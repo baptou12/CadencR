@@ -396,6 +396,17 @@ const agentsRouter = router({
       startedAt: s.startedAt.toISOString(),
     }));
   }),
+
+  /** Get feature IDs that have running agent sessions */
+  getActiveFeatureIds: publicProcedure.query(() => {
+    const db = getDatabase();
+    const rows = db
+      .prepare(
+        "SELECT DISTINCT feature_id FROM agent_sessions WHERE status = 'running'",
+      )
+      .all() as Array<{ feature_id: number }>;
+    return rows.map((r) => r.feature_id);
+  }),
 });
 
 const gitRouter = router({

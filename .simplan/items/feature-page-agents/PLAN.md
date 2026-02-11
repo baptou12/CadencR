@@ -420,21 +420,23 @@ Key files:
 - **Implementation notes**: Added `saveAllSessionStates` (marks running DB sessions as 'interrupted') and `gracefulShutdown` (saves state + kills all) to subprocess-manager.ts. In main.ts, added window `close` event handler and updated `before-quit` handler -- both check `hasRunningSubprocesses()` and show a dialog with "Wait" / "Quit Anyway" options. Uses `isQuitting` flag to prevent recursive dialog prompts. On "Quit Anyway", calls `gracefulShutdown()` then proceeds with close/quit. If no agents running, shutdown proceeds silently.
 - **Validation results**: Lint passed (0 warnings, 0 errors). TypeScript compiled with no errors.
 
-### Phase 19: Sidebar navigation integration
+### ✅ Phase 19: Sidebar navigation integration
 - **Step**: 18
 - **Complexity**: 2
-- [ ] Update FeatureList.tsx: clicking a feature navigates to `/projects/:pid/features/:fid`
-- [ ] Highlight active feature in sidebar based on current route
-- [ ] Show agent activity indicator (dot/spinner) on features with running agents
-- [ ] Ensure back navigation works (going from feature page back to project overview)
-- **Files**: `src/renderer/components/FeatureList.tsx`, `src/renderer/components/Sidebar.tsx`
+- [x] Update FeatureList.tsx: clicking a feature navigates to `/projects/:pid/features/:fid`
+- [x] Highlight active feature in sidebar based on current route
+- [x] Show agent activity indicator (dot/spinner) on features with running agents
+- [x] Ensure back navigation works (going from feature page back to project overview)
+- **Files**: `src/renderer/components/FeatureList.tsx`, `src/renderer/components/Sidebar.tsx`, `src/main/trpc/router.ts`
 - **Commit message**: `feat: integrate feature page navigation with sidebar`
 - **Bisect note**: Updates click handlers and styling only
 - **Informed by**: Q17
+- **Implementation notes**: Navigation was already wired from Phase 3. Added route-aware sidebar: `Sidebar.tsx` now uses `useRouterState` to parse projectId/featureId from the URL pathname, syncing sidebar selection with the current route (so navigating directly to a feature URL highlights it). Added `agents.getActiveFeatureIds` tRPC procedure that queries `agent_sessions` for running sessions and returns distinct feature IDs. `FeatureList.tsx` polls this every 3s and shows a spinning `Loader2Icon` next to features with active agents. Back navigation works naturally via browser history since TanStack Router manages the history stack and the sidebar is always visible.
+- **Validation results**: Lint passed (0 warnings, 0 errors). TypeScript compiled with no errors.
 
 ## Current Status
-- **Current Phase**: Phase 19
-- **Progress**: 18/19
+- **Current Phase**: All phases complete
+- **Progress**: 19/19
 
 ## Deferred Items
 - Keyboard shortcuts / command palette

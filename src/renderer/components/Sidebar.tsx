@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "@tanstack/react-router";
+import { Link, useRouterState } from "@tanstack/react-router";
 import { Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -13,6 +13,18 @@ export function Sidebar() {
   const [selectedFeatureId, setSelectedFeatureId] = useState<number | null>(
     null,
   );
+
+  // Detect active project/feature from current route
+  const routerState = useRouterState();
+  const routeParams = (routerState.location.pathname.match(
+    /\/projects\/(\d+)(?:\/features\/(\d+))?/,
+  ) ?? []) as string[];
+  const activeProjectId = routeParams[1] ? Number(routeParams[1]) : null;
+  const activeFeatureId = routeParams[2] ? Number(routeParams[2]) : null;
+
+  // Sync sidebar selection with route
+  const effectiveProjectId = activeProjectId ?? selectedProjectId;
+  const effectiveFeatureId = activeFeatureId ?? selectedFeatureId;
 
   return (
     <aside className="flex h-full w-64 flex-col border-r border-border bg-muted/50">
@@ -30,7 +42,7 @@ export function Sidebar() {
 
       <div className="flex-[1] overflow-auto p-2">
         <ProjectList
-          selectedProjectId={selectedProjectId}
+          selectedProjectId={effectiveProjectId}
           onSelectProject={setSelectedProjectId}
         />
       </div>
@@ -38,10 +50,10 @@ export function Sidebar() {
       <Separator />
 
       <div className="flex-[2] overflow-auto p-2">
-        {selectedProjectId !== null ? (
+        {effectiveProjectId !== null ? (
           <FeatureList
-            projectId={selectedProjectId}
-            selectedFeatureId={selectedFeatureId ?? undefined}
+            projectId={effectiveProjectId}
+            selectedFeatureId={effectiveFeatureId ?? undefined}
             onSelectFeature={setSelectedFeatureId}
           />
         ) : (

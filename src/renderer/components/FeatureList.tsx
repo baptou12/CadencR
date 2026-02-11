@@ -20,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { PlusIcon, TrashIcon } from "lucide-react";
+import { PlusIcon, TrashIcon, Loader2Icon } from "lucide-react";
 
 const STATUSES = ["draft", "planned", "in-progress", "review", "done"] as const;
 type FeatureStatus = (typeof STATUSES)[number];
@@ -57,6 +57,12 @@ export function FeatureList({
       : { project_id: projectId, status: statusFilter };
 
   const { data: features = [] } = trpc.features.listByProject.useQuery(queryInput);
+
+  // Poll for features with running agents
+  const { data: activeFeatureIds = [] } = trpc.agents.getActiveFeatureIds.useQuery(
+    undefined,
+    { refetchInterval: 3000 },
+  );
 
   const createMutation = trpc.features.create.useMutation({
     onSuccess: () => {
@@ -144,6 +150,9 @@ export function FeatureList({
                 }
               }}
             >
+              {activeFeatureIds.includes(feature.id) && (
+                <Loader2Icon className="size-3.5 shrink-0 animate-spin text-blue-500" />
+              )}
               <span className="flex-1 truncate">{feature.title}</span>
 
               <Select
