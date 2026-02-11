@@ -224,18 +224,20 @@ Key files:
 - **Implementation notes**: Created `types.ts` with full StreamEvent union type covering message_start, content_block_start/delta/stop, message_delta, message_stop, tool_result, error, and system events. Created `ipc-bridge.ts` with line-buffered stream-json parsing that sends AgentEvent objects to all renderer windows via `webContents.send()`. Also bridges stderr as error events and flushes buffer on stream end. Updated `preload.ts` to expose `window.api.onAgentEvent` and `window.api.offAgentEvent` via `contextBridge.exposeInMainWorld`. Added `window.api` type declaration to `env.d.ts`. Created `agentsRouter` in `router.ts` with `start`, `stop`, `resume`, and `list` procedures. The `start` and `resume` mutations call `bridgeSubprocessToRenderer` after spawning to wire up the IPC relay.
 - **Validation results**: Lint passed (0 errors), TypeScript compiled with no errors.
 
-### Phase 6: Agent output UI components
+### ✅ Phase 6: Agent output UI components
 - **Step**: 5
 - **Complexity**: 4
-- [ ] Create `src/renderer/components/AgentPanel.tsx` — container for a single agent's output
-- [ ] Create `src/renderer/components/AgentBlock.tsx` — renders a single structured block (text, code, tool_call, tool_result, thinking)
-- [ ] Create `src/renderer/components/AgentStream.tsx` — scrollable list of AgentBlocks with auto-scroll
-- [ ] Style blocks: text with markdown rendering, code with syntax highlighting (use a simple approach), tool calls with name + args, thinking with collapsible section
-- [ ] Add loading/spinner states for active agents
+- [x] Create `src/renderer/components/AgentPanel.tsx` — container for a single agent's output
+- [x] Create `src/renderer/components/AgentBlock.tsx` — renders a single structured block (text, code, tool_call, tool_result, thinking)
+- [x] Create `src/renderer/components/AgentStream.tsx` — scrollable list of AgentBlocks with auto-scroll
+- [x] Style blocks: text with markdown rendering, code with syntax highlighting (use a simple approach), tool calls with name + args, thinking with collapsible section
+- [x] Add loading/spinner states for active agents
 - **Files**: `src/renderer/components/AgentPanel.tsx`, `src/renderer/components/AgentBlock.tsx`, `src/renderer/components/AgentStream.tsx`
 - **Commit message**: `feat: add agent output UI components with structured block rendering`
 - **Bisect note**: Pure UI components, no side effects
 - **Informed by**: Q6
+- **Implementation notes**: Created three components. `AgentBlock` renders 5 block types: text (whitespace-pre-wrap), code (with language header), tool_call (collapsible with formatted JSON args), tool_result (collapsible, red styling for errors), and thinking (collapsible with purple accent). `AgentStream` is a ScrollArea wrapper with auto-scroll via useEffect on blocks.length and animated bounce dots for streaming state. `AgentPanel` is the container with agent type label, status badge (idle/running/complete/error with appropriate icons), and the stream content. Used existing shadcn ScrollArea and Badge components. No external markdown or syntax highlighting libraries -- kept simple with pre/code elements per plan guidance.
+- **Validation results**: Lint passed (0 errors), TypeScript compiled with no errors.
 
 ### Phase 7: Dynamic form bottom drawer for AskUserQuestion
 - **Step**: 6
@@ -407,8 +409,8 @@ Key files:
 - **Informed by**: Q17
 
 ## Current Status
-- **Current Phase**: Phase 6
-- **Progress**: 5/19
+- **Current Phase**: Phase 7
+- **Progress**: 6/19
 
 ## Deferred Items
 - Keyboard shortcuts / command palette
