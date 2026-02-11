@@ -285,19 +285,21 @@ Key files:
 - **Implementation notes**: Created `src/main/git/worktree.ts` with functions: createWorktree (places at `../<project-name>-<safe-branch>`), listWorktrees (parses `git worktree list --porcelain`), removeWorktree, getWorktreeInfo, buildBranchName (slugifies feature title), and openInTerminal (platform-aware: macOS uses `open -a Terminal`, Windows uses `start cmd`, Linux tries x-terminal-emulator). Added `gitRouter` to router.ts with createWorktree, removeWorktree, getWorktreeInfo, and openInTerminal procedures. All procedures read worktree_path/worktree_branch from feature_settings. Updated features.create to auto-create worktree on feature creation (best-effort, catches errors). Updated FeatureTopBar to accept projectId prop, show worktree branch name, and wire terminal button to git.openInTerminal mutation. Updated feature page route to pass projectId to FeatureTopBar.
 - **Validation results**: Lint passed (0 warnings, 0 errors). TypeScript compiled with no errors.
 
-### Phase 10: Plan agent implementation
+### ✅ Phase 10: Plan agent implementation
 - **Step**: 9
 - **Complexity**: 5
-- [ ] Create `src/main/agents/plan-agent.ts` — system prompt adapted from simplan item:plan
-- [ ] Flow: user enters description in textarea → agent explores codebase → asks clarifying questions (1-12) → generates phased plan
-- [ ] Store plan in `plans` table, phases in `phases` table
-- [ ] Parse agent output to extract plan structure (phases, tasks, files, commit messages)
-- [ ] Update feature status to "planned" on completion
-- [ ] Wire "Start Planning" button on feature page to launch plan agent
-- **Files**: `src/main/agents/plan-agent.ts`, `src/renderer/routes/projects/$projectId/features/$featureId.tsx`
+- [x] Create `src/main/agents/plan-agent.ts` — system prompt adapted from simplan item:plan
+- [x] Flow: user enters description in textarea → agent explores codebase → asks clarifying questions (1-12) → generates phased plan
+- [x] Store plan in `plans` table, phases in `phases` table
+- [x] Parse agent output to extract plan structure (phases, tasks, files, commit messages)
+- [x] Update feature status to "planned" on completion
+- [x] Wire "Start Planning" button on feature page to launch plan agent
+- **Files**: `src/main/agents/plan-agent.ts`, `src/renderer/routes/projects/$projectId/features/$featureId.tsx`, `src/renderer/components/ui/textarea.tsx`
 - **Commit message**: `feat: implement Plan agent with codebase exploration and phased planning`
 - **Bisect note**: New agent, extends feature page with plan flow
 - **Informed by**: Q9, Q1 (answer)
+- **Implementation notes**: Created `plan-agent.ts` with system prompt instructing the agent to explore codebase, ask 1-12 clarifying questions via AskUserQuestion, then output a structured plan between `---PLAN_START---`/`---PLAN_END---` markers. The `parsePlanOutput` function extracts phases with step, complexity, tasks, files, and commit messages using regex. On subprocess completion, the handler stores the plan in the `plans` table and phases in the `phases` table, then updates feature status to "planned". Added `agents.startPlan` tRPC mutation that resolves working directory (worktree or project path) and launches the agent. Updated the feature page with a textarea for description input and "Start Planning" button (shown when feature is in draft status). The page listens for agent events via IPC bridge and renders them in an AgentPanel, including AskUserQuestion handling for clarifying questions. Also created `textarea.tsx` shadcn UI component (was missing).
+- **Validation results**: Lint passed (0 errors), TypeScript compiled with no errors.
 
 ### Phase 11: Brainstorm agent implementation
 - **Step**: 10
@@ -415,8 +417,8 @@ Key files:
 - **Informed by**: Q17
 
 ## Current Status
-- **Current Phase**: Phase 10
-- **Progress**: 9/19
+- **Current Phase**: Phase 11
+- **Progress**: 10/19
 
 ## Deferred Items
 - Keyboard shortcuts / command palette

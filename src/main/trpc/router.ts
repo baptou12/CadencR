@@ -20,6 +20,7 @@ import {
   openInTerminal,
   buildBranchName,
 } from "../git/worktree";
+import { startPlanAgent } from "../agents/plan-agent";
 
 const settingsRouter = router({
   get: publicProcedure.input(z.object({ key: z.string() })).query(({ input }) => {
@@ -147,6 +148,42 @@ const agentsRouter = router({
     .mutation(({ input }) => {
       const sent = sendSubprocessInput(input.id, input.text);
       return { success: sent };
+    }),
+
+  /** Start the plan agent for a feature */
+  startPlan: publicProcedure
+    .input(
+      z.object({
+        featureId: z.number(),
+        projectId: z.number(),
+        description: z.string(),
+      }),
+    )
+    .mutation(({ input }) => {
+      const db = getDatabase();
+
+      // Determine working directory: use worktree path if available, else project path
+      const wtRow = db
+        .prepare(
+          "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
+        )
+        .get(input.featureId) as { value: string } | undefined;
+
+      const project = db
+        .prepare("SELECT path FROM projects WHERE id = ?")
+        .get(input.projectId) as { path: string } | undefined;
+
+      const cwd = wtRow?.value ?? project?.path;
+      if (!cwd) throw new Error("No working directory found for this feature");
+
+      const result = startPlanAgent({
+        featureId: input.featureId,
+        projectId: input.projectId,
+        description: input.description,
+        cwd,
+      });
+
+      return result;
     }),
 
   /** List all active agent subprocesses */
