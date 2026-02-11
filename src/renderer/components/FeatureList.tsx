@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import { trpc } from "@/trpc";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
@@ -43,6 +44,7 @@ export function FeatureList({
   selectedFeatureId,
   onSelectFeature,
 }: FeatureListProps) {
+  const navigate = useNavigate();
   const [statusFilter, setStatusFilter] = useState<FeatureStatus | "all">("all");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [newTitle, setNewTitle] = useState("");
@@ -118,11 +120,27 @@ export function FeatureList({
               className={`group flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-accent ${
                 selectedFeatureId === feature.id ? "bg-accent" : ""
               }`}
-              onClick={() => onSelectFeature?.(feature.id)}
+              onClick={() => {
+                onSelectFeature?.(feature.id);
+                void navigate({
+                  to: "/projects/$projectId/features/$featureId",
+                  params: {
+                    projectId: String(projectId),
+                    featureId: String(feature.id),
+                  },
+                });
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
                   onSelectFeature?.(feature.id);
+                  void navigate({
+                    to: "/projects/$projectId/features/$featureId",
+                    params: {
+                      projectId: String(projectId),
+                      featureId: String(feature.id),
+                    },
+                  });
                 }
               }}
             >

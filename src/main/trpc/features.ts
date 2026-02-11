@@ -67,6 +67,50 @@ export const featuresRouter = router({
     return { success: true };
   }),
 
+  getById: publicProcedure
+    .input(z.object({ id: z.number() }))
+    .query(({ input }) => {
+      const db = getDatabase();
+      return db
+        .prepare(
+          "SELECT id, project_id, title, status, created_at FROM features WHERE id = ?",
+        )
+        .get(input.id) as
+        | {
+            id: number;
+            project_id: number;
+            title: string;
+            status: string;
+            created_at: string;
+          }
+        | undefined;
+    }),
+
+  getPlanProgress: publicProcedure
+    .input(z.object({ feature_id: z.number() }))
+    .query(({ input }) => {
+      const db = getDatabase();
+      const plan = db
+        .prepare("SELECT id FROM plans WHERE feature_id = ? LIMIT 1")
+        .get(input.feature_id) as { id: number } | undefined;
+      if (!plan) {
+        return { total: 0, done: 0 };
+      }
+      const total = (
+        db.prepare("SELECT COUNT(*) as count FROM phases WHERE plan_id = ?").get(plan.id) as {
+          count: number;
+        }
+      ).count;
+      const done = (
+        db
+          .prepare(
+            "SELECT COUNT(*) as count FROM phases WHERE plan_id = ? AND status = 'done'",
+          )
+          .get(plan.id) as { count: number }
+      ).count;
+      return { total, done };
+    }),
+
   getSettings: publicProcedure
     .input(z.object({ feature_id: z.number() }))
     .query(({ input }) => {
