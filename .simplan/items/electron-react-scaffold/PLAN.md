@@ -52,36 +52,42 @@
 - **Validation results**: `pnpm exec tsc --noEmit` passes (exit 0). `pnpm run make` passes (exit 0, output in `out/make/`). `pnpm start` not validated (requires display/manual check).
 - **Review**: Approved - Clean Electron Forge + Vite + TypeScript scaffold. All files present with real implementations. Both completion conditions (tsc --noEmit, pnpm run make) pass. Standard patterns used throughout.
 
-### ⬜ Phase 2: Add React, Tailwind CSS, and shadcn/ui
+### ✅ Phase 2: Add React, Tailwind CSS, and shadcn/ui
 - **Step**: 2
 - **Complexity**: 3
-- [ ] Install React deps: `react`, `react-dom`, `@types/react`, `@types/react-dom`, `@vitejs/plugin-react`
-- [ ] Install Tailwind CSS v4 and configure (or v3 with `tailwind.config.js` + `postcss.config.js`)
-- [ ] Initialize shadcn/ui with `pnpm dlx shadcn@latest init`
-- [ ] Update `vite.renderer.config.ts` to include React plugin
-- [ ] Replace default `renderer.ts` with React entry point (`main.tsx` or `renderer.tsx`) mounting `<App />` to `#root`
-- [ ] Update `index.html` to have a `<div id="root">` and import the React entry
-- [ ] Create `src/renderer/App.tsx` with a basic component
-- [ ] Add global CSS with Tailwind directives
+- [x] Install React deps: `react`, `react-dom`, `@types/react`, `@types/react-dom`, `@vitejs/plugin-react`
+- [x] Install Tailwind CSS v4 and configure (or v3 with `tailwind.config.js` + `postcss.config.js`)
+- [x] Initialize shadcn/ui with `pnpm dlx shadcn@latest init`
+- [x] Update `vite.renderer.config.ts` to include React plugin
+- [x] Replace default `renderer.ts` with React entry point (`main.tsx` or `renderer.tsx`) mounting `<App />` to `#root`
+- [x] Update `index.html` to have a `<div id="root">` and import the React entry
+- [x] Create `src/renderer/App.tsx` with a basic component
+- [x] Add global CSS with Tailwind directives
 - **Files**: `package.json`, `vite.renderer.config.ts`, `index.html`, `src/renderer.ts` → `src/renderer/main.tsx`, `src/renderer/App.tsx`, `src/renderer/index.css`, `tailwind.config.js`, `postcss.config.js`, `components.json`
 - **Commit message**: `feat: add react, tailwind css, and shadcn/ui to renderer`
 - **Bisect note**: Must update both vite config and entry point together so the build doesn't break
+- **Implementation notes**: Used Tailwind CSS v4 with `@tailwindcss/vite` plugin (no `tailwind.config.js` or `postcss.config.js` needed). shadcn/ui auto-init failed (framework detection), so manually created `components.json`, `src/renderer/lib/utils.ts` with `cn()` helper, and full oklch CSS variable theme in `index.css`. Added `@` path alias in both `vite.renderer.config.ts` (resolve.alias) and `tsconfig.json` (paths). Installed `clsx`, `tailwind-merge`, `class-variance-authority`, `lucide-react` as shadcn utility deps. Added `jsx: "react-jsx"` to tsconfig. Removed old `src/renderer.ts` and `src/index.css`.
+- **Validation results**: `pnpm exec tsc --noEmit` passes (exit 0). `pnpm run make` passes (exit 0, artifacts in `out/make/`). `pnpm start` and router validation deferred to manual check.
+- **Review**: Approved - Tailwind v4 with @tailwindcss/vite plugin, full shadcn/ui theme with oklch CSS variables, cn() utility, proper @ alias in both vite and tsconfig. Clean and complete.
 
-### ⬜ Phase 3: Set up TanStack Router with two pages
+### ✅ Phase 3: Set up TanStack Router with two pages
 - **Step**: 2
 - **Complexity**: 3
-- [ ] Install `@tanstack/react-router` and `@tanstack/router-vite-plugin`
-- [ ] Configure `createHashHistory` for Electron compatibility
-- [ ] Create route tree: root route with layout, `/` (Home page), `/settings` (Settings page)
-- [ ] Create `src/renderer/routes/__root.tsx` with navigation layout (sidebar or nav bar with links to both pages)
-- [ ] Create `src/renderer/routes/index.tsx` (Home page)
-- [ ] Create `src/renderer/routes/settings.tsx` (Settings page)
-- [ ] Create router instance in `src/renderer/router.ts` with hash history
-- [ ] Mount `<RouterProvider>` in `App.tsx`
-- [ ] Add TanStack router plugin to `vite.renderer.config.ts`
-- **Files**: `package.json`, `src/renderer/router.ts`, `src/renderer/routes/__root.tsx`, `src/renderer/routes/index.tsx`, `src/renderer/routes/settings.tsx`, `src/renderer/App.tsx`, `vite.renderer.config.ts`
+- [x] Install `@tanstack/react-router` and `@tanstack/router-vite-plugin`
+- [x] Configure `createHashHistory` for Electron compatibility
+- [x] Create route tree: root route with layout, `/` (Home page), `/settings` (Settings page)
+- [x] Create `src/renderer/routes/__root.tsx` with navigation layout (sidebar or nav bar with links to both pages)
+- [x] Create `src/renderer/routes/index.tsx` (Home page)
+- [x] Create `src/renderer/routes/settings.tsx` (Settings page)
+- [x] Create router instance in `src/renderer/router.ts` with hash history
+- [x] Mount `<RouterProvider>` in `App.tsx`
+- [x] Add TanStack router plugin to `vite.renderer.config.ts`
+- **Files**: `package.json`, `src/renderer/router.ts`, `src/renderer/routes/__root.tsx`, `src/renderer/routes/index.tsx`, `src/renderer/routes/settings.tsx`, `src/renderer/App.tsx`, `vite.renderer.config.ts`, `tsr.config.json`, `src/renderer/routeTree.gen.ts`
 - **Commit message**: `feat: add tanstack router with home and settings pages`
 - **Bisect note**: Router + pages + provider must all be added together for the app to render
+- **Implementation notes**: Installed `@tanstack/react-router`, `@tanstack/router-vite-plugin`, and `@tanstack/router-cli` (dev). Created `tsr.config.json` at project root to configure route generation paths (routesDirectory and generatedRouteTree) since the CLI doesn't accept these as flags. Root layout uses a sidebar nav with Links. Router uses `createHashHistory` for Electron `file://` compatibility. App.tsx replaced Phase 2's placeholder with `RouterProvider`. The `routeTree.gen.ts` file is auto-generated by the TanStack Router plugin/CLI.
+- **Validation results**: `pnpm exec tsc --noEmit` passes (exit 0). `pnpm run make` passes (exit 0, artifacts in `out/make/`). `pnpm start` and router navigation require manual verification.
+- **Review**: Approved - Hash history correctly configured for Electron file:// protocol. Root layout with sidebar nav, two pages with Links. Route tree auto-generated. RouterProvider properly mounted in App.tsx.
 
 ### ⬜ Phase 4: Set up electron-trpc IPC layer
 - **Step**: 3
@@ -121,5 +127,5 @@
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 2 & 3 (Step 2)
-- **Progress**: 1/5
+- **Current Phase**: Phase 4 (Step 3)
+- **Progress**: 3/5
