@@ -5,7 +5,7 @@ import { AgentPanel, type AgentStatus } from "@/components/AgentPanel";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/trpc";
-import { PlayIcon, Loader2Icon, LightbulbIcon, HammerIcon, ShieldAlertIcon } from "lucide-react";
+import { PlayIcon, Loader2Icon, LightbulbIcon, HammerIcon, ShieldAlertIcon, SearchCheckIcon, PlusCircleIcon, WrenchIcon } from "lucide-react";
 import type { AgentBlockData } from "@/components/AgentBlock";
 import type { AgentQuestion } from "@/components/AgentQuestionDrawer";
 import type { AgentEvent } from "../../../../../main/agents/types";
@@ -49,10 +49,18 @@ function FeaturePage() {
   const [riskBlocks, setRiskBlocks] = useState<AgentBlockData[]>([]);
   const [riskStatus, setRiskStatus] = useState<AgentStatus>("idle");
 
+  const [reviewBlocks, setReviewBlocks] = useState<AgentBlockData[]>([]);
+  const [reviewStatus, setReviewStatus] = useState<AgentStatus>("idle");
+  const [reviewComplete, setReviewComplete] = useState(false);
+  const [reviewVerdict, setReviewVerdict] = useState<"approved" | "changes_requested" | null>(null);
+
   const startPlanMutation = trpc.agents.startPlan.useMutation();
   const startBrainstormMutation = trpc.agents.startBrainstorm.useMutation();
   const startExecuteMutation = trpc.agents.startExecute.useMutation();
   const startRiskMutation = trpc.agents.startRisk.useMutation();
+  const startReviewMutation = trpc.agents.startReview.useMutation();
+  const addFixPhaseMutation = trpc.agents.addFixPhase.useMutation();
+  const startExecuteForFixMutation = trpc.agents.startExecute.useMutation();
   const sendInputMutation = trpc.agents.sendInput.useMutation();
 
   const handlePlanEvent = useCallback((agentEvent: AgentEvent) => {
@@ -356,6 +364,69 @@ function FeaturePage() {
     }
   }, []);
 
+  const handleReviewEvent = useCallback((agentEvent: AgentEvent) => {
+    const { event } = agentEvent;
+
+    switch (event.type) {
+      case "content_block_start": {
+        if (event.content_block.type === "text") {
+          setReviewBlocks((prev) => [
+            ...prev,
+            makeBlock({ type: "text", content: event.content_block.type === "text" ? event.content_block.text : "" }),
+          ]);
+        } else if (event.content_block.type === "tool_use") {
+          const toolBlock = event.content_block;
+          setReviewBlocks((prev) => [
+            ...prev,
+            makeBlock({
+              type: "tool_call",
+              content: JSON.stringify(toolBlock.input, null, 2),
+              toolName: toolBlock.name,
+              toolArgs: JSON.stringify(toolBlock.input, null, 2),
+            }),
+          ]);
+        }
+        break;
+      }
+      case "content_block_delta": {
+        if (event.delta.type === "text_delta") {
+          const deltaText = event.delta.text;
+          setReviewBlocks((prev) => {
+            if (prev.length === 0) return [makeBlock({ type: "text", content: deltaText })];
+            const last = prev[prev.length - 1];
+            if (last.type === "text") {
+              return [
+                ...prev.slice(0, -1),
+                { ...last, content: last.content + deltaText },
+              ];
+            }
+            return [...prev, makeBlock({ type: "text", content: deltaText })];
+          });
+        }
+        break;
+      }
+      case "tool_result": {
+        setReviewBlocks((prev) => [
+          ...prev,
+          makeBlock({
+            type: "tool_result",
+            content: event.content,
+            isError: event.is_error ?? false,
+          }),
+        ]);
+        break;
+      }
+      case "error": {
+        setReviewStatus("error");
+        setReviewBlocks((prev) => [
+          ...prev,
+          makeBlock({ type: "text", content: `Error: ${event.error.message}` }),
+        ]);
+        break;
+      }
+    }
+  }, []);
+
   // Listen for agent events via IPC bridge
   useEffect(() => {
     const api = (window as unknown as { api?: {
@@ -379,13 +450,15 @@ function FeaturePage() {
         handleExecuteEvent(agentEvent);
       } else if (agentEvent.agentType === "risk") {
         handleRiskEvent(agentEvent);
+      } else if (agentEvent.agentType === "review") {
+        handleReviewEvent(agentEvent);
       }
     });
 
     return () => {
       api.offAgentEvent(listener as undefined);
     };
-  }, [handlePlanEvent, handleBrainstormEvent, handleExecuteEvent, handleRiskEvent]);
+  }, [handlePlanEvent, handleBrainstormEvent, handleExecuteEvent, handleRiskEvent, handleReviewEvent]);
 
   const handleStartPlanning = async () => {
     if (!description.trim()) return;
@@ -493,6 +566,94 @@ function FeaturePage() {
     }
   };
 
+  const handleStartReview = async () => {
+    setReviewStatus("running");
+    setReviewBlocks([]);
+    setReviewComplete(false);
+    setReviewVerdict(null);
+
+    try {
+      await startReviewMutation.mutateAsync({
+        featureId: numericFeatureId,
+        projectId: numericProjectId,
+      });
+    } catch (err) {
+      setReviewStatus("error");
+      setReviewBlocks([
+        makeBlock({
+          type: "text",
+          content: `Failed to start review agent: ${err instanceof Error ? err.message : String(err)}`,
+        }),
+      ]);
+    }
+  };
+
+  const handleAddFixPhase = async () => {
+    // Collect the review output as the fix description
+    const reviewText = reviewBlocks
+      .filter((b) => b.type === "text")
+      .map((b) => b.content)
+      .join("\n");
+
+    try {
+      await addFixPhaseMutation.mutateAsync({
+        featureId: numericFeatureId,
+        fixDescription: `Fix the following issues identified during code review:\n\n${reviewText}`,
+      });
+      setReviewBlocks((prev) => [
+        ...prev,
+        makeBlock({ type: "text", content: "\n\n--- Fix phase added to plan. You can execute it from the Build step. ---" }),
+      ]);
+    } catch (err) {
+      setReviewBlocks((prev) => [
+        ...prev,
+        makeBlock({
+          type: "text",
+          content: `Failed to add fix phase: ${err instanceof Error ? err.message : String(err)}`,
+        }),
+      ]);
+    }
+  };
+
+  const handleFixImmediately = async () => {
+    setExecuteStatus("running");
+    setExecuteBlocks([]);
+
+    try {
+      await startExecuteForFixMutation.mutateAsync({
+        featureId: numericFeatureId,
+        projectId: numericProjectId,
+      });
+    } catch (err) {
+      setExecuteStatus("error");
+      setExecuteBlocks([
+        makeBlock({
+          type: "text",
+          content: `Failed to start fix execution: ${err instanceof Error ? err.message : String(err)}`,
+        }),
+      ]);
+    }
+  };
+
+  // Detect review completion and verdict from blocks
+  useEffect(() => {
+    if (reviewStatus !== "running") return;
+    const fullText = reviewBlocks
+      .filter((b) => b.type === "text")
+      .map((b) => b.content)
+      .join("");
+    if (fullText.includes("---REVIEW_APPROVED---")) {
+      setReviewComplete(true);
+      setReviewVerdict("approved");
+      setReviewStatus("complete");
+      void featureQuery.refetch();
+    } else if (fullText.includes("---REVIEW_CHANGES_REQUESTED---")) {
+      setReviewComplete(true);
+      setReviewVerdict("changes_requested");
+      setReviewStatus("complete");
+    }
+  }, [reviewBlocks, reviewStatus, featureQuery]);
+
   const isDraft = !feature || feature.status === "draft";
   const isPlanned = feature?.status === "planned";
   const isInProgress = feature?.status === "in-progress";
@@ -503,6 +664,9 @@ function FeaturePage() {
   const showExecuteAgent = executeStatus !== "idle" || executeBlocks.length > 0;
   const showRiskButton = (isPlanned || isInProgress) && riskStatus === "idle";
   const showRiskAgent = riskStatus !== "idle" || riskBlocks.length > 0;
+  const isReview = feature?.status === "review";
+  const showReviewButton = (isInProgress || isReview) && reviewStatus === "idle";
+  const showReviewAgent = reviewStatus !== "idle" || reviewBlocks.length > 0;
 
   return (
     <div className="flex h-full flex-col -m-6">
@@ -579,7 +743,7 @@ function FeaturePage() {
           </div>
         )}
 
-        {(showBuildButton || showRiskButton) && !showPlanAgent && !showBrainstormAgent && !showExecuteAgent && !showRiskAgent && (
+        {(showBuildButton || showRiskButton || showReviewButton) && !showPlanAgent && !showBrainstormAgent && !showExecuteAgent && !showRiskAgent && !showReviewAgent && (
           <div className="mx-auto max-w-2xl space-y-4">
             <div>
               <h2 className="text-lg font-semibold">Ready to Build</h2>
@@ -616,6 +780,20 @@ function FeaturePage() {
                   Evaluate Risk
                 </Button>
               )}
+              {showReviewButton && (
+                <Button
+                  variant="outline"
+                  onClick={handleStartReview}
+                  disabled={startReviewMutation.isLoading}
+                >
+                  {startReviewMutation.isLoading ? (
+                    <Loader2Icon className="mr-2 size-4 animate-spin" />
+                  ) : (
+                    <SearchCheckIcon className="mr-2 size-4" />
+                  )}
+                  Start Review
+                </Button>
+              )}
             </div>
           </div>
         )}
@@ -642,7 +820,52 @@ function FeaturePage() {
           </div>
         )}
 
-        {!showPlanInput && !showPlanAgent && !showBrainstormAgent && !showBuildButton && !showRiskButton && !showExecuteAgent && !showRiskAgent && feature && feature.status !== "draft" && (
+        {showReviewAgent && (
+          <div className="h-full">
+            <AgentPanel
+              agentType="review"
+              status={reviewStatus}
+              blocks={reviewBlocks}
+              className="h-full"
+            />
+            {reviewComplete && reviewVerdict === "changes_requested" && (
+              <div className="mt-4 flex gap-2 border-t pt-4">
+                <Button
+                  variant="outline"
+                  onClick={handleAddFixPhase}
+                  disabled={addFixPhaseMutation.isLoading}
+                >
+                  {addFixPhaseMutation.isLoading ? (
+                    <Loader2Icon className="mr-2 size-4 animate-spin" />
+                  ) : (
+                    <PlusCircleIcon className="mr-2 size-4" />
+                  )}
+                  Add Fix Phase
+                </Button>
+                <Button
+                  onClick={handleFixImmediately}
+                  disabled={startExecuteForFixMutation.isLoading}
+                >
+                  {startExecuteForFixMutation.isLoading ? (
+                    <Loader2Icon className="mr-2 size-4 animate-spin" />
+                  ) : (
+                    <WrenchIcon className="mr-2 size-4" />
+                  )}
+                  Fix Immediately
+                </Button>
+              </div>
+            )}
+            {reviewComplete && reviewVerdict === "approved" && (
+              <div className="mt-4 border-t pt-4">
+                <p className="text-sm font-medium text-green-600">
+                  Review approved! Feature marked as done.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {!showPlanInput && !showPlanAgent && !showBrainstormAgent && !showBuildButton && !showRiskButton && !showReviewButton && !showExecuteAgent && !showRiskAgent && !showReviewAgent && feature && feature.status !== "draft" && (
           <p className="text-muted-foreground">
             Feature is in &quot;{feature.status}&quot; state.
           </p>

@@ -25,6 +25,7 @@ import { startPlanAgent } from "../agents/plan-agent";
 import { startBrainstormAgent } from "../agents/brainstorm-agent";
 import { startExecuteAgent } from "../agents/execute-agent";
 import { startRiskAgent } from "../agents/risk-agent";
+import { startReviewAgent, addFixPhase } from "../agents/review-agent";
 
 const settingsRouter = router({
   get: publicProcedure.input(z.object({ key: z.string() })).query(({ input }) => {
@@ -289,6 +290,52 @@ const agentsRouter = router({
       });
 
       return result;
+    }),
+
+  /** Start the review agent for a feature */
+  startReview: publicProcedure
+    .input(
+      z.object({
+        featureId: z.number(),
+        projectId: z.number(),
+      }),
+    )
+    .mutation(({ input }) => {
+      const db = getDatabase();
+
+      // Determine working directory
+      const wtRow = db
+        .prepare(
+          "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
+        )
+        .get(input.featureId) as SettingRow | undefined;
+
+      const project = db
+        .prepare("SELECT path FROM projects WHERE id = ?")
+        .get(input.projectId) as Pick<ProjectRow, "path"> | undefined;
+
+      const cwd = wtRow?.value ?? project?.path;
+      if (!cwd) throw new Error("No working directory found for this feature");
+
+      const result = startReviewAgent({
+        featureId: input.featureId,
+        projectId: input.projectId,
+        cwd,
+      });
+
+      return result;
+    }),
+
+  /** Add a fix phase to the plan based on review findings */
+  addFixPhase: publicProcedure
+    .input(
+      z.object({
+        featureId: z.number(),
+        fixDescription: z.string(),
+      }),
+    )
+    .mutation(({ input }) => {
+      return addFixPhase(input.featureId, input.fixDescription);
     }),
 
   /** List all active agent subprocesses */

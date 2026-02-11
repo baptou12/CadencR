@@ -347,19 +347,21 @@ Key files:
 - **Implementation notes**: Created `risk-agent.ts` following the same pattern as brainstorm-agent. System prompt instructs the agent to read the plan, explore codebase, and generate a structured markdown risk report with sections for deployment risks, data impact, dependency risks, code quality risks, verification checklist, and recommendations. The agent fetches the latest plan's raw_markdown to include as context. On completion, the risk report is stored in `agent_messages` with message_type='risk_report'. Added `agents.startRisk` tRPC mutation to router.ts with the same cwd resolution pattern. Updated feature page with risk state (blocks, status), risk event handler, "Evaluate Risk" outline button alongside "Start Building" (both shown when feature is planned/in-progress), and a risk AgentPanel.
 - **Validation results**: Lint passed (0 warnings, 0 errors). TypeScript compiled with no errors.
 
-### Phase 14: Review agent
+### ✅ Phase 14: Review agent
 - **Step**: 13
 - **Complexity**: 4
-- [ ] Create `src/main/agents/review-agent.ts` — system prompt for code review
-- [ ] Flow: reviews diff of all changes → flags issues → presents findings
-- [ ] At end of review, show user options: "Add fix phase" (appends to plan) or "Fix immediately" (new commit)
-- [ ] If "Add fix phase": create new phase in DB, user can execute it later
-- [ ] If "Fix immediately": launch a quick execute agent for the fix
-- [ ] Update feature status to "review" when review starts, "done" if approved
+- [x] Create `src/main/agents/review-agent.ts` — system prompt for code review
+- [x] Flow: reviews diff of all changes → flags issues → presents findings
+- [x] At end of review, show user options: "Add fix phase" (appends to plan) or "Fix immediately" (new commit)
+- [x] If "Add fix phase": create new phase in DB, user can execute it later
+- [x] If "Fix immediately": launch a quick execute agent for the fix
+- [x] Update feature status to "review" when review starts, "done" if approved
 - **Files**: `src/main/agents/review-agent.ts`, `src/renderer/routes/projects/$projectId/features/$featureId.tsx`
 - **Commit message**: `feat: implement Review agent with fix-phase and immediate-fix options`
 - **Bisect note**: New agent, depends on execute agent having run
 - **Informed by**: Q15
+- **Implementation notes**: Created `review-agent.ts` following the same pattern as risk-agent. System prompt instructs the agent to run `git diff` to review all changes, then produce a structured review report with Critical Issues, Warnings, Suggestions, and a Verdict (APPROVED, APPROVED_WITH_SUGGESTIONS, or CHANGES_REQUESTED). Uses `---REVIEW_APPROVED---` and `---REVIEW_CHANGES_REQUESTED---` markers to detect verdict. On completion, stores review report in `agent_messages` with message_type='review_report'. Updates feature status to "review" on start, "done" if approved. Exported `addFixPhase` function that appends a new phase to the existing plan with the review findings as the prompt. Added `agents.startReview` and `agents.addFixPhase` tRPC mutations to router.ts. Updated feature page with review state, review event handler, "Start Review" button (shown when feature is in-progress or review status), review AgentPanel, and post-review action buttons: "Add Fix Phase" (creates new phase in DB) and "Fix Immediately" (launches execute agent for pending fix phases). Verdict detection uses useEffect watching reviewBlocks content.
+- **Validation results**: Lint passed (0 warnings, 0 errors). TypeScript compiled with no errors.
 
 ### Phase 15: Feature state machine and button logic
 - **Step**: 14
@@ -423,8 +425,8 @@ Key files:
 - **Informed by**: Q17
 
 ## Current Status
-- **Current Phase**: Phase 14
-- **Progress**: 13/19
+- **Current Phase**: Phase 15
+- **Progress**: 14/19
 
 ## Deferred Items
 - Keyboard shortcuts / command palette
