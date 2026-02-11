@@ -122,6 +122,29 @@ export const featuresRouter = router({
       return { total, done };
     }),
 
+  getProgress: publicProcedure
+    .input(z.object({ feature_id: z.number() }))
+    .query(({ input }) => {
+      const db = getDatabase();
+      const plan = db
+        .prepare("SELECT id FROM plans WHERE feature_id = ? ORDER BY created_at DESC LIMIT 1")
+        .get(input.feature_id) as Pick<PlanRow, "id"> | undefined;
+      if (!plan) {
+        return { total: 0, done: 0 };
+      }
+      const total = (
+        db.prepare("SELECT COUNT(*) as count FROM phases WHERE plan_id = ?").get(plan.id) as CountRow
+      ).count;
+      const done = (
+        db
+          .prepare(
+            "SELECT COUNT(*) as count FROM phases WHERE plan_id = ? AND status = 'done'",
+          )
+          .get(plan.id) as CountRow
+      ).count;
+      return { total, done };
+    }),
+
   getSettings: publicProcedure
     .input(z.object({ feature_id: z.number() }))
     .query(({ input }) => {

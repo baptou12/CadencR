@@ -20,6 +20,7 @@ import {
   getWorktreeInfo,
   openInTerminal,
   buildBranchName,
+  getGitStats,
 } from "../git/worktree";
 import { startPlanAgent } from "../agents/plan-agent";
 import { startBrainstormAgent } from "../agents/brainstorm-agent";
@@ -443,6 +444,20 @@ const gitRouter = router({
       if (!wtRow) return null;
 
       return getWorktreeInfo(project.path, wtRow.value);
+    }),
+
+  /** Get git diff stats (LOC changed) for a feature's worktree */
+  getStats: publicProcedure
+    .input(z.object({ featureId: z.number() }))
+    .query(({ input }) => {
+      const db = getDatabase();
+      const wtRow = db
+        .prepare(
+          "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
+        )
+        .get(input.featureId) as SettingRow | undefined;
+      if (!wtRow) return { filesChanged: 0, insertions: 0, deletions: 0 };
+      return getGitStats(wtRow.value);
     }),
 
   /** Open a worktree path in the system terminal */

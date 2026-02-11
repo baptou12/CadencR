@@ -142,6 +142,56 @@ export function buildBranchName(prefix: string, featureTitle: string): string {
 }
 
 /**
+ * Get git diff stats for a worktree (lines added/removed).
+ */
+export function getGitStats(worktreePath: string): {
+  filesChanged: number;
+  insertions: number;
+  deletions: number;
+} {
+  try {
+    const output = execSync("git diff --stat", {
+      cwd: worktreePath,
+      stdio: "pipe",
+      encoding: "utf-8",
+    });
+
+    // Parse the summary line, e.g. " 3 files changed, 10 insertions(+), 2 deletions(-)"
+    const summaryMatch = output.match(
+      /(\d+)\s+files?\s+changed(?:,\s+(\d+)\s+insertions?\(\+\))?(?:,\s+(\d+)\s+deletions?\(-\))?/,
+    );
+
+    if (!summaryMatch) {
+      // Also check staged changes
+      const stagedOutput = execSync("git diff --cached --stat", {
+        cwd: worktreePath,
+        stdio: "pipe",
+        encoding: "utf-8",
+      });
+      const stagedMatch = stagedOutput.match(
+        /(\d+)\s+files?\s+changed(?:,\s+(\d+)\s+insertions?\(\+\))?(?:,\s+(\d+)\s+deletions?\(-\))?/,
+      );
+      if (!stagedMatch) {
+        return { filesChanged: 0, insertions: 0, deletions: 0 };
+      }
+      return {
+        filesChanged: parseInt(stagedMatch[1], 10),
+        insertions: parseInt(stagedMatch[2] ?? "0", 10),
+        deletions: parseInt(stagedMatch[3] ?? "0", 10),
+      };
+    }
+
+    return {
+      filesChanged: parseInt(summaryMatch[1], 10),
+      insertions: parseInt(summaryMatch[2] ?? "0", 10),
+      deletions: parseInt(summaryMatch[3] ?? "0", 10),
+    };
+  } catch {
+    return { filesChanged: 0, insertions: 0, deletions: 0 };
+  }
+}
+
+/**
  * Open a directory in the system's default terminal.
  */
 export function openInTerminal(dirPath: string): void {

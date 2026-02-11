@@ -18,12 +18,17 @@ interface FeatureTopBarProps {
 
 export function FeatureTopBar({ featureId, projectId: _projectId }: FeatureTopBarProps) {
   const { data: feature } = trpc.features.getById.useQuery({ id: featureId });
-  const { data: progress } = trpc.features.getPlanProgress.useQuery({
-    feature_id: featureId,
-  });
+  const { data: progress } = trpc.features.getProgress.useQuery(
+    { feature_id: featureId },
+    { refetchInterval: 5000 },
+  );
   const { data: featureSettings } = trpc.features.getSettings.useQuery({
     feature_id: featureId,
   });
+  const { data: gitStats } = trpc.git.getStats.useQuery(
+    { featureId },
+    { refetchInterval: 10000 },
+  );
   const openTerminal = trpc.git.openInTerminal.useMutation();
 
   const worktreeBranch = featureSettings?.worktree_branch;
@@ -51,7 +56,9 @@ export function FeatureTopBar({ featureId, projectId: _projectId }: FeatureTopBa
         Worktree: {worktreeBranch ?? "--"}
       </span>
 
-      <span className="text-muted-foreground text-sm">LOC: --</span>
+      <span className="text-muted-foreground text-sm">
+        LOC: {gitStats ? `+${gitStats.insertions} -${gitStats.deletions}` : "--"}
+      </span>
 
       <div className="flex-1" />
 

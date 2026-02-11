@@ -377,17 +377,19 @@ Key files:
 - **Implementation notes**: Created `useFeatureState` hook that derives a `FeatureView` (plan-input, planning, ready-to-build, agents-active, done) plus `AgentVisibility` and `ActionAvailability` objects from feature status and agent states. The hook uses `useMemo` for efficient recomputation. Supports concurrent agents (e.g., risk running alongside execute) via the `agents-active` view which renders all active agent panels. Refactored the feature page to replace 12 inline visibility flags with the hook's structured output, using view-based conditional rendering. Added a "done" summary view with CheckCircle2 icon.
 - **Validation results**: Lint passed (0 warnings, 0 errors). TypeScript compiled with no errors.
 
-### Phase 16: Real-time metrics polling
+### ✅ Phase 16: Real-time metrics polling
 - **Step**: 15
 - **Complexity**: 2
-- [ ] Add tRPC procedure `git.getStats` — returns LOC changed (git diff --stat on worktree)
-- [ ] Add tRPC procedure `features.getProgress` — returns phases completed/total
-- [ ] Set up React Query polling (refetchInterval) on feature page for both endpoints
-- [ ] Update top bar to show live metrics
+- [x] Add tRPC procedure `git.getStats` — returns LOC changed (git diff --stat on worktree)
+- [x] Add tRPC procedure `features.getProgress` — returns phases completed/total
+- [x] Set up React Query polling (refetchInterval) on feature page for both endpoints
+- [x] Update top bar to show live metrics
 - **Files**: `src/main/trpc/router.ts`, `src/main/git/worktree.ts`, `src/renderer/components/FeatureTopBar.tsx`
 - **Commit message**: `feat: add real-time metrics polling for LOC and phase progress`
 - **Bisect note**: Adds polling, no side effects
 - **Informed by**: Q21
+- **Implementation notes**: Added `getGitStats` function to `worktree.ts` that runs `git diff --stat` and parses the summary line for files changed, insertions, and deletions (falls back to `--cached` for staged-only changes). Added `git.getStats` tRPC query procedure to `router.ts` that looks up the feature's worktree path from feature_settings. Added `features.getProgress` procedure to `features.ts` (similar to existing `getPlanProgress` but kept as separate endpoint per plan). Updated `FeatureTopBar` to use `features.getProgress` with 5s polling and `git.getStats` with 10s polling via `refetchInterval`. LOC display now shows `+N -N` format from real git data.
+- **Validation results**: Lint passed (0 warnings, 0 errors). TypeScript compiled with no errors.
 
 ### Phase 17: Session persistence and resume
 - **Step**: 16
@@ -427,8 +429,8 @@ Key files:
 - **Informed by**: Q17
 
 ## Current Status
-- **Current Phase**: Phase 16
-- **Progress**: 15/19
+- **Current Phase**: Phase 17
+- **Progress**: 16/19
 
 ## Deferred Items
 - Keyboard shortcuts / command palette
