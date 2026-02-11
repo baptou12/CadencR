@@ -89,20 +89,23 @@
 - **Validation results**: `pnpm exec tsc --noEmit` passes (exit 0). `pnpm run make` passes (exit 0, artifacts in `out/make/`). `pnpm start` and router navigation require manual verification.
 - **Review**: Approved - Hash history correctly configured for Electron file:// protocol. Root layout with sidebar nav, two pages with Links. Route tree auto-generated. RouterProvider properly mounted in App.tsx.
 
-### ⬜ Phase 4: Set up electron-trpc IPC layer
+### ✅ Phase 4: Set up electron-trpc IPC layer
 - **Step**: 3
 - **Complexity**: 3
-- [ ] Install `electron-trpc`, `@trpc/server`, `@trpc/client`, `@trpc/react-query`, `@tanstack/react-query`, `zod`
-- [ ] Create tRPC router in `src/main/trpc/router.ts` with a sample `hello` procedure
-- [ ] Create tRPC context and procedure helpers in `src/main/trpc/trpc.ts`
-- [ ] Update `src/preload.ts` to call `exposeElectronTRPC()`
-- [ ] Call `createIPCHandler` in `src/main.ts` after window creation
-- [ ] Create tRPC client in `src/renderer/trpc.ts` using `ipcLink`
-- [ ] Wrap React app with `QueryClientProvider` and tRPC provider
-- [ ] Add a sample query call in one of the pages to verify IPC works
+- [x] Install `electron-trpc`, `@trpc/server`, `@trpc/client`, `@trpc/react-query`, `@tanstack/react-query`, `zod`
+- [x] Create tRPC router in `src/main/trpc/router.ts` with a sample `hello` procedure
+- [x] Create tRPC context and procedure helpers in `src/main/trpc/trpc.ts`
+- [x] Update `src/preload.ts` to call `exposeElectronTRPC()`
+- [x] Call `createIPCHandler` in `src/main.ts` after window creation
+- [x] Create tRPC client in `src/renderer/trpc.ts` using `ipcLink`
+- [x] Wrap React app with `QueryClientProvider` and tRPC provider
+- [x] Add a sample query call in one of the pages to verify IPC works
 - **Files**: `package.json`, `src/main/trpc/trpc.ts`, `src/main/trpc/router.ts`, `src/main.ts`, `src/preload.ts`, `src/renderer/trpc.ts`, `src/renderer/App.tsx`, `src/renderer/routes/index.tsx`
 - **Commit message**: `feat: add electron-trpc IPC layer with sample procedure`
 - **Bisect note**: Preload, main handler, and renderer client must all be wired together in one phase
+- **Implementation notes**: Installed electron-trpc 0.7.1, @trpc/server 11.10.0, @trpc/client 11.10.0, @trpc/react-query 11.10.0, @tanstack/react-query 5.90.21, zod 4.3.6. Added `sandbox: false` to BrowserWindow webPreferences (required by electron-trpc's preload script which uses Node APIs). The `hello` procedure accepts an optional `name` string and returns a greeting. Home page displays the greeting from the IPC query. Preload uses `process.once("loaded", ...)` pattern per electron-trpc docs.
+- **Validation results**: `pnpm exec tsc --noEmit` passes (exit 0). `pnpm run make` passes (exit 0, artifacts in `out/make/`). `pnpm start` and IPC verification require manual check.
+- **Review**: Approved - Clean electron-trpc setup with proper wiring across main, preload, and renderer. Sample hello procedure with zod validation, ipcLink client, and QueryClientProvider wrapping. All automated completion conditions pass.
 
 ### ⬜ Phase 5: Set up SQLite with better-sqlite3
 - **Step**: 4
@@ -127,5 +130,5 @@
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 4 (Step 3)
-- **Progress**: 3/5
+- **Current Phase**: Phase 5 (Step 4)
+- **Progress**: 4/5

@@ -1,5 +1,7 @@
 import { app, BrowserWindow } from "electron";
 import path from "node:path";
+import { createIPCHandler } from "electron-trpc/main";
+import { appRouter } from "./main/trpc/router";
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (require("electron-squirrel-startup")) {
@@ -13,6 +15,7 @@ const createWindow = () => {
     height: 800,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
+      sandbox: false,
     },
   });
 
@@ -29,6 +32,8 @@ const createWindow = () => {
   if (process.env.NODE_ENV === "development") {
     mainWindow.webContents.openDevTools();
   }
+
+  createIPCHandler({ router: appRouter, windows: [mainWindow] });
 };
 
 // This method will be called when Electron has finished
