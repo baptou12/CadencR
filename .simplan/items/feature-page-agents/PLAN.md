@@ -181,17 +181,19 @@ Key files:
 - **Validation results**: Lint passed (0 errors), TypeScript compiled with no errors.
 - **Informed by**: Q14, Q18
 
-### Phase 3: Feature page route with top bar
+### ✅ Phase 3: Feature page route with top bar
 - **Step**: 2
 - **Complexity**: 3
-- [ ] Create route file `src/renderer/routes/projects/$projectId/features/$featureId.tsx`
-- [ ] Build top bar component showing: feature name, status badge, phase progress (X/Y), worktree name, LOC changed (placeholder), terminal button, settings button (no-op)
-- [ ] Add tRPC procedures for fetching plan progress (phases done/total)
-- [ ] Wire sidebar feature click to navigate to the new route
+- [x] Create route file `src/renderer/routes/projects/$projectId/features/$featureId.tsx`
+- [x] Build top bar component showing: feature name, status badge, phase progress (X/Y), worktree name, LOC changed (placeholder), terminal button, settings button (no-op)
+- [x] Add tRPC procedures for fetching plan progress (phases done/total)
+- [x] Wire sidebar feature click to navigate to the new route
 - **Files**: `src/renderer/routes/projects/$projectId/features/$featureId.tsx`, `src/renderer/components/FeatureTopBar.tsx`, `src/main/trpc/features.ts`, `src/renderer/components/FeatureList.tsx`
 - **Commit message**: `feat: add feature page route with status top bar`
 - **Bisect note**: New route, sidebar click now navigates instead of no-op
 - **Informed by**: Q1, Q17
+- **Implementation notes**: Added `getById` and `getPlanProgress` tRPC procedures to features router. Created `FeatureTopBar` component with feature name, status badge (reusing color scheme from FeatureList), phase progress (X/Y from plans/phases tables), worktree name placeholder, LOC placeholder, terminal button, and settings button (both no-op). Created route at `/projects/$projectId/features/$featureId` using TanStack Router file-based routing. Updated `FeatureList` to use `useNavigate` for navigating to the feature page on click. Route tree regenerated via `tsr generate`.
+- **Validation results**: Lint passed (0 warnings, 0 errors). TypeScript compiled with no errors.
 
 ### Phase 4: Claude CLI discovery and subprocess manager
 - **Step**: 3
@@ -401,8 +403,8 @@ Key files:
 - **Informed by**: Q17
 
 ## Current Status
-- **Current Phase**: Phase 3
-- **Progress**: 2/19
+- **Current Phase**: Phase 4
+- **Progress**: 3/19
 
 ## Deferred Items
 - Keyboard shortcuts / command palette
