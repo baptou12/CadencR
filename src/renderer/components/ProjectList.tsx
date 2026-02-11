@@ -1,17 +1,7 @@
-import { useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { trpc } from "@/trpc";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 
 interface ProjectListProps {
   selectedProjectId: number | null;
@@ -22,18 +12,12 @@ export function ProjectList({
   selectedProjectId,
   onSelectProject,
 }: ProjectListProps) {
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [path, setPath] = useState("");
-
   const utils = trpc.useUtils();
   const projectsQuery = trpc.projects.list.useQuery();
+  const selectFolderMutation = trpc.projects.selectFolder.useMutation();
   const createMutation = trpc.projects.create.useMutation({
     onSuccess: () => {
       void utils.projects.list.invalidate();
-      setName("");
-      setPath("");
-      setDialogOpen(false);
     },
   });
   const deleteMutation = trpc.projects.delete.useMutation({
@@ -44,9 +28,10 @@ export function ProjectList({
 
   const projects = projectsQuery.data ?? [];
 
-  const handleCreate = () => {
-    if (!name.trim() || !path.trim()) return;
-    createMutation.mutate({ name: name.trim(), path: path.trim() });
+  const handleAdd = async () => {
+    const folder = await selectFolderMutation.mutateAsync();
+    if (!folder) return;
+    createMutation.mutate({ name: folder.name, path: folder.path });
   };
 
   const handleDelete = (e: React.MouseEvent, id: number) => {
@@ -60,40 +45,14 @@ export function ProjectList({
         <span className="text-xs font-semibold uppercase text-muted-foreground">
           Projects
         </span>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button variant="ghost" size="icon-xs">
-              <Plus />
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Add Project</DialogTitle>
-            </DialogHeader>
-            <div className="flex flex-col gap-3">
-              <Input
-                placeholder="Project name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
-              <Input
-                placeholder="Folder path"
-                value={path}
-                onChange={(e) => setPath(e.target.value)}
-              />
-            </div>
-            <DialogFooter>
-              <Button
-                onClick={handleCreate}
-                disabled={
-                  !name.trim() || !path.trim() || createMutation.isLoading
-                }
-              >
-                {createMutation.isLoading ? "Creating..." : "Create"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          onClick={handleAdd}
+          disabled={selectFolderMutation.isLoading || createMutation.isLoading}
+        >
+          <Plus />
+        </Button>
       </div>
       <ScrollArea className="max-h-64">
         <div className="flex flex-col gap-0.5">
