@@ -1,14 +1,24 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { FeatureTopBar } from "@/components/FeatureTopBar";
-import { AgentPanel, type AgentStatus } from "@/components/AgentPanel";
+import { AgentPanel } from "@/components/AgentPanel";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/trpc";
-import { PlayIcon, Loader2Icon, LightbulbIcon, HammerIcon, ShieldAlertIcon, SearchCheckIcon, PlusCircleIcon, WrenchIcon } from "lucide-react";
-import type { AgentBlockData } from "@/components/AgentBlock";
-import type { AgentQuestion } from "@/components/AgentQuestionDrawer";
-import type { AgentEvent } from "../../../../../main/agents/types";
+import {
+  PlayIcon,
+  Loader2Icon,
+  LightbulbIcon,
+  HammerIcon,
+  ShieldAlertIcon,
+  SearchCheckIcon,
+  PlusCircleIcon,
+  WrenchIcon,
+} from "lucide-react";
+import {
+  useAgentState,
+  useAgentEventListener,
+} from "@/hooks/useAgentState";
 
 export const Route = createFileRoute(
   "/projects/$projectId/features/$featureId",
@@ -16,44 +26,31 @@ export const Route = createFileRoute(
   component: FeaturePage,
 });
 
-let blockIdCounter = 0;
-function makeBlock(partial: Omit<AgentBlockData, "id">): AgentBlockData {
-  blockIdCounter += 1;
-  return { id: `block-${blockIdCounter}`, ...partial };
-}
-
 function FeaturePage() {
   const { featureId, projectId } = Route.useParams();
   const numericFeatureId = Number(featureId);
   const numericProjectId = Number(projectId);
 
-  const featureQuery = trpc.features.getById.useQuery({ id: numericFeatureId });
+  const featureQuery = trpc.features.getById.useQuery({
+    id: numericFeatureId,
+  });
   const feature = featureQuery.data;
 
   const [description, setDescription] = useState("");
-  const [planSubprocessId, setPlanSubprocessId] = useState<string | null>(null);
-  const [planBlocks, setPlanBlocks] = useState<AgentBlockData[]>([]);
-  const [planStatus, setPlanStatus] = useState<AgentStatus>("idle");
-  const [pendingQuestions, setPendingQuestions] = useState<AgentQuestion[]>([]);
-  const planSubprocessIdRef = useRef<string | null>(null);
 
-  const [brainstormSubprocessId, setBrainstormSubprocessId] = useState<string | null>(null);
-  const [brainstormBlocks, setBrainstormBlocks] = useState<AgentBlockData[]>([]);
-  const [brainstormStatus, setBrainstormStatus] = useState<AgentStatus>("idle");
-  const [brainstormPendingQuestions, setBrainstormPendingQuestions] = useState<AgentQuestion[]>([]);
-  const brainstormSubprocessIdRef = useRef<string | null>(null);
+  // Agent states
+  const plan = useAgentState({ supportsQuestions: true });
+  const brainstorm = useAgentState({ supportsQuestions: true });
+  const execute = useAgentState();
+  const risk = useAgentState();
+  const review = useAgentState();
 
-  const [executeBlocks, setExecuteBlocks] = useState<AgentBlockData[]>([]);
-  const [executeStatus, setExecuteStatus] = useState<AgentStatus>("idle");
-
-  const [riskBlocks, setRiskBlocks] = useState<AgentBlockData[]>([]);
-  const [riskStatus, setRiskStatus] = useState<AgentStatus>("idle");
-
-  const [reviewBlocks, setReviewBlocks] = useState<AgentBlockData[]>([]);
-  const [reviewStatus, setReviewStatus] = useState<AgentStatus>("idle");
   const [reviewComplete, setReviewComplete] = useState(false);
-  const [reviewVerdict, setReviewVerdict] = useState<"approved" | "changes_requested" | null>(null);
+  const [reviewVerdict, setReviewVerdict] = useState<
+    "approved" | "changes_requested" | null
+  >(null);
 
+  // Mutations
   const startPlanMutation = trpc.agents.startPlan.useMutation();
   const startBrainstormMutation = trpc.agents.startBrainstorm.useMutation();
   const startExecuteMutation = trpc.agents.startExecute.useMutation();
@@ -63,614 +60,224 @@ function FeaturePage() {
   const startExecuteForFixMutation = trpc.agents.startExecute.useMutation();
   const sendInputMutation = trpc.agents.sendInput.useMutation();
 
-  const handlePlanEvent = useCallback((agentEvent: AgentEvent) => {
-    const { event } = agentEvent;
+  // Wire up IPC event listener
+  const eventHandlers = useMemo(
+    () => ({
+      plan: {
+        handleEvent: plan.handleEvent,
+        subprocessIdRef: plan.subprocessIdRef,
+      },
+      brainstorm: {
+        handleEvent: brainstorm.handleEvent,
+        subprocessIdRef: brainstorm.subprocessIdRef,
+      },
+      execute: { handleEvent: execute.handleEvent },
+      risk: { handleEvent: risk.handleEvent },
+      review: { handleEvent: review.handleEvent },
+    }),
+    [
+      plan.handleEvent,
+      plan.subprocessIdRef,
+      brainstorm.handleEvent,
+      brainstorm.subprocessIdRef,
+      execute.handleEvent,
+      risk.handleEvent,
+      review.handleEvent,
+    ],
+  );
+  useAgentEventListener(eventHandlers);
 
-    switch (event.type) {
-      case "content_block_start": {
-        if (event.content_block.type === "text") {
-          setPlanBlocks((prev) => [
-            ...prev,
-            makeBlock({ type: "text", content: event.content_block.type === "text" ? event.content_block.text : "" }),
-          ]);
-        } else if (event.content_block.type === "tool_use") {
-          const toolBlock = event.content_block;
-          // Check for AskUserQuestion
-          if (toolBlock.name === "AskUserQuestion") {
-            const toolInput = toolBlock.input as Record<string, unknown>;
-            const questions: AgentQuestion[] = [];
-            if (Array.isArray(toolInput.questions)) {
-              for (const q of toolInput.questions) {
-                const qObj = q as { question: string; options?: string[] };
-                questions.push({
-                  question: qObj.question,
-                  options: qObj.options ?? [],
-                });
-              }
-            } else if (typeof toolInput.question === "string") {
-              questions.push({
-                question: toolInput.question as string,
-                options: Array.isArray(toolInput.options) ? (toolInput.options as string[]) : [],
-              });
-            }
-            if (questions.length > 0) {
-              setPendingQuestions(questions);
-            }
-          }
-          setPlanBlocks((prev) => [
-            ...prev,
-            makeBlock({
-              type: "tool_call",
-              content: JSON.stringify(toolBlock.input, null, 2),
-              toolName: toolBlock.name,
-              toolArgs: JSON.stringify(toolBlock.input, null, 2),
-            }),
-          ]);
-        }
-        break;
-      }
-      case "content_block_delta": {
-        if (event.delta.type === "text_delta") {
-          const deltaText = event.delta.text;
-          setPlanBlocks((prev) => {
-            if (prev.length === 0) return [makeBlock({ type: "text", content: deltaText })];
-            const last = prev[prev.length - 1];
-            if (last.type === "text") {
-              return [
-                ...prev.slice(0, -1),
-                { ...last, content: last.content + deltaText },
-              ];
-            }
-            return [...prev, makeBlock({ type: "text", content: deltaText })];
-          });
-        }
-        break;
-      }
-      case "tool_result": {
-        setPlanBlocks((prev) => [
-          ...prev,
-          makeBlock({
-            type: "tool_result",
-            content: event.content,
-            isError: event.is_error ?? false,
-          }),
-        ]);
-        break;
-      }
-      case "message_stop": {
-        break;
-      }
-      case "error": {
-        setPlanStatus("error");
-        setPlanBlocks((prev) => [
-          ...prev,
-          makeBlock({ type: "text", content: `Error: ${event.error.message}` }),
-        ]);
-        break;
-      }
-    }
-  }, []);
-
-  const handleBrainstormEvent = useCallback((agentEvent: AgentEvent) => {
-    const { event } = agentEvent;
-
-    switch (event.type) {
-      case "content_block_start": {
-        if (event.content_block.type === "text") {
-          setBrainstormBlocks((prev) => [
-            ...prev,
-            makeBlock({ type: "text", content: event.content_block.type === "text" ? event.content_block.text : "" }),
-          ]);
-        } else if (event.content_block.type === "tool_use") {
-          const toolBlock = event.content_block;
-          if (toolBlock.name === "AskUserQuestion") {
-            const toolInput = toolBlock.input as Record<string, unknown>;
-            const questions: AgentQuestion[] = [];
-            if (Array.isArray(toolInput.questions)) {
-              for (const q of toolInput.questions) {
-                const qObj = q as { question: string; options?: string[] };
-                questions.push({
-                  question: qObj.question,
-                  options: qObj.options ?? [],
-                });
-              }
-            } else if (typeof toolInput.question === "string") {
-              questions.push({
-                question: toolInput.question as string,
-                options: Array.isArray(toolInput.options) ? (toolInput.options as string[]) : [],
-              });
-            }
-            if (questions.length > 0) {
-              setBrainstormPendingQuestions(questions);
-            }
-          }
-          setBrainstormBlocks((prev) => [
-            ...prev,
-            makeBlock({
-              type: "tool_call",
-              content: JSON.stringify(toolBlock.input, null, 2),
-              toolName: toolBlock.name,
-              toolArgs: JSON.stringify(toolBlock.input, null, 2),
-            }),
-          ]);
-        }
-        break;
-      }
-      case "content_block_delta": {
-        if (event.delta.type === "text_delta") {
-          const deltaText = event.delta.text;
-          setBrainstormBlocks((prev) => {
-            if (prev.length === 0) return [makeBlock({ type: "text", content: deltaText })];
-            const last = prev[prev.length - 1];
-            if (last.type === "text") {
-              return [
-                ...prev.slice(0, -1),
-                { ...last, content: last.content + deltaText },
-              ];
-            }
-            return [...prev, makeBlock({ type: "text", content: deltaText })];
-          });
-        }
-        break;
-      }
-      case "tool_result": {
-        setBrainstormBlocks((prev) => [
-          ...prev,
-          makeBlock({
-            type: "tool_result",
-            content: event.content,
-            isError: event.is_error ?? false,
-          }),
-        ]);
-        break;
-      }
-      case "message_stop": {
-        break;
-      }
-      case "error": {
-        setBrainstormStatus("error");
-        setBrainstormBlocks((prev) => [
-          ...prev,
-          makeBlock({ type: "text", content: `Error: ${event.error.message}` }),
-        ]);
-        break;
-      }
-    }
-  }, []);
-
-  const handleExecuteEvent = useCallback((agentEvent: AgentEvent) => {
-    const { event } = agentEvent;
-
-    switch (event.type) {
-      case "content_block_start": {
-        if (event.content_block.type === "text") {
-          setExecuteBlocks((prev) => [
-            ...prev,
-            makeBlock({ type: "text", content: event.content_block.type === "text" ? event.content_block.text : "" }),
-          ]);
-        } else if (event.content_block.type === "tool_use") {
-          const toolBlock = event.content_block;
-          setExecuteBlocks((prev) => [
-            ...prev,
-            makeBlock({
-              type: "tool_call",
-              content: JSON.stringify(toolBlock.input, null, 2),
-              toolName: toolBlock.name,
-              toolArgs: JSON.stringify(toolBlock.input, null, 2),
-            }),
-          ]);
-        }
-        break;
-      }
-      case "content_block_delta": {
-        if (event.delta.type === "text_delta") {
-          const deltaText = event.delta.text;
-          setExecuteBlocks((prev) => {
-            if (prev.length === 0) return [makeBlock({ type: "text", content: deltaText })];
-            const last = prev[prev.length - 1];
-            if (last.type === "text") {
-              return [
-                ...prev.slice(0, -1),
-                { ...last, content: last.content + deltaText },
-              ];
-            }
-            return [...prev, makeBlock({ type: "text", content: deltaText })];
-          });
-        }
-        break;
-      }
-      case "tool_result": {
-        setExecuteBlocks((prev) => [
-          ...prev,
-          makeBlock({
-            type: "tool_result",
-            content: event.content,
-            isError: event.is_error ?? false,
-          }),
-        ]);
-        break;
-      }
-      case "error": {
-        setExecuteStatus("error");
-        setExecuteBlocks((prev) => [
-          ...prev,
-          makeBlock({ type: "text", content: `Error: ${event.error.message}` }),
-        ]);
-        break;
-      }
-    }
-  }, []);
-
-  const handleRiskEvent = useCallback((agentEvent: AgentEvent) => {
-    const { event } = agentEvent;
-
-    switch (event.type) {
-      case "content_block_start": {
-        if (event.content_block.type === "text") {
-          setRiskBlocks((prev) => [
-            ...prev,
-            makeBlock({ type: "text", content: event.content_block.type === "text" ? event.content_block.text : "" }),
-          ]);
-        } else if (event.content_block.type === "tool_use") {
-          const toolBlock = event.content_block;
-          setRiskBlocks((prev) => [
-            ...prev,
-            makeBlock({
-              type: "tool_call",
-              content: JSON.stringify(toolBlock.input, null, 2),
-              toolName: toolBlock.name,
-              toolArgs: JSON.stringify(toolBlock.input, null, 2),
-            }),
-          ]);
-        }
-        break;
-      }
-      case "content_block_delta": {
-        if (event.delta.type === "text_delta") {
-          const deltaText = event.delta.text;
-          setRiskBlocks((prev) => {
-            if (prev.length === 0) return [makeBlock({ type: "text", content: deltaText })];
-            const last = prev[prev.length - 1];
-            if (last.type === "text") {
-              return [
-                ...prev.slice(0, -1),
-                { ...last, content: last.content + deltaText },
-              ];
-            }
-            return [...prev, makeBlock({ type: "text", content: deltaText })];
-          });
-        }
-        break;
-      }
-      case "tool_result": {
-        setRiskBlocks((prev) => [
-          ...prev,
-          makeBlock({
-            type: "tool_result",
-            content: event.content,
-            isError: event.is_error ?? false,
-          }),
-        ]);
-        break;
-      }
-      case "error": {
-        setRiskStatus("error");
-        setRiskBlocks((prev) => [
-          ...prev,
-          makeBlock({ type: "text", content: `Error: ${event.error.message}` }),
-        ]);
-        break;
-      }
-    }
-  }, []);
-
-  const handleReviewEvent = useCallback((agentEvent: AgentEvent) => {
-    const { event } = agentEvent;
-
-    switch (event.type) {
-      case "content_block_start": {
-        if (event.content_block.type === "text") {
-          setReviewBlocks((prev) => [
-            ...prev,
-            makeBlock({ type: "text", content: event.content_block.type === "text" ? event.content_block.text : "" }),
-          ]);
-        } else if (event.content_block.type === "tool_use") {
-          const toolBlock = event.content_block;
-          setReviewBlocks((prev) => [
-            ...prev,
-            makeBlock({
-              type: "tool_call",
-              content: JSON.stringify(toolBlock.input, null, 2),
-              toolName: toolBlock.name,
-              toolArgs: JSON.stringify(toolBlock.input, null, 2),
-            }),
-          ]);
-        }
-        break;
-      }
-      case "content_block_delta": {
-        if (event.delta.type === "text_delta") {
-          const deltaText = event.delta.text;
-          setReviewBlocks((prev) => {
-            if (prev.length === 0) return [makeBlock({ type: "text", content: deltaText })];
-            const last = prev[prev.length - 1];
-            if (last.type === "text") {
-              return [
-                ...prev.slice(0, -1),
-                { ...last, content: last.content + deltaText },
-              ];
-            }
-            return [...prev, makeBlock({ type: "text", content: deltaText })];
-          });
-        }
-        break;
-      }
-      case "tool_result": {
-        setReviewBlocks((prev) => [
-          ...prev,
-          makeBlock({
-            type: "tool_result",
-            content: event.content,
-            isError: event.is_error ?? false,
-          }),
-        ]);
-        break;
-      }
-      case "error": {
-        setReviewStatus("error");
-        setReviewBlocks((prev) => [
-          ...prev,
-          makeBlock({ type: "text", content: `Error: ${event.error.message}` }),
-        ]);
-        break;
-      }
-    }
-  }, []);
-
-  // Listen for agent events via IPC bridge
-  useEffect(() => {
-    const api = (window as unknown as { api?: {
-      onAgentEvent: (cb: (event: unknown) => void) => unknown;
-      offAgentEvent: (listener?: unknown) => void;
-    } }).api;
-    if (!api) return;
-
-    const listener = api.onAgentEvent((data: unknown) => {
-      const agentEvent = data as AgentEvent;
-
-      if (agentEvent.agentType === "plan") {
-        const currentId = planSubprocessIdRef.current;
-        if (currentId && agentEvent.subprocessId !== currentId) return;
-        handlePlanEvent(agentEvent);
-      } else if (agentEvent.agentType === "brainstorm") {
-        const currentId = brainstormSubprocessIdRef.current;
-        if (currentId && agentEvent.subprocessId !== currentId) return;
-        handleBrainstormEvent(agentEvent);
-      } else if (agentEvent.agentType === "execute") {
-        handleExecuteEvent(agentEvent);
-      } else if (agentEvent.agentType === "risk") {
-        handleRiskEvent(agentEvent);
-      } else if (agentEvent.agentType === "review") {
-        handleReviewEvent(agentEvent);
-      }
-    });
-
-    return () => {
-      api.offAgentEvent(listener as undefined);
-    };
-  }, [handlePlanEvent, handleBrainstormEvent, handleExecuteEvent, handleRiskEvent, handleReviewEvent]);
-
+  // Action handlers
   const handleStartPlanning = async () => {
     if (!description.trim()) return;
-
-    setPlanStatus("running");
-    setPlanBlocks([]);
-    setPendingQuestions([]);
-
+    plan.start();
     try {
       const result = await startPlanMutation.mutateAsync({
         featureId: numericFeatureId,
         projectId: numericProjectId,
         description: description.trim(),
       });
-      setPlanSubprocessId(result.subprocessId);
-      planSubprocessIdRef.current = result.subprocessId;
+      plan.trackSubprocess(result.subprocessId);
     } catch (err) {
-      setPlanStatus("error");
-      setPlanBlocks([
-        makeBlock({
-          type: "text",
-          content: `Failed to start plan agent: ${err instanceof Error ? err.message : String(err)}`,
-        }),
-      ]);
+      plan.setStatus("error");
+      plan.appendBlock({
+        type: "text",
+        content: `Failed to start plan agent: ${err instanceof Error ? err.message : String(err)}`,
+      });
     }
   };
 
   const handleStartBrainstorming = async () => {
     if (!description.trim()) return;
-
-    setBrainstormStatus("running");
-    setBrainstormBlocks([]);
-    setBrainstormPendingQuestions([]);
-
+    brainstorm.start();
     try {
       const result = await startBrainstormMutation.mutateAsync({
         featureId: numericFeatureId,
         projectId: numericProjectId,
         description: description.trim(),
       });
-      setBrainstormSubprocessId(result.subprocessId);
-      brainstormSubprocessIdRef.current = result.subprocessId;
+      brainstorm.trackSubprocess(result.subprocessId);
     } catch (err) {
-      setBrainstormStatus("error");
-      setBrainstormBlocks([
-        makeBlock({
-          type: "text",
-          content: `Failed to start brainstorm agent: ${err instanceof Error ? err.message : String(err)}`,
-        }),
-      ]);
-    }
-  };
-
-  const handleBrainstormQuestionResponse = (response: string) => {
-    setBrainstormPendingQuestions([]);
-    if (brainstormSubprocessId) {
-      sendInputMutation.mutate({ id: brainstormSubprocessId, text: response });
+      brainstorm.setStatus("error");
+      brainstorm.appendBlock({
+        type: "text",
+        content: `Failed to start brainstorm agent: ${err instanceof Error ? err.message : String(err)}`,
+      });
     }
   };
 
   const handleQuestionResponse = (response: string) => {
-    setPendingQuestions([]);
-    if (planSubprocessId) {
-      sendInputMutation.mutate({ id: planSubprocessId, text: response });
+    plan.clearQuestions();
+    if (plan.subprocessId) {
+      sendInputMutation.mutate({ id: plan.subprocessId, text: response });
+    }
+  };
+
+  const handleBrainstormQuestionResponse = (response: string) => {
+    brainstorm.clearQuestions();
+    if (brainstorm.subprocessId) {
+      sendInputMutation.mutate({
+        id: brainstorm.subprocessId,
+        text: response,
+      });
     }
   };
 
   const handleStartBuilding = async () => {
-    setExecuteStatus("running");
-    setExecuteBlocks([]);
-
+    execute.start();
     try {
       await startExecuteMutation.mutateAsync({
         featureId: numericFeatureId,
         projectId: numericProjectId,
       });
     } catch (err) {
-      setExecuteStatus("error");
-      setExecuteBlocks([
-        makeBlock({
-          type: "text",
-          content: `Failed to start execute agent: ${err instanceof Error ? err.message : String(err)}`,
-        }),
-      ]);
+      execute.setStatus("error");
+      execute.appendBlock({
+        type: "text",
+        content: `Failed to start execute agent: ${err instanceof Error ? err.message : String(err)}`,
+      });
     }
   };
 
   const handleStartRisk = async () => {
-    setRiskStatus("running");
-    setRiskBlocks([]);
-
+    risk.start();
     try {
       await startRiskMutation.mutateAsync({
         featureId: numericFeatureId,
         projectId: numericProjectId,
       });
     } catch (err) {
-      setRiskStatus("error");
-      setRiskBlocks([
-        makeBlock({
-          type: "text",
-          content: `Failed to start risk agent: ${err instanceof Error ? err.message : String(err)}`,
-        }),
-      ]);
+      risk.setStatus("error");
+      risk.appendBlock({
+        type: "text",
+        content: `Failed to start risk agent: ${err instanceof Error ? err.message : String(err)}`,
+      });
     }
   };
 
   const handleStartReview = async () => {
-    setReviewStatus("running");
-    setReviewBlocks([]);
+    review.start();
     setReviewComplete(false);
     setReviewVerdict(null);
-
     try {
       await startReviewMutation.mutateAsync({
         featureId: numericFeatureId,
         projectId: numericProjectId,
       });
     } catch (err) {
-      setReviewStatus("error");
-      setReviewBlocks([
-        makeBlock({
-          type: "text",
-          content: `Failed to start review agent: ${err instanceof Error ? err.message : String(err)}`,
-        }),
-      ]);
+      review.setStatus("error");
+      review.appendBlock({
+        type: "text",
+        content: `Failed to start review agent: ${err instanceof Error ? err.message : String(err)}`,
+      });
     }
   };
 
   const handleAddFixPhase = async () => {
-    // Collect the review output as the fix description
-    const reviewText = reviewBlocks
+    const reviewText = review.blocks
       .filter((b) => b.type === "text")
       .map((b) => b.content)
       .join("\n");
-
     try {
       await addFixPhaseMutation.mutateAsync({
         featureId: numericFeatureId,
         fixDescription: `Fix the following issues identified during code review:\n\n${reviewText}`,
       });
-      setReviewBlocks((prev) => [
-        ...prev,
-        makeBlock({ type: "text", content: "\n\n--- Fix phase added to plan. You can execute it from the Build step. ---" }),
-      ]);
+      review.appendBlock({
+        type: "text",
+        content:
+          "\n\n--- Fix phase added to plan. You can execute it from the Build step. ---",
+      });
     } catch (err) {
-      setReviewBlocks((prev) => [
-        ...prev,
-        makeBlock({
-          type: "text",
-          content: `Failed to add fix phase: ${err instanceof Error ? err.message : String(err)}`,
-        }),
-      ]);
+      review.appendBlock({
+        type: "text",
+        content: `Failed to add fix phase: ${err instanceof Error ? err.message : String(err)}`,
+      });
     }
   };
 
   const handleFixImmediately = async () => {
-    setExecuteStatus("running");
-    setExecuteBlocks([]);
-
+    execute.start();
     try {
       await startExecuteForFixMutation.mutateAsync({
         featureId: numericFeatureId,
         projectId: numericProjectId,
       });
     } catch (err) {
-      setExecuteStatus("error");
-      setExecuteBlocks([
-        makeBlock({
-          type: "text",
-          content: `Failed to start fix execution: ${err instanceof Error ? err.message : String(err)}`,
-        }),
-      ]);
+      execute.setStatus("error");
+      execute.appendBlock({
+        type: "text",
+        content: `Failed to start fix execution: ${err instanceof Error ? err.message : String(err)}`,
+      });
     }
   };
 
-  // Detect review completion and verdict from blocks
+  // Detect review completion and verdict
   useEffect(() => {
-    if (reviewStatus !== "running") return;
-    const fullText = reviewBlocks
+    if (review.status !== "running") return;
+    const fullText = review.blocks
       .filter((b) => b.type === "text")
       .map((b) => b.content)
       .join("");
     if (fullText.includes("---REVIEW_APPROVED---")) {
       setReviewComplete(true);
       setReviewVerdict("approved");
-      setReviewStatus("complete");
+      review.setStatus("complete");
       void featureQuery.refetch();
     } else if (fullText.includes("---REVIEW_CHANGES_REQUESTED---")) {
       setReviewComplete(true);
       setReviewVerdict("changes_requested");
-      setReviewStatus("complete");
+      review.setStatus("complete");
     }
-  }, [reviewBlocks, reviewStatus, featureQuery]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [review.blocks, review.status, review.setStatus, featureQuery]);
 
+  // Visibility flags
   const isDraft = !feature || feature.status === "draft";
   const isPlanned = feature?.status === "planned";
   const isInProgress = feature?.status === "in-progress";
-  const showPlanInput = isDraft && planStatus === "idle" && brainstormStatus === "idle";
-  const showPlanAgent = planStatus !== "idle" || planBlocks.length > 0;
-  const showBrainstormAgent = brainstormStatus !== "idle" || brainstormBlocks.length > 0;
-  const showBuildButton = (isPlanned || isInProgress) && executeStatus === "idle";
-  const showExecuteAgent = executeStatus !== "idle" || executeBlocks.length > 0;
-  const showRiskButton = (isPlanned || isInProgress) && riskStatus === "idle";
-  const showRiskAgent = riskStatus !== "idle" || riskBlocks.length > 0;
+  const showPlanInput =
+    isDraft && plan.status === "idle" && brainstorm.status === "idle";
+  const showPlanAgent = plan.status !== "idle" || plan.blocks.length > 0;
+  const showBrainstormAgent =
+    brainstorm.status !== "idle" || brainstorm.blocks.length > 0;
+  const showBuildButton = (isPlanned || isInProgress) && execute.status === "idle";
+  const showExecuteAgent =
+    execute.status !== "idle" || execute.blocks.length > 0;
+  const showRiskButton = (isPlanned || isInProgress) && risk.status === "idle";
+  const showRiskAgent = risk.status !== "idle" || risk.blocks.length > 0;
   const isReview = feature?.status === "review";
-  const showReviewButton = (isInProgress || isReview) && reviewStatus === "idle";
-  const showReviewAgent = reviewStatus !== "idle" || reviewBlocks.length > 0;
+  const showReviewButton =
+    (isInProgress || isReview) && review.status === "idle";
+  const showReviewAgent =
+    review.status !== "idle" || review.blocks.length > 0;
 
   return (
     <div className="flex h-full flex-col -m-6">
-      <FeatureTopBar featureId={numericFeatureId} projectId={numericProjectId} />
+      <FeatureTopBar
+        featureId={numericFeatureId}
+        projectId={numericProjectId}
+      />
       <div className="flex-1 overflow-auto p-6">
         {showPlanInput && (
           <div className="mx-auto max-w-2xl space-y-4">
@@ -692,7 +299,11 @@ function FeaturePage() {
             <div className="flex gap-2">
               <Button
                 onClick={handleStartPlanning}
-                disabled={!description.trim() || startPlanMutation.isLoading || startBrainstormMutation.isLoading}
+                disabled={
+                  !description.trim() ||
+                  startPlanMutation.isLoading ||
+                  startBrainstormMutation.isLoading
+                }
               >
                 {startPlanMutation.isLoading ? (
                   <Loader2Icon className="mr-2 size-4 animate-spin" />
@@ -704,7 +315,11 @@ function FeaturePage() {
               <Button
                 variant="outline"
                 onClick={handleStartBrainstorming}
-                disabled={!description.trim() || startBrainstormMutation.isLoading || startPlanMutation.isLoading}
+                disabled={
+                  !description.trim() ||
+                  startBrainstormMutation.isLoading ||
+                  startPlanMutation.isLoading
+                }
               >
                 {startBrainstormMutation.isLoading ? (
                   <Loader2Icon className="mr-2 size-4 animate-spin" />
@@ -721,9 +336,13 @@ function FeaturePage() {
           <div className="h-full">
             <AgentPanel
               agentType="plan"
-              status={planStatus}
-              blocks={planBlocks}
-              pendingQuestions={pendingQuestions.length > 0 ? pendingQuestions : undefined}
+              status={plan.status}
+              blocks={plan.blocks}
+              pendingQuestions={
+                plan.pendingQuestions.length > 0
+                  ? plan.pendingQuestions
+                  : undefined
+              }
               onQuestionResponse={handleQuestionResponse}
               className="h-full"
             />
@@ -734,76 +353,85 @@ function FeaturePage() {
           <div className="h-full">
             <AgentPanel
               agentType="brainstorm"
-              status={brainstormStatus}
-              blocks={brainstormBlocks}
-              pendingQuestions={brainstormPendingQuestions.length > 0 ? brainstormPendingQuestions : undefined}
+              status={brainstorm.status}
+              blocks={brainstorm.blocks}
+              pendingQuestions={
+                brainstorm.pendingQuestions.length > 0
+                  ? brainstorm.pendingQuestions
+                  : undefined
+              }
               onQuestionResponse={handleBrainstormQuestionResponse}
               className="h-full"
             />
           </div>
         )}
 
-        {(showBuildButton || showRiskButton || showReviewButton) && !showPlanAgent && !showBrainstormAgent && !showExecuteAgent && !showRiskAgent && !showReviewAgent && (
-          <div className="mx-auto max-w-2xl space-y-4">
-            <div>
-              <h2 className="text-lg font-semibold">Ready to Build</h2>
-              <p className="text-sm text-muted-foreground">
-                The plan is ready. Start building to execute all phases in order,
-                or evaluate risks before proceeding.
-              </p>
+        {(showBuildButton || showRiskButton || showReviewButton) &&
+          !showPlanAgent &&
+          !showBrainstormAgent &&
+          !showExecuteAgent &&
+          !showRiskAgent &&
+          !showReviewAgent && (
+            <div className="mx-auto max-w-2xl space-y-4">
+              <div>
+                <h2 className="text-lg font-semibold">Ready to Build</h2>
+                <p className="text-sm text-muted-foreground">
+                  The plan is ready. Start building to execute all phases in
+                  order, or evaluate risks before proceeding.
+                </p>
+              </div>
+              <div className="flex gap-2">
+                {showBuildButton && (
+                  <Button
+                    onClick={handleStartBuilding}
+                    disabled={startExecuteMutation.isLoading}
+                  >
+                    {startExecuteMutation.isLoading ? (
+                      <Loader2Icon className="mr-2 size-4 animate-spin" />
+                    ) : (
+                      <HammerIcon className="mr-2 size-4" />
+                    )}
+                    Start Building
+                  </Button>
+                )}
+                {showRiskButton && (
+                  <Button
+                    variant="outline"
+                    onClick={handleStartRisk}
+                    disabled={startRiskMutation.isLoading}
+                  >
+                    {startRiskMutation.isLoading ? (
+                      <Loader2Icon className="mr-2 size-4 animate-spin" />
+                    ) : (
+                      <ShieldAlertIcon className="mr-2 size-4" />
+                    )}
+                    Evaluate Risk
+                  </Button>
+                )}
+                {showReviewButton && (
+                  <Button
+                    variant="outline"
+                    onClick={handleStartReview}
+                    disabled={startReviewMutation.isLoading}
+                  >
+                    {startReviewMutation.isLoading ? (
+                      <Loader2Icon className="mr-2 size-4 animate-spin" />
+                    ) : (
+                      <SearchCheckIcon className="mr-2 size-4" />
+                    )}
+                    Start Review
+                  </Button>
+                )}
+              </div>
             </div>
-            <div className="flex gap-2">
-              {showBuildButton && (
-                <Button
-                  onClick={handleStartBuilding}
-                  disabled={startExecuteMutation.isLoading}
-                >
-                  {startExecuteMutation.isLoading ? (
-                    <Loader2Icon className="mr-2 size-4 animate-spin" />
-                  ) : (
-                    <HammerIcon className="mr-2 size-4" />
-                  )}
-                  Start Building
-                </Button>
-              )}
-              {showRiskButton && (
-                <Button
-                  variant="outline"
-                  onClick={handleStartRisk}
-                  disabled={startRiskMutation.isLoading}
-                >
-                  {startRiskMutation.isLoading ? (
-                    <Loader2Icon className="mr-2 size-4 animate-spin" />
-                  ) : (
-                    <ShieldAlertIcon className="mr-2 size-4" />
-                  )}
-                  Evaluate Risk
-                </Button>
-              )}
-              {showReviewButton && (
-                <Button
-                  variant="outline"
-                  onClick={handleStartReview}
-                  disabled={startReviewMutation.isLoading}
-                >
-                  {startReviewMutation.isLoading ? (
-                    <Loader2Icon className="mr-2 size-4 animate-spin" />
-                  ) : (
-                    <SearchCheckIcon className="mr-2 size-4" />
-                  )}
-                  Start Review
-                </Button>
-              )}
-            </div>
-          </div>
-        )}
+          )}
 
         {showExecuteAgent && (
           <div className="h-full">
             <AgentPanel
               agentType="execute"
-              status={executeStatus}
-              blocks={executeBlocks}
+              status={execute.status}
+              blocks={execute.blocks}
               className="h-full"
             />
           </div>
@@ -813,8 +441,8 @@ function FeaturePage() {
           <div className="h-full">
             <AgentPanel
               agentType="risk"
-              status={riskStatus}
-              blocks={riskBlocks}
+              status={risk.status}
+              blocks={risk.blocks}
               className="h-full"
             />
           </div>
@@ -824,8 +452,8 @@ function FeaturePage() {
           <div className="h-full">
             <AgentPanel
               agentType="review"
-              status={reviewStatus}
-              blocks={reviewBlocks}
+              status={review.status}
+              blocks={review.blocks}
               className="h-full"
             />
             {reviewComplete && reviewVerdict === "changes_requested" && (
@@ -865,11 +493,21 @@ function FeaturePage() {
           </div>
         )}
 
-        {!showPlanInput && !showPlanAgent && !showBrainstormAgent && !showBuildButton && !showRiskButton && !showReviewButton && !showExecuteAgent && !showRiskAgent && !showReviewAgent && feature && feature.status !== "draft" && (
-          <p className="text-muted-foreground">
-            Feature is in &quot;{feature.status}&quot; state.
-          </p>
-        )}
+        {!showPlanInput &&
+          !showPlanAgent &&
+          !showBrainstormAgent &&
+          !showBuildButton &&
+          !showRiskButton &&
+          !showReviewButton &&
+          !showExecuteAgent &&
+          !showRiskAgent &&
+          !showReviewAgent &&
+          feature &&
+          feature.status !== "draft" && (
+            <p className="text-muted-foreground">
+              Feature is in &quot;{feature.status}&quot; state.
+            </p>
+          )}
       </div>
     </div>
   );
