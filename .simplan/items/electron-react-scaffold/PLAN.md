@@ -107,19 +107,21 @@
 - **Validation results**: `pnpm exec tsc --noEmit` passes (exit 0). `pnpm run make` passes (exit 0, artifacts in `out/make/`). `pnpm start` and IPC verification require manual check.
 - **Review**: Approved - Clean electron-trpc setup with proper wiring across main, preload, and renderer. Sample hello procedure with zod validation, ipcLink client, and QueryClientProvider wrapping. All automated completion conditions pass.
 
-### ⬜ Phase 5: Set up SQLite with better-sqlite3
+### ✅ Phase 5: Set up SQLite with better-sqlite3
 - **Step**: 4
 - **Complexity**: 3
-- [ ] Install `better-sqlite3` and `@types/better-sqlite3`
-- [ ] Create `src/main/db/database.ts` — initializes DB file in app's userData path, creates connection
-- [ ] Create `src/main/db/migrations.ts` — simple migration runner with a `migrations` version table
-- [ ] Add a sample `settings` table (key-value store) as the first migration
-- [ ] Expose DB operations via tRPC procedures: `settings.get`, `settings.set`, `settings.list`
-- [ ] Add `better-sqlite3` to Vite's external modules in `vite.main.config.ts`
-- [ ] Wire up a settings read/write in the Settings page to verify end-to-end
+- [x] Install `better-sqlite3` and `@types/better-sqlite3`
+- [x] Create `src/main/db/database.ts` — initializes DB file in app's userData path, creates connection
+- [x] Create `src/main/db/migrations.ts` — simple migration runner with a `migrations` version table
+- [x] Add a sample `settings` table (key-value store) as the first migration
+- [x] Expose DB operations via tRPC procedures: `settings.get`, `settings.set`, `settings.list`
+- [x] Add `better-sqlite3` to Vite's external modules in `vite.main.config.ts`
+- [x] Wire up a settings read/write in the Settings page to verify end-to-end
 - **Files**: `package.json`, `src/main/db/database.ts`, `src/main/db/migrations.ts`, `src/main/trpc/router.ts`, `vite.main.config.ts`, `src/renderer/routes/settings.tsx`
 - **Commit message**: `feat: add sqlite database with settings table and trpc integration`
 - **Bisect note**: DB init, migration, trpc procedures, and vite externals must be configured together
+- **Implementation notes**: Installed better-sqlite3 12.6.2 and @types/better-sqlite3 7.6.13. Database file stored at `app.getPath("userData")/productdevr.db` with WAL journal mode. Migration runner uses a `migrations` table to track applied versions. Settings table is a simple key-value store with UPSERT for `settings.set`. Added `closeDatabase()` call on `before-quit` in main.ts. Settings page has a form to add key-value pairs and displays all stored settings. Added `better-sqlite3` to rollupOptions.external in vite.main.config.ts.
+- **Validation results**: `pnpm exec tsc --noEmit` passes (exit 0). `pnpm run make` passes (exit 0, artifacts in `out/make/`). `pnpm start` and end-to-end settings verification require manual check.
 
 ## Phase Status Legend
 
@@ -130,5 +132,5 @@
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 5 (Step 4)
-- **Progress**: 4/5
+- **Current Phase**: All phases complete
+- **Progress**: 5/5
