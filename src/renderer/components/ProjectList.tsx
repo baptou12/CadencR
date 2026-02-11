@@ -68,14 +68,15 @@ export function ProjectList({
               }`}
             >
               <span className="truncate">{project.name}</span>
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                className="opacity-0 group-hover:opacity-100"
+              <span
+                role="button"
+                tabIndex={0}
+                className="inline-flex h-6 w-6 items-center justify-center rounded-md opacity-0 group-hover:opacity-100 hover:bg-accent"
                 onClick={(e) => handleDelete(e, project.id)}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleDelete(e as unknown as React.MouseEvent, project.id); }}
               >
-                <Trash2 />
-              </Button>
+                <Trash2 className="h-3.5 w-3.5" />
+              </span>
             </button>
           ))}
           {projects.length === 0 && (
