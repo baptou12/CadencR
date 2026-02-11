@@ -50,15 +50,17 @@
 - **Implementation notes**: Added migration v2 (projects) and v3 (features) to the migrations array. Both use `datetime('now')` for created_at defaults and features has a foreign key to projects.
 - **Validation results**: `npx tsc --noEmit` passed (exit 0). `npm run package -- --platform=darwin` passed (exit 0).
 
-### ⬜ Phase 2: tRPC routers for projects and features
+### ✅ Phase 2: tRPC routers for projects and features
 - **Step**: 2
 - **Complexity**: 3
-- [ ] Create `src/main/trpc/projects.ts` with CRUD procedures: list, create (name, path), delete (id)
-- [ ] Create `src/main/trpc/features.ts` with procedures: listByProject (project_id, optional status filter, sorted by created_at desc), create (project_id, title), updateStatus (id, status), delete (id)
-- [ ] Add both sub-routers to appRouter in `src/main/trpc/router.ts`
+- [x] Create `src/main/trpc/projects.ts` with CRUD procedures: list, create (name, path), delete (id)
+- [x] Create `src/main/trpc/features.ts` with procedures: listByProject (project_id, optional status filter, sorted by created_at desc), create (project_id, title), updateStatus (id, status), delete (id)
+- [x] Add both sub-routers to appRouter in `src/main/trpc/router.ts`
 - **Files**: `src/main/trpc/projects.ts`, `src/main/trpc/features.ts`, `src/main/trpc/router.ts`
 - **Commit message**: `feat: add tRPC routers for projects and features CRUD`
 - **Bisect note**: Routers added but not called from UI yet — safe
+- **Implementation notes**: Created projectsRouter (list, create, delete) and featuresRouter (listByProject with optional status filter, create, updateStatus, delete). Used zod enum for status validation matching the 5 statuses (draft, planned, in-progress, review, done). Both routers added as sub-routers to appRouter.
+- **Validation results**: `npx tsc --noEmit` passed (exit 0). `npm run package -- --platform=darwin` passed (exit 0).
 
 ### ⬜ Phase 3: Install shadcn/ui components
 - **Step**: 3
@@ -113,5 +115,5 @@
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 2
-- **Progress**: 1/6
+- **Current Phase**: Phase 3
+- **Progress**: 2/6

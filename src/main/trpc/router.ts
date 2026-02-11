@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { router, publicProcedure } from "./trpc";
 import { getDatabase } from "../db/database";
+import { projectsRouter } from "./projects";
+import { featuresRouter } from "./features";
 
 const settingsRouter = router({
   get: publicProcedure
@@ -40,6 +42,8 @@ export const appRouter = router({
       return { greeting: `Hello, ${input.name ?? "world"}!` };
     }),
   settings: settingsRouter,
+  projects: projectsRouter,
+  features: featuresRouter,
 });
 
 export type AppRouter = typeof appRouter;
