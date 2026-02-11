@@ -195,17 +195,19 @@ Key files:
 - **Implementation notes**: Added `getById` and `getPlanProgress` tRPC procedures to features router. Created `FeatureTopBar` component with feature name, status badge (reusing color scheme from FeatureList), phase progress (X/Y from plans/phases tables), worktree name placeholder, LOC placeholder, terminal button, and settings button (both no-op). Created route at `/projects/$projectId/features/$featureId` using TanStack Router file-based routing. Updated `FeatureList` to use `useNavigate` for navigating to the feature page on click. Route tree regenerated via `tsr generate`.
 - **Validation results**: Lint passed (0 warnings, 0 errors). TypeScript compiled with no errors.
 
-### Phase 4: Claude CLI discovery and subprocess manager
+### ✅ Phase 4: Claude CLI discovery and subprocess manager
 - **Step**: 3
 - **Complexity**: 4
-- [ ] Create `src/main/agents/cli-discovery.ts` — detect `claude` binary: check PATH, common locations (/usr/local/bin, ~/.nvm, etc.), fallback to settings
-- [ ] Create `src/main/agents/subprocess-manager.ts` — spawn Claude CLI with `--output-format stream-json`, manage lifecycle (start, kill, resume)
-- [ ] Add `settings` tRPC procedure for claude CLI path configuration
-- [ ] Handle macOS GUI PATH issue: source user's shell profile to get PATH
-- **Files**: `src/main/agents/cli-discovery.ts`, `src/main/agents/subprocess-manager.ts`, `src/main/trpc/settings.ts`
+- [x] Create `src/main/agents/cli-discovery.ts` — detect `claude` binary: check PATH, common locations (/usr/local/bin, ~/.nvm, etc.), fallback to settings
+- [x] Create `src/main/agents/subprocess-manager.ts` — spawn Claude CLI with `--output-format stream-json`, manage lifecycle (start, kill, resume)
+- [x] Add `settings` tRPC procedure for claude CLI path configuration
+- [x] Handle macOS GUI PATH issue: source user's shell profile to get PATH
+- **Files**: `src/main/agents/cli-discovery.ts`, `src/main/agents/subprocess-manager.ts`, `src/main/trpc/router.ts`
 - **Commit message**: `feat: add Claude CLI discovery and subprocess manager`
 - **Bisect note**: Infrastructure only, no UI changes
 - **Informed by**: Q2, Q7, Q11
+- **Implementation notes**: Created `cli-discovery.ts` with 4-tier discovery: user settings DB > shell PATH (via `shell -ilc 'which claude'`) > process PATH > common locations (homebrew, local bin, npm, yarn). The shell sourcing handles macOS GUI PATH issue. Created `subprocess-manager.ts` with start/kill/list/cleanup/killAll functions, 10 max concurrent limit, and `--output-format stream-json` flag. Added `getClaudeCliPath` and `setClaudeCliPath` procedures to the existing settingsRouter in router.ts (not a separate settings.ts file since the settings router was already inline). The setClaudeCliPath mutation validates the file exists before saving.
+- **Validation results**: Lint passed (0 errors), TypeScript compiled with no errors.
 
 ### Phase 5: Agent streaming IPC bridge
 - **Step**: 4
@@ -403,8 +405,8 @@ Key files:
 - **Informed by**: Q17
 
 ## Current Status
-- **Current Phase**: Phase 4
-- **Progress**: 3/19
+- **Current Phase**: Phase 5
+- **Progress**: 4/19
 
 ## Deferred Items
 - Keyboard shortcuts / command palette

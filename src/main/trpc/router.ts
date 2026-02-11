@@ -1,8 +1,10 @@
 import { z } from "zod";
+import fs from "node:fs";
 import { router, publicProcedure } from "./trpc";
 import { getDatabase } from "../db/database";
 import { projectsRouter } from "./projects";
 import { featuresRouter } from "./features";
+import { discoverClaudeCli } from "../agents/cli-discovery";
 
 const settingsRouter = router({
   get: publicProcedure.input(z.object({ key: z.string() })).query(({ input }) => {
@@ -31,6 +33,26 @@ const settingsRouter = router({
     }[];
     return rows;
   }),
+
+  /** Get the current Claude CLI path (from settings or auto-discovered) */
+  getClaudeCliPath: publicProcedure.query(() => {
+    const cliInfo = discoverClaudeCli();
+    return cliInfo ? { path: cliInfo.path, source: cliInfo.source } : null;
+  }),
+
+  /** Set a custom Claude CLI path (validates the file exists) */
+  setClaudeCliPath: publicProcedure
+    .input(z.object({ path: z.string() }))
+    .mutation(({ input }) => {
+      if (!fs.existsSync(input.path)) {
+        throw new Error(`File not found: ${input.path}`);
+      }
+      const db = getDatabase();
+      db.prepare(
+        "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+      ).run("claude_cli_path", input.path);
+      return { success: true, path: input.path };
+    }),
 });
 
 export const appRouter = router({
