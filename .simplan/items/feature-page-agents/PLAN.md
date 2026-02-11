@@ -363,17 +363,19 @@ Key files:
 - **Implementation notes**: Created `review-agent.ts` following the same pattern as risk-agent. System prompt instructs the agent to run `git diff` to review all changes, then produce a structured review report with Critical Issues, Warnings, Suggestions, and a Verdict (APPROVED, APPROVED_WITH_SUGGESTIONS, or CHANGES_REQUESTED). Uses `---REVIEW_APPROVED---` and `---REVIEW_CHANGES_REQUESTED---` markers to detect verdict. On completion, stores review report in `agent_messages` with message_type='review_report'. Updates feature status to "review" on start, "done" if approved. Exported `addFixPhase` function that appends a new phase to the existing plan with the review findings as the prompt. Added `agents.startReview` and `agents.addFixPhase` tRPC mutations to router.ts. Updated feature page with review state, review event handler, "Start Review" button (shown when feature is in-progress or review status), review AgentPanel, and post-review action buttons: "Add Fix Phase" (creates new phase in DB) and "Fix Immediately" (launches execute agent for pending fix phases). Verdict detection uses useEffect watching reviewBlocks content.
 - **Validation results**: Lint passed (0 warnings, 0 errors). TypeScript compiled with no errors.
 
-### Phase 15: Feature state machine and button logic
+### ✅ Phase 15: Feature state machine and button logic
 - **Step**: 14
 - **Complexity**: 3
-- [ ] Create `src/renderer/hooks/useFeatureState.ts` — determines which buttons/actions are available based on feature status and plan existence
-- [ ] State transitions: draft (no plan) → show Plan/Brainstorm buttons; planned → show Build/Risk buttons; in-progress → show agent grid; review → show review results; done → show summary
-- [ ] Handle concurrent states (e.g., risk analysis while building)
-- [ ] Integrate state machine with feature page layout
+- [x] Create `src/renderer/hooks/useFeatureState.ts` — determines which buttons/actions are available based on feature status and plan existence
+- [x] State transitions: draft (no plan) → show Plan/Brainstorm buttons; planned → show Build/Risk buttons; in-progress → show agent grid; review → show review results; done → show summary
+- [x] Handle concurrent states (e.g., risk analysis while building)
+- [x] Integrate state machine with feature page layout
 - **Files**: `src/renderer/hooks/useFeatureState.ts`, `src/renderer/routes/projects/$projectId/features/$featureId.tsx`
 - **Commit message**: `feat: add feature state machine for contextual UI actions`
 - **Bisect note**: Refactors feature page to use state-driven rendering
 - **Informed by**: Q1 (answer)
+- **Implementation notes**: Created `useFeatureState` hook that derives a `FeatureView` (plan-input, planning, ready-to-build, agents-active, done) plus `AgentVisibility` and `ActionAvailability` objects from feature status and agent states. The hook uses `useMemo` for efficient recomputation. Supports concurrent agents (e.g., risk running alongside execute) via the `agents-active` view which renders all active agent panels. Refactored the feature page to replace 12 inline visibility flags with the hook's structured output, using view-based conditional rendering. Added a "done" summary view with CheckCircle2 icon.
+- **Validation results**: Lint passed (0 warnings, 0 errors). TypeScript compiled with no errors.
 
 ### Phase 16: Real-time metrics polling
 - **Step**: 15
@@ -425,8 +427,8 @@ Key files:
 - **Informed by**: Q17
 
 ## Current Status
-- **Current Phase**: Phase 15
-- **Progress**: 14/19
+- **Current Phase**: Phase 16
+- **Progress**: 15/19
 
 ## Deferred Items
 - Keyboard shortcuts / command palette

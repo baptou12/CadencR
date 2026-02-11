@@ -14,11 +14,16 @@ import {
   SearchCheckIcon,
   PlusCircleIcon,
   WrenchIcon,
+  CheckCircle2Icon,
 } from "lucide-react";
 import {
   useAgentState,
   useAgentEventListener,
 } from "@/hooks/useAgentState";
+import {
+  useFeatureState,
+  type FeatureStatus,
+} from "@/hooks/useFeatureState";
 
 export const Route = createFileRoute(
   "/projects/$projectId/features/$featureId",
@@ -252,25 +257,15 @@ function FeaturePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [review.blocks, review.status, review.setStatus, featureQuery]);
 
-  // Visibility flags
-  const isDraft = !feature || feature.status === "draft";
-  const isPlanned = feature?.status === "planned";
-  const isInProgress = feature?.status === "in-progress";
-  const showPlanInput =
-    isDraft && plan.status === "idle" && brainstorm.status === "idle";
-  const showPlanAgent = plan.status !== "idle" || plan.blocks.length > 0;
-  const showBrainstormAgent =
-    brainstorm.status !== "idle" || brainstorm.blocks.length > 0;
-  const showBuildButton = (isPlanned || isInProgress) && execute.status === "idle";
-  const showExecuteAgent =
-    execute.status !== "idle" || execute.blocks.length > 0;
-  const showRiskButton = (isPlanned || isInProgress) && risk.status === "idle";
-  const showRiskAgent = risk.status !== "idle" || risk.blocks.length > 0;
-  const isReview = feature?.status === "review";
-  const showReviewButton =
-    (isInProgress || isReview) && review.status === "idle";
-  const showReviewAgent =
-    review.status !== "idle" || review.blocks.length > 0;
+  // Feature state machine
+  const { view, agents, actions } = useFeatureState({
+    featureStatus: feature?.status as FeatureStatus | undefined,
+    plan: { status: plan.status, blocks: plan.blocks },
+    brainstorm: { status: brainstorm.status, blocks: brainstorm.blocks },
+    execute: { status: execute.status, blocks: execute.blocks },
+    risk: { status: risk.status, blocks: risk.blocks },
+    review: { status: review.status, blocks: review.blocks },
+  });
 
   return (
     <div className="flex h-full flex-col -m-6">
@@ -279,7 +274,8 @@ function FeaturePage() {
         projectId={numericProjectId}
       />
       <div className="flex-1 overflow-auto p-6">
-        {showPlanInput && (
+        {/* Draft view: description input + Plan/Brainstorm buttons */}
+        {view === "plan-input" && (
           <div className="mx-auto max-w-2xl space-y-4">
             <div>
               <h2 className="text-lg font-semibold">Start Planning</h2>
@@ -332,182 +328,184 @@ function FeaturePage() {
           </div>
         )}
 
-        {showPlanAgent && (
-          <div className="h-full">
-            <AgentPanel
-              agentType="plan"
-              status={plan.status}
-              blocks={plan.blocks}
-              pendingQuestions={
-                plan.pendingQuestions.length > 0
-                  ? plan.pendingQuestions
-                  : undefined
-              }
-              onQuestionResponse={handleQuestionResponse}
-              className="h-full"
-            />
+        {/* Planning view: plan/brainstorm agent panels */}
+        {view === "planning" && (
+          <div className="space-y-4">
+            {agents.showPlanAgent && (
+              <div className="h-full">
+                <AgentPanel
+                  agentType="plan"
+                  status={plan.status}
+                  blocks={plan.blocks}
+                  pendingQuestions={
+                    plan.pendingQuestions.length > 0
+                      ? plan.pendingQuestions
+                      : undefined
+                  }
+                  onQuestionResponse={handleQuestionResponse}
+                  className="h-full"
+                />
+              </div>
+            )}
+            {agents.showBrainstormAgent && (
+              <div className="h-full">
+                <AgentPanel
+                  agentType="brainstorm"
+                  status={brainstorm.status}
+                  blocks={brainstorm.blocks}
+                  pendingQuestions={
+                    brainstorm.pendingQuestions.length > 0
+                      ? brainstorm.pendingQuestions
+                      : undefined
+                  }
+                  onQuestionResponse={handleBrainstormQuestionResponse}
+                  className="h-full"
+                />
+              </div>
+            )}
           </div>
         )}
 
-        {showBrainstormAgent && (
-          <div className="h-full">
-            <AgentPanel
-              agentType="brainstorm"
-              status={brainstorm.status}
-              blocks={brainstorm.blocks}
-              pendingQuestions={
-                brainstorm.pendingQuestions.length > 0
-                  ? brainstorm.pendingQuestions
-                  : undefined
-              }
-              onQuestionResponse={handleBrainstormQuestionResponse}
-              className="h-full"
-            />
-          </div>
-        )}
-
-        {(showBuildButton || showRiskButton || showReviewButton) &&
-          !showPlanAgent &&
-          !showBrainstormAgent &&
-          !showExecuteAgent &&
-          !showRiskAgent &&
-          !showReviewAgent && (
-            <div className="mx-auto max-w-2xl space-y-4">
-              <div>
-                <h2 className="text-lg font-semibold">Ready to Build</h2>
-                <p className="text-sm text-muted-foreground">
-                  The plan is ready. Start building to execute all phases in
-                  order, or evaluate risks before proceeding.
-                </p>
-              </div>
-              <div className="flex gap-2">
-                {showBuildButton && (
-                  <Button
-                    onClick={handleStartBuilding}
-                    disabled={startExecuteMutation.isLoading}
-                  >
-                    {startExecuteMutation.isLoading ? (
-                      <Loader2Icon className="mr-2 size-4 animate-spin" />
-                    ) : (
-                      <HammerIcon className="mr-2 size-4" />
-                    )}
-                    Start Building
-                  </Button>
-                )}
-                {showRiskButton && (
-                  <Button
-                    variant="outline"
-                    onClick={handleStartRisk}
-                    disabled={startRiskMutation.isLoading}
-                  >
-                    {startRiskMutation.isLoading ? (
-                      <Loader2Icon className="mr-2 size-4 animate-spin" />
-                    ) : (
-                      <ShieldAlertIcon className="mr-2 size-4" />
-                    )}
-                    Evaluate Risk
-                  </Button>
-                )}
-                {showReviewButton && (
-                  <Button
-                    variant="outline"
-                    onClick={handleStartReview}
-                    disabled={startReviewMutation.isLoading}
-                  >
-                    {startReviewMutation.isLoading ? (
-                      <Loader2Icon className="mr-2 size-4 animate-spin" />
-                    ) : (
-                      <SearchCheckIcon className="mr-2 size-4" />
-                    )}
-                    Start Review
-                  </Button>
-                )}
-              </div>
+        {/* Ready to build: action buttons for Build/Risk/Review */}
+        {view === "ready-to-build" && (
+          <div className="mx-auto max-w-2xl space-y-4">
+            <div>
+              <h2 className="text-lg font-semibold">Ready to Build</h2>
+              <p className="text-sm text-muted-foreground">
+                The plan is ready. Start building to execute all phases in
+                order, or evaluate risks before proceeding.
+              </p>
             </div>
-          )}
-
-        {showExecuteAgent && (
-          <div className="h-full">
-            <AgentPanel
-              agentType="execute"
-              status={execute.status}
-              blocks={execute.blocks}
-              className="h-full"
-            />
-          </div>
-        )}
-
-        {showRiskAgent && (
-          <div className="h-full">
-            <AgentPanel
-              agentType="risk"
-              status={risk.status}
-              blocks={risk.blocks}
-              className="h-full"
-            />
-          </div>
-        )}
-
-        {showReviewAgent && (
-          <div className="h-full">
-            <AgentPanel
-              agentType="review"
-              status={review.status}
-              blocks={review.blocks}
-              className="h-full"
-            />
-            {reviewComplete && reviewVerdict === "changes_requested" && (
-              <div className="mt-4 flex gap-2 border-t pt-4">
+            <div className="flex gap-2">
+              {actions.canStartBuild && (
+                <Button
+                  onClick={handleStartBuilding}
+                  disabled={startExecuteMutation.isLoading}
+                >
+                  {startExecuteMutation.isLoading ? (
+                    <Loader2Icon className="mr-2 size-4 animate-spin" />
+                  ) : (
+                    <HammerIcon className="mr-2 size-4" />
+                  )}
+                  Start Building
+                </Button>
+              )}
+              {actions.canStartRisk && (
                 <Button
                   variant="outline"
-                  onClick={handleAddFixPhase}
-                  disabled={addFixPhaseMutation.isLoading}
+                  onClick={handleStartRisk}
+                  disabled={startRiskMutation.isLoading}
                 >
-                  {addFixPhaseMutation.isLoading ? (
+                  {startRiskMutation.isLoading ? (
                     <Loader2Icon className="mr-2 size-4 animate-spin" />
                   ) : (
-                    <PlusCircleIcon className="mr-2 size-4" />
+                    <ShieldAlertIcon className="mr-2 size-4" />
                   )}
-                  Add Fix Phase
+                  Evaluate Risk
                 </Button>
+              )}
+              {actions.canStartReview && (
                 <Button
-                  onClick={handleFixImmediately}
-                  disabled={startExecuteForFixMutation.isLoading}
+                  variant="outline"
+                  onClick={handleStartReview}
+                  disabled={startReviewMutation.isLoading}
                 >
-                  {startExecuteForFixMutation.isLoading ? (
+                  {startReviewMutation.isLoading ? (
                     <Loader2Icon className="mr-2 size-4 animate-spin" />
                   ) : (
-                    <WrenchIcon className="mr-2 size-4" />
+                    <SearchCheckIcon className="mr-2 size-4" />
                   )}
-                  Fix Immediately
+                  Start Review
                 </Button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Agents active: show all active agent panels (supports concurrent agents) */}
+        {view === "agents-active" && (
+          <div className="space-y-4">
+            {agents.showExecuteAgent && (
+              <div className="h-full">
+                <AgentPanel
+                  agentType="execute"
+                  status={execute.status}
+                  blocks={execute.blocks}
+                  className="h-full"
+                />
               </div>
             )}
-            {reviewComplete && reviewVerdict === "approved" && (
-              <div className="mt-4 border-t pt-4">
-                <p className="text-sm font-medium text-green-600">
-                  Review approved! Feature marked as done.
-                </p>
+            {agents.showRiskAgent && (
+              <div className="h-full">
+                <AgentPanel
+                  agentType="risk"
+                  status={risk.status}
+                  blocks={risk.blocks}
+                  className="h-full"
+                />
+              </div>
+            )}
+            {agents.showReviewAgent && (
+              <div className="h-full">
+                <AgentPanel
+                  agentType="review"
+                  status={review.status}
+                  blocks={review.blocks}
+                  className="h-full"
+                />
+                {reviewComplete && reviewVerdict === "changes_requested" && (
+                  <div className="mt-4 flex gap-2 border-t pt-4">
+                    <Button
+                      variant="outline"
+                      onClick={handleAddFixPhase}
+                      disabled={addFixPhaseMutation.isLoading}
+                    >
+                      {addFixPhaseMutation.isLoading ? (
+                        <Loader2Icon className="mr-2 size-4 animate-spin" />
+                      ) : (
+                        <PlusCircleIcon className="mr-2 size-4" />
+                      )}
+                      Add Fix Phase
+                    </Button>
+                    <Button
+                      onClick={handleFixImmediately}
+                      disabled={startExecuteForFixMutation.isLoading}
+                    >
+                      {startExecuteForFixMutation.isLoading ? (
+                        <Loader2Icon className="mr-2 size-4 animate-spin" />
+                      ) : (
+                        <WrenchIcon className="mr-2 size-4" />
+                      )}
+                      Fix Immediately
+                    </Button>
+                  </div>
+                )}
+                {reviewComplete && reviewVerdict === "approved" && (
+                  <div className="mt-4 border-t pt-4">
+                    <p className="text-sm font-medium text-green-600">
+                      Review approved! Feature marked as done.
+                    </p>
+                  </div>
+                )}
               </div>
             )}
           </div>
         )}
 
-        {!showPlanInput &&
-          !showPlanAgent &&
-          !showBrainstormAgent &&
-          !showBuildButton &&
-          !showRiskButton &&
-          !showReviewButton &&
-          !showExecuteAgent &&
-          !showRiskAgent &&
-          !showReviewAgent &&
-          feature &&
-          feature.status !== "draft" && (
-            <p className="text-muted-foreground">
-              Feature is in &quot;{feature.status}&quot; state.
-            </p>
-          )}
+        {/* Done view: summary */}
+        {view === "done" && (
+          <div className="mx-auto max-w-2xl space-y-4">
+            <div className="flex items-center gap-3">
+              <CheckCircle2Icon className="size-8 text-green-600" />
+              <div>
+                <h2 className="text-lg font-semibold">Feature Complete</h2>
+                <p className="text-sm text-muted-foreground">
+                  This feature has been reviewed and marked as done.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
