@@ -77,32 +77,36 @@
 - **Implementation notes**: Ran `npx shadcn@latest add button scroll-area badge dialog input select separator`. All 7 component files created under `src/renderer/components/ui/`. Dependencies installed automatically by shadcn CLI.
 - **Validation results**: `npx tsc --noEmit` passed (exit 0). `pnpm run package -- --platform=darwin` passed (exit 0).
 
-### ⬜ Phase 4: Project list component
+### ✅ Phase 4: Project list component
 
 - **Step**: 4
 - **Complexity**: 3
-- [ ] Create `src/renderer/components/ProjectList.tsx` — scrollable list of projects with selected state, "Add project" button that opens a dialog (name + folder path inputs)
-- [ ] Use tRPC `projects.list` and `projects.create` queries/mutations
-- [ ] Highlight selected project, call `onSelectProject(id)` callback
-- [ ] Include delete option per project
+- [x] Create `src/renderer/components/ProjectList.tsx` — scrollable list of projects with selected state, "Add project" button that opens a dialog (name + folder path inputs)
+- [x] Use tRPC `projects.list` and `projects.create` queries/mutations
+- [x] Highlight selected project, call `onSelectProject(id)` callback
+- [x] Include delete option per project
 - **Files**: `src/renderer/components/ProjectList.tsx`
 - **Commit message**: `feat: add project list component with create/delete`
 - **Bisect note**: Standalone component, not mounted yet
+- **Implementation notes**: Created ProjectList component with props `selectedProjectId` and `onSelectProject`. Uses Dialog for add-project form (name + path inputs), ScrollArea for the list, highlights selected project with `bg-accent`, delete button appears on hover per project. Cache invalidation via `trpc.useUtils()`.
+- **Validation results**: `npx tsc --noEmit` passed (exit 0). `npm run package -- --platform=darwin` passed (exit 0).
 
-### ⬜ Phase 5: Feature list component
+### ✅ Phase 5: Feature list component
 
 - **Step**: 4
 - **Complexity**: 3
-- [ ] Create `src/renderer/components/FeatureList.tsx` — scrollable list of features for a given project_id
-- [ ] Status filter (select/dropdown): all, draft, planned, in-progress, to-test, done
-- [ ] Sorted by creation date (newest first, from DB)
-- [ ] Status badge with color per status
-- [ ] "Add feature" button → dialog with title input
-- [ ] Click feature to select, status change dropdown per feature
-- [ ] Include delete option per feature
+- [x] Create `src/renderer/components/FeatureList.tsx` — scrollable list of features for a given project_id
+- [x] Status filter (select/dropdown): all, draft, planned, in-progress, review, done
+- [x] Sorted by creation date (newest first, from DB)
+- [x] Status badge with color per status
+- [x] "Add feature" button → dialog with title input
+- [x] Click feature to select, status change dropdown per feature
+- [x] Include delete option per feature
 - **Files**: `src/renderer/components/FeatureList.tsx`
 - **Commit message**: `feat: add feature list component with filtering and status`
 - **Bisect note**: Standalone component, not mounted yet
+- **Implementation notes**: Created FeatureList component with props for projectId, selectedFeatureId, and onSelectFeature callback. Uses tRPC queries/mutations for all CRUD operations with cache invalidation via `trpc.useUtils()`. Status filter uses "review" (not "to-test") matching the DB schema. Each feature row has an inline status change dropdown (Select over Badge) and a delete button (visible on hover). Add feature dialog with title input and Enter key support.
+- **Validation results**: `npx tsc --noEmit` passed (exit 0). `npm run package -- --platform=darwin` passed (exit 0).
 
 ### ⬜ Phase 6: Integrate sidebar into root layout
 
@@ -126,5 +130,5 @@
 
 ## Current Status
 
-- **Current Phase**: Phase 4
-- **Progress**: 3/6
+- **Current Phase**: Phase 6
+- **Progress**: 5/6
