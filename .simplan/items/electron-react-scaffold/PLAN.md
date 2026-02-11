@@ -37,17 +37,20 @@
 
 ## Phases
 
-### ⬜ Phase 1: Scaffold Electron Forge + Vite + TypeScript project
+### ✅ Phase 1: Scaffold Electron Forge + Vite + TypeScript project
 - **Step**: 1
 - **Complexity**: 3
-- [ ] Run `pnpm create electron-app@latest . --template=vite-typescript` (or equivalent manual setup since we're in an existing dir)
-- [ ] Verify the generated structure: `src/main.ts`, `src/preload.ts`, `src/renderer.ts`, `forge.config.ts`, `vite.main.config.ts`, `vite.renderer.config.ts`
-- [ ] Update `tsconfig.json` to enable `strict: true`
-- [ ] Configure `package.json` scripts and ensure `pnpm start` launches the app
-- [ ] Add `.gitignore` entries for `node_modules/`, `out/`, `.vite/`
-- **Files**: `package.json`, `forge.config.ts`, `tsconfig.json`, `vite.main.config.ts`, `vite.renderer.config.ts`, `src/main.ts`, `src/preload.ts`, `src/renderer.ts`, `index.html`, `.gitignore`
+- [x] Run `pnpm create electron-app@latest . --template=vite-typescript` (or equivalent manual setup since we're in an existing dir)
+- [x] Verify the generated structure: `src/main.ts`, `src/preload.ts`, `src/renderer.ts`, `forge.config.ts`, `vite.main.config.ts`, `vite.renderer.config.ts`
+- [x] Update `tsconfig.json` to enable `strict: true`
+- [x] Configure `package.json` scripts and ensure `pnpm start` launches the app
+- [x] Add `.gitignore` entries for `node_modules/`, `out/`, `.vite/`
+- **Files**: `package.json`, `forge.config.ts`, `tsconfig.json`, `vite.main.config.ts`, `vite.preload.config.ts`, `vite.renderer.config.ts`, `src/main.ts`, `src/preload.ts`, `src/renderer.ts`, `src/env.d.ts`, `src/index.css`, `index.html`, `.gitignore`, `.npmrc`
 - **Commit message**: `feat: scaffold electron forge project with vite and typescript`
 - **Bisect note**: N/A — initial scaffold, app should launch with default content
+- **Implementation notes**: Manually scaffolded instead of using `create electron-app` since we are in an existing repo. Added `.npmrc` with `node-linker=hoisted` (required by Electron Forge with pnpm). Added `vite.preload.config.ts` (needed by forge config for preload build target). Added `src/env.d.ts` for Vite dev server URL type declarations. Installed `electron-squirrel-startup` as a dependency.
+- **Validation results**: `pnpm exec tsc --noEmit` passes (exit 0). `pnpm run make` passes (exit 0, output in `out/make/`). `pnpm start` not validated (requires display/manual check).
+- **Review**: Approved - Clean Electron Forge + Vite + TypeScript scaffold. All files present with real implementations. Both completion conditions (tsc --noEmit, pnpm run make) pass. Standard patterns used throughout.
 
 ### ⬜ Phase 2: Add React, Tailwind CSS, and shadcn/ui
 - **Step**: 2
@@ -118,5 +121,5 @@
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Not started
-- **Progress**: 0/5
+- **Current Phase**: Phase 2 & 3 (Step 2)
+- **Progress**: 1/5
