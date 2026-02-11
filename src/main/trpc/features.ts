@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { router, publicProcedure } from "./trpc";
 import { getDatabase } from "../db/database";
+import type { FeatureRow, ProjectRow, PlanRow, CountRow, SettingRow } from "../db/types";
 import { createWorktree, buildBranchName } from "../git/worktree";
 
 export const FEATURE_STATUSES = ["draft", "planned", "in-progress", "review", "done"] as const;
@@ -23,25 +24,13 @@ export const featuresRouter = router({
           .prepare(
             "SELECT id, project_id, title, status, created_at FROM features WHERE project_id = ? AND status = ? ORDER BY created_at DESC",
           )
-          .all(input.project_id, input.status) as {
-          id: number;
-          project_id: number;
-          title: string;
-          status: FeatureStatus;
-          created_at: string;
-        }[];
+          .all(input.project_id, input.status) as FeatureRow[];
       }
       return db
         .prepare(
           "SELECT id, project_id, title, status, created_at FROM features WHERE project_id = ? ORDER BY created_at DESC",
         )
-        .all(input.project_id) as {
-        id: number;
-        project_id: number;
-        title: string;
-        status: string;
-        created_at: string;
-      }[];
+        .all(input.project_id) as FeatureRow[];
     }),
 
   create: publicProcedure
@@ -56,7 +45,7 @@ export const featuresRouter = router({
       // Auto-create worktree if project has a path
       const project = db
         .prepare("SELECT name, path FROM projects WHERE id = ?")
-        .get(input.project_id) as { name: string; path: string } | undefined;
+        .get(input.project_id) as Pick<ProjectRow, "name" | "path"> | undefined;
 
       if (project?.path) {
         try {
@@ -64,7 +53,7 @@ export const featuresRouter = router({
             .prepare(
               "SELECT value FROM project_settings WHERE project_id = ? AND key = 'branch_prefix'",
             )
-            .get(input.project_id) as { value: string } | undefined;
+            .get(input.project_id) as SettingRow | undefined;
           const prefix = prefixRow?.value ?? "feature/";
           const branchName = buildBranchName(prefix, input.title);
           const wt = createWorktree(project.path, branchName, project.name);
@@ -107,15 +96,7 @@ export const featuresRouter = router({
         .prepare(
           "SELECT id, project_id, title, status, created_at FROM features WHERE id = ?",
         )
-        .get(input.id) as
-        | {
-            id: number;
-            project_id: number;
-            title: string;
-            status: string;
-            created_at: string;
-          }
-        | undefined;
+        .get(input.id) as FeatureRow | undefined;
     }),
 
   getPlanProgress: publicProcedure
@@ -124,21 +105,19 @@ export const featuresRouter = router({
       const db = getDatabase();
       const plan = db
         .prepare("SELECT id FROM plans WHERE feature_id = ? LIMIT 1")
-        .get(input.feature_id) as { id: number } | undefined;
+        .get(input.feature_id) as Pick<PlanRow, "id"> | undefined;
       if (!plan) {
         return { total: 0, done: 0 };
       }
       const total = (
-        db.prepare("SELECT COUNT(*) as count FROM phases WHERE plan_id = ?").get(plan.id) as {
-          count: number;
-        }
+        db.prepare("SELECT COUNT(*) as count FROM phases WHERE plan_id = ?").get(plan.id) as CountRow
       ).count;
       const done = (
         db
           .prepare(
             "SELECT COUNT(*) as count FROM phases WHERE plan_id = ? AND status = 'done'",
           )
-          .get(plan.id) as { count: number }
+          .get(plan.id) as CountRow
       ).count;
       return { total, done };
     }),
@@ -149,7 +128,7 @@ export const featuresRouter = router({
       const db = getDatabase();
       const rows = db
         .prepare("SELECT key, value FROM feature_settings WHERE feature_id = ?")
-        .all(input.feature_id) as { key: string; value: string }[];
+        .all(input.feature_id) as SettingRow[];
       return Object.fromEntries(rows.map((r) => [r.key, r.value]));
     }),
 

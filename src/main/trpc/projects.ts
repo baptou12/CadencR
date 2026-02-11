@@ -3,6 +3,7 @@ import path from "node:path";
 import { dialog } from "electron";
 import { router, publicProcedure } from "./trpc";
 import { getDatabase } from "../db/database";
+import type { ProjectRow, SettingRow } from "../db/types";
 
 export const projectsRouter = router({
   selectFolder: publicProcedure.mutation(async () => {
@@ -19,7 +20,7 @@ export const projectsRouter = router({
     const db = getDatabase();
     const rows = db
       .prepare("SELECT id, name, path, created_at FROM projects ORDER BY created_at DESC")
-      .all() as { id: number; name: string; path: string; created_at: string }[];
+      .all() as ProjectRow[];
     return rows;
   }),
 
@@ -45,7 +46,7 @@ export const projectsRouter = router({
       const db = getDatabase();
       const rows = db
         .prepare("SELECT key, value FROM project_settings WHERE project_id = ?")
-        .all(input.project_id) as { key: string; value: string }[];
+        .all(input.project_id) as SettingRow[];
       return Object.fromEntries(rows.map((r) => [r.key, r.value]));
     }),
 

@@ -2,6 +2,7 @@ import { z } from "zod";
 import fs from "node:fs";
 import { router, publicProcedure } from "./trpc";
 import { getDatabase } from "../db/database";
+import type { SettingRow, ProjectRow } from "../db/types";
 import { projectsRouter } from "./projects";
 import { featuresRouter } from "./features";
 import { discoverClaudeCli } from "../agents/cli-discovery";
@@ -22,12 +23,13 @@ import {
 } from "../git/worktree";
 import { startPlanAgent } from "../agents/plan-agent";
 import { startBrainstormAgent } from "../agents/brainstorm-agent";
+import { startExecuteAgent } from "../agents/execute-agent";
 
 const settingsRouter = router({
   get: publicProcedure.input(z.object({ key: z.string() })).query(({ input }) => {
     const db = getDatabase();
     const row = db.prepare("SELECT value FROM settings WHERE key = ?").get(input.key) as
-      | { value: string }
+      | SettingRow
       | undefined;
     return row?.value ?? null;
   }),
@@ -44,10 +46,7 @@ const settingsRouter = router({
 
   list: publicProcedure.query(() => {
     const db = getDatabase();
-    const rows = db.prepare("SELECT key, value FROM settings").all() as {
-      key: string;
-      value: string;
-    }[];
+    const rows = db.prepare("SELECT key, value FROM settings").all() as SettingRow[];
     return rows;
   }),
 
@@ -168,11 +167,11 @@ const agentsRouter = router({
         .prepare(
           "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
         )
-        .get(input.featureId) as { value: string } | undefined;
+        .get(input.featureId) as SettingRow | undefined;
 
       const project = db
         .prepare("SELECT path FROM projects WHERE id = ?")
-        .get(input.projectId) as { path: string } | undefined;
+        .get(input.projectId) as Pick<ProjectRow, "path"> | undefined;
 
       const cwd = wtRow?.value ?? project?.path;
       if (!cwd) throw new Error("No working directory found for this feature");
@@ -204,11 +203,11 @@ const agentsRouter = router({
         .prepare(
           "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
         )
-        .get(input.featureId) as { value: string } | undefined;
+        .get(input.featureId) as SettingRow | undefined;
 
       const project = db
         .prepare("SELECT path FROM projects WHERE id = ?")
-        .get(input.projectId) as { path: string } | undefined;
+        .get(input.projectId) as Pick<ProjectRow, "path"> | undefined;
 
       const cwd = wtRow?.value ?? project?.path;
       if (!cwd) throw new Error("No working directory found for this feature");
@@ -217,6 +216,40 @@ const agentsRouter = router({
         featureId: input.featureId,
         projectId: input.projectId,
         description: input.description,
+        cwd,
+      });
+
+      return result;
+    }),
+
+  /** Start the execute agent for a feature (runs plan phases) */
+  startExecute: publicProcedure
+    .input(
+      z.object({
+        featureId: z.number(),
+        projectId: z.number(),
+      }),
+    )
+    .mutation(({ input }) => {
+      const db = getDatabase();
+
+      // Determine working directory
+      const wtRow = db
+        .prepare(
+          "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
+        )
+        .get(input.featureId) as SettingRow | undefined;
+
+      const project = db
+        .prepare("SELECT path FROM projects WHERE id = ?")
+        .get(input.projectId) as Pick<ProjectRow, "path"> | undefined;
+
+      const cwd = wtRow?.value ?? project?.path;
+      if (!cwd) throw new Error("No working directory found for this feature");
+
+      const result = startExecuteAgent({
+        featureId: input.featureId,
+        projectId: input.projectId,
         cwd,
       });
 
@@ -248,7 +281,7 @@ const gitRouter = router({
       const db = getDatabase();
       const project = db
         .prepare("SELECT id, name, path FROM projects WHERE id = ?")
-        .get(input.projectId) as { id: number; name: string; path: string } | undefined;
+        .get(input.projectId) as ProjectRow | undefined;
       if (!project) throw new Error(`Project not found: ${input.projectId}`);
 
       // Get branch prefix from project settings (default: "feature/")
@@ -256,7 +289,7 @@ const gitRouter = router({
         .prepare(
           "SELECT value FROM project_settings WHERE project_id = ? AND key = 'branch_prefix'",
         )
-        .get(input.projectId) as { value: string } | undefined;
+        .get(input.projectId) as SettingRow | undefined;
       const prefix = prefixRow?.value ?? "feature/";
 
       const branchName = buildBranchName(prefix, input.featureTitle);
@@ -285,14 +318,14 @@ const gitRouter = router({
       const db = getDatabase();
       const project = db
         .prepare("SELECT path FROM projects WHERE id = ?")
-        .get(input.projectId) as { path: string } | undefined;
+        .get(input.projectId) as Pick<ProjectRow, "path"> | undefined;
       if (!project) throw new Error(`Project not found: ${input.projectId}`);
 
       const wtRow = db
         .prepare(
           "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
         )
-        .get(input.featureId) as { value: string } | undefined;
+        .get(input.featureId) as SettingRow | undefined;
       if (!wtRow) throw new Error("No worktree found for this feature");
 
       removeWorktree(project.path, wtRow.value);
@@ -317,14 +350,14 @@ const gitRouter = router({
       const db = getDatabase();
       const project = db
         .prepare("SELECT path FROM projects WHERE id = ?")
-        .get(input.projectId) as { path: string } | undefined;
+        .get(input.projectId) as Pick<ProjectRow, "path"> | undefined;
       if (!project) return null;
 
       const wtRow = db
         .prepare(
           "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
         )
-        .get(input.featureId) as { value: string } | undefined;
+        .get(input.featureId) as SettingRow | undefined;
       if (!wtRow) return null;
 
       return getWorktreeInfo(project.path, wtRow.value);
@@ -339,7 +372,7 @@ const gitRouter = router({
         .prepare(
           "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
         )
-        .get(input.featureId) as { value: string } | undefined;
+        .get(input.featureId) as SettingRow | undefined;
       if (!wtRow) throw new Error("No worktree found for this feature");
 
       openInTerminal(wtRow.value);
