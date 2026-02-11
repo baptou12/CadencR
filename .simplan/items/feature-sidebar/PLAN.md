@@ -108,17 +108,19 @@
 - **Implementation notes**: Created FeatureList component with props for projectId, selectedFeatureId, and onSelectFeature callback. Uses tRPC queries/mutations for all CRUD operations with cache invalidation via `trpc.useUtils()`. Status filter uses "review" (not "to-test") matching the DB schema. Each feature row has an inline status change dropdown (Select over Badge) and a delete button (visible on hover). Add feature dialog with title input and Enter key support.
 - **Validation results**: `npx tsc --noEmit` passed (exit 0). `npm run package -- --platform=darwin` passed (exit 0).
 
-### ⬜ Phase 6: Integrate sidebar into root layout
+### ✅ Phase 6: Integrate sidebar into root layout
 
 - **Step**: 5
 - **Complexity**: 3
-- [ ] Create `src/renderer/components/Sidebar.tsx` composing ProjectList (top ~33%) + FeatureList (bottom ~67%) with a separator
-- [ ] Manage selected project state, pass project_id to FeatureList
-- [ ] Replace current nav in `__root.tsx` with `<Sidebar />` component
-- [ ] Keep Settings link (as icon/gear button in sidebar header or footer)
+- [x] Create `src/renderer/components/Sidebar.tsx` composing ProjectList (top ~33%) + FeatureList (bottom ~67%) with a separator
+- [x] Manage selected project state, pass project_id to FeatureList
+- [x] Replace current nav in `__root.tsx` with `<Sidebar />` component
+- [x] Keep Settings link (as icon/gear button in sidebar header or footer)
 - **Files**: `src/renderer/components/Sidebar.tsx`, `src/renderer/routes/__root.tsx`
 - **Commit message**: `feat: integrate sidebar into root layout replacing nav`
 - **Bisect note**: This is the integration phase — must include both the component and the layout change together
+- **Implementation notes**: Created Sidebar component with header (app name + gear icon linking to /settings), ProjectList in flex-[1] section, FeatureList in flex-[2] section (roughly 33/67 split), separated by Separator components. Manages selectedProjectId and selectedFeatureId state locally. Shows placeholder text when no project is selected. Replaced entire nav in __root.tsx with the Sidebar component, removed unused Link import.
+- **Validation results**: `npx tsc --noEmit` passed (exit 0). `npm run package -- --platform=darwin` passed (exit 0).
 
 ## Phase Status Legend
 
@@ -130,5 +132,5 @@
 
 ## Current Status
 
-- **Current Phase**: Phase 6
-- **Progress**: 5/6
+- **Current Phase**: All phases complete
+- **Progress**: 6/6
