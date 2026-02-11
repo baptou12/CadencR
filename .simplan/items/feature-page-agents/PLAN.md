@@ -301,17 +301,19 @@ Key files:
 - **Implementation notes**: Created `plan-agent.ts` with system prompt instructing the agent to explore codebase, ask 1-12 clarifying questions via AskUserQuestion, then output a structured plan between `---PLAN_START---`/`---PLAN_END---` markers. The `parsePlanOutput` function extracts phases with step, complexity, tasks, files, and commit messages using regex. On subprocess completion, the handler stores the plan in the `plans` table and phases in the `phases` table, then updates feature status to "planned". Added `agents.startPlan` tRPC mutation that resolves working directory (worktree or project path) and launches the agent. Updated the feature page with a textarea for description input and "Start Planning" button (shown when feature is in draft status). The page listens for agent events via IPC bridge and renders them in an AgentPanel, including AskUserQuestion handling for clarifying questions. Also created `textarea.tsx` shadcn UI component (was missing).
 - **Validation results**: Lint passed (0 errors), TypeScript compiled with no errors.
 
-### Phase 11: Brainstorm agent implementation
+### ✅ Phase 11: Brainstorm agent implementation
 - **Step**: 10
 - **Complexity**: 4
-- [ ] Create `src/main/agents/brainstorm-agent.ts` — system prompt adapted from simplan item:brainstorm
-- [ ] Flow: user enters description → agent does deep exploration + web research → asks 10-40 questions → generates comprehensive plan
-- [ ] Reuse plan/phase storage from Phase 10
-- [ ] Wire "Start Brainstorming" button on feature page
+- [x] Create `src/main/agents/brainstorm-agent.ts` — system prompt adapted from simplan item:brainstorm
+- [x] Flow: user enters description → agent does deep exploration + web research → asks 10-40 questions → generates comprehensive plan
+- [x] Reuse plan/phase storage from Phase 10
+- [x] Wire "Start Brainstorming" button on feature page
 - **Files**: `src/main/agents/brainstorm-agent.ts`, `src/renderer/routes/projects/$projectId/features/$featureId.tsx`
 - **Commit message**: `feat: implement Brainstorm agent with extensive Q&A and planning`
 - **Bisect note**: New agent, parallel to plan agent
 - **Informed by**: Q9, Q1 (answer)
+- **Implementation notes**: Created `brainstorm-agent.ts` following the same pattern as `plan-agent.ts`. The brainstorm system prompt instructs the agent to do deep codebase exploration, web research, and ask 10-40 questions covering requirements, UX, technical approach, integration, edge cases, security, performance, scope, and risks. Reuses `parsePlanOutput` from plan-agent for plan parsing and the same plans/phases DB storage. Added `agents.startBrainstorm` tRPC mutation to router.ts (mirrors startPlan). Updated feature page with brainstorm state (blocks, status, pending questions, subprocess ID), a brainstorm event handler, and a "Start Brainstorming" outline button next to "Start Planning". Both buttons are mutually exclusive while loading.
+- **Validation results**: Lint passed (0 warnings, 0 errors). TypeScript compiled with no errors.
 
 ### Phase 12: Execute agent implementation
 - **Step**: 11
@@ -417,8 +419,8 @@ Key files:
 - **Informed by**: Q17
 
 ## Current Status
-- **Current Phase**: Phase 11
-- **Progress**: 10/19
+- **Current Phase**: Phase 12
+- **Progress**: 11/19
 
 ## Deferred Items
 - Keyboard shortcuts / command palette
