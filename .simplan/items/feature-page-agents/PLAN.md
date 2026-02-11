@@ -254,18 +254,20 @@ Key files:
 - **Implementation notes**: Created `AgentQuestionDrawer` component with: multi-question navigation (progress indicator), option buttons with single/multi-select support, "Other..." free-text toggle with Input field, Enter-to-submit on free text, and formatted response output combining all answers. Added `parseAskUserQuestions` utility function that handles both single question `{question, options}` and multiple questions `{questions: [...]}` formats from tool input. Added `sendSubprocessInput` to subprocess-manager.ts for writing to stdin. Added `agents.sendInput` tRPC procedure. Updated `AgentPanel` with `pendingQuestions` and `onQuestionResponse` props, rendering the drawer at the bottom of the panel to push content up.
 - **Validation results**: Lint passed (0 errors), TypeScript compiled with no errors.
 
-### Phase 8: Multi-agent grid layout with focus mode
+### ✅ Phase 8: Multi-agent grid layout with focus mode
 - **Step**: 7
 - **Complexity**: 3
-- [ ] Create `src/renderer/components/AgentGrid.tsx` — auto-splits into equal panels based on active agent count
-- [ ] Layout logic: 1 agent = full, 2 = side-by-side, 3-4 = 2x2 grid, 5+ = scrollable grid
-- [ ] Add focus button per panel — expands one agent to full width, others collapse
-- [ ] Unfocus button to return to grid view
-- [ ] Each cell renders an AgentPanel
+- [x] Create `src/renderer/components/AgentGrid.tsx` — auto-splits into equal panels based on active agent count
+- [x] Layout logic: 1 agent = full, 2 = side-by-side, 3-4 = 2x2 grid, 5+ = scrollable grid
+- [x] Add focus button per panel — expands one agent to full width, others collapse
+- [x] Unfocus button to return to grid view
+- [x] Each cell renders an AgentPanel
 - **Files**: `src/renderer/components/AgentGrid.tsx`
 - **Commit message**: `feat: add multi-agent grid layout with focus mode`
 - **Bisect note**: Layout component, wraps AgentPanels
 - **Informed by**: Q4
+- **Implementation notes**: Created AgentGrid component with CSS grid layout. Uses `getGridClass` helper to determine grid columns/rows based on agent count and focus state. Focus mode uses useState to track focused index; when focused, non-focused agents are filtered out with `return null` and grid switches to 1x1. Each panel gets a maximize/minimize button (positioned in the header area) that toggles focus. For 5+ agents, the grid uses 3 columns with `auto-rows-fr` and `overflow-y-auto` for scrolling. Exported `AgentGridItem` interface for parent components to use.
+- **Validation results**: Lint passed (0 errors), TypeScript compiled with no errors.
 
 ### Phase 9: Git worktree management
 - **Step**: 8
@@ -411,8 +413,8 @@ Key files:
 - **Informed by**: Q17
 
 ## Current Status
-- **Current Phase**: Phase 8
-- **Progress**: 7/19
+- **Current Phase**: Phase 9
+- **Progress**: 8/19
 
 ## Deferred Items
 - Keyboard shortcuts / command palette
