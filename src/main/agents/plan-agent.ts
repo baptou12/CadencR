@@ -174,7 +174,7 @@ function setupPlanCompletionHandler(
 
         // Insert phases
         const insertPhase = db.prepare(
-          "INSERT INTO phases (plan_id, step_number, title, status, complexity, commit_message, tasks, files, order_index) VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?)",
+          "INSERT INTO phases (plan_id, step_number, title, status, complexity, commit_message, prompt, order_index) VALUES (?, ?, ?, 'pending', ?, ?, ?, ?)",
         );
 
         for (let i = 0; i < parsed.phases.length; i++) {
@@ -185,8 +185,7 @@ function setupPlanCompletionHandler(
             phase.title,
             phase.complexity,
             phase.commitMessage,
-            JSON.stringify(phase.tasks),
-            JSON.stringify(phase.files),
+            phase.prompt,
             i,
           );
         }
@@ -235,9 +234,9 @@ export interface ParsedPhase {
   title: string;
   step: number;
   complexity: number;
-  tasks: string[];
-  files: string[];
   commitMessage: string;
+  /** Raw phase body text to pass directly to the execute agent */
+  prompt: string;
 }
 
 /**
@@ -281,30 +280,6 @@ export function parsePlanOutput(output: string): ParsedPlan | null {
     const complexityMatch = phaseBody.match(/\*\*Complexity\*\*:\s*(\d+)/);
     const complexity = complexityMatch ? parseInt(complexityMatch[1], 10) : 3;
 
-    // Parse tasks
-    const tasks: string[] = [];
-    const tasksSection = phaseBody.match(
-      /\*\*Tasks\*\*:\s*\n((?:\s*-\s+.+\n?)+)/,
-    );
-    if (tasksSection) {
-      const taskLines = tasksSection[1].match(/-\s+(.+)/g);
-      if (taskLines) {
-        for (const taskLine of taskLines) {
-          const taskText = taskLine.replace(/^-\s+/, "").trim();
-          if (taskText) tasks.push(taskText);
-        }
-      }
-    }
-
-    // Parse files
-    const filesMatch = phaseBody.match(/\*\*Files\*\*:\s*(.+)/);
-    const files = filesMatch
-      ? filesMatch[1]
-          .split(",")
-          .map((f) => f.trim().replace(/`/g, ""))
-          .filter(Boolean)
-      : [];
-
     // Parse commit message
     const commitMatch = phaseBody.match(/\*\*Commit message\*\*:\s*(.+)/);
     const commitMessage = commitMatch
@@ -316,9 +291,8 @@ export function parsePlanOutput(output: string): ParsedPlan | null {
       title: phaseTitle,
       step,
       complexity,
-      tasks,
-      files,
       commitMessage,
+      prompt: phaseBody.trim(),
     });
   }
 

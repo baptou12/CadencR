@@ -80,8 +80,7 @@ const migrations: Migration[] = [
           status TEXT NOT NULL DEFAULT 'pending',
           complexity INTEGER,
           commit_message TEXT,
-          tasks TEXT,
-          files TEXT,
+          prompt TEXT,
           order_index INTEGER NOT NULL DEFAULT 0,
           FOREIGN KEY (plan_id) REFERENCES plans(id)
         )

@@ -315,20 +315,22 @@ Key files:
 - **Implementation notes**: Created `brainstorm-agent.ts` following the same pattern as `plan-agent.ts`. The brainstorm system prompt instructs the agent to do deep codebase exploration, web research, and ask 10-40 questions covering requirements, UX, technical approach, integration, edge cases, security, performance, scope, and risks. Reuses `parsePlanOutput` from plan-agent for plan parsing and the same plans/phases DB storage. Added `agents.startBrainstorm` tRPC mutation to router.ts (mirrors startPlan). Updated feature page with brainstorm state (blocks, status, pending questions, subprocess ID), a brainstorm event handler, and a "Start Brainstorming" outline button next to "Start Planning". Both buttons are mutually exclusive while loading.
 - **Validation results**: Lint passed (0 warnings, 0 errors). TypeScript compiled with no errors.
 
-### Phase 12: Execute agent implementation
+### ✅ Phase 12: Execute agent implementation
 - **Step**: 11
 - **Complexity**: 5
-- [ ] Create `src/main/agents/execute-agent.ts` — system prompt adapted from simplan item:exec
-- [ ] Flow: reads plan phases → executes them in step order → supports parallel phase execution within steps
-- [ ] Manage concurrent Claude instances (up to 10) for parallel phases
-- [ ] Read auto-commit setting (project/feature level), commit after each phase if enabled
-- [ ] Update phase status in DB as each completes
-- [ ] Update feature status to "in-progress" when building starts
-- [ ] Wire "Start Building" button on feature page
+- [x] Create `src/main/agents/execute-agent.ts` — system prompt adapted from simplan item:exec
+- [x] Flow: reads plan phases → executes them in step order → supports parallel phase execution within steps
+- [x] Manage concurrent Claude instances (up to 10) for parallel phases
+- [x] Read auto-commit setting (project/feature level), commit after each phase if enabled
+- [x] Update phase status in DB as each completes
+- [x] Update feature status to "in-progress" when building starts
+- [x] Wire "Start Building" button on feature page
 - **Files**: `src/main/agents/execute-agent.ts`, `src/renderer/routes/projects/$projectId/features/$featureId.tsx`
 - **Commit message**: `feat: implement Execute agent with parallel phase execution`
 - **Bisect note**: New agent, uses subprocess manager for concurrency
 - **Informed by**: Q3, Q12, Q14
+- **Implementation notes**: Created `execute-agent.ts` with `startExecuteAgent` function that: (1) updates feature status to "in-progress", (2) creates agent session record, (3) fetches active plan and pending phases, (4) groups phases by step number, (5) executes steps sequentially with phases within each step running in parallel via Promise.allSettled, (6) updates phase status (pending -> running -> completed/error) in DB, (7) auto-commits after each phase if enabled (reads feature-level then project-level `auto_commit` setting). Added `agents.startExecute` tRPC mutation to router.ts following the same cwd resolution pattern as startPlan/startBrainstorm. Updated feature page with execute state (blocks, status), execute event handler, "Start Building" button (shown when feature is planned/in-progress and execute is idle), and an AgentPanel for execute output.
+- **Validation results**: Lint passed (0 warnings, 0 errors). TypeScript compiled with no errors.
 
 ### Phase 13: Risk Analysis agent
 - **Step**: 12
@@ -419,8 +421,8 @@ Key files:
 - **Informed by**: Q17
 
 ## Current Status
-- **Current Phase**: Phase 12
-- **Progress**: 11/19
+- **Current Phase**: Phase 13
+- **Progress**: 12/19
 
 ## Deferred Items
 - Keyboard shortcuts / command palette

@@ -5,7 +5,7 @@ import { AgentPanel, type AgentStatus } from "@/components/AgentPanel";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/trpc";
-import { PlayIcon, Loader2Icon, LightbulbIcon } from "lucide-react";
+import { PlayIcon, Loader2Icon, LightbulbIcon, HammerIcon } from "lucide-react";
 import type { AgentBlockData } from "@/components/AgentBlock";
 import type { AgentQuestion } from "@/components/AgentQuestionDrawer";
 import type { AgentEvent } from "../../../../../main/agents/types";
@@ -43,8 +43,12 @@ function FeaturePage() {
   const [brainstormPendingQuestions, setBrainstormPendingQuestions] = useState<AgentQuestion[]>([]);
   const brainstormSubprocessIdRef = useRef<string | null>(null);
 
+  const [executeBlocks, setExecuteBlocks] = useState<AgentBlockData[]>([]);
+  const [executeStatus, setExecuteStatus] = useState<AgentStatus>("idle");
+
   const startPlanMutation = trpc.agents.startPlan.useMutation();
   const startBrainstormMutation = trpc.agents.startBrainstorm.useMutation();
+  const startExecuteMutation = trpc.agents.startExecute.useMutation();
   const sendInputMutation = trpc.agents.sendInput.useMutation();
 
   const handlePlanEvent = useCallback((agentEvent: AgentEvent) => {
@@ -222,6 +226,69 @@ function FeaturePage() {
     }
   }, []);
 
+  const handleExecuteEvent = useCallback((agentEvent: AgentEvent) => {
+    const { event } = agentEvent;
+
+    switch (event.type) {
+      case "content_block_start": {
+        if (event.content_block.type === "text") {
+          setExecuteBlocks((prev) => [
+            ...prev,
+            makeBlock({ type: "text", content: event.content_block.type === "text" ? event.content_block.text : "" }),
+          ]);
+        } else if (event.content_block.type === "tool_use") {
+          const toolBlock = event.content_block;
+          setExecuteBlocks((prev) => [
+            ...prev,
+            makeBlock({
+              type: "tool_call",
+              content: JSON.stringify(toolBlock.input, null, 2),
+              toolName: toolBlock.name,
+              toolArgs: JSON.stringify(toolBlock.input, null, 2),
+            }),
+          ]);
+        }
+        break;
+      }
+      case "content_block_delta": {
+        if (event.delta.type === "text_delta") {
+          const deltaText = event.delta.text;
+          setExecuteBlocks((prev) => {
+            if (prev.length === 0) return [makeBlock({ type: "text", content: deltaText })];
+            const last = prev[prev.length - 1];
+            if (last.type === "text") {
+              return [
+                ...prev.slice(0, -1),
+                { ...last, content: last.content + deltaText },
+              ];
+            }
+            return [...prev, makeBlock({ type: "text", content: deltaText })];
+          });
+        }
+        break;
+      }
+      case "tool_result": {
+        setExecuteBlocks((prev) => [
+          ...prev,
+          makeBlock({
+            type: "tool_result",
+            content: event.content,
+            isError: event.is_error ?? false,
+          }),
+        ]);
+        break;
+      }
+      case "error": {
+        setExecuteStatus("error");
+        setExecuteBlocks((prev) => [
+          ...prev,
+          makeBlock({ type: "text", content: `Error: ${event.error.message}` }),
+        ]);
+        break;
+      }
+    }
+  }, []);
+
   // Listen for agent events via IPC bridge
   useEffect(() => {
     const api = (window as unknown as { api?: {
@@ -241,13 +308,15 @@ function FeaturePage() {
         const currentId = brainstormSubprocessIdRef.current;
         if (currentId && agentEvent.subprocessId !== currentId) return;
         handleBrainstormEvent(agentEvent);
+      } else if (agentEvent.agentType === "execute") {
+        handleExecuteEvent(agentEvent);
       }
     });
 
     return () => {
       api.offAgentEvent(listener as undefined);
     };
-  }, [handlePlanEvent, handleBrainstormEvent]);
+  }, [handlePlanEvent, handleBrainstormEvent, handleExecuteEvent]);
 
   const handleStartPlanning = async () => {
     if (!description.trim()) return;
@@ -315,10 +384,34 @@ function FeaturePage() {
     }
   };
 
+  const handleStartBuilding = async () => {
+    setExecuteStatus("running");
+    setExecuteBlocks([]);
+
+    try {
+      await startExecuteMutation.mutateAsync({
+        featureId: numericFeatureId,
+        projectId: numericProjectId,
+      });
+    } catch (err) {
+      setExecuteStatus("error");
+      setExecuteBlocks([
+        makeBlock({
+          type: "text",
+          content: `Failed to start execute agent: ${err instanceof Error ? err.message : String(err)}`,
+        }),
+      ]);
+    }
+  };
+
   const isDraft = !feature || feature.status === "draft";
+  const isPlanned = feature?.status === "planned";
+  const isInProgress = feature?.status === "in-progress";
   const showPlanInput = isDraft && planStatus === "idle" && brainstormStatus === "idle";
   const showPlanAgent = planStatus !== "idle" || planBlocks.length > 0;
   const showBrainstormAgent = brainstormStatus !== "idle" || brainstormBlocks.length > 0;
+  const showBuildButton = (isPlanned || isInProgress) && executeStatus === "idle";
+  const showExecuteAgent = executeStatus !== "idle" || executeBlocks.length > 0;
 
   return (
     <div className="flex h-full flex-col -m-6">
@@ -395,9 +488,43 @@ function FeaturePage() {
           </div>
         )}
 
-        {!showPlanInput && !showPlanAgent && !showBrainstormAgent && feature && feature.status !== "draft" && (
+        {showBuildButton && !showPlanAgent && !showBrainstormAgent && (
+          <div className="mx-auto max-w-2xl space-y-4">
+            <div>
+              <h2 className="text-lg font-semibold">Ready to Build</h2>
+              <p className="text-sm text-muted-foreground">
+                The plan is ready. Start building to execute all phases in order.
+                Phases within the same step will run in parallel.
+              </p>
+            </div>
+            <Button
+              onClick={handleStartBuilding}
+              disabled={startExecuteMutation.isLoading}
+            >
+              {startExecuteMutation.isLoading ? (
+                <Loader2Icon className="mr-2 size-4 animate-spin" />
+              ) : (
+                <HammerIcon className="mr-2 size-4" />
+              )}
+              Start Building
+            </Button>
+          </div>
+        )}
+
+        {showExecuteAgent && (
+          <div className="h-full">
+            <AgentPanel
+              agentType="execute"
+              status={executeStatus}
+              blocks={executeBlocks}
+              className="h-full"
+            />
+          </div>
+        )}
+
+        {!showPlanInput && !showPlanAgent && !showBrainstormAgent && !showBuildButton && !showExecuteAgent && feature && feature.status !== "draft" && (
           <p className="text-muted-foreground">
-            Feature is in &quot;{feature.status}&quot; state. Planning is complete.
+            Feature is in &quot;{feature.status}&quot; state.
           </p>
         )}
       </div>

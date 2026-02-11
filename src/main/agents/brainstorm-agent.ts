@@ -193,7 +193,7 @@ function setupBrainstormCompletionHandler(
 
         // Insert phases
         const insertPhase = db.prepare(
-          "INSERT INTO phases (plan_id, step_number, title, status, complexity, commit_message, tasks, files, order_index) VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?)",
+          "INSERT INTO phases (plan_id, step_number, title, status, complexity, commit_message, prompt, order_index) VALUES (?, ?, ?, 'pending', ?, ?, ?, ?)",
         );
 
         for (let i = 0; i < parsed.phases.length; i++) {
@@ -204,8 +204,7 @@ function setupBrainstormCompletionHandler(
             phase.title,
             phase.complexity,
             phase.commitMessage,
-            JSON.stringify(phase.tasks),
-            JSON.stringify(phase.files),
+            phase.prompt,
             i,
           );
         }
