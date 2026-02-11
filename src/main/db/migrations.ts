@@ -61,9 +61,9 @@ export function runMigrations(db: Database.Database): void {
     )
   `);
 
-  const currentVersion = db
-    .prepare("SELECT MAX(version) as version FROM migrations")
-    .get() as { version: number | null };
+  const currentVersion = db.prepare("SELECT MAX(version) as version FROM migrations").get() as {
+    version: number | null;
+  };
 
   const appliedVersion = currentVersion?.version ?? 0;
 
@@ -72,9 +72,10 @@ export function runMigrations(db: Database.Database): void {
   for (const migration of pending) {
     db.transaction(() => {
       migration.up(db);
-      db.prepare(
-        "INSERT INTO migrations (version, description) VALUES (?, ?)"
-      ).run(migration.version, migration.description);
+      db.prepare("INSERT INTO migrations (version, description) VALUES (?, ?)").run(
+        migration.version,
+        migration.description,
+      );
     })();
   }
 }

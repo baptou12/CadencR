@@ -21,11 +21,9 @@ export const projectsRouter = router({
       return { id: Number(result.lastInsertRowid) };
     }),
 
-  delete: publicProcedure
-    .input(z.object({ id: z.number() }))
-    .mutation(({ input }) => {
-      const db = getDatabase();
-      db.prepare("DELETE FROM projects WHERE id = ?").run(input.id);
-      return { success: true };
-    }),
+  delete: publicProcedure.input(z.object({ id: z.number() })).mutation(({ input }) => {
+    const db = getDatabase();
+    db.prepare("DELETE FROM projects WHERE id = ?").run(input.id);
+    return { success: true };
+  }),
 });

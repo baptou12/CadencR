@@ -26,10 +26,10 @@ A desktop application that provides a fully-fledged UI for Claude Code, replacin
 
 ## Tech Stack
 
-| Layer | Technology |
-|-------|-----------|
-| Desktop shell | Electron |
-| UI framework | React |
-| Styling | Tailwind CSS + shadcn/ui |
-| AI backbone | Claude Code (CLI / SDK) |
+| Layer         | Technology                  |
+| ------------- | --------------------------- |
+| Desktop shell | Electron                    |
+| UI framework  | React                       |
+| Styling       | Tailwind CSS + shadcn/ui    |
+| AI backbone   | Claude Code (CLI / SDK)     |
 | Local storage | SQLite (via better-sqlite3) |

@@ -16,11 +16,13 @@ ProductDevR is an Electron desktop app that provides a UI for Claude Code. It ma
 ## Architecture
 
 **Electron app with three Vite build targets** configured in `forge.config.ts`:
+
 - **Main process** (`src/main.ts`) — Electron main, creates BrowserWindow, sets up tRPC IPC handler
 - **Preload** (`src/preload.ts`) — Electron preload script
 - **Renderer** (`src/renderer/`) — React UI
 
 **IPC layer uses tRPC v10 via `electron-trpc`:**
+
 - Main process exposes `appRouter` (`src/main/trpc/router.ts`) with sub-routers: `settings`, `projects`, `features`
 - Renderer consumes via `@trpc/react-query` + `@tanstack/react-query` v4 (`src/renderer/trpc.ts`)
 - Must stay on tRPC v10 and React Query v4 for `electron-trpc` compatibility

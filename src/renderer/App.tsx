@@ -10,7 +10,7 @@ export default function App() {
   const [trpcClient] = useState(() =>
     trpc.createClient({
       links: [ipcLink()],
-    })
+    }),
   );
 
   return (

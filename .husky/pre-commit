@@ -1,0 +1,2 @@
+pnpm tsc --noEmit
+pnpm run lint

@@ -1,12 +1,14 @@
 # Plan: Electron + React Project Scaffold
 
 ## Context
+
 - Greenfield project — only `GOAL.md` exists, no source code yet
 - ProductDevR is a desktop app providing a UI for Claude Code
 - Tech stack: Electron Forge + Vite, React, TypeScript (strict), Tailwind CSS, shadcn/ui, TanStack Router (hash history), electron-trpc, better-sqlite3
 - Package manager: pnpm
 
 ## Clarifications
+
 - **Build toolchain**: Electron Forge with Vite plugin (`@electron-forge/plugin-vite`)
 - **Package manager**: pnpm
 - **TypeScript**: Strict mode
@@ -17,20 +19,20 @@
 
 ## Completion Conditions
 
-| Condition | Validation Command | Expected Outcome |
-|-----------|-------------------|------------------|
-| Build passes | `pnpm run make` | Exit code 0, produces output in `out/` |
-| TypeScript compiles | `pnpm exec tsc --noEmit` | No errors |
-| App starts | `pnpm start` | Electron window opens without crash |
-| Router works | Manual verification | Two pages visible and navigable |
+| Condition           | Validation Command       | Expected Outcome                       |
+| ------------------- | ------------------------ | -------------------------------------- |
+| Build passes        | `pnpm run make`          | Exit code 0, produces output in `out/` |
+| TypeScript compiles | `pnpm exec tsc --noEmit` | No errors                              |
+| App starts          | `pnpm start`             | Electron window opens without crash    |
+| Router works        | Manual verification      | Two pages visible and navigable        |
 
 ## Execution Steps
 
-| Step | Phases | Description |
-|------|--------|-------------|
-| 1    | 1      | Scaffold Electron Forge project with Vite + TS template |
-| 2    | 2, 3   | React + Tailwind/shadcn setup and TanStack Router are independent |
-| 3    | 4      | electron-trpc depends on React being set up in renderer |
+| Step | Phases | Description                                                         |
+| ---- | ------ | ------------------------------------------------------------------- |
+| 1    | 1      | Scaffold Electron Forge project with Vite + TS template             |
+| 2    | 2, 3   | React + Tailwind/shadcn setup and TanStack Router are independent   |
+| 3    | 4      | electron-trpc depends on React being set up in renderer             |
 | 4    | 5      | SQLite setup depends on trpc being in place for exposing DB via IPC |
 
 > **Parallelism**: Phases within the same step can run in parallel (max 4).
@@ -38,6 +40,7 @@
 ## Phases
 
 ### ✅ Phase 1: Scaffold Electron Forge + Vite + TypeScript project
+
 - **Step**: 1
 - **Complexity**: 3
 - [x] Run `pnpm create electron-app@latest . --template=vite-typescript` (or equivalent manual setup since we're in an existing dir)
@@ -53,6 +56,7 @@
 - **Review**: Approved - Clean Electron Forge + Vite + TypeScript scaffold. All files present with real implementations. Both completion conditions (tsc --noEmit, pnpm run make) pass. Standard patterns used throughout.
 
 ### ✅ Phase 2: Add React, Tailwind CSS, and shadcn/ui
+
 - **Step**: 2
 - **Complexity**: 3
 - [x] Install React deps: `react`, `react-dom`, `@types/react`, `@types/react-dom`, `@vitejs/plugin-react`
@@ -71,6 +75,7 @@
 - **Review**: Approved - Tailwind v4 with @tailwindcss/vite plugin, full shadcn/ui theme with oklch CSS variables, cn() utility, proper @ alias in both vite and tsconfig. Clean and complete.
 
 ### ✅ Phase 3: Set up TanStack Router with two pages
+
 - **Step**: 2
 - **Complexity**: 3
 - [x] Install `@tanstack/react-router` and `@tanstack/router-vite-plugin`
@@ -90,6 +95,7 @@
 - **Review**: Approved - Hash history correctly configured for Electron file:// protocol. Root layout with sidebar nav, two pages with Links. Route tree auto-generated. RouterProvider properly mounted in App.tsx.
 
 ### ✅ Phase 4: Set up electron-trpc IPC layer
+
 - **Step**: 3
 - **Complexity**: 3
 - [x] Install `electron-trpc`, `@trpc/server`, `@trpc/client`, `@trpc/react-query`, `@tanstack/react-query`, `zod`
@@ -108,6 +114,7 @@
 - **Review**: Approved - Clean electron-trpc setup with proper wiring across main, preload, and renderer. Sample hello procedure with zod validation, ipcLink client, and QueryClientProvider wrapping. All automated completion conditions pass.
 
 ### ✅ Phase 5: Set up SQLite with better-sqlite3
+
 - **Step**: 4
 - **Complexity**: 3
 - [x] Install `better-sqlite3` and `@types/better-sqlite3`
@@ -125,12 +132,13 @@
 
 ## Phase Status Legend
 
-| Emoji | Status |
-|-------|--------|
-| ⬜ | Not started |
-| 🔄 | In progress |
-| ✅ | Completed |
+| Emoji | Status      |
+| ----- | ----------- |
+| ⬜    | Not started |
+| 🔄    | In progress |
+| ✅    | Completed   |
 
 ## Current Status
+
 - **Current Phase**: All phases complete
 - **Progress**: 5/5

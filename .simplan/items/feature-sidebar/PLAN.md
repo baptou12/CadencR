@@ -1,6 +1,7 @@
 # Plan: Feature Sidebar
 
 ## Context
+
 - Electron app with React 19, Tailwind v4, TanStack Router (hash-based, file-based routes)
 - SQLite via better-sqlite3 with migration system (version-based, currently at v1 with settings table)
 - tRPC v10 over electron-trpc IPC for main↔renderer communication
@@ -9,6 +10,7 @@
 - Path alias: `@/*` → `src/renderer/*`
 
 ## Clarifications
+
 - **Sidebar replaces** current nav entirely
 - **Layout**: Flat project list (top ~33% height), feature list below for selected project
 - **Scope**: Both projects and features tables + UI
@@ -20,26 +22,27 @@
 
 ## Completion Conditions
 
-| Condition | Validation Command | Expected Outcome |
-|-----------|-------------------|------------------|
-| Type check | `npx tsc --noEmit` | Exit code 0, no errors |
+| Condition    | Validation Command                     | Expected Outcome            |
+| ------------ | -------------------------------------- | --------------------------- |
+| Type check   | `npx tsc --noEmit`                     | Exit code 0, no errors      |
 | Build passes | `npm run package -- --platform=darwin` | Exit code 0, build succeeds |
 
 ## Execution Steps
 
-| Step | Phases | Description |
-|------|--------|-------------|
-| 1    | 1      | Database migration for projects + features tables |
-| 2    | 2      | tRPC routers for projects and features CRUD |
-| 3    | 3      | Install shadcn/ui components needed for sidebar |
+| Step | Phases | Description                                                        |
+| ---- | ------ | ------------------------------------------------------------------ |
+| 1    | 1      | Database migration for projects + features tables                  |
+| 2    | 2      | tRPC routers for projects and features CRUD                        |
+| 3    | 3      | Install shadcn/ui components needed for sidebar                    |
 | 4    | 4, 5   | Project list component and feature list component (independent UI) |
-| 5    | 6      | Integrate sidebar into root layout, replacing current nav |
+| 5    | 6      | Integrate sidebar into root layout, replacing current nav          |
 
 > **Parallelism**: Phases within the same step can run in parallel (max 4).
 
 ## Phases
 
 ### ✅ Phase 1: Database migration for projects and features
+
 - **Step**: 1
 - **Complexity**: 2
 - [x] Add migration v2: create `projects` table (id INTEGER PK autoincrement, name TEXT NOT NULL, path TEXT NOT NULL, created_at TEXT DEFAULT datetime('now'))
@@ -51,6 +54,7 @@
 - **Validation results**: `npx tsc --noEmit` passed (exit 0). `npm run package -- --platform=darwin` passed (exit 0).
 
 ### ✅ Phase 2: tRPC routers for projects and features
+
 - **Step**: 2
 - **Complexity**: 3
 - [x] Create `src/main/trpc/projects.ts` with CRUD procedures: list, create (name, path), delete (id)
@@ -63,6 +67,7 @@
 - **Validation results**: `npx tsc --noEmit` passed (exit 0). `npm run package -- --platform=darwin` passed (exit 0).
 
 ### ⬜ Phase 3: Install shadcn/ui components
+
 - **Step**: 3
 - **Complexity**: 1
 - [ ] Install shadcn/ui components: button, scroll-area, badge, dialog, input, select, separator
@@ -71,6 +76,7 @@
 - **Bisect note**: N/A — just adding unused component files
 
 ### ⬜ Phase 4: Project list component
+
 - **Step**: 4
 - **Complexity**: 3
 - [ ] Create `src/renderer/components/ProjectList.tsx` — scrollable list of projects with selected state, "Add project" button that opens a dialog (name + folder path inputs)
@@ -82,6 +88,7 @@
 - **Bisect note**: Standalone component, not mounted yet
 
 ### ⬜ Phase 5: Feature list component
+
 - **Step**: 4
 - **Complexity**: 3
 - [ ] Create `src/renderer/components/FeatureList.tsx` — scrollable list of features for a given project_id
@@ -96,6 +103,7 @@
 - **Bisect note**: Standalone component, not mounted yet
 
 ### ⬜ Phase 6: Integrate sidebar into root layout
+
 - **Step**: 5
 - **Complexity**: 3
 - [ ] Create `src/renderer/components/Sidebar.tsx` composing ProjectList (top ~33%) + FeatureList (bottom ~67%) with a separator
@@ -108,12 +116,13 @@
 
 ## Phase Status Legend
 
-| Emoji | Status |
-|-------|--------|
-| ⬜ | Not started |
-| 🔄 | In progress |
-| ✅ | Completed |
+| Emoji | Status      |
+| ----- | ----------- |
+| ⬜    | Not started |
+| 🔄    | In progress |
+| ✅    | Completed   |
 
 ## Current Status
+
 - **Current Phase**: Phase 3
 - **Progress**: 2/6
