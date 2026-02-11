@@ -239,18 +239,20 @@ Key files:
 - **Implementation notes**: Created three components. `AgentBlock` renders 5 block types: text (whitespace-pre-wrap), code (with language header), tool_call (collapsible with formatted JSON args), tool_result (collapsible, red styling for errors), and thinking (collapsible with purple accent). `AgentStream` is a ScrollArea wrapper with auto-scroll via useEffect on blocks.length and animated bounce dots for streaming state. `AgentPanel` is the container with agent type label, status badge (idle/running/complete/error with appropriate icons), and the stream content. Used existing shadcn ScrollArea and Badge components. No external markdown or syntax highlighting libraries -- kept simple with pre/code elements per plan guidance.
 - **Validation results**: Lint passed (0 errors), TypeScript compiled with no errors.
 
-### Phase 7: Dynamic form bottom drawer for AskUserQuestion
+### ✅ Phase 7: Dynamic form bottom drawer for AskUserQuestion
 - **Step**: 6
 - **Complexity**: 3
-- [ ] Create `src/renderer/components/AgentQuestionDrawer.tsx` — bottom drawer that pushes content up
-- [ ] Parse AskUserQuestion tool calls from stream-json events
-- [ ] Render dynamic form: question text, option buttons, multi-select support, free-text "Other" option
-- [ ] On submit, send response back to Claude CLI subprocess via stdin
-- [ ] Handle multiple questions in a single AskUserQuestion call
+- [x] Create `src/renderer/components/AgentQuestionDrawer.tsx` — bottom drawer that pushes content up
+- [x] Parse AskUserQuestion tool calls from stream-json events
+- [x] Render dynamic form: question text, option buttons, multi-select support, free-text "Other" option
+- [x] On submit, send response back to Claude CLI subprocess via stdin
+- [x] Handle multiple questions in a single AskUserQuestion call
 - **Files**: `src/renderer/components/AgentQuestionDrawer.tsx`, `src/renderer/components/AgentPanel.tsx`
 - **Commit message**: `feat: add dynamic form drawer for agent questions`
 - **Bisect note**: Extends AgentPanel, new component
 - **Informed by**: Q11, Q12 (answer 2)
+- **Implementation notes**: Created `AgentQuestionDrawer` component with: multi-question navigation (progress indicator), option buttons with single/multi-select support, "Other..." free-text toggle with Input field, Enter-to-submit on free text, and formatted response output combining all answers. Added `parseAskUserQuestions` utility function that handles both single question `{question, options}` and multiple questions `{questions: [...]}` formats from tool input. Added `sendSubprocessInput` to subprocess-manager.ts for writing to stdin. Added `agents.sendInput` tRPC procedure. Updated `AgentPanel` with `pendingQuestions` and `onQuestionResponse` props, rendering the drawer at the bottom of the panel to push content up.
+- **Validation results**: Lint passed (0 errors), TypeScript compiled with no errors.
 
 ### Phase 8: Multi-agent grid layout with focus mode
 - **Step**: 7
@@ -409,8 +411,8 @@ Key files:
 - **Informed by**: Q17
 
 ## Current Status
-- **Current Phase**: Phase 7
-- **Progress**: 6/19
+- **Current Phase**: Phase 8
+- **Progress**: 7/19
 
 ## Deferred Items
 - Keyboard shortcuts / command palette

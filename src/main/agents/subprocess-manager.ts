@@ -175,6 +175,18 @@ export function cleanupSubprocesses(): void {
 }
 
 /**
+ * Send input to a running subprocess via stdin.
+ */
+export function sendSubprocessInput(id: string, input: string): boolean {
+  const managed = activeProcesses.get(id);
+  if (!managed || managed.status !== "running" || !managed.process.stdin) {
+    return false;
+  }
+  managed.process.stdin.write(input + "\n");
+  return true;
+}
+
+/**
  * Check if any subprocesses are currently running.
  */
 export function hasRunningSubprocesses(): boolean {

@@ -9,6 +9,7 @@ import {
   startSubprocess,
   killSubprocess,
   listSubprocesses,
+  sendSubprocessInput,
 } from "../agents/subprocess-manager";
 import { bridgeSubprocessToRenderer } from "../agents/ipc-bridge";
 import type { AgentType } from "../agents/types";
@@ -131,6 +132,14 @@ const agentsRouter = router({
         agentType: managed.agentType,
         status: managed.status,
       };
+    }),
+
+  /** Send input to a running agent subprocess via stdin */
+  sendInput: publicProcedure
+    .input(z.object({ id: z.string(), text: z.string() }))
+    .mutation(({ input }) => {
+      const sent = sendSubprocessInput(input.id, input.text);
+      return { success: sent };
     }),
 
   /** List all active agent subprocesses */

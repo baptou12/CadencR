@@ -2,8 +2,10 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { Loader2Icon, CheckCircleIcon, XCircleIcon } from "lucide-react";
 import { AgentStream } from "./AgentStream";
+import { AgentQuestionDrawer } from "./AgentQuestionDrawer";
 import type { AgentBlockData } from "./AgentBlock";
 import type { AgentType } from "../../main/agents/types";
+import type { AgentQuestion } from "./AgentQuestionDrawer";
 
 export type AgentStatus = "idle" | "running" | "complete" | "error";
 
@@ -12,6 +14,10 @@ interface AgentPanelProps {
   status: AgentStatus;
   blocks: AgentBlockData[];
   className?: string;
+  /** Active questions from AskUserQuestion tool calls */
+  pendingQuestions?: AgentQuestion[];
+  /** Called when the user submits a response to questions */
+  onQuestionResponse?: (response: string) => void;
 }
 
 const AGENT_LABELS: Record<AgentType, string> = {
@@ -44,7 +50,14 @@ const STATUS_BADGE: Record<
   },
 };
 
-export function AgentPanel({ agentType, status, blocks, className }: AgentPanelProps) {
+export function AgentPanel({
+  agentType,
+  status,
+  blocks,
+  className,
+  pendingQuestions,
+  onQuestionResponse,
+}: AgentPanelProps) {
   const badge = STATUS_BADGE[status];
 
   return (
@@ -71,6 +84,13 @@ export function AgentPanel({ agentType, status, blocks, className }: AgentPanelP
       ) : (
         <AgentStream blocks={blocks} isStreaming={status === "running"} />
       )}
+
+      {/* Question drawer — pushes content up from bottom */}
+      <AgentQuestionDrawer
+        questions={pendingQuestions ?? []}
+        open={!!pendingQuestions && pendingQuestions.length > 0}
+        onSubmit={onQuestionResponse ?? (() => {})}
+      />
     </div>
   );
 }
