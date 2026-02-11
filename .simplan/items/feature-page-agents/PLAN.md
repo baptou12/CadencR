@@ -269,19 +269,21 @@ Key files:
 - **Implementation notes**: Created AgentGrid component with CSS grid layout. Uses `getGridClass` helper to determine grid columns/rows based on agent count and focus state. Focus mode uses useState to track focused index; when focused, non-focused agents are filtered out with `return null` and grid switches to 1x1. Each panel gets a maximize/minimize button (positioned in the header area) that toggles focus. For 5+ agents, the grid uses 3 columns with `auto-rows-fr` and `overflow-y-auto` for scrolling. Exported `AgentGridItem` interface for parent components to use.
 - **Validation results**: Lint passed (0 errors), TypeScript compiled with no errors.
 
-### Phase 9: Git worktree management
+### ✅ Phase 9: Git worktree management
 - **Step**: 8
 - **Complexity**: 4
-- [ ] Create `src/main/git/worktree.ts` — create, list, remove git worktrees
-- [ ] On feature creation: create worktree at `../<project-name>-<branch>` with configurable branch prefix
-- [ ] Add tRPC procedures: `git.createWorktree`, `git.removeWorktree`, `git.getWorktreeInfo`
-- [ ] Read project settings for branch prefix (default: `feature/`)
-- [ ] Add "Open in Terminal" button functionality (open worktree path in system terminal)
-- [ ] Update feature creation flow in `features.create` to auto-create worktree
-- **Files**: `src/main/git/worktree.ts`, `src/main/trpc/router.ts`, `src/main/trpc/features.ts`
+- [x] Create `src/main/git/worktree.ts` — create, list, remove git worktrees
+- [x] On feature creation: create worktree at `../<project-name>-<branch>` with configurable branch prefix
+- [x] Add tRPC procedures: `git.createWorktree`, `git.removeWorktree`, `git.getWorktreeInfo`
+- [x] Read project settings for branch prefix (default: `feature/`)
+- [x] Add "Open in Terminal" button functionality (open worktree path in system terminal)
+- [x] Update feature creation flow in `features.create` to auto-create worktree
+- **Files**: `src/main/git/worktree.ts`, `src/main/trpc/router.ts`, `src/main/trpc/features.ts`, `src/renderer/components/FeatureTopBar.tsx`, `src/renderer/routes/projects/$projectId/features/$featureId.tsx`
 - **Commit message**: `feat: add git worktree management for feature isolation`
 - **Bisect note**: Extends feature creation, creates worktree directory
 - **Informed by**: Q5, Q18, Q22
+- **Implementation notes**: Created `src/main/git/worktree.ts` with functions: createWorktree (places at `../<project-name>-<safe-branch>`), listWorktrees (parses `git worktree list --porcelain`), removeWorktree, getWorktreeInfo, buildBranchName (slugifies feature title), and openInTerminal (platform-aware: macOS uses `open -a Terminal`, Windows uses `start cmd`, Linux tries x-terminal-emulator). Added `gitRouter` to router.ts with createWorktree, removeWorktree, getWorktreeInfo, and openInTerminal procedures. All procedures read worktree_path/worktree_branch from feature_settings. Updated features.create to auto-create worktree on feature creation (best-effort, catches errors). Updated FeatureTopBar to accept projectId prop, show worktree branch name, and wire terminal button to git.openInTerminal mutation. Updated feature page route to pass projectId to FeatureTopBar.
+- **Validation results**: Lint passed (0 warnings, 0 errors). TypeScript compiled with no errors.
 
 ### Phase 10: Plan agent implementation
 - **Step**: 9
@@ -413,8 +415,8 @@ Key files:
 - **Informed by**: Q17
 
 ## Current Status
-- **Current Phase**: Phase 9
-- **Progress**: 8/19
+- **Current Phase**: Phase 10
+- **Progress**: 9/19
 
 ## Deferred Items
 - Keyboard shortcuts / command palette

@@ -13,13 +13,20 @@ const STATUS_COLORS: Record<string, string> = {
 
 interface FeatureTopBarProps {
   featureId: number;
+  projectId: number;
 }
 
-export function FeatureTopBar({ featureId }: FeatureTopBarProps) {
+export function FeatureTopBar({ featureId, projectId: _projectId }: FeatureTopBarProps) {
   const { data: feature } = trpc.features.getById.useQuery({ id: featureId });
   const { data: progress } = trpc.features.getPlanProgress.useQuery({
     feature_id: featureId,
   });
+  const { data: featureSettings } = trpc.features.getSettings.useQuery({
+    feature_id: featureId,
+  });
+  const openTerminal = trpc.git.openInTerminal.useMutation();
+
+  const worktreeBranch = featureSettings?.worktree_branch;
 
   if (!feature) return null;
 
@@ -40,13 +47,22 @@ export function FeatureTopBar({ featureId }: FeatureTopBarProps) {
         </span>
       )}
 
-      <span className="text-muted-foreground text-sm">Worktree: --</span>
+      <span className="text-muted-foreground text-sm">
+        Worktree: {worktreeBranch ?? "--"}
+      </span>
 
       <span className="text-muted-foreground text-sm">LOC: --</span>
 
       <div className="flex-1" />
 
-      <Button variant="ghost" size="icon" className="size-7" title="Open terminal">
+      <Button
+        variant="ghost"
+        size="icon"
+        className="size-7"
+        title="Open terminal"
+        disabled={!worktreeBranch}
+        onClick={() => openTerminal.mutate({ featureId })}
+      >
         <TerminalIcon className="size-4" />
       </Button>
 

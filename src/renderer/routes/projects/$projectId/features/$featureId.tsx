@@ -8,12 +8,13 @@ export const Route = createFileRoute(
 });
 
 function FeaturePage() {
-  const { featureId } = Route.useParams();
+  const { featureId, projectId } = Route.useParams();
   const numericFeatureId = Number(featureId);
+  const numericProjectId = Number(projectId);
 
   return (
     <div className="flex h-full flex-col -m-6">
-      <FeatureTopBar featureId={numericFeatureId} />
+      <FeatureTopBar featureId={numericFeatureId} projectId={numericProjectId} />
       <div className="flex-1 p-6">
         <p className="text-muted-foreground">
           Feature workspace will appear here.

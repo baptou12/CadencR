@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { router, publicProcedure } from "./trpc";
 import { getDatabase } from "../db/database";
+import { createWorktree, buildBranchName } from "../git/worktree";
 
 export const FEATURE_STATUSES = ["draft", "planned", "in-progress", "review", "done"] as const;
 export type FeatureStatus = (typeof FEATURE_STATUSES)[number];
@@ -50,7 +51,38 @@ export const featuresRouter = router({
       const result = db
         .prepare("INSERT INTO features (project_id, title) VALUES (?, ?)")
         .run(input.project_id, input.title);
-      return { id: Number(result.lastInsertRowid) };
+      const featureId = Number(result.lastInsertRowid);
+
+      // Auto-create worktree if project has a path
+      const project = db
+        .prepare("SELECT name, path FROM projects WHERE id = ?")
+        .get(input.project_id) as { name: string; path: string } | undefined;
+
+      if (project?.path) {
+        try {
+          const prefixRow = db
+            .prepare(
+              "SELECT value FROM project_settings WHERE project_id = ? AND key = 'branch_prefix'",
+            )
+            .get(input.project_id) as { value: string } | undefined;
+          const prefix = prefixRow?.value ?? "feature/";
+          const branchName = buildBranchName(prefix, input.title);
+          const wt = createWorktree(project.path, branchName, project.name);
+
+          // Store worktree info in feature settings
+          db.prepare(
+            "INSERT INTO feature_settings (feature_id, key, value) VALUES (?, ?, ?) ON CONFLICT(feature_id, key) DO UPDATE SET value = excluded.value",
+          ).run(featureId, "worktree_path", wt.worktreePath);
+          db.prepare(
+            "INSERT INTO feature_settings (feature_id, key, value) VALUES (?, ?, ?) ON CONFLICT(feature_id, key) DO UPDATE SET value = excluded.value",
+          ).run(featureId, "worktree_branch", wt.branch);
+        } catch {
+          // Worktree creation is best-effort — don't fail feature creation
+          console.warn("Failed to create worktree for feature:", input.title);
+        }
+      }
+
+      return { id: featureId };
     }),
 
   updateStatus: publicProcedure

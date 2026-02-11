@@ -13,6 +13,13 @@ import {
 } from "../agents/subprocess-manager";
 import { bridgeSubprocessToRenderer } from "../agents/ipc-bridge";
 import type { AgentType } from "../agents/types";
+import {
+  createWorktree,
+  removeWorktree,
+  getWorktreeInfo,
+  openInTerminal,
+  buildBranchName,
+} from "../git/worktree";
 
 const settingsRouter = router({
   get: publicProcedure.input(z.object({ key: z.string() })).query(({ input }) => {
@@ -153,6 +160,119 @@ const agentsRouter = router({
   }),
 });
 
+const gitRouter = router({
+  /** Create a git worktree for a feature */
+  createWorktree: publicProcedure
+    .input(
+      z.object({
+        projectId: z.number(),
+        featureId: z.number(),
+        featureTitle: z.string(),
+      }),
+    )
+    .mutation(({ input }) => {
+      const db = getDatabase();
+      const project = db
+        .prepare("SELECT id, name, path FROM projects WHERE id = ?")
+        .get(input.projectId) as { id: number; name: string; path: string } | undefined;
+      if (!project) throw new Error(`Project not found: ${input.projectId}`);
+
+      // Get branch prefix from project settings (default: "feature/")
+      const prefixRow = db
+        .prepare(
+          "SELECT value FROM project_settings WHERE project_id = ? AND key = 'branch_prefix'",
+        )
+        .get(input.projectId) as { value: string } | undefined;
+      const prefix = prefixRow?.value ?? "feature/";
+
+      const branchName = buildBranchName(prefix, input.featureTitle);
+      const result = createWorktree(project.path, branchName, project.name);
+
+      // Store worktree path in feature settings
+      db.prepare(
+        "INSERT INTO feature_settings (feature_id, key, value) VALUES (?, ?, ?) ON CONFLICT(feature_id, key) DO UPDATE SET value = excluded.value",
+      ).run(input.featureId, "worktree_path", result.worktreePath);
+      db.prepare(
+        "INSERT INTO feature_settings (feature_id, key, value) VALUES (?, ?, ?) ON CONFLICT(feature_id, key) DO UPDATE SET value = excluded.value",
+      ).run(input.featureId, "worktree_branch", result.branch);
+
+      return result;
+    }),
+
+  /** Remove a git worktree */
+  removeWorktree: publicProcedure
+    .input(
+      z.object({
+        projectId: z.number(),
+        featureId: z.number(),
+      }),
+    )
+    .mutation(({ input }) => {
+      const db = getDatabase();
+      const project = db
+        .prepare("SELECT path FROM projects WHERE id = ?")
+        .get(input.projectId) as { path: string } | undefined;
+      if (!project) throw new Error(`Project not found: ${input.projectId}`);
+
+      const wtRow = db
+        .prepare(
+          "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
+        )
+        .get(input.featureId) as { value: string } | undefined;
+      if (!wtRow) throw new Error("No worktree found for this feature");
+
+      removeWorktree(project.path, wtRow.value);
+
+      // Clean up feature settings
+      db.prepare(
+        "DELETE FROM feature_settings WHERE feature_id = ? AND key IN ('worktree_path', 'worktree_branch')",
+      ).run(input.featureId);
+
+      return { success: true };
+    }),
+
+  /** Get worktree info for a feature */
+  getWorktreeInfo: publicProcedure
+    .input(
+      z.object({
+        projectId: z.number(),
+        featureId: z.number(),
+      }),
+    )
+    .query(({ input }) => {
+      const db = getDatabase();
+      const project = db
+        .prepare("SELECT path FROM projects WHERE id = ?")
+        .get(input.projectId) as { path: string } | undefined;
+      if (!project) return null;
+
+      const wtRow = db
+        .prepare(
+          "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
+        )
+        .get(input.featureId) as { value: string } | undefined;
+      if (!wtRow) return null;
+
+      return getWorktreeInfo(project.path, wtRow.value);
+    }),
+
+  /** Open a worktree path in the system terminal */
+  openInTerminal: publicProcedure
+    .input(z.object({ featureId: z.number() }))
+    .mutation(({ input }) => {
+      const db = getDatabase();
+      const wtRow = db
+        .prepare(
+          "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
+        )
+        .get(input.featureId) as { value: string } | undefined;
+      if (!wtRow) throw new Error("No worktree found for this feature");
+
+      openInTerminal(wtRow.value);
+      return { success: true };
+    }),
+});
+
 export const appRouter = router({
   hello: publicProcedure.input(z.object({ name: z.string().optional() })).query(({ input }) => {
     return { greeting: `Hello, ${input.name ?? "world"}!` };
@@ -161,6 +281,7 @@ export const appRouter = router({
   projects: projectsRouter,
   features: featuresRouter,
   agents: agentsRouter,
+  git: gitRouter,
 });
 
 export type AppRouter = typeof appRouter;
