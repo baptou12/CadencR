@@ -332,18 +332,20 @@ Key files:
 - **Implementation notes**: Created `execute-agent.ts` with `startExecuteAgent` function that: (1) updates feature status to "in-progress", (2) creates agent session record, (3) fetches active plan and pending phases, (4) groups phases by step number, (5) executes steps sequentially with phases within each step running in parallel via Promise.allSettled, (6) updates phase status (pending -> running -> completed/error) in DB, (7) auto-commits after each phase if enabled (reads feature-level then project-level `auto_commit` setting). Added `agents.startExecute` tRPC mutation to router.ts following the same cwd resolution pattern as startPlan/startBrainstorm. Updated feature page with execute state (blocks, status), execute event handler, "Start Building" button (shown when feature is planned/in-progress and execute is idle), and an AgentPanel for execute output.
 - **Validation results**: Lint passed (0 warnings, 0 errors). TypeScript compiled with no errors.
 
-### Phase 13: Risk Analysis agent
+### ✅ Phase 13: Risk Analysis agent
 - **Step**: 12
 - **Complexity**: 3
-- [ ] Create `src/main/agents/risk-agent.ts` — system prompt for risk evaluation
-- [ ] Flow: reads plan → explores codebase → generates markdown risk report covering: deployment risks, data impact, dependency risks, verification checklist
-- [ ] Store risk report in `agent_messages` or a dedicated field
-- [ ] Render risk report as formatted markdown in agent panel
-- [ ] Wire "Evaluate Risk" button on feature page
+- [x] Create `src/main/agents/risk-agent.ts` — system prompt for risk evaluation
+- [x] Flow: reads plan → explores codebase → generates markdown risk report covering: deployment risks, data impact, dependency risks, verification checklist
+- [x] Store risk report in `agent_messages` or a dedicated field
+- [x] Render risk report as formatted markdown in agent panel
+- [x] Wire "Evaluate Risk" button on feature page
 - **Files**: `src/main/agents/risk-agent.ts`, `src/renderer/routes/projects/$projectId/features/$featureId.tsx`
 - **Commit message**: `feat: implement Risk Analysis agent with markdown report output`
 - **Bisect note**: New agent, independent of execute agent
 - **Informed by**: Q16
+- **Implementation notes**: Created `risk-agent.ts` following the same pattern as brainstorm-agent. System prompt instructs the agent to read the plan, explore codebase, and generate a structured markdown risk report with sections for deployment risks, data impact, dependency risks, code quality risks, verification checklist, and recommendations. The agent fetches the latest plan's raw_markdown to include as context. On completion, the risk report is stored in `agent_messages` with message_type='risk_report'. Added `agents.startRisk` tRPC mutation to router.ts with the same cwd resolution pattern. Updated feature page with risk state (blocks, status), risk event handler, "Evaluate Risk" outline button alongside "Start Building" (both shown when feature is planned/in-progress), and a risk AgentPanel.
+- **Validation results**: Lint passed (0 warnings, 0 errors). TypeScript compiled with no errors.
 
 ### Phase 14: Review agent
 - **Step**: 13
@@ -421,8 +423,8 @@ Key files:
 - **Informed by**: Q17
 
 ## Current Status
-- **Current Phase**: Phase 13
-- **Progress**: 12/19
+- **Current Phase**: Phase 14
+- **Progress**: 13/19
 
 ## Deferred Items
 - Keyboard shortcuts / command palette

@@ -24,6 +24,7 @@ import {
 import { startPlanAgent } from "../agents/plan-agent";
 import { startBrainstormAgent } from "../agents/brainstorm-agent";
 import { startExecuteAgent } from "../agents/execute-agent";
+import { startRiskAgent } from "../agents/risk-agent";
 
 const settingsRouter = router({
   get: publicProcedure.input(z.object({ key: z.string() })).query(({ input }) => {
@@ -248,6 +249,40 @@ const agentsRouter = router({
       if (!cwd) throw new Error("No working directory found for this feature");
 
       const result = startExecuteAgent({
+        featureId: input.featureId,
+        projectId: input.projectId,
+        cwd,
+      });
+
+      return result;
+    }),
+
+  /** Start the risk analysis agent for a feature */
+  startRisk: publicProcedure
+    .input(
+      z.object({
+        featureId: z.number(),
+        projectId: z.number(),
+      }),
+    )
+    .mutation(({ input }) => {
+      const db = getDatabase();
+
+      // Determine working directory
+      const wtRow = db
+        .prepare(
+          "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
+        )
+        .get(input.featureId) as SettingRow | undefined;
+
+      const project = db
+        .prepare("SELECT path FROM projects WHERE id = ?")
+        .get(input.projectId) as Pick<ProjectRow, "path"> | undefined;
+
+      const cwd = wtRow?.value ?? project?.path;
+      if (!cwd) throw new Error("No working directory found for this feature");
+
+      const result = startRiskAgent({
         featureId: input.featureId,
         projectId: input.projectId,
         cwd,

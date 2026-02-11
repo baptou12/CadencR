@@ -5,7 +5,7 @@ import { AgentPanel, type AgentStatus } from "@/components/AgentPanel";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/trpc";
-import { PlayIcon, Loader2Icon, LightbulbIcon, HammerIcon } from "lucide-react";
+import { PlayIcon, Loader2Icon, LightbulbIcon, HammerIcon, ShieldAlertIcon } from "lucide-react";
 import type { AgentBlockData } from "@/components/AgentBlock";
 import type { AgentQuestion } from "@/components/AgentQuestionDrawer";
 import type { AgentEvent } from "../../../../../main/agents/types";
@@ -46,9 +46,13 @@ function FeaturePage() {
   const [executeBlocks, setExecuteBlocks] = useState<AgentBlockData[]>([]);
   const [executeStatus, setExecuteStatus] = useState<AgentStatus>("idle");
 
+  const [riskBlocks, setRiskBlocks] = useState<AgentBlockData[]>([]);
+  const [riskStatus, setRiskStatus] = useState<AgentStatus>("idle");
+
   const startPlanMutation = trpc.agents.startPlan.useMutation();
   const startBrainstormMutation = trpc.agents.startBrainstorm.useMutation();
   const startExecuteMutation = trpc.agents.startExecute.useMutation();
+  const startRiskMutation = trpc.agents.startRisk.useMutation();
   const sendInputMutation = trpc.agents.sendInput.useMutation();
 
   const handlePlanEvent = useCallback((agentEvent: AgentEvent) => {
@@ -289,6 +293,69 @@ function FeaturePage() {
     }
   }, []);
 
+  const handleRiskEvent = useCallback((agentEvent: AgentEvent) => {
+    const { event } = agentEvent;
+
+    switch (event.type) {
+      case "content_block_start": {
+        if (event.content_block.type === "text") {
+          setRiskBlocks((prev) => [
+            ...prev,
+            makeBlock({ type: "text", content: event.content_block.type === "text" ? event.content_block.text : "" }),
+          ]);
+        } else if (event.content_block.type === "tool_use") {
+          const toolBlock = event.content_block;
+          setRiskBlocks((prev) => [
+            ...prev,
+            makeBlock({
+              type: "tool_call",
+              content: JSON.stringify(toolBlock.input, null, 2),
+              toolName: toolBlock.name,
+              toolArgs: JSON.stringify(toolBlock.input, null, 2),
+            }),
+          ]);
+        }
+        break;
+      }
+      case "content_block_delta": {
+        if (event.delta.type === "text_delta") {
+          const deltaText = event.delta.text;
+          setRiskBlocks((prev) => {
+            if (prev.length === 0) return [makeBlock({ type: "text", content: deltaText })];
+            const last = prev[prev.length - 1];
+            if (last.type === "text") {
+              return [
+                ...prev.slice(0, -1),
+                { ...last, content: last.content + deltaText },
+              ];
+            }
+            return [...prev, makeBlock({ type: "text", content: deltaText })];
+          });
+        }
+        break;
+      }
+      case "tool_result": {
+        setRiskBlocks((prev) => [
+          ...prev,
+          makeBlock({
+            type: "tool_result",
+            content: event.content,
+            isError: event.is_error ?? false,
+          }),
+        ]);
+        break;
+      }
+      case "error": {
+        setRiskStatus("error");
+        setRiskBlocks((prev) => [
+          ...prev,
+          makeBlock({ type: "text", content: `Error: ${event.error.message}` }),
+        ]);
+        break;
+      }
+    }
+  }, []);
+
   // Listen for agent events via IPC bridge
   useEffect(() => {
     const api = (window as unknown as { api?: {
@@ -310,13 +377,15 @@ function FeaturePage() {
         handleBrainstormEvent(agentEvent);
       } else if (agentEvent.agentType === "execute") {
         handleExecuteEvent(agentEvent);
+      } else if (agentEvent.agentType === "risk") {
+        handleRiskEvent(agentEvent);
       }
     });
 
     return () => {
       api.offAgentEvent(listener as undefined);
     };
-  }, [handlePlanEvent, handleBrainstormEvent, handleExecuteEvent]);
+  }, [handlePlanEvent, handleBrainstormEvent, handleExecuteEvent, handleRiskEvent]);
 
   const handleStartPlanning = async () => {
     if (!description.trim()) return;
@@ -404,6 +473,26 @@ function FeaturePage() {
     }
   };
 
+  const handleStartRisk = async () => {
+    setRiskStatus("running");
+    setRiskBlocks([]);
+
+    try {
+      await startRiskMutation.mutateAsync({
+        featureId: numericFeatureId,
+        projectId: numericProjectId,
+      });
+    } catch (err) {
+      setRiskStatus("error");
+      setRiskBlocks([
+        makeBlock({
+          type: "text",
+          content: `Failed to start risk agent: ${err instanceof Error ? err.message : String(err)}`,
+        }),
+      ]);
+    }
+  };
+
   const isDraft = !feature || feature.status === "draft";
   const isPlanned = feature?.status === "planned";
   const isInProgress = feature?.status === "in-progress";
@@ -412,6 +501,8 @@ function FeaturePage() {
   const showBrainstormAgent = brainstormStatus !== "idle" || brainstormBlocks.length > 0;
   const showBuildButton = (isPlanned || isInProgress) && executeStatus === "idle";
   const showExecuteAgent = executeStatus !== "idle" || executeBlocks.length > 0;
+  const showRiskButton = (isPlanned || isInProgress) && riskStatus === "idle";
+  const showRiskAgent = riskStatus !== "idle" || riskBlocks.length > 0;
 
   return (
     <div className="flex h-full flex-col -m-6">
@@ -488,26 +579,44 @@ function FeaturePage() {
           </div>
         )}
 
-        {showBuildButton && !showPlanAgent && !showBrainstormAgent && (
+        {(showBuildButton || showRiskButton) && !showPlanAgent && !showBrainstormAgent && !showExecuteAgent && !showRiskAgent && (
           <div className="mx-auto max-w-2xl space-y-4">
             <div>
               <h2 className="text-lg font-semibold">Ready to Build</h2>
               <p className="text-sm text-muted-foreground">
-                The plan is ready. Start building to execute all phases in order.
-                Phases within the same step will run in parallel.
+                The plan is ready. Start building to execute all phases in order,
+                or evaluate risks before proceeding.
               </p>
             </div>
-            <Button
-              onClick={handleStartBuilding}
-              disabled={startExecuteMutation.isLoading}
-            >
-              {startExecuteMutation.isLoading ? (
-                <Loader2Icon className="mr-2 size-4 animate-spin" />
-              ) : (
-                <HammerIcon className="mr-2 size-4" />
+            <div className="flex gap-2">
+              {showBuildButton && (
+                <Button
+                  onClick={handleStartBuilding}
+                  disabled={startExecuteMutation.isLoading}
+                >
+                  {startExecuteMutation.isLoading ? (
+                    <Loader2Icon className="mr-2 size-4 animate-spin" />
+                  ) : (
+                    <HammerIcon className="mr-2 size-4" />
+                  )}
+                  Start Building
+                </Button>
               )}
-              Start Building
-            </Button>
+              {showRiskButton && (
+                <Button
+                  variant="outline"
+                  onClick={handleStartRisk}
+                  disabled={startRiskMutation.isLoading}
+                >
+                  {startRiskMutation.isLoading ? (
+                    <Loader2Icon className="mr-2 size-4 animate-spin" />
+                  ) : (
+                    <ShieldAlertIcon className="mr-2 size-4" />
+                  )}
+                  Evaluate Risk
+                </Button>
+              )}
+            </div>
           </div>
         )}
 
@@ -522,7 +631,18 @@ function FeaturePage() {
           </div>
         )}
 
-        {!showPlanInput && !showPlanAgent && !showBrainstormAgent && !showBuildButton && !showExecuteAgent && feature && feature.status !== "draft" && (
+        {showRiskAgent && (
+          <div className="h-full">
+            <AgentPanel
+              agentType="risk"
+              status={riskStatus}
+              blocks={riskBlocks}
+              className="h-full"
+            />
+          </div>
+        )}
+
+        {!showPlanInput && !showPlanAgent && !showBrainstormAgent && !showBuildButton && !showRiskButton && !showExecuteAgent && !showRiskAgent && feature && feature.status !== "draft" && (
           <p className="text-muted-foreground">
             Feature is in &quot;{feature.status}&quot; state.
           </p>
