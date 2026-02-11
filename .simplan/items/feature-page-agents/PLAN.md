@@ -209,18 +209,20 @@ Key files:
 - **Implementation notes**: Created `cli-discovery.ts` with 4-tier discovery: user settings DB > shell PATH (via `shell -ilc 'which claude'`) > process PATH > common locations (homebrew, local bin, npm, yarn). The shell sourcing handles macOS GUI PATH issue. Created `subprocess-manager.ts` with start/kill/list/cleanup/killAll functions, 10 max concurrent limit, and `--output-format stream-json` flag. Added `getClaudeCliPath` and `setClaudeCliPath` procedures to the existing settingsRouter in router.ts (not a separate settings.ts file since the settings router was already inline). The setClaudeCliPath mutation validates the file exists before saving.
 - **Validation results**: Lint passed (0 errors), TypeScript compiled with no errors.
 
-### Phase 5: Agent streaming IPC bridge
+### ✅ Phase 5: Agent streaming IPC bridge
 - **Step**: 4
 - **Complexity**: 4
-- [ ] Create `src/main/agents/ipc-bridge.ts` — relay subprocess stream-json events to renderer via `webContents.send()`
-- [ ] Add preload API: `window.api.onAgentEvent(callback)`, `window.api.offAgentEvent()`
-- [ ] Define TypeScript types for all stream-json event types (text, tool_call, tool_result, error, etc.)
-- [ ] Create tRPC procedures: `agents.start`, `agents.stop`, `agents.resume`, `agents.list`
-- [ ] Parse stream-json lines from subprocess stdout, emit typed events
+- [x] Create `src/main/agents/ipc-bridge.ts` — relay subprocess stream-json events to renderer via `webContents.send()`
+- [x] Add preload API: `window.api.onAgentEvent(callback)`, `window.api.offAgentEvent()`
+- [x] Define TypeScript types for all stream-json event types (text, tool_call, tool_result, error, etc.)
+- [x] Create tRPC procedures: `agents.start`, `agents.stop`, `agents.resume`, `agents.list`
+- [x] Parse stream-json lines from subprocess stdout, emit typed events
 - **Files**: `src/main/agents/ipc-bridge.ts`, `src/preload.ts`, `src/main/trpc/router.ts`, `src/main/agents/types.ts`
 - **Commit message**: `feat: add agent IPC streaming bridge between main and renderer`
 - **Bisect note**: Extends preload API, new tRPC router — no breaking changes
 - **Informed by**: Q6, Q19
+- **Implementation notes**: Created `types.ts` with full StreamEvent union type covering message_start, content_block_start/delta/stop, message_delta, message_stop, tool_result, error, and system events. Created `ipc-bridge.ts` with line-buffered stream-json parsing that sends AgentEvent objects to all renderer windows via `webContents.send()`. Also bridges stderr as error events and flushes buffer on stream end. Updated `preload.ts` to expose `window.api.onAgentEvent` and `window.api.offAgentEvent` via `contextBridge.exposeInMainWorld`. Added `window.api` type declaration to `env.d.ts`. Created `agentsRouter` in `router.ts` with `start`, `stop`, `resume`, and `list` procedures. The `start` and `resume` mutations call `bridgeSubprocessToRenderer` after spawning to wire up the IPC relay.
+- **Validation results**: Lint passed (0 errors), TypeScript compiled with no errors.
 
 ### Phase 6: Agent output UI components
 - **Step**: 5
@@ -405,8 +407,8 @@ Key files:
 - **Informed by**: Q17
 
 ## Current Status
-- **Current Phase**: Phase 5
-- **Progress**: 4/19
+- **Current Phase**: Phase 6
+- **Progress**: 5/19
 
 ## Deferred Items
 - Keyboard shortcuts / command palette
