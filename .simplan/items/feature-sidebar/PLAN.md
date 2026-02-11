@@ -66,14 +66,16 @@
 - **Implementation notes**: Created projectsRouter (list, create, delete) and featuresRouter (listByProject with optional status filter, create, updateStatus, delete). Used zod enum for status validation matching the 5 statuses (draft, planned, in-progress, review, done). Both routers added as sub-routers to appRouter.
 - **Validation results**: `npx tsc --noEmit` passed (exit 0). `npm run package -- --platform=darwin` passed (exit 0).
 
-### ⬜ Phase 3: Install shadcn/ui components
+### ✅ Phase 3: Install shadcn/ui components
 
 - **Step**: 3
 - **Complexity**: 1
-- [ ] Install shadcn/ui components: button, scroll-area, badge, dialog, input, select, separator
+- [x] Install shadcn/ui components: button, scroll-area, badge, dialog, input, select, separator
 - **Files**: `src/renderer/components/ui/*.tsx` (generated), `package.json`
 - **Commit message**: `chore: install shadcn/ui components for sidebar`
 - **Bisect note**: N/A — just adding unused component files
+- **Implementation notes**: Ran `npx shadcn@latest add button scroll-area badge dialog input select separator`. All 7 component files created under `src/renderer/components/ui/`. Dependencies installed automatically by shadcn CLI.
+- **Validation results**: `npx tsc --noEmit` passed (exit 0). `pnpm run package -- --platform=darwin` passed (exit 0).
 
 ### ⬜ Phase 4: Project list component
 
@@ -124,5 +126,5 @@
 
 ## Current Status
 
-- **Current Phase**: Phase 3
-- **Progress**: 2/6
+- **Current Phase**: Phase 4
+- **Progress**: 3/6
