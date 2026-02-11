@@ -406,17 +406,19 @@ Key files:
 - **Implementation notes**: Updated `ipc-bridge.ts` to accept optional `sessionDbId` parameter. When provided, the bridge: (1) captures Claude session IDs from `system` events and stores them in `agent_sessions.claude_session_id`, (2) persists content-bearing stream events (text, tool_call, tool_result, error) to `agent_messages` table. Updated all 5 agent files (plan, brainstorm, execute, risk, review) to pass `sessionDbId` to `bridgeSubprocessToRenderer`. Added 3 new tRPC procedures: `agents.getHistory` (returns messages for a session), `agents.getSessions` (returns sessions for a feature with optional status filter), `agents.getIncompleteSessions` (returns running sessions with Claude session IDs for resume). Updated `AgentPanel` with optional `resumable` and `onResume` props showing a Resume button. Updated the feature page to: query incomplete sessions on mount, show resume button on panels with resumable sessions, load plan history from completed sessions on mount (merging text blocks for clean display).
 - **Validation results**: Lint passed (0 warnings, 0 errors). TypeScript compiled with no errors.
 
-### Phase 18: Close warning and subprocess cleanup
+### ✅ Phase 18: Close warning and subprocess cleanup
 - **Step**: 17
 - **Complexity**: 2
-- [ ] Add Electron `before-quit` handler: check for running agent subprocesses
-- [ ] If agents running: show dialog warning user, options: "Wait" or "Quit Anyway"
-- [ ] On quit: gracefully kill all subprocesses, save session state
-- [ ] On window close (not quit): same behavior
+- [x] Add Electron `before-quit` handler: check for running agent subprocesses
+- [x] If agents running: show dialog warning user, options: "Wait" or "Quit Anyway"
+- [x] On quit: gracefully kill all subprocesses, save session state
+- [x] On window close (not quit): same behavior
 - **Files**: `src/main.ts`, `src/main/agents/subprocess-manager.ts`
 - **Commit message**: `feat: add close warning and graceful subprocess cleanup`
 - **Bisect note**: Adds quit handler, no impact if no agents running
 - **Informed by**: Q10
+- **Implementation notes**: Added `saveAllSessionStates` (marks running DB sessions as 'interrupted') and `gracefulShutdown` (saves state + kills all) to subprocess-manager.ts. In main.ts, added window `close` event handler and updated `before-quit` handler -- both check `hasRunningSubprocesses()` and show a dialog with "Wait" / "Quit Anyway" options. Uses `isQuitting` flag to prevent recursive dialog prompts. On "Quit Anyway", calls `gracefulShutdown()` then proceeds with close/quit. If no agents running, shutdown proceeds silently.
+- **Validation results**: Lint passed (0 warnings, 0 errors). TypeScript compiled with no errors.
 
 ### Phase 19: Sidebar navigation integration
 - **Step**: 18
@@ -431,8 +433,8 @@ Key files:
 - **Informed by**: Q17
 
 ## Current Status
-- **Current Phase**: Phase 18
-- **Progress**: 17/19
+- **Current Phase**: Phase 19
+- **Progress**: 18/19
 
 ## Deferred Items
 - Keyboard shortcuts / command palette

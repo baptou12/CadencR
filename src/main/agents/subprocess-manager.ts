@@ -1,6 +1,7 @@
 import { ChildProcess, spawn } from "node:child_process";
 import os from "node:os";
 import { discoverClaudeCli, getResolvedPath } from "./cli-discovery";
+import { getDatabase } from "../db/database";
 
 const MAX_CONCURRENT = 10;
 
@@ -196,4 +197,27 @@ export function hasRunningSubprocesses(): boolean {
     }
   }
   return false;
+}
+
+/**
+ * Mark all running agent sessions as 'interrupted' in the database.
+ * Called during app shutdown to preserve session state for resume.
+ */
+export function saveAllSessionStates(): void {
+  try {
+    const db = getDatabase();
+    db.prepare(
+      "UPDATE agent_sessions SET status = 'interrupted', ended_at = datetime('now') WHERE status = 'running'",
+    ).run();
+  } catch {
+    // Best-effort: database may already be closed
+  }
+}
+
+/**
+ * Gracefully shut down all subprocesses and save session state.
+ */
+export function gracefulShutdown(): void {
+  saveAllSessionStates();
+  killAllSubprocesses();
 }

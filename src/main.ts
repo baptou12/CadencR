@@ -1,8 +1,9 @@
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, dialog } from "electron";
 import path from "node:path";
 import { createIPCHandler } from "electron-trpc/main";
 import { appRouter } from "./main/trpc/router";
 import { closeDatabase } from "./main/db/database";
+import { hasRunningSubprocesses, gracefulShutdown } from "./main/agents/subprocess-manager";
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (require("electron-squirrel-startup")) {
@@ -33,7 +34,31 @@ const createWindow = () => {
   }
 
   createIPCHandler({ router: appRouter, windows: [mainWindow] });
+
+  mainWindow.on("close", (e) => {
+    if (!isQuitting && hasRunningSubprocesses()) {
+      e.preventDefault();
+      dialog
+        .showMessageBox(mainWindow, {
+          type: "warning",
+          title: "Agents Running",
+          message: "AI agents are still running. Closing now will interrupt them.",
+          detail: "Agent sessions can be resumed when you reopen the app.",
+          buttons: ["Wait", "Quit Anyway"],
+          defaultId: 0,
+          cancelId: 0,
+        })
+        .then(({ response }) => {
+          if (response === 1) {
+            gracefulShutdown();
+            mainWindow.destroy();
+          }
+        });
+    }
+  });
 };
+
+let isQuitting = false;
 
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
@@ -46,8 +71,34 @@ app.on("window-all-closed", () => {
   }
 });
 
-app.on("before-quit", () => {
-  closeDatabase();
+app.on("before-quit", (e) => {
+  if (!isQuitting && hasRunningSubprocesses()) {
+    e.preventDefault();
+    const win = BrowserWindow.getAllWindows()[0];
+    if (win) {
+      dialog
+        .showMessageBox(win, {
+          type: "warning",
+          title: "Agents Running",
+          message: "AI agents are still running. Quitting now will interrupt them.",
+          detail: "Agent sessions can be resumed when you reopen the app.",
+          buttons: ["Wait", "Quit Anyway"],
+          defaultId: 0,
+          cancelId: 0,
+        })
+        .then(({ response }) => {
+          if (response === 1) {
+            isQuitting = true;
+            gracefulShutdown();
+            closeDatabase();
+            app.quit();
+          }
+        });
+    }
+  } else {
+    gracefulShutdown();
+    closeDatabase();
+  }
 });
 
 app.on("activate", () => {
