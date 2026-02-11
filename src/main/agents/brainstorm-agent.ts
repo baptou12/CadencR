@@ -131,7 +131,7 @@ Start by thoroughly exploring the codebase to understand the full context. Resea
   });
 
   // Bridge to renderer
-  bridgeSubprocessToRenderer(managed, "brainstorm");
+  bridgeSubprocessToRenderer(managed, "brainstorm", sessionDbId);
 
   // Set up completion handler to parse plan output
   setupBrainstormCompletionHandler(managed, options.featureId, sessionDbId, planId);

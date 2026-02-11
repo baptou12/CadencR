@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { FeatureTopBar } from "@/components/FeatureTopBar";
 import { AgentPanel } from "@/components/AgentPanel";
@@ -24,6 +24,8 @@ import {
   useFeatureState,
   type FeatureStatus,
 } from "@/hooks/useFeatureState";
+import type { AgentBlockData } from "@/components/AgentBlock";
+import type { AgentType } from "../../../../../main/agents/types";
 
 export const Route = createFileRoute(
   "/projects/$projectId/features/$featureId",
@@ -49,6 +51,145 @@ function FeaturePage() {
   const execute = useAgentState();
   const risk = useAgentState();
   const review = useAgentState();
+
+  // Query for incomplete sessions that can be resumed
+  const incompleteQuery = trpc.agents.getIncompleteSessions.useQuery({
+    featureId: numericFeatureId,
+  });
+  const resumeMutation = trpc.agents.resume.useMutation();
+
+  // Load previous session history for completed agents on mount
+  const sessionsQuery = trpc.agents.getSessions.useQuery({
+    featureId: numericFeatureId,
+  });
+
+  // Convert stored messages to blocks for display
+  const messageToBlock = useCallback(
+    (msg: { content: string; message_type: string; tool_name: string | null }): AgentBlockData | null => {
+      const id = `hist-${Math.random().toString(36).slice(2)}`;
+      switch (msg.message_type) {
+        case "text":
+          return { id, type: "text", content: msg.content };
+        case "text_delta":
+          return null; // Skip deltas in history replay (they were appended to text blocks)
+        case "tool_call":
+          return {
+            id,
+            type: "tool_call",
+            content: msg.content,
+            toolName: msg.tool_name ?? "tool",
+            toolArgs: msg.content,
+          };
+        case "tool_result":
+        case "tool_error":
+          return {
+            id,
+            type: "tool_result",
+            content: msg.content,
+            isError: msg.message_type === "tool_error",
+          };
+        case "error":
+          return { id, type: "text", content: `Error: ${msg.content}` };
+        default:
+          return null;
+      }
+    },
+    [],
+  );
+
+  // Resumable sessions map: agentType -> claudeSessionId
+  const resumableSessions = useMemo(() => {
+    if (!incompleteQuery.data) return new Map<string, string>();
+    const map = new Map<string, string>();
+    for (const s of incompleteQuery.data) {
+      if (!map.has(s.agent_type)) {
+        map.set(s.agent_type, s.claude_session_id!);
+      }
+    }
+    return map;
+  }, [incompleteQuery.data]);
+
+  // Find last completed session per agent type for history display
+  const lastSessionIds = useMemo(() => {
+    if (!sessionsQuery.data) return new Map<string, number>();
+    const map = new Map<string, number>();
+    for (const s of sessionsQuery.data) {
+      if ((s.status === "completed" || s.status === "error") && !map.has(s.agent_type)) {
+        map.set(s.agent_type, s.id);
+      }
+    }
+    return map;
+  }, [sessionsQuery.data]);
+
+  // Load history for the most recent plan session (as an example of showing previous conversation)
+  const latestPlanSessionId = lastSessionIds.get("plan");
+  const planHistoryQuery = trpc.agents.getHistory.useQuery(
+    { sessionId: latestPlanSessionId ?? 0 },
+    { enabled: !!latestPlanSessionId && plan.status === "idle" && plan.blocks.length === 0 },
+  );
+
+  // Populate plan blocks from history on mount
+  useEffect(() => {
+    if (!planHistoryQuery.data || planHistoryQuery.data.length === 0) return;
+    if (plan.status !== "idle" || plan.blocks.length > 0) return;
+
+    const blocks: AgentBlockData[] = [];
+    for (const msg of planHistoryQuery.data) {
+      const block = messageToBlock(msg);
+      if (block) blocks.push(block);
+    }
+    if (blocks.length > 0) {
+      // Merge consecutive text blocks
+      const merged: AgentBlockData[] = [];
+      for (const b of blocks) {
+        const last = merged[merged.length - 1];
+        if (b.type === "text" && last?.type === "text") {
+          merged[merged.length - 1] = { ...last, content: last.content + b.content };
+        } else {
+          merged.push(b);
+        }
+      }
+      for (const b of merged) {
+        plan.appendBlock(b);
+      }
+      plan.setStatus("complete");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [planHistoryQuery.data]);
+
+  const handleResume = useCallback(
+    async (agentType: AgentType) => {
+      const claudeSessionId = resumableSessions.get(agentType);
+      if (!claudeSessionId) return;
+
+      const agentStateMap: Record<string, ReturnType<typeof useAgentState>> = {
+        plan,
+        brainstorm,
+        execute,
+        risk,
+        review,
+      };
+      const state = agentStateMap[agentType];
+      state.start();
+
+      try {
+        const result = await resumeMutation.mutateAsync({
+          cwd: ".",
+          agentType,
+          sessionId: claudeSessionId,
+        });
+        state.trackSubprocess(result.id);
+      } catch (err) {
+        state.setStatus("error");
+        state.appendBlock({
+          type: "text",
+          content: `Failed to resume: ${err instanceof Error ? err.message : String(err)}`,
+        });
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [resumableSessions, plan, brainstorm, execute, risk, review, resumeMutation],
+  );
 
   const [reviewComplete, setReviewComplete] = useState(false);
   const [reviewVerdict, setReviewVerdict] = useState<
@@ -343,6 +484,8 @@ function FeaturePage() {
                       : undefined
                   }
                   onQuestionResponse={handleQuestionResponse}
+                  resumable={resumableSessions.has("plan")}
+                  onResume={() => void handleResume("plan")}
                   className="h-full"
                 />
               </div>

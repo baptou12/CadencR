@@ -391,18 +391,20 @@ Key files:
 - **Implementation notes**: Added `getGitStats` function to `worktree.ts` that runs `git diff --stat` and parses the summary line for files changed, insertions, and deletions (falls back to `--cached` for staged-only changes). Added `git.getStats` tRPC query procedure to `router.ts` that looks up the feature's worktree path from feature_settings. Added `features.getProgress` procedure to `features.ts` (similar to existing `getPlanProgress` but kept as separate endpoint per plan). Updated `FeatureTopBar` to use `features.getProgress` with 5s polling and `git.getStats` with 10s polling via `refetchInterval`. LOC display now shows `+N -N` format from real git data.
 - **Validation results**: Lint passed (0 warnings, 0 errors). TypeScript compiled with no errors.
 
-### Phase 17: Session persistence and resume
+### ✅ Phase 17: Session persistence and resume
 - **Step**: 16
 - **Complexity**: 3
-- [ ] On agent start: store Claude session ID in `agent_sessions` table
-- [ ] On agent message: store in `agent_messages` table
-- [ ] Add tRPC procedure `agents.getHistory` — returns messages for a session
-- [ ] On app reopen: check for incomplete sessions, offer resume via `--resume <session-id>`
-- [ ] Show previous agent conversation when returning to a feature page
+- [x] On agent start: store Claude session ID in `agent_sessions` table
+- [x] On agent message: store in `agent_messages` table
+- [x] Add tRPC procedure `agents.getHistory` — returns messages for a session
+- [x] On app reopen: check for incomplete sessions, offer resume via `--resume <session-id>`
+- [x] Show previous agent conversation when returning to a feature page
 - **Files**: `src/main/agents/subprocess-manager.ts`, `src/main/trpc/router.ts`, `src/renderer/components/AgentPanel.tsx`
 - **Commit message**: `feat: add agent session persistence and resume capability`
 - **Bisect note**: Extends existing agent infra with persistence layer
 - **Informed by**: Q10, Q20, Q23
+- **Implementation notes**: Updated `ipc-bridge.ts` to accept optional `sessionDbId` parameter. When provided, the bridge: (1) captures Claude session IDs from `system` events and stores them in `agent_sessions.claude_session_id`, (2) persists content-bearing stream events (text, tool_call, tool_result, error) to `agent_messages` table. Updated all 5 agent files (plan, brainstorm, execute, risk, review) to pass `sessionDbId` to `bridgeSubprocessToRenderer`. Added 3 new tRPC procedures: `agents.getHistory` (returns messages for a session), `agents.getSessions` (returns sessions for a feature with optional status filter), `agents.getIncompleteSessions` (returns running sessions with Claude session IDs for resume). Updated `AgentPanel` with optional `resumable` and `onResume` props showing a Resume button. Updated the feature page to: query incomplete sessions on mount, show resume button on panels with resumable sessions, load plan history from completed sessions on mount (merging text blocks for clean display).
+- **Validation results**: Lint passed (0 warnings, 0 errors). TypeScript compiled with no errors.
 
 ### Phase 18: Close warning and subprocess cleanup
 - **Step**: 17
@@ -429,8 +431,8 @@ Key files:
 - **Informed by**: Q17
 
 ## Current Status
-- **Current Phase**: Phase 17
-- **Progress**: 16/19
+- **Current Phase**: Phase 18
+- **Progress**: 17/19
 
 ## Deferred Items
 - Keyboard shortcuts / command palette

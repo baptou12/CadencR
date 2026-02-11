@@ -1,6 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { Loader2Icon, CheckCircleIcon, XCircleIcon } from "lucide-react";
+import { Loader2Icon, CheckCircleIcon, XCircleIcon, RotateCcwIcon } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { AgentStream } from "./AgentStream";
 import { AgentQuestionDrawer } from "./AgentQuestionDrawer";
 import type { AgentBlockData } from "./AgentBlock";
@@ -18,6 +19,10 @@ interface AgentPanelProps {
   pendingQuestions?: AgentQuestion[];
   /** Called when the user submits a response to questions */
   onQuestionResponse?: (response: string) => void;
+  /** Whether to show a "resumable" indicator */
+  resumable?: boolean;
+  /** Called when user clicks resume */
+  onResume?: () => void;
 }
 
 const AGENT_LABELS: Record<AgentType, string> = {
@@ -57,6 +62,8 @@ export function AgentPanel({
   className,
   pendingQuestions,
   onQuestionResponse,
+  resumable,
+  onResume,
 }: AgentPanelProps) {
   const badge = STATUS_BADGE[status];
 
@@ -74,6 +81,17 @@ export function AgentPanel({
           {badge.icon}
           {badge.label}
         </Badge>
+        {resumable && onResume && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="ml-auto h-6 gap-1 px-2 text-xs"
+            onClick={onResume}
+          >
+            <RotateCcwIcon className="size-3" />
+            Resume
+          </Button>
+        )}
       </div>
 
       {/* Stream content */}

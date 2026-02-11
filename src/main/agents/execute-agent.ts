@@ -139,7 +139,7 @@ async function executeStepsSequentially(
 
     // Launch all phases in this step in parallel
     const phasePromises = phases.map((phase) =>
-      executePhase(phase, options, autoCommit, allSubprocessIds),
+      executePhase(phase, options, autoCommit, allSubprocessIds, sessionDbId),
     );
 
     // Wait for all phases in this step to complete before moving to next step
@@ -160,6 +160,7 @@ function executePhase(
   options: ExecuteAgentOptions,
   autoCommit: boolean,
   allSubprocessIds: string[],
+  sessionDbId?: number,
 ): Promise<void> {
   return new Promise<void>((resolve) => {
     const db = getDatabase();
@@ -189,7 +190,7 @@ Please implement all the tasks listed above. Focus only on this phase's scope.`;
     }
 
     allSubprocessIds.push(managed.id);
-    bridgeSubprocessToRenderer(managed, "execute");
+    bridgeSubprocessToRenderer(managed, "execute", sessionDbId);
 
     // Collect output for potential commit message
     let fullOutput = "";

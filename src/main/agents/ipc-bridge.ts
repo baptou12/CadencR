@@ -1,6 +1,7 @@
 import { BrowserWindow } from "electron";
 import type { ManagedSubprocess } from "./subprocess-manager";
 import type { AgentEvent, AgentType, StreamEvent } from "./types";
+import { getDatabase } from "../db/database";
 
 const AGENT_EVENT_CHANNEL = "agent:event";
 
@@ -26,6 +27,7 @@ function parseStreamJsonLine(line: string): StreamEvent | null {
 export function bridgeSubprocessToRenderer(
   managed: ManagedSubprocess,
   agentType: AgentType,
+  sessionDbId?: number,
 ): void {
   const { process: child, id } = managed;
 
@@ -44,6 +46,23 @@ export function bridgeSubprocessToRenderer(
     for (const line of lines) {
       const event = parseStreamJsonLine(line);
       if (!event) continue;
+
+      // Capture Claude session ID from system events
+      if (sessionDbId && event.type === "system" && event.session_id) {
+        try {
+          const db = getDatabase();
+          db.prepare(
+            "UPDATE agent_sessions SET claude_session_id = ? WHERE id = ?",
+          ).run(event.session_id, sessionDbId);
+        } catch {
+          // Best-effort persistence
+        }
+      }
+
+      // Persist messages to agent_messages table
+      if (sessionDbId) {
+        persistStreamEvent(sessionDbId, event);
+      }
 
       const agentEvent: AgentEvent = {
         subprocessId: id,
@@ -107,6 +126,61 @@ export function bridgeSubprocessToRenderer(
       }
     }
   });
+}
+
+/**
+ * Persist a stream event to the agent_messages table.
+ * Only persists content-bearing events (text, tool calls, tool results, errors).
+ */
+function persistStreamEvent(sessionDbId: number, event: StreamEvent): void {
+  try {
+    const db = getDatabase();
+    const insert = db.prepare(
+      "INSERT INTO agent_messages (session_id, role, content, message_type, tool_name) VALUES (?, ?, ?, ?, ?)",
+    );
+
+    switch (event.type) {
+      case "content_block_start": {
+        if (event.content_block.type === "text" && event.content_block.text) {
+          insert.run(sessionDbId, "assistant", event.content_block.text, "text", null);
+        } else if (event.content_block.type === "tool_use") {
+          insert.run(
+            sessionDbId,
+            "assistant",
+            JSON.stringify(event.content_block.input),
+            "tool_call",
+            event.content_block.name,
+          );
+        }
+        break;
+      }
+      case "content_block_delta": {
+        if (event.delta.type === "text_delta" && event.delta.text) {
+          insert.run(sessionDbId, "assistant", event.delta.text, "text_delta", null);
+        }
+        break;
+      }
+      case "tool_result": {
+        insert.run(
+          sessionDbId,
+          "tool",
+          event.content,
+          event.is_error ? "tool_error" : "tool_result",
+          null,
+        );
+        break;
+      }
+      case "error": {
+        insert.run(sessionDbId, "system", event.error.message, "error", null);
+        break;
+      }
+      default:
+        // Skip non-content events (message_start, message_stop, message_delta, system)
+        break;
+    }
+  } catch {
+    // Best-effort persistence — don't crash the bridge
+  }
 }
 
 export { AGENT_EVENT_CHANNEL };

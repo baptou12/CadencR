@@ -113,7 +113,7 @@ Start by exploring the codebase to understand the project structure and existing
   });
 
   // Bridge to renderer
-  bridgeSubprocessToRenderer(managed, "plan");
+  bridgeSubprocessToRenderer(managed, "plan", sessionDbId);
 
   // Set up completion handler to parse plan output
   setupPlanCompletionHandler(managed, options.featureId, sessionDbId, planId);

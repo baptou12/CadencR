@@ -119,7 +119,7 @@ Start by exploring the codebase to understand the full context and impact of the
   });
 
   // Bridge to renderer
-  bridgeSubprocessToRenderer(managed, "risk");
+  bridgeSubprocessToRenderer(managed, "risk", sessionDbId);
 
   // Set up completion handler to store risk report
   setupRiskCompletionHandler(managed, options.featureId, sessionDbId);

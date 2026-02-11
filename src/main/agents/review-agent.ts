@@ -117,7 +117,7 @@ followed by a brief summary of the fixes needed (one per line).`;
   });
 
   // Bridge to renderer
-  bridgeSubprocessToRenderer(managed, "review");
+  bridgeSubprocessToRenderer(managed, "review", sessionDbId);
 
   // Set up completion handler
   setupReviewCompletionHandler(managed, options.featureId, sessionDbId);

@@ -2,7 +2,7 @@ import { z } from "zod";
 import fs from "node:fs";
 import { router, publicProcedure } from "./trpc";
 import { getDatabase } from "../db/database";
-import type { SettingRow, ProjectRow } from "../db/types";
+import type { SettingRow, ProjectRow, AgentMessageRow, AgentSessionRow } from "../db/types";
 import { projectsRouter } from "./projects";
 import { featuresRouter } from "./features";
 import { discoverClaudeCli } from "../agents/cli-discovery";
@@ -337,6 +337,54 @@ const agentsRouter = router({
     )
     .mutation(({ input }) => {
       return addFixPhase(input.featureId, input.fixDescription);
+    }),
+
+  /** Get message history for an agent session */
+  getHistory: publicProcedure
+    .input(z.object({ sessionId: z.number() }))
+    .query(({ input }) => {
+      const db = getDatabase();
+      const messages = db
+        .prepare(
+          "SELECT id, session_id, role, content, message_type, tool_name, created_at FROM agent_messages WHERE session_id = ? ORDER BY id ASC",
+        )
+        .all(input.sessionId) as AgentMessageRow[];
+      return messages;
+    }),
+
+  /** Get sessions for a feature (optionally filter by status) */
+  getSessions: publicProcedure
+    .input(
+      z.object({
+        featureId: z.number(),
+        status: z.string().optional(),
+      }),
+    )
+    .query(({ input }) => {
+      const db = getDatabase();
+      let query =
+        "SELECT id, feature_id, agent_type, claude_session_id, status, started_at, ended_at FROM agent_sessions WHERE feature_id = ?";
+      const params: (number | string)[] = [input.featureId];
+      if (input.status) {
+        query += " AND status = ?";
+        params.push(input.status);
+      }
+      query += " ORDER BY id DESC";
+      const sessions = db.prepare(query).all(...params) as AgentSessionRow[];
+      return sessions;
+    }),
+
+  /** Get incomplete sessions that can be resumed */
+  getIncompleteSessions: publicProcedure
+    .input(z.object({ featureId: z.number() }))
+    .query(({ input }) => {
+      const db = getDatabase();
+      const sessions = db
+        .prepare(
+          "SELECT id, feature_id, agent_type, claude_session_id, status, started_at FROM agent_sessions WHERE feature_id = ? AND status = 'running' AND claude_session_id IS NOT NULL ORDER BY id DESC",
+        )
+        .all(input.featureId) as AgentSessionRow[];
+      return sessions;
     }),
 
   /** List all active agent subprocesses */
