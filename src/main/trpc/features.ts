@@ -66,4 +66,24 @@ export const featuresRouter = router({
     db.prepare("DELETE FROM features WHERE id = ?").run(input.id);
     return { success: true };
   }),
+
+  getSettings: publicProcedure
+    .input(z.object({ feature_id: z.number() }))
+    .query(({ input }) => {
+      const db = getDatabase();
+      const rows = db
+        .prepare("SELECT key, value FROM feature_settings WHERE feature_id = ?")
+        .all(input.feature_id) as { key: string; value: string }[];
+      return Object.fromEntries(rows.map((r) => [r.key, r.value]));
+    }),
+
+  setSetting: publicProcedure
+    .input(z.object({ feature_id: z.number(), key: z.string(), value: z.string() }))
+    .mutation(({ input }) => {
+      const db = getDatabase();
+      db.prepare(
+        "INSERT INTO feature_settings (feature_id, key, value) VALUES (?, ?, ?) ON CONFLICT(feature_id, key) DO UPDATE SET value = excluded.value",
+      ).run(input.feature_id, input.key, input.value);
+      return { success: true };
+    }),
 });
