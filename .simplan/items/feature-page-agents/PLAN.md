@@ -153,28 +153,32 @@ Key files:
 
 ## Phases
 
-### Phase 1: Database migrations for plans, phases, and agent messages
+### ✅ Phase 1: Database migrations for plans, phases, and agent messages
 - **Step**: 1
 - **Complexity**: 3
-- [ ] Add migration v4: `plans` table (id, feature_id, title, status, raw_markdown, created_at, updated_at)
-- [ ] Add migration v5: `phases` table (id, plan_id, step_number, title, status, complexity, commit_message, tasks JSON, files JSON, order_index)
-- [ ] Add migration v6: `agent_sessions` table (id, feature_id, agent_type, claude_session_id, status, started_at, ended_at)
-- [ ] Add migration v7: `agent_messages` table (id, session_id, role, content, message_type, tool_name, created_at)
+- [x] Add migration v4: `plans` table (id, feature_id, title, status, raw_markdown, created_at, updated_at)
+- [x] Add migration v5: `phases` table (id, plan_id, step_number, title, status, complexity, commit_message, tasks JSON, files JSON, order_index)
+- [x] Add migration v6: `agent_sessions` table (id, feature_id, agent_type, claude_session_id, status, started_at, ended_at)
+- [x] Add migration v7: `agent_messages` table (id, session_id, role, content, message_type, tool_name, created_at)
 - **Files**: `src/main/db/migrations.ts`
 - **Commit message**: `feat: add database migrations for plans, phases, and agent sessions`
 - **Bisect note**: Migrations are additive, existing tables untouched
 - **Informed by**: Q8, Q13, Q20, Q23
+- **Implementation notes**: Added migrations v4-v7 to the existing migrations array following the established pattern. tasks and files columns in phases table are TEXT (JSON stored as strings). All foreign keys reference parent tables. Status defaults: plans='draft', phases='pending', agent_sessions='pending', agent_messages message_type='text'.
+- **Validation results**: Lint passed (0 errors), TypeScript compiled with no errors.
 
-### Phase 2: Project settings for worktree and commit configuration
+### ✅ Phase 2: Project settings for worktree and commit configuration
 - **Step**: 1
 - **Complexity**: 2
-- [ ] Add migration v8: `project_settings` table (id, project_id, key, value) — for branch prefix, auto-commit default, etc.
-- [ ] Add tRPC procedures: `projects.getSettings`, `projects.setSetting`
-- [ ] Add migration v9: `feature_settings` table (id, feature_id, key, value) — per-feature overrides like auto-commit
-- [ ] Add tRPC procedures: `features.getSettings`, `features.setSetting`
+- [x] Add migration v8: `project_settings` table (id, project_id, key, value) — for branch prefix, auto-commit default, etc.
+- [x] Add tRPC procedures: `projects.getSettings`, `projects.setSetting`
+- [x] Add migration v9: `feature_settings` table (id, feature_id, key, value) — per-feature overrides like auto-commit
+- [x] Add tRPC procedures: `features.getSettings`, `features.setSetting`
 - **Files**: `src/main/db/migrations.ts`, `src/main/trpc/projects.ts`, `src/main/trpc/features.ts`
 - **Commit message**: `feat: add project and feature settings tables and tRPC procedures`
 - **Bisect note**: New tables and procedures only, no breaking changes
+- **Implementation notes**: Added migrations v8 (project_settings) and v9 (feature_settings) with UNIQUE constraints on (project_id, key) and (feature_id, key). Added getSettings (returns key-value object) and setSetting (upsert via ON CONFLICT) procedures to both projects and features routers.
+- **Validation results**: Lint passed (0 errors), TypeScript compiled with no errors.
 - **Informed by**: Q14, Q18
 
 ### Phase 3: Feature page route with top bar
@@ -397,8 +401,8 @@ Key files:
 - **Informed by**: Q17
 
 ## Current Status
-- **Current Phase**: Not started
-- **Progress**: 0/19
+- **Current Phase**: Phase 3
+- **Progress**: 2/19
 
 ## Deferred Items
 - Keyboard shortcuts / command palette
