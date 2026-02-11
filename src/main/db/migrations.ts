@@ -19,6 +19,36 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 2,
+    description: "Create projects table",
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS projects (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          path TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+      `);
+    },
+  },
+  {
+    version: 3,
+    description: "Create features table",
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS features (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          project_id INTEGER NOT NULL,
+          title TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'draft',
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          FOREIGN KEY (project_id) REFERENCES projects(id)
+        )
+      `);
+    },
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

@@ -39,14 +39,16 @@
 
 ## Phases
 
-### ⬜ Phase 1: Database migration for projects and features
+### ✅ Phase 1: Database migration for projects and features
 - **Step**: 1
 - **Complexity**: 2
-- [ ] Add migration v2: create `projects` table (id INTEGER PK autoincrement, name TEXT NOT NULL, path TEXT NOT NULL, created_at TEXT DEFAULT datetime('now'))
-- [ ] Add migration v3: create `features` table (id INTEGER PK autoincrement, project_id INTEGER NOT NULL FK→projects, title TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'draft', created_at TEXT DEFAULT datetime('now'))
+- [x] Add migration v2: create `projects` table (id INTEGER PK autoincrement, name TEXT NOT NULL, path TEXT NOT NULL, created_at TEXT DEFAULT datetime('now'))
+- [x] Add migration v3: create `features` table (id INTEGER PK autoincrement, project_id INTEGER NOT NULL FK→projects, title TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'draft', created_at TEXT DEFAULT datetime('now'))
 - **Files**: `src/main/db/migrations.ts`
 - **Commit message**: `feat: add projects and features database tables`
 - **Bisect note**: N/A — migrations only run on app start, no callers yet
+- **Implementation notes**: Added migration v2 (projects) and v3 (features) to the migrations array. Both use `datetime('now')` for created_at defaults and features has a foreign key to projects.
+- **Validation results**: `npx tsc --noEmit` passed (exit 0). `npm run package -- --platform=darwin` passed (exit 0).
 
 ### ⬜ Phase 2: tRPC routers for projects and features
 - **Step**: 2
@@ -111,5 +113,5 @@
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Not started
-- **Progress**: 0/6
+- **Current Phase**: Phase 2
+- **Progress**: 1/6
