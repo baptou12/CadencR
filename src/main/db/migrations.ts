@@ -155,6 +155,25 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 10,
+    description: "Create diff_comments table",
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS diff_comments (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          feature_id INTEGER NOT NULL,
+          file_path TEXT NOT NULL,
+          line_number INTEGER NOT NULL,
+          side TEXT NOT NULL CHECK (side IN ('old', 'new')),
+          content TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'sent', 'resolved')),
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          FOREIGN KEY (feature_id) REFERENCES features(id)
+        )
+      `);
+    },
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {
