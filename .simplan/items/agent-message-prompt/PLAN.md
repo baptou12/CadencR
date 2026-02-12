@@ -109,15 +109,17 @@ The `subprocess-manager.ts` creates `ManagedSubprocess` objects but doesn't stor
 - **Implementation notes**: Polished prompt bar with `bg-muted/20` background, increased padding (`px-3 py-2`), and refined input styling (subtle border, background, reduced focus ring). Added explicit icon sizing (`size-3.5`) and `shrink-0` on buttons. Added `inline` prop to `AgentQuestionDrawer` for tighter spacing when rendered inside the prompt bar -- removes the redundant `border-t` (already provided by the parent), uses `bg-muted/20` to match, reduces padding and margins, and styles the free-text input consistently with the prompt bar input.
 - **Validation results**: Lint passes (0 warnings, 0 errors). TypeScript compiles with no errors.
 
-### ⬜ Phase 6: Disable prompt bar for plan/brainstorm agents once complete
+### ✅ Phase 6: Disable prompt bar for plan/brainstorm agents once complete
 - **Step**: 6
 - **Complexity**: 2
-- [ ] In `AgentPanel.tsx` or `AgentPromptBar.tsx`, disable the prompt bar (or hide it entirely) when the agent type is `plan` or `brainstorm` and the status is `complete`
-- [ ] These agents produce a one-shot result — sending follow-up messages after completion is not meaningful
-- [ ] Keep the prompt bar functional while these agents are `running` (user may still want to stop them)
+- [x] In `AgentPanel.tsx` or `AgentPromptBar.tsx`, disable the prompt bar (or hide it entirely) when the agent type is `plan` or `brainstorm` and the status is `complete`
+- [x] These agents produce a one-shot result — sending follow-up messages after completion is not meaningful
+- [x] Keep the prompt bar functional while these agents are `running` (user may still want to stop them)
 - **Files**: `src/renderer/components/AgentPanel.tsx`
 - **Commit message**: `feat: disable prompt bar for plan and brainstorm agents after completion`
 - **Bisect note**: Behavioral change — prompt bar hidden for specific agent types post-completion
+- **Implementation notes**: Added a condition to the prompt bar visibility check that hides it when `agentType` is `"plan"` or `"brainstorm"` and `status` is `"complete"`. The prompt bar remains visible and functional while these agents are running or have pending questions.
+- **Validation results**: Lint passes (0 errors), TypeScript compiles with no errors.
 
 ## Phase Status Legend
 
@@ -128,5 +130,5 @@ The `subprocess-manager.ts` creates `ManagedSubprocess` objects but doesn't stor
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 6
-- **Progress**: 5/6
+- **Current Phase**: All phases complete
+- **Progress**: 6/6

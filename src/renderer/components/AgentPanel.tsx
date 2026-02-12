@@ -150,8 +150,10 @@ export function AgentPanel({
             )}
           </div>
 
-          {/* Prompt bar — shown when agent has output, is running, or has pending questions */}
-          {onSend && onStop && (status !== "idle" || blocks.length > 0 || (pendingQuestions && pendingQuestions.length > 0)) && (
+          {/* Prompt bar — shown when agent has output, is running, or has pending questions.
+             Hidden for one-shot agents (plan, brainstorm) once they complete. */}
+          {onSend && onStop && (status !== "idle" || blocks.length > 0 || (pendingQuestions && pendingQuestions.length > 0)) &&
+           !((agentType === "plan" || agentType === "brainstorm") && status === "complete") && (
             <div className="border-t border-border">
               <AgentPromptBar
                 onSend={onSend}
