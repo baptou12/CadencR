@@ -15,6 +15,8 @@ const createWindow = () => {
   const mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
+    titleBarStyle: "hiddenInset",
+    backgroundColor: "#1a1b26",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       sandbox: false,
