@@ -31,6 +31,8 @@ The `subprocess-manager.ts` creates `ManagedSubprocess` objects but doesn't stor
 | 2    | 2      | Frontend: AgentPromptBar component |
 | 3    | 3      | Frontend: integrate into feature page, remove floating stop |
 | 4    | 4      | Inline AskUserQuestion form in prompt bar, preserve draft text |
+| 5    | 5      | Polish prompt bar design |
+| 6    | 6      | Disable prompt bar for plan/brainstorm agents once complete |
 
 > **Parallelism**: Each step depends on the previous.
 
@@ -94,6 +96,27 @@ The `subprocess-manager.ts` creates `ManagedSubprocess` objects but doesn't stor
 - **Implementation notes**: Added `pendingQuestions` and `onQuestionResponse` optional props to `AgentPromptBarProps`. When questions are pending, the component renders `AgentQuestionDrawer` inline (with `open={true}`) instead of the normal input/send/stop UI. The `text` state is preserved across question appearance/dismissal since it lives in `useState` and is not cleared when the question form renders. Removed the standalone `AgentQuestionDrawer` import and rendering from `AgentPanel.tsx`. Updated the prompt bar visibility condition to also show when `pendingQuestions` is non-empty.
 - **Validation results**: Lint passes (0 warnings, 0 errors). TypeScript compiles with no errors.
 
+### ⬜ Phase 5: Polish prompt bar design
+- **Step**: 5
+- **Complexity**: 2
+- [ ] Review current AgentPromptBar and AgentQuestionDrawer inline rendering for visual issues
+- [ ] Improve spacing, alignment, and styling of the prompt bar to match the Dracula theme and overall panel aesthetic
+- [ ] Ensure the inline question form looks cohesive when rendered inside the prompt bar area
+- [ ] Fix any visual regressions from the Phase 4 integration (borders, padding, background consistency)
+- **Files**: `src/renderer/components/AgentPromptBar.tsx`, `src/renderer/components/AgentQuestionDrawer.tsx`
+- **Commit message**: `fix: polish agent prompt bar and inline question form design`
+- **Bisect note**: Style-only changes, no logic changes
+
+### ⬜ Phase 6: Disable prompt bar for plan/brainstorm agents once complete
+- **Step**: 6
+- **Complexity**: 2
+- [ ] In `AgentPanel.tsx` or `AgentPromptBar.tsx`, disable the prompt bar (or hide it entirely) when the agent type is `plan` or `brainstorm` and the status is `complete`
+- [ ] These agents produce a one-shot result — sending follow-up messages after completion is not meaningful
+- [ ] Keep the prompt bar functional while these agents are `running` (user may still want to stop them)
+- **Files**: `src/renderer/components/AgentPanel.tsx`
+- **Commit message**: `feat: disable prompt bar for plan and brainstorm agents after completion`
+- **Bisect note**: Behavioral change — prompt bar hidden for specific agent types post-completion
+
 ## Phase Status Legend
 
 | Emoji | Status |
@@ -103,5 +126,5 @@ The `subprocess-manager.ts` creates `ManagedSubprocess` objects but doesn't stor
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: All phases complete
-- **Progress**: 4/4
+- **Current Phase**: Phase 5
+- **Progress**: 4/6
