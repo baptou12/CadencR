@@ -191,6 +191,7 @@ async function runSdkQuery(managed: ManagedSubprocess, options: SubprocessOption
     cwd: options.cwd,
     permissionMode: "bypassPermissions" as const,
     pathToClaudeCodeExecutable: cliInfo.path,
+    model: "claude-haiku-4-5-20251001",
   };
 
   if (options.systemPrompt) {
