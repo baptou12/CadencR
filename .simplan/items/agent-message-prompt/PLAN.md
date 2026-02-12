@@ -50,18 +50,20 @@ The `subprocess-manager.ts` creates `ManagedSubprocess` objects but doesn't stor
 - **Implementation notes**: Updated dynamic import type cast to return `Query` instead of `AsyncGenerator` so the `query` field types correctly. `stopSubprocess` is exported from subprocess-manager but not yet imported in router (will be used in Phase 3 when the stop endpoint is updated). The `sendMessageToSubprocess` function creates a single-yield async generator to pass to `streamInput()`.
 - **Validation results**: Lint passes (0 warnings, 0 errors). TypeScript compiles with no errors.
 
-### ⬜ Phase 2: Frontend — AgentPromptBar component
+### ✅ Phase 2: Frontend — AgentPromptBar component
 - **Step**: 2
 - **Complexity**: 3
-- [ ] Create `src/renderer/components/AgentPromptBar.tsx` — a compact bar with: text input, Send button, Stop button
-- [ ] Stop button visible when agent is `running`, Send button enabled when input has text
-- [ ] Props: `onSend(message: string)`, `onStop()`, `status: AgentStatus`, `disabled?: boolean`
-- [ ] Style: compact inline bar (not a full textarea), sits below `AgentStream` inside the panel
-- [ ] Use existing shadcn `Input` and `Button` components
-- [ ] Support Enter key to send, Shift+Enter for newline (use Input not Textarea since it's a single-line prompt)
+- [x] Create `src/renderer/components/AgentPromptBar.tsx` — a compact bar with: text input, Send button, Stop button
+- [x] Stop button visible when agent is `running`, Send button enabled when input has text
+- [x] Props: `onSend(message: string)`, `onStop()`, `status: AgentStatus`, `disabled?: boolean`
+- [x] Style: compact inline bar (not a full textarea), sits below `AgentStream` inside the panel
+- [x] Use existing shadcn `Input` and `Button` components
+- [x] Support Enter key to send, Shift+Enter for newline (use Input not Textarea since it's a single-line prompt)
 - **Files**: `src/renderer/components/AgentPromptBar.tsx`
 - **Commit message**: `feat: add AgentPromptBar component with send and stop controls`
 - **Bisect note**: New component, not yet used — safe standalone
+- **Implementation notes**: Created AgentPromptBar with shadcn Input and Button. Shows destructive Stop (Square icon) when running, default Send (Send icon) otherwise. Enter sends, input clears on send. Uses lucide-react icons. Compact layout with h-8 input and icon-xs buttons.
+- **Validation results**: Lint passes (0 warnings, 0 errors). TypeScript compiles with no errors.
 
 ### ⬜ Phase 3: Integration — Wire up prompt bar and remove floating stop
 - **Step**: 3
@@ -84,5 +86,5 @@ The `subprocess-manager.ts` creates `ManagedSubprocess` objects but doesn't stor
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 2
-- **Progress**: 1/3
+- **Current Phase**: Phase 3
+- **Progress**: 2/3
