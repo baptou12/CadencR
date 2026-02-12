@@ -552,7 +552,7 @@ function FeaturePage() {
   }, [runningAgents, stopMutation]);
 
   // Feature state machine
-  const { view, agents, actions } = useFeatureState({
+  const { view, actions } = useFeatureState({
     featureStatus: feature?.status as FeatureStatus | undefined,
     plan: { status: plan.status, blocks: plan.blocks },
     brainstorm: { status: brainstorm.status, blocks: brainstorm.blocks },
