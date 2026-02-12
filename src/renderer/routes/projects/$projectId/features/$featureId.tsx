@@ -205,7 +205,7 @@ function FeaturePage() {
   const startReviewMutation = trpc.agents.startReview.useMutation();
   const addFixPhaseMutation = trpc.agents.addFixPhase.useMutation();
   const startExecuteForFixMutation = trpc.agents.startExecute.useMutation();
-  const sendInputMutation = trpc.agents.sendInput.useMutation();
+  const submitAnswersMutation = trpc.agents.submitAnswers.useMutation();
   const stopMutation = trpc.agents.stop.useMutation();
 
   // Wire up IPC event listener
@@ -234,6 +234,38 @@ function FeaturePage() {
     ],
   );
   useAgentEventListener(eventHandlers);
+
+  // Listen for AskUserQuestion requests from the main process
+  useEffect(() => {
+    const api = (
+      window as unknown as {
+        api?: {
+          onAskUserQuestion: (cb: (data: unknown) => void) => unknown;
+          offAskUserQuestion: (listener?: unknown) => void;
+        };
+      }
+    ).api;
+    if (!api) return;
+
+    const listener = api.onAskUserQuestion((data: unknown) => {
+      const request = data as { subprocessId: string; questions: Record<string, unknown> };
+      console.log("[FeaturePage] AskUserQuestion request:", request);
+
+      // Determine which agent this question is for
+      if (plan.subprocessId === request.subprocessId) {
+        console.log("[FeaturePage] Routing question to plan agent");
+        // The questions are already being parsed by useAgentState
+        // This is just a fallback in case they weren't caught via streaming events
+      } else if (brainstorm.subprocessId === request.subprocessId) {
+        console.log("[FeaturePage] Routing question to brainstorm agent");
+        // Same fallback for brainstorm
+      }
+    });
+
+    return () => {
+      api.offAskUserQuestion(listener as undefined);
+    };
+  }, [plan.subprocessId, brainstorm.subprocessId]);
 
   // Action handlers
   const handleStartPlanning = async () => {
@@ -275,20 +307,62 @@ function FeaturePage() {
   };
 
   const handleQuestionResponse = (response: string) => {
+    if (!plan.subprocessId || plan.pendingQuestions.length === 0) return;
+
+    // Parse the response to extract answers
+    // The AgentQuestionDrawer formats responses as "Question\nAnswer: ...\n\n..."
+    const answers: Record<string, string> = {};
+    const sections = response.split("\n\n");
+
+    plan.pendingQuestions.forEach((q, index) => {
+      // Find the section that contains this question
+      const section = sections[index];
+      if (section) {
+        const answerMatch = section.match(/Answer:\s*(.+)/s);
+        if (answerMatch) {
+          // Use the question text as the key (Claude expects this format)
+          answers[q.question] = answerMatch[1].trim();
+        }
+      }
+    });
+
+    // Submit answers to the main process
+    submitAnswersMutation.mutate({
+      subprocessId: plan.subprocessId,
+      answers,
+    });
+
+    // Clear the questions from the UI
     plan.clearQuestions();
-    if (plan.subprocessId) {
-      sendInputMutation.mutate({ id: plan.subprocessId, text: response });
-    }
   };
 
   const handleBrainstormQuestionResponse = (response: string) => {
+    if (!brainstorm.subprocessId || brainstorm.pendingQuestions.length === 0) return;
+
+    // Parse the response to extract answers
+    const answers: Record<string, string> = {};
+    const sections = response.split("\n\n");
+
+    brainstorm.pendingQuestions.forEach((q, index) => {
+      // Find the section that contains this question
+      const section = sections[index];
+      if (section) {
+        const answerMatch = section.match(/Answer:\s*(.+)/s);
+        if (answerMatch) {
+          // Use the question text as the key
+          answers[q.question] = answerMatch[1].trim();
+        }
+      }
+    });
+
+    // Submit answers to the main process
+    submitAnswersMutation.mutate({
+      subprocessId: brainstorm.subprocessId,
+      answers,
+    });
+
+    // Clear the questions from the UI
     brainstorm.clearQuestions();
-    if (brainstorm.subprocessId) {
-      sendInputMutation.mutate({
-        id: brainstorm.subprocessId,
-        text: response,
-      });
-    }
   };
 
   const handleStartBuilding = async () => {

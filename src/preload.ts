@@ -5,6 +5,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import { exposeElectronTRPC } from "electron-trpc/main";
 
 const AGENT_EVENT_CHANNEL = "agent:event";
+const ASK_USER_QUESTION_CHANNEL = "agent:ask-user-question";
 
 process.once("loaded", () => {
   exposeElectronTRPC();
@@ -24,6 +25,21 @@ process.once("loaded", () => {
         ipcRenderer.removeListener(AGENT_EVENT_CHANNEL, listener as (...args: unknown[]) => void);
       } else {
         ipcRenderer.removeAllListeners(AGENT_EVENT_CHANNEL);
+      }
+    },
+    onAskUserQuestion: (callback: (data: unknown) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, data: unknown) => {
+        console.log("[preload] onAskUserQuestion fired:", data);
+        callback(data);
+      };
+      ipcRenderer.on(ASK_USER_QUESTION_CHANNEL, listener);
+      return listener;
+    },
+    offAskUserQuestion: (listener?: (...args: unknown[]) => void) => {
+      if (listener) {
+        ipcRenderer.removeListener(ASK_USER_QUESTION_CHANNEL, listener as (...args: unknown[]) => void);
+      } else {
+        ipcRenderer.removeAllListeners(ASK_USER_QUESTION_CHANNEL);
       }
     },
   });

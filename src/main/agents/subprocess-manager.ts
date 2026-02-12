@@ -2,9 +2,15 @@ import { BrowserWindow } from "electron";
 import { getDatabase } from "../db/database";
 import { discoverClaudeCli } from "./cli-discovery";
 import type { AgentEvent, AgentType, StreamEvent } from "./types";
+import EventEmitter from "node:events";
 
 const MAX_CONCURRENT = 10;
 const AGENT_EVENT_CHANNEL = "agent:event";
+const ASK_USER_QUESTION_CHANNEL = "agent:ask-user-question";
+const ASK_USER_ANSWER_CHANNEL = "agent:ask-user-answer";
+
+// Global event emitter for question/answer coordination
+const questionEmitter = new EventEmitter();
 
 export interface SubprocessOptions {
   /** Working directory for the Claude CLI process */
@@ -210,6 +216,40 @@ async function runSdkQuery(managed: ManagedSubprocess, options: SubprocessOption
     queryOptions.abortController = managed.abortController;
   }
 
+  // Add canUseTool callback to handle AskUserQuestion
+  queryOptions.canUseTool = async (toolName: string, input: Record<string, unknown>) => {
+    if (toolName === "AskUserQuestion") {
+      console.log("[subprocess-manager] AskUserQuestion intercepted");
+
+      try {
+        // Request answers from the renderer
+        const answers = await requestUserAnswers(managed.id, input);
+
+        // Return the answers in the format expected by Claude
+        return {
+          behavior: "allow" as const,
+          updatedInput: {
+            ...input,
+            answers,
+          },
+        };
+      } catch (error) {
+        console.error("[subprocess-manager] Failed to get user answers:", error);
+        // Return empty answers on error
+        return {
+          behavior: "allow" as const,
+          updatedInput: {
+            ...input,
+            answers: {},
+          },
+        };
+      }
+    }
+
+    // Allow all other tools
+    return { behavior: "allow" as const, updatedInput: input };
+  };
+
   console.log("[subprocess-manager] calling SDK query() with cwd:", options.cwd);
 
   const iterator = query({
@@ -317,19 +357,47 @@ export function cleanupSubprocesses(): void {
 }
 
 /**
- * Send input to a running subprocess via stdin.
- * Note: With SDK approach, this is not directly supported.
- * For interactive input, use the SDK's streaming input mode.
+ * Request user answers to AskUserQuestion from the renderer.
+ * Sends a question request to all renderer windows and waits for a response.
  */
-export function sendSubprocessInput(id: string, _input: string): boolean {
-  const managed = activeProcesses.get(id);
-  if (!managed || managed.status !== "running") {
-    return false;
-  }
-  // TODO: Implement via SDK streaming input
-  console.warn("[subprocess-manager] sendSubprocessInput not yet implemented for SDK mode");
-  return false;
+async function requestUserAnswers(
+  subprocessId: string,
+  questions: Record<string, unknown>,
+): Promise<Record<string, string>> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      questionEmitter.removeAllListeners(`answer:${subprocessId}`);
+      reject(new Error("User answer timeout (60s)"));
+    }, 60000); // 60 second timeout
+
+    // Listen for answer from renderer
+    questionEmitter.once(`answer:${subprocessId}`, (answers: Record<string, string>) => {
+      clearTimeout(timeout);
+      resolve(answers);
+    });
+
+    // Broadcast question request to all renderer windows
+    const windows = BrowserWindow.getAllWindows();
+    for (const win of windows) {
+      if (!win.isDestroyed()) {
+        win.webContents.send(ASK_USER_QUESTION_CHANNEL, {
+          subprocessId,
+          questions,
+        });
+      }
+    }
+  });
 }
+
+/**
+ * Submit user answers for a pending AskUserQuestion.
+ * Called from the renderer via IPC when the user submits their answers.
+ */
+export function submitUserAnswers(subprocessId: string, answers: Record<string, string>): void {
+  console.log("[subprocess-manager] submitUserAnswers called for:", subprocessId);
+  questionEmitter.emit(`answer:${subprocessId}`, answers);
+}
+
 
 /**
  * Check if any subprocesses are currently running.
@@ -365,3 +433,6 @@ export function gracefulShutdown(): void {
   saveAllSessionStates();
   killAllSubprocesses();
 }
+
+// Export channel constants for use in preload and main
+export { ASK_USER_QUESTION_CHANNEL, ASK_USER_ANSWER_CHANNEL };

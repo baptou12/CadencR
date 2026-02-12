@@ -10,7 +10,7 @@ import {
   startSubprocess,
   killSubprocess,
   listSubprocesses,
-  sendSubprocessInput,
+  submitUserAnswers,
 } from "../agents/subprocess-manager";
 import { bridgeSubprocessToRenderer } from "../agents/ipc-bridge";
 import type { AgentType } from "../agents/types";
@@ -148,12 +148,17 @@ const agentsRouter = router({
       };
     }),
 
-  /** Send input to a running agent subprocess via stdin */
-  sendInput: publicProcedure
-    .input(z.object({ id: z.string(), text: z.string() }))
+  /** Submit user answers for an AskUserQuestion tool call */
+  submitAnswers: publicProcedure
+    .input(
+      z.object({
+        subprocessId: z.string(),
+        answers: z.record(z.string(), z.string()),
+      }),
+    )
     .mutation(({ input }) => {
-      const sent = sendSubprocessInput(input.id, input.text);
-      return { success: sent };
+      submitUserAnswers(input.subprocessId, input.answers);
+      return { success: true };
     }),
 
   /** Start the plan agent for a feature */
