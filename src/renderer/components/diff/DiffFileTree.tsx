@@ -17,6 +17,16 @@ interface TreeNode {
   file?: ChangedFileEntry;
 }
 
+function sortNodes(nodes: TreeNode[]) {
+  nodes.sort((a, b) => {
+    if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+  for (const n of nodes) {
+    if (n.isDirectory) sortNodes(n.children);
+  }
+}
+
 function buildTree(files: ChangedFileEntry[]): TreeNode[] {
   const root: TreeNode[] = [];
 
@@ -44,16 +54,6 @@ function buildTree(files: ChangedFileEntry[]): TreeNode[] {
     }
   }
 
-  // Sort: directories first, then alphabetically
-  const sortNodes = (nodes: TreeNode[]) => {
-    nodes.sort((a, b) => {
-      if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
-      return a.name.localeCompare(b.name);
-    });
-    for (const n of nodes) {
-      if (n.isDirectory) sortNodes(n.children);
-    }
-  };
   sortNodes(root);
   return root;
 }
