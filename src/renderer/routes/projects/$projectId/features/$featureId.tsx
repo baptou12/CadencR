@@ -15,6 +15,7 @@ import {
   PlusCircleIcon,
   WrenchIcon,
   CheckCircle2Icon,
+  SquareIcon,
 } from "lucide-react";
 import {
   useAgentState,
@@ -205,6 +206,7 @@ function FeaturePage() {
   const addFixPhaseMutation = trpc.agents.addFixPhase.useMutation();
   const startExecuteForFixMutation = trpc.agents.startExecute.useMutation();
   const sendInputMutation = trpc.agents.sendInput.useMutation();
+  const stopMutation = trpc.agents.stop.useMutation();
 
   // Wire up IPC event listener
   const eventHandlers = useMemo(
@@ -398,6 +400,35 @@ function FeaturePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [review.blocks, review.status, review.setStatus, featureQuery]);
 
+  // Collect all running agents for the stop button
+  const allAgents = useMemo(() => [
+    { state: plan, label: "Plan" },
+    { state: brainstorm, label: "Brainstorm" },
+    { state: execute, label: "Execute" },
+    { state: risk, label: "Risk" },
+    { state: review, label: "Review" },
+  ], [plan, brainstorm, execute, risk, review]);
+
+  const runningAgents = allAgents.filter((a) => a.state.status === "running");
+
+  const handleStopAll = useCallback(async () => {
+    for (const agent of runningAgents) {
+      const id = agent.state.subprocessId;
+      if (id) {
+        try {
+          await stopMutation.mutateAsync({ id });
+        } catch {
+          // best effort
+        }
+        agent.state.setStatus("error");
+        agent.state.appendBlock({
+          type: "text",
+          content: "\n\nStopped by user.",
+        });
+      }
+    }
+  }, [runningAgents, stopMutation]);
+
   // Feature state machine
   const { view, agents, actions } = useFeatureState({
     featureStatus: feature?.status as FeatureStatus | undefined,
@@ -409,7 +440,7 @@ function FeaturePage() {
   });
 
   return (
-    <div className="flex h-full flex-col -m-6">
+    <div className="relative flex h-full flex-col -m-6">
       <FeatureTopBar
         featureId={numericFeatureId}
         projectId={numericProjectId}
@@ -650,6 +681,26 @@ function FeaturePage() {
           </div>
         )}
       </div>
+
+      {/* Floating stop button */}
+      {runningAgents.length > 0 && (
+        <div className="absolute bottom-6 right-6">
+          <Button
+            variant="destructive"
+            size="sm"
+            className="gap-2 shadow-lg"
+            onClick={() => void handleStopAll()}
+            disabled={stopMutation.isLoading}
+          >
+            {stopMutation.isLoading ? (
+              <Loader2Icon className="size-4 animate-spin" />
+            ) : (
+              <SquareIcon className="size-4" />
+            )}
+            Stop {runningAgents.length > 1 ? `All (${runningAgents.length})` : runningAgents[0].label}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

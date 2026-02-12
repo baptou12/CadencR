@@ -1,23 +1,13 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { AgentBlock, type AgentBlockData } from "./AgentBlock";
-
-const TOOL_LABELS: Record<string, string> = {
-  Read: "Reading files",
-  Grep: "Searching code",
-  Glob: "Finding files",
-  Bash: "Running command",
-  Write: "Writing file",
-  Edit: "Editing file",
-  WebSearch: "Searching web",
-  WebFetch: "Fetching page",
-  Task: "Running subtask",
-};
+import { getToolActivityLabel } from "@/lib/tool-call-parser";
 
 function getActivityLabel(blocks: AgentBlockData[]): string {
   for (let i = blocks.length - 1; i >= 0; i--) {
-    if (blocks[i].type === "tool_call" && blocks[i].toolName) {
-      return TOOL_LABELS[blocks[i].toolName!] ?? `Running ${blocks[i].toolName}`;
+    const block = blocks[i];
+    if (block.type === "tool_call" && block.toolName) {
+      return getToolActivityLabel(block.toolName, block.toolArgs);
     }
   }
   return "Generating";
@@ -31,6 +21,11 @@ interface AgentStreamProps {
 
 export function AgentStream({ blocks, isStreaming }: AgentStreamProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
+  const [expandAllTasks, setExpandAllTasks] = useState(false);
+
+  const handleExpandAllTasks = useCallback(() => {
+    setExpandAllTasks(true);
+  }, []);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -39,8 +34,14 @@ export function AgentStream({ blocks, isStreaming }: AgentStreamProps) {
   return (
     <ScrollArea className="flex-1">
       <div className="space-y-1 p-3">
-        {blocks.map((block) => (
-          <AgentBlock key={block.id} block={block} />
+        {blocks.filter((b) => !b.parentToolUseId).map((block) => (
+          <AgentBlock
+            key={block.id}
+            block={block}
+            isStreaming={isStreaming}
+            expandAllTasks={expandAllTasks}
+            onExpandAllTasks={handleExpandAllTasks}
+          />
         ))}
         {isStreaming && (
           <div className="flex items-center gap-2 py-2 text-xs text-muted-foreground">

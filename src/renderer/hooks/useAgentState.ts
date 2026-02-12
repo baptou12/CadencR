@@ -10,6 +10,62 @@ function makeBlock(partial: Omit<AgentBlockData, "id">): AgentBlockData {
   return { id: `block-${blockIdCounter}`, ...partial };
 }
 
+/**
+ * Find a Task block by its toolUseId and append a child block to it.
+ */
+function appendToParent(blocks: AgentBlockData[], parentToolUseId: string, newBlock: AgentBlockData): AgentBlockData[] {
+  return blocks.map((b) => {
+    if (b.type === "tool_call" && b.toolName === "Task" && b.toolUseId === parentToolUseId) {
+      return { ...b, childBlocks: [...(b.childBlocks ?? []), newBlock] };
+    }
+    // Recurse into nested Task blocks
+    if (b.childBlocks) {
+      const updatedChildren = appendToParent(b.childBlocks, parentToolUseId, newBlock);
+      if (updatedChildren !== b.childBlocks) {
+        return { ...b, childBlocks: updatedChildren };
+      }
+    }
+    return b;
+  });
+}
+
+/**
+ * Update the last child of a parent Task block using an updater function.
+ * If updater returns null, append a fallback block instead.
+ */
+function updateLastChildInParent(
+  blocks: AgentBlockData[],
+  parentToolUseId: string,
+  updater: (child: AgentBlockData) => AgentBlockData | null,
+  fallback?: Omit<AgentBlockData, "id">,
+): AgentBlockData[] {
+  return blocks.map((b) => {
+    if (b.type === "tool_call" && b.toolName === "Task" && b.toolUseId === parentToolUseId) {
+      const children = b.childBlocks ?? [];
+      if (children.length > 0) {
+        const last = children[children.length - 1];
+        const updated = updater(last);
+        if (updated) {
+          return { ...b, childBlocks: [...children.slice(0, -1), updated] };
+        }
+      }
+      // Append fallback if updater returned null or no children
+      if (fallback) {
+        return { ...b, childBlocks: [...children, makeBlock(fallback)] };
+      }
+      return b;
+    }
+    // Recurse
+    if (b.childBlocks) {
+      const updatedChildren = updateLastChildInParent(b.childBlocks, parentToolUseId, updater, fallback);
+      if (updatedChildren !== b.childBlocks) {
+        return { ...b, childBlocks: updatedChildren };
+      }
+    }
+    return b;
+  });
+}
+
 /** Normalize an option value to a string (handles both string and {label, description} formats) */
 function normalizeOption(opt: unknown): string {
   if (typeof opt === "string") return opt;
@@ -58,19 +114,24 @@ export function useAgentState(options: UseAgentStateOptions = {}) {
 
       console.log("[useAgentState] event:", event.type, event);
 
+      const parentId = agentEvent.parentToolUseId ?? null;
+
       switch (event.type) {
         case "content_block_start": {
           if (event.content_block.type === "text") {
-            setBlocks((prev) => [
-              ...prev,
-              makeBlock({
-                type: "text",
-                content:
-                  event.content_block.type === "text"
-                    ? event.content_block.text
-                    : "",
-              }),
-            ]);
+            const newBlock = makeBlock({
+              type: "text",
+              content:
+                event.content_block.type === "text"
+                  ? event.content_block.text
+                  : "",
+              parentToolUseId: parentId,
+            });
+            if (parentId) {
+              setBlocks((prev) => appendToParent(prev, parentId, newBlock));
+            } else {
+              setBlocks((prev) => [...prev, newBlock]);
+            }
           } else if (event.content_block.type === "tool_use") {
             const toolBlock = event.content_block;
             // Note: during streaming, input arrives empty here; questions are parsed on content_block_stop
@@ -81,62 +142,101 @@ export function useAgentState(options: UseAgentStateOptions = {}) {
               }
             }
             const hasInput = toolBlock.input && Object.keys(toolBlock.input).length > 0;
-            setBlocks((prev) => [
-              ...prev,
-              makeBlock({
-                type: "tool_call",
-                content: hasInput ? JSON.stringify(toolBlock.input, null, 2) : "",
-                toolName: toolBlock.name,
-                toolArgs: hasInput ? JSON.stringify(toolBlock.input, null, 2) : "",
-              }),
-            ]);
+            const newBlock = makeBlock({
+              type: "tool_call",
+              content: hasInput ? JSON.stringify(toolBlock.input, null, 2) : "",
+              toolName: toolBlock.name,
+              toolArgs: hasInput ? JSON.stringify(toolBlock.input, null, 2) : "",
+              toolUseId: toolBlock.id,
+              parentToolUseId: parentId,
+              childBlocks: toolBlock.name === "Task" ? [] : undefined,
+            });
+            if (parentId) {
+              setBlocks((prev) => appendToParent(prev, parentId, newBlock));
+            } else {
+              setBlocks((prev) => [...prev, newBlock]);
+            }
           }
           break;
         }
         case "content_block_delta": {
           if (event.delta.type === "text_delta") {
             const deltaText = event.delta.text;
-            setBlocks((prev) => {
-              if (prev.length === 0)
-                return [makeBlock({ type: "text", content: deltaText })];
-              const last = prev[prev.length - 1];
-              if (last.type === "text") {
-                return [
-                  ...prev.slice(0, -1),
-                  { ...last, content: last.content + deltaText },
-                ];
-              }
-              return [...prev, makeBlock({ type: "text", content: deltaText })];
-            });
+            if (parentId) {
+              setBlocks((prev) => updateLastChildInParent(prev, parentId, (child) => {
+                if (child.type === "text") return { ...child, content: child.content + deltaText };
+                return null; // signal to append new block
+              }, { type: "text", content: deltaText, parentToolUseId: parentId }));
+            } else {
+              setBlocks((prev) => {
+                if (prev.length === 0)
+                  return [makeBlock({ type: "text", content: deltaText })];
+                const last = prev[prev.length - 1];
+                if (last.type === "text" && !last.parentToolUseId) {
+                  return [
+                    ...prev.slice(0, -1),
+                    { ...last, content: last.content + deltaText },
+                  ];
+                }
+                return [...prev, makeBlock({ type: "text", content: deltaText })];
+              });
+            }
           } else if (event.delta.type === "input_json_delta") {
             const partialJson = event.delta.partial_json;
-            setBlocks((prev) => {
-              if (prev.length === 0) return prev;
-              const last = prev[prev.length - 1];
-              if (last.type === "tool_call") {
-                return [
-                  ...prev.slice(0, -1),
-                  {
-                    ...last,
-                    toolArgs: (last.toolArgs ?? "") + partialJson,
-                    content: (last.content ?? "") + partialJson,
-                  },
-                ];
-              }
-              return prev;
-            });
+            if (parentId) {
+              setBlocks((prev) => updateLastChildInParent(prev, parentId, (child) => {
+                if (child.type === "tool_call") {
+                  return {
+                    ...child,
+                    toolArgs: (child.toolArgs ?? "") + partialJson,
+                    content: (child.content ?? "") + partialJson,
+                  };
+                }
+                return null;
+              }));
+            } else {
+              setBlocks((prev) => {
+                if (prev.length === 0) return prev;
+                const last = prev[prev.length - 1];
+                if (last.type === "tool_call") {
+                  return [
+                    ...prev.slice(0, -1),
+                    {
+                      ...last,
+                      toolArgs: (last.toolArgs ?? "") + partialJson,
+                      content: (last.content ?? "") + partialJson,
+                    },
+                  ];
+                }
+                return prev;
+              });
+            }
           }
           break;
         }
         case "tool_result": {
-          setBlocks((prev) => [
-            ...prev,
-            makeBlock({
-              type: "tool_result",
-              content: event.content,
-              isError: event.is_error ?? false,
-            }),
-          ]);
+          // Check if this tool_result corresponds to a Task block's toolUseId — mark it complete
+          const toolResultBlock = makeBlock({
+            type: "tool_result",
+            content: event.content,
+            isError: event.is_error ?? false,
+            parentToolUseId: parentId,
+          });
+
+          if (parentId) {
+            setBlocks((prev) => appendToParent(prev, parentId, toolResultBlock));
+          } else {
+            // Also check if this result completes a Task block
+            setBlocks((prev) => {
+              const updated = [...prev, toolResultBlock];
+              // Mark matching Task block as complete
+              return updated.map((b) =>
+                b.type === "tool_call" && b.toolName === "Task" && b.toolUseId === event.tool_use_id
+                  ? { ...b, taskComplete: true }
+                  : b
+              );
+            });
+          }
           break;
         }
         case "content_block_stop": {

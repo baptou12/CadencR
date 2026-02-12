@@ -48,12 +48,13 @@ function generateId(): string {
 /**
  * Broadcast a stream event to all renderer windows.
  */
-function broadcastEvent(id: string, agentType: AgentType | string, event: StreamEvent): void {
+function broadcastEvent(id: string, agentType: AgentType | string, event: StreamEvent, parentToolUseId?: string | null): void {
   const agentEvent: AgentEvent = {
     subprocessId: id,
     agentType: agentType as AgentType,
     event,
     timestamp: Date.now(),
+    parentToolUseId: parentToolUseId ?? undefined,
   };
 
   const windows = BrowserWindow.getAllWindows();
@@ -70,14 +71,15 @@ function broadcastEvent(id: string, agentType: AgentType | string, event: Stream
 function handleSdkMessage(managed: ManagedSubprocess, msg: Record<string, unknown>): void {
   const { id, agentType } = managed;
   const type = msg.type as string;
+  const parentToolUseId = (msg.parent_tool_use_id as string | null | undefined) ?? null;
 
-  console.log("[subprocess-manager] SDK message type:", type);
+  console.log("[subprocess-manager] SDK message type:", type, parentToolUseId ? `(parent: ${parentToolUseId})` : "");
 
   if (type === "stream_event") {
     // SDKPartialAssistantMessage — contains the granular content_block_start/delta/stop events
     const innerEvent = msg.event as StreamEvent;
     if (innerEvent) {
-      broadcastEvent(id, agentType, innerEvent);
+      broadcastEvent(id, agentType, innerEvent, parentToolUseId);
       for (const listener of managed.eventListeners) listener(innerEvent);
     }
   } else if (type === "assistant") {
@@ -93,7 +95,7 @@ function handleSdkMessage(managed: ManagedSubprocess, msg: Record<string, unknow
               type: "content_block_start",
               index: i,
               content_block: { type: "text", text: block.text as string },
-            });
+            }, parentToolUseId);
           } else if (block.type === "tool_use") {
             broadcastEvent(id, agentType, {
               type: "content_block_start",
@@ -104,7 +106,7 @@ function handleSdkMessage(managed: ManagedSubprocess, msg: Record<string, unknow
                 name: block.name as string,
                 input: block.input as Record<string, unknown>,
               },
-            });
+            }, parentToolUseId);
           }
         }
       }
@@ -117,19 +119,19 @@ function handleSdkMessage(managed: ManagedSubprocess, msg: Record<string, unknow
         tool_use_id: (msg.tool_use_id as string) ?? "",
         content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content),
         is_error: (msg.is_error as boolean) ?? false,
-      });
+      }, parentToolUseId);
     } else {
       broadcastEvent(id, agentType, {
         type: "result",
         result: msg.result as string | undefined,
-      });
+      }, parentToolUseId);
     }
   } else if (type === "system") {
     broadcastEvent(id, agentType, {
       type: "system",
       subtype: (msg.subtype as string) ?? "unknown",
       session_id: msg.session_id as string | undefined,
-    });
+    }, parentToolUseId);
   }
 }
 
@@ -201,6 +203,10 @@ async function runSdkQuery(managed: ManagedSubprocess, options: SubprocessOption
 
   if (options.allowedTools && options.allowedTools.length > 0) {
     queryOptions.allowedTools = options.allowedTools;
+  }
+
+  if (managed.abortController) {
+    queryOptions.abortController = managed.abortController;
   }
 
   console.log("[subprocess-manager] calling SDK query() with cwd:", options.cwd);

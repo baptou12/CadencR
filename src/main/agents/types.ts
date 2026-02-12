@@ -120,6 +120,8 @@ export interface AgentEvent {
   event: StreamEvent;
   /** Timestamp */
   timestamp: number;
+  /** Parent tool_use_id if this event comes from a subagent spawned by Task */
+  parentToolUseId?: string | null;
 }
 
 /** Agent status info for listing */
