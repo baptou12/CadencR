@@ -2,6 +2,8 @@ import { useState, useCallback } from "react";
 import { Send, Square } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { AgentQuestionDrawer } from "./AgentQuestionDrawer";
+import type { AgentQuestion } from "./AgentQuestionDrawer";
 import type { AgentStatus } from "@/components/AgentPanel";
 
 export interface AgentPromptBarProps {
@@ -9,13 +11,25 @@ export interface AgentPromptBarProps {
   onStop: () => void;
   status: AgentStatus;
   disabled?: boolean;
+  /** Active questions from AskUserQuestion tool calls */
+  pendingQuestions?: AgentQuestion[];
+  /** Called when the user submits a response to questions */
+  onQuestionResponse?: (response: string) => void;
 }
 
-export function AgentPromptBar({ onSend, onStop, status, disabled }: AgentPromptBarProps) {
+export function AgentPromptBar({
+  onSend,
+  onStop,
+  status,
+  disabled,
+  pendingQuestions,
+  onQuestionResponse,
+}: AgentPromptBarProps) {
   const [text, setText] = useState("");
 
   const isRunning = status === "running";
   const canSend = text.trim().length > 0 && !disabled;
+  const hasQuestions = !!pendingQuestions && pendingQuestions.length > 0;
 
   const handleSend = useCallback(() => {
     const trimmed = text.trim();
@@ -33,6 +47,17 @@ export function AgentPromptBar({ onSend, onStop, status, disabled }: AgentPrompt
     },
     [canSend, handleSend],
   );
+
+  // When questions are pending, render the question form inline instead of the prompt input
+  if (hasQuestions && onQuestionResponse) {
+    return (
+      <AgentQuestionDrawer
+        questions={pendingQuestions}
+        open={true}
+        onSubmit={onQuestionResponse}
+      />
+    );
+  }
 
   return (
     <div className="flex items-center gap-2 px-2 py-1.5">

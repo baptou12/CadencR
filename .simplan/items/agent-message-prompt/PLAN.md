@@ -80,17 +80,19 @@ The `subprocess-manager.ts` creates `ManagedSubprocess` objects but doesn't stor
 - **Implementation notes**: Added `onSend` and `onStop` optional props to `AgentPanelProps`. `AgentPromptBar` renders inside the collapsible content, below the question drawer, with a `border-t`. It is hidden when `pendingQuestions` has items. In `featureId.tsx`, added `handleAgentSend` (calls `sendMessage` mutation) and `handleAgentStop` (calls `stop` mutation, sets error status + "Stopped by user" block). Removed `handleStopAll` callback and the floating stop button div. Also removed unused `SquareIcon` import. The `allAgents`/`runningAgents` are kept since `runningAgents` is used for `noAgentsRunning` and `allAgents` for auto-open logic.
 - **Validation results**: Lint passes (0 warnings, 0 errors). TypeScript compiles with no errors.
 
-### ⬜ Phase 4: Show AskUserQuestion form inline, replacing prompt bar
+### ✅ Phase 4: Show AskUserQuestion form inline, replacing prompt bar
 - **Step**: 4
 - **Complexity**: 3
-- [ ] In `AgentPromptBar.tsx`, add optional `pendingQuestions` and `onQuestionResponse` props
-- [ ] When `pendingQuestions` is non-empty, render the `AgentQuestionDrawer` content inline instead of the normal input+send/stop UI
-- [ ] Preserve the user's in-progress text in the prompt bar when questions appear (don't clear `text` state), restore it when questions are answered/dismissed
-- [ ] In `AgentPanel.tsx`, pass `pendingQuestions` and `onQuestionResponse` down to `AgentPromptBar` instead of rendering a separate `AgentQuestionDrawer`
-- [ ] Remove the standalone `AgentQuestionDrawer` rendering from `AgentPanel` (it now lives inside `AgentPromptBar`)
+- [x] In `AgentPromptBar.tsx`, add optional `pendingQuestions` and `onQuestionResponse` props
+- [x] When `pendingQuestions` is non-empty, render the `AgentQuestionDrawer` content inline instead of the normal input+send/stop UI
+- [x] Preserve the user's in-progress text in the prompt bar when questions appear (don't clear `text` state), restore it when questions are answered/dismissed
+- [x] In `AgentPanel.tsx`, pass `pendingQuestions` and `onQuestionResponse` down to `AgentPromptBar` instead of rendering a separate `AgentQuestionDrawer`
+- [x] Remove the standalone `AgentQuestionDrawer` rendering from `AgentPanel` (it now lives inside `AgentPromptBar`)
 - **Files**: `src/renderer/components/AgentPromptBar.tsx`, `src/renderer/components/AgentPanel.tsx`
 - **Commit message**: `feat: show AskUserQuestion form inline in prompt bar, preserving draft text`
 - **Bisect note**: Depends on Phase 3 being integrated first — prompt bar must already be wired into AgentPanel
+- **Implementation notes**: Added `pendingQuestions` and `onQuestionResponse` optional props to `AgentPromptBarProps`. When questions are pending, the component renders `AgentQuestionDrawer` inline (with `open={true}`) instead of the normal input/send/stop UI. The `text` state is preserved across question appearance/dismissal since it lives in `useState` and is not cleared when the question form renders. Removed the standalone `AgentQuestionDrawer` import and rendering from `AgentPanel.tsx`. Updated the prompt bar visibility condition to also show when `pendingQuestions` is non-empty.
+- **Validation results**: Lint passes (0 warnings, 0 errors). TypeScript compiles with no errors.
 
 ## Phase Status Legend
 
@@ -101,5 +103,5 @@ The `subprocess-manager.ts` creates `ManagedSubprocess` objects but doesn't stor
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 4
-- **Progress**: 3/4
+- **Current Phase**: All phases complete
+- **Progress**: 4/4
