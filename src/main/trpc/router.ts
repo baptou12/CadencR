@@ -21,7 +21,10 @@ import {
   openInTerminal,
   buildBranchName,
   getGitStats,
+  getDiff,
+  getChangedFiles,
 } from "../git/worktree";
+import { diffCommentsRouter } from "./diff-comments";
 import { startPlanAgent } from "../agents/plan-agent";
 import { startBrainstormAgent } from "../agents/brainstorm-agent";
 import { startExecuteAgent } from "../agents/execute-agent";
@@ -519,6 +522,46 @@ const gitRouter = router({
       return getGitStats(wtRow.value);
     }),
 
+  /** Get raw unified diff for a feature */
+  getDiff: publicProcedure
+    .input(
+      z.object({
+        featureId: z.number(),
+        mode: z.enum(["worktree", "branch"]),
+        targetBranch: z.string().optional(),
+      }),
+    )
+    .query(({ input }) => {
+      const db = getDatabase();
+      const wtRow = db
+        .prepare(
+          "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
+        )
+        .get(input.featureId) as SettingRow | undefined;
+      if (!wtRow) return "";
+      return getDiff(wtRow.value, input.mode, input.targetBranch);
+    }),
+
+  /** Get list of changed files with per-file line counts */
+  getChangedFiles: publicProcedure
+    .input(
+      z.object({
+        featureId: z.number(),
+        mode: z.enum(["worktree", "branch"]),
+        targetBranch: z.string().optional(),
+      }),
+    )
+    .query(({ input }) => {
+      const db = getDatabase();
+      const wtRow = db
+        .prepare(
+          "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
+        )
+        .get(input.featureId) as SettingRow | undefined;
+      if (!wtRow) return [];
+      return getChangedFiles(wtRow.value, input.mode, input.targetBranch);
+    }),
+
   /** Open a worktree path in the system terminal */
   openInTerminal: publicProcedure
     .input(z.object({ featureId: z.number() }))
@@ -545,6 +588,7 @@ export const appRouter = router({
   features: featuresRouter,
   agents: agentsRouter,
   git: gitRouter,
+  diffComments: diffCommentsRouter,
 });
 
 export type AppRouter = typeof appRouter;

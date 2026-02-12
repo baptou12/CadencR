@@ -90,26 +90,30 @@ ProductDevR is an Electron app with tRPC IPC, SQLite DB, TanStack Router, and Ta
 - **Implementation notes**: Added migration version 10 with CHECK constraints on `side` ('old'/'new') and `status` ('pending'/'sent'/'resolved'). Foreign key references `features(id)`.
 - **Validation results**: Lint passed (0 errors), TypeScript type check passed (no errors).
 
-### ⬜ Phase 3: Add git diff tRPC endpoints
+### ✅ Phase 3: Add git diff tRPC endpoints
 - **Step**: 2
 - **Complexity**: 3
-- [ ] Add `getDiff` function to `src/main/git/worktree.ts` — runs `git diff` (worktree mode) or `git diff main...HEAD` (branch mode), returns raw unified diff string
-- [ ] Add `getChangedFiles` function — runs `git diff --name-status`, returns list of `{ file, status, oldFile? }` with per-file addition/deletion line counts (via `git diff --numstat`)
-- [ ] Add `git.getDiff` and `git.getChangedFiles` procedures to `gitRouter` in `router.ts`
-- [ ] Input: `{ featureId, mode: "worktree" | "branch", targetBranch?: string }`
+- [x] Add `getDiff` function to `src/main/git/worktree.ts` — runs `git diff` (worktree mode) or `git diff main...HEAD` (branch mode), returns raw unified diff string
+- [x] Add `getChangedFiles` function — runs `git diff --name-status`, returns list of `{ file, status, oldFile? }` with per-file addition/deletion line counts (via `git diff --numstat`)
+- [x] Add `git.getDiff` and `git.getChangedFiles` procedures to `gitRouter` in `router.ts`
+- [x] Input: `{ featureId, mode: "worktree" | "branch", targetBranch?: string }`
 - **Files**: `src/main/git/worktree.ts`, `src/main/trpc/router.ts`
 - **Commit message**: `feat: add git diff and changed files tRPC endpoints`
 - **Bisect note**: N/A — new endpoints, not called yet
+- **Implementation notes**: Added `getDiff` and `getChangedFiles` functions to `worktree.ts` with `ChangedFile` interface. Both functions handle worktree/branch modes, with 50MB maxBuffer for large diffs. Added corresponding `git.getDiff` and `git.getChangedFiles` query procedures to `gitRouter` that resolve worktree path from `feature_settings`. Handles renames/copies in `--name-status` output.
+- **Validation results**: Lint passed (0 errors), TypeScript `tsc --noEmit` passed (no type errors).
 
-### ⬜ Phase 4: Add diff comments tRPC sub-router
+### ✅ Phase 4: Add diff comments tRPC sub-router
 - **Step**: 2
 - **Complexity**: 3
-- [ ] Create `src/main/trpc/diff-comments.ts` with CRUD procedures: `create`, `list` (by feature_id), `update` (content/status), `delete`
-- [ ] Add `markAsSent` mutation to batch-update comment statuses to "sent"
-- [ ] Register sub-router in `appRouter` as `diffComments`
+- [x] Create `src/main/trpc/diff-comments.ts` with CRUD procedures: `create`, `list` (by feature_id), `update` (content/status), `delete`
+- [x] Add `markAsSent` mutation to batch-update comment statuses to "sent"
+- [x] Register sub-router in `appRouter` as `diffComments`
 - **Files**: `src/main/trpc/diff-comments.ts`, `src/main/trpc/router.ts`
 - **Commit message**: `feat: add diff comments tRPC sub-router`
 - **Bisect note**: N/A — new sub-router, not consumed yet
+- **Implementation notes**: Created `diffCommentsRouter` with 5 procedures: `create` (inserts with status 'pending'), `list` (by feature_id, ordered by file_path and line_number), `update` (dynamic SET for content/status), `delete`, and `markAsSent` (batch updates pending to sent). Registered as `diffComments` in appRouter. Used `DiffCommentRow` interface for type safety on query results.
+- **Validation results**: Lint passed (0 errors), TypeScript `tsc --noEmit` passed (no type errors).
 
 ### ⬜ Phase 5: Core DiffViewer component with Dracula theme
 - **Step**: 3
@@ -210,5 +214,5 @@ ProductDevR is an Electron app with tRPC IPC, SQLite DB, TanStack Router, and Ta
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 3
-- **Progress**: 2/11
+- **Current Phase**: Phase 5
+- **Progress**: 4/11

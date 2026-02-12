@@ -194,6 +194,117 @@ export function getGitStats(worktreePath: string): {
 /**
  * Open a directory in the system's default terminal.
  */
+export interface ChangedFile {
+  file: string;
+  status: string;
+  oldFile?: string;
+  additions: number;
+  deletions: number;
+}
+
+/**
+ * Get a unified diff string for a worktree.
+ * - "worktree" mode: `git diff` (unstaged changes)
+ * - "branch" mode: `git diff <targetBranch>...HEAD`
+ */
+export function getDiff(
+  worktreePath: string,
+  mode: "worktree" | "branch",
+  targetBranch?: string,
+): string {
+  const branch = targetBranch ?? "main";
+  const cmd = mode === "worktree" ? "git diff" : `git diff ${branch}...HEAD`;
+  try {
+    return execSync(cmd, {
+      cwd: worktreePath,
+      stdio: "pipe",
+      encoding: "utf-8",
+      maxBuffer: 50 * 1024 * 1024,
+    });
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Get list of changed files with per-file addition/deletion counts.
+ */
+export function getChangedFiles(
+  worktreePath: string,
+  mode: "worktree" | "branch",
+  targetBranch?: string,
+): ChangedFile[] {
+  const branch = targetBranch ?? "main";
+  const diffArg = mode === "worktree" ? "" : `${branch}...HEAD`;
+
+  try {
+    // Get name-status for file statuses
+    const nameStatus = execSync(`git diff --name-status ${diffArg}`, {
+      cwd: worktreePath,
+      stdio: "pipe",
+      encoding: "utf-8",
+    }).trim();
+
+    if (!nameStatus) return [];
+
+    // Get numstat for line counts
+    const numstat = execSync(`git diff --numstat ${diffArg}`, {
+      cwd: worktreePath,
+      stdio: "pipe",
+      encoding: "utf-8",
+    }).trim();
+
+    // Build numstat lookup: file -> { additions, deletions }
+    const statMap = new Map<string, { additions: number; deletions: number }>();
+    for (const line of numstat.split("\n")) {
+      if (!line) continue;
+      const parts = line.split("\t");
+      if (parts.length >= 3) {
+        const additions = parts[0] === "-" ? 0 : parseInt(parts[0], 10);
+        const deletions = parts[1] === "-" ? 0 : parseInt(parts[1], 10);
+        const file = parts.slice(2).join("\t"); // handle renames with => in name
+        statMap.set(file, { additions, deletions });
+      }
+    }
+
+    const files: ChangedFile[] = [];
+    for (const line of nameStatus.split("\n")) {
+      if (!line) continue;
+      const parts = line.split("\t");
+      const statusCode = parts[0];
+      let file: string;
+      let oldFile: string | undefined;
+
+      if (statusCode.startsWith("R") || statusCode.startsWith("C")) {
+        // Rename or copy: status\toldFile\tnewFile
+        oldFile = parts[1];
+        file = parts[2];
+      } else {
+        file = parts[1];
+      }
+
+      const stats = statMap.get(file) ??
+        (oldFile ? statMap.get(`${oldFile} => ${file}`) : undefined) ??
+        { additions: 0, deletions: 0 };
+
+      files.push({
+        file,
+        status: statusCode,
+        oldFile,
+        additions: stats.additions,
+        deletions: stats.deletions,
+      });
+    }
+
+    return files;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Open a directory in the system's default terminal.
+ */
 export function openInTerminal(dirPath: string): void {
   // shell.openPath opens with the default application for that type
   // For directories on macOS, this opens Finder — so we use a different approach
