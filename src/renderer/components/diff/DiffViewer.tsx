@@ -1,10 +1,15 @@
 import { useState, useMemo, useCallback } from "react";
-import { DiffView, DiffFile, DiffModeEnum } from "@git-diff-view/react";
+import { DiffView, DiffFile, DiffModeEnum, SplitSide } from "@git-diff-view/react";
 import { highlighter } from "@git-diff-view/lowlight";
 import "@git-diff-view/react/styles/diff-view.css";
 import "./dracula-diff.css";
 import { trpc } from "@/trpc";
 import { ChevronDown, ChevronRight } from "lucide-react";
+import {
+  CommentWidgetLine,
+  CommentExtendLine,
+  type DiffComment,
+} from "./DiffCommentWidget";
 
 /**
  * Infer a language identifier from a file path extension.
@@ -107,12 +112,66 @@ export interface DiffViewerProps {
 export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
   const [diffMode, setDiffMode] = useState<DiffModeEnum>(DiffModeEnum.Split);
   const [collapsedFiles, setCollapsedFiles] = useState<Set<string>>(new Set());
+  const [activeWidget, setActiveWidget] = useState<{
+    filePath: string;
+    lineNumber: number;
+    side: SplitSide;
+  } | null>(null);
 
   const { data: rawDiff, isLoading } = trpc.git.getDiff.useQuery({
     featureId,
     mode,
     targetBranch,
   });
+
+  const utils = trpc.useUtils();
+  const { data: comments = [] } = trpc.diffComments.list.useQuery({ featureId });
+
+  const createComment = trpc.diffComments.create.useMutation({
+    onSuccess: () => utils.diffComments.list.invalidate({ featureId }),
+  });
+  const updateComment = trpc.diffComments.update.useMutation({
+    onSuccess: () => utils.diffComments.list.invalidate({ featureId }),
+  });
+  const deleteComment = trpc.diffComments.delete.useMutation({
+    onSuccess: () => utils.diffComments.list.invalidate({ featureId }),
+  });
+
+  const commentsByFileAndLine = useMemo(() => {
+    const map = new Map<string, DiffComment[]>();
+    for (const c of comments) {
+      const key = `${c.file_path}:${c.line_number}:${c.side}`;
+      const arr = map.get(key) ?? [];
+      arr.push(c as DiffComment);
+      map.set(key, arr);
+    }
+    return map;
+  }, [comments]);
+
+  const getCommentsForLine = useCallback(
+    (filePath: string, lineNumber: number, side: "old" | "new") => {
+      return commentsByFileAndLine.get(`${filePath}:${lineNumber}:${side}`) ?? [];
+    },
+    [commentsByFileAndLine],
+  );
+
+  const buildExtendData = useCallback(
+    (filePath: string) => {
+      const oldFile: Record<string, { data: DiffComment[] }> = {};
+      const newFile: Record<string, { data: DiffComment[] }> = {};
+      for (const c of comments) {
+        if (c.file_path !== filePath) continue;
+        const target = c.side === "old" ? oldFile : newFile;
+        const key = String(c.line_number);
+        if (!target[key]) {
+          target[key] = { data: [] };
+        }
+        target[key].data.push(c as DiffComment);
+      }
+      return { oldFile, newFile };
+    },
+    [comments],
+  );
 
   const fileSections = useMemo(() => parseUnifiedDiff(rawDiff ?? ""), [rawDiff]);
 
@@ -228,6 +287,65 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
                   diffViewFontSize={13}
                   diffViewHighlight={true}
                   registerHighlighter={highlighter}
+                  diffViewAddWidget={true}
+                  extendData={buildExtendData(displayName)}
+                  renderExtendLine={({ side, data, lineNumber }) => {
+                    const lineComments = data as DiffComment[] | undefined;
+                    if (!lineComments || lineComments.length === 0) return null;
+                    // Don't render extend line if widget is open on same line (widget shows comments too)
+                    if (
+                      activeWidget &&
+                      activeWidget.filePath === displayName &&
+                      activeWidget.lineNumber === lineNumber &&
+                      activeWidget.side === side
+                    ) {
+                      return null;
+                    }
+                    return (
+                      <CommentExtendLine
+                        comments={lineComments}
+                        onEdit={(id, content) => updateComment.mutate({ id, content })}
+                        onDelete={(id) => deleteComment.mutate({ id })}
+                      />
+                    );
+                  }}
+                  onAddWidgetClick={(lineNumber, side) => {
+                    setActiveWidget({ filePath: displayName, lineNumber, side });
+                  }}
+                  renderWidgetLine={({ lineNumber, side, onClose }) => {
+                    if (
+                      !activeWidget ||
+                      activeWidget.filePath !== displayName ||
+                      activeWidget.lineNumber !== lineNumber ||
+                      activeWidget.side !== side
+                    ) {
+                      return null;
+                    }
+                    const sideStr = side === SplitSide.old ? "old" : "new";
+                    const lineComments = getCommentsForLine(displayName, lineNumber, sideStr);
+                    return (
+                      <CommentWidgetLine
+                        comments={lineComments}
+                        onClose={() => {
+                          setActiveWidget(null);
+                          onClose();
+                        }}
+                        onSubmit={(content) => {
+                          createComment.mutate({
+                            featureId,
+                            filePath: displayName,
+                            lineNumber,
+                            side: sideStr,
+                            content,
+                          });
+                          setActiveWidget(null);
+                          onClose();
+                        }}
+                        onEdit={(id, content) => updateComment.mutate({ id, content })}
+                        onDelete={(id) => deleteComment.mutate({ id })}
+                      />
+                    );
+                  }}
                 />
               )}
             </div>

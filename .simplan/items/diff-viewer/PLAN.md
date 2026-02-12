@@ -192,17 +192,19 @@ ProductDevR is an Electron app with tRPC IPC, SQLite DB, TanStack Router, and Ta
 - **Implementation notes**: Created `DiffSearch` component that accepts a `containerRef` pointing to the diff scroll area. Uses DOM TreeWalker to find text nodes, wraps matches in `<mark>` elements with Dracula-themed highlighting (yellow `#f1fa8c` for matches, orange `#ffb86c` for current match). Debounced search (200ms). Navigation via Enter/Shift+Enter or chevron buttons. Escape clears. Highlights are cleaned up by restoring original text nodes on clear/unmount. Icons from lucide-react (Search, ChevronUp, ChevronDown, X).
 - **Validation results**: Lint passed (0 errors), TypeScript `tsc --noEmit` passed (no type errors), `pnpm run package` succeeded.
 
-### ⬜ Phase 10: Per-line comment widget
+### ✅ Phase 10: Per-line comment widget
 - **Step**: 7
 - **Complexity**: 4
-- [ ] Use `@git-diff-view/react` widget system (`renderWidgetLine`) to render inline comment forms
-- [ ] Add hover button on each diff line that opens a comment textarea
-- [ ] Wire comment creation to `diffComments.create` mutation
-- [ ] Display existing comments inline using the widget system
-- [ ] Add comment delete/edit actions
+- [x] Use `@git-diff-view/react` widget system (`renderWidgetLine`) to render inline comment forms
+- [x] Add hover button on each diff line that opens a comment textarea
+- [x] Wire comment creation to `diffComments.create` mutation
+- [x] Display existing comments inline using the widget system
+- [x] Add comment delete/edit actions
 - **Files**: `src/renderer/components/diff/DiffViewer.tsx`, `src/renderer/components/diff/DiffCommentWidget.tsx`
 - **Commit message**: `feat: add per-line commenting to diff viewer`
 - **Bisect note**: Builds on Phase 5's component
+- **Implementation notes**: Created `DiffCommentWidget.tsx` with `CommentForm` (textarea + submit/cancel), `CommentDisplay` (shows comment with edit/delete actions, status badge, timestamp), `CommentWidgetLine` (combines existing comments + new form), and `CommentExtendLine` (displays existing comments inline without form). Updated `DiffViewer.tsx` to use `@git-diff-view/react` widget API: `diffViewAddWidget=true` enables hover "+" button, `onAddWidgetClick` tracks active widget state, `renderWidgetLine` renders `CommentWidgetLine`, `extendData` + `renderExtendLine` show existing comments inline. Wired `diffComments.create/update/delete` mutations with query invalidation via `trpc.useUtils()`. Comments grouped by file/line/side in a memoized map.
+- **Validation results**: Lint passed (0 errors, 0 warnings), TypeScript `tsc --noEmit` passed, `pnpm run package` succeeded.
 
 ### ⬜ Phase 11: Modal dialog, TopBar button, and send-to-agent action
 - **Step**: 8
@@ -224,5 +226,5 @@ ProductDevR is an Electron app with tRPC IPC, SQLite DB, TanStack Router, and Ta
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 10
-- **Progress**: 9/11
+- **Current Phase**: Phase 11
+- **Progress**: 10/11
