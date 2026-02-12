@@ -367,8 +367,8 @@ async function requestUserAnswers(
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       questionEmitter.removeAllListeners(`answer:${subprocessId}`);
-      reject(new Error("User answer timeout (60s)"));
-    }, 60000); // 60 second timeout
+      reject(new Error("User answer timeout (15m)"));
+    }, 15 * 60 * 1000); // 15 minute timeout
 
     // Listen for answer from renderer
     questionEmitter.once(`answer:${subprocessId}`, (answers: Record<string, string>) => {
