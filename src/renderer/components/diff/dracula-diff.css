@@ -1,0 +1,54 @@
+/**
+ * Dracula theme overrides for @git-diff-view/react
+ * Applied via .dracula-diff wrapper class
+ */
+.dracula-diff {
+  --diff-border--: #6272a4;
+  --diff-add-content--: #2e4033;
+  --diff-del-content--: #4d2228;
+  --diff-add-lineNumber--: #2e4033;
+  --diff-del-lineNumber--: #4d2228;
+  --diff-plain-content--: #282a36;
+  --diff-expand-content--: #343746;
+  --diff-plain-lineNumber--: #282a36;
+  --diff-expand-lineNumber--: #343746;
+  --diff-plain-lineNumber-color--: #6272a4;
+  --diff-expand-lineNumber-color--: #6272a4;
+  --diff-hunk-content--: #343746;
+  --diff-hunk-lineNumber--: #343746;
+  --diff-hunk-lineNumber-hover--: #bd93f9;
+  --diff-add-content-highlight--: #50fa7b40;
+  --diff-del-content-highlight--: #ff555540;
+  --diff-add-widget--: #bd93f9;
+  --diff-add-widget-color--: #f8f8f2;
+  --diff-empty-content--: #282a36;
+  --diff-hunk-content-color--: #6272a4;
+
+  color: #f8f8f2;
+  background-color: #282a36;
+}
+
+.dracula-diff [data-state="selected"],
+.dracula-diff .diff-line-selected {
+  background-color: #44475a;
+}
+
+.dracula-diff .diff-line-old-content .diff-line-syntax-raw,
+.dracula-diff .diff-line-del .diff-line-syntax-raw {
+  color: #ff5555;
+}
+
+.dracula-diff .diff-line-new-content .diff-line-syntax-raw,
+.dracula-diff .diff-line-add .diff-line-syntax-raw {
+  color: #50fa7b;
+}
+
+.dracula-diff .diff-line-hunk-content {
+  color: #6272a4;
+  background-color: #343746;
+}
+
+.dracula-diff .current-line,
+.dracula-diff [data-current] {
+  background-color: #44475a;
+}

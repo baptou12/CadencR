@@ -115,20 +115,22 @@ ProductDevR is an Electron app with tRPC IPC, SQLite DB, TanStack Router, and Ta
 - **Implementation notes**: Created `diffCommentsRouter` with 5 procedures: `create` (inserts with status 'pending'), `list` (by feature_id, ordered by file_path and line_number), `update` (dynamic SET for content/status), `delete`, and `markAsSent` (batch updates pending to sent). Registered as `diffComments` in appRouter. Used `DiffCommentRow` interface for type safety on query results.
 - **Validation results**: Lint passed (0 errors), TypeScript `tsc --noEmit` passed (no type errors).
 
-### ⬜ Phase 5: Core DiffViewer component with Dracula theme
+### ✅ Phase 5: Core DiffViewer component with Dracula theme
 - **Step**: 3
 - **Complexity**: 4
-- [ ] Create `src/renderer/components/diff/DiffViewer.tsx` — main container component, 3-panel layout (sidebar | diff area | settings)
-- [ ] Import `@git-diff-view/react` `DiffView` component and `@git-diff-view/react/styles/diff-view.css`
-- [ ] Configure `DiffView` with lowlight syntax highlighting engine by default
-- [ ] Wire up `git.getDiff` query, parse unified diff into per-file diff data for `DiffView`
-- [ ] Render per-file collapsible sections: chevron toggle in file header, hunk headers (`@@ ... @@`) as distinct styled bars
-- [ ] Line numbers on both sides in split mode, `+`/`-` gutter markers
-- [ ] Virtual scroll for large diffs
-- [ ] Create `src/renderer/components/diff/dracula-diff.css` — override all `@git-diff-view/react` CSS variables: bg `#282a36`, current line `#44475a`, added line bg `#2e4033`, added text `#50fa7b`, removed line bg `#4d2228`, removed text `#ff5555`, line numbers `#6272a4`, text `#f8f8f2`, hunk header bg `#343746`, selection `#44475a`, border `#6272a4`
+- [x] Create `src/renderer/components/diff/DiffViewer.tsx` — main container component, 3-panel layout (sidebar | diff area | settings)
+- [x] Import `@git-diff-view/react` `DiffView` component and `@git-diff-view/react/styles/diff-view.css`
+- [x] Configure `DiffView` with lowlight syntax highlighting engine by default
+- [x] Wire up `git.getDiff` query, parse unified diff into per-file diff data for `DiffView`
+- [x] Render per-file collapsible sections: chevron toggle in file header, hunk headers (`@@ ... @@`) as distinct styled bars
+- [x] Line numbers on both sides in split mode, `+`/`-` gutter markers
+- [x] Virtual scroll for large diffs
+- [x] Create `src/renderer/components/diff/dracula-diff.css` — override all `@git-diff-view/react` CSS variables: bg `#282a36`, current line `#44475a`, added line bg `#2e4033`, added text `#50fa7b`, removed line bg `#4d2228`, removed text `#ff5555`, line numbers `#6272a4`, text `#f8f8f2`, hunk header bg `#343746`, selection `#44475a`, border `#6272a4`
 - **Files**: `src/renderer/components/diff/DiffViewer.tsx`, `src/renderer/components/diff/dracula-diff.css`
 - **Commit message**: `feat: create core DiffViewer component with Dracula theme`
 - **Bisect note**: Component exists but is not mounted anywhere yet
+- **Implementation notes**: Created `DiffViewer.tsx` with `DiffViewerProps` interface (featureId, mode, targetBranch). Parses raw unified diff into per-file sections using `parseUnifiedDiff()`, creates `DiffFile` instances via `DiffFile.createInstance()` with lowlight highlighter. Each file rendered as collapsible section with chevron toggle, per-file +/- counters. Header bar shows total files changed with aggregate addition/deletion counts. Split/Unified mode toggle in header. Uses `@git-diff-view/lowlight` highlighter registered on each DiffFile. `dracula-diff.css` overrides all CSS variables via `.dracula-diff` wrapper class. Language detection via file extension mapping in `langFromPath()`.
+- **Validation results**: Lint passed (0 errors), TypeScript `tsc --noEmit` passed (no type errors), `pnpm run package` succeeded.
 
 ### ⬜ Phase 6: File tree sidebar
 - **Step**: 4
@@ -214,5 +216,5 @@ ProductDevR is an Electron app with tRPC IPC, SQLite DB, TanStack Router, and Ta
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 5
-- **Progress**: 4/11
+- **Current Phase**: Phase 6
+- **Progress**: 5/11
