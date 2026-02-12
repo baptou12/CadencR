@@ -21,13 +21,15 @@ interface AgentQuestionDrawerProps {
   onSubmit: (response: string) => void;
   /** Whether the drawer is visible */
   open: boolean;
+  /** When true, uses tighter spacing for inline rendering inside AgentPromptBar */
+  inline?: boolean;
 }
 
 /**
  * Bottom drawer that pushes content up, displaying dynamic forms
  * for AskUserQuestion tool calls from the Claude CLI.
  */
-export function AgentQuestionDrawer({ questions, onSubmit, open }: AgentQuestionDrawerProps) {
+export function AgentQuestionDrawer({ questions, onSubmit, open, inline }: AgentQuestionDrawerProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState<string[]>([]);
   const [selectedOptions, setSelectedOptions] = useState<Set<string>>(new Set());
@@ -134,7 +136,10 @@ export function AgentQuestionDrawer({ questions, onSubmit, open }: AgentQuestion
   const hasOptions = currentQuestion.options && currentQuestion.options.length > 0;
 
   return (
-    <div className="border-t border-border bg-muted/30 px-4 py-3">
+    <div className={cn(
+      "bg-muted/20",
+      inline ? "px-3 py-2" : "border-t border-border px-4 py-3"
+    )}>
       {/* Progress indicator for multiple questions */}
       {questions.length > 1 && (
         <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
@@ -146,7 +151,7 @@ export function AgentQuestionDrawer({ questions, onSubmit, open }: AgentQuestion
       )}
 
       {/* Question text */}
-      <p className="mb-3 text-sm font-medium text-foreground">{currentQuestion.question}</p>
+      <p className={cn("text-sm font-medium text-foreground", inline ? "mb-2" : "mb-3")}>{currentQuestion.question}</p>
 
       {/* Option buttons */}
       {hasOptions && (
@@ -184,7 +189,10 @@ export function AgentQuestionDrawer({ questions, onSubmit, open }: AgentQuestion
               if (e.key === "Enter") handleFreeTextSubmit();
             }}
             placeholder="Type your answer..."
-            className="text-sm"
+            className={cn(
+              "text-sm",
+              inline && "h-8 border-border/50 bg-background shadow-none focus-visible:ring-1 focus-visible:ring-ring/40"
+            )}
             autoFocus
           />
         </div>

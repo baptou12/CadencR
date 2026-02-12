@@ -55,19 +55,20 @@ export function AgentPromptBar({
         questions={pendingQuestions}
         open={true}
         onSubmit={onQuestionResponse}
+        inline
       />
     );
   }
 
   return (
-    <div className="flex items-center gap-2 px-2 py-1.5">
+    <div className="flex items-center gap-2 bg-muted/20 px-3 py-2">
       <Input
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={handleKeyDown}
         placeholder="Send a message…"
         disabled={disabled}
-        className="h-8 text-sm"
+        className="h-8 border-border/50 bg-background text-sm shadow-none focus-visible:ring-1 focus-visible:ring-ring/40"
       />
       {isRunning ? (
         <Button
@@ -75,8 +76,9 @@ export function AgentPromptBar({
           size="icon-xs"
           onClick={onStop}
           aria-label="Stop agent"
+          className="shrink-0"
         >
-          <Square />
+          <Square className="size-3.5" />
         </Button>
       ) : (
         <Button
@@ -85,8 +87,9 @@ export function AgentPromptBar({
           onClick={handleSend}
           disabled={!canSend}
           aria-label="Send message"
+          className="shrink-0"
         >
-          <Send />
+          <Send className="size-3.5" />
         </Button>
       )}
     </div>

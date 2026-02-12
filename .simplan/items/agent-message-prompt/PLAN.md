@@ -96,16 +96,18 @@ The `subprocess-manager.ts` creates `ManagedSubprocess` objects but doesn't stor
 - **Implementation notes**: Added `pendingQuestions` and `onQuestionResponse` optional props to `AgentPromptBarProps`. When questions are pending, the component renders `AgentQuestionDrawer` inline (with `open={true}`) instead of the normal input/send/stop UI. The `text` state is preserved across question appearance/dismissal since it lives in `useState` and is not cleared when the question form renders. Removed the standalone `AgentQuestionDrawer` import and rendering from `AgentPanel.tsx`. Updated the prompt bar visibility condition to also show when `pendingQuestions` is non-empty.
 - **Validation results**: Lint passes (0 warnings, 0 errors). TypeScript compiles with no errors.
 
-### ⬜ Phase 5: Polish prompt bar design
+### ✅ Phase 5: Polish prompt bar design
 - **Step**: 5
 - **Complexity**: 2
-- [ ] Review current AgentPromptBar and AgentQuestionDrawer inline rendering for visual issues
-- [ ] Improve spacing, alignment, and styling of the prompt bar to match the Dracula theme and overall panel aesthetic
-- [ ] Ensure the inline question form looks cohesive when rendered inside the prompt bar area
-- [ ] Fix any visual regressions from the Phase 4 integration (borders, padding, background consistency)
+- [x] Review current AgentPromptBar and AgentQuestionDrawer inline rendering for visual issues
+- [x] Improve spacing, alignment, and styling of the prompt bar to match the Dracula theme and overall panel aesthetic
+- [x] Ensure the inline question form looks cohesive when rendered inside the prompt bar area
+- [x] Fix any visual regressions from the Phase 4 integration (borders, padding, background consistency)
 - **Files**: `src/renderer/components/AgentPromptBar.tsx`, `src/renderer/components/AgentQuestionDrawer.tsx`
 - **Commit message**: `fix: polish agent prompt bar and inline question form design`
 - **Bisect note**: Style-only changes, no logic changes
+- **Implementation notes**: Polished prompt bar with `bg-muted/20` background, increased padding (`px-3 py-2`), and refined input styling (subtle border, background, reduced focus ring). Added explicit icon sizing (`size-3.5`) and `shrink-0` on buttons. Added `inline` prop to `AgentQuestionDrawer` for tighter spacing when rendered inside the prompt bar -- removes the redundant `border-t` (already provided by the parent), uses `bg-muted/20` to match, reduces padding and margins, and styles the free-text input consistently with the prompt bar input.
+- **Validation results**: Lint passes (0 warnings, 0 errors). TypeScript compiles with no errors.
 
 ### ⬜ Phase 6: Disable prompt bar for plan/brainstorm agents once complete
 - **Step**: 6
@@ -126,5 +128,5 @@ The `subprocess-manager.ts` creates `ManagedSubprocess` objects but doesn't stor
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 5
-- **Progress**: 4/6
+- **Current Phase**: Phase 6
+- **Progress**: 5/6
