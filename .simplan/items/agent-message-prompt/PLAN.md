@@ -30,6 +30,7 @@ The `subprocess-manager.ts` creates `ManagedSubprocess` objects but doesn't stor
 | 1    | 1      | Backend: store Query ref and add sendMessage API |
 | 2    | 2      | Frontend: AgentPromptBar component |
 | 3    | 3      | Frontend: integrate into feature page, remove floating stop |
+| 4    | 4      | Inline AskUserQuestion form in prompt bar, preserve draft text |
 
 > **Parallelism**: Each step depends on the previous.
 
@@ -77,6 +78,18 @@ The `subprocess-manager.ts` creates `ManagedSubprocess` objects but doesn't stor
 - **Commit message**: `feat: integrate per-agent prompt bar, remove floating stop button`
 - **Bisect note**: Must update both files together — AgentPanel gets new props that featureId.tsx provides
 
+### ⬜ Phase 4: Show AskUserQuestion form inline, replacing prompt bar
+- **Step**: 4
+- **Complexity**: 3
+- [ ] In `AgentPromptBar.tsx`, add optional `pendingQuestions` and `onQuestionResponse` props
+- [ ] When `pendingQuestions` is non-empty, render the `AgentQuestionDrawer` content inline instead of the normal input+send/stop UI
+- [ ] Preserve the user's in-progress text in the prompt bar when questions appear (don't clear `text` state), restore it when questions are answered/dismissed
+- [ ] In `AgentPanel.tsx`, pass `pendingQuestions` and `onQuestionResponse` down to `AgentPromptBar` instead of rendering a separate `AgentQuestionDrawer`
+- [ ] Remove the standalone `AgentQuestionDrawer` rendering from `AgentPanel` (it now lives inside `AgentPromptBar`)
+- **Files**: `src/renderer/components/AgentPromptBar.tsx`, `src/renderer/components/AgentPanel.tsx`
+- **Commit message**: `feat: show AskUserQuestion form inline in prompt bar, preserving draft text`
+- **Bisect note**: Depends on Phase 3 being integrated first — prompt bar must already be wired into AgentPanel
+
 ## Phase Status Legend
 
 | Emoji | Status |
@@ -87,4 +100,4 @@ The `subprocess-manager.ts` creates `ManagedSubprocess` objects but doesn't stor
 
 ## Current Status
 - **Current Phase**: Phase 3
-- **Progress**: 2/3
+- **Progress**: 2/4
