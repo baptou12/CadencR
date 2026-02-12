@@ -53,6 +53,13 @@ function FeaturePage() {
   const risk = useAgentState();
   const review = useAgentState();
 
+  // Refetch feature when agents complete (status may have changed in DB)
+  useEffect(() => {
+    if (plan.status === "complete" || brainstorm.status === "complete") {
+      void featureQuery.refetch();
+    }
+  }, [plan.status, brainstorm.status, featureQuery]);
+
   // Query for incomplete sessions that can be resumed
   const incompleteQuery = trpc.agents.getIncompleteSessions.useQuery({
     featureId: numericFeatureId,

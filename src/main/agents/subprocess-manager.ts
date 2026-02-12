@@ -97,13 +97,15 @@ function handleSdkMessage(managed: ManagedSubprocess, msg: Record<string, unknow
         for (let i = 0; i < content.length; i++) {
           const block = content[i];
           if (block.type === "text") {
-            broadcastEvent(id, agentType, {
+            const event: StreamEvent = {
               type: "content_block_start",
               index: i,
               content_block: { type: "text", text: block.text as string },
-            }, parentToolUseId);
+            };
+            broadcastEvent(id, agentType, event, parentToolUseId);
+            for (const listener of managed.eventListeners) listener(event);
           } else if (block.type === "tool_use") {
-            broadcastEvent(id, agentType, {
+            const event: StreamEvent = {
               type: "content_block_start",
               index: i,
               content_block: {
@@ -112,7 +114,9 @@ function handleSdkMessage(managed: ManagedSubprocess, msg: Record<string, unknow
                 name: block.name as string,
                 input: block.input as Record<string, unknown>,
               },
-            }, parentToolUseId);
+            };
+            broadcastEvent(id, agentType, event, parentToolUseId);
+            for (const listener of managed.eventListeners) listener(event);
           }
         }
       }

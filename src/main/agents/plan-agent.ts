@@ -154,33 +154,44 @@ function setupPlanCompletionHandler(
       // Try to parse the plan
       const parsed = parsePlanOutput(fullOutput);
       if (parsed) {
-        // Store raw markdown
-        db.prepare("UPDATE plans SET raw_markdown = ?, title = ?, status = 'active' WHERE id = ?").run(
-          fullOutput,
-          parsed.title,
-          planId,
-        );
+        try {
+          db.transaction(() => {
+            // Store raw markdown
+            db.prepare("UPDATE plans SET raw_markdown = ?, title = ?, status = 'active' WHERE id = ?").run(
+              fullOutput,
+              parsed.title,
+              planId,
+            );
 
-        // Insert phases
-        const insertPhase = db.prepare(
-          "INSERT INTO phases (plan_id, step_number, title, status, complexity, commit_message, prompt, order_index) VALUES (?, ?, ?, 'pending', ?, ?, ?, ?)",
-        );
+            // Insert phases
+            const insertPhase = db.prepare(
+              "INSERT INTO phases (plan_id, step_number, title, status, complexity, commit_message, prompt, order_index) VALUES (?, ?, ?, 'pending', ?, ?, ?, ?)",
+            );
 
-        for (let i = 0; i < parsed.phases.length; i++) {
-          const phase = parsed.phases[i];
-          insertPhase.run(
+            for (let i = 0; i < parsed.phases.length; i++) {
+              const phase = parsed.phases[i];
+              insertPhase.run(
+                planId,
+                phase.step,
+                phase.title,
+                phase.complexity,
+                phase.commitMessage,
+                phase.prompt,
+                i,
+              );
+            }
+
+            // Update feature status to planned
+            db.prepare("UPDATE features SET status = 'planned' WHERE id = ?").run(featureId);
+          })();
+        } catch (err) {
+          console.error("[plan-agent] Failed to save plan:", err);
+          // Still store raw output even if phase insertion fails
+          db.prepare("UPDATE plans SET raw_markdown = ?, status = 'draft' WHERE id = ?").run(
+            fullOutput,
             planId,
-            phase.step,
-            phase.title,
-            phase.complexity,
-            phase.commitMessage,
-            phase.prompt,
-            i,
           );
         }
-
-        // Update feature status to planned
-        db.prepare("UPDATE features SET status = 'planned' WHERE id = ?").run(featureId);
       } else {
         // Could not parse — store raw output anyway
         db.prepare("UPDATE plans SET raw_markdown = ?, status = 'draft' WHERE id = ?").run(

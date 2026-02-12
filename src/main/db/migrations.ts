@@ -174,6 +174,16 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 11,
+    description: "Ensure phases table has prompt column",
+    up: (db) => {
+      const columns = db.pragma("table_info(phases)") as Array<{ name: string }>;
+      if (!columns.some((c) => c.name === "prompt")) {
+        db.exec("ALTER TABLE phases ADD COLUMN prompt TEXT");
+      }
+    },
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {
