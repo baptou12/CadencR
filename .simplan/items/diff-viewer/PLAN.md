@@ -132,30 +132,34 @@ ProductDevR is an Electron app with tRPC IPC, SQLite DB, TanStack Router, and Ta
 - **Implementation notes**: Created `DiffViewer.tsx` with `DiffViewerProps` interface (featureId, mode, targetBranch). Parses raw unified diff into per-file sections using `parseUnifiedDiff()`, creates `DiffFile` instances via `DiffFile.createInstance()` with lowlight highlighter. Each file rendered as collapsible section with chevron toggle, per-file +/- counters. Header bar shows total files changed with aggregate addition/deletion counts. Split/Unified mode toggle in header. Uses `@git-diff-view/lowlight` highlighter registered on each DiffFile. `dracula-diff.css` overrides all CSS variables via `.dracula-diff` wrapper class. Language detection via file extension mapping in `langFromPath()`.
 - **Validation results**: Lint passed (0 errors), TypeScript `tsc --noEmit` passed (no type errors), `pnpm run package` succeeded.
 
-### ⬜ Phase 6: File tree sidebar
+### ✅ Phase 6: File tree sidebar
 - **Step**: 4
 - **Complexity**: 3
-- [ ] Create `src/renderer/components/diff/DiffFileTree.tsx`
-- [ ] Render changed files as a collapsible directory tree (group files by folder path, folders are collapsible)
-- [ ] Each file entry shows: file icon indicating change type (added=green, modified=yellow, deleted=red, renamed=blue), file name
-- [ ] Each file entry has a `[+]`/`[-]` button to expand/collapse that file's diff in the center panel
-- [ ] Clicking a file name scrolls the center diff panel to that file's section
-- [ ] File filter search input at the top of the sidebar — filters the tree as you type
-- [ ] Show active/selected file highlight
+- [x] Create `src/renderer/components/diff/DiffFileTree.tsx`
+- [x] Render changed files as a collapsible directory tree (group files by folder path, folders are collapsible)
+- [x] Each file entry shows: file icon indicating change type (added=green, modified=yellow, deleted=red, renamed=blue), file name
+- [x] Each file entry has a `[+]`/`[-]` button to expand/collapse that file's diff in the center panel
+- [x] Clicking a file name scrolls the center diff panel to that file's section
+- [x] File filter search input at the top of the sidebar — filters the tree as you type
+- [x] Show active/selected file highlight
 - **Files**: `src/renderer/components/diff/DiffFileTree.tsx`
 - **Commit message**: `feat: add file tree sidebar to diff viewer`
 - **Bisect note**: Integrated into DiffViewer layout from Phase 5
+- **Implementation notes**: Created `DiffFileTree` component with `ChangedFileEntry` interface matching backend `ChangedFile` shape. Files grouped into directory tree via `buildTree()`, sorted directories-first then alphabetically. Each file shows colored status letter (A=green, M=yellow, D=red, R=blue) and +/- button to toggle diff expansion. Filter input uses recursive `matchesFilter()`. Component accepts `onToggleExpand` and `onSelectFile` callbacks for parent control. Directories independently collapsible via local state.
+- **Validation results**: Lint passed (0 errors, 1 warning about nested function), TypeScript `tsc --noEmit` passed (no type errors).
 
-### ⬜ Phase 7: Diff header bar with file count and change counters
+### ✅ Phase 7: Diff header bar with file count and change counters
 - **Step**: 4
 - **Complexity**: 2
-- [ ] Create `src/renderer/components/diff/DiffHeader.tsx`
-- [ ] Show "N files changed" label with file count icon
-- [ ] Show total addition counter (green `+N`) and deletion counter (red `-N`) aggregated from all files
-- [ ] Per-file headers also show individual `+N -N` counters
+- [x] Create `src/renderer/components/diff/DiffHeader.tsx`
+- [x] Show "N files changed" label with file count icon
+- [x] Show total addition counter (green `+N`) and deletion counter (red `-N`) aggregated from all files
+- [x] Per-file headers also show individual `+N -N` counters
 - **Files**: `src/renderer/components/diff/DiffHeader.tsx`
 - **Commit message**: `feat: add diff header with file count and change counters`
 - **Bisect note**: Integrated into DiffViewer layout
+- **Implementation notes**: Created `DiffHeader` component with `FileText` icon from lucide-react, file count label, and green/red aggregate counters. Also created `FileHeader` component for per-file headers with chevron toggle (SVG with rotate transition), file name, and individual +/- counters. Both components accept props and render with Dracula theme colors. A `children` slot in `DiffHeader` allows other phases to inject controls (e.g., split/unified toggle, settings). Components are not yet wired into `DiffViewer.tsx` to avoid conflicting with parallel Phase 6.
+- **Validation results**: Lint passed (0 errors), TypeScript `tsc --noEmit` passed (no type errors).
 
 ### ⬜ Phase 8: Settings popover
 - **Step**: 5
@@ -216,5 +220,5 @@ ProductDevR is an Electron app with tRPC IPC, SQLite DB, TanStack Router, and Ta
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 6
-- **Progress**: 5/11
+- **Current Phase**: Phase 8
+- **Progress**: 7/11
