@@ -68,23 +68,27 @@ ProductDevR is an Electron app with tRPC IPC, SQLite DB, TanStack Router, and Ta
 
 ## Phases
 
-### ⬜ Phase 1: Install @git-diff-view/react and lowlight dependencies
+### ✅ Phase 1: Install @git-diff-view/react and lowlight dependencies
 - **Step**: 1
 - **Complexity**: 1
-- [ ] Run `pnpm add @git-diff-view/react @git-diff-view/lowlight lowlight`
-- [ ] Verify packages install and types are available
+- [x] Run `pnpm add @git-diff-view/react @git-diff-view/lowlight lowlight`
+- [x] Verify packages install and types are available
 - **Files**: `package.json`, `pnpm-lock.yaml`
 - **Commit message**: `chore: add @git-diff-view/react and lowlight dependencies`
 - **Bisect note**: N/A
+- **Implementation notes**: Installed `@git-diff-view/react@^0.0.39`, `@git-diff-view/lowlight@^0.0.39`, `lowlight@^3.3.0`. +45 packages added.
+- **Validation results**: Lint passes (0 errors), TypeScript `tsc --noEmit` passes (no type errors).
 
-### ⬜ Phase 2: Add diff_comments DB migration
+### ✅ Phase 2: Add diff_comments DB migration
 - **Step**: 1
 - **Complexity**: 2
-- [ ] Add migration 10: Create `diff_comments` table with columns: `id`, `feature_id`, `file_path`, `line_number`, `side` (old/new), `content`, `status` (pending/sent/resolved), `created_at`
-- [ ] Table supports per-line comments linked to features
+- [x] Add migration 10: Create `diff_comments` table with columns: `id`, `feature_id`, `file_path`, `line_number`, `side` (old/new), `content`, `status` (pending/sent/resolved), `created_at`
+- [x] Table supports per-line comments linked to features
 - **Files**: `src/main/db/migrations.ts`
 - **Commit message**: `feat: add diff_comments table migration`
 - **Bisect note**: N/A — migration is additive, no existing code references this table
+- **Implementation notes**: Added migration version 10 with CHECK constraints on `side` ('old'/'new') and `status` ('pending'/'sent'/'resolved'). Foreign key references `features(id)`.
+- **Validation results**: Lint passed (0 errors), TypeScript type check passed (no errors).
 
 ### ⬜ Phase 3: Add git diff tRPC endpoints
 - **Step**: 2
@@ -206,5 +210,5 @@ ProductDevR is an Electron app with tRPC IPC, SQLite DB, TanStack Router, and Ta
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Not started
-- **Progress**: 0/11
+- **Current Phase**: Phase 3
+- **Progress**: 2/11
