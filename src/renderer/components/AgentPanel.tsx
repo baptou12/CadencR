@@ -5,6 +5,7 @@ import { Loader2Icon, CheckCircleIcon, XCircleIcon, RotateCcwIcon, ChevronRightI
 import { Button } from "@/components/ui/button";
 import { AgentStream } from "./AgentStream";
 import { AgentQuestionDrawer } from "./AgentQuestionDrawer";
+import { AgentPromptBar } from "./AgentPromptBar";
 import type { AgentBlockData } from "./AgentBlock";
 import type { AgentType } from "../../main/agents/types";
 import type { AgentQuestion } from "./AgentQuestionDrawer";
@@ -24,6 +25,10 @@ interface AgentPanelProps {
   resumable?: boolean;
   /** Called when user clicks resume */
   onResume?: () => void;
+  /** Called when user sends a message via the prompt bar */
+  onSend?: (message: string) => void;
+  /** Called when user clicks the stop button in the prompt bar */
+  onStop?: () => void;
   /** Whether the panel content is expanded */
   open?: boolean;
   /** Called when the user toggles the panel */
@@ -69,6 +74,8 @@ export function AgentPanel({
   onQuestionResponse,
   resumable,
   onResume,
+  onSend,
+  onStop,
   open: controlledOpen,
   onToggle,
 }: AgentPanelProps) {
@@ -150,6 +157,17 @@ export function AgentPanel({
             open={!!pendingQuestions && pendingQuestions.length > 0}
             onSubmit={onQuestionResponse ?? (() => {})}
           />
+
+          {/* Prompt bar — shown when agent has output or is running, hidden when questions are pending */}
+          {onSend && onStop && !(pendingQuestions && pendingQuestions.length > 0) && (status !== "idle" || blocks.length > 0) && (
+            <div className="border-t border-border">
+              <AgentPromptBar
+                onSend={onSend}
+                onStop={onStop}
+                status={status}
+              />
+            </div>
+          )}
         </>
       )}
     </div>

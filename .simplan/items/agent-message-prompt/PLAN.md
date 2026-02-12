@@ -66,17 +66,19 @@ The `subprocess-manager.ts` creates `ManagedSubprocess` objects but doesn't stor
 - **Implementation notes**: Created AgentPromptBar with shadcn Input and Button. Shows destructive Stop (Square icon) when running, default Send (Send icon) otherwise. Enter sends, input clears on send. Uses lucide-react icons. Compact layout with h-8 input and icon-xs buttons.
 - **Validation results**: Lint passes (0 warnings, 0 errors). TypeScript compiles with no errors.
 
-### ⬜ Phase 3: Integration — Wire up prompt bar and remove floating stop
+### ✅ Phase 3: Integration — Wire up prompt bar and remove floating stop
 - **Step**: 3
 - **Complexity**: 3
-- [ ] In `AgentPanel.tsx`, add `onSend`, `onStop` props and render `AgentPromptBar` below the stream (when agent has output or is running)
-- [ ] In `featureId.tsx`, wire `onSend` to call `trpc.agents.sendMessage.mutate()` with the agent's `subprocessId`
-- [ ] In `featureId.tsx`, wire `onStop` to call `trpc.agents.stop.mutate()` and update agent state to error + "Stopped by user"
-- [ ] Remove the floating "Stop All" button from the bottom-right
-- [ ] Ensure question drawer and prompt bar don't conflict (hide prompt bar when questions are pending)
+- [x] In `AgentPanel.tsx`, add `onSend`, `onStop` props and render `AgentPromptBar` below the stream (when agent has output or is running)
+- [x] In `featureId.tsx`, wire `onSend` to call `trpc.agents.sendMessage.mutate()` with the agent's `subprocessId`
+- [x] In `featureId.tsx`, wire `onStop` to call `trpc.agents.stop.mutate()` and update agent state to error + "Stopped by user"
+- [x] Remove the floating "Stop All" button from the bottom-right
+- [x] Ensure question drawer and prompt bar don't conflict (hide prompt bar when questions are pending)
 - **Files**: `src/renderer/components/AgentPanel.tsx`, `src/renderer/routes/projects/$projectId/features/$featureId.tsx`
 - **Commit message**: `feat: integrate per-agent prompt bar, remove floating stop button`
 - **Bisect note**: Must update both files together — AgentPanel gets new props that featureId.tsx provides
+- **Implementation notes**: Added `onSend` and `onStop` optional props to `AgentPanelProps`. `AgentPromptBar` renders inside the collapsible content, below the question drawer, with a `border-t`. It is hidden when `pendingQuestions` has items. In `featureId.tsx`, added `handleAgentSend` (calls `sendMessage` mutation) and `handleAgentStop` (calls `stop` mutation, sets error status + "Stopped by user" block). Removed `handleStopAll` callback and the floating stop button div. Also removed unused `SquareIcon` import. The `allAgents`/`runningAgents` are kept since `runningAgents` is used for `noAgentsRunning` and `allAgents` for auto-open logic.
+- **Validation results**: Lint passes (0 warnings, 0 errors). TypeScript compiles with no errors.
 
 ### ⬜ Phase 4: Show AskUserQuestion form inline, replacing prompt bar
 - **Step**: 4
@@ -99,5 +101,5 @@ The `subprocess-manager.ts` creates `ManagedSubprocess` objects but doesn't stor
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 3
-- **Progress**: 2/4
+- **Current Phase**: Phase 4
+- **Progress**: 3/4

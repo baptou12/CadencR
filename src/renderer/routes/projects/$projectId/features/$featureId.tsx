@@ -15,7 +15,6 @@ import {
   PlusCircleIcon,
   WrenchIcon,
   CheckCircle2Icon,
-  SquareIcon,
 } from "lucide-react";
 import {
   useAgentState,
@@ -255,6 +254,7 @@ function FeaturePage() {
   const startExecuteForFixMutation = trpc.agents.startExecute.useMutation();
   const submitAnswersMutation = trpc.agents.submitAnswers.useMutation();
   const stopMutation = trpc.agents.stop.useMutation();
+  const sendMessageMutation = trpc.agents.sendMessage.useMutation();
 
   // Wire up IPC event listener
   const eventHandlers = useMemo(
@@ -533,23 +533,36 @@ function FeaturePage() {
 
   const runningAgents = allAgents.filter((a) => a.state.status === "running");
 
-  const handleStopAll = useCallback(async () => {
-    for (const agent of runningAgents) {
-      const id = agent.state.subprocessId;
-      if (id) {
-        try {
-          await stopMutation.mutateAsync({ id });
-        } catch {
-          // best effort
-        }
-        agent.state.setStatus("error");
-        agent.state.appendBlock({
-          type: "text",
-          content: "\n\nStopped by user.",
-        });
+  // Per-agent send message handler
+  const handleAgentSend = useCallback(
+    (agentType: AgentType, message: string) => {
+      const state = agentStateMap[agentType];
+      const id = state.subprocessId;
+      if (!id) return;
+      sendMessageMutation.mutate({ id, message });
+    },
+    [agentStateMap, sendMessageMutation],
+  );
+
+  // Per-agent stop handler
+  const handleAgentStop = useCallback(
+    async (agentType: AgentType) => {
+      const state = agentStateMap[agentType];
+      const id = state.subprocessId;
+      if (!id) return;
+      try {
+        await stopMutation.mutateAsync({ id });
+      } catch {
+        // best effort
       }
-    }
-  }, [runningAgents, stopMutation]);
+      state.setStatus("error");
+      state.appendBlock({
+        type: "text",
+        content: "\n\nStopped by user.",
+      });
+    },
+    [agentStateMap, stopMutation],
+  );
 
   // Feature state machine
   const { view, actions } = useFeatureState({
@@ -688,6 +701,8 @@ function FeaturePage() {
                         ? handleBrainstormQuestionResponse
                         : undefined
                   }
+                  onSend={(message) => handleAgentSend(entry.type, message)}
+                  onStop={() => void handleAgentStop(entry.type)}
                   resumable={
                     (entry.type === "plan" || entry.type === "brainstorm") &&
                     resumableSessions.has(entry.type)
@@ -827,25 +842,6 @@ function FeaturePage() {
         )}
       </div>
 
-      {/* Floating stop button */}
-      {runningAgents.length > 0 && (
-        <div className="absolute bottom-6 right-6">
-          <Button
-            variant="destructive"
-            size="sm"
-            className="gap-2 shadow-lg"
-            onClick={() => void handleStopAll()}
-            disabled={stopMutation.isLoading}
-          >
-            {stopMutation.isLoading ? (
-              <Loader2Icon className="size-4 animate-spin" />
-            ) : (
-              <SquareIcon className="size-4" />
-            )}
-            Stop {runningAgents.length > 1 ? `All (${runningAgents.length})` : runningAgents[0].label}
-          </Button>
-        </div>
-      )}
     </div>
   );
 }
