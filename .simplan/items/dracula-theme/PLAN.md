@@ -63,17 +63,19 @@
 - **Implementation notes**: Converted all 11 Dracula palette colors from hex to OKLCH via sRGB->XYZ->OKLab->OKLCH. Replaced all `:root` variables, removed `.dark` block and `@custom-variant dark` line. Chart colors use purple, pink, green, cyan, orange. All CSS variable names preserved.
 - **Validation results**: Lint passes (0 errors). No `build` script exists in package.json (`package` is the equivalent but too heavy to run as validation).
 
-### ⬜ Phase 2: Remove dark: variant usages from components
+### ✅ Phase 2: Remove dark: variant usages from components
 - **Step**: 2
 - **Complexity**: 2
-- [ ] Remove all `dark:` prefixed classes from `src/renderer/components/FeatureList.tsx` (5 occurrences)
-- [ ] Remove all `dark:` prefixed classes from `src/renderer/components/FeatureTopBar.tsx` (5 occurrences)
-- [ ] Remove all `dark:` prefixed classes from `src/renderer/components/AgentPanel.tsx` (4 occurrences)
-- [ ] Remove all `dark:` prefixed classes from `src/renderer/components/AgentBlock.tsx` (10 occurrences)
-- [ ] Remove all `dark:` prefixed classes from shadcn/ui components: `input.tsx`, `textarea.tsx`, `badge.tsx`, `select.tsx`, `button.tsx` (9 occurrences)
+- [x] Remove all `dark:` prefixed classes from `src/renderer/components/FeatureList.tsx` (5 occurrences)
+- [x] Remove all `dark:` prefixed classes from `src/renderer/components/FeatureTopBar.tsx` (5 occurrences)
+- [x] Remove all `dark:` prefixed classes from `src/renderer/components/AgentPanel.tsx` (4 occurrences)
+- [x] Remove all `dark:` prefixed classes from `src/renderer/components/AgentBlock.tsx` (10 occurrences)
+- [x] Remove all `dark:` prefixed classes from shadcn/ui components: `input.tsx`, `textarea.tsx`, `badge.tsx`, `select.tsx`, `button.tsx` (9 occurrences)
 - **Files**: `src/renderer/components/FeatureList.tsx`, `src/renderer/components/FeatureTopBar.tsx`, `src/renderer/components/AgentPanel.tsx`, `src/renderer/components/AgentBlock.tsx`, `src/renderer/components/ui/input.tsx`, `src/renderer/components/ui/textarea.tsx`, `src/renderer/components/ui/badge.tsx`, `src/renderer/components/ui/select.tsx`, `src/renderer/components/ui/button.tsx`
 - **Commit message**: `refactor: remove dark: variant classes (single Dracula theme)`
 - **Bisect note**: Must come after phase 1 — the `@custom-variant dark` is removed in phase 1, so dark: classes would cause build errors if left
+- **Implementation notes**: Removed all `dark:` prefixed classes from all 9 files. For classes like `text-gray-700 dark:text-gray-300`, kept only the dark variant value (e.g. `text-gray-300`) since the app is now always-dark Dracula. For `dark:bg-input/30`, `dark:border-input`, `dark:hover:bg-input/50`, `dark:hover:bg-accent/50`, `dark:bg-destructive/60`, `dark:focus-visible:ring-destructive/40`, and `dark:aria-invalid:ring-destructive/40` -- these were simply removed as their non-dark counterparts or the base styles already provide appropriate styling.
+- **Validation results**: Lint passes (0 errors, 0 warnings). Build passes (`pnpm run package` succeeds; no `build` script exists).
 
 ### ✅ Phase 3: Dracula window titlebar
 - **Step**: 1
@@ -96,5 +98,5 @@
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 2
-- **Progress**: 2/3
+- **Current Phase**: All phases complete
+- **Progress**: 3/3

@@ -42,20 +42,20 @@ const STATUS_BADGE: Record<
   AgentStatus,
   { label: string; className: string; icon?: React.ReactNode }
 > = {
-  idle: { label: "Idle", className: "bg-gray-500/15 text-gray-600 dark:text-gray-400" },
+  idle: { label: "Idle", className: "bg-gray-500/15 text-gray-400" },
   running: {
     label: "Running",
-    className: "bg-yellow-500/15 text-yellow-700 dark:text-yellow-300",
+    className: "bg-yellow-500/15 text-yellow-300",
     icon: <Loader2Icon className="size-3 animate-spin" />,
   },
   complete: {
     label: "Complete",
-    className: "bg-green-500/15 text-green-700 dark:text-green-300",
+    className: "bg-green-500/15 text-green-300",
     icon: <CheckCircleIcon className="size-3" />,
   },
   error: {
     label: "Error",
-    className: "bg-red-500/15 text-red-700 dark:text-red-300",
+    className: "bg-red-500/15 text-red-300",
     icon: <XCircleIcon className="size-3" />,
   },
 };

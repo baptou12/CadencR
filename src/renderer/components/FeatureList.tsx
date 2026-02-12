@@ -26,11 +26,11 @@ const STATUSES = ["draft", "planned", "in-progress", "review", "done"] as const;
 type FeatureStatus = (typeof STATUSES)[number];
 
 const STATUS_COLORS: Record<FeatureStatus, string> = {
-  draft: "bg-gray-500/15 text-gray-700 dark:text-gray-300",
-  planned: "bg-blue-500/15 text-blue-700 dark:text-blue-300",
-  "in-progress": "bg-yellow-500/15 text-yellow-700 dark:text-yellow-300",
-  review: "bg-purple-500/15 text-purple-700 dark:text-purple-300",
-  done: "bg-green-500/15 text-green-700 dark:text-green-300",
+  draft: "bg-gray-500/15 text-gray-300",
+  planned: "bg-blue-500/15 text-blue-300",
+  "in-progress": "bg-yellow-500/15 text-yellow-300",
+  review: "bg-purple-500/15 text-purple-300",
+  done: "bg-green-500/15 text-green-300",
 };
 
 interface FeatureListProps {

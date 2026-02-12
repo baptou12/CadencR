@@ -93,8 +93,8 @@ function ToolCallBlock({ name, args }: { name: string; args?: string }) {
         className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs"
         onClick={() => setExpanded(!expanded)}
       >
-        <WrenchIcon className="size-3 text-blue-600 dark:text-blue-400" />
-        <span className="font-medium text-blue-700 dark:text-blue-300">{name}</span>
+        <WrenchIcon className="size-3 text-blue-400" />
+        <span className="font-medium text-blue-300">{name}</span>
         {summary?.detail && (
           <span className="truncate text-muted-foreground">{summary.detail}</span>
         )}
@@ -123,7 +123,7 @@ function ToolResultBlock({ content, isError }: { content: string; isError?: bool
       className={cn(
         "my-1 rounded-md border px-3 py-1.5 text-xs",
         isError
-          ? "border-red-300 bg-red-500/5 text-red-700 dark:border-red-800 dark:text-red-300"
+          ? "border-red-800 bg-red-500/5 text-red-300"
           : "border-border bg-muted/30 text-muted-foreground"
       )}
     >
@@ -150,8 +150,8 @@ function ThinkingBlock({ content }: { content: string }) {
         className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs"
         onClick={() => setExpanded(!expanded)}
       >
-        <BrainIcon className="size-3 text-purple-600 dark:text-purple-400" />
-        <span className="font-medium text-purple-700 dark:text-purple-300">Thinking</span>
+        <BrainIcon className="size-3 text-purple-400" />
+        <span className="font-medium text-purple-300">Thinking</span>
         <ChevronRightIcon
           className={cn(
             "ml-auto size-3 text-muted-foreground transition-transform",
@@ -191,14 +191,14 @@ function TaskAgentBlock({ block, isStreaming, expandAll, onExpandAll }: { block:
   const hiddenCount = children.length - visibleChildren.length;
 
   return (
-    <div className="my-1 rounded-md border border-indigo-300 dark:border-indigo-700 bg-indigo-500/5">
+    <div className="my-1 rounded-md border border-indigo-700 bg-indigo-500/5">
       <button
         type="button"
         className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs"
         onClick={() => setExpanded(!expanded)}
       >
-        <LayersIcon className="size-3 text-indigo-600 dark:text-indigo-400" />
-        <span className="font-medium text-indigo-700 dark:text-indigo-300">Task</span>
+        <LayersIcon className="size-3 text-indigo-400" />
+        <span className="font-medium text-indigo-300">Task</span>
         <span className="truncate text-muted-foreground">{description}</span>
         {isRunning && (
           <LoaderIcon className="size-3 animate-spin text-indigo-500 shrink-0" />
@@ -211,11 +211,11 @@ function TaskAgentBlock({ block, isStreaming, expandAll, onExpandAll }: { block:
         )}
       </button>
       {expanded && (
-        <div className="border-t border-indigo-200 dark:border-indigo-800 px-3 py-2 space-y-0.5">
+        <div className="border-t border-indigo-800 px-3 py-2 space-y-0.5">
           {hiddenCount > 0 && (
             <button
               type="button"
-              className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline mb-1"
+              className="text-xs text-indigo-400 hover:underline mb-1"
               onClick={onExpandAll}
             >
               Show all {children.length} actions ({hiddenCount} hidden)
