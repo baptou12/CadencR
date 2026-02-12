@@ -136,24 +136,13 @@ function setupPlanCompletionHandler(
 ): void {
   let fullOutput = "";
 
-  // Collect stdout text
-  if (managed.process.stdout) {
-    managed.process.stdout.on("data", (chunk: Buffer) => {
-      const lines = chunk.toString().split("\n");
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        try {
-          const event = JSON.parse(line) as StreamEvent;
-          const text = extractTextFromEvent(event);
-          if (text) fullOutput += text;
-        } catch {
-          // Not JSON, skip
-        }
-      }
-    });
-  }
+  // Collect text from stream events via the event listener API
+  managed.eventListeners.push((event: StreamEvent) => {
+    const text = extractTextFromEvent(event);
+    if (text) fullOutput += text;
+  });
 
-  managed.process.on("exit", (code) => {
+  managed.completionListeners.push((code: number) => {
     const db = getDatabase();
 
     // Update session status

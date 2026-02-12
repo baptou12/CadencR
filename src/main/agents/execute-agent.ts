@@ -194,23 +194,12 @@ Please implement all the tasks listed above. Focus only on this phase's scope.`;
 
     // Collect output for potential commit message
     let fullOutput = "";
-    if (managed.process.stdout) {
-      managed.process.stdout.on("data", (chunk: Buffer) => {
-        const lines = chunk.toString().split("\n");
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          try {
-            const event = JSON.parse(line) as StreamEvent;
-            const text = extractTextFromEvent(event);
-            if (text) fullOutput += text;
-          } catch {
-            // Not JSON, skip
-          }
-        }
-      });
-    }
+    managed.eventListeners.push((event: StreamEvent) => {
+      const text = extractTextFromEvent(event);
+      if (text) fullOutput += text;
+    });
 
-    managed.process.on("exit", (code) => {
+    managed.completionListeners.push((code: number) => {
       if (code === 0) {
         db.prepare("UPDATE phases SET status = 'completed' WHERE id = ?").run(phase.id);
 
@@ -232,10 +221,6 @@ Please implement all the tasks listed above. Focus only on this phase's scope.`;
       resolve();
     });
 
-    managed.process.on("error", () => {
-      db.prepare("UPDATE phases SET status = 'error' WHERE id = ?").run(phase.id);
-      resolve();
-    });
   });
 }
 

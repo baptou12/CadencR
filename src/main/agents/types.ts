@@ -81,6 +81,21 @@ export interface StreamSystemEvent {
   [key: string]: unknown;
 }
 
+/** Result event — final event emitted by Claude CLI at end of session */
+export interface StreamResult {
+  type: "result";
+  result?: string;
+  cost_usd?: number;
+  duration_ms?: number;
+  [key: string]: unknown;
+}
+
+/** Synthetic event emitted when the agent subprocess exits */
+export interface StreamAgentDone {
+  type: "agent_done";
+  exitCode: number | null;
+}
+
 /** Union of all stream-json event types */
 export type StreamEvent =
   | StreamMessageStart
@@ -91,7 +106,9 @@ export type StreamEvent =
   | StreamMessageStop
   | StreamToolResult
   | StreamError
-  | StreamSystemEvent;
+  | StreamSystemEvent
+  | StreamResult
+  | StreamAgentDone;
 
 /** Agent event sent to the renderer via IPC */
 export interface AgentEvent {

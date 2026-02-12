@@ -12,6 +12,7 @@ process.once("loaded", () => {
   contextBridge.exposeInMainWorld("api", {
     onAgentEvent: (callback: (event: unknown) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, data: unknown) => {
+        console.log("[preload] onAgentEvent fired:", JSON.stringify(data).substring(0, 200));
         callback(data);
       };
       ipcRenderer.on(AGENT_EVENT_CHANNEL, listener);

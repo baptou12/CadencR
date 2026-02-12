@@ -1,9 +1,10 @@
-import { ChildProcess, spawn } from "node:child_process";
-import os from "node:os";
-import { discoverClaudeCli, getResolvedPath } from "./cli-discovery";
+import { BrowserWindow } from "electron";
 import { getDatabase } from "../db/database";
+import { discoverClaudeCli } from "./cli-discovery";
+import type { AgentEvent, AgentType, StreamEvent } from "./types";
 
 const MAX_CONCURRENT = 10;
+const AGENT_EVENT_CHANNEL = "agent:event";
 
 export interface SubprocessOptions {
   /** Working directory for the Claude CLI process */
@@ -22,10 +23,17 @@ export interface SubprocessOptions {
 
 export interface ManagedSubprocess {
   id: string;
-  process: ChildProcess;
   agentType: string;
   startedAt: Date;
   status: "running" | "stopped" | "error" | "completed";
+  /** Abort controller to cancel the SDK query */
+  abortController?: AbortController;
+  /** The async iterator (kept for reference) */
+  queryIterator?: AsyncGenerator<unknown, void>;
+  /** Event listeners registered by agent-specific code */
+  eventListeners: Array<(event: StreamEvent) => void>;
+  /** Completion listeners called when the query finishes */
+  completionListeners: Array<(exitCode: number) => void>;
 }
 
 const activeProcesses = new Map<string, ManagedSubprocess>();
@@ -38,80 +46,206 @@ function generateId(): string {
 }
 
 /**
- * Start a new Claude CLI subprocess with stream-json output.
+ * Broadcast a stream event to all renderer windows.
+ */
+function broadcastEvent(id: string, agentType: AgentType | string, event: StreamEvent): void {
+  const agentEvent: AgentEvent = {
+    subprocessId: id,
+    agentType: agentType as AgentType,
+    event,
+    timestamp: Date.now(),
+  };
+
+  const windows = BrowserWindow.getAllWindows();
+  for (const win of windows) {
+    if (!win.isDestroyed()) {
+      win.webContents.send(AGENT_EVENT_CHANNEL, agentEvent);
+    }
+  }
+}
+
+/**
+ * Convert an SDK message to StreamEvent(s) and broadcast them.
+ */
+function handleSdkMessage(managed: ManagedSubprocess, msg: Record<string, unknown>): void {
+  const { id, agentType } = managed;
+  const type = msg.type as string;
+
+  console.log("[subprocess-manager] SDK message type:", type);
+
+  if (type === "stream_event") {
+    // SDKPartialAssistantMessage — contains the granular content_block_start/delta/stop events
+    const innerEvent = msg.event as StreamEvent;
+    if (innerEvent) {
+      broadcastEvent(id, agentType, innerEvent);
+      for (const listener of managed.eventListeners) listener(innerEvent);
+    }
+  } else if (type === "assistant") {
+    // Full assistant message — extract text and tool_use content blocks
+    const message = msg.message as Record<string, unknown> | undefined;
+    if (message) {
+      const content = message.content as Array<Record<string, unknown>> | undefined;
+      if (content) {
+        for (let i = 0; i < content.length; i++) {
+          const block = content[i];
+          if (block.type === "text") {
+            broadcastEvent(id, agentType, {
+              type: "content_block_start",
+              index: i,
+              content_block: { type: "text", text: block.text as string },
+            });
+          } else if (block.type === "tool_use") {
+            broadcastEvent(id, agentType, {
+              type: "content_block_start",
+              index: i,
+              content_block: {
+                type: "tool_use",
+                id: block.id as string,
+                name: block.name as string,
+                input: block.input as Record<string, unknown>,
+              },
+            });
+          }
+        }
+      }
+    }
+  } else if (type === "tool_result" || type === "result") {
+    // Tool result or final result
+    if (type === "tool_result") {
+      broadcastEvent(id, agentType, {
+        type: "tool_result",
+        tool_use_id: (msg.tool_use_id as string) ?? "",
+        content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content),
+        is_error: (msg.is_error as boolean) ?? false,
+      });
+    } else {
+      broadcastEvent(id, agentType, {
+        type: "result",
+        result: msg.result as string | undefined,
+      });
+    }
+  } else if (type === "system") {
+    broadcastEvent(id, agentType, {
+      type: "system",
+      subtype: (msg.subtype as string) ?? "unknown",
+      session_id: msg.session_id as string | undefined,
+    });
+  }
+}
+
+/**
+ * Start a new Claude Agent SDK query.
  */
 export function startSubprocess(options: SubprocessOptions): ManagedSubprocess {
   if (activeProcesses.size >= MAX_CONCURRENT) {
     throw new Error(`Maximum concurrent agent limit reached (${MAX_CONCURRENT})`);
   }
 
-  const cliInfo = discoverClaudeCli();
-  if (!cliInfo) {
-    throw new Error(
-      "Claude CLI not found. Please install it or configure the path in Settings.",
-    );
-  }
-
-  const args: string[] = [
-    "--output-format",
-    "stream-json",
-    "--verbose",
-  ];
-
-  if (options.resumeSessionId) {
-    args.push("--resume", options.resumeSessionId);
-  } else {
-    if (options.systemPrompt) {
-      args.push("--system-prompt", options.systemPrompt);
-    }
-    // The prompt is passed via stdin as the initial message
-    args.push("--print", options.prompt);
-  }
-
-  if (options.allowedTools && options.allowedTools.length > 0) {
-    for (const tool of options.allowedTools) {
-      args.push("--allowedTools", tool);
-    }
-  }
-
-  const resolvedPath = getResolvedPath();
-
-  const child = spawn(cliInfo.path, args, {
-    cwd: options.cwd,
-    env: {
-      ...process.env,
-      PATH: resolvedPath,
-      HOME: os.homedir(),
-    },
-    stdio: ["pipe", "pipe", "pipe"],
-  });
-
   const id = generateId();
+  const abortController = new AbortController();
+
   const managed: ManagedSubprocess = {
     id,
-    process: child,
     agentType: options.agentType,
     startedAt: new Date(),
     status: "running",
+    abortController,
+    eventListeners: [],
+    completionListeners: [],
   };
 
   activeProcesses.set(id, managed);
 
-  child.on("exit", (code) => {
-    const entry = activeProcesses.get(id);
-    if (entry) {
-      entry.status = code === 0 ? "completed" : "error";
-    }
+  // Start the SDK query asynchronously
+  runSdkQuery(managed, options).catch((err) => {
+    console.error("[subprocess-manager] SDK query error:", err);
+    managed.status = "error";
+    broadcastEvent(id, options.agentType, {
+      type: "error",
+      error: { type: "sdk_error", message: err instanceof Error ? err.message : String(err) },
+    });
   });
 
-  child.on("error", () => {
-    const entry = activeProcesses.get(id);
-    if (entry) {
-      entry.status = "error";
-    }
-  });
+  console.log("[subprocess-manager] started SDK query, id:", id);
 
   return managed;
+}
+
+async function runSdkQuery(managed: ManagedSubprocess, options: SubprocessOptions): Promise<void> {
+  // Dynamic import since the SDK is ESM
+  const { query } = await import("@anthropic-ai/claude-agent-sdk") as {
+    query: (opts: {
+      prompt: string;
+      options?: Record<string, unknown>;
+    }) => AsyncGenerator<Record<string, unknown>, void>;
+  };
+
+  const cliInfo = discoverClaudeCli();
+  if (!cliInfo) {
+    throw new Error("Claude CLI not found. Please install it or configure the path in Settings.");
+  }
+
+  const queryOptions: Record<string, unknown> = {
+    cwd: options.cwd,
+    permissionMode: "bypassPermissions" as const,
+    pathToClaudeCodeExecutable: cliInfo.path,
+  };
+
+  if (options.systemPrompt) {
+    queryOptions.systemPrompt = options.systemPrompt;
+  }
+
+  if (options.resumeSessionId) {
+    queryOptions.resume = options.resumeSessionId;
+  }
+
+  if (options.allowedTools && options.allowedTools.length > 0) {
+    queryOptions.allowedTools = options.allowedTools;
+  }
+
+  console.log("[subprocess-manager] calling SDK query() with cwd:", options.cwd);
+
+  const iterator = query({
+    prompt: options.prompt,
+    options: queryOptions,
+  });
+
+  managed.queryIterator = iterator;
+
+  try {
+    for await (const message of iterator) {
+      if (managed.status === "stopped") break;
+      handleSdkMessage(managed, message as Record<string, unknown>);
+    }
+
+    if (managed.status === "running") {
+      managed.status = "completed";
+    }
+
+    // Notify completion listeners
+    for (const listener of managed.completionListeners) listener(0);
+
+    // Broadcast agent_done
+    broadcastEvent(managed.id, managed.agentType, {
+      type: "agent_done",
+      exitCode: 0,
+    });
+  } catch (err) {
+    if (managed.status !== "stopped") {
+      managed.status = "error";
+      broadcastEvent(managed.id, managed.agentType, {
+        type: "error",
+        error: {
+          type: "sdk_error",
+          message: err instanceof Error ? err.message : String(err),
+        },
+      });
+      broadcastEvent(managed.id, managed.agentType, {
+        type: "agent_done",
+        exitCode: 1,
+      });
+    }
+  }
 }
 
 /**
@@ -123,8 +257,8 @@ export function killSubprocess(id: string): boolean {
     return false;
   }
 
-  managed.process.kill("SIGTERM");
   managed.status = "stopped";
+  managed.abortController?.abort();
   return true;
 }
 
@@ -158,8 +292,8 @@ export function listSubprocesses(): Array<{
 export function killAllSubprocesses(): void {
   for (const [, managed] of activeProcesses) {
     if (managed.status === "running") {
-      managed.process.kill("SIGTERM");
       managed.status = "stopped";
+      managed.abortController?.abort();
     }
   }
 }
@@ -177,14 +311,17 @@ export function cleanupSubprocesses(): void {
 
 /**
  * Send input to a running subprocess via stdin.
+ * Note: With SDK approach, this is not directly supported.
+ * For interactive input, use the SDK's streaming input mode.
  */
-export function sendSubprocessInput(id: string, input: string): boolean {
+export function sendSubprocessInput(id: string, _input: string): boolean {
   const managed = activeProcesses.get(id);
-  if (!managed || managed.status !== "running" || !managed.process.stdin) {
+  if (!managed || managed.status !== "running") {
     return false;
   }
-  managed.process.stdin.write(input + "\n");
-  return true;
+  // TODO: Implement via SDK streaming input
+  console.warn("[subprocess-manager] sendSubprocessInput not yet implemented for SDK mode");
+  return false;
 }
 
 /**

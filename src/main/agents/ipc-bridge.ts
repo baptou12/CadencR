@@ -1,138 +1,50 @@
-import { BrowserWindow } from "electron";
 import type { ManagedSubprocess } from "./subprocess-manager";
-import type { AgentEvent, AgentType, StreamEvent } from "./types";
+import type { AgentType, StreamEvent } from "./types";
 import { getDatabase } from "../db/database";
 
 const AGENT_EVENT_CHANNEL = "agent:event";
 
 /**
- * Parse a line of stream-json output into a typed StreamEvent.
- * Returns null if the line is empty or not valid JSON.
- */
-function parseStreamJsonLine(line: string): StreamEvent | null {
-  const trimmed = line.trim();
-  if (!trimmed) return null;
-
-  try {
-    return JSON.parse(trimmed) as StreamEvent;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Attach stream-json parsing to a managed subprocess and relay events
- * to all renderer windows via webContents.send().
+ * Bridge subprocess events to the renderer.
+ * With the SDK-based subprocess manager, event broadcasting is handled
+ * internally by the subprocess manager. This function now only sets up
+ * persistence of session IDs and messages.
  */
 export function bridgeSubprocessToRenderer(
   managed: ManagedSubprocess,
   agentType: AgentType,
   sessionDbId?: number,
 ): void {
-  const { process: child, id } = managed;
+  // The SDK-based subprocess manager broadcasts events directly.
+  // This function is kept for backward compatibility but is now a no-op
+  // for event broadcasting. Session persistence is handled separately.
+  console.log("[ipc-bridge] bridgeSubprocessToRenderer called (SDK mode), id:", managed.id, "agentType:", agentType);
 
-  if (!child.stdout) return;
-
-  let buffer = "";
-
-  child.stdout.on("data", (chunk: Buffer) => {
-    buffer += chunk.toString("utf-8");
-
-    // Process complete lines
-    const lines = buffer.split("\n");
-    // Keep the last incomplete line in the buffer
-    buffer = lines.pop() ?? "";
-
-    for (const line of lines) {
-      const event = parseStreamJsonLine(line);
-      if (!event) continue;
-
-      // Capture Claude session ID from system events
-      if (sessionDbId && event.type === "system" && event.session_id) {
-        try {
-          const db = getDatabase();
-          db.prepare(
-            "UPDATE agent_sessions SET claude_session_id = ? WHERE id = ?",
-          ).run(event.session_id, sessionDbId);
-        } catch {
-          // Best-effort persistence
-        }
-      }
-
-      // Persist messages to agent_messages table
-      if (sessionDbId) {
-        persistStreamEvent(sessionDbId, event);
-      }
-
-      const agentEvent: AgentEvent = {
-        subprocessId: id,
-        agentType,
-        event,
-        timestamp: Date.now(),
-      };
-
-      // Send to all open windows
-      const windows = BrowserWindow.getAllWindows();
-      for (const win of windows) {
-        if (!win.isDestroyed()) {
-          win.webContents.send(AGENT_EVENT_CHANNEL, agentEvent);
-        }
-      }
-    }
-  });
-
-  // Handle stderr as error events
-  if (child.stderr) {
-    child.stderr.on("data", (chunk: Buffer) => {
-      const text = chunk.toString("utf-8").trim();
-      if (!text) return;
-
-      const agentEvent: AgentEvent = {
-        subprocessId: id,
-        agentType,
-        event: {
-          type: "error",
-          error: { type: "stderr", message: text },
-        },
-        timestamp: Date.now(),
-      };
-
-      const windows = BrowserWindow.getAllWindows();
-      for (const win of windows) {
-        if (!win.isDestroyed()) {
-          win.webContents.send(AGENT_EVENT_CHANNEL, agentEvent);
-        }
-      }
-    });
+  if (sessionDbId) {
+    // Register this session for persistence tracking
+    registerSessionPersistence(managed.id, sessionDbId);
   }
+}
 
-  // Flush remaining buffer on close
-  child.stdout.on("end", () => {
-    if (buffer.trim()) {
-      const event = parseStreamJsonLine(buffer);
-      if (event) {
-        const agentEvent: AgentEvent = {
-          subprocessId: id,
-          agentType,
-          event,
-          timestamp: Date.now(),
-        };
-        const windows = BrowserWindow.getAllWindows();
-        for (const win of windows) {
-          if (!win.isDestroyed()) {
-            win.webContents.send(AGENT_EVENT_CHANNEL, agentEvent);
-          }
-        }
-      }
-    }
-  });
+// Map of subprocess ID -> session DB ID for persistence
+const sessionMap = new Map<string, number>();
+
+function registerSessionPersistence(subprocessId: string, sessionDbId: number): void {
+  sessionMap.set(subprocessId, sessionDbId);
+}
+
+/**
+ * Get the session DB ID for a subprocess (used by the subprocess manager for persistence).
+ */
+export function getSessionDbId(subprocessId: string): number | undefined {
+  return sessionMap.get(subprocessId);
 }
 
 /**
  * Persist a stream event to the agent_messages table.
  * Only persists content-bearing events (text, tool calls, tool results, errors).
  */
-function persistStreamEvent(sessionDbId: number, event: StreamEvent): void {
+export function persistStreamEvent(sessionDbId: number, event: StreamEvent): void {
   try {
     const db = getDatabase();
     const insert = db.prepare(
@@ -180,6 +92,20 @@ function persistStreamEvent(sessionDbId: number, event: StreamEvent): void {
     }
   } catch {
     // Best-effort persistence — don't crash the bridge
+  }
+}
+
+/**
+ * Persist a Claude session ID to the agent_sessions table.
+ */
+export function persistClaudeSessionId(sessionDbId: number, claudeSessionId: string): void {
+  try {
+    const db = getDatabase();
+    db.prepare(
+      "UPDATE agent_sessions SET claude_session_id = ? WHERE id = ?",
+    ).run(claudeSessionId, sessionDbId);
+  } catch {
+    // Best-effort persistence
   }
 }
 

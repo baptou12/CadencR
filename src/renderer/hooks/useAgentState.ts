@@ -10,21 +10,28 @@ function makeBlock(partial: Omit<AgentBlockData, "id">): AgentBlockData {
   return { id: `block-${blockIdCounter}`, ...partial };
 }
 
+/** Normalize an option value to a string (handles both string and {label, description} formats) */
+function normalizeOption(opt: unknown): string {
+  if (typeof opt === "string") return opt;
+  if (opt && typeof opt === "object" && "label" in opt) return String((opt as { label: string }).label);
+  return String(opt);
+}
+
 function parseQuestions(toolInput: Record<string, unknown>): AgentQuestion[] {
   const questions: AgentQuestion[] = [];
   if (Array.isArray(toolInput.questions)) {
     for (const q of toolInput.questions) {
-      const qObj = q as { question: string; options?: string[] };
+      const qObj = q as { question: string; options?: unknown[] };
       questions.push({
         question: qObj.question,
-        options: qObj.options ?? [],
+        options: Array.isArray(qObj.options) ? qObj.options.map(normalizeOption) : [],
       });
     }
   } else if (typeof toolInput.question === "string") {
     questions.push({
       question: toolInput.question as string,
       options: Array.isArray(toolInput.options)
-        ? (toolInput.options as string[])
+        ? (toolInput.options as unknown[]).map(normalizeOption)
         : [],
     });
   }
@@ -49,6 +56,8 @@ export function useAgentState(options: UseAgentStateOptions = {}) {
     (agentEvent: AgentEvent) => {
       const { event } = agentEvent;
 
+      console.log("[useAgentState] event:", event.type, event);
+
       switch (event.type) {
         case "content_block_start": {
           if (event.content_block.type === "text") {
@@ -64,21 +73,21 @@ export function useAgentState(options: UseAgentStateOptions = {}) {
             ]);
           } else if (event.content_block.type === "tool_use") {
             const toolBlock = event.content_block;
-            if (supportsQuestions && toolBlock.name === "AskUserQuestion") {
-              const parsed = parseQuestions(
-                toolBlock.input as Record<string, unknown>,
-              );
+            // Note: during streaming, input arrives empty here; questions are parsed on content_block_stop
+            if (supportsQuestions && toolBlock.name === "AskUserQuestion" && Object.keys(toolBlock.input).length > 0) {
+              const parsed = parseQuestions(toolBlock.input as Record<string, unknown>);
               if (parsed.length > 0) {
                 setPendingQuestions(parsed);
               }
             }
+            const hasInput = toolBlock.input && Object.keys(toolBlock.input).length > 0;
             setBlocks((prev) => [
               ...prev,
               makeBlock({
                 type: "tool_call",
-                content: JSON.stringify(toolBlock.input, null, 2),
+                content: hasInput ? JSON.stringify(toolBlock.input, null, 2) : "",
                 toolName: toolBlock.name,
-                toolArgs: JSON.stringify(toolBlock.input, null, 2),
+                toolArgs: hasInput ? JSON.stringify(toolBlock.input, null, 2) : "",
               }),
             ]);
           }
@@ -99,6 +108,23 @@ export function useAgentState(options: UseAgentStateOptions = {}) {
               }
               return [...prev, makeBlock({ type: "text", content: deltaText })];
             });
+          } else if (event.delta.type === "input_json_delta") {
+            const partialJson = event.delta.partial_json;
+            setBlocks((prev) => {
+              if (prev.length === 0) return prev;
+              const last = prev[prev.length - 1];
+              if (last.type === "tool_call") {
+                return [
+                  ...prev.slice(0, -1),
+                  {
+                    ...last,
+                    toolArgs: (last.toolArgs ?? "") + partialJson,
+                    content: (last.content ?? "") + partialJson,
+                  },
+                ];
+              }
+              return prev;
+            });
           }
           break;
         }
@@ -113,7 +139,39 @@ export function useAgentState(options: UseAgentStateOptions = {}) {
           ]);
           break;
         }
+        case "content_block_stop": {
+          // When a tool_use block finishes, try to parse accumulated args
+          if (supportsQuestions) {
+            setBlocks((prev) => {
+              // Find the last tool_call block
+              for (let i = prev.length - 1; i >= 0; i--) {
+                const block = prev[i];
+                if (block.type === "tool_call" && block.toolName === "AskUserQuestion" && block.toolArgs) {
+                  try {
+                    const parsed = parseQuestions(JSON.parse(block.toolArgs) as Record<string, unknown>);
+                    if (parsed.length > 0) {
+                      setPendingQuestions(parsed);
+                    }
+                  } catch {
+                    // Not valid JSON yet, skip
+                  }
+                  break;
+                }
+              }
+              return prev; // no mutation
+            });
+          }
+          break;
+        }
         case "message_stop": {
+          break;
+        }
+        case "result": {
+          setStatus("complete");
+          break;
+        }
+        case "agent_done": {
+          setStatus((prev) => (prev === "running" ? "complete" : prev));
           break;
         }
         case "error": {
@@ -204,13 +262,20 @@ export function useAgentEventListener(
 
     const listener = api.onAgentEvent((data: unknown) => {
       const agentEvent = data as AgentEvent;
+      console.log("[useAgentEventListener] received:", agentEvent.agentType, agentEvent.event.type);
       const handler = handlersRef.current[agentEvent.agentType];
-      if (!handler) return;
+      if (!handler) {
+        console.log("[useAgentEventListener] no handler for agentType:", agentEvent.agentType, "registered:", Object.keys(handlersRef.current));
+        return;
+      }
 
       // If handler has a subprocess filter, check it
       if (handler.subprocessIdRef) {
         const currentId = handler.subprocessIdRef.current;
-        if (currentId && agentEvent.subprocessId !== currentId) return;
+        if (currentId && agentEvent.subprocessId !== currentId) {
+          console.log("[useAgentEventListener] filtered out: subprocess mismatch", currentId, "!=", agentEvent.subprocessId);
+          return;
+        }
       }
 
       handler.handleEvent(agentEvent);

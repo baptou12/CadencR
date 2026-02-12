@@ -2,6 +2,27 @@ import { useEffect, useRef } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { AgentBlock, type AgentBlockData } from "./AgentBlock";
 
+const TOOL_LABELS: Record<string, string> = {
+  Read: "Reading files",
+  Grep: "Searching code",
+  Glob: "Finding files",
+  Bash: "Running command",
+  Write: "Writing file",
+  Edit: "Editing file",
+  WebSearch: "Searching web",
+  WebFetch: "Fetching page",
+  Task: "Running subtask",
+};
+
+function getActivityLabel(blocks: AgentBlockData[]): string {
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    if (blocks[i].type === "tool_call" && blocks[i].toolName) {
+      return TOOL_LABELS[blocks[i].toolName!] ?? `Running ${blocks[i].toolName}`;
+    }
+  }
+  return "Generating";
+}
+
 interface AgentStreamProps {
   blocks: AgentBlockData[];
   /** Whether the agent is currently streaming */
@@ -28,7 +49,7 @@ export function AgentStream({ blocks, isStreaming }: AgentStreamProps) {
               <span className="size-1.5 animate-bounce rounded-full bg-current [animation-delay:150ms]" />
               <span className="size-1.5 animate-bounce rounded-full bg-current [animation-delay:300ms]" />
             </span>
-            Generating...
+            {getActivityLabel(blocks)}...
           </div>
         )}
         <div ref={bottomRef} />
