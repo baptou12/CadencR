@@ -161,20 +161,22 @@ ProductDevR is an Electron app with tRPC IPC, SQLite DB, TanStack Router, and Ta
 - **Implementation notes**: Created `DiffHeader` component with `FileText` icon from lucide-react, file count label, and green/red aggregate counters. Also created `FileHeader` component for per-file headers with chevron toggle (SVG with rotate transition), file name, and individual +/- counters. Both components accept props and render with Dracula theme colors. A `children` slot in `DiffHeader` allows other phases to inject controls (e.g., split/unified toggle, settings). Components are not yet wired into `DiffViewer.tsx` to avoid conflicting with parallel Phase 6.
 - **Validation results**: Lint passed (0 errors), TypeScript `tsc --noEmit` passed (no type errors).
 
-### ⬜ Phase 8: Settings popover
+### ✅ Phase 8: Settings popover
 - **Step**: 5
 - **Complexity**: 2
-- [ ] Create `src/renderer/components/diff/DiffSettings.tsx` — popover triggered by gear icon button in top-right
-- [ ] **Font Size**: Small / Medium (default) / Large — radio group, applies CSS font-size to diff area
-- [ ] **Diff Mode**: Split (default) / Unified — radio group, switches `DiffView` mode prop
-- [ ] **Line Mode**: Wrap (default) / No Wrap — radio group, toggles CSS `white-space` on diff lines
-- [ ] **Highlight Mode**: Enable (default) / Disable — radio group, toggles syntax highlighting
-- [ ] **Highlight Engine**: lowlight (default) / shiki — radio group (note in UI: "reload required" to switch)
-- [ ] **AutoLoad FullDiff**: Enable / Disable (default) — radio group, controls whether full file diff loads automatically or on-demand
-- [ ] Persist settings in React state (per-session, no DB needed)
+- [x] Create `src/renderer/components/diff/DiffSettings.tsx` — popover triggered by gear icon button in top-right
+- [x] **Font Size**: Small / Medium (default) / Large — radio group, applies CSS font-size to diff area
+- [x] **Diff Mode**: Split (default) / Unified — radio group, switches `DiffView` mode prop
+- [x] **Line Mode**: Wrap (default) / No Wrap — radio group, toggles CSS `white-space` on diff lines
+- [x] **Highlight Mode**: Enable (default) / Disable — radio group, toggles syntax highlighting
+- [x] **Highlight Engine**: lowlight (default) / shiki — radio group (note in UI: "reload required" to switch)
+- [x] **AutoLoad FullDiff**: Enable / Disable (default) — radio group, controls whether full file diff loads automatically or on-demand
+- [x] Persist settings in React state (per-session, no DB needed)
 - **Files**: `src/renderer/components/diff/DiffSettings.tsx`
 - **Commit message**: `feat: add settings popover to diff viewer`
 - **Bisect note**: Reads/writes state already managed in DiffViewer
+- **Implementation notes**: Created `DiffSettingsPopover` component with gear icon trigger and click-outside-to-close popover. Exports `DiffSettings` interface and `defaultDiffSettings` for parent components to manage state. All 6 setting groups implemented as button-based radio groups with Dracula theme styling. Purple labels (`#bd93f9`), active state uses `#44475a` bg. Shiki option shows "(reload req.)" note in pink. No shadcn dependencies needed -- uses plain Tailwind + click-outside `useEffect`.
+- **Validation results**: Lint passed (0 errors, 1 pre-existing warning in DiffFileTree), TypeScript `tsc --noEmit` passed, `pnpm run package` succeeded.
 
 ### ⬜ Phase 9: Search in diff
 - **Step**: 6
@@ -220,5 +222,5 @@ ProductDevR is an Electron app with tRPC IPC, SQLite DB, TanStack Router, and Ta
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 8
-- **Progress**: 7/11
+- **Current Phase**: Phase 9
+- **Progress**: 8/11
