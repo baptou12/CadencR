@@ -1,7 +1,9 @@
+import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { TerminalIcon, SettingsIcon } from "lucide-react";
+import { TerminalIcon, SettingsIcon, GitCompareArrowsIcon } from "lucide-react";
 import { trpc } from "@/trpc";
+import { DiffViewerModal } from "./diff/DiffViewerModal";
 
 const STATUS_COLORS: Record<string, string> = {
   draft: "bg-gray-500/15 text-gray-700 dark:text-gray-300",
@@ -17,6 +19,7 @@ interface FeatureTopBarProps {
 }
 
 export function FeatureTopBar({ featureId, projectId: _projectId }: FeatureTopBarProps) {
+  const [diffOpen, setDiffOpen] = useState(false);
   const { data: feature } = trpc.features.getById.useQuery({ id: featureId });
   const { data: progress } = trpc.features.getProgress.useQuery(
     { feature_id: featureId },
@@ -66,6 +69,17 @@ export function FeatureTopBar({ featureId, projectId: _projectId }: FeatureTopBa
         variant="ghost"
         size="icon"
         className="size-7"
+        title="View Diff"
+        disabled={!worktreeBranch}
+        onClick={() => setDiffOpen(true)}
+      >
+        <GitCompareArrowsIcon className="size-4" />
+      </Button>
+
+      <Button
+        variant="ghost"
+        size="icon"
+        className="size-7"
         title="Open terminal"
         disabled={!worktreeBranch}
         onClick={() => openTerminal.mutate({ featureId })}
@@ -76,6 +90,12 @@ export function FeatureTopBar({ featureId, projectId: _projectId }: FeatureTopBa
       <Button variant="ghost" size="icon" className="size-7" title="Feature settings">
         <SettingsIcon className="size-4" />
       </Button>
+
+      <DiffViewerModal
+        featureId={featureId}
+        open={diffOpen}
+        onOpenChange={setDiffOpen}
+      />
     </div>
   );
 }
