@@ -129,54 +129,95 @@ function FeaturePage() {
     return map;
   }, [sessionsQuery.data]);
 
-  // Load history for the most recent plan session (as an example of showing previous conversation)
-  const latestPlanSessionId = lastSessionIds.get("plan");
-  const planHistoryQuery = trpc.agents.getHistory.useQuery(
-    { sessionId: latestPlanSessionId ?? 0 },
-    { enabled: !!latestPlanSessionId && plan.status === "idle" && plan.blocks.length === 0 },
+  // Load history for all agent types
+  const agentTypes = ["plan", "brainstorm", "execute", "risk", "review"] as const;
+  const agentStateMap: Record<string, ReturnType<typeof useAgentState>> = useMemo(
+    () => ({ plan, brainstorm, execute, risk, review }),
+    [plan, brainstorm, execute, risk, review],
   );
 
-  // Populate plan blocks from history on mount
-  useEffect(() => {
-    if (!planHistoryQuery.data || planHistoryQuery.data.length === 0) return;
-    if (plan.status !== "idle" || plan.blocks.length > 0) return;
+  const planSessionId = lastSessionIds.get("plan");
+  const brainstormSessionId = lastSessionIds.get("brainstorm");
+  const executeSessionId = lastSessionIds.get("execute");
+  const riskSessionId = lastSessionIds.get("risk");
+  const reviewSessionId = lastSessionIds.get("review");
 
-    const blocks: AgentBlockData[] = [];
-    for (const msg of planHistoryQuery.data) {
-      const block = messageToBlock(msg);
-      if (block) blocks.push(block);
-    }
-    if (blocks.length > 0) {
-      // Merge consecutive text blocks
-      const merged: AgentBlockData[] = [];
-      for (const b of blocks) {
-        const last = merged[merged.length - 1];
-        if (b.type === "text" && last?.type === "text") {
-          merged[merged.length - 1] = { ...last, content: last.content + b.content };
-        } else {
-          merged.push(b);
+  const planHistoryQuery = trpc.agents.getHistory.useQuery(
+    { sessionId: planSessionId ?? 0 },
+    { enabled: !!planSessionId && plan.status === "idle" && plan.blocks.length === 0 },
+  );
+  const brainstormHistoryQuery = trpc.agents.getHistory.useQuery(
+    { sessionId: brainstormSessionId ?? 0 },
+    { enabled: !!brainstormSessionId && brainstorm.status === "idle" && brainstorm.blocks.length === 0 },
+  );
+  const executeHistoryQuery = trpc.agents.getHistory.useQuery(
+    { sessionId: executeSessionId ?? 0 },
+    { enabled: !!executeSessionId && execute.status === "idle" && execute.blocks.length === 0 },
+  );
+  const riskHistoryQuery = trpc.agents.getHistory.useQuery(
+    { sessionId: riskSessionId ?? 0 },
+    { enabled: !!riskSessionId && risk.status === "idle" && risk.blocks.length === 0 },
+  );
+  const reviewHistoryQuery = trpc.agents.getHistory.useQuery(
+    { sessionId: reviewSessionId ?? 0 },
+    { enabled: !!reviewSessionId && review.status === "idle" && review.blocks.length === 0 },
+  );
+
+  const historyQueries = useMemo(
+    () => ({
+      plan: planHistoryQuery,
+      brainstorm: brainstormHistoryQuery,
+      execute: executeHistoryQuery,
+      risk: riskHistoryQuery,
+      review: reviewHistoryQuery,
+    }),
+    [planHistoryQuery, brainstormHistoryQuery, executeHistoryQuery, riskHistoryQuery, reviewHistoryQuery],
+  );
+
+  // Populate agent blocks from history on mount
+  useEffect(() => {
+    for (const agentType of agentTypes) {
+      const query = historyQueries[agentType];
+      const state = agentStateMap[agentType];
+      if (!query.data || query.data.length === 0) continue;
+      if (state.status !== "idle" || state.blocks.length > 0) continue;
+
+      const blocks: AgentBlockData[] = [];
+      for (const msg of query.data) {
+        const block = messageToBlock(msg);
+        if (block) blocks.push(block);
+      }
+      if (blocks.length > 0) {
+        // Merge consecutive text blocks
+        const merged: AgentBlockData[] = [];
+        for (const b of blocks) {
+          const last = merged[merged.length - 1];
+          if (b.type === "text" && last?.type === "text") {
+            merged[merged.length - 1] = { ...last, content: last.content + b.content };
+          } else {
+            merged.push(b);
+          }
         }
+        for (const b of merged) {
+          state.appendBlock(b);
+        }
+        state.setStatus("complete");
       }
-      for (const b of merged) {
-        plan.appendBlock(b);
-      }
-      plan.setStatus("complete");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [planHistoryQuery.data]);
+  }, [
+    planHistoryQuery.data,
+    brainstormHistoryQuery.data,
+    executeHistoryQuery.data,
+    riskHistoryQuery.data,
+    reviewHistoryQuery.data,
+  ]);
 
   const handleResume = useCallback(
     async (agentType: AgentType) => {
       const claudeSessionId = resumableSessions.get(agentType);
       if (!claudeSessionId) return;
 
-      const agentStateMap: Record<string, ReturnType<typeof useAgentState>> = {
-        plan,
-        brainstorm,
-        execute,
-        risk,
-        review,
-      };
       const state = agentStateMap[agentType];
       state.start();
 
@@ -520,6 +561,43 @@ function FeaturePage() {
     review: { status: review.status, blocks: review.blocks },
   });
 
+  // Track which agent panel is open (auto-opens running agents)
+  const [openAgent, setOpenAgent] = useState<string | null>(null);
+
+  // Auto-open the currently running agent, or the last completed one
+  useEffect(() => {
+    const running = allAgents.find((a) => a.state.status === "running");
+    if (running) {
+      setOpenAgent(running.label);
+    }
+  }, [allAgents]);
+
+  // Build the list of agents that have output (to show in the vertical list)
+  const agentEntries = useMemo(() => {
+    const hasOutput = (state: ReturnType<typeof useAgentState>) =>
+      state.status !== "idle" || state.blocks.length > 0;
+
+    const entries: Array<{
+      type: AgentType;
+      label: string;
+      state: ReturnType<typeof useAgentState>;
+    }> = [];
+
+    // Planning agents
+    if (hasOutput(plan)) entries.push({ type: "plan", label: "Plan", state: plan });
+    if (hasOutput(brainstorm)) entries.push({ type: "brainstorm", label: "Brainstorm", state: brainstorm });
+
+    // Build phase agents
+    if (hasOutput(execute)) entries.push({ type: "execute", label: "Execute", state: execute });
+    if (hasOutput(risk)) entries.push({ type: "risk", label: "Risk", state: risk });
+    if (hasOutput(review)) entries.push({ type: "review", label: "Review", state: review });
+
+    return entries;
+  }, [plan, brainstorm, execute, risk, review]);
+
+  const hasAnyAgentOutput = agentEntries.length > 0;
+  const noAgentsRunning = runningAgents.length === 0;
+
   return (
     <div className="relative flex h-full flex-col -m-6">
       <FeatureTopBar
@@ -527,7 +605,7 @@ function FeaturePage() {
         projectId={numericProjectId}
       />
       <div className="flex-1 overflow-auto p-6">
-        {/* Draft view: description input + Plan/Brainstorm buttons */}
+        {/* Draft view with no agent output: show description input */}
         {view === "plan-input" && (
           <div className="mx-auto max-w-2xl space-y-4">
             <div>
@@ -581,137 +659,52 @@ function FeaturePage() {
           </div>
         )}
 
-        {/* Planning view: plan/brainstorm agent panels */}
-        {view === "planning" && (
-          <div className="space-y-4">
-            {agents.showPlanAgent && (
-              <div className="h-full">
+        {/* Vertical agent list + actions — shown when agents have output or actions are available */}
+        {(hasAnyAgentOutput || actions.canStartBuild || actions.canStartRisk || actions.canStartReview) && (
+          <div className="space-y-2">
+            {agentEntries.map((entry) => (
+              <div key={entry.type}>
                 <AgentPanel
-                  agentType="plan"
-                  status={plan.status}
-                  blocks={plan.blocks}
+                  agentType={entry.type}
+                  status={entry.state.status}
+                  blocks={entry.state.blocks}
+                  open={openAgent === entry.label || entry.state.status === "running"}
+                  onToggle={() =>
+                    setOpenAgent((prev) =>
+                      prev === entry.label ? null : entry.label
+                    )
+                  }
                   pendingQuestions={
-                    plan.pendingQuestions.length > 0
+                    entry.type === "plan" && plan.pendingQuestions.length > 0
                       ? plan.pendingQuestions
+                      : entry.type === "brainstorm" && brainstorm.pendingQuestions.length > 0
+                        ? brainstorm.pendingQuestions
+                        : undefined
+                  }
+                  onQuestionResponse={
+                    entry.type === "plan"
+                      ? handleQuestionResponse
+                      : entry.type === "brainstorm"
+                        ? handleBrainstormQuestionResponse
+                        : undefined
+                  }
+                  resumable={
+                    (entry.type === "plan" || entry.type === "brainstorm") &&
+                    resumableSessions.has(entry.type)
+                  }
+                  onResume={
+                    (entry.type === "plan" || entry.type === "brainstorm")
+                      ? () => void handleResume(entry.type)
                       : undefined
                   }
-                  onQuestionResponse={handleQuestionResponse}
-                  resumable={resumableSessions.has("plan")}
-                  onResume={() => void handleResume("plan")}
-                  className="h-full"
                 />
-              </div>
-            )}
-            {agents.showBrainstormAgent && (
-              <div className="h-full">
-                <AgentPanel
-                  agentType="brainstorm"
-                  status={brainstorm.status}
-                  blocks={brainstorm.blocks}
-                  pendingQuestions={
-                    brainstorm.pendingQuestions.length > 0
-                      ? brainstorm.pendingQuestions
-                      : undefined
-                  }
-                  onQuestionResponse={handleBrainstormQuestionResponse}
-                  className="h-full"
-                />
-              </div>
-            )}
-          </div>
-        )}
 
-        {/* Ready to build: action buttons for Build/Risk/Review */}
-        {view === "ready-to-build" && (
-          <div className="mx-auto max-w-2xl space-y-4">
-            <div>
-              <h2 className="text-lg font-semibold">Ready to Build</h2>
-              <p className="text-sm text-muted-foreground">
-                The plan is ready. Start building to execute all phases in
-                order, or evaluate risks before proceeding.
-              </p>
-            </div>
-            <div className="flex gap-2">
-              {actions.canStartBuild && (
-                <Button
-                  onClick={handleStartBuilding}
-                  disabled={startExecuteMutation.isLoading}
-                >
-                  {startExecuteMutation.isLoading ? (
-                    <Loader2Icon className="mr-2 size-4 animate-spin" />
-                  ) : (
-                    <HammerIcon className="mr-2 size-4" />
-                  )}
-                  Start Building
-                </Button>
-              )}
-              {actions.canStartRisk && (
-                <Button
-                  variant="outline"
-                  onClick={handleStartRisk}
-                  disabled={startRiskMutation.isLoading}
-                >
-                  {startRiskMutation.isLoading ? (
-                    <Loader2Icon className="mr-2 size-4 animate-spin" />
-                  ) : (
-                    <ShieldAlertIcon className="mr-2 size-4" />
-                  )}
-                  Evaluate Risk
-                </Button>
-              )}
-              {actions.canStartReview && (
-                <Button
-                  variant="outline"
-                  onClick={handleStartReview}
-                  disabled={startReviewMutation.isLoading}
-                >
-                  {startReviewMutation.isLoading ? (
-                    <Loader2Icon className="mr-2 size-4 animate-spin" />
-                  ) : (
-                    <SearchCheckIcon className="mr-2 size-4" />
-                  )}
-                  Start Review
-                </Button>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Agents active: show all active agent panels (supports concurrent agents) */}
-        {view === "agents-active" && (
-          <div className="space-y-4">
-            {agents.showExecuteAgent && (
-              <div className="h-full">
-                <AgentPanel
-                  agentType="execute"
-                  status={execute.status}
-                  blocks={execute.blocks}
-                  className="h-full"
-                />
-              </div>
-            )}
-            {agents.showRiskAgent && (
-              <div className="h-full">
-                <AgentPanel
-                  agentType="risk"
-                  status={risk.status}
-                  blocks={risk.blocks}
-                  className="h-full"
-                />
-              </div>
-            )}
-            {agents.showReviewAgent && (
-              <div className="h-full">
-                <AgentPanel
-                  agentType="review"
-                  status={review.status}
-                  blocks={review.blocks}
-                  className="h-full"
-                />
-                {reviewComplete && reviewVerdict === "changes_requested" && (
-                  <div className="mt-4 flex gap-2 border-t pt-4">
+                {/* Review verdict actions */}
+                {entry.type === "review" && reviewComplete && reviewVerdict === "changes_requested" && (
+                  <div className="mt-2 flex gap-2 px-3">
                     <Button
                       variant="outline"
+                      size="sm"
                       onClick={handleAddFixPhase}
                       disabled={addFixPhaseMutation.isLoading}
                     >
@@ -723,6 +716,7 @@ function FeaturePage() {
                       Add Fix Phase
                     </Button>
                     <Button
+                      size="sm"
                       onClick={handleFixImmediately}
                       disabled={startExecuteForFixMutation.isLoading}
                     >
@@ -735,20 +729,90 @@ function FeaturePage() {
                     </Button>
                   </div>
                 )}
-                {reviewComplete && reviewVerdict === "approved" && (
-                  <div className="mt-4 border-t pt-4">
+                {entry.type === "review" && reviewComplete && reviewVerdict === "approved" && (
+                  <div className="mt-2 px-3">
                     <p className="text-sm font-medium text-green-600">
                       Review approved! Feature marked as done.
                     </p>
                   </div>
                 )}
               </div>
+            ))}
+
+            {/* Next actions — shown below agents when none are running */}
+            {noAgentsRunning && (actions.canStartBuild || actions.canStartRisk || actions.canStartReview) && (
+              <div className="space-y-3 pt-4">
+                <div>
+                  <h3 className="text-sm font-semibold">Next Steps</h3>
+                  <p className="text-xs text-muted-foreground">
+                    {actions.canStartBuild
+                      ? "The plan is ready. Start building to execute all phases, or evaluate risks first."
+                      : "Run a review or risk analysis on the current implementation."}
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                {actions.canStartBuild && (
+                  <Button
+                    onClick={handleStartBuilding}
+                    disabled={startExecuteMutation.isLoading}
+                  >
+                    {startExecuteMutation.isLoading ? (
+                      <Loader2Icon className="mr-2 size-4 animate-spin" />
+                    ) : (
+                      <HammerIcon className="mr-2 size-4" />
+                    )}
+                    Start Building
+                  </Button>
+                )}
+                {actions.canStartRisk && (
+                  <Button
+                    variant="outline"
+                    onClick={handleStartRisk}
+                    disabled={startRiskMutation.isLoading}
+                  >
+                    {startRiskMutation.isLoading ? (
+                      <Loader2Icon className="mr-2 size-4 animate-spin" />
+                    ) : (
+                      <ShieldAlertIcon className="mr-2 size-4" />
+                    )}
+                    Evaluate Risk
+                  </Button>
+                )}
+                {actions.canStartReview && (
+                  <Button
+                    variant="outline"
+                    onClick={handleStartReview}
+                    disabled={startReviewMutation.isLoading}
+                  >
+                    {startReviewMutation.isLoading ? (
+                      <Loader2Icon className="mr-2 size-4 animate-spin" />
+                    ) : (
+                      <SearchCheckIcon className="mr-2 size-4" />
+                    )}
+                    Start Review
+                  </Button>
+                )}
+                </div>
+              </div>
+            )}
+
+            {/* Done banner */}
+            {view === "done" && (
+              <div className="flex items-center gap-3 pt-4">
+                <CheckCircle2Icon className="size-8 text-green-600" />
+                <div>
+                  <h2 className="text-lg font-semibold">Feature Complete</h2>
+                  <p className="text-sm text-muted-foreground">
+                    This feature has been reviewed and marked as done.
+                  </p>
+                </div>
+              </div>
             )}
           </div>
         )}
 
-        {/* Done view: summary */}
-        {view === "done" && (
+        {/* Done view with no agent output visible (edge case) */}
+        {view === "done" && !hasAnyAgentOutput && (
           <div className="mx-auto max-w-2xl space-y-4">
             <div className="flex items-center gap-3">
               <CheckCircle2Icon className="size-8 text-green-600" />

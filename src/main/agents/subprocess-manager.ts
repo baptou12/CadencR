@@ -1,6 +1,7 @@
 import { BrowserWindow } from "electron";
 import { getDatabase } from "../db/database";
 import { discoverClaudeCli } from "./cli-discovery";
+import { getSessionDbId, persistStreamEvent } from "./ipc-bridge";
 import type { AgentEvent, AgentType, StreamEvent } from "./types";
 import EventEmitter from "node:events";
 
@@ -81,11 +82,15 @@ function handleSdkMessage(managed: ManagedSubprocess, msg: Record<string, unknow
 
   console.log("[subprocess-manager] SDK message type:", type, parentToolUseId ? `(parent: ${parentToolUseId})` : "");
 
+  // Persist events to agent_messages table
+  const sessionDbId = getSessionDbId(id);
+
   if (type === "stream_event") {
     // SDKPartialAssistantMessage — contains the granular content_block_start/delta/stop events
     const innerEvent = msg.event as StreamEvent;
     if (innerEvent) {
       broadcastEvent(id, agentType, innerEvent, parentToolUseId);
+      if (sessionDbId) persistStreamEvent(sessionDbId, innerEvent);
       for (const listener of managed.eventListeners) listener(innerEvent);
     }
   } else if (type === "assistant") {
@@ -103,6 +108,7 @@ function handleSdkMessage(managed: ManagedSubprocess, msg: Record<string, unknow
               content_block: { type: "text", text: block.text as string },
             };
             broadcastEvent(id, agentType, event, parentToolUseId);
+            if (sessionDbId) persistStreamEvent(sessionDbId, event);
             for (const listener of managed.eventListeners) listener(event);
           } else if (block.type === "tool_use") {
             const event: StreamEvent = {
@@ -116,6 +122,7 @@ function handleSdkMessage(managed: ManagedSubprocess, msg: Record<string, unknow
               },
             };
             broadcastEvent(id, agentType, event, parentToolUseId);
+            if (sessionDbId) persistStreamEvent(sessionDbId, event);
             for (const listener of managed.eventListeners) listener(event);
           }
         }
@@ -124,12 +131,14 @@ function handleSdkMessage(managed: ManagedSubprocess, msg: Record<string, unknow
   } else if (type === "tool_result" || type === "result") {
     // Tool result or final result
     if (type === "tool_result") {
-      broadcastEvent(id, agentType, {
+      const toolResultEvent: StreamEvent = {
         type: "tool_result",
         tool_use_id: (msg.tool_use_id as string) ?? "",
         content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content),
         is_error: (msg.is_error as boolean) ?? false,
-      }, parentToolUseId);
+      };
+      broadcastEvent(id, agentType, toolResultEvent, parentToolUseId);
+      if (sessionDbId) persistStreamEvent(sessionDbId, toolResultEvent);
     } else {
       broadcastEvent(id, agentType, {
         type: "result",

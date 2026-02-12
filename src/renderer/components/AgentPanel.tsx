@@ -1,6 +1,7 @@
+import { useState, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { Loader2Icon, CheckCircleIcon, XCircleIcon, RotateCcwIcon } from "lucide-react";
+import { Loader2Icon, CheckCircleIcon, XCircleIcon, RotateCcwIcon, ChevronRightIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AgentStream } from "./AgentStream";
 import { AgentQuestionDrawer } from "./AgentQuestionDrawer";
@@ -23,9 +24,13 @@ interface AgentPanelProps {
   resumable?: boolean;
   /** Called when user clicks resume */
   onResume?: () => void;
+  /** Whether the panel content is expanded */
+  open?: boolean;
+  /** Called when the user toggles the panel */
+  onToggle?: () => void;
 }
 
-const AGENT_LABELS: Record<AgentType, string> = {
+export const AGENT_LABELS: Record<AgentType, string> = {
   plan: "Plan",
   brainstorm: "Brainstorm",
   execute: "Execute",
@@ -64,8 +69,30 @@ export function AgentPanel({
   onQuestionResponse,
   resumable,
   onResume,
+  open: controlledOpen,
+  onToggle,
 }: AgentPanelProps) {
   const badge = STATUS_BADGE[status];
+
+  // If open/onToggle not provided, manage internally
+  const [internalOpen, setInternalOpen] = useState(true);
+  const isControlled = controlledOpen !== undefined;
+  const isOpen = isControlled ? controlledOpen : internalOpen;
+
+  // Auto-open when agent starts running
+  useEffect(() => {
+    if (status === "running" && !isControlled) {
+      setInternalOpen(true);
+    }
+  }, [status, isControlled]);
+
+  const handleToggle = () => {
+    if (onToggle) {
+      onToggle();
+    } else {
+      setInternalOpen((prev) => !prev);
+    }
+  };
 
   return (
     <div
@@ -74,8 +101,17 @@ export function AgentPanel({
         className
       )}
     >
-      {/* Header */}
-      <div className="flex items-center gap-2 border-b border-border px-3 py-2">
+      {/* Header — clickable to toggle */}
+      <div
+        className="flex cursor-pointer items-center gap-2 px-3 py-2 hover:bg-muted/50"
+        onClick={handleToggle}
+      >
+        <ChevronRightIcon
+          className={cn(
+            "size-4 text-muted-foreground transition-transform duration-200",
+            isOpen && "rotate-90"
+          )}
+        />
         <span className="text-sm font-medium">{AGENT_LABELS[agentType]}</span>
         <Badge variant="secondary" className={cn("gap-1 text-xs", badge.className)}>
           {badge.icon}
@@ -86,7 +122,7 @@ export function AgentPanel({
             variant="ghost"
             size="sm"
             className="ml-auto h-6 gap-1 px-2 text-xs"
-            onClick={onResume}
+            onClick={(e) => { e.stopPropagation(); onResume(); }}
           >
             <RotateCcwIcon className="size-3" />
             Resume
@@ -94,21 +130,28 @@ export function AgentPanel({
         )}
       </div>
 
-      {/* Stream content */}
-      {blocks.length === 0 && status === "idle" ? (
-        <div className="flex flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
-          No output yet
-        </div>
-      ) : (
-        <AgentStream blocks={blocks} isStreaming={status === "running"} />
-      )}
+      {/* Collapsible content */}
+      {isOpen && (
+        <>
+          <div className="border-t border-border">
+            {/* Stream content */}
+            {blocks.length === 0 && status === "idle" ? (
+              <div className="flex flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
+                No output yet
+              </div>
+            ) : (
+              <AgentStream blocks={blocks} isStreaming={status === "running"} />
+            )}
+          </div>
 
-      {/* Question drawer — pushes content up from bottom */}
-      <AgentQuestionDrawer
-        questions={pendingQuestions ?? []}
-        open={!!pendingQuestions && pendingQuestions.length > 0}
-        onSubmit={onQuestionResponse ?? (() => {})}
-      />
+          {/* Question drawer — pushes content up from bottom */}
+          <AgentQuestionDrawer
+            questions={pendingQuestions ?? []}
+            open={!!pendingQuestions && pendingQuestions.length > 0}
+            onSubmit={onQuestionResponse ?? (() => {})}
+          />
+        </>
+      )}
     </div>
   );
 }
