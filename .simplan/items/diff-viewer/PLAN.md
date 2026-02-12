@@ -178,17 +178,19 @@ ProductDevR is an Electron app with tRPC IPC, SQLite DB, TanStack Router, and Ta
 - **Implementation notes**: Created `DiffSettingsPopover` component with gear icon trigger and click-outside-to-close popover. Exports `DiffSettings` interface and `defaultDiffSettings` for parent components to manage state. All 6 setting groups implemented as button-based radio groups with Dracula theme styling. Purple labels (`#bd93f9`), active state uses `#44475a` bg. Shiki option shows "(reload req.)" note in pink. No shadcn dependencies needed -- uses plain Tailwind + click-outside `useEffect`.
 - **Validation results**: Lint passed (0 errors, 1 pre-existing warning in DiffFileTree), TypeScript `tsc --noEmit` passed, `pnpm run package` succeeded.
 
-### ⬜ Phase 9: Search in diff
+### ✅ Phase 9: Search in diff
 - **Step**: 6
 - **Complexity**: 3
-- [ ] Create `src/renderer/components/diff/DiffSearch.tsx` — search input in the top-right of the diff area ("Search in the diff" placeholder)
-- [ ] On typing, highlight all matching text occurrences across all file diffs (use DOM-based text highlighting or `@git-diff-view/react` highlight API if available)
-- [ ] Show match count (e.g., "3/15")
-- [ ] Up/down arrows or Enter/Shift+Enter to navigate between matches, scrolling to each
-- [ ] Clear button to reset search
+- [x] Create `src/renderer/components/diff/DiffSearch.tsx` — search input in the top-right of the diff area ("Search in the diff" placeholder)
+- [x] On typing, highlight all matching text occurrences across all file diffs (use DOM-based text highlighting or `@git-diff-view/react` highlight API if available)
+- [x] Show match count (e.g., "3/15")
+- [x] Up/down arrows or Enter/Shift+Enter to navigate between matches, scrolling to each
+- [x] Clear button to reset search
 - **Files**: `src/renderer/components/diff/DiffSearch.tsx`
 - **Commit message**: `feat: add search-in-diff functionality`
 - **Bisect note**: Operates on rendered diff DOM; no backend changes
+- **Implementation notes**: Created `DiffSearch` component that accepts a `containerRef` pointing to the diff scroll area. Uses DOM TreeWalker to find text nodes, wraps matches in `<mark>` elements with Dracula-themed highlighting (yellow `#f1fa8c` for matches, orange `#ffb86c` for current match). Debounced search (200ms). Navigation via Enter/Shift+Enter or chevron buttons. Escape clears. Highlights are cleaned up by restoring original text nodes on clear/unmount. Icons from lucide-react (Search, ChevronUp, ChevronDown, X).
+- **Validation results**: Lint passed (0 errors), TypeScript `tsc --noEmit` passed (no type errors), `pnpm run package` succeeded.
 
 ### ⬜ Phase 10: Per-line comment widget
 - **Step**: 7
@@ -222,5 +224,5 @@ ProductDevR is an Electron app with tRPC IPC, SQLite DB, TanStack Router, and Ta
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 9
-- **Progress**: 8/11
+- **Current Phase**: Phase 10
+- **Progress**: 9/11
