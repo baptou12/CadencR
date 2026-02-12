@@ -35,6 +35,8 @@ export interface ManagedSubprocess {
   status: "running" | "stopped" | "error" | "completed";
   /** Abort controller to cancel the SDK query */
   abortController?: AbortController;
+  /** The SDK Query object for streamInput/close */
+  query?: import("@anthropic-ai/claude-agent-sdk").Query;
   /** The async iterator (kept for reference) */
   queryIterator?: AsyncGenerator<unknown, void>;
   /** Event listeners registered by agent-specific code */
@@ -194,11 +196,12 @@ export function startSubprocess(options: SubprocessOptions): ManagedSubprocess {
 
 async function runSdkQuery(managed: ManagedSubprocess, options: SubprocessOptions): Promise<void> {
   // Dynamic import since the SDK is ESM
-  const { query } = await import("@anthropic-ai/claude-agent-sdk") as {
+  const sdk = await import("@anthropic-ai/claude-agent-sdk");
+  const { query } = sdk as {
     query: (opts: {
       prompt: string;
       options?: Record<string, unknown>;
-    }) => AsyncGenerator<Record<string, unknown>, void>;
+    }) => import("@anthropic-ai/claude-agent-sdk").Query;
   };
 
   const cliInfo = discoverClaudeCli();
@@ -265,15 +268,16 @@ async function runSdkQuery(managed: ManagedSubprocess, options: SubprocessOption
 
   console.log("[subprocess-manager] calling SDK query() with cwd:", options.cwd);
 
-  const iterator = query({
+  const queryObj = query({
     prompt: options.prompt,
     options: queryOptions,
   });
 
-  managed.queryIterator = iterator;
+  managed.query = queryObj;
+  managed.queryIterator = queryObj;
 
   try {
-    for await (const message of iterator) {
+    for await (const message of queryObj) {
       if (managed.status === "stopped") break;
       handleSdkMessage(managed, message as Record<string, unknown>);
     }
@@ -306,6 +310,49 @@ async function runSdkQuery(managed: ManagedSubprocess, options: SubprocessOption
       });
     }
   }
+}
+
+/**
+ * Send a user message to a running subprocess via SDK streamInput.
+ */
+export async function sendMessageToSubprocess(id: string, message: string): Promise<boolean> {
+  const managed = activeProcesses.get(id);
+  if (!managed || managed.status !== "running" || !managed.query) {
+    return false;
+  }
+
+  const userMessage = {
+    type: "user" as const,
+    message: { role: "user" as const, content: message },
+    parent_tool_use_id: null,
+    session_id: "",
+  };
+
+  // streamInput expects an AsyncIterable that yields one message
+  async function* singleMessage() {
+    yield userMessage;
+  }
+
+  await managed.query.streamInput(singleMessage());
+  return true;
+}
+
+/**
+ * Stop a running subprocess cleanly via SDK Query.close().
+ */
+export function stopSubprocess(id: string): boolean {
+  const managed = activeProcesses.get(id);
+  if (!managed || managed.status !== "running") {
+    return false;
+  }
+
+  managed.status = "stopped";
+  if (managed.query) {
+    managed.query.close();
+  } else {
+    managed.abortController?.abort();
+  }
+  return true;
 }
 
 /**

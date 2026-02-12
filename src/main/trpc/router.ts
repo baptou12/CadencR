@@ -11,6 +11,7 @@ import {
   killSubprocess,
   listSubprocesses,
   submitUserAnswers,
+  sendMessageToSubprocess,
 } from "../agents/subprocess-manager";
 import { bridgeSubprocessToRenderer } from "../agents/ipc-bridge";
 import type { AgentType } from "../agents/types";
@@ -159,6 +160,14 @@ const agentsRouter = router({
     .mutation(({ input }) => {
       submitUserAnswers(input.subprocessId, input.answers);
       return { success: true };
+    }),
+
+  /** Send a message to a running agent subprocess */
+  sendMessage: publicProcedure
+    .input(z.object({ id: z.string(), message: z.string() }))
+    .mutation(async ({ input }) => {
+      const sent = await sendMessageToSubprocess(input.id, input.message);
+      return { success: sent };
     }),
 
   /** Start the plan agent for a feature */

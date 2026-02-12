@@ -35,18 +35,20 @@ The `subprocess-manager.ts` creates `ManagedSubprocess` objects but doesn't stor
 
 ## Phases
 
-### ⬜ Phase 1: Backend — Store Query reference and add sendMessage endpoint
+### ✅ Phase 1: Backend — Store Query reference and add sendMessage endpoint
 - **Step**: 1
 - **Complexity**: 3
-- [ ] In `subprocess-manager.ts`, add `query?: Query` field to `ManagedSubprocess` interface
-- [ ] Store the `Query` object returned by `query()` in `runSdkQuery()`
-- [ ] Add `sendMessageToSubprocess(id: string, message: string)` function that calls `query.streamInput()` with an `SDKUserMessage`
-- [ ] Add `stopSubprocess(id: string)` function that calls `query.close()` (cleaner than abort)
-- [ ] In `router.ts`, add `agents.sendMessage` mutation (input: `{ id: string, message: string }`)
-- [ ] Export the new function from subprocess-manager
+- [x] In `subprocess-manager.ts`, add `query?: Query` field to `ManagedSubprocess` interface
+- [x] Store the `Query` object returned by `query()` in `runSdkQuery()`
+- [x] Add `sendMessageToSubprocess(id: string, message: string)` function that calls `query.streamInput()` with an `SDKUserMessage`
+- [x] Add `stopSubprocess(id: string)` function that calls `query.close()` (cleaner than abort)
+- [x] In `router.ts`, add `agents.sendMessage` mutation (input: `{ id: string, message: string }`)
+- [x] Export the new function from subprocess-manager
 - **Files**: `src/main/agents/subprocess-manager.ts`, `src/main/trpc/router.ts`
 - **Commit message**: `feat: add sendMessage and per-agent stop via SDK Query API`
 - **Bisect note**: Backend-only change, no callers yet — safe standalone
+- **Implementation notes**: Updated dynamic import type cast to return `Query` instead of `AsyncGenerator` so the `query` field types correctly. `stopSubprocess` is exported from subprocess-manager but not yet imported in router (will be used in Phase 3 when the stop endpoint is updated). The `sendMessageToSubprocess` function creates a single-yield async generator to pass to `streamInput()`.
+- **Validation results**: Lint passes (0 warnings, 0 errors). TypeScript compiles with no errors.
 
 ### ⬜ Phase 2: Frontend — AgentPromptBar component
 - **Step**: 2
@@ -82,5 +84,5 @@ The `subprocess-manager.ts` creates `ManagedSubprocess` objects but doesn't stor
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Not started
-- **Progress**: 0/3
+- **Current Phase**: Phase 2
+- **Progress**: 1/3
