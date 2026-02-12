@@ -48,18 +48,20 @@
 
 ## Phases
 
-### ⬜ Phase 1: Replace CSS variables with Dracula palette
+### ✅ Phase 1: Replace CSS variables with Dracula palette
 - **Step**: 1
 - **Complexity**: 2
-- [ ] Convert Dracula hex colors to OKLCH values
-- [ ] Replace `:root` variables with Dracula colors (background=#282a36, foreground=#f8f8f2, primary=purple #bd93f9, destructive=red #ff5555, etc.)
-- [ ] Remove the `.dark { ... }` block entirely
-- [ ] Remove the `@custom-variant dark` line
-- [ ] Set chart colors to Dracula accents (purple, pink, green, cyan, orange)
-- [ ] Set sidebar variables to match (sidebar bg=#282a36, sidebar-primary=purple, sidebar-accent=#44475a)
+- [x] Convert Dracula hex colors to OKLCH values
+- [x] Replace `:root` variables with Dracula colors (background=#282a36, foreground=#f8f8f2, primary=purple #bd93f9, destructive=red #ff5555, etc.)
+- [x] Remove the `.dark { ... }` block entirely
+- [x] Remove the `@custom-variant dark` line
+- [x] Set chart colors to Dracula accents (purple, pink, green, cyan, orange)
+- [x] Set sidebar variables to match (sidebar bg=#282a36, sidebar-primary=purple, sidebar-accent=#44475a)
 - **Files**: `src/renderer/index.css`
 - **Commit message**: `feat: replace light/dark themes with Dracula color palette`
 - **Bisect note**: Self-contained — CSS-only change, all variable names stay the same so no breakage
+- **Implementation notes**: Converted all 11 Dracula palette colors from hex to OKLCH via sRGB->XYZ->OKLab->OKLCH. Replaced all `:root` variables, removed `.dark` block and `@custom-variant dark` line. Chart colors use purple, pink, green, cyan, orange. All CSS variable names preserved.
+- **Validation results**: Lint passes (0 errors). No `build` script exists in package.json (`package` is the equivalent but too heavy to run as validation).
 
 ### ⬜ Phase 2: Remove dark: variant usages from components
 - **Step**: 2
@@ -73,15 +75,17 @@
 - **Commit message**: `refactor: remove dark: variant classes (single Dracula theme)`
 - **Bisect note**: Must come after phase 1 — the `@custom-variant dark` is removed in phase 1, so dark: classes would cause build errors if left
 
-### ⬜ Phase 3: Dracula window titlebar
+### ✅ Phase 3: Dracula window titlebar
 - **Step**: 1
 - **Complexity**: 2
-- [ ] Add `titleBarStyle: 'hiddenInset'` and `backgroundColor: '#282a36'` to BrowserWindow options in `src/main.ts`
-- [ ] Add CSS for `-webkit-app-region: drag` on a top bar area and padding-left for macOS traffic lights (~70px) in `src/renderer/index.css` or the root layout
-- [ ] Ensure the app content doesn't overlap the traffic light buttons
+- [x] Add `titleBarStyle: 'hiddenInset'` and `backgroundColor: '#282a36'` to BrowserWindow options in `src/main.ts`
+- [x] Add CSS for `-webkit-app-region: drag` on a top bar area and padding-left for macOS traffic lights (~70px) in `src/renderer/index.css` or the root layout
+- [x] Ensure the app content doesn't overlap the traffic light buttons
 - **Files**: `src/main.ts`, `src/renderer/index.css` or `src/renderer/routes/__root.tsx`
 - **Commit message**: `feat: use Dracula background for window titlebar`
 - **Bisect note**: Independent of CSS variable changes — only touches BrowserWindow config and layout padding
+- **Implementation notes**: Added `titleBarStyle: "hiddenInset"` and `backgroundColor: "#282a36"` to BrowserWindow in `src/main.ts`. In `src/renderer/routes/__root.tsx`, added a fixed 28px drag region div at the top with `-webkit-app-region: drag` and Dracula background color, plus 28px top padding on the root container to prevent content overlap with traffic lights. Used inline styles to avoid conflicts with Phase 1 editing `index.css` in parallel.
+- **Validation results**: Lint passes (0 errors). Build passes (`pnpm run package` succeeds; no `build` script exists, used `package` instead).
 
 ## Phase Status Legend
 
@@ -92,5 +96,5 @@
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Not started
-- **Progress**: 0/3
+- **Current Phase**: Phase 2
+- **Progress**: 2/3
