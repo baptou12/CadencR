@@ -1,12 +1,14 @@
-import React from "react";
+import React, { useCallback } from "react";
 import { createRootRoute, Outlet } from "@tanstack/react-router";
 import { Sidebar } from "@/components/Sidebar";
 import { useDbUpdated } from "@/hooks/useDbUpdated";
+import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import {
   ResizablePanelGroup,
   ResizablePanel,
   ResizableHandle,
 } from "@/components/ui/resizable";
+import type { PanelSize } from "react-resizable-panels";
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -14,6 +16,16 @@ export const Route = createRootRoute({
 
 function RootLayout() {
   useDbUpdated();
+  const leftWidth = useDebouncedSetting("sidebar_left_width");
+
+  const handleLeftResize = useCallback(
+    (panelSize: PanelSize) => {
+      leftWidth.setValue(String(Math.round(panelSize.inPixels)));
+    },
+    [leftWidth],
+  );
+
+  const defaultLeftSize = leftWidth.value ? `${leftWidth.value}px` : "256px";
 
   return (
     <div className="flex h-screen" style={{ paddingTop: 28 }}>
@@ -27,15 +39,16 @@ function RootLayout() {
       />
       <ResizablePanelGroup orientation="horizontal">
         <ResizablePanel
-          defaultSize="256px"
+          defaultSize={defaultLeftSize}
           minSize="180px"
           maxSize="400px"
+          onResize={handleLeftResize}
         >
           <Sidebar />
         </ResizablePanel>
         <ResizableHandle className="cursor-col-resize" />
         <ResizablePanel>
-          <main className="h-full overflow-auto p-6">
+          <main className="h-full overflow-hidden">
             <Outlet />
           </main>
         </ResizablePanel>

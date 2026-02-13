@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { trpc } from "@/trpc";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -13,13 +12,11 @@ import { Badge } from "@/components/ui/badge";
 import { Markdown } from "@/components/Markdown";
 import { PhaseCard } from "@/components/PhaseCard";
 import type { PhaseData } from "@/components/PhaseCard";
-import { CircleIcon, Loader2, CheckCircle2, XCircle, ChevronsRight, ChevronsLeft } from "lucide-react";
+import { CircleIcon, Loader2, CheckCircle2, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface PlanSidebarProps {
   featureId: number;
-  collapsed?: boolean;
-  onToggleCollapse?: () => void;
 }
 
 const statusConfig: Record<string, { icon: React.ElementType; className: string; badgeClassName: string; label: string }> = {
@@ -30,7 +27,7 @@ const statusConfig: Record<string, { icon: React.ElementType; className: string;
   error: { icon: XCircle, className: "text-[var(--drac-red)]", badgeClassName: "bg-[var(--drac-red)]/20 text-[var(--drac-red)]", label: "Error" },
 };
 
-export function PlanSidebar({ featureId, collapsed, onToggleCollapse }: PlanSidebarProps) {
+export function PlanSidebar({ featureId }: PlanSidebarProps) {
   const [expandedPhase, setExpandedPhase] = useState<PhaseData | null>(null);
 
   const { data: plan } = trpc.features.getPlanWithPhases.useQuery({ feature_id: featureId });
@@ -43,16 +40,11 @@ export function PlanSidebar({ featureId, collapsed, onToggleCollapse }: PlanSide
 
   return (
     <>
-      <div className="flex h-full shrink-0 flex-col border-l border-border">
-        <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          {!collapsed && <h3 className="text-sm font-semibold text-foreground">{plan.title}</h3>}
-          {onToggleCollapse && (
-            <Button variant="ghost" size="icon" className="size-6 shrink-0" onClick={onToggleCollapse}>
-              {collapsed ? <ChevronsLeft className="size-4" /> : <ChevronsRight className="size-4" />}
-            </Button>
-          )}
+      <div className="flex h-full w-80 shrink-0 flex-col border-l border-border">
+        <div className="flex items-center border-b border-border px-4 py-3">
+          <h3 className="text-sm font-semibold text-foreground">{plan.title}</h3>
         </div>
-        <ScrollArea className="flex-1">
+        <ScrollArea className="flex-1 min-h-0">
           <div className="flex flex-col gap-3 p-3">
             {plan.phases.map((phase) => (
               <PhaseCard

@@ -74,16 +74,18 @@
 - **Implementation notes**: Replaced the `flex` wrapper div with `ResizablePanelGroup orientation="horizontal"`. Main content is in an auto-sized `ResizablePanel`, right sidebar in a collapsible panel with `defaultSize="320px"`, `minSize="240px"`, `maxSize="600px"`, `collapsedSize="0px"`. Used `panelRef` + `useRef<PanelImperativeHandle>` for imperative `collapse()`/`expand()` calls. Toggle button uses `ChevronsRight`/`ChevronsLeft` from lucide-react in the PlanSidebar header. Removed fixed `w-80` from PlanSidebar. Collapse state tracked via `onResize` callback checking `panelSize.inPixels === 0`.
 - **Validation results**: Lint passes (exit 0), TypeScript type check passes (exit 0, no errors).
 
-### ⬜ Phase 4: Persist sidebar widths and collapsed state
+### ✅ Phase 4: Persist sidebar widths and collapsed state
 - **Step**: 4
 - **Complexity**: 2
-- [ ] On left sidebar resize (`onResize` callback), debounce and save width to settings key `sidebar_left_width`
-- [ ] On right sidebar resize/collapse, debounce and save width to `sidebar_right_width` and collapsed state to `sidebar_right_collapsed`
-- [ ] On mount, read persisted values from settings and use as `defaultSize` / default collapsed state
-- [ ] Create a small `useSidebarWidth` hook (or inline) that wraps the trpc queries/mutations with debounce
-- **Files**: `src/renderer/routes/__root.tsx`, `src/renderer/routes/projects/$projectId/features/$featureId.tsx`, `src/renderer/components/PlanSidebar.tsx`
+- [x] On left sidebar resize (`onResize` callback), debounce and save width to settings key `sidebar_left_width`
+- [x] On right sidebar resize/collapse, debounce and save width to `sidebar_right_width` and collapsed state to `sidebar_right_collapsed`
+- [x] On mount, read persisted values from settings and use as `defaultSize` / default collapsed state
+- [x] Create a small `useSidebarWidth` hook (or inline) that wraps the trpc queries/mutations with debounce
+- **Files**: `src/renderer/routes/__root.tsx`, `src/renderer/routes/projects/$projectId/features/$featureId.tsx`, `src/renderer/hooks/useDebouncedSetting.ts`
 - **Commit message**: `feat: persist sidebar widths across sessions`
 - **Bisect note**: Adds persistence on top of already-working resize; no breakage if settings are empty (falls back to defaults)
+- **Implementation notes**: Created `useDebouncedSetting` hook in `src/renderer/hooks/useDebouncedSetting.ts` that wraps `trpc.settings.get`/`trpc.settings.set` with a 300ms debounce via `setTimeout`. Left sidebar persists width to `sidebar_left_width` key. Right sidebar persists width to `sidebar_right_width` and collapsed state to `sidebar_right_collapsed`. On mount, persisted values are read and used as `defaultSize`; if no persisted value exists, falls back to original defaults (256px left, 320px right). PlanSidebar.tsx was not modified as persistence logic lives entirely in the parent components.
+- **Validation results**: Lint passes (exit 0), TypeScript type check passes (exit 0, no errors).
 
 ## Phase Status Legend
 
@@ -94,5 +96,5 @@
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 4
-- **Progress**: 3/4
+- **Current Phase**: All phases complete
+- **Progress**: 4/4

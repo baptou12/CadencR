@@ -9,7 +9,7 @@ function HomePage() {
   const hello = trpc.hello.useQuery({ name: "ProductDevR" });
 
   return (
-    <div>
+    <div className="p-6">
       <h1 className="text-2xl font-bold mb-4">Home</h1>
       <p className="text-muted-foreground">{hello.data?.greeting ?? "Loading..."}</p>
     </div>
