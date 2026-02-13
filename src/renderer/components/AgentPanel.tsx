@@ -44,6 +44,7 @@ export const AGENT_LABELS: Record<AgentType, string> = {
   execute: "Execute",
   risk: "Risk Analysis",
   review: "Review",
+  session: "Session",
 };
 
 const STATUS_BADGE: Record<

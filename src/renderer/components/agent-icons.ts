@@ -4,6 +4,7 @@ import {
   HammerIcon,
   ShieldAlertIcon,
   SearchCheckIcon,
+  MessageSquareIcon,
 } from "lucide-react";
 import type { AgentType } from "../../main/agents/types";
 
@@ -13,4 +14,5 @@ export const AGENT_ICONS: Record<AgentType, typeof PlayIcon> = {
   execute: HammerIcon,
   risk: ShieldAlertIcon,
   review: SearchCheckIcon,
+  session: MessageSquareIcon,
 };

@@ -47,26 +47,30 @@ Features are created via `features.create` mutation, which also sets up a git wo
 - **Implementation notes**: Added migration version 13 with ALTER TABLE to add `type` column. Added `FeatureType` union type (`"feature" | "session"`) and `type` field to `FeatureRow` in types.ts.
 - **Validation results**: Lint passes (0 warnings, 0 errors). Type check passes (no errors).
 
-### ⬜ Phase 2: Create session agent in main process
+### ✅ Phase 2: Create session agent in main process
 - **Step**: 2
 - **Complexity**: 3
-- [ ] Create `src/main/agents/session-agent.ts` — a simple agent that starts a Claude Code subprocess with a user prompt, running in the project's root directory (not a worktree)
-- [ ] The agent should support: starting a new session, resuming an existing session, multi-turn messaging, and interrupt/resume
-- [ ] System prompt should be minimal: "You are Claude Code working on this project. Help the user with whatever they need."
-- [ ] No structured output parsing needed (unlike plan/execute agents) — just stream raw output
+- [x] Create `src/main/agents/session-agent.ts` — a simple agent that starts a Claude Code subprocess with a user prompt, running in the project's root directory (not a worktree)
+- [x] The agent should support: starting a new session, resuming an existing session, multi-turn messaging, and interrupt/resume
+- [x] System prompt should be minimal: "You are Claude Code working on this project. Help the user with whatever they need."
+- [x] No structured output parsing needed (unlike plan/execute agents) — just stream raw output
 - **Files**: `src/main/agents/session-agent.ts`
 - **Commit message**: `feat: add session agent for free-form Claude Code sessions`
 - **Bisect note**: Agent file is standalone, not called yet
+- **Implementation notes**: Created `src/main/agents/session-agent.ts` following the brainstorm-agent pattern. Added "session" to `AgentType` union in `types.ts`. The agent creates an `agent_sessions` DB record, starts a subprocess with a minimal system prompt, bridges to renderer, and updates session status on completion. No structured output parsing. Supports resume via `resumeSessionId` option and multi-turn via existing subprocess manager. Also fixed downstream type errors in `agent-icons.ts` (added `MessageSquareIcon` for session) and `AgentPanel.tsx` (added "Session" label) caused by the AgentType change.
+- **Validation results**: Lint passes (0 warnings, 0 errors). Type check passes (no errors).
 
-### ⬜ Phase 3: Add tRPC endpoints for sessions
+### ✅ Phase 3: Add tRPC endpoints for sessions
 - **Step**: 2
 - **Complexity**: 3
-- [ ] Add `features.createSession` mutation — creates a feature with `type='session'`, title auto-generated (e.g., "Session #N"), NO worktree creation
-- [ ] Add `agents.startSession` mutation — starts session agent on project path, returns subprocess ID + session DB ID
-- [ ] Ensure `agents.interrupt`, `agents.sendMessage`, `agents.getHistory` work for session agent type (they should already via subprocess manager)
+- [x] Add `features.createSession` mutation — creates a feature with `type='session'`, title auto-generated (e.g., "Session #N"), NO worktree creation
+- [x] Add `agents.startSession` mutation — starts session agent on project path, returns subprocess ID + session DB ID
+- [x] Ensure `agents.interrupt`, `agents.sendMessage`, `agents.getHistory` work for session agent type (they should already via subprocess manager)
 - **Files**: `src/main/trpc/features.ts`, `src/main/trpc/router.ts`
 - **Commit message**: `feat: add tRPC endpoints for creating and starting sessions`
 - **Bisect note**: Endpoints added but not called from UI yet
+- **Implementation notes**: Added `createSession` mutation to features router (counts existing sessions per project, auto-titles "Session N", inserts with type='session', no worktree). Added `startSession` mutation to agents router (resolves project path, calls `startSessionAgent`). Updated `agentTypeSchema` to include "session". Updated all feature SELECT queries to include `type` column. Added "session" to agent type enums in model settings. Existing `interrupt`, `sendMessage`, `getHistory` work unchanged for session agents via subprocess manager.
+- **Validation results**: Lint passes (0 warnings, 0 errors). Type check has 2 errors in renderer files (`AgentPanel.tsx`, `agent-icons.ts`) that need "session" added to their Record types -- these files are outside this phase's scope and will be addressed by UI phases.
 
 ### ⬜ Phase 4: Add dropdown menu to ProjectList
 - **Step**: 3
@@ -120,5 +124,5 @@ Features are created via `features.create` mutation, which also sets up a git wo
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 2
-- **Progress**: 1/7
+- **Current Phase**: Phase 4
+- **Progress**: 3/7
