@@ -1,6 +1,6 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { Send, Square } from "lucide-react";
-import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { AgentQuestionDrawer } from "./AgentQuestionDrawer";
 import type { AgentQuestion } from "./AgentQuestionDrawer";
@@ -26,10 +26,19 @@ export function AgentPromptBar({
   onQuestionResponse,
 }: AgentPromptBarProps) {
   const [text, setText] = useState("");
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const isRunning = status === "running";
   const canSend = text.trim().length > 0 && !disabled;
   const hasQuestions = !!pendingQuestions && pendingQuestions.length > 0;
+
+  // Auto-resize textarea to fit content
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [text]);
 
   const handleSend = useCallback(() => {
     const trimmed = text.trim();
@@ -39,10 +48,12 @@ export function AgentPromptBar({
   }, [text, onSend]);
 
   const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLInputElement>) => {
+    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
       if (e.key === "Enter" && !e.shiftKey && canSend) {
         e.preventDefault();
         handleSend();
+      } else if (e.key === "Enter" && !e.shiftKey && !canSend) {
+        e.preventDefault();
       }
     },
     [canSend, handleSend],
@@ -61,14 +72,16 @@ export function AgentPromptBar({
   }
 
   return (
-    <div className="flex items-center gap-2 bg-muted/20 px-3 py-2">
-      <Input
+    <div className="flex items-end gap-2 bg-muted/20 px-3 py-2">
+      <Textarea
+        ref={textareaRef}
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={handleKeyDown}
         placeholder="Send a message…"
         disabled={disabled}
-        className="h-8 border-border/50 bg-background text-sm shadow-none focus-visible:ring-1 focus-visible:ring-ring/40"
+        rows={1}
+        className="max-h-32 resize-none overflow-hidden border-border/50 bg-background py-1.5 text-sm shadow-none focus-visible:ring-1 focus-visible:ring-ring/40"
       />
       {isRunning ? (
         <Button

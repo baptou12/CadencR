@@ -24,18 +24,20 @@ The prompt bar lives in `src/renderer/components/AgentPromptBar.tsx`. It current
 
 ## Phases
 
-### ⬜ Phase 1: Replace Input with auto-resizing Textarea
+### ✅ Phase 1: Replace Input with auto-resizing Textarea
 - **Step**: 1
 - **Complexity**: 2
-- [ ] In `AgentPromptBar.tsx`, replace `Input` import with `Textarea` import
-- [ ] Replace `<Input>` element with `<Textarea>` — set `rows={1}`, remove fixed `h-8`, add `resize-none`, `overflow-hidden`, and `max-h-32` classes
-- [ ] Update `handleKeyDown` type from `HTMLInputElement` to `HTMLTextAreaElement`
-- [ ] Add auto-resize effect: after each `text` change, reset textarea height to `auto` then set to `scrollHeight` (use a ref + useEffect or onInput callback)
-- [ ] Ensure Enter sends (existing logic), Shift+Enter inserts newline (native textarea behavior)
-- [ ] Verify layout: the prompt bar should stay at the bottom and grow upward
+- [x] In `AgentPromptBar.tsx`, replace `Input` import with `Textarea` import
+- [x] Replace `<Input>` element with `<Textarea>` — set `rows={1}`, remove fixed `h-8`, add `resize-none`, `overflow-hidden`, and `max-h-32` classes
+- [x] Update `handleKeyDown` type from `HTMLInputElement` to `HTMLTextAreaElement`
+- [x] Add auto-resize effect: after each `text` change, reset textarea height to `auto` then set to `scrollHeight` (use a ref + useEffect or onInput callback)
+- [x] Ensure Enter sends (existing logic), Shift+Enter inserts newline (native textarea behavior)
+- [x] Verify layout: the prompt bar should stay at the bottom and grow upward
 - **Files**: `src/renderer/components/AgentPromptBar.tsx`
 - **Commit message**: `feat: multi-line prompt with Shift+Enter for newlines`
 - **Bisect note**: N/A — single file, self-contained change
+- **Implementation notes**: Replaced `Input` with `Textarea` using a ref and `useEffect` for auto-resize. Changed container from `items-center` to `items-end` so the send button stays at the bottom as the textarea grows. Added prevention of bare Enter when message is empty to avoid inserting blank lines. Used `py-1.5` to match the original compact height.
+- **Validation results**: Lint passes (0 errors). Typecheck passes (`npx tsc --noEmit` — note: `pnpm run typecheck` script does not exist, used `tsc` directly).
 
 ## Phase Status Legend
 
@@ -46,5 +48,5 @@ The prompt bar lives in `src/renderer/components/AgentPromptBar.tsx`. It current
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Not started
-- **Progress**: 0/1
+- **Current Phase**: All phases complete
+- **Progress**: 1/1
