@@ -40,7 +40,7 @@ export function Sidebar() {
 
       <Separator />
 
-      <div className="flex-[1] overflow-auto p-2">
+      <div className="shrink-0 p-2">
         <ProjectList
           selectedProjectId={effectiveProjectId}
           onSelectProject={setSelectedProjectId}

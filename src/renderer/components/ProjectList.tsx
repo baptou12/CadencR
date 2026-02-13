@@ -59,7 +59,7 @@ export function ProjectList({
           <Plus />
         </Button>
       </div>
-      <ScrollArea className="max-h-64">
+      <ScrollArea className="max-h-40">
         <div className="flex flex-col gap-0.5">
           {projects.map((project) => (
             <button
