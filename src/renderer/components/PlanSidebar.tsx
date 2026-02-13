@@ -46,10 +46,11 @@ export function PlanSidebar({ featureId }: PlanSidebarProps) {
         </div>
         <ScrollArea className="flex-1 min-h-0">
           <div className="flex flex-col gap-3 p-3">
-            {plan.phases.map((phase) => (
+            {plan.phases.map((phase, index) => (
               <PhaseCard
                 key={phase.id}
                 phase={phase}
+                displayNumber={index + 1}
                 onExpand={setExpandedPhase}
               />
             ))}

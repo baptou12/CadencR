@@ -16,6 +16,7 @@ export interface PhaseData {
 
 interface PhaseCardProps {
   phase: PhaseData;
+  displayNumber: number;
   onExpand: (phase: PhaseData) => void;
 }
 
@@ -27,7 +28,7 @@ const statusConfig: Record<string, { icon: React.ElementType; className: string;
   error: { icon: XCircle, className: "text-[var(--drac-red)]", badgeClassName: "bg-[var(--drac-red)]/20 text-[var(--drac-red)]", label: "Error" },
 };
 
-export function PhaseCard({ phase, onExpand }: PhaseCardProps) {
+export function PhaseCard({ phase, displayNumber, onExpand }: PhaseCardProps) {
   const config = statusConfig[phase.status] ?? statusConfig.pending;
   const StatusIcon = config.icon;
 
@@ -37,7 +38,7 @@ export function PhaseCard({ phase, onExpand }: PhaseCardProps) {
         <div className="flex items-center gap-2 min-w-0">
           <StatusIcon className={cn("size-4 shrink-0", config.className)} />
           <span className="text-xs font-medium text-muted-foreground">
-            Phase {phase.step_number}
+            Phase {displayNumber}
           </span>
           <span
             className={cn(
