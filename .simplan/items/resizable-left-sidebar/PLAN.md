@@ -59,18 +59,20 @@
 - **Implementation notes**: Used `orientation="horizontal"` instead of `direction="horizontal"` as `react-resizable-panels` v4 uses `orientation` prop. Used pixel-based sizes (`defaultSize="256px"`, `minSize="180px"`, `maxSize="400px"`). Removed `w-64` and `border-r` from Sidebar component (border now handled by handle). Updated `ResizablePanelGroup` in resizable.tsx to remove stale `data-[panel-group-direction=vertical]` class from v2/v3 API. Handle styled with `cursor-col-resize`.
 - **Validation results**: Lint passes (exit 0), TypeScript type check passes (exit 0, no errors).
 
-### ⬜ Phase 3: Resizable right sidebar with collapse toggle
+### ✅ Phase 3: Resizable right sidebar with collapse toggle
 - **Step**: 3
 - **Complexity**: 3
-- [ ] Wrap the feature detail content and `PlanSidebar` in a `ResizablePanelGroup` in the feature route
-- [ ] Add `ResizableHandle` between content and PlanSidebar panels
-- [ ] Set constraints: 240px min, 600px max when expanded
-- [ ] Add a collapse/expand toggle button (chevron icon) on the PlanSidebar header or on the resize handle
-- [ ] When collapsed, panel collapses to 0px; re-expanding restores last width
-- [ ] Use `collapsible` prop on the ResizablePanel and `onCollapse`/`onExpand` callbacks
+- [x] Wrap the feature detail content and `PlanSidebar` in a `ResizablePanelGroup` in the feature route
+- [x] Add `ResizableHandle` between content and PlanSidebar panels
+- [x] Set constraints: 240px min, 600px max when expanded
+- [x] Add a collapse/expand toggle button (chevron icon) on the PlanSidebar header or on the resize handle
+- [x] When collapsed, panel collapses to 0px; re-expanding restores last width
+- [x] Use `collapsible` prop on the ResizablePanel and `onCollapse`/`onExpand` callbacks
 - **Files**: `src/renderer/routes/projects/$projectId/features/$featureId.tsx`, `src/renderer/components/PlanSidebar.tsx`
 - **Commit message**: `feat: make right plan sidebar resizable with collapse toggle`
 - **Bisect note**: Self-contained — right sidebar becomes resizable independently of persistence
+- **Implementation notes**: Replaced the `flex` wrapper div with `ResizablePanelGroup orientation="horizontal"`. Main content is in an auto-sized `ResizablePanel`, right sidebar in a collapsible panel with `defaultSize="320px"`, `minSize="240px"`, `maxSize="600px"`, `collapsedSize="0px"`. Used `panelRef` + `useRef<PanelImperativeHandle>` for imperative `collapse()`/`expand()` calls. Toggle button uses `ChevronsRight`/`ChevronsLeft` from lucide-react in the PlanSidebar header. Removed fixed `w-80` from PlanSidebar. Collapse state tracked via `onResize` callback checking `panelSize.inPixels === 0`.
+- **Validation results**: Lint passes (exit 0), TypeScript type check passes (exit 0, no errors).
 
 ### ⬜ Phase 4: Persist sidebar widths and collapsed state
 - **Step**: 4
@@ -92,5 +94,5 @@
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 3
-- **Progress**: 2/4
+- **Current Phase**: Phase 4
+- **Progress**: 3/4

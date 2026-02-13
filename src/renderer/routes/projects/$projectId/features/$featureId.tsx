@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { FeatureTopBar } from "@/components/FeatureTopBar";
 import { AgentPanel } from "@/components/AgentPanel";
@@ -21,6 +21,12 @@ import { useFeatureState, type FeatureStatus } from "@/hooks/useFeatureState";
 import type { AgentBlockData } from "@/components/AgentBlock";
 import type { AgentType } from "../../../../../main/agents/types";
 import { PlanSidebar } from "@/components/PlanSidebar";
+import {
+  ResizablePanelGroup,
+  ResizablePanel,
+  ResizableHandle,
+} from "@/components/ui/resizable";
+import type { PanelImperativeHandle } from "react-resizable-panels";
 
 export const Route = createFileRoute(
   "/projects/$projectId/features/$featureId",
@@ -39,6 +45,18 @@ function FeaturePage() {
   const feature = featureQuery.data;
 
   const [description, setDescription] = useState("");
+  const [planSidebarCollapsed, setPlanSidebarCollapsed] = useState(false);
+  const planPanelRef = useRef<PanelImperativeHandle | null>(null);
+
+  const handleTogglePlanSidebar = useCallback(() => {
+    const panel = planPanelRef.current;
+    if (!panel) return;
+    if (planSidebarCollapsed) {
+      panel.expand();
+    } else {
+      panel.collapse();
+    }
+  }, [planSidebarCollapsed]);
 
   // Agent states
   const plan = useAgentState({ supportsQuestions: true });
@@ -684,8 +702,9 @@ function FeaturePage() {
         featureId={numericFeatureId}
         projectId={numericProjectId}
       />
-      <div className="flex flex-1 min-h-0">
-      <div className="flex-1 min-w-0 overflow-auto p-6">
+      <ResizablePanelGroup orientation="horizontal" className="flex-1 min-h-0">
+        <ResizablePanel>
+      <div className="h-full overflow-auto p-6">
         {/* Draft view with no agent output: show description input */}
         {view === "plan-input" && (
           <div className="mx-auto max-w-2xl space-y-4">
@@ -923,8 +942,26 @@ function FeaturePage() {
           </div>
         )}
       </div>
-      <PlanSidebar featureId={numericFeatureId} />
-      </div>
+        </ResizablePanel>
+        <ResizableHandle className="cursor-col-resize" />
+        <ResizablePanel
+          defaultSize="320px"
+          minSize="240px"
+          maxSize="600px"
+          collapsible
+          collapsedSize="0px"
+          panelRef={planPanelRef}
+          onResize={(panelSize) => {
+            setPlanSidebarCollapsed(panelSize.inPixels === 0);
+          }}
+        >
+          <PlanSidebar
+            featureId={numericFeatureId}
+            collapsed={planSidebarCollapsed}
+            onToggleCollapse={handleTogglePlanSidebar}
+          />
+        </ResizablePanel>
+      </ResizablePanelGroup>
     </div>
   );
 }
