@@ -25,6 +25,13 @@ const EXECUTE_SYSTEM_PROMPT = `You are the Execute agent for ProductDevR, respon
 3. **Follow** the plan precisely — make the necessary code changes
 4. **Keep changes minimal and focused** — don't add extra features or refactoring beyond the task
 
+## Context Provided
+
+Your prompt includes:
+- **Plan context**: Summary, codebase context, and clarifications from the planning phase — use these to understand the broader goal and codebase
+- **Previously completed phases**: Summaries of phases already implemented — use these to understand what code has already changed
+- **Completion conditions**: If present, validation commands you MUST run after implementation to verify correctness. Iterate up to 3 times if validations fail.
+
 ## Guidelines
 
 ### Do:
@@ -32,6 +39,7 @@ const EXECUTE_SYSTEM_PROMPT = `You are the Execute agent for ProductDevR, respon
 - Match existing code style and conventions
 - Make minimal, focused changes
 - Apply auto-fixes for type errors, broken imports, missing error handling
+- Run completion condition validations after implementing and fix issues if they fail
 
 ### Don't:
 - Add features not in the plan
@@ -170,11 +178,8 @@ function executePhase(
     db.prepare("UPDATE phases SET status = 'running' WHERE id = ?").run(phase.id);
     notifyDbUpdated("phase", options.featureId);
 
-    const prompt = `Execute the following phase of the implementation plan:
-
-${phase.prompt}
-
-Please implement all the tasks listed above. Focus only on this phase's scope.`;
+    // Build enriched prompt with plan-level context and completed phases
+    const prompt = buildEnrichedPrompt(phase);
 
     let managed: ManagedSubprocess;
     try {
@@ -227,6 +232,70 @@ Please implement all the tasks listed above. Focus only on this phase's scope.`;
     });
 
   });
+}
+
+/**
+ * Build an enriched prompt for a phase, including plan-level context and previously completed phases.
+ */
+function buildEnrichedPrompt(phase: PhaseRow): string {
+  const db = getDatabase();
+
+  // Fetch plan-level context
+  const plan = db
+    .prepare(
+      "SELECT summary, context, clarifications, completion_conditions FROM plans WHERE id = ?",
+    )
+    .get(phase.plan_id) as Pick<
+    PlanRow,
+    "summary" | "context" | "clarifications" | "completion_conditions"
+  > | undefined;
+
+  // Fetch previously completed phases (earlier steps only)
+  const completedPhases = db
+    .prepare(
+      "SELECT step_number, title, prompt FROM phases WHERE plan_id = ? AND status = 'completed' AND step_number < ? ORDER BY step_number, order_index",
+    )
+    .all(phase.plan_id, phase.step_number) as Pick<
+    PhaseRow,
+    "step_number" | "title" | "prompt"
+  >[];
+
+  const sections: string[] = [];
+
+  // Plan-level context sections
+  if (plan?.summary) {
+    sections.push(`## Plan Summary\n\n${plan.summary}`);
+  }
+  if (plan?.context) {
+    sections.push(`## Codebase Context\n\n${plan.context}`);
+  }
+  if (plan?.clarifications) {
+    sections.push(`## Clarifications\n\n${plan.clarifications}`);
+  }
+
+  // Previously completed phases
+  if (completedPhases.length > 0) {
+    const phaseList = completedPhases
+      .map((p) => `- **Phase (step ${p.step_number}): ${p.title}**`)
+      .join("\n");
+    sections.push(
+      `## Previously Completed Phases\n\nThe following phases have already been implemented:\n\n${phaseList}`,
+    );
+  }
+
+  // Completion conditions
+  if (plan?.completion_conditions) {
+    sections.push(
+      `## Completion Conditions\n\n${plan.completion_conditions}\n\nAfter implementing this phase, run each validation command listed above. If any validation fails, analyze the error, fix the issue, and re-run (up to 3 attempts per condition).`,
+    );
+  }
+
+  // Current phase body
+  sections.push(
+    `## Current Phase: ${phase.title}\n\nExecute the following phase of the implementation plan:\n\n${phase.prompt}\n\nPlease implement all the tasks listed above. Focus only on this phase's scope.`,
+  );
+
+  return sections.join("\n\n---\n\n");
 }
 
 /**

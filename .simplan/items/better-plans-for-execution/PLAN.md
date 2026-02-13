@@ -61,18 +61,20 @@ Current plan format only has `## Summary` and `## Phases`. The phase `prompt` se
 - **Implementation notes**: Added Context, Clarifications, and Completion Conditions sections to `PLAN_SYSTEM_PROMPT` template between Summary and Phases. Added `extractSection()` helper in `parsePlanOutput()` that uses a regex to capture content between `## Heading` markers. Added four new fields to `ParsedPlan` interface. Updated the DB UPDATE statement in `setupPlanCompletionHandler` to persist all four new columns.
 - **Validation results**: Lint passes (0 warnings, 0 errors). Type check passes (npx tsc --noEmit, exit 0).
 
-### ⬜ Phase 3: Enrich execute agent prompts with plan context
+### ✅ Phase 3: Enrich execute agent prompts with plan context
 - **Step**: 3
 - **Complexity**: 3
-- [ ] In `execute-agent.ts`, when building the phase prompt in `executePhase()`:
+- [x] In `execute-agent.ts`, when building the phase prompt in `executePhase()`:
   - Read the plan's `summary`, `context`, `clarifications`, `completion_conditions` from DB
   - Query previously completed phases for the same plan (status = 'completed', step_number < current phase's step_number)
   - Build an enriched prompt that includes: plan-level context sections, then completed phase summaries, then the current phase body
-- [ ] Update `EXECUTE_SYSTEM_PROMPT` to mention that plan context, clarifications, and completion conditions are provided, and that previously completed phases are listed for reference
-- [ ] If completion conditions are present, instruct the executor to run validation commands after implementation and iterate (max 3 attempts)
+- [x] Update `EXECUTE_SYSTEM_PROMPT` to mention that plan context, clarifications, and completion conditions are provided, and that previously completed phases are listed for reference
+- [x] If completion conditions are present, instruct the executor to run validation commands after implementation and iterate (max 3 attempts)
 - **Files**: `src/main/agents/execute-agent.ts`
 - **Commit message**: `feat: enrich execute agent prompts with plan context and completed phases`
 - **Bisect note**: Depends on Phase 2 for populated DB columns. Falls back gracefully if columns are null (old plans).
+- **Implementation notes**: Added `buildEnrichedPrompt()` helper that queries plan-level context columns and previously completed phases (step_number < current). Builds sectioned prompt with plan summary, codebase context, clarifications, completed phases list, completion conditions (with iteration instructions), and current phase body. All sections are conditional on non-null values, so old plans without these columns work fine. Updated `EXECUTE_SYSTEM_PROMPT` with a "Context Provided" section describing plan context, completed phases, and completion conditions.
+- **Validation results**: Lint passes (0 warnings, 0 errors). Type check passes (npx tsc --noEmit, exit 0).
 
 ## Phase Status Legend
 
@@ -83,5 +85,5 @@ Current plan format only has `## Summary` and `## Phases`. The phase `prompt` se
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 3
-- **Progress**: 2/3
+- **Current Phase**: All phases complete
+- **Progress**: 3/3
