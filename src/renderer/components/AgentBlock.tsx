@@ -2,6 +2,7 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { ChevronRightIcon, ChevronDownIcon, WrenchIcon, BrainIcon, CodeIcon, LayersIcon, LoaderIcon } from "lucide-react";
 import { parseToolCall } from "@/lib/tool-call-parser";
+import { Markdown } from "@/components/Markdown";
 
 /** Block types that the agent stream can produce */
 export type BlockType = "text" | "code" | "tool_call" | "tool_result" | "thinking" | "user_message";
@@ -61,11 +62,7 @@ export function AgentBlock({ block, isStreaming, expandAllTasks, onExpandAllTask
 }
 
 function TextBlock({ content }: { content: string }) {
-  return (
-    <div className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
-      {content}
-    </div>
-  );
+  return <Markdown content={content} />;
 }
 
 function CodeBlock({ content, language }: { content: string; language?: string }) {

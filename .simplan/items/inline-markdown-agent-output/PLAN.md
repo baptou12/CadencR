@@ -38,17 +38,19 @@ Agent text output is rendered in `src/renderer/components/AgentBlock.tsx` via a 
 - **Implementation notes**: Installed react-markdown@10.1.0 and remark-gfm@4.0.1. Added 125 packages.
 - **Validation results**: Lint passes (exit 0). Skipped tsc and package build as no code changes were made — only dependencies added.
 
-### ⬜ Phase 2: Create reusable Markdown component and use it in TextBlock
+### ✅ Phase 2: Create reusable Markdown component and use it in TextBlock
 - **Step**: 2
 - **Complexity**: 3
-- [ ] Create `src/renderer/components/Markdown.tsx` — a reusable `<Markdown>` component wrapping `ReactMarkdown` with `remarkGfm`
-- [ ] Configure `components` prop overrides for: headings (sized appropriately), inline `code`, fenced code blocks (match existing CodeBlock styling), links (target="_blank" + rel="noopener noreferrer"), tables, blockquotes, lists
-- [ ] Add Tailwind styling via a wrapper div with appropriate spacing/typography classes
-- [ ] Accept `className` prop for flexibility in different contexts
-- [ ] Import and use `<Markdown>` in `AgentBlock.tsx` `TextBlock`, replacing the plain text div
+- [x] Create `src/renderer/components/Markdown.tsx` — a reusable `<Markdown>` component wrapping `ReactMarkdown` with `remarkGfm`
+- [x] Configure `components` prop overrides for: headings (sized appropriately), inline `code`, fenced code blocks (match existing CodeBlock styling), links (target="_blank" + rel="noopener noreferrer"), tables, blockquotes, lists
+- [x] Add Tailwind styling via a wrapper div with appropriate spacing/typography classes
+- [x] Accept `className` prop for flexibility in different contexts
+- [x] Import and use `<Markdown>` in `AgentBlock.tsx` `TextBlock`, replacing the plain text div
 - **Files**: `src/renderer/components/Markdown.tsx`, `src/renderer/components/AgentBlock.tsx`
 - **Commit message**: `feat: add reusable Markdown component and render markdown in agent text output`
 - **Bisect note**: Both files must be in same commit since AgentBlock imports the new component
+- **Implementation notes**: Created Markdown.tsx with ReactMarkdown + remarkGfm. Component overrides cover h1-h6, inline/fenced code (fenced code matches existing CodeBlock styling with language header and CodeIcon), links with target="_blank", tables, blockquotes, ul/ol lists, hr, and paragraphs. The `pre` override renders children directly so fenced code blocks are handled entirely by the `code` override. TextBlock in AgentBlock.tsx now renders `<Markdown content={content} />` instead of plain text.
+- **Validation results**: Lint passes (exit 0), type check passes (no errors), package build succeeds (exit 0).
 
 ## Phase Status Legend
 
@@ -59,5 +61,5 @@ Agent text output is rendered in `src/renderer/components/AgentBlock.tsx` via a 
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 2
-- **Progress**: 1/2
+- **Current Phase**: All phases complete
+- **Progress**: 2/2
