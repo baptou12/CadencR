@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { TerminalIcon, SettingsIcon, GitCompareArrowsIcon } from "lucide-react";
+import { TerminalIcon, SettingsIcon, GitCompareArrowsIcon, AlertCircleIcon, RefreshCwIcon } from "lucide-react";
 import { trpc } from "@/trpc";
 import { DiffViewerModal } from "./diff/DiffViewerModal";
 
@@ -33,7 +33,15 @@ export function FeatureTopBar({ featureId, projectId: _projectId }: FeatureTopBa
   );
   const openTerminal = trpc.git.openInTerminal.useMutation();
 
+  const utils = trpc.useContext();
+  const createWorktree = trpc.git.createWorktree.useMutation({
+    onSuccess: () => {
+      utils.features.getSettings.invalidate({ feature_id: featureId });
+    },
+  });
+
   const worktreeBranch = featureSettings?.worktree_branch;
+  const worktreeError = featureSettings?.worktree_error;
 
   if (!feature) return null;
 
@@ -54,9 +62,36 @@ export function FeatureTopBar({ featureId, projectId: _projectId }: FeatureTopBa
         </span>
       )}
 
-      <span className="text-muted-foreground text-sm">
-        Worktree: {worktreeBranch ?? "--"}
-      </span>
+      {worktreeBranch ? (
+        <span className="text-muted-foreground text-sm">
+          Worktree: {worktreeBranch}
+        </span>
+      ) : worktreeError ? (
+        <span className="flex items-center gap-1 text-sm text-red-400" title={worktreeError}>
+          <AlertCircleIcon className="size-3.5" />
+          Worktree failed
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-5"
+            title="Retry worktree creation"
+            disabled={createWorktree.isLoading}
+            onClick={() =>
+              createWorktree.mutate({
+                projectId: feature.project_id,
+                featureId,
+                featureTitle: feature.title,
+              })
+            }
+          >
+            <RefreshCwIcon className={`size-3 ${createWorktree.isLoading ? "animate-spin" : ""}`} />
+          </Button>
+        </span>
+      ) : (
+        <span className="text-muted-foreground text-sm">
+          Worktree: --
+        </span>
+      )}
 
       <span className="text-muted-foreground text-sm">
         LOC: {gitStats ? `+${gitStats.insertions} -${gitStats.deletions}` : "--"}

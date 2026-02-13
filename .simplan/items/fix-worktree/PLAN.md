@@ -44,15 +44,17 @@ Key files:
 - **Implementation notes**: Changed catch block in features.ts to capture error, log with console.error, and persist to feature_settings as `worktree_error`. Added git rev-parse and branch name regex validation as pre-flight checks in worktree.ts createWorktree. Extracted `resolveAgentCwd` helper in router.ts that checks for `worktree_error` when worktree path is missing and logs a warning; replaced all 5 agent launcher cwd-resolution blocks with this helper.
 - **Validation results**: `pnpm run lint` passed (0 errors). `npx tsc --noEmit` passed (0 errors). Initial lint had an unnecessary escape in the branch name regex which was fixed.
 
-### ⬜ Phase 2: Surface worktree errors in UI and add retry
+### ✅ Phase 2: Surface worktree errors in UI and add retry
 - **Step**: 2
 - **Complexity**: 3
-- [ ] In `FeatureTopBar.tsx`: when `worktree_branch` is missing, check for `worktree_error` in feature settings and display an error indicator with the message
-- [ ] Add a "Retry" button next to the error that calls the existing `git.createWorktree` mutation from `router.ts`
-- [ ] After successful retry, invalidate the feature settings query so the UI updates
+- [x] In `FeatureTopBar.tsx`: when `worktree_branch` is missing, check for `worktree_error` in feature settings and display an error indicator with the message
+- [x] Add a "Retry" button next to the error that calls the existing `git.createWorktree` mutation from `router.ts`
+- [x] After successful retry, invalidate the feature settings query so the UI updates
 - **Files**: `src/renderer/components/FeatureTopBar.tsx`
 - **Commit message**: `feat: surface worktree errors in UI with retry button`
 - **Bisect note**: Depends on Phase 1 storing `worktree_error` in feature_settings
+- **Implementation notes**: Added three-state worktree display: (1) branch name when available, (2) red error indicator with AlertCircleIcon and retry button when `worktree_error` exists, (3) "--" fallback. Retry button calls `git.createWorktree` mutation and invalidates `features.getSettings` on success. Error message shown via title attribute on hover. Spinner animation on retry button while loading.
+- **Validation results**: `pnpm run lint` passed (0 errors). `npx tsc --noEmit` passed (0 errors).
 
 ## Phase Status Legend
 
@@ -63,5 +65,5 @@ Key files:
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 2
-- **Progress**: 1/2
+- **Current Phase**: All phases complete
+- **Progress**: 2/2
