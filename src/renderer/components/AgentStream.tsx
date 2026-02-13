@@ -1,13 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { AgentBlock, type AgentBlockData } from "./AgentBlock";
-import { getToolActivityLabel } from "@/lib/tool-call-parser";
 
-function getActivityLabel(blocks: AgentBlockData[]): string {
+function getLastToolName(blocks: AgentBlockData[]): string {
   for (let i = blocks.length - 1; i >= 0; i--) {
     const block = blocks[i];
     if (block.type === "tool_call" && block.toolName) {
-      return getToolActivityLabel(block.toolName, block.toolArgs);
+      return block.toolName;
     }
   }
   return "Generating";
@@ -32,7 +30,7 @@ export function AgentStream({ blocks, isStreaming }: AgentStreamProps) {
   }, [blocks.length]);
 
   return (
-    <ScrollArea className="flex-1">
+    <div className="flex-1 overflow-y-auto overflow-x-hidden">
       <div className="space-y-1 p-3">
         {blocks.filter((b) => !b.parentToolUseId).map((block) => (
           <AgentBlock
@@ -45,16 +43,16 @@ export function AgentStream({ blocks, isStreaming }: AgentStreamProps) {
         ))}
         {isStreaming && (
           <div className="flex items-center gap-2 py-2 text-xs text-muted-foreground">
-            <span className="inline-flex gap-0.5">
+            <span className="inline-flex gap-0.5 shrink-0">
               <span className="size-1.5 animate-bounce rounded-full bg-current [animation-delay:0ms]" />
               <span className="size-1.5 animate-bounce rounded-full bg-current [animation-delay:150ms]" />
               <span className="size-1.5 animate-bounce rounded-full bg-current [animation-delay:300ms]" />
             </span>
-            {getActivityLabel(blocks)}...
+            {getLastToolName(blocks)}...
           </div>
         )}
         <div ref={bottomRef} />
       </div>
-    </ScrollArea>
+    </div>
   );
 }
