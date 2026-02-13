@@ -50,17 +50,19 @@
 - **Implementation notes**: Added `PlanWithPhases` interface extending `PlanRow` with `phases: PhaseRow[]`. Query fetches latest plan by `created_at DESC` and all phases ordered by `step_number ASC, order_index ASC`. Returns `null` when no plan exists. Added invalidation for both `phase` and `plan` entity changes in `useDbUpdated`.
 - **Validation results**: Lint passes (0 errors), TypeScript compiles (no type errors). Build validation skipped (additive-only change).
 
-### ⬜ Phase 2: Create PhaseCard component
+### ✅ Phase 2: Create PhaseCard component
 - **Step**: 2
 - **Complexity**: 3
-- [ ] Create `src/renderer/components/PhaseCard.tsx`
-- [ ] Props: phase data (title, status, complexity, step_number, prompt/markdown content), `onExpand` callback
-- [ ] Display: status icon+badge (CircleIcon=pending, Loader2=running, CheckCircle2=completed/done, XCircle=error), phase title, truncated markdown preview (using existing `Markdown` component from `@/components/Markdown`, limited height with overflow hidden)
-- [ ] "Expand" button (MaximizeIcon from lucide) to trigger `onExpand`
-- [ ] Fixed width card, compact layout suitable for sidebar
+- [x] Create `src/renderer/components/PhaseCard.tsx`
+- [x] Props: phase data (title, status, complexity, step_number, prompt/markdown content), `onExpand` callback
+- [x] Display: status icon+badge (CircleIcon=pending, Loader2=running, CheckCircle2=completed/done, XCircle=error), phase title, truncated markdown preview (using existing `Markdown` component from `@/components/Markdown`, limited height with overflow hidden)
+- [x] "Expand" button (MaximizeIcon from lucide) to trigger `onExpand`
+- [x] Fixed width card, compact layout suitable for sidebar
 - **Files**: `src/renderer/components/PhaseCard.tsx`
 - **Commit message**: `feat: add PhaseCard component with status icons and markdown preview`
 - **Bisect note**: N/A — new component, no callers yet
+- **Implementation notes**: Created PhaseCard with exported `PhaseData` interface matching the DB phase schema. Status config map handles pending/running/completed/done/error with appropriate lucide icons and Dracula theme colors. Card is 288px wide (`w-72`), uses `max-h-32` with overflow hidden and a gradient fade for markdown preview. Used `Maximize` icon (lucide) for expand button.
+- **Validation results**: Lint passes (0 errors), TypeScript compiles (no type errors). Build validation skipped (additive-only change).
 
 ### ⬜ Phase 3: Create PlanSidebar component with fullscreen modal
 - **Step**: 3
@@ -94,5 +96,5 @@
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 2
-- **Progress**: 1/4
+- **Current Phase**: Phase 3
+- **Progress**: 2/4
