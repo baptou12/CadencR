@@ -90,6 +90,15 @@ export const featuresRouter = router({
 
   delete: publicProcedure.input(z.object({ id: z.number() })).mutation(({ input }) => {
     const db = getDatabase();
+    // Delete child records that reference this feature
+    const planIds = db.prepare("SELECT id FROM plans WHERE feature_id = ?").all(input.id) as { id: number }[];
+    for (const plan of planIds) {
+      db.prepare("DELETE FROM phases WHERE plan_id = ?").run(plan.id);
+    }
+    db.prepare("DELETE FROM plans WHERE feature_id = ?").run(input.id);
+    db.prepare("DELETE FROM agent_messages WHERE session_id IN (SELECT id FROM agent_sessions WHERE feature_id = ?)").run(input.id);
+    db.prepare("DELETE FROM agent_sessions WHERE feature_id = ?").run(input.id);
+    db.prepare("DELETE FROM feature_settings WHERE feature_id = ?").run(input.id);
     db.prepare("DELETE FROM features WHERE id = ?").run(input.id);
     return { success: true };
   }),
