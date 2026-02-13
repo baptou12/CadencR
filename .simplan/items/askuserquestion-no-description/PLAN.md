@@ -48,16 +48,18 @@ The component renders options as horizontal pill buttons with no description tex
 - **Implementation notes**: Updated the `AgentQuestion` interface, created a standalone `normalizeOptions` helper (outside the parser function to satisfy linting), and updated all option references in the JSX to use `option.label`. Also had to update `normalizeOption` in `src/renderer/hooks/useAgentState.ts` which was returning `string` but needed to return `{label, description?}` to match the updated interface.
 - **Validation results**: `npx tsc --noEmit` passes (exit 0), `pnpm run lint` passes (0 warnings, 0 errors)
 
-### ⬜ Phase 2: Vertical list layout with descriptions
+### ✅ Phase 2: Vertical list layout with descriptions
 - **Step**: 2
 - **Complexity**: 2
-- [ ] Replace horizontal `flex-wrap` button row with vertical list layout
-- [ ] Render each option as a selectable card/row: label as primary text, description as muted text below
-- [ ] Style selected state with ring/border highlight
-- [ ] Keep "Other..." option at the bottom of the list
+- [x] Replace horizontal `flex-wrap` button row with vertical list layout
+- [x] Render each option as a selectable card/row: label as primary text, description as muted text below
+- [x] Style selected state with ring/border highlight
+- [x] Keep "Other..." option at the bottom of the list
 - **Files**: `src/renderer/components/AgentQuestionDrawer.tsx`
 - **Commit message**: `fix: vertical option list with descriptions in AskUserQuestion UI`
 - **Bisect note**: N/A
+- **Implementation notes**: Replaced `flex-wrap` Button row with a vertical `flex-col` list of native `<button>` elements styled as cards. Each option shows `option.label` as primary text and `option.description` (when present) as smaller muted text below. Selected state uses `border-primary`, `bg-primary/5`, and `ring-2 ring-primary/30`. "Other..." remains last in the list. Removed dependency on shadcn Button for option items to allow richer content layout.
+- **Validation results**: `pnpm run lint` passes (0 warnings, 0 errors). `npx tsc --noEmit` passes (exit 0).
 
 ## Phase Status Legend
 
@@ -68,5 +70,5 @@ The component renders options as horizontal pill buttons with no description tex
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 2
-- **Progress**: 1/2
+- **Current Phase**: All phases complete
+- **Progress**: 2/2

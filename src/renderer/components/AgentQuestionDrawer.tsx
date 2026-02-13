@@ -153,29 +153,40 @@ export function AgentQuestionDrawer({ questions, onSubmit, open, inline }: Agent
       {/* Question text */}
       <p className={cn("text-sm font-medium text-foreground", inline ? "mb-2" : "mb-3")}>{currentQuestion.question}</p>
 
-      {/* Option buttons */}
+      {/* Option list */}
       {hasOptions && (
-        <div className="mb-2 flex flex-wrap gap-2">
+        <div className="mb-2 flex flex-col gap-1.5">
           {currentQuestion.options!.map((option) => (
-            <Button
+            <button
               key={option.label}
-              variant={selectedOptions.has(option.label) ? "default" : "outline"}
-              size="sm"
-              className={cn("text-xs", selectedOptions.has(option.label) && "ring-2 ring-primary/30")}
+              type="button"
+              className={cn(
+                "w-full rounded-md border px-3 py-2 text-left transition-colors",
+                selectedOptions.has(option.label)
+                  ? "border-primary bg-primary/5 ring-2 ring-primary/30"
+                  : "border-border bg-background hover:bg-muted/50"
+              )}
               onClick={() => handleOptionToggle(option.label)}
             >
-              {option.label}
-            </Button>
+              <span className="text-sm font-medium text-foreground">{option.label}</span>
+              {option.description && (
+                <span className="mt-0.5 block text-xs text-muted-foreground">{option.description}</span>
+              )}
+            </button>
           ))}
           {/* "Other" toggle */}
-          <Button
-            variant={showOther ? "default" : "outline"}
-            size="sm"
-            className="text-xs"
+          <button
+            type="button"
+            className={cn(
+              "w-full rounded-md border px-3 py-2 text-left transition-colors",
+              showOther
+                ? "border-primary bg-primary/5 ring-2 ring-primary/30"
+                : "border-border bg-background hover:bg-muted/50"
+            )}
             onClick={handleOtherToggle}
           >
-            Other...
-          </Button>
+            <span className="text-sm font-medium text-foreground">Other...</span>
+          </button>
         </div>
       )}
 
