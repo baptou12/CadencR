@@ -9,7 +9,7 @@ export interface AgentQuestion {
   /** The question text */
   question: string;
   /** Pre-defined options the user can choose from */
-  options?: string[];
+  options?: { label: string; description?: string }[];
   /** Whether multiple options can be selected */
   allowMultiple?: boolean;
 }
@@ -158,13 +158,13 @@ export function AgentQuestionDrawer({ questions, onSubmit, open, inline }: Agent
         <div className="mb-2 flex flex-wrap gap-2">
           {currentQuestion.options!.map((option) => (
             <Button
-              key={option}
-              variant={selectedOptions.has(option) ? "default" : "outline"}
+              key={option.label}
+              variant={selectedOptions.has(option.label) ? "default" : "outline"}
               size="sm"
-              className={cn("text-xs", selectedOptions.has(option) && "ring-2 ring-primary/30")}
-              onClick={() => handleOptionToggle(option)}
+              className={cn("text-xs", selectedOptions.has(option.label) && "ring-2 ring-primary/30")}
+              onClick={() => handleOptionToggle(option.label)}
             >
-              {option}
+              {option.label}
             </Button>
           ))}
           {/* "Other" toggle */}
@@ -214,6 +214,25 @@ export function AgentQuestionDrawer({ questions, onSubmit, open, inline }: Agent
  * Extracts questions from content_block_start events with tool_use type
  * where the tool name is "AskUserQuestion".
  */
+/** Normalize options array: handle both string[] and {label, description}[] formats */
+function normalizeOptions(
+  raw: unknown,
+): { label: string; description?: string }[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  return raw.map((item: unknown) => {
+    if (typeof item === "string") return { label: item };
+    if (typeof item === "object" && item !== null) {
+      const obj = item as Record<string, unknown>;
+      return {
+        label: (obj.label as string) ?? "",
+        description:
+          typeof obj.description === "string" ? obj.description : undefined,
+      };
+    }
+    return { label: String(item) };
+  });
+}
+
 export function parseAskUserQuestions(
   toolInput: Record<string, unknown>,
 ): AgentQuestion[] {
@@ -222,9 +241,7 @@ export function parseAskUserQuestions(
     return [
       {
         question: toolInput.question as string,
-        options: Array.isArray(toolInput.options)
-          ? (toolInput.options as string[])
-          : undefined,
+        options: normalizeOptions(toolInput.options),
         allowMultiple: typeof toolInput.allowMultiple === "boolean"
           ? (toolInput.allowMultiple as boolean)
           : false,
@@ -236,7 +253,7 @@ export function parseAskUserQuestions(
   if (Array.isArray(toolInput.questions)) {
     return (toolInput.questions as Record<string, unknown>[]).map((q) => ({
       question: (q.question as string) ?? "",
-      options: Array.isArray(q.options) ? (q.options as string[]) : undefined,
+      options: normalizeOptions(q.options),
       allowMultiple: typeof q.allowMultiple === "boolean"
         ? (q.allowMultiple as boolean)
         : false,

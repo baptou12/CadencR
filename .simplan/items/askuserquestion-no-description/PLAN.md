@@ -35,16 +35,18 @@ The component renders options as horizontal pill buttons with no description tex
 
 ## Phases
 
-### ⬜ Phase 1: Update AgentQuestion interface and parser
+### ✅ Phase 1: Update AgentQuestion interface and parser
 - **Step**: 1
 - **Complexity**: 2
-- [ ] Change `AgentQuestion.options` from `string[]` to `{label: string, description?: string}[]`
-- [ ] Update `parseAskUserQuestions` to extract `label` and `description` from option objects (handle both object and string formats for backwards compat)
-- [ ] Update `getCurrentAnswer` and submission logic to use `option.label` for the answer value
-- [ ] Update all references to `option` as string to `option.label` in event handlers
+- [x] Change `AgentQuestion.options` from `string[]` to `{label: string, description?: string}[]`
+- [x] Update `parseAskUserQuestions` to extract `label` and `description` from option objects (handle both object and string formats for backwards compat)
+- [x] Update `getCurrentAnswer` and submission logic to use `option.label` for the answer value
+- [x] Update all references to `option` as string to `option.label` in event handlers
 - **Files**: `src/renderer/components/AgentQuestionDrawer.tsx`
 - **Commit message**: `fix: update AgentQuestion options to support label+description objects`
 - **Bisect note**: Must update interface, parser, and all usages in same phase to avoid type errors
+- **Implementation notes**: Updated the `AgentQuestion` interface, created a standalone `normalizeOptions` helper (outside the parser function to satisfy linting), and updated all option references in the JSX to use `option.label`. Also had to update `normalizeOption` in `src/renderer/hooks/useAgentState.ts` which was returning `string` but needed to return `{label, description?}` to match the updated interface.
+- **Validation results**: `npx tsc --noEmit` passes (exit 0), `pnpm run lint` passes (0 warnings, 0 errors)
 
 ### ⬜ Phase 2: Vertical list layout with descriptions
 - **Step**: 2
@@ -66,5 +68,5 @@ The component renders options as horizontal pill buttons with no description tex
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Not started
-- **Progress**: 0/2
+- **Current Phase**: Phase 2
+- **Progress**: 1/2

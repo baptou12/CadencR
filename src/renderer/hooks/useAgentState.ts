@@ -87,12 +87,17 @@ function updateLastChildInParent(
   });
 }
 
-/** Normalize an option value to a string (handles both string and {label, description} formats) */
-function normalizeOption(opt: unknown): string {
-  if (typeof opt === "string") return opt;
-  if (opt && typeof opt === "object" && "label" in opt)
-    return String((opt as { label: string }).label);
-  return String(opt);
+/** Normalize an option value to {label, description?} (handles both string and object formats) */
+function normalizeOption(opt: unknown): { label: string; description?: string } {
+  if (typeof opt === "string") return { label: opt };
+  if (opt && typeof opt === "object" && "label" in opt) {
+    const obj = opt as { label: string; description?: unknown };
+    return {
+      label: String(obj.label),
+      description: typeof obj.description === "string" ? obj.description : undefined,
+    };
+  }
+  return { label: String(opt) };
 }
 
 function parseQuestions(toolInput: Record<string, unknown>): AgentQuestion[] {
