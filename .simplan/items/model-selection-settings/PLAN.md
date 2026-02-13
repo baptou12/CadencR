@@ -78,10 +78,10 @@
 - **Implementation notes**: Added `getModelSettings` and `setModelSetting` procedures to all three routers (settings, projects, features). Each `getModelSettings` iterates the 5 agent types, queries the appropriate settings table, and falls back to `DEFAULT_MODEL`. Each `setModelSetting` upserts the `model_<agentType>` key into the corresponding table. Imported `AgentType` and `DEFAULT_MODEL` in projects.ts and features.ts; imported `DEFAULT_MODEL` in router.ts.
 - **Validation results**: Lint passed (0 errors), type check passed (no errors). Skipped `pnpm run package` (heavy build; lint + tsc sufficient for new unconnected procedures).
 
-### ⬜ Phase 4: Build ModelSelector component
+### ✅ Phase 4: Build ModelSelector component
 - **Step**: 4
 - **Complexity**: 3
-- [ ] Create `src/renderer/components/ModelSelector.tsx`
+- [x] Create `src/renderer/components/ModelSelector.tsx`
   - Props: `level: "global" | "project" | "feature"`, optional `projectId`, optional `featureId`
   - Renders a grid of 5 agent types, each with a Select dropdown (Opus/Sonnet/Haiku + "Inherit default" for project/feature levels)
   - Uses the tRPC model settings queries/mutations for the appropriate level
@@ -89,6 +89,8 @@
 - **Files**: `src/renderer/components/ModelSelector.tsx`
 - **Commit message**: `feat: add ModelSelector component with per-agent dropdowns`
 - **Bisect note**: N/A — new component, not rendered yet
+- **Implementation notes**: Created ModelSelector component with responsive grid layout (1/2/3 columns). Uses shadcn Select component. For global level, shows direct model selection; for project/feature levels, adds "Inherit default" option that shows the effective inherited model label. Queries parent-level settings to resolve effective models for placeholder display. Mutations invalidate queries on success.
+- **Validation results**: Lint passed (0 errors), type check passed (no errors). Skipped `pnpm run package` (heavy build; lint + tsc sufficient for new unrendered component).
 
 ### ⬜ Phase 5: Integrate into settings page
 - **Step**: 5
@@ -109,5 +111,5 @@
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 4
-- **Progress**: 3/5
+- **Current Phase**: Phase 5
+- **Progress**: 4/5
