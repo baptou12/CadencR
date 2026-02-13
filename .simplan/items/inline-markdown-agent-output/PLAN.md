@@ -28,13 +28,15 @@ Agent text output is rendered in `src/renderer/components/AgentBlock.tsx` via a 
 
 ## Phases
 
-### ⬜ Phase 1: Install react-markdown and remark-gfm
+### ✅ Phase 1: Install react-markdown and remark-gfm
 - **Step**: 1
 - **Complexity**: 1
-- [ ] Run `pnpm add react-markdown remark-gfm`
+- [x] Run `pnpm add react-markdown remark-gfm`
 - **Files**: `package.json`, `pnpm-lock.yaml`
 - **Commit message**: `feat: add react-markdown and remark-gfm dependencies`
 - **Bisect note**: N/A — no code changes, just dependency addition
+- **Implementation notes**: Installed react-markdown@10.1.0 and remark-gfm@4.0.1. Added 125 packages.
+- **Validation results**: Lint passes (exit 0). Skipped tsc and package build as no code changes were made — only dependencies added.
 
 ### ⬜ Phase 2: Create reusable Markdown component and use it in TextBlock
 - **Step**: 2
@@ -57,5 +59,5 @@ Agent text output is rendered in `src/renderer/components/AgentBlock.tsx` via a 
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Not started
-- **Progress**: 0/2
+- **Current Phase**: Phase 2
+- **Progress**: 1/2
