@@ -62,6 +62,13 @@ export function startSessionAgent(options: SessionAgentOptions): SessionAgentRes
   // Bridge to renderer — no completion handler needed, just raw streaming
   bridgeSubprocessToRenderer(managed, "session", sessionDbId);
 
+  // Persist the initial user message
+  if (options.prompt) {
+    db.prepare(
+      "INSERT INTO agent_messages (session_id, role, content, message_type, tool_name) VALUES (?, ?, ?, ?, ?)",
+    ).run(sessionDbId, "user", options.prompt, "user_message", null);
+  }
+
   // Update session status on completion
   managed.completionListeners.push((code: number) => {
     const db2 = getDatabase();

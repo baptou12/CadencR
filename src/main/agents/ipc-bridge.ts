@@ -43,6 +43,17 @@ export function getSessionDbId(subprocessId: string): number | undefined {
 }
 
 /**
+ * Find the active subprocess ID for a given DB session ID.
+ * Returns the subprocess ID if it's still in the session map, or undefined.
+ */
+export function getSubprocessIdForSession(sessionDbId: number): string | undefined {
+  for (const [subprocessId, dbId] of sessionMap) {
+    if (dbId === sessionDbId) return subprocessId;
+  }
+  return undefined;
+}
+
+/**
  * Persist a stream event to the agent_messages table.
  * Only persists content-bearing events (text, tool calls, tool results, errors).
  */

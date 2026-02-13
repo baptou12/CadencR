@@ -15,7 +15,7 @@ import {
   submitUserAnswers,
   sendMessageToSubprocess,
 } from "../agents/subprocess-manager";
-import { bridgeSubprocessToRenderer } from "../agents/ipc-bridge";
+import { bridgeSubprocessToRenderer, getSubprocessIdForSession } from "../agents/ipc-bridge";
 import type { AgentType } from "../agents/types";
 import {
   createWorktree,
@@ -446,6 +446,26 @@ const agentsRouter = router({
       startedAt: s.startedAt.toISOString(),
     }));
   }),
+
+  /** Get the active subprocess ID for a feature's session (if still alive) */
+  getActiveSessionProcess: publicProcedure
+    .input(z.object({ featureId: z.number() }))
+    .query(({ input }) => {
+      const db = getDatabase();
+      // Find the latest running session for this feature
+      const session = db
+        .prepare(
+          "SELECT id FROM agent_sessions WHERE feature_id = ? AND agent_type = 'session' AND status = 'running' ORDER BY id DESC LIMIT 1",
+        )
+        .get(input.featureId) as { id: number } | undefined;
+      if (!session) return null;
+      const subprocessId = getSubprocessIdForSession(session.id);
+      if (!subprocessId) return null;
+      // Verify it's actually still active
+      const active = listSubprocesses().find((s) => s.id === subprocessId);
+      if (!active || active.status === "completed" || active.status === "error" || active.status === "stopped") return null;
+      return { subprocessId, sessionDbId: session.id, status: active.status };
+    }),
 
   /** Get feature IDs that have running agent sessions */
   getActiveFeatureIds: publicProcedure.query(() => {

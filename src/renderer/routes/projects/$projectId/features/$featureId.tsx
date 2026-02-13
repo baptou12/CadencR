@@ -40,6 +40,49 @@ function SessionView({
 }) {
   const session = useAgentState();
 
+  // Restore: find the latest session's history and reconnect to active subprocess
+  const activeProcess = trpc.agents.getActiveSessionProcess.useQuery({ featureId });
+  const sessionsQuery = trpc.agents.getSessions.useQuery({ featureId });
+
+  const lastSessionDbId = useMemo(() => {
+    if (!sessionsQuery.data) return null;
+    const s = sessionsQuery.data.find((r) => r.agent_type === "session");
+    return s?.id ?? null;
+  }, [sessionsQuery.data]);
+
+  const historyQuery = trpc.agents.getHistory.useQuery(
+    { sessionId: lastSessionDbId ?? 0 },
+    { enabled: !!lastSessionDbId && session.status === "idle" && session.blocks.length === 0 },
+  );
+
+  // On mount: restore blocks from history and reconnect to active subprocess
+  useEffect(() => {
+    if (!historyQuery.data || historyQuery.data.length === 0) return;
+    if (session.status !== "idle" || session.blocks.length > 0) return;
+
+    for (const msg of historyQuery.data) {
+      const id = `hist-${Math.random().toString(36).slice(2)}`;
+      let block: AgentBlockData | null = null;
+      switch (msg.message_type) {
+        case "text": block = { id, type: "text", content: msg.content }; break;
+        case "tool_call": block = { id, type: "tool_call", content: msg.content, toolName: msg.tool_name ?? "tool", toolArgs: msg.content }; break;
+        case "tool_result": case "tool_error": block = { id, type: "tool_result", content: msg.content, isError: msg.message_type === "tool_error" }; break;
+        case "user_message": block = { id, type: "user_message", content: msg.content }; break;
+        case "error": block = { id, type: "text", content: `Error: ${msg.content}` }; break;
+      }
+      if (block) session.appendBlock(block);
+    }
+
+    // Reconnect to active subprocess or mark as paused/complete
+    if (activeProcess.data) {
+      session.trackSubprocess(activeProcess.data.subprocessId);
+      session.setStatus(activeProcess.data.status === "running" ? "running" : "paused");
+    } else {
+      session.setStatus("paused");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [historyQuery.data, activeProcess.data]);
+
   // Event listener for session agent
   const eventHandlers = useMemo(
     () => ({
