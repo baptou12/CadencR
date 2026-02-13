@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { createElement } from "react";
 import { Loader2Icon, CheckCircleIcon, XCircleIcon, RotateCcwIcon, ChevronRightIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AgentStream } from "./AgentStream";
@@ -8,6 +9,7 @@ import { AgentPromptBar } from "./AgentPromptBar";
 import type { AgentBlockData } from "./AgentBlock";
 import type { AgentType } from "../../main/agents/types";
 import type { AgentQuestion } from "./AgentQuestionDrawer";
+import { AGENT_ICONS } from "./agent-icons";
 
 export type AgentStatus = "idle" | "running" | "complete" | "error";
 
@@ -118,6 +120,7 @@ export function AgentPanel({
             isOpen && "rotate-90"
           )}
         />
+        {createElement(AGENT_ICONS[agentType], { className: "size-4 text-muted-foreground" })}
         <span className="text-sm font-medium">{AGENT_LABELS[agentType]}</span>
         <Badge variant="secondary" className={cn("gap-1 text-xs", badge.className)}>
           {badge.icon}

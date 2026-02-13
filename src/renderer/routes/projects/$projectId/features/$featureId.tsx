@@ -6,12 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/trpc";
 import {
-  PlayIcon,
   Loader2Icon,
-  LightbulbIcon,
-  HammerIcon,
-  ShieldAlertIcon,
-  SearchCheckIcon,
   PlusCircleIcon,
   WrenchIcon,
   CheckCircle2Icon,
@@ -21,6 +16,7 @@ import { useFeatureState, type FeatureStatus } from "@/hooks/useFeatureState";
 import type { AgentBlockData } from "@/components/AgentBlock";
 import type { AgentType } from "../../../../../main/agents/types";
 import { PlanSidebar } from "@/components/PlanSidebar";
+import { AGENT_ICONS } from "@/components/agent-icons";
 
 export const Route = createFileRoute(
   "/projects/$projectId/features/$featureId",
@@ -715,7 +711,7 @@ function FeaturePage() {
                 {startPlanMutation.isLoading ? (
                   <Loader2Icon className="mr-2 size-4 animate-spin" />
                 ) : (
-                  <PlayIcon className="mr-2 size-4" />
+                  <AGENT_ICONS.plan className="mr-2 size-4" />
                 )}
                 Start Planning
               </Button>
@@ -731,7 +727,7 @@ function FeaturePage() {
                 {startBrainstormMutation.isLoading ? (
                   <Loader2Icon className="mr-2 size-4 animate-spin" />
                 ) : (
-                  <LightbulbIcon className="mr-2 size-4" />
+                  <AGENT_ICONS.brainstorm className="mr-2 size-4" />
                 )}
                 Start Brainstorming
               </Button>
@@ -855,7 +851,7 @@ function FeaturePage() {
                         {startExecuteMutation.isLoading ? (
                           <Loader2Icon className="mr-2 size-4 animate-spin" />
                         ) : (
-                          <HammerIcon className="mr-2 size-4" />
+                          <AGENT_ICONS.execute className="mr-2 size-4" />
                         )}
                         Start Building
                       </Button>
@@ -869,7 +865,7 @@ function FeaturePage() {
                         {startRiskMutation.isLoading ? (
                           <Loader2Icon className="mr-2 size-4 animate-spin" />
                         ) : (
-                          <ShieldAlertIcon className="mr-2 size-4" />
+                          <AGENT_ICONS.risk className="mr-2 size-4" />
                         )}
                         Evaluate Risk
                       </Button>
@@ -883,7 +879,7 @@ function FeaturePage() {
                         {startReviewMutation.isLoading ? (
                           <Loader2Icon className="mr-2 size-4 animate-spin" />
                         ) : (
-                          <SearchCheckIcon className="mr-2 size-4" />
+                          <AGENT_ICONS.review className="mr-2 size-4" />
                         )}
                         Start Review
                       </Button>

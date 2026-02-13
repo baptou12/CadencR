@@ -1,3 +1,4 @@
+import { createElement } from "react";
 import { trpc } from "../trpc";
 import {
   Select,
@@ -6,6 +7,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./ui/select";
+import { AGENT_ICONS } from "./agent-icons";
 
 const AGENT_TYPES = ["plan", "brainstorm", "execute", "risk", "review"] as const;
 type AgentType = (typeof AGENT_TYPES)[number];
@@ -134,7 +136,10 @@ export function ModelSelector({ level, projectId, featureId }: ModelSelectorProp
 
         return (
           <div key={agentType} className="space-y-1.5">
-            <label className="text-sm font-medium">{AGENT_LABELS[agentType]} Agent</label>
+            <label className="flex items-center gap-1.5 text-sm font-medium">
+              {createElement(AGENT_ICONS[agentType], { className: "size-3.5" })}
+              {AGENT_LABELS[agentType]}
+            </label>
             <Select value={currentValue} onValueChange={(v) => handleChange(agentType, v)}>
               <SelectTrigger className="w-full">
                 <SelectValue

@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { TerminalIcon, SettingsIcon, GitCompareArrowsIcon, AlertCircleIcon, RefreshCwIcon } from "lucide-react";
 import { trpc } from "@/trpc";
 import { DiffViewerModal } from "./diff/DiffViewerModal";
+import { ModelSelector } from "./ModelSelector";
 
 const STATUS_COLORS: Record<string, string> = {
   draft: "bg-gray-500/15 text-gray-300",
@@ -121,9 +123,22 @@ export function FeatureTopBar({ featureId, projectId: _projectId }: FeatureTopBa
         <TerminalIcon className="size-4" />
       </Button>
 
-      <Button variant="ghost" size="icon" className="size-7" title="Feature settings">
-        <SettingsIcon className="size-4" />
-      </Button>
+      <Popover>
+        <PopoverTrigger asChild>
+          <Button variant="ghost" size="icon" className="size-7" title="Feature settings">
+            <SettingsIcon className="size-4" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-[540px]" align="end">
+          <div className="space-y-3">
+            <div>
+              <h4 className="text-sm font-semibold">Model Configuration</h4>
+              <p className="text-xs text-muted-foreground">Override models for this feature</p>
+            </div>
+            <ModelSelector level="feature" featureId={featureId} projectId={_projectId} />
+          </div>
+        </PopoverContent>
+      </Popover>
 
       <DiffViewerModal
         featureId={featureId}
