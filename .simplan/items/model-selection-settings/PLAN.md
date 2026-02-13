@@ -38,10 +38,10 @@
 
 ## Phases
 
-### ⬜ Phase 1: Add model constants and resolver
+### ✅ Phase 1: Add model constants and resolver
 - **Step**: 1
 - **Complexity**: 2
-- [ ] Create `src/main/agents/models.ts` with:
+- [x] Create `src/main/agents/models.ts` with:
   - `CLAUDE_MODELS` array: `{ id: string, label: string }` for Opus, Sonnet, Haiku
   - `DEFAULT_MODEL` = `"claude-opus-4-6"`
   - `AgentType` re-export from types
@@ -49,6 +49,8 @@
 - **Files**: `src/main/agents/models.ts`
 - **Commit message**: `feat: add model constants and resolver for per-agent model selection`
 - **Bisect note**: N/A — new file, not imported yet
+- **Implementation notes**: Created file with `ClaudeModel` interface, `CLAUDE_MODELS` array (Opus 4.6, Sonnet 4, Haiku 3.5), `DEFAULT_MODEL` constant, re-exported `AgentType`, and `resolveModel` function querying feature_settings, project_settings, and settings tables in cascade order.
+- **Validation results**: Lint passed (0 errors), type check passed (no errors). Skipped `pnpm run package` (heavy build; lint + tsc sufficient for a new unimported file).
 
 ### ⬜ Phase 2: Wire model into subprocess manager
 - **Step**: 2
@@ -103,5 +105,5 @@
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Not started
-- **Progress**: 0/5
+- **Current Phase**: Phase 2
+- **Progress**: 1/5
