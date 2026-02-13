@@ -101,6 +101,11 @@ export interface StreamAgentPaused {
   type: "agent_paused";
 }
 
+/** Synthetic event emitted when a session agent finishes a turn but stays alive */
+export interface StreamTurnComplete {
+  type: "turn_complete";
+}
+
 /** Union of all stream-json event types */
 export type StreamEvent =
   | StreamMessageStart
@@ -114,7 +119,8 @@ export type StreamEvent =
   | StreamSystemEvent
   | StreamResult
   | StreamAgentDone
-  | StreamAgentPaused;
+  | StreamAgentPaused
+  | StreamTurnComplete;
 
 /** Agent event sent to the renderer via IPC */
 export interface AgentEvent {

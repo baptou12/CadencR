@@ -172,9 +172,15 @@ function handleSdkMessage(
         },
         parentToolUseId,
       );
-      // Agent finished — close the message stream so the for-await loop exits
-      if (managed.closeMessageStream) {
-        managed.closeMessageStream();
+      if (agentType === "session") {
+        // Session agents stay alive between turns — broadcast turn_complete
+        // but keep the message stream open for follow-up messages.
+        broadcastEvent(id, agentType, { type: "turn_complete" });
+      } else {
+        // Non-session agents: close the message stream so the for-await loop exits
+        if (managed.closeMessageStream) {
+          managed.closeMessageStream();
+        }
       }
     }
   } else if (type === "system") {

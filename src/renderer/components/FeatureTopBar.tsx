@@ -18,20 +18,23 @@ const STATUS_COLORS: Record<string, string> = {
 interface FeatureTopBarProps {
   featureId: number;
   projectId: number;
+  mode?: "feature" | "session";
 }
 
-export function FeatureTopBar({ featureId, projectId: _projectId }: FeatureTopBarProps) {
+export function FeatureTopBar({ featureId, projectId: _projectId, mode = "feature" }: FeatureTopBarProps) {
+  const isSession = mode === "session";
   const [diffOpen, setDiffOpen] = useState(false);
   const { data: feature } = trpc.features.getById.useQuery({ id: featureId });
   const { data: progress } = trpc.features.getProgress.useQuery(
     { feature_id: featureId },
+    { enabled: !isSession },
   );
   const { data: featureSettings } = trpc.features.getSettings.useQuery({
     feature_id: featureId,
   });
   const { data: gitStats } = trpc.git.getStats.useQuery(
     { featureId },
-    { refetchInterval: 10000 },
+    { refetchInterval: 10000, enabled: !isSession },
   );
   const openTerminal = trpc.git.openInTerminal.useMutation();
 
@@ -51,14 +54,16 @@ export function FeatureTopBar({ featureId, projectId: _projectId }: FeatureTopBa
     <div className="flex items-center gap-3 border-b border-border px-4 py-2">
       <h1 className="text-lg font-semibold">{feature.title}</h1>
 
-      <Badge
-        variant="secondary"
-        className={STATUS_COLORS[feature.status] ?? ""}
-      >
-        {feature.status}
-      </Badge>
+      {!isSession && (
+        <Badge
+          variant="secondary"
+          className={STATUS_COLORS[feature.status] ?? ""}
+        >
+          {feature.status}
+        </Badge>
+      )}
 
-      {progress && progress.total > 0 && (
+      {!isSession && progress && progress.total > 0 && (
         <span className="text-muted-foreground text-sm">
           Phases: {progress.done}/{progress.total}
         </span>
@@ -95,33 +100,39 @@ export function FeatureTopBar({ featureId, projectId: _projectId }: FeatureTopBa
         </span>
       )}
 
-      <span className="text-muted-foreground text-sm">
-        LOC: {gitStats ? `+${gitStats.insertions} -${gitStats.deletions}` : "--"}
-      </span>
+      {!isSession && (
+        <span className="text-muted-foreground text-sm">
+          LOC: {gitStats ? `+${gitStats.insertions} -${gitStats.deletions}` : "--"}
+        </span>
+      )}
 
       <div className="flex-1" />
 
-      <Button
-        variant="ghost"
-        size="icon"
-        className="size-7"
-        title="View Diff"
-        disabled={!worktreeBranch}
-        onClick={() => setDiffOpen(true)}
-      >
-        <GitCompareArrowsIcon className="size-4" />
-      </Button>
+      {!isSession && (
+        <>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-7"
+            title="View Diff"
+            disabled={!worktreeBranch}
+            onClick={() => setDiffOpen(true)}
+          >
+            <GitCompareArrowsIcon className="size-4" />
+          </Button>
 
-      <Button
-        variant="ghost"
-        size="icon"
-        className="size-7"
-        title="Open terminal"
-        disabled={!worktreeBranch}
-        onClick={() => openTerminal.mutate({ featureId })}
-      >
-        <TerminalIcon className="size-4" />
-      </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-7"
+            title="Open terminal"
+            disabled={!worktreeBranch}
+            onClick={() => openTerminal.mutate({ featureId })}
+          >
+            <TerminalIcon className="size-4" />
+          </Button>
+        </>
+      )}
 
       <Popover>
         <PopoverTrigger asChild>

@@ -337,6 +337,11 @@ export function useAgentState(options: UseAgentStateOptions = {}) {
           setStatus((prev) => (prev === "running" ? "complete" : prev));
           break;
         }
+        case "turn_complete": {
+          // Session agent finished a turn but subprocess is still alive
+          setStatus("paused");
+          break;
+        }
         case "error": {
           setStatus("error");
           setBlocks((prev) => [
