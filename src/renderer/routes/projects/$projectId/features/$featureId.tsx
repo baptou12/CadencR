@@ -10,6 +10,7 @@ import {
   PlusCircleIcon,
   WrenchIcon,
   CheckCircle2Icon,
+  PlayIcon,
 } from "lucide-react";
 import { useAgentState, useAgentEventListener } from "@/hooks/useAgentState";
 import { useMultiExecuteState } from "@/hooks/useMultiExecuteState";
@@ -18,12 +19,281 @@ import type { AgentBlockData } from "@/components/AgentBlock";
 import type { AgentType } from "../../../../../main/agents/types";
 import { PlanSidebar } from "@/components/PlanSidebar";
 import { AGENT_ICONS } from "@/components/agent-icons";
+import { AgentStream } from "@/components/AgentStream";
+import { AgentPromptBar } from "@/components/AgentPromptBar";
 
 export const Route = createFileRoute(
   "/projects/$projectId/features/$featureId",
 )({
   component: FeaturePage,
 });
+
+// ---------------------------------------------------------------------------
+// SessionView — simplified layout for free-form Claude sessions
+// ---------------------------------------------------------------------------
+
+function SessionView({
+  featureId,
+  projectId,
+  title,
+}: {
+  featureId: number;
+  projectId: number;
+  title: string;
+}) {
+  const session = useAgentState();
+
+  // Check for incomplete (resumable) sessions
+  const incompleteQuery = trpc.agents.getIncompleteSessions.useQuery({
+    featureId,
+  });
+  const sessionsQuery = trpc.agents.getSessions.useQuery({ featureId });
+
+  const resumableSessionId = useMemo(() => {
+    if (!incompleteQuery.data) return null;
+    const s = incompleteQuery.data.find((r) => r.agent_type === "session");
+    return s?.claude_session_id ?? null;
+  }, [incompleteQuery.data]);
+
+  // Find last completed session for history
+  const lastSessionDbId = useMemo(() => {
+    if (!sessionsQuery.data) return null;
+    const s = sessionsQuery.data.find(
+      (r) =>
+        r.agent_type === "session" &&
+        (r.status === "completed" || r.status === "error"),
+    );
+    return s?.id ?? null;
+  }, [sessionsQuery.data]);
+
+  const historyQuery = trpc.agents.getHistory.useQuery(
+    { sessionId: lastSessionDbId ?? 0 },
+    {
+      enabled:
+        !!lastSessionDbId &&
+        session.status === "idle" &&
+        session.blocks.length === 0,
+    },
+  );
+
+  // Convert stored messages to blocks for display
+  const messageToBlock = useCallback(
+    (msg: {
+      content: string;
+      message_type: string;
+      tool_name: string | null;
+    }): AgentBlockData | null => {
+      const id = `hist-${Math.random().toString(36).slice(2)}`;
+      switch (msg.message_type) {
+        case "text":
+          return { id, type: "text", content: msg.content };
+        case "text_delta":
+          return null;
+        case "tool_call":
+          return {
+            id,
+            type: "tool_call",
+            content: msg.content,
+            toolName: msg.tool_name ?? "tool",
+            toolArgs: msg.content,
+          };
+        case "tool_result":
+        case "tool_error":
+          return {
+            id,
+            type: "tool_result",
+            content: msg.content,
+            isError: msg.message_type === "tool_error",
+          };
+        case "user_message":
+          return { id, type: "user_message", content: msg.content };
+        case "error":
+          return { id, type: "text", content: `Error: ${msg.content}` };
+        default:
+          return null;
+      }
+    },
+    [],
+  );
+
+  // Populate blocks from history on mount
+  useEffect(() => {
+    if (!historyQuery.data || historyQuery.data.length === 0) return;
+    if (session.status !== "idle" || session.blocks.length > 0) return;
+
+    const blocks: AgentBlockData[] = [];
+    for (const msg of historyQuery.data) {
+      const block = messageToBlock(msg);
+      if (block) blocks.push(block);
+    }
+    // Merge consecutive text blocks
+    const merged: AgentBlockData[] = [];
+    for (const b of blocks) {
+      const last = merged[merged.length - 1];
+      if (b.type === "text" && last?.type === "text") {
+        merged[merged.length - 1] = {
+          ...last,
+          content: last.content + b.content,
+        };
+      } else {
+        merged.push(b);
+      }
+    }
+    for (const b of merged) {
+      session.appendBlock(b);
+    }
+    session.setStatus("complete");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [historyQuery.data]);
+
+  // Event listener for session agent
+  const eventHandlers = useMemo(
+    () => ({
+      session: {
+        handleEvent: session.handleEvent,
+        subprocessIdRef: session.subprocessIdRef,
+      },
+    }),
+    [session.handleEvent, session.subprocessIdRef],
+  );
+  useAgentEventListener(eventHandlers);
+
+  // Mutations
+  const startSessionMutation = trpc.agents.startSession.useMutation();
+  const resumeMutation = trpc.agents.resume.useMutation();
+  const sendMessageMutation = trpc.agents.sendMessage.useMutation();
+  const interruptMutation = trpc.agents.interrupt.useMutation();
+
+  const handleSend = useCallback(
+    async (message: string) => {
+      if (session.status === "running" && session.subprocessId) {
+        // Follow-up message to running session
+        session.appendBlock({ type: "user_message", content: message });
+        sendMessageMutation.mutate({ id: session.subprocessId, message });
+        return;
+      }
+
+      if (session.status === "paused" && session.subprocessId) {
+        // Resume paused session with a message
+        session.appendBlock({ type: "user_message", content: message });
+        sendMessageMutation.mutate({ id: session.subprocessId, message });
+        session.setStatus("running");
+        return;
+      }
+
+      // Start a new session
+      session.start();
+      session.appendBlock({ type: "user_message", content: message });
+      try {
+        const result = await startSessionMutation.mutateAsync({
+          featureId,
+          projectId,
+          prompt: message,
+        });
+        session.trackSubprocess(result.subprocessId);
+      } catch (err) {
+        session.setStatus("error");
+        session.appendBlock({
+          type: "text",
+          content: `Failed to start session: ${err instanceof Error ? err.message : String(err)}`,
+        });
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      session.status,
+      session.subprocessId,
+      featureId,
+      projectId,
+      sendMessageMutation,
+      startSessionMutation,
+    ],
+  );
+
+  const handleStop = useCallback(async () => {
+    if (!session.subprocessId) return;
+    try {
+      await interruptMutation.mutateAsync({ id: session.subprocessId });
+    } catch {
+      // best effort
+    }
+  }, [session.subprocessId, interruptMutation]);
+
+  const handleResume = useCallback(async () => {
+    if (!resumableSessionId) return;
+    session.start();
+    try {
+      const result = await resumeMutation.mutateAsync({
+        cwd: ".",
+        agentType: "session" as AgentType,
+        sessionId: resumableSessionId,
+      });
+      session.trackSubprocess(result.id);
+    } catch (err) {
+      session.setStatus("error");
+      session.appendBlock({
+        type: "text",
+        content: `Failed to resume: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resumableSessionId, resumeMutation]);
+
+  const isIdle = session.status === "idle" && session.blocks.length === 0;
+
+  return (
+    <div className="flex h-full flex-col">
+      {/* Title bar */}
+      <div className="flex items-center gap-2 border-b px-4 py-2">
+        <AGENT_ICONS.session className="size-4 text-muted-foreground" />
+        <h1 className="text-sm font-semibold">{title}</h1>
+        {session.status === "running" && (
+          <Loader2Icon className="size-3.5 animate-spin text-muted-foreground" />
+        )}
+      </div>
+
+      {/* Scrollable agent output */}
+      <div className="flex-1 overflow-auto p-4">
+        {isIdle && !resumableSessionId && (
+          <div className="flex h-full items-center justify-center">
+            <p className="text-sm text-muted-foreground">
+              Send a message to start a session with Claude Code.
+            </p>
+          </div>
+        )}
+        {isIdle && resumableSessionId && (
+          <div className="flex h-full flex-col items-center justify-center gap-3">
+            <p className="text-sm text-muted-foreground">
+              You have an incomplete session that can be resumed.
+            </p>
+            <Button variant="outline" size="sm" onClick={handleResume}>
+              <PlayIcon className="mr-2 size-4" />
+              Resume Session
+            </Button>
+          </div>
+        )}
+        {session.blocks.length > 0 && (
+          <AgentStream
+            blocks={session.blocks}
+            isStreaming={session.status === "running"}
+          />
+        )}
+      </div>
+
+      {/* Prompt bar pinned at bottom */}
+      <AgentPromptBar
+        onSend={handleSend}
+        onStop={handleStop}
+        status={session.status}
+        disabled={startSessionMutation.isLoading}
+      />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// FeaturePage — routes to SessionView or FeatureWorkflowView
+// ---------------------------------------------------------------------------
 
 function FeaturePage() {
   const { featureId, projectId } = Route.useParams();
@@ -35,6 +305,41 @@ function FeaturePage() {
   });
   const feature = featureQuery.data;
 
+  if (feature?.type === "session") {
+    return (
+      <SessionView
+        featureId={numericFeatureId}
+        projectId={numericProjectId}
+        title={feature.title}
+      />
+    );
+  }
+
+  return (
+    <FeatureWorkflowView
+      featureId={numericFeatureId}
+      projectId={numericProjectId}
+      feature={feature}
+      featureQuery={featureQuery}
+    />
+  );
+}
+
+// ---------------------------------------------------------------------------
+// FeatureWorkflowView — the existing structured feature workflow
+// ---------------------------------------------------------------------------
+
+function FeatureWorkflowView({
+  featureId: numericFeatureId,
+  projectId: numericProjectId,
+  feature,
+  featureQuery,
+}: {
+  featureId: number;
+  projectId: number;
+  feature: { id: number; title: string; status: string; type: string; project_id: number; created_at: string } | undefined;
+  featureQuery: { refetch: () => unknown };
+}) {
   const [description, setDescription] = useState("");
   // Agent states
   const plan = useAgentState({ supportsQuestions: true });
