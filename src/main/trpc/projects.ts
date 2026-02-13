@@ -4,6 +4,8 @@ import { dialog } from "electron";
 import { router, publicProcedure } from "./trpc";
 import { getDatabase } from "../db/database";
 import type { ProjectRow, SettingRow } from "../db/types";
+import type { AgentType } from "../agents/types";
+import { DEFAULT_MODEL } from "../agents/models";
 
 export const projectsRouter = router({
   selectFolder: publicProcedure.mutation(async () => {
@@ -57,6 +59,40 @@ export const projectsRouter = router({
       db.prepare(
         "INSERT INTO project_settings (project_id, key, value) VALUES (?, ?, ?) ON CONFLICT(project_id, key) DO UPDATE SET value = excluded.value",
       ).run(input.project_id, input.key, input.value);
+      return { success: true };
+    }),
+
+  /** Get model settings for all agent types from project settings */
+  getModelSettings: publicProcedure
+    .input(z.object({ projectId: z.number() }))
+    .query(({ input }) => {
+      const db = getDatabase();
+      const agentTypes = ["plan", "brainstorm", "execute", "risk", "review"] as const;
+      const result: Record<string, string> = {};
+      for (const at of agentTypes) {
+        const row = db
+          .prepare("SELECT value FROM project_settings WHERE project_id = ? AND key = ?")
+          .get(input.projectId, `model_${at}`) as SettingRow | undefined;
+        result[at] = row?.value ?? DEFAULT_MODEL;
+      }
+      return result as Record<AgentType, string>;
+    }),
+
+  /** Set a model for a specific agent type in project settings */
+  setModelSetting: publicProcedure
+    .input(
+      z.object({
+        projectId: z.number(),
+        agentType: z.enum(["plan", "brainstorm", "execute", "risk", "review"]),
+        modelId: z.string(),
+      }),
+    )
+    .mutation(({ input }) => {
+      const db = getDatabase();
+      const key = `model_${input.agentType}`;
+      db.prepare(
+        "INSERT INTO project_settings (project_id, key, value) VALUES (?, ?, ?) ON CONFLICT(project_id, key) DO UPDATE SET value = excluded.value",
+      ).run(input.projectId, key, input.modelId);
       return { success: true };
     }),
 });

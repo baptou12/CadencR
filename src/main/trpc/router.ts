@@ -6,6 +6,7 @@ import type { SettingRow, ProjectRow, AgentMessageRow, AgentSessionRow } from ".
 import { projectsRouter } from "./projects";
 import { featuresRouter } from "./features";
 import { discoverClaudeCli } from "../agents/cli-discovery";
+import { DEFAULT_MODEL } from "../agents/models";
 import {
   startSubprocess,
   killSubprocess,
@@ -62,6 +63,37 @@ const settingsRouter = router({
     const cliInfo = discoverClaudeCli();
     return cliInfo ? { path: cliInfo.path, source: cliInfo.source } : null;
   }),
+
+  /** Get model settings for all agent types from global settings */
+  getModelSettings: publicProcedure.query(() => {
+    const db = getDatabase();
+    const agentTypes = ["plan", "brainstorm", "execute", "risk", "review"] as const;
+    const result: Record<string, string> = {};
+    for (const at of agentTypes) {
+      const row = db
+        .prepare("SELECT value FROM settings WHERE key = ?")
+        .get(`model_${at}`) as SettingRow | undefined;
+      result[at] = row?.value ?? DEFAULT_MODEL;
+    }
+    return result as Record<AgentType, string>;
+  }),
+
+  /** Set a model for a specific agent type in global settings */
+  setModelSetting: publicProcedure
+    .input(
+      z.object({
+        agentType: z.enum(["plan", "brainstorm", "execute", "risk", "review"]),
+        modelId: z.string(),
+      }),
+    )
+    .mutation(({ input }) => {
+      const db = getDatabase();
+      const key = `model_${input.agentType}`;
+      db.prepare(
+        "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+      ).run(key, input.modelId);
+      return { success: true };
+    }),
 
   /** Set a custom Claude CLI path (validates the file exists) */
   setClaudeCliPath: publicProcedure

@@ -2,6 +2,8 @@ import { z } from "zod";
 import { router, publicProcedure } from "./trpc";
 import { getDatabase } from "../db/database";
 import type { FeatureRow, ProjectRow, PlanRow, PhaseRow, CountRow, SettingRow } from "../db/types";
+import type { AgentType } from "../agents/types";
+import { DEFAULT_MODEL } from "../agents/models";
 import { createWorktree, buildBranchName } from "../git/worktree";
 
 export const FEATURE_STATUSES = ["draft", "planned", "in-progress", "review", "done"] as const;
@@ -195,6 +197,40 @@ export const featuresRouter = router({
       db.prepare(
         "INSERT INTO feature_settings (feature_id, key, value) VALUES (?, ?, ?) ON CONFLICT(feature_id, key) DO UPDATE SET value = excluded.value",
       ).run(input.feature_id, input.key, input.value);
+      return { success: true };
+    }),
+
+  /** Get model settings for all agent types from feature settings */
+  getModelSettings: publicProcedure
+    .input(z.object({ featureId: z.number() }))
+    .query(({ input }) => {
+      const db = getDatabase();
+      const agentTypes = ["plan", "brainstorm", "execute", "risk", "review"] as const;
+      const result: Record<string, string> = {};
+      for (const at of agentTypes) {
+        const row = db
+          .prepare("SELECT value FROM feature_settings WHERE feature_id = ? AND key = ?")
+          .get(input.featureId, `model_${at}`) as SettingRow | undefined;
+        result[at] = row?.value ?? DEFAULT_MODEL;
+      }
+      return result as Record<AgentType, string>;
+    }),
+
+  /** Set a model for a specific agent type in feature settings */
+  setModelSetting: publicProcedure
+    .input(
+      z.object({
+        featureId: z.number(),
+        agentType: z.enum(["plan", "brainstorm", "execute", "risk", "review"]),
+        modelId: z.string(),
+      }),
+    )
+    .mutation(({ input }) => {
+      const db = getDatabase();
+      const key = `model_${input.agentType}`;
+      db.prepare(
+        "INSERT INTO feature_settings (feature_id, key, value) VALUES (?, ?, ?) ON CONFLICT(feature_id, key) DO UPDATE SET value = excluded.value",
+      ).run(input.featureId, key, input.modelId);
       return { success: true };
     }),
 });

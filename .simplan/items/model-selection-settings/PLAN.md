@@ -64,17 +64,19 @@
 - **Implementation notes**: Added `model?: string` to `SubprocessOptions`, imported `DEFAULT_MODEL` and replaced hardcoded `"claude-haiku-4-5-20251001"` with `options.model ?? DEFAULT_MODEL`. Each of the 5 agent files now imports `resolveModel` from `./models`, calls it with the appropriate agent type and IDs, and passes the result as `model` in the subprocess options.
 - **Validation results**: Lint passed (0 errors), type check passed (no errors). Skipped `pnpm run package` (heavy build; lint + tsc sufficient).
 
-### ⬜ Phase 3: Add tRPC procedures for model settings
+### ✅ Phase 3: Add tRPC procedures for model settings
 - **Step**: 3
 - **Complexity**: 2
-- [ ] Add `settings.getModelSettings` procedure — returns `Record<AgentType, string>` from global settings (keys `model_plan`, `model_execute`, etc.), falling back to DEFAULT_MODEL
-- [ ] Add `settings.setModelSetting` procedure — input `{ agentType, modelId }`, saves to global settings
-- [ ] Add `projects.getModelSettings` procedure — same pattern for project_settings
-- [ ] Add `projects.setModelSetting` procedure — input `{ projectId, agentType, modelId }`
-- [ ] Add `features.getModelSettings` and `features.setModelSetting` similarly
+- [x] Add `settings.getModelSettings` procedure — returns `Record<AgentType, string>` from global settings (keys `model_plan`, `model_execute`, etc.), falling back to DEFAULT_MODEL
+- [x] Add `settings.setModelSetting` procedure — input `{ agentType, modelId }`, saves to global settings
+- [x] Add `projects.getModelSettings` procedure — same pattern for project_settings
+- [x] Add `projects.setModelSetting` procedure — input `{ projectId, agentType, modelId }`
+- [x] Add `features.getModelSettings` and `features.setModelSetting` similarly
 - **Files**: `src/main/trpc/router.ts`, `src/main/trpc/projects.ts`, `src/main/trpc/features.ts`
 - **Commit message**: `feat: add tRPC procedures for per-agent model settings`
 - **Bisect note**: N/A — new procedures, not called from UI yet
+- **Implementation notes**: Added `getModelSettings` and `setModelSetting` procedures to all three routers (settings, projects, features). Each `getModelSettings` iterates the 5 agent types, queries the appropriate settings table, and falls back to `DEFAULT_MODEL`. Each `setModelSetting` upserts the `model_<agentType>` key into the corresponding table. Imported `AgentType` and `DEFAULT_MODEL` in projects.ts and features.ts; imported `DEFAULT_MODEL` in router.ts.
+- **Validation results**: Lint passed (0 errors), type check passed (no errors). Skipped `pnpm run package` (heavy build; lint + tsc sufficient for new unconnected procedures).
 
 ### ⬜ Phase 4: Build ModelSelector component
 - **Step**: 4
@@ -107,5 +109,5 @@
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 3
-- **Progress**: 2/5
+- **Current Phase**: Phase 4
+- **Progress**: 3/5
