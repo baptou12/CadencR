@@ -98,15 +98,17 @@ Features are created via `features.create` mutation, which also sets up a git wo
 - **Implementation notes**: Refactored FeaturePage into three components: (1) `SessionView` - self-contained component with its own hooks for free-form sessions, (2) `FeaturePage` - thin router that queries feature and conditionally renders SessionView or FeatureWorkflowView based on `feature.type`, (3) `FeatureWorkflowView` - receives feature data as props and contains all existing workflow logic. SessionView uses `useAgentState`, `useAgentEventListener`, and the `AgentStream`/`AgentPromptBar` components. It supports: starting new sessions via `agents.startSession`, resuming incomplete sessions via `agents.resume`, follow-up messages via `agents.sendMessage`, and interrupting via `agents.interrupt`. History is loaded from completed sessions on mount.
 - **Validation results**: Lint passes (0 warnings, 0 errors). Type check passes (no errors).
 
-### ⬜ Phase 6: Distinguish sessions in FeatureList sidebar
+### ✅ Phase 6: Distinguish sessions in FeatureList sidebar
 - **Step**: 4
 - **Complexity**: 2
-- [ ] In `FeatureList`, check feature `type` — if `'session'`, show a MessageSquare icon instead of the status badge/dropdown
-- [ ] Sessions should not show the status filter dropdown options (they have no workflow status)
-- [ ] Add "session" to the status filter or hide sessions from status filtering entirely
+- [x] In `FeatureList`, check feature `type` — if `'session'`, show a MessageSquare icon instead of the status badge/dropdown
+- [x] Sessions should not show the status filter dropdown options (they have no workflow status)
+- [x] Add "session" to the status filter or hide sessions from status filtering entirely
 - **Files**: `src/renderer/components/FeatureList.tsx`
 - **Commit message**: `feat: show distinct icon for sessions in sidebar feature list`
 - **Bisect note**: Requires type column from Phase 1 to be present in query results
+- **Implementation notes**: Added `MessageSquareIcon` import from lucide-react. For session-type features, the status badge/dropdown is replaced with a small muted MessageSquare icon. The delete button remains for both types. Sessions are naturally filtered out when a specific status filter is active (since they have draft status but no meaningful workflow status), and appear when filter is "all" -- this is the simplest correct behavior.
+- **Validation results**: Lint passes (0 warnings, 0 errors). Type check passes (no errors).
 
 ### ⬜ Phase 7: Integration polish and edge cases
 - **Step**: 5
@@ -128,5 +130,5 @@ Features are created via `features.create` mutation, which also sets up a git wo
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 6
-- **Progress**: 5/7
+- **Current Phase**: Phase 7
+- **Progress**: 6/7

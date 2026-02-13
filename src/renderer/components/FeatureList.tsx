@@ -20,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { PlusIcon, TrashIcon, Loader2Icon } from "lucide-react";
+import { PlusIcon, TrashIcon, Loader2Icon, MessageSquareIcon } from "lucide-react";
 
 const STATUSES = ["draft", "planned", "in-progress", "review", "done"] as const;
 type FeatureStatus = (typeof STATUSES)[number];
@@ -157,35 +157,41 @@ export function FeatureList({
               )}
               <span className="flex-1 truncate">{feature.title}</span>
 
-              <Select
-                value={feature.status}
-                onValueChange={(v) =>
-                  updateStatusMutation.mutate({
-                    id: feature.id,
-                    status: v as FeatureStatus,
-                  })
-                }
-              >
-                <SelectTrigger
-                  size="sm"
-                  className="h-auto border-none bg-transparent p-0 shadow-none"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <Badge
-                    variant="secondary"
-                    className={STATUS_COLORS[feature.status as FeatureStatus] ?? ""}
+              {feature.type === "session" ? (
+                <MessageSquareIcon className="size-3.5 shrink-0 text-muted-foreground" />
+              ) : (
+                <>
+                  <Select
+                    value={feature.status}
+                    onValueChange={(v) =>
+                      updateStatusMutation.mutate({
+                        id: feature.id,
+                        status: v as FeatureStatus,
+                      })
+                    }
                   >
-                    {feature.status}
-                  </Badge>
-                </SelectTrigger>
-                <SelectContent>
-                  {STATUSES.map((s) => (
-                    <SelectItem key={s} value={s}>
-                      {s}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                    <SelectTrigger
+                      size="sm"
+                      className="h-auto border-none bg-transparent p-0 shadow-none"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Badge
+                        variant="secondary"
+                        className={STATUS_COLORS[feature.status as FeatureStatus] ?? ""}
+                      >
+                        {feature.status}
+                      </Badge>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {STATUSES.map((s) => (
+                        <SelectItem key={s} value={s}>
+                          {s}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </>
+              )}
 
               <Button
                 size="sm"
