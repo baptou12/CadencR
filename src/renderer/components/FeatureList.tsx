@@ -20,6 +20,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { PlusIcon, TrashIcon, Loader2Icon, MessageSquareIcon } from "lucide-react";
 
 const STATUSES = ["draft", "planned", "in-progress", "review", "done"] as const;
@@ -78,6 +84,19 @@ export function FeatureList({
     },
   });
 
+  const createSessionMutation = trpc.features.createSession.useMutation({
+    onSuccess: (session) => {
+      invalidateFeatures();
+      void navigate({
+        to: "/projects/$projectId/features/$featureId",
+        params: {
+          projectId: String(projectId),
+          featureId: String(session.id),
+        },
+      });
+    },
+  });
+
   const updateStatusMutation = trpc.features.updateStatus.useMutation({
     onSuccess: invalidateFeatures,
   });
@@ -112,10 +131,22 @@ export function FeatureList({
           </SelectContent>
         </Select>
 
-        <Button size="sm" variant="ghost" onClick={() => setDialogOpen(true)}>
-          <PlusIcon className="size-4" />
-          <span className="sr-only">Add feature</span>
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button size="sm" variant="ghost">
+              <PlusIcon className="size-4" />
+              <span className="sr-only">Add</span>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => setDialogOpen(true)}>
+              New Feature
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => createSessionMutation.mutate({ project_id: projectId })}>
+              New Session
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       <ScrollArea className="flex-1">

@@ -1,5 +1,4 @@
 import { Ellipsis, Plus } from "lucide-react";
-import { useNavigate } from "@tanstack/react-router";
 import { trpc } from "@/trpc";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -7,7 +6,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
@@ -21,7 +19,6 @@ export function ProjectList({
   onSelectProject,
 }: ProjectListProps) {
   const utils = trpc.useUtils();
-  const navigate = useNavigate();
   const projectsQuery = trpc.projects.list.useQuery();
   const selectFolderMutation = trpc.projects.selectFolder.useMutation();
   const createMutation = trpc.projects.create.useMutation({
@@ -34,19 +31,6 @@ export function ProjectList({
       void utils.projects.list.invalidate();
     },
   });
-  const createSessionMutation = trpc.features.createSession.useMutation({
-    onSuccess: (data, variables) => {
-      void utils.features.listByProject.invalidate();
-      void navigate({
-        to: "/projects/$projectId/features/$featureId",
-        params: {
-          projectId: String(variables.project_id),
-          featureId: String(data.id),
-        },
-      });
-    },
-  });
-
   const projects = projectsQuery.data ?? [];
 
   const handleAdd = async () => {
@@ -58,11 +42,6 @@ export function ProjectList({
   const handleDelete = (e: React.MouseEvent, id: number) => {
     e.stopPropagation();
     deleteMutation.mutate({ id });
-  };
-
-  const handleNewSession = (e: React.MouseEvent, projectId: number) => {
-    e.stopPropagation();
-    createSessionMutation.mutate({ project_id: projectId });
   };
 
   return (
@@ -106,12 +85,6 @@ export function ProjectList({
                   </span>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem
-                    onClick={(e) => handleNewSession(e, project.id)}
-                  >
-                    New Session
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
                   <DropdownMenuItem
                     className="text-destructive focus:text-destructive"
                     onClick={(e) => handleDelete(e, project.id)}
