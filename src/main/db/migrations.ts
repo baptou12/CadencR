@@ -184,6 +184,16 @@ const migrations: Migration[] = [
       }
     },
   },
+  {
+    version: 12,
+    description: "Add plan-level context columns to plans table",
+    up: (db) => {
+      db.exec("ALTER TABLE plans ADD COLUMN summary TEXT");
+      db.exec("ALTER TABLE plans ADD COLUMN context TEXT");
+      db.exec("ALTER TABLE plans ADD COLUMN clarifications TEXT");
+      db.exec("ALTER TABLE plans ADD COLUMN completion_conditions TEXT");
+    },
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

@@ -33,14 +33,16 @@ Current plan format only has `## Summary` and `## Phases`. The phase `prompt` se
 
 ## Phases
 
-### ⬜ Phase 1: Add plan-level context columns to DB
+### ✅ Phase 1: Add plan-level context columns to DB
 - **Step**: 1
 - **Complexity**: 2
-- [ ] Add migration 12 to `src/main/db/migrations.ts`: ALTER TABLE plans ADD COLUMN `summary` TEXT, `context` TEXT, `clarifications` TEXT, `completion_conditions` TEXT
-- [ ] Update `PlanRow` in `src/main/db/types.ts` to include `summary`, `context`, `clarifications`, `completion_conditions` (all `string | null`)
+- [x] Add migration 12 to `src/main/db/migrations.ts`: ALTER TABLE plans ADD COLUMN `summary` TEXT, `context` TEXT, `clarifications` TEXT, `completion_conditions` TEXT
+- [x] Update `PlanRow` in `src/main/db/types.ts` to include `summary`, `context`, `clarifications`, `completion_conditions` (all `string | null`)
 - **Files**: `src/main/db/migrations.ts`, `src/main/db/types.ts`
 - **Commit message**: `feat: add plan-level context columns to plans table`
 - **Bisect note**: N/A — new nullable columns, no code reads them yet
+- **Implementation notes**: Added migration 12 with four separate ALTER TABLE statements (SQLite requires one column per ALTER). Added four `string | null` fields to `PlanRow` between `raw_markdown` and `created_at`.
+- **Validation results**: Lint passes (0 errors). Typecheck passes (npx tsc --noEmit, exit 0). Note: `pnpm run typecheck` script does not exist; used `npx tsc --noEmit` directly.
 
 ### ⬜ Phase 2: Enrich plan agent prompt and parser
 - **Step**: 2
@@ -79,5 +81,5 @@ Current plan format only has `## Summary` and `## Phases`. The phase `prompt` se
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Not started
-- **Progress**: 0/3
+- **Current Phase**: Phase 2
+- **Progress**: 1/3

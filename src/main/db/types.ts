@@ -48,6 +48,10 @@ export interface PlanRow {
   title: string;
   status: string;
   raw_markdown: string | null;
+  summary: string | null;
+  context: string | null;
+  clarifications: string | null;
+  completion_conditions: string | null;
   created_at: string;
   updated_at: string;
 }
