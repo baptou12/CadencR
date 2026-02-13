@@ -27,7 +27,7 @@ export function Sidebar() {
   const effectiveFeatureId = activeFeatureId ?? selectedFeatureId;
 
   return (
-    <aside className="flex h-full w-64 flex-col border-r border-border bg-sidebar">
+    <aside className="flex h-full flex-col bg-sidebar">
       <div className="flex items-center justify-between px-4 py-2">
         <span className="text-sm font-semibold">ProductDevR</span>
         <Link to="/settings">

@@ -45,17 +45,19 @@
 - **Implementation notes**: Installed `react-resizable-panels` v4.6.2. Adapted the shadcn resizable component for v4 API which uses `Group`, `Panel`, `Separator` exports (not `PanelGroup`, `Panel`, `PanelResizeHandle` as in v2/v3). Component re-exports as `ResizablePanelGroup`, `ResizablePanel`, `ResizableHandle` for consistent shadcn naming.
 - **Validation results**: Lint passes (exit 0), TypeScript type check passes (exit 0, no errors).
 
-### ⬜ Phase 2: Resizable left sidebar in root layout
+### ✅ Phase 2: Resizable left sidebar in root layout
 - **Step**: 2
 - **Complexity**: 3
-- [ ] Wrap `<Sidebar />` and `<main>` in `ResizablePanelGroup` with `direction="horizontal"` in `__root.tsx`
-- [ ] Replace `w-64` on Sidebar with flex-based sizing from `ResizablePanel` (remove fixed width, use `defaultSize` as percentage)
-- [ ] Add `ResizableHandle` between sidebar and main panels
-- [ ] Set min/max constraints: 180px min, 400px max (use `minSize`/`maxSize` as percentages or pixel-based collapsedSize)
-- [ ] Style the resize handle to match the app theme (thin vertical line, cursor: col-resize)
+- [x] Wrap `<Sidebar />` and `<main>` in `ResizablePanelGroup` with `direction="horizontal"` in `__root.tsx`
+- [x] Replace `w-64` on Sidebar with flex-based sizing from `ResizablePanel` (remove fixed width, use `defaultSize` as percentage)
+- [x] Add `ResizableHandle` between sidebar and main panels
+- [x] Set min/max constraints: 180px min, 400px max (use `minSize`/`maxSize` as percentages or pixel-based collapsedSize)
+- [x] Style the resize handle to match the app theme (thin vertical line, cursor: col-resize)
 - **Files**: `src/renderer/routes/__root.tsx`, `src/renderer/components/Sidebar.tsx`
 - **Commit message**: `feat: make left sidebar resizable with drag handle`
 - **Bisect note**: Self-contained — sidebar becomes resizable but width not yet persisted
+- **Implementation notes**: Used `orientation="horizontal"` instead of `direction="horizontal"` as `react-resizable-panels` v4 uses `orientation` prop. Used pixel-based sizes (`defaultSize="256px"`, `minSize="180px"`, `maxSize="400px"`). Removed `w-64` and `border-r` from Sidebar component (border now handled by handle). Updated `ResizablePanelGroup` in resizable.tsx to remove stale `data-[panel-group-direction=vertical]` class from v2/v3 API. Handle styled with `cursor-col-resize`.
+- **Validation results**: Lint passes (exit 0), TypeScript type check passes (exit 0, no errors).
 
 ### ⬜ Phase 3: Resizable right sidebar with collapse toggle
 - **Step**: 3
@@ -90,5 +92,5 @@
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 2
-- **Progress**: 1/4
+- **Current Phase**: Phase 3
+- **Progress**: 2/4

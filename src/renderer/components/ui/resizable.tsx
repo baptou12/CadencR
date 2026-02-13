@@ -20,7 +20,7 @@ function ResizablePanelGroup({
     <Group
       data-slot="resizable-panel-group"
       className={cn(
-        "flex h-full w-full data-[panel-group-direction=vertical]:flex-col",
+        "flex h-full w-full",
         className
       )}
       {...props}
