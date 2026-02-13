@@ -92,15 +92,17 @@
 - **Implementation notes**: Created ModelSelector component with responsive grid layout (1/2/3 columns). Uses shadcn Select component. For global level, shows direct model selection; for project/feature levels, adds "Inherit default" option that shows the effective inherited model label. Queries parent-level settings to resolve effective models for placeholder display. Mutations invalidate queries on success.
 - **Validation results**: Lint passed (0 errors), type check passed (no errors). Skipped `pnpm run package` (heavy build; lint + tsc sufficient for new unrendered component).
 
-### ⬜ Phase 5: Integrate into settings page
+### ✅ Phase 5: Integrate into settings page
 - **Step**: 5
 - **Complexity**: 2
-- [ ] Add "Model Configuration" section to `/settings` page with `<ModelSelector level="global" />`
-- [ ] Keep existing key/value settings UI below it
-- [ ] Clean up settings page layout (add section headings, spacing)
+- [x] Add "Model Configuration" section to `/settings` page with `<ModelSelector level="global" />`
+- [x] Keep existing key/value settings UI below it
+- [x] Clean up settings page layout (add section headings, spacing)
 - **Files**: `src/renderer/routes/settings.tsx`
 - **Commit message**: `feat: add model configuration section to settings page`
 - **Bisect note**: N/A
+- **Implementation notes**: Added ModelSelector import and rendered it in a "Model Configuration" section at the top of the settings page. Restructured page with `<section>` elements, descriptive subheadings, and consistent spacing (`space-y-8` between sections, `space-y-4` within). Existing key/value UI moved into a "Custom Settings" section below.
+- **Validation results**: Lint passed (0 errors), type check passed (no errors). Skipped `pnpm run package` consistent with prior phases.
 
 ## Phase Status Legend
 
@@ -111,5 +113,5 @@
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 5
-- **Progress**: 4/5
+- **Current Phase**: All phases complete
+- **Progress**: 5/5
