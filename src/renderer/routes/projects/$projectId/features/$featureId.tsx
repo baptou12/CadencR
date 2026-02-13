@@ -20,6 +20,7 @@ import { useAgentState, useAgentEventListener } from "@/hooks/useAgentState";
 import { useFeatureState, type FeatureStatus } from "@/hooks/useFeatureState";
 import type { AgentBlockData } from "@/components/AgentBlock";
 import type { AgentType } from "../../../../../main/agents/types";
+import { PlanSidebar } from "@/components/PlanSidebar";
 
 export const Route = createFileRoute(
   "/projects/$projectId/features/$featureId",
@@ -683,7 +684,8 @@ function FeaturePage() {
         featureId={numericFeatureId}
         projectId={numericProjectId}
       />
-      <div className="flex-1 overflow-auto p-6">
+      <div className="flex flex-1 min-h-0">
+      <div className="flex-1 min-w-0 overflow-auto p-6">
         {/* Draft view with no agent output: show description input */}
         {view === "plan-input" && (
           <div className="mx-auto max-w-2xl space-y-4">
@@ -920,6 +922,8 @@ function FeaturePage() {
             </div>
           </div>
         )}
+      </div>
+      <PlanSidebar featureId={numericFeatureId} />
       </div>
     </div>
   );

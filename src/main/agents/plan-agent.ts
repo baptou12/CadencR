@@ -265,7 +265,7 @@ export function parsePlanOutput(output: string): ParsedPlan | null {
 
   // Extract phases
   const phaseRegex =
-    /###\s+Phase\s+(\d+):\s*(.+?)(?=\n###\s+Phase|\n---PLAN_END---|$)/gs;
+    /###\s+Phase\s+(\d+):\s*([^\n]+)([\s\S]*?)(?=\n###\s+Phase|\n---PLAN_END---|$)/g;
   const phases: ParsedPhase[] = [];
 
   let match;

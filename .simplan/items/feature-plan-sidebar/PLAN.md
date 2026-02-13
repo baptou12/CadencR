@@ -79,15 +79,17 @@
 - **Implementation notes**: Created PlanSidebar with `featureId` prop querying `getPlanWithPhases`. Returns null when no plan. Uses ScrollArea for phase list with PhaseCard components. Fullscreen Dialog shows status icon+badge, complexity badge, full markdown content via Markdown component, and commit message in a styled code block. Reused statusConfig pattern from PhaseCard for consistency. Sidebar is 320px wide (`w-80`) with border-l separator.
 - **Validation results**: Lint passes (0 errors), TypeScript compiles (no type errors). Build validation skipped (additive-only change, no callers yet).
 
-### ⬜ Phase 4: Integrate PlanSidebar into feature page
+### ✅ Phase 4: Integrate PlanSidebar into feature page
 - **Step**: 4
 - **Complexity**: 2
-- [ ] Modify feature page layout: wrap existing content in a flex row — left side (flex-1, min-w-0) for current content, right side (fixed width ~320px) for `<PlanSidebar featureId={...} />`
-- [ ] PlanSidebar returns null when no plan exists, so layout is unchanged for draft features
-- [ ] Ensure the sidebar is full-height and independently scrollable (the main content area should still scroll independently)
+- [x] Modify feature page layout: wrap existing content in a flex row — left side (flex-1, min-w-0) for current content, right side (fixed width ~320px) for `<PlanSidebar featureId={...} />`
+- [x] PlanSidebar returns null when no plan exists, so layout is unchanged for draft features
+- [x] Ensure the sidebar is full-height and independently scrollable (the main content area should still scroll independently)
 - **Files**: `src/renderer/routes/projects/$projectId/features/$featureId.tsx`
 - **Commit message**: `feat: integrate plan sidebar into feature page layout`
 - **Bisect note**: Must include PlanSidebar import and usage together; layout change is self-contained
+- **Implementation notes**: Added a flex row wrapper (`flex flex-1 min-h-0`) around the content area and sidebar. Left side uses `flex-1 min-w-0 overflow-auto` for independent scrolling. PlanSidebar is placed as a sibling and handles its own width (w-80) and scrolling internally. When no plan exists, PlanSidebar returns null so the layout remains single-column.
+- **Validation results**: Lint passes (0 errors), TypeScript compiles (no type errors).
 
 ## Phase Status Legend
 
@@ -98,5 +100,5 @@
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 4
-- **Progress**: 3/4
+- **Current Phase**: All phases complete
+- **Progress**: 4/4

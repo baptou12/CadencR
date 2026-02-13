@@ -6,6 +6,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Markdown } from "@/components/Markdown";
@@ -18,12 +19,12 @@ interface PlanSidebarProps {
   featureId: number;
 }
 
-const statusConfig: Record<string, { icon: React.ElementType; className: string; label: string }> = {
-  pending: { icon: CircleIcon, className: "text-muted-foreground", label: "Pending" },
-  running: { icon: Loader2, className: "text-[var(--drac-orange)] animate-spin", label: "Running" },
-  completed: { icon: CheckCircle2, className: "text-[var(--drac-green)]", label: "Completed" },
-  done: { icon: CheckCircle2, className: "text-[var(--drac-green)]", label: "Done" },
-  error: { icon: XCircle, className: "text-[var(--drac-red)]", label: "Error" },
+const statusConfig: Record<string, { icon: React.ElementType; className: string; badgeClassName: string; label: string }> = {
+  pending: { icon: CircleIcon, className: "text-muted-foreground", badgeClassName: "bg-muted text-foreground", label: "Pending" },
+  running: { icon: Loader2, className: "text-[var(--drac-orange)] animate-spin", badgeClassName: "bg-[var(--drac-orange)]/20 text-[var(--drac-orange)]", label: "Running" },
+  completed: { icon: CheckCircle2, className: "text-[var(--drac-green)]", badgeClassName: "bg-[var(--drac-green)]/20 text-[var(--drac-green)]", label: "Completed" },
+  done: { icon: CheckCircle2, className: "text-[var(--drac-green)]", badgeClassName: "bg-[var(--drac-green)]/20 text-[var(--drac-green)]", label: "Done" },
+  error: { icon: XCircle, className: "text-[var(--drac-red)]", badgeClassName: "bg-[var(--drac-red)]/20 text-[var(--drac-red)]", label: "Error" },
 };
 
 export function PlanSidebar({ featureId }: PlanSidebarProps) {
@@ -61,7 +62,7 @@ export function PlanSidebar({ featureId }: PlanSidebarProps) {
         onOpenChange={(open) => { if (!open) setExpandedPhase(null); }}
       >
         {expandedPhase && config && (
-          <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
+          <DialogContent className="!max-w-[90vw] !w-[90vw] !max-h-[90vh] flex flex-col">
             <DialogHeader>
               <div className="flex items-center gap-3">
                 {(() => {
@@ -72,8 +73,11 @@ export function PlanSidebar({ featureId }: PlanSidebarProps) {
                   Phase {expandedPhase.step_number}: {expandedPhase.title}
                 </DialogTitle>
               </div>
+              <DialogDescription className="sr-only">
+                Phase {expandedPhase.step_number} details
+              </DialogDescription>
               <div className="flex items-center gap-2 mt-1">
-                <Badge variant="secondary" className={config.className}>
+                <Badge variant="secondary" className={config.badgeClassName}>
                   {config.label}
                 </Badge>
                 {expandedPhase.complexity != null && (

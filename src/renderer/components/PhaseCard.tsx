@@ -19,12 +19,12 @@ interface PhaseCardProps {
   onExpand: (phase: PhaseData) => void;
 }
 
-const statusConfig: Record<string, { icon: React.ElementType; className: string; label: string }> = {
-  pending: { icon: CircleIcon, className: "text-muted-foreground", label: "Pending" },
-  running: { icon: Loader2, className: "text-[var(--drac-orange)] animate-spin", label: "Running" },
-  completed: { icon: CheckCircle2, className: "text-[var(--drac-green)]", label: "Completed" },
-  done: { icon: CheckCircle2, className: "text-[var(--drac-green)]", label: "Done" },
-  error: { icon: XCircle, className: "text-[var(--drac-red)]", label: "Error" },
+const statusConfig: Record<string, { icon: React.ElementType; className: string; badgeClassName: string; label: string }> = {
+  pending: { icon: CircleIcon, className: "text-muted-foreground", badgeClassName: "bg-muted text-foreground", label: "Pending" },
+  running: { icon: Loader2, className: "text-[var(--drac-orange)] animate-spin", badgeClassName: "bg-[var(--drac-orange)]/20 text-[var(--drac-orange)]", label: "Running" },
+  completed: { icon: CheckCircle2, className: "text-[var(--drac-green)]", badgeClassName: "bg-[var(--drac-green)]/20 text-[var(--drac-green)]", label: "Completed" },
+  done: { icon: CheckCircle2, className: "text-[var(--drac-green)]", badgeClassName: "bg-[var(--drac-green)]/20 text-[var(--drac-green)]", label: "Done" },
+  error: { icon: XCircle, className: "text-[var(--drac-red)]", badgeClassName: "bg-[var(--drac-red)]/20 text-[var(--drac-red)]", label: "Error" },
 };
 
 export function PhaseCard({ phase, onExpand }: PhaseCardProps) {
@@ -42,8 +42,7 @@ export function PhaseCard({ phase, onExpand }: PhaseCardProps) {
           <span
             className={cn(
               "rounded-full px-1.5 py-0.5 text-[10px] font-medium leading-none",
-              config.className,
-              "bg-muted",
+              config.badgeClassName,
             )}
           >
             {config.label}
