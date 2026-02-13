@@ -102,7 +102,29 @@ export function FeatureList({
   });
 
   const deleteMutation = trpc.features.delete.useMutation({
-    onSuccess: invalidateFeatures,
+    onSuccess: (_data, variables) => {
+      const deletedId = variables.id;
+
+      // If the deleted feature/session was currently viewed, navigate away
+      if (deletedId === selectedFeatureId) {
+        const idx = features.findIndex((f) => f.id === deletedId);
+        const next = features[idx + 1] ?? features[idx - 1];
+
+        if (next) {
+          void navigate({
+            to: "/projects/$projectId/features/$featureId",
+            params: {
+              projectId: String(projectId),
+              featureId: String(next.id),
+            },
+          });
+        } else {
+          void navigate({ to: "/" });
+        }
+      }
+
+      invalidateFeatures();
+    },
   });
 
   const handleCreate = () => {
