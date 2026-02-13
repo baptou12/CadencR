@@ -65,9 +65,15 @@ export const featuresRouter = router({
           db.prepare(
             "INSERT INTO feature_settings (feature_id, key, value) VALUES (?, ?, ?) ON CONFLICT(feature_id, key) DO UPDATE SET value = excluded.value",
           ).run(featureId, "worktree_branch", wt.branch);
-        } catch {
+        } catch (err: unknown) {
           // Worktree creation is best-effort — don't fail feature creation
-          console.warn("Failed to create worktree for feature:", input.title);
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          console.error("Failed to create worktree for feature:", input.title, errorMessage);
+
+          // Store the error so the UI can display it
+          db.prepare(
+            "INSERT INTO feature_settings (feature_id, key, value) VALUES (?, ?, ?) ON CONFLICT(feature_id, key) DO UPDATE SET value = excluded.value",
+          ).run(featureId, "worktree_error", errorMessage);
         }
       }
 

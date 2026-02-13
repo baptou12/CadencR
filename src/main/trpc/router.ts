@@ -78,6 +78,40 @@ const settingsRouter = router({
     }),
 });
 
+/** Resolve the working directory for an agent, preferring worktree path over project path. */
+function resolveAgentCwd(featureId: number, projectId: number): string {
+  const db = getDatabase();
+
+  const wtRow = db
+    .prepare(
+      "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
+    )
+    .get(featureId) as SettingRow | undefined;
+
+  const project = db
+    .prepare("SELECT path FROM projects WHERE id = ?")
+    .get(projectId) as Pick<ProjectRow, "path"> | undefined;
+
+  if (!wtRow) {
+    // Check if there was a worktree creation error
+    const errorRow = db
+      .prepare(
+        "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_error'",
+      )
+      .get(featureId) as SettingRow | undefined;
+
+    if (errorRow) {
+      console.warn(
+        `Worktree not available for feature ${featureId}, falling back to project path. Worktree error: ${errorRow.value}`,
+      );
+    }
+  }
+
+  const cwd = wtRow?.value ?? project?.path;
+  if (!cwd) throw new Error("No working directory found for this feature");
+  return cwd;
+}
+
 const agentTypeSchema = z.enum(["plan", "brainstorm", "execute", "risk", "review"]);
 
 const agentsRouter = router({
@@ -180,21 +214,7 @@ const agentsRouter = router({
       }),
     )
     .mutation(({ input }) => {
-      const db = getDatabase();
-
-      // Determine working directory: use worktree path if available, else project path
-      const wtRow = db
-        .prepare(
-          "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
-        )
-        .get(input.featureId) as SettingRow | undefined;
-
-      const project = db
-        .prepare("SELECT path FROM projects WHERE id = ?")
-        .get(input.projectId) as Pick<ProjectRow, "path"> | undefined;
-
-      const cwd = wtRow?.value ?? project?.path;
-      if (!cwd) throw new Error("No working directory found for this feature");
+      const cwd = resolveAgentCwd(input.featureId, input.projectId);
 
       const result = startPlanAgent({
         featureId: input.featureId,
@@ -216,21 +236,7 @@ const agentsRouter = router({
       }),
     )
     .mutation(({ input }) => {
-      const db = getDatabase();
-
-      // Determine working directory: use worktree path if available, else project path
-      const wtRow = db
-        .prepare(
-          "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
-        )
-        .get(input.featureId) as SettingRow | undefined;
-
-      const project = db
-        .prepare("SELECT path FROM projects WHERE id = ?")
-        .get(input.projectId) as Pick<ProjectRow, "path"> | undefined;
-
-      const cwd = wtRow?.value ?? project?.path;
-      if (!cwd) throw new Error("No working directory found for this feature");
+      const cwd = resolveAgentCwd(input.featureId, input.projectId);
 
       const result = startBrainstormAgent({
         featureId: input.featureId,
@@ -251,21 +257,7 @@ const agentsRouter = router({
       }),
     )
     .mutation(({ input }) => {
-      const db = getDatabase();
-
-      // Determine working directory
-      const wtRow = db
-        .prepare(
-          "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
-        )
-        .get(input.featureId) as SettingRow | undefined;
-
-      const project = db
-        .prepare("SELECT path FROM projects WHERE id = ?")
-        .get(input.projectId) as Pick<ProjectRow, "path"> | undefined;
-
-      const cwd = wtRow?.value ?? project?.path;
-      if (!cwd) throw new Error("No working directory found for this feature");
+      const cwd = resolveAgentCwd(input.featureId, input.projectId);
 
       const result = startExecuteAgent({
         featureId: input.featureId,
@@ -285,21 +277,7 @@ const agentsRouter = router({
       }),
     )
     .mutation(({ input }) => {
-      const db = getDatabase();
-
-      // Determine working directory
-      const wtRow = db
-        .prepare(
-          "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
-        )
-        .get(input.featureId) as SettingRow | undefined;
-
-      const project = db
-        .prepare("SELECT path FROM projects WHERE id = ?")
-        .get(input.projectId) as Pick<ProjectRow, "path"> | undefined;
-
-      const cwd = wtRow?.value ?? project?.path;
-      if (!cwd) throw new Error("No working directory found for this feature");
+      const cwd = resolveAgentCwd(input.featureId, input.projectId);
 
       const result = startRiskAgent({
         featureId: input.featureId,
@@ -319,21 +297,7 @@ const agentsRouter = router({
       }),
     )
     .mutation(({ input }) => {
-      const db = getDatabase();
-
-      // Determine working directory
-      const wtRow = db
-        .prepare(
-          "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
-        )
-        .get(input.featureId) as SettingRow | undefined;
-
-      const project = db
-        .prepare("SELECT path FROM projects WHERE id = ?")
-        .get(input.projectId) as Pick<ProjectRow, "path"> | undefined;
-
-      const cwd = wtRow?.value ?? project?.path;
-      if (!cwd) throw new Error("No working directory found for this feature");
+      const cwd = resolveAgentCwd(input.featureId, input.projectId);
 
       const result = startReviewAgent({
         featureId: input.featureId,

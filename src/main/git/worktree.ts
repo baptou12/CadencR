@@ -18,6 +18,26 @@ export function createWorktree(
   branchName: string,
   projectName: string,
 ): { worktreePath: string; branch: string } {
+  // Pre-flight: verify repoPath is a git repo
+  try {
+    execSync("git rev-parse --git-dir", {
+      cwd: repoPath,
+      stdio: "pipe",
+      encoding: "utf-8",
+    });
+  } catch {
+    throw new Error(
+      `Not a git repository: ${repoPath}. Ensure the project path points to a valid git repo.`,
+    );
+  }
+
+  // Pre-flight: verify branch name is valid
+  if (!branchName || /[\s~^:?*[\\]/.test(branchName)) {
+    throw new Error(
+      `Invalid branch name: "${branchName}". Branch names cannot contain spaces or special characters like ~ ^ : ? * [ \\`,
+    );
+  }
+
   // Sanitize branch name for use in directory names
   const safeBranch = branchName.replace(/\//g, "-");
   const worktreePath = path.join(os.homedir(), ".productdevr", projectName, safeBranch);

@@ -32,15 +32,17 @@ Key files:
 
 ## Phases
 
-### ⬜ Phase 1: Add error logging and fix silent failure in worktree creation
+### ✅ Phase 1: Add error logging and fix silent failure in worktree creation
 - **Step**: 1
 - **Complexity**: 3
-- [ ] In `features.ts` create mutation: log the actual error in the catch block (not just a warn), and store a `worktree_error` key in `feature_settings` with the error message so the UI can display it
-- [ ] In `worktree.ts` `createWorktree`: add pre-flight checks — verify `repoPath` is a git repo (`git rev-parse --git-dir`), verify branch name is valid, log meaningful errors
-- [ ] In `router.ts` agent launch methods: when `wtRow` is missing, check for `worktree_error` in feature_settings and include it in the thrown error message
+- [x] In `features.ts` create mutation: log the actual error in the catch block (not just a warn), and store a `worktree_error` key in `feature_settings` with the error message so the UI can display it
+- [x] In `worktree.ts` `createWorktree`: add pre-flight checks — verify `repoPath` is a git repo (`git rev-parse --git-dir`), verify branch name is valid, log meaningful errors
+- [x] In `router.ts` agent launch methods: when `wtRow` is missing, check for `worktree_error` in feature_settings and include it in the thrown error message
 - **Files**: `src/main/trpc/features.ts`, `src/main/git/worktree.ts`, `src/main/trpc/router.ts`
 - **Commit message**: `fix: add error logging and diagnostics to worktree creation`
 - **Bisect note**: N/A — all changes are additive error handling
+- **Implementation notes**: Changed catch block in features.ts to capture error, log with console.error, and persist to feature_settings as `worktree_error`. Added git rev-parse and branch name regex validation as pre-flight checks in worktree.ts createWorktree. Extracted `resolveAgentCwd` helper in router.ts that checks for `worktree_error` when worktree path is missing and logs a warning; replaced all 5 agent launcher cwd-resolution blocks with this helper.
+- **Validation results**: `pnpm run lint` passed (0 errors). `npx tsc --noEmit` passed (0 errors). Initial lint had an unnecessary escape in the branch name regex which was fixed.
 
 ### ⬜ Phase 2: Surface worktree errors in UI and add retry
 - **Step**: 2
@@ -61,5 +63,5 @@ Key files:
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Not started
-- **Progress**: 0/2
+- **Current Phase**: Phase 2
+- **Progress**: 1/2
