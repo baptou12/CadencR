@@ -46,6 +46,16 @@ function FeaturePage() {
   const risk = useAgentState();
   const review = useAgentState();
 
+  // Reset agent states when switching features
+  useEffect(() => {
+    plan.reset();
+    brainstorm.reset();
+    execute.reset();
+    risk.reset();
+    review.reset();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [numericFeatureId]);
+
   // Query for incomplete sessions that can be resumed
   const incompleteQuery = trpc.agents.getIncompleteSessions.useQuery({
     featureId: numericFeatureId,
