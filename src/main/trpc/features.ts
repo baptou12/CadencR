@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { router, publicProcedure } from "./trpc";
 import { getDatabase } from "../db/database";
-import type { FeatureRow, ProjectRow, PlanRow, CountRow, SettingRow } from "../db/types";
+import type { FeatureRow, ProjectRow, PlanRow, PhaseRow, CountRow, SettingRow } from "../db/types";
 import { createWorktree, buildBranchName } from "../git/worktree";
 
 export const FEATURE_STATUSES = ["draft", "planned", "in-progress", "review", "done"] as const;
@@ -143,6 +143,24 @@ export const featuresRouter = router({
           .get(plan.id) as CountRow
       ).count;
       return { total, done };
+    }),
+
+  getPlanWithPhases: publicProcedure
+    .input(z.object({ feature_id: z.number() }))
+    .query(({ input }) => {
+      const db = getDatabase();
+      const plan = db
+        .prepare(
+          "SELECT id, feature_id, title, status, raw_markdown, created_at, updated_at FROM plans WHERE feature_id = ? ORDER BY created_at DESC LIMIT 1",
+        )
+        .get(input.feature_id) as PlanRow | undefined;
+      if (!plan) return null;
+      const phases = db
+        .prepare(
+          "SELECT id, plan_id, step_number, title, status, complexity, commit_message, prompt, order_index FROM phases WHERE plan_id = ? ORDER BY step_number ASC, order_index ASC",
+        )
+        .all(plan.id) as PhaseRow[];
+      return { ...plan, phases };
     }),
 
   getSettings: publicProcedure

@@ -86,6 +86,12 @@ export interface AgentMessageRow {
   created_at: string;
 }
 
+// -- composite types --
+
+export interface PlanWithPhases extends PlanRow {
+  phases: PhaseRow[];
+}
+
 // -- utility pick types for partial selects --
 
 /** For `SELECT COUNT(*) as count` queries */

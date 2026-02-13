@@ -38,15 +38,17 @@
 
 ## Phases
 
-### ⬜ Phase 1: Add tRPC route for plan with phases
+### ✅ Phase 1: Add tRPC route for plan with phases
 - **Step**: 1
 - **Complexity**: 2
-- [ ] Add `getPlanWithPhases` query to `featuresRouter` in `src/main/trpc/features.ts` — takes `feature_id`, returns the latest plan row with all its phases (ordered by `step_number`, `order_index`)
-- [ ] Add return type to `src/main/db/types.ts` if needed (e.g. `PlanWithPhases`)
-- [ ] Update `useDbUpdated` hook to invalidate `features.getPlanWithPhases` on `phase` and `plan` entity changes
+- [x] Add `getPlanWithPhases` query to `featuresRouter` in `src/main/trpc/features.ts` — takes `feature_id`, returns the latest plan row with all its phases (ordered by `step_number`, `order_index`)
+- [x] Add return type to `src/main/db/types.ts` if needed (e.g. `PlanWithPhases`)
+- [x] Update `useDbUpdated` hook to invalidate `features.getPlanWithPhases` on `phase` and `plan` entity changes
 - **Files**: `src/main/trpc/features.ts`, `src/main/db/types.ts`, `src/renderer/hooks/useDbUpdated.ts`
 - **Commit message**: `feat: add getPlanWithPhases tRPC query for plan sidebar`
 - **Bisect note**: N/A — new query, no callers yet
+- **Implementation notes**: Added `PlanWithPhases` interface extending `PlanRow` with `phases: PhaseRow[]`. Query fetches latest plan by `created_at DESC` and all phases ordered by `step_number ASC, order_index ASC`. Returns `null` when no plan exists. Added invalidation for both `phase` and `plan` entity changes in `useDbUpdated`.
+- **Validation results**: Lint passes (0 errors), TypeScript compiles (no type errors). Build validation skipped (additive-only change).
 
 ### ⬜ Phase 2: Create PhaseCard component
 - **Step**: 2
@@ -92,5 +94,5 @@
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Not started
-- **Progress**: 0/4
+- **Current Phase**: Phase 2
+- **Progress**: 1/4

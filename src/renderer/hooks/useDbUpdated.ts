@@ -32,9 +32,11 @@ export function useDbUpdated() {
           break;
         case "phase":
           void utils.features.getProgress.invalidate({ feature_id: featureId });
+          void utils.features.getPlanWithPhases.invalidate({ feature_id: featureId });
           break;
         case "plan":
           void utils.features.getProgress.invalidate({ feature_id: featureId });
+          void utils.features.getPlanWithPhases.invalidate({ feature_id: featureId });
           break;
         case "agent_session":
           void utils.agents.getActiveFeatureIds.invalidate();
