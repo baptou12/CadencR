@@ -72,27 +72,31 @@ Features are created via `features.create` mutation, which also sets up a git wo
 - **Implementation notes**: Added `createSession` mutation to features router (counts existing sessions per project, auto-titles "Session N", inserts with type='session', no worktree). Added `startSession` mutation to agents router (resolves project path, calls `startSessionAgent`). Updated `agentTypeSchema` to include "session". Updated all feature SELECT queries to include `type` column. Added "session" to agent type enums in model settings. Existing `interrupt`, `sendMessage`, `getHistory` work unchanged for session agents via subprocess manager.
 - **Validation results**: Lint passes (0 warnings, 0 errors). Type check has 2 errors in renderer files (`AgentPanel.tsx`, `agent-icons.ts`) that need "session" added to their Record types -- these files are outside this phase's scope and will be addressed by UI phases.
 
-### ⬜ Phase 4: Add dropdown menu to ProjectList
+### ✅ Phase 4: Add dropdown menu to ProjectList
 - **Step**: 3
 - **Complexity**: 2
-- [ ] Replace the delete icon on project hover with a dropdown menu (using shadcn DropdownMenu)
-- [ ] Dropdown options: "New Feature" (opens existing dialog) and "New Session" (calls `features.createSession` and navigates to session page)
-- [ ] Move project delete into the dropdown as well (with a separator)
+- [x] Replace the delete icon on project hover with a dropdown menu (using shadcn DropdownMenu)
+- [x] Dropdown options: "New Session" (calls `features.createSession` and navigates to session page) — "New Feature" omitted as it belongs in FeatureList
+- [x] Move project delete into the dropdown as well (with a separator)
 - **Files**: `src/renderer/components/ProjectList.tsx`
 - **Commit message**: `feat: add dropdown menu on projects with new session option`
 - **Bisect note**: N/A
+- **Implementation notes**: Installed shadcn dropdown-menu component. Replaced Trash2 icon with Ellipsis icon trigger for DropdownMenu. Added "New Session" item (calls `features.createSession` mutation, navigates on success) and "Delete Project" item (with separator, styled with destructive color). Used `features.listByProject.invalidate()` for cache invalidation after session creation.
+- **Validation results**: Lint passes (0 warnings, 0 errors). Type check passes (no errors).
 
-### ⬜ Phase 5: Create session page route
+### ✅ Phase 5: Create session page route
 - **Step**: 3
 - **Complexity**: 3
-- [ ] Create route file for session page (reuse the existing feature route path — the feature page will detect `type='session'` and render differently)
-- [ ] Alternatively, add a conditional render in the existing `$featureId.tsx` page: if feature type is `'session'`, render a simplified layout with just a single AgentPanel + AgentPromptBar
-- [ ] Session page layout: title bar at top, scrollable AgentStream in the middle, AgentPromptBar at bottom
-- [ ] On mount: check for incomplete session → show resume option. Otherwise show prompt bar to start.
-- [ ] Wire up: send message starts/resumes session, pause button interrupts, prompt bar sends follow-up messages
+- [x] Create route file for session page (reuse the existing feature route path — the feature page will detect `type='session'` and render differently)
+- [x] Alternatively, add a conditional render in the existing `$featureId.tsx` page: if feature type is `'session'`, render a simplified layout with just a single AgentPanel + AgentPromptBar
+- [x] Session page layout: title bar at top, scrollable AgentStream in the middle, AgentPromptBar at bottom
+- [x] On mount: check for incomplete session → show resume option. Otherwise show prompt bar to start.
+- [x] Wire up: send message starts/resumes session, pause button interrupts, prompt bar sends follow-up messages
 - **Files**: `src/renderer/routes/projects/$projectId/features/$featureId.tsx`
 - **Commit message**: `feat: add session view in feature page for free-form Claude sessions`
 - **Bisect note**: Must have Phase 3 endpoints available
+- **Implementation notes**: Refactored FeaturePage into three components: (1) `SessionView` - self-contained component with its own hooks for free-form sessions, (2) `FeaturePage` - thin router that queries feature and conditionally renders SessionView or FeatureWorkflowView based on `feature.type`, (3) `FeatureWorkflowView` - receives feature data as props and contains all existing workflow logic. SessionView uses `useAgentState`, `useAgentEventListener`, and the `AgentStream`/`AgentPromptBar` components. It supports: starting new sessions via `agents.startSession`, resuming incomplete sessions via `agents.resume`, follow-up messages via `agents.sendMessage`, and interrupting via `agents.interrupt`. History is loaded from completed sessions on mount.
+- **Validation results**: Lint passes (0 warnings, 0 errors). Type check passes (no errors).
 
 ### ⬜ Phase 6: Distinguish sessions in FeatureList sidebar
 - **Step**: 4
@@ -124,5 +128,5 @@ Features are created via `features.create` mutation, which also sets up a git wo
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 4
-- **Progress**: 3/7
+- **Current Phase**: Phase 6
+- **Progress**: 5/7

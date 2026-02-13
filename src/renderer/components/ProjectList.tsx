@@ -1,7 +1,15 @@
-import { Plus, Trash2 } from "lucide-react";
+import { Ellipsis, Plus } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
 import { trpc } from "@/trpc";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface ProjectListProps {
   selectedProjectId: number | null;
@@ -13,6 +21,7 @@ export function ProjectList({
   onSelectProject,
 }: ProjectListProps) {
   const utils = trpc.useUtils();
+  const navigate = useNavigate();
   const projectsQuery = trpc.projects.list.useQuery();
   const selectFolderMutation = trpc.projects.selectFolder.useMutation();
   const createMutation = trpc.projects.create.useMutation({
@@ -23,6 +32,18 @@ export function ProjectList({
   const deleteMutation = trpc.projects.delete.useMutation({
     onSuccess: () => {
       void utils.projects.list.invalidate();
+    },
+  });
+  const createSessionMutation = trpc.features.createSession.useMutation({
+    onSuccess: (data, variables) => {
+      void utils.features.listByProject.invalidate();
+      void navigate({
+        to: "/projects/$projectId/features/$featureId",
+        params: {
+          projectId: String(variables.project_id),
+          featureId: String(data.id),
+        },
+      });
     },
   });
 
@@ -37,6 +58,11 @@ export function ProjectList({
   const handleDelete = (e: React.MouseEvent, id: number) => {
     e.stopPropagation();
     deleteMutation.mutate({ id });
+  };
+
+  const handleNewSession = (e: React.MouseEvent, projectId: number) => {
+    e.stopPropagation();
+    createSessionMutation.mutate({ project_id: projectId });
   };
 
   return (
@@ -68,15 +94,32 @@ export function ProjectList({
               }`}
             >
               <span className="truncate">{project.name}</span>
-              <span
-                role="button"
-                tabIndex={0}
-                className="inline-flex h-6 w-6 items-center justify-center rounded-md opacity-0 group-hover:opacity-100 hover:bg-accent"
-                onClick={(e) => handleDelete(e, project.id)}
-                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleDelete(e as unknown as React.MouseEvent, project.id); }}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </span>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    className="inline-flex h-6 w-6 items-center justify-center rounded-md opacity-0 group-hover:opacity-100 hover:bg-accent"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <Ellipsis className="h-3.5 w-3.5" />
+                  </span>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    onClick={(e) => handleNewSession(e, project.id)}
+                  >
+                    New Session
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    className="text-destructive focus:text-destructive"
+                    onClick={(e) => handleDelete(e, project.id)}
+                  >
+                    Delete Project
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </button>
           ))}
           {projects.length === 0 && (
