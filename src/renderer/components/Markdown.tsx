@@ -6,22 +6,22 @@ import { CodeIcon } from "lucide-react";
 
 const components: Components = {
   h1: ({ children }) => (
-    <h1 className="text-lg font-bold mt-4 mb-2">{children}</h1>
+    <h1 className="text-2xl font-bold mt-5 mb-2 text-[var(--drac-purple)]">{children}</h1>
   ),
   h2: ({ children }) => (
-    <h2 className="text-base font-bold mt-3 mb-1.5">{children}</h2>
+    <h2 className="text-xl font-bold mt-4 mb-2 text-[var(--drac-cyan)]">{children}</h2>
   ),
   h3: ({ children }) => (
-    <h3 className="text-sm font-semibold mt-2 mb-1">{children}</h3>
+    <h3 className="text-lg font-semibold mt-3 mb-1.5 text-[var(--drac-green)]">{children}</h3>
   ),
   h4: ({ children }) => (
-    <h4 className="text-sm font-semibold mt-2 mb-1">{children}</h4>
+    <h4 className="text-base font-semibold mt-2 mb-1 text-[var(--drac-orange)]">{children}</h4>
   ),
   h5: ({ children }) => (
-    <h5 className="text-xs font-semibold mt-1 mb-0.5">{children}</h5>
+    <h5 className="text-sm font-semibold mt-2 mb-1 text-[var(--drac-pink)]">{children}</h5>
   ),
   h6: ({ children }) => (
-    <h6 className="text-xs font-semibold mt-1 mb-0.5">{children}</h6>
+    <h6 className="text-xs font-semibold mt-1 mb-0.5 text-[var(--drac-yellow)]">{children}</h6>
   ),
   code: ({ className, children, ...props }) => {
     const match = /language-(\w+)/.exec(className || "");
@@ -91,11 +91,15 @@ interface MarkdownProps {
   className?: string;
 }
 
+function preprocessContent(raw: string): string {
+  return raw.replace(/---PLAN_START---|---PLAN_END---/g, "\n---\n");
+}
+
 export function Markdown({ content, className }: MarkdownProps) {
   return (
     <div className={cn("text-sm leading-relaxed text-foreground", className)}>
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
-        {content}
+        {preprocessContent(content)}
       </ReactMarkdown>
     </div>
   );
