@@ -33,6 +33,21 @@ After gathering information, output the plan in the following structured format.
 ## Summary
 <1-3 sentence summary of what will be built>
 
+## Context
+<What you learned about the codebase: key files, patterns, technologies, and constraints relevant to this feature. This helps the executor understand the environment without re-exploring.>
+
+## Clarifications
+<Q&A from the user. List each question you asked and the answer received. If no questions were asked, write "None".>
+
+## Completion Conditions
+<A table of conditions that should be true when the entire plan is complete. Use this format:>
+
+| Condition | Validation Command | Expected Outcome |
+|-----------|-------------------|------------------|
+| <what should be true> | <command to run> | <expected result> |
+
+<If there are no specific validation commands, write "None specified" instead of the table.>
+
 ## Phases
 
 ### Phase <N>: <title>
@@ -156,10 +171,16 @@ function setupPlanCompletionHandler(
       if (parsed) {
         try {
           db.transaction(() => {
-            // Store raw markdown
-            db.prepare("UPDATE plans SET raw_markdown = ?, title = ?, status = 'active' WHERE id = ?").run(
+            // Store raw markdown and parsed sections
+            db.prepare(
+              "UPDATE plans SET raw_markdown = ?, title = ?, summary = ?, context = ?, clarifications = ?, completion_conditions = ?, status = 'active' WHERE id = ?",
+            ).run(
               fullOutput,
               parsed.title,
+              parsed.summary,
+              parsed.context,
+              parsed.clarifications,
+              parsed.completionConditions,
               planId,
             );
 
@@ -228,6 +249,10 @@ function extractTextFromEvent(event: StreamEvent): string | null {
 
 export interface ParsedPlan {
   title: string;
+  summary: string | null;
+  context: string | null;
+  clarifications: string | null;
+  completionConditions: string | null;
   phases: ParsedPhase[];
 }
 
@@ -262,6 +287,23 @@ export function parsePlanOutput(output: string): ParsedPlan | null {
   // Extract title
   const titleMatch = planContent.match(/^#\s+Plan:\s*(.+)$/m);
   const title = titleMatch ? titleMatch[1].trim() : "Untitled Plan";
+
+  // Extract sections between ## headings
+  const extractSection = (heading: string): string | null => {
+    const regex = new RegExp(
+      `^##\\s+${heading}\\s*\\n([\\s\\S]*?)(?=\\n##\\s|$)`,
+      "m",
+    );
+    const m = planContent.match(regex);
+    if (!m) return null;
+    const text = m[1].trim();
+    return text || null;
+  };
+
+  const summary = extractSection("Summary");
+  const context = extractSection("Context");
+  const clarifications = extractSection("Clarifications");
+  const completionConditions = extractSection("Completion Conditions");
 
   // Extract phases
   const phaseRegex =
@@ -302,5 +344,5 @@ export function parsePlanOutput(output: string): ParsedPlan | null {
     return null;
   }
 
-  return { title, phases };
+  return { title, summary, context, clarifications, completionConditions, phases };
 }

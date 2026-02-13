@@ -44,20 +44,22 @@ Current plan format only has `## Summary` and `## Phases`. The phase `prompt` se
 - **Implementation notes**: Added migration 12 with four separate ALTER TABLE statements (SQLite requires one column per ALTER). Added four `string | null` fields to `PlanRow` between `raw_markdown` and `created_at`.
 - **Validation results**: Lint passes (0 errors). Typecheck passes (npx tsc --noEmit, exit 0). Note: `pnpm run typecheck` script does not exist; used `npx tsc --noEmit` directly.
 
-### ⬜ Phase 2: Enrich plan agent prompt and parser
+### ✅ Phase 2: Enrich plan agent prompt and parser
 - **Step**: 2
 - **Complexity**: 3
-- [ ] Update `PLAN_SYSTEM_PROMPT` in `plan-agent.ts` to instruct the agent to output these new sections between the `---PLAN_START---`/`---PLAN_END---` markers:
+- [x] Update `PLAN_SYSTEM_PROMPT` in `plan-agent.ts` to instruct the agent to output these new sections between the `---PLAN_START---`/`---PLAN_END---` markers:
   - `## Summary` (already exists)
   - `## Context` — what the agent learned about the codebase
   - `## Clarifications` — Q&A from the user
   - `## Completion Conditions` — table with Condition / Validation Command / Expected Outcome (or "None specified")
   - `## Phases` (already exists)
-- [ ] Update `parsePlanOutput()` to extract the new sections from the markdown. Add fields to `ParsedPlan`: `summary`, `context`, `clarifications`, `completionConditions` (all `string | null`)
-- [ ] In `setupPlanCompletionHandler`, store the parsed sections into the new DB columns when saving the plan
+- [x] Update `parsePlanOutput()` to extract the new sections from the markdown. Add fields to `ParsedPlan`: `summary`, `context`, `clarifications`, `completionConditions` (all `string | null`)
+- [x] In `setupPlanCompletionHandler`, store the parsed sections into the new DB columns when saving the plan
 - **Files**: `src/main/agents/plan-agent.ts`
 - **Commit message**: `feat: enrich plan agent prompt with context, clarifications, and completion conditions`
 - **Bisect note**: Depends on Phase 1 columns existing. Parser changes are backward-compatible (new fields are optional).
+- **Implementation notes**: Added Context, Clarifications, and Completion Conditions sections to `PLAN_SYSTEM_PROMPT` template between Summary and Phases. Added `extractSection()` helper in `parsePlanOutput()` that uses a regex to capture content between `## Heading` markers. Added four new fields to `ParsedPlan` interface. Updated the DB UPDATE statement in `setupPlanCompletionHandler` to persist all four new columns.
+- **Validation results**: Lint passes (0 warnings, 0 errors). Type check passes (npx tsc --noEmit, exit 0).
 
 ### ⬜ Phase 3: Enrich execute agent prompts with plan context
 - **Step**: 3
@@ -81,5 +83,5 @@ Current plan format only has `## Summary` and `## Phases`. The phase `prompt` se
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 2
-- **Progress**: 1/3
+- **Current Phase**: Phase 3
+- **Progress**: 2/3
