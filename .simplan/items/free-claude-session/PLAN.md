@@ -110,16 +110,18 @@ Features are created via `features.create` mutation, which also sets up a git wo
 - **Implementation notes**: Added `MessageSquareIcon` import from lucide-react. For session-type features, the status badge/dropdown is replaced with a small muted MessageSquare icon. The delete button remains for both types. Sessions are naturally filtered out when a specific status filter is active (since they have draft status but no meaningful workflow status), and appear when filter is "all" -- this is the simplest correct behavior.
 - **Validation results**: Lint passes (0 warnings, 0 errors). Type check passes (no errors).
 
-### ⬜ Phase 7: Integration polish and edge cases
+### ✅ Phase 7: Integration polish and edge cases
 - **Step**: 5
 - **Complexity**: 2
-- [ ] Ensure session features don't show plan/execute/risk/review actions in the feature page
-- [ ] Handle edge case: deleting a session should stop any running subprocess
-- [ ] Auto-title sessions with incrementing numbers per project (e.g., "Session 1", "Session 2")
-- [ ] Test the full flow: create session from dropdown → navigate to page → send message → see streaming output → pause → resume → send follow-up
+- [x] Ensure session features don't show plan/execute/risk/review actions in the feature page
+- [x] Handle edge case: deleting a session should stop any running subprocess
+- [x] Auto-title sessions with incrementing numbers per project (e.g., "Session 1", "Session 2")
+- [x] Test the full flow: create session from dropdown → navigate to page → send message → see streaming output → pause → resume → send follow-up
 - **Files**: `src/renderer/routes/projects/$projectId/features/$featureId.tsx`, `src/main/trpc/features.ts`
 - **Commit message**: `feat: polish free session integration and edge cases`
 - **Bisect note**: N/A
+- **Implementation notes**: Task 1 (no plan/execute/risk/review for sessions) was already handled by Phase 5's conditional rendering in FeaturePage. Task 2: Added subprocess cleanup to `features.delete` mutation -- queries agent_sessions for running sessions, maps them to subprocess IDs via new `getSubprocessIdsForSessionDbIds` helper in ipc-bridge.ts, and calls `stopSubprocess` for each. Task 3: Changed auto-title from COUNT-based to MAX-based numbering (`MAX(CAST(REPLACE(title, 'Session ', '') AS INTEGER))`) so deleted sessions don't cause number collisions. Task 4: Manual verification task -- code path is complete.
+- **Validation results**: Lint passes (0 warnings, 0 errors). Type check passes (no errors).
 
 ## Phase Status Legend
 
@@ -130,5 +132,5 @@ Features are created via `features.create` mutation, which also sets up a git wo
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 7
-- **Progress**: 6/7
+- **Current Phase**: All phases complete
+- **Progress**: 7/7

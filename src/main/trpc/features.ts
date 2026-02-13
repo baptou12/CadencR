@@ -5,6 +5,8 @@ import type { FeatureRow, ProjectRow, PlanRow, PhaseRow, CountRow, SettingRow } 
 import type { AgentType } from "../agents/types";
 import { DEFAULT_MODEL } from "../agents/models";
 import { createWorktree, buildBranchName } from "../git/worktree";
+import { getSubprocessIdsForSessionDbIds } from "../agents/ipc-bridge";
+import { stopSubprocess } from "../agents/subprocess-manager";
 
 export const FEATURE_STATUSES = ["draft", "planned", "in-progress", "review", "done"] as const;
 export type FeatureStatus = (typeof FEATURE_STATUSES)[number];
@@ -86,12 +88,13 @@ export const featuresRouter = router({
     .input(z.object({ project_id: z.number() }))
     .mutation(({ input }) => {
       const db = getDatabase();
-      const countRow = db
+      // Use MAX to extract the highest session number so deletions don't cause collisions
+      const maxRow = db
         .prepare(
-          "SELECT COUNT(*) as count FROM features WHERE project_id = ? AND type = 'session'",
+          "SELECT MAX(CAST(REPLACE(title, 'Session ', '') AS INTEGER)) as max_num FROM features WHERE project_id = ? AND type = 'session' AND title LIKE 'Session %'",
         )
-        .get(input.project_id) as { count: number };
-      const title = `Session ${countRow.count + 1}`;
+        .get(input.project_id) as { max_num: number | null };
+      const title = `Session ${(maxRow.max_num ?? 0) + 1}`;
       const result = db
         .prepare("INSERT INTO features (project_id, title, type) VALUES (?, ?, 'session')")
         .run(input.project_id, title);
@@ -108,6 +111,16 @@ export const featuresRouter = router({
 
   delete: publicProcedure.input(z.object({ id: z.number() })).mutation(({ input }) => {
     const db = getDatabase();
+    // Stop any running subprocesses for this feature's agent sessions
+    const sessionIds = db
+      .prepare("SELECT id FROM agent_sessions WHERE feature_id = ? AND status = 'running'")
+      .all(input.id) as { id: number }[];
+    if (sessionIds.length > 0) {
+      const subprocessIds = getSubprocessIdsForSessionDbIds(sessionIds.map((s) => s.id));
+      for (const spId of subprocessIds) {
+        try { stopSubprocess(spId); } catch { /* best effort */ }
+      }
+    }
     // Delete child records that reference this feature
     const planIds = db.prepare("SELECT id FROM plans WHERE feature_id = ?").all(input.id) as { id: number }[];
     for (const plan of planIds) {

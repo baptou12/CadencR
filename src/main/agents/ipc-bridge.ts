@@ -152,4 +152,21 @@ export function notifyDbUpdated(entity: DbEntity, featureId: number): void {
   }
 }
 
+/**
+ * Find subprocess IDs that are mapped to any of the given session DB IDs.
+ * Used to stop running subprocesses when deleting a feature.
+ */
+export function getSubprocessIdsForSessionDbIds(
+  sessionDbIds: number[],
+): string[] {
+  const result: string[] = [];
+  const idSet = new Set(sessionDbIds);
+  for (const [subprocessId, sessionDbId] of sessionMap.entries()) {
+    if (idSet.has(sessionDbId)) {
+      result.push(subprocessId);
+    }
+  }
+  return result;
+}
+
 export { AGENT_EVENT_CHANNEL, DB_UPDATED_CHANNEL };
