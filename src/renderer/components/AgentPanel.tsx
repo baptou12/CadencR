@@ -15,6 +15,8 @@ export type AgentStatus = "idle" | "running" | "complete" | "error";
 
 interface AgentPanelProps {
   agentType: AgentType;
+  /** Override the default label (e.g. "Execute 1" for parallel phases) */
+  label?: string;
   status: AgentStatus;
   blocks: AgentBlockData[];
   className?: string;
@@ -68,6 +70,7 @@ const STATUS_BADGE: Record<
 
 export function AgentPanel({
   agentType,
+  label,
   status,
   blocks,
   className,
@@ -121,7 +124,7 @@ export function AgentPanel({
           )}
         />
         {createElement(AGENT_ICONS[agentType], { className: "size-4 text-muted-foreground" })}
-        <span className="text-sm font-medium">{AGENT_LABELS[agentType]}</span>
+        <span className="text-sm font-medium">{label ?? AGENT_LABELS[agentType]}</span>
         <Badge variant="secondary" className={cn("gap-1 text-xs", badge.className)}>
           {badge.icon}
           {badge.label}

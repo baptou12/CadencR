@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { FeatureTopBar } from "@/components/FeatureTopBar";
-import { AgentPanel } from "@/components/AgentPanel";
+import { AgentPanel, type AgentStatus } from "@/components/AgentPanel";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/trpc";
@@ -12,6 +12,7 @@ import {
   CheckCircle2Icon,
 } from "lucide-react";
 import { useAgentState, useAgentEventListener } from "@/hooks/useAgentState";
+import { useMultiExecuteState } from "@/hooks/useMultiExecuteState";
 import { useFeatureState, type FeatureStatus } from "@/hooks/useFeatureState";
 import type { AgentBlockData } from "@/components/AgentBlock";
 import type { AgentType } from "../../../../../main/agents/types";
@@ -38,7 +39,7 @@ function FeaturePage() {
   // Agent states
   const plan = useAgentState({ supportsQuestions: true });
   const brainstorm = useAgentState({ supportsQuestions: true });
-  const execute = useAgentState();
+  const execute = useMultiExecuteState();
   const risk = useAgentState();
   const review = useAgentState();
 
@@ -138,10 +139,8 @@ function FeaturePage() {
     "risk",
     "review",
   ] as const;
-  const agentStateMap: Record<
-    string,
-    ReturnType<typeof useAgentState>
-  > = useMemo(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const agentStateMap: Record<string, any> = useMemo(
     () => ({ plan, brainstorm, execute, risk, review }),
     [plan, brainstorm, execute, risk, review],
   );
@@ -305,6 +304,10 @@ function FeaturePage() {
   const stopMutation = trpc.agents.stop.useMutation();
   const sendMessageMutation = trpc.agents.sendMessage.useMutation();
 
+  // Wrap execute event handler to ignore per-subprocess agent_done events.
+  // The execute agent runs multiple subprocesses in parallel; only the
+  // session-level "all done" event (subprocessId starts with "session-") should
+  // mark execution as complete.
   // Wire up IPC event listener
   const eventHandlers = useMemo(
     () => ({
@@ -600,6 +603,22 @@ function FeaturePage() {
   // Per-agent stop handler
   const handleAgentStop = useCallback(
     async (agentType: AgentType) => {
+      if (agentType === "execute") {
+        // Stop all running execute subprocesses
+        for (const id of execute.subprocessIds) {
+          try {
+            await stopMutation.mutateAsync({ id });
+          } catch {
+            // best effort
+          }
+        }
+        execute.setStatus("error");
+        execute.appendBlock({
+          type: "text",
+          content: "\n\nStopped by user.",
+        });
+        return;
+      }
       const state = agentStateMap[agentType];
       const id = state.subprocessId;
       if (!id) return;
@@ -614,7 +633,7 @@ function FeaturePage() {
         content: "\n\nStopped by user.",
       });
     },
-    [agentStateMap, stopMutation],
+    [agentStateMap, execute, stopMutation],
   );
 
   // Feature state machine
@@ -640,32 +659,74 @@ function FeaturePage() {
 
   // Build the list of agents that have output (to show in the vertical list)
   const agentEntries = useMemo(() => {
-    const hasOutput = (state: ReturnType<typeof useAgentState>) =>
+    const hasOutput = (state: { status: string; blocks: AgentBlockData[] }) =>
       state.status !== "idle" || state.blocks.length > 0;
+
+    interface EntryState {
+      status: AgentStatus;
+      blocks: AgentBlockData[];
+      subprocessId?: string | null;
+      pendingQuestions?: Array<{ question: string; options?: Array<{ label: string; description?: string }> }>;
+    }
 
     const entries: Array<{
       type: AgentType;
       label: string;
-      state: ReturnType<typeof useAgentState>;
+      state: EntryState;
     }> = [];
 
     // Planning agents
     if (hasOutput(plan))
-      entries.push({ type: "plan", label: "Plan", state: plan });
+      entries.push({ type: "plan", label: "Plan", state: { status: plan.status, blocks: plan.blocks, subprocessId: plan.subprocessId, pendingQuestions: plan.pendingQuestions } });
     if (hasOutput(brainstorm))
       entries.push({
         type: "brainstorm",
         label: "Brainstorm",
-        state: brainstorm,
+        state: { status: brainstorm.status, blocks: brainstorm.blocks, subprocessId: brainstorm.subprocessId, pendingQuestions: brainstorm.pendingQuestions },
       });
 
-    // Build phase agents
-    if (hasOutput(execute))
-      entries.push({ type: "execute", label: "Execute", state: execute });
+    // Build phase agents — expand parallel execute subprocesses into separate entries
+    const execSubs = execute.subprocessList.filter(
+      (s) => s.subprocessId !== "__global__",
+    );
+    if (execSubs.length > 1) {
+      // Multiple parallel phases — one panel per subprocess
+      for (let i = 0; i < execSubs.length; i++) {
+        const sub = execSubs[i];
+        entries.push({
+          type: "execute",
+          label: `Execute ${i + 1}`,
+          state: {
+            status: sub.status,
+            blocks: sub.blocks,
+            subprocessId: sub.subprocessId,
+          },
+        });
+      }
+    } else if (hasOutput(execute)) {
+      // Single phase or merged view
+      entries.push({ type: "execute", label: "Execute", state: { status: execute.status, blocks: execute.blocks, subprocessId: execute.subprocessId } });
+    }
+
+    // Append global blocks (e.g. error messages) if any
+    const globalSub = execute.subprocessList.find(
+      (s) => s.subprocessId === "__global__",
+    );
+    if (globalSub && globalSub.blocks.length > 0 && execSubs.length > 1) {
+      entries.push({
+        type: "execute",
+        label: "Execute",
+        state: {
+          status: execute.status,
+          blocks: globalSub.blocks,
+        },
+      });
+    }
+
     if (hasOutput(risk))
-      entries.push({ type: "risk", label: "Risk", state: risk });
+      entries.push({ type: "risk", label: "Risk", state: { status: risk.status, blocks: risk.blocks, subprocessId: risk.subprocessId } });
     if (hasOutput(review))
-      entries.push({ type: "review", label: "Review", state: review });
+      entries.push({ type: "review", label: "Review", state: { status: review.status, blocks: review.blocks, subprocessId: review.subprocessId } });
 
     return entries;
   }, [plan, brainstorm, execute, risk, review]);
@@ -742,9 +803,10 @@ function FeaturePage() {
           actions.canStartReview) && (
           <div className="space-y-2">
             {agentEntries.map((entry) => (
-              <div key={entry.type}>
+              <div key={entry.label}>
                 <AgentPanel
                   agentType={entry.type}
+                  label={entry.label}
                   status={entry.state.status}
                   blocks={entry.state.blocks}
                   open={
@@ -772,7 +834,14 @@ function FeaturePage() {
                         : undefined
                   }
                   onSend={(message) => handleAgentSend(entry.type, message)}
-                  onStop={() => void handleAgentStop(entry.type)}
+                  onStop={() => {
+                    if (entry.type === "execute" && entry.state.subprocessId) {
+                      // Stop this specific execute subprocess
+                      void stopMutation.mutateAsync({ id: entry.state.subprocessId }).catch(() => {});
+                    } else {
+                      void handleAgentStop(entry.type);
+                    }
+                  }}
                   resumable={
                     (entry.type === "plan" || entry.type === "brainstorm") &&
                     resumableSessions.has(entry.type)

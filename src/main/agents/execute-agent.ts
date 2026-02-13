@@ -15,7 +15,7 @@ import type { PhaseRow, PlanRow, SettingRow } from "../db/types";
 import { startSubprocess, type ManagedSubprocess } from "./subprocess-manager";
 import { bridgeSubprocessToRenderer, notifyDbUpdated } from "./ipc-bridge";
 import { resolveModel } from "./models";
-import type { StreamEvent, StreamContentBlockStart, StreamContentBlockDelta } from "./types";
+import type { AgentEvent, StreamEvent, StreamContentBlockStart, StreamContentBlockDelta } from "./types";
 
 const EXECUTE_SYSTEM_PROMPT = `You are the Execute agent for ProductDevR, responsible for implementing a single phase of a development plan.
 
@@ -120,46 +120,61 @@ export function startExecuteAgent(options: ExecuteAgentOptions): ExecuteAgentRes
   // Sort steps in order
   const sortedSteps = Array.from(stepGroups.keys()).toSorted((a, b) => a - b);
 
-  // Launch execution: steps run sequentially, phases within a step run in parallel
-  const allSubprocessIds: string[] = [];
+  // Launch all phases in the first step immediately so we can return their IDs.
+  // Subsequent steps are kicked off after each step completes.
+  const firstStepNumber = sortedSteps[0];
+  const firstStepPhases = stepGroups.get(firstStepNumber) ?? [];
 
-  void executeStepsSequentially(sortedSteps, stepGroups, options, sessionDbId, autoCommit, allSubprocessIds);
+  const firstStepSubprocessIds: string[] = [];
+  const firstStepPromises = firstStepPhases.map((phase) =>
+    executePhase(phase, options, autoCommit, firstStepSubprocessIds, sessionDbId),
+  );
+
+  // Continue remaining steps asynchronously after first step completes
+  void (async () => {
+    await Promise.allSettled(firstStepPromises);
+
+    for (let i = 1; i < sortedSteps.length; i++) {
+      const stepNumber = sortedSteps[i];
+      const phases = stepGroups.get(stepNumber) ?? [];
+      const stepSubprocessIds: string[] = [];
+      const phasePromises = phases.map((phase) =>
+        executePhase(phase, options, autoCommit, stepSubprocessIds, sessionDbId),
+      );
+      await Promise.allSettled(phasePromises);
+    }
+
+    // All steps complete — update session and broadcast a synthetic "all done" event
+    db.prepare(
+      "UPDATE agent_sessions SET status = 'completed', ended_at = datetime('now') WHERE id = ?",
+    ).run(sessionDbId);
+
+    broadcastExecuteAllDone(sessionDbId);
+  })();
 
   return {
-    subprocessIds: allSubprocessIds,
+    subprocessIds: firstStepSubprocessIds,
     sessionDbId,
   };
 }
 
 /**
- * Execute steps sequentially. Within each step, phases run in parallel.
+ * Broadcast a synthetic event to the renderer indicating all execute phases are done.
  */
-async function executeStepsSequentially(
-  steps: number[],
-  stepGroups: Map<number, PhaseRow[]>,
-  options: ExecuteAgentOptions,
-  sessionDbId: number,
-  autoCommit: boolean,
-  allSubprocessIds: string[],
-): Promise<void> {
-  const db = getDatabase();
-
-  for (const stepNumber of steps) {
-    const phases = stepGroups.get(stepNumber) ?? [];
-
-    // Launch all phases in this step in parallel
-    const phasePromises = phases.map((phase) =>
-      executePhase(phase, options, autoCommit, allSubprocessIds, sessionDbId),
-    );
-
-    // Wait for all phases in this step to complete before moving to next step
-    await Promise.allSettled(phasePromises);
+function broadcastExecuteAllDone(sessionDbId: number): void {
+  const { BrowserWindow } = require("electron") as typeof import("electron");
+  const event: AgentEvent = {
+    subprocessId: `session-${sessionDbId}`,
+    agentType: "execute",
+    event: { type: "agent_done", exitCode: 0 },
+    timestamp: Date.now(),
+  };
+  const AGENT_EVENT_CHANNEL = "agent:event";
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) {
+      win.webContents.send(AGENT_EVENT_CHANNEL, event);
+    }
   }
-
-  // Update session status
-  db.prepare(
-    "UPDATE agent_sessions SET status = 'completed', ended_at = datetime('now') WHERE id = ?",
-  ).run(sessionDbId);
 }
 
 /**

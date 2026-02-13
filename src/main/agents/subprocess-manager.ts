@@ -423,18 +423,31 @@ async function runSdkQuery(
 
     if (managed.status === "running") {
       managed.status = "completed";
+      // Notify completion listeners
+      for (const listener of managed.completionListeners) listener(0);
+      // Broadcast agent_done
+      broadcastEvent(managed.id, managed.agentType, {
+        type: "agent_done",
+        exitCode: 0,
+      });
+    } else if (managed.status === "stopped") {
+      // Notify completion listeners with non-zero exit code
+      for (const listener of managed.completionListeners) listener(1);
+      // Broadcast agent_done with non-zero exit code
+      broadcastEvent(managed.id, managed.agentType, {
+        type: "agent_done",
+        exitCode: 1,
+      });
     }
-
-    // Notify completion listeners
-    for (const listener of managed.completionListeners) listener(0);
-
-    // Broadcast agent_done
-    broadcastEvent(managed.id, managed.agentType, {
-      type: "agent_done",
-      exitCode: 0,
-    });
   } catch (err) {
-    if (managed.status !== "stopped") {
+    if (managed.status === "stopped") {
+      // Stopped by user — notify with non-zero exit
+      for (const listener of managed.completionListeners) listener(1);
+      broadcastEvent(managed.id, managed.agentType, {
+        type: "agent_done",
+        exitCode: 1,
+      });
+    } else {
       managed.status = "error";
       broadcastEvent(managed.id, managed.agentType, {
         type: "error",
@@ -443,6 +456,7 @@ async function runSdkQuery(
           message: err instanceof Error ? err.message : String(err),
         },
       });
+      for (const listener of managed.completionListeners) listener(1);
       broadcastEvent(managed.id, managed.agentType, {
         type: "agent_done",
         exitCode: 1,

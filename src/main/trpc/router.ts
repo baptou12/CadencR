@@ -9,7 +9,7 @@ import { discoverClaudeCli } from "../agents/cli-discovery";
 import { DEFAULT_MODEL } from "../agents/models";
 import {
   startSubprocess,
-  killSubprocess,
+  stopSubprocess,
   listSubprocesses,
   submitUserAnswers,
   sendMessageToSubprocess,
@@ -183,8 +183,8 @@ const agentsRouter = router({
   stop: publicProcedure
     .input(z.object({ id: z.string() }))
     .mutation(({ input }) => {
-      const killed = killSubprocess(input.id);
-      return { success: killed };
+      const stopped = stopSubprocess(input.id);
+      return { success: stopped };
     }),
 
   /** Resume a previous agent session */
