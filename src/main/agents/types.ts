@@ -96,6 +96,11 @@ export interface StreamAgentDone {
   exitCode: number | null;
 }
 
+/** Synthetic event emitted when an agent is interrupted/paused */
+export interface StreamAgentPaused {
+  type: "agent_paused";
+}
+
 /** Union of all stream-json event types */
 export type StreamEvent =
   | StreamMessageStart
@@ -108,7 +113,8 @@ export type StreamEvent =
   | StreamError
   | StreamSystemEvent
   | StreamResult
-  | StreamAgentDone;
+  | StreamAgentDone
+  | StreamAgentPaused;
 
 /** Agent event sent to the renderer via IPC */
 export interface AgentEvent {

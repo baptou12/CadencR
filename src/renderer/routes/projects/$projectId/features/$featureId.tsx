@@ -302,6 +302,7 @@ function FeaturePage() {
   const startExecuteForFixMutation = trpc.agents.startExecute.useMutation();
   const submitAnswersMutation = trpc.agents.submitAnswers.useMutation();
   const stopMutation = trpc.agents.stop.useMutation();
+  const interruptMutation = trpc.agents.interrupt.useMutation();
   const sendMessageMutation = trpc.agents.sendMessage.useMutation();
 
   // Wrap execute event handler to ignore per-subprocess agent_done events.
@@ -334,37 +335,6 @@ function FeaturePage() {
     ],
   );
   useAgentEventListener(eventHandlers);
-
-  // Listen for AskUserQuestion requests from the main process
-  useEffect(() => {
-    const api = (
-      window as unknown as {
-        api?: {
-          onAskUserQuestion: (cb: (data: unknown) => void) => unknown;
-          offAskUserQuestion: (listener?: unknown) => void;
-        };
-      }
-    ).api;
-    if (!api) return;
-
-    const listener = api.onAskUserQuestion((data: unknown) => {
-      const request = data as {
-        subprocessId: string;
-        questions: Record<string, unknown>;
-      };
-      // Determine which agent this question is for
-      if (plan.subprocessId === request.subprocessId) {
-        // The questions are already being parsed by useAgentState
-        // This is just a fallback in case they weren't caught via streaming events
-      } else if (brainstorm.subprocessId === request.subprocessId) {
-        // Same fallback for brainstorm
-      }
-    });
-
-    return () => {
-      api.offAskUserQuestion(listener as undefined);
-    };
-  }, [plan.subprocessId, brainstorm.subprocessId]);
 
   // Action handlers
   const handleStartPlanning = async () => {
@@ -600,25 +570,9 @@ function FeaturePage() {
     [agentStateMap, sendMessageMutation],
   );
 
-  // Per-agent stop handler
+  // Per-agent stop handler (non-execute agents — execute uses per-panel interrupt)
   const handleAgentStop = useCallback(
     async (agentType: AgentType) => {
-      if (agentType === "execute") {
-        // Stop all running execute subprocesses
-        for (const id of execute.subprocessIds) {
-          try {
-            await stopMutation.mutateAsync({ id });
-          } catch {
-            // best effort
-          }
-        }
-        execute.setStatus("error");
-        execute.appendBlock({
-          type: "text",
-          content: "\n\nStopped by user.",
-        });
-        return;
-      }
       const state = agentStateMap[agentType];
       const id = state.subprocessId;
       if (!id) return;
@@ -633,7 +587,7 @@ function FeaturePage() {
         content: "\n\nStopped by user.",
       });
     },
-    [agentStateMap, execute, stopMutation],
+    [agentStateMap, stopMutation],
   );
 
   // Feature state machine
@@ -811,7 +765,8 @@ function FeaturePage() {
                   blocks={entry.state.blocks}
                   open={
                     openAgent === entry.label ||
-                    entry.state.status === "running"
+                    entry.state.status === "running" ||
+                    entry.state.status === "paused"
                   }
                   onToggle={() =>
                     setOpenAgent((prev) =>
@@ -833,11 +788,20 @@ function FeaturePage() {
                         ? handleBrainstormQuestionResponse
                         : undefined
                   }
-                  onSend={(message) => handleAgentSend(entry.type, message)}
+                  onSend={(message) => {
+                    if (entry.type === "execute" && entry.state.subprocessId) {
+                      // Send directly to the specific execute subprocess
+                      sendMessageMutation.mutate({ id: entry.state.subprocessId, message });
+                      // Append user message block to the correct subprocess panel
+                      execute.appendBlockToSubprocess(entry.state.subprocessId, { type: "user_message", content: message });
+                    } else {
+                      handleAgentSend(entry.type, message);
+                    }
+                  }}
                   onStop={() => {
                     if (entry.type === "execute" && entry.state.subprocessId) {
-                      // Stop this specific execute subprocess
-                      void stopMutation.mutateAsync({ id: entry.state.subprocessId }).catch(() => {});
+                      // Interrupt this specific execute subprocess (pause, don't kill)
+                      void interruptMutation.mutateAsync({ id: entry.state.subprocessId }).catch(() => {});
                     } else {
                       void handleAgentStop(entry.type);
                     }
@@ -906,9 +870,11 @@ function FeaturePage() {
                   <div>
                     <h3 className="text-sm font-semibold">Next Steps</h3>
                     <p className="text-xs text-muted-foreground">
-                      {actions.canStartBuild
-                        ? "The plan is ready. Start building to execute all phases, or evaluate risks first."
-                        : "Run a review or risk analysis on the current implementation."}
+                      {actions.canStartBuild && execute.status === "error"
+                        ? "Some phases failed. Retry to re-run the errored phases."
+                        : actions.canStartBuild
+                          ? "The plan is ready. Start building to execute all phases, or evaluate risks first."
+                          : "Run a review or risk analysis on the current implementation."}
                     </p>
                   </div>
                   <div className="flex gap-2">
@@ -922,7 +888,7 @@ function FeaturePage() {
                         ) : (
                           <AGENT_ICONS.execute className="mr-2 size-4" />
                         )}
-                        Start Building
+                        {execute.status === "error" ? "Retry Build" : "Start Building"}
                       </Button>
                     )}
                     {actions.canStartRisk && (

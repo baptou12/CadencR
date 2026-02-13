@@ -130,9 +130,19 @@ export function startExecuteAgent(options: ExecuteAgentOptions): ExecuteAgentRes
     executePhase(phase, options, autoCommit, firstStepSubprocessIds, sessionDbId),
   );
 
-  // Continue remaining steps asynchronously after first step completes
+  // Continue remaining steps asynchronously after first step completes.
+  // Note: if a phase is interrupted (paused), its promise won't resolve until
+  // it completes or errors — so the step naturally waits for all phases.
   void (async () => {
     await Promise.allSettled(firstStepPromises);
+
+    if (hasStepErrors(plan.id, firstStepNumber)) {
+      db.prepare(
+        "UPDATE agent_sessions SET status = 'error', ended_at = datetime('now') WHERE id = ?",
+      ).run(sessionDbId);
+      broadcastExecuteAllDone(sessionDbId, 1);
+      return;
+    }
 
     for (let i = 1; i < sortedSteps.length; i++) {
       const stepNumber = sortedSteps[i];
@@ -142,14 +152,21 @@ export function startExecuteAgent(options: ExecuteAgentOptions): ExecuteAgentRes
         executePhase(phase, options, autoCommit, stepSubprocessIds, sessionDbId),
       );
       await Promise.allSettled(phasePromises);
+
+      if (hasStepErrors(plan.id, stepNumber)) {
+        db.prepare(
+          "UPDATE agent_sessions SET status = 'error', ended_at = datetime('now') WHERE id = ?",
+        ).run(sessionDbId);
+        broadcastExecuteAllDone(sessionDbId, 1);
+        return;
+      }
     }
 
-    // All steps complete — update session and broadcast a synthetic "all done" event
     db.prepare(
       "UPDATE agent_sessions SET status = 'completed', ended_at = datetime('now') WHERE id = ?",
     ).run(sessionDbId);
 
-    broadcastExecuteAllDone(sessionDbId);
+    broadcastExecuteAllDone(sessionDbId, 0);
   })();
 
   return {
@@ -159,14 +176,28 @@ export function startExecuteAgent(options: ExecuteAgentOptions): ExecuteAgentRes
 }
 
 /**
+ * Check if any phase in a given step has status 'error'.
+ */
+function hasStepErrors(planId: number, stepNumber: number): boolean {
+  const db = getDatabase();
+  const row = db
+    .prepare(
+      "SELECT COUNT(*) as cnt FROM phases WHERE plan_id = ? AND step_number = ? AND status = 'error'",
+    )
+    .get(planId, stepNumber) as { cnt: number };
+  return row.cnt > 0;
+}
+
+
+/**
  * Broadcast a synthetic event to the renderer indicating all execute phases are done.
  */
-function broadcastExecuteAllDone(sessionDbId: number): void {
+function broadcastExecuteAllDone(sessionDbId: number, exitCode = 0): void {
   const { BrowserWindow } = require("electron") as typeof import("electron");
   const event: AgentEvent = {
     subprocessId: `session-${sessionDbId}`,
     agentType: "execute",
-    event: { type: "agent_done", exitCode: 0 },
+    event: { type: "agent_done", exitCode },
     timestamp: Date.now(),
   };
   const AGENT_EVENT_CHANNEL = "agent:event";

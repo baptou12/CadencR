@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { createElement } from "react";
-import { Loader2Icon, CheckCircleIcon, XCircleIcon, RotateCcwIcon, ChevronRightIcon } from "lucide-react";
+import { Loader2Icon, CheckCircleIcon, XCircleIcon, RotateCcwIcon, ChevronRightIcon, PauseCircleIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AgentStream } from "./AgentStream";
 import { AgentPromptBar } from "./AgentPromptBar";
@@ -11,7 +11,7 @@ import type { AgentType } from "../../main/agents/types";
 import type { AgentQuestion } from "./AgentQuestionDrawer";
 import { AGENT_ICONS } from "./agent-icons";
 
-export type AgentStatus = "idle" | "running" | "complete" | "error";
+export type AgentStatus = "idle" | "running" | "complete" | "error" | "paused";
 
 interface AgentPanelProps {
   agentType: AgentType;
@@ -66,6 +66,11 @@ const STATUS_BADGE: Record<
     className: "bg-red-500/15 text-red-300",
     icon: <XCircleIcon className="size-3" />,
   },
+  paused: {
+    label: "Paused",
+    className: "bg-orange-500/15 text-orange-300",
+    icon: <PauseCircleIcon className="size-3" />,
+  },
 };
 
 export function AgentPanel({
@@ -92,7 +97,7 @@ export function AgentPanel({
 
   // Auto-open when agent starts running
   useEffect(() => {
-    if (status === "running" && !isControlled) {
+    if ((status === "running" || status === "paused") && !isControlled) {
       setInternalOpen(true);
     }
   }, [status, isControlled]);

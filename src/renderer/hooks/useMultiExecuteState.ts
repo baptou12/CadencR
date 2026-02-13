@@ -81,9 +81,9 @@ export function useMultiExecuteState() {
   const handleEvent = useCallback((agentEvent: AgentEvent) => {
     const { subprocessId, event } = agentEvent;
 
-    // Session-level "all done" event — mark overall as complete
+    // Session-level "all done" event — mark overall status based on exit code
     if (event.type === "agent_done" && subprocessId.startsWith("session-")) {
-      setOverallStatus("complete");
+      setOverallStatus(event.exitCode === 0 ? "complete" : "error");
       return;
     }
 
@@ -102,6 +102,11 @@ export function useMultiExecuteState() {
 
       let blocks = existing.blocks;
       let status = existing.status;
+
+      // Resume from paused when new content arrives
+      if (status === "paused" && (event.type === "content_block_start" || event.type === "content_block_delta")) {
+        status = "running";
+      }
 
       switch (event.type) {
         case "content_block_start": {
@@ -206,6 +211,10 @@ export function useMultiExecuteState() {
           }
           break;
         }
+        case "agent_paused": {
+          status = "paused";
+          break;
+        }
         case "error": {
           status = "error";
           blocks = [...blocks, makeBlock({ type: "text", content: `Error: ${event.error.message}` })];
@@ -254,6 +263,16 @@ export function useMultiExecuteState() {
     });
   }, []);
 
+  const appendBlockToSubprocess = useCallback((spId: string, partial: Omit<AgentBlockData, "id">) => {
+    setSubprocesses((prev) => {
+      const next = new Map(prev);
+      const existing = next.get(spId);
+      if (!existing) return prev;
+      next.set(spId, { ...existing, blocks: [...existing.blocks, makeBlock(partial)] });
+      return next;
+    });
+  }, []);
+
   return {
     subprocessList,
     overallStatus,
@@ -264,6 +283,7 @@ export function useMultiExecuteState() {
     reset,
     setStatus,
     appendBlock,
+    appendBlockToSubprocess,
     // Compatibility with useAgentState interface
     blocks: allBlocks,
     status: overallStatus,

@@ -10,6 +10,7 @@ import { DEFAULT_MODEL } from "../agents/models";
 import {
   startSubprocess,
   stopSubprocess,
+  interruptSubprocess,
   listSubprocesses,
   submitUserAnswers,
   sendMessageToSubprocess,
@@ -186,6 +187,15 @@ const agentsRouter = router({
       const stopped = stopSubprocess(input.id);
       return { success: stopped };
     }),
+
+  /** Interrupt a running agent — pauses without killing, allows resume via sendMessage */
+  interrupt: publicProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ input }) => {
+      const interrupted = await interruptSubprocess(input.id);
+      return { success: interrupted };
+    }),
+
 
   /** Resume a previous agent session */
   resume: publicProcedure

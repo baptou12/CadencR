@@ -35,7 +35,7 @@ export interface ManagedSubprocess {
   id: string;
   agentType: string;
   startedAt: Date;
-  status: "running" | "stopped" | "error" | "completed";
+  status: "running" | "stopped" | "error" | "completed" | "paused";
   /** Abort controller to cancel the SDK query */
   abortController?: AbortController;
   /** The SDK Query object for close/interrupt */
@@ -48,6 +48,10 @@ export interface ManagedSubprocess {
   eventListeners: Array<(event: StreamEvent) => void>;
   /** Completion listeners called when the query finishes */
   completionListeners: Array<(exitCode: number) => void>;
+  /** SDK session ID for resume after interrupt */
+  sdkSessionId?: string;
+  /** Original options used to start this subprocess (needed for resume) */
+  originalOptions?: SubprocessOptions;
 }
 
 const activeProcesses = new Map<string, ManagedSubprocess>();
@@ -174,6 +178,10 @@ function handleSdkMessage(
       }
     }
   } else if (type === "system") {
+    // Capture SDK session ID for resume after interrupt
+    if (msg.session_id && typeof msg.session_id === "string") {
+      managed.sdkSessionId = msg.session_id;
+    }
     broadcastEvent(
       id,
       agentType,
@@ -208,6 +216,7 @@ export function startSubprocess(options: SubprocessOptions): ManagedSubprocess {
     abortController,
     eventListeners: [],
     completionListeners: [],
+    originalOptions: options,
   };
 
   activeProcesses.set(id, managed);
@@ -423,25 +432,31 @@ async function runSdkQuery(
 
     if (managed.status === "running") {
       managed.status = "completed";
-      // Notify completion listeners
       for (const listener of managed.completionListeners) listener(0);
-      // Broadcast agent_done
       broadcastEvent(managed.id, managed.agentType, {
         type: "agent_done",
         exitCode: 0,
       });
+    } else if (managed.status === "paused") {
+      // Interrupted — broadcast paused event but do NOT call completion listeners.
+      // The subprocess stays alive; user can resume by sending a message.
+      broadcastEvent(managed.id, managed.agentType, {
+        type: "agent_paused",
+      });
     } else if (managed.status === "stopped") {
-      // Notify completion listeners with non-zero exit code
       for (const listener of managed.completionListeners) listener(1);
-      // Broadcast agent_done with non-zero exit code
       broadcastEvent(managed.id, managed.agentType, {
         type: "agent_done",
         exitCode: 1,
       });
     }
   } catch (err) {
-    if (managed.status === "stopped") {
-      // Stopped by user — notify with non-zero exit
+    if (managed.status === "paused") {
+      // Interrupt threw — still treat as paused
+      broadcastEvent(managed.id, managed.agentType, {
+        type: "agent_paused",
+      });
+    } else if (managed.status === "stopped") {
       for (const listener of managed.completionListeners) listener(1);
       broadcastEvent(managed.id, managed.agentType, {
         type: "agent_done",
@@ -463,7 +478,9 @@ async function runSdkQuery(
       });
     }
   } finally {
-    messageStream.close();
+    if (managed.status !== "paused") {
+      messageStream.close();
+    }
   }
 }
 
@@ -472,7 +489,9 @@ async function runSdkQuery(
  */
 export function sendMessageToSubprocess(id: string, message: string): boolean {
   const managed = activeProcesses.get(id);
-  if (!managed || managed.status !== "running" || !managed.pushMessage) {
+  if (!managed) return false;
+
+  if (managed.status !== "running" && managed.status !== "paused") {
     return false;
   }
 
@@ -489,6 +508,27 @@ export function sendMessageToSubprocess(id: string, message: string): boolean {
     }
   }
 
+  // Resume from paused state — start a new query with resume session ID
+  if (managed.status === "paused") {
+    if (!managed.sdkSessionId || !managed.originalOptions) {
+      return false;
+    }
+    managed.status = "running";
+    // Fresh abort controller for the resumed query
+    managed.abortController = new AbortController();
+    const resumeOptions: SubprocessOptions = {
+      ...managed.originalOptions,
+      prompt: message,
+      resumeSessionId: managed.sdkSessionId,
+    };
+    // Re-run the SDK query with resume
+    runSdkQuery(managed, resumeOptions).catch((err) => {
+      console.error(`[subprocess-manager] Resume SDK query failed for ${id}:`, err);
+    });
+    return true;
+  }
+
+  if (!managed.pushMessage) return false;
   managed.pushMessage(message);
   return true;
 }
@@ -512,24 +552,31 @@ export function stopSubprocess(id: string): boolean {
 }
 
 /**
- * Kill a running subprocess by ID.
+ * Interrupt a running subprocess — pauses the current turn but keeps the session alive.
+ * The user can send a follow-up message to resume.
  */
-export function killSubprocess(id: string): boolean {
+export async function interruptSubprocess(id: string): Promise<boolean> {
   const managed = activeProcesses.get(id);
   if (!managed || managed.status !== "running") {
     return false;
   }
 
-  managed.status = "stopped";
-  managed.abortController?.abort();
-  return true;
-}
+  managed.status = "paused";
 
-/**
- * Get a managed subprocess by ID.
- */
-export function getSubprocess(id: string): ManagedSubprocess | undefined {
-  return activeProcesses.get(id);
+  if (managed.query) {
+    try {
+      await managed.query.interrupt();
+    } catch {
+      // interrupt may fail if the query already finished
+    }
+  }
+
+  // Broadcast paused event to the renderer
+  broadcastEvent(managed.id, managed.agentType, {
+    type: "agent_paused",
+  });
+
+  return true;
 }
 
 /**
@@ -561,16 +608,7 @@ export function killAllSubprocesses(): void {
   }
 }
 
-/**
- * Remove completed/stopped/errored subprocesses from tracking.
- */
-export function cleanupSubprocesses(): void {
-  for (const [id, managed] of activeProcesses) {
-    if (managed.status !== "running") {
-      activeProcesses.delete(id);
-    }
-  }
-}
+
 
 /**
  * Request user answers to AskUserQuestion from the renderer.
