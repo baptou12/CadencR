@@ -25,10 +25,13 @@ export interface ProjectSettingRow {
 
 // -- features --
 
+export type FeatureType = "feature" | "session";
+
 export interface FeatureRow {
   id: number;
   project_id: number;
   title: string;
+  type: FeatureType;
   status: string;
   created_at: string;
 }

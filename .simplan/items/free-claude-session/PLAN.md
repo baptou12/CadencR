@@ -36,14 +36,16 @@ Features are created via `features.create` mutation, which also sets up a git wo
 
 ## Phases
 
-### ⬜ Phase 1: Add `type` column to features table
+### ✅ Phase 1: Add `type` column to features table
 - **Step**: 1
 - **Complexity**: 1
-- [ ] Add migration to add `type TEXT NOT NULL DEFAULT 'feature'` column to `features` table
-- [ ] Update `src/main/db/types.ts` to include `type` field on Feature type
+- [x] Add migration to add `type TEXT NOT NULL DEFAULT 'feature'` column to `features` table
+- [x] Update `src/main/db/types.ts` to include `type` field on Feature type
 - **Files**: `src/main/db/migrations.ts`, `src/main/db/types.ts`
 - **Commit message**: `feat: add type column to features table for session support`
 - **Bisect note**: N/A - additive migration, default value ensures backward compatibility
+- **Implementation notes**: Added migration version 13 with ALTER TABLE to add `type` column. Added `FeatureType` union type (`"feature" | "session"`) and `type` field to `FeatureRow` in types.ts.
+- **Validation results**: Lint passes (0 warnings, 0 errors). Type check passes (no errors).
 
 ### ⬜ Phase 2: Create session agent in main process
 - **Step**: 2
@@ -118,5 +120,5 @@ Features are created via `features.create` mutation, which also sets up a git wo
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Not started
-- **Progress**: 0/7
+- **Current Phase**: Phase 2
+- **Progress**: 1/7

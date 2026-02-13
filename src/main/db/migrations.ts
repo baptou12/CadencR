@@ -194,6 +194,13 @@ const migrations: Migration[] = [
       db.exec("ALTER TABLE plans ADD COLUMN completion_conditions TEXT");
     },
   },
+  {
+    version: 13,
+    description: "Add type column to features table",
+    up: (db) => {
+      db.exec("ALTER TABLE features ADD COLUMN type TEXT NOT NULL DEFAULT 'feature'");
+    },
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {
