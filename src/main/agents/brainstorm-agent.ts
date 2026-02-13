@@ -12,7 +12,7 @@
 
 import { getDatabase } from "../db/database";
 import { startSubprocess, type ManagedSubprocess } from "./subprocess-manager";
-import { bridgeSubprocessToRenderer } from "./ipc-bridge";
+import { bridgeSubprocessToRenderer, notifyDbUpdated } from "./ipc-bridge";
 import { parsePlanOutput } from "./plan-agent";
 import type { AgentType, StreamEvent, StreamContentBlockStart, StreamContentBlockDelta } from "./types";
 
@@ -200,6 +200,8 @@ function setupBrainstormCompletionHandler(
 
         // Update feature status to planned
         db.prepare("UPDATE features SET status = 'planned' WHERE id = ?").run(featureId);
+        notifyDbUpdated("phase", featureId);
+        notifyDbUpdated("feature", featureId);
       } else {
         db.prepare("UPDATE plans SET raw_markdown = ?, status = 'draft' WHERE id = ?").run(
           fullOutput,

@@ -12,7 +12,7 @@
 
 import { getDatabase } from "../db/database";
 import { startSubprocess, type ManagedSubprocess } from "./subprocess-manager";
-import { bridgeSubprocessToRenderer } from "./ipc-bridge";
+import { bridgeSubprocessToRenderer, notifyDbUpdated } from "./ipc-bridge";
 import type { AgentType, StreamEvent, StreamContentBlockStart, StreamContentBlockDelta } from "./types";
 
 const PLAN_SYSTEM_PROMPT = `You are the Plan agent for ProductDevR, a development planning tool. Your job is to create a detailed, phased implementation plan for a feature.
@@ -184,6 +184,8 @@ function setupPlanCompletionHandler(
             // Update feature status to planned
             db.prepare("UPDATE features SET status = 'planned' WHERE id = ?").run(featureId);
           })();
+          notifyDbUpdated("phase", featureId);
+          notifyDbUpdated("feature", featureId);
         } catch (err) {
           console.error("[plan-agent] Failed to save plan:", err);
           // Still store raw output even if phase insertion fails

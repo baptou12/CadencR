@@ -1,12 +1,15 @@
 import React from "react";
 import { createRootRoute, Outlet } from "@tanstack/react-router";
 import { Sidebar } from "@/components/Sidebar";
+import { useDbUpdated } from "@/hooks/useDbUpdated";
 
 export const Route = createRootRoute({
   component: RootLayout,
 });
 
 function RootLayout() {
+  useDbUpdated();
+
   return (
     <div className="flex h-screen" style={{ paddingTop: 28 }}>
       <div

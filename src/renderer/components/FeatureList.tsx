@@ -64,24 +64,26 @@ export function FeatureList({
     { refetchInterval: 3000 },
   );
 
+  const invalidateFeatures = () => {
+    void utils.features.listByProject.invalidate();
+    void utils.features.getById.invalidate();
+    void utils.features.getProgress.invalidate();
+  };
+
   const createMutation = trpc.features.create.useMutation({
     onSuccess: () => {
-      void utils.features.listByProject.invalidate();
+      invalidateFeatures();
       setDialogOpen(false);
       setNewTitle("");
     },
   });
 
   const updateStatusMutation = trpc.features.updateStatus.useMutation({
-    onSuccess: () => {
-      void utils.features.listByProject.invalidate();
-    },
+    onSuccess: invalidateFeatures,
   });
 
   const deleteMutation = trpc.features.delete.useMutation({
-    onSuccess: () => {
-      void utils.features.listByProject.invalidate();
-    },
+    onSuccess: invalidateFeatures,
   });
 
   const handleCreate = () => {

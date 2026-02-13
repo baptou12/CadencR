@@ -6,6 +6,7 @@ import { exposeElectronTRPC } from "electron-trpc/main";
 
 const AGENT_EVENT_CHANNEL = "agent:event";
 const ASK_USER_QUESTION_CHANNEL = "agent:ask-user-question";
+const DB_UPDATED_CHANNEL = "db:updated";
 
 process.once("loaded", () => {
   exposeElectronTRPC();
@@ -44,6 +45,23 @@ process.once("loaded", () => {
         );
       } else {
         ipcRenderer.removeAllListeners(ASK_USER_QUESTION_CHANNEL);
+      }
+    },
+    onDbUpdated: (callback: (data: { entity: string; featureId: number }) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, data: { entity: string; featureId: number }) => {
+        callback(data);
+      };
+      ipcRenderer.on(DB_UPDATED_CHANNEL, listener);
+      return listener;
+    },
+    offDbUpdated: (listener?: (...args: unknown[]) => void) => {
+      if (listener) {
+        ipcRenderer.removeListener(
+          DB_UPDATED_CHANNEL,
+          listener as (...args: unknown[]) => void,
+        );
+      } else {
+        ipcRenderer.removeAllListeners(DB_UPDATED_CHANNEL);
       }
     },
   });

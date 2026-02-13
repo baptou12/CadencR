@@ -23,7 +23,6 @@ export function FeatureTopBar({ featureId, projectId: _projectId }: FeatureTopBa
   const { data: feature } = trpc.features.getById.useQuery({ id: featureId });
   const { data: progress } = trpc.features.getProgress.useQuery(
     { feature_id: featureId },
-    { refetchInterval: 5000 },
   );
   const { data: featureSettings } = trpc.features.getSettings.useQuery({
     feature_id: featureId,

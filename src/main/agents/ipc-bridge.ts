@@ -129,4 +129,27 @@ export function persistClaudeSessionId(
   }
 }
 
-export { AGENT_EVENT_CHANNEL };
+const DB_UPDATED_CHANNEL = "db:updated";
+
+export type DbEntity = "feature" | "phase" | "plan" | "agent_session";
+
+export interface DbUpdateEvent {
+  entity: DbEntity;
+  featureId: number;
+}
+
+/**
+ * Notify all renderer windows that data changed in the DB.
+ * The renderer listens for this and invalidates TanStack Query caches.
+ */
+export function notifyDbUpdated(entity: DbEntity, featureId: number): void {
+  const { BrowserWindow } = require("electron") as typeof import("electron");
+  const event: DbUpdateEvent = { entity, featureId };
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) {
+      win.webContents.send(DB_UPDATED_CHANNEL, event);
+    }
+  }
+}
+
+export { AGENT_EVENT_CHANNEL, DB_UPDATED_CHANNEL };

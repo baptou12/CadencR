@@ -13,7 +13,7 @@ import { execSync } from "node:child_process";
 import { getDatabase } from "../db/database";
 import type { PhaseRow, PlanRow, SettingRow } from "../db/types";
 import { startSubprocess, type ManagedSubprocess } from "./subprocess-manager";
-import { bridgeSubprocessToRenderer } from "./ipc-bridge";
+import { bridgeSubprocessToRenderer, notifyDbUpdated } from "./ipc-bridge";
 import type { StreamEvent, StreamContentBlockStart, StreamContentBlockDelta } from "./types";
 
 const EXECUTE_SYSTEM_PROMPT = `You are the Execute agent for ProductDevR, responsible for implementing a single phase of a development plan.
@@ -67,6 +67,7 @@ export function startExecuteAgent(options: ExecuteAgentOptions): ExecuteAgentRes
 
   // Update feature status to in-progress
   db.prepare("UPDATE features SET status = 'in-progress' WHERE id = ?").run(options.featureId);
+  notifyDbUpdated("feature", options.featureId);
 
   // Create agent session record
   const sessionResult = db
@@ -167,6 +168,7 @@ function executePhase(
 
     // Update phase status to running
     db.prepare("UPDATE phases SET status = 'running' WHERE id = ?").run(phase.id);
+    notifyDbUpdated("phase", options.featureId);
 
     const prompt = `Execute the following phase of the implementation plan:
 
@@ -185,6 +187,7 @@ Please implement all the tasks listed above. Focus only on this phase's scope.`;
     } catch {
       // Could not start subprocess (e.g., max concurrent limit)
       db.prepare("UPDATE phases SET status = 'error' WHERE id = ?").run(phase.id);
+      notifyDbUpdated("phase", options.featureId);
       resolve();
       return;
     }
@@ -202,6 +205,7 @@ Please implement all the tasks listed above. Focus only on this phase's scope.`;
     managed.completionListeners.push((code: number) => {
       if (code === 0) {
         db.prepare("UPDATE phases SET status = 'completed' WHERE id = ?").run(phase.id);
+        notifyDbUpdated("phase", options.featureId);
 
         // Auto-commit if enabled
         if (autoCommit && phase.commit_message) {
@@ -216,6 +220,7 @@ Please implement all the tasks listed above. Focus only on this phase's scope.`;
         }
       } else {
         db.prepare("UPDATE phases SET status = 'error' WHERE id = ?").run(phase.id);
+        notifyDbUpdated("phase", options.featureId);
       }
 
       resolve();

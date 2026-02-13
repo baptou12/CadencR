@@ -11,7 +11,7 @@
 
 import { getDatabase } from "../db/database";
 import { startSubprocess, type ManagedSubprocess } from "./subprocess-manager";
-import { bridgeSubprocessToRenderer } from "./ipc-bridge";
+import { bridgeSubprocessToRenderer, notifyDbUpdated } from "./ipc-bridge";
 import type { AgentType, StreamEvent, StreamContentBlockStart, StreamContentBlockDelta } from "./types";
 import type { PlanRow, PhaseRow } from "../db/types";
 
@@ -89,6 +89,7 @@ export function startReviewAgent(options: ReviewAgentOptions): ReviewAgentResult
 
   // Update feature status to review
   db.prepare("UPDATE features SET status = 'review' WHERE id = ?").run(options.featureId);
+  notifyDbUpdated("feature", options.featureId);
 
   // Create agent session record
   const sessionResult = db
@@ -203,6 +204,7 @@ function setupReviewCompletionHandler(
       // Check verdict and update feature status
       if (fullOutput.includes("---REVIEW_APPROVED---")) {
         db.prepare("UPDATE features SET status = 'done' WHERE id = ?").run(featureId);
+        notifyDbUpdated("feature", featureId);
       }
       // If changes requested, feature stays in "review" status
     }
