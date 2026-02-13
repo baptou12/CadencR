@@ -4,7 +4,7 @@ import { ChevronRightIcon, ChevronDownIcon, WrenchIcon, BrainIcon, CodeIcon, Lay
 import { parseToolCall } from "@/lib/tool-call-parser";
 
 /** Block types that the agent stream can produce */
-export type BlockType = "text" | "code" | "tool_call" | "tool_result" | "thinking";
+export type BlockType = "text" | "code" | "tool_call" | "tool_result" | "thinking" | "user_message";
 
 export interface AgentBlockData {
   id: string;
@@ -53,6 +53,8 @@ export function AgentBlock({ block, isStreaming, expandAllTasks, onExpandAllTask
       return <ToolResultBlock content={block.content} isError={block.isError} />;
     case "thinking":
       return <ThinkingBlock content={block.content} />;
+    case "user_message":
+      return <UserMessageBlock content={block.content} />;
     default:
       return null;
   }
@@ -164,6 +166,16 @@ function ThinkingBlock({ content }: { content: string }) {
           {content}
         </div>
       )}
+    </div>
+  );
+}
+
+function UserMessageBlock({ content }: { content: string }) {
+  return (
+    <div className="my-1 flex justify-end">
+      <div className="rounded-md border border-primary/30 bg-primary/10 px-3 py-1.5 text-sm max-w-[80%]">
+        <span className="whitespace-pre-wrap text-foreground">{content}</span>
+      </div>
     </div>
   );
 }

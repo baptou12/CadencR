@@ -35,10 +35,12 @@ export interface ManagedSubprocess {
   status: "running" | "stopped" | "error" | "completed";
   /** Abort controller to cancel the SDK query */
   abortController?: AbortController;
-  /** The SDK Query object for streamInput/close */
+  /** The SDK Query object for close/interrupt */
   query?: import("@anthropic-ai/claude-agent-sdk").Query;
-  /** The async iterator (kept for reference) */
-  queryIterator?: AsyncGenerator<unknown, void>;
+  /** Push a user message into the streaming input generator */
+  pushMessage?: (message: string) => void;
+  /** Close the message stream (signals no more user messages) */
+  closeMessageStream?: () => void;
   /** Event listeners registered by agent-specific code */
   eventListeners: Array<(event: StreamEvent) => void>;
   /** Completion listeners called when the query finishes */
@@ -146,6 +148,10 @@ function handleSdkMessage(managed: ManagedSubprocess, msg: Record<string, unknow
         type: "result",
         result: msg.result as string | undefined,
       }, parentToolUseId);
+      // Agent finished — close the message stream so the for-await loop exits
+      if (managed.closeMessageStream) {
+        managed.closeMessageStream();
+      }
     }
   } else if (type === "system") {
     broadcastEvent(id, agentType, {
@@ -194,12 +200,99 @@ export function startSubprocess(options: SubprocessOptions): ManagedSubprocess {
   return managed;
 }
 
+/**
+ * Creates an async generator that yields user messages on demand.
+ * The initial prompt is yielded immediately, and subsequent messages
+ * are pushed via the returned `push` function.
+ */
+function createMessageStream(initialPrompt: string) {
+  // Queue of pending messages and a resolver for the current wait
+  const queue: string[] = [];
+  let resolver: ((value: IteratorResult<unknown, void>) => void) | null = null;
+  let done = false;
+
+  function push(message: string) {
+    if (done) return;
+    if (resolver) {
+      const r = resolver;
+      resolver = null;
+      r({
+        done: false,
+        value: {
+          type: "user" as const,
+          message: { role: "user" as const, content: message },
+          parent_tool_use_id: null,
+          session_id: "",
+        },
+      });
+    } else {
+      queue.push(message);
+    }
+  }
+
+  function close() {
+    done = true;
+    if (resolver) {
+      const r = resolver;
+      resolver = null;
+      r({ done: true, value: undefined });
+    }
+  }
+
+  const generator: AsyncGenerator<unknown, void> = {
+    next(): Promise<IteratorResult<unknown, void>> {
+      // Yield initial prompt first
+      if (initialPrompt) {
+        const prompt = initialPrompt;
+        initialPrompt = "";
+        return Promise.resolve({
+          done: false,
+          value: {
+            type: "user" as const,
+            message: { role: "user" as const, content: prompt },
+            parent_tool_use_id: null,
+            session_id: "",
+          },
+        });
+      }
+      // Check queue
+      if (queue.length > 0) {
+        const msg = queue.shift()!;
+        return Promise.resolve({
+          done: false,
+          value: {
+            type: "user" as const,
+            message: { role: "user" as const, content: msg },
+            parent_tool_use_id: null,
+            session_id: "",
+          },
+        });
+      }
+      if (done) return Promise.resolve({ done: true, value: undefined });
+      // Wait for next push
+      return new Promise((resolve) => { resolver = resolve; });
+    },
+    return(): Promise<IteratorResult<unknown, void>> {
+      close();
+      return Promise.resolve({ done: true, value: undefined });
+    },
+    throw(err?: unknown): Promise<IteratorResult<unknown, void>> {
+      close();
+      return Promise.reject(err);
+    },
+    [Symbol.asyncIterator]() { return this; },
+    [Symbol.asyncDispose]() { close(); return Promise.resolve(); },
+  };
+
+  return { generator, push, close };
+}
+
 async function runSdkQuery(managed: ManagedSubprocess, options: SubprocessOptions): Promise<void> {
   // Dynamic import since the SDK is ESM
   const sdk = await import("@anthropic-ai/claude-agent-sdk");
   const { query } = sdk as {
     query: (opts: {
-      prompt: string;
+      prompt: string | AsyncIterable<unknown>;
       options?: Record<string, unknown>;
     }) => import("@anthropic-ai/claude-agent-sdk").Query;
   };
@@ -268,13 +361,17 @@ async function runSdkQuery(managed: ManagedSubprocess, options: SubprocessOption
 
   console.log("[subprocess-manager] calling SDK query() with cwd:", options.cwd);
 
+  // Create a persistent message stream for multi-turn messaging
+  const messageStream = createMessageStream(options.prompt);
+  managed.pushMessage = messageStream.push;
+  managed.closeMessageStream = messageStream.close;
+
   const queryObj = query({
-    prompt: options.prompt,
+    prompt: messageStream.generator,
     options: queryOptions,
   });
 
   managed.query = queryObj;
-  managed.queryIterator = queryObj;
 
   try {
     for await (const message of queryObj) {
@@ -309,31 +406,34 @@ async function runSdkQuery(managed: ManagedSubprocess, options: SubprocessOption
         exitCode: 1,
       });
     }
+  } finally {
+    messageStream.close();
   }
 }
 
 /**
- * Send a user message to a running subprocess via SDK streamInput.
+ * Send a user message to a running subprocess via the streaming input generator.
  */
-export async function sendMessageToSubprocess(id: string, message: string): Promise<boolean> {
+export function sendMessageToSubprocess(id: string, message: string): boolean {
   const managed = activeProcesses.get(id);
-  if (!managed || managed.status !== "running" || !managed.query) {
+  if (!managed || managed.status !== "running" || !managed.pushMessage) {
     return false;
   }
 
-  const userMessage = {
-    type: "user" as const,
-    message: { role: "user" as const, content: message },
-    parent_tool_use_id: null,
-    session_id: "",
-  };
-
-  // streamInput expects an AsyncIterable that yields one message
-  async function* singleMessage() {
-    yield userMessage;
+  // Persist the user message to the database
+  const sessionDbId = getSessionDbId(id);
+  if (sessionDbId) {
+    try {
+      const db = getDatabase();
+      db.prepare(
+        "INSERT INTO agent_messages (session_id, role, content, message_type, tool_name) VALUES (?, ?, ?, ?, ?)",
+      ).run(sessionDbId, "user", message, "user_message", null);
+    } catch {
+      // Best-effort persistence
+    }
   }
 
-  await managed.query.streamInput(singleMessage());
+  managed.pushMessage(message);
   return true;
 }
 

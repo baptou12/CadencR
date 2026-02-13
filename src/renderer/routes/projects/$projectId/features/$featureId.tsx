@@ -95,6 +95,8 @@ function FeaturePage() {
             content: msg.content,
             isError: msg.message_type === "tool_error",
           };
+        case "user_message":
+          return { id, type: "user_message", content: msg.content };
         case "error":
           return { id, type: "text", content: `Error: ${msg.content}` };
         default:
@@ -539,6 +541,7 @@ function FeaturePage() {
       const state = agentStateMap[agentType];
       const id = state.subprocessId;
       if (!id) return;
+      state.appendBlock({ type: "user_message", content: message });
       sendMessageMutation.mutate({ id, message });
     },
     [agentStateMap, sendMessageMutation],
