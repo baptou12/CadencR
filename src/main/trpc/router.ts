@@ -33,6 +33,7 @@ import { startBrainstormAgent } from "../agents/brainstorm-agent";
 import { startExecuteAgent } from "../agents/execute-agent";
 import { startRiskAgent } from "../agents/risk-agent";
 import { startReviewAgent, addFixPhase } from "../agents/review-agent";
+import { startSessionAgent } from "../agents/session-agent";
 
 const settingsRouter = router({
   get: publicProcedure.input(z.object({ key: z.string() })).query(({ input }) => {
@@ -145,7 +146,7 @@ function resolveAgentCwd(featureId: number, projectId: number): string {
   return cwd;
 }
 
-const agentTypeSchema = z.enum(["plan", "brainstorm", "execute", "risk", "review"]);
+const agentTypeSchema = z.enum(["plan", "brainstorm", "execute", "risk", "review", "session"]);
 
 const agentsRouter = router({
   /** Start a new agent subprocess */
@@ -360,6 +361,32 @@ const agentsRouter = router({
     )
     .mutation(({ input }) => {
       return addFixPhase(input.featureId, input.fixDescription);
+    }),
+
+  /** Start a free-form session agent on a project */
+  startSession: publicProcedure
+    .input(
+      z.object({
+        featureId: z.number(),
+        projectId: z.number(),
+        prompt: z.string(),
+      }),
+    )
+    .mutation(({ input }) => {
+      const db = getDatabase();
+      const project = db
+        .prepare("SELECT path FROM projects WHERE id = ?")
+        .get(input.projectId) as Pick<ProjectRow, "path"> | undefined;
+      if (!project?.path) throw new Error("Project path not found");
+
+      const result = startSessionAgent({
+        featureId: input.featureId,
+        projectId: input.projectId,
+        prompt: input.prompt,
+        cwd: project.path,
+      });
+
+      return result;
     }),
 
   /** Get message history for an agent session */

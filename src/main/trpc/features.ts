@@ -24,13 +24,13 @@ export const featuresRouter = router({
       if (input.status) {
         return db
           .prepare(
-            "SELECT id, project_id, title, status, created_at FROM features WHERE project_id = ? AND status = ? ORDER BY created_at DESC",
+            "SELECT id, project_id, title, status, type, created_at FROM features WHERE project_id = ? AND status = ? ORDER BY created_at DESC",
           )
           .all(input.project_id, input.status) as FeatureRow[];
       }
       return db
         .prepare(
-          "SELECT id, project_id, title, status, created_at FROM features WHERE project_id = ? ORDER BY created_at DESC",
+          "SELECT id, project_id, title, status, type, created_at FROM features WHERE project_id = ? ORDER BY created_at DESC",
         )
         .all(input.project_id) as FeatureRow[];
     }),
@@ -82,6 +82,22 @@ export const featuresRouter = router({
       return { id: featureId };
     }),
 
+  createSession: publicProcedure
+    .input(z.object({ project_id: z.number() }))
+    .mutation(({ input }) => {
+      const db = getDatabase();
+      const countRow = db
+        .prepare(
+          "SELECT COUNT(*) as count FROM features WHERE project_id = ? AND type = 'session'",
+        )
+        .get(input.project_id) as { count: number };
+      const title = `Session ${countRow.count + 1}`;
+      const result = db
+        .prepare("INSERT INTO features (project_id, title, type) VALUES (?, ?, 'session')")
+        .run(input.project_id, title);
+      return { id: Number(result.lastInsertRowid) };
+    }),
+
   updateStatus: publicProcedure
     .input(z.object({ id: z.number(), status: featureStatusSchema }))
     .mutation(({ input }) => {
@@ -111,7 +127,7 @@ export const featuresRouter = router({
       const db = getDatabase();
       return db
         .prepare(
-          "SELECT id, project_id, title, status, created_at FROM features WHERE id = ?",
+          "SELECT id, project_id, title, status, type, created_at FROM features WHERE id = ?",
         )
         .get(input.id) as FeatureRow | undefined;
     }),
@@ -205,7 +221,7 @@ export const featuresRouter = router({
     .input(z.object({ featureId: z.number() }))
     .query(({ input }) => {
       const db = getDatabase();
-      const agentTypes = ["plan", "brainstorm", "execute", "risk", "review"] as const;
+      const agentTypes = ["plan", "brainstorm", "execute", "risk", "review", "session"] as const;
       const result: Record<string, string> = {};
       for (const at of agentTypes) {
         const row = db
@@ -221,7 +237,7 @@ export const featuresRouter = router({
     .input(
       z.object({
         featureId: z.number(),
-        agentType: z.enum(["plan", "brainstorm", "execute", "risk", "review"]),
+        agentType: z.enum(["plan", "brainstorm", "execute", "risk", "review", "session"]),
         modelId: z.string(),
       }),
     )
