@@ -18,7 +18,6 @@ export function bridgeSubprocessToRenderer(
   // The SDK-based subprocess manager broadcasts events directly.
   // This function is kept for backward compatibility but is now a no-op
   // for event broadcasting. Session persistence is handled separately.
-  console.log("[ipc-bridge] bridgeSubprocessToRenderer called (SDK mode), id:", managed.id, "agentType:", agentType);
 
   if (sessionDbId) {
     // Register this session for persistence tracking
@@ -29,7 +28,10 @@ export function bridgeSubprocessToRenderer(
 // Map of subprocess ID -> session DB ID for persistence
 const sessionMap = new Map<string, number>();
 
-function registerSessionPersistence(subprocessId: string, sessionDbId: number): void {
+function registerSessionPersistence(
+  subprocessId: string,
+  sessionDbId: number,
+): void {
   sessionMap.set(subprocessId, sessionDbId);
 }
 
@@ -44,7 +46,10 @@ export function getSessionDbId(subprocessId: string): number | undefined {
  * Persist a stream event to the agent_messages table.
  * Only persists content-bearing events (text, tool calls, tool results, errors).
  */
-export function persistStreamEvent(sessionDbId: number, event: StreamEvent): void {
+export function persistStreamEvent(
+  sessionDbId: number,
+  event: StreamEvent,
+): void {
   try {
     const db = getDatabase();
     const insert = db.prepare(
@@ -54,7 +59,13 @@ export function persistStreamEvent(sessionDbId: number, event: StreamEvent): voi
     switch (event.type) {
       case "content_block_start": {
         if (event.content_block.type === "text" && event.content_block.text) {
-          insert.run(sessionDbId, "assistant", event.content_block.text, "text", null);
+          insert.run(
+            sessionDbId,
+            "assistant",
+            event.content_block.text,
+            "text",
+            null,
+          );
         } else if (event.content_block.type === "tool_use") {
           insert.run(
             sessionDbId,
@@ -68,7 +79,13 @@ export function persistStreamEvent(sessionDbId: number, event: StreamEvent): voi
       }
       case "content_block_delta": {
         if (event.delta.type === "text_delta" && event.delta.text) {
-          insert.run(sessionDbId, "assistant", event.delta.text, "text_delta", null);
+          insert.run(
+            sessionDbId,
+            "assistant",
+            event.delta.text,
+            "text_delta",
+            null,
+          );
         }
         break;
       }
@@ -98,7 +115,10 @@ export function persistStreamEvent(sessionDbId: number, event: StreamEvent): voi
 /**
  * Persist a Claude session ID to the agent_sessions table.
  */
-export function persistClaudeSessionId(sessionDbId: number, claudeSessionId: string): void {
+export function persistClaudeSessionId(
+  sessionDbId: number,
+  claudeSessionId: string,
+): void {
   try {
     const db = getDatabase();
     db.prepare(

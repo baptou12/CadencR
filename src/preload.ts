@@ -13,7 +13,6 @@ process.once("loaded", () => {
   contextBridge.exposeInMainWorld("api", {
     onAgentEvent: (callback: (event: unknown) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, data: unknown) => {
-        console.log("[preload] onAgentEvent fired:", JSON.stringify(data).substring(0, 200));
         callback(data);
       };
       ipcRenderer.on(AGENT_EVENT_CHANNEL, listener);
@@ -22,14 +21,16 @@ process.once("loaded", () => {
     },
     offAgentEvent: (listener?: (...args: unknown[]) => void) => {
       if (listener) {
-        ipcRenderer.removeListener(AGENT_EVENT_CHANNEL, listener as (...args: unknown[]) => void);
+        ipcRenderer.removeListener(
+          AGENT_EVENT_CHANNEL,
+          listener as (...args: unknown[]) => void,
+        );
       } else {
         ipcRenderer.removeAllListeners(AGENT_EVENT_CHANNEL);
       }
     },
     onAskUserQuestion: (callback: (data: unknown) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, data: unknown) => {
-        console.log("[preload] onAskUserQuestion fired:", data);
         callback(data);
       };
       ipcRenderer.on(ASK_USER_QUESTION_CHANNEL, listener);
@@ -37,7 +38,10 @@ process.once("loaded", () => {
     },
     offAskUserQuestion: (listener?: (...args: unknown[]) => void) => {
       if (listener) {
-        ipcRenderer.removeListener(ASK_USER_QUESTION_CHANNEL, listener as (...args: unknown[]) => void);
+        ipcRenderer.removeListener(
+          ASK_USER_QUESTION_CHANNEL,
+          listener as (...args: unknown[]) => void,
+        );
       } else {
         ipcRenderer.removeAllListeners(ASK_USER_QUESTION_CHANNEL);
       }

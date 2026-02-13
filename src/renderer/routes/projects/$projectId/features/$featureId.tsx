@@ -16,14 +16,8 @@ import {
   WrenchIcon,
   CheckCircle2Icon,
 } from "lucide-react";
-import {
-  useAgentState,
-  useAgentEventListener,
-} from "@/hooks/useAgentState";
-import {
-  useFeatureState,
-  type FeatureStatus,
-} from "@/hooks/useFeatureState";
+import { useAgentState, useAgentEventListener } from "@/hooks/useAgentState";
+import { useFeatureState, type FeatureStatus } from "@/hooks/useFeatureState";
 import type { AgentBlockData } from "@/components/AgentBlock";
 import type { AgentType } from "../../../../../main/agents/types";
 
@@ -72,7 +66,11 @@ function FeaturePage() {
 
   // Convert stored messages to blocks for display
   const messageToBlock = useCallback(
-    (msg: { content: string; message_type: string; tool_name: string | null }): AgentBlockData | null => {
+    (msg: {
+      content: string;
+      message_type: string;
+      tool_name: string | null;
+    }): AgentBlockData | null => {
       const id = `hist-${Math.random().toString(36).slice(2)}`;
       switch (msg.message_type) {
         case "text":
@@ -123,7 +121,10 @@ function FeaturePage() {
     if (!sessionsQuery.data) return new Map<string, number>();
     const map = new Map<string, number>();
     for (const s of sessionsQuery.data) {
-      if ((s.status === "completed" || s.status === "error") && !map.has(s.agent_type)) {
+      if (
+        (s.status === "completed" || s.status === "error") &&
+        !map.has(s.agent_type)
+      ) {
         map.set(s.agent_type, s.id);
       }
     }
@@ -131,8 +132,17 @@ function FeaturePage() {
   }, [sessionsQuery.data]);
 
   // Load history for all agent types
-  const agentTypes = ["plan", "brainstorm", "execute", "risk", "review"] as const;
-  const agentStateMap: Record<string, ReturnType<typeof useAgentState>> = useMemo(
+  const agentTypes = [
+    "plan",
+    "brainstorm",
+    "execute",
+    "risk",
+    "review",
+  ] as const;
+  const agentStateMap: Record<
+    string,
+    ReturnType<typeof useAgentState>
+  > = useMemo(
     () => ({ plan, brainstorm, execute, risk, review }),
     [plan, brainstorm, execute, risk, review],
   );
@@ -145,23 +155,44 @@ function FeaturePage() {
 
   const planHistoryQuery = trpc.agents.getHistory.useQuery(
     { sessionId: planSessionId ?? 0 },
-    { enabled: !!planSessionId && plan.status === "idle" && plan.blocks.length === 0 },
+    {
+      enabled:
+        !!planSessionId && plan.status === "idle" && plan.blocks.length === 0,
+    },
   );
   const brainstormHistoryQuery = trpc.agents.getHistory.useQuery(
     { sessionId: brainstormSessionId ?? 0 },
-    { enabled: !!brainstormSessionId && brainstorm.status === "idle" && brainstorm.blocks.length === 0 },
+    {
+      enabled:
+        !!brainstormSessionId &&
+        brainstorm.status === "idle" &&
+        brainstorm.blocks.length === 0,
+    },
   );
   const executeHistoryQuery = trpc.agents.getHistory.useQuery(
     { sessionId: executeSessionId ?? 0 },
-    { enabled: !!executeSessionId && execute.status === "idle" && execute.blocks.length === 0 },
+    {
+      enabled:
+        !!executeSessionId &&
+        execute.status === "idle" &&
+        execute.blocks.length === 0,
+    },
   );
   const riskHistoryQuery = trpc.agents.getHistory.useQuery(
     { sessionId: riskSessionId ?? 0 },
-    { enabled: !!riskSessionId && risk.status === "idle" && risk.blocks.length === 0 },
+    {
+      enabled:
+        !!riskSessionId && risk.status === "idle" && risk.blocks.length === 0,
+    },
   );
   const reviewHistoryQuery = trpc.agents.getHistory.useQuery(
     { sessionId: reviewSessionId ?? 0 },
-    { enabled: !!reviewSessionId && review.status === "idle" && review.blocks.length === 0 },
+    {
+      enabled:
+        !!reviewSessionId &&
+        review.status === "idle" &&
+        review.blocks.length === 0,
+    },
   );
 
   const historyQueries = useMemo(
@@ -172,7 +203,13 @@ function FeaturePage() {
       risk: riskHistoryQuery,
       review: reviewHistoryQuery,
     }),
-    [planHistoryQuery, brainstormHistoryQuery, executeHistoryQuery, riskHistoryQuery, reviewHistoryQuery],
+    [
+      planHistoryQuery,
+      brainstormHistoryQuery,
+      executeHistoryQuery,
+      riskHistoryQuery,
+      reviewHistoryQuery,
+    ],
   );
 
   // Populate agent blocks from history on mount
@@ -194,7 +231,10 @@ function FeaturePage() {
         for (const b of blocks) {
           const last = merged[merged.length - 1];
           if (b.type === "text" && last?.type === "text") {
-            merged[merged.length - 1] = { ...last, content: last.content + b.content };
+            merged[merged.length - 1] = {
+              ...last,
+              content: last.content + b.content,
+            };
           } else {
             merged.push(b);
           }
@@ -238,7 +278,15 @@ function FeaturePage() {
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [resumableSessions, plan, brainstorm, execute, risk, review, resumeMutation],
+    [
+      resumableSessions,
+      plan,
+      brainstorm,
+      execute,
+      risk,
+      review,
+      resumeMutation,
+    ],
   );
 
   const [reviewComplete, setReviewComplete] = useState(false);
@@ -298,16 +346,15 @@ function FeaturePage() {
     if (!api) return;
 
     const listener = api.onAskUserQuestion((data: unknown) => {
-      const request = data as { subprocessId: string; questions: Record<string, unknown> };
-      console.log("[FeaturePage] AskUserQuestion request:", request);
-
+      const request = data as {
+        subprocessId: string;
+        questions: Record<string, unknown>;
+      };
       // Determine which agent this question is for
       if (plan.subprocessId === request.subprocessId) {
-        console.log("[FeaturePage] Routing question to plan agent");
         // The questions are already being parsed by useAgentState
         // This is just a fallback in case they weren't caught via streaming events
       } else if (brainstorm.subprocessId === request.subprocessId) {
-        console.log("[FeaturePage] Routing question to brainstorm agent");
         // Same fallback for brainstorm
       }
     });
@@ -387,7 +434,8 @@ function FeaturePage() {
   };
 
   const handleBrainstormQuestionResponse = (response: string) => {
-    if (!brainstorm.subprocessId || brainstorm.pendingQuestions.length === 0) return;
+    if (!brainstorm.subprocessId || brainstorm.pendingQuestions.length === 0)
+      return;
 
     // Parse the response to extract answers
     const answers: Record<string, string> = {};
@@ -525,13 +573,16 @@ function FeaturePage() {
   }, [review.blocks, review.status, review.setStatus, featureQuery]);
 
   // Collect all running agents for the stop button
-  const allAgents = useMemo(() => [
-    { state: plan, label: "Plan" },
-    { state: brainstorm, label: "Brainstorm" },
-    { state: execute, label: "Execute" },
-    { state: risk, label: "Risk" },
-    { state: review, label: "Review" },
-  ], [plan, brainstorm, execute, risk, review]);
+  const allAgents = useMemo(
+    () => [
+      { state: plan, label: "Plan" },
+      { state: brainstorm, label: "Brainstorm" },
+      { state: execute, label: "Execute" },
+      { state: risk, label: "Risk" },
+      { state: review, label: "Review" },
+    ],
+    [plan, brainstorm, execute, risk, review],
+  );
 
   const runningAgents = allAgents.filter((a) => a.state.status === "running");
 
@@ -600,13 +651,22 @@ function FeaturePage() {
     }> = [];
 
     // Planning agents
-    if (hasOutput(plan)) entries.push({ type: "plan", label: "Plan", state: plan });
-    if (hasOutput(brainstorm)) entries.push({ type: "brainstorm", label: "Brainstorm", state: brainstorm });
+    if (hasOutput(plan))
+      entries.push({ type: "plan", label: "Plan", state: plan });
+    if (hasOutput(brainstorm))
+      entries.push({
+        type: "brainstorm",
+        label: "Brainstorm",
+        state: brainstorm,
+      });
 
     // Build phase agents
-    if (hasOutput(execute)) entries.push({ type: "execute", label: "Execute", state: execute });
-    if (hasOutput(risk)) entries.push({ type: "risk", label: "Risk", state: risk });
-    if (hasOutput(review)) entries.push({ type: "review", label: "Review", state: review });
+    if (hasOutput(execute))
+      entries.push({ type: "execute", label: "Execute", state: execute });
+    if (hasOutput(risk))
+      entries.push({ type: "risk", label: "Risk", state: risk });
+    if (hasOutput(review))
+      entries.push({ type: "review", label: "Review", state: review });
 
     return entries;
   }, [plan, brainstorm, execute, risk, review]);
@@ -676,7 +736,10 @@ function FeaturePage() {
         )}
 
         {/* Vertical agent list + actions — shown when agents have output or actions are available */}
-        {(hasAnyAgentOutput || actions.canStartBuild || actions.canStartRisk || actions.canStartReview) && (
+        {(hasAnyAgentOutput ||
+          actions.canStartBuild ||
+          actions.canStartRisk ||
+          actions.canStartReview) && (
           <div className="space-y-2">
             {agentEntries.map((entry) => (
               <div key={entry.type}>
@@ -684,16 +747,20 @@ function FeaturePage() {
                   agentType={entry.type}
                   status={entry.state.status}
                   blocks={entry.state.blocks}
-                  open={openAgent === entry.label || entry.state.status === "running"}
+                  open={
+                    openAgent === entry.label ||
+                    entry.state.status === "running"
+                  }
                   onToggle={() =>
                     setOpenAgent((prev) =>
-                      prev === entry.label ? null : entry.label
+                      prev === entry.label ? null : entry.label,
                     )
                   }
                   pendingQuestions={
                     entry.type === "plan" && plan.pendingQuestions.length > 0
                       ? plan.pendingQuestions
-                      : entry.type === "brainstorm" && brainstorm.pendingQuestions.length > 0
+                      : entry.type === "brainstorm" &&
+                          brainstorm.pendingQuestions.length > 0
                         ? brainstorm.pendingQuestions
                         : undefined
                   }
@@ -711,108 +778,115 @@ function FeaturePage() {
                     resumableSessions.has(entry.type)
                   }
                   onResume={
-                    (entry.type === "plan" || entry.type === "brainstorm")
+                    entry.type === "plan" || entry.type === "brainstorm"
                       ? () => void handleResume(entry.type)
                       : undefined
                   }
                 />
 
                 {/* Review verdict actions */}
-                {entry.type === "review" && reviewComplete && reviewVerdict === "changes_requested" && (
-                  <div className="mt-2 flex gap-2 px-3">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleAddFixPhase}
-                      disabled={addFixPhaseMutation.isLoading}
-                    >
-                      {addFixPhaseMutation.isLoading ? (
-                        <Loader2Icon className="mr-2 size-4 animate-spin" />
-                      ) : (
-                        <PlusCircleIcon className="mr-2 size-4" />
-                      )}
-                      Add Fix Phase
-                    </Button>
-                    <Button
-                      size="sm"
-                      onClick={handleFixImmediately}
-                      disabled={startExecuteForFixMutation.isLoading}
-                    >
-                      {startExecuteForFixMutation.isLoading ? (
-                        <Loader2Icon className="mr-2 size-4 animate-spin" />
-                      ) : (
-                        <WrenchIcon className="mr-2 size-4" />
-                      )}
-                      Fix Immediately
-                    </Button>
-                  </div>
-                )}
-                {entry.type === "review" && reviewComplete && reviewVerdict === "approved" && (
-                  <div className="mt-2 px-3">
-                    <p className="text-sm font-medium text-green-600">
-                      Review approved! Feature marked as done.
-                    </p>
-                  </div>
-                )}
+                {entry.type === "review" &&
+                  reviewComplete &&
+                  reviewVerdict === "changes_requested" && (
+                    <div className="mt-2 flex gap-2 px-3">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleAddFixPhase}
+                        disabled={addFixPhaseMutation.isLoading}
+                      >
+                        {addFixPhaseMutation.isLoading ? (
+                          <Loader2Icon className="mr-2 size-4 animate-spin" />
+                        ) : (
+                          <PlusCircleIcon className="mr-2 size-4" />
+                        )}
+                        Add Fix Phase
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={handleFixImmediately}
+                        disabled={startExecuteForFixMutation.isLoading}
+                      >
+                        {startExecuteForFixMutation.isLoading ? (
+                          <Loader2Icon className="mr-2 size-4 animate-spin" />
+                        ) : (
+                          <WrenchIcon className="mr-2 size-4" />
+                        )}
+                        Fix Immediately
+                      </Button>
+                    </div>
+                  )}
+                {entry.type === "review" &&
+                  reviewComplete &&
+                  reviewVerdict === "approved" && (
+                    <div className="mt-2 px-3">
+                      <p className="text-sm font-medium text-green-600">
+                        Review approved! Feature marked as done.
+                      </p>
+                    </div>
+                  )}
               </div>
             ))}
 
             {/* Next actions — shown below agents when none are running */}
-            {noAgentsRunning && (actions.canStartBuild || actions.canStartRisk || actions.canStartReview) && (
-              <div className="space-y-3 pt-4">
-                <div>
-                  <h3 className="text-sm font-semibold">Next Steps</h3>
-                  <p className="text-xs text-muted-foreground">
-                    {actions.canStartBuild
-                      ? "The plan is ready. Start building to execute all phases, or evaluate risks first."
-                      : "Run a review or risk analysis on the current implementation."}
-                  </p>
+            {noAgentsRunning &&
+              (actions.canStartBuild ||
+                actions.canStartRisk ||
+                actions.canStartReview) && (
+                <div className="space-y-3 pt-4">
+                  <div>
+                    <h3 className="text-sm font-semibold">Next Steps</h3>
+                    <p className="text-xs text-muted-foreground">
+                      {actions.canStartBuild
+                        ? "The plan is ready. Start building to execute all phases, or evaluate risks first."
+                        : "Run a review or risk analysis on the current implementation."}
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    {actions.canStartBuild && (
+                      <Button
+                        onClick={handleStartBuilding}
+                        disabled={startExecuteMutation.isLoading}
+                      >
+                        {startExecuteMutation.isLoading ? (
+                          <Loader2Icon className="mr-2 size-4 animate-spin" />
+                        ) : (
+                          <HammerIcon className="mr-2 size-4" />
+                        )}
+                        Start Building
+                      </Button>
+                    )}
+                    {actions.canStartRisk && (
+                      <Button
+                        variant="outline"
+                        onClick={handleStartRisk}
+                        disabled={startRiskMutation.isLoading}
+                      >
+                        {startRiskMutation.isLoading ? (
+                          <Loader2Icon className="mr-2 size-4 animate-spin" />
+                        ) : (
+                          <ShieldAlertIcon className="mr-2 size-4" />
+                        )}
+                        Evaluate Risk
+                      </Button>
+                    )}
+                    {actions.canStartReview && (
+                      <Button
+                        variant="outline"
+                        onClick={handleStartReview}
+                        disabled={startReviewMutation.isLoading}
+                      >
+                        {startReviewMutation.isLoading ? (
+                          <Loader2Icon className="mr-2 size-4 animate-spin" />
+                        ) : (
+                          <SearchCheckIcon className="mr-2 size-4" />
+                        )}
+                        Start Review
+                      </Button>
+                    )}
+                  </div>
                 </div>
-                <div className="flex gap-2">
-                {actions.canStartBuild && (
-                  <Button
-                    onClick={handleStartBuilding}
-                    disabled={startExecuteMutation.isLoading}
-                  >
-                    {startExecuteMutation.isLoading ? (
-                      <Loader2Icon className="mr-2 size-4 animate-spin" />
-                    ) : (
-                      <HammerIcon className="mr-2 size-4" />
-                    )}
-                    Start Building
-                  </Button>
-                )}
-                {actions.canStartRisk && (
-                  <Button
-                    variant="outline"
-                    onClick={handleStartRisk}
-                    disabled={startRiskMutation.isLoading}
-                  >
-                    {startRiskMutation.isLoading ? (
-                      <Loader2Icon className="mr-2 size-4 animate-spin" />
-                    ) : (
-                      <ShieldAlertIcon className="mr-2 size-4" />
-                    )}
-                    Evaluate Risk
-                  </Button>
-                )}
-                {actions.canStartReview && (
-                  <Button
-                    variant="outline"
-                    onClick={handleStartReview}
-                    disabled={startReviewMutation.isLoading}
-                  >
-                    {startReviewMutation.isLoading ? (
-                      <Loader2Icon className="mr-2 size-4 animate-spin" />
-                    ) : (
-                      <SearchCheckIcon className="mr-2 size-4" />
-                    )}
-                    Start Review
-                  </Button>
-                )}
-                </div>
-              </div>
-            )}
+              )}
 
             {/* Done banner */}
             {view === "done" && (
@@ -844,7 +918,6 @@ function FeaturePage() {
           </div>
         )}
       </div>
-
     </div>
   );
 }

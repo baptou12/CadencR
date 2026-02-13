@@ -59,7 +59,12 @@ function generateId(): string {
 /**
  * Broadcast a stream event to all renderer windows.
  */
-function broadcastEvent(id: string, agentType: AgentType | string, event: StreamEvent, parentToolUseId?: string | null): void {
+function broadcastEvent(
+  id: string,
+  agentType: AgentType | string,
+  event: StreamEvent,
+  parentToolUseId?: string | null,
+): void {
   const agentEvent: AgentEvent = {
     subprocessId: id,
     agentType: agentType as AgentType,
@@ -79,12 +84,14 @@ function broadcastEvent(id: string, agentType: AgentType | string, event: Stream
 /**
  * Convert an SDK message to StreamEvent(s) and broadcast them.
  */
-function handleSdkMessage(managed: ManagedSubprocess, msg: Record<string, unknown>): void {
+function handleSdkMessage(
+  managed: ManagedSubprocess,
+  msg: Record<string, unknown>,
+): void {
   const { id, agentType } = managed;
   const type = msg.type as string;
-  const parentToolUseId = (msg.parent_tool_use_id as string | null | undefined) ?? null;
-
-  console.log("[subprocess-manager] SDK message type:", type, parentToolUseId ? `(parent: ${parentToolUseId})` : "");
+  const parentToolUseId =
+    (msg.parent_tool_use_id as string | null | undefined) ?? null;
 
   // Persist events to agent_messages table
   const sessionDbId = getSessionDbId(id);
@@ -101,7 +108,9 @@ function handleSdkMessage(managed: ManagedSubprocess, msg: Record<string, unknow
     // Full assistant message — extract text and tool_use content blocks
     const message = msg.message as Record<string, unknown> | undefined;
     if (message) {
-      const content = message.content as Array<Record<string, unknown>> | undefined;
+      const content = message.content as
+        | Array<Record<string, unknown>>
+        | undefined;
       if (content) {
         for (let i = 0; i < content.length; i++) {
           const block = content[i];
@@ -138,27 +147,40 @@ function handleSdkMessage(managed: ManagedSubprocess, msg: Record<string, unknow
       const toolResultEvent: StreamEvent = {
         type: "tool_result",
         tool_use_id: (msg.tool_use_id as string) ?? "",
-        content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content),
+        content:
+          typeof msg.content === "string"
+            ? msg.content
+            : JSON.stringify(msg.content),
         is_error: (msg.is_error as boolean) ?? false,
       };
       broadcastEvent(id, agentType, toolResultEvent, parentToolUseId);
       if (sessionDbId) persistStreamEvent(sessionDbId, toolResultEvent);
     } else {
-      broadcastEvent(id, agentType, {
-        type: "result",
-        result: msg.result as string | undefined,
-      }, parentToolUseId);
+      broadcastEvent(
+        id,
+        agentType,
+        {
+          type: "result",
+          result: msg.result as string | undefined,
+        },
+        parentToolUseId,
+      );
       // Agent finished — close the message stream so the for-await loop exits
       if (managed.closeMessageStream) {
         managed.closeMessageStream();
       }
     }
   } else if (type === "system") {
-    broadcastEvent(id, agentType, {
-      type: "system",
-      subtype: (msg.subtype as string) ?? "unknown",
-      session_id: msg.session_id as string | undefined,
-    }, parentToolUseId);
+    broadcastEvent(
+      id,
+      agentType,
+      {
+        type: "system",
+        subtype: (msg.subtype as string) ?? "unknown",
+        session_id: msg.session_id as string | undefined,
+      },
+      parentToolUseId,
+    );
   }
 }
 
@@ -167,7 +189,9 @@ function handleSdkMessage(managed: ManagedSubprocess, msg: Record<string, unknow
  */
 export function startSubprocess(options: SubprocessOptions): ManagedSubprocess {
   if (activeProcesses.size >= MAX_CONCURRENT) {
-    throw new Error(`Maximum concurrent agent limit reached (${MAX_CONCURRENT})`);
+    throw new Error(
+      `Maximum concurrent agent limit reached (${MAX_CONCURRENT})`,
+    );
   }
 
   const id = generateId();
@@ -191,11 +215,12 @@ export function startSubprocess(options: SubprocessOptions): ManagedSubprocess {
     managed.status = "error";
     broadcastEvent(id, options.agentType, {
       type: "error",
-      error: { type: "sdk_error", message: err instanceof Error ? err.message : String(err) },
+      error: {
+        type: "sdk_error",
+        message: err instanceof Error ? err.message : String(err),
+      },
     });
   });
-
-  console.log("[subprocess-manager] started SDK query, id:", id);
 
   return managed;
 }
@@ -270,7 +295,9 @@ function createMessageStream(initialPrompt: string) {
       }
       if (done) return Promise.resolve({ done: true, value: undefined });
       // Wait for next push
-      return new Promise((resolve) => { resolver = resolve; });
+      return new Promise((resolve) => {
+        resolver = resolve;
+      });
     },
     return(): Promise<IteratorResult<unknown, void>> {
       close();
@@ -280,14 +307,22 @@ function createMessageStream(initialPrompt: string) {
       close();
       return Promise.reject(err);
     },
-    [Symbol.asyncIterator]() { return this; },
-    [Symbol.asyncDispose]() { close(); return Promise.resolve(); },
+    [Symbol.asyncIterator]() {
+      return this;
+    },
+    [Symbol.asyncDispose]() {
+      close();
+      return Promise.resolve();
+    },
   };
 
   return { generator, push, close };
 }
 
-async function runSdkQuery(managed: ManagedSubprocess, options: SubprocessOptions): Promise<void> {
+async function runSdkQuery(
+  managed: ManagedSubprocess,
+  options: SubprocessOptions,
+): Promise<void> {
   // Dynamic import since the SDK is ESM
   const sdk = await import("@anthropic-ai/claude-agent-sdk");
   const { query } = sdk as {
@@ -299,7 +334,9 @@ async function runSdkQuery(managed: ManagedSubprocess, options: SubprocessOption
 
   const cliInfo = discoverClaudeCli();
   if (!cliInfo) {
-    throw new Error("Claude CLI not found. Please install it or configure the path in Settings.");
+    throw new Error(
+      "Claude CLI not found. Please install it or configure the path in Settings.",
+    );
   }
 
   const queryOptions: Record<string, unknown> = {
@@ -326,10 +363,11 @@ async function runSdkQuery(managed: ManagedSubprocess, options: SubprocessOption
   }
 
   // Add canUseTool callback to handle AskUserQuestion
-  queryOptions.canUseTool = async (toolName: string, input: Record<string, unknown>) => {
+  queryOptions.canUseTool = async (
+    toolName: string,
+    input: Record<string, unknown>,
+  ) => {
     if (toolName === "AskUserQuestion") {
-      console.log("[subprocess-manager] AskUserQuestion intercepted");
-
       try {
         // Request answers from the renderer
         const answers = await requestUserAnswers(managed.id, input);
@@ -343,7 +381,10 @@ async function runSdkQuery(managed: ManagedSubprocess, options: SubprocessOption
           },
         };
       } catch (error) {
-        console.error("[subprocess-manager] Failed to get user answers:", error);
+        console.error(
+          "[subprocess-manager] Failed to get user answers:",
+          error,
+        );
         // Return empty answers on error
         return {
           behavior: "allow" as const,
@@ -358,8 +399,6 @@ async function runSdkQuery(managed: ManagedSubprocess, options: SubprocessOption
     // Allow all other tools
     return { behavior: "allow" as const, updatedInput: input };
   };
-
-  console.log("[subprocess-manager] calling SDK query() with cwd:", options.cwd);
 
   // Create a persistent message stream for multi-turn messaging
   const messageStream = createMessageStream(options.prompt);
@@ -525,16 +564,22 @@ async function requestUserAnswers(
   questions: Record<string, unknown>,
 ): Promise<Record<string, string>> {
   return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      questionEmitter.removeAllListeners(`answer:${subprocessId}`);
-      reject(new Error("User answer timeout (15m)"));
-    }, 15 * 60 * 1000); // 15 minute timeout
+    const timeout = setTimeout(
+      () => {
+        questionEmitter.removeAllListeners(`answer:${subprocessId}`);
+        reject(new Error("User answer timeout (15m)"));
+      },
+      15 * 60 * 1000,
+    ); // 15 minute timeout
 
     // Listen for answer from renderer
-    questionEmitter.once(`answer:${subprocessId}`, (answers: Record<string, string>) => {
-      clearTimeout(timeout);
-      resolve(answers);
-    });
+    questionEmitter.once(
+      `answer:${subprocessId}`,
+      (answers: Record<string, string>) => {
+        clearTimeout(timeout);
+        resolve(answers);
+      },
+    );
 
     // Broadcast question request to all renderer windows
     const windows = BrowserWindow.getAllWindows();
@@ -553,11 +598,12 @@ async function requestUserAnswers(
  * Submit user answers for a pending AskUserQuestion.
  * Called from the renderer via IPC when the user submits their answers.
  */
-export function submitUserAnswers(subprocessId: string, answers: Record<string, string>): void {
-  console.log("[subprocess-manager] submitUserAnswers called for:", subprocessId);
+export function submitUserAnswers(
+  subprocessId: string,
+  answers: Record<string, string>,
+): void {
   questionEmitter.emit(`answer:${subprocessId}`, answers);
 }
-
 
 /**
  * Check if any subprocesses are currently running.

@@ -13,14 +13,26 @@ function makeBlock(partial: Omit<AgentBlockData, "id">): AgentBlockData {
 /**
  * Find a Task block by its toolUseId and append a child block to it.
  */
-function appendToParent(blocks: AgentBlockData[], parentToolUseId: string, newBlock: AgentBlockData): AgentBlockData[] {
+function appendToParent(
+  blocks: AgentBlockData[],
+  parentToolUseId: string,
+  newBlock: AgentBlockData,
+): AgentBlockData[] {
   return blocks.map((b) => {
-    if (b.type === "tool_call" && b.toolName === "Task" && b.toolUseId === parentToolUseId) {
+    if (
+      b.type === "tool_call" &&
+      b.toolName === "Task" &&
+      b.toolUseId === parentToolUseId
+    ) {
       return { ...b, childBlocks: [...(b.childBlocks ?? []), newBlock] };
     }
     // Recurse into nested Task blocks
     if (b.childBlocks) {
-      const updatedChildren = appendToParent(b.childBlocks, parentToolUseId, newBlock);
+      const updatedChildren = appendToParent(
+        b.childBlocks,
+        parentToolUseId,
+        newBlock,
+      );
       if (updatedChildren !== b.childBlocks) {
         return { ...b, childBlocks: updatedChildren };
       }
@@ -40,7 +52,11 @@ function updateLastChildInParent(
   fallback?: Omit<AgentBlockData, "id">,
 ): AgentBlockData[] {
   return blocks.map((b) => {
-    if (b.type === "tool_call" && b.toolName === "Task" && b.toolUseId === parentToolUseId) {
+    if (
+      b.type === "tool_call" &&
+      b.toolName === "Task" &&
+      b.toolUseId === parentToolUseId
+    ) {
       const children = b.childBlocks ?? [];
       if (children.length > 0) {
         const last = children[children.length - 1];
@@ -57,7 +73,12 @@ function updateLastChildInParent(
     }
     // Recurse
     if (b.childBlocks) {
-      const updatedChildren = updateLastChildInParent(b.childBlocks, parentToolUseId, updater, fallback);
+      const updatedChildren = updateLastChildInParent(
+        b.childBlocks,
+        parentToolUseId,
+        updater,
+        fallback,
+      );
       if (updatedChildren !== b.childBlocks) {
         return { ...b, childBlocks: updatedChildren };
       }
@@ -69,7 +90,8 @@ function updateLastChildInParent(
 /** Normalize an option value to a string (handles both string and {label, description} formats) */
 function normalizeOption(opt: unknown): string {
   if (typeof opt === "string") return opt;
-  if (opt && typeof opt === "object" && "label" in opt) return String((opt as { label: string }).label);
+  if (opt && typeof opt === "object" && "label" in opt)
+    return String((opt as { label: string }).label);
   return String(opt);
 }
 
@@ -80,7 +102,9 @@ function parseQuestions(toolInput: Record<string, unknown>): AgentQuestion[] {
       const qObj = q as { question: string; options?: unknown[] };
       questions.push({
         question: qObj.question,
-        options: Array.isArray(qObj.options) ? qObj.options.map(normalizeOption) : [],
+        options: Array.isArray(qObj.options)
+          ? qObj.options.map(normalizeOption)
+          : [],
       });
     }
   } else if (typeof toolInput.question === "string") {
@@ -112,8 +136,6 @@ export function useAgentState(options: UseAgentStateOptions = {}) {
     (agentEvent: AgentEvent) => {
       const { event } = agentEvent;
 
-      console.log("[useAgentState] event:", event.type, event);
-
       const parentId = agentEvent.parentToolUseId ?? null;
 
       switch (event.type) {
@@ -135,18 +157,27 @@ export function useAgentState(options: UseAgentStateOptions = {}) {
           } else if (event.content_block.type === "tool_use") {
             const toolBlock = event.content_block;
             // Note: during streaming, input arrives empty here; questions are parsed on content_block_stop
-            if (supportsQuestions && toolBlock.name === "AskUserQuestion" && Object.keys(toolBlock.input).length > 0) {
-              const parsed = parseQuestions(toolBlock.input as Record<string, unknown>);
+            if (
+              supportsQuestions &&
+              toolBlock.name === "AskUserQuestion" &&
+              Object.keys(toolBlock.input).length > 0
+            ) {
+              const parsed = parseQuestions(
+                toolBlock.input as Record<string, unknown>,
+              );
               if (parsed.length > 0) {
                 setPendingQuestions(parsed);
               }
             }
-            const hasInput = toolBlock.input && Object.keys(toolBlock.input).length > 0;
+            const hasInput =
+              toolBlock.input && Object.keys(toolBlock.input).length > 0;
             const newBlock = makeBlock({
               type: "tool_call",
               content: hasInput ? JSON.stringify(toolBlock.input, null, 2) : "",
               toolName: toolBlock.name,
-              toolArgs: hasInput ? JSON.stringify(toolBlock.input, null, 2) : "",
+              toolArgs: hasInput
+                ? JSON.stringify(toolBlock.input, null, 2)
+                : "",
               toolUseId: toolBlock.id,
               parentToolUseId: parentId,
               childBlocks: toolBlock.name === "Task" ? [] : undefined,
@@ -163,10 +194,22 @@ export function useAgentState(options: UseAgentStateOptions = {}) {
           if (event.delta.type === "text_delta") {
             const deltaText = event.delta.text;
             if (parentId) {
-              setBlocks((prev) => updateLastChildInParent(prev, parentId, (child) => {
-                if (child.type === "text") return { ...child, content: child.content + deltaText };
-                return null; // signal to append new block
-              }, { type: "text", content: deltaText, parentToolUseId: parentId }));
+              setBlocks((prev) =>
+                updateLastChildInParent(
+                  prev,
+                  parentId,
+                  (child) => {
+                    if (child.type === "text")
+                      return { ...child, content: child.content + deltaText };
+                    return null; // signal to append new block
+                  },
+                  {
+                    type: "text",
+                    content: deltaText,
+                    parentToolUseId: parentId,
+                  },
+                ),
+              );
             } else {
               setBlocks((prev) => {
                 if (prev.length === 0)
@@ -178,22 +221,27 @@ export function useAgentState(options: UseAgentStateOptions = {}) {
                     { ...last, content: last.content + deltaText },
                   ];
                 }
-                return [...prev, makeBlock({ type: "text", content: deltaText })];
+                return [
+                  ...prev,
+                  makeBlock({ type: "text", content: deltaText }),
+                ];
               });
             }
           } else if (event.delta.type === "input_json_delta") {
             const partialJson = event.delta.partial_json;
             if (parentId) {
-              setBlocks((prev) => updateLastChildInParent(prev, parentId, (child) => {
-                if (child.type === "tool_call") {
-                  return {
-                    ...child,
-                    toolArgs: (child.toolArgs ?? "") + partialJson,
-                    content: (child.content ?? "") + partialJson,
-                  };
-                }
-                return null;
-              }));
+              setBlocks((prev) =>
+                updateLastChildInParent(prev, parentId, (child) => {
+                  if (child.type === "tool_call") {
+                    return {
+                      ...child,
+                      toolArgs: (child.toolArgs ?? "") + partialJson,
+                      content: (child.content ?? "") + partialJson,
+                    };
+                  }
+                  return null;
+                }),
+              );
             } else {
               setBlocks((prev) => {
                 if (prev.length === 0) return prev;
@@ -224,16 +272,20 @@ export function useAgentState(options: UseAgentStateOptions = {}) {
           });
 
           if (parentId) {
-            setBlocks((prev) => appendToParent(prev, parentId, toolResultBlock));
+            setBlocks((prev) =>
+              appendToParent(prev, parentId, toolResultBlock),
+            );
           } else {
             // Also check if this result completes a Task block
             setBlocks((prev) => {
               const updated = [...prev, toolResultBlock];
               // Mark matching Task block as complete
               return updated.map((b) =>
-                b.type === "tool_call" && b.toolName === "Task" && b.toolUseId === event.tool_use_id
+                b.type === "tool_call" &&
+                b.toolName === "Task" &&
+                b.toolUseId === event.tool_use_id
                   ? { ...b, taskComplete: true }
-                  : b
+                  : b,
               );
             });
           }
@@ -246,9 +298,15 @@ export function useAgentState(options: UseAgentStateOptions = {}) {
               // Find the last tool_call block
               for (let i = prev.length - 1; i >= 0; i--) {
                 const block = prev[i];
-                if (block.type === "tool_call" && block.toolName === "AskUserQuestion" && block.toolArgs) {
+                if (
+                  block.type === "tool_call" &&
+                  block.toolName === "AskUserQuestion" &&
+                  block.toolArgs
+                ) {
                   try {
-                    const parsed = parseQuestions(JSON.parse(block.toolArgs) as Record<string, unknown>);
+                    const parsed = parseQuestions(
+                      JSON.parse(block.toolArgs) as Record<string, unknown>,
+                    );
                     if (parsed.length > 0) {
                       setPendingQuestions(parsed);
                     }
@@ -362,10 +420,8 @@ export function useAgentEventListener(
 
     const listener = api.onAgentEvent((data: unknown) => {
       const agentEvent = data as AgentEvent;
-      console.log("[useAgentEventListener] received:", agentEvent.agentType, agentEvent.event.type);
       const handler = handlersRef.current[agentEvent.agentType];
       if (!handler) {
-        console.log("[useAgentEventListener] no handler for agentType:", agentEvent.agentType, "registered:", Object.keys(handlersRef.current));
         return;
       }
 
@@ -373,7 +429,6 @@ export function useAgentEventListener(
       if (handler.subprocessIdRef) {
         const currentId = handler.subprocessIdRef.current;
         if (currentId && agentEvent.subprocessId !== currentId) {
-          console.log("[useAgentEventListener] filtered out: subprocess mismatch", currentId, "!=", agentEvent.subprocessId);
           return;
         }
       }
