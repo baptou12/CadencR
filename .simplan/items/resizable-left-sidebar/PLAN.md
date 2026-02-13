@@ -34,14 +34,16 @@
 
 ## Phases
 
-### ⬜ Phase 1: Add shadcn resizable component
+### ✅ Phase 1: Add shadcn resizable component
 - **Step**: 1
 - **Complexity**: 1
-- [ ] Install `react-resizable-panels` dependency
-- [ ] Add shadcn `resizable` UI component files (`ResizablePanelGroup`, `ResizablePanel`, `ResizableHandle`)
+- [x] Install `react-resizable-panels` dependency
+- [x] Add shadcn `resizable` UI component files (`ResizablePanelGroup`, `ResizablePanel`, `ResizableHandle`)
 - **Files**: `package.json`, `src/renderer/components/ui/resizable.tsx`
 - **Commit message**: `feat: add shadcn resizable component`
 - **Bisect note**: N/A — only adds files, nothing uses them yet
+- **Implementation notes**: Installed `react-resizable-panels` v4.6.2. Adapted the shadcn resizable component for v4 API which uses `Group`, `Panel`, `Separator` exports (not `PanelGroup`, `Panel`, `PanelResizeHandle` as in v2/v3). Component re-exports as `ResizablePanelGroup`, `ResizablePanel`, `ResizableHandle` for consistent shadcn naming.
+- **Validation results**: Lint passes (exit 0), TypeScript type check passes (exit 0, no errors).
 
 ### ⬜ Phase 2: Resizable left sidebar in root layout
 - **Step**: 2
@@ -88,5 +90,5 @@
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Not started
-- **Progress**: 0/4
+- **Current Phase**: Phase 2
+- **Progress**: 1/4
