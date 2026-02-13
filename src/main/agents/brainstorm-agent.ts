@@ -14,6 +14,7 @@ import { getDatabase } from "../db/database";
 import { startSubprocess, type ManagedSubprocess } from "./subprocess-manager";
 import { bridgeSubprocessToRenderer, notifyDbUpdated } from "./ipc-bridge";
 import { parsePlanOutput } from "./plan-agent";
+import { resolveModel } from "./models";
 import type { AgentType, StreamEvent, StreamContentBlockStart, StreamContentBlockDelta } from "./types";
 
 const BRAINSTORM_SYSTEM_PROMPT = `You are the Brainstorm agent for ProductDevR, a development planning tool. Your job is to perform deep, comprehensive research and produce a thorough implementation plan for a feature.
@@ -123,11 +124,14 @@ ${options.description}
 
 Start by thoroughly exploring the codebase to understand the full context. Research best practices if needed. Then ask me extensive clarifying questions (aim for 10-40 questions covering all aspects). Finally, generate a detailed phased plan.`;
 
+  const model = resolveModel("brainstorm", options.featureId, options.projectId);
+
   const managed = startSubprocess({
     cwd: options.cwd,
     agentType: "brainstorm",
     systemPrompt: BRAINSTORM_SYSTEM_PROMPT,
     prompt,
+    model,
   });
 
   // Bridge to renderer

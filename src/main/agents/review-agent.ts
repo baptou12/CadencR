@@ -12,6 +12,7 @@
 import { getDatabase } from "../db/database";
 import { startSubprocess, type ManagedSubprocess } from "./subprocess-manager";
 import { bridgeSubprocessToRenderer, notifyDbUpdated } from "./ipc-bridge";
+import { resolveModel } from "./models";
 import type { AgentType, StreamEvent, StreamContentBlockStart, StreamContentBlockDelta } from "./types";
 import type { PlanRow, PhaseRow } from "../db/types";
 
@@ -110,11 +111,14 @@ If your verdict is CHANGES_REQUESTED, end with:
 ---REVIEW_CHANGES_REQUESTED---
 followed by a brief summary of the fixes needed (one per line).`;
 
+  const model = resolveModel("review", options.featureId, options.projectId);
+
   const managed = startSubprocess({
     cwd: options.cwd,
     agentType: "review",
     systemPrompt: REVIEW_SYSTEM_PROMPT,
     prompt,
+    model,
   });
 
   // Bridge to renderer

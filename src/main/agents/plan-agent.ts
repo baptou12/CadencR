@@ -13,6 +13,7 @@
 import { getDatabase } from "../db/database";
 import { startSubprocess, type ManagedSubprocess } from "./subprocess-manager";
 import { bridgeSubprocessToRenderer, notifyDbUpdated } from "./ipc-bridge";
+import { resolveModel } from "./models";
 import type { AgentType, StreamEvent, StreamContentBlockStart, StreamContentBlockDelta } from "./types";
 
 const PLAN_SYSTEM_PROMPT = `You are the Plan agent for ProductDevR, a development planning tool. Your job is to create a detailed, phased implementation plan for a feature.
@@ -120,11 +121,14 @@ ${options.description}
 
 Start by exploring the codebase to understand the project structure and existing patterns. Then ask me clarifying questions. Finally, generate a phased plan.`;
 
+  const model = resolveModel("plan", options.featureId, options.projectId);
+
   const managed = startSubprocess({
     cwd: options.cwd,
     agentType: "plan",
     systemPrompt: PLAN_SYSTEM_PROMPT,
     prompt,
+    model,
   });
 
   // Bridge to renderer

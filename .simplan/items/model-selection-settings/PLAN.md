@@ -52,15 +52,17 @@
 - **Implementation notes**: Created file with `ClaudeModel` interface, `CLAUDE_MODELS` array (Opus 4.6, Sonnet 4, Haiku 3.5), `DEFAULT_MODEL` constant, re-exported `AgentType`, and `resolveModel` function querying feature_settings, project_settings, and settings tables in cascade order.
 - **Validation results**: Lint passed (0 errors), type check passed (no errors). Skipped `pnpm run package` (heavy build; lint + tsc sufficient for a new unimported file).
 
-### ⬜ Phase 2: Wire model into subprocess manager
+### ✅ Phase 2: Wire model into subprocess manager
 - **Step**: 2
 - **Complexity**: 2
-- [ ] Add optional `model?: string` to `SubprocessOptions` interface
-- [ ] Replace hardcoded model in `startSubprocess` with `options.model ?? DEFAULT_MODEL`
-- [ ] Update each agent caller (plan-agent, execute-agent, brainstorm-agent, risk-agent, review-agent) to call `resolveModel(agentType, featureId, projectId)` and pass `model` in subprocess options
+- [x] Add optional `model?: string` to `SubprocessOptions` interface
+- [x] Replace hardcoded model in `startSubprocess` with `options.model ?? DEFAULT_MODEL`
+- [x] Update each agent caller (plan-agent, execute-agent, brainstorm-agent, risk-agent, review-agent) to call `resolveModel(agentType, featureId, projectId)` and pass `model` in subprocess options
 - **Files**: `src/main/agents/subprocess-manager.ts`, `src/main/agents/plan-agent.ts`, `src/main/agents/execute-agent.ts`, `src/main/agents/brainstorm-agent.ts`, `src/main/agents/risk-agent.ts`, `src/main/agents/review-agent.ts`
 - **Commit message**: `feat: use resolved model setting instead of hardcoded model`
 - **Bisect note**: Must update all callers in same phase to avoid inconsistency
+- **Implementation notes**: Added `model?: string` to `SubprocessOptions`, imported `DEFAULT_MODEL` and replaced hardcoded `"claude-haiku-4-5-20251001"` with `options.model ?? DEFAULT_MODEL`. Each of the 5 agent files now imports `resolveModel` from `./models`, calls it with the appropriate agent type and IDs, and passes the result as `model` in the subprocess options.
+- **Validation results**: Lint passed (0 errors), type check passed (no errors). Skipped `pnpm run package` (heavy build; lint + tsc sufficient).
 
 ### ⬜ Phase 3: Add tRPC procedures for model settings
 - **Step**: 3
@@ -105,5 +107,5 @@
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 2
-- **Progress**: 1/5
+- **Current Phase**: Phase 3
+- **Progress**: 2/5

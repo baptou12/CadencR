@@ -12,6 +12,7 @@
 import { getDatabase } from "../db/database";
 import { startSubprocess, type ManagedSubprocess } from "./subprocess-manager";
 import { bridgeSubprocessToRenderer } from "./ipc-bridge";
+import { resolveModel } from "./models";
 import type { AgentType, StreamEvent, StreamContentBlockStart, StreamContentBlockDelta } from "./types";
 
 const RISK_SYSTEM_PROMPT = `You are the Risk Analysis agent for ProductDevR, a development planning tool. Your job is to evaluate the risk profile of a planned feature before execution begins.
@@ -111,11 +112,14 @@ export function startRiskAgent(options: RiskAgentOptions): RiskAgentResult {
 
 Start by exploring the codebase to understand the full context and impact of these changes. Then generate a comprehensive risk report in markdown format.`;
 
+  const model = resolveModel("risk", options.featureId, options.projectId);
+
   const managed = startSubprocess({
     cwd: options.cwd,
     agentType: "risk",
     systemPrompt: RISK_SYSTEM_PROMPT,
     prompt,
+    model,
   });
 
   // Bridge to renderer

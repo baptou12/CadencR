@@ -2,6 +2,7 @@ import { BrowserWindow } from "electron";
 import { getDatabase } from "../db/database";
 import { discoverClaudeCli } from "./cli-discovery";
 import { getSessionDbId, persistStreamEvent } from "./ipc-bridge";
+import { DEFAULT_MODEL } from "./models";
 import type { AgentEvent, AgentType, StreamEvent } from "./types";
 import EventEmitter from "node:events";
 
@@ -26,6 +27,8 @@ export interface SubprocessOptions {
   resumeSessionId?: string;
   /** Allowed tools configuration */
   allowedTools?: string[];
+  /** Claude model to use (defaults to DEFAULT_MODEL) */
+  model?: string;
 }
 
 export interface ManagedSubprocess {
@@ -343,7 +346,7 @@ async function runSdkQuery(
     cwd: options.cwd,
     permissionMode: "bypassPermissions" as const,
     pathToClaudeCodeExecutable: cliInfo.path,
-    model: "claude-haiku-4-5-20251001",
+    model: options.model ?? DEFAULT_MODEL,
   };
 
   if (options.systemPrompt) {

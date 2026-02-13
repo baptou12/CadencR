@@ -14,6 +14,7 @@ import { getDatabase } from "../db/database";
 import type { PhaseRow, PlanRow, SettingRow } from "../db/types";
 import { startSubprocess, type ManagedSubprocess } from "./subprocess-manager";
 import { bridgeSubprocessToRenderer, notifyDbUpdated } from "./ipc-bridge";
+import { resolveModel } from "./models";
 import type { StreamEvent, StreamContentBlockStart, StreamContentBlockDelta } from "./types";
 
 const EXECUTE_SYSTEM_PROMPT = `You are the Execute agent for ProductDevR, responsible for implementing a single phase of a development plan.
@@ -181,6 +182,8 @@ function executePhase(
     // Build enriched prompt with plan-level context and completed phases
     const prompt = buildEnrichedPrompt(phase);
 
+    const model = resolveModel("execute", options.featureId, options.projectId);
+
     let managed: ManagedSubprocess;
     try {
       managed = startSubprocess({
@@ -188,6 +191,7 @@ function executePhase(
         agentType: "execute",
         systemPrompt: EXECUTE_SYSTEM_PROMPT,
         prompt,
+        model,
       });
     } catch {
       // Could not start subprocess (e.g., max concurrent limit)
