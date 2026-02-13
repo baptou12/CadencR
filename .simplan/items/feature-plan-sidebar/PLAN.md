@@ -64,18 +64,20 @@
 - **Implementation notes**: Created PhaseCard with exported `PhaseData` interface matching the DB phase schema. Status config map handles pending/running/completed/done/error with appropriate lucide icons and Dracula theme colors. Card is 288px wide (`w-72`), uses `max-h-32` with overflow hidden and a gradient fade for markdown preview. Used `Maximize` icon (lucide) for expand button.
 - **Validation results**: Lint passes (0 errors), TypeScript compiles (no type errors). Build validation skipped (additive-only change).
 
-### ⬜ Phase 3: Create PlanSidebar component with fullscreen modal
+### ✅ Phase 3: Create PlanSidebar component with fullscreen modal
 - **Step**: 3
 - **Complexity**: 3
-- [ ] Create `src/renderer/components/PlanSidebar.tsx`
-- [ ] Takes `featureId` prop, queries `getPlanWithPhases`
-- [ ] Renders plan title at top, then a vertical scrollable list of PhaseCard components
-- [ ] Manages `expandedPhaseId` state — when set, opens a Dialog with full phase content (title, full markdown via `Markdown` component, status badge, complexity, commit message)
-- [ ] Use `ScrollArea` from shadcn for the phase list
-- [ ] If no plan exists, render nothing (return null) so the layout stays single-column
+- [x] Create `src/renderer/components/PlanSidebar.tsx`
+- [x] Takes `featureId` prop, queries `getPlanWithPhases`
+- [x] Renders plan title at top, then a vertical scrollable list of PhaseCard components
+- [x] Manages `expandedPhaseId` state — when set, opens a Dialog with full phase content (title, full markdown via `Markdown` component, status badge, complexity, commit message)
+- [x] Use `ScrollArea` from shadcn for the phase list
+- [x] If no plan exists, render nothing (return null) so the layout stays single-column
 - **Files**: `src/renderer/components/PlanSidebar.tsx`
 - **Commit message**: `feat: add PlanSidebar with scrollable phase list and fullscreen modal`
 - **Bisect note**: N/A — new component, no callers yet
+- **Implementation notes**: Created PlanSidebar with `featureId` prop querying `getPlanWithPhases`. Returns null when no plan. Uses ScrollArea for phase list with PhaseCard components. Fullscreen Dialog shows status icon+badge, complexity badge, full markdown content via Markdown component, and commit message in a styled code block. Reused statusConfig pattern from PhaseCard for consistency. Sidebar is 320px wide (`w-80`) with border-l separator.
+- **Validation results**: Lint passes (0 errors), TypeScript compiles (no type errors). Build validation skipped (additive-only change, no callers yet).
 
 ### ⬜ Phase 4: Integrate PlanSidebar into feature page
 - **Step**: 4
@@ -96,5 +98,5 @@
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 3
-- **Progress**: 2/4
+- **Current Phase**: Phase 4
+- **Progress**: 3/4
