@@ -258,6 +258,14 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 19,
+    description: "Remove deprecated auto_commit rows",
+    up: (db) => {
+      db.exec(`DELETE FROM project_settings WHERE key = 'auto_commit'`);
+      db.exec(`DELETE FROM feature_settings WHERE key = 'auto_commit'`);
+    },
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

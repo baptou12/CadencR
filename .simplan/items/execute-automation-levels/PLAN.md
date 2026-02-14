@@ -106,16 +106,18 @@ Phase completion parses implementation notes and deviations from agent output be
 - **Implementation notes**: Added `executeWaitingSessionDbId` and `executeWaitingNextStep` state to `useWorkflowAgents`. On mount, detects waiting orchestrator sessions from `sessionsQuery.data`. At runtime, wraps `execute.handleEvent` to intercept `execute_waiting` events before they reach the multi-subprocess handler (which would discard them since they use `session-` prefixed subprocessId). The wrapped handler extracts sessionDbId from the subprocessId pattern and stores it. `handleContinueBuild` calls `continueExecuteMutation`, clears waiting state, and sets execute status to running. In `NextStepsBar`, added a "Continue to Step N" button that shows when `canContinueBuild` is true, hiding the normal "Start Building" button. `FeatureWorkflowView` passes the new props and includes `canContinueBuild` in the NextStepsBar show condition.
 - **Validation results**: Lint passed (0 warnings, 0 errors). TypeScript compiled with no errors.
 
-### ⬜ Phase 6: Remove auto_commit from codebase
+### ✅ Phase 6: Remove auto_commit from codebase
 - **Step**: 5
 - **Complexity**: 2
-- [ ] Remove `auto_commit` key handling from `execute-agent.ts` (should already be gone from Phase 2, verify)
-- [ ] Remove any remaining `auto_commit` references in `ProjectList.tsx` (should be replaced in Phase 3, verify)
-- [ ] Add migration 19 that deletes `auto_commit` rows from `project_settings` and `feature_settings`
-- [ ] Search codebase for any remaining `auto_commit` references and remove them
+- [x] Remove `auto_commit` key handling from `execute-agent.ts` (should already be gone from Phase 2, verify)
+- [x] Remove any remaining `auto_commit` references in `ProjectList.tsx` (should be replaced in Phase 3, verify)
+- [x] Add migration 19 that deletes `auto_commit` rows from `project_settings` and `feature_settings`
+- [x] Search codebase for any remaining `auto_commit` references and remove them
 - **Files**: `src/main/db/migrations.ts`, any files with remaining references
 - **Commit message**: `chore: remove deprecated auto_commit setting`
 - **Bisect note**: Safe to remove since Phase 2 already replaced all usages
+- **Implementation notes**: Verified `execute-agent.ts` and `ProjectList.tsx` have no `auto_commit` references (already removed in Phases 2 and 3). Only remaining references are in migration 18 SQL/comments (kept as historical record). Added migration 19 (version 19) that DELETEs `auto_commit` rows from `project_settings` and `feature_settings`.
+- **Validation results**: Lint passed (0 warnings, 0 errors). TypeScript compiled with no errors.
 
 ## Phase Status Legend
 
@@ -126,5 +128,5 @@ Phase completion parses implementation notes and deviations from agent output be
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 6
-- **Progress**: 5/6
+- **Current Phase**: All phases complete
+- **Progress**: 6/6
