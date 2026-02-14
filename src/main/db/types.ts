@@ -69,6 +69,8 @@ export interface PhaseRow {
   commit_message: string;
   prompt: string;
   order_index: number;
+  implementation_notes: string | null;
+  deviations: string | null;
 }
 
 // -- agent sessions & messages --

@@ -29,14 +29,16 @@ The execute agent orchestrates phase execution via `execute-agent.ts`. Each phas
 
 ## Phases
 
-### ⬜ Phase 1: Add DB columns for deviation tracking
+### ✅ Phase 1: Add DB columns for deviation tracking
 - **Step**: 1
 - **Complexity**: 2
-- [ ] Add migration 14 in `src/main/db/migrations.ts`: `ALTER TABLE phases ADD COLUMN implementation_notes TEXT; ALTER TABLE phases ADD COLUMN deviations TEXT;`
-- [ ] Update `PhaseRow` interface in `src/main/db/types.ts` to include `implementation_notes: string | null` and `deviations: string | null`
+- [x] Add migration 14 in `src/main/db/migrations.ts`: `ALTER TABLE phases ADD COLUMN implementation_notes TEXT; ALTER TABLE phases ADD COLUMN deviations TEXT;`
+- [x] Update `PhaseRow` interface in `src/main/db/types.ts` to include `implementation_notes: string | null` and `deviations: string | null`
 - **Files**: `src/main/db/migrations.ts`, `src/main/db/types.ts`
 - **Commit message**: `feat: add implementation_notes and deviations columns to phases table`
 - **Bisect note**: N/A — new nullable columns, no callers yet
+- **Implementation notes**: Added as migration 17 (not 14 as planned) since migrations 14-16 already exist. Two ALTER TABLE statements add nullable TEXT columns. PhaseRow interface updated with both fields as `string | null`.
+- **Validation results**: Lint passes (0 warnings, 0 errors). TypeScript compiles with no errors.
 
 ### ⬜ Phase 2: Update execute agent prompt for structured output
 - **Step**: 2
@@ -82,5 +84,5 @@ The execute agent orchestrates phase execution via `execute-agent.ts`. Each phas
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Not started
-- **Progress**: 0/4
+- **Current Phase**: Phase 2
+- **Progress**: 1/4

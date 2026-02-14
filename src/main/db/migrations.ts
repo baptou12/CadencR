@@ -224,6 +224,14 @@ const migrations: Migration[] = [
       db.exec("CREATE INDEX idx_agent_sessions_subprocess_id ON agent_sessions(subprocess_id)");
     },
   },
+  {
+    version: 17,
+    description: "Add implementation_notes and deviations columns to phases table",
+    up: (db) => {
+      db.exec("ALTER TABLE phases ADD COLUMN implementation_notes TEXT");
+      db.exec("ALTER TABLE phases ADD COLUMN deviations TEXT");
+    },
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {
