@@ -970,9 +970,15 @@ export function useSessionState(
     setSubprocesses((prev) => {
       const entry = prev.get(oldId);
       if (!entry) return prev;
-      const next = new Map(prev);
-      next.delete(oldId);
-      next.set(newId, { ...entry, subprocessId: newId, status: "running" });
+      // Rebuild the Map preserving insertion order (replace in-place, don't delete+append)
+      const next = new Map<string, SubprocessState>();
+      for (const [key, value] of prev) {
+        if (key === oldId) {
+          next.set(newId, { ...value, subprocessId: newId, status: "running" });
+        } else {
+          next.set(key, value);
+        }
+      }
       return next;
     });
   }, []);
