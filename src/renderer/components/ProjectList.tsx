@@ -12,11 +12,13 @@ import {
 interface ProjectListProps {
   selectedProjectId: number | null;
   onSelectProject: (id: number) => void;
+  keyboardFocusProjectId?: number | null;
 }
 
 export function ProjectList({
   selectedProjectId,
   onSelectProject,
+  keyboardFocusProjectId,
 }: ProjectListProps) {
   const utils = trpc.useUtils();
   const projectsQuery = trpc.projects.list.useQuery();
@@ -70,7 +72,7 @@ export function ProjectList({
                 selectedProjectId === project.id
                   ? "bg-accent text-accent-foreground"
                   : "hover:bg-accent/50"
-              }`}
+              } ${keyboardFocusProjectId === project.id ? "ring-2 ring-ring ring-offset-1 ring-offset-background" : ""}`}
             >
               <span className="truncate">{project.name}</span>
               <DropdownMenu>
