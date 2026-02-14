@@ -1,8 +1,8 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { trpc } from "@/trpc";
 import { useSessionState, useSessionEventListener } from "@/hooks/useSessionState";
 import type { AgentBlockData } from "@/components/AgentBlock";
-import type { AgentType } from "../../main/agents/types";
+import type { AgentType, AgentEvent } from "../../main/agents/types";
 import type { AgentStatus } from "@/components/AgentSession";
 
 // ---------------------------------------------------------------------------
@@ -530,6 +530,69 @@ export function useWorkflowAgents({
     ],
   );
 
+  // --- Continue build state (Level 2 autonomy: manual continue) ---
+  const [executeWaitingSessionDbId, setExecuteWaitingSessionDbId] = useState<number | null>(null);
+  const [executeWaitingNextStep, setExecuteWaitingNextStep] = useState<number | null>(null);
+  const continueExecuteMutation = trpc.agents.continueExecute.useMutation();
+
+  // Detect waiting orchestrator on mount (page refresh scenario)
+  useEffect(() => {
+    if (!sessionsQuery.data) return;
+    const waitingOrchestrator = sessionsQuery.data.find(
+      (s) => s.agent_type === "execute" && s.run_id == null && s.status === "waiting",
+    );
+    if (waitingOrchestrator) {
+      setExecuteWaitingSessionDbId(waitingOrchestrator.id);
+      // We don't have nextStepNumber persisted, so use a generic label
+      // The execute_waiting event at runtime will have the real number
+      setExecuteWaitingNextStep(null);
+    }
+  }, [sessionsQuery.data]);
+
+  const handleContinueBuild = useCallback(async () => {
+    if (executeWaitingSessionDbId == null) return;
+    const sessionDbId = executeWaitingSessionDbId;
+    setExecuteWaitingSessionDbId(null);
+    setExecuteWaitingNextStep(null);
+    execute.setStatus("running");
+    try {
+      await continueExecuteMutation.mutateAsync({ sessionDbId });
+    } catch (err) {
+      execute.setStatus("error");
+      execute.appendBlock({
+        type: "text",
+        content: `Failed to continue build: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
+  }, [executeWaitingSessionDbId, continueExecuteMutation, execute]);
+
+  const canContinueBuild = executeWaitingSessionDbId != null;
+  const isContinuingBuild = continueExecuteMutation.isLoading;
+
+  // Wrap execute handleEvent to intercept execute_waiting events
+  const originalExecuteHandleEvent = execute.handleEvent;
+  const executeHandleEventRef = useRef(originalExecuteHandleEvent);
+  executeHandleEventRef.current = originalExecuteHandleEvent;
+
+  const wrappedExecuteHandleEvent = useCallback(
+    (agentEvent: AgentEvent) => {
+      if (agentEvent.event.type === "execute_waiting") {
+        const evt = agentEvent.event as { type: "execute_waiting"; nextStepNumber: number };
+        // Extract sessionDbId from subprocessId "session-{id}"
+        const match = agentEvent.subprocessId.match(/^session-(\d+)$/);
+        const sessionDbId = match ? Number(match[1]) : null;
+        if (sessionDbId != null) {
+          setExecuteWaitingSessionDbId(sessionDbId);
+          setExecuteWaitingNextStep(evt.nextStepNumber);
+          execute.setStatus("paused");
+        }
+        return;
+      }
+      executeHandleEventRef.current(agentEvent);
+    },
+    [execute],
+  );
+
   const [reviewComplete, setReviewComplete] = useState(false);
   const [reviewVerdict, setReviewVerdict] = useState<
     "approved" | "changes_requested" | null
@@ -563,7 +626,7 @@ export function useWorkflowAgents({
         subprocessIdRef: brainstorm.subprocessIdRef,
         sessionDbIdRef: brainstorm.sessionDbIdRef,
       },
-      execute: { handleEvent: execute.handleEvent },
+      execute: { handleEvent: wrappedExecuteHandleEvent },
       risk: {
         handleEvent: risk.handleEvent,
         sessionDbIdRef: risk.sessionDbIdRef,
@@ -580,7 +643,7 @@ export function useWorkflowAgents({
       brainstorm.handleEvent,
       brainstorm.subprocessIdRef,
       brainstorm.sessionDbIdRef,
-      execute.handleEvent,
+      wrappedExecuteHandleEvent,
       risk.handleEvent,
       risk.sessionDbIdRef,
       review.handleEvent,
@@ -1010,6 +1073,11 @@ export function useWorkflowAgents({
     handleAgentStop,
     sendToExecuteSubprocess,
     interruptExecuteSubprocess,
+    // Continue build (Level 2 autonomy)
+    canContinueBuild,
+    executeWaitingNextStep,
+    handleContinueBuild,
+    isContinuingBuild,
     // Session list model (replaces useAgentEntries)
     sessionEntries,
     hasAnyAgentOutput,

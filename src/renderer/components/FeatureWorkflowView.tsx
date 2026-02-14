@@ -235,7 +235,8 @@ export function FeatureWorkflowView({
                 wf.noAgentsRunning &&
                 (actions.canStartBuild ||
                   actions.canStartRisk ||
-                  actions.canStartReview)
+                  actions.canStartReview ||
+                  wf.canContinueBuild)
               }
               canStartBuild={actions.canStartBuild}
               canStartRisk={actions.canStartRisk}
@@ -247,6 +248,10 @@ export function FeatureWorkflowView({
               isStartingExecute={wf.isStartingExecute}
               isStartingRisk={wf.isStartingRisk}
               isStartingReview={wf.isStartingReview}
+              canContinueBuild={wf.canContinueBuild}
+              onContinueBuild={wf.handleContinueBuild}
+              isContinuingBuild={wf.isContinuingBuild}
+              nextStepNumber={wf.executeWaitingNextStep}
             />
 
             {view === "done" && (

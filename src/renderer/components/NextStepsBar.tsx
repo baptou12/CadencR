@@ -15,6 +15,10 @@ interface NextStepsBarProps {
   isStartingExecute: boolean;
   isStartingRisk: boolean;
   isStartingReview: boolean;
+  canContinueBuild?: boolean;
+  onContinueBuild?: () => void;
+  isContinuingBuild?: boolean;
+  nextStepNumber?: number | null;
 }
 
 export function NextStepsBar({
@@ -29,6 +33,10 @@ export function NextStepsBar({
   isStartingExecute,
   isStartingRisk,
   isStartingReview,
+  canContinueBuild,
+  onContinueBuild,
+  isContinuingBuild,
+  nextStepNumber,
 }: NextStepsBarProps) {
   if (!show) return null;
 
@@ -45,7 +53,22 @@ export function NextStepsBar({
         </p>
       </div>
       <div className="flex gap-2">
-        {canStartBuild && (
+        {canContinueBuild && onContinueBuild && (
+          <Button
+            onClick={onContinueBuild}
+            disabled={isContinuingBuild}
+          >
+            {isContinuingBuild ? (
+              <Loader2Icon className="mr-2 size-4 animate-spin" />
+            ) : (
+              <AGENT_ICONS.execute className="mr-2 size-4" />
+            )}
+            {nextStepNumber != null
+              ? `Continue to Step ${nextStepNumber}`
+              : "Continue Building"}
+          </Button>
+        )}
+        {canStartBuild && !canContinueBuild && (
           <Button
             onClick={onStartBuilding}
             disabled={isStartingExecute}

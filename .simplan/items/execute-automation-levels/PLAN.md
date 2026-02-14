@@ -92,17 +92,19 @@ Phase completion parses implementation notes and deviations from agent output be
 - **Implementation notes**: Added `AgentAutonomySelect` component in settings.tsx using `trpc.settings.get` (key: `agent_autonomy`) and `trpc.settings.set` mutation. No router changes needed — the existing generic get/set procedures handle the `agent_autonomy` key. Section placed between Model Configuration and Custom Settings. Three options: Low (1), Medium (2), High (3).
 - **Validation results**: Lint passed (0 warnings, 0 errors). TypeScript compiled with no errors.
 
-### ⬜ Phase 5: Add "Continue Building" button for Level 2
+### ✅ Phase 5: Add "Continue Building" button for Level 2
 - **Step**: 4
 - **Complexity**: 3
-- [ ] In `useWorkflowAgents.ts`, detect when the execute orchestrator session has `waiting` status (step completed, next step pending)
-- [ ] Expose a `canContinueBuild` flag and `onContinueBuild` handler that calls the `agents.continueExecute` mutation
-- [ ] In the workflow view (likely near `NextStepsBar` or below the execute agent entries), show a "Continue to Next Step" button when `canContinueBuild` is true
-- [ ] The button should show which step is next (e.g., "Continue to Step 2")
-- [ ] After clicking, the button disappears and new phase subprocesses appear
+- [x] In `useWorkflowAgents.ts`, detect when the execute orchestrator session has `waiting` status (step completed, next step pending)
+- [x] Expose a `canContinueBuild` flag and `onContinueBuild` handler that calls the `agents.continueExecute` mutation
+- [x] In the workflow view (likely near `NextStepsBar` or below the execute agent entries), show a "Continue to Next Step" button when `canContinueBuild` is true
+- [x] The button should show which step is next (e.g., "Continue to Step 2")
+- [x] After clicking, the button disappears and new phase subprocesses appear
 - **Files**: `src/renderer/hooks/useWorkflowAgents.ts`, `src/renderer/components/FeatureWorkflowView.tsx`, `src/renderer/components/NextStepsBar.tsx`
 - **Commit message**: `feat: add continue building button for manual continue autonomy level`
 - **Bisect note**: Requires Phase 2's `waiting` status and `continueExecute` mutation
+- **Implementation notes**: Added `executeWaitingSessionDbId` and `executeWaitingNextStep` state to `useWorkflowAgents`. On mount, detects waiting orchestrator sessions from `sessionsQuery.data`. At runtime, wraps `execute.handleEvent` to intercept `execute_waiting` events before they reach the multi-subprocess handler (which would discard them since they use `session-` prefixed subprocessId). The wrapped handler extracts sessionDbId from the subprocessId pattern and stores it. `handleContinueBuild` calls `continueExecuteMutation`, clears waiting state, and sets execute status to running. In `NextStepsBar`, added a "Continue to Step N" button that shows when `canContinueBuild` is true, hiding the normal "Start Building" button. `FeatureWorkflowView` passes the new props and includes `canContinueBuild` in the NextStepsBar show condition.
+- **Validation results**: Lint passed (0 warnings, 0 errors). TypeScript compiled with no errors.
 
 ### ⬜ Phase 6: Remove auto_commit from codebase
 - **Step**: 5
@@ -124,5 +126,5 @@ Phase completion parses implementation notes and deviations from agent output be
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 5
-- **Progress**: 4/6
+- **Current Phase**: Phase 6
+- **Progress**: 5/6
