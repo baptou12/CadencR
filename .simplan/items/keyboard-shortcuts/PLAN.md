@@ -56,18 +56,20 @@ Key files:
 
 ## Phases
 
-### ⬜ Phase 1: Focus context system + library setup
+### ✅ Phase 1: Focus context system + library setup
 - **Step**: 1
 - **Complexity**: 3
-- [ ] Install `react-hotkeys-hook` via pnpm
-- [ ] Create `src/renderer/contexts/FocusContext.tsx` — React context tracking active panel zone (`left-sidebar` | `main-content` | `right-sidebar`), with `setFocusZone()` and `focusZone` value. Default to `left-sidebar`.
-- [ ] Create `src/renderer/hooks/useAppFocus.ts` — Hook wrapping the context, providing helpers like `isFocused(zone)`, `moveFocusLeft()`, `moveFocusRight()`
-- [ ] Wrap root layout in `FocusProvider` in `__root.tsx`
-- [ ] Add focus outline CSS — when a panel zone is focused, show a subtle `ring-2 ring-blue-500/50` outline on the container element. Add `data-focus-zone` attributes to the panel containers in `__root.tsx`.
-- [ ] Wire up click handlers on panel zones to update focus when user clicks into a panel
+- [x] Install `react-hotkeys-hook` via pnpm
+- [x] Create `src/renderer/contexts/FocusContext.tsx` — React context tracking active panel zone (`left-sidebar` | `main-content` | `right-sidebar`), with `setFocusZone()` and `focusZone` value. Default to `left-sidebar`.
+- [x] Create `src/renderer/hooks/useAppFocus.ts` — Hook wrapping the context, providing helpers like `isFocused(zone)`, `moveFocusLeft()`, `moveFocusRight()`
+- [x] Wrap root layout in `FocusProvider` in `__root.tsx`
+- [x] Add focus outline CSS — when a panel zone is focused, show a subtle `ring-2 ring-blue-500/50` outline on the container element. Add `data-focus-zone` attributes to the panel containers in `__root.tsx`.
+- [x] Wire up click handlers on panel zones to update focus when user clicks into a panel
 - **Files**: `package.json`, `pnpm-lock.yaml`, `src/renderer/contexts/FocusContext.tsx` (new), `src/renderer/hooks/useAppFocus.ts` (new), `src/renderer/routes/__root.tsx`
 - **Commit message**: `feat: add focus context system with react-hotkeys-hook`
 - **Bisect note**: Self-contained — adds context + visual indicators but no shortcuts yet. No broken imports since nothing consumes the hooks until later phases.
+- **Implementation notes**: Installed react-hotkeys-hook v5.2.4. Created FocusContext with FocusProvider and useFocusContext hook. Created useAppFocus helper hook with isFocused, moveFocusLeft, moveFocusRight (wraps around cyclically). Split RootLayout into RootLayout (wraps FocusProvider) and RootLayoutInner (uses the context). Added data-focus-zone attributes and ring-2 ring-blue-500/50 focus outlines to left-sidebar and main-content panels. Click handlers on panel divs update focusZone. The right-sidebar zone is not yet visible in the root layout (it is rendered inside routes by PlanSidebar), so its data-focus-zone attribute will be added in Phase 4.
+- **Validation results**: Lint passes (0 warnings, 0 errors). TypeScript compiles with no errors.
 
 ### ⬜ Phase 2: Global keyboard shortcuts
 - **Step**: 2
@@ -147,5 +149,5 @@ Key files:
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Not started
-- **Progress**: 0/6
+- **Current Phase**: Phase 2
+- **Progress**: 1/6
