@@ -102,7 +102,7 @@ export function FeatureTopBar({ featureId, projectId: _projectId, mode = "featur
 
       {!isSession && (
         <span className="text-muted-foreground text-sm">
-          LOC: {gitStats ? `+${gitStats.insertions} -${gitStats.deletions}` : "--"}
+          {gitStats ? `+${gitStats.insertions} -${gitStats.deletions}` : "--"}
         </span>
       )}
 
