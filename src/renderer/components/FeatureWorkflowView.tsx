@@ -1,11 +1,14 @@
+import { useState, useRef, useCallback } from "react";
+import { useHotkeys } from "react-hotkeys-hook";
 import { FeatureTopBar } from "@/components/FeatureTopBar";
-import { AgentSession } from "@/components/AgentSession";
+import { AgentSession, type AgentSessionHandle } from "@/components/AgentSession";
 import { CheckCircle2Icon } from "lucide-react";
 import { useFeatureState, type FeatureStatus } from "@/hooks/useFeatureState";
 import { PlanSidebar } from "@/components/PlanSidebar";
 import { PlanInputView } from "@/components/PlanInputView";
 import { NextStepsBar } from "@/components/NextStepsBar";
 import { useWorkflowAgents } from "@/hooks/useWorkflowAgents";
+import { getActiveFocusZone } from "@/lib/focus-zones";
 
 export function FeatureWorkflowView({
   featureId,
@@ -19,6 +22,115 @@ export function FeatureWorkflowView({
   featureQuery: { refetch: () => unknown };
 }) {
   const wf = useWorkflowAgents({ featureId, projectId, featureQuery });
+
+  // --- Keyboard navigation state ---
+  const [focusedAgentIndex, setFocusedAgentIndex] = useState<number | null>(null);
+  const agentRefs = useRef<Map<number, AgentSessionHandle>>(new Map());
+
+  const setAgentRef = useCallback((index: number, handle: AgentSessionHandle | null) => {
+    if (handle) {
+      agentRefs.current.set(index, handle);
+    } else {
+      agentRefs.current.delete(index);
+    }
+  }, []);
+
+  // CMD+OPT+DOWN: move focus to next agent session
+  useHotkeys(
+    "meta+alt+down",
+    (e) => {
+      if (getActiveFocusZone() !== "main-content") return;
+      if (wf.sessionEntries.length === 0) return;
+      e.preventDefault();
+      setFocusedAgentIndex((prev) => {
+        if (prev === null) return 0;
+        return prev >= wf.sessionEntries.length - 1 ? 0 : prev + 1;
+      });
+    },
+    { enableOnFormTags: true },
+  );
+
+  // CMD+OPT+UP: move focus to previous agent session
+  useHotkeys(
+    "meta+alt+up",
+    (e) => {
+      if (getActiveFocusZone() !== "main-content") return;
+      if (wf.sessionEntries.length === 0) return;
+      e.preventDefault();
+      setFocusedAgentIndex((prev) => {
+        if (prev === null) return wf.sessionEntries.length - 1;
+        return prev <= 0 ? wf.sessionEntries.length - 1 : prev - 1;
+      });
+    },
+    { enableOnFormTags: true },
+  );
+
+  // Enter: if focused agent is collapsed, expand it and focus its prompt bar
+  useHotkeys(
+    "enter",
+    (e) => {
+      if (getActiveFocusZone() !== "main-content") return;
+      if (focusedAgentIndex === null) return;
+      const entry = wf.sessionEntries[focusedAgentIndex];
+      if (!entry) return;
+      const isOpen =
+        wf.openAgent === entry.label ||
+        entry.status === "running" ||
+        entry.status === "paused";
+      if (!isOpen) {
+        e.preventDefault();
+        wf.setOpenAgent(entry.label);
+        // Focus prompt bar after opening (slight delay for render)
+        setTimeout(() => {
+          agentRefs.current.get(focusedAgentIndex)?.focusPromptBar();
+        }, 50);
+      }
+    },
+    { enableOnFormTags: false },
+  );
+
+  // Escape: stop the focused running agent
+  useHotkeys(
+    "escape",
+    (e) => {
+      if (getActiveFocusZone() !== "main-content") return;
+      if (focusedAgentIndex === null) return;
+      const entry = wf.sessionEntries[focusedAgentIndex];
+      if (!entry || entry.status !== "running") return;
+      e.preventDefault();
+      if (entry.type === "execute" && entry.subprocessId) {
+        void wf.interruptExecuteSubprocess(entry.subprocessId);
+      } else {
+        void wf.handleAgentStop(entry.type);
+      }
+    },
+    { enableOnFormTags: true },
+  );
+
+  // CMD+Escape: stop all running agents in this feature (with confirmation)
+  useHotkeys(
+    "meta+escape",
+    (e) => {
+      if (getActiveFocusZone() !== "main-content") return;
+      const runningEntries = wf.sessionEntries.filter((entry) => entry.status === "running");
+      if (runningEntries.length === 0) return;
+      e.preventDefault();
+      const confirmed = window.confirm("Stop all running agents across all features?");
+      if (!confirmed) return;
+      for (const entry of runningEntries) {
+        if (entry.type === "execute" && entry.subprocessId) {
+          void wf.interruptExecuteSubprocess(entry.subprocessId);
+        } else {
+          void wf.handleAgentStop(entry.type);
+        }
+      }
+    },
+    { enableOnFormTags: true },
+  );
+
+  // When focused agent changes, focus its prompt bar (if open) or header (if collapsed)
+  // This is handled by the keyboardFocused prop + useEffect would be complex,
+  // so we rely on the visual indicator and Enter to expand+focus.
 
   const { view, actions } = useFeatureState({
     featureStatus: feature?.status as FeatureStatus | undefined,
@@ -50,10 +162,12 @@ export function FeatureWorkflowView({
           actions.canStartRisk ||
           actions.canStartReview) && (
           <div className="space-y-2">
-            {wf.sessionEntries.map((entry) => (
+            {wf.sessionEntries.map((entry, index) => (
               <AgentSession
                 key={entry.label}
+                ref={(handle) => setAgentRef(index, handle)}
                 collapsible
+                keyboardFocused={focusedAgentIndex === index}
                 agentType={entry.type}
                 label={entry.label}
                 status={entry.status}

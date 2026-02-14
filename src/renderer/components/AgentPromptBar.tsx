@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useImperativeHandle, forwardRef } from "react";
 import { Send, Square } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
@@ -17,16 +17,28 @@ export interface AgentPromptBarProps {
   onQuestionResponse?: (response: string) => void;
 }
 
-export function AgentPromptBar({
+/** Handle exposed by AgentPromptBar via forwardRef */
+export interface AgentPromptBarHandle {
+  /** Focus the textarea input */
+  focusInput: () => void;
+}
+
+export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarProps>(function AgentPromptBar({
   onSend,
   onStop,
   status,
   disabled,
   pendingQuestions,
   onQuestionResponse,
-}: AgentPromptBarProps) {
+}, ref) {
   const [text, setText] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useImperativeHandle(ref, () => ({
+    focusInput: () => {
+      textareaRef.current?.focus({ focusVisible: true } as FocusOptions);
+    },
+  }));
 
   const isRunning = status === "running";
   const isPaused = status === "paused";
@@ -108,4 +120,4 @@ export function AgentPromptBar({
       )}
     </div>
   );
-}
+});

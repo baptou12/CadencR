@@ -10,7 +10,7 @@
  * match data is provided).
  */
 
-import { useState, useEffect, createElement } from "react";
+import { useState, useEffect, createElement, useRef, useImperativeHandle, forwardRef } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -23,7 +23,7 @@ import {
   RotateCcwIcon,
 } from "lucide-react";
 import { AgentStream } from "./AgentStream";
-import { AgentPromptBar } from "./AgentPromptBar";
+import { AgentPromptBar, type AgentPromptBarHandle } from "./AgentPromptBar";
 import { ReviewVerdictActions } from "./ReviewVerdictActions";
 import type { AgentBlockData } from "./AgentBlock";
 import type { AgentType } from "../../main/agents/types";
@@ -127,13 +127,21 @@ export interface AgentSessionProps {
   isAddingFixPhase?: boolean;
   /** Whether "Fix Immediately" action is in progress */
   isStartingFix?: boolean;
+  /** Whether this agent session is keyboard-focused (shows ring outline) */
+  keyboardFocused?: boolean;
+}
+
+/** Handle exposed by AgentSession via forwardRef */
+export interface AgentSessionHandle {
+  /** Focus the prompt bar textarea */
+  focusPromptBar: () => void;
 }
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export function AgentSession({
+export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(function AgentSession({
   agentType,
   blocks,
   status,
@@ -156,7 +164,15 @@ export function AgentSession({
   onFixImmediately,
   isAddingFixPhase,
   isStartingFix,
-}: AgentSessionProps) {
+  keyboardFocused,
+}, ref) {
+  const promptBarRef = useRef<AgentPromptBarHandle>(null);
+
+  useImperativeHandle(ref, () => ({
+    focusPromptBar: () => {
+      promptBarRef.current?.focusInput();
+    },
+  }));
   // ---- Collapsible state ----
   const [internalOpen, setInternalOpen] = useState(true);
   const isControlled = controlledOpen !== undefined;
@@ -232,6 +248,7 @@ export function AgentSession({
   // ---- Prompt bar ----
   const promptBar = shouldShowPromptBar ? (
     <AgentPromptBar
+      ref={promptBarRef}
       onSend={onSend}
       onStop={onStop}
       status={status}
@@ -271,14 +288,19 @@ export function AgentSession({
   return (
     <div
       className={cn(
-        "flex flex-col rounded-lg border border-border bg-background overflow-hidden",
+        "flex flex-col rounded-lg border border-border bg-background",
         className,
       )}
     >
       {/* Header -- clickable to toggle */}
       <div
-        className="flex cursor-pointer items-center gap-2 px-3 py-2 hover:bg-muted/50"
+        className={cn(
+          "flex cursor-pointer items-center gap-2 px-3 py-2 hover:bg-muted/50",
+          keyboardFocused && "ring-2 ring-ring ring-offset-1 ring-offset-background",
+        )}
         onClick={handleToggle}
+        data-nav-item
+        tabIndex={-1}
       >
         <ChevronRightIcon
           className={cn(
@@ -340,4 +362,4 @@ export function AgentSession({
       )}
     </div>
   );
-}
+});
