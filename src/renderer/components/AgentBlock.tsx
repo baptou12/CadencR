@@ -3,6 +3,7 @@ import { cn } from "@/lib/utils";
 import { ChevronRightIcon, ChevronDownIcon, WrenchIcon, BrainIcon, CodeIcon, LayersIcon, LoaderIcon } from "lucide-react";
 import { parseToolCall } from "@/lib/tool-call-parser";
 import { Markdown } from "@/components/Markdown";
+import { InlineDiffBlock } from "@/components/InlineDiffBlock";
 
 /** Block types that the agent stream can produce */
 export type BlockType = "text" | "code" | "tool_call" | "tool_result" | "thinking" | "user_message";
@@ -50,6 +51,18 @@ export function AgentBlock({ block, isStreaming, expandAllTasks, onExpandAllTask
     case "tool_call":
       if (block.toolName === "Task" && block.childBlocks) {
         return <TaskAgentBlock block={block} isStreaming={isStreaming} expandAll={expandAllTasks} onExpandAll={onExpandAllTasks} />;
+      }
+      if ((block.toolName === "Write" || block.toolName === "Edit") && block.diffData) {
+        return (
+          <div>
+            <ToolCallBlock name={block.toolName} args={block.toolArgs} />
+            <InlineDiffBlock
+              filePath={block.diffData.filePath}
+              oldContent={block.diffData.oldContent}
+              newContent={block.diffData.newContent}
+            />
+          </div>
+        );
       }
       return <ToolCallBlock name={block.toolName ?? "unknown"} args={block.toolArgs} />;
     case "tool_result":

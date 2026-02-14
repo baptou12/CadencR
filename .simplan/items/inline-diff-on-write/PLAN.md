@@ -98,18 +98,20 @@ Write tool args contain `{file_path, content}`. Edit tool args contain `{file_pa
 - **Implementation notes**: Created `src/renderer/lib/parse-unified-diff.ts` with both `parseUnifiedDiff` and `langFromPath` exported. The `langFromPath` utility was also extracted since it is shared between DiffViewer and InlineDiffBlock. Updated DiffViewer.tsx to remove the inline definitions of `parseUnifiedDiff`, `FileDiffSection`, and `langFromPath`, replacing them with a single import from `@/lib/parse-unified-diff`. Created `InlineDiffBlock.tsx` component that uses `createTwoFilesPatch` from the `diff` library to generate a unified diff, extracts hunk lines by finding the first `@@` line, and passes them to `DiffFile.createInstance`. The component renders in unified mode (DiffModeEnum.Unified) with wrap, dark theme, and font size 13. Includes a compact header bar with file path (truncated via CSS) and +/- line counts. The "No changes" edge case shows a styled message when old and new content are identical or when no hunks are produced.
 - **Validation results**: Lint passed (0 warnings, 0 errors). TypeScript type check passed (no errors).
 
-### ⬜ Phase 5: Wire up rendering in AgentBlock
+### ✅ Phase 5: Wire up rendering in AgentBlock
 - **Step**: 3
 - **Complexity**: 2
-- [ ] In `src/renderer/components/AgentBlock.tsx`, modify the `tool_result` case in `AgentBlock` component
-- [ ] When rendering a `tool_result` block, look back at the preceding blocks to find the matching `tool_call` with `toolName === "Write" || "Edit"` that has `diffData`
-- [ ] If diffData exists, render `<InlineDiffBlock>` instead of `<ToolResultBlock>` — always expanded per user preference
-- [ ] If diffData is missing (e.g., error reading file, nested task), fall back to existing `<ToolResultBlock>`
-- [ ] Pass `blocks` array to AgentBlock for context lookup, or restructure to pass diffData directly from parent
-- [ ] Alternative approach: render the diff inside the `ToolCallBlock` for Write/Edit when `diffData` is present, and keep `ToolResultBlock` as a compact success/error indicator below it
+- [x] In `src/renderer/components/AgentBlock.tsx`, modify the `tool_result` case in `AgentBlock` component
+- [x] When rendering a `tool_result` block, look back at the preceding blocks to find the matching `tool_call` with `toolName === "Write" || "Edit"` that has `diffData`
+- [x] If diffData exists, render `<InlineDiffBlock>` instead of `<ToolResultBlock>` — always expanded per user preference
+- [x] If diffData is missing (e.g., error reading file, nested task), fall back to existing `<ToolResultBlock>`
+- [x] Pass `blocks` array to AgentBlock for context lookup, or restructure to pass diffData directly from parent
+- [x] Alternative approach: render the diff inside the `ToolCallBlock` for Write/Edit when `diffData` is present, and keep `ToolResultBlock` as a compact success/error indicator below it
 - **Files**: `src/renderer/components/AgentBlock.tsx`
 - **Commit message**: `feat: render inline diffs for Write/Edit tool calls in agent stream`
 - **Bisect note**: N/A — final integration phase
+- **Implementation notes**: Used the alternative approach from the plan: rendering the diff inside the `tool_call` case rather than the `tool_result` case. When `toolName` is "Write" or "Edit" and `diffData` is present on the block, the component renders both the `ToolCallBlock` header (for context/collapsible args) and the `InlineDiffBlock` below it in a wrapper div. This avoids the need to pass the full `blocks` array or do backwards lookups since `diffData` is already attached to the `tool_call` block by the `file_diff` event handler in `useSessionState`. When `diffData` is missing (e.g., error reading file, new binary file), the normal `ToolCallBlock` renders without any diff. The `tool_result` case remains unchanged and continues to render `ToolResultBlock` as a compact success/error indicator. Added import for `InlineDiffBlock` from `@/components/InlineDiffBlock`.
+- **Validation results**: Lint passed (0 warnings, 0 errors). TypeScript type check passed (no errors).
 
 ## Phase Status Legend
 
@@ -120,5 +122,5 @@ Write tool args contain `{file_path, content}`. Edit tool args contain `{file_pa
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 5 (Wire up rendering in AgentBlock)
-- **Progress**: 4/5
+- **Current Phase**: All phases complete
+- **Progress**: 5/5
