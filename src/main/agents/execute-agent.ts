@@ -1,9 +1,12 @@
 /**
- * Execute Agent — reads plan phases and executes them in step order with parallel support.
+ * Execute Agent — orchestrates phase execution in step order with parallel support.
+ *
+ * Each phase is executed via startUnifiedAgent, while the orchestrator manages
+ * step ordering, parallel dispatch, and overall status tracking.
  *
  * Flow:
  * 1. Reads phases from the plan, grouped by step number
- * 2. Executes phases within each step in parallel (up to 10 concurrent)
+ * 2. Executes phases within each step in parallel (via startUnifiedAgent per phase)
  * 3. Updates phase status in DB as each completes
  * 4. Optionally commits after each phase if auto-commit is enabled
  * 5. Updates feature status to "in-progress" when building starts
@@ -12,47 +15,10 @@
 import { execSync } from "node:child_process";
 import { getDatabase } from "../db/database";
 import type { PhaseRow, PlanRow, SettingRow } from "../db/types";
-import { startSubprocess, type ManagedSubprocess } from "./subprocess-manager";
-import { bridgeSubprocessToRenderer, notifyDbUpdated } from "./ipc-bridge";
-import { resolveModel } from "./models";
-import type { AgentEvent, StreamEvent, StreamContentBlockStart, StreamContentBlockDelta } from "./types";
-
-const EXECUTE_SYSTEM_PROMPT = `You are the Execute agent for ProductDevR, responsible for implementing a single phase of a development plan.
-
-## Your Role
-
-1. **Read** the phase requirements provided in the prompt
-2. **Execute** the tasks defined in the phase
-3. **Follow** the plan precisely — make the necessary code changes
-4. **Keep changes minimal and focused** — don't add extra features or refactoring beyond the task
-
-## Context Provided
-
-Your prompt includes:
-- **Plan context**: Summary, codebase context, and clarifications from the planning phase — use these to understand the broader goal and codebase
-- **Previously completed phases**: Summaries of phases already implemented — use these to understand what code has already changed
-- **Completion conditions**: If present, validation commands you MUST run after implementation to verify correctness. Iterate up to 3 times if validations fail.
-
-## Guidelines
-
-### Do:
-- Follow the plan precisely
-- Match existing code style and conventions
-- Make minimal, focused changes
-- Apply auto-fixes for type errors, broken imports, missing error handling
-- Run completion condition validations after implementing and fix issues if they fail
-
-### Don't:
-- Add features not in the plan
-- Refactor unrelated code
-- Over-engineer solutions
-- Make changes beyond the phase scope
-
-## Important
-- Stay focused on the current phase only
-- If something is unclear, make a reasonable decision and proceed
-- Quality over speed
-`;
+import { notifyDbUpdated } from "./ipc-bridge";
+import { startUnifiedAgent } from "./unified-agent";
+import { EXECUTE_SYSTEM_PROMPT } from "./agent-configs";
+import type { AgentEvent, UnifiedAgentConfig, CompletionAction } from "./types";
 
 export interface ExecuteAgentOptions {
   featureId: number;
@@ -78,7 +44,7 @@ export function startExecuteAgent(options: ExecuteAgentOptions): ExecuteAgentRes
   db.prepare("UPDATE features SET status = 'in-progress' WHERE id = ?").run(options.featureId);
   notifyDbUpdated("feature", options.featureId);
 
-  // Create agent session record
+  // Create orchestrator session record (tracks overall execution)
   const sessionResult = db
     .prepare(
       "INSERT INTO agent_sessions (feature_id, agent_type, status, started_at) VALUES (?, ?, ?, datetime('now'))",
@@ -127,12 +93,10 @@ export function startExecuteAgent(options: ExecuteAgentOptions): ExecuteAgentRes
 
   const firstStepSubprocessIds: string[] = [];
   const firstStepPromises = firstStepPhases.map((phase) =>
-    executePhase(phase, options, autoCommit, firstStepSubprocessIds, sessionDbId),
+    executePhase(phase, options, autoCommit, firstStepSubprocessIds),
   );
 
   // Continue remaining steps asynchronously after first step completes.
-  // Note: if a phase is interrupted (paused), its promise won't resolve until
-  // it completes or errors — so the step naturally waits for all phases.
   void (async () => {
     await Promise.allSettled(firstStepPromises);
 
@@ -146,10 +110,10 @@ export function startExecuteAgent(options: ExecuteAgentOptions): ExecuteAgentRes
 
     for (let i = 1; i < sortedSteps.length; i++) {
       const stepNumber = sortedSteps[i];
-      const phases = stepGroups.get(stepNumber) ?? [];
+      const stepPhases = stepGroups.get(stepNumber) ?? [];
       const stepSubprocessIds: string[] = [];
-      const phasePromises = phases.map((phase) =>
-        executePhase(phase, options, autoCommit, stepSubprocessIds, sessionDbId),
+      const phasePromises = stepPhases.map((phase) =>
+        executePhase(phase, options, autoCommit, stepSubprocessIds),
       );
       await Promise.allSettled(phasePromises);
 
@@ -209,14 +173,14 @@ function broadcastExecuteAllDone(sessionDbId: number, exitCode = 0): void {
 }
 
 /**
- * Execute a single phase by spawning a Claude CLI subprocess.
+ * Execute a single phase by starting a unified agent.
+ * Returns a promise that resolves when the phase completes.
  */
 function executePhase(
   phase: PhaseRow,
   options: ExecuteAgentOptions,
   autoCommit: boolean,
   allSubprocessIds: string[],
-  sessionDbId?: number,
 ): Promise<void> {
   return new Promise<void>((resolve) => {
     const db = getDatabase();
@@ -228,59 +192,57 @@ function executePhase(
     // Build enriched prompt with plan-level context and completed phases
     const prompt = buildEnrichedPrompt(phase);
 
-    const model = resolveModel("execute", options.featureId, options.projectId);
+    // Build completion actions for this phase
+    const completionActions: CompletionAction[] = [
+      {
+        event: "phase_complete",
+        handler: (_output: string, context) => {
+          const db2 = getDatabase();
 
-    let managed: ManagedSubprocess;
+          if (context.exitCode === 0) {
+            db2.prepare("UPDATE phases SET status = 'completed' WHERE id = ?").run(phase.id);
+            notifyDbUpdated("phase", options.featureId);
+
+            // Auto-commit if enabled
+            if (autoCommit && phase.commit_message) {
+              try {
+                execSync(`git add -A && git commit -m ${JSON.stringify(phase.commit_message)}`, {
+                  cwd: options.cwd,
+                  stdio: "ignore",
+                });
+              } catch {
+                // Commit may fail if no changes -- that's OK
+              }
+            }
+          } else {
+            db2.prepare("UPDATE phases SET status = 'error' WHERE id = ?").run(phase.id);
+            notifyDbUpdated("phase", options.featureId);
+          }
+
+          resolve();
+        },
+      },
+    ];
+
+    const config: UnifiedAgentConfig = {
+      agentType: "execute",
+      systemPrompt: EXECUTE_SYSTEM_PROMPT,
+      completionActions,
+      featureId: options.featureId,
+      projectId: options.projectId,
+      cwd: options.cwd,
+      prompt,
+    };
+
     try {
-      managed = startSubprocess({
-        cwd: options.cwd,
-        agentType: "execute",
-        systemPrompt: EXECUTE_SYSTEM_PROMPT,
-        prompt,
-        model,
-      });
+      const result = startUnifiedAgent(config);
+      allSubprocessIds.push(result.subprocessId);
     } catch {
       // Could not start subprocess (e.g., max concurrent limit)
       db.prepare("UPDATE phases SET status = 'error' WHERE id = ?").run(phase.id);
       notifyDbUpdated("phase", options.featureId);
       resolve();
-      return;
     }
-
-    allSubprocessIds.push(managed.id);
-    bridgeSubprocessToRenderer(managed, "execute", sessionDbId);
-
-    // Collect output for potential commit message
-    let fullOutput = "";
-    managed.eventListeners.push((event: StreamEvent) => {
-      const text = extractTextFromEvent(event);
-      if (text) fullOutput += text;
-    });
-
-    managed.completionListeners.push((code: number) => {
-      if (code === 0) {
-        db.prepare("UPDATE phases SET status = 'completed' WHERE id = ?").run(phase.id);
-        notifyDbUpdated("phase", options.featureId);
-
-        // Auto-commit if enabled
-        if (autoCommit && phase.commit_message) {
-          try {
-            execSync(`git add -A && git commit -m ${JSON.stringify(phase.commit_message)}`, {
-              cwd: options.cwd,
-              stdio: "ignore",
-            });
-          } catch {
-            // Commit may fail if no changes — that's OK
-          }
-        }
-      } else {
-        db.prepare("UPDATE phases SET status = 'error' WHERE id = ?").run(phase.id);
-        notifyDbUpdated("phase", options.featureId);
-      }
-
-      resolve();
-    });
-
   });
 }
 
@@ -346,25 +308,6 @@ function buildEnrichedPrompt(phase: PhaseRow): string {
   );
 
   return sections.join("\n\n---\n\n");
-}
-
-/**
- * Extract text content from a stream event.
- */
-function extractTextFromEvent(event: StreamEvent): string | null {
-  if (event.type === "content_block_start") {
-    const blockEvent = event as StreamContentBlockStart;
-    if (blockEvent.content_block.type === "text") {
-      return blockEvent.content_block.text;
-    }
-  }
-  if (event.type === "content_block_delta") {
-    const deltaEvent = event as StreamContentBlockDelta;
-    if (deltaEvent.delta.type === "text_delta") {
-      return deltaEvent.delta.text;
-    }
-  }
-  return null;
 }
 
 /**

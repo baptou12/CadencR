@@ -78,20 +78,22 @@ A: useWorkflowAgents becomes a session list with metadata `{type, sessionState, 
 - **Implementation notes**: Created `src/main/agents/agent-configs.ts` with 5 factory functions (`createPlanConfig`, `createBrainstormConfig`, `createRiskConfig`, `createReviewConfig`, `createSessionConfig`) plus exported `EXECUTE_SYSTEM_PROMPT` constant. Each factory returns a `UnifiedAgentConfig` with: (1) system prompt extracted verbatim from the original agent file, (2) output patterns as `OutputPattern[]` (plan/brainstorm use `---PLAN_START---`/`---PLAN_END---`, review uses `---REVIEW_APPROVED---`/`---REVIEW_CHANGES_REQUESTED---`, risk/session have none), (3) completion actions using closures over opts for DB access (plan stores parsed plan with all columns + phases + feature status update, brainstorm stores title + raw_markdown + phases, risk stores risk_report in agent_messages, review stores review_report + conditionally updates feature status to done). Added `---AGENT_DONE---` standard completion marker to the end of all system prompts (plan, brainstorm, risk, review, execute). Moved `parsePlanOutput()`, `ParsedPlan`, and `ParsedPhase` from `plan-agent.ts` to `utils.ts` (the original copies in plan-agent.ts still exist and will be removed in Phase 3/7 -- no imports were changed in this phase since configs are not wired up yet). The risk config accepts a pre-built `prompt` string (caller fetches plan context), matching how `startRiskAgent` works today. The review config builds the prompt internally (same as the original `startReviewAgent`). Factory functions do NOT create DB records -- that stays with callers.
 - **Validation results**: Lint passes (oxlint: 0 warnings, 0 errors). TypeScript compiles (`npx tsc --noEmit`: no errors).
 
-### ⬜ Phase 3: Migrate backend agents to unified function
+### ✅ Phase 3: Migrate backend agents to unified function
 - **Step**: 3
 - **Complexity**: 4
-- [ ] Rewrite `startPlanAgent()` to call `startUnifiedAgent(createPlanConfig(opts))` — delete the inline system prompt, completion handler, and event listeners
-- [ ] Rewrite `startBrainstormAgent()` same way using `createBrainstormConfig(opts)`
-- [ ] Rewrite `startRiskAgent()` same way using `createRiskConfig(opts)`
-- [ ] Rewrite `startReviewAgent()` same way using `createReviewConfig(opts)`
-- [ ] Rewrite `startSessionAgent()` same way using `createSessionConfig(opts)` (simplest — no patterns or completion actions)
-- [ ] Keep each agent file as a thin wrapper (1 function that builds options and calls startUnifiedAgent) — this preserves the named tRPC endpoints
-- [ ] Update `startExecuteAgent()` to use `startUnifiedAgent` for each phase subprocess internally (keep the orchestrator logic for step ordering and parallel dispatch)
-- [ ] Verify all tRPC router endpoints still work with the new internals (no signature changes)
+- [x] Rewrite `startPlanAgent()` to call `startUnifiedAgent(createPlanConfig(opts))` — delete the inline system prompt, completion handler, and event listeners
+- [x] Rewrite `startBrainstormAgent()` same way using `createBrainstormConfig(opts)`
+- [x] Rewrite `startRiskAgent()` same way using `createRiskConfig(opts)`
+- [x] Rewrite `startReviewAgent()` same way using `createReviewConfig(opts)`
+- [x] Rewrite `startSessionAgent()` same way using `createSessionConfig(opts)` (simplest — no patterns or completion actions)
+- [x] Keep each agent file as a thin wrapper (1 function that builds options and calls startUnifiedAgent) — this preserves the named tRPC endpoints
+- [x] Update `startExecuteAgent()` to use `startUnifiedAgent` for each phase subprocess internally (keep the orchestrator logic for step ordering and parallel dispatch)
+- [x] Verify all tRPC router endpoints still work with the new internals (no signature changes)
 - **Files**: `src/main/agents/plan-agent.ts`, `src/main/agents/brainstorm-agent.ts`, `src/main/agents/risk-agent.ts`, `src/main/agents/review-agent.ts`, `src/main/agents/session-agent.ts`, `src/main/agents/execute-agent.ts`
 - **Commit message**: `refactor: migrate all agents to unified start function`
 - **Bisect note**: Critical phase — all agents must work after this. Each agent file becomes a thin config wrapper. Must update all 6 files atomically to avoid broken imports.
+- **Implementation notes**: All 6 agent files rewritten to thin wrappers around `startUnifiedAgent`. Each file now: (1) performs agent-specific pre-work (plan/brainstorm create draft plan records and feature_settings entries; risk fetches plan context to build the prompt; review sets feature status to "review"), (2) builds a `UnifiedAgentConfig` via the corresponding factory function from `agent-configs.ts`, (3) calls `startUnifiedAgent()` and returns the result. The session agent became the simplest at ~50 lines with zero pre-work. The execute agent retains its full orchestrator logic (step grouping, parallel dispatch, `hasStepErrors`, `broadcastExecuteAllDone`, `buildEnrichedPrompt`, `getAutoCommitSetting`) but each individual phase subprocess is now launched via `startUnifiedAgent` instead of raw `startSubprocess` + manual event wiring. Phase completion actions handle status updates and auto-commit via the `CompletionAction` mechanism, with a Promise-based wrapper to maintain the step-sequencing contract. The `addFixPhase` function remains in `review-agent.ts` unchanged. The `plan-agent.ts` re-exports `parsePlanOutput`, `ParsedPlan`, and `ParsedPhase` from `utils.ts` for backwards compatibility (brainstorm-agent previously imported `parsePlanOutput` from plan-agent, though now brainstorm-agent no longer imports it). All tRPC router imports (`startPlanAgent`, `startBrainstormAgent`, `startExecuteAgent`, `startRiskAgent`, `startReviewAgent`, `addFixPhase`, `startSessionAgent`) continue to work unchanged -- no signature changes were made. Behavioral note: `startUnifiedAgent` now persists an initial user message for all agents (previously only session-agent did this), which is a minor but consistent improvement.
+- **Validation results**: Lint passes (oxlint: 0 warnings, 0 errors). TypeScript compiles (`npx tsc --noEmit`: no errors). App packages successfully (`pnpm run package`: all targets built and packaged for arm64 on darwin).
 
 ### ⬜ Phase 4: Unified renderer state hook
 - **Step**: 4
@@ -155,5 +157,5 @@ A: useWorkflowAgents becomes a session list with metadata `{type, sessionState, 
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 3
-- **Progress**: 2/7
+- **Current Phase**: Phase 4
+- **Progress**: 3/7

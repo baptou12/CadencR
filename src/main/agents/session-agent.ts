@@ -1,19 +1,13 @@
 /**
- * Session Agent — free-form Claude Code session.
+ * Session Agent — thin wrapper that builds a UnifiedAgentConfig and delegates
+ * to startUnifiedAgent.
  *
- * Provides an open-ended chat/agent experience without structured output parsing.
- * Supports starting new sessions, resuming existing ones, multi-turn messaging,
- * and interrupt/resume.
+ * The simplest agent — no output patterns or completion actions.
  */
 
-import { getDatabase } from "../db/database";
-import { startSubprocess } from "./subprocess-manager";
-import { bridgeSubprocessToRenderer } from "./ipc-bridge";
-import { resolveModel } from "./models";
+import { startUnifiedAgent, type UnifiedAgentResult } from "./unified-agent";
+import { createSessionConfig } from "./agent-configs";
 import type { AgentType } from "./types";
-
-const SESSION_SYSTEM_PROMPT =
-  "You are Claude Code working on this project. Help the user with whatever they need.";
 
 export interface SessionAgentOptions {
   /** Feature ID (optional — session can run without a feature) */
@@ -38,48 +32,19 @@ export interface SessionAgentResult {
  * Start a free-form session agent.
  */
 export function startSessionAgent(options: SessionAgentOptions): SessionAgentResult {
-  const db = getDatabase();
-
-  // Create agent session record
-  const sessionResult = db
-    .prepare(
-      "INSERT INTO agent_sessions (feature_id, agent_type, status, started_at) VALUES (?, ?, ?, datetime('now'))",
-    )
-    .run(options.featureId ?? null, "session", "running");
-  const sessionDbId = Number(sessionResult.lastInsertRowid);
-
-  const model = resolveModel("session", options.featureId, options.projectId);
-
-  const managed = startSubprocess({
+  const config = createSessionConfig({
+    featureId: options.featureId,
+    projectId: options.projectId,
     cwd: options.cwd,
-    agentType: "session",
-    systemPrompt: SESSION_SYSTEM_PROMPT,
     prompt: options.prompt,
     resumeSessionId: options.resumeSessionId,
-    model,
   });
 
-  // Bridge to renderer — no completion handler needed, just raw streaming
-  bridgeSubprocessToRenderer(managed, "session", sessionDbId);
-
-  // Persist the initial user message
-  if (options.prompt) {
-    db.prepare(
-      "INSERT INTO agent_messages (session_id, role, content, message_type, tool_name) VALUES (?, ?, ?, ?, ?)",
-    ).run(sessionDbId, "user", options.prompt, "user_message", null);
-  }
-
-  // Update session status on completion
-  managed.completionListeners.push((code: number) => {
-    const db2 = getDatabase();
-    db2.prepare(
-      "UPDATE agent_sessions SET status = ?, ended_at = datetime('now') WHERE id = ?",
-    ).run(code === 0 ? "completed" : "error", sessionDbId);
-  });
+  const result: UnifiedAgentResult = startUnifiedAgent(config);
 
   return {
-    subprocessId: managed.id,
-    agentType: "session",
-    sessionDbId,
+    subprocessId: result.subprocessId,
+    agentType: result.agentType,
+    sessionDbId: result.sessionDbId,
   };
 }
