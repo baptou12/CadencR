@@ -179,6 +179,18 @@ export function PlanSidebar({ featureId }: PlanSidebarProps) {
                   </code>
                 </div>
               )}
+              {expandedPhase.implementation_notes && (expandedPhase.status === "completed" || expandedPhase.status === "done") && (
+                <div className="mt-4 rounded-md border border-border bg-muted/50 p-3">
+                  <p className="text-xs font-medium text-muted-foreground mb-1">Implementation Notes</p>
+                  <Markdown content={expandedPhase.implementation_notes} className="text-sm" />
+                </div>
+              )}
+              {expandedPhase.deviations && (expandedPhase.status === "completed" || expandedPhase.status === "done") && (
+                <div className="mt-4 rounded-md border border-[var(--drac-orange)]/40 bg-[var(--drac-orange)]/10 p-3">
+                  <p className="text-xs font-medium text-[var(--drac-orange)] mb-1">Deviations</p>
+                  <Markdown content={expandedPhase.deviations} className="text-sm" />
+                </div>
+              )}
             </ScrollArea>
           </DialogContent>
         )}

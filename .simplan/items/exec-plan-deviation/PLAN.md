@@ -68,17 +68,19 @@ The execute agent orchestrates phase execution via `execute-agent.ts`. Each phas
 - **Implementation notes**: Used the `_output` parameter already available in the completion handler (accumulated agent output) rather than querying ipc-bridge message store. Added `parsePhaseOutput()` function that finds the last `---IMPLEMENTATION_NOTES_START---`/`---IMPLEMENTATION_NOTES_END---` block and extracts `## Implementation Notes` and `## Deviations` sections via regex. Updated the completed-phase UPDATE statement to set both columns. Updated `getPlanWithPhases` SELECT to include `implementation_notes, deviations`.
 - **Validation results**: Lint passes (0 warnings, 0 errors). TypeScript compiles with no errors.
 
-### ⬜ Phase 4: Display deviations in phase detail UI
+### ✅ Phase 4: Display deviations in phase detail UI
 - **Step**: 4
 - **Complexity**: 3
-- [ ] Update `PhaseData` interface in `PhaseCard.tsx` to include `implementation_notes` and `deviations`
-- [ ] In the expanded phase modal in `PlanSidebar.tsx`, add sections below the prompt:
+- [x] Update `PhaseData` interface in `PhaseCard.tsx` to include `implementation_notes` and `deviations`
+- [x] In the expanded phase modal in `PlanSidebar.tsx`, add sections below the prompt:
   - "Implementation Notes" section (rendered as markdown, only if non-null)
   - "Deviations" section with a distinct visual treatment (e.g., amber/warning color accent, only if non-null)
-- [ ] Both sections should only appear for completed phases that have data
+- [x] Both sections should only appear for completed phases that have data
 - **Files**: `src/renderer/components/PhaseCard.tsx`, `src/renderer/components/PlanSidebar.tsx`
 - **Commit message**: `feat: display implementation notes and deviations in phase detail panel`
 - **Bisect note**: N/A — nullable fields, gracefully hidden when null
+- **Implementation notes**: Added `implementation_notes` and `deviations` (both `string | null`) to `PhaseData` interface. In the expanded phase dialog in PlanSidebar, added two conditional sections after the commit message block: "Implementation Notes" with standard muted styling, and "Deviations" with an amber/orange border and background using `--drac-orange` for visual distinction. Both sections only render when the phase status is "completed" or "done" and the respective field is non-null.
+- **Validation results**: Lint passes (0 warnings, 0 errors). TypeScript compiles with no errors.
 
 ### ⬜ Phase 5: Include deviations in enriched prompt for subsequent phases
 - **Step**: 5
@@ -98,5 +100,5 @@ The execute agent orchestrates phase execution via `execute-agent.ts`. Each phas
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 4
-- **Progress**: 3/5
+- **Current Phase**: Phase 5
+- **Progress**: 4/5

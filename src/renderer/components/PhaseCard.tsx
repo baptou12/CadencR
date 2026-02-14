@@ -12,6 +12,8 @@ export interface PhaseData {
   commit_message: string | null;
   prompt: string | null;
   order_index: number;
+  implementation_notes: string | null;
+  deviations: string | null;
 }
 
 interface PhaseCardProps {
