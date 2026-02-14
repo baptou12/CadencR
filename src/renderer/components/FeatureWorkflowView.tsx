@@ -1,13 +1,11 @@
 import { FeatureTopBar } from "@/components/FeatureTopBar";
-import { AgentPanel } from "@/components/AgentPanel";
+import { AgentSession } from "@/components/AgentSession";
 import { CheckCircle2Icon } from "lucide-react";
 import { useFeatureState, type FeatureStatus } from "@/hooks/useFeatureState";
 import { PlanSidebar } from "@/components/PlanSidebar";
 import { PlanInputView } from "@/components/PlanInputView";
-import { ReviewVerdictActions } from "@/components/ReviewVerdictActions";
 import { NextStepsBar } from "@/components/NextStepsBar";
 import { useWorkflowAgents } from "@/hooks/useWorkflowAgents";
-import { useAgentEntries } from "@/hooks/useAgentEntries";
 
 export function FeatureWorkflowView({
   featureId,
@@ -31,15 +29,6 @@ export function FeatureWorkflowView({
     review: { status: wf.review.status, blocks: wf.review.blocks },
   });
 
-  const { agentEntries, hasAnyAgentOutput, noAgentsRunning, openAgent, setOpenAgent } =
-    useAgentEntries({
-      plan: wf.plan,
-      brainstorm: wf.brainstorm,
-      execute: wf.execute,
-      risk: wf.risk,
-      review: wf.review,
-    });
-
   return (
     <div className="relative flex h-full flex-col">
       <FeatureTopBar featureId={featureId} projectId={projectId} />
@@ -56,83 +45,77 @@ export function FeatureWorkflowView({
           />
         )}
 
-        {(hasAnyAgentOutput ||
+        {(wf.hasAnyAgentOutput ||
           actions.canStartBuild ||
           actions.canStartRisk ||
           actions.canStartReview) && (
           <div className="space-y-2">
-            {agentEntries.map((entry) => (
-              <div key={entry.label}>
-                <AgentPanel
-                  agentType={entry.type}
-                  label={entry.label}
-                  status={entry.state.status}
-                  blocks={entry.state.blocks}
-                  open={
-                    openAgent === entry.label ||
-                    entry.state.status === "running" ||
-                    entry.state.status === "paused"
-                  }
-                  onToggle={() =>
-                    setOpenAgent((prev) =>
-                      prev === entry.label ? null : entry.label,
-                    )
-                  }
-                  pendingQuestions={
-                    entry.type === "plan" && wf.plan.pendingQuestions.length > 0
-                      ? wf.plan.pendingQuestions
-                      : entry.type === "brainstorm" &&
-                          wf.brainstorm.pendingQuestions.length > 0
-                        ? wf.brainstorm.pendingQuestions
-                        : undefined
-                  }
-                  onQuestionResponse={
-                    entry.type === "plan"
-                      ? wf.handleQuestionResponse
-                      : entry.type === "brainstorm"
-                        ? wf.handleBrainstormQuestionResponse
-                        : undefined
-                  }
-                  onSend={(message) => {
-                    if (entry.type === "execute" && entry.state.subprocessId) {
-                      wf.sendToExecuteSubprocess(entry.state.subprocessId, message);
-                    } else {
-                      wf.handleAgentSend(entry.type, message);
-                    }
-                  }}
-                  onStop={() => {
-                    if (entry.type === "execute" && entry.state.subprocessId) {
-                      void wf.interruptExecuteSubprocess(entry.state.subprocessId);
-                    } else {
-                      void wf.handleAgentStop(entry.type);
-                    }
-                  }}
-                  resumable={
-                    (entry.type === "plan" || entry.type === "brainstorm") &&
-                    wf.resumableSessions.has(entry.type)
-                  }
-                  onResume={
-                    entry.type === "plan" || entry.type === "brainstorm"
-                      ? () => void wf.handleResume(entry.type)
+            {wf.sessionEntries.map((entry) => (
+              <AgentSession
+                key={entry.label}
+                collapsible
+                agentType={entry.type}
+                label={entry.label}
+                status={entry.status}
+                blocks={entry.blocks}
+                open={
+                  wf.openAgent === entry.label ||
+                  entry.status === "running" ||
+                  entry.status === "paused"
+                }
+                onToggle={() =>
+                  wf.setOpenAgent((prev) =>
+                    prev === entry.label ? null : entry.label,
+                  )
+                }
+                pendingQuestions={
+                  entry.type === "plan" && wf.plan.pendingQuestions.length > 0
+                    ? wf.plan.pendingQuestions
+                    : entry.type === "brainstorm" &&
+                        wf.brainstorm.pendingQuestions.length > 0
+                      ? wf.brainstorm.pendingQuestions
                       : undefined
+                }
+                onAnswerSubmit={
+                  entry.type === "plan"
+                    ? wf.handleQuestionResponse
+                    : entry.type === "brainstorm"
+                      ? wf.handleBrainstormQuestionResponse
+                      : undefined
+                }
+                onSend={(message) => {
+                  if (entry.type === "execute" && entry.subprocessId) {
+                    wf.sendToExecuteSubprocess(entry.subprocessId, message);
+                  } else {
+                    wf.handleAgentSend(entry.type, message);
                   }
-                />
-
-                <ReviewVerdictActions
-                  show={entry.type === "review"}
-                  reviewComplete={wf.reviewComplete}
-                  reviewVerdict={wf.reviewVerdict}
-                  onAddFixPhase={wf.handleAddFixPhase}
-                  onFixImmediately={wf.handleFixImmediately}
-                  isAddingFixPhase={wf.isAddingFixPhase}
-                  isStartingFix={wf.isStartingFix}
-                />
-              </div>
+                }}
+                onStop={() => {
+                  if (entry.type === "execute" && entry.subprocessId) {
+                    void wf.interruptExecuteSubprocess(entry.subprocessId);
+                  } else {
+                    void wf.handleAgentStop(entry.type);
+                  }
+                }}
+                resumable={entry.resumable}
+                onResume={
+                  entry.type === "plan" || entry.type === "brainstorm"
+                    ? () => void wf.handleResume(entry.type)
+                    : undefined
+                }
+                // Review verdict props (only effective for review entries)
+                reviewComplete={wf.reviewComplete}
+                reviewVerdict={wf.reviewVerdict}
+                onAddFixPhase={entry.type === "review" ? wf.handleAddFixPhase : undefined}
+                onFixImmediately={entry.type === "review" ? wf.handleFixImmediately : undefined}
+                isAddingFixPhase={wf.isAddingFixPhase}
+                isStartingFix={wf.isStartingFix}
+              />
             ))}
 
             <NextStepsBar
               show={
-                noAgentsRunning &&
+                wf.noAgentsRunning &&
                 (actions.canStartBuild ||
                   actions.canStartRisk ||
                   actions.canStartReview)
@@ -163,7 +146,7 @@ export function FeatureWorkflowView({
           </div>
         )}
 
-        {view === "done" && !hasAnyAgentOutput && (
+        {view === "done" && !wf.hasAnyAgentOutput && (
           <div className="mx-auto max-w-2xl space-y-4">
             <div className="flex items-center gap-3">
               <CheckCircle2Icon className="size-8 text-green-600" />

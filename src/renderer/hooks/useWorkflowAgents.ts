@@ -1,15 +1,46 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { trpc } from "@/trpc";
-import { useAgentState, useAgentEventListener } from "@/hooks/useAgentState";
-import { useMultiExecuteState } from "@/hooks/useMultiExecuteState";
+import { useSessionState, useSessionEventListener } from "@/hooks/useSessionState";
 import type { AgentBlockData } from "@/components/AgentBlock";
 import type { AgentType } from "../../main/agents/types";
+import type { AgentStatus } from "@/components/AgentPanel";
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
 
 interface UseWorkflowAgentsParams {
   featureId: number;
   projectId: number;
   featureQuery: { refetch: () => unknown };
 }
+
+/** A single entry in the session list — replaces the old useAgentEntries concept. */
+export interface SessionEntry {
+  type: AgentType;
+  label: string;
+  status: AgentStatus;
+  blocks: AgentBlockData[];
+  subprocessId: string | null;
+  pendingQuestions: Array<{
+    question: string;
+    options?: Array<{ label: string; description?: string }>;
+  }>;
+  /** Whether this entry can be resumed */
+  resumable: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function hasOutput(state: { status: AgentStatus; blocks: AgentBlockData[] }) {
+  return state.status !== "idle" || state.blocks.length > 0;
+}
+
+// ---------------------------------------------------------------------------
+// Hook
+// ---------------------------------------------------------------------------
 
 export function useWorkflowAgents({
   featureId,
@@ -18,12 +49,12 @@ export function useWorkflowAgents({
 }: UseWorkflowAgentsParams) {
   const [description, setDescription] = useState("");
 
-  // Agent states
-  const plan = useAgentState({ supportsQuestions: true });
-  const brainstorm = useAgentState({ supportsQuestions: true });
-  const execute = useMultiExecuteState();
-  const risk = useAgentState();
-  const review = useAgentState();
+  // Agent sessions — using the unified useSessionState hook
+  const plan = useSessionState({ supportsQuestions: true });
+  const brainstorm = useSessionState({ supportsQuestions: true });
+  const execute = useSessionState({ supportsMultiSubprocess: true });
+  const risk = useSessionState();
+  const review = useSessionState();
 
   // Reset agent states when switching features
   useEffect(() => {
@@ -287,7 +318,7 @@ export function useWorkflowAgents({
   const interruptMutation = trpc.agents.interrupt.useMutation();
   const sendMessageMutation = trpc.agents.sendMessage.useMutation();
 
-  // Wire up IPC event listener
+  // Wire up IPC event listener using the unified useSessionEventListener
   const eventHandlers = useMemo(
     () => ({
       plan: {
@@ -312,7 +343,7 @@ export function useWorkflowAgents({
       review.handleEvent,
     ],
   );
-  useAgentEventListener(eventHandlers);
+  useSessionEventListener(eventHandlers);
 
   // Action handlers
   const handleStartPlanning = async () => {
@@ -559,6 +590,130 @@ export function useWorkflowAgents({
     [interruptMutation],
   );
 
+  // ---------------------------------------------------------------------------
+  // Session entry list — the unified model that replaces useAgentEntries
+  // ---------------------------------------------------------------------------
+
+  const sessionEntries: SessionEntry[] = useMemo(() => {
+    const entries: SessionEntry[] = [];
+
+    // Planning agents
+    if (hasOutput(plan)) {
+      entries.push({
+        type: "plan",
+        label: "Plan",
+        status: plan.status,
+        blocks: plan.blocks,
+        subprocessId: plan.subprocessId,
+        pendingQuestions: plan.pendingQuestions,
+        resumable: resumableSessions.has("plan"),
+      });
+    }
+    if (hasOutput(brainstorm)) {
+      entries.push({
+        type: "brainstorm",
+        label: "Brainstorm",
+        status: brainstorm.status,
+        blocks: brainstorm.blocks,
+        subprocessId: brainstorm.subprocessId,
+        pendingQuestions: brainstorm.pendingQuestions,
+        resumable: resumableSessions.has("brainstorm"),
+      });
+    }
+
+    // Build phase agents — expand parallel execute subprocesses into separate entries
+    const execSubs = execute.subprocessList.filter(
+      (s) => s.subprocessId !== "__global__",
+    );
+    if (execSubs.length > 1) {
+      // Multiple parallel phases — one entry per subprocess
+      for (let i = 0; i < execSubs.length; i++) {
+        const sub = execSubs[i];
+        entries.push({
+          type: "execute",
+          label: `Execute ${i + 1}`,
+          status: sub.status,
+          blocks: sub.blocks,
+          subprocessId: sub.subprocessId,
+          pendingQuestions: [],
+          resumable: false,
+        });
+      }
+    } else if (hasOutput(execute)) {
+      // Single phase or merged view
+      entries.push({
+        type: "execute",
+        label: "Execute",
+        status: execute.status,
+        blocks: execute.blocks,
+        subprocessId: execute.subprocessId,
+        pendingQuestions: [],
+        resumable: false,
+      });
+    }
+
+    // Append global blocks (e.g. error messages) if any
+    const globalSub = execute.subprocessList.find(
+      (s) => s.subprocessId === "__global__",
+    );
+    if (globalSub && globalSub.blocks.length > 0 && execSubs.length > 1) {
+      entries.push({
+        type: "execute",
+        label: "Execute",
+        status: execute.status,
+        blocks: globalSub.blocks,
+        subprocessId: null,
+        pendingQuestions: [],
+        resumable: false,
+      });
+    }
+
+    if (hasOutput(risk)) {
+      entries.push({
+        type: "risk",
+        label: "Risk Analysis",
+        status: risk.status,
+        blocks: risk.blocks,
+        subprocessId: risk.subprocessId,
+        pendingQuestions: [],
+        resumable: false,
+      });
+    }
+    if (hasOutput(review)) {
+      entries.push({
+        type: "review",
+        label: "Review",
+        status: review.status,
+        blocks: review.blocks,
+        subprocessId: review.subprocessId,
+        pendingQuestions: [],
+        resumable: false,
+      });
+    }
+
+    return entries;
+  }, [plan, brainstorm, execute, risk, review, resumableSessions]);
+
+  // Derived state from the session list
+  const hasAnyAgentOutput = sessionEntries.length > 0;
+  const noAgentsRunning = useMemo(
+    () =>
+      [plan, brainstorm, execute, risk, review].every(
+        (s) => s.status !== "running",
+      ),
+    [plan, brainstorm, execute, risk, review],
+  );
+
+  // Track which agent panel is open (auto-opens running agents)
+  const [openAgent, setOpenAgent] = useState<string | null>(null);
+
+  useEffect(() => {
+    const running = sessionEntries.find((e) => e.status === "running");
+    if (running) {
+      setOpenAgent(running.label);
+    }
+  }, [sessionEntries]);
+
   return {
     description,
     setDescription,
@@ -591,5 +746,11 @@ export function useWorkflowAgents({
     handleAgentStop,
     sendToExecuteSubprocess,
     interruptExecuteSubprocess,
+    // Session list model (replaces useAgentEntries)
+    sessionEntries,
+    hasAnyAgentOutput,
+    noAgentsRunning,
+    openAgent,
+    setOpenAgent,
   };
 }
