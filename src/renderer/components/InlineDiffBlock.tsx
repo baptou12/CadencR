@@ -23,12 +23,8 @@ export function InlineDiffBlock({ filePath, oldContent, newContent }: InlineDiff
     // Generate unified diff from old and new content
     const patch = createTwoFilesPatch(filePath, filePath, oldContent, newContent);
 
-    // Extract hunk lines (everything from first @@ onwards)
-    const lines = patch.split("\n");
-    const hunkStart = lines.findIndex((l) => l.startsWith("@@"));
-    if (hunkStart === -1) return null;
-
-    const hunkLines = lines.slice(hunkStart);
+    // Verify the patch has actual hunks
+    if (!patch.includes("@@")) return null;
 
     const lang = langFromPath(filePath);
     const file = DiffFile.createInstance({
@@ -42,7 +38,7 @@ export function InlineDiffBlock({ filePath, oldContent, newContent }: InlineDiff
         fileLang: lang,
         content: "",
       },
-      hunks: hunkLines,
+      hunks: [patch],
     });
     file.initTheme("dark");
     file.initRaw();

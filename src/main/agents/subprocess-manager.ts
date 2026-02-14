@@ -6,7 +6,6 @@ import { DEFAULT_MODEL } from "./models";
 import type { AgentEvent, AgentType, StreamEvent } from "./types";
 import EventEmitter from "node:events";
 import * as fs from "node:fs";
-import * as path from "node:path";
 
 const MAX_CONCURRENT = 10;
 const AGENT_EVENT_CHANNEL = "agent:event";
@@ -33,6 +32,13 @@ export interface SubprocessOptions {
   model?: string;
 }
 
+/** Tracks a tool_use block being streamed incrementally */
+interface PendingToolInput {
+  id: string;
+  name: string;
+  inputJson: string;
+}
+
 export interface ManagedSubprocess {
   id: string;
   agentType: string;
@@ -54,6 +60,8 @@ export interface ManagedSubprocess {
   sdkSessionId?: string;
   /** Original options used to start this subprocess (needed for resume) */
   originalOptions?: SubprocessOptions;
+  /** Tracks the currently streaming tool_use block for diff interception */
+  pendingToolInput?: PendingToolInput;
 }
 
 const activeProcesses = new Map<string, ManagedSubprocess>();
@@ -90,6 +98,95 @@ function broadcastEvent(
   }
 }
 
+// ---------------------------------------------------------------------------
+// File diff helpers — used to broadcast inline diffs for Write/Edit tool calls
+// ---------------------------------------------------------------------------
+
+/**
+ * Read a file from disk, returning its text content or null if binary/unreadable.
+ */
+function readFileText(filePath: string): string | null {
+  try {
+    const buf = fs.readFileSync(filePath);
+    // Check for binary (null bytes in first 8KB)
+    const checkLen = Math.min(buf.length, 8192);
+    for (let i = 0; i < checkLen; i++) {
+      if (buf[i] === 0) return null;
+    }
+    return buf.toString("utf-8");
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Broadcast a `file_diff` event for a Write or Edit tool call.
+ *
+ * In bypassPermissions mode the SDK executes tools before yielding messages,
+ * so the file on disk is already the post-edit version by the time we see the
+ * tool_use block. For Edit we reverse the replacement to reconstruct old content;
+ * for Write we compare disk vs input.content to detect whether the tool ran.
+ *
+ * Best-effort: silently swallows errors so tool execution is never blocked.
+ */
+function tryBroadcastFileDiff(
+  managed: ManagedSubprocess,
+  toolName: string,
+  input: Record<string, unknown>,
+): void {
+  try {
+    const filePath = input.file_path as string | undefined;
+    if (!filePath) return;
+
+    let oldContent: string;
+    let newContent: string;
+
+    if (toolName === "Write") {
+      newContent = (input.content as string) ?? "";
+      const disk = readFileText(filePath);
+      // If disk differs from input.content the tool hasn't run yet
+      oldContent = disk !== null && disk !== newContent ? disk : "";
+    } else {
+      // Edit — read post-edit file and reverse the replacement
+      const oldString = (input.old_string as string) ?? "";
+      const newString = (input.new_string as string) ?? "";
+      const replaceAll = (input.replace_all as boolean) ?? false;
+
+      const disk = readFileText(filePath);
+      if (disk === null) return;
+
+      if (replaceAll) {
+        newContent = disk;
+        oldContent = disk.split(newString).join(oldString);
+      } else {
+        const newIdx = disk.indexOf(newString);
+        if (newIdx !== -1) {
+          // Tool already ran — reverse to get old content
+          newContent = disk;
+          oldContent = disk.slice(0, newIdx) + oldString + disk.slice(newIdx + newString.length);
+        } else {
+          // Tool hasn't run yet — apply forward
+          const oldIdx = disk.indexOf(oldString);
+          if (oldIdx === -1) return;
+          oldContent = disk;
+          newContent = disk.slice(0, oldIdx) + newString + disk.slice(oldIdx + oldString.length);
+        }
+      }
+    }
+
+    if (oldContent === newContent) return;
+
+    broadcastEvent(managed.id, managed.agentType, {
+      type: "file_diff",
+      file_path: filePath,
+      old_content: oldContent,
+      new_content: newContent,
+    });
+  } catch {
+    // Best-effort: don't block tool execution if diff capture fails
+  }
+}
+
 /**
  * Convert an SDK message to StreamEvent(s) and broadcast them.
  */
@@ -109,6 +206,36 @@ function handleSdkMessage(
     // SDKPartialAssistantMessage — contains the granular content_block_start/delta/stop events
     const innerEvent = msg.event as StreamEvent;
     if (innerEvent) {
+      // Track streaming tool_use blocks for diff interception
+      if (innerEvent.type === "content_block_start") {
+        const block = innerEvent.content_block;
+        if (block.type === "tool_use") {
+          managed.pendingToolInput = {
+            id: block.id,
+            name: block.name,
+            inputJson: "",
+          };
+        }
+      } else if (innerEvent.type === "content_block_delta") {
+        const delta = innerEvent.delta;
+        if (delta.type === "input_json_delta" && managed.pendingToolInput) {
+          managed.pendingToolInput.inputJson += delta.partial_json ?? "";
+        }
+      } else if (innerEvent.type === "content_block_stop") {
+        if (managed.pendingToolInput) {
+          const pending = managed.pendingToolInput;
+          managed.pendingToolInput = undefined;
+          if (pending.name === "Write" || pending.name === "Edit") {
+            try {
+              const input = JSON.parse(pending.inputJson) as Record<string, unknown>;
+              tryBroadcastFileDiff(managed, pending.name, input);
+            } catch {
+              // JSON parse failed — skip diff
+            }
+          }
+        }
+      }
+
       broadcastEvent(id, agentType, innerEvent, parentToolUseId);
       if (sessionDbId) persistStreamEvent(sessionDbId, innerEvent);
       for (const listener of managed.eventListeners) listener(innerEvent);
@@ -133,19 +260,28 @@ function handleSdkMessage(
             if (sessionDbId) persistStreamEvent(sessionDbId, event);
             for (const listener of managed.eventListeners) listener(event);
           } else if (block.type === "tool_use") {
+            const toolName = block.name as string;
+            const toolInput = block.input as Record<string, unknown>;
+
             const event: StreamEvent = {
               type: "content_block_start",
               index: i,
               content_block: {
                 type: "tool_use",
                 id: block.id as string,
-                name: block.name as string,
-                input: block.input as Record<string, unknown>,
+                name: toolName,
+                input: toolInput,
               },
             };
             broadcastEvent(id, agentType, event, parentToolUseId);
             if (sessionDbId) persistStreamEvent(sessionDbId, event);
             for (const listener of managed.eventListeners) listener(event);
+
+            // Broadcast file_diff AFTER the tool_use block so the renderer
+            // has created the block before attachDiffData searches for it.
+            if (toolName === "Write" || toolName === "Edit") {
+              tryBroadcastFileDiff(managed, toolName, toolInput);
+            }
           }
         }
       }
@@ -339,61 +475,6 @@ function createMessageStream(initialPrompt: string) {
   return { generator, push, close };
 }
 
-/**
- * Check whether a buffer likely contains binary (non-text) data.
- * Looks for null bytes in the first 8KB — a common heuristic.
- */
-function isBinaryBuffer(buf: Buffer): boolean {
-  const checkLength = Math.min(buf.length, 8192);
-  for (let i = 0; i < checkLength; i++) {
-    if (buf[i] === 0) return true;
-  }
-  return false;
-}
-
-/**
- * Safely read old file content before a Write/Edit tool executes.
- * Returns `null` if the file doesn't exist (new file), is binary, or can't be read.
- * Returns empty string for new files so callers can still produce a diff.
- */
-function readOldFileContent(filePath: string): string | null {
-  try {
-    const buf = fs.readFileSync(filePath);
-    if (isBinaryBuffer(buf)) return null;
-    return buf.toString("utf-8");
-  } catch (err: unknown) {
-    if (
-      err instanceof Error &&
-      "code" in err &&
-      (err as NodeJS.ErrnoException).code === "ENOENT"
-    ) {
-      // New file — old content is empty
-      return "";
-    }
-    // Other read errors (permission denied, etc.) — skip diff
-    return null;
-  }
-}
-
-/**
- * Compute new content for an Edit tool call by applying old_string -> new_string replacement.
- */
-function applyEditReplacement(
-  oldContent: string,
-  oldString: string,
-  newString: string,
-  replaceAll: boolean,
-): string {
-  if (replaceAll) {
-    // Replace all occurrences
-    return oldContent.split(oldString).join(newString);
-  }
-  // Replace first occurrence only
-  const idx = oldContent.indexOf(oldString);
-  if (idx === -1) return oldContent;
-  return oldContent.slice(0, idx) + newString + oldContent.slice(idx + oldString.length);
-}
-
 async function runSdkQuery(
   managed: ManagedSubprocess,
   options: SubprocessOptions,
@@ -468,46 +549,6 @@ async function runSdkQuery(
             answers: {},
           },
         };
-      }
-    }
-
-    // Intercept Write and Edit tools to capture file diffs
-    if (toolName === "Write" || toolName === "Edit") {
-      try {
-        const filePath = input.file_path as string | undefined;
-        if (filePath) {
-          const resolvedPath = path.resolve(options.cwd, filePath);
-          const oldContent = readOldFileContent(resolvedPath);
-
-          if (oldContent !== null) {
-            let newContent: string;
-
-            if (toolName === "Write") {
-              newContent = (input.content as string) ?? "";
-            } else {
-              // Edit tool: apply old_string -> new_string replacement
-              const oldString = (input.old_string as string) ?? "";
-              const newString = (input.new_string as string) ?? "";
-              const replaceAll = (input.replace_all as boolean) ?? false;
-              newContent = applyEditReplacement(
-                oldContent,
-                oldString,
-                newString,
-                replaceAll,
-              );
-            }
-
-            // Broadcast file_diff event (ephemeral — not persisted to agent_messages)
-            broadcastEvent(managed.id, managed.agentType, {
-              type: "file_diff",
-              file_path: filePath,
-              old_content: oldContent,
-              new_content: newContent,
-            });
-          }
-        }
-      } catch {
-        // Best-effort: don't block tool execution if diff capture fails
       }
     }
 
@@ -710,8 +751,6 @@ export function killAllSubprocesses(): void {
     }
   }
 }
-
-
 
 /**
  * Request user answers to AskUserQuestion from the renderer.

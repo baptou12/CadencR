@@ -28,22 +28,26 @@ function extractFilePath(toolArgs?: string): string | null {
   return null;
 }
 
-/**
- * Attach diffData to the last top-level Write/Edit tool_call block whose
- * file_path matches the given path. Returns a new array if a match was found.
- */
+/** Buffered diff that arrived before its matching tool_call block was created. */
+interface PendingDiff {
+  filePath: string;
+  oldContent: string;
+  newContent: string;
+}
+
+/** Attach diffData to the last unmatched Write/Edit tool_call for `filePath`. */
 function attachDiffData(
   blocks: AgentBlockData[],
   filePath: string,
   oldContent: string,
   newContent: string,
 ): AgentBlockData[] {
-  // Walk backwards to find the last matching Write/Edit tool_call
   for (let i = blocks.length - 1; i >= 0; i--) {
     const b = blocks[i];
     if (
       b.type === "tool_call" &&
       (b.toolName === "Write" || b.toolName === "Edit") &&
+      !b.diffData &&
       extractFilePath(b.toolArgs) === filePath
     ) {
       const updated = [...blocks];
@@ -52,6 +56,24 @@ function attachDiffData(
     }
   }
   return blocks;
+}
+
+/** Drain buffered diffs, attaching any that now have a matching block. */
+function drainPendingDiffs(
+  blocks: AgentBlockData[],
+  pending: PendingDiff[],
+): { blocks: AgentBlockData[]; remaining: PendingDiff[] } {
+  const remaining: PendingDiff[] = [];
+  let current = blocks;
+  for (const diff of pending) {
+    const updated = attachDiffData(current, diff.filePath, diff.oldContent, diff.newContent);
+    if (updated === current) {
+      remaining.push(diff);
+    } else {
+      current = updated;
+    }
+  }
+  return { blocks: current, remaining };
 }
 
 // ---------------------------------------------------------------------------
@@ -282,6 +304,9 @@ export function useSessionState(
   // Client-side pattern matching dedup (single mode)
   const singleMatchedPatterns = useRef(new Set<string>());
 
+  // Buffered diffs that arrived before their matching tool_call block
+  const pendingDiffsRef = useRef<PendingDiff[]>([]);
+
   // ----- Multi-subprocess state -----
   const [subprocesses, setSubprocesses] = useState<
     Map<string, SubprocessState>
@@ -373,7 +398,15 @@ export function useSessionState(
                 appendToParent(prev, parentId, newBlock),
               );
             } else {
-              setSingleBlocks((prev) => [...prev, newBlock]);
+              setSingleBlocks((prev) => {
+                let updated = [...prev, newBlock];
+                if (pendingDiffsRef.current.length > 0) {
+                  const result = drainPendingDiffs(updated, pendingDiffsRef.current);
+                  updated = result.blocks;
+                  pendingDiffsRef.current = result.remaining;
+                }
+                return updated;
+              });
             }
           }
           break;
@@ -507,14 +540,18 @@ export function useSessionState(
           break;
         }
         case "file_diff": {
-          setSingleBlocks((prev) =>
-            attachDiffData(
-              prev,
-              event.file_path,
-              event.old_content,
-              event.new_content,
-            ),
-          );
+          setSingleBlocks((prev) => {
+            const updated = attachDiffData(prev, event.file_path, event.old_content, event.new_content);
+            if (updated === prev) {
+              // Block not created yet — buffer until content_block_start arrives
+              pendingDiffsRef.current.push({
+                filePath: event.file_path,
+                oldContent: event.old_content,
+                newContent: event.new_content,
+              });
+            }
+            return updated;
+          });
           break;
         }
         case "result": {
@@ -832,6 +869,7 @@ export function useSessionState(
       setSingleSubprocessId(null);
       singleSubprocessIdRef.current = null;
       singleMatchedPatterns.current = new Set();
+      pendingDiffsRef.current = [];
     }
   }, [supportsMultiSubprocess]);
 
@@ -845,6 +883,7 @@ export function useSessionState(
       setSingleStatus("running");
       setPendingQuestions([]);
       singleMatchedPatterns.current = new Set();
+      pendingDiffsRef.current = [];
     }
   }, [supportsMultiSubprocess]);
 
