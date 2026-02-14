@@ -151,6 +151,19 @@ function RootLayout() {
     { enableOnFormTags: true },
   );
 
+  // CMD+Escape -> stop all running agents globally (with confirmation)
+  const stopAllMutation = trpc.agents.stopAll.useMutation();
+  useHotkeys(
+    "meta+escape",
+    (e) => {
+      e.preventDefault();
+      const confirmed = window.confirm("Stop all running agents across all features and projects?");
+      if (!confirmed) return;
+      stopAllMutation.mutate();
+    },
+    { enableOnFormTags: true },
+  );
+
   // CMD+N -> create new feature (open dialog)
   useHotkeys(
     "meta+n",

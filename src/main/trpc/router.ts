@@ -190,6 +190,16 @@ const agentsRouter = router({
       return { success: stopped };
     }),
 
+  /** Interrupt all running agent subprocesses (pauses them for resume) */
+  stopAll: publicProcedure.mutation(async () => {
+    const running = listSubprocesses().filter((s) => s.status === "running");
+    let stopped = 0;
+    for (const s of running) {
+      if (await interruptSubprocess(s.id)) stopped++;
+    }
+    return { stopped };
+  }),
+
   /** Interrupt a running agent — pauses without killing, allows resume via sendMessage */
   interrupt: publicProcedure
     .input(z.object({ id: z.string() }))

@@ -62,14 +62,17 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (e.key === "Enter" && !e.shiftKey && canSend) {
+      if (e.key === "Escape" && isRunning) {
+        e.preventDefault();
+        onStop();
+      } else if (e.key === "Enter" && !e.shiftKey && canSend) {
         e.preventDefault();
         handleSend();
       } else if (e.key === "Enter" && !e.shiftKey && !canSend) {
         e.preventDefault();
       }
     },
-    [canSend, handleSend],
+    [canSend, handleSend, isRunning, onStop],
   );
 
   // When questions are pending, render the question form inline instead of the prompt input

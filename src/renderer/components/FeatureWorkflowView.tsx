@@ -134,26 +134,6 @@ export function FeatureWorkflowView({
     { enableOnFormTags: true },
   );
 
-  // CMD+Escape: stop all running agents in this feature (with confirmation)
-  useHotkeys(
-    "meta+escape",
-    (e) => {
-      if (getActiveFocusZone() !== "main-content") return;
-      const runningEntries = wf.sessionEntries.filter((entry) => entry.status === "running");
-      if (runningEntries.length === 0) return;
-      e.preventDefault();
-      const confirmed = window.confirm("Stop all running agents across all features?");
-      if (!confirmed) return;
-      for (const entry of runningEntries) {
-        if (entry.type === "execute" && entry.subprocessId) {
-          void wf.interruptExecuteSubprocess(entry.subprocessId);
-        } else {
-          void wf.handleAgentStop(entry.type);
-        }
-      }
-    },
-    { enableOnFormTags: true },
-  );
 
   // When focused agent changes, focus its prompt bar (if open) or header (if collapsed)
   // This is handled by the keyboardFocused prop + useEffect would be complex,
