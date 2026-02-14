@@ -40,16 +40,18 @@ The execute agent orchestrates phase execution via `execute-agent.ts`. Each phas
 - **Implementation notes**: Added as migration 17 (not 14 as planned) since migrations 14-16 already exist. Two ALTER TABLE statements add nullable TEXT columns. PhaseRow interface updated with both fields as `string | null`.
 - **Validation results**: Lint passes (0 warnings, 0 errors). TypeScript compiles with no errors.
 
-### ⬜ Phase 2: Update execute agent prompt for structured output
+### ✅ Phase 2: Update execute agent prompt for structured output
 - **Step**: 2
 - **Complexity**: 2
-- [ ] Update `EXECUTE_SYSTEM_PROMPT` in `src/main/agents/agent-configs.ts` to:
+- [x] Update `EXECUTE_SYSTEM_PROMPT` in `src/main/agents/agent-configs.ts` to:
   - Allow minor deviations (fix type errors, edge cases, broken imports) but require documenting them
   - Instruct agent to output a structured section at the end of execution: `## Implementation Notes` (what was done) and `## Deviations` (what differed from plan and why)
   - Keep the tone: plan is primary guide, deviations are for unplanned issues only
 - **Files**: `src/main/agents/agent-configs.ts`
 - **Commit message**: `feat: update execute prompt to request implementation notes and deviations`
 - **Bisect note**: N/A — prompt change only, no code depends on output format yet
+- **Implementation notes**: Updated EXECUTE_SYSTEM_PROMPT with: (1) "Deviation Rules" section defining auto-fix vs stop-and-report categories, (2) "Structured Output" section with `---IMPLEMENTATION_NOTES_START---` / `---IMPLEMENTATION_NOTES_END---` delimiters containing Implementation Notes, Deviations, and Validation Results subsections. Also added a Validation Results section to the structured output for completeness.
+- **Validation results**: Lint passes (0 warnings, 0 errors). TypeScript compiles with no errors.
 
 ### ⬜ Phase 3: Parse agent output and persist deviations to DB
 - **Step**: 3
@@ -84,5 +86,5 @@ The execute agent orchestrates phase execution via `execute-agent.ts`. Each phas
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 2
-- **Progress**: 1/4
+- **Current Phase**: Phase 3
+- **Progress**: 2/4
