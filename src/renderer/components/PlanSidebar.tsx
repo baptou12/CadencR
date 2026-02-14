@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { useHotkeys } from "react-hotkeys-hook";
 import { trpc } from "@/trpc";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -14,6 +15,7 @@ import { PhaseCard } from "@/components/PhaseCard";
 import type { PhaseData } from "@/components/PhaseCard";
 import { CircleIcon, Loader2, CheckCircle2, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getActiveFocusZone } from "@/lib/focus-zones";
 
 interface PlanSidebarProps {
   featureId: number;
@@ -29,8 +31,72 @@ const statusConfig: Record<string, { icon: React.ElementType; className: string;
 
 export function PlanSidebar({ featureId }: PlanSidebarProps) {
   const [expandedPhase, setExpandedPhase] = useState<PhaseData | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const { data: plan } = trpc.features.getPlanWithPhases.useQuery({ feature_id: featureId });
+
+  const getNavItems = () => {
+    if (!containerRef.current) return [];
+    return Array.from(containerRef.current.querySelectorAll("[data-nav-item]")) as HTMLElement[];
+  };
+
+  const moveFocus = (direction: "up" | "down") => {
+    const items = getNavItems();
+    if (items.length === 0) return;
+
+    const currentIndex = items.findIndex((el) => el === document.activeElement);
+    let nextIndex: number;
+    if (currentIndex === -1) {
+      nextIndex = direction === "down" ? 0 : items.length - 1;
+    } else if (direction === "down") {
+      nextIndex = currentIndex >= items.length - 1 ? 0 : currentIndex + 1;
+    } else {
+      nextIndex = currentIndex <= 0 ? items.length - 1 : currentIndex - 1;
+    }
+    items[nextIndex].focus({ focusVisible: true } as FocusOptions);
+  };
+
+  // CMD+OPT+DOWN: move focus down in the plan sidebar
+  useHotkeys(
+    "meta+alt+down",
+    (e) => {
+      if (getActiveFocusZone() !== "right-sidebar") return;
+      e.preventDefault();
+      moveFocus("down");
+    },
+    { enableOnFormTags: true },
+  );
+
+  // CMD+OPT+UP: move focus up in the plan sidebar
+  useHotkeys(
+    "meta+alt+up",
+    (e) => {
+      if (getActiveFocusZone() !== "right-sidebar") return;
+      e.preventDefault();
+      moveFocus("up");
+    },
+    { enableOnFormTags: true },
+  );
+
+  // Enter: expand the focused phase
+  useHotkeys(
+    "enter",
+    (e) => {
+      if (getActiveFocusZone() !== "right-sidebar") return;
+      const focused = document.activeElement as HTMLElement | null;
+      if (!focused?.hasAttribute("data-nav-item")) return;
+      e.preventDefault();
+
+      const phaseIndexStr = focused.getAttribute("data-nav-phase-index");
+      if (phaseIndexStr == null || !plan) return;
+      const phaseIndex = Number(phaseIndexStr);
+      const phase = plan.phases[phaseIndex];
+      if (phase) {
+        setExpandedPhase(phase);
+      }
+    },
+    { enableOnFormTags: false },
+  );
 
   if (!plan) return null;
 
@@ -40,19 +106,31 @@ export function PlanSidebar({ featureId }: PlanSidebarProps) {
 
   return (
     <>
-      <div className="flex h-full w-80 shrink-0 flex-col border-l border-border">
+      <div
+        ref={containerRef}
+        data-focus-zone="right-sidebar"
+        tabIndex={0}
+        className="flex h-full w-80 shrink-0 flex-col border-l border-border outline-none focus-within:ring-2 focus-within:ring-blue-500/50"
+      >
         <div className="flex items-center border-b border-border px-4 py-3">
           <h3 className="text-sm font-semibold text-foreground">{plan.title}</h3>
         </div>
         <ScrollArea className="flex-1 min-h-0">
           <div className="flex flex-col gap-3 p-3">
             {plan.phases.map((phase, index) => (
-              <PhaseCard
+              <div
                 key={phase.id}
-                phase={phase}
-                displayNumber={index + 1}
-                onExpand={setExpandedPhase}
-              />
+                data-nav-item
+                data-nav-phase-index={index}
+                tabIndex={-1}
+                className="rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
+              >
+                <PhaseCard
+                  phase={phase}
+                  displayNumber={index + 1}
+                  onExpand={setExpandedPhase}
+                />
+              </div>
             ))}
           </div>
         </ScrollArea>

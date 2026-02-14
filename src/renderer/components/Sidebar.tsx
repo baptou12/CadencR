@@ -6,11 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { ProjectList } from "@/components/ProjectList";
 import { FeatureList } from "@/components/FeatureList";
-
-function isSidebarFocused() {
-  const zone = document.querySelector('[data-focus-zone="left-sidebar"]');
-  return zone && (zone === document.activeElement || zone.contains(document.activeElement));
-}
+import { getActiveFocusZone } from "@/lib/focus-zones";
 
 export function Sidebar() {
   const navigate = useNavigate();
@@ -55,7 +51,7 @@ export function Sidebar() {
   useHotkeys(
     "meta+alt+down",
     (e) => {
-      if (!isSidebarFocused()) return;
+      if (getActiveFocusZone() !== "left-sidebar") return;
       e.preventDefault();
       moveFocus("down");
     },
@@ -66,7 +62,7 @@ export function Sidebar() {
   useHotkeys(
     "meta+alt+up",
     (e) => {
-      if (!isSidebarFocused()) return;
+      if (getActiveFocusZone() !== "left-sidebar") return;
       e.preventDefault();
       moveFocus("up");
     },
@@ -77,7 +73,7 @@ export function Sidebar() {
   useHotkeys(
     "enter",
     (e) => {
-      if (!isSidebarFocused()) return;
+      if (getActiveFocusZone() !== "left-sidebar") return;
       const focused = document.activeElement as HTMLElement | null;
       if (!focused?.hasAttribute("data-nav-item")) return;
       e.preventDefault();

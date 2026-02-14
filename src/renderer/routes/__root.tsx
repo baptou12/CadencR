@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/resizable";
 import type { PanelSize } from "react-resizable-panels";
 import { trpc } from "@/trpc";
+import { getActiveFocusZone } from "@/lib/focus-zones";
 import {
   Dialog,
   DialogContent,
@@ -30,24 +31,19 @@ import { Button } from "@/components/ui/button";
 const ZONE_ORDER = ["left-sidebar", "main-content", "right-sidebar"] as const;
 
 function focusZoneByDirection(direction: "left" | "right") {
-  const active = document.activeElement;
-  let currentIndex = -1;
-  for (let i = 0; i < ZONE_ORDER.length; i++) {
-    const el = document.querySelector(`[data-focus-zone="${ZONE_ORDER[i]}"]`);
-    if (el && (el === active || el.contains(active))) {
-      currentIndex = i;
-      break;
+  const currentZone = getActiveFocusZone();
+  const currentIndex = currentZone ? ZONE_ORDER.indexOf(currentZone as (typeof ZONE_ORDER)[number]) : -1;
+  const step = direction === "right" ? 1 : -1;
+  // Move in the given direction, skipping zones not in the DOM. No wrapping.
+  for (let next = currentIndex + step; next >= 0 && next < ZONE_ORDER.length; next += step) {
+    const nextEl = document.querySelector(
+      `[data-focus-zone="${ZONE_ORDER[next]}"]`,
+    ) as HTMLElement | null;
+    if (nextEl) {
+      nextEl.focus();
+      return;
     }
   }
-  const len = ZONE_ORDER.length;
-  const nextIndex =
-    direction === "right"
-      ? (currentIndex + 1) % len
-      : (currentIndex - 1 + len) % len;
-  const nextEl = document.querySelector(
-    `[data-focus-zone="${ZONE_ORDER[nextIndex]}"]`,
-  ) as HTMLElement | null;
-  nextEl?.focus();
 }
 
 export const Route = createRootRoute({
