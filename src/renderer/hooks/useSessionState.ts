@@ -196,6 +196,8 @@ export interface SessionStateReturn {
   pendingQuestions: AgentQuestion[];
   /** Which subprocess ID asked the current pending questions (for multi-subprocess mode) */
   questionSubprocessId: string | null;
+  /** Whether any file-modifying tool (Write, Edit, NotebookEdit) was used during this session */
+  hasFileChanges: boolean;
   handleEvent: (agentEvent: AgentEvent) => void;
   reset: () => void;
   start: () => void;
@@ -248,6 +250,10 @@ export function useSessionState(
   const [pendingQuestions, setPendingQuestions] = useState<AgentQuestion[]>([]);
   /** Tracks which subprocess ID asked the current pending questions (for multi-subprocess mode) */
   const [questionSubprocessId, setQuestionSubprocessId] = useState<string | null>(null);
+
+  /** Whether any file-modifying tool (Write, Edit, NotebookEdit) was used */
+  const FILE_CHANGING_TOOLS = useRef(new Set(["Write", "Edit", "NotebookEdit"]));
+  const [hasFileChanges, setHasFileChanges] = useState(false);
 
   // Client-side pattern matching dedup (single mode)
   const singleMatchedPatterns = useRef(new Set<string>());
@@ -317,6 +323,9 @@ export function useSessionState(
             }
           } else if (event.content_block.type === "tool_use") {
             const toolBlock = event.content_block;
+            if (FILE_CHANGING_TOOLS.current.has(toolBlock.name)) {
+              setHasFileChanges(true);
+            }
             if (
               supportsQuestions &&
               toolBlock.name === "AskUserQuestion" &&
@@ -562,6 +571,9 @@ export function useSessionState(
                 : [...blocks, newBlock];
             } else if (event.content_block.type === "tool_use") {
               const tb = event.content_block;
+              if (FILE_CHANGING_TOOLS.current.has(tb.name)) {
+                setHasFileChanges(true);
+              }
               // Detect AskUserQuestion in multi-subprocess mode
               if (
                 supportsQuestions &&
@@ -819,6 +831,7 @@ export function useSessionState(
 
   // ----- Actions -----
   const reset = useCallback(() => {
+    setHasFileChanges(false);
     if (supportsMultiSubprocess) {
       setSubprocesses(new Map());
       setMultiOverallStatus("idle");
@@ -836,6 +849,7 @@ export function useSessionState(
   }, [supportsMultiSubprocess]);
 
   const start = useCallback(() => {
+    setHasFileChanges(false);
     if (supportsMultiSubprocess) {
       setSubprocesses(new Map());
       setMultiOverallStatus("running");
@@ -963,6 +977,7 @@ export function useSessionState(
     sessionDbIdRef,
     pendingQuestions,
     questionSubprocessId,
+    hasFileChanges,
     handleEvent,
     reset,
     start,

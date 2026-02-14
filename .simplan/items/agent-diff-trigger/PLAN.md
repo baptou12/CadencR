@@ -31,17 +31,19 @@ The `AgentSession` component renders agent output with an `AgentStream` + `Agent
 
 ## Phases
 
-### ⬜ Phase 1: Track file-changing tool usage in useSessionState
+### ✅ Phase 1: Track file-changing tool usage in useSessionState
 - **Step**: 1
 - **Complexity**: 2
-- [ ] In `useSessionState.ts`, add a `hasFileChanges` boolean state (per single-session and per multi-subprocess)
-- [ ] In the event handler, detect `content_block_start` events where `content_block.type === "tool_use"` and `name` is one of: "Write", "Edit", "NotebookEdit" (file-modifying tools)
-- [ ] Set `hasFileChanges = true` when such a tool is detected
-- [ ] Expose `hasFileChanges` from the hook return value
-- [ ] Reset `hasFileChanges` when a new session starts
+- [x] In `useSessionState.ts`, add a `hasFileChanges` boolean state (per single-session and per multi-subprocess)
+- [x] In the event handler, detect `content_block_start` events where `content_block.type === "tool_use"` and `name` is one of: "Write", "Edit", "NotebookEdit" (file-modifying tools)
+- [x] Set `hasFileChanges = true` when such a tool is detected
+- [x] Expose `hasFileChanges` from the hook return value
+- [x] Reset `hasFileChanges` when a new session starts
 - **Files**: `src/renderer/hooks/useSessionState.ts`
 - **Commit message**: `feat: track file-changing tool usage in useSessionState`
 - **Bisect note**: N/A — adds state tracking without UI changes
+- **Implementation notes**: Added a single `hasFileChanges` boolean state shared across single and multi-subprocess modes. Detection uses a `Set` of file-changing tool names ("Write", "Edit", "NotebookEdit") checked in `content_block_start` for `tool_use` blocks in both `handleSingleEvent` and `handleMultiEvent`. Reset in both `reset()` and `start()`. Added to `SessionStateReturn` interface and return value.
+- **Validation results**: Lint passed (0 warnings, 0 errors). Type check passed (no errors).
 
 ### ⬜ Phase 2: Add inline diff trigger to AgentSession
 - **Step**: 2
@@ -64,5 +66,5 @@ The `AgentSession` component renders agent output with an `AgentStream` + `Agent
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Not started
-- **Progress**: 0/2
+- **Current Phase**: Phase 2
+- **Progress**: 1/2
