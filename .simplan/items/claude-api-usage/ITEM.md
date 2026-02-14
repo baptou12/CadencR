@@ -1,4 +1,4 @@
 # Claude API Usage
 - **Type**: ✨ Feature
-- **Status**: 📋 BACKLOG
+- **Status**: 📝 PLANNED
 - **Description**: Display token counts and cost estimates from Claude API responses
