@@ -71,32 +71,36 @@ Key files:
 - **Implementation notes**: Installed react-hotkeys-hook v5.2.4. Created FocusContext with FocusProvider and useFocusContext hook. Created useAppFocus helper hook with isFocused, moveFocusLeft, moveFocusRight (wraps around cyclically). Split RootLayout into RootLayout (wraps FocusProvider) and RootLayoutInner (uses the context). Added data-focus-zone attributes and ring-2 ring-blue-500/50 focus outlines to left-sidebar and main-content panels. Click handlers on panel divs update focusZone. The right-sidebar zone is not yet visible in the root layout (it is rendered inside routes by PlanSidebar), so its data-focus-zone attribute will be added in Phase 4.
 - **Validation results**: Lint passes (0 warnings, 0 errors). TypeScript compiles with no errors.
 
-### ⬜ Phase 2: Global keyboard shortcuts
+### ✅ Phase 2: Global keyboard shortcuts
 - **Step**: 2
 - **Complexity**: 3
-- [ ] Register CMD+"," to navigate to `/settings` via TanStack Router's `useNavigate()`
-- [ ] Register CMD+OPT+LEFT/RIGHT to cycle focus zones using `moveFocusLeft()`/`moveFocusRight()` from FocusContext
-- [ ] Register CMD+N to create a new feature on the currently selected project (reuse existing create-feature logic from FeatureList). If no project selected, do nothing.
-- [ ] Register CMD+SHIFT+N to create a new free session on the selected project. If no project, do nothing.
-- [ ] Shortcuts should be registered at the root layout level (`__root.tsx`) so they work everywhere
-- [ ] Prevent default browser behavior for these key combos (e.g., CMD+"," might open browser prefs)
+- [x] Register CMD+"," to navigate to `/settings` via TanStack Router's `useNavigate()`
+- [x] Register CMD+OPT+LEFT/RIGHT to cycle focus zones using `moveFocusLeft()`/`moveFocusRight()` from FocusContext
+- [x] Register CMD+N to create a new feature on the currently selected project (reuse existing create-feature logic from FeatureList). If no project selected, do nothing.
+- [x] Register CMD+SHIFT+N to create a new free session on the selected project. If no project, do nothing.
+- [x] Shortcuts should be registered at the root layout level (`__root.tsx`) so they work everywhere
+- [x] Prevent default browser behavior for these key combos (e.g., CMD+"," might open browser prefs)
 - **Files**: `src/renderer/routes/__root.tsx`
 - **Commit message**: `feat: add global keyboard shortcuts (settings, focus, new feature/session)`
 - **Bisect note**: N/A — all shortcuts registered in one file, no cross-file dependencies.
+- **Implementation notes**: All shortcuts registered in `RootLayoutInner` using `useHotkeys` from `react-hotkeys-hook`. Active project ID is extracted from the URL via `useRouterState()` regex match. CMD+N opens a dialog (same pattern as FeatureList) with title input; CMD+SHIFT+N creates a session immediately and navigates to it. Both CMD+, and CMD+OPT+LEFT/RIGHT have `enableOnFormTags: true` so they work even when focused in text inputs. CMD+N and CMD+SHIFT+N have `enableOnFormTags: false` to avoid conflicts when typing in form fields. All handlers call `e.preventDefault()` to suppress default browser/Electron behavior. Added `trpc.features.create` and `trpc.features.createSession` mutations with proper invalidation and navigation on success.
+- **Validation results**: Lint passes (0 warnings, 0 errors). TypeScript compiles with no errors.
 
-### ⬜ Phase 3: Left sidebar navigation shortcuts
+### ✅ Phase 3: Left sidebar navigation shortcuts
 - **Step**: 2
 - **Complexity**: 3
-- [ ] Add CMD+UP/DOWN handlers that only activate when `focusZone === 'left-sidebar'`
-- [ ] Track the currently selected/focused item index in the sidebar (projects + features as one flat list)
-- [ ] CMD+DOWN moves selection down: navigate through features in current project, then to next project, then its features
-- [ ] CMD+UP moves selection up: reverse direction
-- [ ] Show selected element with an outline/ring style
-- [ ] When a project or feature is selected via keyboard, navigate to it (same as clicking it)
-- [ ] Handle edge cases: wrap around at top/bottom, empty lists, no project selected
+- [x] Add CMD+UP/DOWN handlers that only activate when `focusZone === 'left-sidebar'`
+- [x] Track the currently selected/focused item index in the sidebar (projects + features as one flat list)
+- [x] CMD+DOWN moves selection down: navigate through features in current project, then to next project, then its features
+- [x] CMD+UP moves selection up: reverse direction
+- [x] Show selected element with an outline/ring style
+- [x] When a project or feature is selected via keyboard, navigate to it (same as clicking it)
+- [x] Handle edge cases: wrap around at top/bottom, empty lists, no project selected
 - **Files**: `src/renderer/components/Sidebar.tsx`, `src/renderer/components/ProjectList.tsx`, `src/renderer/components/FeatureList.tsx`
 - **Commit message**: `feat: add keyboard navigation for sidebar (CMD+UP/DOWN)`
 - **Bisect note**: Only activates when left sidebar is focused. No impact on other panels.
+- **Implementation notes**: Fetched projects and features data at the Sidebar level (using `trpc.projects.list.useQuery()` and `trpc.features.listByProject.useQuery()`) to build a flat `NavItem[]` list of projects interleaved with features for the currently selected project. Added `keyboardFocusIndex` state tracked in Sidebar.tsx. Used `useHotkeys` for `meta+down` and `meta+up` with `enabled: focusZone === 'left-sidebar'` guard. Navigation wraps around at both ends. Selecting a project updates sidebar state; selecting a feature navigates to its route. Added `keyboardFocusProjectId` prop to ProjectList and `keyboardFocusFeatureId` prop to FeatureList, which apply `ring-2 ring-ring ring-offset-1 ring-offset-background` styling to the focused item. Used `projectsQuery.data` and `featuresQuery.data` directly in useMemo deps (rather than `?? []` derived arrays) to satisfy exhaustive-deps lint rule. No dedicated `/projects/$projectId` route exists, so project selection only updates sidebar state without navigation.
+- **Validation results**: Lint passes (0 warnings, 0 errors). TypeScript compiles with no errors.
 
 ### ⬜ Phase 4: Right sidebar (plan) navigation shortcuts
 - **Step**: 3
@@ -149,5 +153,5 @@ Key files:
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 2
-- **Progress**: 1/6
+- **Current Phase**: Phase 4
+- **Progress**: 3/6

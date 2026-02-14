@@ -1,5 +1,11 @@
-import React, { useCallback } from "react";
-import { createRootRoute, Outlet } from "@tanstack/react-router";
+import React, { useCallback, useState } from "react";
+import {
+  createRootRoute,
+  Outlet,
+  useNavigate,
+  useRouterState,
+} from "@tanstack/react-router";
+import { useHotkeys } from "react-hotkeys-hook";
 import { Sidebar } from "@/components/Sidebar";
 import { useDbUpdated } from "@/hooks/useDbUpdated";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
@@ -11,6 +17,17 @@ import {
 import type { PanelSize } from "react-resizable-panels";
 import { FocusProvider } from "@/contexts/FocusContext";
 import { useAppFocus } from "@/hooks/useAppFocus";
+import { trpc } from "@/trpc";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -27,7 +44,121 @@ function RootLayout() {
 function RootLayoutInner() {
   useDbUpdated();
   const leftWidth = useDebouncedSetting("sidebar_left_width");
-  const { focusZone, setFocusZone } = useAppFocus();
+  const { focusZone, setFocusZone, moveFocusLeft, moveFocusRight } =
+    useAppFocus();
+  const navigate = useNavigate();
+
+  // Extract active project ID from the current route
+  const routerState = useRouterState();
+  const routeParams = (routerState.location.pathname.match(
+    /\/projects\/(\d+)(?:\/features\/(\d+))?/,
+  ) ?? []) as string[];
+  const activeProjectId = routeParams[1] ? Number(routeParams[1]) : null;
+
+  // New feature dialog state
+  const [featureDialogOpen, setFeatureDialogOpen] = useState(false);
+  const [newFeatureTitle, setNewFeatureTitle] = useState("");
+
+  const utils = trpc.useUtils();
+
+  const invalidateFeatures = useCallback(() => {
+    void utils.features.listByProject.invalidate();
+    void utils.features.getById.invalidate();
+    void utils.features.getProgress.invalidate();
+  }, [utils]);
+
+  const createFeatureMutation = trpc.features.create.useMutation({
+    onSuccess: (result) => {
+      invalidateFeatures();
+      setFeatureDialogOpen(false);
+      setNewFeatureTitle("");
+      if (activeProjectId != null) {
+        void navigate({
+          to: "/projects/$projectId/features/$featureId",
+          params: {
+            projectId: String(activeProjectId),
+            featureId: String(result.id),
+          },
+        });
+      }
+    },
+  });
+
+  const createSessionMutation = trpc.features.createSession.useMutation({
+    onSuccess: (session) => {
+      invalidateFeatures();
+      if (activeProjectId != null) {
+        void navigate({
+          to: "/projects/$projectId/features/$featureId",
+          params: {
+            projectId: String(activeProjectId),
+            featureId: String(session.id),
+          },
+        });
+      }
+    },
+  });
+
+  const handleCreateFeature = useCallback(() => {
+    const trimmed = newFeatureTitle.trim();
+    if (!trimmed || activeProjectId == null) return;
+    createFeatureMutation.mutate({
+      project_id: activeProjectId,
+      title: trimmed,
+    });
+  }, [newFeatureTitle, activeProjectId, createFeatureMutation]);
+
+  // CMD+, -> navigate to settings
+  useHotkeys(
+    "meta+comma",
+    (e) => {
+      e.preventDefault();
+      void navigate({ to: "/settings" });
+    },
+    { enableOnFormTags: true },
+  );
+
+  // CMD+OPT+LEFT -> cycle focus left
+  useHotkeys(
+    "meta+alt+ArrowLeft",
+    (e) => {
+      e.preventDefault();
+      moveFocusLeft();
+    },
+    { enableOnFormTags: true },
+  );
+
+  // CMD+OPT+RIGHT -> cycle focus right
+  useHotkeys(
+    "meta+alt+ArrowRight",
+    (e) => {
+      e.preventDefault();
+      moveFocusRight();
+    },
+    { enableOnFormTags: true },
+  );
+
+  // CMD+N -> create new feature (open dialog)
+  useHotkeys(
+    "meta+n",
+    (e) => {
+      e.preventDefault();
+      if (activeProjectId == null) return;
+      setFeatureDialogOpen(true);
+    },
+    { enableOnFormTags: false },
+  );
+
+  // CMD+SHIFT+N -> create new session
+  useHotkeys(
+    "meta+shift+n",
+    (e) => {
+      e.preventDefault();
+      if (activeProjectId == null) return;
+      createSessionMutation.mutate({ project_id: activeProjectId });
+    },
+    { enableOnFormTags: false },
+  );
 
   const handleLeftResize = useCallback(
     (panelSize: PanelSize) => {
@@ -76,6 +207,36 @@ function RootLayoutInner() {
           </main>
         </ResizablePanel>
       </ResizablePanelGroup>
+
+      {/* New Feature dialog triggered by CMD+N */}
+      <Dialog open={featureDialogOpen} onOpenChange={setFeatureDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>New Feature</DialogTitle>
+            <DialogDescription>
+              Enter a title for the new feature.
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            placeholder="Feature title"
+            value={newFeatureTitle}
+            onChange={(e) => setNewFeatureTitle(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleCreateFeature();
+            }}
+          />
+          <DialogFooter>
+            <Button
+              onClick={handleCreateFeature}
+              disabled={
+                !newFeatureTitle.trim() || createFeatureMutation.isLoading
+              }
+            >
+              Create
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
