@@ -5,6 +5,8 @@ import { getSessionDbId, persistStreamEvent } from "./ipc-bridge";
 import { DEFAULT_MODEL } from "./models";
 import type { AgentEvent, AgentType, StreamEvent } from "./types";
 import EventEmitter from "node:events";
+import * as fs from "node:fs";
+import * as path from "node:path";
 
 const MAX_CONCURRENT = 10;
 const AGENT_EVENT_CHANNEL = "agent:event";
@@ -337,6 +339,61 @@ function createMessageStream(initialPrompt: string) {
   return { generator, push, close };
 }
 
+/**
+ * Check whether a buffer likely contains binary (non-text) data.
+ * Looks for null bytes in the first 8KB — a common heuristic.
+ */
+function isBinaryBuffer(buf: Buffer): boolean {
+  const checkLength = Math.min(buf.length, 8192);
+  for (let i = 0; i < checkLength; i++) {
+    if (buf[i] === 0) return true;
+  }
+  return false;
+}
+
+/**
+ * Safely read old file content before a Write/Edit tool executes.
+ * Returns `null` if the file doesn't exist (new file), is binary, or can't be read.
+ * Returns empty string for new files so callers can still produce a diff.
+ */
+function readOldFileContent(filePath: string): string | null {
+  try {
+    const buf = fs.readFileSync(filePath);
+    if (isBinaryBuffer(buf)) return null;
+    return buf.toString("utf-8");
+  } catch (err: unknown) {
+    if (
+      err instanceof Error &&
+      "code" in err &&
+      (err as NodeJS.ErrnoException).code === "ENOENT"
+    ) {
+      // New file — old content is empty
+      return "";
+    }
+    // Other read errors (permission denied, etc.) — skip diff
+    return null;
+  }
+}
+
+/**
+ * Compute new content for an Edit tool call by applying old_string -> new_string replacement.
+ */
+function applyEditReplacement(
+  oldContent: string,
+  oldString: string,
+  newString: string,
+  replaceAll: boolean,
+): string {
+  if (replaceAll) {
+    // Replace all occurrences
+    return oldContent.split(oldString).join(newString);
+  }
+  // Replace first occurrence only
+  const idx = oldContent.indexOf(oldString);
+  if (idx === -1) return oldContent;
+  return oldContent.slice(0, idx) + newString + oldContent.slice(idx + oldString.length);
+}
+
 async function runSdkQuery(
   managed: ManagedSubprocess,
   options: SubprocessOptions,
@@ -411,6 +468,46 @@ async function runSdkQuery(
             answers: {},
           },
         };
+      }
+    }
+
+    // Intercept Write and Edit tools to capture file diffs
+    if (toolName === "Write" || toolName === "Edit") {
+      try {
+        const filePath = input.file_path as string | undefined;
+        if (filePath) {
+          const resolvedPath = path.resolve(options.cwd, filePath);
+          const oldContent = readOldFileContent(resolvedPath);
+
+          if (oldContent !== null) {
+            let newContent: string;
+
+            if (toolName === "Write") {
+              newContent = (input.content as string) ?? "";
+            } else {
+              // Edit tool: apply old_string -> new_string replacement
+              const oldString = (input.old_string as string) ?? "";
+              const newString = (input.new_string as string) ?? "";
+              const replaceAll = (input.replace_all as boolean) ?? false;
+              newContent = applyEditReplacement(
+                oldContent,
+                oldString,
+                newString,
+                replaceAll,
+              );
+            }
+
+            // Broadcast file_diff event (ephemeral — not persisted to agent_messages)
+            broadcastEvent(managed.id, managed.agentType, {
+              type: "file_diff",
+              file_path: filePath,
+              old_content: oldContent,
+              new_content: newContent,
+            });
+          }
+        }
+      } catch {
+        // Best-effort: don't block tool execution if diff capture fails
       }
     }
 

@@ -51,46 +51,52 @@ Write tool args contain `{file_path, content}`. Edit tool args contain `{file_pa
 - **Implementation notes**: Added `StreamFileDiff` interface after `StreamAgentPaused` in types.ts with JSDoc comment. Added it as the last entry in the `StreamEvent` union. Added `diffData` optional field with JSDoc to `AgentBlockData`. Installed `diff@^8.0.3` as dependency and `@types/diff@^8.0.0` as devDependency (note: `@types/diff` is a stub since diff v8 ships its own types, but it is harmless).
 - **Validation results**: Lint passed (0 warnings, 0 errors). TypeScript type check passed (no errors).
 
-### ⬜ Phase 2: Main process canUseTool interception
+### ✅ Phase 2: Main process canUseTool interception
 - **Step**: 2
 - **Complexity**: 3
-- [ ] In `runSdkQuery` in `src/main/agents/subprocess-manager.ts`, extend the `canUseTool` callback to intercept Write and Edit tool calls
-- [ ] For Write: read old file content from disk at `path.resolve(options.cwd, input.file_path)`, use `input.content` as new content
-- [ ] For Edit: read old file content, compute new content by applying `old_string → new_string` replacement (respect `replace_all` flag)
-- [ ] Handle edge cases: new file (old content = ""), read errors (skip diff), binary files (skip diff)
-- [ ] Broadcast `file_diff` event via `broadcastEvent(managed.id, managed.agentType, {...})` before returning `allow`
-- [ ] Do NOT persist `file_diff` events to agent_messages (they're ephemeral display data)
+- [x] In `runSdkQuery` in `src/main/agents/subprocess-manager.ts`, extend the `canUseTool` callback to intercept Write and Edit tool calls
+- [x] For Write: read old file content from disk at `path.resolve(options.cwd, input.file_path)`, use `input.content` as new content
+- [x] For Edit: read old file content, compute new content by applying `old_string → new_string` replacement (respect `replace_all` flag)
+- [x] Handle edge cases: new file (old content = ""), read errors (skip diff), binary files (skip diff)
+- [x] Broadcast `file_diff` event via `broadcastEvent(managed.id, managed.agentType, {...})` before returning `allow`
+- [x] Do NOT persist `file_diff` events to agent_messages (they're ephemeral display data)
 - **Files**: `src/main/agents/subprocess-manager.ts`
 - **Commit message**: `feat: intercept Write/Edit in canUseTool to capture file diffs`
 - **Bisect note**: Broadcasts file_diff events that renderer doesn't handle yet — harmless since unknown event types are ignored by useSessionState
+- **Implementation notes**: Added `node:fs` and `node:path` imports. Created three helper functions before `runSdkQuery`: `isBinaryBuffer()` (checks first 8KB for null bytes), `readOldFileContent()` (returns file content string, empty string for ENOENT/new files, null for binary/read errors), and `applyEditReplacement()` (handles both single replacement via indexOf and replace_all via split-join). Extended the `canUseTool` callback with a Write/Edit interception block placed after the AskUserQuestion handler but before the default allow-all return. The diff capture is wrapped in a try/catch so it never blocks tool execution. The `file_diff` event is broadcast via `broadcastEvent()` only (no call to `persistStreamEvent`) keeping it ephemeral as required.
+- **Validation results**: Lint passed (0 warnings, 0 errors). TypeScript type check passed (no errors).
 
-### ⬜ Phase 3: Handle file_diff events in renderer state
+### ✅ Phase 3: Handle file_diff events in renderer state
 - **Step**: 2
 - **Complexity**: 2
-- [ ] In `handleSingleEvent` in `src/renderer/hooks/useSessionState.ts`, add case for `file_diff` event type
-- [ ] When `file_diff` arrives, find the last top-level tool_call block with `toolName === "Write" || toolName === "Edit"` and matching file path (from toolArgs)
-- [ ] Attach `diffData` to that block: `{ filePath: event.file_path, oldContent: event.old_content, newContent: event.new_content }`
-- [ ] Also handle in `handleMultiEvent` for execute agent multi-subprocess mode (same logic, scoped to subprocess blocks)
+- [x] In `handleSingleEvent` in `src/renderer/hooks/useSessionState.ts`, add case for `file_diff` event type
+- [x] When `file_diff` arrives, find the last top-level tool_call block with `toolName === "Write" || toolName === "Edit"` and matching file path (from toolArgs)
+- [x] Attach `diffData` to that block: `{ filePath: event.file_path, oldContent: event.old_content, newContent: event.new_content }`
+- [x] Also handle in `handleMultiEvent` for execute agent multi-subprocess mode (same logic, scoped to subprocess blocks)
 - **Files**: `src/renderer/hooks/useSessionState.ts`
 - **Commit message**: `feat: handle file_diff events and attach diffData to Write/Edit blocks`
 - **Bisect note**: Adds handler for new event type and stores data on blocks — no rendering changes yet, safe intermediate state
+- **Implementation notes**: Added two helper functions at the top of useSessionState.ts: `extractFilePath` (parses file_path from toolArgs JSON, handles partial JSON gracefully) and `attachDiffData` (walks blocks backwards to find the last matching Write/Edit tool_call and attaches diffData). Added `file_diff` case in both `handleSingleEvent` (using `setSingleBlocks` with `attachDiffData`) and `handleMultiEvent` (mutating local `blocks` variable with `attachDiffData`). Both use the same shared helper function.
+- **Validation results**: Lint passed (0 warnings, 0 errors). TypeScript type check passed (no errors).
 
-### ⬜ Phase 4: InlineDiffBlock component
+### ✅ Phase 4: InlineDiffBlock component
 - **Step**: 2
 - **Complexity**: 3
-- [ ] Create `src/renderer/components/InlineDiffBlock.tsx` component
-- [ ] Accept props: `filePath: string`, `oldContent: string`, `newContent: string`
-- [ ] Use `createTwoFilesPatch` from `diff` library to compute unified diff from old/new content
-- [ ] Extract `parseUnifiedDiff` utility from `src/renderer/components/diff/DiffViewer.tsx` into `src/renderer/lib/parse-unified-diff.ts` (shared between DiffViewer and InlineDiffBlock)
-- [ ] Update DiffViewer.tsx to import from the shared utility
-- [ ] Parse the unified diff into hunks, create `DiffFile` instance with `@git-diff-view/react`
-- [ ] Render using `DiffView` component in unified mode, dark theme, wrap enabled, font size 13
-- [ ] Include compact file header showing file path and +/- line counts
-- [ ] Use existing `dracula-diff.css` styles (import from `./diff/dracula-diff.css`)
-- [ ] Handle edge case: identical content (show "No changes" message)
+- [x] Create `src/renderer/components/InlineDiffBlock.tsx` component
+- [x] Accept props: `filePath: string`, `oldContent: string`, `newContent: string`
+- [x] Use `createTwoFilesPatch` from `diff` library to compute unified diff from old/new content
+- [x] Extract `parseUnifiedDiff` utility from `src/renderer/components/diff/DiffViewer.tsx` into `src/renderer/lib/parse-unified-diff.ts` (shared between DiffViewer and InlineDiffBlock)
+- [x] Update DiffViewer.tsx to import from the shared utility
+- [x] Parse the unified diff into hunks, create `DiffFile` instance with `@git-diff-view/react`
+- [x] Render using `DiffView` component in unified mode, dark theme, wrap enabled, font size 13
+- [x] Include compact file header showing file path and +/- line counts
+- [x] Use existing `dracula-diff.css` styles (import from `./diff/dracula-diff.css`)
+- [x] Handle edge case: identical content (show "No changes" message)
 - **Files**: `src/renderer/components/InlineDiffBlock.tsx`, `src/renderer/lib/parse-unified-diff.ts`, `src/renderer/components/diff/DiffViewer.tsx`
 - **Commit message**: `feat: create InlineDiffBlock component with @git-diff-view/react`
 - **Bisect note**: New component not yet imported anywhere — safe. DiffViewer import path change must be included to avoid broken import.
+- **Implementation notes**: Created `src/renderer/lib/parse-unified-diff.ts` with both `parseUnifiedDiff` and `langFromPath` exported. The `langFromPath` utility was also extracted since it is shared between DiffViewer and InlineDiffBlock. Updated DiffViewer.tsx to remove the inline definitions of `parseUnifiedDiff`, `FileDiffSection`, and `langFromPath`, replacing them with a single import from `@/lib/parse-unified-diff`. Created `InlineDiffBlock.tsx` component that uses `createTwoFilesPatch` from the `diff` library to generate a unified diff, extracts hunk lines by finding the first `@@` line, and passes them to `DiffFile.createInstance`. The component renders in unified mode (DiffModeEnum.Unified) with wrap, dark theme, and font size 13. Includes a compact header bar with file path (truncated via CSS) and +/- line counts. The "No changes" edge case shows a styled message when old and new content are identical or when no hunks are produced.
+- **Validation results**: Lint passed (0 warnings, 0 errors). TypeScript type check passed (no errors).
 
 ### ⬜ Phase 5: Wire up rendering in AgentBlock
 - **Step**: 3
@@ -114,5 +120,5 @@ Write tool args contain `{file_path, content}`. Edit tool args contain `{file_pa
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 2 (Main process canUseTool interception)
-- **Progress**: 1/5
+- **Current Phase**: Phase 5 (Wire up rendering in AgentBlock)
+- **Progress**: 4/5
