@@ -108,8 +108,13 @@ export function FeatureTopBar({ featureId, projectId: _projectId, mode = "featur
         </span>
       )}
 
-      <span className="text-muted-foreground text-sm">
-        {gitStats ? `+${gitStats.insertions} -${gitStats.deletions}` : "--"}
+      <span className="text-sm">
+        {gitStats ? (
+          <>
+            <span className="text-green-400">+{gitStats.insertions}</span>{" "}
+            <span className="text-red-400">-{gitStats.deletions}</span>
+          </>
+        ) : "--"}
       </span>
 
       <div className="flex-1" />
