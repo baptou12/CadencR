@@ -1,0 +1,86 @@
+# Plan: Execute agent plan deviation tracking
+
+## Context
+The execute agent orchestrates phase execution via `execute-agent.ts`. Each phase runs as a Claude subprocess with an enriched prompt (plan context + previous phases). The system prompt in `agent-configs.ts` currently tells the agent to "follow the plan precisely." Phase status is tracked in the `phases` DB table but has no fields for implementation notes or deviations. The UI shows phases in `PlanSidebar.tsx` → `PhaseCard.tsx` with status, title, prompt, and commit message.
+
+## Clarifications
+- **Deviation reporting**: Add `implementation_notes` and `deviations` TEXT columns to phases table. Parse agent output for structured sections.
+- **Deviation scope**: Minor only — fix unexpected issues (type errors, edge cases) but don't change the overall approach. Must document why.
+- **UI visibility**: Show notes and deviations in the phase detail panel.
+- **Completion conditions**: Lint + typecheck must pass.
+
+## Completion Conditions
+
+| Condition | Validation Command | Expected Outcome |
+|-----------|-------------------|------------------|
+| Lint passes | `pnpm run lint` | Exit code 0, no errors |
+| TypeScript compiles | `npx tsc --noEmit` | Exit code 0, no type errors |
+
+## Execution Steps
+
+| Step | Phases | Description |
+|------|--------|-------------|
+| 1    | 1      | DB migration adding new columns |
+| 2    | 2      | Update system prompt to request structured output |
+| 3    | 3      | Parse agent output and persist to DB in completion action |
+| 4    | 4      | Show implementation notes and deviations in phase UI |
+
+> **Parallelism**: Sequential — each phase depends on the previous.
+
+## Phases
+
+### ⬜ Phase 1: Add DB columns for deviation tracking
+- **Step**: 1
+- **Complexity**: 2
+- [ ] Add migration 14 in `src/main/db/migrations.ts`: `ALTER TABLE phases ADD COLUMN implementation_notes TEXT; ALTER TABLE phases ADD COLUMN deviations TEXT;`
+- [ ] Update `PhaseRow` interface in `src/main/db/types.ts` to include `implementation_notes: string | null` and `deviations: string | null`
+- **Files**: `src/main/db/migrations.ts`, `src/main/db/types.ts`
+- **Commit message**: `feat: add implementation_notes and deviations columns to phases table`
+- **Bisect note**: N/A — new nullable columns, no callers yet
+
+### ⬜ Phase 2: Update execute agent prompt for structured output
+- **Step**: 2
+- **Complexity**: 2
+- [ ] Update `EXECUTE_SYSTEM_PROMPT` in `src/main/agents/agent-configs.ts` to:
+  - Allow minor deviations (fix type errors, edge cases, broken imports) but require documenting them
+  - Instruct agent to output a structured section at the end of execution: `## Implementation Notes` (what was done) and `## Deviations` (what differed from plan and why)
+  - Keep the tone: plan is primary guide, deviations are for unplanned issues only
+- **Files**: `src/main/agents/agent-configs.ts`
+- **Commit message**: `feat: update execute prompt to request implementation notes and deviations`
+- **Bisect note**: N/A — prompt change only, no code depends on output format yet
+
+### ⬜ Phase 3: Parse agent output and persist deviations to DB
+- **Step**: 3
+- **Complexity**: 3
+- [ ] In `src/main/agents/execute-agent.ts`, in the phase completion action (where status is set to 'completed'), extract `## Implementation Notes` and `## Deviations` sections from the agent's message history
+- [ ] Use `ipc-bridge.ts` message store or agent session messages to get the agent's final output
+- [ ] Parse the sections using simple regex/string matching
+- [ ] Update the phase row with `implementation_notes` and `deviations` columns
+- [ ] Update the `getPlanWithPhases` query in `src/main/trpc/features.ts` to include the new columns in SELECT
+- **Files**: `src/main/agents/execute-agent.ts`, `src/main/trpc/features.ts`
+- **Commit message**: `feat: parse and persist implementation notes and deviations from execute agent`
+- **Bisect note**: Must include both parsing and query update together — UI won't break (columns are nullable) but data should flow end-to-end
+
+### ⬜ Phase 4: Display deviations in phase detail UI
+- **Step**: 4
+- **Complexity**: 3
+- [ ] Update `PhaseData` interface in `PhaseCard.tsx` to include `implementation_notes` and `deviations`
+- [ ] In the expanded phase modal in `PlanSidebar.tsx`, add sections below the prompt:
+  - "Implementation Notes" section (rendered as markdown, only if non-null)
+  - "Deviations" section with a distinct visual treatment (e.g., amber/warning color accent, only if non-null)
+- [ ] Both sections should only appear for completed phases that have data
+- **Files**: `src/renderer/components/PhaseCard.tsx`, `src/renderer/components/PlanSidebar.tsx`
+- **Commit message**: `feat: display implementation notes and deviations in phase detail panel`
+- **Bisect note**: N/A — nullable fields, gracefully hidden when null
+
+## Phase Status Legend
+
+| Emoji | Status |
+|-------|--------|
+| ⬜ | Not started |
+| 🔄 | In progress |
+| ✅ | Completed |
+
+## Current Status
+- **Current Phase**: Not started
+- **Progress**: 0/4
