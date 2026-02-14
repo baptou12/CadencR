@@ -135,18 +135,20 @@ Key files:
 - **Implementation notes**: Used `meta+alt+down`/`meta+alt+up` key combos (matching sidebar pattern) with `isMainContentFocused()` guard. `focusedAgentIndex` state in FeatureWorkflowView tracks the keyboard-focused agent. Converted AgentPromptBar to `forwardRef` exposing `AgentPromptBarHandle` with `focusInput()` method. Converted AgentSession to `forwardRef` exposing `AgentSessionHandle` with `focusPromptBar()` method. Added `keyboardFocused` prop to AgentSession which shows `ring-2 ring-ring` on the header. Enter on collapsed agent expands it via `wf.setOpenAgent()` then focuses the prompt bar after a 50ms timeout for render. Escape stops the focused running agent. CMD+Escape uses `window.confirm()` then iterates all running sessionEntries to stop them. No `getActiveFeatureIds` endpoint was needed -- stop-all uses `wf.sessionEntries.filter(e => e.status === "running")` for the current feature. The header div gets `data-nav-item` and `tabIndex={-1}` attributes. Moved `isMainContentFocused()` outside the component to satisfy `consistent-function-scoping` lint rule.
 - **Validation results**: Lint passes (0 warnings, 0 errors). TypeScript compiles with no errors.
 
-### ⬜ Phase 6: AskUserQuestion form shortcuts
+### ✅ Phase 6: AskUserQuestion form shortcuts
 - **Step**: 4
 - **Complexity**: 2
-- [ ] Add CMD+1 through CMD+9 handlers in AgentQuestionDrawer to select/toggle option by index
-- [ ] For multi-select questions, CMD+<number> toggles without unchecking other selections
-- [ ] For single-select questions, CMD+<number> selects exclusively
-- [ ] Enter key validates the current question (moves to next question, or submits form if last)
-- [ ] Visual feedback when option is selected via keyboard (brief highlight animation)
-- [ ] Only active when a question form is visible/mounted
+- [x] Add CMD+1 through CMD+9 handlers in AgentQuestionDrawer to select/toggle option by index
+- [x] For multi-select questions, CMD+<number> toggles without unchecking other selections
+- [x] For single-select questions, CMD+<number> selects exclusively
+- [x] Enter key validates the current question (moves to next question, or submits form if last)
+- [x] Visual feedback when option is selected via keyboard (brief highlight animation)
+- [x] Only active when a question form is visible/mounted
 - **Files**: `src/renderer/components/AgentQuestionDrawer.tsx`
 - **Commit message**: `feat: add keyboard shortcuts for agent question forms (CMD+number, Enter)`
 - **Bisect note**: Self-contained in AgentQuestionDrawer. No cross-component dependencies.
+- **Implementation notes**: Added `useHotkeys` for `meta+1` through `meta+9` with `enableOnFormTags: true` so they work even when the free-text input is focused. The handler reads the digit from `e.key`, maps to option index, and calls the existing `handleOptionToggle` which already handles multi-select (toggle) vs single-select (exclusive) correctly. Enter key handler is registered separately and only fires when options are showing (not free-text mode, which has its own `onKeyDown` handler). Visual feedback uses a `highlightedIndex` state with a 300ms timeout that applies `ring-2 ring-blue-400 bg-blue-50/10` to the flashed option. Added `<kbd>` badges (1-9) next to each option label for discoverability. Both hotkeys are `enabled: open` so they only fire when the drawer is mounted and visible.
+- **Validation results**: Lint passes (0 warnings, 0 errors). TypeScript compiles with no errors.
 
 ## Phase Status Legend
 
@@ -157,5 +159,5 @@ Key files:
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 6
-- **Progress**: 5/6
+- **Current Phase**: All phases complete
+- **Progress**: 6/6

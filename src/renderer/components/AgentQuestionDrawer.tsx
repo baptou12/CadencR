@@ -1,4 +1,5 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
+import { useHotkeys } from "react-hotkeys-hook";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -35,6 +36,8 @@ export function AgentQuestionDrawer({ questions, onSubmit, open, inline }: Agent
   const [selectedOptions, setSelectedOptions] = useState<Set<string>>(new Set());
   const [freeText, setFreeText] = useState("");
   const [showOther, setShowOther] = useState(false);
+  const [highlightedIndex, setHighlightedIndex] = useState<number | null>(null);
+  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const currentQuestion = questions[currentIndex];
 
@@ -123,6 +126,43 @@ export function AgentQuestionDrawer({ questions, onSubmit, open, inline }: Agent
     }
   }, [freeText, handleNext]);
 
+  const flashHighlight = useCallback((index: number) => {
+    if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+    setHighlightedIndex(index);
+    highlightTimerRef.current = setTimeout(() => setHighlightedIndex(null), 300);
+  }, []);
+
+  // CMD+1 through CMD+9 to select/toggle option by index
+  useHotkeys(
+    "meta+1,meta+2,meta+3,meta+4,meta+5,meta+6,meta+7,meta+8,meta+9",
+    (e) => {
+      if (!open || !currentQuestion?.options) return;
+      e.preventDefault();
+      const digit = Number(e.key);
+      // digit 0 means key "0" which we don't handle; keys 1-9
+      if (digit < 1 || digit > currentQuestion.options.length) return;
+      const option = currentQuestion.options[digit - 1];
+      handleOptionToggle(option.label);
+      flashHighlight(digit - 1);
+    },
+    { enabled: open, enableOnFormTags: true },
+    [open, currentQuestion, handleOptionToggle, flashHighlight],
+  );
+
+  // Enter to validate/submit current question
+  useHotkeys(
+    "enter",
+    (e) => {
+      if (!open || !currentQuestion) return;
+      // Don't intercept Enter when typing in the free text input (handled by onKeyDown there)
+      if (showOther || !currentQuestion.options?.length) return;
+      e.preventDefault();
+      handleNext();
+    },
+    { enabled: open },
+    [open, currentQuestion, showOther, handleNext],
+  );
+
   if (!open || !currentQuestion) {
     return null;
   }
@@ -156,7 +196,7 @@ export function AgentQuestionDrawer({ questions, onSubmit, open, inline }: Agent
       {/* Option list */}
       {hasOptions && (
         <div className="mb-2 flex flex-col gap-1.5">
-          {currentQuestion.options!.map((option) => (
+          {currentQuestion.options!.map((option, optIdx) => (
             <button
               key={option.label}
               type="button"
@@ -164,11 +204,15 @@ export function AgentQuestionDrawer({ questions, onSubmit, open, inline }: Agent
                 "w-full rounded-md border px-3 py-2 text-left transition-colors",
                 selectedOptions.has(option.label)
                   ? "border-primary bg-primary/5 ring-2 ring-primary/30"
-                  : "border-border bg-background hover:bg-muted/50"
+                  : "border-border bg-background hover:bg-muted/50",
+                highlightedIndex === optIdx && "ring-2 ring-blue-400 bg-blue-50/10 transition-none"
               )}
               onClick={() => handleOptionToggle(option.label)}
             >
-              <span className="text-sm font-medium text-foreground">{option.label}</span>
+              <span className="text-sm font-medium text-foreground">
+                <kbd className="mr-1.5 inline-flex size-5 items-center justify-center rounded border border-border bg-muted text-[10px] text-muted-foreground">{optIdx + 1}</kbd>
+                {option.label}
+              </span>
               {option.description && (
                 <span className="mt-0.5 block text-xs text-muted-foreground">{option.description}</span>
               )}
