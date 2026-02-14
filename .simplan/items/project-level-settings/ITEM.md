@@ -1,4 +1,4 @@
 # Project-level settings configuration
 - **Type**: ✨ Feature
-- **Status**: 📋 BACKLOG
+- **Status**: 📝 PLANNED
 - **Description**: Add project-level settings with the same options available at global and feature levels. The settings button for project-level should be accessible from the `...` menu on the project.
