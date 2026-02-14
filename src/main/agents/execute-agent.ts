@@ -293,11 +293,11 @@ function buildEnrichedPrompt(phase: PhaseRow): string {
   // Fetch previously completed phases (earlier steps only)
   const completedPhases = db
     .prepare(
-      "SELECT step_number, title, prompt FROM phases WHERE plan_id = ? AND status = 'completed' AND step_number < ? ORDER BY step_number, order_index",
+      "SELECT step_number, title, prompt, implementation_notes, deviations FROM phases WHERE plan_id = ? AND status = 'completed' AND step_number < ? ORDER BY step_number, order_index",
     )
     .all(phase.plan_id, phase.step_number) as Pick<
     PhaseRow,
-    "step_number" | "title" | "prompt"
+    "step_number" | "title" | "prompt" | "implementation_notes" | "deviations"
   >[];
 
   const sections: string[] = [];
@@ -316,7 +316,16 @@ function buildEnrichedPrompt(phase: PhaseRow): string {
   // Previously completed phases
   if (completedPhases.length > 0) {
     const phaseList = completedPhases
-      .map((p) => `- **Phase (step ${p.step_number}): ${p.title}**`)
+      .map((p) => {
+        let entry = `- **Phase (step ${p.step_number}): ${p.title}**`;
+        if (p.implementation_notes) {
+          entry += `\n  - Implementation notes: ${p.implementation_notes}`;
+        }
+        if (p.deviations) {
+          entry += `\n  - Deviations: ${p.deviations}`;
+        }
+        return entry;
+      })
       .join("\n");
     sections.push(
       `## Previously Completed Phases\n\nThe following phases have already been implemented:\n\n${phaseList}`,

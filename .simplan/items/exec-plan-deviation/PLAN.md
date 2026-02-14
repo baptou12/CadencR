@@ -82,14 +82,16 @@ The execute agent orchestrates phase execution via `execute-agent.ts`. Each phas
 - **Implementation notes**: Added `implementation_notes` and `deviations` (both `string | null`) to `PhaseData` interface. In the expanded phase dialog in PlanSidebar, added two conditional sections after the commit message block: "Implementation Notes" with standard muted styling, and "Deviations" with an amber/orange border and background using `--drac-orange` for visual distinction. Both sections only render when the phase status is "completed" or "done" and the respective field is non-null.
 - **Validation results**: Lint passes (0 warnings, 0 errors). TypeScript compiles with no errors.
 
-### ⬜ Phase 5: Include deviations in enriched prompt for subsequent phases
+### ✅ Phase 5: Include deviations in enriched prompt for subsequent phases
 - **Step**: 5
 - **Complexity**: 2
-- [ ] In `buildEnrichedPrompt()` in `src/main/agents/execute-agent.ts`, update the completed phases query to also SELECT `implementation_notes` and `deviations`
-- [ ] Update the phase list formatting to include implementation notes and deviations below each completed phase (only when non-null)
+- [x] In `buildEnrichedPrompt()` in `src/main/agents/execute-agent.ts`, update the completed phases query to also SELECT `implementation_notes` and `deviations`
+- [x] Update the phase list formatting to include implementation notes and deviations below each completed phase (only when non-null)
 - **Files**: `src/main/agents/execute-agent.ts`
 - **Commit message**: `feat: include implementation notes and deviations in enriched prompt for next phases`
 - **Bisect note**: N/A — additive prompt content, no breaking changes
+- **Implementation notes**: Updated the completed phases SQL query to include `implementation_notes` and `deviations` columns, and the corresponding TypeScript Pick type. Updated the phase list formatting to append indented "Implementation notes" and "Deviations" lines beneath each completed phase entry, only when non-null.
+- **Validation results**: Lint passes (0 warnings, 0 errors). TypeScript compiles with no errors.
 
 ## Phase Status Legend
 
@@ -100,5 +102,5 @@ The execute agent orchestrates phase execution via `execute-agent.ts`. Each phas
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 5
-- **Progress**: 4/5
+- **Current Phase**: All phases complete
+- **Progress**: 5/5
