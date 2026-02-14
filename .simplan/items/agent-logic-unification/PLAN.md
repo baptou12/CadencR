@@ -95,18 +95,20 @@ A: useWorkflowAgents becomes a session list with metadata `{type, sessionState, 
 - **Implementation notes**: All 6 agent files rewritten to thin wrappers around `startUnifiedAgent`. Each file now: (1) performs agent-specific pre-work (plan/brainstorm create draft plan records and feature_settings entries; risk fetches plan context to build the prompt; review sets feature status to "review"), (2) builds a `UnifiedAgentConfig` via the corresponding factory function from `agent-configs.ts`, (3) calls `startUnifiedAgent()` and returns the result. The session agent became the simplest at ~50 lines with zero pre-work. The execute agent retains its full orchestrator logic (step grouping, parallel dispatch, `hasStepErrors`, `broadcastExecuteAllDone`, `buildEnrichedPrompt`, `getAutoCommitSetting`) but each individual phase subprocess is now launched via `startUnifiedAgent` instead of raw `startSubprocess` + manual event wiring. Phase completion actions handle status updates and auto-commit via the `CompletionAction` mechanism, with a Promise-based wrapper to maintain the step-sequencing contract. The `addFixPhase` function remains in `review-agent.ts` unchanged. The `plan-agent.ts` re-exports `parsePlanOutput`, `ParsedPlan`, and `ParsedPhase` from `utils.ts` for backwards compatibility (brainstorm-agent previously imported `parsePlanOutput` from plan-agent, though now brainstorm-agent no longer imports it). All tRPC router imports (`startPlanAgent`, `startBrainstormAgent`, `startExecuteAgent`, `startRiskAgent`, `startReviewAgent`, `addFixPhase`, `startSessionAgent`) continue to work unchanged -- no signature changes were made. Behavioral note: `startUnifiedAgent` now persists an initial user message for all agents (previously only session-agent did this), which is a minor but consistent improvement.
 - **Validation results**: Lint passes (oxlint: 0 warnings, 0 errors). TypeScript compiles (`npx tsc --noEmit`: no errors). App packages successfully (`pnpm run package`: all targets built and packaged for arm64 on darwin).
 
-### ⬜ Phase 4: Unified renderer state hook
+### ✅ Phase 4: Unified renderer state hook
 - **Step**: 4
 - **Complexity**: 4
-- [ ] Create `src/renderer/hooks/useSessionState.ts` — a single hook that manages agent state for any agent type. Combines the logic from `useAgentState` (blocks, status, questions) and `useMultiExecuteState` (multi-subprocess tracking)
-- [ ] The hook accepts config: `{ supportsQuestions?: boolean, supportsMultiSubprocess?: boolean, outputPatterns?: Array<{pattern: RegExp, event: string}> }`
-- [ ] Add client-side pattern matching: as text blocks accumulate, check patterns and emit callbacks (e.g. `onPatternMatch(event, fullText)`)
-- [ ] Handle the new `agent:pattern-match` IPC event from backend — surface it as a callback prop
-- [ ] Support both single-subprocess mode (plan, brainstorm, risk, review, session) and multi-subprocess mode (execute) in one hook
-- [ ] Export the same interface shape so existing consumers can migrate incrementally
-- **Files**: `src/renderer/hooks/useSessionState.ts`
+- [x] Create `src/renderer/hooks/useSessionState.ts` — a single hook that manages agent state for any agent type. Combines the logic from `useAgentState` (blocks, status, questions) and `useMultiExecuteState` (multi-subprocess tracking)
+- [x] The hook accepts config: `{ supportsQuestions?: boolean, supportsMultiSubprocess?: boolean, outputPatterns?: Array<{pattern: RegExp, event: string}> }`
+- [x] Add client-side pattern matching: as text blocks accumulate, check patterns and emit callbacks (e.g. `onPatternMatch(event, fullText)`)
+- [x] Handle the new `agent:pattern-match` IPC event from backend — surface it as a callback prop
+- [x] Support both single-subprocess mode (plan, brainstorm, risk, review, session) and multi-subprocess mode (execute) in one hook
+- [x] Export the same interface shape so existing consumers can migrate incrementally
+- **Files**: `src/renderer/hooks/useSessionState.ts`, `src/preload.ts`
 - **Commit message**: `refactor: create unified useSessionState hook replacing useAgentState and useMultiExecuteState`
 - **Bisect note**: New file only — old hooks still exist and are still used. No breakage.
+- **Implementation notes**: Created `src/renderer/hooks/useSessionState.ts` with a single `useSessionState(options)` hook that unifies `useAgentState` and `useMultiExecuteState`. The hook accepts `UseSessionStateOptions` with 4 fields: `supportsQuestions` (boolean, enables AskUserQuestion tool parsing), `supportsMultiSubprocess` (boolean, switches between single/multi subprocess management), `outputPatterns` (array of `{pattern: RegExp, event: string}` for client-side pattern matching), and `onPatternMatch` (callback fired on pattern match). Internally the hook maintains both single-subprocess state (`singleBlocks`, `singleStatus`, `singleSubprocessId`, `pendingQuestions`) and multi-subprocess state (`subprocesses` Map, `multiOverallStatus`), dispatching to the correct handler via the `supportsMultiSubprocess` flag. Client-side pattern matching runs via `useEffect` watching block changes, with deduplication via `Set<string>` (single mode) and `Map<string, Set<string>>` (multi mode). The hook also listens for backend `agent:pattern-match` IPC events via `window.api.onPatternMatch`. The return type `SessionStateReturn` is a superset of both old hooks' interfaces: it includes all fields from `useAgentState` (blocks, status, subprocessId, subprocessIdRef, pendingQuestions, handleEvent, reset, start, trackSubprocess, clearQuestions, appendBlock) AND all fields from `useMultiExecuteState` (subprocessList, overallStatus, allBlocks, subprocessIds, appendBlockToSubprocess). Also exported `useSessionEventListener` which is a copy of `useAgentEventListener` from the old hook, for convenience. Deviation: also updated `src/preload.ts` to expose `onPatternMatch`/`offPatternMatch` IPC bridge methods for the `agent:pattern-match` channel -- without this the backend pattern-match events would not reach the renderer. Block ID prefix uses `sblock-` to avoid collisions with the old hooks' `block-` and `mblock-` prefixes during the migration period.
+- **Validation results**: Lint passes (oxlint: 0 warnings, 0 errors). TypeScript compiles (`npx tsc --noEmit`: no errors). App packages successfully (`pnpm run package`: all targets built for arm64 on darwin).
 
 ### ⬜ Phase 5: Unified agent UI component
 - **Step**: 5
@@ -157,5 +159,5 @@ A: useWorkflowAgents becomes a session list with metadata `{type, sessionState, 
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 4
-- **Progress**: 3/7
+- **Current Phase**: Phase 5
+- **Progress**: 4/7
