@@ -194,6 +194,8 @@ export interface SessionStateReturn {
   sessionDbId: number | null;
   sessionDbIdRef: React.RefObject<number | null>;
   pendingQuestions: AgentQuestion[];
+  /** Which subprocess ID asked the current pending questions (for multi-subprocess mode) */
+  questionSubprocessId: string | null;
   handleEvent: (agentEvent: AgentEvent) => void;
   reset: () => void;
   start: () => void;
@@ -244,6 +246,8 @@ export function useSessionState(
   );
   const singleSubprocessIdRef = useRef<string | null>(null);
   const [pendingQuestions, setPendingQuestions] = useState<AgentQuestion[]>([]);
+  /** Tracks which subprocess ID asked the current pending questions (for multi-subprocess mode) */
+  const [questionSubprocessId, setQuestionSubprocessId] = useState<string | null>(null);
 
   // Client-side pattern matching dedup (single mode)
   const singleMatchedPatterns = useRef(new Set<string>());
@@ -558,6 +562,20 @@ export function useSessionState(
                 : [...blocks, newBlock];
             } else if (event.content_block.type === "tool_use") {
               const tb = event.content_block;
+              // Detect AskUserQuestion in multi-subprocess mode
+              if (
+                supportsQuestions &&
+                tb.name === "AskUserQuestion" &&
+                tb.input && Object.keys(tb.input).length > 0
+              ) {
+                const parsed = parseQuestions(
+                  tb.input as Record<string, unknown>,
+                );
+                if (parsed.length > 0) {
+                  setPendingQuestions(parsed);
+                  setQuestionSubprocessId(subprocessId);
+                }
+              }
               const hasInput = tb.input && Object.keys(tb.input).length > 0;
               const newBlock = makeBlock({
                 type: "tool_call",
@@ -661,6 +679,33 @@ export function useSessionState(
             }
             break;
           }
+          case "content_block_stop": {
+            // Re-parse questions from accumulated toolArgs (streaming JSON case)
+            if (supportsQuestions) {
+              for (let i = blocks.length - 1; i >= 0; i--) {
+                const block = blocks[i];
+                if (
+                  block.type === "tool_call" &&
+                  block.toolName === "AskUserQuestion" &&
+                  block.toolArgs
+                ) {
+                  try {
+                    const parsed = parseQuestions(
+                      JSON.parse(block.toolArgs) as Record<string, unknown>,
+                    );
+                    if (parsed.length > 0) {
+                      setPendingQuestions(parsed);
+                      setQuestionSubprocessId(subprocessId);
+                    }
+                  } catch {
+                    // Not valid JSON yet, skip
+                  }
+                  break;
+                }
+              }
+            }
+            break;
+          }
           case "result": {
             status = "complete";
             break;
@@ -692,7 +737,7 @@ export function useSessionState(
         return next;
       });
     },
-    [],
+    [supportsQuestions],
   );
 
   // ----- Unified event dispatcher -----
@@ -818,6 +863,7 @@ export function useSessionState(
 
   const clearQuestions = useCallback(() => {
     setPendingQuestions([]);
+    setQuestionSubprocessId(null);
   }, []);
 
   const appendBlock = useCallback(
@@ -916,6 +962,7 @@ export function useSessionState(
     sessionDbId,
     sessionDbIdRef,
     pendingQuestions,
+    questionSubprocessId,
     handleEvent,
     reset,
     start,

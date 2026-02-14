@@ -54,9 +54,9 @@ export function useWorkflowAgents({
   // Agent sessions — using the unified useSessionState hook
   const plan = useSessionState({ supportsQuestions: true });
   const brainstorm = useSessionState({ supportsQuestions: true });
-  const execute = useSessionState({ supportsMultiSubprocess: true });
-  const risk = useSessionState();
-  const review = useSessionState();
+  const execute = useSessionState({ supportsMultiSubprocess: true, supportsQuestions: true });
+  const risk = useSessionState({ supportsQuestions: true });
+  const review = useSessionState({ supportsQuestions: true });
 
   // Reset agent states when switching features
   useEffect(() => {
@@ -740,6 +740,40 @@ export function useWorkflowAgents({
     brainstorm.clearQuestions();
   };
 
+  /**
+   * Generic question response handler for any agent type.
+   * Works for execute (including multi-subprocess), risk, and review.
+   */
+  const handleGenericQuestionResponse = (
+    agentState: typeof execute,
+    response: string,
+  ) => {
+    // Determine the subprocess ID: use questionSubprocessId (for multi-subprocess)
+    // or fall back to the main subprocessId
+    const spId = agentState.questionSubprocessId ?? agentState.subprocessId;
+    if (!spId || agentState.pendingQuestions.length === 0) return;
+
+    const answers: Record<string, string> = {};
+    const sections = response.split("\n\n");
+
+    agentState.pendingQuestions.forEach((q, index) => {
+      const section = sections[index];
+      if (section) {
+        const answerMatch = section.match(/Answer:\s*(.+)/s);
+        if (answerMatch) {
+          answers[q.question] = answerMatch[1].trim();
+        }
+      }
+    });
+
+    submitAnswersMutation.mutate({
+      subprocessId: spId,
+      answers,
+    });
+
+    agentState.clearQuestions();
+  };
+
   const handleStartBuilding = async () => {
     execute.start();
     try {
@@ -952,13 +986,15 @@ export function useWorkflowAgents({
       // Multiple parallel phases — one entry per subprocess
       for (let i = 0; i < execSubs.length; i++) {
         const sub = execSubs[i];
+        // Show questions on the subprocess that asked them
+        const hasQuestion = execute.questionSubprocessId === sub.subprocessId;
         entries.push({
           type: "execute",
           label: `Execute ${i + 1}`,
           status: sub.status,
           blocks: sub.blocks,
           subprocessId: sub.subprocessId,
-          pendingQuestions: [],
+          pendingQuestions: hasQuestion ? execute.pendingQuestions : [],
           resumable: sub.sessionDbId != null && resumableBySessionId.has(sub.sessionDbId),
           sessionDbId: sub.sessionDbId,
         });
@@ -971,7 +1007,7 @@ export function useWorkflowAgents({
         status: execute.status,
         blocks: execute.blocks,
         subprocessId: execute.subprocessId,
-        pendingQuestions: [],
+        pendingQuestions: execute.pendingQuestions,
         resumable: resumableByType.has("execute"),
         sessionDbId: resumableByType.get("execute")?.sessionDbId,
       });
@@ -1000,7 +1036,7 @@ export function useWorkflowAgents({
         status: risk.status,
         blocks: risk.blocks,
         subprocessId: risk.subprocessId,
-        pendingQuestions: [],
+        pendingQuestions: risk.pendingQuestions,
         resumable: resumableByType.has("risk"),
         sessionDbId: resumableByType.get("risk")?.sessionDbId,
       });
@@ -1012,7 +1048,7 @@ export function useWorkflowAgents({
         status: review.status,
         blocks: review.blocks,
         subprocessId: review.subprocessId,
-        pendingQuestions: [],
+        pendingQuestions: review.pendingQuestions,
         resumable: resumableByType.has("review"),
         sessionDbId: resumableByType.get("review")?.sessionDbId,
       });
@@ -1063,6 +1099,9 @@ export function useWorkflowAgents({
     handleStartBrainstorming,
     handleQuestionResponse,
     handleBrainstormQuestionResponse,
+    handleExecuteQuestionResponse: (response: string) => handleGenericQuestionResponse(execute, response),
+    handleRiskQuestionResponse: (response: string) => handleGenericQuestionResponse(risk, response),
+    handleReviewQuestionResponse: (response: string) => handleGenericQuestionResponse(review, response),
     handleStartBuilding,
     handleStartRisk,
     handleStartReview,

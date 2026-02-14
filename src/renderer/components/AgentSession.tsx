@@ -95,6 +95,8 @@ export interface AgentSessionProps {
   pendingQuestions?: AgentQuestion[];
   /** Called when the user submits a response to questions */
   onAnswerSubmit?: (response: string) => void;
+  /** When true, disables keyboard shortcuts in the question drawer */
+  disableShortcuts?: boolean;
   /** Override label (e.g. "Execute 1" for parallel phases) */
   label?: string;
   /** Override icon (lucide component) */
@@ -149,6 +151,7 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
   onStop,
   pendingQuestions,
   onAnswerSubmit,
+  disableShortcuts,
   label,
   icon,
   collapsible = false,
@@ -255,6 +258,7 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
       disabled={disabled}
       pendingQuestions={pendingQuestions}
       onQuestionResponse={onAnswerSubmit}
+      disableShortcuts={disableShortcuts}
     />
   ) : null;
 

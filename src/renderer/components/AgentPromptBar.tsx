@@ -15,6 +15,8 @@ export interface AgentPromptBarProps {
   pendingQuestions?: AgentQuestion[];
   /** Called when the user submits a response to questions */
   onQuestionResponse?: (response: string) => void;
+  /** When true, disables keyboard shortcuts in the question drawer */
+  disableShortcuts?: boolean;
 }
 
 /** Handle exposed by AgentPromptBar via forwardRef */
@@ -30,6 +32,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
   disabled,
   pendingQuestions,
   onQuestionResponse,
+  disableShortcuts,
 }, ref) {
   const [text, setText] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -83,6 +86,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
         open={true}
         onSubmit={onQuestionResponse}
         inline
+        disableShortcuts={disableShortcuts}
       />
     );
   }

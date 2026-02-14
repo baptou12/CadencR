@@ -24,13 +24,15 @@ interface AgentQuestionDrawerProps {
   open: boolean;
   /** When true, uses tighter spacing for inline rendering inside AgentPromptBar */
   inline?: boolean;
+  /** When true, disables keyboard shortcuts (e.g. when multiple agents have questions) */
+  disableShortcuts?: boolean;
 }
 
 /**
  * Bottom drawer that pushes content up, displaying dynamic forms
  * for AskUserQuestion tool calls from the Claude CLI.
  */
-export function AgentQuestionDrawer({ questions, onSubmit, open, inline }: AgentQuestionDrawerProps) {
+export function AgentQuestionDrawer({ questions, onSubmit, open, inline, disableShortcuts }: AgentQuestionDrawerProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState<string[]>([]);
   const [selectedOptions, setSelectedOptions] = useState<Set<string>>(new Set());
@@ -145,8 +147,8 @@ export function AgentQuestionDrawer({ questions, onSubmit, open, inline }: Agent
       handleOptionToggle(option.label);
       flashHighlight(digit - 1);
     },
-    { enabled: open, enableOnFormTags: true },
-    [open, currentQuestion, handleOptionToggle, flashHighlight],
+    { enabled: open && !disableShortcuts, enableOnFormTags: true },
+    [open, disableShortcuts, currentQuestion, handleOptionToggle, flashHighlight],
   );
 
   // Enter to validate/submit current question
@@ -159,8 +161,8 @@ export function AgentQuestionDrawer({ questions, onSubmit, open, inline }: Agent
       e.preventDefault();
       handleNext();
     },
-    { enabled: open },
-    [open, currentQuestion, showOther, handleNext],
+    { enabled: open && !disableShortcuts },
+    [open, disableShortcuts, currentQuestion, showOther, handleNext],
   );
 
   if (!open || !currentQuestion) {

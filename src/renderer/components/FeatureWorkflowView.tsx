@@ -148,6 +148,11 @@ export function FeatureWorkflowView({
     review: { status: wf.review.status, blocks: wf.review.blocks },
   });
 
+  // Count how many agents currently have pending questions — disable shortcuts when > 1
+  const agentsWithQuestions = wf.sessionEntries.filter(
+    (e) => e.pendingQuestions.length > 0,
+  ).length;
+
   return (
     <div className="relative flex h-full flex-col">
       <FeatureTopBar featureId={featureId} projectId={projectId} />
@@ -190,19 +195,23 @@ export function FeatureWorkflowView({
                   )
                 }
                 pendingQuestions={
-                  entry.type === "plan" && wf.plan.pendingQuestions.length > 0
-                    ? wf.plan.pendingQuestions
-                    : entry.type === "brainstorm" &&
-                        wf.brainstorm.pendingQuestions.length > 0
-                      ? wf.brainstorm.pendingQuestions
-                      : undefined
+                  entry.pendingQuestions.length > 0
+                    ? entry.pendingQuestions
+                    : undefined
                 }
+                disableShortcuts={agentsWithQuestions > 1}
                 onAnswerSubmit={
                   entry.type === "plan"
                     ? wf.handleQuestionResponse
                     : entry.type === "brainstorm"
                       ? wf.handleBrainstormQuestionResponse
-                      : undefined
+                      : entry.type === "execute"
+                        ? wf.handleExecuteQuestionResponse
+                        : entry.type === "risk"
+                          ? wf.handleRiskQuestionResponse
+                          : entry.type === "review"
+                            ? wf.handleReviewQuestionResponse
+                            : undefined
                 }
                 onSend={(message) => {
                   if (entry.type === "execute" && entry.subprocessId) {
