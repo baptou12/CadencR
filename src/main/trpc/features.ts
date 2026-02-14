@@ -203,7 +203,7 @@ export const featuresRouter = router({
       if (!plan) return null;
       const phases = db
         .prepare(
-          "SELECT id, plan_id, step_number, title, status, complexity, commit_message, prompt, order_index FROM phases WHERE plan_id = ? ORDER BY step_number ASC, order_index ASC",
+          "SELECT id, plan_id, step_number, title, status, complexity, commit_message, prompt, order_index, implementation_notes, deviations FROM phases WHERE plan_id = ? ORDER BY step_number ASC, order_index ASC",
         )
         .all(plan.id) as PhaseRow[];
       return { ...plan, phases };

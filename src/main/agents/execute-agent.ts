@@ -222,7 +222,11 @@ function executePhase(
             db2.prepare("UPDATE phases SET status = 'pending' WHERE id = ? AND status = 'running'").run(phase.id);
             notifyDbUpdated("phase", options.featureId);
           } else if (context.exitCode === 0) {
-            db2.prepare("UPDATE phases SET status = 'completed' WHERE id = ?").run(phase.id);
+            // Parse implementation notes and deviations from agent output
+            const parsed = parsePhaseOutput(_output);
+            db2.prepare(
+              "UPDATE phases SET status = 'completed', implementation_notes = ?, deviations = ? WHERE id = ?",
+            ).run(parsed.implementationNotes, parsed.deviations, phase.id);
             notifyDbUpdated("phase", options.featureId);
 
             // Auto-commit if enabled
@@ -360,4 +364,38 @@ function getAutoCommitSetting(featureId: number, projectId: number): boolean {
 
   // Default: no auto-commit
   return false;
+}
+
+/**
+ * Parse implementation notes and deviations from the agent's accumulated output.
+ * Looks for content between ---IMPLEMENTATION_NOTES_START--- and ---IMPLEMENTATION_NOTES_END--- delimiters,
+ * then extracts ## Implementation Notes and ## Deviations sections.
+ */
+function parsePhaseOutput(output: string): {
+  implementationNotes: string | null;
+  deviations: string | null;
+} {
+  const startDelim = "---IMPLEMENTATION_NOTES_START---";
+  const endDelim = "---IMPLEMENTATION_NOTES_END---";
+
+  const startIdx = output.lastIndexOf(startDelim);
+  if (startIdx === -1) {
+    return { implementationNotes: null, deviations: null };
+  }
+
+  const endIdx = output.indexOf(endDelim, startIdx);
+  const block = endIdx === -1
+    ? output.slice(startIdx + startDelim.length)
+    : output.slice(startIdx + startDelim.length, endIdx);
+
+  const extractSection = (heading: string): string | null => {
+    const pattern = new RegExp(`## ${heading}\\s*\\n([\\s\\S]*?)(?=\\n## |$)`);
+    const match = block.match(pattern);
+    return match ? match[1].trim() || null : null;
+  };
+
+  return {
+    implementationNotes: extractSection("Implementation Notes"),
+    deviations: extractSection("Deviations"),
+  };
 }

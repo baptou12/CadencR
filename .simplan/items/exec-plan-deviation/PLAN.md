@@ -53,17 +53,19 @@ The execute agent orchestrates phase execution via `execute-agent.ts`. Each phas
 - **Implementation notes**: Updated EXECUTE_SYSTEM_PROMPT with: (1) "Deviation Rules" section defining auto-fix vs stop-and-report categories, (2) "Structured Output" section with `---IMPLEMENTATION_NOTES_START---` / `---IMPLEMENTATION_NOTES_END---` delimiters containing Implementation Notes, Deviations, and Validation Results subsections. Also added a Validation Results section to the structured output for completeness.
 - **Validation results**: Lint passes (0 warnings, 0 errors). TypeScript compiles with no errors.
 
-### ⬜ Phase 3: Parse agent output and persist deviations to DB
+### ✅ Phase 3: Parse agent output and persist deviations to DB
 - **Step**: 3
 - **Complexity**: 3
-- [ ] In `src/main/agents/execute-agent.ts`, in the phase completion action (where status is set to 'completed'), extract `## Implementation Notes` and `## Deviations` sections from the agent's message history
-- [ ] Use `ipc-bridge.ts` message store or agent session messages to get the agent's final output
-- [ ] Parse the sections using simple regex/string matching
-- [ ] Update the phase row with `implementation_notes` and `deviations` columns
-- [ ] Update the `getPlanWithPhases` query in `src/main/trpc/features.ts` to include the new columns in SELECT
+- [x] In `src/main/agents/execute-agent.ts`, in the phase completion action (where status is set to 'completed'), extract `## Implementation Notes` and `## Deviations` sections from the agent's message history
+- [x] Use `ipc-bridge.ts` message store or agent session messages to get the agent's final output
+- [x] Parse the sections using simple regex/string matching
+- [x] Update the phase row with `implementation_notes` and `deviations` columns
+- [x] Update the `getPlanWithPhases` query in `src/main/trpc/features.ts` to include the new columns in SELECT
 - **Files**: `src/main/agents/execute-agent.ts`, `src/main/trpc/features.ts`
 - **Commit message**: `feat: parse and persist implementation notes and deviations from execute agent`
 - **Bisect note**: Must include both parsing and query update together — UI won't break (columns are nullable) but data should flow end-to-end
+- **Implementation notes**: Used the `_output` parameter already available in the completion handler (accumulated agent output) rather than querying ipc-bridge message store. Added `parsePhaseOutput()` function that finds the last `---IMPLEMENTATION_NOTES_START---`/`---IMPLEMENTATION_NOTES_END---` block and extracts `## Implementation Notes` and `## Deviations` sections via regex. Updated the completed-phase UPDATE statement to set both columns. Updated `getPlanWithPhases` SELECT to include `implementation_notes, deviations`.
+- **Validation results**: Lint passes (0 warnings, 0 errors). TypeScript compiles with no errors.
 
 ### ⬜ Phase 4: Display deviations in phase detail UI
 - **Step**: 4
@@ -86,5 +88,5 @@ The execute agent orchestrates phase execution via `execute-agent.ts`. Each phas
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 3
-- **Progress**: 2/4
+- **Current Phase**: Phase 4
+- **Progress**: 3/4
