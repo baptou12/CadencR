@@ -13,6 +13,48 @@ import type { AgentEvent, AgentType } from "../../main/agents/types";
 import type { AgentStatus } from "@/components/AgentSession";
 
 // ---------------------------------------------------------------------------
+// File diff helpers
+// ---------------------------------------------------------------------------
+
+/** Extract file_path from a tool_call block's toolArgs JSON string. */
+function extractFilePath(toolArgs?: string): string | null {
+  if (!toolArgs) return null;
+  try {
+    const parsed = JSON.parse(toolArgs) as Record<string, unknown>;
+    if (typeof parsed.file_path === "string") return parsed.file_path;
+  } catch {
+    // Partial JSON during streaming — ignore
+  }
+  return null;
+}
+
+/**
+ * Attach diffData to the last top-level Write/Edit tool_call block whose
+ * file_path matches the given path. Returns a new array if a match was found.
+ */
+function attachDiffData(
+  blocks: AgentBlockData[],
+  filePath: string,
+  oldContent: string,
+  newContent: string,
+): AgentBlockData[] {
+  // Walk backwards to find the last matching Write/Edit tool_call
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    const b = blocks[i];
+    if (
+      b.type === "tool_call" &&
+      (b.toolName === "Write" || b.toolName === "Edit") &&
+      extractFilePath(b.toolArgs) === filePath
+    ) {
+      const updated = [...blocks];
+      updated[i] = { ...b, diffData: { filePath, oldContent, newContent } };
+      return updated;
+    }
+  }
+  return blocks;
+}
+
+// ---------------------------------------------------------------------------
 // Block helpers (shared between single and multi mode)
 // ---------------------------------------------------------------------------
 
@@ -464,6 +506,17 @@ export function useSessionState(
         case "message_stop": {
           break;
         }
+        case "file_diff": {
+          setSingleBlocks((prev) =>
+            attachDiffData(
+              prev,
+              event.file_path,
+              event.old_content,
+              event.new_content,
+            ),
+          );
+          break;
+        }
         case "result": {
           setSingleStatus("complete");
           break;
@@ -644,6 +697,15 @@ export function useSessionState(
                   : b,
               );
             }
+            break;
+          }
+          case "file_diff": {
+            blocks = attachDiffData(
+              blocks,
+              event.file_path,
+              event.old_content,
+              event.new_content,
+            );
             break;
           }
           case "result": {
