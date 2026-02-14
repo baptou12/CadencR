@@ -1,6 +1,6 @@
 # Execute automation levels
 - **Type**: ✨ Feature
-- **Status**: 📝 PLANNED
+- **Status**: 🔄 IN_PROGRESS
 - **Description**: Add a setting to determine the level of automation for the execute agent workflow:
   - **Level 1 (Ask before commit)**: Uses AskUserQuestion at the end of an execute agent before committing changes, allowing the user to review code first. The question appears AFTER implementation notes and deviations. This replaces the existing auto_commit option from all settings.
   - **Level 2 (Manual continue)**: Don't ask before commit, but require manual trigger for next execution agents. After an agent execution completes, show a "continue building" button under the agent(s) execution.

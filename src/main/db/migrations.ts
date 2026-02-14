@@ -232,6 +232,32 @@ const migrations: Migration[] = [
       db.exec("ALTER TABLE phases ADD COLUMN deviations TEXT");
     },
   },
+  {
+    version: 18,
+    description: "Migrate auto_commit to agent_autonomy setting",
+    up: (db) => {
+      // Set global default
+      db.exec(`
+        INSERT OR IGNORE INTO settings (key, value) VALUES ('agent_autonomy', '1')
+      `);
+
+      // Migrate project_settings: auto_commit=true -> agent_autonomy=3, else 1
+      db.exec(`
+        INSERT OR IGNORE INTO project_settings (project_id, key, value)
+        SELECT project_id, 'agent_autonomy', CASE WHEN value = 'true' THEN '3' ELSE '1' END
+        FROM project_settings
+        WHERE key = 'auto_commit'
+      `);
+
+      // Migrate feature_settings: auto_commit=true -> agent_autonomy=3, else 1
+      db.exec(`
+        INSERT OR IGNORE INTO feature_settings (feature_id, key, value)
+        SELECT feature_id, 'agent_autonomy', CASE WHEN value = 'true' THEN '3' ELSE '1' END
+        FROM feature_settings
+        WHERE key = 'auto_commit'
+      `);
+    },
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

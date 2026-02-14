@@ -40,14 +40,16 @@ Phase completion parses implementation notes and deviations from agent output be
 
 ## Phases
 
-### ⬜ Phase 1: Add DB migration for agent_autonomy
+### ✅ Phase 1: Add DB migration for agent_autonomy
 - **Step**: 1
 - **Complexity**: 1
-- [ ] Add migration 18 in `src/main/db/migrations.ts` that migrates existing `auto_commit` values: insert `agent_autonomy` key with value `3` where `auto_commit='true'` in both `project_settings` and `feature_settings`, and value `1` elsewhere
-- [ ] Set default global setting `agent_autonomy` to `1` in the `settings` table (via migration or seed)
+- [x] Add migration 18 in `src/main/db/migrations.ts` that migrates existing `auto_commit` values: insert `agent_autonomy` key with value `3` where `auto_commit='true'` in both `project_settings` and `feature_settings`, and value `1` elsewhere
+- [x] Set default global setting `agent_autonomy` to `1` in the `settings` table (via migration or seed)
 - **Files**: `src/main/db/migrations.ts`
 - **Commit message**: `feat: add migration for agent_autonomy setting`
 - **Bisect note**: Migration only, no code references the new key yet
+- **Implementation notes**: Added migration 18 with three SQL statements: (1) INSERT OR IGNORE into settings table for global default of '1', (2) INSERT OR IGNORE into project_settings migrating auto_commit true->3, else->1, (3) same for feature_settings. Used CASE WHEN for the value mapping.
+- **Validation results**: Lint passed (0 warnings, 0 errors). TypeScript compiled with no errors.
 
 ### ⬜ Phase 2: Add autonomy level resolution in execute-agent
 - **Step**: 2
@@ -116,5 +118,5 @@ Phase completion parses implementation notes and deviations from agent output be
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Not started
-- **Progress**: 0/6
+- **Current Phase**: Phase 2
+- **Progress**: 1/6
