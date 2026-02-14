@@ -65,7 +65,8 @@ export function FeatureWorkflowView({
     { enableOnFormTags: true },
   );
 
-  // Enter: if focused agent is collapsed, expand it and focus its prompt bar
+  // Enter: toggle expand/collapse for non-working agents;
+  // for working agents, expand and focus prompt bar
   useHotkeys(
     "enter",
     (e) => {
@@ -73,20 +74,46 @@ export function FeatureWorkflowView({
       if (focusedAgentIndex === null) return;
       const entry = wf.sessionEntries[focusedAgentIndex];
       if (!entry) return;
+      const isWorking = entry.status === "running" || entry.status === "paused";
       const isOpen =
-        wf.openAgent === entry.label ||
-        entry.status === "running" ||
-        entry.status === "paused";
-      if (!isOpen) {
+        wf.openAgent === entry.label || isWorking;
+      if (isWorking) {
+        // Working agent: expand (if needed) and focus prompt bar
         e.preventDefault();
-        wf.setOpenAgent(entry.label);
-        // Focus prompt bar after opening (slight delay for render)
+        if (!isOpen) {
+          wf.setOpenAgent(entry.label);
+        }
         setTimeout(() => {
           agentRefs.current.get(focusedAgentIndex)?.focusPromptBar();
         }, 50);
+      } else {
+        // Non-working agent: toggle expand/collapse
+        e.preventDefault();
+        wf.setOpenAgent((prev) =>
+          prev === entry.label ? null : entry.label,
+        );
       }
     },
     { enableOnFormTags: false },
+  );
+
+  // CMD+OPT+Z: leave text input, refocus the parent agent header
+  useHotkeys(
+    "meta+alt+z",
+    (e) => {
+      if (getActiveFocusZone() !== "main-content") return;
+      e.preventDefault();
+      // Blur active element (textarea) to return to agent header focus
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+      // Re-focus the main-content zone so CMD+OPT+UP/DOWN still works
+      const zone = document.querySelector('[data-focus-zone="main-content"]');
+      if (zone instanceof HTMLElement) {
+        zone.focus();
+      }
+    },
+    { enableOnFormTags: true },
   );
 
   // Escape: stop the focused running agent

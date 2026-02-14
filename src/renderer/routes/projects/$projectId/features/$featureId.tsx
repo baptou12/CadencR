@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useCallback } from "react";
+import { useEffect, useMemo, useCallback, useRef } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { trpc } from "@/trpc";
 import { FeatureTopBar } from "@/components/FeatureTopBar";
-import { AgentSession } from "@/components/AgentSession";
+import { AgentSession, type AgentSessionHandle } from "@/components/AgentSession";
 import { FeatureWorkflowView } from "@/components/FeatureWorkflowView";
 import { useSessionState, useSessionEventListener } from "@/hooks/useSessionState";
 import type { AgentBlockData } from "@/components/AgentBlock";
@@ -54,6 +54,21 @@ function SessionFeatureView({
   projectId: number;
 }) {
   const session = useSessionState();
+  const agentRef = useRef<AgentSessionHandle>(null);
+
+  // When main-content zone receives focus, auto-focus the text input
+  useEffect(() => {
+    const zone = document.querySelector('[data-focus-zone="main-content"]');
+    if (!zone) return;
+    const handleFocus = (e: Event) => {
+      // Only when the zone itself is focused (not a child element)
+      if (e.target === zone) {
+        agentRef.current?.focusPromptBar();
+      }
+    };
+    zone.addEventListener("focus", handleFocus);
+    return () => zone.removeEventListener("focus", handleFocus);
+  }, []);
 
   // Restore: find the latest session's history and reconnect to active subprocess
   const activeProcess = trpc.agents.getActiveSessionProcess.useQuery({ featureId });
@@ -160,6 +175,7 @@ function SessionFeatureView({
     <div className="flex h-full flex-col">
       <FeatureTopBar featureId={featureId} projectId={projectId} mode="session" />
       <AgentSession
+        ref={agentRef}
         agentType="session"
         blocks={session.blocks}
         status={session.status}
