@@ -26,6 +26,7 @@ import {
   getGitStats,
   getDiff,
   getChangedFiles,
+  getCurrentBranch,
 } from "../git/worktree";
 import { diffCommentsRouter } from "./diff-comments";
 import { startPlanAgent } from "../agents/plan-agent";
@@ -575,7 +576,7 @@ const gitRouter = router({
       return getWorktreeInfo(project.path, wtRow.value);
     }),
 
-  /** Get git diff stats (LOC changed) for a feature's worktree */
+  /** Get git diff stats (LOC changed) for a feature's worktree or project path */
   getStats: publicProcedure
     .input(z.object({ featureId: z.number() }))
     .query(({ input }) => {
@@ -585,8 +586,30 @@ const gitRouter = router({
           "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
         )
         .get(input.featureId) as SettingRow | undefined;
-      if (!wtRow) return { filesChanged: 0, insertions: 0, deletions: 0 };
-      return getGitStats(wtRow.value);
+      if (wtRow) return getGitStats(wtRow.value);
+
+      // For sessions without a worktree, use the project path
+      const feature = db
+        .prepare("SELECT project_id FROM features WHERE id = ?")
+        .get(input.featureId) as { project_id: number } | undefined;
+      if (!feature) return { filesChanged: 0, insertions: 0, deletions: 0 };
+      const project = db
+        .prepare("SELECT path FROM projects WHERE id = ?")
+        .get(feature.project_id) as Pick<ProjectRow, "path"> | undefined;
+      if (!project?.path) return { filesChanged: 0, insertions: 0, deletions: 0 };
+      return getGitStats(project.path);
+    }),
+
+  /** Get the current branch for a project */
+  getBranch: publicProcedure
+    .input(z.object({ projectId: z.number() }))
+    .query(({ input }) => {
+      const db = getDatabase();
+      const project = db
+        .prepare("SELECT path FROM projects WHERE id = ?")
+        .get(input.projectId) as Pick<ProjectRow, "path"> | undefined;
+      if (!project?.path) return null;
+      return getCurrentBranch(project.path);
     }),
 
   /** Get raw unified diff for a feature */

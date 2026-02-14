@@ -161,6 +161,18 @@ export function buildBranchName(prefix: string, featureTitle: string): string {
   return `${prefix}${slug}`;
 }
 
+export function getCurrentBranch(repoPath: string): string | null {
+  try {
+    return execSync("git rev-parse --abbrev-ref HEAD", {
+      cwd: repoPath,
+      stdio: "pipe",
+      encoding: "utf-8",
+    }).trim() || null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Get git diff stats for a worktree (lines added/removed).
  */

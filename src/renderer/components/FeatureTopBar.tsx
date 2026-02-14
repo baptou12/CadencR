@@ -36,6 +36,10 @@ export function FeatureTopBar({ featureId, projectId: _projectId, mode = "featur
     { featureId },
     { refetchInterval: 10000 },
   );
+  const { data: currentBranch } = trpc.git.getBranch.useQuery(
+    { projectId: _projectId },
+    { enabled: isSession, refetchInterval: 10000 },
+  );
   const openTerminal = trpc.git.openInTerminal.useMutation();
 
   const utils = trpc.useContext();
@@ -69,7 +73,11 @@ export function FeatureTopBar({ featureId, projectId: _projectId, mode = "featur
         </span>
       )}
 
-      {worktreeBranch ? (
+      {isSession ? (
+        <span className="text-muted-foreground text-sm">
+          {currentBranch ?? "--"}
+        </span>
+      ) : worktreeBranch ? (
         <span className="text-muted-foreground text-sm">
           Worktree: {worktreeBranch}
         </span>
