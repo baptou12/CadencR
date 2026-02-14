@@ -1,4 +1,4 @@
 # Agent Logic Unification / Simplification
 - **Type**: ✨ Feature
-- **Status**: 📋 BACKLOG
+- **Status**: 📝 PLANNED
 - **Description**: Find and consolidate duplicated agent handling code across the codebase. Merge duplicate logic to simplify and unify agent execution paths.
