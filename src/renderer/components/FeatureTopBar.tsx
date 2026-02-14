@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TerminalIcon, SettingsIcon, GitCompareArrowsIcon, AlertCircleIcon, RefreshCwIcon } from "lucide-react";
 import { trpc } from "@/trpc";
 import { DiffViewerModal } from "./diff/DiffViewerModal";
@@ -43,6 +44,11 @@ export function FeatureTopBar({ featureId, projectId: _projectId, mode = "featur
   const openTerminal = trpc.git.openInTerminal.useMutation();
 
   const utils = trpc.useContext();
+  const setFeatureSetting = trpc.features.setSetting.useMutation({
+    onSuccess: () => {
+      utils.features.getSettings.invalidate({ feature_id: featureId });
+    },
+  });
   const createWorktree = trpc.git.createWorktree.useMutation({
     onSuccess: () => {
       utils.features.getSettings.invalidate({ feature_id: featureId });
@@ -159,6 +165,34 @@ export function FeatureTopBar({ featureId, projectId: _projectId, mode = "featur
             </div>
             <ModelSelector level="feature" featureId={featureId} projectId={_projectId} />
           </div>
+
+          {!isSession && (
+            <div className="space-y-1">
+              <span className="text-xs font-medium">Agent Autonomy</span>
+              <Select
+                value={featureSettings?.agent_autonomy ?? ""}
+                onValueChange={(value) =>
+                  setFeatureSetting.mutate({
+                    feature_id: featureId,
+                    key: "agent_autonomy",
+                    value,
+                  })
+                }
+              >
+                <SelectTrigger className="h-8 text-sm">
+                  <SelectValue placeholder="Inherit from project" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">Low — ask before commit</SelectItem>
+                  <SelectItem value="2">Medium — manual continue</SelectItem>
+                  <SelectItem value="3">High — full auto</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Controls how much the execute agent does automatically
+              </p>
+            </div>
+          )}
         </PopoverContent>
       </Popover>
 
