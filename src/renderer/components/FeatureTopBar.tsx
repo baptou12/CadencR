@@ -34,7 +34,7 @@ export function FeatureTopBar({ featureId, projectId: _projectId, mode = "featur
   });
   const { data: gitStats } = trpc.git.getStats.useQuery(
     { featureId },
-    { refetchInterval: 10000, enabled: !isSession },
+    { refetchInterval: 10000 },
   );
   const openTerminal = trpc.git.openInTerminal.useMutation();
 
@@ -100,11 +100,9 @@ export function FeatureTopBar({ featureId, projectId: _projectId, mode = "featur
         </span>
       )}
 
-      {!isSession && (
-        <span className="text-muted-foreground text-sm">
-          {gitStats ? `+${gitStats.insertions} -${gitStats.deletions}` : "--"}
-        </span>
-      )}
+      <span className="text-muted-foreground text-sm">
+        {gitStats ? `+${gitStats.insertions} -${gitStats.deletions}` : "--"}
+      </span>
 
       <div className="flex-1" />
 
