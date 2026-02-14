@@ -106,6 +106,12 @@ export interface StreamTurnComplete {
   type: "turn_complete";
 }
 
+/** Synthetic event emitted when the execute orchestrator is waiting for user to continue (Level 2 autonomy) */
+export interface StreamExecuteWaiting {
+  type: "execute_waiting";
+  nextStepNumber: number;
+}
+
 /** Union of all stream-json event types */
 export type StreamEvent =
   | StreamMessageStart
@@ -120,7 +126,8 @@ export type StreamEvent =
   | StreamResult
   | StreamAgentDone
   | StreamAgentPaused
-  | StreamTurnComplete;
+  | StreamTurnComplete
+  | StreamExecuteWaiting;
 
 /** Agent event sent to the renderer via IPC */
 export interface AgentEvent {
@@ -177,7 +184,7 @@ export interface CompletionAction {
   /** Logical event name (for documentation / filtering) */
   event: string;
   /** Handler called with the full accumulated output and context */
-  handler: (output: string, context: CompletionContext) => void;
+  handler: (output: string, context: CompletionContext) => void | Promise<void>;
 }
 
 /**

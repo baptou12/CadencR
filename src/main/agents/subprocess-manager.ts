@@ -48,7 +48,7 @@ export interface ManagedSubprocess {
   /** Event listeners registered by agent-specific code */
   eventListeners: Array<(event: StreamEvent) => void>;
   /** Completion listeners called when the query finishes */
-  completionListeners: Array<(exitCode: number) => void>;
+  completionListeners: Array<(exitCode: number) => void | Promise<void>>;
   /** SDK session ID for resume after interrupt */
   sdkSessionId?: string;
   /** Original options used to start this subprocess (needed for resume) */

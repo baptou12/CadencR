@@ -12,7 +12,6 @@
  * 5. Updates feature status to "in-progress" when building starts
  */
 
-import { execSync } from "node:child_process";
 import { getDatabase } from "../db/database";
 import type { PhaseRow, PlanRow, SettingRow } from "../db/types";
 import { notifyDbUpdated } from "./ipc-bridge";
@@ -72,8 +71,8 @@ export function startExecuteAgent(options: ExecuteAgentOptions): ExecuteAgentRes
     throw new Error("No pending phases to execute.");
   }
 
-  // Check auto-commit setting
-  const autoCommit = getAutoCommitSetting(options.featureId, options.projectId);
+  // Resolve autonomy level: 1 = ask before commit, 2 = manual continue, 3 = full auto
+  const autonomyLevel = getAutonomyLevel(options.featureId, options.projectId);
 
   // Group phases by step number
   const stepGroups = new Map<number, PhaseRow[]>();
@@ -94,7 +93,7 @@ export function startExecuteAgent(options: ExecuteAgentOptions): ExecuteAgentRes
   const optionsWithSession = { ...options, sessionDbId };
   const firstStepSubprocessIds: string[] = [];
   const firstStepPromises = firstStepPhases.map((phase) =>
-    executePhase(phase, optionsWithSession, autoCommit, firstStepSubprocessIds),
+    executePhase(phase, optionsWithSession, autonomyLevel, firstStepSubprocessIds),
   );
 
   // Continue remaining steps asynchronously after first step completes.
@@ -110,30 +109,16 @@ export function startExecuteAgent(options: ExecuteAgentOptions): ExecuteAgentRes
       return;
     }
 
-    for (let i = 1; i < sortedSteps.length; i++) {
-      const stepNumber = sortedSteps[i];
-      const stepPhases = stepGroups.get(stepNumber) ?? [];
-      const stepSubprocessIds: string[] = [];
-      const phasePromises = stepPhases.map((phase) =>
-        executePhase(phase, optionsWithSession, autoCommit, stepSubprocessIds),
-      );
-      await Promise.allSettled(phasePromises);
-
-      const stepResult = getStepOutcome(plan.id, stepNumber);
-      if (stepResult !== "ok") {
-        db.prepare(
-          "UPDATE agent_sessions SET status = ?, ended_at = datetime('now') WHERE id = ?",
-        ).run(stepResult === "paused" ? "paused" : "error", sessionDbId);
-        broadcastExecuteAllDone(sessionDbId, 1);
-        return;
-      }
+    // For Level 2 (manual continue), stop after first step and wait
+    if (autonomyLevel === 2 && sortedSteps.length > 1) {
+      db.prepare(
+        "UPDATE agent_sessions SET status = 'waiting' WHERE id = ?",
+      ).run(sessionDbId);
+      broadcastExecuteWaiting(sessionDbId, sortedSteps[1]);
+      return;
     }
 
-    db.prepare(
-      "UPDATE agent_sessions SET status = 'completed', ended_at = datetime('now') WHERE id = ?",
-    ).run(sessionDbId);
-
-    broadcastExecuteAllDone(sessionDbId, 0);
+    await executeRemainingSteps(sortedSteps, 1, stepGroups, optionsWithSession, autonomyLevel, plan.id, sessionDbId);
   })();
 
   return {
@@ -192,7 +177,7 @@ function broadcastExecuteAllDone(sessionDbId: number, exitCode = 0): void {
 function executePhase(
   phase: PhaseRow,
   options: ExecuteAgentOptions & { sessionDbId: number },
-  autoCommit: boolean,
+  autonomyLevel: 1 | 2 | 3,
   allSubprocessIds: string[],
 ): Promise<void> {
   return new Promise<void>((resolve) => {
@@ -203,13 +188,13 @@ function executePhase(
     notifyDbUpdated("phase", options.featureId);
 
     // Build enriched prompt with plan-level context and completed phases
-    const prompt = buildEnrichedPrompt(phase);
+    const prompt = buildEnrichedPrompt(phase, autonomyLevel);
 
     // Build completion actions for this phase
     const completionActions: CompletionAction[] = [
       {
         event: "phase_complete",
-        handler: (_output: string, context) => {
+        handler: async (_output: string, context) => {
           const db2 = getDatabase();
 
           // Check if the session was interrupted — if so, don't update the
@@ -229,17 +214,9 @@ function executePhase(
             ).run(parsed.implementationNotes, parsed.deviations, phase.id);
             notifyDbUpdated("phase", options.featureId);
 
-            // Auto-commit if enabled
-            if (autoCommit && phase.commit_message) {
-              try {
-                execSync(`git add -A && git commit -m ${JSON.stringify(phase.commit_message)}`, {
-                  cwd: options.cwd,
-                  stdio: "ignore",
-                });
-              } catch {
-                // Commit may fail if no changes -- that's OK
-              }
-            }
+            // Commits are handled by the agent subprocess itself (via prompt instructions)
+            // Level 1: agent asks user, commits if approved
+            // Level 2 & 3: agent auto-commits as part of its execution
           } else {
             db2.prepare("UPDATE phases SET status = 'error' WHERE id = ?").run(phase.id);
             notifyDbUpdated("phase", options.featureId);
@@ -277,7 +254,7 @@ function executePhase(
 /**
  * Build an enriched prompt for a phase, including plan-level context and previously completed phases.
  */
-function buildEnrichedPrompt(phase: PhaseRow): string {
+function buildEnrichedPrompt(phase: PhaseRow, autonomyLevel: 1 | 2 | 3 = 3): string {
   const db = getDatabase();
 
   // Fetch plan-level context
@@ -344,35 +321,256 @@ function buildEnrichedPrompt(phase: PhaseRow): string {
     `## Current Phase: ${phase.title}\n\nExecute the following phase of the implementation plan:\n\n${phase.prompt}\n\nPlease implement all the tasks listed above. Focus only on this phase's scope.`,
   );
 
+  // Add commit instructions based on autonomy level
+  const commitMsg = phase.commit_message ?? "implement phase changes";
+  const commitInstructions = `To commit, stage ONLY the files you modified (do NOT use \`git add -A\` or \`git add .\` as other agents may be running in parallel). Use \`git add <file1> <file2> ...\` for each file you changed, then:\n\`\`\`\ngit commit -m ${JSON.stringify(commitMsg)}\n\`\`\``;
+
+  if (autonomyLevel === 1) {
+    // Level 1: Ask user for approval, iterate if they request changes
+    sections.push(
+      `## User Approval Required\n\nAfter outputting your implementation notes and deviations (the ---IMPLEMENTATION_NOTES_START--- block), you MUST ask the user for approval using AskUserQuestion:\n\n- Question: "Review complete. Approve changes and commit?"\n- Options: "Approve and commit", "Skip commit", "Request changes"\n\nIf the user selects "Request changes", they will provide feedback via the "Other" option. In that case:\n1. Read and address their feedback\n2. Make the necessary fixes\n3. Re-output the ---IMPLEMENTATION_NOTES_START--- block with updated notes and deviations\n4. Ask for approval again\n\nIf the user selects "Approve and commit":\n${commitInstructions}\n\nIf the user selects "Skip commit", do NOT commit.\n\nRepeat the approval loop until the user approves or skips. Only output ---AGENT_DONE--- after the user has approved or skipped.`,
+    );
+  } else {
+    // Level 2 & 3: Auto-commit after implementation
+    sections.push(
+      `## Auto-Commit\n\nAfter outputting your implementation notes and deviations (the ---IMPLEMENTATION_NOTES_START--- block), automatically commit your changes:\n${commitInstructions}\n\nThen output ---AGENT_DONE---.`,
+    );
+  }
+
   return sections.join("\n\n---\n\n");
 }
 
 /**
- * Get auto-commit setting: feature-level overrides project-level.
+ * Get autonomy level: feature → project → global settings cascade.
+ * Returns 1 (ask before commit), 2 (manual continue), or 3 (full auto).
  */
-function getAutoCommitSetting(featureId: number, projectId: number): boolean {
+function getAutonomyLevel(featureId: number, projectId: number): 1 | 2 | 3 {
   const db = getDatabase();
 
   // Check feature-level setting first
   const featureRow = db
-    .prepare("SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'auto_commit'")
+    .prepare("SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'agent_autonomy'")
     .get(featureId) as SettingRow | undefined;
 
   if (featureRow) {
-    return featureRow.value === "true";
+    const val = Number(featureRow.value);
+    if (val === 1 || val === 2 || val === 3) return val;
   }
 
   // Fall back to project-level setting
   const projectRow = db
-    .prepare("SELECT value FROM project_settings WHERE project_id = ? AND key = 'auto_commit'")
+    .prepare("SELECT value FROM project_settings WHERE project_id = ? AND key = 'agent_autonomy'")
     .get(projectId) as SettingRow | undefined;
 
   if (projectRow) {
-    return projectRow.value === "true";
+    const val = Number(projectRow.value);
+    if (val === 1 || val === 2 || val === 3) return val;
   }
 
-  // Default: no auto-commit
-  return false;
+  // Fall back to global setting
+  const globalRow = db
+    .prepare("SELECT value FROM settings WHERE key = 'agent_autonomy'")
+    .get() as SettingRow | undefined;
+
+  if (globalRow) {
+    const val = Number(globalRow.value);
+    if (val === 1 || val === 2 || val === 3) return val;
+  }
+
+  // Default: ask before commit
+  return 1;
+}
+
+/**
+ * Execute remaining steps starting from a given index in the sorted steps array.
+ * Shared by both initial launch and continueExecuteAgent.
+ */
+async function executeRemainingSteps(
+  sortedSteps: number[],
+  startIndex: number,
+  stepGroups: Map<number, PhaseRow[]>,
+  options: ExecuteAgentOptions & { sessionDbId: number },
+  autonomyLevel: 1 | 2 | 3,
+  planId: number,
+  sessionDbId: number,
+): Promise<void> {
+  const db = getDatabase();
+
+  for (let i = startIndex; i < sortedSteps.length; i++) {
+    const stepNumber = sortedSteps[i];
+    const stepPhases = stepGroups.get(stepNumber) ?? [];
+    const stepSubprocessIds: string[] = [];
+    const phasePromises = stepPhases.map((phase) =>
+      executePhase(phase, options, autonomyLevel, stepSubprocessIds),
+    );
+    await Promise.allSettled(phasePromises);
+
+    const stepResult = getStepOutcome(planId, stepNumber);
+    if (stepResult !== "ok") {
+      db.prepare(
+        "UPDATE agent_sessions SET status = ?, ended_at = datetime('now') WHERE id = ?",
+      ).run(stepResult === "paused" ? "paused" : "error", sessionDbId);
+      broadcastExecuteAllDone(sessionDbId, 1);
+      return;
+    }
+
+    // For Level 2, stop after each step and wait for user to continue
+    if (autonomyLevel === 2 && i < sortedSteps.length - 1) {
+      db.prepare(
+        "UPDATE agent_sessions SET status = 'waiting' WHERE id = ?",
+      ).run(sessionDbId);
+      broadcastExecuteWaiting(sessionDbId, sortedSteps[i + 1]);
+      return;
+    }
+  }
+
+  db.prepare(
+    "UPDATE agent_sessions SET status = 'completed', ended_at = datetime('now') WHERE id = ?",
+  ).run(sessionDbId);
+
+  broadcastExecuteAllDone(sessionDbId, 0);
+}
+
+/**
+ * Broadcast a synthetic event to the renderer indicating the execute orchestrator is waiting
+ * for the user to continue to the next step (Level 2 autonomy).
+ */
+function broadcastExecuteWaiting(sessionDbId: number, nextStepNumber: number): void {
+  const { BrowserWindow } = require("electron") as typeof import("electron");
+  const event: AgentEvent = {
+    subprocessId: `session-${sessionDbId}`,
+    agentType: "execute",
+    event: { type: "execute_waiting", nextStepNumber },
+    timestamp: Date.now(),
+  };
+  const AGENT_EVENT_CHANNEL = "agent:event";
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) {
+      win.webContents.send(AGENT_EVENT_CHANNEL, event);
+    }
+  }
+}
+
+/**
+ * Continue a waiting execute orchestrator by launching the next step's phases.
+ * Called from the tRPC `agents.continueExecute` mutation.
+ */
+export function continueExecuteAgent(sessionDbId: number): { subprocessIds: string[] } {
+  const db = getDatabase();
+
+  // Verify the session is in 'waiting' status
+  const session = db
+    .prepare("SELECT id, feature_id, status FROM agent_sessions WHERE id = ? AND agent_type = 'execute' AND status = 'waiting'")
+    .get(sessionDbId) as { id: number; feature_id: number; status: string } | undefined;
+
+  if (!session) {
+    throw new Error("No waiting execute session found");
+  }
+
+  // Get feature's project ID
+  const feature = db
+    .prepare("SELECT project_id FROM features WHERE id = ?")
+    .get(session.feature_id) as { project_id: number } | undefined;
+
+  if (!feature) {
+    throw new Error("Feature not found");
+  }
+
+  // Resolve working directory
+  const wtRow = db
+    .prepare("SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'")
+    .get(session.feature_id) as SettingRow | undefined;
+  const projectRow = db
+    .prepare("SELECT path FROM projects WHERE id = ?")
+    .get(feature.project_id) as { path: string } | undefined;
+  const cwd = wtRow?.value ?? projectRow?.path;
+  if (!cwd) throw new Error("No working directory found");
+
+  // Get the active plan
+  const plan = db
+    .prepare("SELECT id FROM plans WHERE feature_id = ? AND status = 'active' ORDER BY id DESC LIMIT 1")
+    .get(session.feature_id) as { id: number } | undefined;
+
+  if (!plan) throw new Error("No active plan found");
+
+  // Get pending phases
+  const phases = db
+    .prepare(
+      "SELECT id, plan_id, step_number, title, status, complexity, commit_message, prompt, order_index FROM phases WHERE plan_id = ? AND status IN ('pending', 'error') ORDER BY step_number, order_index",
+    )
+    .all(plan.id) as PhaseRow[];
+
+  if (phases.length === 0) {
+    // All phases done — mark session as completed
+    db.prepare(
+      "UPDATE agent_sessions SET status = 'completed', ended_at = datetime('now') WHERE id = ?",
+    ).run(sessionDbId);
+    broadcastExecuteAllDone(sessionDbId, 0);
+    return { subprocessIds: [] };
+  }
+
+  const autonomyLevel = getAutonomyLevel(session.feature_id, feature.project_id);
+
+  // Group remaining phases by step
+  const stepGroups = new Map<number, PhaseRow[]>();
+  for (const phase of phases) {
+    const existing = stepGroups.get(phase.step_number) ?? [];
+    existing.push(phase);
+    stepGroups.set(phase.step_number, existing);
+  }
+  const sortedSteps = Array.from(stepGroups.keys()).toSorted((a, b) => a - b);
+
+  // Update session to running
+  db.prepare("UPDATE agent_sessions SET status = 'running' WHERE id = ?").run(sessionDbId);
+
+  const options = {
+    featureId: session.feature_id,
+    projectId: feature.project_id,
+    cwd,
+    sessionDbId,
+  };
+
+  // Launch first pending step
+  const firstStepNumber = sortedSteps[0];
+  const firstStepPhases = stepGroups.get(firstStepNumber) ?? [];
+  const firstStepSubprocessIds: string[] = [];
+  const firstStepPromises = firstStepPhases.map((phase) =>
+    executePhase(phase, options, autonomyLevel, firstStepSubprocessIds),
+  );
+
+  // Continue remaining steps asynchronously
+  void (async () => {
+    await Promise.allSettled(firstStepPromises);
+
+    const firstStepResult = getStepOutcome(plan.id, firstStepNumber);
+    if (firstStepResult !== "ok") {
+      db.prepare(
+        "UPDATE agent_sessions SET status = ?, ended_at = datetime('now') WHERE id = ?",
+      ).run(firstStepResult === "paused" ? "paused" : "error", sessionDbId);
+      broadcastExecuteAllDone(sessionDbId, 1);
+      return;
+    }
+
+    if (sortedSteps.length > 1) {
+      // For Level 2, stop after this step
+      if (autonomyLevel === 2) {
+        db.prepare(
+          "UPDATE agent_sessions SET status = 'waiting' WHERE id = ?",
+        ).run(sessionDbId);
+        broadcastExecuteWaiting(sessionDbId, sortedSteps[1]);
+        return;
+      }
+
+      await executeRemainingSteps(sortedSteps, 1, stepGroups, options, autonomyLevel, plan.id, sessionDbId);
+    } else {
+      db.prepare(
+        "UPDATE agent_sessions SET status = 'completed', ended_at = datetime('now') WHERE id = ?",
+      ).run(sessionDbId);
+      broadcastExecuteAllDone(sessionDbId, 0);
+    }
+  })();
+
+  return { subprocessIds: firstStepSubprocessIds };
 }
 
 /**

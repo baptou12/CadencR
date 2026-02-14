@@ -32,7 +32,7 @@ import { diffCommentsRouter } from "./diff-comments";
 import { startUnifiedAgent } from "../agents/unified-agent";
 import { startPlanAgent } from "../agents/plan-agent";
 import { startBrainstormAgent } from "../agents/brainstorm-agent";
-import { startExecuteAgent } from "../agents/execute-agent";
+import { startExecuteAgent, continueExecuteAgent } from "../agents/execute-agent";
 import { startRiskAgent } from "../agents/risk-agent";
 import { startReviewAgent, addFixPhase } from "../agents/review-agent";
 import { startSessionAgent } from "../agents/session-agent";
@@ -330,6 +330,13 @@ const agentsRouter = router({
       });
 
       return result;
+    }),
+
+  /** Continue a waiting execute orchestrator (Level 2 autonomy) */
+  continueExecute: publicProcedure
+    .input(z.object({ sessionDbId: z.number() }))
+    .mutation(({ input }) => {
+      return continueExecuteAgent(input.sessionDbId);
     }),
 
   /** Start the risk analysis agent for a feature */

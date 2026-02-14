@@ -51,19 +51,21 @@ Phase completion parses implementation notes and deviations from agent output be
 - **Implementation notes**: Added migration 18 with three SQL statements: (1) INSERT OR IGNORE into settings table for global default of '1', (2) INSERT OR IGNORE into project_settings migrating auto_commit true->3, else->1, (3) same for feature_settings. Used CASE WHEN for the value mapping.
 - **Validation results**: Lint passed (0 warnings, 0 errors). TypeScript compiled with no errors.
 
-### ⬜ Phase 2: Add autonomy level resolution in execute-agent
+### ✅ Phase 2: Add autonomy level resolution in execute-agent
 - **Step**: 2
 - **Complexity**: 3
-- [ ] Add `getAutonomyLevel(featureId, projectId)` function in `execute-agent.ts` that cascades feature → project → global settings, returning 1, 2, or 3 (default: 1)
-- [ ] Replace `getAutoCommitSetting()` calls with `getAutonomyLevel()` throughout the orchestrator
-- [ ] For Level 3 (full auto): keep current behavior — auto-commit after each phase, auto-continue to next step
-- [ ] For Level 2 (manual continue): auto-commit after each phase, but STOP after a step completes — don't auto-launch next step. Update orchestrator session status to a new `waiting` status and broadcast an event so the renderer knows to show "Continue" button
-- [ ] For Level 1 (ask before commit): after phase output parsing (implementation notes/deviations), use the existing AskUserQuestion mechanism to ask "Commit changes?" with options "Commit changes" / "Skip commit". If commit, run git commit; then auto-continue to next step (same as Level 3 for step continuation)
-- [ ] Add a new tRPC mutation `agents.continueExecute` that resumes a waiting orchestrator — it reads the orchestrator session, finds the next step, and launches those phases
-- [ ] Remove `getAutoCommitSetting()` function
-- **Files**: `src/main/agents/execute-agent.ts`, `src/main/trpc/agents.ts` (or wherever agent routes are)
+- [x] Add `getAutonomyLevel(featureId, projectId)` function in `execute-agent.ts` that cascades feature → project → global settings, returning 1, 2, or 3 (default: 1)
+- [x] Replace `getAutoCommitSetting()` calls with `getAutonomyLevel()` throughout the orchestrator
+- [x] For Level 3 (full auto): keep current behavior — auto-commit after each phase, auto-continue to next step
+- [x] For Level 2 (manual continue): auto-commit after each phase, but STOP after a step completes — don't auto-launch next step. Update orchestrator session status to a new `waiting` status and broadcast an event so the renderer knows to show "Continue" button
+- [x] For Level 1 (ask before commit): after phase output parsing (implementation notes/deviations), use the existing AskUserQuestion mechanism to ask "Commit changes?" with options "Commit changes" / "Skip commit". If commit, run git commit; then auto-continue to next step (same as Level 3 for step continuation)
+- [x] Add a new tRPC mutation `agents.continueExecute` that resumes a waiting orchestrator — it reads the orchestrator session, finds the next step, and launches those phases
+- [x] Remove `getAutoCommitSetting()` function
+- **Files**: `src/main/agents/execute-agent.ts`, `src/main/trpc/router.ts`, `src/main/agents/types.ts`, `src/main/agents/subprocess-manager.ts`, `src/main/agents/unified-agent.ts`
 - **Commit message**: `feat: implement 3 autonomy levels in execute agent`
 - **Bisect note**: Must include the AskUserQuestion integration and the continue mutation together to avoid dead code paths
+- **Implementation notes**: Replaced `getAutoCommitSetting()` with `getAutonomyLevel()` (feature→project→global cascade). Added `StreamExecuteWaiting` event type. Made `CompletionAction.handler` return `void | Promise<void>` and added `await` in unified-agent. Added `executeRemainingSteps()` helper, `broadcastExecuteWaiting()`, `continueExecuteAgent()` export, and `continueExecute` tRPC mutation in router.ts. **All git commit logic removed from completion handler** — commits are handled entirely by the agent subprocess via prompt instructions. **Level 1**: enriched prompt instructs agent to ask user via AskUserQuestion (approve/skip/request changes loop), agent commits itself if approved. **Level 2**: enriched prompt instructs agent to auto-commit, orchestrator stops after step with `waiting` status. **Level 3**: enriched prompt instructs agent to auto-commit, orchestrator auto-continues.
+- **Validation results**: Lint passed, TypeScript compiled with no errors.
 
 ### ⬜ Phase 3: Update project settings UI with autonomy dropdown
 - **Step**: 3
@@ -118,5 +120,5 @@ Phase completion parses implementation notes and deviations from agent output be
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 2
-- **Progress**: 1/6
+- **Current Phase**: Phase 3
+- **Progress**: 2/6

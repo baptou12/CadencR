@@ -109,7 +109,7 @@ export function startUnifiedAgent(config: UnifiedAgentConfig): UnifiedAgentResul
   });
 
   // 7. Completion handling
-  managed.completionListeners.push((exitCode: number) => {
+  managed.completionListeners.push(async (exitCode: number) => {
     const db2 = getDatabase();
 
     // Don't overwrite 'paused' status — it was already set by stop/interrupt
@@ -142,7 +142,7 @@ export function startUnifiedAgent(config: UnifiedAgentConfig): UnifiedAgentResul
 
       for (const action of config.completionActions) {
         try {
-          action.handler(fullOutput, context);
+          await action.handler(fullOutput, context);
         } catch (err) {
           console.error(
             `[unified-agent] Completion action "${action.event}" failed:`,
