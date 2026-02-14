@@ -67,26 +67,30 @@ Phase completion parses implementation notes and deviations from agent output be
 - **Implementation notes**: Replaced `getAutoCommitSetting()` with `getAutonomyLevel()` (feature→project→global cascade). Added `StreamExecuteWaiting` event type. Made `CompletionAction.handler` return `void | Promise<void>` and added `await` in unified-agent. Added `executeRemainingSteps()` helper, `broadcastExecuteWaiting()`, `continueExecuteAgent()` export, and `continueExecute` tRPC mutation in router.ts. **All git commit logic removed from completion handler** — commits are handled entirely by the agent subprocess via prompt instructions. **Level 1**: enriched prompt instructs agent to ask user via AskUserQuestion (approve/skip/request changes loop), agent commits itself if approved. **Level 2**: enriched prompt instructs agent to auto-commit, orchestrator stops after step with `waiting` status. **Level 3**: enriched prompt instructs agent to auto-commit, orchestrator auto-continues.
 - **Validation results**: Lint passed, TypeScript compiled with no errors.
 
-### ⬜ Phase 3: Update project settings UI with autonomy dropdown
+### ✅ Phase 3: Update project settings UI with autonomy dropdown
 - **Step**: 3
 - **Complexity**: 2
-- [ ] In `ProjectList.tsx`, replace the auto_commit checkbox with a dropdown/select for "Agent autonomy"
-- [ ] Options: "Low — ask before commit" (value `1`), "Medium — manual continue" (value `2`), "High — full auto" (value `3`)
-- [ ] Use `setSetting` mutation with key `agent_autonomy`
-- [ ] Read current value from project settings, falling back to display the effective level
+- [x] In `ProjectList.tsx`, replace the auto_commit checkbox with a dropdown/select for "Agent autonomy"
+- [x] Options: "Low — ask before commit" (value `1`), "Medium — manual continue" (value `2`), "High — full auto" (value `3`)
+- [x] Use `setSetting` mutation with key `agent_autonomy`
+- [x] Read current value from project settings, falling back to display the effective level
 - **Files**: `src/renderer/components/ProjectList.tsx`
 - **Commit message**: `feat: replace auto-commit checkbox with autonomy level dropdown`
 - **Bisect note**: N/A
+- **Implementation notes**: Replaced the auto_commit checkbox with a shadcn Select component offering three autonomy levels. Added imports for Select components from `@/components/ui/select`. The setting reads `agent_autonomy` from project settings (falling back to `"1"`), and writes via `setSetting` mutation with key `agent_autonomy`.
+- **Validation results**: Lint passed (0 warnings, 0 errors). TypeScript has one pre-existing error in `settings.tsx` (Phase 4's file, not related to this phase) — no errors in `ProjectList.tsx`.
 
-### ⬜ Phase 4: Add global autonomy setting to settings page
+### ✅ Phase 4: Add global autonomy setting to settings page
 - **Step**: 3
 - **Complexity**: 2
-- [ ] In `src/renderer/routes/settings.tsx`, add an "Agent Autonomy" section with the same dropdown
-- [ ] Wire to the global `settings` table via the settings tRPC router
-- [ ] Ensure the global settings router supports getting/setting the `agent_autonomy` key
+- [x] In `src/renderer/routes/settings.tsx`, add an "Agent Autonomy" section with the same dropdown
+- [x] Wire to the global `settings` table via the settings tRPC router
+- [x] Ensure the global settings router supports getting/setting the `agent_autonomy` key
 - **Files**: `src/renderer/routes/settings.tsx`, `src/main/trpc/settings.ts` (if changes needed)
 - **Commit message**: `feat: add global agent autonomy setting`
 - **Bisect note**: N/A
+- **Implementation notes**: Added `AgentAutonomySelect` component in settings.tsx using `trpc.settings.get` (key: `agent_autonomy`) and `trpc.settings.set` mutation. No router changes needed — the existing generic get/set procedures handle the `agent_autonomy` key. Section placed between Model Configuration and Custom Settings. Three options: Low (1), Medium (2), High (3).
+- **Validation results**: Lint passed (0 warnings, 0 errors). TypeScript compiled with no errors.
 
 ### ⬜ Phase 5: Add "Continue Building" button for Level 2
 - **Step**: 4
@@ -120,5 +124,5 @@ Phase completion parses implementation notes and deviations from agent output be
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 3
-- **Progress**: 2/6
+- **Current Phase**: Phase 5
+- **Progress**: 4/6

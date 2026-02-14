@@ -16,6 +16,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { ModelSelector } from "./ModelSelector";
 
 interface ProjectListProps {
@@ -46,7 +53,7 @@ function ProjectSettingsDialog({
   });
 
   const branchPrefix = settings?.branch_prefix ?? "";
-  const autoCommit = settings?.auto_commit === "true";
+  const agentAutonomy = settings?.agent_autonomy ?? "1";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -87,26 +94,31 @@ function ProjectSettingsDialog({
               </p>
             </div>
 
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={autoCommit}
-                onChange={(e) =>
+            <div className="space-y-1">
+              <span className="text-xs font-medium">Agent Autonomy</span>
+              <Select
+                value={agentAutonomy}
+                onValueChange={(value) =>
                   setSettingMutation.mutate({
                     project_id: projectId,
-                    key: "auto_commit",
-                    value: e.target.checked ? "true" : "false",
+                    key: "agent_autonomy",
+                    value,
                   })
                 }
-                className="h-4 w-4 rounded border-border"
-              />
-              <div>
-                <span className="text-sm font-medium">Auto-commit</span>
-                <p className="text-xs text-muted-foreground">
-                  Automatically commit changes after agent execution
-                </p>
-              </div>
-            </label>
+              >
+                <SelectTrigger className="h-8 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">Low — ask before commit</SelectItem>
+                  <SelectItem value="2">Medium — manual continue</SelectItem>
+                  <SelectItem value="3">High — full auto</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Controls how much the execute agent does automatically
+              </p>
+            </div>
           </div>
         </div>
       </DialogContent>
