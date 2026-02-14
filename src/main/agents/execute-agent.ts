@@ -91,19 +91,21 @@ export function startExecuteAgent(options: ExecuteAgentOptions): ExecuteAgentRes
   const firstStepNumber = sortedSteps[0];
   const firstStepPhases = stepGroups.get(firstStepNumber) ?? [];
 
+  const optionsWithSession = { ...options, sessionDbId };
   const firstStepSubprocessIds: string[] = [];
   const firstStepPromises = firstStepPhases.map((phase) =>
-    executePhase(phase, options, autoCommit, firstStepSubprocessIds),
+    executePhase(phase, optionsWithSession, autoCommit, firstStepSubprocessIds),
   );
 
   // Continue remaining steps asynchronously after first step completes.
   void (async () => {
     await Promise.allSettled(firstStepPromises);
 
-    if (hasStepErrors(plan.id, firstStepNumber)) {
+    const firstStepResult = getStepOutcome(plan.id, firstStepNumber);
+    if (firstStepResult !== "ok") {
       db.prepare(
-        "UPDATE agent_sessions SET status = 'error', ended_at = datetime('now') WHERE id = ?",
-      ).run(sessionDbId);
+        "UPDATE agent_sessions SET status = ?, ended_at = datetime('now') WHERE id = ?",
+      ).run(firstStepResult === "paused" ? "paused" : "error", sessionDbId);
       broadcastExecuteAllDone(sessionDbId, 1);
       return;
     }
@@ -113,14 +115,15 @@ export function startExecuteAgent(options: ExecuteAgentOptions): ExecuteAgentRes
       const stepPhases = stepGroups.get(stepNumber) ?? [];
       const stepSubprocessIds: string[] = [];
       const phasePromises = stepPhases.map((phase) =>
-        executePhase(phase, options, autoCommit, stepSubprocessIds),
+        executePhase(phase, optionsWithSession, autoCommit, stepSubprocessIds),
       );
       await Promise.allSettled(phasePromises);
 
-      if (hasStepErrors(plan.id, stepNumber)) {
+      const stepResult = getStepOutcome(plan.id, stepNumber);
+      if (stepResult !== "ok") {
         db.prepare(
-          "UPDATE agent_sessions SET status = 'error', ended_at = datetime('now') WHERE id = ?",
-        ).run(sessionDbId);
+          "UPDATE agent_sessions SET status = ?, ended_at = datetime('now') WHERE id = ?",
+        ).run(stepResult === "paused" ? "paused" : "error", sessionDbId);
         broadcastExecuteAllDone(sessionDbId, 1);
         return;
       }
@@ -140,16 +143,26 @@ export function startExecuteAgent(options: ExecuteAgentOptions): ExecuteAgentRes
 }
 
 /**
- * Check if any phase in a given step has status 'error'.
+ * Check step outcome: "ok" if all phases completed, "error" if any errored,
+ * "paused" if any were reset to pending (i.e. paused/interrupted).
  */
-function hasStepErrors(planId: number, stepNumber: number): boolean {
+function getStepOutcome(planId: number, stepNumber: number): "ok" | "error" | "paused" {
   const db = getDatabase();
-  const row = db
+  const errorRow = db
     .prepare(
       "SELECT COUNT(*) as cnt FROM phases WHERE plan_id = ? AND step_number = ? AND status = 'error'",
     )
     .get(planId, stepNumber) as { cnt: number };
-  return row.cnt > 0;
+  if (errorRow.cnt > 0) return "error";
+
+  const pendingRow = db
+    .prepare(
+      "SELECT COUNT(*) as cnt FROM phases WHERE plan_id = ? AND step_number = ? AND status = 'pending'",
+    )
+    .get(planId, stepNumber) as { cnt: number };
+  if (pendingRow.cnt > 0) return "paused";
+
+  return "ok";
 }
 
 
@@ -178,7 +191,7 @@ function broadcastExecuteAllDone(sessionDbId: number, exitCode = 0): void {
  */
 function executePhase(
   phase: PhaseRow,
-  options: ExecuteAgentOptions,
+  options: ExecuteAgentOptions & { sessionDbId: number },
   autoCommit: boolean,
   allSubprocessIds: string[],
 ): Promise<void> {
@@ -199,7 +212,16 @@ function executePhase(
         handler: (_output: string, context) => {
           const db2 = getDatabase();
 
-          if (context.exitCode === 0) {
+          // Check if the session was interrupted — if so, don't update the
+          // phase status (it stays 'running' or whatever it was).
+          const session = db2.prepare("SELECT status FROM agent_sessions WHERE id = ?").get(context.sessionDbId) as { status: string } | undefined;
+          const wasInterrupted = session?.status === "paused";
+
+          if (wasInterrupted) {
+            // Reset phase from 'running' to 'pending' so it can be re-executed
+            db2.prepare("UPDATE phases SET status = 'pending' WHERE id = ? AND status = 'running'").run(phase.id);
+            notifyDbUpdated("phase", options.featureId);
+          } else if (context.exitCode === 0) {
             db2.prepare("UPDATE phases SET status = 'completed' WHERE id = ?").run(phase.id);
             notifyDbUpdated("phase", options.featureId);
 
@@ -232,6 +254,8 @@ function executePhase(
       projectId: options.projectId,
       cwd: options.cwd,
       prompt,
+      runId: options.sessionDbId,
+      phaseId: phase.id,
     };
 
     try {

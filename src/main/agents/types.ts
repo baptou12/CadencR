@@ -96,7 +96,7 @@ export interface StreamAgentDone {
   exitCode: number | null;
 }
 
-/** Synthetic event emitted when an agent is interrupted/paused */
+/** Synthetic event emitted when an agent is paused */
 export interface StreamAgentPaused {
   type: "agent_paused";
 }
@@ -143,6 +143,8 @@ export interface AgentEvent {
   timestamp: number;
   /** Parent tool_use_id if this event comes from a subagent spawned by Task */
   parentToolUseId?: string | null;
+  /** DB session ID (agent_sessions.id) for this subprocess */
+  sessionDbId?: number;
 }
 
 /** Agent status info for listing */
@@ -213,4 +215,8 @@ export interface UnifiedAgentConfig {
   prompt: string;
   /** Existing Claude session ID to resume */
   resumeSessionId?: string;
+  /** Parent orchestrator session ID (for execute phase sessions) */
+  runId?: number;
+  /** Phase row ID this session is executing */
+  phaseId?: number;
 }

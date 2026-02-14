@@ -28,6 +28,8 @@ export interface SessionEntry {
   }>;
   /** Whether this entry can be resumed */
   resumable: boolean;
+  /** DB session ID for this entry (used for targeted resume of parallel phases) */
+  sessionDbId?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -117,8 +119,9 @@ export function useWorkflowAgents({
     [],
   );
 
-  // Resumable sessions map: agentType -> claudeSessionId
-  const resumableSessions = useMemo(() => {
+  // Resumable sessions: agentType -> first claudeSessionId (for non-execute agents)
+  // and sessionDbId -> claudeSessionId (for targeted resume of specific sessions)
+  const resumableByType = useMemo(() => {
     if (!incompleteQuery.data) return new Map<string, string>();
     const map = new Map<string, string>();
     for (const s of incompleteQuery.data) {
@@ -129,29 +132,69 @@ export function useWorkflowAgents({
     return map;
   }, [incompleteQuery.data]);
 
-  // Find last completed session per agent type for history display
+  const resumableBySessionId = useMemo(() => {
+    if (!incompleteQuery.data) return new Map<number, string>();
+    const map = new Map<number, string>();
+    for (const s of incompleteQuery.data) {
+      if (s.claude_session_id) {
+        map.set(s.id, s.claude_session_id);
+      }
+    }
+    return map;
+  }, [incompleteQuery.data]);
+
+  // Statuses that indicate a session has usable history worth displaying
+  const historyStatuses = new Set(["completed", "error", "paused", "resumed"]);
+
+  // Find last session per agent type for history display
   const lastSessionIds = useMemo(() => {
     if (!sessionsQuery.data) return new Map<string, number>();
     const map = new Map<string, number>();
     for (const s of sessionsQuery.data) {
-      if (
-        (s.status === "completed" || s.status === "error") &&
-        !map.has(s.agent_type)
-      ) {
+      if (historyStatuses.has(s.status) && !map.has(s.agent_type)) {
         map.set(s.agent_type, s.id);
       }
     }
     return map;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionsQuery.data]);
 
-  // Load history for all agent types
-  const agentTypes = [
-    "plan",
-    "brainstorm",
-    "execute",
-    "risk",
-    "review",
-  ] as const;
+  // For execute: find the latest orchestrator session (run_id IS NULL, agent_type = 'execute')
+  // and query its phase sessions via getSessionsByRunId.
+  const latestExecuteRunId = useMemo(() => {
+    if (!sessionsQuery.data) return null;
+    const orchestrator = sessionsQuery.data.find(
+      (s) =>
+        s.agent_type === "execute" &&
+        s.run_id == null &&
+        historyStatuses.has(s.status),
+    );
+    return orchestrator?.id ?? null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionsQuery.data]);
+
+  const executeRunQuery = trpc.agents.getSessionsByRunId.useQuery(
+    { runId: latestExecuteRunId ?? 0 },
+    { enabled: latestExecuteRunId != null },
+  );
+
+  const executeSessionIds = useMemo(() => {
+    if (!executeRunQuery.data) return [] as number[];
+    // Deduplicate by phase_id — keep the latest (highest id) non-resumed session per phase
+    const byPhase = new Map<number | null, number>();
+    for (const s of executeRunQuery.data) {
+      if (s.status === "resumed") continue; // Skip replaced sessions
+      if (!historyStatuses.has(s.status)) continue;
+      const key = s.phase_id;
+      const existing = byPhase.get(key);
+      if (existing == null || s.id > existing) {
+        byPhase.set(key, s.id);
+      }
+    }
+    return [...byPhase.values()].toSorted((a, b) => a - b);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [executeRunQuery.data]);
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const agentStateMap: Record<string, any> = useMemo(
     () => ({ plan, brainstorm, execute, risk, review }),
@@ -180,11 +223,31 @@ export function useWorkflowAgents({
         brainstorm.blocks.length === 0,
     },
   );
+  // Only enable the single-session fallback when we're certain there are no phase sessions:
+  // either there's no orchestrator (latestExecuteRunId is null), or the run query has
+  // loaded and returned nothing. This prevents a race where this fires before
+  // executeRunQuery finishes, populates blocks, and blocks the batch path.
+  const noPhaseSessionsConfirmed =
+    latestExecuteRunId == null ||
+    (executeRunQuery.isFetched && executeSessionIds.length === 0);
+
   const executeHistoryQuery = trpc.agents.getHistory.useQuery(
     { sessionId: executeSessionId ?? 0 },
     {
       enabled:
         !!executeSessionId &&
+        noPhaseSessionsConfirmed &&
+        execute.status === "idle" &&
+        execute.blocks.length === 0,
+    },
+  );
+
+  // Batch history query for execute phase sessions (linked via run_id)
+  const executeBatchHistoryQuery = trpc.agents.getHistoryBatch.useQuery(
+    { sessionIds: executeSessionIds },
+    {
+      enabled:
+        executeSessionIds.length > 0 &&
         execute.status === "idle" &&
         execute.blocks.length === 0,
     },
@@ -223,9 +286,24 @@ export function useWorkflowAgents({
     ],
   );
 
-  // Populate agent blocks from history on mount
+  // Helper: merge consecutive text blocks
+  const mergeTextBlocks = useCallback((blocks: AgentBlockData[]): AgentBlockData[] => {
+    const merged: AgentBlockData[] = [];
+    for (const b of blocks) {
+      const last = merged[merged.length - 1];
+      if (b.type === "text" && last?.type === "text") {
+        merged[merged.length - 1] = { ...last, content: last.content + b.content };
+      } else {
+        merged.push(b);
+      }
+    }
+    return merged;
+  }, []);
+
+  // Populate agent blocks from history on mount (non-execute agents)
   useEffect(() => {
-    for (const agentType of agentTypes) {
+    const nonExecuteTypes = ["plan", "brainstorm", "risk", "review"] as const;
+    for (const agentType of nonExecuteTypes) {
       const query = historyQueries[agentType];
       const state = agentStateMap[agentType];
       if (!query.data || query.data.length === 0) continue;
@@ -237,49 +315,122 @@ export function useWorkflowAgents({
         if (block) blocks.push(block);
       }
       if (blocks.length > 0) {
-        // Merge consecutive text blocks
-        const merged: AgentBlockData[] = [];
-        for (const b of blocks) {
-          const last = merged[merged.length - 1];
-          if (b.type === "text" && last?.type === "text") {
-            merged[merged.length - 1] = {
-              ...last,
-              content: last.content + b.content,
-            };
-          } else {
-            merged.push(b);
-          }
-        }
-        for (const b of merged) {
+        for (const b of mergeTextBlocks(blocks)) {
           state.appendBlock(b);
         }
-        state.setStatus("complete");
+        const sourceSession = sessionsQuery.data?.find(s => s.id === lastSessionIds.get(agentType));
+        state.setStatus(sourceSession?.status === "paused" ? "paused" : "complete");
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     planHistoryQuery.data,
     brainstormHistoryQuery.data,
-    executeHistoryQuery.data,
     riskHistoryQuery.data,
     reviewHistoryQuery.data,
   ]);
 
+  // Populate execute agent blocks from history (handles parallel phases via run_id)
+  useEffect(() => {
+    if (execute.status !== "idle" || execute.blocks.length > 0) return;
+
+    if (executeSessionIds.length > 0 && executeBatchHistoryQuery.data) {
+      // Phase sessions linked via run_id — create a subprocess entry per session
+      const batchData = executeBatchHistoryQuery.data;
+      let hasAny = false;
+
+      for (const sid of executeSessionIds) {
+        const messages = batchData[sid];
+        if (!messages || messages.length === 0) continue;
+
+        const blocks: AgentBlockData[] = [];
+        for (const msg of messages) {
+          const block = messageToBlock(msg);
+          if (block) blocks.push(block);
+        }
+        if (blocks.length === 0) continue;
+        hasAny = true;
+
+        const syntheticId = `hist-exec-${sid}`;
+        // Determine status for this subprocess from run query data
+        const srcSession = executeRunQuery.data?.find((s) => s.id === sid);
+        const subStatus: AgentStatus = srcSession?.status === "paused" ? "paused"
+          : srcSession?.status === "error" ? "error" : "complete";
+
+        // Inject blocks into a subprocess entry (auto-created by appendBlockToSubprocess)
+        for (const b of mergeTextBlocks(blocks)) {
+          execute.appendBlockToSubprocess(syntheticId, b, subStatus, sid);
+        }
+      }
+
+      if (hasAny) {
+        const anyPaused = executeSessionIds.some((sid) => {
+          const s = executeRunQuery.data?.find((sess) => sess.id === sid);
+          return s?.status === "paused";
+        });
+        execute.setStatus(anyPaused ? "paused" : "complete");
+      }
+    } else if (executeSessionIds.length === 0 && executeHistoryQuery.data && executeHistoryQuery.data.length > 0) {
+      // No phase sessions found — fall back to orchestrator session history
+      const blocks: AgentBlockData[] = [];
+      for (const msg of executeHistoryQuery.data) {
+        const block = messageToBlock(msg);
+        if (block) blocks.push(block);
+      }
+      if (blocks.length > 0) {
+        for (const b of mergeTextBlocks(blocks)) {
+          execute.appendBlock(b);
+        }
+        const sourceSession = sessionsQuery.data?.find(s => s.id === lastSessionIds.get("execute"));
+        execute.setStatus(sourceSession?.status === "paused" ? "paused" : "complete");
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [executeHistoryQuery.data, executeBatchHistoryQuery.data, executeSessionIds]);
+
   const handleResume = useCallback(
-    async (agentType: AgentType) => {
-      const claudeSessionId = resumableSessions.get(agentType);
-      if (!claudeSessionId) return;
+    async (agentType: AgentType, targetSessionDbId?: number) => {
+      let claudeSessionId: string | undefined;
+      let originalSession: (typeof incompleteQuery.data extends (infer T)[] | undefined ? T : never) | undefined;
+
+      if (targetSessionDbId != null) {
+        // Targeted resume of a specific session (parallel execute phases)
+        claudeSessionId = resumableBySessionId.get(targetSessionDbId);
+        originalSession = incompleteQuery.data?.find((s) => s.id === targetSessionDbId);
+      } else {
+        // Generic resume by agent type (non-execute agents)
+        claudeSessionId = resumableByType.get(agentType);
+        originalSession = incompleteQuery.data?.find(
+          (s) => s.agent_type === agentType && s.claude_session_id === claudeSessionId,
+        );
+      }
+
+      if (!claudeSessionId || !originalSession) return;
 
       const state = agentStateMap[agentType];
-      state.start();
+      // Don't call state.start() — it clears all blocks/subprocesses.
+      // Just set status to running to preserve existing history.
+      state.setStatus("running");
 
       try {
         const result = await resumeMutation.mutateAsync({
-          cwd: ".",
+          featureId,
+          projectId,
           agentType,
           sessionId: claudeSessionId,
+          originalSessionDbId: originalSession.id,
         });
-        state.trackSubprocess(result.id);
+
+        // For multi-subprocess execute agents, remap the history panel
+        // (keyed by synthetic ID) to the new real subprocess ID so events
+        // flow into the existing panel instead of creating a new one.
+        if (agentType === "execute") {
+          const syntheticId = `hist-exec-${originalSession.id}`;
+          execute.remapSubprocess(syntheticId, result.subprocessId);
+        } else {
+          state.trackSubprocess(result.subprocessId);
+        }
+        void incompleteQuery.refetch();
       } catch (err) {
         state.setStatus("error");
         state.appendBlock({
@@ -290,7 +441,11 @@ export function useWorkflowAgents({
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
-      resumableSessions,
+      resumableByType,
+      resumableBySessionId,
+      incompleteQuery,
+      featureId,
+      projectId,
       plan,
       brainstorm,
       execute,
@@ -565,13 +720,14 @@ export function useWorkflowAgents({
       } catch {
         // best effort
       }
-      state.setStatus("error");
+      state.setStatus("paused");
       state.appendBlock({
         type: "text",
-        content: "\n\nStopped by user.",
+        content: "\n\nStopped. This agent can be resumed.",
       });
+      void incompleteQuery.refetch();
     },
-    [agentStateMap, stopMutation],
+    [agentStateMap, stopMutation, incompleteQuery],
   );
 
   // Convenience wrappers for execute subprocess operations
@@ -606,7 +762,7 @@ export function useWorkflowAgents({
         blocks: plan.blocks,
         subprocessId: plan.subprocessId,
         pendingQuestions: plan.pendingQuestions,
-        resumable: resumableSessions.has("plan"),
+        resumable: resumableByType.has("plan"),
       });
     }
     if (hasOutput(brainstorm)) {
@@ -617,7 +773,7 @@ export function useWorkflowAgents({
         blocks: brainstorm.blocks,
         subprocessId: brainstorm.subprocessId,
         pendingQuestions: brainstorm.pendingQuestions,
-        resumable: resumableSessions.has("brainstorm"),
+        resumable: resumableByType.has("brainstorm"),
       });
     }
 
@@ -636,7 +792,8 @@ export function useWorkflowAgents({
           blocks: sub.blocks,
           subprocessId: sub.subprocessId,
           pendingQuestions: [],
-          resumable: false,
+          resumable: sub.sessionDbId != null && resumableBySessionId.has(sub.sessionDbId),
+          sessionDbId: sub.sessionDbId,
         });
       }
     } else if (hasOutput(execute)) {
@@ -648,7 +805,7 @@ export function useWorkflowAgents({
         blocks: execute.blocks,
         subprocessId: execute.subprocessId,
         pendingQuestions: [],
-        resumable: false,
+        resumable: resumableByType.has("execute"),
       });
     }
 
@@ -676,7 +833,7 @@ export function useWorkflowAgents({
         blocks: risk.blocks,
         subprocessId: risk.subprocessId,
         pendingQuestions: [],
-        resumable: false,
+        resumable: resumableByType.has("risk"),
       });
     }
     if (hasOutput(review)) {
@@ -687,12 +844,12 @@ export function useWorkflowAgents({
         blocks: review.blocks,
         subprocessId: review.subprocessId,
         pendingQuestions: [],
-        resumable: false,
+        resumable: resumableByType.has("review"),
       });
     }
 
     return entries;
-  }, [plan, brainstorm, execute, risk, review, resumableSessions]);
+  }, [plan, brainstorm, execute, risk, review, resumableByType, resumableBySessionId]);
 
   // Derived state from the session list
   const hasAnyAgentOutput = sessionEntries.length > 0;
@@ -722,7 +879,7 @@ export function useWorkflowAgents({
     execute,
     risk,
     review,
-    resumableSessions,
+    resumableByType,
     reviewComplete,
     reviewVerdict,
     isStartingPlan: startPlanMutation.isLoading,

@@ -219,6 +219,8 @@ export interface SubprocessState {
   subprocessId: string;
   blocks: AgentBlockData[];
   status: AgentStatus;
+  /** DB session ID (agent_sessions.id) — set from AgentEvent or synthetic history IDs */
+  sessionDbId?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -269,7 +271,11 @@ export interface SessionStateReturn {
   appendBlockToSubprocess: (
     subprocessId: string,
     partial: Omit<AgentBlockData, "id">,
+    subStatus?: AgentStatus,
+    sessionDbId?: number,
   ) => void;
+  /** Re-key a subprocess entry so events from `newId` route into the existing `oldId` panel */
+  remapSubprocess: (oldId: string, newId: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -606,6 +612,7 @@ export function useSessionState(
           subprocessId,
           blocks: [],
           status: "running" as AgentStatus,
+          sessionDbId: agentEvent.sessionDbId,
         };
 
         let blocks = existing.blocks;
@@ -922,11 +929,15 @@ export function useSessionState(
   );
 
   const appendBlockToSubprocess = useCallback(
-    (spId: string, partial: Omit<AgentBlockData, "id">) => {
+    (spId: string, partial: Omit<AgentBlockData, "id">, subStatus?: AgentStatus, sessionDbId?: number) => {
       setSubprocesses((prev) => {
         const next = new Map(prev);
-        const existing = next.get(spId);
-        if (!existing) return prev;
+        const existing = next.get(spId) ?? {
+          subprocessId: spId,
+          blocks: [],
+          status: subStatus ?? ("running" as AgentStatus),
+          sessionDbId,
+        };
         next.set(spId, {
           ...existing,
           blocks: [...existing.blocks, makeBlock(partial)],
@@ -936,6 +947,17 @@ export function useSessionState(
     },
     [],
   );
+
+  const remapSubprocess = useCallback((oldId: string, newId: string) => {
+    setSubprocesses((prev) => {
+      const entry = prev.get(oldId);
+      if (!entry) return prev;
+      const next = new Map(prev);
+      next.delete(oldId);
+      next.set(newId, { ...entry, subprocessId: newId, status: "running" });
+      return next;
+    });
+  }, []);
 
   // ----- Derived values for multi-subprocess mode -----
   const subprocessList = Array.from(subprocesses.values());
@@ -978,6 +1000,7 @@ export function useSessionState(
     allBlocks,
     subprocessIds: activeSubprocessIds,
     appendBlockToSubprocess,
+    remapSubprocess,
   };
 }
 

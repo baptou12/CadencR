@@ -81,6 +81,8 @@ export interface AgentSessionRow {
   status: string;
   started_at: string | null;
   ended_at: string | null;
+  run_id: number | null;
+  phase_id: number | null;
 }
 
 export interface AgentMessageRow {

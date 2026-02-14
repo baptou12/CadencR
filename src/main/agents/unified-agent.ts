@@ -55,9 +55,9 @@ export function startUnifiedAgent(config: UnifiedAgentConfig): UnifiedAgentResul
   // 1. Create agent session record
   const sessionResult = db
     .prepare(
-      "INSERT INTO agent_sessions (feature_id, agent_type, status, started_at) VALUES (?, ?, ?, datetime('now'))",
+      "INSERT INTO agent_sessions (feature_id, agent_type, status, started_at, run_id, phase_id) VALUES (?, ?, ?, datetime('now'), ?, ?)",
     )
-    .run(config.featureId ?? null, config.agentType, "running");
+    .run(config.featureId ?? null, config.agentType, "running", config.runId ?? null, config.phaseId ?? null);
   const sessionDbId = Number(sessionResult.lastInsertRowid);
 
   // 2. Resolve model
@@ -109,12 +109,25 @@ export function startUnifiedAgent(config: UnifiedAgentConfig): UnifiedAgentResul
   managed.completionListeners.push((exitCode: number) => {
     const db2 = getDatabase();
 
-    // Update session status
-    db2.prepare(
-      "UPDATE agent_sessions SET status = ?, ended_at = datetime('now') WHERE id = ?",
-    ).run(exitCode === 0 ? "completed" : "error", sessionDbId);
+    // Don't overwrite 'paused' status — it was already set by stop/interrupt
+    const current = db2.prepare("SELECT status FROM agent_sessions WHERE id = ?").get(sessionDbId) as { status: string } | undefined;
+    const wasInterrupted = current?.status === "paused";
 
-    // Run registered completion actions
+    if (!wasInterrupted) {
+      // Update session status
+      db2.prepare(
+        "UPDATE agent_sessions SET status = ?, ended_at = datetime('now') WHERE id = ?",
+      ).run(exitCode === 0 ? "completed" : "error", sessionDbId);
+    }
+
+    // Safety-net: persist session ID if not yet saved
+    if (managed.sdkSessionId) {
+      db2.prepare("UPDATE agent_sessions SET claude_session_id = ? WHERE id = ? AND claude_session_id IS NULL")
+        .run(managed.sdkSessionId, sessionDbId);
+    }
+
+    // Always run completion actions — even on interrupt — so that callers
+    // waiting on promises (e.g. execute orchestrator) can settle.
     if (config.completionActions) {
       const context = {
         agentType: config.agentType,

@@ -1,7 +1,7 @@
 import { BrowserWindow } from "electron";
 import { getDatabase } from "../db/database";
 import { discoverClaudeCli } from "./cli-discovery";
-import { getSessionDbId, persistStreamEvent } from "./ipc-bridge";
+import { getSessionDbId, persistStreamEvent, persistClaudeSessionId } from "./ipc-bridge";
 import { DEFAULT_MODEL } from "./models";
 import type { AgentEvent, AgentType, StreamEvent } from "./types";
 import EventEmitter from "node:events";
@@ -88,6 +88,7 @@ function broadcastEvent(
     event,
     timestamp: Date.now(),
     parentToolUseId: parentToolUseId ?? undefined,
+    sessionDbId: getSessionDbId(id),
   };
 
   const windows = BrowserWindow.getAllWindows();
@@ -325,6 +326,11 @@ function handleSdkMessage(
     // Capture SDK session ID for resume after interrupt
     if (msg.session_id && typeof msg.session_id === "string") {
       managed.sdkSessionId = msg.session_id;
+      // Persist to DB immediately so it survives app restart
+      const sDbId = getSessionDbId(id);
+      if (sDbId) {
+        persistClaudeSessionId(sDbId, msg.session_id);
+      }
     }
     broadcastEvent(
       id,
@@ -658,6 +664,12 @@ export function sendMessageToSubprocess(id: string, message: string): boolean {
       return false;
     }
     managed.status = "running";
+    // Update DB status back to running
+    const resumeDbId = getSessionDbId(id);
+    if (resumeDbId) {
+      const db = getDatabase();
+      db.prepare("UPDATE agent_sessions SET status = 'running', ended_at = NULL WHERE id = ?").run(resumeDbId);
+    }
     // Fresh abort controller for the resumed query
     managed.abortController = new AbortController();
     const resumeOptions: SubprocessOptions = {
@@ -678,26 +690,37 @@ export function sendMessageToSubprocess(id: string, message: string): boolean {
 }
 
 /**
- * Stop a running subprocess cleanly via SDK Query.close().
+ * Stop a running subprocess — interrupts the SDK query and persists 'paused'
+ * status to DB so the session can be resumed later (even after app restart).
  */
-export function stopSubprocess(id: string): boolean {
+export async function stopSubprocess(id: string): Promise<boolean> {
   const managed = activeProcesses.get(id);
-  if (!managed || managed.status !== "running") {
+  if (!managed || (managed.status !== "running" && managed.status !== "paused")) {
     return false;
   }
 
-  managed.status = "stopped";
+  managed.status = "paused";
   if (managed.query) {
-    managed.query.close();
+    try { await managed.query.interrupt(); } catch { /* may already be done */ }
   } else {
     managed.abortController?.abort();
   }
+
+  // Persist paused status to DB
+  const sessionDbId = getSessionDbId(id);
+  if (sessionDbId) {
+    const db = getDatabase();
+    db.prepare("UPDATE agent_sessions SET status = 'paused', ended_at = datetime('now') WHERE id = ?").run(sessionDbId);
+    if (managed.sdkSessionId) persistClaudeSessionId(sessionDbId, managed.sdkSessionId);
+  }
+
+  broadcastEvent(managed.id, managed.agentType, { type: "agent_paused" });
   return true;
 }
 
 /**
  * Interrupt a running subprocess — pauses the current turn but keeps the session alive.
- * The user can send a follow-up message to resume.
+ * The user can send a follow-up message to resume. Also persists 'paused' status to DB.
  */
 export async function interruptSubprocess(id: string): Promise<boolean> {
   const managed = activeProcesses.get(id);
@@ -713,6 +736,14 @@ export async function interruptSubprocess(id: string): Promise<boolean> {
     } catch {
       // interrupt may fail if the query already finished
     }
+  }
+
+  // Persist paused status to DB
+  const sessionDbId = getSessionDbId(id);
+  if (sessionDbId) {
+    const db = getDatabase();
+    db.prepare("UPDATE agent_sessions SET status = 'paused', ended_at = datetime('now') WHERE id = ?").run(sessionDbId);
+    if (managed.sdkSessionId) persistClaudeSessionId(sessionDbId, managed.sdkSessionId);
   }
 
   // Broadcast paused event to the renderer
@@ -815,14 +846,14 @@ export function hasRunningSubprocesses(): boolean {
 }
 
 /**
- * Mark all running agent sessions as 'interrupted' in the database.
+ * Mark all running agent sessions as 'paused' in the database.
  * Called during app shutdown to preserve session state for resume.
  */
 export function saveAllSessionStates(): void {
   try {
     const db = getDatabase();
     db.prepare(
-      "UPDATE agent_sessions SET status = 'interrupted', ended_at = datetime('now') WHERE status = 'running'",
+      "UPDATE agent_sessions SET status = 'paused', ended_at = datetime('now') WHERE status = 'running'",
     ).run();
   } catch {
     // Best-effort: database may already be closed

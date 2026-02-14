@@ -73,12 +73,22 @@ function SessionFeatureView({
   // Restore: find the latest session's history and reconnect to active subprocess
   const activeProcess = trpc.agents.getActiveSessionProcess.useQuery({ featureId });
   const sessionsQuery = trpc.agents.getSessions.useQuery({ featureId });
+  const incompleteQuery = trpc.agents.getIncompleteSessions.useQuery({ featureId });
+  const resumeMutation = trpc.agents.resume.useMutation();
 
   const lastSessionDbId = useMemo(() => {
     if (!sessionsQuery.data) return null;
     const s = sessionsQuery.data.find((r) => r.agent_type === "session");
     return s?.id ?? null;
   }, [sessionsQuery.data]);
+
+  // Find interrupted session info for resume
+  const interruptedSession = useMemo(() => {
+    if (!incompleteQuery.data) return null;
+    return incompleteQuery.data.find(
+      (s) => s.agent_type === "session" && s.claude_session_id,
+    ) ?? null;
+  }, [incompleteQuery.data]);
 
   const historyQuery = trpc.agents.getHistory.useQuery(
     { sessionId: lastSessionDbId ?? 0 },
@@ -103,7 +113,7 @@ function SessionFeatureView({
       if (block) session.appendBlock(block);
     }
 
-    // Reconnect to active subprocess or mark as paused/complete
+    // Reconnect to active subprocess or check for interrupted session
     if (activeProcess.data) {
       session.trackSubprocess(activeProcess.data.subprocessId);
       session.setStatus(activeProcess.data.status === "running" ? "running" : "paused");
@@ -111,7 +121,7 @@ function SessionFeatureView({
       session.setStatus("paused");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [historyQuery.data, activeProcess.data]);
+  }, [historyQuery.data, activeProcess.data, interruptedSession]);
 
   // Event listener for session agent
   const eventHandlers = useMemo(
@@ -140,6 +150,32 @@ function SessionFeatureView({
         return;
       }
 
+      // Resume an interrupted session
+      if (session.status === "paused" && interruptedSession?.claude_session_id) {
+        session.appendBlock({ type: "user_message", content: message });
+        session.setStatus("running");
+        try {
+          const result = await resumeMutation.mutateAsync({
+            featureId,
+            projectId,
+            agentType: "session",
+            sessionId: interruptedSession.claude_session_id,
+            originalSessionDbId: interruptedSession.id,
+          });
+          session.trackSubprocess(result.subprocessId);
+          // Send the user's message to the resumed session
+          sendMessageMutation.mutate({ id: result.subprocessId, message });
+          void incompleteQuery.refetch();
+        } catch (err) {
+          session.setStatus("error");
+          session.appendBlock({
+            type: "text",
+            content: `Failed to resume: ${err instanceof Error ? err.message : String(err)}`,
+          });
+        }
+        return;
+      }
+
       // Start a new session
       session.start();
       session.appendBlock({ type: "user_message", content: message });
@@ -159,7 +195,7 @@ function SessionFeatureView({
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [session.status, session.subprocessId, featureId, projectId, sendMessageMutation, startSessionMutation],
+    [session.status, session.subprocessId, featureId, projectId, sendMessageMutation, startSessionMutation, interruptedSession, resumeMutation, incompleteQuery],
   );
 
   const handleStop = useCallback(async () => {
@@ -169,11 +205,19 @@ function SessionFeatureView({
     } catch {
       // best effort
     }
-  }, [session.subprocessId, interruptMutation]);
+    session.setStatus("paused");
+    void incompleteQuery.refetch();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session.subprocessId, interruptMutation, incompleteQuery]);
 
   return (
     <div className="flex h-full flex-col">
       <FeatureTopBar featureId={featureId} projectId={projectId} mode="session" />
+      {session.status === "paused" && !session.subprocessId && (
+        <div className="border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 text-sm text-amber-300">
+          Previous session paused — type a message to resume.
+        </div>
+      )}
       <AgentSession
         ref={agentRef}
         agentType="session"
@@ -181,7 +225,7 @@ function SessionFeatureView({
         status={session.status}
         onSend={handleSend}
         onStop={handleStop}
-        disabled={startSessionMutation.isLoading}
+        disabled={startSessionMutation.isLoading || resumeMutation.isLoading}
       />
     </div>
   );

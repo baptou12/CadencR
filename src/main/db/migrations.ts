@@ -201,6 +201,21 @@ const migrations: Migration[] = [
       db.exec("ALTER TABLE features ADD COLUMN type TEXT NOT NULL DEFAULT 'feature'");
     },
   },
+  {
+    version: 14,
+    description: "Add run_id and phase_id columns to agent_sessions",
+    up: (db) => {
+      db.exec("ALTER TABLE agent_sessions ADD COLUMN run_id INTEGER");
+      db.exec("ALTER TABLE agent_sessions ADD COLUMN phase_id INTEGER");
+    },
+  },
+  {
+    version: 15,
+    description: "Remove interrupted status — replaced by paused",
+    up: (db) => {
+      db.exec("DELETE FROM agent_sessions WHERE status = 'interrupted'");
+    },
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

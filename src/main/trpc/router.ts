@@ -29,6 +29,7 @@ import {
   getCurrentBranch,
 } from "../git/worktree";
 import { diffCommentsRouter } from "./diff-comments";
+import { startUnifiedAgent } from "../agents/unified-agent";
 import { startPlanAgent } from "../agents/plan-agent";
 import { startBrainstormAgent } from "../agents/brainstorm-agent";
 import { startExecuteAgent } from "../agents/execute-agent";
@@ -185,8 +186,8 @@ const agentsRouter = router({
   /** Stop a running agent subprocess */
   stop: publicProcedure
     .input(z.object({ id: z.string() }))
-    .mutation(({ input }) => {
-      const stopped = stopSubprocess(input.id);
+    .mutation(async ({ input }) => {
+      const stopped = await stopSubprocess(input.id);
       return { success: stopped };
     }),
 
@@ -213,28 +214,37 @@ const agentsRouter = router({
   resume: publicProcedure
     .input(
       z.object({
-        cwd: z.string(),
+        featureId: z.number(),
+        projectId: z.number(),
         agentType: agentTypeSchema,
         sessionId: z.string(),
-        allowedTools: z.array(z.string()).optional(),
+        originalSessionDbId: z.number(),
       }),
     )
     .mutation(({ input }) => {
-      const managed = startSubprocess({
-        cwd: input.cwd,
-        agentType: input.agentType,
-        prompt: "",
+      const cwd = resolveAgentCwd(input.featureId, input.projectId);
+
+      // Copy run_id and phase_id from the original session
+      const db = getDatabase();
+      const originalSession = db
+        .prepare("SELECT run_id, phase_id FROM agent_sessions WHERE id = ?")
+        .get(input.originalSessionDbId) as Pick<AgentSessionRow, "run_id" | "phase_id"> | undefined;
+
+      const result = startUnifiedAgent({
+        agentType: input.agentType as AgentType,
+        featureId: input.featureId,
+        projectId: input.projectId,
+        cwd,
+        prompt: "Continue from where you left off.",
         resumeSessionId: input.sessionId,
-        allowedTools: input.allowedTools,
+        runId: originalSession?.run_id ?? undefined,
+        phaseId: originalSession?.phase_id ?? undefined,
       });
 
-      bridgeSubprocessToRenderer(managed, input.agentType as AgentType);
+      // Mark old session as 'resumed' so it doesn't show as incomplete
+      db.prepare("UPDATE agent_sessions SET status = 'resumed' WHERE id = ?").run(input.originalSessionDbId);
 
-      return {
-        id: managed.id,
-        agentType: managed.agentType,
-        status: managed.status,
-      };
+      return { subprocessId: result.subprocessId, agentType: result.agentType, sessionDbId: result.sessionDbId };
     }),
 
   /** Submit user answers for an AskUserQuestion tool call */
@@ -413,6 +423,23 @@ const agentsRouter = router({
       return messages;
     }),
 
+  /** Get message history for multiple sessions at once (used for parallel execute phases) */
+  getHistoryBatch: publicProcedure
+    .input(z.object({ sessionIds: z.array(z.number()) }))
+    .query(({ input }) => {
+      if (input.sessionIds.length === 0) return {};
+      const db = getDatabase();
+      const result: Record<number, AgentMessageRow[]> = {};
+      for (const sid of input.sessionIds) {
+        result[sid] = db
+          .prepare(
+            "SELECT id, session_id, role, content, message_type, tool_name, created_at FROM agent_messages WHERE session_id = ? ORDER BY id ASC",
+          )
+          .all(sid) as AgentMessageRow[];
+      }
+      return result;
+    }),
+
   /** Get sessions for a feature (optionally filter by status) */
   getSessions: publicProcedure
     .input(
@@ -424,7 +451,7 @@ const agentsRouter = router({
     .query(({ input }) => {
       const db = getDatabase();
       let query =
-        "SELECT id, feature_id, agent_type, claude_session_id, status, started_at, ended_at FROM agent_sessions WHERE feature_id = ?";
+        "SELECT id, feature_id, agent_type, claude_session_id, status, started_at, ended_at, run_id, phase_id FROM agent_sessions WHERE feature_id = ?";
       const params: (number | string)[] = [input.featureId];
       if (input.status) {
         query += " AND status = ?";
@@ -442,9 +469,22 @@ const agentsRouter = router({
       const db = getDatabase();
       const sessions = db
         .prepare(
-          "SELECT id, feature_id, agent_type, claude_session_id, status, started_at FROM agent_sessions WHERE feature_id = ? AND status = 'running' AND claude_session_id IS NOT NULL ORDER BY id DESC",
+          "SELECT id, feature_id, agent_type, claude_session_id, status, started_at, run_id, phase_id FROM agent_sessions WHERE feature_id = ? AND status IN ('paused', 'running') AND claude_session_id IS NOT NULL ORDER BY id DESC",
         )
         .all(input.featureId) as AgentSessionRow[];
+      return sessions;
+    }),
+
+  /** Get all phase sessions belonging to an orchestrator run */
+  getSessionsByRunId: publicProcedure
+    .input(z.object({ runId: z.number() }))
+    .query(({ input }) => {
+      const db = getDatabase();
+      const sessions = db
+        .prepare(
+          "SELECT id, feature_id, agent_type, claude_session_id, status, started_at, ended_at, run_id, phase_id FROM agent_sessions WHERE run_id = ? ORDER BY id ASC",
+        )
+        .all(input.runId) as AgentSessionRow[];
       return sessions;
     }),
 

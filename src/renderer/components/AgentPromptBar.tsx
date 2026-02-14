@@ -94,7 +94,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder={isPaused ? "Send a follow-up to resume…" : "Send a message…"}
+        placeholder={isPaused ? "Send a message to resume…" : "Send a message…"}
         disabled={disabled}
         rows={1}
         className="max-h-32 resize-none overflow-hidden border-border/50 bg-background py-1.5 text-sm shadow-none focus-visible:ring-1 focus-visible:ring-ring/40"

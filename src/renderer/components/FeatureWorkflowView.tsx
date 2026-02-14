@@ -219,11 +219,7 @@ export function FeatureWorkflowView({
                   }
                 }}
                 resumable={entry.resumable}
-                onResume={
-                  entry.type === "plan" || entry.type === "brainstorm"
-                    ? () => void wf.handleResume(entry.type)
-                    : undefined
-                }
+                onResume={entry.resumable ? () => void wf.handleResume(entry.type, entry.sessionDbId) : undefined}
                 // Review verdict props (only effective for review entries)
                 reviewComplete={wf.reviewComplete}
                 reviewVerdict={wf.reviewVerdict}
