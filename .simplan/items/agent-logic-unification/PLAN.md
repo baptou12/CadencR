@@ -65,16 +65,18 @@ A: useWorkflowAgents becomes a session list with metadata `{type, sessionState, 
 - **Implementation notes**: Added `OutputPattern`, `CompletionContext`, `CompletionAction`, and `UnifiedAgentConfig` interfaces to `types.ts`. Created `utils.ts` with a single shared `extractTextFromEvent()` function (currently 5 copies exist in the individual agent files -- those will be removed in Phase 7). Created `unified-agent.ts` with `startUnifiedAgent()` that: (1) creates a DB session record, (2) resolves the model, (3) spawns a subprocess via `startSubprocess`, (4) bridges events to the renderer, (5) persists the initial user message, (6) accumulates output text and checks patterns using a deduplicating `Set<string>` to prevent re-firing, (7) broadcasts `agent:pattern-match` events via IPC on first match, and (8) runs completion actions on subprocess exit with error isolation (each action is try/caught independently). Pattern matching uses `checkPatterns()` which tests each registered regex against the full accumulated output and broadcasts matches via the `AGENT_PATTERN_MATCH_CHANNEL` IPC channel.
 - **Validation results**: Lint passes (exit 0, 0 errors). TypeScript compiles (`npx tsc --noEmit` exit 0, no errors). `pnpm run build` does not exist as a script in this project (available scripts: start, package, make, lint, lint:fix, format, format:check, prepare) -- this completion condition in the plan is invalid, but `tsc --noEmit` confirms the code compiles correctly.
 
-### ⬜ Phase 2: Output matcher system
+### ✅ Phase 2: Output matcher system
 - **Step**: 2
 - **Complexity**: 3
-- [ ] Define agent-specific configs for each agent type — create `src/main/agents/agent-configs.ts` with factory functions: `createPlanConfig(opts)`, `createBrainstormConfig(opts)`, `createRiskConfig(opts)`, `createReviewConfig(opts)`, `createSessionConfig(opts)`
-- [ ] Each config includes: the system prompt (moved from individual agent files), output patterns (e.g. plan uses `---PLAN_START---`/`---PLAN_END---`, review uses `---REVIEW_APPROVED---`/`---REVIEW_CHANGES_REQUESTED---`), and completion actions (e.g. plan parses output and stores in DB, review checks verdict and updates feature status)
-- [ ] Move `parsePlanOutput()` to `src/main/agents/utils.ts` as a shared utility (already reused by brainstorm)
-- [ ] Add system prompt additions that instruct agents to signal completion with a standard marker (e.g. each agent's system prompt ends with "When your task is complete, output `---AGENT_DONE---` on its own line")
+- [x] Define agent-specific configs for each agent type — create `src/main/agents/agent-configs.ts` with factory functions: `createPlanConfig(opts)`, `createBrainstormConfig(opts)`, `createRiskConfig(opts)`, `createReviewConfig(opts)`, `createSessionConfig(opts)`
+- [x] Each config includes: the system prompt (moved from individual agent files), output patterns (e.g. plan uses `---PLAN_START---`/`---PLAN_END---`, review uses `---REVIEW_APPROVED---`/`---REVIEW_CHANGES_REQUESTED---`), and completion actions (e.g. plan parses output and stores in DB, review checks verdict and updates feature status)
+- [x] Move `parsePlanOutput()` to `src/main/agents/utils.ts` as a shared utility (already reused by brainstorm)
+- [x] Add system prompt additions that instruct agents to signal completion with a standard marker (e.g. each agent's system prompt ends with "When your task is complete, output `---AGENT_DONE---` on its own line")
 - **Files**: `src/main/agents/agent-configs.ts`, `src/main/agents/utils.ts`
 - **Commit message**: `refactor: define agent configs with output patterns and completion actions`
 - **Bisect note**: New files only, configs not wired up yet
+- **Implementation notes**: Created `src/main/agents/agent-configs.ts` with 5 factory functions (`createPlanConfig`, `createBrainstormConfig`, `createRiskConfig`, `createReviewConfig`, `createSessionConfig`) plus exported `EXECUTE_SYSTEM_PROMPT` constant. Each factory returns a `UnifiedAgentConfig` with: (1) system prompt extracted verbatim from the original agent file, (2) output patterns as `OutputPattern[]` (plan/brainstorm use `---PLAN_START---`/`---PLAN_END---`, review uses `---REVIEW_APPROVED---`/`---REVIEW_CHANGES_REQUESTED---`, risk/session have none), (3) completion actions using closures over opts for DB access (plan stores parsed plan with all columns + phases + feature status update, brainstorm stores title + raw_markdown + phases, risk stores risk_report in agent_messages, review stores review_report + conditionally updates feature status to done). Added `---AGENT_DONE---` standard completion marker to the end of all system prompts (plan, brainstorm, risk, review, execute). Moved `parsePlanOutput()`, `ParsedPlan`, and `ParsedPhase` from `plan-agent.ts` to `utils.ts` (the original copies in plan-agent.ts still exist and will be removed in Phase 3/7 -- no imports were changed in this phase since configs are not wired up yet). The risk config accepts a pre-built `prompt` string (caller fetches plan context), matching how `startRiskAgent` works today. The review config builds the prompt internally (same as the original `startReviewAgent`). Factory functions do NOT create DB records -- that stays with callers.
+- **Validation results**: Lint passes (oxlint: 0 warnings, 0 errors). TypeScript compiles (`npx tsc --noEmit`: no errors).
 
 ### ⬜ Phase 3: Migrate backend agents to unified function
 - **Step**: 3
@@ -153,5 +155,5 @@ A: useWorkflowAgents becomes a session list with metadata `{type, sessionState, 
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 2
-- **Progress**: 1/7
+- **Current Phase**: Phase 3
+- **Progress**: 2/7
