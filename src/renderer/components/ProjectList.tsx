@@ -1,17 +1,117 @@
+import { useState } from "react";
 import { Ellipsis, Plus } from "lucide-react";
 import { trpc } from "@/trpc";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { ModelSelector } from "./ModelSelector";
 
 interface ProjectListProps {
   selectedProjectId: number | null;
   onSelectProject: (id: number) => void;
+}
+
+function ProjectSettingsDialog({
+  projectId,
+  projectName,
+  open,
+  onOpenChange,
+}: {
+  projectId: number;
+  projectName: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const utils = trpc.useUtils();
+  const { data: settings } = trpc.projects.getSettings.useQuery(
+    { project_id: projectId },
+    { enabled: open },
+  );
+  const setSettingMutation = trpc.projects.setSetting.useMutation({
+    onSuccess: () => {
+      void utils.projects.getSettings.invalidate({ project_id: projectId });
+    },
+  });
+
+  const branchPrefix = settings?.branch_prefix ?? "";
+  const autoCommit = settings?.auto_commit === "true";
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-[560px]">
+        <DialogHeader>
+          <DialogTitle>Project Settings: {projectName}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-5">
+          <div className="space-y-3">
+            <div>
+              <h4 className="text-sm font-semibold">Model Configuration</h4>
+              <p className="text-xs text-muted-foreground">
+                Override models for this project
+              </p>
+            </div>
+            <ModelSelector level="project" projectId={projectId} />
+          </div>
+
+          <div className="space-y-3">
+            <h4 className="text-sm font-semibold">Git &amp; Automation</h4>
+
+            <div className="space-y-1">
+              <span className="text-xs font-medium">Branch Prefix</span>
+              <Input
+                placeholder="e.g. feature/"
+                value={branchPrefix}
+                onChange={(e) =>
+                  setSettingMutation.mutate({
+                    project_id: projectId,
+                    key: "branch_prefix",
+                    value: e.target.value,
+                  })
+                }
+                className="h-8 text-sm"
+              />
+              <p className="text-xs text-muted-foreground">
+                Prefix added to worktree branch names
+              </p>
+            </div>
+
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={autoCommit}
+                onChange={(e) =>
+                  setSettingMutation.mutate({
+                    project_id: projectId,
+                    key: "auto_commit",
+                    value: e.target.checked ? "true" : "false",
+                  })
+                }
+                className="h-4 w-4 rounded border-border"
+              />
+              <div>
+                <span className="text-sm font-medium">Auto-commit</span>
+                <p className="text-xs text-muted-foreground">
+                  Automatically commit changes after agent execution
+                </p>
+              </div>
+            </label>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 export function ProjectList({
@@ -19,6 +119,10 @@ export function ProjectList({
   onSelectProject,
 }: ProjectListProps) {
   const utils = trpc.useUtils();
+  const [settingsProject, setSettingsProject] = useState<{
+    id: number;
+    name: string;
+  } | null>(null);
   const projectsQuery = trpc.projects.list.useQuery();
   const selectFolderMutation = trpc.projects.selectFolder.useMutation();
   const createMutation = trpc.projects.create.useMutation({
@@ -89,6 +193,14 @@ export function ProjectList({
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSettingsProject({ id: project.id, name: project.name });
+                    }}
+                  >
+                    Project Settings
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
                     className="text-destructive focus:text-destructive"
                     onClick={(e) => handleDelete(e, project.id)}
                   >
@@ -105,6 +217,17 @@ export function ProjectList({
           )}
         </div>
       </ScrollArea>
+
+      {settingsProject && (
+        <ProjectSettingsDialog
+          projectId={settingsProject.id}
+          projectName={settingsProject.name}
+          open={true}
+          onOpenChange={(open) => {
+            if (!open) setSettingsProject(null);
+          }}
+        />
+      )}
     </div>
   );
 }

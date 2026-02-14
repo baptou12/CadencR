@@ -33,17 +33,19 @@ Feature-level settings use a `Popover` from a gear icon in `FeatureTopBar.tsx` s
 
 ## Phases
 
-### ⬜ Phase 1: Add project settings popover to project list dropdown
+### ✅ Phase 1: Add project settings popover to project list dropdown
 - **Step**: 1
 - **Complexity**: 3
-- [ ] Add a "Settings" `DropdownMenuItem` to the project `...` menu in `ProjectList.tsx`
-- [ ] Use a `Popover` (or `Dialog`) triggered from the menu item to show project settings
-- [ ] Inside the popover, render `ModelSelector` with `level="project"` and the project's `projectId`
-- [ ] Add branch_prefix and auto_commit settings fields (text input for prefix, toggle for auto_commit) using `projects.getSettings` / `projects.setSetting` tRPC calls
-- [ ] Ensure popover alignment works within the sidebar layout (may need `side="right"` or a Dialog if space is tight)
+- [x] Add a "Settings" `DropdownMenuItem` to the project `...` menu in `ProjectList.tsx`
+- [x] Use a `Popover` (or `Dialog`) triggered from the menu item to show project settings
+- [x] Inside the popover, render `ModelSelector` with `level="project"` and the project's `projectId`
+- [x] Add branch_prefix and auto_commit settings fields (text input for prefix, toggle for auto_commit) using `projects.getSettings` / `projects.setSetting` tRPC calls
+- [x] Ensure popover alignment works within the sidebar layout (may need `side="right"` or a Dialog if space is tight)
 - **Files**: `src/renderer/components/ProjectList.tsx`
 - **Commit message**: `feat: add project-level settings popover to project dropdown menu`
 - **Bisect note**: Self-contained — adds new UI using existing backend endpoints
+- **Implementation notes**: Used a Dialog (not Popover) since the trigger is inside a DropdownMenu which makes nested popovers problematic. Created a `ProjectSettingsDialog` component within ProjectList.tsx that renders ModelSelector with `level="project"` and project-specific settings (branch_prefix as text Input, auto_commit as native checkbox). State for which project's settings to show is managed via `settingsProject` state. Used native checkbox input since no Switch/Checkbox shadcn component was available.
+- **Validation results**: Lint passed (0 errors), typecheck passed (no errors).
 
 ## Phase Status Legend
 
@@ -54,5 +56,5 @@ Feature-level settings use a `Popover` from a gear icon in `FeatureTopBar.tsx` s
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Not started
-- **Progress**: 0/1
+- **Current Phase**: All phases complete
+- **Progress**: 1/1
