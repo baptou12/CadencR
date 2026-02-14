@@ -27,6 +27,8 @@ export interface AgentBlockData {
   childBlocks?: AgentBlockData[];
   /** Whether this Task's subagent has completed */
   taskComplete?: boolean;
+  /** Diff data attached by file_diff events for Write/Edit tool calls */
+  diffData?: { filePath: string; oldContent: string; newContent: string };
 }
 
 interface AgentBlockProps {

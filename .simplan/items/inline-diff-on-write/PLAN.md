@@ -38,16 +38,18 @@ Write tool args contain `{file_path, content}`. Edit tool args contain `{file_pa
 
 ## Phases
 
-### ⬜ Phase 1: Add types and install diff dependency
+### ✅ Phase 1: Add types and install diff dependency
 - **Step**: 1
 - **Complexity**: 1
-- [ ] Add `StreamFileDiff` interface to `src/main/agents/types.ts` with fields: `type: "file_diff"`, `file_path: string`, `old_content: string`, `new_content: string`
-- [ ] Add `StreamFileDiff` to the `StreamEvent` union type
-- [ ] Add optional `diffData?: { filePath: string; oldContent: string; newContent: string }` field to `AgentBlockData` in `src/renderer/components/AgentBlock.tsx`
-- [ ] Install `diff` npm package and `@types/diff` for computing unified diffs from old/new content
+- [x] Add `StreamFileDiff` interface to `src/main/agents/types.ts` with fields: `type: "file_diff"`, `file_path: string`, `old_content: string`, `new_content: string`
+- [x] Add `StreamFileDiff` to the `StreamEvent` union type
+- [x] Add optional `diffData?: { filePath: string; oldContent: string; newContent: string }` field to `AgentBlockData` in `src/renderer/components/AgentBlock.tsx`
+- [x] Install `diff` npm package and `@types/diff` for computing unified diffs from old/new content
 - **Files**: `src/main/agents/types.ts`, `src/renderer/components/AgentBlock.tsx`, `package.json`
 - **Commit message**: `feat: add file_diff event type and diffData field for inline diffs`
 - **Bisect note**: Adding unused types and an unused dependency — safe intermediate state
+- **Implementation notes**: Added `StreamFileDiff` interface after `StreamAgentPaused` in types.ts with JSDoc comment. Added it as the last entry in the `StreamEvent` union. Added `diffData` optional field with JSDoc to `AgentBlockData`. Installed `diff@^8.0.3` as dependency and `@types/diff@^8.0.0` as devDependency (note: `@types/diff` is a stub since diff v8 ships its own types, but it is harmless).
+- **Validation results**: Lint passed (0 warnings, 0 errors). TypeScript type check passed (no errors).
 
 ### ⬜ Phase 2: Main process canUseTool interception
 - **Step**: 2
@@ -112,5 +114,5 @@ Write tool args contain `{file_path, content}`. Edit tool args contain `{file_pa
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Not started
-- **Progress**: 0/5
+- **Current Phase**: Phase 2 (Main process canUseTool interception)
+- **Progress**: 1/5
