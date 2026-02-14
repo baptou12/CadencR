@@ -51,17 +51,19 @@ A: useWorkflowAgents becomes a session list with metadata `{type, sessionState, 
 
 ## Phases
 
-### ⬜ Phase 1: Unified agent config & start function
+### ✅ Phase 1: Unified agent config & start function
 - **Step**: 1
 - **Complexity**: 4
-- [ ] Define `UnifiedAgentConfig` type in `src/main/agents/types.ts`: `{ agentType, systemPrompt?, outputPatterns?: Array<{pattern: RegExp, event: string}>, completionActions?: Array<{event: string, handler: (output, context) => void}>, featureId?, projectId, cwd, prompt, resumeSessionId? }`
-- [ ] Create `startUnifiedAgent(config: UnifiedAgentConfig)` in a new `src/main/agents/unified-agent.ts` — this is the session agent's logic generalized: creates session record, spawns subprocess, sets up multi-turn message stream, bridges to renderer
-- [ ] Add output pattern matching in the event listener: as text accumulates, check each pattern against the full output. When a pattern matches, broadcast a typed event (e.g. `agent:pattern-match`) via IPC and optionally stop the subprocess
-- [ ] Add completion action dispatch: on subprocess exit, run registered completion actions with the full output text and context (featureId, sessionDbId, etc.)
-- [ ] Extract `extractTextFromEvent()` into a shared utility used by the unified agent (eliminate 5 copies)
+- [x] Define `UnifiedAgentConfig` type in `src/main/agents/types.ts`: `{ agentType, systemPrompt?, outputPatterns?: Array<{pattern: RegExp, event: string}>, completionActions?: Array<{event: string, handler: (output, context) => void}>, featureId?, projectId, cwd, prompt, resumeSessionId? }`
+- [x] Create `startUnifiedAgent(config: UnifiedAgentConfig)` in a new `src/main/agents/unified-agent.ts` — this is the session agent's logic generalized: creates session record, spawns subprocess, sets up multi-turn message stream, bridges to renderer
+- [x] Add output pattern matching in the event listener: as text accumulates, check each pattern against the full output. When a pattern matches, broadcast a typed event (e.g. `agent:pattern-match`) via IPC and optionally stop the subprocess
+- [x] Add completion action dispatch: on subprocess exit, run registered completion actions with the full output text and context (featureId, sessionDbId, etc.)
+- [x] Extract `extractTextFromEvent()` into a shared utility used by the unified agent (eliminate 5 copies)
 - **Files**: `src/main/agents/types.ts`, `src/main/agents/unified-agent.ts`, `src/main/agents/utils.ts`
 - **Commit message**: `refactor: create unified agent start function with pattern matching`
 - **Bisect note**: New files only, no existing code changed yet — safe intermediate state
+- **Implementation notes**: Added `OutputPattern`, `CompletionContext`, `CompletionAction`, and `UnifiedAgentConfig` interfaces to `types.ts`. Created `utils.ts` with a single shared `extractTextFromEvent()` function (currently 5 copies exist in the individual agent files -- those will be removed in Phase 7). Created `unified-agent.ts` with `startUnifiedAgent()` that: (1) creates a DB session record, (2) resolves the model, (3) spawns a subprocess via `startSubprocess`, (4) bridges events to the renderer, (5) persists the initial user message, (6) accumulates output text and checks patterns using a deduplicating `Set<string>` to prevent re-firing, (7) broadcasts `agent:pattern-match` events via IPC on first match, and (8) runs completion actions on subprocess exit with error isolation (each action is try/caught independently). Pattern matching uses `checkPatterns()` which tests each registered regex against the full accumulated output and broadcasts matches via the `AGENT_PATTERN_MATCH_CHANNEL` IPC channel.
+- **Validation results**: Lint passes (exit 0, 0 errors). TypeScript compiles (`npx tsc --noEmit` exit 0, no errors). `pnpm run build` does not exist as a script in this project (available scripts: start, package, make, lint, lint:fix, format, format:check, prepare) -- this completion condition in the plan is invalid, but `tsc --noEmit` confirms the code compiles correctly.
 
 ### ⬜ Phase 2: Output matcher system
 - **Step**: 2
@@ -151,5 +153,5 @@ A: useWorkflowAgents becomes a session list with metadata `{type, sessionState, 
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Not started
-- **Progress**: 0/7
+- **Current Phase**: Phase 2
+- **Progress**: 1/7

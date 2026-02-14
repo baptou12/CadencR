@@ -143,3 +143,65 @@ export interface AgentInfo {
   status: string;
   startedAt: string;
 }
+
+// ---------------------------------------------------------------------------
+// Unified agent configuration
+// ---------------------------------------------------------------------------
+
+/** An output pattern to match against accumulated agent output text. */
+export interface OutputPattern {
+  /** Regex to test against the full accumulated output */
+  pattern: RegExp;
+  /** Logical name for this match (e.g. "plan_complete", "review_approved") */
+  event: string;
+}
+
+/** Context object passed to completion action handlers. */
+export interface CompletionContext {
+  /** The agent type that completed */
+  agentType: AgentType;
+  /** The subprocess exit code */
+  exitCode: number;
+  /** The database session ID */
+  sessionDbId: number;
+  /** The feature ID (if any) */
+  featureId?: number;
+  /** The project ID */
+  projectId: number;
+}
+
+/** A completion action to run when the subprocess exits. */
+export interface CompletionAction {
+  /** Logical event name (for documentation / filtering) */
+  event: string;
+  /** Handler called with the full accumulated output and context */
+  handler: (output: string, context: CompletionContext) => void;
+}
+
+/**
+ * Unified configuration for starting any agent type.
+ *
+ * All agent types (plan, brainstorm, execute, risk, review, session) can be
+ * expressed as a UnifiedAgentConfig — the only differences are the system
+ * prompt, output patterns, and completion actions.
+ */
+export interface UnifiedAgentConfig {
+  /** The agent type identifier */
+  agentType: AgentType;
+  /** System prompt for the Claude session */
+  systemPrompt?: string;
+  /** Patterns to match against accumulated output during streaming */
+  outputPatterns?: OutputPattern[];
+  /** Actions to run when the subprocess exits */
+  completionActions?: CompletionAction[];
+  /** Feature ID (optional — sessions can run without a feature) */
+  featureId?: number;
+  /** Project ID */
+  projectId: number;
+  /** Working directory (project root or worktree path) */
+  cwd: string;
+  /** User prompt / initial message */
+  prompt: string;
+  /** Existing Claude session ID to resume */
+  resumeSessionId?: string;
+}
