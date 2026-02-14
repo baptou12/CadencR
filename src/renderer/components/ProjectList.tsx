@@ -12,13 +12,11 @@ import {
 interface ProjectListProps {
   selectedProjectId: number | null;
   onSelectProject: (id: number) => void;
-  keyboardFocusProjectId?: number | null;
 }
 
 export function ProjectList({
   selectedProjectId,
   onSelectProject,
-  keyboardFocusProjectId,
 }: ProjectListProps) {
   const utils = trpc.useUtils();
   const projectsQuery = trpc.projects.list.useQuery();
@@ -67,12 +65,15 @@ export function ProjectList({
             <button
               key={project.id}
               type="button"
+              data-nav-item
+              data-nav-type="project"
+              data-nav-id={String(project.id)}
               onClick={() => onSelectProject(project.id)}
-              className={`group flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm transition-colors ${
+              className={`group flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background ${
                 selectedProjectId === project.id
                   ? "bg-accent text-accent-foreground"
                   : "hover:bg-accent/50"
-              } ${keyboardFocusProjectId === project.id ? "ring-2 ring-ring ring-offset-1 ring-offset-background" : ""}`}
+              }`}
             >
               <span className="truncate">{project.name}</span>
               <DropdownMenu>

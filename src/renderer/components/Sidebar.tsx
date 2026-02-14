@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useRef, useState } from "react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useHotkeys } from "react-hotkeys-hook";
 import { Settings } from "lucide-react";
@@ -6,26 +6,17 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { ProjectList } from "@/components/ProjectList";
 import { FeatureList } from "@/components/FeatureList";
-import { useFocusContext } from "@/contexts/FocusContext";
-import { trpc } from "@/trpc";
 
-type NavItem =
-  | { type: "project"; id: number }
-  | { type: "feature"; id: number; projectId: number };
+function isSidebarFocused() {
+  const zone = document.querySelector('[data-focus-zone="left-sidebar"]');
+  return zone && (zone === document.activeElement || zone.contains(document.activeElement));
+}
 
 export function Sidebar() {
-  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(
-    null,
-  );
-  const [selectedFeatureId, setSelectedFeatureId] = useState<number | null>(
-    null,
-  );
-  const [keyboardFocusIndex, setKeyboardFocusIndex] = useState<number | null>(
-    null,
-  );
-
   const navigate = useNavigate();
-  const { focusZone } = useFocusContext();
+  const sidebarRef = useRef<HTMLElement>(null);
+  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
+  const [selectedFeatureId, setSelectedFeatureId] = useState<number | null>(null);
 
   // Detect active project/feature from current route
   const routerState = useRouterState();
@@ -39,128 +30,75 @@ export function Sidebar() {
   const effectiveProjectId = activeProjectId ?? selectedProjectId;
   const effectiveFeatureId = activeFeatureId ?? selectedFeatureId;
 
-  // Fetch projects at sidebar level for keyboard navigation
-  const projectsQuery = trpc.projects.list.useQuery();
-  const projectsData = projectsQuery.data;
+  const getNavItems = () => {
+    if (!sidebarRef.current) return [];
+    return Array.from(sidebarRef.current.querySelectorAll("[data-nav-item]")) as HTMLElement[];
+  };
 
-  // Fetch features for the effective project
-  const featuresQuery = trpc.features.listByProject.useQuery(
-    { project_id: effectiveProjectId! },
-    { enabled: effectiveProjectId !== null },
-  );
-  const featuresData = featuresQuery.data;
+  const moveFocus = (direction: "up" | "down") => {
+    const items = getNavItems();
+    if (items.length === 0) return;
 
-  // Build flat navigation list: projects with their features interleaved
-  const navItems: NavItem[] = useMemo(() => {
-    const projects = projectsData ?? [];
-    const features = featuresData ?? [];
-    const items: NavItem[] = [];
-    for (const project of projects) {
-      items.push({ type: "project", id: project.id });
-      // Only include features for the currently selected project
-      if (project.id === effectiveProjectId) {
-        for (const feature of features) {
-          items.push({
-            type: "feature",
-            id: feature.id,
-            projectId: project.id,
-          });
-        }
-      }
+    const currentIndex = items.findIndex((el) => el === document.activeElement);
+    let nextIndex: number;
+    if (currentIndex === -1) {
+      nextIndex = direction === "down" ? 0 : items.length - 1;
+    } else if (direction === "down") {
+      nextIndex = currentIndex >= items.length - 1 ? 0 : currentIndex + 1;
+    } else {
+      nextIndex = currentIndex <= 0 ? items.length - 1 : currentIndex - 1;
     }
-    return items;
-  }, [projectsData, featuresData, effectiveProjectId]);
+    items[nextIndex].focus({ focusVisible: true } as FocusOptions);
+  };
 
-  // Determine keyboard focus item for passing to children
-  const keyboardFocusItem =
-    keyboardFocusIndex !== null && keyboardFocusIndex < navItems.length
-      ? navItems[keyboardFocusIndex]
-      : null;
+  // CMD+OPT+DOWN: move focus down in the sidebar
+  useHotkeys(
+    "meta+alt+down",
+    (e) => {
+      if (!isSidebarFocused()) return;
+      e.preventDefault();
+      moveFocus("down");
+    },
+    { enableOnFormTags: true },
+  );
 
-  const keyboardFocusProjectId =
-    keyboardFocusItem?.type === "project" ? keyboardFocusItem.id : null;
-  const keyboardFocusFeatureId =
-    keyboardFocusItem?.type === "feature" ? keyboardFocusItem.id : null;
+  // CMD+OPT+UP: move focus up in the sidebar
+  useHotkeys(
+    "meta+alt+up",
+    (e) => {
+      if (!isSidebarFocused()) return;
+      e.preventDefault();
+      moveFocus("up");
+    },
+    { enableOnFormTags: true },
+  );
 
-  const navigateToItem = useCallback(
-    (item: NavItem) => {
-      if (item.type === "project") {
-        setSelectedProjectId(item.id);
-        setSelectedFeatureId(null);
-        // No dedicated project route exists, selecting project updates sidebar
-      } else {
-        setSelectedProjectId(item.projectId);
-        setSelectedFeatureId(item.id);
+  // Enter: navigate to the focused item
+  useHotkeys(
+    "enter",
+    (e) => {
+      if (!isSidebarFocused()) return;
+      const focused = document.activeElement as HTMLElement | null;
+      if (!focused?.hasAttribute("data-nav-item")) return;
+      e.preventDefault();
+
+      const type = focused.getAttribute("data-nav-type");
+      const id = focused.getAttribute("data-nav-id");
+      const projectId = focused.getAttribute("data-nav-project-id");
+
+      if (type === "feature" && id && projectId) {
         void navigate({
           to: "/projects/$projectId/features/$featureId",
-          params: {
-            projectId: String(item.projectId),
-            featureId: String(item.id),
-          },
+          params: { projectId, featureId: id },
         });
       }
+      // For projects, just focusing is enough — the project is already "selected" visually
     },
-    [navigate],
-  );
-
-  // CMD+DOWN: move selection down in the sidebar
-  useHotkeys(
-    "meta+down",
-    (e) => {
-      e.preventDefault();
-      if (navItems.length === 0) return;
-
-      setKeyboardFocusIndex((prev) => {
-        let nextIndex: number;
-        if (prev === null) {
-          nextIndex = 0;
-        } else if (prev >= navItems.length - 1) {
-          // Wrap to top
-          nextIndex = 0;
-        } else {
-          nextIndex = prev + 1;
-        }
-        navigateToItem(navItems[nextIndex]);
-        return nextIndex;
-      });
-    },
-    {
-      enabled: focusZone === "left-sidebar",
-      enableOnFormTags: false,
-    },
-    [navItems, focusZone, navigateToItem],
-  );
-
-  // CMD+UP: move selection up in the sidebar
-  useHotkeys(
-    "meta+up",
-    (e) => {
-      e.preventDefault();
-      if (navItems.length === 0) return;
-
-      setKeyboardFocusIndex((prev) => {
-        let nextIndex: number;
-        if (prev === null) {
-          nextIndex = navItems.length - 1;
-        } else if (prev <= 0) {
-          // Wrap to bottom
-          nextIndex = navItems.length - 1;
-        } else {
-          nextIndex = prev - 1;
-        }
-        navigateToItem(navItems[nextIndex]);
-        return nextIndex;
-      });
-    },
-    {
-      enabled: focusZone === "left-sidebar",
-      enableOnFormTags: false,
-    },
-    [navItems, focusZone, navigateToItem],
+    { enableOnFormTags: false },
   );
 
   return (
-    <aside className="flex h-full flex-col bg-sidebar">
+    <aside ref={sidebarRef} className="flex h-full flex-col bg-sidebar">
       <div className="flex items-center justify-between px-4 py-2">
         <span className="text-sm font-semibold">ProductDevR</span>
         <Link to="/settings">
@@ -177,7 +115,6 @@ export function Sidebar() {
         <ProjectList
           selectedProjectId={effectiveProjectId}
           onSelectProject={setSelectedProjectId}
-          keyboardFocusProjectId={keyboardFocusProjectId}
         />
       </div>
 
@@ -189,7 +126,6 @@ export function Sidebar() {
             projectId={effectiveProjectId}
             selectedFeatureId={effectiveFeatureId ?? undefined}
             onSelectFeature={setSelectedFeatureId}
-            keyboardFocusFeatureId={keyboardFocusFeatureId}
           />
         ) : (
           <p className="px-2 py-4 text-center text-xs text-muted-foreground">

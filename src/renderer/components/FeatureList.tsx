@@ -43,14 +43,12 @@ interface FeatureListProps {
   projectId: number;
   selectedFeatureId?: number;
   onSelectFeature?: (featureId: number) => void;
-  keyboardFocusFeatureId?: number | null;
 }
 
 export function FeatureList({
   projectId,
   selectedFeatureId,
   onSelectFeature,
-  keyboardFocusFeatureId,
 }: FeatureListProps) {
   const navigate = useNavigate();
   const [statusFilter, setStatusFilter] = useState<FeatureStatus | "all">("all");
@@ -180,9 +178,13 @@ export function FeatureList({
               key={feature.id}
               role="button"
               tabIndex={0}
-              className={`group flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-accent ${
+              data-nav-item
+              data-nav-type="feature"
+              data-nav-id={String(feature.id)}
+              data-nav-project-id={String(projectId)}
+              className={`group flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background ${
                 selectedFeatureId === feature.id ? "bg-accent" : ""
-              } ${keyboardFocusFeatureId === feature.id ? "ring-2 ring-ring ring-offset-1 ring-offset-background" : ""}`}
+              }`}
               onClick={() => {
                 onSelectFeature?.(feature.id);
                 void navigate({

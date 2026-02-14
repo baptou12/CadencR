@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   createRootRoute,
   Outlet,
@@ -15,8 +15,6 @@ import {
   ResizableHandle,
 } from "@/components/ui/resizable";
 import type { PanelSize } from "react-resizable-panels";
-import { FocusProvider } from "@/contexts/FocusContext";
-import { useAppFocus } from "@/hooks/useAppFocus";
 import { trpc } from "@/trpc";
 import {
   Dialog,
@@ -29,24 +27,43 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
+const ZONE_ORDER = ["left-sidebar", "main-content", "right-sidebar"] as const;
+
+function focusZoneByDirection(direction: "left" | "right") {
+  const active = document.activeElement;
+  let currentIndex = -1;
+  for (let i = 0; i < ZONE_ORDER.length; i++) {
+    const el = document.querySelector(`[data-focus-zone="${ZONE_ORDER[i]}"]`);
+    if (el && (el === active || el.contains(active))) {
+      currentIndex = i;
+      break;
+    }
+  }
+  const len = ZONE_ORDER.length;
+  const nextIndex =
+    direction === "right"
+      ? (currentIndex + 1) % len
+      : (currentIndex - 1 + len) % len;
+  const nextEl = document.querySelector(
+    `[data-focus-zone="${ZONE_ORDER[nextIndex]}"]`,
+  ) as HTMLElement | null;
+  nextEl?.focus();
+}
+
 export const Route = createRootRoute({
   component: RootLayout,
 });
 
 function RootLayout() {
-  return (
-    <FocusProvider>
-      <RootLayoutInner />
-    </FocusProvider>
-  );
-}
-
-function RootLayoutInner() {
   useDbUpdated();
   const leftWidth = useDebouncedSetting("sidebar_left_width");
-  const { focusZone, setFocusZone, moveFocusLeft, moveFocusRight } =
-    useAppFocus();
   const navigate = useNavigate();
+  const leftSidebarRef = useRef<HTMLDivElement>(null);
+
+  // Auto-focus left sidebar on mount
+  useEffect(() => {
+    leftSidebarRef.current?.focus();
+  }, []);
 
   // Extract active project ID from the current route
   const routerState = useRouterState();
@@ -120,20 +137,20 @@ function RootLayoutInner() {
 
   // CMD+OPT+LEFT -> cycle focus left
   useHotkeys(
-    "meta+alt+ArrowLeft",
+    "meta+alt+left",
     (e) => {
       e.preventDefault();
-      moveFocusLeft();
+      focusZoneByDirection("left");
     },
     { enableOnFormTags: true },
   );
 
   // CMD+OPT+RIGHT -> cycle focus right
   useHotkeys(
-    "meta+alt+ArrowRight",
+    "meta+alt+right",
     (e) => {
       e.preventDefault();
-      moveFocusRight();
+      focusZoneByDirection("right");
     },
     { enableOnFormTags: true },
   );
@@ -169,8 +186,6 @@ function RootLayoutInner() {
 
   const defaultLeftSize = leftWidth.value ? `${leftWidth.value}px` : "256px";
 
-  const focusRingClass = "ring-2 ring-blue-500/50";
-
   return (
     <div className="flex h-screen" style={{ paddingTop: 28 }}>
       <div
@@ -189,9 +204,10 @@ function RootLayoutInner() {
           onResize={handleLeftResize}
         >
           <div
+            ref={leftSidebarRef}
             data-focus-zone="left-sidebar"
-            className={`h-full ${focusZone === "left-sidebar" ? focusRingClass : ""}`}
-            onClick={() => setFocusZone("left-sidebar")}
+            tabIndex={0}
+            className="h-full outline-none focus-within:ring-2 focus-within:ring-blue-500/50"
           >
             <Sidebar />
           </div>
@@ -200,8 +216,8 @@ function RootLayoutInner() {
         <ResizablePanel>
           <main
             data-focus-zone="main-content"
-            className={`h-full overflow-hidden ${focusZone === "main-content" ? focusRingClass : ""}`}
-            onClick={() => setFocusZone("main-content")}
+            tabIndex={0}
+            className="h-full overflow-hidden outline-none focus-within:ring-2 focus-within:ring-blue-500/50"
           >
             <Outlet />
           </main>
