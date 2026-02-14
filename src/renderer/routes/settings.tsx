@@ -7,6 +7,32 @@ export const Route = createFileRoute("/settings")({
   component: SettingsPage,
 });
 
+function AgentAutonomySelect() {
+  const autonomy = trpc.settings.get.useQuery({ key: "agent_autonomy" });
+  const utils = trpc.useContext();
+  const setAutonomy = trpc.settings.set.useMutation({
+    onSuccess: () => {
+      utils.settings.get.invalidate({ key: "agent_autonomy" });
+    },
+  });
+
+  const currentValue = autonomy.data ?? "1";
+
+  return (
+    <select
+      className="border rounded px-3 py-1.5 text-sm bg-background"
+      value={currentValue}
+      onChange={(e) =>
+        setAutonomy.mutate({ key: "agent_autonomy", value: e.target.value })
+      }
+    >
+      <option value="1">Low — ask before commit</option>
+      <option value="2">Medium — manual continue</option>
+      <option value="3">High — full auto</option>
+    </select>
+  );
+}
+
 function SettingsPage() {
   const [key, setKey] = useState("");
   const [value, setValue] = useState("");
@@ -32,6 +58,17 @@ function SettingsPage() {
           </p>
         </div>
         <ModelSelector level="global" />
+      </section>
+
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-lg font-semibold">Agent Autonomy</h2>
+          <p className="text-sm text-muted-foreground">
+            Controls how much automation the execute agent uses when building
+            features.
+          </p>
+        </div>
+        <AgentAutonomySelect />
       </section>
 
       <section className="space-y-4">
