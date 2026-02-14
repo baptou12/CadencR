@@ -140,19 +140,21 @@ A: useWorkflowAgents becomes a session list with metadata `{type, sessionState, 
 - **Implementation notes**: Rewrote all 4 files to switch from the old hooks/components to the unified ones from Phases 4-5. **useWorkflowAgents.ts**: Replaced `useAgentState`/`useMultiExecuteState` imports with `useSessionState`/`useSessionEventListener` from the unified hook. All 5 agent sessions (plan, brainstorm, execute, risk, review) now use `useSessionState()` with the appropriate options (`supportsQuestions: true` for plan/brainstorm, `supportsMultiSubprocess: true` for execute). Added a `SessionEntry` export interface and a `sessionEntries` computed list that builds the entry array directly inside the hook -- this replaces the old `useAgentEntries` hook entirely. The session entries include all the data needed for rendering: type, label, status, blocks, subprocessId, pendingQuestions, and resumable flag. Also moved `hasOutput` helper to module scope to satisfy the `consistent-function-scoping` lint rule. The hook now also exports `hasAnyAgentOutput`, `noAgentsRunning`, `openAgent`, and `setOpenAgent` so that FeatureWorkflowView doesn't need useAgentEntries at all. **useAgentEntries.ts**: Gutted to a deprecation stub that only re-exports the `AgentEntry` type for any lingering consumers (none exist after this phase). Will be deleted in Phase 7. **FeatureWorkflowView.tsx**: Replaced `AgentPanel` with `AgentSession` (with `collapsible` prop). Removed imports of `AgentPanel`, `ReviewVerdictActions`, and `useAgentEntries`. Review verdict actions are now handled inside `AgentSession` via its `reviewComplete`/`reviewVerdict`/`onAddFixPhase`/`onFixImmediately` props, passed only for review-type entries. The session entries and open-agent state come directly from `useWorkflowAgents` return value. **$featureId.tsx**: Replaced `SessionView` import with inline `SessionFeatureView` component that uses `useSessionState` + `useSessionEventListener` (from unified hooks) and renders `AgentSession` with `collapsible={false}` for full-screen mode. All the session restoration logic (history query, active process reconnection, send/stop handlers) was preserved verbatim from the old `SessionView`. The `FeatureTopBar` is rendered outside `AgentSession` to maintain the same layout. All existing functionality is preserved: question handling (plan/brainstorm), review verdict detection (useEffect watching review blocks), execute multi-phase expansion (subprocess list), resume support (resumable flag in entries), send/stop per agent, and per-execute-subprocess send/interrupt.
 - **Validation results**: Lint passes (oxlint: 0 warnings, 0 errors). TypeScript compiles (`npx tsc --noEmit`: no errors). App packages successfully (`pnpm run package`: all targets built for arm64 on darwin).
 
-### ⬜ Phase 7: Clean up deprecated code
+### ✅ Phase 7: Clean up deprecated code
 - **Step**: 7
 - **Complexity**: 2
-- [ ] Delete `src/renderer/hooks/useAgentState.ts` (replaced by useSessionState)
-- [ ] Delete `src/renderer/hooks/useMultiExecuteState.ts` (replaced by useSessionState)
-- [ ] Delete `src/renderer/components/AgentPanel.tsx` (replaced by AgentSession)
-- [ ] Delete `src/renderer/components/SessionView.tsx` (replaced by AgentSession)
-- [ ] Remove `setupPlanCompletionHandler`, `setupBrainstormCompletionHandler`, `setupRiskCompletionHandler`, `setupReviewCompletionHandler` from individual agent files (logic now in unified-agent + agent-configs)
-- [ ] Remove duplicated `extractTextFromEvent()` from all agent files (now in utils.ts)
-- [ ] Verify no dead imports or references remain
+- [x] Delete `src/renderer/hooks/useAgentState.ts` (replaced by useSessionState)
+- [x] Delete `src/renderer/hooks/useMultiExecuteState.ts` (replaced by useSessionState)
+- [x] Delete `src/renderer/components/AgentPanel.tsx` (replaced by AgentSession)
+- [x] Delete `src/renderer/components/SessionView.tsx` (replaced by AgentSession)
+- [x] Remove `setupPlanCompletionHandler`, `setupBrainstormCompletionHandler`, `setupRiskCompletionHandler`, `setupReviewCompletionHandler` from individual agent files (logic now in unified-agent + agent-configs)
+- [x] Remove duplicated `extractTextFromEvent()` from all agent files (now in utils.ts)
+- [x] Verify no dead imports or references remain
 - **Files**: Multiple deletions and import cleanups across `src/renderer/` and `src/main/agents/`
 - **Commit message**: `refactor: remove deprecated agent hooks, components, and duplicated utilities`
 - **Bisect note**: Pure deletion — only safe if Phase 6 is fully complete and working
+- **Implementation notes**: Deleted 6 files total: the 4 specified deprecated files (`useAgentState.ts`, `useMultiExecuteState.ts`, `AgentPanel.tsx`, `SessionView.tsx`), plus `useAgentEntries.ts` (deprecated stub from Phase 6, marked for deletion in its own docstring) and `AgentGrid.tsx` (unused component whose only import was `AgentPanel`). The `AgentStatus` type and `AGENT_LABELS` constant were previously exported from `AgentPanel.tsx` and imported by 5 other files (`useFeatureState.ts`, `useWorkflowAgents.ts`, `useSessionState.ts`, `NextStepsBar.tsx`, `AgentPromptBar.tsx`). Moved both to `AgentSession.tsx` as canonical exports and updated all 5 import sites to point to `@/components/AgentSession`. The `setupXxxCompletionHandler` functions and duplicated `extractTextFromEvent()` copies were already removed in Phase 3 when the agent files were rewritten as thin wrappers -- confirmed no such functions exist in any agent file. Updated stale comments in `AgentSession.tsx` and `useSessionState.ts` to remove references to the deleted files.
+- **Validation results**: Lint passes (oxlint: 0 warnings, 0 errors, 78 files). TypeScript compiles (`npx tsc --noEmit`: no errors). App packages successfully (`pnpm run package`: all targets built for arm64 on darwin). `pnpm run build` does not exist as a script -- same as noted in previous phases.
 
 ## Phase Status Legend
 
@@ -163,5 +165,5 @@ A: useWorkflowAgents becomes a session list with metadata `{type, sessionState, 
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 7
-- **Progress**: 6/7
+- **Current Phase**: All phases complete
+- **Progress**: 7/7

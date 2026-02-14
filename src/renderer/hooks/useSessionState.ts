@@ -1,20 +1,16 @@
 /**
  * Unified renderer state hook for all agent types.
  *
- * Combines the logic from `useAgentState` (blocks, status, questions) and
- * `useMultiExecuteState` (multi-subprocess tracking) into a single hook
+ * Manages both single-subprocess state (blocks, status, questions) and
+ * multi-subprocess tracking (for execute agent parallelism) in a single hook
  * configurable via options.
- *
- * This is a new file (Phase 4) — the old hooks still exist and are used
- * by existing consumers.  This hook exports a compatible interface shape
- * so consumers can migrate incrementally.
  */
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import type { AgentBlockData } from "@/components/AgentBlock";
 import type { AgentQuestion } from "@/components/AgentQuestionDrawer";
 import type { AgentEvent, AgentType } from "../../main/agents/types";
-import type { AgentStatus } from "@/components/AgentPanel";
+import type { AgentStatus } from "@/components/AgentSession";
 
 // ---------------------------------------------------------------------------
 // Block helpers (shared between single and multi mode)
@@ -887,10 +883,6 @@ export function useSessionState(
 /**
  * Hook to listen for agent events via the IPC bridge and dispatch
  * them to the correct agent state handler.
- *
- * Re-exported here for convenience so consumers that migrate to
- * `useSessionState` don't need to import from the old `useAgentState`
- * module.
  */
 export function useSessionEventListener(
   handlers: Record<

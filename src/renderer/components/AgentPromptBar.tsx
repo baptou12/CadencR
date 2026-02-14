@@ -4,7 +4,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { AgentQuestionDrawer } from "./AgentQuestionDrawer";
 import type { AgentQuestion } from "./AgentQuestionDrawer";
-import type { AgentStatus } from "@/components/AgentPanel";
+import type { AgentStatus } from "@/components/AgentSession";
 
 export interface AgentPromptBarProps {
   onSend: (message: string) => void;

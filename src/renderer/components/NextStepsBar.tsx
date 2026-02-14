@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Loader2Icon } from "lucide-react";
-import type { AgentStatus } from "@/components/AgentPanel";
+import type { AgentStatus } from "@/components/AgentSession";
 import { AGENT_ICONS } from "@/components/agent-icons";
 
 interface NextStepsBarProps {

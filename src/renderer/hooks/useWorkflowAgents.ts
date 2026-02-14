@@ -3,7 +3,7 @@ import { trpc } from "@/trpc";
 import { useSessionState, useSessionEventListener } from "@/hooks/useSessionState";
 import type { AgentBlockData } from "@/components/AgentBlock";
 import type { AgentType } from "../../main/agents/types";
-import type { AgentStatus } from "@/components/AgentPanel";
+import type { AgentStatus } from "@/components/AgentSession";
 
 // ---------------------------------------------------------------------------
 // Types

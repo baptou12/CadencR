@@ -1,6 +1,5 @@
 /**
- * Unified agent UI component that replaces both SessionView (full-screen)
- * and AgentPanel (collapsible workflow panel).
+ * Unified agent UI component for all agent types.
  *
  * When `collapsible` is true, renders with a header and toggle (for workflow
  * view where multiple agents show).  When false, renders full-screen (for
@@ -29,12 +28,25 @@ import { ReviewVerdictActions } from "./ReviewVerdictActions";
 import type { AgentBlockData } from "./AgentBlock";
 import type { AgentType } from "../../main/agents/types";
 import type { AgentQuestion } from "./AgentQuestionDrawer";
-import type { AgentStatus } from "./AgentPanel";
-import { AGENT_LABELS } from "./AgentPanel";
 import { AGENT_ICONS } from "./agent-icons";
 
 // ---------------------------------------------------------------------------
-// Status badge configuration (same as AgentPanel)
+// Shared types & constants (previously in AgentPanel, now canonical here)
+// ---------------------------------------------------------------------------
+
+export type AgentStatus = "idle" | "running" | "complete" | "error" | "paused";
+
+export const AGENT_LABELS: Record<AgentType, string> = {
+  plan: "Plan",
+  brainstorm: "Brainstorm",
+  execute: "Execute",
+  risk: "Risk Analysis",
+  review: "Review",
+  session: "Session",
+};
+
+// ---------------------------------------------------------------------------
+// Status badge configuration
 // ---------------------------------------------------------------------------
 
 const STATUS_BADGE: Record<
@@ -175,7 +187,7 @@ export function AgentSession({
     // Always show in non-collapsible (full-screen) mode unless totally idle with no blocks
     if (!collapsible) return true;
 
-    // In collapsible mode, follow the same logic as AgentPanel:
+    // In collapsible mode:
     // Show when agent has output, is running, or has pending questions.
     // Hidden for one-shot agents (plan, brainstorm) once they complete.
     const hasOutput = blocks.length > 0;
