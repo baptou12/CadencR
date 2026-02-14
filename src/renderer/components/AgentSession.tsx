@@ -21,6 +21,7 @@ import {
   ChevronRightIcon,
   PauseCircleIcon,
   RotateCcwIcon,
+  FileEditIcon,
 } from "lucide-react";
 import { AgentStream } from "./AgentStream";
 import { AgentPromptBar, type AgentPromptBarHandle } from "./AgentPromptBar";
@@ -131,6 +132,12 @@ export interface AgentSessionProps {
   isStartingFix?: boolean;
   /** Whether this agent session is keyboard-focused (shows ring outline) */
   keyboardFocused?: boolean;
+
+  // --- Diff trigger props ---
+  /** Whether the agent made file changes during its session */
+  hasFileChanges?: boolean;
+  /** Called when user clicks "Review Changes" to open the diff viewer */
+  onViewDiff?: () => void;
 }
 
 /** Handle exposed by AgentSession via forwardRef */
@@ -168,6 +175,8 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
   isAddingFixPhase,
   isStartingFix,
   keyboardFocused,
+  hasFileChanges,
+  onViewDiff,
 }, ref) {
   const promptBarRef = useRef<AgentPromptBarHandle>(null);
 
@@ -232,6 +241,20 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
       />
     ) : null;
 
+  // ---- Inline diff trigger bar ----
+  const showDiffBar =
+    hasFileChanges && onViewDiff;
+
+  const diffBar = showDiffBar ? (
+    <div
+      className="flex cursor-pointer items-center gap-2 border-t border-border bg-muted px-4 py-2 text-xs text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+      onClick={onViewDiff}
+    >
+      <FileEditIcon className="size-3.5" />
+      <span>Files changed &mdash; <span className="underline underline-offset-2">Review Changes</span></span>
+    </div>
+  ) : null;
+
   // ---- Stream content ----
   const streamContent = (
     <>
@@ -275,6 +298,9 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
 
         {/* Review verdict actions */}
         {reviewVerdictSection}
+
+        {/* Inline diff trigger */}
+        {diffBar}
 
         {/* Prompt bar pinned at bottom */}
         {promptBar && (
@@ -355,6 +381,9 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
 
           {/* Review verdict actions */}
           {reviewVerdictSection}
+
+          {/* Inline diff trigger */}
+          {diffBar}
 
           {/* Prompt bar */}
           {promptBar && (

@@ -24,6 +24,8 @@ export function parseUnifiedDiff(rawDiff: string): FileDiffSection[] {
       continue;
     }
 
+    // Capture the full diff block for this file (headers + hunks) as a single string
+    const blockStart = i;
     let oldFileName = "";
     let newFileName = "";
     i++;
@@ -39,17 +41,18 @@ export function parseUnifiedDiff(rawDiff: string): FileDiffSection[] {
     }
 
     // Collect all hunk lines for this file
-    const hunkLines: string[] = [];
     while (i < lines.length && !lines[i].startsWith("diff --git ")) {
-      hunkLines.push(lines[i]);
       i++;
     }
 
     if (oldFileName || newFileName) {
+      // DiffFile.createInstance expects hunks as an array with
+      // the full diff text (headers + hunks) as a single string entry
+      const fullBlock = lines.slice(blockStart, i).join("\n");
       sections.push({
         oldFileName: oldFileName || "/dev/null",
         newFileName: newFileName || "/dev/null",
-        hunks: hunkLines,
+        hunks: [fullBlock],
       });
     }
   }

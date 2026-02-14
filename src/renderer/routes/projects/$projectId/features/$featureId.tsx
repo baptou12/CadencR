@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useCallback, useRef } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { trpc } from "@/trpc";
 import { FeatureTopBar } from "@/components/FeatureTopBar";
 import { AgentSession, type AgentSessionHandle } from "@/components/AgentSession";
 import { FeatureWorkflowView } from "@/components/FeatureWorkflowView";
+import { DiffViewerModal } from "@/components/diff/DiffViewerModal";
 import { useSessionState, useSessionEventListener } from "@/hooks/useSessionState";
 import type { AgentBlockData } from "@/components/AgentBlock";
 
@@ -55,6 +56,8 @@ function SessionFeatureView({
 }) {
   const session = useSessionState();
   const agentRef = useRef<AgentSessionHandle>(null);
+  const [inlineDiffOpen, setInlineDiffOpen] = useState(false);
+  const handleViewDiff = useCallback(() => setInlineDiffOpen(true), []);
 
   // When main-content zone receives focus, auto-focus the text input
   useEffect(() => {
@@ -226,6 +229,13 @@ function SessionFeatureView({
         onSend={handleSend}
         onStop={handleStop}
         disabled={startSessionMutation.isLoading || resumeMutation.isLoading}
+        hasFileChanges={session.hasFileChanges}
+        onViewDiff={handleViewDiff}
+      />
+      <DiffViewerModal
+        featureId={featureId}
+        open={inlineDiffOpen}
+        onOpenChange={setInlineDiffOpen}
       />
     </div>
   );

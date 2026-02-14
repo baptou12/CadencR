@@ -30,6 +30,8 @@ export interface SessionEntry {
   resumable: boolean;
   /** DB session ID for this entry (used for targeted resume of parallel phases) */
   sessionDbId?: number;
+  /** Whether this agent made file changes (detected Write/Edit tool usage) */
+  hasFileChanges: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -963,6 +965,7 @@ export function useWorkflowAgents({
         pendingQuestions: plan.pendingQuestions,
         resumable: resumableByType.has("plan"),
         sessionDbId: resumableByType.get("plan")?.sessionDbId,
+        hasFileChanges: plan.hasFileChanges,
       });
     }
     if (hasOutput(brainstorm)) {
@@ -975,6 +978,7 @@ export function useWorkflowAgents({
         pendingQuestions: brainstorm.pendingQuestions,
         resumable: resumableByType.has("brainstorm"),
         sessionDbId: resumableByType.get("brainstorm")?.sessionDbId,
+        hasFileChanges: brainstorm.hasFileChanges,
       });
     }
 
@@ -997,6 +1001,7 @@ export function useWorkflowAgents({
           pendingQuestions: hasQuestion ? execute.pendingQuestions : [],
           resumable: sub.sessionDbId != null && resumableBySessionId.has(sub.sessionDbId),
           sessionDbId: sub.sessionDbId,
+          hasFileChanges: execute.hasFileChanges,
         });
       }
     } else if (hasOutput(execute)) {
@@ -1010,6 +1015,7 @@ export function useWorkflowAgents({
         pendingQuestions: execute.pendingQuestions,
         resumable: resumableByType.has("execute"),
         sessionDbId: resumableByType.get("execute")?.sessionDbId,
+        hasFileChanges: execute.hasFileChanges,
       });
     }
 
@@ -1026,6 +1032,7 @@ export function useWorkflowAgents({
         subprocessId: null,
         pendingQuestions: [],
         resumable: false,
+        hasFileChanges: execute.hasFileChanges,
       });
     }
 
@@ -1039,6 +1046,7 @@ export function useWorkflowAgents({
         pendingQuestions: risk.pendingQuestions,
         resumable: resumableByType.has("risk"),
         sessionDbId: resumableByType.get("risk")?.sessionDbId,
+        hasFileChanges: risk.hasFileChanges,
       });
     }
     if (hasOutput(review)) {
@@ -1051,6 +1059,7 @@ export function useWorkflowAgents({
         pendingQuestions: review.pendingQuestions,
         resumable: resumableByType.has("review"),
         sessionDbId: resumableByType.get("review")?.sessionDbId,
+        hasFileChanges: review.hasFileChanges,
       });
     }
 

@@ -45,17 +45,19 @@ The `AgentSession` component renders agent output with an `AgentStream` + `Agent
 - **Implementation notes**: Added a single `hasFileChanges` boolean state shared across single and multi-subprocess modes. Detection uses a `Set` of file-changing tool names ("Write", "Edit", "NotebookEdit") checked in `content_block_start` for `tool_use` blocks in both `handleSingleEvent` and `handleMultiEvent`. Reset in both `reset()` and `start()`. Added to `SessionStateReturn` interface and return value.
 - **Validation results**: Lint passed (0 warnings, 0 errors). Type check passed (no errors).
 
-### ⬜ Phase 2: Add inline diff trigger to AgentSession
+### ✅ Phase 2: Add inline diff trigger to AgentSession
 - **Step**: 2
 - **Complexity**: 3
-- [ ] Add `hasFileChanges` and `onViewDiff` props to `AgentSession` component
-- [ ] Create a small inline bar (between stream content and prompt bar) that shows "N files changed — Review Changes" when `hasFileChanges` is true and agent status is "complete" or "paused"
-- [ ] Wire `onViewDiff` to open the `DiffViewerModal` in `worktree` mode from the parent component (FeatureWorkflowView or equivalent)
-- [ ] Pass `hasFileChanges` from `useSessionState` through to `AgentSession` in all usage sites
-- [ ] Style the inline bar consistently with the existing UI (muted background, small text, clickable)
-- **Files**: `src/renderer/components/AgentSession.tsx`, `src/renderer/components/FeatureWorkflowView.tsx` (or parent that renders AgentSession)
+- [x] Add `hasFileChanges` and `onViewDiff` props to `AgentSession` component
+- [x] Create a small inline bar (between stream content and prompt bar) that shows "N files changed — Review Changes" when `hasFileChanges` is true and agent status is "complete" or "paused"
+- [x] Wire `onViewDiff` to open the `DiffViewerModal` in `worktree` mode from the parent component (FeatureWorkflowView or equivalent)
+- [x] Pass `hasFileChanges` from `useSessionState` through to `AgentSession` in all usage sites
+- [x] Style the inline bar consistently with the existing UI (muted background, small text, clickable)
+- **Files**: `src/renderer/components/AgentSession.tsx`, `src/renderer/components/FeatureWorkflowView.tsx`, `src/renderer/hooks/useWorkflowAgents.ts`, `src/renderer/routes/projects/$projectId/features/$featureId.tsx`
 - **Commit message**: `feat: add inline diff trigger after agent completes with file changes`
 - **Bisect note**: Must include both the component change and the prop wiring to avoid type errors
+- **Implementation notes**: Added `hasFileChanges` to `SessionEntry` interface in `useWorkflowAgents.ts` and populated it from each agent's `useSessionState` return value. Added `hasFileChanges` and `onViewDiff` optional props to `AgentSessionProps`. Created an inline diff trigger bar using `FileEditIcon` + "Files changed -- Review Changes" text, shown between stream/review-verdict content and prompt bar when `hasFileChanges` is true and status is "complete" or "paused". Styled with muted background, small text, hover transition. Wired in `FeatureWorkflowView` (workflow mode) and `SessionFeatureView` (session mode) with local `DiffViewerModal` state opening in worktree mode. Note: the plan mentioned "N files changed" but `hasFileChanges` is a boolean (not a count), so the bar shows "Files changed" instead.
+- **Validation results**: Lint passed (0 warnings, 0 errors). Type check passed (no errors).
 
 ## Phase Status Legend
 
@@ -66,5 +68,5 @@ The `AgentSession` component renders agent output with an `AgentStream` + `Agent
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 2
-- **Progress**: 1/2
+- **Current Phase**: All phases complete
+- **Progress**: 2/2

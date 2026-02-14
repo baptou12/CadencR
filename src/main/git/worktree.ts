@@ -245,9 +245,32 @@ export function getDiff(
   targetBranch?: string,
 ): string {
   const branch = targetBranch ?? "main";
-  const cmd = mode === "worktree" ? "git diff" : `git diff ${branch}...HEAD`;
   try {
-    return execSync(cmd, {
+    if (mode === "worktree") {
+      const opts = { cwd: worktreePath, stdio: "pipe" as const, encoding: "utf-8" as const, maxBuffer: 50 * 1024 * 1024 };
+      // Standard diff for tracked files
+      const trackedDiff = execSync("git diff", opts);
+      // Build unified diffs for untracked (new) files by reading their content
+      const untrackedRaw = execSync("git ls-files --others --exclude-standard", { ...opts, maxBuffer: 1024 * 1024 });
+      const untrackedFiles = untrackedRaw.trim().split("\n").filter(Boolean);
+      let untrackedDiff = "";
+      for (const file of untrackedFiles) {
+        try {
+          const fullPath = path.join(worktreePath, file);
+          const content = fs.readFileSync(fullPath, "utf-8");
+          const lines = content.split("\n");
+          // Remove trailing empty line from final newline
+          if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
+          const lineCount = lines.length;
+          const addedLines = lines.map((l) => `+${l}`).join("\n");
+          untrackedDiff += `diff --git a/${file} b/${file}\nnew file mode 100644\n--- /dev/null\n+++ b/${file}\n@@ -0,0 +1,${lineCount} @@\n${addedLines}\n`;
+        } catch {
+          // skip files we can't read
+        }
+      }
+      return trackedDiff + untrackedDiff;
+    }
+    return execSync(`git diff ${branch}...HEAD`, {
       cwd: worktreePath,
       stdio: "pipe",
       encoding: "utf-8",

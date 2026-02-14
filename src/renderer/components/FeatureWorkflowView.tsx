@@ -9,6 +9,7 @@ import { PlanInputView } from "@/components/PlanInputView";
 import { NextStepsBar } from "@/components/NextStepsBar";
 import { useWorkflowAgents } from "@/hooks/useWorkflowAgents";
 import { getActiveFocusZone } from "@/lib/focus-zones";
+import { DiffViewerModal } from "@/components/diff/DiffViewerModal";
 
 export function FeatureWorkflowView({
   featureId,
@@ -22,6 +23,10 @@ export function FeatureWorkflowView({
   featureQuery: { refetch: () => unknown };
 }) {
   const wf = useWorkflowAgents({ featureId, projectId, featureQuery });
+
+  // --- Inline diff viewer modal state ---
+  const [inlineDiffOpen, setInlineDiffOpen] = useState(false);
+  const handleViewDiff = useCallback(() => setInlineDiffOpen(true), []);
 
   // --- Keyboard navigation state ---
   const [focusedAgentIndex, setFocusedAgentIndex] = useState<number | null>(null);
@@ -236,6 +241,8 @@ export function FeatureWorkflowView({
                 onFixImmediately={entry.type === "review" ? wf.handleFixImmediately : undefined}
                 isAddingFixPhase={wf.isAddingFixPhase}
                 isStartingFix={wf.isStartingFix}
+                hasFileChanges={entry.hasFileChanges}
+                onViewDiff={handleViewDiff}
               />
             ))}
 
@@ -293,6 +300,12 @@ export function FeatureWorkflowView({
       </div>
         <PlanSidebar featureId={featureId} />
       </div>
+
+      <DiffViewerModal
+        featureId={featureId}
+        open={inlineDiffOpen}
+        onOpenChange={setInlineDiffOpen}
+      />
     </div>
   );
 }
