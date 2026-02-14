@@ -110,18 +110,20 @@ A: useWorkflowAgents becomes a session list with metadata `{type, sessionState, 
 - **Implementation notes**: Created `src/renderer/hooks/useSessionState.ts` with a single `useSessionState(options)` hook that unifies `useAgentState` and `useMultiExecuteState`. The hook accepts `UseSessionStateOptions` with 4 fields: `supportsQuestions` (boolean, enables AskUserQuestion tool parsing), `supportsMultiSubprocess` (boolean, switches between single/multi subprocess management), `outputPatterns` (array of `{pattern: RegExp, event: string}` for client-side pattern matching), and `onPatternMatch` (callback fired on pattern match). Internally the hook maintains both single-subprocess state (`singleBlocks`, `singleStatus`, `singleSubprocessId`, `pendingQuestions`) and multi-subprocess state (`subprocesses` Map, `multiOverallStatus`), dispatching to the correct handler via the `supportsMultiSubprocess` flag. Client-side pattern matching runs via `useEffect` watching block changes, with deduplication via `Set<string>` (single mode) and `Map<string, Set<string>>` (multi mode). The hook also listens for backend `agent:pattern-match` IPC events via `window.api.onPatternMatch`. The return type `SessionStateReturn` is a superset of both old hooks' interfaces: it includes all fields from `useAgentState` (blocks, status, subprocessId, subprocessIdRef, pendingQuestions, handleEvent, reset, start, trackSubprocess, clearQuestions, appendBlock) AND all fields from `useMultiExecuteState` (subprocessList, overallStatus, allBlocks, subprocessIds, appendBlockToSubprocess). Also exported `useSessionEventListener` which is a copy of `useAgentEventListener` from the old hook, for convenience. Deviation: also updated `src/preload.ts` to expose `onPatternMatch`/`offPatternMatch` IPC bridge methods for the `agent:pattern-match` channel -- without this the backend pattern-match events would not reach the renderer. Block ID prefix uses `sblock-` to avoid collisions with the old hooks' `block-` and `mblock-` prefixes during the migration period.
 - **Validation results**: Lint passes (oxlint: 0 warnings, 0 errors). TypeScript compiles (`npx tsc --noEmit`: no errors). App packages successfully (`pnpm run package`: all targets built for arm64 on darwin).
 
-### ⬜ Phase 5: Unified agent UI component
+### ✅ Phase 5: Unified agent UI component
 - **Step**: 5
 - **Complexity**: 4
-- [ ] Refactor `SessionView` into a generic `AgentSession` component that works for all agent types
-- [ ] Props: `{ agentType, blocks, status, onSend, onStop, pendingQuestions?, onAnswerSubmit?, onPatternMatch?, label?, icon?, collapsible? }`
-- [ ] When `collapsible` is true, wrap content in a collapsible panel (for workflow view where multiple agents show). When false, render full-screen (for standalone session view)
-- [ ] Move question rendering (AgentQuestionDrawer) into the unified component — shown when `pendingQuestions` is non-empty
-- [ ] Move review verdict actions into the unified component — shown when `agentType === 'review'` and pattern match detected
-- [ ] Keep AgentStream, AgentBlock, AgentPromptBar as-is (they're already shared and work well)
+- [x] Refactor `SessionView` into a generic `AgentSession` component that works for all agent types
+- [x] Props: `{ agentType, blocks, status, onSend, onStop, pendingQuestions?, onAnswerSubmit?, onPatternMatch?, label?, icon?, collapsible? }`
+- [x] When `collapsible` is true, wrap content in a collapsible panel (for workflow view where multiple agents show). When false, render full-screen (for standalone session view)
+- [x] Move question rendering (AgentQuestionDrawer) into the unified component — shown when `pendingQuestions` is non-empty
+- [x] Move review verdict actions into the unified component — shown when `agentType === 'review'` and pattern match detected
+- [x] Keep AgentStream, AgentBlock, AgentPromptBar as-is (they're already shared and work well)
 - **Files**: `src/renderer/components/AgentSession.tsx` (new), `src/renderer/components/SessionView.tsx` (refactor into AgentSession)
 - **Commit message**: `refactor: create unified AgentSession component replacing SessionView and AgentPanel`
 - **Bisect note**: Creates new component alongside old ones. Old components still referenced.
+- **Implementation notes**: Created `src/renderer/components/AgentSession.tsx` as a unified agent UI component that can serve as both a full-screen session view and a collapsible workflow panel. The component accepts a comprehensive `AgentSessionProps` interface with 22 props covering: core agent display (`agentType`, `blocks`, `status`), interaction (`onSend`, `onStop`), question handling (`pendingQuestions`, `onAnswerSubmit`), customization (`label`, `icon`, `collapsible`, `className`), resume support (`resumable`, `onResume`), controlled open state (`open`, `onToggle`), and review verdict actions (`reviewComplete`, `reviewVerdict`, `onAddFixPhase`, `onFixImmediately`, `isAddingFixPhase`, `isStartingFix`). When `collapsible=false` (default), renders a full-screen layout matching `SessionView`'s structure: scrollable content area + prompt bar pinned at bottom. When `collapsible=true`, renders the `AgentPanel`-style collapsible layout with header bar (icon, label, status badge, optional resume button), toggle chevron, and bordered content area. Question rendering is delegated to `AgentPromptBar` which already integrates `AgentQuestionDrawer` inline when `pendingQuestions` is provided -- so the unified component simply passes `pendingQuestions` and `onAnswerSubmit` (mapped to `onQuestionResponse`) through to `AgentPromptBar`. Review verdict actions are rendered via the existing `ReviewVerdictActions` component, shown when `agentType === 'review'` and the review action callbacks are provided. The prompt bar visibility logic in collapsible mode matches `AgentPanel`'s behavior: hidden for one-shot agents (plan, brainstorm) when complete, shown otherwise when there is output, the agent is running, or questions are pending. Re-exports `AGENT_LABELS` and `STATUS_BADGE` configurations from `AgentPanel` (labels) and defines its own copy of `STATUS_BADGE` (since it is not exported from `AgentPanel`). `SessionView.tsx` was NOT modified in this phase -- it remains intact as the bisect note specifies. Consumers will be migrated in Phase 6.
+- **Validation results**: Lint passes (oxlint: 0 warnings, 0 errors). TypeScript compiles (`npx tsc --noEmit`: no errors). App packages successfully (`pnpm run package`: all targets built for arm64 on darwin).
 
 ### ⬜ Phase 6: Refactor useWorkflowAgents to session-list model
 - **Step**: 6
@@ -159,5 +161,5 @@ A: useWorkflowAgents becomes a session list with metadata `{type, sessionState, 
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 5
-- **Progress**: 4/7
+- **Current Phase**: Phase 6
+- **Progress**: 5/7
