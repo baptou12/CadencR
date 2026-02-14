@@ -24,6 +24,7 @@ The execute agent orchestrates phase execution via `execute-agent.ts`. Each phas
 | 2    | 2      | Update system prompt to request structured output |
 | 3    | 3      | Parse agent output and persist to DB in completion action |
 | 4    | 4      | Show implementation notes and deviations in phase UI |
+| 5    | 5      | Include implementation notes and deviations in enriched prompt for next phases |
 
 > **Parallelism**: Sequential — each phase depends on the previous.
 
@@ -79,6 +80,15 @@ The execute agent orchestrates phase execution via `execute-agent.ts`. Each phas
 - **Commit message**: `feat: display implementation notes and deviations in phase detail panel`
 - **Bisect note**: N/A — nullable fields, gracefully hidden when null
 
+### ⬜ Phase 5: Include deviations in enriched prompt for subsequent phases
+- **Step**: 5
+- **Complexity**: 2
+- [ ] In `buildEnrichedPrompt()` in `src/main/agents/execute-agent.ts`, update the completed phases query to also SELECT `implementation_notes` and `deviations`
+- [ ] Update the phase list formatting to include implementation notes and deviations below each completed phase (only when non-null)
+- **Files**: `src/main/agents/execute-agent.ts`
+- **Commit message**: `feat: include implementation notes and deviations in enriched prompt for next phases`
+- **Bisect note**: N/A — additive prompt content, no breaking changes
+
 ## Phase Status Legend
 
 | Emoji | Status |
@@ -89,4 +99,4 @@ The execute agent orchestrates phase execution via `execute-agent.ts`. Each phas
 
 ## Current Status
 - **Current Phase**: Phase 4
-- **Progress**: 3/4
+- **Progress**: 3/5
