@@ -5,6 +5,35 @@ import { parseToolCall } from "@/lib/tool-call-parser";
 import { Markdown } from "@/components/Markdown";
 import { InlineDiffBlock } from "@/components/InlineDiffBlock";
 
+/** Reconstruct diff data from persisted tool args (for historical sessions). */
+function diffFromToolArgs(
+  toolName: string,
+  toolArgs?: string,
+): { filePath: string; oldContent: string; newContent: string } | null {
+  if (!toolArgs) return null;
+  try {
+    const args = JSON.parse(toolArgs) as Record<string, unknown>;
+    const filePath = args.file_path as string | undefined;
+    if (!filePath) return null;
+
+    if (toolName === "Edit") {
+      const oldString = (args.old_string as string) ?? "";
+      const newString = (args.new_string as string) ?? "";
+      if (oldString || newString) {
+        return { filePath, oldContent: oldString, newContent: newString };
+      }
+    } else if (toolName === "Write") {
+      const content = (args.content as string) ?? "";
+      if (content) {
+        return { filePath, oldContent: "", newContent: content };
+      }
+    }
+  } catch {
+    // Partial JSON during streaming — skip
+  }
+  return null;
+}
+
 /** Block types that the agent stream can produce */
 export type BlockType = "text" | "code" | "tool_call" | "tool_result" | "thinking" | "user_message";
 
@@ -28,8 +57,6 @@ export interface AgentBlockData {
   childBlocks?: AgentBlockData[];
   /** Whether this Task's subagent has completed */
   taskComplete?: boolean;
-  /** Diff data attached by file_diff events for Write/Edit tool calls */
-  diffData?: { filePath: string; oldContent: string; newContent: string };
 }
 
 interface AgentBlockProps {
@@ -52,17 +79,20 @@ export function AgentBlock({ block, isStreaming, expandAllTasks, onExpandAllTask
       if (block.toolName === "Task" && block.childBlocks) {
         return <TaskAgentBlock block={block} isStreaming={isStreaming} expandAll={expandAllTasks} onExpandAll={onExpandAllTasks} />;
       }
-      if ((block.toolName === "Write" || block.toolName === "Edit") && block.diffData) {
-        return (
-          <div>
-            <ToolCallBlock name={block.toolName} args={block.toolArgs} />
-            <InlineDiffBlock
-              filePath={block.diffData.filePath}
-              oldContent={block.diffData.oldContent}
-              newContent={block.diffData.newContent}
-            />
-          </div>
-        );
+      if (block.toolName === "Write" || block.toolName === "Edit") {
+        const diff = diffFromToolArgs(block.toolName, block.toolArgs);
+        if (diff) {
+          return (
+            <div>
+              <ToolCallBlock name={block.toolName} args={block.toolArgs} />
+              <InlineDiffBlock
+                filePath={diff.filePath}
+                oldContent={diff.oldContent}
+                newContent={diff.newContent}
+              />
+            </div>
+          );
+        }
       }
       return <ToolCallBlock name={block.toolName ?? "unknown"} args={block.toolArgs} />;
     case "tool_result":

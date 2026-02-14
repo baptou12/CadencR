@@ -13,70 +13,6 @@ import type { AgentEvent, AgentType } from "../../main/agents/types";
 import type { AgentStatus } from "@/components/AgentSession";
 
 // ---------------------------------------------------------------------------
-// File diff helpers
-// ---------------------------------------------------------------------------
-
-/** Extract file_path from a tool_call block's toolArgs JSON string. */
-function extractFilePath(toolArgs?: string): string | null {
-  if (!toolArgs) return null;
-  try {
-    const parsed = JSON.parse(toolArgs) as Record<string, unknown>;
-    if (typeof parsed.file_path === "string") return parsed.file_path;
-  } catch {
-    // Partial JSON during streaming — ignore
-  }
-  return null;
-}
-
-/** Buffered diff that arrived before its matching tool_call block was created. */
-interface PendingDiff {
-  filePath: string;
-  oldContent: string;
-  newContent: string;
-}
-
-/** Attach diffData to the last unmatched Write/Edit tool_call for `filePath`. */
-function attachDiffData(
-  blocks: AgentBlockData[],
-  filePath: string,
-  oldContent: string,
-  newContent: string,
-): AgentBlockData[] {
-  for (let i = blocks.length - 1; i >= 0; i--) {
-    const b = blocks[i];
-    if (
-      b.type === "tool_call" &&
-      (b.toolName === "Write" || b.toolName === "Edit") &&
-      !b.diffData &&
-      extractFilePath(b.toolArgs) === filePath
-    ) {
-      const updated = [...blocks];
-      updated[i] = { ...b, diffData: { filePath, oldContent, newContent } };
-      return updated;
-    }
-  }
-  return blocks;
-}
-
-/** Drain buffered diffs, attaching any that now have a matching block. */
-function drainPendingDiffs(
-  blocks: AgentBlockData[],
-  pending: PendingDiff[],
-): { blocks: AgentBlockData[]; remaining: PendingDiff[] } {
-  const remaining: PendingDiff[] = [];
-  let current = blocks;
-  for (const diff of pending) {
-    const updated = attachDiffData(current, diff.filePath, diff.oldContent, diff.newContent);
-    if (updated === current) {
-      remaining.push(diff);
-    } else {
-      current = updated;
-    }
-  }
-  return { blocks: current, remaining };
-}
-
-// ---------------------------------------------------------------------------
 // Block helpers (shared between single and multi mode)
 // ---------------------------------------------------------------------------
 
@@ -312,9 +248,6 @@ export function useSessionState(
   // Client-side pattern matching dedup (single mode)
   const singleMatchedPatterns = useRef(new Set<string>());
 
-  // Buffered diffs that arrived before their matching tool_call block
-  const pendingDiffsRef = useRef<PendingDiff[]>([]);
-
   // ----- Multi-subprocess state -----
   const [subprocesses, setSubprocesses] = useState<
     Map<string, SubprocessState>
@@ -412,15 +345,7 @@ export function useSessionState(
                 appendToParent(prev, parentId, newBlock),
               );
             } else {
-              setSingleBlocks((prev) => {
-                let updated = [...prev, newBlock];
-                if (pendingDiffsRef.current.length > 0) {
-                  const result = drainPendingDiffs(updated, pendingDiffsRef.current);
-                  updated = result.blocks;
-                  pendingDiffsRef.current = result.remaining;
-                }
-                return updated;
-              });
+              setSingleBlocks((prev) => [...prev, newBlock]);
             }
           }
           break;
@@ -551,21 +476,6 @@ export function useSessionState(
           break;
         }
         case "message_stop": {
-          break;
-        }
-        case "file_diff": {
-          setSingleBlocks((prev) => {
-            const updated = attachDiffData(prev, event.file_path, event.old_content, event.new_content);
-            if (updated === prev) {
-              // Block not created yet — buffer until content_block_start arrives
-              pendingDiffsRef.current.push({
-                filePath: event.file_path,
-                oldContent: event.old_content,
-                newContent: event.new_content,
-              });
-            }
-            return updated;
-          });
           break;
         }
         case "result": {
@@ -751,15 +661,6 @@ export function useSessionState(
             }
             break;
           }
-          case "file_diff": {
-            blocks = attachDiffData(
-              blocks,
-              event.file_path,
-              event.old_content,
-              event.new_content,
-            );
-            break;
-          }
           case "result": {
             status = "complete";
             break;
@@ -886,7 +787,6 @@ export function useSessionState(
       setSingleSessionDbId(null);
       singleSessionDbIdRef.current = null;
       singleMatchedPatterns.current = new Set();
-      pendingDiffsRef.current = [];
     }
   }, [supportsMultiSubprocess]);
 
@@ -900,7 +800,6 @@ export function useSessionState(
       setSingleStatus("running");
       setPendingQuestions([]);
       singleMatchedPatterns.current = new Set();
-      pendingDiffsRef.current = [];
     }
   }, [supportsMultiSubprocess]);
 

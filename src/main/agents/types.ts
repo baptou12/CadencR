@@ -101,14 +101,6 @@ export interface StreamAgentPaused {
   type: "agent_paused";
 }
 
-/** Synthetic event emitted when a Write/Edit tool is about to execute, carrying the before/after file content */
-export interface StreamFileDiff {
-  type: "file_diff";
-  file_path: string;
-  old_content: string;
-  new_content: string;
-}
-
 /** Synthetic event emitted when a session agent finishes a turn but stays alive */
 export interface StreamTurnComplete {
   type: "turn_complete";
@@ -128,8 +120,7 @@ export type StreamEvent =
   | StreamResult
   | StreamAgentDone
   | StreamAgentPaused
-  | StreamTurnComplete
-  | StreamFileDiff;
+  | StreamTurnComplete;
 
 /** Agent event sent to the renderer via IPC */
 export interface AgentEvent {
