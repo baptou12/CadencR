@@ -4,6 +4,7 @@ import { createIPCHandler } from "electron-trpc/main";
 import { appRouter } from "./main/trpc/router";
 import { closeDatabase } from "./main/db/database";
 import { hasRunningSubprocesses, gracefulShutdown } from "./main/agents/subprocess-manager";
+import { restoreSessionMap } from "./main/agents/ipc-bridge";
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (require("electron-squirrel-startup")) {
@@ -64,7 +65,11 @@ let isQuitting = false;
 
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
-app.on("ready", createWindow);
+app.on("ready", () => {
+  // Restore in-memory session map from DB (for reconnection after restart)
+  restoreSessionMap();
+  createWindow();
+});
 
 // Quit when all windows are closed, except on macOS.
 app.on("window-all-closed", () => {

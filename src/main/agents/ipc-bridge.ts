@@ -180,4 +180,25 @@ export function getSubprocessIdsForSessionDbIds(
   return result;
 }
 
+/**
+ * Restore the in-memory sessionMap from the database on app startup.
+ * Re-populates entries for sessions that were running/paused with a subprocess_id,
+ * so that event routing and stop/interrupt work after app restart.
+ */
+export function restoreSessionMap(): void {
+  try {
+    const db = getDatabase();
+    const rows = db
+      .prepare(
+        "SELECT id, subprocess_id FROM agent_sessions WHERE status IN ('running', 'paused') AND subprocess_id IS NOT NULL",
+      )
+      .all() as Array<{ id: number; subprocess_id: string }>;
+    for (const row of rows) {
+      sessionMap.set(row.subprocess_id, row.id);
+    }
+  } catch {
+    // Best-effort: database may not be ready yet
+  }
+}
+
 export { AGENT_EVENT_CHANNEL, DB_UPDATED_CHANNEL };

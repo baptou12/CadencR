@@ -73,6 +73,9 @@ export function startUnifiedAgent(config: UnifiedAgentConfig): UnifiedAgentResul
     model,
   });
 
+  // 3b. Persist subprocess ID to DB for reconnection after refresh
+  db.prepare("UPDATE agent_sessions SET subprocess_id = ? WHERE id = ?").run(managed.id, sessionDbId);
+
   // 4. Bridge events to the renderer
   bridgeSubprocessToRenderer(managed, config.agentType, sessionDbId);
 

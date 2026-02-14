@@ -68,6 +68,9 @@ export function useWorkflowAgents({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [featureId]);
 
+  // Query for running agents (used for reconnection after refresh)
+  const runningQuery = trpc.agents.getRunningAgents.useQuery({ featureId });
+
   // Query for incomplete sessions that can be resumed
   const incompleteQuery = trpc.agents.getIncompleteSessions.useQuery({
     featureId,
@@ -121,12 +124,14 @@ export function useWorkflowAgents({
 
   // Resumable sessions: agentType -> first claudeSessionId (for non-execute agents)
   // and sessionDbId -> claudeSessionId (for targeted resume of specific sessions)
+  // Map agent type -> { claudeSessionId, sessionDbId } for the most recent incomplete session.
+  // incompleteQuery.data is ordered by id DESC, so the first per type is the most recent.
   const resumableByType = useMemo(() => {
-    if (!incompleteQuery.data) return new Map<string, string>();
-    const map = new Map<string, string>();
+    if (!incompleteQuery.data) return new Map<string, { claudeSessionId: string; sessionDbId: number }>();
+    const map = new Map<string, { claudeSessionId: string; sessionDbId: number }>();
     for (const s of incompleteQuery.data) {
-      if (!map.has(s.agent_type)) {
-        map.set(s.agent_type, s.claude_session_id!);
+      if (!map.has(s.agent_type) && s.claude_session_id) {
+        map.set(s.agent_type, { claudeSessionId: s.claude_session_id, sessionDbId: s.id });
       }
     }
     return map;
@@ -161,13 +166,16 @@ export function useWorkflowAgents({
 
   // For execute: find the latest orchestrator session (run_id IS NULL, agent_type = 'execute')
   // and query its phase sessions via getSessionsByRunId.
+  // Note: orchestrator sessions may stay in 'running' status even when all phases are paused,
+  // because the orchestrator is a virtual container, not a real subprocess. So we also match 'running'.
+  const orchestratorStatuses = new Set([...historyStatuses, "running"]);
   const latestExecuteRunId = useMemo(() => {
     if (!sessionsQuery.data) return null;
     const orchestrator = sessionsQuery.data.find(
       (s) =>
         s.agent_type === "execute" &&
         s.run_id == null &&
-        historyStatuses.has(s.status),
+        orchestratorStatuses.has(s.status),
     );
     return orchestrator?.id ?? null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -181,17 +189,20 @@ export function useWorkflowAgents({
   const executeSessionIds = useMemo(() => {
     if (!executeRunQuery.data) return [] as number[];
     // Deduplicate by phase_id — keep the latest (highest id) non-resumed session per phase
-    const byPhase = new Map<number | null, number>();
+    const byPhase = new Map<number | null, { sessionId: number; phaseId: number | null }>();
     for (const s of executeRunQuery.data) {
       if (s.status === "resumed") continue; // Skip replaced sessions
-      if (!historyStatuses.has(s.status)) continue;
+      if (!orchestratorStatuses.has(s.status)) continue;
       const key = s.phase_id;
       const existing = byPhase.get(key);
-      if (existing == null || s.id > existing) {
-        byPhase.set(key, s.id);
+      if (existing == null || s.id > existing.sessionId) {
+        byPhase.set(key, { sessionId: s.id, phaseId: s.phase_id });
       }
     }
-    return [...byPhase.values()].toSorted((a, b) => a - b);
+    // Sort by phase_id to match original execution order (consistent before/after refresh)
+    return [...byPhase.values()]
+      .toSorted((a, b) => (a.phaseId ?? 0) - (b.phaseId ?? 0))
+      .map((v) => v.sessionId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [executeRunQuery.data]);
 
@@ -332,7 +343,9 @@ export function useWorkflowAgents({
 
   // Populate execute agent blocks from history (handles parallel phases via run_id)
   useEffect(() => {
-    if (execute.status !== "idle" || execute.blocks.length > 0) return;
+    if (execute.status !== "idle" || execute.blocks.length > 0) {
+      return;
+    }
 
     if (executeSessionIds.length > 0 && executeBatchHistoryQuery.data) {
       // Phase sessions linked via run_id — create a subprocess entry per session
@@ -357,8 +370,9 @@ export function useWorkflowAgents({
         const subStatus: AgentStatus = srcSession?.status === "paused" ? "paused"
           : srcSession?.status === "error" ? "error" : "complete";
 
+        const merged = mergeTextBlocks(blocks);
         // Inject blocks into a subprocess entry (auto-created by appendBlockToSubprocess)
-        for (const b of mergeTextBlocks(blocks)) {
+        for (const b of merged) {
           execute.appendBlockToSubprocess(syntheticId, b, subStatus, sid);
         }
       }
@@ -388,6 +402,67 @@ export function useWorkflowAgents({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [executeHistoryQuery.data, executeBatchHistoryQuery.data, executeSessionIds]);
 
+  // Reconnect to running agents after refresh — restore subprocess IDs and load history
+  const runningHistorySessionIds = useMemo(() => {
+    if (!runningQuery.data) return [] as number[];
+    return runningQuery.data.map((s) => s.id);
+  }, [runningQuery.data]);
+
+  const runningHistoryBatch = trpc.agents.getHistoryBatch.useQuery(
+    { sessionIds: runningHistorySessionIds },
+    { enabled: runningHistorySessionIds.length > 0 },
+  );
+
+  useEffect(() => {
+    if (!runningQuery.data || runningQuery.data.length === 0) return;
+
+    for (const session of runningQuery.data) {
+      if (!session.subprocess_id) continue;
+
+      // Load history for this running session
+      const historyMessages = runningHistoryBatch.data?.[session.id];
+      const historyBlocks: AgentBlockData[] = [];
+      if (historyMessages) {
+        for (const msg of historyMessages) {
+          const block = messageToBlock(msg);
+          if (block) historyBlocks.push(block);
+        }
+      }
+
+      if (session.agent_type === "execute") {
+        // For execute (multi-subprocess), set up a subprocess entry with history
+        if (execute.subprocessList.some((s) => s.subprocessId === session.subprocess_id)) continue;
+        for (const b of mergeTextBlocks(historyBlocks)) {
+          execute.appendBlockToSubprocess(session.subprocess_id, b, "running", session.id);
+        }
+        if (historyBlocks.length === 0) {
+          execute.appendBlockToSubprocess(
+            session.subprocess_id,
+            { type: "text", content: "" },
+            "running",
+            session.id,
+          );
+        }
+        execute.setStatus("running");
+      } else {
+        const state = agentStateMap[session.agent_type];
+        if (!state) continue;
+        // Only reconnect if the agent isn't already tracked
+        if (state.subprocessIdRef?.current) continue;
+
+        // Load history blocks before tracking (so UI has prior output)
+        if (historyBlocks.length > 0) {
+          for (const b of mergeTextBlocks(historyBlocks)) {
+            state.appendBlock(b);
+          }
+        }
+        state.trackSubprocess(session.subprocess_id, session.id);
+        state.setStatus("running");
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runningQuery.data, runningHistoryBatch.data]);
+
   const handleResume = useCallback(
     async (agentType: AgentType, targetSessionDbId?: number) => {
       let claudeSessionId: string | undefined;
@@ -398,11 +473,10 @@ export function useWorkflowAgents({
         claudeSessionId = resumableBySessionId.get(targetSessionDbId);
         originalSession = incompleteQuery.data?.find((s) => s.id === targetSessionDbId);
       } else {
-        // Generic resume by agent type (non-execute agents)
-        claudeSessionId = resumableByType.get(agentType);
-        originalSession = incompleteQuery.data?.find(
-          (s) => s.agent_type === agentType && s.claude_session_id === claudeSessionId,
-        );
+        // Generic resume by agent type — uses the most recent incomplete session
+        const resumable = resumableByType.get(agentType);
+        claudeSessionId = resumable?.claudeSessionId;
+        originalSession = incompleteQuery.data?.find((s) => s.id === resumable?.sessionDbId);
       }
 
       if (!claudeSessionId || !originalSession) return;
@@ -431,6 +505,7 @@ export function useWorkflowAgents({
           state.trackSubprocess(result.subprocessId);
         }
         void incompleteQuery.refetch();
+        void runningQuery.refetch();
       } catch (err) {
         state.setStatus("error");
         state.appendBlock({
@@ -470,7 +545,9 @@ export function useWorkflowAgents({
   const startExecuteForFixMutation = trpc.agents.startExecute.useMutation();
   const submitAnswersMutation = trpc.agents.submitAnswers.useMutation();
   const stopMutation = trpc.agents.stop.useMutation();
+  const stopBySessionIdMutation = trpc.agents.stopBySessionId.useMutation();
   const interruptMutation = trpc.agents.interrupt.useMutation();
+  const interruptBySessionIdMutation = trpc.agents.interruptBySessionId.useMutation();
   const sendMessageMutation = trpc.agents.sendMessage.useMutation();
 
   // Wire up IPC event listener using the unified useSessionEventListener
@@ -479,23 +556,35 @@ export function useWorkflowAgents({
       plan: {
         handleEvent: plan.handleEvent,
         subprocessIdRef: plan.subprocessIdRef,
+        sessionDbIdRef: plan.sessionDbIdRef,
       },
       brainstorm: {
         handleEvent: brainstorm.handleEvent,
         subprocessIdRef: brainstorm.subprocessIdRef,
+        sessionDbIdRef: brainstorm.sessionDbIdRef,
       },
       execute: { handleEvent: execute.handleEvent },
-      risk: { handleEvent: risk.handleEvent },
-      review: { handleEvent: review.handleEvent },
+      risk: {
+        handleEvent: risk.handleEvent,
+        sessionDbIdRef: risk.sessionDbIdRef,
+      },
+      review: {
+        handleEvent: review.handleEvent,
+        sessionDbIdRef: review.sessionDbIdRef,
+      },
     }),
     [
       plan.handleEvent,
       plan.subprocessIdRef,
+      plan.sessionDbIdRef,
       brainstorm.handleEvent,
       brainstorm.subprocessIdRef,
+      brainstorm.sessionDbIdRef,
       execute.handleEvent,
       risk.handleEvent,
+      risk.sessionDbIdRef,
       review.handleEvent,
+      review.sessionDbIdRef,
     ],
   );
   useSessionEventListener(eventHandlers);
@@ -714,9 +803,15 @@ export function useWorkflowAgents({
     async (agentType: AgentType) => {
       const state = agentStateMap[agentType];
       const id = state.subprocessId;
-      if (!id) return;
       try {
-        await stopMutation.mutateAsync({ id });
+        if (id) {
+          await stopMutation.mutateAsync({ id });
+        } else if (state.sessionDbId) {
+          // Fallback: stop by DB session ID (works after refresh when subprocess ID is lost)
+          await stopBySessionIdMutation.mutateAsync({ sessionId: state.sessionDbId });
+        } else {
+          return;
+        }
       } catch {
         // best effort
       }
@@ -727,7 +822,7 @@ export function useWorkflowAgents({
       });
       void incompleteQuery.refetch();
     },
-    [agentStateMap, stopMutation, incompleteQuery],
+    [agentStateMap, stopMutation, stopBySessionIdMutation, incompleteQuery],
   );
 
   // Convenience wrappers for execute subprocess operations
@@ -740,10 +835,17 @@ export function useWorkflowAgents({
   );
 
   const interruptExecuteSubprocess = useCallback(
-    async (subprocessId: string) => {
-      await interruptMutation.mutateAsync({ id: subprocessId }).catch(() => {});
+    async (subprocessId: string, sessionDbId?: number) => {
+      try {
+        await interruptMutation.mutateAsync({ id: subprocessId });
+      } catch {
+        // Fallback to session-based interrupt if subprocess ID is stale
+        if (sessionDbId != null) {
+          await interruptBySessionIdMutation.mutateAsync({ sessionId: sessionDbId }).catch(() => {});
+        }
+      }
     },
-    [interruptMutation],
+    [interruptMutation, interruptBySessionIdMutation],
   );
 
   // ---------------------------------------------------------------------------
@@ -763,6 +865,7 @@ export function useWorkflowAgents({
         subprocessId: plan.subprocessId,
         pendingQuestions: plan.pendingQuestions,
         resumable: resumableByType.has("plan"),
+        sessionDbId: resumableByType.get("plan")?.sessionDbId,
       });
     }
     if (hasOutput(brainstorm)) {
@@ -774,6 +877,7 @@ export function useWorkflowAgents({
         subprocessId: brainstorm.subprocessId,
         pendingQuestions: brainstorm.pendingQuestions,
         resumable: resumableByType.has("brainstorm"),
+        sessionDbId: resumableByType.get("brainstorm")?.sessionDbId,
       });
     }
 
@@ -806,6 +910,7 @@ export function useWorkflowAgents({
         subprocessId: execute.subprocessId,
         pendingQuestions: [],
         resumable: resumableByType.has("execute"),
+        sessionDbId: resumableByType.get("execute")?.sessionDbId,
       });
     }
 
@@ -834,6 +939,7 @@ export function useWorkflowAgents({
         subprocessId: risk.subprocessId,
         pendingQuestions: [],
         resumable: resumableByType.has("risk"),
+        sessionDbId: resumableByType.get("risk")?.sessionDbId,
       });
     }
     if (hasOutput(review)) {
@@ -845,6 +951,7 @@ export function useWorkflowAgents({
         subprocessId: review.subprocessId,
         pendingQuestions: [],
         resumable: resumableByType.has("review"),
+        sessionDbId: resumableByType.get("review")?.sessionDbId,
       });
     }
 

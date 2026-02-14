@@ -255,11 +255,13 @@ export interface SessionStateReturn {
   setStatus: React.Dispatch<React.SetStateAction<AgentStatus>>;
   subprocessId: string | null;
   subprocessIdRef: React.RefObject<string | null>;
+  sessionDbId: number | null;
+  sessionDbIdRef: React.RefObject<number | null>;
   pendingQuestions: AgentQuestion[];
   handleEvent: (agentEvent: AgentEvent) => void;
   reset: () => void;
   start: () => void;
-  trackSubprocess: (id: string) => void;
+  trackSubprocess: (id: string, sessionDbId?: number) => void;
   clearQuestions: () => void;
   appendBlock: (partial: Omit<AgentBlockData, "id">) => void;
 
@@ -354,6 +356,12 @@ export function useSessionState(
     (agentEvent: AgentEvent) => {
       const { event } = agentEvent;
       const parentId = agentEvent.parentToolUseId ?? null;
+
+      // Capture sessionDbId from the first event if not already set
+      if (agentEvent.sessionDbId != null && singleSessionDbIdRef.current == null) {
+        setSingleSessionDbId(agentEvent.sessionDbId);
+        singleSessionDbIdRef.current = agentEvent.sessionDbId;
+      }
 
       switch (event.type) {
         case "content_block_start": {
@@ -875,6 +883,8 @@ export function useSessionState(
       setPendingQuestions([]);
       setSingleSubprocessId(null);
       singleSubprocessIdRef.current = null;
+      setSingleSessionDbId(null);
+      singleSessionDbIdRef.current = null;
       singleMatchedPatterns.current = new Set();
       pendingDiffsRef.current = [];
     }
@@ -894,9 +904,17 @@ export function useSessionState(
     }
   }, [supportsMultiSubprocess]);
 
-  const trackSubprocess = useCallback((id: string) => {
+  // ----- Session DB ID tracking (stable across refresh) -----
+  const [singleSessionDbId, setSingleSessionDbId] = useState<number | null>(null);
+  const singleSessionDbIdRef = useRef<number | null>(null);
+
+  const trackSubprocess = useCallback((id: string, sessionDbId?: number) => {
     setSingleSubprocessId(id);
     singleSubprocessIdRef.current = id;
+    if (sessionDbId != null) {
+      setSingleSessionDbId(sessionDbId);
+      singleSessionDbIdRef.current = sessionDbId;
+    }
   }, []);
 
   const clearQuestions = useCallback(() => {
@@ -978,6 +996,10 @@ export function useSessionState(
   const subprocessIdRef = supportsMultiSubprocess
     ? ({ current: null } as React.RefObject<string | null>)
     : singleSubprocessIdRef;
+  const sessionDbId = supportsMultiSubprocess ? null : singleSessionDbId;
+  const sessionDbIdRef = supportsMultiSubprocess
+    ? ({ current: null } as React.RefObject<number | null>)
+    : singleSessionDbIdRef;
 
   return {
     // Common (single-subprocess compat)
@@ -986,6 +1008,8 @@ export function useSessionState(
     setStatus,
     subprocessId,
     subprocessIdRef,
+    sessionDbId,
+    sessionDbIdRef,
     pendingQuestions,
     handleEvent,
     reset,
@@ -1014,6 +1038,7 @@ export function useSessionEventListener(
     {
       handleEvent: (event: AgentEvent) => void;
       subprocessIdRef?: React.RefObject<string | null>;
+      sessionDbIdRef?: React.RefObject<number | null>;
     }
   >,
 ) {
@@ -1038,10 +1063,13 @@ export function useSessionEventListener(
         return;
       }
 
-      // If handler has a subprocess filter, check it
-      if (handler.subprocessIdRef) {
-        const currentId = handler.subprocessIdRef.current;
-        if (currentId && agentEvent.subprocessId !== currentId) {
+      // Route by sessionDbId first (stable across refresh), then by subprocessId
+      if (handler.sessionDbIdRef?.current != null) {
+        if (agentEvent.sessionDbId !== handler.sessionDbIdRef.current) {
+          return;
+        }
+      } else if (handler.subprocessIdRef?.current) {
+        if (agentEvent.subprocessId !== handler.subprocessIdRef.current) {
           return;
         }
       }

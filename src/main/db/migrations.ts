@@ -216,6 +216,14 @@ const migrations: Migration[] = [
       db.exec("DELETE FROM agent_sessions WHERE status = 'interrupted'");
     },
   },
+  {
+    version: 16,
+    description: "Add subprocess_id column to agent_sessions",
+    up: (db) => {
+      db.exec("ALTER TABLE agent_sessions ADD COLUMN subprocess_id TEXT");
+      db.exec("CREATE INDEX idx_agent_sessions_subprocess_id ON agent_sessions(subprocess_id)");
+    },
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

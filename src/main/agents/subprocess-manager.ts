@@ -588,8 +588,10 @@ async function runSdkQuery(
         exitCode: 0,
       });
     } else if (managed.status === "paused") {
-      // Interrupted — broadcast paused event but do NOT call completion listeners.
-      // The subprocess stays alive; user can resume by sending a message.
+      // Interrupted — broadcast paused event and call completion listeners with
+      // exit code 2 (paused) so orchestrators (e.g. execute) can resolve their
+      // Promise.allSettled and update their own status.
+      for (const listener of managed.completionListeners) listener(2);
       broadcastEvent(managed.id, managed.agentType, {
         type: "agent_paused",
       });
@@ -603,6 +605,7 @@ async function runSdkQuery(
   } catch (err) {
     if (managed.status === "paused") {
       // Interrupt threw — still treat as paused
+      for (const listener of managed.completionListeners) listener(2);
       broadcastEvent(managed.id, managed.agentType, {
         type: "agent_paused",
       });
@@ -706,11 +709,11 @@ export async function stopSubprocess(id: string): Promise<boolean> {
     managed.abortController?.abort();
   }
 
-  // Persist paused status to DB
+  // Persist paused status to DB and clear subprocess_id (process will get a new one on resume)
   const sessionDbId = getSessionDbId(id);
   if (sessionDbId) {
     const db = getDatabase();
-    db.prepare("UPDATE agent_sessions SET status = 'paused', ended_at = datetime('now') WHERE id = ?").run(sessionDbId);
+    db.prepare("UPDATE agent_sessions SET status = 'paused', ended_at = datetime('now'), subprocess_id = NULL WHERE id = ?").run(sessionDbId);
     if (managed.sdkSessionId) persistClaudeSessionId(sessionDbId, managed.sdkSessionId);
   }
 
@@ -738,11 +741,11 @@ export async function interruptSubprocess(id: string): Promise<boolean> {
     }
   }
 
-  // Persist paused status to DB
+  // Persist paused status to DB and clear subprocess_id
   const sessionDbId = getSessionDbId(id);
   if (sessionDbId) {
     const db = getDatabase();
-    db.prepare("UPDATE agent_sessions SET status = 'paused', ended_at = datetime('now') WHERE id = ?").run(sessionDbId);
+    db.prepare("UPDATE agent_sessions SET status = 'paused', ended_at = datetime('now'), subprocess_id = NULL WHERE id = ?").run(sessionDbId);
     if (managed.sdkSessionId) persistClaudeSessionId(sessionDbId, managed.sdkSessionId);
   }
 
@@ -852,8 +855,9 @@ export function hasRunningSubprocesses(): boolean {
 export function saveAllSessionStates(): void {
   try {
     const db = getDatabase();
+    // Mark running sessions as paused and clear subprocess_id since the process is dead
     db.prepare(
-      "UPDATE agent_sessions SET status = 'paused', ended_at = datetime('now') WHERE status = 'running'",
+      "UPDATE agent_sessions SET status = 'paused', ended_at = datetime('now'), subprocess_id = NULL WHERE status = 'running'",
     ).run();
   } catch {
     // Best-effort: database may already be closed

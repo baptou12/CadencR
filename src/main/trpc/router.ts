@@ -488,6 +488,45 @@ const agentsRouter = router({
       return sessions;
     }),
 
+  /** Get all running agents for a feature (used for reconnection after refresh) */
+  getRunningAgents: publicProcedure
+    .input(z.object({ featureId: z.number() }))
+    .query(({ input }) => {
+      const db = getDatabase();
+      const sessions = db
+        .prepare(
+          "SELECT id, agent_type, subprocess_id, status, run_id, phase_id FROM agent_sessions WHERE feature_id = ? AND status = 'running' AND subprocess_id IS NOT NULL",
+        )
+        .all(input.featureId) as Array<Pick<AgentSessionRow, "id" | "agent_type" | "subprocess_id" | "status" | "run_id" | "phase_id">>;
+      return sessions;
+    }),
+
+  /** Stop a running agent by its DB session ID (used when subprocess ID is unknown after refresh) */
+  stopBySessionId: publicProcedure
+    .input(z.object({ sessionId: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = getDatabase();
+      const session = db
+        .prepare("SELECT subprocess_id FROM agent_sessions WHERE id = ?")
+        .get(input.sessionId) as Pick<AgentSessionRow, "subprocess_id"> | undefined;
+      if (!session?.subprocess_id) return { success: false };
+      const stopped = await stopSubprocess(session.subprocess_id);
+      return { success: stopped };
+    }),
+
+  /** Interrupt a running agent by its DB session ID */
+  interruptBySessionId: publicProcedure
+    .input(z.object({ sessionId: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = getDatabase();
+      const session = db
+        .prepare("SELECT subprocess_id FROM agent_sessions WHERE id = ?")
+        .get(input.sessionId) as Pick<AgentSessionRow, "subprocess_id"> | undefined;
+      if (!session?.subprocess_id) return { success: false };
+      const interrupted = await interruptSubprocess(session.subprocess_id);
+      return { success: interrupted };
+    }),
+
   /** List all active agent subprocesses */
   list: publicProcedure.query(() => {
     return listSubprocesses().map((s) => ({
