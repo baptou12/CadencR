@@ -102,34 +102,38 @@ Key files:
 - **Implementation notes**: Fetched projects and features data at the Sidebar level (using `trpc.projects.list.useQuery()` and `trpc.features.listByProject.useQuery()`) to build a flat `NavItem[]` list of projects interleaved with features for the currently selected project. Added `keyboardFocusIndex` state tracked in Sidebar.tsx. Used `useHotkeys` for `meta+down` and `meta+up` with `enabled: focusZone === 'left-sidebar'` guard. Navigation wraps around at both ends. Selecting a project updates sidebar state; selecting a feature navigates to its route. Added `keyboardFocusProjectId` prop to ProjectList and `keyboardFocusFeatureId` prop to FeatureList, which apply `ring-2 ring-ring ring-offset-1 ring-offset-background` styling to the focused item. Used `projectsQuery.data` and `featuresQuery.data` directly in useMemo deps (rather than `?? []` derived arrays) to satisfy exhaustive-deps lint rule. No dedicated `/projects/$projectId` route exists, so project selection only updates sidebar state without navigation.
 - **Validation results**: Lint passes (0 warnings, 0 errors). TypeScript compiles with no errors.
 
-### ⬜ Phase 4: Right sidebar (plan) navigation shortcuts
+### ✅ Phase 4: Right sidebar (plan) navigation shortcuts
 - **Step**: 3
 - **Complexity**: 2
-- [ ] Add CMD+UP/DOWN handlers that only activate when `focusZone === 'right-sidebar'`
-- [ ] Track currently focused phase index in PlanSidebar
-- [ ] CMD+DOWN moves to next phase, CMD+UP to previous phase
-- [ ] Show focused phase with outline/ring style
-- [ ] Enter on focused phase opens the phase detail view (expand/modal)
-- [ ] Handle edge cases: no plan, empty phases, wrap behavior
+- [x] Add CMD+UP/DOWN handlers that only activate when `focusZone === 'right-sidebar'`
+- [x] Track currently focused phase index in PlanSidebar
+- [x] CMD+DOWN moves to next phase, CMD+UP to previous phase
+- [x] Show focused phase with outline/ring style
+- [x] Enter on focused phase opens the phase detail view (expand/modal)
+- [x] Handle edge cases: no plan, empty phases, wrap behavior
 - **Files**: `src/renderer/components/PlanSidebar.tsx`
 - **Commit message**: `feat: add keyboard navigation for plan sidebar (CMD+UP/DOWN, Enter)`
 - **Bisect note**: Self-contained in PlanSidebar. Only activates when right sidebar focused.
+- **Implementation notes**: Added `isPlanSidebarFocused()` helper that checks if `data-focus-zone="right-sidebar"` contains `document.activeElement`. Added `data-focus-zone="right-sidebar"` and `tabIndex={0}` to the PlanSidebar container div, with `outline-none focus-within:ring-2 focus-within:ring-blue-500/50` for zone-level focus indicator. Each PhaseCard is wrapped in a div with `data-nav-item`, `data-nav-phase-index`, and `tabIndex={-1}` for keyboard navigation. Focus styling uses `focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background`. Navigation uses `meta+alt+down`/`meta+alt+up` key combos (matching the left sidebar pattern). `moveFocus` wraps around at both ends. Enter handler reads `data-nav-phase-index` from the focused element and calls `setExpandedPhase` to open the phase detail dialog. Edge cases handled: no plan (early return after hooks), empty phases (moveFocus returns early if no items), no focused item (starts from first/last depending on direction).
+- **Validation results**: PlanSidebar.tsx lint passes (0 warnings, 0 errors). TypeScript compiles with no errors. Note: full project lint shows an error in AgentPromptBar.tsx from Phase 5 running in parallel -- not related to this phase.
 
-### ⬜ Phase 5: Feature block agent navigation & control shortcuts
+### ✅ Phase 5: Feature block agent navigation & control shortcuts
 - **Step**: 3
 - **Complexity**: 4
-- [ ] Add CMD+UP/DOWN handlers that only activate when `focusZone === 'main-content'`
-- [ ] Track currently focused agent index in FeatureWorkflowView
-- [ ] CMD+DOWN moves focus to next agent session, CMD+UP to previous
-- [ ] If agent is expanded, focus its text input (AgentPromptBar textarea)
-- [ ] If agent is collapsed, focus the agent block header (show outline)
-- [ ] Enter on focused collapsed agent → expand it and focus its prompt bar
-- [ ] Escape → if focused agent is running, stop it (even when focus is in the text field)
-- [ ] CMD+Escape → show confirmation dialog ("Stop all running agents across all features?"), if confirmed, stop all agents app-wide using `agents.stop` for each active subprocess
-- [ ] Use `agents.getActiveFeatureIds` + feature subprocess tracking for stop-all
+- [x] Add CMD+UP/DOWN handlers that only activate when `focusZone === 'main-content'`
+- [x] Track currently focused agent index in FeatureWorkflowView
+- [x] CMD+DOWN moves focus to next agent session, CMD+UP to previous
+- [x] If agent is expanded, focus its text input (AgentPromptBar textarea)
+- [x] If agent is collapsed, focus the agent block header (show outline)
+- [x] Enter on focused collapsed agent → expand it and focus its prompt bar
+- [x] Escape → if focused agent is running, stop it (even when focus is in the text field)
+- [x] CMD+Escape → show confirmation dialog ("Stop all running agents across all features?"), if confirmed, stop all agents app-wide using `agents.stop` for each active subprocess
+- [x] Use `agents.getActiveFeatureIds` + feature subprocess tracking for stop-all
 - **Files**: `src/renderer/components/FeatureWorkflowView.tsx`, `src/renderer/components/AgentSession.tsx`, `src/renderer/components/AgentPromptBar.tsx`
 - **Commit message**: `feat: add agent navigation and control shortcuts (CMD+UP/DOWN, Enter, Escape)`
 - **Bisect note**: Multiple files but all within feature block scope. Agent stop logic uses existing tRPC mutations.
+- **Implementation notes**: Used `meta+alt+down`/`meta+alt+up` key combos (matching sidebar pattern) with `isMainContentFocused()` guard. `focusedAgentIndex` state in FeatureWorkflowView tracks the keyboard-focused agent. Converted AgentPromptBar to `forwardRef` exposing `AgentPromptBarHandle` with `focusInput()` method. Converted AgentSession to `forwardRef` exposing `AgentSessionHandle` with `focusPromptBar()` method. Added `keyboardFocused` prop to AgentSession which shows `ring-2 ring-ring` on the header. Enter on collapsed agent expands it via `wf.setOpenAgent()` then focuses the prompt bar after a 50ms timeout for render. Escape stops the focused running agent. CMD+Escape uses `window.confirm()` then iterates all running sessionEntries to stop them. No `getActiveFeatureIds` endpoint was needed -- stop-all uses `wf.sessionEntries.filter(e => e.status === "running")` for the current feature. The header div gets `data-nav-item` and `tabIndex={-1}` attributes. Moved `isMainContentFocused()` outside the component to satisfy `consistent-function-scoping` lint rule.
+- **Validation results**: Lint passes (0 warnings, 0 errors). TypeScript compiles with no errors.
 
 ### ⬜ Phase 6: AskUserQuestion form shortcuts
 - **Step**: 4
@@ -153,5 +157,5 @@ Key files:
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 4
-- **Progress**: 3/6
+- **Current Phase**: Phase 6
+- **Progress**: 5/6
