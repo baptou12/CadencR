@@ -210,7 +210,11 @@ export function useFeatureAgentState(featureId: number) {
     sessionMapRef.current = new Map();
   }, [featureId]);
 
-  // Build the sessionMap from query data
+  // Build the sessionMap from query data and clear stale buffer entries.
+  // When query data refreshes (e.g. after notifyDbUpdated), the DB now contains
+  // messages that were previously only in the stream buffer.  Clearing the buffer
+  // avoids duplicates — any new stream events arriving after this point will have
+  // messageDbId > maxMessageId and pass the dedup filter.
   useEffect(() => {
     if (!query.data) return;
     const map = new Map<string, number>();
@@ -220,6 +224,27 @@ export function useFeatureAgentState(featureId: number) {
       }
     }
     sessionMapRef.current = map;
+
+    // Trim buffer: drop blocks already covered by the new query snapshot
+    setStreamBuffer((prev) => {
+      let changed = false;
+      const next = new Map(prev);
+      for (const s of query.data!.sessions) {
+        const buf = next.get(s.sessionDbId);
+        if (!buf || buf.length === 0) continue;
+        const maxMsgId = s.maxMessageId ?? 0;
+        const filtered = buf.filter((b) => b.messageDbId != null && b.messageDbId > maxMsgId);
+        if (filtered.length !== buf.length) {
+          changed = true;
+          if (filtered.length === 0) {
+            next.delete(s.sessionDbId);
+          } else {
+            next.set(s.sessionDbId, filtered);
+          }
+        }
+      }
+      return changed ? next : prev;
+    });
   }, [query.data]);
 
   // IPC event listener
@@ -317,11 +342,24 @@ export function useFeatureAgentState(featureId: number) {
     const rawBufferBlocks = streamBuffer.get(s.sessionDbId) ?? [];
     const maxMsgId = s.maxMessageId ?? 0;
 
+    // Collect toolUseIds already present in server blocks (including nested)
+    const serverToolUseIds = new Set<string>();
+    function collectToolUseIds(blocks: AgentBlockData[]) {
+      for (const b of blocks) {
+        if (b.toolUseId) serverToolUseIds.add(b.toolUseId);
+        if (b.childBlocks) collectToolUseIds(b.childBlocks);
+      }
+    }
+    collectToolUseIds(queryBlocks);
+
     // Filter buffer blocks: skip any already covered by server data
-    // A block with messageDbId <= maxMessageId is already in the DB query result
-    const bufferBlocks = rawBufferBlocks.filter((b) =>
-      !b.messageDbId || b.messageDbId > maxMsgId,
-    );
+    // - messageDbId <= maxMessageId means it's in the DB query result
+    // - toolUseId already in server blocks means it's a duplicate tool_call
+    const bufferBlocks = rawBufferBlocks.filter((b) => {
+      if (b.messageDbId && b.messageDbId <= maxMsgId) return false;
+      if (b.type === "tool_call" && b.toolUseId && serverToolUseIds.has(b.toolUseId)) return false;
+      return true;
+    });
 
     // Nest buffer blocks under their parent Task blocks (parent may be in query or buffer)
     const merged = [...queryBlocks];

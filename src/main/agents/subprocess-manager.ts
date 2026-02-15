@@ -1,7 +1,7 @@
 import { BrowserWindow } from "electron";
 import { getDatabase } from "../db/database";
 import { discoverClaudeCli } from "./cli-discovery";
-import { getSessionDbId, persistStreamEvent, persistClaudeSessionId } from "./ipc-bridge";
+import { getSessionDbId, persistStreamEvent, persistClaudeSessionId, notifyDbUpdated } from "./ipc-bridge";
 import { DEFAULT_MODEL } from "./models";
 import type { AgentEvent, AgentType, StreamEvent } from "./types";
 import EventEmitter from "node:events";
@@ -413,11 +413,17 @@ async function runSdkQuery(
     if (toolName === "AskUserQuestion") {
       // Persist questions to DB before broadcasting
       const sDbId = getSessionDbId(managed.id);
+      let featureIdForNotify: number | null = null;
       if (sDbId) {
         try {
           const db2 = getDatabase();
           db2.prepare("UPDATE agent_sessions SET pending_questions = ? WHERE id = ?")
             .run(JSON.stringify(input), sDbId);
+          const row = db2.prepare("SELECT feature_id FROM agent_sessions WHERE id = ?").get(sDbId) as { feature_id: number } | undefined;
+          if (row) {
+            featureIdForNotify = row.feature_id;
+            notifyDbUpdated("agent_session", row.feature_id);
+          }
         } catch { /* best-effort */ }
       }
 
@@ -430,6 +436,7 @@ async function runSdkQuery(
           try {
             const db2 = getDatabase();
             db2.prepare("UPDATE agent_sessions SET pending_questions = NULL WHERE id = ?").run(sDbId);
+            if (featureIdForNotify) notifyDbUpdated("agent_session", featureIdForNotify);
           } catch { /* best-effort */ }
         }
 
@@ -451,6 +458,7 @@ async function runSdkQuery(
           try {
             const db2 = getDatabase();
             db2.prepare("UPDATE agent_sessions SET pending_questions = NULL WHERE id = ?").run(sDbId);
+            if (featureIdForNotify) notifyDbUpdated("agent_session", featureIdForNotify);
           } catch { /* best-effort */ }
         }
         return {
