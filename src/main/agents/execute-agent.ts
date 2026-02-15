@@ -485,9 +485,9 @@ function broadcastExecuteWaiting(sessionDbId: number, nextStepNumber: number): v
 export function continueExecuteAgent(sessionDbId: number): { subprocessIds: string[] } {
   const db = getDatabase();
 
-  // Verify the session is in 'waiting' status
+  // Verify the session is in 'waiting' or 'paused' status (paused happens after app restart)
   const session = db
-    .prepare("SELECT id, feature_id, status FROM agent_sessions WHERE id = ? AND agent_type = 'execute' AND status = 'waiting'")
+    .prepare("SELECT id, feature_id, status FROM agent_sessions WHERE id = ? AND agent_type = 'execute' AND status IN ('waiting', 'paused')")
     .get(sessionDbId) as { id: number; feature_id: number; status: string } | undefined;
 
   if (!session) {

@@ -92,22 +92,26 @@ export function useWorkflowAgents({
   const hasAnyAgentOutput = sessionEntries.length > 0;
   const noAgentsRunning = sessions.every((s) => s.status !== "running");
 
-  // Execute overall status
-  const executeStatus: AgentStatus = useMemo(() => {
-    if (executeSessions.length === 0) return "idle";
-    if (executeSessions.some((s) => s.status === "running")) return "running";
-    if (executeSessions.some((s) => s.status === "paused")) return "paused";
-    if (executeSessions.some((s) => s.status === "error")) return "error";
-    if (executeSessions.every((s) => s.status === "completed")) return "completed";
-    return "idle";
-  }, [executeSessions]);
-
   // --- Continue build state (Level 2 autonomy) ---
   const waitingOrchestrator = useMemo(
     () => sessions.find((s) => s.agentType === "execute" && s.runId == null && s.status === "paused"),
     [sessions],
   );
   const canContinueBuild = waitingOrchestrator != null;
+
+  // Execute overall status (includes orchestrator state for paused/waiting)
+  const executeStatus: AgentStatus = useMemo(() => {
+    if (executeSessions.length === 0) {
+      // No child sessions yet — check if the orchestrator is paused/waiting (e.g. after restart)
+      if (waitingOrchestrator) return "paused";
+      return "idle";
+    }
+    if (executeSessions.some((s) => s.status === "running")) return "running";
+    if (executeSessions.some((s) => s.status === "paused")) return "paused";
+    if (executeSessions.some((s) => s.status === "error")) return "error";
+    if (executeSessions.every((s) => s.status === "completed")) return "completed";
+    return "idle";
+  }, [executeSessions, waitingOrchestrator]);
   const [executeWaitingNextStep, setExecuteWaitingNextStep] = useState<number | null>(null);
   const isContinuingBuild = continueExecuteMutation.isLoading;
 
@@ -116,10 +120,12 @@ export function useWorkflowAgents({
     setExecuteWaitingNextStep(null);
     try {
       await continueExecuteMutation.mutateAsync({ sessionDbId: waitingOrchestrator.sessionDbId });
+      // Refetch so the newly spawned child sessions appear immediately
+      void refetch();
     } catch {
       // error handled by query refetch
     }
-  }, [waitingOrchestrator, continueExecuteMutation]);
+  }, [waitingOrchestrator, continueExecuteMutation, refetch]);
 
   // --- Review state ---
   const [reviewComplete, setReviewComplete] = useState(false);
