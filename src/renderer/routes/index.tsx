@@ -1,4 +1,5 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { useEffect } from "react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { trpc } from "../trpc";
 
 export const Route = createFileRoute("/")({
@@ -6,12 +7,32 @@ export const Route = createFileRoute("/")({
 });
 
 function HomePage() {
-  const hello = trpc.hello.useQuery({ name: "ProductDevR" });
+  const navigate = useNavigate();
+  const projectsQuery = trpc.projects.list.useQuery();
+  const firstProjectId = projectsQuery.data?.[0]?.id ?? null;
+
+  const featuresQuery = trpc.features.listByProject.useQuery(
+    { project_id: firstProjectId! },
+    { enabled: firstProjectId != null },
+  );
+  const firstFeatureId = featuresQuery.data?.[0]?.id ?? null;
+
+  useEffect(() => {
+    if (firstProjectId != null && firstFeatureId != null) {
+      void navigate({
+        to: "/projects/$projectId/features/$featureId",
+        params: {
+          projectId: String(firstProjectId),
+          featureId: String(firstFeatureId),
+        },
+        replace: true,
+      });
+    }
+  }, [firstProjectId, firstFeatureId, navigate]);
 
   return (
     <div className="p-6">
-      <h1 className="text-2xl font-bold mb-4">Home</h1>
-      <p className="text-muted-foreground">{hello.data?.greeting ?? "Loading..."}</p>
+      <p className="text-muted-foreground">Loading...</p>
     </div>
   );
 }
