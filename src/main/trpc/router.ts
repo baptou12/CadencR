@@ -640,6 +640,19 @@ const agentsRouter = router({
 
       if (sessions.length === 0) return { sessions: [] };
 
+      // Batch-fetch phase titles for execute sessions
+      const phaseIds = sessions.map((s) => s.phase_id).filter((id): id is number => id != null);
+      const phaseTitleMap = new Map<number, string>();
+      if (phaseIds.length > 0) {
+        const phPlaceholders = phaseIds.map(() => "?").join(",");
+        const phases = db
+          .prepare(`SELECT id, title FROM phases WHERE id IN (${phPlaceholders})`)
+          .all(...phaseIds) as Array<{ id: number; title: string }>;
+        for (const p of phases) {
+          phaseTitleMap.set(p.id, p.title);
+        }
+      }
+
       // Batch-fetch all messages for these sessions
       const sessionIds = sessions.map((s) => s.id);
       const placeholders = sessionIds.map(() => "?").join(",");
@@ -682,6 +695,7 @@ const agentsRouter = router({
             claudeSessionId: s.claude_session_id,
             runId: s.run_id,
             phaseId: s.phase_id,
+            phaseTitle: s.phase_id != null ? phaseTitleMap.get(s.phase_id) ?? null : null,
           };
         }),
       };

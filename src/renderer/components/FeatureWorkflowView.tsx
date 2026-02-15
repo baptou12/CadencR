@@ -264,7 +264,9 @@ export function FeatureWorkflowView({
           actions.canStartReview) && (
           <div className="space-y-2">
             {wf.sessionEntries.map((entry, index) => {
-              const label = AGENT_LABELS[entry.agentType] ?? entry.agentType;
+              const label = entry.agentType === "execute" && entry.phaseTitle
+                ? `Execute - ${entry.phaseTitle}`
+                : AGENT_LABELS[entry.agentType] ?? entry.agentType;
               const sessionKey = `${entry.agentType}-${entry.sessionDbId}`;
               const questions = entry.pendingQuestions ?? [];
               return (

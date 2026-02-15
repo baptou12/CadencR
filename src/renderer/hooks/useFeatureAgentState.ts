@@ -187,6 +187,7 @@ export interface FeatureSession {
   claudeSessionId: string | null;
   runId: number | null;
   phaseId: number | null;
+  phaseTitle: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -405,6 +406,7 @@ export function useFeatureAgentState(featureId: number) {
       claudeSessionId: s.claudeSessionId,
       runId: s.runId,
       phaseId: s.phaseId,
+      phaseTitle: s.phaseTitle,
     };
   });
 
