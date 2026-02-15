@@ -75,6 +75,10 @@ const toolParsers: Record<string, ToolParser> = {
     label: "Fetching page",
     detail: typeof args.url === "string" ? args.url : undefined,
   }),
+
+  ExitPlanMode: () => ({
+    label: "Plan ready for review",
+  }),
 };
 
 /**

@@ -4,6 +4,7 @@ import { ChevronRightIcon, ChevronDownIcon, WrenchIcon, BrainIcon, CodeIcon, Lay
 import { parseToolCall } from "@/lib/tool-call-parser";
 import { Markdown } from "@/components/Markdown";
 import { InlineDiffBlock } from "@/components/InlineDiffBlock";
+import { ClipboardCheck } from "lucide-react";
 
 /** Reconstruct diff data from persisted tool args (for historical sessions). */
 function diffFromToolArgs(
@@ -81,9 +82,12 @@ export function AgentBlock({ block, isStreaming, expandAllTasks, onExpandAllTask
       if (block.toolName === "Task" && block.childBlocks) {
         return <TaskAgentBlock block={block} isStreaming={isStreaming} expandAll={expandAllTasks} onExpandAll={onExpandAllTasks} />;
       }
+      if (block.toolName === "ExitPlanMode") {
+        return <PlanBlock args={block.toolArgs} />;
+      }
       if (block.toolName === "Write" || block.toolName === "Edit") {
         const diff = diffFromToolArgs(block.toolName, block.toolArgs);
-        if (diff) {
+        if (diff && !diff.filePath.includes("/.claude/plans/")) {
           return (
             <div>
               <ToolCallBlock name={block.toolName} args={block.toolArgs} />
@@ -110,6 +114,32 @@ export function AgentBlock({ block, isStreaming, expandAllTasks, onExpandAllTask
 
 function TextBlock({ content }: { content: string }) {
   return <Markdown content={content} />;
+}
+
+function PlanBlock({ args }: { args?: string }) {
+  let plan: string | undefined;
+  if (args) {
+    try {
+      const parsed = JSON.parse(args) as Record<string, unknown>;
+      if (typeof parsed.plan === "string") plan = parsed.plan;
+    } catch {
+      // partial JSON during streaming
+    }
+  }
+
+  if (!plan) return null;
+
+  return (
+    <div className="my-2 rounded-md border border-blue-800 bg-blue-500/5">
+      <div className="flex items-center gap-2 border-b border-blue-800 px-3 py-1.5 text-xs">
+        <ClipboardCheck className="size-3 text-blue-400" />
+        <span className="font-medium text-blue-300">Plan</span>
+      </div>
+      <div className="px-3 py-2">
+        <Markdown content={plan} />
+      </div>
+    </div>
+  );
 }
 
 function CodeBlock({ content, language }: { content: string; language?: string }) {
