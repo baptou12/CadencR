@@ -73,15 +73,17 @@ A: Yes — all feature types start as "Session X" and get renamed from first use
 - **Implementation notes**: Created `src/main/agents/auto-name.ts`. Uses `startSubprocess` with `allowedTools: []` and hardcoded Haiku model. Listens for both `content_block_start` (text) and `content_block_delta` (text_delta) events to accumulate output. On completion, strips surrounding quotes from the name, updates the DB, and broadcasts `db:updated` with entity `"feature"` so the renderer invalidates via existing IPC channel.
 - **Validation results**: Lint passed (0 warnings, 0 errors). Type check passed (no errors).
 
-### ⬜ Phase 3: Hook auto-naming into agent start procedures
+### ✅ Phase 3: Hook auto-naming into agent start procedures
 - **Step**: 2
 - **Complexity**: 2
-- [ ] In `router.ts`, after calling `startPlanAgent` / `startBrainstormAgent` / `startSessionAgent`, call `autoNameFeature(featureId, description/prompt, cwd)` fire-and-forget
-- [ ] Only trigger if the feature title still matches the "Session X" pattern (avoid renaming user-titled features)
-- [ ] Add the custom event listener in the renderer to invalidate the features query when `feature_renamed` event arrives (via existing IPC agent:event channel)
+- [x] In `router.ts`, after calling `startPlanAgent` / `startBrainstormAgent` / `startSessionAgent`, call `autoNameFeature(featureId, description/prompt, cwd)` fire-and-forget
+- [x] Only trigger if the feature title still matches the "Session X" pattern (avoid renaming user-titled features)
+- [x] Add the custom event listener in the renderer to invalidate the features query when `feature_renamed` event arrives (via existing IPC agent:event channel)
 - **Files**: `src/main/trpc/router.ts`, `src/main/agents/auto-name.ts` (add event broadcast), `src/renderer/components/FeatureList.tsx` (listen for rename event)
 - **Commit message**: `feat: trigger auto-naming on first agent interaction`
 - **Bisect note**: Must include both the call site and the event listener to avoid stale UI
+- **Implementation notes**: Added `hasDefaultTitle(featureId)` helper in `router.ts` that checks if a feature title matches `/^Session \d+$/i`. Added `autoNameFeature` calls (fire-and-forget) after `startPlanAgent`, `startBrainstormAgent`, and `startSessionAgent`, gated by the title check. No changes needed in `FeatureList.tsx` or `auto-name.ts` -- the existing `db:updated` broadcast with `entity: "feature"` already triggers `useDbUpdated` in `__root.tsx`, which invalidates `features.listByProject` and `features.getById`.
+- **Validation results**: Lint passed (0 warnings, 0 errors). Type check passed (no errors).
 
 ### ⬜ Phase 4: Change feature creation to auto-name "Session X"
 - **Step**: 3
@@ -102,5 +104,5 @@ A: Yes — all feature types start as "Session X" and get renamed from first use
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 3
-- **Progress**: 2/4
+- **Current Phase**: Phase 4
+- **Progress**: 3/4

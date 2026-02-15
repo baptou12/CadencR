@@ -37,6 +37,7 @@ import { startExecuteAgent, continueExecuteAgent } from "../agents/execute-agent
 import { startRiskAgent } from "../agents/risk-agent";
 import { startReviewAgent, addFixPhase } from "../agents/review-agent";
 import { startSessionAgent } from "../agents/session-agent";
+import { autoNameFeature } from "../agents/auto-name";
 
 const settingsRouter = router({
   get: publicProcedure.input(z.object({ key: z.string() })).query(({ input }) => {
@@ -147,6 +148,13 @@ function resolveAgentCwd(featureId: number, projectId: number): string {
   const cwd = wtRow?.value ?? project?.path;
   if (!cwd) throw new Error("No working directory found for this feature");
   return cwd;
+}
+
+/** Check if a feature still has its default auto-generated title (e.g. "Session 3") */
+function hasDefaultTitle(featureId: number): boolean {
+  const db = getDatabase();
+  const row = db.prepare("SELECT title FROM features WHERE id = ?").get(featureId) as { title: string } | undefined;
+  return row != null && /^Session \d+$/i.test(row.title);
 }
 
 const agentTypeSchema = z.enum(["plan", "brainstorm", "execute", "risk", "review", "session"]);
@@ -382,6 +390,10 @@ const agentsRouter = router({
         cwd,
       });
 
+      if (hasDefaultTitle(input.featureId)) {
+        autoNameFeature(input.featureId, input.description, cwd);
+      }
+
       return result;
     }),
 
@@ -403,6 +415,10 @@ const agentsRouter = router({
         description: input.description,
         cwd,
       });
+
+      if (hasDefaultTitle(input.featureId)) {
+        autoNameFeature(input.featureId, input.description, cwd);
+      }
 
       return result;
     }),
@@ -508,6 +524,10 @@ const agentsRouter = router({
         prompt: input.prompt,
         cwd: project.path,
       });
+
+      if (hasDefaultTitle(input.featureId)) {
+        autoNameFeature(input.featureId, input.prompt, project.path);
+      }
 
       return result;
     }),
