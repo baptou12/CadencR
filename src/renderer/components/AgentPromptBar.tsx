@@ -19,6 +19,8 @@ export interface AgentPromptBarProps {
   disableShortcuts?: boolean;
   /** Called when the textarea gains or loses focus */
   onFocusChange?: (focused: boolean) => void;
+  /** Called when CMD+SHIFT+Z is pressed to collapse the agent */
+  onCollapse?: () => void;
 }
 
 /** Handle exposed by AgentPromptBar via forwardRef */
@@ -36,6 +38,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
   onQuestionResponse,
   disableShortcuts,
   onFocusChange,
+  onCollapse,
 }, ref) {
   const [text, setText] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -68,7 +71,10 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (e.key === "Escape" && isRunning) {
+      if (e.key === "z" && e.metaKey && e.shiftKey && !isRunning && onCollapse) {
+        e.preventDefault();
+        onCollapse();
+      } else if (e.key === "Escape" && isRunning) {
         e.preventDefault();
         onStop();
       } else if (e.key === "Enter" && !e.shiftKey && canSend) {
@@ -78,7 +84,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
         e.preventDefault();
       }
     },
-    [canSend, handleSend, isRunning, onStop],
+    [canSend, handleSend, isRunning, onStop, onCollapse],
   );
 
   // When questions are pending, render the question form inline instead of the prompt input

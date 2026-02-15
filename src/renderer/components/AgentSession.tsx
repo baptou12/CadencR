@@ -210,12 +210,21 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
     }
   }, [status, isControlled]);
 
+  const headerRef = useRef<HTMLDivElement>(null);
+
   const handleToggle = () => {
     if (onToggle) {
       onToggle();
     } else {
       setInternalOpen((prev) => !prev);
     }
+  };
+
+  const handleCollapse = () => {
+    handleToggle();
+    requestAnimationFrame(() => {
+      headerRef.current?.focus();
+    });
   };
 
   const isIdle = status === "idle" && blocks.length === 0;
@@ -296,6 +305,7 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
       onQuestionResponse={onAnswerSubmit}
       disableShortcuts={disableShortcuts}
       onFocusChange={setPromptBarFocused}
+      onCollapse={collapsible ? handleCollapse : undefined}
     />
   ) : null;
 
@@ -338,6 +348,7 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
     >
       {/* Header -- clickable to toggle */}
       <div
+        ref={headerRef}
         className="flex cursor-pointer items-center gap-2 px-3 py-2 outline-none hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:bg-blue-500/10"
         onClick={handleToggle}
         data-nav-item
