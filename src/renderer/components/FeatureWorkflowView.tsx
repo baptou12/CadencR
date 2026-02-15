@@ -11,6 +11,7 @@ import { NextStepsBar } from "@/components/NextStepsBar";
 import { useWorkflowAgents } from "@/hooks/useWorkflowAgents";
 import { getActiveFocusZone } from "@/lib/focus-zones";
 import { DiffViewerModal, type ExecuteAgentState } from "@/components/diff/DiffViewerModal";
+import { WorktreeSetupSection } from "@/components/WorktreeSetupSection";
 import type { FeatureSession } from "@/hooks/useFeatureAgentState";
 
 export function FeatureWorkflowView({
@@ -256,6 +257,10 @@ export function FeatureWorkflowView({
             isStartingPlan={wf.isStartingPlan}
             isStartingBrainstorm={wf.isStartingBrainstorm}
           />
+        )}
+
+        {view !== "plan-input" && (
+          <WorktreeSetupSection featureId={featureId} projectId={projectId} />
         )}
 
         {(wf.hasAnyAgentOutput ||

@@ -1,7 +1,13 @@
-import { execSync } from "node:child_process";
+import { execSync, exec } from "node:child_process";
+import { promisify } from "node:util";
 import path from "node:path";
 import os from "node:os";
 import fs from "node:fs";
+import crypto from "node:crypto";
+import { getDatabase } from "../db/database";
+import { notifyDbUpdated } from "../agents/ipc-bridge";
+
+const execAsync = promisify(exec);
 export interface WorktreeInfo {
   path: string;
   branch: string;
@@ -158,7 +164,114 @@ export function buildBranchName(prefix: string, featureTitle: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "")
     .slice(0, 50);
-  return `${prefix}${slug}`;
+  const suffix = crypto.randomBytes(2).toString("hex"); // 4-char hex
+  return `${prefix}${slug}-${suffix}`;
+}
+
+/**
+ * Set a feature setting in the DB (upsert).
+ */
+function setFeatureSetting(featureId: number, key: string, value: string): void {
+  const db = getDatabase();
+  db.prepare(
+    "INSERT INTO feature_settings (feature_id, key, value) VALUES (?, ?, ?) ON CONFLICT(feature_id, key) DO UPDATE SET value = excluded.value",
+  ).run(featureId, key, value);
+}
+
+/**
+ * Setup a worktree for a feature: create the worktree and run setup commands.
+ * Tracks progress via feature_settings (worktree_setup_step) and notifies the renderer.
+ */
+export async function setupWorktreeForFeature(
+  projectId: number,
+  featureId: number,
+): Promise<void> {
+  const db = getDatabase();
+
+  const feature = db
+    .prepare("SELECT title FROM features WHERE id = ?")
+    .get(featureId) as { title: string } | undefined;
+  if (!feature) throw new Error(`Feature not found: ${featureId}`);
+
+  const project = db
+    .prepare("SELECT name, path FROM projects WHERE id = ?")
+    .get(projectId) as { name: string; path: string } | undefined;
+  if (!project?.path) throw new Error(`Project path not found: ${projectId}`);
+
+  // Step 1: Naming is already done
+  setFeatureSetting(featureId, "worktree_setup_step", "named");
+  notifyDbUpdated("feature", featureId);
+
+  // Step 2: Create worktree
+  try {
+    setFeatureSetting(featureId, "worktree_setup_step", "creating");
+    notifyDbUpdated("feature", featureId);
+
+    const prefixRow = db
+      .prepare(
+        "SELECT value FROM project_settings WHERE project_id = ? AND key = 'branch_prefix'",
+      )
+      .get(projectId) as { value: string } | undefined;
+    const prefix = prefixRow?.value ?? "feature/";
+    const branchName = buildBranchName(prefix, feature.title);
+    const wt = createWorktree(project.path, branchName, project.name);
+
+    setFeatureSetting(featureId, "worktree_path", wt.worktreePath);
+    setFeatureSetting(featureId, "worktree_branch", wt.branch);
+    setFeatureSetting(featureId, "worktree_setup_step", "created");
+    notifyDbUpdated("feature", featureId);
+
+    // Step 3: Run setup commands
+    const setupRow = db
+      .prepare(
+        "SELECT value FROM project_settings WHERE project_id = ? AND key = 'setup_worktree'",
+      )
+      .get(projectId) as { value: string } | undefined;
+    const setupCommands = setupRow?.value?.trim();
+
+    if (setupCommands) {
+      setFeatureSetting(featureId, "worktree_setup_step", "setup");
+      setFeatureSetting(featureId, "worktree_setup_log", "");
+      notifyDbUpdated("feature", featureId);
+
+      const lines = setupCommands.split("\n").filter((l) => l.trim());
+      let accumulatedLog = "";
+
+      for (const cmd of lines) {
+        try {
+          accumulatedLog += `$ ${cmd}\n`;
+          setFeatureSetting(featureId, "worktree_setup_log", accumulatedLog);
+          notifyDbUpdated("feature", featureId);
+
+          const { stdout, stderr } = await execAsync(cmd, {
+            cwd: wt.worktreePath,
+            timeout: 120_000,
+          });
+          if (stdout) accumulatedLog += stdout;
+          if (stderr) accumulatedLog += stderr;
+          setFeatureSetting(featureId, "worktree_setup_log", accumulatedLog);
+          notifyDbUpdated("feature", featureId);
+        } catch (err: unknown) {
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          accumulatedLog += `ERROR: ${errorMessage}\n`;
+          setFeatureSetting(featureId, "worktree_setup_log", accumulatedLog);
+          setFeatureSetting(featureId, "worktree_setup_step", "error");
+          setFeatureSetting(featureId, "worktree_setup_error", errorMessage);
+          notifyDbUpdated("feature", featureId);
+          return;
+        }
+      }
+    }
+
+    setFeatureSetting(featureId, "worktree_setup_step", "done");
+    notifyDbUpdated("feature", featureId);
+  } catch (err: unknown) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    console.error("[worktree-setup] Failed:", errorMessage);
+    setFeatureSetting(featureId, "worktree_setup_step", "error");
+    setFeatureSetting(featureId, "worktree_setup_error", errorMessage);
+    notifyDbUpdated("feature", featureId);
+  }
 }
 
 export function getCurrentBranch(repoPath: string): string | null {

@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Ellipsis, Plus } from "lucide-react";
 import { trpc } from "@/trpc";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -54,6 +55,12 @@ function ProjectSettingsDialog({
 
   const branchPrefix = settings?.branch_prefix ?? "";
   const agentAutonomy = settings?.agent_autonomy ?? "1";
+  const [setupWorktree, setSetupWorktree] = useState(settings?.setup_worktree ?? "");
+  useEffect(() => {
+    if (settings?.setup_worktree != null) {
+      setSetupWorktree(settings.setup_worktree);
+    }
+  }, [settings?.setup_worktree]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -91,6 +98,27 @@ function ProjectSettingsDialog({
               />
               <p className="text-xs text-muted-foreground">
                 Prefix added to worktree branch names
+              </p>
+            </div>
+
+            <div className="space-y-1">
+              <span className="text-xs font-medium">Worktree Setup Commands</span>
+              <Textarea
+                placeholder={"e.g. pnpm install\ncp .env.example .env"}
+                rows={3}
+                value={setupWorktree}
+                onChange={(e) => setSetupWorktree(e.target.value)}
+                onBlur={() =>
+                  setSettingMutation.mutate({
+                    project_id: projectId,
+                    key: "setup_worktree",
+                    value: setupWorktree,
+                  })
+                }
+                className="text-sm"
+              />
+              <p className="text-xs text-muted-foreground">
+                Shell commands to run after creating a worktree (one per line)
               </p>
             </div>
 

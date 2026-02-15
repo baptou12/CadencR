@@ -18,8 +18,9 @@ export function autoNameFeature(
   featureId: number,
   userInput: string,
   cwd: string,
+  projectId?: number,
 ): void {
-  runAutoName(featureId, userInput, cwd).catch((err) => {
+  runAutoName(featureId, userInput, cwd, projectId).catch((err) => {
     console.error("[auto-name] Failed:", err);
   });
 }
@@ -28,6 +29,7 @@ async function runAutoName(
   featureId: number,
   userInput: string,
   cwd: string,
+  projectId?: number,
 ): Promise<void> {
   const cliInfo = discoverClaudeCli();
   if (!cliInfo) return;
@@ -99,4 +101,12 @@ async function runAutoName(
     featureId,
   );
   notifyDbUpdated("feature", featureId);
+
+  // Chain worktree setup after naming
+  if (projectId != null) {
+    const { setupWorktreeForFeature } = await import("../git/worktree");
+    setupWorktreeForFeature(projectId, featureId).catch((err) => {
+      console.error("[auto-name] Worktree setup failed:", err);
+    });
+  }
 }

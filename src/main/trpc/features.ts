@@ -1,10 +1,9 @@
 import { z } from "zod";
 import { router, publicProcedure } from "./trpc";
 import { getDatabase } from "../db/database";
-import type { FeatureRow, ProjectRow, PlanRow, PhaseRow, CountRow, SettingRow } from "../db/types";
+import type { FeatureRow, PlanRow, PhaseRow, CountRow, SettingRow } from "../db/types";
 import type { AgentType } from "../agents/types";
 import { DEFAULT_MODEL } from "../agents/models";
-import { createWorktree, buildBranchName } from "../git/worktree";
 import { getSubprocessIdsForSessionDbIds } from "../agents/ipc-bridge";
 import { stopSubprocess } from "../agents/subprocess-manager";
 
@@ -55,42 +54,6 @@ export const featuresRouter = router({
         .prepare("INSERT INTO features (project_id, title) VALUES (?, ?)")
         .run(input.project_id, title);
       const featureId = Number(result.lastInsertRowid);
-
-      // Auto-create worktree if project has a path
-      const project = db
-        .prepare("SELECT name, path FROM projects WHERE id = ?")
-        .get(input.project_id) as Pick<ProjectRow, "name" | "path"> | undefined;
-
-      if (project?.path) {
-        try {
-          const prefixRow = db
-            .prepare(
-              "SELECT value FROM project_settings WHERE project_id = ? AND key = 'branch_prefix'",
-            )
-            .get(input.project_id) as SettingRow | undefined;
-          const prefix = prefixRow?.value ?? "feature/";
-          const branchName = buildBranchName(prefix, title);
-          const wt = createWorktree(project.path, branchName, project.name);
-
-          // Store worktree info in feature settings
-          db.prepare(
-            "INSERT INTO feature_settings (feature_id, key, value) VALUES (?, ?, ?) ON CONFLICT(feature_id, key) DO UPDATE SET value = excluded.value",
-          ).run(featureId, "worktree_path", wt.worktreePath);
-          db.prepare(
-            "INSERT INTO feature_settings (feature_id, key, value) VALUES (?, ?, ?) ON CONFLICT(feature_id, key) DO UPDATE SET value = excluded.value",
-          ).run(featureId, "worktree_branch", wt.branch);
-        } catch (err: unknown) {
-          // Worktree creation is best-effort — don't fail feature creation
-          const errorMessage = err instanceof Error ? err.message : String(err);
-          console.error("Failed to create worktree for feature:", title, errorMessage);
-
-          // Store the error so the UI can display it
-          db.prepare(
-            "INSERT INTO feature_settings (feature_id, key, value) VALUES (?, ?, ?) ON CONFLICT(feature_id, key) DO UPDATE SET value = excluded.value",
-          ).run(featureId, "worktree_error", errorMessage);
-        }
-      }
-
       return { id: featureId };
     }),
 

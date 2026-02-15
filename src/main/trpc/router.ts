@@ -27,6 +27,7 @@ import {
   getDiff,
   getChangedFiles,
   getCurrentBranch,
+  setupWorktreeForFeature,
 } from "../git/worktree";
 import { diffCommentsRouter } from "./diff-comments";
 import { usageRouter } from "./usage";
@@ -391,7 +392,12 @@ const agentsRouter = router({
       });
 
       if (hasDefaultTitle(input.featureId)) {
-        autoNameFeature(input.featureId, input.description, cwd);
+        autoNameFeature(input.featureId, input.description, cwd, input.projectId);
+      } else {
+        // Feature already has a name, create worktree directly
+        setupWorktreeForFeature(input.projectId, input.featureId).catch((err) => {
+          console.error("[startPlan] Worktree setup failed:", err);
+        });
       }
 
       return result;
@@ -417,7 +423,12 @@ const agentsRouter = router({
       });
 
       if (hasDefaultTitle(input.featureId)) {
-        autoNameFeature(input.featureId, input.description, cwd);
+        autoNameFeature(input.featureId, input.description, cwd, input.projectId);
+      } else {
+        // Feature already has a name, create worktree directly
+        setupWorktreeForFeature(input.projectId, input.featureId).catch((err) => {
+          console.error("[startBrainstorm] Worktree setup failed:", err);
+        });
       }
 
       return result;
@@ -526,7 +537,7 @@ const agentsRouter = router({
       });
 
       if (hasDefaultTitle(input.featureId)) {
-        autoNameFeature(input.featureId, input.prompt, project.path);
+        autoNameFeature(input.featureId, input.prompt, project.path, input.projectId);
       }
 
       return result;
@@ -908,6 +919,16 @@ const gitRouter = router({
         .get(feature.project_id) as Pick<ProjectRow, "path"> | undefined;
       if (!project?.path) return [];
       return getChangedFiles(project.path, input.mode, input.targetBranch);
+    }),
+
+  /** Retry worktree setup for a feature */
+  retryWorktreeSetup: publicProcedure
+    .input(z.object({ projectId: z.number(), featureId: z.number() }))
+    .mutation(({ input }) => {
+      setupWorktreeForFeature(input.projectId, input.featureId).catch((err) => {
+        console.error("[retryWorktreeSetup] Failed:", err);
+      });
+      return { success: true };
     }),
 
   /** Open a worktree path in the system terminal */
