@@ -216,7 +216,7 @@ function RootLayout() {
             ref={leftSidebarRef}
             data-focus-zone="left-sidebar"
             tabIndex={0}
-            className="h-full outline-none focus-within:ring-2 focus-within:ring-blue-500/50"
+            className="h-full outline-none focus-within:ring-2 focus-within:ring-blue-400/70"
             onFocus={(e) => {
               // When the wrapper itself gets focus, move to the first nav item
               if (e.target === e.currentTarget) {
@@ -233,7 +233,14 @@ function RootLayout() {
           <main
             data-focus-zone="main-content"
             tabIndex={0}
-            className="h-full overflow-hidden outline-none focus-within:ring-2 focus-within:ring-blue-500/50"
+            className="h-full overflow-hidden outline-none focus-within:ring-2 focus-within:ring-blue-400/70"
+            onFocus={(e) => {
+              // When the wrapper itself gets focus, move to the first nav item
+              if (e.target === e.currentTarget) {
+                const firstItem = e.currentTarget.querySelector("[data-nav-item]") as HTMLElement | null;
+                if (firstItem) firstItem.focus();
+              }
+            }}
           >
             <Outlet />
           </main>

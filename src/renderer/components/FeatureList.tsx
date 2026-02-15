@@ -182,7 +182,7 @@ export function FeatureList({
               data-nav-type="feature"
               data-nav-id={String(feature.id)}
               data-nav-project-id={String(projectId)}
-              className={`group flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background ${
+              className={`group flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:bg-blue-500/10 ${
                 selectedFeatureId === feature.id ? "bg-accent" : ""
               }`}
               onClick={() => {

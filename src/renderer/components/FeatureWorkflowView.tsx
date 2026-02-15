@@ -58,8 +58,7 @@ export function FeatureWorkflowView({
     };
   }, [wf.sessionEntries]);
 
-  // --- Keyboard navigation state ---
-  const [focusedAgentIndex, setFocusedAgentIndex] = useState<number | null>(null);
+  // --- Keyboard navigation (DOM-based focus) ---
   const agentRefs = useRef<Map<number, AgentSessionHandle>>(new Map());
 
   const setAgentRef = useCallback((index: number, handle: AgentSessionHandle | null) => {
@@ -70,17 +69,34 @@ export function FeatureWorkflowView({
     }
   }, []);
 
+  const getMainNavItems = useCallback(() => {
+    const zone = document.querySelector('[data-focus-zone="main-content"]');
+    if (!zone) return [];
+    return Array.from(zone.querySelectorAll("[data-nav-item]")) as HTMLElement[];
+  }, []);
+
+  const moveFocus = useCallback((direction: "up" | "down") => {
+    const items = getMainNavItems();
+    if (items.length === 0) return;
+    const currentIndex = items.findIndex((el) => el === document.activeElement);
+    let nextIndex: number;
+    if (currentIndex === -1) {
+      nextIndex = direction === "down" ? 0 : items.length - 1;
+    } else if (direction === "down") {
+      nextIndex = currentIndex >= items.length - 1 ? 0 : currentIndex + 1;
+    } else {
+      nextIndex = currentIndex <= 0 ? items.length - 1 : currentIndex - 1;
+    }
+    items[nextIndex].focus({ focusVisible: true } as FocusOptions);
+  }, [getMainNavItems]);
+
   // CMD+OPT+DOWN: move focus to next agent session
   useHotkeys(
     "meta+alt+down",
     (e) => {
       if (getActiveFocusZone() !== "main-content") return;
-      if (wf.sessionEntries.length === 0) return;
       e.preventDefault();
-      setFocusedAgentIndex((prev) => {
-        if (prev === null) return 0;
-        return prev >= wf.sessionEntries.length - 1 ? 0 : prev + 1;
-      });
+      moveFocus("down");
     },
     { enableOnFormTags: true },
   );
@@ -90,12 +106,8 @@ export function FeatureWorkflowView({
     "meta+alt+up",
     (e) => {
       if (getActiveFocusZone() !== "main-content") return;
-      if (wf.sessionEntries.length === 0) return;
       e.preventDefault();
-      setFocusedAgentIndex((prev) => {
-        if (prev === null) return wf.sessionEntries.length - 1;
-        return prev <= 0 ? wf.sessionEntries.length - 1 : prev - 1;
-      });
+      moveFocus("up");
     },
     { enableOnFormTags: true },
   );
@@ -106,8 +118,12 @@ export function FeatureWorkflowView({
     "enter",
     (e) => {
       if (getActiveFocusZone() !== "main-content") return;
-      if (focusedAgentIndex === null) return;
-      const entry = wf.sessionEntries[focusedAgentIndex];
+      const focused = document.activeElement as HTMLElement | null;
+      if (!focused?.hasAttribute("data-nav-item")) return;
+      const agentIndexStr = focused.getAttribute("data-nav-agent-index");
+      if (agentIndexStr == null) return;
+      const agentIndex = Number(agentIndexStr);
+      const entry = wf.sessionEntries[agentIndex];
       if (!entry) return;
       const entryLabel = AGENT_LABELS[entry.agentType] ?? entry.agentType;
       const isWorking = entry.status === "running" || entry.status === "paused";
@@ -118,9 +134,9 @@ export function FeatureWorkflowView({
         if (!isOpen) {
           wf.setOpenAgent(entryLabel);
         }
-        setTimeout(() => {
-          agentRefs.current.get(focusedAgentIndex)?.focusPromptBar();
-        }, 50);
+        requestAnimationFrame(() => {
+          agentRefs.current.get(agentIndex)?.focusPromptBar();
+        });
       } else {
         e.preventDefault();
         wf.setOpenAgent((prev) =>
@@ -141,7 +157,7 @@ export function FeatureWorkflowView({
       if (document.activeElement instanceof HTMLElement) {
         document.activeElement.blur();
       }
-      // Re-focus the main-content zone so CMD+OPT+UP/DOWN still works
+      // Re-focus the main-content zone so onFocus delegation picks the first nav item
       const zone = document.querySelector('[data-focus-zone="main-content"]');
       if (zone instanceof HTMLElement) {
         zone.focus();
@@ -155,8 +171,12 @@ export function FeatureWorkflowView({
     "escape",
     (e) => {
       if (getActiveFocusZone() !== "main-content") return;
-      if (focusedAgentIndex === null) return;
-      const entry = wf.sessionEntries[focusedAgentIndex];
+      const focused = document.activeElement as HTMLElement | null;
+      if (!focused?.hasAttribute("data-nav-item")) return;
+      const agentIndexStr = focused.getAttribute("data-nav-agent-index");
+      if (agentIndexStr == null) return;
+      const agentIndex = Number(agentIndexStr);
+      const entry = wf.sessionEntries[agentIndex];
       if (!entry || entry.status !== "running") return;
       e.preventDefault();
       if (entry.agentType === "execute" && entry.subprocessId) {
@@ -167,11 +187,6 @@ export function FeatureWorkflowView({
     },
     { enableOnFormTags: true },
   );
-
-
-  // When focused agent changes, focus its prompt bar (if open) or header (if collapsed)
-  // This is handled by the keyboardFocused prop + useEffect would be complex,
-  // so we rely on the visual indicator and Enter to expand+focus.
 
   const { view, actions } = useFeatureState({
     featureStatus: feature?.status as FeatureStatus | undefined,
@@ -216,7 +231,7 @@ export function FeatureWorkflowView({
                   key={`${entry.agentType}-${entry.sessionDbId}`}
                   ref={(handle) => setAgentRef(index, handle)}
                   collapsible
-                  keyboardFocused={focusedAgentIndex === index}
+                  navAgentIndex={index}
                   agentType={entry.agentType}
                   label={label}
                   status={entry.status}

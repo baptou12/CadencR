@@ -132,7 +132,13 @@ export function PlanSidebar({ featureId }: PlanSidebarProps) {
         ref={containerRef}
         data-focus-zone="right-sidebar"
         tabIndex={0}
-        className="flex h-full w-80 shrink-0 flex-col border-l border-border outline-none focus-within:ring-2 focus-within:ring-blue-500/50"
+        className="flex h-full w-80 shrink-0 flex-col border-l border-border outline-none focus-within:ring-2 focus-within:ring-blue-400/70"
+        onFocus={(e) => {
+          if (e.target === e.currentTarget) {
+            const firstItem = e.currentTarget.querySelector("[data-nav-item]") as HTMLElement | null;
+            if (firstItem) firstItem.focus();
+          }
+        }}
       >
         <div className="flex items-center border-b border-border px-4 py-3">
           <h3 className="text-sm font-semibold text-foreground">{plan.title}</h3>
@@ -145,7 +151,7 @@ export function PlanSidebar({ featureId }: PlanSidebarProps) {
                 data-nav-item
                 data-nav-phase-index={index}
                 tabIndex={-1}
-                className="rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
+                className="rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:bg-blue-500/10"
               >
                 <PhaseCard
                   phase={phase}

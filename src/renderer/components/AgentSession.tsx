@@ -131,8 +131,8 @@ export interface AgentSessionProps {
   isAddingFixPhase?: boolean;
   /** Whether "Fix Immediately" action is in progress */
   isStartingFix?: boolean;
-  /** Whether this agent session is keyboard-focused (shows ring outline) */
-  keyboardFocused?: boolean;
+  /** Index for DOM-based keyboard navigation (sets data-nav-agent-index) */
+  navAgentIndex?: number;
 
   // --- Diff trigger props ---
   /** Whether the agent made file changes during its session */
@@ -183,7 +183,7 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
   onFixImmediately,
   isAddingFixPhase,
   isStartingFix,
-  keyboardFocused,
+  navAgentIndex,
   hasFileChanges,
   onViewDiff,
   canDelete,
@@ -338,12 +338,10 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
     >
       {/* Header -- clickable to toggle */}
       <div
-        className={cn(
-          "flex cursor-pointer items-center gap-2 px-3 py-2 hover:bg-muted/50",
-          keyboardFocused && "ring-2 ring-ring ring-offset-1 ring-offset-background",
-        )}
+        className="flex cursor-pointer items-center gap-2 px-3 py-2 outline-none hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:bg-blue-500/10"
         onClick={handleToggle}
         data-nav-item
+        {...(navAgentIndex != null ? { "data-nav-agent-index": navAgentIndex } : {})}
         tabIndex={-1}
       >
         <ChevronRightIcon
