@@ -333,7 +333,7 @@ export function useWorkflowAgents({
   };
 
   // Track open agent panel
-  const [openAgent, setOpenAgent] = useState<string | null>(null);
+  const [openAgent, setOpenAgent] = useState<string | null>(null); // stores unique key like "execute-123" or "plan-45"
 
   return {
     description,

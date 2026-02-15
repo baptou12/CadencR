@@ -125,14 +125,14 @@ export function FeatureWorkflowView({
       const agentIndex = Number(agentIndexStr);
       const entry = wf.sessionEntries[agentIndex];
       if (!entry) return;
-      const entryLabel = AGENT_LABELS[entry.agentType] ?? entry.agentType;
+      const sessionKey = `${entry.agentType}-${entry.sessionDbId}`;
       const isWorking = entry.status === "running" || entry.status === "paused";
       const isOpen =
-        wf.openAgent === entryLabel || isWorking;
+        wf.openAgent === sessionKey || isWorking;
       if (isWorking) {
         e.preventDefault();
         if (!isOpen) {
-          wf.setOpenAgent(entryLabel);
+          wf.setOpenAgent(sessionKey);
         }
         requestAnimationFrame(() => {
           agentRefs.current.get(agentIndex)?.focusPromptBar();
@@ -140,7 +140,7 @@ export function FeatureWorkflowView({
       } else {
         e.preventDefault();
         wf.setOpenAgent((prev) =>
-          prev === entryLabel ? null : entryLabel,
+          prev === sessionKey ? null : sessionKey,
         );
       }
     },
@@ -265,10 +265,11 @@ export function FeatureWorkflowView({
           <div className="space-y-2">
             {wf.sessionEntries.map((entry, index) => {
               const label = AGENT_LABELS[entry.agentType] ?? entry.agentType;
+              const sessionKey = `${entry.agentType}-${entry.sessionDbId}`;
               const questions = entry.pendingQuestions ?? [];
               return (
                 <AgentSession
-                  key={`${entry.agentType}-${entry.sessionDbId}`}
+                  key={sessionKey}
                   ref={(handle) => setAgentRef(index, handle)}
                   collapsible
                   navAgentIndex={index}
@@ -277,13 +278,13 @@ export function FeatureWorkflowView({
                   status={entry.status}
                   blocks={entry.blocks}
                   open={
-                    wf.openAgent === label ||
+                    wf.openAgent === sessionKey ||
                     entry.status === "running" ||
                     entry.status === "paused"
                   }
                   onToggle={() =>
                     wf.setOpenAgent((prev) =>
-                      prev === label ? null : label,
+                      prev === sessionKey ? null : sessionKey,
                     )
                   }
                   pendingQuestions={
