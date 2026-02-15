@@ -85,8 +85,7 @@ export function parsePlanOutput(output: string): ParsedPlan | null {
   // Extract sections between ## headings
   const extractSection = (heading: string): string | null => {
     const regex = new RegExp(
-      `^##\\s+${heading}\\s*\\n([\\s\\S]*?)(?=\\n##\\s|$)`,
-      "m",
+      `(?:^|\\n)##\\s+${heading}\\s*\\n([\\s\\S]*?)(?=\\n##\\s|$)`,
     );
     const m = planContent.match(regex);
     if (!m) return null;
