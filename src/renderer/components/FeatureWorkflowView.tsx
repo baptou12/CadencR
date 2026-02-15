@@ -269,6 +269,7 @@ export function FeatureWorkflowView({
                 isStartingFix={wf.isStartingFix}
                 hasFileChanges={entry.hasFileChanges}
                 onViewDiff={handleViewDiff}
+                model={entry.model}
                 canDelete={entry.status !== "running" && entry.status !== "completed" && !!entry.sessionDbId}
                 onDelete={() => handleDeleteAgent(entry)}
               />

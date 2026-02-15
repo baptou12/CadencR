@@ -32,6 +32,8 @@ export interface SessionEntry {
   sessionDbId?: number;
   /** Whether this agent made file changes (detected Write/Edit tool usage) */
   hasFileChanges: boolean;
+  /** The model used for this agent session */
+  model?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -957,6 +959,10 @@ export function useWorkflowAgents({
 
   const sessionEntries: SessionEntry[] = useMemo(() => {
     const entries: SessionEntry[] = [];
+    const sessions = sessionsQuery.data ?? [];
+    const runSessions = executeRunQuery.data ?? [];
+    const modelFor = (type: string) => sessions.find(s => s.agent_type === type)?.model ?? null;
+    const modelForSession = (id: number) => sessions.find(s => s.id === id)?.model ?? runSessions.find(s => s.id === id)?.model ?? null;
 
     // Planning agents
     if (hasOutput(plan)) {
@@ -970,6 +976,7 @@ export function useWorkflowAgents({
         resumable: resumableByType.has("plan"),
         sessionDbId: resumableByType.get("plan")?.sessionDbId,
         hasFileChanges: plan.hasFileChanges,
+        model: modelFor("plan"),
       });
     }
     if (hasOutput(brainstorm)) {
@@ -983,6 +990,7 @@ export function useWorkflowAgents({
         resumable: resumableByType.has("brainstorm"),
         sessionDbId: resumableByType.get("brainstorm")?.sessionDbId,
         hasFileChanges: brainstorm.hasFileChanges,
+        model: modelFor("brainstorm"),
       });
     }
 
@@ -1006,6 +1014,7 @@ export function useWorkflowAgents({
           resumable: sub.sessionDbId != null && resumableBySessionId.has(sub.sessionDbId),
           sessionDbId: sub.sessionDbId,
           hasFileChanges: execute.hasFileChanges,
+          model: sub.sessionDbId != null ? modelForSession(sub.sessionDbId) : modelFor("execute"),
         });
       }
     } else if (hasOutput(execute)) {
@@ -1020,6 +1029,7 @@ export function useWorkflowAgents({
         resumable: resumableByType.has("execute"),
         sessionDbId: resumableByType.get("execute")?.sessionDbId,
         hasFileChanges: execute.hasFileChanges,
+        model: modelFor("execute"),
       });
     }
 
@@ -1037,6 +1047,7 @@ export function useWorkflowAgents({
         pendingQuestions: [],
         resumable: false,
         hasFileChanges: execute.hasFileChanges,
+        model: modelFor("execute"),
       });
     }
 
@@ -1051,6 +1062,7 @@ export function useWorkflowAgents({
         resumable: resumableByType.has("risk"),
         sessionDbId: resumableByType.get("risk")?.sessionDbId,
         hasFileChanges: risk.hasFileChanges,
+        model: modelFor("risk"),
       });
     }
     if (hasOutput(review)) {
@@ -1064,11 +1076,12 @@ export function useWorkflowAgents({
         resumable: resumableByType.has("review"),
         sessionDbId: resumableByType.get("review")?.sessionDbId,
         hasFileChanges: review.hasFileChanges,
+        model: modelFor("review"),
       });
     }
 
     return entries;
-  }, [plan, brainstorm, execute, risk, review, resumableByType, resumableBySessionId]);
+  }, [plan, brainstorm, execute, risk, review, resumableByType, resumableBySessionId, sessionsQuery.data, executeRunQuery.data]);
 
   // Derived state from the session list
   const hasAnyAgentOutput = sessionEntries.length > 0;

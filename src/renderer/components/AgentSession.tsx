@@ -145,6 +145,8 @@ export interface AgentSessionProps {
   canDelete?: boolean;
   /** Called when user clicks delete */
   onDelete?: () => void;
+  /** The model ID used for this agent session */
+  model?: string | null;
 }
 
 /** Handle exposed by AgentSession via forwardRef */
@@ -186,6 +188,7 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
   onViewDiff,
   canDelete,
   onDelete,
+  model,
 }, ref) {
   const promptBarRef = useRef<AgentPromptBarHandle>(null);
 
@@ -358,6 +361,11 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
           {badge.icon}
           {badge.label}
         </Badge>
+        {model && (
+          <span className="text-xs text-muted-foreground">
+            {model.includes("opus") ? "Opus" : model.includes("sonnet") ? "Sonnet" : model.includes("haiku") ? "Haiku" : model}
+          </span>
+        )}
         {resumable && onResume && (
           <Button
             variant="ghost"

@@ -52,16 +52,16 @@ export interface UnifiedAgentResult {
 export function startUnifiedAgent(config: UnifiedAgentConfig): UnifiedAgentResult {
   const db = getDatabase();
 
-  // 1. Create agent session record
+  // 1. Resolve model
+  const model = resolveModel(config.agentType, config.featureId, config.projectId);
+
+  // 2. Create agent session record (with resolved model)
   const sessionResult = db
     .prepare(
-      "INSERT INTO agent_sessions (feature_id, agent_type, status, started_at, run_id, phase_id) VALUES (?, ?, ?, datetime('now'), ?, ?)",
+      "INSERT INTO agent_sessions (feature_id, agent_type, status, started_at, run_id, phase_id, model) VALUES (?, ?, ?, datetime('now'), ?, ?, ?)",
     )
-    .run(config.featureId ?? null, config.agentType, "running", config.runId ?? null, config.phaseId ?? null);
+    .run(config.featureId ?? null, config.agentType, "running", config.runId ?? null, config.phaseId ?? null, model);
   const sessionDbId = Number(sessionResult.lastInsertRowid);
-
-  // 2. Resolve model
-  const model = resolveModel(config.agentType, config.featureId, config.projectId);
 
   // 3. Spawn subprocess
   const managed = startSubprocess({

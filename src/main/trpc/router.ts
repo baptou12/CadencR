@@ -458,7 +458,7 @@ const agentsRouter = router({
     .query(({ input }) => {
       const db = getDatabase();
       let query =
-        "SELECT id, feature_id, agent_type, claude_session_id, status, started_at, ended_at, run_id, phase_id FROM agent_sessions WHERE feature_id = ?";
+        "SELECT id, feature_id, agent_type, claude_session_id, status, started_at, ended_at, run_id, phase_id, model FROM agent_sessions WHERE feature_id = ?";
       const params: (number | string)[] = [input.featureId];
       if (input.status) {
         query += " AND status = ?";
@@ -489,7 +489,7 @@ const agentsRouter = router({
       const db = getDatabase();
       const sessions = db
         .prepare(
-          "SELECT id, feature_id, agent_type, claude_session_id, status, started_at, ended_at, run_id, phase_id FROM agent_sessions WHERE run_id = ? ORDER BY id ASC",
+          "SELECT id, feature_id, agent_type, claude_session_id, status, started_at, ended_at, run_id, phase_id, model FROM agent_sessions WHERE run_id = ? ORDER BY id ASC",
         )
         .all(input.runId) as AgentSessionRow[];
       return sessions;

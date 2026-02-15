@@ -86,6 +86,7 @@ export interface AgentSessionRow {
   run_id: number | null;
   phase_id: number | null;
   subprocess_id: string | null;
+  model: string | null;
 }
 
 export interface AgentMessageRow {

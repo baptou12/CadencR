@@ -266,6 +266,13 @@ const migrations: Migration[] = [
       db.exec(`DELETE FROM feature_settings WHERE key = 'auto_commit'`);
     },
   },
+  {
+    version: 20,
+    description: "Add model column to agent_sessions",
+    up: (db) => {
+      db.exec("ALTER TABLE agent_sessions ADD COLUMN model TEXT");
+    },
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {
