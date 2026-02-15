@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useCallback } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { trpc } from "@/trpc";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Markdown } from "@/components/Markdown";
 import { PhaseCard } from "@/components/PhaseCard";
 import type { PhaseData } from "@/components/PhaseCard";
-import { CircleIcon, Loader2, CheckCircle2, XCircle } from "lucide-react";
+import { CircleIcon, Loader2, CheckCircle2, XCircle, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getActiveFocusZone } from "@/lib/focus-zones";
 
@@ -33,7 +33,32 @@ export function PlanSidebar({ featureId }: PlanSidebarProps) {
   const [expandedPhase, setExpandedPhase] = useState<PhaseData | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  const utils = trpc.useUtils();
   const { data: plan } = trpc.features.getPlanWithPhases.useQuery({ feature_id: featureId });
+  const resetPhase = trpc.features.resetPhase.useMutation({
+    onSuccess: () => {
+      utils.features.getPlanWithPhases.invalidate({ feature_id: featureId });
+      utils.agents.getSessions.invalidate({ featureId });
+      utils.agents.getHistory.invalidate();
+      utils.agents.getHistoryBatch.invalidate();
+      utils.agents.getSessionsByRunId.invalidate();
+    },
+  });
+
+  const canResetPhase = useCallback((phase: PhaseData, index: number) => {
+    if (phase.status !== "completed" && phase.status !== "done" && phase.status !== "error") return false;
+    if (!plan) return false;
+    const nextPhase = plan.phases[index + 1];
+    if (nextPhase && (nextPhase.status === "done" || nextPhase.status === "completed")) return false;
+    return true;
+  }, [plan]);
+
+  const handleResetPhase = useCallback((phase: PhaseData) => {
+    if (confirm(`Reset "${phase.title}" to pending? This will delete its agent sessions and messages.`)) {
+      resetPhase.mutate({ phase_id: phase.id });
+      setExpandedPhase(null);
+    }
+  }, [resetPhase]);
 
   const getNavItems = () => {
     if (!containerRef.current) return [];
@@ -129,6 +154,8 @@ export function PlanSidebar({ featureId }: PlanSidebarProps) {
                   phase={phase}
                   displayNumber={index + 1}
                   onExpand={setExpandedPhase}
+                  canReset={canResetPhase(phase, index)}
+                  onReset={handleResetPhase}
                 />
               </div>
             ))}
@@ -164,6 +191,18 @@ export function PlanSidebar({ featureId }: PlanSidebarProps) {
                     Complexity: {expandedPhase.complexity}
                   </Badge>
                 )}
+                {(() => {
+                  const idx = plan.phases.findIndex((p) => p.id === expandedPhase.id);
+                  return canResetPhase(expandedPhase, idx) ? (
+                    <button
+                      onClick={() => handleResetPhase(expandedPhase)}
+                      className="ml-auto flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-[var(--drac-orange)]"
+                    >
+                      <RotateCcw className="size-3" />
+                      Reset
+                    </button>
+                  ) : null;
+                })()}
               </div>
             </DialogHeader>
 

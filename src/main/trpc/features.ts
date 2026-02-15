@@ -219,6 +219,42 @@ export const featuresRouter = router({
       return Object.fromEntries(rows.map((r) => [r.key, r.value]));
     }),
 
+  resetPhase: publicProcedure
+    .input(z.object({ phase_id: z.number() }))
+    .mutation(({ input }) => {
+      const db = getDatabase();
+
+      // Get the phase and its plan
+      const phase = db.prepare("SELECT id, plan_id, step_number, status FROM phases WHERE id = ?").get(input.phase_id) as Pick<PhaseRow, "id" | "plan_id" | "step_number" | "status"> | undefined;
+      if (!phase) throw new Error("Phase not found");
+      if (phase.status !== "completed" && phase.status !== "done" && phase.status !== "error") {
+        throw new Error("Can only reset phases in completed or error status");
+      }
+
+      // Check that the next phase (by step_number) is not done/completed
+      const nextPhase = db.prepare(
+        "SELECT id, status FROM phases WHERE plan_id = ? AND step_number > ? ORDER BY step_number ASC, order_index ASC LIMIT 1"
+      ).get(phase.plan_id, phase.step_number) as Pick<PhaseRow, "id" | "status"> | undefined;
+      if (nextPhase && (nextPhase.status === "done" || nextPhase.status === "completed")) {
+        throw new Error("Cannot reset a phase when the next phase is already completed");
+      }
+
+      // Delete agent messages for sessions tied to this phase
+      db.prepare(
+        "DELETE FROM agent_messages WHERE session_id IN (SELECT id FROM agent_sessions WHERE phase_id = ?)"
+      ).run(input.phase_id);
+
+      // Delete agent sessions tied to this phase
+      db.prepare("DELETE FROM agent_sessions WHERE phase_id = ?").run(input.phase_id);
+
+      // Reset phase status and clear implementation data
+      db.prepare(
+        "UPDATE phases SET status = 'pending', implementation_notes = NULL, deviations = NULL WHERE id = ?"
+      ).run(input.phase_id);
+
+      return { success: true };
+    }),
+
   setSetting: publicProcedure
     .input(z.object({ feature_id: z.number(), key: z.string(), value: z.string() }))
     .mutation(({ input }) => {

@@ -1,4 +1,4 @@
-import { CircleIcon, Loader2, CheckCircle2, XCircle, Maximize } from "lucide-react";
+import { CircleIcon, Loader2, CheckCircle2, XCircle, Maximize, RotateCcw } from "lucide-react";
 import { Markdown } from "@/components/Markdown";
 import { cn } from "@/lib/utils";
 
@@ -20,6 +20,8 @@ interface PhaseCardProps {
   phase: PhaseData;
   displayNumber: number;
   onExpand: (phase: PhaseData) => void;
+  canReset?: boolean;
+  onReset?: (phase: PhaseData) => void;
 }
 
 const statusConfig: Record<string, { icon: React.ElementType; className: string; badgeClassName: string; label: string }> = {
@@ -30,7 +32,7 @@ const statusConfig: Record<string, { icon: React.ElementType; className: string;
   error: { icon: XCircle, className: "text-[var(--drac-red)]", badgeClassName: "bg-[var(--drac-red)]/20 text-[var(--drac-red)]", label: "Error" },
 };
 
-export function PhaseCard({ phase, displayNumber, onExpand }: PhaseCardProps) {
+export function PhaseCard({ phase, displayNumber, onExpand, canReset, onReset }: PhaseCardProps) {
   const config = statusConfig[phase.status] ?? statusConfig.pending;
   const StatusIcon = config.icon;
 
@@ -51,13 +53,24 @@ export function PhaseCard({ phase, displayNumber, onExpand }: PhaseCardProps) {
             {config.label}
           </span>
         </div>
-        <button
-          onClick={() => onExpand(phase)}
-          className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-          title="Expand phase"
-        >
-          <Maximize className="size-3.5" />
-        </button>
+        <div className="flex items-center gap-0.5 shrink-0">
+          {canReset && onReset && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onReset(phase); }}
+              className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-[var(--drac-orange)]"
+              title="Reset phase to pending"
+            >
+              <RotateCcw className="size-3.5" />
+            </button>
+          )}
+          <button
+            onClick={() => onExpand(phase)}
+            className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+            title="Expand phase"
+          >
+            <Maximize className="size-3.5" />
+          </button>
+        </div>
       </div>
 
       <h4 className="mt-1.5 text-sm font-semibold leading-snug truncate" title={phase.title}>
