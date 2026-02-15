@@ -195,6 +195,8 @@ export interface FeatureSession {
   phaseId: number | null;
   phaseTitle: string | null;
   todos: TodoItem[] | null;
+  permissionMode: string;
+  pendingPlanApproval: { allowedPrompts?: Array<{ tool: string; prompt: string }> } | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -471,6 +473,8 @@ export function useFeatureAgentState(featureId: number) {
       phaseId: s.phaseId,
       phaseTitle: s.phaseTitle,
       todos,
+      permissionMode: s.permissionMode ?? "bypassPermissions",
+      pendingPlanApproval: s.pendingPlanApproval ?? null,
     };
   });
 

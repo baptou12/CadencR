@@ -151,6 +151,16 @@ export interface AgentSessionProps {
   model?: string | null;
   /** Todo list from TodoWrite tool calls */
   todos?: TodoItem[] | null;
+  /** Current permission mode (session agents only) */
+  permissionMode?: "bypassPermissions" | "plan";
+  /** Called when user toggles permission mode */
+  onPermissionModeToggle?: () => void;
+  /** Pending plan approval from ExitPlanMode tool call */
+  pendingPlanApproval?: { allowedPrompts?: Array<{ tool: string; prompt: string }> } | null;
+  /** Called when user approves the plan */
+  onPlanApprove?: () => void;
+  /** Called when user requests changes to the plan */
+  onPlanRequestChanges?: (feedback: string) => void;
 }
 
 /** Handle exposed by AgentSession via forwardRef */
@@ -194,6 +204,11 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
   onDelete,
   model,
   todos,
+  permissionMode,
+  onPermissionModeToggle,
+  pendingPlanApproval,
+  onPlanApprove,
+  onPlanRequestChanges,
 }, ref) {
   const promptBarRef = useRef<AgentPromptBarHandle>(null);
   const [promptBarFocused, setPromptBarFocused] = useState(false);
@@ -314,6 +329,11 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
       disableShortcuts={disableShortcuts}
       onFocusChange={setPromptBarFocused}
       onCollapse={collapsible ? handleCollapse : undefined}
+      permissionMode={permissionMode}
+      onPermissionModeToggle={onPermissionModeToggle}
+      pendingPlanApproval={pendingPlanApproval}
+      onPlanApprove={onPlanApprove}
+      onPlanRequestChanges={onPlanRequestChanges}
     />
   ) : null;
 

@@ -66,9 +66,9 @@ export function startUnifiedAgent(config: UnifiedAgentConfig): UnifiedAgentResul
   } else {
     const sessionResult = db
       .prepare(
-        "INSERT INTO agent_sessions (feature_id, agent_type, status, started_at, run_id, phase_id, model) VALUES (?, ?, ?, datetime('now'), ?, ?, ?)",
+        "INSERT INTO agent_sessions (feature_id, agent_type, status, started_at, run_id, phase_id, model, permission_mode) VALUES (?, ?, ?, datetime('now'), ?, ?, ?, ?)",
       )
-      .run(config.featureId ?? null, config.agentType, "running", config.runId ?? null, config.phaseId ?? null, model);
+      .run(config.featureId ?? null, config.agentType, "running", config.runId ?? null, config.phaseId ?? null, model, config.permissionMode ?? "bypassPermissions");
     sessionDbId = Number(sessionResult.lastInsertRowid);
   }
 
@@ -80,6 +80,7 @@ export function startUnifiedAgent(config: UnifiedAgentConfig): UnifiedAgentResul
     prompt: config.prompt,
     resumeSessionId: config.resumeSessionId,
     model,
+    permissionMode: config.permissionMode,
   });
 
   // 3b. Persist subprocess ID to DB for reconnection after refresh

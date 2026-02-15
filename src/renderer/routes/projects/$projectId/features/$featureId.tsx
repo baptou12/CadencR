@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { trpc } from "@/trpc";
 import { FeatureTopBar } from "@/components/FeatureTopBar";
@@ -65,11 +65,67 @@ function SessionFeatureView({
   const hasFileChanges = session?.hasFileChanges ?? false;
   const todos = session?.todos ?? null;
 
+  // Permission mode state — initialized from DB, toggled locally
+  const [permissionMode, setPermissionMode] = useState<"bypassPermissions" | "plan">(
+    (session?.permissionMode as "bypassPermissions" | "plan") ?? "bypassPermissions",
+  );
+  // Sync from DB when session data loads/changes
+  useEffect(() => {
+    if (session?.permissionMode) {
+      setPermissionMode(session.permissionMode as "bypassPermissions" | "plan");
+    }
+  }, [session?.permissionMode]);
+
   // Mutations
   const startSessionMutation = trpc.agents.startSession.useMutation();
   const sendMessageMutation = trpc.agents.sendMessage.useMutation();
   const interruptMutation = trpc.agents.interrupt.useMutation();
   const resumeMutation = trpc.agents.resume.useMutation();
+  const setPermissionModeMutation = trpc.agents.setPermissionMode.useMutation();
+  const submitAnswersMutation = trpc.agents.submitAnswers.useMutation();
+  const submitPlanApprovalMutation = trpc.agents.submitPlanApproval.useMutation();
+
+  const handlePermissionModeToggle = useCallback(() => {
+    const newMode = permissionMode === "bypassPermissions" ? "plan" : "bypassPermissions";
+    setPermissionMode(newMode);
+    if (session?.sessionDbId) {
+      setPermissionModeMutation.mutate({ sessionId: session.sessionDbId, mode: newMode });
+    }
+  }, [permissionMode, session?.sessionDbId, setPermissionModeMutation]);
+
+  const handlePlanApprove = useCallback(() => {
+    if (!session?.subprocessId) return;
+    submitPlanApprovalMutation.mutate({ subprocessId: session.subprocessId, approved: true });
+    // Optimistically update local permission mode
+    setPermissionMode("bypassPermissions");
+  }, [session?.subprocessId, submitPlanApprovalMutation]);
+
+  const handlePlanRequestChanges = useCallback((feedback: string) => {
+    if (!session?.subprocessId) return;
+    submitPlanApprovalMutation.mutate({ subprocessId: session.subprocessId, approved: false, feedback });
+  }, [session?.subprocessId, submitPlanApprovalMutation]);
+
+  const handleAnswerSubmit = useCallback(
+    (response: string) => {
+      if (!session?.subprocessId || !session.pendingQuestions?.length) return;
+      const answers: Record<string, string> = {};
+      const sections = response.split("\n\n");
+      session.pendingQuestions.forEach((q, index) => {
+        const section = sections[index];
+        if (section) {
+          const answerMatch = section.match(/Answer:\s*(.+)/s);
+          if (answerMatch) {
+            answers[q.question] = answerMatch[1].trim();
+          }
+        }
+      });
+      submitAnswersMutation.mutate({
+        subprocessId: session.subprocessId,
+        answers,
+      });
+    },
+    [session?.subprocessId, session?.pendingQuestions, submitAnswersMutation],
+  );
 
   const handleSend = useCallback(
     async (message: string) => {
@@ -102,13 +158,14 @@ function SessionFeatureView({
           featureId,
           projectId,
           prompt: message,
+          permissionMode,
         });
         void refetch();
       } catch {
         // Error shown via refetch
       }
     },
-    [session, status, featureId, projectId, sendMessageMutation, startSessionMutation, resumeMutation, refetch],
+    [session, status, featureId, projectId, permissionMode, sendMessageMutation, startSessionMutation, resumeMutation, refetch],
   );
 
   const handleStop = useCallback(async () => {
@@ -136,10 +193,17 @@ function SessionFeatureView({
         status={status}
         onSend={handleSend}
         onStop={handleStop}
+        pendingQuestions={session?.pendingQuestions ?? undefined}
+        onAnswerSubmit={handleAnswerSubmit}
         disabled={startSessionMutation.isLoading || resumeMutation.isLoading}
         hasFileChanges={hasFileChanges}
         onViewDiff={handleViewDiff}
         todos={todos}
+        permissionMode={permissionMode}
+        onPermissionModeToggle={handlePermissionModeToggle}
+        pendingPlanApproval={session?.pendingPlanApproval}
+        onPlanApprove={handlePlanApprove}
+        onPlanRequestChanges={handlePlanRequestChanges}
         className="min-h-0"
       />
       <DiffViewerModal

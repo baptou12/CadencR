@@ -13,7 +13,9 @@ import {
   interruptSubprocess,
   listSubprocesses,
   submitUserAnswers,
+  submitPlanApproval,
   sendMessageToSubprocess,
+  setSubprocessPermissionMode,
 } from "../agents/subprocess-manager";
 import { bridgeSubprocessToRenderer, getSubprocessIdForSession } from "../agents/ipc-bridge";
 import type { AgentType } from "../agents/types";
@@ -364,6 +366,20 @@ const agentsRouter = router({
       return { success: true };
     }),
 
+  /** Submit plan approval or rejection for a pending ExitPlanMode tool call */
+  submitPlanApproval: publicProcedure
+    .input(
+      z.object({
+        subprocessId: z.string(),
+        approved: z.boolean(),
+        feedback: z.string().optional(),
+      }),
+    )
+    .mutation(({ input }) => {
+      submitPlanApproval(input.subprocessId, input.approved, input.feedback);
+      return { success: true };
+    }),
+
   /** Send a message to a running agent subprocess */
   sendMessage: publicProcedure
     .input(z.object({ id: z.string(), message: z.string() }))
@@ -520,6 +536,7 @@ const agentsRouter = router({
         featureId: z.number(),
         projectId: z.number(),
         prompt: z.string(),
+        permissionMode: z.enum(["bypassPermissions", "plan"]).optional(),
       }),
     )
     .mutation(({ input }) => {
@@ -534,6 +551,7 @@ const agentsRouter = router({
         projectId: input.projectId,
         prompt: input.prompt,
         cwd: project.path,
+        permissionMode: input.permissionMode,
       });
 
       if (hasDefaultTitle(input.featureId)) {
@@ -608,6 +626,29 @@ const agentsRouter = router({
       return { success: true };
     }),
 
+  /** Change the permission mode of a running session agent */
+  setPermissionMode: publicProcedure
+    .input(
+      z.object({
+        sessionId: z.number(),
+        mode: z.enum(["bypassPermissions", "plan"]),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      const db = getDatabase();
+      // Update DB regardless of whether subprocess is active
+      db.prepare("UPDATE agent_sessions SET permission_mode = ? WHERE id = ?")
+        .run(input.mode, input.sessionId);
+      // If subprocess is running, update it at runtime
+      const session = db
+        .prepare("SELECT subprocess_id FROM agent_sessions WHERE id = ?")
+        .get(input.sessionId) as Pick<AgentSessionRow, "subprocess_id"> | undefined;
+      if (session?.subprocess_id) {
+        await setSubprocessPermissionMode(session.subprocess_id, input.mode);
+      }
+      return { success: true };
+    }),
+
   /** List all active agent subprocesses */
   list: publicProcedure.query(() => {
     return listSubprocesses().map((s) => ({
@@ -645,7 +686,7 @@ const agentsRouter = router({
       const db = getDatabase();
       const sessions = db
         .prepare(
-          "SELECT id, feature_id, agent_type, claude_session_id, status, started_at, ended_at, run_id, phase_id, subprocess_id, model, pending_questions, has_file_changes FROM agent_sessions WHERE feature_id = ? ORDER BY id ASC",
+          "SELECT id, feature_id, agent_type, claude_session_id, status, started_at, ended_at, run_id, phase_id, subprocess_id, model, pending_questions, has_file_changes, permission_mode, pending_plan_approval FROM agent_sessions WHERE feature_id = ? ORDER BY id ASC",
         )
         .all(input.featureId) as AgentSessionRow[];
 
@@ -724,6 +765,8 @@ const agentsRouter = router({
             phaseId: s.phase_id,
             phaseTitle: s.phase_id != null ? phaseTitleMap.get(s.phase_id) ?? null : null,
             todos,
+            permissionMode: s.permission_mode ?? "bypassPermissions",
+            pendingPlanApproval: s.pending_plan_approval ? (() => { try { return JSON.parse(s.pending_plan_approval); } catch { return null; } })() : null,
           };
         }),
       };

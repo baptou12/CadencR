@@ -373,6 +373,7 @@ export interface SessionConfigOptions {
   cwd: string;
   prompt: string;
   resumeSessionId?: string;
+  permissionMode?: "bypassPermissions" | "plan";
 }
 
 // ---------------------------------------------------------------------------
@@ -669,5 +670,6 @@ export function createSessionConfig(opts: SessionConfigOptions): UnifiedAgentCon
     cwd: opts.cwd,
     prompt: opts.prompt,
     resumeSessionId: opts.resumeSessionId,
+    permissionMode: opts.permissionMode,
   };
 }

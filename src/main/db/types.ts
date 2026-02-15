@@ -89,6 +89,8 @@ export interface AgentSessionRow {
   model: string | null;
   pending_questions: string | null;
   has_file_changes: number;
+  permission_mode: string | null;
+  pending_plan_approval: string | null;
 }
 
 export interface AgentMessageRow {

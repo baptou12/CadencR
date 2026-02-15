@@ -20,6 +20,8 @@ export interface SessionAgentOptions {
   cwd: string;
   /** Existing Claude session ID to resume */
   resumeSessionId?: string;
+  /** Permission mode for the subprocess */
+  permissionMode?: "bypassPermissions" | "plan";
 }
 
 export interface SessionAgentResult {
@@ -38,6 +40,7 @@ export function startSessionAgent(options: SessionAgentOptions): SessionAgentRes
     cwd: options.cwd,
     prompt: options.prompt,
     resumeSessionId: options.resumeSessionId,
+    permissionMode: options.permissionMode,
   });
 
   const result: UnifiedAgentResult = startUnifiedAgent(config);

@@ -290,6 +290,20 @@ const migrations: Migration[] = [
       db.exec("ALTER TABLE agent_messages ADD COLUMN parent_tool_use_id TEXT");
     },
   },
+  {
+    version: 23,
+    description: "Add permission_mode column to agent_sessions",
+    up: (db) => {
+      db.exec("ALTER TABLE agent_sessions ADD COLUMN permission_mode TEXT DEFAULT 'bypassPermissions'");
+    },
+  },
+  {
+    version: 24,
+    description: "Add pending_plan_approval column to agent_sessions",
+    up: (db) => {
+      db.exec("ALTER TABLE agent_sessions ADD COLUMN pending_plan_approval TEXT");
+    },
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

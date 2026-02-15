@@ -227,4 +227,6 @@ export interface UnifiedAgentConfig {
   phaseId?: number;
   /** Existing DB session ID to reuse (for resume — skips creating a new row) */
   existingSessionDbId?: number;
+  /** Permission mode for the subprocess */
+  permissionMode?: "bypassPermissions" | "plan";
 }

@@ -1,8 +1,10 @@
 import { useState, useCallback, useRef, useEffect, useImperativeHandle, forwardRef } from "react";
-import { Send, Square } from "lucide-react";
+import { Send, Square, Zap, ClipboardList } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { AgentQuestionDrawer } from "./AgentQuestionDrawer";
+import { PlanApprovalBar } from "./PlanApprovalBar";
 import type { AgentQuestion } from "./AgentQuestionDrawer";
 import type { AgentStatus } from "@/components/AgentSession";
 
@@ -21,6 +23,16 @@ export interface AgentPromptBarProps {
   onFocusChange?: (focused: boolean) => void;
   /** Called when CMD+SHIFT+Z is pressed to collapse the agent */
   onCollapse?: () => void;
+  /** Current permission mode (session agents only) */
+  permissionMode?: "bypassPermissions" | "plan";
+  /** Called when user toggles permission mode */
+  onPermissionModeToggle?: () => void;
+  /** Pending plan approval from ExitPlanMode tool call */
+  pendingPlanApproval?: { allowedPrompts?: Array<{ tool: string; prompt: string }> } | null;
+  /** Called when user approves the plan */
+  onPlanApprove?: () => void;
+  /** Called when user requests changes to the plan */
+  onPlanRequestChanges?: (feedback: string) => void;
 }
 
 /** Handle exposed by AgentPromptBar via forwardRef */
@@ -39,6 +51,11 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
   disableShortcuts,
   onFocusChange,
   onCollapse,
+  permissionMode,
+  onPermissionModeToggle,
+  pendingPlanApproval,
+  onPlanApprove,
+  onPlanRequestChanges,
 }, ref) {
   const [text, setText] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -71,7 +88,10 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (e.key === "z" && e.metaKey && e.shiftKey && !isRunning && onCollapse) {
+      if (e.key === "Tab" && e.shiftKey && onPermissionModeToggle) {
+        e.preventDefault();
+        onPermissionModeToggle();
+      } else if (e.key === "z" && e.metaKey && e.shiftKey && !isRunning && onCollapse) {
         e.preventDefault();
         onCollapse();
       } else if (e.key === "Escape" && isRunning) {
@@ -84,8 +104,19 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
         e.preventDefault();
       }
     },
-    [canSend, handleSend, isRunning, onStop, onCollapse],
+    [canSend, handleSend, isRunning, onStop, onCollapse, onPermissionModeToggle],
   );
+
+  // When plan approval is pending, render the approval bar instead of the prompt input
+  if (pendingPlanApproval && onPlanApprove && onPlanRequestChanges) {
+    return (
+      <PlanApprovalBar
+        allowedPrompts={pendingPlanApproval.allowedPrompts}
+        onApprove={onPlanApprove}
+        onRequestChanges={onPlanRequestChanges}
+      />
+    );
+  }
 
   // When questions are pending, render the question form inline instead of the prompt input
   if (hasQuestions && onQuestionResponse) {
@@ -102,6 +133,31 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
 
   return (
     <div className="flex items-center gap-2 bg-muted/20 px-3 py-2">
+      {onPermissionModeToggle && (
+        <button
+          type="button"
+          onClick={onPermissionModeToggle}
+          className={cn(
+            "flex shrink-0 items-center gap-1 rounded-md px-2 py-1.5 text-xs font-medium transition-colors",
+            permissionMode === "plan"
+              ? "bg-blue-500/15 text-blue-400 hover:bg-blue-500/25"
+              : "bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+          )}
+          title="Toggle permission mode (Shift+Tab)"
+        >
+          {permissionMode === "plan" ? (
+            <>
+              <ClipboardList className="size-3.5" />
+              Plan
+            </>
+          ) : (
+            <>
+              <Zap className="size-3.5" />
+              Auto
+            </>
+          )}
+        </button>
+      )}
       <Textarea
         ref={textareaRef}
         value={text}

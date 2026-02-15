@@ -29,6 +29,8 @@ export interface SubprocessOptions {
   allowedTools?: string[];
   /** Claude model to use (defaults to DEFAULT_MODEL) */
   model?: string;
+  /** Permission mode for the SDK query */
+  permissionMode?: "bypassPermissions" | "plan";
 }
 
 
@@ -373,7 +375,7 @@ async function runSdkQuery(
 
   const queryOptions: Record<string, unknown> = {
     cwd: options.cwd,
-    permissionMode: "bypassPermissions" as const,
+    permissionMode: options.permissionMode ?? "bypassPermissions",
     pathToClaudeCodeExecutable: cliInfo.path,
     model: options.model ?? DEFAULT_MODEL,
   };
@@ -460,6 +462,86 @@ async function runSdkQuery(
       }
     }
 
+    if (toolName === "ExitPlanMode") {
+      // Persist pending plan approval to DB + notify renderer
+      const sDbId = getSessionDbId(managed.id);
+      let featureIdForNotify: number | null = null;
+      if (sDbId) {
+        try {
+          const db2 = getDatabase();
+          db2.prepare("UPDATE agent_sessions SET pending_plan_approval = ? WHERE id = ?")
+            .run(JSON.stringify(input), sDbId);
+          const row = db2.prepare("SELECT feature_id FROM agent_sessions WHERE id = ?").get(sDbId) as { feature_id: number } | undefined;
+          if (row) {
+            featureIdForNotify = row.feature_id;
+            notifyDbUpdated("agent_session", row.feature_id);
+          }
+        } catch { /* best-effort */ }
+      }
+
+      try {
+        // Wait for user approval via questionEmitter
+        const result = await new Promise<{ approved: boolean; feedback?: string }>((resolve, reject) => {
+          const timeout = setTimeout(
+            () => {
+              questionEmitter.removeAllListeners(`plan-approval:${managed.id}`);
+              reject(new Error("Plan approval timeout (15m)"));
+            },
+            15 * 60 * 1000,
+          );
+
+          questionEmitter.once(
+            `plan-approval:${managed.id}`,
+            (response: { approved: boolean; feedback?: string }) => {
+              clearTimeout(timeout);
+              resolve(response);
+            },
+          );
+        });
+
+        if (result.approved) {
+          // Switch permission mode to bypassPermissions so Claude starts executing
+          if (managed.query) {
+            await managed.query.setPermissionMode("bypassPermissions");
+          }
+          // Update DB: permission_mode = 'bypassPermissions', clear pending_plan_approval
+          if (sDbId) {
+            try {
+              const db2 = getDatabase();
+              db2.prepare("UPDATE agent_sessions SET permission_mode = 'bypassPermissions', pending_plan_approval = NULL WHERE id = ?")
+                .run(sDbId);
+              if (featureIdForNotify) notifyDbUpdated("agent_session", featureIdForNotify);
+            } catch { /* best-effort */ }
+          }
+          return { behavior: "allow" as const, updatedInput: input };
+        } else {
+          // User requested changes — clear pending_plan_approval and deny with feedback
+          if (sDbId) {
+            try {
+              const db2 = getDatabase();
+              db2.prepare("UPDATE agent_sessions SET pending_plan_approval = NULL WHERE id = ?").run(sDbId);
+              if (featureIdForNotify) notifyDbUpdated("agent_session", featureIdForNotify);
+            } catch { /* best-effort */ }
+          }
+          return {
+            behavior: "deny" as const,
+            message: result.feedback || "User requested changes to the plan.",
+          };
+        }
+      } catch (error) {
+        // Timeout or error — clear pending_plan_approval
+        if (sDbId) {
+          try {
+            const db2 = getDatabase();
+            db2.prepare("UPDATE agent_sessions SET pending_plan_approval = NULL WHERE id = ?").run(sDbId);
+            if (featureIdForNotify) notifyDbUpdated("agent_session", featureIdForNotify);
+          } catch { /* best-effort */ }
+        }
+        console.error("[subprocess-manager] Plan approval failed:", error);
+        return { behavior: "allow" as const, updatedInput: input };
+      }
+    }
+
     // Allow all other tools
     return { behavior: "allow" as const, updatedInput: input };
   };
@@ -537,6 +619,19 @@ async function runSdkQuery(
       messageStream.close();
     }
   }
+}
+
+/**
+ * Change the permission mode of a running subprocess at runtime.
+ */
+export async function setSubprocessPermissionMode(
+  id: string,
+  mode: "bypassPermissions" | "plan",
+): Promise<boolean> {
+  const managed = activeProcesses.get(id);
+  if (!managed || !managed.query || managed.status !== "running") return false;
+  await managed.query.setPermissionMode(mode);
+  return true;
 }
 
 /**
@@ -794,6 +889,39 @@ export function saveAllSessionStates(): void {
 export function gracefulShutdown(): void {
   saveAllSessionStates();
   killAllSubprocesses();
+}
+
+/**
+ * Submit a plan approval or rejection for a pending ExitPlanMode tool call.
+ * Called from the renderer via tRPC when the user approves or requests changes.
+ */
+export function submitPlanApproval(
+  subprocessId: string,
+  approved: boolean,
+  feedback?: string,
+): void {
+  // Persist the user's feedback as a visible user message in the session
+  if (!approved && feedback) {
+    const sessionDbId = getSessionDbId(subprocessId);
+    if (sessionDbId) {
+      try {
+        const managed = activeProcesses.get(subprocessId);
+        const content = `**Plan feedback:**\n${feedback}`;
+        const db = getDatabase();
+        const result = db.prepare(
+          "INSERT INTO agent_messages (session_id, role, content, message_type, tool_name) VALUES (?, ?, ?, ?, ?)",
+        ).run(sessionDbId, "user", content, "user_message", null);
+        const msgDbId = Number(result.lastInsertRowid);
+        if (managed) {
+          broadcastEvent(subprocessId, managed.agentType, { type: "user_message", content }, null, msgDbId);
+        }
+      } catch {
+        // Best-effort persistence
+      }
+    }
+  }
+
+  questionEmitter.emit(`plan-approval:${subprocessId}`, { approved, feedback });
 }
 
 // Export channel constants for use in preload and main
