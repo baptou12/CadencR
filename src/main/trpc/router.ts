@@ -42,6 +42,34 @@ import { startReviewAgent, addFixPhase } from "../agents/review-agent";
 import { startSessionAgent } from "../agents/session-agent";
 import { autoNameFeature } from "../agents/auto-name";
 
+/**
+ * Resolve the git directory for a feature.
+ * Session features always use the project path (they work on main).
+ * Workflow features use their worktree path if available.
+ */
+function resolveFeatureGitPath(featureId: number): string | null {
+  const db = getDatabase();
+  const feature = db
+    .prepare("SELECT project_id, type FROM features WHERE id = ?")
+    .get(featureId) as { project_id: number; type: string } | undefined;
+  if (!feature) return null;
+
+  // Session features always use the project path directly
+  if (feature.type !== "session") {
+    const wtRow = db
+      .prepare(
+        "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
+      )
+      .get(featureId) as SettingRow | undefined;
+    if (wtRow) return wtRow.value;
+  }
+
+  const project = db
+    .prepare("SELECT path FROM projects WHERE id = ?")
+    .get(feature.project_id) as Pick<ProjectRow, "path"> | undefined;
+  return project?.path ?? null;
+}
+
 const settingsRouter = router({
   get: publicProcedure.input(z.object({ key: z.string() })).query(({ input }) => {
     const db = getDatabase();
@@ -888,25 +916,9 @@ const gitRouter = router({
       targetBranch: z.string().optional(),
     }))
     .query(({ input }) => {
-      const db = getDatabase();
-      const statsMode = input.mode ?? "worktree";
-      const wtRow = db
-        .prepare(
-          "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
-        )
-        .get(input.featureId) as SettingRow | undefined;
-      if (wtRow) return getGitStats(wtRow.value, statsMode, input.targetBranch);
-
-      // For sessions without a worktree, use the project path
-      const feature = db
-        .prepare("SELECT project_id FROM features WHERE id = ?")
-        .get(input.featureId) as { project_id: number } | undefined;
-      if (!feature) return { filesChanged: 0, insertions: 0, deletions: 0 };
-      const project = db
-        .prepare("SELECT path FROM projects WHERE id = ?")
-        .get(feature.project_id) as Pick<ProjectRow, "path"> | undefined;
-      if (!project?.path) return { filesChanged: 0, insertions: 0, deletions: 0 };
-      return getGitStats(project.path, statsMode, input.targetBranch);
+      const gitPath = resolveFeatureGitPath(input.featureId);
+      if (!gitPath) return { filesChanged: 0, insertions: 0, deletions: 0 };
+      return getGitStats(gitPath, input.mode ?? "worktree", input.targetBranch);
     }),
 
   /** Get the current branch for a project */
@@ -931,24 +943,9 @@ const gitRouter = router({
       }),
     )
     .query(({ input }) => {
-      const db = getDatabase();
-      const wtRow = db
-        .prepare(
-          "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
-        )
-        .get(input.featureId) as SettingRow | undefined;
-      if (wtRow) return getDiff(wtRow.value, input.mode, input.targetBranch);
-
-      // For sessions without a worktree, use the project path
-      const feature = db
-        .prepare("SELECT project_id FROM features WHERE id = ?")
-        .get(input.featureId) as { project_id: number } | undefined;
-      if (!feature) return "";
-      const project = db
-        .prepare("SELECT path FROM projects WHERE id = ?")
-        .get(feature.project_id) as Pick<ProjectRow, "path"> | undefined;
-      if (!project?.path) return "";
-      return getDiff(project.path, input.mode, input.targetBranch);
+      const gitPath = resolveFeatureGitPath(input.featureId);
+      if (!gitPath) return "";
+      return getDiff(gitPath, input.mode, input.targetBranch);
     }),
 
   /** Get list of changed files with per-file line counts */
@@ -961,24 +958,9 @@ const gitRouter = router({
       }),
     )
     .query(({ input }) => {
-      const db = getDatabase();
-      const wtRow = db
-        .prepare(
-          "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
-        )
-        .get(input.featureId) as SettingRow | undefined;
-      if (wtRow) return getChangedFiles(wtRow.value, input.mode, input.targetBranch);
-
-      // For sessions without a worktree, use the project path
-      const feature = db
-        .prepare("SELECT project_id FROM features WHERE id = ?")
-        .get(input.featureId) as { project_id: number } | undefined;
-      if (!feature) return [];
-      const project = db
-        .prepare("SELECT path FROM projects WHERE id = ?")
-        .get(feature.project_id) as Pick<ProjectRow, "path"> | undefined;
-      if (!project?.path) return [];
-      return getChangedFiles(project.path, input.mode, input.targetBranch);
+      const gitPath = resolveFeatureGitPath(input.featureId);
+      if (!gitPath) return [];
+      return getChangedFiles(gitPath, input.mode, input.targetBranch);
     }),
 
   /** Retry worktree setup for a feature */

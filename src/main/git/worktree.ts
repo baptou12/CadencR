@@ -361,7 +361,7 @@ export interface ChangedFile {
 
 /**
  * Get a unified diff string for a worktree.
- * - "worktree" mode: `git diff` (unstaged changes)
+ * - "worktree" mode: unstaged + staged + untracked changes
  * - "branch" mode: `git diff <targetBranch>...HEAD`
  */
 export function getDiff(
@@ -373,8 +373,10 @@ export function getDiff(
   try {
     if (mode === "worktree") {
       const opts = { cwd: worktreePath, stdio: "pipe" as const, encoding: "utf-8" as const, maxBuffer: 50 * 1024 * 1024 };
-      // Standard diff for tracked files
-      const trackedDiff = execSync("git diff", opts);
+      // Unstaged changes to tracked files
+      const unstagedDiff = execSync("git diff", opts);
+      // Staged changes to tracked files
+      const stagedDiff = execSync("git diff --cached", opts);
       // Build unified diffs for untracked (new) files by reading their content
       const untrackedRaw = execSync("git ls-files --others --exclude-standard", { ...opts, maxBuffer: 1024 * 1024 });
       const untrackedFiles = untrackedRaw.trim().split("\n").filter(Boolean);
@@ -393,7 +395,7 @@ export function getDiff(
           // skip files we can't read
         }
       }
-      return trackedDiff + untrackedDiff;
+      return unstagedDiff + stagedDiff + untrackedDiff;
     }
     return execSync(`git diff ${branch}...HEAD`, {
       cwd: worktreePath,
