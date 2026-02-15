@@ -47,27 +47,31 @@ A: Yes — all feature types start as "Session X" and get renamed from first use
 
 ## Phases
 
-### ⬜ Phase 1: Add updateTitle tRPC procedure
+### ✅ Phase 1: Add updateTitle tRPC procedure
 - **Step**: 1
 - **Complexity**: 1
-- [ ] Add `updateTitle` mutation to `featuresRouter` in `src/main/trpc/features.ts` accepting `{ id: number, title: string }`
-- [ ] Simple SQL: `UPDATE features SET title = ? WHERE id = ?`
+- [x] Add `updateTitle` mutation to `featuresRouter` in `src/main/trpc/features.ts` accepting `{ id: number, title: string }`
+- [x] Simple SQL: `UPDATE features SET title = ? WHERE id = ?`
 - **Files**: `src/main/trpc/features.ts`
 - **Commit message**: `feat: add updateTitle mutation to features router`
 - **Bisect note**: N/A — new procedure, no callers yet
+- **Implementation notes**: Added `updateTitle` mutation after `updateStatus` in the features router. Accepts `{ id: number, title: string }`, runs `UPDATE features SET title = ? WHERE id = ?`, returns `{ success: true }`.
+- **Validation results**: Lint passed (0 warnings, 0 errors). Type check passed (no errors).
 
-### ⬜ Phase 2: Create auto-naming service using Claude CLI
+### ✅ Phase 2: Create auto-naming service using Claude CLI
 - **Step**: 1
 - **Complexity**: 3
-- [ ] Create `src/main/agents/auto-name.ts` with an `autoNameFeature(featureId: number, userInput: string, cwd: string)` function
-- [ ] Use `startSubprocess` from subprocess-manager to run a lightweight Haiku query with no tools
-- [ ] System prompt: "Generate a concise feature name (3-7 words) based on the user's description. Output ONLY the name, nothing else."
-- [ ] Listen for the text output, parse the name, then call `UPDATE features SET title = ? WHERE id = ?` directly
-- [ ] Use model `claude-haiku-3-5-20241022` hardcoded (this is a utility, not a user-configurable agent)
-- [ ] Fire-and-forget — don't block the main agent startup. Broadcast a custom event so the renderer can invalidate the features query when the name is ready
+- [x] Create `src/main/agents/auto-name.ts` with an `autoNameFeature(featureId: number, userInput: string, cwd: string)` function
+- [x] Use `startSubprocess` from subprocess-manager to run a lightweight Haiku query with no tools
+- [x] System prompt: "Generate a concise feature name (3-7 words) based on the user's description. Output ONLY the name, nothing else."
+- [x] Listen for the text output, parse the name, then call `UPDATE features SET title = ? WHERE id = ?` directly
+- [x] Use model `claude-haiku-3-5-20241022` hardcoded (this is a utility, not a user-configurable agent)
+- [x] Fire-and-forget — don't block the main agent startup. Broadcast a custom event so the renderer can invalidate the features query when the name is ready
 - **Files**: `src/main/agents/auto-name.ts`
 - **Commit message**: `feat: add auto-naming service using Haiku via Claude CLI`
 - **Bisect note**: N/A — new file, no callers yet
+- **Implementation notes**: Created `src/main/agents/auto-name.ts`. Uses `startSubprocess` with `allowedTools: []` and hardcoded Haiku model. Listens for both `content_block_start` (text) and `content_block_delta` (text_delta) events to accumulate output. On completion, strips surrounding quotes from the name, updates the DB, and broadcasts `db:updated` with entity `"feature"` so the renderer invalidates via existing IPC channel.
+- **Validation results**: Lint passed (0 warnings, 0 errors). Type check passed (no errors).
 
 ### ⬜ Phase 3: Hook auto-naming into agent start procedures
 - **Step**: 2
@@ -98,5 +102,5 @@ A: Yes — all feature types start as "Session X" and get renamed from first use
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Not started
-- **Progress**: 0/4
+- **Current Phase**: Phase 3
+- **Progress**: 2/4

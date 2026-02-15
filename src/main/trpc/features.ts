@@ -109,6 +109,14 @@ export const featuresRouter = router({
       return { success: true };
     }),
 
+  updateTitle: publicProcedure
+    .input(z.object({ id: z.number(), title: z.string() }))
+    .mutation(({ input }) => {
+      const db = getDatabase();
+      db.prepare("UPDATE features SET title = ? WHERE id = ?").run(input.title, input.id);
+      return { success: true };
+    }),
+
   delete: publicProcedure.input(z.object({ id: z.number() })).mutation(({ input }) => {
     const db = getDatabase();
     // Stop any running subprocesses for this feature's agent sessions
