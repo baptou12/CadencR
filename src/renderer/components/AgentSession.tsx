@@ -191,6 +191,7 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
   model,
 }, ref) {
   const promptBarRef = useRef<AgentPromptBarHandle>(null);
+  const [promptBarFocused, setPromptBarFocused] = useState(false);
 
   useImperativeHandle(ref, () => ({
     focusPromptBar: () => {
@@ -278,7 +279,7 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
         </div>
       )}
       {blocks.length > 0 && (
-        <AgentStream blocks={blocks} isStreaming={status === "running"} />
+        <AgentStream blocks={blocks} isStreaming={status === "running"} autoScroll={promptBarFocused} />
       )}
     </>
   );
@@ -294,6 +295,7 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
       pendingQuestions={pendingQuestions}
       onQuestionResponse={onAnswerSubmit}
       disableShortcuts={disableShortcuts}
+      onFocusChange={setPromptBarFocused}
     />
   ) : null;
 
@@ -406,7 +408,7 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
                 No output yet
               </div>
             ) : (
-              <AgentStream blocks={blocks} isStreaming={status === "running"} />
+              <AgentStream blocks={blocks} isStreaming={status === "running"} autoScroll={promptBarFocused} />
             )}
           </div>
 

@@ -15,9 +15,11 @@ interface AgentStreamProps {
   blocks: AgentBlockData[];
   /** Whether the agent is currently streaming */
   isStreaming?: boolean;
+  /** Whether auto-scroll is enabled (e.g. when this agent's prompt bar is focused) */
+  autoScroll?: boolean;
 }
 
-export function AgentStream({ blocks, isStreaming }: AgentStreamProps) {
+export function AgentStream({ blocks, isStreaming, autoScroll }: AgentStreamProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const [expandAllTasks, setExpandAllTasks] = useState(false);
 
@@ -26,8 +28,10 @@ export function AgentStream({ blocks, isStreaming }: AgentStreamProps) {
   }, []);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [blocks.length]);
+    if (autoScroll !== false) {
+      bottomRef.current?.scrollIntoView();
+    }
+  }, [blocks.length, autoScroll]);
 
   return (
     <div className="flex-1 overflow-y-auto overflow-x-hidden">

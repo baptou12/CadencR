@@ -17,6 +17,8 @@ export interface AgentPromptBarProps {
   onQuestionResponse?: (response: string) => void;
   /** When true, disables keyboard shortcuts in the question drawer */
   disableShortcuts?: boolean;
+  /** Called when the textarea gains or loses focus */
+  onFocusChange?: (focused: boolean) => void;
 }
 
 /** Handle exposed by AgentPromptBar via forwardRef */
@@ -33,6 +35,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
   pendingQuestions,
   onQuestionResponse,
   disableShortcuts,
+  onFocusChange,
 }, ref) {
   const [text, setText] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -98,6 +101,8 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={handleKeyDown}
+        onFocus={() => onFocusChange?.(true)}
+        onBlur={() => onFocusChange?.(false)}
         placeholder={isPaused ? "Send a message to resume…" : "Send a message…"}
         disabled={disabled}
         rows={1}
