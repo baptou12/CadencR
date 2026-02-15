@@ -399,17 +399,6 @@ async function runSdkQuery(
     toolName: string,
     input: Record<string, unknown>,
   ) => {
-    // Track file-modifying tools
-    if (toolName === "Write" || toolName === "Edit" || toolName === "NotebookEdit") {
-      const sDbId = getSessionDbId(managed.id);
-      if (sDbId) {
-        try {
-          const db2 = getDatabase();
-          db2.prepare("UPDATE agent_sessions SET has_file_changes = 1 WHERE id = ?").run(sDbId);
-        } catch { /* best-effort */ }
-      }
-    }
-
     if (toolName === "AskUserQuestion") {
       // Persist questions to DB before broadcasting
       const sDbId = getSessionDbId(managed.id);

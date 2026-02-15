@@ -84,15 +84,21 @@ export function persistStreamEvent(
             ptuid,
           ) as { lastInsertRowid: number | bigint };
         } else if (event.content_block.type === "tool_use") {
+          const toolName = event.content_block.name;
           result = insert.run(
             sessionDbId,
             "assistant",
             JSON.stringify(event.content_block.input),
             "tool_call",
-            event.content_block.name,
+            toolName,
             event.content_block.id ?? null,
             ptuid,
           ) as { lastInsertRowid: number | bigint };
+
+          // Track file-modifying tools
+          if (toolName === "Write" || toolName === "Edit" || toolName === "NotebookEdit") {
+            markSessionHasFileChanges(sessionDbId);
+          }
         }
         break;
       }
@@ -213,6 +219,20 @@ export function restoreSessionMap(): void {
   } catch {
     // Best-effort: database may not be ready yet
   }
+}
+
+// Set of session IDs already marked — avoids redundant DB writes
+const fileChangeMarked = new Set<number>();
+
+function markSessionHasFileChanges(sessionDbId: number): void {
+  if (fileChangeMarked.has(sessionDbId)) return;
+  fileChangeMarked.add(sessionDbId);
+  try {
+    const db = getDatabase();
+    const row = db.prepare("SELECT feature_id FROM agent_sessions WHERE id = ?").get(sessionDbId) as { feature_id: number } | undefined;
+    db.prepare("UPDATE agent_sessions SET has_file_changes = 1 WHERE id = ?").run(sessionDbId);
+    if (row) notifyDbUpdated("agent_session", row.feature_id);
+  } catch { /* best-effort */ }
 }
 
 export { AGENT_EVENT_CHANNEL, DB_UPDATED_CHANNEL };
