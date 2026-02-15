@@ -72,7 +72,7 @@ export function FeatureWorkflowView({
   const getMainNavItems = useCallback(() => {
     const zone = document.querySelector('[data-focus-zone="main-content"]');
     if (!zone) return [];
-    return Array.from(zone.querySelectorAll("[data-nav-item]")) as HTMLElement[];
+    return Array.from(zone.querySelectorAll("[data-nav-agent-index]")) as HTMLElement[];
   }, []);
 
   const moveFocus = useCallback((direction: "up" | "down") => {
