@@ -4,7 +4,7 @@ import { startSubprocess } from "./subprocess-manager";
 import type { StreamEvent } from "./types";
 
 const AUTO_NAME_SYSTEM_PROMPT =
-  "Generate a concise feature name (3-7 words) based on the user's description. Output ONLY the name, nothing else.";
+  "Generate a concise feature name (3-7 words) based on the user's description. Output the name wrapped in delimiters exactly like this: __FEATURE_NAME_START__Your Feature Name Here__FEATURE_NAME_END__. Output nothing else.";
 
 const AUTO_NAME_MODEL = "claude-haiku-3-5-20241022";
 
@@ -47,7 +47,12 @@ export function autoNameFeature(
   });
 
   managed.completionListeners.push(() => {
-    const name = accumulatedText.trim().replace(/^["']|["']$/g, "");
+    const match = accumulatedText.match(
+      /__FEATURE_NAME_START__(.+?)__FEATURE_NAME_END__/,
+    );
+    const name = (match ? match[1] : accumulatedText)
+      .trim()
+      .replace(/^["']|["']$/g, "");
     if (!name) return;
 
     try {
