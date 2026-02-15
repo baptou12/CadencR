@@ -39,10 +39,10 @@ Authentication uses an OAuth token stored in macOS Keychain under `"Claude Code-
 
 ## Phases
 
-### ⬜ Phase 1: Usage API service in main process
+### ✅ Phase 1: Usage API service in main process
 - **Step**: 1
 - **Complexity**: 3
-- [ ] Create `src/main/usage/usage-service.ts` with:
+- [x] Create `src/main/usage/usage-service.ts` with:
   - Function to read OAuth token from macOS Keychain via `child_process.execSync('security find-generic-password -s "Claude Code-credentials" -w')`
   - Parse the JSON to extract `claudeAiOauth.accessToken`
   - Function to call `https://api.anthropic.com/api/oauth/usage` with Bearer token and `anthropic-beta: oauth-2025-04-20` header
@@ -50,6 +50,8 @@ Authentication uses an OAuth token stored in macOS Keychain under `"Claude Code-
   - Cache result in-memory with 3-minute TTL to avoid redundant calls
   - Graceful error handling (return null if Keychain unavailable or API fails)
 - **Files**: `src/main/usage/usage-service.ts`
+- **Implementation notes**: Created module with `getOAuthToken()` (sync, via execSync with piped stdio to suppress stderr) and `getUsage()` (async, uses native fetch). Exported `UsageBucket` and `UsageResponse` types for use by Phase 2.
+- **Validation results**: Lint passes (0 errors), TypeScript type check passes (no errors)
 - **Commit message**: `feat: add Claude usage API service with Keychain auth`
 - **Bisect note**: Self-contained module with no callers yet, safe standalone
 
@@ -84,5 +86,5 @@ Authentication uses an OAuth token stored in macOS Keychain under `"Claude Code-
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Not started
-- **Progress**: 0/3
+- **Current Phase**: Phase 2
+- **Progress**: 1/3
