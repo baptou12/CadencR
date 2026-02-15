@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { cn } from "@/lib/utils";
 import { useHotkeys } from "react-hotkeys-hook";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,9 +22,10 @@ interface FeatureTopBarProps {
   featureId: number;
   projectId: number;
   mode?: "feature" | "session";
+  className?: string;
 }
 
-export function FeatureTopBar({ featureId, projectId: _projectId, mode = "feature" }: FeatureTopBarProps) {
+export function FeatureTopBar({ featureId, projectId: _projectId, mode = "feature", className }: FeatureTopBarProps) {
   const isSession = mode === "session";
   const [diffOpen, setDiffOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -66,7 +68,7 @@ export function FeatureTopBar({ featureId, projectId: _projectId, mode = "featur
   if (!feature) return null;
 
   return (
-    <div className="flex items-center gap-3 border-b border-border px-4 py-2">
+    <div className={cn("flex items-center gap-3 border-b border-border px-4 py-2", className)}>
       <h1 className="text-lg font-semibold">{feature.title}</h1>
 
       {!isSession && (

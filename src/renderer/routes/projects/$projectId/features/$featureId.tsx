@@ -123,7 +123,7 @@ function SessionFeatureView({
 
   return (
     <div className="flex h-full flex-col">
-      <FeatureTopBar featureId={featureId} projectId={projectId} mode="session" />
+      <FeatureTopBar featureId={featureId} projectId={projectId} mode="session" className="shrink-0" />
       {status === "paused" && !session?.subprocessId && (
         <div className="border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 text-sm text-amber-300">
           Previous session paused — type a message to resume.
@@ -140,6 +140,7 @@ function SessionFeatureView({
         hasFileChanges={hasFileChanges}
         onViewDiff={handleViewDiff}
         todos={todos}
+        className="min-h-0"
       />
       <DiffViewerModal
         featureId={featureId}
