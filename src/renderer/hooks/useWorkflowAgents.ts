@@ -61,10 +61,13 @@ export function useWorkflowAgents({
   // --- Session entry list for display ---
   // Group sessions into display entries
   const sessionEntries: FeatureSession[] = useMemo(() => {
-    // Filter out sessions with no output that are not running
-    return sessions.filter(
-      (s) => s.status !== "idle" || s.blocks.length > 0,
-    );
+    return sessions.filter((s) => {
+      // Hide execute orchestrator sessions (no subprocess, no phase — just bookkeeping)
+      if (s.agentType === "execute" && s.runId == null && !s.subprocessId) return false;
+      // Hide idle sessions with no output
+      if (s.status === "idle" && s.blocks.length === 0) return false;
+      return true;
+    });
   }, [sessions]);
 
   // --- Helper: find session by agent type ---
@@ -82,7 +85,7 @@ export function useWorkflowAgents({
 
   // Execute sessions (may be multiple for parallel phases)
   const executeSessions = useMemo(
-    () => sessions.filter((s) => s.agentType === "execute"),
+    () => sessions.filter((s) => s.agentType === "execute" && s.subprocessId),
     [sessions],
   );
 
