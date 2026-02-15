@@ -553,14 +553,16 @@ export function sendMessageToSubprocess(id: string, message: string): boolean {
     return false;
   }
 
-  // Persist the user message to the database
+  // Persist the user message to the database and broadcast to renderer
   const sessionDbId = getSessionDbId(id);
   if (sessionDbId) {
     try {
       const db = getDatabase();
-      db.prepare(
+      const result = db.prepare(
         "INSERT INTO agent_messages (session_id, role, content, message_type, tool_name) VALUES (?, ?, ?, ?, ?)",
       ).run(sessionDbId, "user", message, "user_message", null);
+      const msgDbId = Number(result.lastInsertRowid);
+      broadcastEvent(id, managed.agentType, { type: "user_message", content: message }, null, msgDbId);
     } catch {
       // Best-effort persistence
     }

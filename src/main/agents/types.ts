@@ -127,7 +127,13 @@ export type StreamEvent =
   | StreamAgentDone
   | StreamAgentPaused
   | StreamTurnComplete
-  | StreamExecuteWaiting;
+  | StreamExecuteWaiting
+  | StreamUserMessage;
+
+export interface StreamUserMessage {
+  type: "user_message";
+  content: string;
+}
 
 /** Agent event sent to the renderer via IPC */
 export interface AgentEvent {

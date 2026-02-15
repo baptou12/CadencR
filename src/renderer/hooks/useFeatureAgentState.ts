@@ -22,7 +22,7 @@ import type { AgentQuestion } from "@/components/AgentQuestionDrawer";
 let streamIdCounter = 0;
 function makeStreamBlock(partial: Omit<AgentBlockData, "id">, messageDbId?: number): AgentBlockData {
   const id = messageDbId ? `msg-${messageDbId}` : `stream-${++streamIdCounter}`;
-  return { id, ...partial };
+  return { id, messageDbId, ...partial };
 }
 
 /** Recursively find a Task block's childBlocks by toolUseId */
@@ -46,6 +46,18 @@ function applyResult(
   messageDbId?: number,
 ): void {
   if (result.action === "append") {
+    // Deduplicate tool_call blocks by toolUseId — the SDK may send the same
+    // tool_use via both stream_event and assistant messages
+    if (result.block.type === "tool_call" && result.block.toolUseId) {
+      const existing = list.find((b) => b.type === "tool_call" && b.toolUseId === result.block.toolUseId);
+      if (existing) {
+        if (result.block.content && result.block.content.length > (existing.content?.length ?? 0)) {
+          existing.content = result.block.content;
+          existing.toolArgs = result.block.toolArgs;
+        }
+        return;
+      }
+    }
     list.push(makeStreamBlock(result.block, messageDbId));
   } else if (result.action === "delta") {
     if (list.length > 0 && list[list.length - 1].type === "text") {
@@ -117,6 +129,11 @@ export function eventToBlock(
       return {
         action: "append",
         block: { type: "text", content: `Error: ${e.error.message}`, parentToolUseId: event.parentToolUseId },
+      };
+    case "user_message":
+      return {
+        action: "append",
+        block: { type: "user_message", content: e.content, parentToolUseId: event.parentToolUseId },
       };
     default:
       return null;
@@ -298,19 +315,13 @@ export function useFeatureAgentState(featureId: number) {
   const sessions: FeatureSession[] = (query.data?.sessions ?? []).map((s) => {
     const queryBlocks = serverBlocksToAgentBlocks(s.blocks as ServerBlock[]);
     const rawBufferBlocks = streamBuffer.get(s.sessionDbId) ?? [];
+    const maxMsgId = s.maxMessageId ?? 0;
 
-    // Collect all IDs present in server data (including nested childBlocks)
-    const serverIds = new Set<string>();
-    function collectIds(blocks: AgentBlockData[]) {
-      for (const b of blocks) {
-        serverIds.add(b.id);
-        if (b.childBlocks) collectIds(b.childBlocks);
-      }
-    }
-    collectIds(queryBlocks);
-
-    // Filter buffer blocks: skip any whose ID already exists in server data
-    const bufferBlocks = rawBufferBlocks.filter((b) => !serverIds.has(b.id));
+    // Filter buffer blocks: skip any already covered by server data
+    // A block with messageDbId <= maxMessageId is already in the DB query result
+    const bufferBlocks = rawBufferBlocks.filter((b) =>
+      !b.messageDbId || b.messageDbId > maxMsgId,
+    );
 
     // Nest buffer blocks under their parent Task blocks (parent may be in query or buffer)
     const merged = [...queryBlocks];

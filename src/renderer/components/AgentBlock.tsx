@@ -57,6 +57,8 @@ export interface AgentBlockData {
   childBlocks?: AgentBlockData[];
   /** Whether this Task's subagent has completed */
   taskComplete?: boolean;
+  /** DB message ID — used for deduplication against server data */
+  messageDbId?: number;
 }
 
 interface AgentBlockProps {

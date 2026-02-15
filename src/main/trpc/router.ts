@@ -198,6 +198,17 @@ function buildBlocks(messages: AgentMessageRow[]): AgentBlock[] {
         appendText(list, msg.id, msg.content, msg.parent_tool_use_id);
         break;
       case "tool_call": {
+        // Deduplicate: if we already have a block with this tool_use_id,
+        // update its content instead of creating a duplicate (the SDK sends
+        // the same tool_call via both stream_event and assistant messages).
+        if (msg.tool_use_id && byToolUseId.has(msg.tool_use_id)) {
+          const existing = byToolUseId.get(msg.tool_use_id)!;
+          if (msg.content && (!existing.content || existing.content.length < msg.content.length)) {
+            existing.content = msg.content;
+            existing.toolArgs = msg.content;
+          }
+          break;
+        }
         const isTask = msg.tool_name === "Task";
         const block: AgentBlock = {
           id,
@@ -634,13 +645,16 @@ const agentsRouter = router({
           if (s.pending_questions) {
             try { pendingQuestions = JSON.parse(s.pending_questions); } catch { /* ignore */ }
           }
+          const msgs = messagesBySession.get(s.id) ?? [];
+          const maxMessageId = msgs.length > 0 ? msgs[msgs.length - 1].id : 0;
           return {
             sessionDbId: s.id,
             agentType: s.agent_type as AgentType,
             status: s.status,
             subprocessId: s.subprocess_id,
             model: s.model,
-            blocks: buildBlocks(messagesBySession.get(s.id) ?? []),
+            blocks: buildBlocks(msgs),
+            maxMessageId,
             pendingQuestions,
             hasFileChanges: s.has_file_changes === 1,
             resumable: s.status === "paused" && s.claude_session_id != null,
