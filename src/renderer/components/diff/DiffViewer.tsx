@@ -1,10 +1,11 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useRef } from "react";
 import { DiffView, DiffFile, DiffModeEnum, SplitSide } from "@git-diff-view/react";
 import { highlighter } from "@git-diff-view/lowlight";
 import "@git-diff-view/react/styles/diff-view.css";
 import "./dracula-diff.css";
 import { trpc } from "@/trpc";
 import { ChevronDown, ChevronRight } from "lucide-react";
+import { DiffFileTree, type ChangedFileEntry } from "./DiffFileTree";
 import {
   CommentWidgetLine,
   CommentExtendLine,
@@ -19,13 +20,15 @@ export interface DiffViewerProps {
 }
 
 export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
-  const [diffMode, setDiffMode] = useState<DiffModeEnum>(DiffModeEnum.Split);
+  const [diffMode, setDiffMode] = useState<DiffModeEnum>(DiffModeEnum.Unified);
   const [collapsedFiles, setCollapsedFiles] = useState<Set<string>>(new Set());
+  const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [activeWidget, setActiveWidget] = useState<{
     filePath: string;
     lineNumber: number;
     side: SplitSide;
   } | null>(null);
+  const diffAreaRef = useRef<HTMLDivElement>(null);
 
   const { data: rawDiff, isLoading } = trpc.git.getDiff.useQuery({
     featureId,
@@ -124,6 +127,50 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
   const totalAdditions = diffFiles.reduce((sum, { file }) => sum + file.additionLength, 0);
   const totalDeletions = diffFiles.reduce((sum, { file }) => sum + file.deletionLength, 0);
 
+  const changedFileEntries: ChangedFileEntry[] = useMemo(
+    () =>
+      diffFiles.map(({ section, file }) => {
+        const name =
+          section.newFileName !== "/dev/null"
+            ? section.newFileName
+            : section.oldFileName;
+        const status = section.oldFileName === "/dev/null" ? "A" : section.newFileName === "/dev/null" ? "D" : "M";
+        return {
+          file: name,
+          status,
+          additions: file.additionLength,
+          deletions: file.deletionLength,
+        };
+      }),
+    [diffFiles],
+  );
+
+  const expandedFiles = useMemo(() => {
+    const set = new Set<string>();
+    for (const e of changedFileEntries) {
+      if (!collapsedFiles.has(e.file)) set.add(e.file);
+    }
+    return set;
+  }, [changedFileEntries, collapsedFiles]);
+
+  const handleSelectFile = useCallback(
+    (filePath: string) => {
+      setSelectedFile(filePath);
+      // Ensure the file is expanded
+      setCollapsedFiles((prev) => {
+        const next = new Set(prev);
+        next.delete(filePath);
+        return next;
+      });
+      // Scroll to the file in the diff area
+      requestAnimationFrame(() => {
+        const el = diffAreaRef.current?.querySelector(`[data-file="${CSS.escape(filePath)}"]`);
+        el?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    },
+    [],
+  );
+
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center bg-[#282a36] text-[#f8f8f2]">
@@ -163,14 +210,25 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
         </div>
       </div>
 
-      {/* Diff area with virtual scroll */}
-      <div className="flex-1 overflow-y-auto">
+      {/* Diff area + file tree */}
+      <div className="flex min-h-0 flex-1">
+        {/* File tree sidebar */}
+        <div className="w-64 shrink-0 border-r border-[#6272a4] overflow-hidden">
+          <DiffFileTree
+            files={changedFileEntries}
+            expandedFiles={expandedFiles}
+            selectedFile={selectedFile}
+            onToggleExpand={toggleFile}
+            onSelectFile={handleSelectFile}
+          />
+        </div>
+        <div ref={diffAreaRef} className="flex-1 overflow-y-auto">
         {diffFiles.map(({ section, file }) => {
           const displayName = section.newFileName !== "/dev/null" ? section.newFileName : section.oldFileName;
           const isCollapsed = collapsedFiles.has(displayName);
 
           return (
-            <div key={displayName} className="border-b border-[#6272a4]">
+            <div key={displayName} data-file={displayName} className="border-b border-[#6272a4]">
               {/* File header */}
               <button
                 className="flex w-full items-center gap-2 bg-[#343746] px-4 py-1.5 text-left text-sm text-[#f8f8f2] hover:bg-[#44475a]"
@@ -260,6 +318,8 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
             </div>
           );
         })}
+        </div>
+
       </div>
     </div>
   );

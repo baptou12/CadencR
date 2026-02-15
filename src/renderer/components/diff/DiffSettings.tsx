@@ -12,7 +12,7 @@ export interface DiffSettings {
 
 export const defaultDiffSettings: DiffSettings = {
   fontSize: "medium",
-  diffMode: "split",
+  diffMode: "unified",
   lineMode: "wrap",
   highlightMode: "enable",
   highlightEngine: "lowlight",

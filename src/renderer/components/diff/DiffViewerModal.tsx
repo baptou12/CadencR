@@ -50,7 +50,7 @@ export function DiffViewerModal({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="flex h-[90vh] max-h-[90vh] w-[95vw] max-w-[95vw] flex-col gap-0 p-0"
+        className="flex h-[90vh] max-h-[90vh] w-[95vw] max-w-[95vw] sm:max-w-[95vw] flex-col gap-0 p-0"
         showCloseButton={true}
       >
         <DialogHeader className="border-b px-4 py-3">
