@@ -355,11 +355,19 @@ export function useFeatureAgentState(featureId: number) {
     // Filter buffer blocks: skip any already covered by server data
     // - messageDbId <= maxMessageId means it's in the DB query result
     // - toolUseId already in server blocks means it's a duplicate tool_call
-    const bufferBlocks = rawBufferBlocks.filter((b) => {
-      if (b.messageDbId && b.messageDbId <= maxMsgId) return false;
-      if (b.type === "tool_call" && b.toolUseId && serverToolUseIds.has(b.toolUseId)) return false;
-      return true;
-    });
+    // Deep-clone buffer blocks to prevent the merge step from mutating
+    // React state (specifically, pushing into childBlocks arrays that
+    // persist across renders, which caused subagent blocks to accumulate).
+    const bufferBlocks = rawBufferBlocks
+      .filter((b) => {
+        if (b.messageDbId && b.messageDbId <= maxMsgId) return false;
+        if (b.type === "tool_call" && b.toolUseId && serverToolUseIds.has(b.toolUseId)) return false;
+        return true;
+      })
+      .map((b) => ({
+        ...b,
+        childBlocks: b.childBlocks ? [...b.childBlocks] : undefined,
+      }));
 
     // Nest buffer blocks under their parent Task blocks (parent may be in query or buffer)
     const merged = [...queryBlocks];
