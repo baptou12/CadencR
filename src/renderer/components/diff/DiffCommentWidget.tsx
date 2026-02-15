@@ -36,6 +36,14 @@ export function CommentForm({
         rows={3}
         value={content}
         onChange={(e) => setContent(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            if (content.trim()) {
+              onSubmit(content.trim());
+            }
+          }
+        }}
         autoFocus
       />
       <div className="mt-2 flex items-center gap-2">
@@ -92,39 +100,39 @@ export function CommentDisplay({
   return (
     <div className="mx-4 my-2 rounded border border-[#6272a4] bg-[#343746] p-3">
       <div className="flex items-start justify-between gap-2">
-        <p className="flex-1 whitespace-pre-wrap text-sm text-[#f8f8f2]">
+        <p className="flex-1 whitespace-pre-wrap text-sm !text-[#f8f8f2]">
           {comment.content}
         </p>
         <div className="flex shrink-0 gap-1">
           <button
-            className="rounded p-1 text-[#6272a4] hover:bg-[#44475a] hover:text-[#f8f8f2]"
+            className="rounded p-1 !text-[#8892b0] hover:bg-[#44475a] hover:!text-[#f8f8f2]"
             onClick={() => setIsEditing(true)}
             title="Edit comment"
           >
-            <Pencil className="h-3.5 w-3.5" />
+            <Pencil className="h-3.5 w-3.5" style={{ stroke: "#8892b0" }} />
           </button>
           <button
-            className="rounded p-1 text-[#6272a4] hover:bg-[#44475a] hover:text-[#ff5555]"
+            className="rounded p-1 !text-[#8892b0] hover:bg-[#44475a] hover:!text-[#ff5555]"
             onClick={() => onDelete(comment.id)}
             title="Delete comment"
           >
-            <Trash2 className="h-3.5 w-3.5" />
+            <Trash2 className="h-3.5 w-3.5" style={{ stroke: "#8892b0" }} />
           </button>
         </div>
       </div>
-      <div className="mt-1 flex items-center gap-2 text-xs text-[#6272a4]">
+      <div className="mt-1 flex items-center gap-2 text-xs !text-[#6272a4]">
         <span
           className={
             comment.status === "pending"
-              ? "text-[#ffb86c]"
+              ? "!text-[#ffb86c]"
               : comment.status === "sent"
-                ? "text-[#50fa7b]"
-                : "text-[#6272a4]"
+                ? "!text-[#50fa7b]"
+                : "!text-[#6272a4]"
           }
         >
           {comment.status}
         </span>
-        <span>{new Date(comment.created_at).toLocaleString()}</span>
+        <span className="!text-[#8892b0]">{new Date(comment.created_at).toLocaleString()}</span>
       </div>
     </div>
   );
