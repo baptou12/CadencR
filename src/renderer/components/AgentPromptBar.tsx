@@ -92,7 +92,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
   }
 
   return (
-    <div className="flex items-end gap-2 bg-muted/20 px-3 py-2">
+    <div className="flex items-center gap-2 bg-muted/20 px-3 py-2">
       <Textarea
         ref={textareaRef}
         value={text}
@@ -101,26 +101,26 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
         placeholder={isPaused ? "Send a message to resume…" : "Send a message…"}
         disabled={disabled}
         rows={1}
-        className="max-h-32 resize-none overflow-hidden border-border/50 bg-background py-1.5 text-sm shadow-none focus-visible:ring-1 focus-visible:ring-ring/40"
+        className="max-h-32 min-h-[42px] resize-none overflow-hidden border-border/50 bg-background py-2.5 text-sm leading-[22px] shadow-none focus-visible:ring-1 focus-visible:ring-ring/40"
       />
       {isRunning ? (
         <Button
           variant="destructive"
-          size="icon-xs"
+          size="icon"
           onClick={onStop}
           aria-label="Stop agent"
-          className="shrink-0"
+          className="h-[42px] w-[42px] shrink-0"
         >
           <Square className="size-3.5" />
         </Button>
       ) : (
         <Button
           variant="default"
-          size="icon-xs"
+          size="icon"
           onClick={handleSend}
           disabled={!canSend}
           aria-label="Send message"
-          className="shrink-0"
+          className="h-[42px] w-[42px] shrink-0"
         >
           <Send className="size-3.5" />
         </Button>
