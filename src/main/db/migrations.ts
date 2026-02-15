@@ -304,6 +304,16 @@ const migrations: Migration[] = [
       db.exec("ALTER TABLE agent_sessions ADD COLUMN pending_plan_approval TEXT");
     },
   },
+  {
+    version: 25,
+    description: "Add context usage tracking columns to agent_sessions",
+    up: (db) => {
+      db.exec("ALTER TABLE agent_sessions ADD COLUMN input_tokens INTEGER DEFAULT 0");
+      db.exec("ALTER TABLE agent_sessions ADD COLUMN output_tokens INTEGER DEFAULT 0");
+      db.exec("ALTER TABLE agent_sessions ADD COLUMN context_window INTEGER DEFAULT 200000");
+      db.exec("ALTER TABLE agent_sessions ADD COLUMN was_compacted INTEGER DEFAULT 0");
+    },
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

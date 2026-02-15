@@ -714,7 +714,7 @@ const agentsRouter = router({
       const db = getDatabase();
       const sessions = db
         .prepare(
-          "SELECT id, feature_id, agent_type, claude_session_id, status, started_at, ended_at, run_id, phase_id, subprocess_id, model, pending_questions, has_file_changes, permission_mode, pending_plan_approval FROM agent_sessions WHERE feature_id = ? ORDER BY id ASC",
+          "SELECT id, feature_id, agent_type, claude_session_id, status, started_at, ended_at, run_id, phase_id, subprocess_id, model, pending_questions, has_file_changes, permission_mode, pending_plan_approval, input_tokens, output_tokens, context_window, was_compacted FROM agent_sessions WHERE feature_id = ? ORDER BY id ASC",
         )
         .all(input.featureId) as AgentSessionRow[];
 
@@ -795,6 +795,10 @@ const agentsRouter = router({
             todos,
             permissionMode: s.permission_mode ?? "bypassPermissions",
             pendingPlanApproval: s.pending_plan_approval ? (() => { try { return JSON.parse(s.pending_plan_approval); } catch { return null; } })() : null,
+            inputTokens: s.input_tokens ?? 0,
+            outputTokens: s.output_tokens ?? 0,
+            contextWindow: s.context_window ?? 200000,
+            wasCompacted: s.was_compacted === 1,
           };
         }),
       };

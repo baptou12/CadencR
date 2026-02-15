@@ -27,11 +27,13 @@ import {
 import { AgentStream } from "./AgentStream";
 import { AgentPromptBar, type AgentPromptBarHandle } from "./AgentPromptBar";
 import { AgentTodoList } from "./AgentTodoList";
+import { ContextUsageBar } from "./ContextUsageBar";
 import { ReviewVerdictActions } from "./ReviewVerdictActions";
 import type { AgentBlockData } from "./AgentBlock";
 import type { AgentType } from "../../main/agents/types";
 import type { AgentQuestion } from "./AgentQuestionDrawer";
 import type { TodoItem } from "@/hooks/useFeatureAgentState";
+import type { ContextUsageState } from "@/hooks/useContextUsage";
 import { AGENT_ICONS } from "./agent-icons";
 
 // ---------------------------------------------------------------------------
@@ -161,6 +163,8 @@ export interface AgentSessionProps {
   onPlanApprove?: () => void;
   /** Called when user requests changes to the plan */
   onPlanRequestChanges?: (feedback: string) => void;
+  /** Context usage data for this session */
+  contextUsage?: ContextUsageState | null;
 }
 
 /** Handle exposed by AgentSession via forwardRef */
@@ -209,6 +213,7 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
   pendingPlanApproval,
   onPlanApprove,
   onPlanRequestChanges,
+  contextUsage,
 }, ref) {
   const promptBarRef = useRef<AgentPromptBarHandle>(null);
   const [promptBarFocused, setPromptBarFocused] = useState(false);
@@ -363,6 +368,9 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
             {promptBar}
           </div>
         )}
+
+        {/* Context usage bar */}
+        <ContextUsageBar usage={contextUsage} />
       </div>
     );
   }
@@ -467,6 +475,9 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
               {promptBar}
             </div>
           )}
+
+          {/* Context usage bar */}
+          <ContextUsageBar usage={contextUsage} />
         </>
       )}
     </div>

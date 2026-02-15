@@ -6,6 +6,7 @@ import { AgentSession, type AgentSessionHandle } from "@/components/AgentSession
 import { FeatureWorkflowView } from "@/components/FeatureWorkflowView";
 import { DiffViewerModal } from "@/components/diff/DiffViewerModal";
 import { useFeatureAgentState } from "@/hooks/useFeatureAgentState";
+import { useContextUsage } from "@/hooks/useContextUsage";
 
 export const Route = createFileRoute(
   "/projects/$projectId/features/$featureId",
@@ -54,6 +55,7 @@ function SessionFeatureView({
   projectId: number;
 }) {
   const { sessions, refetch } = useFeatureAgentState(featureId);
+  const contextUsageMap = useContextUsage(featureId, sessions);
   const agentRef = useRef<AgentSessionHandle>(null);
   const [inlineDiffOpen, setInlineDiffOpen] = useState(false);
   const handleViewDiff = useCallback(() => setInlineDiffOpen(true), []);
@@ -204,6 +206,7 @@ function SessionFeatureView({
         pendingPlanApproval={session?.pendingPlanApproval}
         onPlanApprove={handlePlanApprove}
         onPlanRequestChanges={handlePlanRequestChanges}
+        contextUsage={session ? contextUsageMap.get(session.sessionDbId) : null}
         className="min-h-0"
       />
       <DiffViewerModal

@@ -197,6 +197,10 @@ export interface FeatureSession {
   todos: TodoItem[] | null;
   permissionMode: string;
   pendingPlanApproval: { allowedPrompts?: Array<{ tool: string; prompt: string }> } | null;
+  inputTokens: number;
+  outputTokens: number;
+  contextWindow: number;
+  wasCompacted: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -475,6 +479,10 @@ export function useFeatureAgentState(featureId: number) {
       todos,
       permissionMode: s.permissionMode ?? "bypassPermissions",
       pendingPlanApproval: s.pendingPlanApproval ?? null,
+      inputTokens: s.inputTokens ?? 0,
+      outputTokens: s.outputTokens ?? 0,
+      contextWindow: s.contextWindow ?? 200000,
+      wasCompacted: s.wasCompacted ?? false,
     };
   });
 

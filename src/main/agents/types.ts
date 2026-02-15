@@ -13,6 +13,7 @@ export interface StreamMessageStart {
     type: "message";
     role: "assistant";
     model: string;
+    usage?: { input_tokens: number; output_tokens: number };
   };
 }
 
@@ -78,6 +79,7 @@ export interface StreamSystemEvent {
   type: "system";
   subtype: string;
   session_id?: string;
+  pre_tokens?: number;
   [key: string]: unknown;
 }
 

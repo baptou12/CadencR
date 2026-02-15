@@ -13,6 +13,7 @@ import { getActiveFocusZone } from "@/lib/focus-zones";
 import { DiffViewerModal, type ExecuteAgentState } from "@/components/diff/DiffViewerModal";
 import { WorktreeSetupSection } from "@/components/WorktreeSetupSection";
 import type { FeatureSession } from "@/hooks/useFeatureAgentState";
+import { useContextUsage } from "@/hooks/useContextUsage";
 
 export function FeatureWorkflowView({
   featureId,
@@ -26,6 +27,7 @@ export function FeatureWorkflowView({
   featureQuery: { refetch: () => unknown };
 }) {
   const wf = useWorkflowAgents({ featureId, projectId, featureQuery });
+  const contextUsageMap = useContextUsage(featureId, wf.sessionEntries);
   const utils = trpc.useUtils();
 
   const deleteSession = trpc.agents.deleteSession.useMutation({
@@ -339,6 +341,7 @@ export function FeatureWorkflowView({
                   todos={entry.todos}
                   canDelete={entry.status !== "running" && entry.status !== "completed" && !!entry.sessionDbId}
                   onDelete={() => handleDeleteAgent(entry)}
+                  contextUsage={contextUsageMap.get(entry.sessionDbId)}
                 />
               );
             })}

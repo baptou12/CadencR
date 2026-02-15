@@ -120,7 +120,35 @@ function handleSdkMessage(
     }
   } else if (type === "assistant") {
     // Full assistant message — extract text and tool_use content blocks
+    // Extract usage: total input = input_tokens + cache_creation_input_tokens + cache_read_input_tokens
     const message = msg.message as Record<string, unknown> | undefined;
+    if (sessionDbId && message) {
+      const usage = message.usage as {
+        input_tokens?: number;
+        output_tokens?: number;
+        cache_creation_input_tokens?: number;
+        cache_read_input_tokens?: number;
+      } | undefined;
+      if (usage) {
+        const totalInput = (usage.input_tokens ?? 0)
+          + (usage.cache_creation_input_tokens ?? 0)
+          + (usage.cache_read_input_tokens ?? 0);
+        const totalOutput = usage.output_tokens ?? 0;
+        try {
+          const db2 = getDatabase();
+          db2.prepare("UPDATE agent_sessions SET input_tokens = ?, output_tokens = ? WHERE id = ?")
+            .run(totalInput, totalOutput, sessionDbId);
+        } catch { /* best-effort */ }
+
+        // Broadcast usage to renderer for live updates
+        broadcastEvent(id, agentType, {
+          type: "system",
+          subtype: "usage_update",
+          input_tokens: totalInput,
+          output_tokens: totalOutput,
+        } as StreamEvent);
+      }
+    }
     if (message) {
       const content = message.content as
         | Array<Record<string, unknown>>
@@ -180,6 +208,8 @@ function handleSdkMessage(
         {
           type: "result",
           result: msg.result as string | undefined,
+          cost_usd: msg.cost_usd as number | undefined,
+          duration_ms: msg.duration_ms as number | undefined,
         },
         parentToolUseId,
       );
@@ -204,13 +234,22 @@ function handleSdkMessage(
         persistClaudeSessionId(sDbId, msg.session_id);
       }
     }
+    // Track compaction events
+    const subtype = (msg.subtype as string) ?? "unknown";
+    if (subtype === "compact_boundary" && sessionDbId) {
+      try {
+        const db2 = getDatabase();
+        db2.prepare("UPDATE agent_sessions SET was_compacted = 1 WHERE id = ?").run(sessionDbId);
+      } catch { /* best-effort */ }
+    }
     broadcastEvent(
       id,
       agentType,
       {
         type: "system",
-        subtype: (msg.subtype as string) ?? "unknown",
+        subtype,
         session_id: msg.session_id as string | undefined,
+        pre_tokens: msg.pre_tokens as number | undefined,
       },
       parentToolUseId,
     );
