@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useHotkeys } from "react-hotkeys-hook";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -25,6 +26,17 @@ interface FeatureTopBarProps {
 export function FeatureTopBar({ featureId, projectId: _projectId, mode = "feature" }: FeatureTopBarProps) {
   const isSession = mode === "session";
   const [diffOpen, setDiffOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  // OPT+P -> toggle feature settings popover
+  useHotkeys(
+    "alt+p",
+    (e) => {
+      e.preventDefault();
+      setSettingsOpen((prev) => !prev);
+    },
+    { enableOnFormTags: true },
+  );
   const { data: feature } = trpc.features.getById.useQuery({ id: featureId });
   const { data: progress } = trpc.features.getProgress.useQuery(
     { feature_id: featureId },
@@ -146,7 +158,7 @@ export function FeatureTopBar({ featureId, projectId: _projectId, mode = "featur
         </Button>
       )}
 
-      <Popover>
+      <Popover open={settingsOpen} onOpenChange={setSettingsOpen}>
         <PopoverTrigger asChild>
           <Button variant="ghost" size="icon" className="size-7" title="Feature settings">
             <SettingsIcon className="size-4" />
