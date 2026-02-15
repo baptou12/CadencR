@@ -66,16 +66,18 @@ Authentication uses an OAuth token stored in macOS Keychain under `"Claude Code-
 - **Commit message**: `feat: add tRPC usage router for Claude API usage data`
 - **Bisect note**: New router added to appRouter; no existing code affected
 
-### ⬜ Phase 3: Usage display component in sidebar
+### ✅ Phase 3: Usage display component in sidebar
 - **Step**: 3
 - **Complexity**: 3
-- [ ] Create `src/renderer/components/UsageIndicator.tsx`:
+- [x] Create `src/renderer/components/UsageIndicator.tsx`:
   - Call `trpc.usage.getUsage.useQuery()` with 3-minute `refetchInterval`
   - Format as compact text: `5h: X% · Wk: Y%` with time-until-reset on hover (tooltip)
   - Color coding: green (<60%), yellow (60-85%), red (>85%) via Tailwind text colors
   - Show `--` placeholder while loading or on error
-- [ ] Add `<UsageIndicator />` in `Sidebar.tsx` header, between the title span and the Settings Link
+- [x] Add `<UsageIndicator />` in `Sidebar.tsx` header, between the title span and the Settings Link
 - **Files**: `src/renderer/components/UsageIndicator.tsx`, `src/renderer/components/Sidebar.tsx`
+- **Implementation notes**: Created UsageIndicator component with native `title` attribute for tooltip (no shadcn tooltip component existed). Used `tabular-nums` class for stable width. Added between title span and Settings link in sidebar header.
+- **Validation results**: Lint passes (0 warnings, 0 errors). TypeScript type check passes (no errors).
 - **Commit message**: `feat: add usage indicator component to sidebar header`
 - **Bisect note**: N/A
 
@@ -88,5 +90,5 @@ Authentication uses an OAuth token stored in macOS Keychain under `"Claude Code-
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 3
-- **Progress**: 2/3
+- **Current Phase**: All phases complete
+- **Progress**: 3/3

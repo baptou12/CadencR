@@ -7,6 +7,7 @@ import { Separator } from "@/components/ui/separator";
 import { ProjectList } from "@/components/ProjectList";
 import { FeatureList } from "@/components/FeatureList";
 import { getActiveFocusZone } from "@/lib/focus-zones";
+import { UsageIndicator } from "@/components/UsageIndicator";
 
 export function Sidebar() {
   const navigate = useNavigate();
@@ -102,12 +103,15 @@ export function Sidebar() {
     <aside ref={sidebarRef} className="flex h-full flex-col bg-sidebar">
       <div className="flex items-center justify-between px-4 py-2">
         <span className="text-sm font-semibold">ProductDevR</span>
-        <Link to="/settings">
+        <div className="flex items-center gap-1 ml-auto">
+          <UsageIndicator />
+          <Link to="/settings">
           <Button variant="ghost" size="icon" className="size-7">
             <Settings className="size-4" />
             <span className="sr-only">Settings</span>
           </Button>
         </Link>
+        </div>
       </div>
 
       <Separator />
