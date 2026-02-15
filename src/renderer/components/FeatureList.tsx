@@ -17,7 +17,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { PlusIcon, TrashIcon, Loader2Icon, MessageSquareIcon } from "lucide-react";
+import { PlusIcon, TrashIcon, Loader2Icon } from "lucide-react";
 
 const STATUSES = ["draft", "planned", "in-progress", "review", "done"] as const;
 type FeatureStatus = (typeof STATUSES)[number];
@@ -170,7 +170,7 @@ export function FeatureList({
               data-nav-type="feature"
               data-nav-id={String(feature.id)}
               data-nav-project-id={String(projectId)}
-              className={`group flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:bg-blue-500/10 ${
+              className={`group relative flex min-w-0 cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:bg-blue-500/10 ${
                 selectedFeatureId === feature.id ? "bg-accent" : ""
               }`}
               onClick={() => {
@@ -200,12 +200,10 @@ export function FeatureList({
               {activeFeatureIds.includes(feature.id) && (
                 <Loader2Icon className="size-3.5 shrink-0 animate-spin text-blue-500" />
               )}
-              <span className="flex-1 truncate">{feature.title}</span>
+              <span className="truncate pr-1">{feature.title}</span>
 
-              {feature.type === "session" ? (
-                <MessageSquareIcon className="size-3.5 shrink-0 text-muted-foreground" />
-              ) : (
-                <>
+              <div className="absolute inset-y-0 right-0 flex items-center gap-1 rounded-r-md pr-1.5 pl-6 bg-gradient-to-l from-sidebar from-60% to-transparent group-hover:from-accent group-[.bg-accent]:from-accent">
+                {feature.type !== "session" && (
                   <Select
                     value={feature.status}
                     onValueChange={(v) =>
@@ -217,12 +215,12 @@ export function FeatureList({
                   >
                     <SelectTrigger
                       size="sm"
-                      className="h-auto border-none bg-transparent p-0 shadow-none"
+                      className="h-auto border-none bg-transparent p-0 shadow-none [&_svg[class*='opacity']]:hidden"
                       onClick={(e) => e.stopPropagation()}
                     >
                       <Badge
                         variant="secondary"
-                        className={STATUS_COLORS[feature.status as FeatureStatus] ?? ""}
+                        className={`whitespace-nowrap ${STATUS_COLORS[feature.status as FeatureStatus] ?? ""}`}
                       >
                         {feature.status}
                       </Badge>
@@ -235,21 +233,21 @@ export function FeatureList({
                       ))}
                     </SelectContent>
                   </Select>
-                </>
-              )}
+                )}
 
-              <Button
-                size="sm"
-                variant="ghost"
-                className="size-6 p-0 opacity-0 group-hover:opacity-100"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  deleteMutation.mutate({ id: feature.id });
-                }}
-              >
-                <TrashIcon className="size-3.5" />
-                <span className="sr-only">Delete</span>
-              </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="size-6 shrink-0 p-0 text-muted-foreground hover:text-foreground"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    deleteMutation.mutate({ id: feature.id });
+                  }}
+                >
+                  <TrashIcon className="size-3.5" />
+                  <span className="sr-only">Delete</span>
+                </Button>
+              </div>
             </div>
           ))}
 
