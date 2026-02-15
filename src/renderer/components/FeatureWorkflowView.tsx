@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useMemo } from "react";
+import { useState, useRef, useCallback, useMemo, useEffect } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { trpc } from "@/trpc";
 import { FeatureTopBar } from "@/components/FeatureTopBar";
@@ -166,6 +166,21 @@ export function FeatureWorkflowView({
     { enableOnFormTags: true },
   );
 
+  // CMD+SHIFT+B: start or continue building
+  useHotkeys(
+    "meta+shift+b",
+    (e) => {
+      if (wf.canContinueBuild && wf.handleContinueBuild && !wf.isContinuingBuild) {
+        e.preventDefault();
+        wf.handleContinueBuild();
+      } else if (actions.canStartBuild && !wf.canContinueBuild && !wf.isStartingExecute) {
+        e.preventDefault();
+        wf.handleStartBuilding();
+      }
+    },
+    { enableOnFormTags: true },
+  );
+
   // Escape: stop the focused running agent
   useHotkeys(
     "escape",
@@ -196,6 +211,31 @@ export function FeatureWorkflowView({
     risk: { status: wf.risk.status, blocks: wf.risk.blocks },
     review: { status: wf.review.status, blocks: wf.review.blocks },
   });
+
+  // Auto-focus the prompt bar of a newly started agent
+  const prevRunningAgentsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const currentRunning = new Set(
+      wf.sessionEntries
+        .filter((e) => e.status === "running" || e.status === "paused")
+        .map((e) => `${e.agentType}-${e.sessionDbId}`),
+    );
+    // Find agents that just became running/paused
+    for (const key of currentRunning) {
+      if (!prevRunningAgentsRef.current.has(key)) {
+        const index = wf.sessionEntries.findIndex(
+          (e) => `${e.agentType}-${e.sessionDbId}` === key,
+        );
+        if (index >= 0) {
+          requestAnimationFrame(() => {
+            agentRefs.current.get(index)?.focusPromptBar();
+          });
+        }
+        break; // focus only the first new one
+      }
+    }
+    prevRunningAgentsRef.current = currentRunning;
+  }, [wf.sessionEntries]);
 
   // Count how many agents currently have pending questions — disable shortcuts when > 1
   const agentsWithQuestions = wf.sessionEntries.filter(

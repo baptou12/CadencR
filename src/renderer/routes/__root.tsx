@@ -131,9 +131,9 @@ function RootLayout() {
     { enableOnFormTags: true },
   );
 
-  // CMD+OPT+LEFT -> cycle focus left
+  // CMD+SHIFT+[ -> cycle focus left
   useHotkeys(
-    "meta+alt+left",
+    "meta+shift+bracketleft",
     (e) => {
       e.preventDefault();
       focusZoneByDirection("left");
@@ -141,9 +141,9 @@ function RootLayout() {
     { enableOnFormTags: true },
   );
 
-  // CMD+OPT+RIGHT -> cycle focus right
+  // CMD+SHIFT+] -> cycle focus right
   useHotkeys(
-    "meta+alt+right",
+    "meta+shift+bracketright",
     (e) => {
       e.preventDefault();
       focusZoneByDirection("right");
@@ -218,8 +218,8 @@ function RootLayout() {
             tabIndex={0}
             className="h-full outline-none focus-within:ring-2 focus-within:ring-blue-400/70"
             onFocus={(e) => {
-              // When the wrapper itself gets focus, move to the first nav item
-              if (e.target === e.currentTarget) {
+              // When the wrapper itself gets focus via keyboard (not click), move to the first nav item
+              if (e.target === e.currentTarget && !e.currentTarget.matches(":active")) {
                 const firstItem = e.currentTarget.querySelector("[data-nav-item]") as HTMLElement | null;
                 if (firstItem) firstItem.focus();
               }
@@ -235,8 +235,8 @@ function RootLayout() {
             tabIndex={0}
             className="h-full overflow-hidden outline-none focus-within:ring-2 focus-within:ring-blue-400/70"
             onFocus={(e) => {
-              // When the wrapper itself gets focus, move to the first nav item
-              if (e.target === e.currentTarget) {
+              // When the wrapper itself gets focus via keyboard (not click), move to the first nav item
+              if (e.target === e.currentTarget && !e.currentTarget.matches(":active")) {
                 const firstItem = e.currentTarget.querySelector("[data-nav-item]") as HTMLElement | null;
                 if (firstItem) firstItem.focus();
               }

@@ -134,7 +134,7 @@ export function PlanSidebar({ featureId }: PlanSidebarProps) {
         tabIndex={0}
         className="flex h-full w-80 shrink-0 flex-col border-l border-border outline-none focus-within:ring-2 focus-within:ring-blue-400/70"
         onFocus={(e) => {
-          if (e.target === e.currentTarget) {
+          if (e.target === e.currentTarget && !e.currentTarget.matches(":active")) {
             const firstItem = e.currentTarget.querySelector("[data-nav-item]") as HTMLElement | null;
             if (firstItem) firstItem.focus();
           }

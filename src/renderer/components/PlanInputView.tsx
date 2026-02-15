@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2Icon } from "lucide-react";
 import { AGENT_ICONS } from "@/components/agent-icons";
+import { KbdShortcut } from "@/components/KbdShortcut";
 
 interface PlanInputViewProps {
   description: string;
@@ -34,6 +35,14 @@ export function PlanInputView({
         placeholder="Describe the feature you want to build..."
         value={description}
         onChange={(e) => onDescriptionChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            if (description.trim() && !isStartingPlan && !isStartingBrainstorm) {
+              onStartPlanning();
+            }
+          }
+        }}
         rows={6}
         className="resize-none"
       />
@@ -50,6 +59,7 @@ export function PlanInputView({
             <AGENT_ICONS.plan className="mr-2 size-4" />
           )}
           Start Planning
+          <KbdShortcut keys={["enter"]} />
         </Button>
         <Button
           variant="outline"

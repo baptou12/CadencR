@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Loader2Icon } from "lucide-react";
 import type { AgentStatus } from "@/components/AgentSession";
 import { AGENT_ICONS } from "@/components/agent-icons";
+import { KbdShortcut } from "@/components/KbdShortcut";
 
 interface NextStepsBarProps {
   show: boolean;
@@ -66,6 +67,7 @@ export function NextStepsBar({
             {nextStepNumber != null
               ? `Continue to Step ${nextStepNumber}`
               : "Continue Building"}
+            <KbdShortcut keys={["cmd", "shift", "B"]} />
           </Button>
         )}
         {canStartBuild && !canContinueBuild && (
@@ -79,6 +81,7 @@ export function NextStepsBar({
               <AGENT_ICONS.execute className="mr-2 size-4" />
             )}
             {executeStatus === "error" ? "Retry Build" : "Start Building"}
+            <KbdShortcut keys={["cmd", "shift", "B"]} />
           </Button>
         )}
         {canStartRisk && (

@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { SendIcon, Loader2Icon } from "lucide-react";
+import { KbdShortcut } from "@/components/KbdShortcut";
 import { DiffViewer } from "./DiffViewer";
 import { trpc } from "@/trpc";
 import type { AgentQuestion } from "@/components/AgentQuestionDrawer";
@@ -154,6 +155,7 @@ export function DiffViewerModal({
               <SendIcon className="mr-2 size-4" />
             )}
             {buttonLabel}
+            <KbdShortcut keys={["cmd", "enter"]} />
           </Button>
         </DialogFooter>
       </DialogContent>
