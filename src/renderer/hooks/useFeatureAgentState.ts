@@ -174,6 +174,12 @@ function serverBlocksToAgentBlocks(serverBlocks: ServerBlock[]): AgentBlockData[
 // Session shape exposed to consumers
 // ---------------------------------------------------------------------------
 
+export interface TodoItem {
+  content: string;
+  status: "pending" | "in_progress" | "completed";
+  activeForm: string;
+}
+
 export interface FeatureSession {
   sessionDbId: number;
   agentType: AgentType;
@@ -188,6 +194,7 @@ export interface FeatureSession {
   runId: number | null;
   phaseId: number | null;
   phaseTitle: string | null;
+  todos: TodoItem[] | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -199,8 +206,15 @@ export function useFeatureAgentState(featureId: number) {
 
   // Streaming buffer: sessionDbId -> flat list of extra blocks since last query
   const [streamBuffer, setStreamBuffer] = useState<Map<number, AgentBlockData[]>>(new Map());
+  // Streaming todos: sessionDbId -> latest TodoWrite todos captured during streaming
+  const streamingTodosRef = useRef<Map<number, TodoItem[]>>(new Map());
+  const [streamingTodosVersion, setStreamingTodosVersion] = useState(0);
   // Track running subprocess -> sessionDbId mapping
   const sessionMapRef = useRef<Map<string, number>>(new Map());
+  // Track in-progress TodoWrite tool call JSON accumulation: toolUseId -> partial JSON
+  const todoJsonAccumRef = useRef<Map<string, string>>(new Map());
+  // Track which toolUseId is a TodoWrite: toolUseId -> sessionDbId
+  const todoToolUseRef = useRef<Map<string, number>>(new Map());
   // Stable ref to query.refetch so the IPC effect doesn't re-register every render
   const refetchRef = useRef(query.refetch);
   refetchRef.current = query.refetch;
@@ -208,6 +222,9 @@ export function useFeatureAgentState(featureId: number) {
   // Reset buffer on featureId change
   useEffect(() => {
     setStreamBuffer(new Map());
+    streamingTodosRef.current = new Map();
+    todoJsonAccumRef.current = new Map();
+    todoToolUseRef.current = new Map();
     sessionMapRef.current = new Map();
   }, [featureId]);
 
@@ -278,7 +295,7 @@ export function useFeatureAgentState(featureId: number) {
 
       const e = agentEvent.event;
 
-      // Terminal events: clear buffer and refetch
+      // Terminal events: clear buffer and streaming todos, refetch
       if (
         e.type === "agent_done" ||
         e.type === "agent_paused" ||
@@ -289,8 +306,47 @@ export function useFeatureAgentState(featureId: number) {
           next.delete(sessionDbId);
           return next;
         });
+        streamingTodosRef.current.delete(sessionDbId);
+        setStreamingTodosVersion((v) => v + 1);
         void refetchRef.current();
         return;
+      }
+
+      // Track TodoWrite tool calls during streaming
+      if (e.type === "content_block_start" && e.content_block?.type === "tool_use" && e.content_block.name === "TodoWrite") {
+        const toolUseId = e.content_block.id;
+        todoToolUseRef.current.set(toolUseId, sessionDbId);
+        todoJsonAccumRef.current.set(toolUseId, "");
+        // If the input is already complete (non-streaming), parse immediately
+        if (e.content_block.input && Object.keys(e.content_block.input).length > 0) {
+          const input = e.content_block.input as { todos?: TodoItem[] };
+          if (input.todos && Array.isArray(input.todos)) {
+            streamingTodosRef.current.set(sessionDbId, input.todos);
+            setStreamingTodosVersion((v) => v + 1);
+          }
+        }
+      } else if (e.type === "content_block_delta" && e.delta?.type === "input_json_delta") {
+        // Accumulate JSON deltas for any in-progress TodoWrite
+        for (const [toolUseId, sid] of todoToolUseRef.current.entries()) {
+          if (todoJsonAccumRef.current.has(toolUseId)) {
+            const accum = todoJsonAccumRef.current.get(toolUseId)! + e.delta.partial_json;
+            todoJsonAccumRef.current.set(toolUseId, accum);
+            // Try to parse the accumulated JSON
+            try {
+              const parsed = JSON.parse(accum);
+              if (parsed.todos && Array.isArray(parsed.todos)) {
+                streamingTodosRef.current.set(sid, parsed.todos);
+                setStreamingTodosVersion((v) => v + 1);
+              }
+            } catch {
+              // Not complete JSON yet, continue accumulating
+            }
+          }
+        }
+      } else if (e.type === "content_block_stop") {
+        // Clean up accumulated JSON for completed tool uses
+        // We can't easily know which toolUseId stopped, but that's fine —
+        // the accumulated data persists until terminal event or next TodoWrite
       }
 
       // Convert event to block and append to flat buffer
@@ -338,6 +394,8 @@ export function useFeatureAgentState(featureId: number) {
   }, []);
 
   // Merge server blocks + streaming buffer, deduplicating by ID
+  // (streamingTodosVersion triggers re-render when streaming todos update)
+  void streamingTodosVersion;
   const sessions: FeatureSession[] = (query.data?.sessions ?? []).map((s) => {
     const queryBlocks = serverBlocksToAgentBlocks(s.blocks as ServerBlock[]);
     const rawBufferBlocks = streamBuffer.get(s.sessionDbId) ?? [];
@@ -393,6 +451,11 @@ export function useFeatureAgentState(featureId: number) {
           ? "paused"
           : "idle";
 
+    // Prefer streaming todos over server todos (more up-to-date during active streaming)
+    const serverTodos = (s.todos as TodoItem[] | null) ?? null;
+    const streamTodos = streamingTodosRef.current.get(s.sessionDbId) ?? null;
+    const todos = streamTodos ?? serverTodos;
+
     return {
       sessionDbId: s.sessionDbId,
       agentType: s.agentType as AgentType,
@@ -407,6 +470,7 @@ export function useFeatureAgentState(featureId: number) {
       runId: s.runId,
       phaseId: s.phaseId,
       phaseTitle: s.phaseTitle,
+      todos,
     };
   });
 

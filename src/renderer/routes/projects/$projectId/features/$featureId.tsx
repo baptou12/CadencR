@@ -63,6 +63,7 @@ function SessionFeatureView({
   const status = session?.status ?? "idle";
   const blocks = session?.blocks ?? [];
   const hasFileChanges = session?.hasFileChanges ?? false;
+  const todos = session?.todos ?? null;
 
   // Mutations
   const startSessionMutation = trpc.agents.startSession.useMutation();
@@ -138,6 +139,7 @@ function SessionFeatureView({
         disabled={startSessionMutation.isLoading || resumeMutation.isLoading}
         hasFileChanges={hasFileChanges}
         onViewDiff={handleViewDiff}
+        todos={todos}
       />
       <DiffViewerModal
         featureId={featureId}

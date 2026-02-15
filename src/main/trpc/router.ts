@@ -692,6 +692,22 @@ const agentsRouter = router({
           }
           const msgs = messagesBySession.get(s.id) ?? [];
           const maxMessageId = msgs.length > 0 ? msgs[msgs.length - 1].id : 0;
+
+          // Extract the last TodoWrite tool call to get current todo list
+          let todos: Array<{ content: string; status: string; activeForm: string }> | null = null;
+          for (let i = msgs.length - 1; i >= 0; i--) {
+            const msg = msgs[i];
+            if (msg.message_type === "tool_call" && msg.tool_name === "TodoWrite") {
+              try {
+                const parsed = JSON.parse(msg.content);
+                if (parsed.todos && Array.isArray(parsed.todos)) {
+                  todos = parsed.todos;
+                }
+              } catch { /* ignore parse errors */ }
+              break;
+            }
+          }
+
           return {
             sessionDbId: s.id,
             agentType: s.agent_type as AgentType,
@@ -707,6 +723,7 @@ const agentsRouter = router({
             runId: s.run_id,
             phaseId: s.phase_id,
             phaseTitle: s.phase_id != null ? phaseTitleMap.get(s.phase_id) ?? null : null,
+            todos,
           };
         }),
       };

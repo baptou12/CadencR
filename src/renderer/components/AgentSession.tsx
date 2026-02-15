@@ -26,10 +26,12 @@ import {
 } from "lucide-react";
 import { AgentStream } from "./AgentStream";
 import { AgentPromptBar, type AgentPromptBarHandle } from "./AgentPromptBar";
+import { AgentTodoList } from "./AgentTodoList";
 import { ReviewVerdictActions } from "./ReviewVerdictActions";
 import type { AgentBlockData } from "./AgentBlock";
 import type { AgentType } from "../../main/agents/types";
 import type { AgentQuestion } from "./AgentQuestionDrawer";
+import type { TodoItem } from "@/hooks/useFeatureAgentState";
 import { AGENT_ICONS } from "./agent-icons";
 
 // ---------------------------------------------------------------------------
@@ -147,6 +149,8 @@ export interface AgentSessionProps {
   onDelete?: () => void;
   /** The model ID used for this agent session */
   model?: string | null;
+  /** Todo list from TodoWrite tool calls */
+  todos?: TodoItem[] | null;
 }
 
 /** Handle exposed by AgentSession via forwardRef */
@@ -189,6 +193,7 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
   canDelete,
   onDelete,
   model,
+  todos,
 }, ref) {
   const promptBarRef = useRef<AgentPromptBarHandle>(null);
   const [promptBarFocused, setPromptBarFocused] = useState(false);
@@ -277,6 +282,9 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
     </div>
   ) : null;
 
+  // ---- Todo list bar ----
+  const todoBar = todos && todos.length > 0 ? <AgentTodoList todos={todos} /> : null;
+
   // ---- Stream content ----
   const streamContent = (
     <>
@@ -325,6 +333,9 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
 
         {/* Inline diff trigger */}
         {diffBar}
+
+        {/* Todo list */}
+        {todoBar}
 
         {/* Prompt bar pinned at bottom */}
         {promptBar && (
@@ -426,6 +437,9 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
 
           {/* Inline diff trigger */}
           {diffBar}
+
+          {/* Todo list */}
+          {todoBar}
 
           {/* Prompt bar */}
           {promptBar && (
