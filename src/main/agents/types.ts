@@ -143,6 +143,8 @@ export interface AgentEvent {
   parentToolUseId?: string | null;
   /** DB session ID (agent_sessions.id) for this subprocess */
   sessionDbId?: number;
+  /** DB message ID (agent_messages.id) — used by frontend to deduplicate */
+  messageDbId?: number;
 }
 
 /** Agent status info for listing */
@@ -217,4 +219,6 @@ export interface UnifiedAgentConfig {
   runId?: number;
   /** Phase row ID this session is executing */
   phaseId?: number;
+  /** Existing DB session ID to reuse (for resume — skips creating a new row) */
+  existingSessionDbId?: number;
 }

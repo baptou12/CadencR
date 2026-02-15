@@ -1,12 +1,11 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useState, useCallback, useRef } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { trpc } from "@/trpc";
 import { FeatureTopBar } from "@/components/FeatureTopBar";
 import { AgentSession, type AgentSessionHandle } from "@/components/AgentSession";
 import { FeatureWorkflowView } from "@/components/FeatureWorkflowView";
 import { DiffViewerModal } from "@/components/diff/DiffViewerModal";
-import { useSessionState, useSessionEventListener } from "@/hooks/useSessionState";
-import type { AgentBlockData } from "@/components/AgentBlock";
+import { useFeatureAgentState } from "@/hooks/useFeatureAgentState";
 
 export const Route = createFileRoute(
   "/projects/$projectId/features/$featureId",
@@ -54,169 +53,77 @@ function SessionFeatureView({
   featureId: number;
   projectId: number;
 }) {
-  const session = useSessionState();
+  const { sessions, refetch } = useFeatureAgentState(featureId);
   const agentRef = useRef<AgentSessionHandle>(null);
   const [inlineDiffOpen, setInlineDiffOpen] = useState(false);
   const handleViewDiff = useCallback(() => setInlineDiffOpen(true), []);
 
-  // When main-content zone receives focus, auto-focus the text input
-  useEffect(() => {
-    const zone = document.querySelector('[data-focus-zone="main-content"]');
-    if (!zone) return;
-    const handleFocus = (e: Event) => {
-      // Only when the zone itself is focused (not a child element)
-      if (e.target === zone) {
-        agentRef.current?.focusPromptBar();
-      }
-    };
-    zone.addEventListener("focus", handleFocus);
-    return () => zone.removeEventListener("focus", handleFocus);
-  }, []);
-
-  // Restore: find the latest session's history and reconnect to active subprocess
-  const activeProcess = trpc.agents.getActiveSessionProcess.useQuery({ featureId });
-  const sessionsQuery = trpc.agents.getSessions.useQuery({ featureId });
-  const incompleteQuery = trpc.agents.getIncompleteSessions.useQuery({ featureId });
-  const resumeMutation = trpc.agents.resume.useMutation();
-
-  const lastSessionDbId = useMemo(() => {
-    if (!sessionsQuery.data) return null;
-    const s = sessionsQuery.data.find((r) => r.agent_type === "session");
-    return s?.id ?? null;
-  }, [sessionsQuery.data]);
-
-  // Find interrupted session info for resume
-  const interruptedSession = useMemo(() => {
-    if (!incompleteQuery.data) return null;
-    return incompleteQuery.data.find(
-      (s) => s.agent_type === "session" && s.claude_session_id,
-    ) ?? null;
-  }, [incompleteQuery.data]);
-
-  const historyQuery = trpc.agents.getHistory.useQuery(
-    { sessionId: lastSessionDbId ?? 0 },
-    { enabled: !!lastSessionDbId && session.status === "idle" && session.blocks.length === 0 },
-  );
-
-  // On mount: restore blocks from history and reconnect to active subprocess
-  useEffect(() => {
-    if (!historyQuery.data || historyQuery.data.length === 0) return;
-    if (session.status !== "idle" || session.blocks.length > 0) return;
-
-    for (const msg of historyQuery.data) {
-      const id = `hist-${Math.random().toString(36).slice(2)}`;
-      let block: AgentBlockData | null = null;
-      switch (msg.message_type) {
-        case "text": block = { id, type: "text", content: msg.content }; break;
-        case "tool_call": block = { id, type: "tool_call", content: msg.content, toolName: msg.tool_name ?? "tool", toolArgs: msg.content }; break;
-        case "tool_result": case "tool_error": block = { id, type: "tool_result", content: msg.content, isError: msg.message_type === "tool_error" }; break;
-        case "user_message": block = { id, type: "user_message", content: msg.content }; break;
-        case "error": block = { id, type: "text", content: `Error: ${msg.content}` }; break;
-      }
-      if (block) session.appendBlock(block);
-    }
-
-    // Reconnect to active subprocess or check for interrupted session
-    if (activeProcess.data) {
-      session.trackSubprocess(activeProcess.data.subprocessId);
-      session.setStatus(activeProcess.data.status === "running" ? "running" : "paused");
-    } else {
-      session.setStatus("paused");
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [historyQuery.data, activeProcess.data, interruptedSession]);
-
-  // Event listener for session agent
-  const eventHandlers = useMemo(
-    () => ({
-      session: {
-        handleEvent: session.handleEvent,
-        subprocessIdRef: session.subprocessIdRef,
-      },
-    }),
-    [session.handleEvent, session.subprocessIdRef],
-  );
-  useSessionEventListener(eventHandlers);
+  // Find the latest session agent
+  const session = sessions.find((s) => s.agentType === "session");
+  const status = session?.status ?? "idle";
+  const blocks = session?.blocks ?? [];
+  const hasFileChanges = session?.hasFileChanges ?? false;
 
   // Mutations
   const startSessionMutation = trpc.agents.startSession.useMutation();
   const sendMessageMutation = trpc.agents.sendMessage.useMutation();
   const interruptMutation = trpc.agents.interrupt.useMutation();
+  const resumeMutation = trpc.agents.resume.useMutation();
 
   const handleSend = useCallback(
     async (message: string) => {
-      if (session.subprocessId && (session.status === "running" || session.status === "paused")) {
-        // Subprocess is alive -- send follow-up message
-        session.appendBlock({ type: "user_message", content: message });
+      if (session?.subprocessId && (status === "running" || status === "paused")) {
         sendMessageMutation.mutate({ id: session.subprocessId, message });
-        session.setStatus("running");
         return;
       }
 
-      // Resume an interrupted session
-      if (session.status === "paused" && interruptedSession?.claude_session_id) {
-        session.appendBlock({ type: "user_message", content: message });
-        session.setStatus("running");
+      // Resume a paused session
+      if (status === "paused" && session?.claudeSessionId) {
         try {
           const result = await resumeMutation.mutateAsync({
             featureId,
             projectId,
             agentType: "session",
-            sessionId: interruptedSession.claude_session_id,
-            originalSessionDbId: interruptedSession.id,
+            sessionId: session.claudeSessionId,
+            originalSessionDbId: session.sessionDbId,
           });
-          session.trackSubprocess(result.subprocessId);
-          // Send the user's message to the resumed session
           sendMessageMutation.mutate({ id: result.subprocessId, message });
-          void incompleteQuery.refetch();
-        } catch (err) {
-          session.setStatus("error");
-          session.appendBlock({
-            type: "text",
-            content: `Failed to resume: ${err instanceof Error ? err.message : String(err)}`,
-          });
+          void refetch();
+        } catch {
+          // Error shown via refetch
         }
         return;
       }
 
       // Start a new session
-      session.start();
-      session.appendBlock({ type: "user_message", content: message });
       try {
-        const result = await startSessionMutation.mutateAsync({
+        await startSessionMutation.mutateAsync({
           featureId,
           projectId,
           prompt: message,
         });
-        session.trackSubprocess(result.subprocessId);
-      } catch (err) {
-        session.setStatus("error");
-        session.appendBlock({
-          type: "text",
-          content: `Failed to start session: ${err instanceof Error ? err.message : String(err)}`,
-        });
+        void refetch();
+      } catch {
+        // Error shown via refetch
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [session.status, session.subprocessId, featureId, projectId, sendMessageMutation, startSessionMutation, interruptedSession, resumeMutation, incompleteQuery],
+    [session, status, featureId, projectId, sendMessageMutation, startSessionMutation, resumeMutation, refetch],
   );
 
   const handleStop = useCallback(async () => {
-    if (!session.subprocessId) return;
+    if (!session?.subprocessId) return;
     try {
       await interruptMutation.mutateAsync({ id: session.subprocessId });
     } catch {
       // best effort
     }
-    session.setStatus("paused");
-    void incompleteQuery.refetch();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session.subprocessId, interruptMutation, incompleteQuery]);
+    void refetch();
+  }, [session?.subprocessId, interruptMutation, refetch]);
 
   return (
     <div className="flex h-full flex-col">
       <FeatureTopBar featureId={featureId} projectId={projectId} mode="session" />
-      {session.status === "paused" && !session.subprocessId && (
+      {status === "paused" && !session?.subprocessId && (
         <div className="border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 text-sm text-amber-300">
           Previous session paused — type a message to resume.
         </div>
@@ -224,12 +131,12 @@ function SessionFeatureView({
       <AgentSession
         ref={agentRef}
         agentType="session"
-        blocks={session.blocks}
-        status={session.status}
+        blocks={blocks}
+        status={status}
         onSend={handleSend}
         onStop={handleStop}
         disabled={startSessionMutation.isLoading || resumeMutation.isLoading}
-        hasFileChanges={session.hasFileChanges}
+        hasFileChanges={hasFileChanges}
         onViewDiff={handleViewDiff}
       />
       <DiffViewerModal

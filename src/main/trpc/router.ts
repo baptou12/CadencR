@@ -150,6 +150,92 @@ function resolveAgentCwd(featureId: number, projectId: number): string {
 
 const agentTypeSchema = z.enum(["plan", "brainstorm", "execute", "risk", "review", "session"]);
 
+// ---------------------------------------------------------------------------
+// Block builder — converts agent_messages rows into a nested block tree
+// ---------------------------------------------------------------------------
+
+interface AgentBlock {
+  id: string;
+  type: string;
+  content: string;
+  toolName?: string;
+  toolArgs?: string;
+  isError?: boolean;
+  toolUseId?: string;
+  parentToolUseId?: string | null;
+  childBlocks?: AgentBlock[];
+}
+
+function appendText(list: AgentBlock[], msgId: number, content: string, parentId?: string | null) {
+  const last = list.length > 0 ? list[list.length - 1] : null;
+  if (last && last.type === "text" && !last.parentToolUseId === !parentId) {
+    last.content += content;
+    // Keep the first message's id for the merged block
+  } else {
+    list.push({ id: `msg-${msgId}`, type: "text", content, parentToolUseId: parentId });
+  }
+}
+
+function buildBlocks(messages: AgentMessageRow[]): AgentBlock[] {
+  const blocks: AgentBlock[] = [];
+  const byToolUseId = new Map<string, AgentBlock>();
+
+  function targetList(parentId: string | null | undefined): AgentBlock[] {
+    if (parentId) {
+      const parent = byToolUseId.get(parentId);
+      if (parent?.childBlocks) return parent.childBlocks;
+    }
+    return blocks;
+  }
+
+  for (const msg of messages) {
+    const list = targetList(msg.parent_tool_use_id);
+    const id = `msg-${msg.id}`;
+
+    switch (msg.message_type) {
+      case "text":
+      case "text_delta":
+        appendText(list, msg.id, msg.content, msg.parent_tool_use_id);
+        break;
+      case "tool_call": {
+        const isTask = msg.tool_name === "Task";
+        const block: AgentBlock = {
+          id,
+          type: "tool_call",
+          content: msg.content,
+          toolName: msg.tool_name ?? "tool",
+          toolArgs: msg.content,
+          toolUseId: msg.tool_use_id ?? undefined,
+          parentToolUseId: msg.parent_tool_use_id,
+          childBlocks: isTask ? [] : undefined,
+        };
+        if (msg.tool_use_id) byToolUseId.set(msg.tool_use_id, block);
+        list.push(block);
+        break;
+      }
+      case "tool_result":
+      case "tool_error":
+        list.push({
+          id,
+          type: "tool_result",
+          content: msg.content,
+          isError: msg.message_type === "tool_error",
+          parentToolUseId: msg.parent_tool_use_id,
+        });
+        break;
+      case "user_message":
+        list.push({ id, type: "user_message", content: msg.content, parentToolUseId: msg.parent_tool_use_id });
+        break;
+      case "error":
+        list.push({ id, type: "text", content: `Error: ${msg.content}`, parentToolUseId: msg.parent_tool_use_id });
+        break;
+    }
+  }
+  return blocks;
+}
+
+// ---------------------------------------------------------------------------
+
 const agentsRouter = router({
   /** Start a new agent subprocess */
   start: publicProcedure
@@ -210,7 +296,7 @@ const agentsRouter = router({
     }),
 
 
-  /** Resume a previous agent session */
+  /** Resume a previous agent session (reuses the same DB row) */
   resume: publicProcedure
     .input(
       z.object({
@@ -224,7 +310,6 @@ const agentsRouter = router({
     .mutation(({ input }) => {
       const cwd = resolveAgentCwd(input.featureId, input.projectId);
 
-      // Copy run_id and phase_id from the original session
       const db = getDatabase();
       const originalSession = db
         .prepare("SELECT run_id, phase_id FROM agent_sessions WHERE id = ?")
@@ -239,10 +324,8 @@ const agentsRouter = router({
         resumeSessionId: input.sessionId,
         runId: originalSession?.run_id ?? undefined,
         phaseId: originalSession?.phase_id ?? undefined,
+        existingSessionDbId: input.originalSessionDbId,
       });
-
-      // Mark old session as 'resumed' so it doesn't show as incomplete
-      db.prepare("UPDATE agent_sessions SET status = 'resumed' WHERE id = ?").run(input.originalSessionDbId);
 
       return { subprocessId: result.subprocessId, agentType: result.agentType, sessionDbId: result.sessionDbId };
     }),
@@ -417,36 +500,6 @@ const agentsRouter = router({
       return result;
     }),
 
-  /** Get message history for an agent session */
-  getHistory: publicProcedure
-    .input(z.object({ sessionId: z.number() }))
-    .query(({ input }) => {
-      const db = getDatabase();
-      const messages = db
-        .prepare(
-          "SELECT id, session_id, role, content, message_type, tool_name, created_at FROM agent_messages WHERE session_id = ? ORDER BY id ASC",
-        )
-        .all(input.sessionId) as AgentMessageRow[];
-      return messages;
-    }),
-
-  /** Get message history for multiple sessions at once (used for parallel execute phases) */
-  getHistoryBatch: publicProcedure
-    .input(z.object({ sessionIds: z.array(z.number()) }))
-    .query(({ input }) => {
-      if (input.sessionIds.length === 0) return {};
-      const db = getDatabase();
-      const result: Record<number, AgentMessageRow[]> = {};
-      for (const sid of input.sessionIds) {
-        result[sid] = db
-          .prepare(
-            "SELECT id, session_id, role, content, message_type, tool_name, created_at FROM agent_messages WHERE session_id = ? ORDER BY id ASC",
-          )
-          .all(sid) as AgentMessageRow[];
-      }
-      return result;
-    }),
-
   /** Get sessions for a feature (optionally filter by status) */
   getSessions: publicProcedure
     .input(
@@ -466,45 +519,6 @@ const agentsRouter = router({
       }
       query += " ORDER BY id DESC";
       const sessions = db.prepare(query).all(...params) as AgentSessionRow[];
-      return sessions;
-    }),
-
-  /** Get incomplete sessions that can be resumed */
-  getIncompleteSessions: publicProcedure
-    .input(z.object({ featureId: z.number() }))
-    .query(({ input }) => {
-      const db = getDatabase();
-      const sessions = db
-        .prepare(
-          "SELECT id, feature_id, agent_type, claude_session_id, status, started_at, run_id, phase_id FROM agent_sessions WHERE feature_id = ? AND status IN ('paused', 'running') AND claude_session_id IS NOT NULL ORDER BY id DESC",
-        )
-        .all(input.featureId) as AgentSessionRow[];
-      return sessions;
-    }),
-
-  /** Get all phase sessions belonging to an orchestrator run */
-  getSessionsByRunId: publicProcedure
-    .input(z.object({ runId: z.number() }))
-    .query(({ input }) => {
-      const db = getDatabase();
-      const sessions = db
-        .prepare(
-          "SELECT id, feature_id, agent_type, claude_session_id, status, started_at, ended_at, run_id, phase_id, model FROM agent_sessions WHERE run_id = ? ORDER BY id ASC",
-        )
-        .all(input.runId) as AgentSessionRow[];
-      return sessions;
-    }),
-
-  /** Get all running agents for a feature (used for reconnection after refresh) */
-  getRunningAgents: publicProcedure
-    .input(z.object({ featureId: z.number() }))
-    .query(({ input }) => {
-      const db = getDatabase();
-      const sessions = db
-        .prepare(
-          "SELECT id, agent_type, subprocess_id, status, run_id, phase_id FROM agent_sessions WHERE feature_id = ? AND status = 'running' AND subprocess_id IS NOT NULL",
-        )
-        .all(input.featureId) as Array<Pick<AgentSessionRow, "id" | "agent_type" | "subprocess_id" | "status" | "run_id" | "phase_id">>;
       return sessions;
     }),
 
@@ -579,6 +593,63 @@ const agentsRouter = router({
       const active = listSubprocesses().find((s) => s.id === subprocessId);
       if (!active || active.status === "completed" || active.status === "error" || active.status === "stopped") return null;
       return { subprocessId, sessionDbId: session.id, status: active.status };
+    }),
+
+  /** Get all agent state for a feature in a single query */
+  getFeatureAgentState: publicProcedure
+    .input(z.object({ featureId: z.number() }))
+    .query(({ input }) => {
+      const db = getDatabase();
+      const sessions = db
+        .prepare(
+          "SELECT id, feature_id, agent_type, claude_session_id, status, started_at, ended_at, run_id, phase_id, subprocess_id, model, pending_questions, has_file_changes FROM agent_sessions WHERE feature_id = ? ORDER BY id ASC",
+        )
+        .all(input.featureId) as AgentSessionRow[];
+
+      if (sessions.length === 0) return { sessions: [] };
+
+      // Batch-fetch all messages for these sessions
+      const sessionIds = sessions.map((s) => s.id);
+      const placeholders = sessionIds.map(() => "?").join(",");
+      const allMessages = db
+        .prepare(
+          `SELECT id, session_id, role, content, message_type, tool_name, tool_use_id, parent_tool_use_id, created_at FROM agent_messages WHERE session_id IN (${placeholders}) ORDER BY id ASC`,
+        )
+        .all(...sessionIds) as AgentMessageRow[];
+
+      // Group messages by session
+      const messagesBySession = new Map<number, AgentMessageRow[]>();
+      for (const msg of allMessages) {
+        let arr = messagesBySession.get(msg.session_id);
+        if (!arr) {
+          arr = [];
+          messagesBySession.set(msg.session_id, arr);
+        }
+        arr.push(msg);
+      }
+
+      return {
+        sessions: sessions.map((s) => {
+          let pendingQuestions: unknown = null;
+          if (s.pending_questions) {
+            try { pendingQuestions = JSON.parse(s.pending_questions); } catch { /* ignore */ }
+          }
+          return {
+            sessionDbId: s.id,
+            agentType: s.agent_type as AgentType,
+            status: s.status,
+            subprocessId: s.subprocess_id,
+            model: s.model,
+            blocks: buildBlocks(messagesBySession.get(s.id) ?? []),
+            pendingQuestions,
+            hasFileChanges: s.has_file_changes === 1,
+            resumable: s.status === "paused" && s.claude_session_id != null,
+            claudeSessionId: s.claude_session_id,
+            runId: s.run_id,
+            phaseId: s.phase_id,
+          };
+        }),
+      };
     }),
 
   /** Get feature IDs that have running agent sessions */

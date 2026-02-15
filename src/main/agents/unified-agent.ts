@@ -55,13 +55,22 @@ export function startUnifiedAgent(config: UnifiedAgentConfig): UnifiedAgentResul
   // 1. Resolve model
   const model = resolveModel(config.agentType, config.featureId, config.projectId);
 
-  // 2. Create agent session record (with resolved model)
-  const sessionResult = db
-    .prepare(
-      "INSERT INTO agent_sessions (feature_id, agent_type, status, started_at, run_id, phase_id, model) VALUES (?, ?, ?, datetime('now'), ?, ?, ?)",
-    )
-    .run(config.featureId ?? null, config.agentType, "running", config.runId ?? null, config.phaseId ?? null, model);
-  const sessionDbId = Number(sessionResult.lastInsertRowid);
+  // 2. Create or reuse agent session record
+  let sessionDbId: number;
+  if (config.existingSessionDbId) {
+    // Resume: reuse existing session row
+    sessionDbId = config.existingSessionDbId;
+    db.prepare(
+      "UPDATE agent_sessions SET status = 'running', started_at = datetime('now'), ended_at = NULL, model = ?, pending_questions = NULL WHERE id = ?",
+    ).run(model, sessionDbId);
+  } else {
+    const sessionResult = db
+      .prepare(
+        "INSERT INTO agent_sessions (feature_id, agent_type, status, started_at, run_id, phase_id, model) VALUES (?, ?, ?, datetime('now'), ?, ?, ?)",
+      )
+      .run(config.featureId ?? null, config.agentType, "running", config.runId ?? null, config.phaseId ?? null, model);
+    sessionDbId = Number(sessionResult.lastInsertRowid);
+  }
 
   // 3. Spawn subprocess
   const managed = startSubprocess({

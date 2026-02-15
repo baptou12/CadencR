@@ -87,6 +87,8 @@ export interface AgentSessionRow {
   phase_id: number | null;
   subprocess_id: string | null;
   model: string | null;
+  pending_questions: string | null;
+  has_file_changes: number;
 }
 
 export interface AgentMessageRow {
@@ -96,6 +98,8 @@ export interface AgentMessageRow {
   content: string;
   message_type: string;
   tool_name: string | null;
+  tool_use_id: string | null;
+  parent_tool_use_id: string | null;
   created_at: string;
 }
 

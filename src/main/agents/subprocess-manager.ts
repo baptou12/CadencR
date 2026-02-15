@@ -72,6 +72,7 @@ function broadcastEvent(
   agentType: AgentType | string,
   event: StreamEvent,
   parentToolUseId?: string | null,
+  messageDbId?: number | null,
 ): void {
   const agentEvent: AgentEvent = {
     subprocessId: id,
@@ -80,6 +81,7 @@ function broadcastEvent(
     timestamp: Date.now(),
     parentToolUseId: parentToolUseId ?? undefined,
     sessionDbId: getSessionDbId(id),
+    messageDbId: messageDbId ?? undefined,
   };
 
   const windows = BrowserWindow.getAllWindows();
@@ -110,8 +112,8 @@ function handleSdkMessage(
     // SDKPartialAssistantMessage — contains the granular content_block_start/delta/stop events
     const innerEvent = msg.event as StreamEvent;
     if (innerEvent) {
-      broadcastEvent(id, agentType, innerEvent, parentToolUseId);
-      if (sessionDbId) persistStreamEvent(sessionDbId, innerEvent);
+      const msgId = sessionDbId ? persistStreamEvent(sessionDbId, innerEvent, parentToolUseId) : null;
+      broadcastEvent(id, agentType, innerEvent, parentToolUseId, msgId);
       for (const listener of managed.eventListeners) listener(innerEvent);
     }
   } else if (type === "assistant") {
@@ -130,8 +132,8 @@ function handleSdkMessage(
               index: i,
               content_block: { type: "text", text: block.text as string },
             };
-            broadcastEvent(id, agentType, event, parentToolUseId);
-            if (sessionDbId) persistStreamEvent(sessionDbId, event);
+            const msgId = sessionDbId ? persistStreamEvent(sessionDbId, event, parentToolUseId) : null;
+            broadcastEvent(id, agentType, event, parentToolUseId, msgId);
             for (const listener of managed.eventListeners) listener(event);
           } else if (block.type === "tool_use") {
             const toolName = block.name as string;
@@ -147,8 +149,8 @@ function handleSdkMessage(
                 input: toolInput,
               },
             };
-            broadcastEvent(id, agentType, event, parentToolUseId);
-            if (sessionDbId) persistStreamEvent(sessionDbId, event);
+            const msgId = sessionDbId ? persistStreamEvent(sessionDbId, event, parentToolUseId) : null;
+            broadcastEvent(id, agentType, event, parentToolUseId, msgId);
             for (const listener of managed.eventListeners) listener(event);
 
           }
@@ -167,8 +169,8 @@ function handleSdkMessage(
             : JSON.stringify(msg.content),
         is_error: (msg.is_error as boolean) ?? false,
       };
-      broadcastEvent(id, agentType, toolResultEvent, parentToolUseId);
-      if (sessionDbId) persistStreamEvent(sessionDbId, toolResultEvent);
+      const msgId = sessionDbId ? persistStreamEvent(sessionDbId, toolResultEvent, parentToolUseId) : null;
+      broadcastEvent(id, agentType, toolResultEvent, parentToolUseId, msgId);
     } else {
       broadcastEvent(
         id,
@@ -392,15 +394,44 @@ async function runSdkQuery(
     queryOptions.abortController = managed.abortController;
   }
 
-  // Add canUseTool callback to handle AskUserQuestion
+  // Add canUseTool callback to handle AskUserQuestion and track file changes
   queryOptions.canUseTool = async (
     toolName: string,
     input: Record<string, unknown>,
   ) => {
+    // Track file-modifying tools
+    if (toolName === "Write" || toolName === "Edit" || toolName === "NotebookEdit") {
+      const sDbId = getSessionDbId(managed.id);
+      if (sDbId) {
+        try {
+          const db2 = getDatabase();
+          db2.prepare("UPDATE agent_sessions SET has_file_changes = 1 WHERE id = ?").run(sDbId);
+        } catch { /* best-effort */ }
+      }
+    }
+
     if (toolName === "AskUserQuestion") {
+      // Persist questions to DB before broadcasting
+      const sDbId = getSessionDbId(managed.id);
+      if (sDbId) {
+        try {
+          const db2 = getDatabase();
+          db2.prepare("UPDATE agent_sessions SET pending_questions = ? WHERE id = ?")
+            .run(JSON.stringify(input), sDbId);
+        } catch { /* best-effort */ }
+      }
+
       try {
         // Request answers from the renderer
         const answers = await requestUserAnswers(managed.id, input);
+
+        // Clear pending_questions on answer
+        if (sDbId) {
+          try {
+            const db2 = getDatabase();
+            db2.prepare("UPDATE agent_sessions SET pending_questions = NULL WHERE id = ?").run(sDbId);
+          } catch { /* best-effort */ }
+        }
 
         // Return the answers in the format expected by Claude
         return {
@@ -415,7 +446,13 @@ async function runSdkQuery(
           "[subprocess-manager] Failed to get user answers:",
           error,
         );
-        // Return empty answers on error
+        // Clear pending_questions on error too
+        if (sDbId) {
+          try {
+            const db2 = getDatabase();
+            db2.prepare("UPDATE agent_sessions SET pending_questions = NULL WHERE id = ?").run(sDbId);
+          } catch { /* best-effort */ }
+        }
         return {
           behavior: "allow" as const,
           updatedInput: {

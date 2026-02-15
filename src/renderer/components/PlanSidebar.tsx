@@ -38,10 +38,7 @@ export function PlanSidebar({ featureId }: PlanSidebarProps) {
   const resetPhase = trpc.features.resetPhase.useMutation({
     onSuccess: () => {
       utils.features.getPlanWithPhases.invalidate({ feature_id: featureId });
-      utils.agents.getSessions.invalidate({ featureId });
-      utils.agents.getHistory.invalidate();
-      utils.agents.getHistoryBatch.invalidate();
-      utils.agents.getSessionsByRunId.invalidate();
+      utils.agents.getFeatureAgentState.invalidate({ featureId });
     },
   });
 

@@ -2,7 +2,7 @@ import { useState, useRef, useCallback } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { trpc } from "@/trpc";
 import { FeatureTopBar } from "@/components/FeatureTopBar";
-import { AgentSession, type AgentSessionHandle } from "@/components/AgentSession";
+import { AgentSession, AGENT_LABELS, type AgentSessionHandle } from "@/components/AgentSession";
 import { CheckCircle2Icon } from "lucide-react";
 import { useFeatureState, type FeatureStatus } from "@/hooks/useFeatureState";
 import { PlanSidebar } from "@/components/PlanSidebar";
@@ -11,6 +11,7 @@ import { NextStepsBar } from "@/components/NextStepsBar";
 import { useWorkflowAgents } from "@/hooks/useWorkflowAgents";
 import { getActiveFocusZone } from "@/lib/focus-zones";
 import { DiffViewerModal } from "@/components/diff/DiffViewerModal";
+import type { FeatureSession } from "@/hooks/useFeatureAgentState";
 
 export function FeatureWorkflowView({
   featureId,
@@ -28,27 +29,17 @@ export function FeatureWorkflowView({
 
   const deleteSession = trpc.agents.deleteSession.useMutation({
     onSuccess: () => {
-      utils.agents.getSessions.invalidate({ featureId });
-      utils.agents.getHistory.invalidate();
-      utils.agents.getHistoryBatch.invalidate();
-      utils.agents.getSessionsByRunId.invalidate();
+      utils.agents.getFeatureAgentState.invalidate({ featureId });
     },
   });
 
-  const handleDeleteAgent = useCallback((entry: typeof wf.sessionEntries[number]) => {
+  const handleDeleteAgent = useCallback((entry: FeatureSession) => {
     if (!entry.sessionDbId) return;
-    if (confirm(`Remove "${entry.label}" agent? This will delete its messages.`)) {
+    const label = AGENT_LABELS[entry.agentType] ?? entry.agentType;
+    if (confirm(`Remove "${label}" agent? This will delete its messages.`)) {
       deleteSession.mutate({ sessionId: entry.sessionDbId });
-      const resetMap: Record<string, () => void> = {
-        plan: wf.plan.reset,
-        brainstorm: wf.brainstorm.reset,
-        execute: wf.execute.reset,
-        risk: wf.risk.reset,
-        review: wf.review.reset,
-      };
-      resetMap[entry.type]?.();
     }
-  }, [deleteSession, wf.plan.reset, wf.brainstorm.reset, wf.execute.reset, wf.risk.reset, wf.review.reset]);
+  }, [deleteSession]);
 
   // --- Inline diff viewer modal state ---
   const [inlineDiffOpen, setInlineDiffOpen] = useState(false);
@@ -105,23 +96,22 @@ export function FeatureWorkflowView({
       if (focusedAgentIndex === null) return;
       const entry = wf.sessionEntries[focusedAgentIndex];
       if (!entry) return;
+      const entryLabel = AGENT_LABELS[entry.agentType] ?? entry.agentType;
       const isWorking = entry.status === "running" || entry.status === "paused";
       const isOpen =
-        wf.openAgent === entry.label || isWorking;
+        wf.openAgent === entryLabel || isWorking;
       if (isWorking) {
-        // Working agent: expand (if needed) and focus prompt bar
         e.preventDefault();
         if (!isOpen) {
-          wf.setOpenAgent(entry.label);
+          wf.setOpenAgent(entryLabel);
         }
         setTimeout(() => {
           agentRefs.current.get(focusedAgentIndex)?.focusPromptBar();
         }, 50);
       } else {
-        // Non-working agent: toggle expand/collapse
         e.preventDefault();
         wf.setOpenAgent((prev) =>
-          prev === entry.label ? null : entry.label,
+          prev === entryLabel ? null : entryLabel,
         );
       }
     },
@@ -156,10 +146,10 @@ export function FeatureWorkflowView({
       const entry = wf.sessionEntries[focusedAgentIndex];
       if (!entry || entry.status !== "running") return;
       e.preventDefault();
-      if (entry.type === "execute" && entry.subprocessId) {
+      if (entry.agentType === "execute" && entry.subprocessId) {
         void wf.interruptExecuteSubprocess(entry.subprocessId);
       } else {
-        void wf.handleAgentStop(entry.type);
+        void wf.handleAgentStop(entry.agentType);
       }
     },
     { enableOnFormTags: true },
@@ -181,7 +171,7 @@ export function FeatureWorkflowView({
 
   // Count how many agents currently have pending questions — disable shortcuts when > 1
   const agentsWithQuestions = wf.sessionEntries.filter(
-    (e) => e.pendingQuestions.length > 0,
+    (e) => e.pendingQuestions && e.pendingQuestions.length > 0,
   ).length;
 
   return (
@@ -205,75 +195,76 @@ export function FeatureWorkflowView({
           actions.canStartRisk ||
           actions.canStartReview) && (
           <div className="space-y-2">
-            {wf.sessionEntries.map((entry, index) => (
-              <AgentSession
-                key={entry.label}
-                ref={(handle) => setAgentRef(index, handle)}
-                collapsible
-                keyboardFocused={focusedAgentIndex === index}
-                agentType={entry.type}
-                label={entry.label}
-                status={entry.status}
-                blocks={entry.blocks}
-                open={
-                  wf.openAgent === entry.label ||
-                  entry.status === "running" ||
-                  entry.status === "paused"
-                }
-                onToggle={() =>
-                  wf.setOpenAgent((prev) =>
-                    prev === entry.label ? null : entry.label,
-                  )
-                }
-                pendingQuestions={
-                  entry.pendingQuestions.length > 0
-                    ? entry.pendingQuestions
-                    : undefined
-                }
-                disableShortcuts={agentsWithQuestions > 1}
-                onAnswerSubmit={
-                  entry.type === "plan"
-                    ? wf.handleQuestionResponse
-                    : entry.type === "brainstorm"
-                      ? wf.handleBrainstormQuestionResponse
-                      : entry.type === "execute"
-                        ? wf.handleExecuteQuestionResponse
-                        : entry.type === "risk"
-                          ? wf.handleRiskQuestionResponse
-                          : entry.type === "review"
-                            ? wf.handleReviewQuestionResponse
-                            : undefined
-                }
-                onSend={(message) => {
-                  if (entry.type === "execute" && entry.subprocessId) {
-                    wf.sendToExecuteSubprocess(entry.subprocessId, message);
-                  } else {
-                    wf.handleAgentSend(entry.type, message);
+            {wf.sessionEntries.map((entry, index) => {
+              const label = AGENT_LABELS[entry.agentType] ?? entry.agentType;
+              const questions = entry.pendingQuestions ?? [];
+              return (
+                <AgentSession
+                  key={`${entry.agentType}-${entry.sessionDbId}`}
+                  ref={(handle) => setAgentRef(index, handle)}
+                  collapsible
+                  keyboardFocused={focusedAgentIndex === index}
+                  agentType={entry.agentType}
+                  label={label}
+                  status={entry.status}
+                  blocks={entry.blocks}
+                  open={
+                    wf.openAgent === label ||
+                    entry.status === "running" ||
+                    entry.status === "paused"
                   }
-                }}
-                onStop={() => {
-                  if (entry.type === "execute" && entry.subprocessId) {
-                    void wf.interruptExecuteSubprocess(entry.subprocessId);
-                  } else {
-                    void wf.handleAgentStop(entry.type);
+                  onToggle={() =>
+                    wf.setOpenAgent((prev) =>
+                      prev === label ? null : label,
+                    )
                   }
-                }}
-                resumable={entry.resumable}
-                onResume={entry.resumable ? () => void wf.handleResume(entry.type, entry.sessionDbId) : undefined}
-                // Review verdict props (only effective for review entries)
-                reviewComplete={wf.reviewComplete}
-                reviewVerdict={wf.reviewVerdict}
-                onAddFixPhase={entry.type === "review" ? wf.handleAddFixPhase : undefined}
-                onFixImmediately={entry.type === "review" ? wf.handleFixImmediately : undefined}
-                isAddingFixPhase={wf.isAddingFixPhase}
-                isStartingFix={wf.isStartingFix}
-                hasFileChanges={entry.hasFileChanges}
-                onViewDiff={handleViewDiff}
-                model={entry.model}
-                canDelete={entry.status !== "running" && entry.status !== "completed" && !!entry.sessionDbId}
-                onDelete={() => handleDeleteAgent(entry)}
-              />
-            ))}
+                  pendingQuestions={
+                    questions.length > 0 ? questions : undefined
+                  }
+                  disableShortcuts={agentsWithQuestions > 1}
+                  onAnswerSubmit={
+                    entry.agentType === "plan"
+                      ? wf.handleQuestionResponse
+                      : entry.agentType === "brainstorm"
+                        ? wf.handleBrainstormQuestionResponse
+                        : entry.agentType === "execute"
+                          ? wf.handleExecuteQuestionResponse
+                          : entry.agentType === "risk"
+                            ? wf.handleRiskQuestionResponse
+                            : entry.agentType === "review"
+                              ? wf.handleReviewQuestionResponse
+                              : undefined
+                  }
+                  onSend={(message) => {
+                    if (entry.agentType === "execute" && entry.subprocessId) {
+                      wf.sendToExecuteSubprocess(entry.subprocessId, message);
+                    } else {
+                      wf.handleAgentSend(entry.agentType, message);
+                    }
+                  }}
+                  onStop={() => {
+                    if (entry.agentType === "execute" && entry.subprocessId) {
+                      void wf.interruptExecuteSubprocess(entry.subprocessId);
+                    } else {
+                      void wf.handleAgentStop(entry.agentType);
+                    }
+                  }}
+                  resumable={entry.resumable}
+                  onResume={entry.resumable ? () => void wf.handleResume(entry.agentType, entry.sessionDbId) : undefined}
+                  reviewComplete={wf.reviewComplete}
+                  reviewVerdict={wf.reviewVerdict}
+                  onAddFixPhase={entry.agentType === "review" ? wf.handleAddFixPhase : undefined}
+                  onFixImmediately={entry.agentType === "review" ? wf.handleFixImmediately : undefined}
+                  isAddingFixPhase={wf.isAddingFixPhase}
+                  isStartingFix={wf.isStartingFix}
+                  hasFileChanges={entry.hasFileChanges}
+                  onViewDiff={handleViewDiff}
+                  model={entry.model}
+                  canDelete={entry.status !== "running" && entry.status !== "completed" && !!entry.sessionDbId}
+                  onDelete={() => handleDeleteAgent(entry)}
+                />
+              );
+            })}
 
             <NextStepsBar
               show={

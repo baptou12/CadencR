@@ -60,66 +60,80 @@ export function getSubprocessIdForSession(sessionDbId: number): string | undefin
 export function persistStreamEvent(
   sessionDbId: number,
   event: StreamEvent,
-): void {
+  parentToolUseId?: string | null,
+): number | null {
   try {
     const db = getDatabase();
     const insert = db.prepare(
-      "INSERT INTO agent_messages (session_id, role, content, message_type, tool_name) VALUES (?, ?, ?, ?, ?)",
+      "INSERT INTO agent_messages (session_id, role, content, message_type, tool_name, tool_use_id, parent_tool_use_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
     );
+
+    const ptuid = parentToolUseId ?? null;
+    let result: { lastInsertRowid: number | bigint } | undefined;
 
     switch (event.type) {
       case "content_block_start": {
         if (event.content_block.type === "text" && event.content_block.text) {
-          insert.run(
+          result = insert.run(
             sessionDbId,
             "assistant",
             event.content_block.text,
             "text",
             null,
-          );
+            null,
+            ptuid,
+          ) as { lastInsertRowid: number | bigint };
         } else if (event.content_block.type === "tool_use") {
-          insert.run(
+          result = insert.run(
             sessionDbId,
             "assistant",
             JSON.stringify(event.content_block.input),
             "tool_call",
             event.content_block.name,
-          );
+            event.content_block.id ?? null,
+            ptuid,
+          ) as { lastInsertRowid: number | bigint };
         }
         break;
       }
       case "content_block_delta": {
         if (event.delta.type === "text_delta" && event.delta.text) {
-          insert.run(
+          result = insert.run(
             sessionDbId,
             "assistant",
             event.delta.text,
             "text_delta",
             null,
-          );
+            null,
+            ptuid,
+          ) as { lastInsertRowid: number | bigint };
         }
         break;
       }
       case "tool_result": {
-        insert.run(
+        result = insert.run(
           sessionDbId,
           "tool",
           event.content,
           event.is_error ? "tool_error" : "tool_result",
           null,
-        );
+          null,
+          ptuid,
+        ) as { lastInsertRowid: number | bigint };
         break;
       }
       case "error": {
-        insert.run(sessionDbId, "system", event.error.message, "error", null);
+        result = insert.run(sessionDbId, "system", event.error.message, "error", null, null, ptuid) as { lastInsertRowid: number | bigint };
         break;
       }
       default:
         // Skip non-content events (message_start, message_stop, message_delta, system)
         break;
     }
+    return result ? Number(result.lastInsertRowid) : null;
   } catch {
     // Best-effort persistence — don't crash the bridge
+    return null;
   }
 }
 

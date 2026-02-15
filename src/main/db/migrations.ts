@@ -273,6 +273,23 @@ const migrations: Migration[] = [
       db.exec("ALTER TABLE agent_sessions ADD COLUMN model TEXT");
     },
   },
+  {
+    version: 21,
+    description: "Add pending_questions and has_file_changes to agent_sessions",
+    up: (db) => {
+      db.exec("ALTER TABLE agent_sessions ADD COLUMN pending_questions TEXT");
+      db.exec("ALTER TABLE agent_sessions ADD COLUMN has_file_changes INTEGER DEFAULT 0");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_agent_sessions_feature_status ON agent_sessions(feature_id, status)");
+    },
+  },
+  {
+    version: 22,
+    description: "Add tool_use_id and parent_tool_use_id to agent_messages for sub-agent nesting",
+    up: (db) => {
+      db.exec("ALTER TABLE agent_messages ADD COLUMN tool_use_id TEXT");
+      db.exec("ALTER TABLE agent_messages ADD COLUMN parent_tool_use_id TEXT");
+    },
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

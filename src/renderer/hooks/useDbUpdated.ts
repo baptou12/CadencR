@@ -41,6 +41,7 @@ export function useDbUpdated() {
         case "agent_session":
           void utils.agents.getActiveFeatureIds.invalidate();
           void utils.agents.getSessions.invalidate({ featureId });
+          void utils.agents.getFeatureAgentState.invalidate({ featureId });
           break;
       }
     });
