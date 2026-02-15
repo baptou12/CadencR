@@ -55,12 +55,14 @@ Authentication uses an OAuth token stored in macOS Keychain under `"Claude Code-
 - **Commit message**: `feat: add Claude usage API service with Keychain auth`
 - **Bisect note**: Self-contained module with no callers yet, safe standalone
 
-### ⬜ Phase 2: tRPC endpoint for usage data
+### ✅ Phase 2: tRPC endpoint for usage data
 - **Step**: 2
 - **Complexity**: 2
-- [ ] Create `src/main/trpc/usage.ts` with a `usageRouter` containing a `getUsage` query that calls the usage service
-- [ ] Register `usage: usageRouter` in `appRouter` in `src/main/trpc/router.ts`
+- [x] Create `src/main/trpc/usage.ts` with a `usageRouter` containing a `getUsage` query that calls the usage service
+- [x] Register `usage: usageRouter` in `appRouter` in `src/main/trpc/router.ts`
 - **Files**: `src/main/trpc/usage.ts`, `src/main/trpc/router.ts`
+- **Implementation notes**: Created `usageRouter` with a single `getUsage` async query that delegates to the usage service. Registered as `usage` in the `appRouter`.
+- **Validation results**: Lint passes (0 warnings, 0 errors). TypeScript type check passes (no errors).
 - **Commit message**: `feat: add tRPC usage router for Claude API usage data`
 - **Bisect note**: New router added to appRouter; no existing code affected
 
@@ -86,5 +88,5 @@ Authentication uses an OAuth token stored in macOS Keychain under `"Claude Code-
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 2
-- **Progress**: 1/3
+- **Current Phase**: Phase 3
+- **Progress**: 2/3

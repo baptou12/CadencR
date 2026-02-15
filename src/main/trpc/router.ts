@@ -29,6 +29,7 @@ import {
   getCurrentBranch,
 } from "../git/worktree";
 import { diffCommentsRouter } from "./diff-comments";
+import { usageRouter } from "./usage";
 import { startUnifiedAgent } from "../agents/unified-agent";
 import { startPlanAgent } from "../agents/plan-agent";
 import { startBrainstormAgent } from "../agents/brainstorm-agent";
@@ -877,6 +878,7 @@ export const appRouter = router({
   agents: agentsRouter,
   git: gitRouter,
   diffComments: diffCommentsRouter,
+  usage: usageRouter,
 });
 
 export type AppRouter = typeof appRouter;
