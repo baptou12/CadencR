@@ -5,15 +5,6 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-  DialogDescription,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import {
   Select,
   SelectContent,
   SelectItem,
@@ -52,8 +43,6 @@ export function FeatureList({
 }: FeatureListProps) {
   const navigate = useNavigate();
   const [statusFilter, setStatusFilter] = useState<FeatureStatus | "all">("all");
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [newTitle, setNewTitle] = useState("");
 
   const utils = trpc.useUtils();
 
@@ -77,10 +66,15 @@ export function FeatureList({
   };
 
   const createMutation = trpc.features.create.useMutation({
-    onSuccess: () => {
+    onSuccess: (feature) => {
       invalidateFeatures();
-      setDialogOpen(false);
-      setNewTitle("");
+      void navigate({
+        to: "/projects/$projectId/features/$featureId",
+        params: {
+          projectId: String(projectId),
+          featureId: String(feature.id),
+        },
+      });
     },
   });
 
@@ -127,12 +121,6 @@ export function FeatureList({
     },
   });
 
-  const handleCreate = () => {
-    const trimmed = newTitle.trim();
-    if (!trimmed) return;
-    createMutation.mutate({ project_id: projectId, title: trimmed });
-  };
-
   return (
     <div className="flex h-full flex-col gap-2">
       <div className="flex items-center justify-between gap-2 px-2">
@@ -161,7 +149,7 @@ export function FeatureList({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => setDialogOpen(true)}>
+            <DropdownMenuItem onClick={() => createMutation.mutate({ project_id: projectId })}>
               New Feature
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => createSessionMutation.mutate({ project_id: projectId })}>
@@ -273,30 +261,6 @@ export function FeatureList({
         </div>
       </ScrollArea>
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add Feature</DialogTitle>
-            <DialogDescription>Enter a title for the new feature.</DialogDescription>
-          </DialogHeader>
-          <Input
-            placeholder="Feature title"
-            value={newTitle}
-            onChange={(e) => setNewTitle(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") handleCreate();
-            }}
-          />
-          <DialogFooter>
-            <Button
-              onClick={handleCreate}
-              disabled={!newTitle.trim() || createMutation.isLoading}
-            >
-              Create
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

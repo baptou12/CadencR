@@ -1,17 +1,16 @@
-import { BrowserWindow } from "electron";
 import { getDatabase } from "../db/database";
-import { startSubprocess } from "./subprocess-manager";
-import type { StreamEvent } from "./types";
+import { discoverClaudeCli } from "./cli-discovery";
+import { notifyDbUpdated } from "./ipc-bridge";
 
 const AUTO_NAME_SYSTEM_PROMPT =
-  "Generate a concise feature name (3-7 words) based on the user's description. Output the name wrapped in delimiters exactly like this: __FEATURE_NAME_START__Your Feature Name Here__FEATURE_NAME_END__. Output nothing else.";
+  "You are a feature naming assistant. Your ONLY job is to output a short name (3-7 words) for a coding session. ALWAYS output a name, even if the input is vague — just pick a reasonable generic name. Examples: 'hi' → 'General Coding Session', 'fix the login bug' → 'Fix Login Bug', 'I want to add dark mode' → 'Add Dark Mode Support'.";
 
-const AUTO_NAME_MODEL = "claude-haiku-3-5-20241022";
+const AUTO_NAME_MODEL = "claude-haiku-4-5-20251001";
 
 /**
  * Auto-name a feature using a lightweight Haiku query.
  *
- * This is fire-and-forget — it spawns a subprocess, collects the text output,
+ * This is fire-and-forget — it spawns a single-turn SDK query, parses the name,
  * updates the feature title in the DB, and broadcasts a `db:updated` event so
  * the renderer can invalidate the features query.
  */
@@ -20,59 +19,84 @@ export function autoNameFeature(
   userInput: string,
   cwd: string,
 ): void {
+  runAutoName(featureId, userInput, cwd).catch((err) => {
+    console.error("[auto-name] Failed:", err);
+  });
+}
+
+async function runAutoName(
+  featureId: number,
+  userInput: string,
+  cwd: string,
+): Promise<void> {
+  const cliInfo = discoverClaudeCli();
+  if (!cliInfo) return;
+
+  const sdk = await import("@anthropic-ai/claude-agent-sdk");
+  const { query } = sdk as {
+    query: (opts: {
+      prompt: string;
+      options?: Record<string, unknown>;
+    }) => AsyncIterable<Record<string, unknown>>;
+  };
+
+  const prompt = `Now name this session. User's first message: "${userInput.replace(/"/g, '\\"')}". Reply with ONLY: __FEATURE_NAME_START__<name>__FEATURE_NAME_END__`;
+
   let accumulatedText = "";
 
-  const managed = startSubprocess({
-    cwd,
-    agentType: "session",
-    systemPrompt: AUTO_NAME_SYSTEM_PROMPT,
-    prompt: userInput,
-    model: AUTO_NAME_MODEL,
-    allowedTools: [],
+  const result = query({
+    prompt,
+    options: {
+      cwd,
+      permissionMode: "bypassPermissions" as const,
+      pathToClaudeCodeExecutable: cliInfo.path,
+      model: AUTO_NAME_MODEL,
+      systemPrompt: AUTO_NAME_SYSTEM_PROMPT,
+      allowedTools: [],
+    },
   });
 
-  managed.eventListeners.push((event: StreamEvent) => {
-    if (
-      event.type === "content_block_start" &&
-      event.content_block.type === "text"
-    ) {
-      accumulatedText += event.content_block.text;
-    } else if (
-      event.type === "content_block_delta" &&
-      "delta" in event &&
-      event.delta.type === "text_delta"
-    ) {
-      accumulatedText += event.delta.text;
-    }
-  });
-
-  managed.completionListeners.push(() => {
-    const match = accumulatedText.match(
-      /__FEATURE_NAME_START__(.+?)__FEATURE_NAME_END__/,
-    );
-    const name = (match ? match[1] : accumulatedText)
-      .trim()
-      .replace(/^["']|["']$/g, "");
-    if (!name) return;
-
-    try {
-      const db = getDatabase();
-      db.prepare("UPDATE features SET title = ? WHERE id = ?").run(
-        name,
-        featureId,
-      );
-
-      // Broadcast db:updated so the renderer invalidates features query
-      for (const win of BrowserWindow.getAllWindows()) {
-        if (!win.isDestroyed()) {
-          win.webContents.send("db:updated", {
-            entity: "feature",
-            featureId,
-          });
+  for await (const msg of result) {
+    const type = msg.type as string;
+    if (type === "stream_event") {
+      const event = msg.event as Record<string, unknown>;
+      if (!event) continue;
+      if (
+        event.type === "content_block_start" &&
+        (event.content_block as Record<string, unknown>)?.type === "text"
+      ) {
+        accumulatedText += (event.content_block as Record<string, unknown>).text as string;
+      } else if (
+        event.type === "content_block_delta" &&
+        (event.delta as Record<string, unknown>)?.type === "text_delta"
+      ) {
+        accumulatedText += (event.delta as Record<string, unknown>).text as string;
+      }
+    } else if (type === "assistant") {
+      const message = msg.message as Record<string, unknown> | undefined;
+      const content = message?.content as Array<Record<string, unknown>> | undefined;
+      if (content) {
+        for (const block of content) {
+          if (block.type === "text") {
+            accumulatedText += block.text as string;
+          }
         }
       }
-    } catch (err) {
-      console.error("[auto-name] Failed to update feature title:", err);
     }
-  });
+  }
+
+  const match = accumulatedText.match(
+    /__FEATURE_NAME_START__(.+?)__FEATURE_NAME_END__/,
+  );
+  const name = (match ? match[1] : accumulatedText)
+    .trim()
+    .replace(/^["']|["']$/g, "");
+  if (!name) return;
+
+  const db = getDatabase();
+  db.prepare("UPDATE features SET title = ? WHERE id = ?").run(
+    name,
+    featureId,
+  );
+  notifyDbUpdated("feature", featureId);
 }

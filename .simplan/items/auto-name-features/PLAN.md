@@ -85,15 +85,17 @@ A: Yes — all feature types start as "Session X" and get renamed from first use
 - **Implementation notes**: Added `hasDefaultTitle(featureId)` helper in `router.ts` that checks if a feature title matches `/^Session \d+$/i`. Added `autoNameFeature` calls (fire-and-forget) after `startPlanAgent`, `startBrainstormAgent`, and `startSessionAgent`, gated by the title check. No changes needed in `FeatureList.tsx` or `auto-name.ts` -- the existing `db:updated` broadcast with `entity: "feature"` already triggers `useDbUpdated` in `__root.tsx`, which invalidates `features.listByProject` and `features.getById`.
 - **Validation results**: Lint passed (0 warnings, 0 errors). Type check passed (no errors).
 
-### ⬜ Phase 4: Change feature creation to auto-name "Session X"
+### ✅ Phase 4: Change feature creation to auto-name "Session X"
 - **Step**: 3
 - **Complexity**: 2
-- [ ] Modify `features.create` mutation to auto-generate "Session X" title (same pattern as `createSession`) instead of requiring a user-provided title — make `title` optional in the input schema
-- [ ] Remove the title input dialog from `FeatureList.tsx` — "New Feature" should behave like "New Session" (instant creation, auto-name, navigate to feature)
-- [ ] Update `createSession` to use the same unified counter so numbering is consistent across both types (query MAX across both feature types)
+- [x] Modify `features.create` mutation to auto-generate "Session X" title (same pattern as `createSession`) instead of requiring a user-provided title — make `title` optional in the input schema
+- [x] Remove the title input dialog from `FeatureList.tsx` — "New Feature" should behave like "New Session" (instant creation, auto-name, navigate to feature)
+- [x] Update `createSession` to use the same unified counter so numbering is consistent across both types (query MAX across both feature types)
 - **Files**: `src/main/trpc/features.ts`, `src/renderer/components/FeatureList.tsx`
 - **Commit message**: `feat: auto-name all features as "Session X" on creation`
 - **Bisect note**: Must update both backend and frontend together to avoid broken dialog flow
+- **Implementation notes**: Made `title` optional in `features.create` input schema; when omitted, auto-generates "Session X" using a unified counter across all feature types (removed `AND type = 'session'` filter). Updated `createSession` to use the same unified counter. In FeatureList.tsx, removed the Dialog/Input imports, dialog state, and handleCreate function. "New Feature" dropdown item now calls `createMutation.mutate({ project_id: projectId })` directly (no title), and on success navigates to the new feature just like session creation.
+- **Validation results**: Lint passed (0 warnings, 0 errors). Type check passed (no errors).
 
 ## Phase Status Legend
 
@@ -104,5 +106,5 @@ A: Yes — all feature types start as "Session X" and get renamed from first use
 | ✅ | Completed |
 
 ## Current Status
-- **Current Phase**: Phase 4
-- **Progress**: 3/4
+- **Current Phase**: All phases complete
+- **Progress**: 4/4

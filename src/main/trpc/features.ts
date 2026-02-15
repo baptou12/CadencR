@@ -38,12 +38,22 @@ export const featuresRouter = router({
     }),
 
   create: publicProcedure
-    .input(z.object({ project_id: z.number(), title: z.string() }))
+    .input(z.object({ project_id: z.number(), title: z.string().optional() }))
     .mutation(({ input }) => {
       const db = getDatabase();
+      let title = input.title?.trim();
+      if (!title) {
+        // Auto-generate "Session X" using unified counter across both feature types
+        const maxRow = db
+          .prepare(
+            "SELECT MAX(CAST(REPLACE(title, 'Session ', '') AS INTEGER)) as max_num FROM features WHERE project_id = ? AND title LIKE 'Session %'",
+          )
+          .get(input.project_id) as { max_num: number | null };
+        title = `Session ${(maxRow.max_num ?? 0) + 1}`;
+      }
       const result = db
         .prepare("INSERT INTO features (project_id, title) VALUES (?, ?)")
-        .run(input.project_id, input.title);
+        .run(input.project_id, title);
       const featureId = Number(result.lastInsertRowid);
 
       // Auto-create worktree if project has a path
@@ -59,7 +69,7 @@ export const featuresRouter = router({
             )
             .get(input.project_id) as SettingRow | undefined;
           const prefix = prefixRow?.value ?? "feature/";
-          const branchName = buildBranchName(prefix, input.title);
+          const branchName = buildBranchName(prefix, title);
           const wt = createWorktree(project.path, branchName, project.name);
 
           // Store worktree info in feature settings
@@ -72,7 +82,7 @@ export const featuresRouter = router({
         } catch (err: unknown) {
           // Worktree creation is best-effort — don't fail feature creation
           const errorMessage = err instanceof Error ? err.message : String(err);
-          console.error("Failed to create worktree for feature:", input.title, errorMessage);
+          console.error("Failed to create worktree for feature:", title, errorMessage);
 
           // Store the error so the UI can display it
           db.prepare(
@@ -89,9 +99,10 @@ export const featuresRouter = router({
     .mutation(({ input }) => {
       const db = getDatabase();
       // Use MAX to extract the highest session number so deletions don't cause collisions
+      // Unified counter across both feature types
       const maxRow = db
         .prepare(
-          "SELECT MAX(CAST(REPLACE(title, 'Session ', '') AS INTEGER)) as max_num FROM features WHERE project_id = ? AND type = 'session' AND title LIKE 'Session %'",
+          "SELECT MAX(CAST(REPLACE(title, 'Session ', '') AS INTEGER)) as max_num FROM features WHERE project_id = ? AND title LIKE 'Session %'",
         )
         .get(input.project_id) as { max_num: number | null };
       const title = `Session ${(maxRow.max_num ?? 0) + 1}`;
