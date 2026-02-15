@@ -52,3 +52,17 @@
 .dracula-diff [data-current] {
   background-color: #44475a;
 }
+
+/* Ensure internal diff table elements don't break border-radius clipping */
+.dracula-diff .diff-table-wrapper {
+  border-radius: inherit;
+}
+
+.dracula-diff table {
+  border-radius: inherit;
+}
+
+/* Last row cells should have bottom border-radius */
+.dracula-diff table tr:last-child td {
+  border-bottom: none;
+}

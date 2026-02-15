@@ -51,7 +51,7 @@ export function InlineDiffBlock({ filePath, oldContent, newContent }: InlineDiff
   // Edge case: identical content
   if (oldContent === newContent || !diffFile) {
     return (
-      <div className="rounded border border-[#6272a4] bg-[#282a36] px-3 py-2 text-xs text-[#6272a4]">
+      <div className="rounded-lg border border-[#6272a4] bg-[#282a36] px-3 py-2 text-xs text-[#6272a4]">
         No changes
       </div>
     );
@@ -61,9 +61,9 @@ export function InlineDiffBlock({ filePath, oldContent, newContent }: InlineDiff
   const deletions = diffFile.deletionLength;
 
   return (
-    <div className="dracula-diff overflow-hidden rounded border border-[#6272a4] bg-[#282a36]">
+    <div className="dracula-diff overflow-hidden rounded-lg border border-[#6272a4] bg-[#282a36]">
       {/* Compact file header */}
-      <div className="flex items-center gap-2 border-b border-[#6272a4] bg-[#343746] px-3 py-1 text-xs">
+      <div className="flex items-center gap-2 border-b border-[#6272a4] bg-[color-mix(in_srgb,var(--drac-cyan)_15%,#282a36)] px-3 py-1 text-xs">
         <span className="flex-1 truncate font-mono text-[#f8f8f2]">{filePath}</span>
         <span className="text-[#50fa7b]">+{additions}</span>
         <span className="text-[#ff5555]">-{deletions}</span>
