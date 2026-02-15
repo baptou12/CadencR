@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useMemo } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { trpc } from "@/trpc";
 import { FeatureTopBar } from "@/components/FeatureTopBar";
@@ -10,7 +10,7 @@ import { PlanInputView } from "@/components/PlanInputView";
 import { NextStepsBar } from "@/components/NextStepsBar";
 import { useWorkflowAgents } from "@/hooks/useWorkflowAgents";
 import { getActiveFocusZone } from "@/lib/focus-zones";
-import { DiffViewerModal } from "@/components/diff/DiffViewerModal";
+import { DiffViewerModal, type ExecuteAgentState } from "@/components/diff/DiffViewerModal";
 import type { FeatureSession } from "@/hooks/useFeatureAgentState";
 
 export function FeatureWorkflowView({
@@ -44,6 +44,19 @@ export function FeatureWorkflowView({
   // --- Inline diff viewer modal state ---
   const [inlineDiffOpen, setInlineDiffOpen] = useState(false);
   const handleViewDiff = useCallback(() => setInlineDiffOpen(true), []);
+
+  // Derive execute agent state for the diff viewer modal
+  const executeState: ExecuteAgentState | undefined = useMemo(() => {
+    const execEntry = wf.sessionEntries.find(
+      (e) => e.agentType === "execute" && e.subprocessId && (e.status === "running" || e.status === "paused"),
+    );
+    if (!execEntry?.subprocessId) return undefined;
+    return {
+      subprocessId: execEntry.subprocessId,
+      status: execEntry.status,
+      pendingQuestions: execEntry.pendingQuestions,
+    };
+  }, [wf.sessionEntries]);
 
   // --- Keyboard navigation state ---
   const [focusedAgentIndex, setFocusedAgentIndex] = useState<number | null>(null);
@@ -325,6 +338,7 @@ export function FeatureWorkflowView({
         featureId={featureId}
         open={inlineDiffOpen}
         onOpenChange={setInlineDiffOpen}
+        executeState={executeState}
       />
     </div>
   );

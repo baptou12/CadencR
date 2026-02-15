@@ -737,6 +737,26 @@ export function submitUserAnswers(
   subprocessId: string,
   answers: Record<string, string>,
 ): void {
+  // Persist the user's answers as a visible user message in the session
+  const sessionDbId = getSessionDbId(subprocessId);
+  if (sessionDbId) {
+    try {
+      const managed = activeProcesses.get(subprocessId);
+      const lines = Object.entries(answers).map(([q, a]) => `**${q}**\n${a}`);
+      const content = lines.join("\n\n");
+      const db = getDatabase();
+      const result = db.prepare(
+        "INSERT INTO agent_messages (session_id, role, content, message_type, tool_name) VALUES (?, ?, ?, ?, ?)",
+      ).run(sessionDbId, "user", content, "user_message", null);
+      const msgDbId = Number(result.lastInsertRowid);
+      if (managed) {
+        broadcastEvent(subprocessId, managed.agentType, { type: "user_message", content }, null, msgDbId);
+      }
+    } catch {
+      // Best-effort persistence
+    }
+  }
+
   questionEmitter.emit(`answer:${subprocessId}`, answers);
 }
 

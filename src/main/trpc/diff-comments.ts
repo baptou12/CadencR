@@ -109,4 +109,17 @@ export const diffCommentsRouter = router({
         .run(input.featureId);
       return { updated: result.changes };
     }),
+
+  /** Delete all pending comments for a feature (used after delivering to an agent) */
+  deletePending: publicProcedure
+    .input(z.object({ featureId: z.number() }))
+    .mutation(({ input }) => {
+      const db = getDatabase();
+      const result = db
+        .prepare(
+          "DELETE FROM diff_comments WHERE feature_id = ? AND status = 'pending'",
+        )
+        .run(input.featureId);
+      return { deleted: result.changes };
+    }),
 });
