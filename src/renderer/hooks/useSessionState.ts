@@ -524,12 +524,18 @@ export function useSessionState(
     (agentEvent: AgentEvent) => {
       const { subprocessId, event } = agentEvent;
 
-      // Session-level "all done" event
-      if (event.type === "agent_done" && subprocessId.startsWith("session-")) {
-        setMultiOverallStatus(
-          event.exitCode === 0 ? "completed" : "error",
-        );
-        return;
+      // Session-level "all done" or "paused" event
+      if (subprocessId.startsWith("session-")) {
+        if (event.type === "agent_paused") {
+          setMultiOverallStatus("paused");
+          return;
+        }
+        if (event.type === "agent_done") {
+          setMultiOverallStatus(
+            event.exitCode === 0 ? "completed" : "error",
+          );
+          return;
+        }
       }
 
       // Skip events without a real subprocess ID

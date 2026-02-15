@@ -105,7 +105,11 @@ export function startExecuteAgent(options: ExecuteAgentOptions): ExecuteAgentRes
       db.prepare(
         "UPDATE agent_sessions SET status = ?, ended_at = datetime('now') WHERE id = ?",
       ).run(firstStepResult === "paused" ? "paused" : "error", sessionDbId);
-      broadcastExecuteAllDone(sessionDbId, 1);
+      if (firstStepResult === "paused") {
+        broadcastExecutePaused(sessionDbId);
+      } else {
+        broadcastExecuteAllDone(sessionDbId, 1);
+      }
       return;
     }
 
@@ -160,6 +164,25 @@ function broadcastExecuteAllDone(sessionDbId: number, exitCode = 0): void {
     subprocessId: `session-${sessionDbId}`,
     agentType: "execute",
     event: { type: "agent_done", exitCode },
+    timestamp: Date.now(),
+  };
+  const AGENT_EVENT_CHANNEL = "agent:event";
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) {
+      win.webContents.send(AGENT_EVENT_CHANNEL, event);
+    }
+  }
+}
+
+/**
+ * Broadcast a synthetic event to the renderer indicating the execute orchestrator was paused.
+ */
+function broadcastExecutePaused(sessionDbId: number): void {
+  const { BrowserWindow } = require("electron") as typeof import("electron");
+  const event: AgentEvent = {
+    subprocessId: `session-${sessionDbId}`,
+    agentType: "execute",
+    event: { type: "agent_paused" },
     timestamp: Date.now(),
   };
   const AGENT_EVENT_CHANNEL = "agent:event";
@@ -410,7 +433,11 @@ async function executeRemainingSteps(
       db.prepare(
         "UPDATE agent_sessions SET status = ?, ended_at = datetime('now') WHERE id = ?",
       ).run(stepResult === "paused" ? "paused" : "error", sessionDbId);
-      broadcastExecuteAllDone(sessionDbId, 1);
+      if (stepResult === "paused") {
+        broadcastExecutePaused(sessionDbId);
+      } else {
+        broadcastExecuteAllDone(sessionDbId, 1);
+      }
       return;
     }
 
@@ -547,7 +574,11 @@ export function continueExecuteAgent(sessionDbId: number): { subprocessIds: stri
       db.prepare(
         "UPDATE agent_sessions SET status = ?, ended_at = datetime('now') WHERE id = ?",
       ).run(firstStepResult === "paused" ? "paused" : "error", sessionDbId);
-      broadcastExecuteAllDone(sessionDbId, 1);
+      if (firstStepResult === "paused") {
+        broadcastExecutePaused(sessionDbId);
+      } else {
+        broadcastExecuteAllDone(sessionDbId, 1);
+      }
       return;
     }
 
