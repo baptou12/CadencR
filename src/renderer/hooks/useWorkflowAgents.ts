@@ -42,6 +42,7 @@ function hasOutput(state: { status: AgentStatus; blocks: AgentBlockData[] }) {
   return state.status !== "idle" || state.blocks.length > 0;
 }
 
+
 // ---------------------------------------------------------------------------
 // Hook
 // ---------------------------------------------------------------------------
@@ -332,7 +333,7 @@ export function useWorkflowAgents({
           state.appendBlock(b);
         }
         const sourceSession = sessionsQuery.data?.find(s => s.id === lastSessionIds.get(agentType));
-        state.setStatus(sourceSession?.status === "paused" ? "paused" : "complete");
+        state.setStatus((sourceSession?.status as AgentStatus) ?? "completed");
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -369,8 +370,7 @@ export function useWorkflowAgents({
         const syntheticId = `hist-exec-${sid}`;
         // Determine status for this subprocess from run query data
         const srcSession = executeRunQuery.data?.find((s) => s.id === sid);
-        const subStatus: AgentStatus = srcSession?.status === "paused" ? "paused"
-          : srcSession?.status === "error" ? "error" : "complete";
+        const subStatus: AgentStatus = (srcSession?.status as AgentStatus) ?? "completed";
 
         const merged = mergeTextBlocks(blocks);
         // Inject blocks into a subprocess entry (auto-created by appendBlockToSubprocess)
@@ -384,7 +384,11 @@ export function useWorkflowAgents({
           const s = executeRunQuery.data?.find((sess) => sess.id === sid);
           return s?.status === "paused";
         });
-        execute.setStatus(anyPaused ? "paused" : "complete");
+        const anyError = executeSessionIds.some((sid) => {
+          const s = executeRunQuery.data?.find((sess) => sess.id === sid);
+          return s?.status === "error";
+        });
+        execute.setStatus(anyPaused ? "paused" : anyError ? "error" : "completed");
       }
     } else if (executeSessionIds.length === 0 && executeHistoryQuery.data && executeHistoryQuery.data.length > 0) {
       // No phase sessions found — fall back to orchestrator session history
@@ -398,7 +402,7 @@ export function useWorkflowAgents({
           execute.appendBlock(b);
         }
         const sourceSession = sessionsQuery.data?.find(s => s.id === lastSessionIds.get("execute"));
-        execute.setStatus(sourceSession?.status === "paused" ? "paused" : "complete");
+        execute.setStatus((sourceSession?.status as AgentStatus) ?? "completed");
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -875,12 +879,12 @@ export function useWorkflowAgents({
     if (fullText.includes("---REVIEW_APPROVED---")) {
       setReviewComplete(true);
       setReviewVerdict("approved");
-      review.setStatus("complete");
+      review.setStatus("completed");
       void featureQuery.refetch();
     } else if (fullText.includes("---REVIEW_CHANGES_REQUESTED---")) {
       setReviewComplete(true);
       setReviewVerdict("changes_requested");
-      review.setStatus("complete");
+      review.setStatus("completed");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [review.blocks, review.status, review.setStatus, featureQuery]);

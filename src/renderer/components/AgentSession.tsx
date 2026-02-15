@@ -22,6 +22,7 @@ import {
   PauseCircleIcon,
   RotateCcwIcon,
   FileEditIcon,
+  Trash2Icon,
 } from "lucide-react";
 import { AgentStream } from "./AgentStream";
 import { AgentPromptBar, type AgentPromptBarHandle } from "./AgentPromptBar";
@@ -35,7 +36,7 @@ import { AGENT_ICONS } from "./agent-icons";
 // Shared types & constants (previously in AgentPanel, now canonical here)
 // ---------------------------------------------------------------------------
 
-export type AgentStatus = "idle" | "running" | "complete" | "error" | "paused";
+export type AgentStatus = "idle" | "running" | "completed" | "error" | "paused";
 
 export const AGENT_LABELS: Record<AgentType, string> = {
   plan: "Plan",
@@ -60,8 +61,8 @@ const STATUS_BADGE: Record<
     className: "bg-yellow-500/15 text-yellow-300",
     icon: <Loader2Icon className="size-3 animate-spin" />,
   },
-  complete: {
-    label: "Complete",
+  completed: {
+    label: "Completed",
     className: "bg-green-500/15 text-green-300",
     icon: <CheckCircleIcon className="size-3" />,
   },
@@ -138,6 +139,12 @@ export interface AgentSessionProps {
   hasFileChanges?: boolean;
   /** Called when user clicks "Review Changes" to open the diff viewer */
   onViewDiff?: () => void;
+
+  // --- Delete props ---
+  /** Whether this agent can be deleted */
+  canDelete?: boolean;
+  /** Called when user clicks delete */
+  onDelete?: () => void;
 }
 
 /** Handle exposed by AgentSession via forwardRef */
@@ -177,6 +184,8 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
   keyboardFocused,
   hasFileChanges,
   onViewDiff,
+  canDelete,
+  onDelete,
 }, ref) {
   const promptBarRef = useRef<AgentPromptBarHandle>(null);
 
@@ -221,7 +230,7 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
     const hasOutput = blocks.length > 0;
     const hasQuestions = pendingQuestions && pendingQuestions.length > 0;
     const isOneShot = agentType === "plan" || agentType === "brainstorm";
-    if (isOneShot && status === "complete") return false;
+    if (isOneShot && status === "completed") return false;
     return status !== "idle" || hasOutput || !!hasQuestions;
   })();
 
@@ -361,6 +370,20 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
           >
             <RotateCcwIcon className="size-3" />
             Resume
+          </Button>
+        )}
+        {canDelete && onDelete && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className={cn("h-6 gap-1 px-2 text-xs text-muted-foreground hover:text-red-400", !resumable && "ml-auto")}
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
+          >
+            <Trash2Icon className="size-3" />
+            Remove
           </Button>
         )}
       </div>

@@ -534,6 +534,23 @@ const agentsRouter = router({
       return { success: interrupted };
     }),
 
+  /** Delete an agent session and its messages (only non-running, non-completed) */
+  deleteSession: publicProcedure
+    .input(z.object({ sessionId: z.number() }))
+    .mutation(({ input }) => {
+      const db = getDatabase();
+      const session = db
+        .prepare("SELECT id, status FROM agent_sessions WHERE id = ?")
+        .get(input.sessionId) as Pick<AgentSessionRow, "id" | "status"> | undefined;
+      if (!session) throw new Error("Session not found");
+      if (session.status === "completed" || session.status === "running") {
+        throw new Error("Cannot delete a completed or running session");
+      }
+      db.prepare("DELETE FROM agent_messages WHERE session_id = ?").run(input.sessionId);
+      db.prepare("DELETE FROM agent_sessions WHERE id = ?").run(input.sessionId);
+      return { success: true };
+    }),
+
   /** List all active agent subprocesses */
   list: publicProcedure.query(() => {
     return listSubprocesses().map((s) => ({

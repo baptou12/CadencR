@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
+import { trpc } from "@/trpc";
 import { FeatureTopBar } from "@/components/FeatureTopBar";
 import { AgentSession, type AgentSessionHandle } from "@/components/AgentSession";
 import { CheckCircle2Icon } from "lucide-react";
@@ -23,6 +24,31 @@ export function FeatureWorkflowView({
   featureQuery: { refetch: () => unknown };
 }) {
   const wf = useWorkflowAgents({ featureId, projectId, featureQuery });
+  const utils = trpc.useUtils();
+
+  const deleteSession = trpc.agents.deleteSession.useMutation({
+    onSuccess: () => {
+      utils.agents.getSessions.invalidate({ featureId });
+      utils.agents.getHistory.invalidate();
+      utils.agents.getHistoryBatch.invalidate();
+      utils.agents.getSessionsByRunId.invalidate();
+    },
+  });
+
+  const handleDeleteAgent = useCallback((entry: typeof wf.sessionEntries[number]) => {
+    if (!entry.sessionDbId) return;
+    if (confirm(`Remove "${entry.label}" agent? This will delete its messages.`)) {
+      deleteSession.mutate({ sessionId: entry.sessionDbId });
+      const resetMap: Record<string, () => void> = {
+        plan: wf.plan.reset,
+        brainstorm: wf.brainstorm.reset,
+        execute: wf.execute.reset,
+        risk: wf.risk.reset,
+        review: wf.review.reset,
+      };
+      resetMap[entry.type]?.();
+    }
+  }, [deleteSession, wf.plan.reset, wf.brainstorm.reset, wf.execute.reset, wf.risk.reset, wf.review.reset]);
 
   // --- Inline diff viewer modal state ---
   const [inlineDiffOpen, setInlineDiffOpen] = useState(false);
@@ -243,6 +269,8 @@ export function FeatureWorkflowView({
                 isStartingFix={wf.isStartingFix}
                 hasFileChanges={entry.hasFileChanges}
                 onViewDiff={handleViewDiff}
+                canDelete={entry.status !== "running" && entry.status !== "completed" && !!entry.sessionDbId}
+                onDelete={() => handleDeleteAgent(entry)}
               />
             ))}
 

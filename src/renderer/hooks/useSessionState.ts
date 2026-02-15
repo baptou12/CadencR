@@ -492,11 +492,11 @@ export function useSessionState(
           break;
         }
         case "result": {
-          setSingleStatus("complete");
+          setSingleStatus("completed");
           break;
         }
         case "agent_done": {
-          setSingleStatus((prev) => (prev === "running" ? "complete" : prev));
+          setSingleStatus((prev) => (prev === "running" ? "completed" : prev));
           break;
         }
         case "turn_complete": {
@@ -527,7 +527,7 @@ export function useSessionState(
       // Session-level "all done" event
       if (event.type === "agent_done" && subprocessId.startsWith("session-")) {
         setMultiOverallStatus(
-          event.exitCode === 0 ? "complete" : "error",
+          event.exitCode === 0 ? "completed" : "error",
         );
         return;
       }
@@ -719,12 +719,12 @@ export function useSessionState(
             break;
           }
           case "result": {
-            status = "complete";
+            status = "completed";
             break;
           }
           case "agent_done": {
             if (status === "running") {
-              status = event.exitCode === 0 ? "complete" : "error";
+              status = event.exitCode === 0 ? "completed" : "error";
             }
             break;
           }
