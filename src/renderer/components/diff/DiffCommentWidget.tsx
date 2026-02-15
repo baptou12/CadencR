@@ -31,7 +31,7 @@ export function CommentForm({
   return (
     <div className="mx-4 my-2 rounded border border-[#6272a4] bg-[#343746] p-3">
       <textarea
-        className="w-full resize-y rounded border border-[#6272a4] bg-[#282a36] px-3 py-2 text-sm text-[#f8f8f2] placeholder-[#6272a4] focus:border-[#bd93f9] focus:outline-none"
+        className="w-full resize-y rounded border border-[#6272a4] bg-[#282a36] px-3 py-2 text-sm !text-white placeholder-[#6272a4] focus:border-[#bd93f9] focus:outline-none"
         placeholder="Add a comment..."
         rows={3}
         value={content}
@@ -51,7 +51,7 @@ export function CommentForm({
           {submitLabel}
         </button>
         <button
-          className="rounded px-3 py-1 text-xs text-[#6272a4] hover:text-[#f8f8f2]"
+          className="rounded px-3 py-1 text-xs !text-white hover:!text-white"
           onClick={onClose}
         >
           Cancel

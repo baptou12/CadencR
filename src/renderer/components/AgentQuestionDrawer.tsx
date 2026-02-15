@@ -212,7 +212,7 @@ export function AgentQuestionDrawer({ questions, onSubmit, open, inline, disable
               onClick={() => handleOptionToggle(option.label)}
             >
               <span className="text-sm font-medium text-foreground">
-                <kbd className="mr-1.5 inline-flex size-5 items-center justify-center rounded border border-border bg-muted text-[10px] text-muted-foreground">{optIdx + 1}</kbd>
+                <kbd className="mr-1.5 inline-flex size-5 items-center justify-center rounded border border-border bg-muted text-[10px] text-foreground">{optIdx + 1}</kbd>
                 {option.label}
               </span>
               {option.description && (

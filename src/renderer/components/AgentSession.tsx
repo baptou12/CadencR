@@ -259,7 +259,7 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
 
   const diffBar = showDiffBar ? (
     <div
-      className="flex cursor-pointer items-center gap-2 border-t border-border bg-muted px-4 py-2 text-xs text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+      className="flex cursor-pointer items-center gap-2 border-t border-border bg-muted px-4 py-2 text-xs text-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
       onClick={onViewDiff}
     >
       <FileEditIcon className="size-3.5" />
