@@ -176,48 +176,60 @@ export function getCurrentBranch(repoPath: string): string | null {
 /**
  * Get git diff stats for a worktree (lines added/removed).
  */
-export function getGitStats(worktreePath: string): {
+export function getGitStats(
+  worktreePath: string,
+  mode: "worktree" | "branch" = "worktree",
+  targetBranch?: string,
+): {
   filesChanged: number;
   insertions: number;
   deletions: number;
 } {
   try {
-    const output = execSync("git diff --stat", {
-      cwd: worktreePath,
-      stdio: "pipe",
-      encoding: "utf-8",
-    });
+    const opts = { cwd: worktreePath, stdio: "pipe" as const, encoding: "utf-8" as const };
+    const statRegex =
+      /(\d+)\s+files?\s+changed(?:,\s+(\d+)\s+insertions?\(\+\))?(?:,\s+(\d+)\s+deletions?\(-\))?/;
 
-    // Parse the summary line, e.g. " 3 files changed, 10 insertions(+), 2 deletions(-)"
-    const summaryMatch = output.match(
-      /(\d+)\s+files?\s+changed(?:,\s+(\d+)\s+insertions?\(\+\))?(?:,\s+(\d+)\s+deletions?\(-\))?/,
-    );
-
-    if (!summaryMatch) {
-      // Also check staged changes
-      const stagedOutput = execSync("git diff --cached --stat", {
-        cwd: worktreePath,
-        stdio: "pipe",
-        encoding: "utf-8",
-      });
-      const stagedMatch = stagedOutput.match(
-        /(\d+)\s+files?\s+changed(?:,\s+(\d+)\s+insertions?\(\+\))?(?:,\s+(\d+)\s+deletions?\(-\))?/,
-      );
-      if (!stagedMatch) {
-        return { filesChanged: 0, insertions: 0, deletions: 0 };
-      }
+    function parseStatLine(output: string) {
+      const m = output.match(statRegex);
+      if (!m) return null;
       return {
-        filesChanged: parseInt(stagedMatch[1], 10),
-        insertions: parseInt(stagedMatch[2] ?? "0", 10),
-        deletions: parseInt(stagedMatch[3] ?? "0", 10),
+        filesChanged: parseInt(m[1], 10),
+        insertions: parseInt(m[2] ?? "0", 10),
+        deletions: parseInt(m[3] ?? "0", 10),
       };
     }
 
-    return {
-      filesChanged: parseInt(summaryMatch[1], 10),
-      insertions: parseInt(summaryMatch[2] ?? "0", 10),
-      deletions: parseInt(summaryMatch[3] ?? "0", 10),
-    };
+    if (mode === "branch") {
+      const branch = targetBranch ?? "main";
+      const result = parseStatLine(execSync(`git diff ${branch}...HEAD --stat`, opts));
+      return result ?? { filesChanged: 0, insertions: 0, deletions: 0 };
+    }
+
+    // Worktree mode: unstaged + staged + untracked
+    const unstaged = parseStatLine(execSync("git diff --stat", opts));
+    const staged = parseStatLine(execSync("git diff --cached --stat", opts));
+
+    let filesChanged = (unstaged?.filesChanged ?? 0) + (staged?.filesChanged ?? 0);
+    let insertions = (unstaged?.insertions ?? 0) + (staged?.insertions ?? 0);
+    let deletions = (unstaged?.deletions ?? 0) + (staged?.deletions ?? 0);
+
+    // Count untracked files — each line counts as an insertion
+    const untrackedRaw = execSync("git ls-files --others --exclude-standard", opts);
+    const untrackedFiles = untrackedRaw.trim().split("\n").filter(Boolean);
+    for (const file of untrackedFiles) {
+      try {
+        const fullPath = path.join(worktreePath, file);
+        const content = fs.readFileSync(fullPath, "utf-8");
+        const lineCount = content.split("\n").filter((_, i, arr) => i < arr.length - 1 || arr[arr.length - 1] !== "").length;
+        filesChanged++;
+        insertions += lineCount;
+      } catch {
+        // skip unreadable files
+      }
+    }
+
+    return { filesChanged, insertions, deletions };
   } catch {
     return { filesChanged: 0, insertions: 0, deletions: 0 };
   }

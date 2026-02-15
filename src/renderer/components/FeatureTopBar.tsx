@@ -34,7 +34,7 @@ export function FeatureTopBar({ featureId, projectId: _projectId, mode = "featur
     feature_id: featureId,
   });
   const { data: gitStats } = trpc.git.getStats.useQuery(
-    { featureId },
+    { featureId, mode: isSession ? "worktree" : "branch" },
     { refetchInterval: 10000 },
   );
   const { data: currentBranch } = trpc.git.getBranch.useQuery(
@@ -114,41 +114,36 @@ export function FeatureTopBar({ featureId, projectId: _projectId, mode = "featur
         </span>
       )}
 
-      <span className="text-sm">
-        {gitStats ? (
-          <>
-            <span className="text-green-400">+{gitStats.insertions}</span>{" "}
-            <span className="text-red-400">-{gitStats.deletions}</span>
-          </>
-        ) : "--"}
-      </span>
-
       <div className="flex-1" />
 
-      {!isSession && (
-        <>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-7"
-            title="View Diff"
-            disabled={!worktreeBranch}
-            onClick={() => setDiffOpen(true)}
-          >
-            <GitCompareArrowsIcon className="size-4" />
-          </Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-7 gap-1.5 px-2"
+        title="View Diff"
+        disabled={!isSession && !worktreeBranch}
+        onClick={() => setDiffOpen(true)}
+      >
+        <GitCompareArrowsIcon className="size-4" />
+        {gitStats && (gitStats.insertions > 0 || gitStats.deletions > 0) ? (
+          <>
+            <span className="text-xs text-green-400">+{gitStats.insertions}</span>
+            <span className="text-xs text-red-400">-{gitStats.deletions}</span>
+          </>
+        ) : null}
+      </Button>
 
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-7"
-            title="Open terminal"
-            disabled={!worktreeBranch}
-            onClick={() => openTerminal.mutate({ featureId })}
-          >
-            <TerminalIcon className="size-4" />
-          </Button>
-        </>
+      {!isSession && (
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-7"
+          title="Open terminal"
+          disabled={!worktreeBranch}
+          onClick={() => openTerminal.mutate({ featureId })}
+        >
+          <TerminalIcon className="size-4" />
+        </Button>
       )}
 
       <Popover>
@@ -200,6 +195,7 @@ export function FeatureTopBar({ featureId, projectId: _projectId, mode = "featur
         featureId={featureId}
         open={diffOpen}
         onOpenChange={setDiffOpen}
+        diffMode={isSession ? "worktree" : "branch"}
       />
     </div>
   );

@@ -24,6 +24,7 @@ interface DiffViewerModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   executeState?: ExecuteAgentState;
+  diffMode?: "worktree" | "branch";
 }
 
 function formatCommentsForAgent(
@@ -50,6 +51,7 @@ export function DiffViewerModal({
   open,
   onOpenChange,
   executeState,
+  diffMode = "worktree",
 }: DiffViewerModalProps) {
   const [sending, setSending] = useState(false);
 
@@ -139,7 +141,7 @@ export function DiffViewerModal({
         </DialogHeader>
 
         <div className="min-h-0 flex-1 overflow-hidden">
-          <DiffViewer featureId={featureId} mode="worktree" />
+          <DiffViewer featureId={featureId} mode={diffMode} />
         </div>
 
         <DialogFooter className="border-t px-4 py-3">

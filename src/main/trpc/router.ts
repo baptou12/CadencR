@@ -797,15 +797,20 @@ const gitRouter = router({
 
   /** Get git diff stats (LOC changed) for a feature's worktree or project path */
   getStats: publicProcedure
-    .input(z.object({ featureId: z.number() }))
+    .input(z.object({
+      featureId: z.number(),
+      mode: z.enum(["worktree", "branch"]).optional(),
+      targetBranch: z.string().optional(),
+    }))
     .query(({ input }) => {
       const db = getDatabase();
+      const statsMode = input.mode ?? "worktree";
       const wtRow = db
         .prepare(
           "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
         )
         .get(input.featureId) as SettingRow | undefined;
-      if (wtRow) return getGitStats(wtRow.value);
+      if (wtRow) return getGitStats(wtRow.value, statsMode, input.targetBranch);
 
       // For sessions without a worktree, use the project path
       const feature = db
@@ -816,7 +821,7 @@ const gitRouter = router({
         .prepare("SELECT path FROM projects WHERE id = ?")
         .get(feature.project_id) as Pick<ProjectRow, "path"> | undefined;
       if (!project?.path) return { filesChanged: 0, insertions: 0, deletions: 0 };
-      return getGitStats(project.path);
+      return getGitStats(project.path, statsMode, input.targetBranch);
     }),
 
   /** Get the current branch for a project */
@@ -847,8 +852,18 @@ const gitRouter = router({
           "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
         )
         .get(input.featureId) as SettingRow | undefined;
-      if (!wtRow) return "";
-      return getDiff(wtRow.value, input.mode, input.targetBranch);
+      if (wtRow) return getDiff(wtRow.value, input.mode, input.targetBranch);
+
+      // For sessions without a worktree, use the project path
+      const feature = db
+        .prepare("SELECT project_id FROM features WHERE id = ?")
+        .get(input.featureId) as { project_id: number } | undefined;
+      if (!feature) return "";
+      const project = db
+        .prepare("SELECT path FROM projects WHERE id = ?")
+        .get(feature.project_id) as Pick<ProjectRow, "path"> | undefined;
+      if (!project?.path) return "";
+      return getDiff(project.path, input.mode, input.targetBranch);
     }),
 
   /** Get list of changed files with per-file line counts */
@@ -867,8 +882,18 @@ const gitRouter = router({
           "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
         )
         .get(input.featureId) as SettingRow | undefined;
-      if (!wtRow) return [];
-      return getChangedFiles(wtRow.value, input.mode, input.targetBranch);
+      if (wtRow) return getChangedFiles(wtRow.value, input.mode, input.targetBranch);
+
+      // For sessions without a worktree, use the project path
+      const feature = db
+        .prepare("SELECT project_id FROM features WHERE id = ?")
+        .get(input.featureId) as { project_id: number } | undefined;
+      if (!feature) return [];
+      const project = db
+        .prepare("SELECT path FROM projects WHERE id = ?")
+        .get(feature.project_id) as Pick<ProjectRow, "path"> | undefined;
+      if (!project?.path) return [];
+      return getChangedFiles(project.path, input.mode, input.targetBranch);
     }),
 
   /** Open a worktree path in the system terminal */
