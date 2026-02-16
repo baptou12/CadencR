@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import { Ellipsis, Plus } from "lucide-react";
 import { trpc } from "@/trpc";
 import { Button } from "@/components/ui/button";
@@ -158,6 +159,7 @@ export function ProjectList({
   selectedProjectId,
   onSelectProject,
 }: ProjectListProps) {
+  const navigate = useNavigate();
   const utils = trpc.useUtils();
   const [settingsProject, setSettingsProject] = useState<{
     id: number;
@@ -188,6 +190,30 @@ export function ProjectList({
     deleteMutation.mutate({ id });
   };
 
+  const handleProjectClick = async (projectId: number) => {
+    // Update sidebar state
+    onSelectProject(projectId);
+
+    // Query for features in this project
+    const features = await utils.features.listByProject.fetch({
+      project_id: projectId,
+    });
+
+    // Navigate to first feature if available, otherwise go to home
+    if (features && features.length > 0) {
+      void navigate({
+        to: "/projects/$projectId/features/$featureId",
+        params: {
+          projectId: String(projectId),
+          featureId: String(features[0].id),
+        },
+      });
+    } else {
+      // Navigate to home when project has no features
+      void navigate({ to: "/" });
+    }
+  };
+
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between px-2">
@@ -212,7 +238,7 @@ export function ProjectList({
               data-nav-item
               data-nav-type="project"
               data-nav-id={String(project.id)}
-              onClick={() => onSelectProject(project.id)}
+              onClick={() => void handleProjectClick(project.id)}
               className={`group flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:bg-blue-500/10 ${
                 selectedProjectId === project.id
                   ? "bg-accent text-accent-foreground"

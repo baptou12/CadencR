@@ -89,11 +89,16 @@ export function Sidebar() {
           params: { projectId, featureId: id },
         });
       } else if (type === "project" && id) {
-        // Focus the first feature of this project
+        // Focus the first feature of this project, or trigger the project click to navigate
         const firstFeature = sidebarRef.current?.querySelector(
           `[data-nav-type="feature"][data-nav-project-id="${id}"]`,
         ) as HTMLElement | null;
-        if (firstFeature) firstFeature.focus({ focusVisible: true } as FocusOptions);
+        if (firstFeature) {
+          firstFeature.focus({ focusVisible: true } as FocusOptions);
+        } else {
+          // No features - trigger the project button click to navigate to home
+          focused.click();
+        }
       }
     },
     { enableOnFormTags: false },
