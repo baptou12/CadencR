@@ -1,8 +1,10 @@
 import { useState, useCallback, useRef, useEffect } from "react";
+import { useHotkeys } from "react-hotkeys-hook";
 import { createFileRoute } from "@tanstack/react-router";
 import { trpc } from "@/trpc";
 import { FeatureTopBar } from "@/components/FeatureTopBar";
 import { AgentSession, type AgentSessionHandle } from "@/components/AgentSession";
+import { CLAUDE_MODELS } from "../../../../../shared/models";
 import { FeatureWorkflowView } from "@/components/FeatureWorkflowView";
 import { DiffViewerModal } from "@/components/diff/DiffViewerModal";
 import { useFeatureAgentState } from "@/hooks/useFeatureAgentState";
@@ -59,6 +61,32 @@ function SessionFeatureView({
   const agentRef = useRef<AgentSessionHandle>(null);
   const [inlineDiffOpen, setInlineDiffOpen] = useState(false);
   const handleViewDiff = useCallback(() => setInlineDiffOpen(true), []);
+
+  // Model settings for the session
+  const modelSettings = trpc.features.getModelSettings.useQuery({ featureId });
+  const utils = trpc.useUtils();
+  const setModelMutation = trpc.features.setModelSetting.useMutation({
+    onSuccess: () => utils.features.getModelSettings.invalidate(),
+  });
+  const currentModelId = modelSettings.data?.session ?? CLAUDE_MODELS[0].id;
+  const handleModelChange = useCallback(
+    (modelId: string) => {
+      setModelMutation.mutate({ featureId, agentType: "session", modelId });
+    },
+    [featureId, setModelMutation],
+  );
+
+  // OPT+SHIFT+P — cycle through models
+  const handleCycleModel = useCallback(() => {
+    const idx = CLAUDE_MODELS.findIndex((m) => m.id === currentModelId);
+    const next = CLAUDE_MODELS[(idx + 1) % CLAUDE_MODELS.length];
+    handleModelChange(next.id);
+  }, [currentModelId, handleModelChange]);
+
+  useHotkeys("alt+shift+p", (e) => {
+    e.preventDefault();
+    handleCycleModel();
+  }, { enableOnFormTags: true });
 
   // Find the latest session agent
   const session = sessions.find((s) => s.agentType === "session");
@@ -207,6 +235,8 @@ function SessionFeatureView({
         onPlanApprove={handlePlanApprove}
         onPlanRequestChanges={handlePlanRequestChanges}
         contextUsage={session ? contextUsageMap.get(session.sessionDbId) : null}
+        currentModelId={currentModelId}
+        onModelChange={handleModelChange}
         className="min-h-0"
       />
       <DiffViewerModal

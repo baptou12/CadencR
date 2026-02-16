@@ -10,7 +10,7 @@
  * match data is provided).
  */
 
-import { useState, useEffect, createElement, useRef, useImperativeHandle, forwardRef } from "react";
+import { useState, useEffect, useCallback, createElement, useRef, useImperativeHandle, forwardRef } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -23,18 +23,27 @@ import {
   RotateCcwIcon,
   FileEditIcon,
   Trash2Icon,
+  ChevronDownIcon,
+  CheckIcon,
 } from "lucide-react";
 import { AgentStream } from "./AgentStream";
 import { AgentPromptBar, type AgentPromptBarHandle } from "./AgentPromptBar";
 import { AgentTodoList } from "./AgentTodoList";
 import { ContextUsageBar } from "./ContextUsageBar";
 import { ReviewVerdictActions } from "./ReviewVerdictActions";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "./ui/dropdown-menu";
 import type { AgentBlockData } from "./AgentBlock";
 import type { AgentType } from "../../main/agents/types";
 import type { AgentQuestion } from "./AgentQuestionDrawer";
 import type { TodoItem } from "@/hooks/useFeatureAgentState";
 import type { ContextUsageState } from "@/hooks/useContextUsage";
 import { AGENT_ICONS } from "./agent-icons";
+import { CLAUDE_MODELS } from "../../shared/models";
 
 // ---------------------------------------------------------------------------
 // Shared types & constants (previously in AgentPanel, now canonical here)
@@ -165,6 +174,10 @@ export interface AgentSessionProps {
   onPlanRequestChanges?: (feedback: string) => void;
   /** Context usage data for this session */
   contextUsage?: ContextUsageState | null;
+  /** Current model ID for the session (used for inline model switcher) */
+  currentModelId?: string;
+  /** Called when the user changes the model via the inline switcher */
+  onModelChange?: (modelId: string) => void;
 }
 
 /** Handle exposed by AgentSession via forwardRef */
@@ -214,6 +227,8 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
   onPlanApprove,
   onPlanRequestChanges,
   contextUsage,
+  currentModelId,
+  onModelChange,
 }, ref) {
   const promptBarRef = useRef<AgentPromptBarHandle>(null);
   const [promptBarFocused, setPromptBarFocused] = useState(false);
@@ -305,6 +320,46 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
   // ---- Todo list bar ----
   const todoBar = todos && todos.length > 0 ? <AgentTodoList todos={todos} /> : null;
 
+  // ---- Inline model switcher (full-screen session mode) ----
+  const currentModelLabel = CLAUDE_MODELS.find((m) => m.id === currentModelId)?.label
+    ?? CLAUDE_MODELS.find((m) => m.id === "claude-opus-4-6")!.label;
+
+  const handleCycleModel = useCallback(() => {
+    if (!onModelChange) return;
+    const idx = CLAUDE_MODELS.findIndex((m) => m.id === currentModelId);
+    const next = CLAUDE_MODELS[(idx + 1) % CLAUDE_MODELS.length];
+    onModelChange(next.id);
+  }, [currentModelId, onModelChange]);
+
+  const modelBar = onModelChange ? (
+    <div className="flex items-center justify-between border-t border-border bg-muted/30 px-3 py-1">
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+          >
+            {currentModelLabel}
+            <ChevronDownIcon className="size-3" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="min-w-[160px]">
+          {CLAUDE_MODELS.map((m) => (
+            <DropdownMenuItem
+              key={m.id}
+              onClick={() => onModelChange(m.id)}
+              className="flex items-center justify-between gap-2 text-xs"
+            >
+              {m.label}
+              {m.id === currentModelId && <CheckIcon className="size-3 text-green-400" />}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <span className="text-[10px] text-muted-foreground/50">⌥⇧P</span>
+    </div>
+  ) : null;
+
   // ---- Stream content ----
   const streamContent = (
     <>
@@ -339,6 +394,7 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
       pendingPlanApproval={pendingPlanApproval}
       onPlanApprove={onPlanApprove}
       onPlanRequestChanges={onPlanRequestChanges}
+      onCycleModel={onModelChange ? handleCycleModel : undefined}
     />
   ) : null;
 
@@ -361,6 +417,9 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
 
         {/* Todo list */}
         {todoBar}
+
+        {/* Model switcher */}
+        {modelBar}
 
         {/* Prompt bar pinned at bottom */}
         {promptBar && (

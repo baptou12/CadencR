@@ -8,6 +8,7 @@ import {
   SelectValue,
 } from "./ui/select";
 import { AGENT_ICONS } from "./agent-icons";
+import { CLAUDE_MODELS } from "../../shared/models";
 
 const AGENT_TYPES = ["plan", "brainstorm", "execute", "risk", "review"] as const;
 type AgentType = (typeof AGENT_TYPES)[number];
@@ -19,12 +20,6 @@ const AGENT_LABELS: Record<AgentType, string> = {
   risk: "Risk",
   review: "Review",
 };
-
-const CLAUDE_MODELS = [
-  { id: "claude-opus-4-6", label: "Claude Opus 4.6" },
-  { id: "claude-sonnet-4-20250514", label: "Claude Sonnet 4" },
-  { id: "claude-haiku-3-5-20241022", label: "Claude Haiku 3.5" },
-];
 
 const INHERIT_VALUE = "__inherit__";
 

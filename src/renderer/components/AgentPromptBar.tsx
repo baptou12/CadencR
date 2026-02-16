@@ -33,6 +33,8 @@ export interface AgentPromptBarProps {
   onPlanApprove?: () => void;
   /** Called when user requests changes to the plan */
   onPlanRequestChanges?: (feedback: string) => void;
+  /** Called when OPT+SHIFT+P is pressed to cycle model */
+  onCycleModel?: () => void;
 }
 
 /** Handle exposed by AgentPromptBar via forwardRef */
@@ -56,6 +58,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
   pendingPlanApproval,
   onPlanApprove,
   onPlanRequestChanges,
+  onCycleModel,
 }, ref) {
   const [text, setText] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -88,7 +91,10 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (e.key === "Tab" && e.shiftKey && onPermissionModeToggle) {
+      if (e.key === "p" && e.altKey && e.shiftKey && onCycleModel) {
+        e.preventDefault();
+        onCycleModel();
+      } else if (e.key === "Tab" && e.shiftKey && onPermissionModeToggle) {
         e.preventDefault();
         onPermissionModeToggle();
       } else if (e.key === "z" && e.metaKey && e.shiftKey && !isRunning && onCollapse) {
@@ -104,7 +110,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
         e.preventDefault();
       }
     },
-    [canSend, handleSend, isRunning, onStop, onCollapse, onPermissionModeToggle],
+    [canSend, handleSend, isRunning, onStop, onCollapse, onPermissionModeToggle, onCycleModel],
   );
 
   // When plan approval is pending, render the approval bar instead of the prompt input
