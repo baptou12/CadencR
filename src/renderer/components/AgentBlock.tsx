@@ -102,11 +102,12 @@ export function AgentBlock({ block, isStreaming }: AgentBlockProps) {
       }
       return <ToolCallBlock name={block.toolName ?? "unknown"} args={block.toolArgs} />;
     case "tool_result":
-      if (block.sourceToolName === "TodoWrite") return null;
       if (block.sourceToolName === "Bash") {
         return <BashOutputBlock content={block.content} isError={block.isError} />;
       }
-      return <ToolResultBlock content={block.content} isError={block.isError} />;
+      // Only show output for tools with custom blocks (Bash above).
+      // Hide generic tool results (Grep, Read, Glob, etc.) to reduce noise.
+      return null;
     case "thinking":
       return <ThinkingBlock content={block.content} />;
     case "user_message":
@@ -194,31 +195,6 @@ function ToolCallBlock({ name, args }: { name: string; args?: string }) {
   );
 }
 
-function ToolResultBlock({ content, isError }: { content: string; isError?: boolean }) {
-  const [expanded, setExpanded] = useState(false);
-  const preview = content.length > 200 ? content.slice(0, 200) + "..." : content;
-
-  return (
-    <div
-      className={cn(
-        "my-1 rounded-md border px-3 py-1.5 text-xs",
-        isError
-          ? "border-red-800 bg-red-500/5 text-red-300"
-          : "border-border bg-muted/30 text-muted-foreground"
-      )}
-    >
-      <button
-        type="button"
-        className="w-full text-left"
-        onClick={() => setExpanded(!expanded)}
-      >
-        <pre className="whitespace-pre-wrap overflow-x-auto">
-          {expanded ? content : preview}
-        </pre>
-      </button>
-    </div>
-  );
-}
 
 const DEFAULT_BASH_LINES = 10;
 
@@ -373,14 +349,8 @@ function CompactBlock({ block }: { block: AgentBlockData }) {
         </div>
       );
     }
-    return (
-      <div className={cn(
-        "text-xs py-0.5 truncate",
-        block.isError ? "text-red-500" : "text-muted-foreground/60"
-      )}>
-        {block.isError ? "Error: " : ""}{block.content.slice(0, 80)}
-      </div>
-    );
+    // Hide generic tool results in compact view too
+    return null;
   }
   return null;
 }
