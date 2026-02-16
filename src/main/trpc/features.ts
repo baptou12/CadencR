@@ -119,11 +119,11 @@ export const featuresRouter = router({
     .input(z.object({ id: z.number() }))
     .query(({ input }) => {
       const db = getDatabase();
-      return db
+      return (db
         .prepare(
           "SELECT id, project_id, title, status, type, created_at FROM features WHERE id = ?",
         )
-        .get(input.id) as FeatureRow | undefined;
+        .get(input.id) as FeatureRow | undefined) ?? null;
     }),
 
   getPlanProgress: publicProcedure

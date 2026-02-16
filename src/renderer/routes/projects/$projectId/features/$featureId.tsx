@@ -23,7 +23,7 @@ function FeaturePage() {
   const featureQuery = trpc.features.getById.useQuery({
     id: numericFeatureId,
   });
-  const feature = featureQuery.data;
+  const feature = featureQuery.data ?? undefined;
 
   if (feature?.type === "session") {
     return (
