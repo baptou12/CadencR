@@ -78,6 +78,7 @@ export function AgentBlock({ block, isStreaming }: AgentBlockProps) {
     case "code":
       return <CodeBlock content={block.content} language={block.language} />;
     case "tool_call":
+      if (block.toolName === "TodoWrite") return null;
       if (block.toolName === "Task" && block.childBlocks) {
         return <TaskAgentBlock block={block} isStreaming={isStreaming} />;
       }
@@ -101,6 +102,7 @@ export function AgentBlock({ block, isStreaming }: AgentBlockProps) {
       }
       return <ToolCallBlock name={block.toolName ?? "unknown"} args={block.toolArgs} />;
     case "tool_result":
+      if (block.sourceToolName === "TodoWrite") return null;
       if (block.sourceToolName === "Bash") {
         return <BashOutputBlock content={block.content} isError={block.isError} />;
       }
