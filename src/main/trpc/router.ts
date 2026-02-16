@@ -19,6 +19,7 @@ import {
 } from "../agents/subprocess-manager";
 import { bridgeSubprocessToRenderer, getSubprocessIdForSession } from "../agents/ipc-bridge";
 import type { AgentType } from "../agents/types";
+import { execSync } from "node:child_process";
 import {
   createWorktree,
   removeWorktree,
@@ -1008,6 +1009,16 @@ const gitRouter = router({
 
       openInTerminal(wtRow.value);
       return { success: true };
+    }),
+
+  /** List all git-tracked files for a feature's worktree/project */
+  listFiles: publicProcedure
+    .input(z.object({ featureId: z.number() }))
+    .query(({ input }) => {
+      const gitPath = resolveFeatureGitPath(input.featureId);
+      if (!gitPath) return [];
+      const output = execSync("git ls-files", { cwd: gitPath, encoding: "utf-8", maxBuffer: 10 * 1024 * 1024 });
+      return output.split("\n").filter(Boolean);
     }),
 });
 

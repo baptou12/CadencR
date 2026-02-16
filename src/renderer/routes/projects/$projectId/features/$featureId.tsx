@@ -225,6 +225,7 @@ function SessionFeatureView({
         contextUsage={session ? contextUsageMap.get(session.sessionDbId) : null}
         currentModelId={currentModelId}
         onModelChange={handleModelChange}
+        featureId={featureId}
         className="min-h-0"
       />
       <DiffViewerModal

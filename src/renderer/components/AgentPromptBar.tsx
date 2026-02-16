@@ -5,6 +5,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { AgentQuestionDrawer } from "./AgentQuestionDrawer";
 import { PlanApprovalBar } from "./PlanApprovalBar";
+import { FileMentionPopover } from "./FileMentionPopover";
+import { useFileMention } from "@/hooks/useFileMention";
+import { trpc } from "@/trpc";
 import type { AgentQuestion } from "./AgentQuestionDrawer";
 import type { AgentStatus } from "@/components/AgentSession";
 
@@ -35,6 +38,8 @@ export interface AgentPromptBarProps {
   onPlanRequestChanges?: (feedback: string) => void;
   /** Called when OPT+SHIFT+P is pressed to cycle model */
   onCycleModel?: () => void;
+  /** Feature ID for file mention support */
+  featureId?: number;
 }
 
 /** Handle exposed by AgentPromptBar via forwardRef */
@@ -59,9 +64,17 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
   onPlanApprove,
   onPlanRequestChanges,
   onCycleModel,
+  featureId,
 }, ref) {
   const [text, setText] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // File mention support
+  const filesQuery = trpc.git.listFiles.useQuery(
+    { featureId: featureId! },
+    { enabled: !!featureId },
+  );
+  const mention = useFileMention(filesQuery.data ?? undefined);
 
   useImperativeHandle(ref, () => ({
     focusInput: () => {
@@ -91,6 +104,22 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      // File mention handles keys first when popover is open
+      const mentionResult = mention.handleKeyDown(e, text);
+      if (mentionResult === true) return; // event consumed, no text change
+      if (typeof mentionResult === "object") {
+        // Mention confirmed — update text and cursor
+        setText(mentionResult.newText);
+        requestAnimationFrame(() => {
+          const el = textareaRef.current;
+          if (el) {
+            el.selectionStart = mentionResult.newCursorPos;
+            el.selectionEnd = mentionResult.newCursorPos;
+          }
+        });
+        return;
+      }
+
       if (e.code === "KeyP" && e.altKey && e.shiftKey && onCycleModel) {
         e.preventDefault();
         onCycleModel();
@@ -110,7 +139,34 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
         e.preventDefault();
       }
     },
-    [canSend, handleSend, isRunning, onStop, onCollapse, onPermissionModeToggle, onCycleModel],
+    [canSend, handleSend, isRunning, onStop, onCollapse, onPermissionModeToggle, onCycleModel, mention, text],
+  );
+
+  const handleChange = useCallback(
+    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      const newValue = e.target.value;
+      setText(newValue);
+      mention.handleChange(newValue, e.target.selectionStart);
+    },
+    [mention],
+  );
+
+  const handleMentionSelect = useCallback(
+    (path: string) => {
+      const result = mention.confirm(text, path);
+      if (result) {
+        setText(result.newText);
+        requestAnimationFrame(() => {
+          const el = textareaRef.current;
+          if (el) {
+            el.selectionStart = result.newCursorPos;
+            el.selectionEnd = result.newCursorPos;
+            el.focus();
+          }
+        });
+      }
+    },
+    [mention, text],
   );
 
   // When plan approval is pending, render the approval bar instead of the prompt input
@@ -164,18 +220,26 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
           )}
         </button>
       )}
-      <Textarea
-        ref={textareaRef}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={handleKeyDown}
-        onFocus={() => onFocusChange?.(true)}
-        onBlur={() => onFocusChange?.(false)}
-        placeholder={isPaused ? "Send a message to resume…" : "Send a message…"}
-        disabled={disabled}
-        rows={1}
-        className="max-h-32 min-h-[42px] resize-none overflow-hidden border-border/50 bg-background py-2.5 text-sm leading-[22px] shadow-none focus-visible:ring-1 focus-visible:ring-ring/40"
-      />
+      <FileMentionPopover
+        open={mention.isOpen}
+        items={mention.filteredItems}
+        selectedIndex={mention.selectedIndex}
+        onSelect={handleMentionSelect}
+        onClose={mention.close}
+      >
+        <Textarea
+          ref={textareaRef}
+          value={text}
+          onChange={handleChange}
+          onKeyDown={handleKeyDown}
+          onFocus={() => onFocusChange?.(true)}
+          onBlur={() => onFocusChange?.(false)}
+          placeholder={isPaused ? "Send a message to resume…" : "Send a message… (@ to mention files)"}
+          disabled={disabled}
+          rows={1}
+          className="max-h-32 min-h-[42px] resize-none overflow-hidden border-border/50 bg-background py-2.5 text-sm leading-[22px] shadow-none focus-visible:ring-1 focus-visible:ring-ring/40"
+        />
+      </FileMentionPopover>
       {isRunning ? (
         <Button
           variant="destructive"

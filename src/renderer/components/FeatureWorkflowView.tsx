@@ -347,6 +347,7 @@ export function FeatureWorkflowView({
                   canDelete={entry.status !== "running" && entry.status !== "completed" && !!entry.sessionDbId}
                   onDelete={() => handleDeleteAgent(entry)}
                   contextUsage={contextUsageMap.get(entry.sessionDbId)}
+                  featureId={featureId}
                 />
               );
             })}

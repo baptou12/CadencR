@@ -176,6 +176,8 @@ export interface AgentSessionProps {
   currentModelId?: string;
   /** Called when the user changes the model via the inline switcher */
   onModelChange?: (modelId: string) => void;
+  /** Feature ID for file mention support in the prompt bar */
+  featureId?: number;
 }
 
 /** Handle exposed by AgentSession via forwardRef */
@@ -226,6 +228,7 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
   contextUsage,
   currentModelId,
   onModelChange,
+  featureId,
 }, ref) {
   const promptBarRef = useRef<AgentPromptBarHandle>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -401,6 +404,7 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
       onPlanApprove={onPlanApprove}
       onPlanRequestChanges={onPlanRequestChanges}
       onCycleModel={onModelChange ? handleCycleModel : undefined}
+      featureId={featureId}
     />
   ) : null;
 
