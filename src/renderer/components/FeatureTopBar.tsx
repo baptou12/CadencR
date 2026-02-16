@@ -39,6 +39,16 @@ export function FeatureTopBar({ featureId, projectId: _projectId, mode = "featur
     },
     { enableOnFormTags: true },
   );
+
+  // CMD+SHIFT+D -> toggle diff viewer
+  useHotkeys(
+    "meta+shift+d",
+    (e) => {
+      e.preventDefault();
+      setDiffOpen((prev) => !prev);
+    },
+    { enableOnFormTags: true },
+  );
   const { data: feature } = trpc.features.getById.useQuery({ id: featureId });
   const { data: progress } = trpc.features.getProgress.useQuery(
     { feature_id: featureId },
