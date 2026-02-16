@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-import { ChevronRightIcon, ChevronDownIcon, WrenchIcon, BrainIcon, CodeIcon, LayersIcon, LoaderIcon } from "lucide-react";
+import { ChevronRightIcon, ChevronDownIcon, WrenchIcon, BrainIcon, CodeIcon, LayersIcon, LoaderIcon, TerminalIcon } from "lucide-react";
 import { parseToolCall } from "@/lib/tool-call-parser";
 import { Markdown } from "@/components/Markdown";
 import { InlineDiffBlock } from "@/components/InlineDiffBlock";
@@ -60,6 +60,8 @@ export interface AgentBlockData {
   taskComplete?: boolean;
   /** DB message ID — used for deduplication against server data */
   messageDbId?: number;
+  /** The tool name that produced this tool_result (resolved from parent tool_call) */
+  sourceToolName?: string;
 }
 
 interface AgentBlockProps {
@@ -102,6 +104,9 @@ export function AgentBlock({ block, isStreaming, expandAllTasks, onExpandAllTask
       }
       return <ToolCallBlock name={block.toolName ?? "unknown"} args={block.toolArgs} />;
     case "tool_result":
+      if (block.sourceToolName === "Bash") {
+        return <BashOutputBlock content={block.content} isError={block.isError} />;
+      }
       return <ToolResultBlock content={block.content} isError={block.isError} />;
     case "thinking":
       return <ThinkingBlock content={block.content} />;
@@ -212,6 +217,49 @@ function ToolResultBlock({ content, isError }: { content: string; isError?: bool
           {expanded ? content : preview}
         </pre>
       </button>
+    </div>
+  );
+}
+
+const DEFAULT_BASH_LINES = 10;
+
+function BashOutputBlock({ content, isError }: { content: string; isError?: boolean }) {
+  const [expanded, setExpanded] = useState(false);
+  const lines = content.split("\n");
+  const totalLines = lines.length;
+  const needsCollapse = totalLines > DEFAULT_BASH_LINES;
+  const visibleLines = expanded || !needsCollapse ? lines : lines.slice(-DEFAULT_BASH_LINES);
+
+  return (
+    <div className={cn(
+      "my-1 rounded-md border overflow-hidden",
+      isError ? "border-red-800" : "border-zinc-700"
+    )}>
+      <div className={cn(
+        "flex items-center gap-2 px-3 py-1 text-xs",
+        isError ? "bg-red-950 text-red-400" : "bg-zinc-900 text-zinc-400"
+      )}>
+        <TerminalIcon className="size-3" />
+        <span>Output ({totalLines} line{totalLines !== 1 ? "s" : ""})</span>
+        {needsCollapse && (
+          <button
+            type="button"
+            className="ml-auto text-zinc-500 hover:text-zinc-300"
+            onClick={() => setExpanded(!expanded)}
+          >
+            {expanded ? "Show last 10" : `Show all ${totalLines}`}
+          </button>
+        )}
+      </div>
+      <pre className={cn(
+        "bg-zinc-950 px-3 py-2 text-xs leading-relaxed overflow-x-auto font-mono",
+        isError ? "text-red-300" : "text-zinc-300"
+      )}>
+        {!expanded && needsCollapse && (
+          <span className="text-zinc-600">{"... (" + (totalLines - DEFAULT_BASH_LINES) + " lines above)\n"}</span>
+        )}
+        {visibleLines.join("\n")}
+      </pre>
     </div>
   );
 }
@@ -340,6 +388,18 @@ function CompactBlock({ block }: { block: AgentBlockData }) {
     );
   }
   if (block.type === "tool_result") {
+    if (block.sourceToolName === "Bash") {
+      const lines = block.content.split("\n");
+      const lastLine = lines[lines.length - 1] || lines[lines.length - 2] || "";
+      return (
+        <div className={cn(
+          "text-xs py-0.5 truncate font-mono",
+          block.isError ? "text-red-500" : "text-zinc-500"
+        )}>
+          {lastLine.slice(0, 100)}
+        </div>
+      );
+    }
     return (
       <div className={cn(
         "text-xs py-0.5 truncate",

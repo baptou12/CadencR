@@ -199,8 +199,36 @@ function handleSdkMessage(
         }
       }
     }
+  } else if (type === "user") {
+    // User messages may contain tool_result content blocks (the SDK sends tool
+    // results back to Claude as user messages).  Extract and persist/broadcast them.
+    const message = msg.message as Record<string, unknown> | undefined;
+    if (message) {
+      const content = message.content as Array<Record<string, unknown>> | undefined;
+      if (content && Array.isArray(content)) {
+        for (const block of content) {
+          if (block.type === "tool_result") {
+            const resultContent = typeof block.content === "string"
+              ? block.content
+              : Array.isArray(block.content)
+                ? (block.content as Array<Record<string, unknown>>)
+                    .map((c) => (c.type === "text" ? c.text : JSON.stringify(c)))
+                    .join("")
+                : JSON.stringify(block.content ?? "");
+            const toolResultEvent: StreamEvent = {
+              type: "tool_result",
+              tool_use_id: (block.tool_use_id as string) ?? "",
+              content: resultContent,
+              is_error: (block.is_error as boolean) ?? false,
+            };
+            const msgId = sessionDbId ? persistStreamEvent(sessionDbId, toolResultEvent, parentToolUseId) : null;
+            broadcastEvent(id, agentType, toolResultEvent, parentToolUseId, msgId);
+          }
+        }
+      }
+    }
   } else if (type === "tool_result" || type === "result") {
-    // Tool result or final result
+    // tool_result: fallback for older SDK versions (current SDK sends tool results inside "user" messages)
     if (type === "tool_result") {
       const toolResultEvent: StreamEvent = {
         type: "tool_result",

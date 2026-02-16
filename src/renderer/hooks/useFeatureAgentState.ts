@@ -58,7 +58,25 @@ function applyResult(
         return;
       }
     }
-    list.push(makeStreamBlock(result.block, messageDbId));
+    const newBlock = makeStreamBlock(result.block, messageDbId);
+    // Resolve sourceToolName for tool_result blocks by matching tool_use_id
+    if (newBlock.type === "tool_result" && newBlock.toolUseId) {
+      for (let i = list.length - 1; i >= 0; i--) {
+        if (list[i].type === "tool_call" && list[i].toolUseId === newBlock.toolUseId) {
+          newBlock.sourceToolName = list[i].toolName;
+          break;
+        }
+      }
+    } else if (newBlock.type === "tool_result" && !newBlock.toolUseId) {
+      // Fallback: find the last tool_call in the list
+      for (let i = list.length - 1; i >= 0; i--) {
+        if (list[i].type === "tool_call") {
+          newBlock.sourceToolName = list[i].toolName;
+          break;
+        }
+      }
+    }
+    list.push(newBlock);
   } else if (result.action === "delta") {
     if (list.length > 0 && list[list.length - 1].type === "text") {
       list[list.length - 1] = {
@@ -123,6 +141,7 @@ export function eventToBlock(
           content: e.content,
           isError: e.is_error ?? false,
           parentToolUseId: event.parentToolUseId,
+          toolUseId: e.tool_use_id,
         },
       };
     case "error":
@@ -154,6 +173,7 @@ interface ServerBlock {
   toolUseId?: string;
   parentToolUseId?: string | null;
   childBlocks?: ServerBlock[];
+  sourceToolName?: string;
 }
 
 function serverBlocksToAgentBlocks(serverBlocks: ServerBlock[]): AgentBlockData[] {
@@ -167,6 +187,7 @@ function serverBlocksToAgentBlocks(serverBlocks: ServerBlock[]): AgentBlockData[
     toolUseId: sb.toolUseId,
     parentToolUseId: sb.parentToolUseId,
     childBlocks: sb.childBlocks ? serverBlocksToAgentBlocks(sb.childBlocks) : undefined,
+    sourceToolName: sb.sourceToolName,
   }));
 }
 
@@ -221,6 +242,10 @@ export function useFeatureAgentState(featureId: number) {
   const todoJsonAccumRef = useRef<Map<string, string>>(new Map());
   // Track which toolUseId is a TodoWrite: toolUseId -> sessionDbId
   const todoToolUseRef = useRef<Map<string, number>>(new Map());
+  // Track toolUseId -> toolName for resolving sourceToolName on tool_result blocks.
+  // This persists across buffer trims so we can resolve even after the tool_call
+  // block has moved from buffer to server blocks.
+  const toolUseNameRef = useRef<Map<string, string>>(new Map());
   // Stable ref to query.refetch so the IPC effect doesn't re-register every render
   const refetchRef = useRef(query.refetch);
   refetchRef.current = query.refetch;
@@ -231,6 +256,7 @@ export function useFeatureAgentState(featureId: number) {
     streamingTodosRef.current = new Map();
     todoJsonAccumRef.current = new Map();
     todoToolUseRef.current = new Map();
+    toolUseNameRef.current = new Map();
     sessionMapRef.current = new Map();
   }, [featureId]);
 
@@ -318,6 +344,11 @@ export function useFeatureAgentState(featureId: number) {
         return;
       }
 
+      // Track tool_use_id -> tool name for resolving sourceToolName on tool_result
+      if (e.type === "content_block_start" && e.content_block?.type === "tool_use" && e.content_block.id) {
+        toolUseNameRef.current.set(e.content_block.id, e.content_block.name);
+      }
+
       // Track TodoWrite tool calls during streaming
       if (e.type === "content_block_start" && e.content_block?.type === "tool_use" && e.content_block.name === "TodoWrite") {
         const toolUseId = e.content_block.id;
@@ -363,6 +394,16 @@ export function useFeatureAgentState(featureId: number) {
         const next = new Map(prev);
         const existing = [...(next.get(sessionDbId) ?? [])];
         applyResult(result, existing, agentEvent.messageDbId);
+        // Resolve sourceToolName for freshly appended tool_result blocks
+        // using the persistent toolUseNameRef (survives buffer trims)
+        if (result.action === "append" && result.block.type === "tool_result") {
+          const last = existing[existing.length - 1];
+          if (last && last.type === "tool_result" && !last.sourceToolName) {
+            if (last.toolUseId && toolUseNameRef.current.has(last.toolUseId)) {
+              last.sourceToolName = toolUseNameRef.current.get(last.toolUseId);
+            }
+          }
+        }
         next.set(sessionDbId, existing);
         return next;
       });

@@ -204,6 +204,7 @@ interface AgentBlock {
   toolUseId?: string;
   parentToolUseId?: string | null;
   childBlocks?: AgentBlock[];
+  sourceToolName?: string;
 }
 
 function appendText(list: AgentBlock[], msgId: number, content: string, parentId?: string | null) {
@@ -265,15 +266,31 @@ function buildBlocks(messages: AgentMessageRow[]): AgentBlock[] {
         break;
       }
       case "tool_result":
-      case "tool_error":
+      case "tool_error": {
+        // Resolve the source tool name from the parent tool_call
+        let sourceToolName: string | undefined;
+        if (msg.tool_use_id && byToolUseId.has(msg.tool_use_id)) {
+          sourceToolName = byToolUseId.get(msg.tool_use_id)!.toolName;
+        } else {
+          // Fallback for historical data where tool_use_id is null on tool_result rows:
+          // scan backwards for the last tool_call in this list
+          for (let i = list.length - 1; i >= 0; i--) {
+            if (list[i].type === "tool_call") {
+              sourceToolName = list[i].toolName;
+              break;
+            }
+          }
+        }
         list.push({
           id,
           type: "tool_result",
           content: msg.content,
           isError: msg.message_type === "tool_error",
           parentToolUseId: msg.parent_tool_use_id,
+          sourceToolName,
         });
         break;
+      }
       case "user_message":
         list.push({ id, type: "user_message", content: msg.content, parentToolUseId: msg.parent_tool_use_id });
         break;

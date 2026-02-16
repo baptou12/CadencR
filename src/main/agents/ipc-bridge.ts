@@ -123,7 +123,7 @@ export function persistStreamEvent(
           event.content,
           event.is_error ? "tool_error" : "tool_result",
           null,
-          null,
+          event.tool_use_id ?? null,
           ptuid,
         ) as { lastInsertRowid: number | bigint };
         break;
