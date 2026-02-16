@@ -140,8 +140,8 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
           className={cn(
             "flex shrink-0 items-center gap-1 rounded-md px-2 py-1.5 text-xs font-medium transition-colors",
             permissionMode === "plan"
-              ? "bg-blue-500/15 text-blue-400 hover:bg-blue-500/25"
-              : "bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+              ? "bg-green-500/15 text-green-400 hover:bg-green-500/25"
+              : "bg-blue-500/15 text-blue-400 hover:bg-blue-500/25",
           )}
           title="Toggle permission mode (Shift+Tab)"
         >

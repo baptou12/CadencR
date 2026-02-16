@@ -169,6 +169,18 @@ function handleSdkMessage(
             const toolName = block.name as string;
             const toolInput = block.input as Record<string, unknown>;
 
+            // Detect EnterPlanMode tool call — update DB so UI reflects plan mode.
+            // In bypassPermissions mode the SDK auto-allows this without calling
+            // canUseTool, so we catch it here in the message stream instead.
+            if (toolName === "EnterPlanMode" && sessionDbId) {
+              try {
+                const db2 = getDatabase();
+                db2.prepare("UPDATE agent_sessions SET permission_mode = 'plan' WHERE id = ?").run(sessionDbId);
+                const row = db2.prepare("SELECT feature_id FROM agent_sessions WHERE id = ?").get(sessionDbId) as { feature_id: number } | undefined;
+                if (row) notifyDbUpdated("agent_session", row.feature_id);
+              } catch { /* best-effort */ }
+            }
+
             const event: StreamEvent = {
               type: "content_block_start",
               index: i,
