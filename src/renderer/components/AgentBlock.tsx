@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-import { ChevronRightIcon, ChevronDownIcon, WrenchIcon, BrainIcon, CodeIcon, LayersIcon, LoaderIcon, TerminalIcon } from "lucide-react";
+import { ChevronRightIcon, WrenchIcon, BrainIcon, CodeIcon, LayersIcon, LoaderIcon, TerminalIcon } from "lucide-react";
 import { parseToolCall } from "@/lib/tool-call-parser";
 import { Markdown } from "@/components/Markdown";
 import { InlineDiffBlock } from "@/components/InlineDiffBlock";
 import { ClipboardCheck } from "lucide-react";
+import { CollapsibleBlock } from "@/components/ui/collapsible-block";
 
 /** Reconstruct diff data from persisted tool args (for historical sessions). */
 function diffFromToolArgs(
@@ -68,13 +69,9 @@ interface AgentBlockProps {
   block: AgentBlockData;
   /** Whether the parent agent is still streaming */
   isStreaming?: boolean;
-  /** Whether all Task blocks should show all children */
-  expandAllTasks?: boolean;
-  /** Callback to expand all Task blocks in the agent */
-  onExpandAllTasks?: () => void;
 }
 
-export function AgentBlock({ block, isStreaming, expandAllTasks, onExpandAllTasks }: AgentBlockProps) {
+export function AgentBlock({ block, isStreaming }: AgentBlockProps) {
   switch (block.type) {
     case "text":
       return <TextBlock content={block.content} />;
@@ -82,7 +79,7 @@ export function AgentBlock({ block, isStreaming, expandAllTasks, onExpandAllTask
       return <CodeBlock content={block.content} language={block.language} />;
     case "tool_call":
       if (block.toolName === "Task" && block.childBlocks) {
-        return <TaskAgentBlock block={block} isStreaming={isStreaming} expandAll={expandAllTasks} onExpandAll={onExpandAllTasks} />;
+        return <TaskAgentBlock block={block} isStreaming={isStreaming} />;
       }
       if (block.toolName === "ExitPlanMode") {
         return <PlanBlock args={block.toolArgs} />;
@@ -224,43 +221,33 @@ function ToolResultBlock({ content, isError }: { content: string; isError?: bool
 const DEFAULT_BASH_LINES = 10;
 
 function BashOutputBlock({ content, isError }: { content: string; isError?: boolean }) {
-  const [expanded, setExpanded] = useState(false);
   const lines = content.split("\n");
   const totalLines = lines.length;
-  const needsCollapse = totalLines > DEFAULT_BASH_LINES;
-  const visibleLines = expanded || !needsCollapse ? lines : lines.slice(-DEFAULT_BASH_LINES);
 
   return (
-    <div className={cn(
-      "my-1 rounded-md border overflow-hidden",
-      isError ? "border-red-800" : "border-zinc-700"
-    )}>
-      <div className={cn(
-        "flex items-center gap-2 px-3 py-1 text-xs",
-        isError ? "bg-red-950 text-red-400" : "bg-zinc-900 text-zinc-400"
-      )}>
-        <TerminalIcon className="size-3" />
-        <span>Output ({totalLines} line{totalLines !== 1 ? "s" : ""})</span>
-        {needsCollapse && (
-          <button
-            type="button"
-            className="ml-auto text-zinc-500 hover:text-zinc-300"
-            onClick={() => setExpanded(!expanded)}
-          >
-            {expanded ? "Show last 10" : `Show all ${totalLines}`}
-          </button>
-        )}
-      </div>
-      <pre className={cn(
+    <CollapsibleBlock
+      totalCount={totalLines}
+      visibleCount={DEFAULT_BASH_LINES}
+      unit="lines"
+      className={isError ? "border-red-800" : "border-zinc-700"}
+      headerClassName={isError ? "bg-red-950 text-red-400 py-1" : "bg-zinc-900 text-zinc-400 py-1"}
+      toggleClassName="ml-auto text-zinc-500 hover:text-zinc-300"
+      bodyClassName={cn(
         "bg-zinc-950 px-3 py-2 text-xs leading-relaxed overflow-x-auto font-mono",
         isError ? "text-red-300" : "text-zinc-300"
-      )}>
-        {!expanded && needsCollapse && (
-          <span className="text-zinc-600">{"... (" + (totalLines - DEFAULT_BASH_LINES) + " lines above)\n"}</span>
-        )}
-        {visibleLines.join("\n")}
-      </pre>
-    </div>
+      )}
+      truncationClassName="text-zinc-600"
+      header={<>
+        <TerminalIcon className="size-3" />
+        <span>Output ({totalLines} line{totalLines !== 1 ? "s" : ""})</span>
+      </>}
+    >
+      {({ showAll }) => (
+        <pre className="whitespace-pre-wrap">
+          {showAll ? lines.join("\n") : lines.slice(-DEFAULT_BASH_LINES).join("\n")}
+        </pre>
+      )}
+    </CollapsibleBlock>
   );
 }
 
@@ -304,8 +291,7 @@ function UserMessageBlock({ content }: { content: string }) {
 
 const DEFAULT_VISIBLE_CHILDREN = 5;
 
-function TaskAgentBlock({ block, isStreaming, expandAll, onExpandAll }: { block: AgentBlockData; isStreaming?: boolean; expandAll?: boolean; onExpandAll?: () => void }) {
-  const [expanded, setExpanded] = useState(true);
+function TaskAgentBlock({ block, isStreaming }: { block: AgentBlockData; isStreaming?: boolean }) {
   const children = block.childBlocks ?? [];
   const isRunning = !block.taskComplete && !!isStreaming;
 
@@ -320,17 +306,17 @@ function TaskAgentBlock({ block, isStreaming, expandAll, onExpandAll }: { block:
     }
   }
 
-  const showAll = !!expandAll;
-  const visibleChildren = showAll ? children : children.slice(-DEFAULT_VISIBLE_CHILDREN);
-  const hiddenCount = children.length - visibleChildren.length;
-
   return (
-    <div className="my-1 rounded-md border border-indigo-700 bg-indigo-500/5">
-      <button
-        type="button"
-        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs"
-        onClick={() => setExpanded(!expanded)}
-      >
+    <CollapsibleBlock
+      totalCount={children.length}
+      visibleCount={DEFAULT_VISIBLE_CHILDREN}
+      unit="actions"
+      className="border-indigo-700 bg-indigo-500/5"
+      headerClassName=""
+      toggleClassName="text-indigo-500 hover:text-indigo-300"
+      bodyClassName="border-t border-indigo-800 px-3 py-2 space-y-0.5"
+      truncationClassName="text-indigo-800"
+      header={<>
         <LayersIcon className="size-3 text-indigo-400" />
         <span className="font-medium text-indigo-300">Task</span>
         <span className="truncate text-muted-foreground">{description}</span>
@@ -338,35 +324,20 @@ function TaskAgentBlock({ block, isStreaming, expandAll, onExpandAll }: { block:
           <LoaderIcon className="size-3 animate-spin text-indigo-500 shrink-0" />
         )}
         <span className="ml-auto text-muted-foreground shrink-0">{children.length} action{children.length !== 1 ? "s" : ""}</span>
-        {expanded ? (
-          <ChevronDownIcon className="size-3 shrink-0 text-muted-foreground" />
-        ) : (
-          <ChevronRightIcon className="size-3 shrink-0 text-muted-foreground" />
+      </>}
+    >
+      {({ showAll }) => (<>
+        {(showAll ? children : children.slice(-DEFAULT_VISIBLE_CHILDREN)).map((child) => (
+          <CompactBlock key={child.id} block={child} />
+        ))}
+        {isRunning && children.length > 0 && (
+          <div className="flex items-center gap-1.5 pt-1 text-xs text-muted-foreground">
+            <LoaderIcon className="size-3 animate-spin" />
+            Working...
+          </div>
         )}
-      </button>
-      {expanded && (
-        <div className="border-t border-indigo-800 px-3 py-2 space-y-0.5">
-          {hiddenCount > 0 && (
-            <button
-              type="button"
-              className="text-xs text-indigo-400 hover:underline mb-1"
-              onClick={onExpandAll}
-            >
-              Show all {children.length} actions ({hiddenCount} hidden)
-            </button>
-          )}
-          {visibleChildren.map((child) => (
-            <CompactBlock key={child.id} block={child} />
-          ))}
-          {isRunning && children.length > 0 && (
-            <div className="flex items-center gap-1.5 pt-1 text-xs text-muted-foreground">
-              <LoaderIcon className="size-3 animate-spin" />
-              Working...
-            </div>
-          )}
-        </div>
-      )}
-    </div>
+      </>)}
+    </CollapsibleBlock>
   );
 }
 

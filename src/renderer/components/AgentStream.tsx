@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { AgentBlock, type AgentBlockData } from "./AgentBlock";
 
 function getLastToolName(blocks: AgentBlockData[]): string {
@@ -21,11 +21,6 @@ interface AgentStreamProps {
 
 export function AgentStream({ blocks, isStreaming, autoScroll }: AgentStreamProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
-  const [expandAllTasks, setExpandAllTasks] = useState(false);
-
-  const handleExpandAllTasks = useCallback(() => {
-    setExpandAllTasks(true);
-  }, []);
 
   useEffect(() => {
     if (autoScroll !== false) {
@@ -41,8 +36,6 @@ export function AgentStream({ blocks, isStreaming, autoScroll }: AgentStreamProp
             key={block.id}
             block={block}
             isStreaming={isStreaming}
-            expandAllTasks={expandAllTasks}
-            onExpandAllTasks={handleExpandAllTasks}
           />
         ))}
         {isStreaming && (
