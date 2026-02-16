@@ -10,7 +10,7 @@
  * match data is provided).
  */
 
-import { useState, useEffect, useCallback, createElement, useRef, useImperativeHandle, forwardRef } from "react";
+import { useState, useEffect, useCallback, createElement, useRef, useImperativeHandle, forwardRef, useLayoutEffect } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -228,7 +228,16 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
   onModelChange,
 }, ref) {
   const promptBarRef = useRef<AgentPromptBarHandle>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [promptBarFocused, setPromptBarFocused] = useState(false);
+
+  // Auto-scroll: only scroll to bottom when the prompt bar is focused
+  useLayoutEffect(() => {
+    const el = scrollContainerRef.current;
+    if (promptBarFocused && el) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [promptBarFocused, blocks.length]);
 
   useImperativeHandle(ref, () => ({
     focusPromptBar: () => {
@@ -368,7 +377,7 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
         </div>
       )}
       {blocks.length > 0 && (
-        <AgentStream blocks={blocks} isStreaming={status === "running"} autoScroll={promptBarFocused} />
+        <AgentStream blocks={blocks} isStreaming={status === "running"} />
       )}
     </>
   );
@@ -402,7 +411,7 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
     return (
       <div className={cn("flex h-full flex-col", className)}>
         {/* Scrollable agent output */}
-        <div className="flex-1 overflow-auto p-4">
+        <div ref={scrollContainerRef} className="flex-1 overflow-auto p-4" style={{ overflowAnchor: "none" }}>
           {streamContent}
         </div>
 
@@ -500,14 +509,14 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
       {/* Collapsible content */}
       {isOpen && (
         <>
-          <div className="border-t border-border">
+          <div ref={scrollContainerRef} className="border-t border-border overflow-y-auto" style={{ overflowAnchor: "none" }}>
             {/* Stream content */}
             {blocks.length === 0 && status === "idle" ? (
               <div className="flex flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
                 No output yet
               </div>
             ) : (
-              <AgentStream blocks={blocks} isStreaming={status === "running"} autoScroll={promptBarFocused} />
+              <AgentStream blocks={blocks} isStreaming={status === "running"} />
             )}
           </div>
 
