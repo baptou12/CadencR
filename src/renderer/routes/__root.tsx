@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef } from "react";
 import {
   createRootRoute,
   Outlet,
@@ -17,16 +17,6 @@ import {
 import type { PanelSize } from "react-resizable-panels";
 import { trpc } from "@/trpc";
 import { getActiveFocusZone } from "@/lib/focus-zones";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-  DialogDescription,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
 
 const ZONE_ORDER = ["left-sidebar", "main-content", "right-sidebar"] as const;
 
@@ -68,9 +58,8 @@ function RootLayout() {
   ) ?? []) as string[];
   const activeProjectId = routeParams[1] ? Number(routeParams[1]) : null;
 
-  // New feature dialog state
-  const [featureDialogOpen, setFeatureDialogOpen] = useState(false);
-  const [newFeatureTitle, setNewFeatureTitle] = useState("");
+  // Extract active feature ID from the current route
+  const activeFeatureId = routeParams[2] ? Number(routeParams[2]) : null;
 
   const utils = trpc.useUtils();
 
@@ -83,8 +72,6 @@ function RootLayout() {
   const createFeatureMutation = trpc.features.create.useMutation({
     onSuccess: (result) => {
       invalidateFeatures();
-      setFeatureDialogOpen(false);
-      setNewFeatureTitle("");
       if (activeProjectId != null) {
         void navigate({
           to: "/projects/$projectId/features/$featureId",
@@ -112,14 +99,27 @@ function RootLayout() {
     },
   });
 
-  const handleCreateFeature = useCallback(() => {
-    const trimmed = newFeatureTitle.trim();
-    if (!trimmed || activeProjectId == null) return;
-    createFeatureMutation.mutate({
-      project_id: activeProjectId,
-      title: trimmed,
-    });
-  }, [newFeatureTitle, activeProjectId, createFeatureMutation]);
+  // Track which feature to navigate to after deletion
+  const deleteNavTargetRef = useRef<number | null>(null);
+  const deleteFeatureMutation = trpc.features.delete.useMutation({
+    onSuccess: () => {
+      invalidateFeatures();
+      if (activeProjectId == null) return;
+      const targetId = deleteNavTargetRef.current;
+      deleteNavTargetRef.current = null;
+      if (targetId != null) {
+        void navigate({
+          to: "/projects/$projectId/features/$featureId",
+          params: {
+            projectId: String(activeProjectId),
+            featureId: String(targetId),
+          },
+        });
+      } else {
+        void navigate({ to: "/" });
+      }
+    },
+  });
 
   // CMD+, -> navigate to settings
   useHotkeys(
@@ -164,13 +164,16 @@ function RootLayout() {
     { enableOnFormTags: true },
   );
 
-  // CMD+N -> create new feature (open dialog)
+  // CMD+N -> create new feature directly
   useHotkeys(
     "meta+n",
     (e) => {
       e.preventDefault();
       if (activeProjectId == null) return;
-      setFeatureDialogOpen(true);
+      createFeatureMutation.mutate({
+        project_id: activeProjectId,
+        title: "Untitled Feature",
+      });
     },
     { enableOnFormTags: true },
   );
@@ -182,6 +185,29 @@ function RootLayout() {
       e.preventDefault();
       if (activeProjectId == null) return;
       createSessionMutation.mutate({ project_id: activeProjectId });
+    },
+    { enableOnFormTags: true },
+  );
+
+  // CMD+SHIFT+X -> delete currently opened feature, navigate to feature above
+  useHotkeys(
+    "meta+shift+x",
+    async (e) => {
+      e.preventDefault();
+      if (activeProjectId == null || activeFeatureId == null) return;
+      const confirmed = window.confirm("Delete this feature? This cannot be undone.");
+      if (!confirmed) return;
+      // Navigate to the feature above, or the first remaining feature, or project root
+      try {
+        const features = await utils.features.listByProject.fetch({ project_id: activeProjectId });
+        const idx = features.findIndex((f: { id: number }) => f.id === activeFeatureId);
+        const remaining = features.filter((f: { id: number }) => f.id !== activeFeatureId);
+        const target = idx > 0 ? features[idx - 1] : remaining[0] ?? null;
+        deleteNavTargetRef.current = target?.id ?? null;
+      } catch {
+        deleteNavTargetRef.current = null;
+      }
+      deleteFeatureMutation.mutate({ id: activeFeatureId });
     },
     { enableOnFormTags: true },
   );
@@ -253,35 +279,6 @@ function RootLayout() {
         </ResizablePanel>
       </ResizablePanelGroup>
 
-      {/* New Feature dialog triggered by CMD+N */}
-      <Dialog open={featureDialogOpen} onOpenChange={setFeatureDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>New Feature</DialogTitle>
-            <DialogDescription>
-              Enter a title for the new feature.
-            </DialogDescription>
-          </DialogHeader>
-          <Input
-            placeholder="Feature title"
-            value={newFeatureTitle}
-            onChange={(e) => setNewFeatureTitle(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") handleCreateFeature();
-            }}
-          />
-          <DialogFooter>
-            <Button
-              onClick={handleCreateFeature}
-              disabled={
-                !newFeatureTitle.trim() || createFeatureMutation.isLoading
-              }
-            >
-              Create
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

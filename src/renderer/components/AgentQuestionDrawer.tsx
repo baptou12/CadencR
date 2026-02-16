@@ -141,21 +141,27 @@ export function AgentQuestionDrawer({ questions, onSubmit, open, inline, disable
     highlightTimerRef.current = setTimeout(() => setHighlightedIndex(null), 300);
   }, []);
 
-  // CMD+1 through CMD+9 to select/toggle option by index
+  // CMD+1 through CMD+9 to select/toggle option by index (last = "Other...")
+  const otherShortcutIndex = currentQuestion?.options?.length ?? 0; // 0-based index for "Other"
   useHotkeys(
     "meta+1,meta+2,meta+3,meta+4,meta+5,meta+6,meta+7,meta+8,meta+9",
     (e) => {
       if (!open || !currentQuestion?.options) return;
       e.preventDefault();
       const digit = Number(e.key);
-      // digit 0 means key "0" which we don't handle; keys 1-9
+      // digit matching otherShortcutIndex + 1 toggles "Other..."
+      if (digit === otherShortcutIndex + 1) {
+        handleOtherToggle();
+        flashHighlight(otherShortcutIndex);
+        return;
+      }
       if (digit < 1 || digit > currentQuestion.options.length) return;
       const option = currentQuestion.options[digit - 1];
       handleOptionToggle(option.label);
       flashHighlight(digit - 1);
     },
     { enabled: open && !disableShortcuts, enableOnFormTags: true },
-    [open, disableShortcuts, currentQuestion, handleOptionToggle, flashHighlight],
+    [open, disableShortcuts, currentQuestion, handleOptionToggle, handleOtherToggle, flashHighlight, otherShortcutIndex],
   );
 
   // Enter to validate/submit current question
@@ -234,11 +240,15 @@ export function AgentQuestionDrawer({ questions, onSubmit, open, inline, disable
               "w-full rounded-md border px-3 py-2 text-left transition-colors",
               showOther
                 ? "border-primary bg-primary/5 ring-2 ring-primary/30"
-                : "border-border bg-background hover:bg-muted/50"
+                : "border-border bg-background hover:bg-muted/50",
+              highlightedIndex === currentQuestion.options!.length && "ring-2 ring-blue-400 bg-blue-50/10 transition-none"
             )}
             onClick={handleOtherToggle}
           >
-            <span className="text-sm font-medium text-foreground">Other...</span>
+            <span className="text-sm font-medium text-foreground">
+              <kbd className="mr-1.5 inline-flex size-5 items-center justify-center rounded border border-border bg-muted text-[10px] text-foreground">{currentQuestion.options!.length + 1}</kbd>
+              Other...
+            </span>
           </button>
         </div>
       )}
