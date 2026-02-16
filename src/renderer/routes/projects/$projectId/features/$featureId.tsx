@@ -76,6 +76,13 @@ function SessionFeatureView({
     [featureId, setModelMutation],
   );
 
+  // Auto-focus prompt bar when session view mounts (e.g. after creating a new session)
+  useEffect(() => {
+    requestAnimationFrame(() => {
+      agentRef.current?.focusPromptBar();
+    });
+  }, []);
+
   // OPT+SHIFT+P — cycle through models
   const handleCycleModel = useCallback(() => {
     const idx = CLAUDE_MODELS.findIndex((m) => m.id === currentModelId);

@@ -32,6 +32,7 @@ export function PlanInputView({
         </p>
       </div>
       <Textarea
+        autoFocus
         placeholder="Describe the feature you want to build..."
         value={description}
         onChange={(e) => onDescriptionChange(e.target.value)}

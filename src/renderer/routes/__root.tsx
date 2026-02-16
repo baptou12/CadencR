@@ -172,7 +172,7 @@ function RootLayout() {
       if (activeProjectId == null) return;
       setFeatureDialogOpen(true);
     },
-    { enableOnFormTags: false },
+    { enableOnFormTags: true },
   );
 
   // CMD+SHIFT+N -> create new session
@@ -183,7 +183,7 @@ function RootLayout() {
       if (activeProjectId == null) return;
       createSessionMutation.mutate({ project_id: activeProjectId });
     },
-    { enableOnFormTags: false },
+    { enableOnFormTags: true },
   );
 
   const handleLeftResize = useCallback(
@@ -235,10 +235,16 @@ function RootLayout() {
             tabIndex={0}
             className="h-full overflow-hidden outline-none focus-within:ring-2 focus-within:ring-blue-400/70"
             onFocus={(e) => {
-              // When the wrapper itself gets focus via keyboard (not click), move to the first nav item
+              // When the wrapper itself gets focus via keyboard (not click), move to the first focusable item
               if (e.target === e.currentTarget && !e.currentTarget.matches(":active")) {
                 const firstItem = e.currentTarget.querySelector("[data-nav-item]") as HTMLElement | null;
-                if (firstItem) firstItem.focus();
+                if (firstItem) {
+                  firstItem.focus();
+                } else {
+                  // Fallback for session view: focus the prompt bar textarea
+                  const textarea = e.currentTarget.querySelector("textarea") as HTMLElement | null;
+                  if (textarea) textarea.focus();
+                }
               }
             }}
           >
