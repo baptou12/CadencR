@@ -3,7 +3,6 @@ import { router, publicProcedure } from "./trpc";
 import { getDatabase } from "../db/database";
 import type { FeatureRow, PlanRow, PhaseRow, CountRow, SettingRow } from "../db/types";
 import type { AgentType } from "../agents/types";
-import { DEFAULT_MODEL } from "../agents/models";
 import { getSubprocessIdsForSessionDbIds } from "../agents/ipc-bridge";
 import { stopSubprocess } from "../agents/subprocess-manager";
 
@@ -247,7 +246,7 @@ export const featuresRouter = router({
       return { success: true };
     }),
 
-  /** Get model settings for all agent types from feature settings */
+  /** Get model settings for all agent types from feature settings (empty string = inherit from parent) */
   getModelSettings: publicProcedure
     .input(z.object({ featureId: z.number() }))
     .query(({ input }) => {
@@ -258,7 +257,7 @@ export const featuresRouter = router({
         const row = db
           .prepare("SELECT value FROM feature_settings WHERE feature_id = ? AND key = ?")
           .get(input.featureId, `model_${at}`) as SettingRow | undefined;
-        result[at] = row?.value ?? DEFAULT_MODEL;
+        result[at] = row?.value ?? "";
       }
       return result as Record<AgentType, string>;
     }),

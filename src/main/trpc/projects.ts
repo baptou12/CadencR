@@ -5,7 +5,6 @@ import { router, publicProcedure } from "./trpc";
 import { getDatabase } from "../db/database";
 import type { ProjectRow, SettingRow } from "../db/types";
 import type { AgentType } from "../agents/types";
-import { DEFAULT_MODEL } from "../agents/models";
 
 export const projectsRouter = router({
   selectFolder: publicProcedure.mutation(async () => {
@@ -62,7 +61,7 @@ export const projectsRouter = router({
       return { success: true };
     }),
 
-  /** Get model settings for all agent types from project settings */
+  /** Get model settings for all agent types from project settings (empty string = inherit from parent) */
   getModelSettings: publicProcedure
     .input(z.object({ projectId: z.number() }))
     .query(({ input }) => {
@@ -73,7 +72,7 @@ export const projectsRouter = router({
         const row = db
           .prepare("SELECT value FROM project_settings WHERE project_id = ? AND key = ?")
           .get(input.projectId, `model_${at}`) as SettingRow | undefined;
-        result[at] = row?.value ?? DEFAULT_MODEL;
+        result[at] = row?.value ?? "";
       }
       return result as Record<AgentType, string>;
     }),

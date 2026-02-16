@@ -158,8 +158,6 @@ export interface AgentSessionProps {
   canDelete?: boolean;
   /** Called when user clicks delete */
   onDelete?: () => void;
-  /** The model ID used for this agent session */
-  model?: string | null;
   /** Todo list from TodoWrite tool calls */
   todos?: TodoItem[] | null;
   /** Current permission mode (session agents only) */
@@ -219,7 +217,6 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
   onViewDiff,
   canDelete,
   onDelete,
-  model,
   todos,
   permissionMode,
   onPermissionModeToggle,
@@ -320,7 +317,7 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
   // ---- Todo list bar ----
   const todoBar = todos && todos.length > 0 ? <AgentTodoList todos={todos} /> : null;
 
-  // ---- Inline model switcher (full-screen session mode) ----
+  // ---- Inline model switcher ----
   const currentModelLabel = CLAUDE_MODELS.find((m) => m.id === currentModelId)?.label
     ?? CLAUDE_MODELS.find((m) => m.id === "claude-opus-4-6")!.label;
 
@@ -470,11 +467,6 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
           {badge.icon}
           {badge.label}
         </Badge>
-        {model && (
-          <span className="text-xs text-muted-foreground">
-            {model.includes("opus") ? "Opus" : model.includes("sonnet") ? "Sonnet" : model.includes("haiku") ? "Haiku" : model}
-          </span>
-        )}
         {resumable && onResume && (
           <Button
             variant="ghost"
@@ -527,6 +519,9 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
 
           {/* Todo list */}
           {todoBar}
+
+          {/* Model switcher */}
+          {modelBar}
 
           {/* Prompt bar */}
           {promptBar && (

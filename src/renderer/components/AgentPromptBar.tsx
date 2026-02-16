@@ -91,7 +91,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (e.key === "p" && e.altKey && e.shiftKey && onCycleModel) {
+      if (e.code === "KeyP" && e.altKey && e.shiftKey && onCycleModel) {
         e.preventDefault();
         onCycleModel();
       } else if (e.key === "Tab" && e.shiftKey && onPermissionModeToggle) {

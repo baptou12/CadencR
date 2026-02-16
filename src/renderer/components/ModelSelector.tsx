@@ -72,12 +72,8 @@ export function ModelSelector({ level, projectId, featureId }: ModelSelectorProp
         : featureSettings.data;
 
   function getEffectiveModel(agentType: AgentType): string {
-    // For non-global levels, resolve through hierarchy for placeholder display
+    // Resolve through parent hierarchy for placeholder display
     if (level === "feature") {
-      const featureVal = featureSettings.data?.[agentType];
-      if (featureVal && featureVal !== "claude-opus-4-6") {
-        // Check if it was explicitly set (not just the default)
-      }
       const projectVal = parentProjectSettings.data?.[agentType];
       if (projectVal) return projectVal;
       const globalVal = parentGlobalSettings.data?.[agentType];

@@ -14,6 +14,7 @@ import { DiffViewerModal, type ExecuteAgentState } from "@/components/diff/DiffV
 import { WorktreeSetupSection } from "@/components/WorktreeSetupSection";
 import type { FeatureSession } from "@/hooks/useFeatureAgentState";
 import { useContextUsage } from "@/hooks/useContextUsage";
+import { useResolvedModel } from "@/hooks/useResolvedModel";
 
 export function FeatureWorkflowView({
   featureId,
@@ -29,6 +30,9 @@ export function FeatureWorkflowView({
   const wf = useWorkflowAgents({ featureId, projectId, featureQuery });
   const contextUsageMap = useContextUsage(featureId, wf.sessionEntries);
   const utils = trpc.useUtils();
+
+  // --- Model settings for inline model switcher ---
+  const { resolveModel, handleModelChange } = useResolvedModel(featureId, projectId);
 
   const deleteSession = trpc.agents.deleteSession.useMutation({
     onSuccess: () => {
@@ -337,8 +341,9 @@ export function FeatureWorkflowView({
                   isStartingFix={wf.isStartingFix}
                   hasFileChanges={entry.hasFileChanges}
                   onViewDiff={handleViewDiff}
-                  model={entry.model}
                   todos={entry.todos}
+                  currentModelId={resolveModel(entry.agentType)}
+                  onModelChange={(modelId) => handleModelChange(entry.agentType, modelId)}
                   canDelete={entry.status !== "running" && entry.status !== "completed" && !!entry.sessionDbId}
                   onDelete={() => handleDeleteAgent(entry)}
                   contextUsage={contextUsageMap.get(entry.sessionDbId)}
