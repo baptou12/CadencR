@@ -7,7 +7,8 @@ import { hasRunningSubprocesses, gracefulShutdown } from "./main/agents/subproce
 import { restoreSessionMap } from "./main/agents/ipc-bridge";
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
-if (require("electron-squirrel-startup")) {
+import electronSquirrelStartup from "electron-squirrel-startup";
+if (electronSquirrelStartup) {
   app.quit();
 }
 
