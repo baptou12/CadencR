@@ -16,6 +16,7 @@ import {
   submitPlanApproval,
   sendMessageToSubprocess,
   setSubprocessPermissionMode,
+  getSupportedCommands,
 } from "../agents/subprocess-manager";
 import { bridgeSubprocessToRenderer, getSubprocessIdForSession } from "../agents/ipc-bridge";
 import type { AgentType } from "../agents/types";
@@ -832,6 +833,18 @@ const agentsRouter = router({
       .all() as Array<{ feature_id: number }>;
     return rows.map((r) => r.feature_id);
   }),
+
+  /** Get supported slash commands (from active subprocess or temporary one) */
+  getSupportedCommands: publicProcedure
+    .input(z.object({
+      subprocessId: z.string().nullish(),
+      featureId: z.number(),
+      projectId: z.number(),
+    }))
+    .query(async ({ input }) => {
+      const cwd = resolveAgentCwd(input.featureId, input.projectId);
+      return getSupportedCommands(input.subprocessId ?? null, cwd);
+    }),
 });
 
 const gitRouter = router({

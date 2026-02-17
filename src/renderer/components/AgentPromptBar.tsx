@@ -6,7 +6,9 @@ import { Button } from "@/components/ui/button";
 import { AgentQuestionDrawer } from "./AgentQuestionDrawer";
 import { PlanApprovalBar } from "./PlanApprovalBar";
 import { FileMentionPopover } from "./FileMentionPopover";
+import { SlashCommandPopover } from "./SlashCommandPopover";
 import { useFileMention } from "@/hooks/useFileMention";
+import { useSlashCommand } from "@/hooks/useSlashCommand";
 import { trpc } from "@/trpc";
 import type { AgentQuestion } from "./AgentQuestionDrawer";
 import type { AgentStatus } from "@/components/AgentSession";
@@ -38,8 +40,12 @@ export interface AgentPromptBarProps {
   onPlanRequestChanges?: (feedback: string) => void;
   /** Called when OPT+SHIFT+P is pressed to cycle model */
   onCycleModel?: () => void;
-  /** Feature ID for file mention support */
+  /** Feature ID for file mention and slash command support */
   featureId?: number;
+  /** Project ID for slash command support */
+  projectId?: number;
+  /** Active subprocess ID for slash command support */
+  subprocessId?: string;
 }
 
 /** Handle exposed by AgentPromptBar via forwardRef */
@@ -65,6 +71,8 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
   onPlanRequestChanges,
   onCycleModel,
   featureId,
+  projectId,
+  subprocessId,
 }, ref) {
   const [text, setText] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -75,6 +83,14 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
     { enabled: !!featureId },
   );
   const mention = useFileMention(filesQuery.data ?? undefined);
+
+  // Slash command support
+  const slashEnabled = !!featureId && !!projectId;
+  const commandsQuery = trpc.agents.getSupportedCommands.useQuery(
+    { subprocessId: subprocessId ?? null, featureId: featureId!, projectId: projectId! },
+    { enabled: slashEnabled },
+  );
+  const slash = useSlashCommand(commandsQuery.data ?? undefined);
 
   useImperativeHandle(ref, () => ({
     focusInput: () => {
@@ -104,7 +120,22 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      // File mention handles keys first when popover is open
+      // Slash command handles keys first when its popover is open
+      const slashResult = slash.handleKeyDown(e, text);
+      if (slashResult === true) return;
+      if (typeof slashResult === "object") {
+        setText(slashResult.newText);
+        requestAnimationFrame(() => {
+          const el = textareaRef.current;
+          if (el) {
+            el.selectionStart = slashResult.newCursorPos;
+            el.selectionEnd = slashResult.newCursorPos;
+          }
+        });
+        return;
+      }
+
+      // File mention handles keys when its popover is open
       const mentionResult = mention.handleKeyDown(e, text);
       if (mentionResult === true) return; // event consumed, no text change
       if (typeof mentionResult === "object") {
@@ -139,7 +170,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
         e.preventDefault();
       }
     },
-    [canSend, handleSend, isRunning, onStop, onCollapse, onPermissionModeToggle, onCycleModel, mention, text],
+    [canSend, handleSend, isRunning, onStop, onCollapse, onPermissionModeToggle, onCycleModel, mention, slash, text],
   );
 
   const handleChange = useCallback(
@@ -147,8 +178,27 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
       const newValue = e.target.value;
       setText(newValue);
       mention.handleChange(newValue, e.target.selectionStart);
+      slash.handleChange(newValue, e.target.selectionStart);
     },
-    [mention],
+    [mention, slash],
+  );
+
+  const handleSlashSelect = useCallback(
+    (commandName: string) => {
+      const result = slash.confirm(text, commandName);
+      if (result) {
+        setText(result.newText);
+        requestAnimationFrame(() => {
+          const el = textareaRef.current;
+          if (el) {
+            el.selectionStart = result.newCursorPos;
+            el.selectionEnd = result.newCursorPos;
+            el.focus();
+          }
+        });
+      }
+    },
+    [slash, text],
   );
 
   const handleMentionSelect = useCallback(
@@ -221,24 +271,32 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
         </button>
       )}
       <FileMentionPopover
-        open={mention.isOpen}
+        open={mention.isOpen && !slash.isOpen}
         items={mention.filteredItems}
         selectedIndex={mention.selectedIndex}
         onSelect={handleMentionSelect}
         onClose={mention.close}
       >
-        <Textarea
-          ref={textareaRef}
-          value={text}
-          onChange={handleChange}
-          onKeyDown={handleKeyDown}
-          onFocus={() => onFocusChange?.(true)}
-          onBlur={() => onFocusChange?.(false)}
-          placeholder={isPaused ? "Send a message to resume…" : "Send a message… (@ to mention files)"}
-          disabled={disabled}
-          rows={1}
-          className="max-h-32 min-h-[42px] resize-none overflow-hidden border-border/50 bg-background py-2.5 text-sm leading-[22px] shadow-none focus-visible:ring-1 focus-visible:ring-ring/40"
-        />
+        <SlashCommandPopover
+          open={slash.isOpen && !mention.isOpen}
+          items={slash.filteredItems}
+          selectedIndex={slash.selectedIndex}
+          onSelect={handleSlashSelect}
+          isLoading={commandsQuery.isLoading || commandsQuery.isFetching}
+        >
+          <Textarea
+            ref={textareaRef}
+            value={text}
+            onChange={handleChange}
+            onKeyDown={handleKeyDown}
+            onFocus={() => onFocusChange?.(true)}
+            onBlur={() => onFocusChange?.(false)}
+            placeholder={isPaused ? "Send a message to resume…" : "Send a message… (@ to mention files, / for commands)"}
+            disabled={disabled}
+            rows={1}
+            className="max-h-32 min-h-[42px] resize-none overflow-hidden border-border/50 bg-background py-2.5 text-sm leading-[22px] shadow-none focus-visible:ring-1 focus-visible:ring-ring/40"
+          />
+        </SlashCommandPopover>
       </FileMentionPopover>
       {isRunning ? (
         <Button

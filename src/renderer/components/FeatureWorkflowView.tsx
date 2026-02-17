@@ -348,6 +348,8 @@ export function FeatureWorkflowView({
                   onDelete={() => handleDeleteAgent(entry)}
                   contextUsage={contextUsageMap.get(entry.sessionDbId)}
                   featureId={featureId}
+                  projectId={projectId}
+                  subprocessId={entry.subprocessId ?? undefined}
                 />
               );
             })}

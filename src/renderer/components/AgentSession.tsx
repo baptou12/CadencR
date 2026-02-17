@@ -176,8 +176,12 @@ export interface AgentSessionProps {
   currentModelId?: string;
   /** Called when the user changes the model via the inline switcher */
   onModelChange?: (modelId: string) => void;
-  /** Feature ID for file mention support in the prompt bar */
+  /** Feature ID for file mention and slash command support in the prompt bar */
   featureId?: number;
+  /** Project ID for slash command support in the prompt bar */
+  projectId?: number;
+  /** Active subprocess ID for slash command support in the prompt bar */
+  subprocessId?: string;
 }
 
 /** Handle exposed by AgentSession via forwardRef */
@@ -229,6 +233,8 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
   currentModelId,
   onModelChange,
   featureId,
+  projectId,
+  subprocessId,
 }, ref) {
   const promptBarRef = useRef<AgentPromptBarHandle>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -405,6 +411,8 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
       onPlanRequestChanges={onPlanRequestChanges}
       onCycleModel={onModelChange ? handleCycleModel : undefined}
       featureId={featureId}
+      projectId={projectId}
+      subprocessId={subprocessId}
     />
   ) : null;
 

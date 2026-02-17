@@ -226,6 +226,8 @@ function SessionFeatureView({
         currentModelId={currentModelId}
         onModelChange={handleModelChange}
         featureId={featureId}
+        projectId={projectId}
+        subprocessId={session?.subprocessId ?? undefined}
         className="min-h-0"
       />
       <DiffViewerModal

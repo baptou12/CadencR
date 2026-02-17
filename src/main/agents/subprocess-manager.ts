@@ -1003,5 +1003,112 @@ export function submitPlanApproval(
   questionEmitter.emit(`plan-approval:${subprocessId}`, { approved, feedback });
 }
 
+// ---------------------------------------------------------------------------
+// Slash command discovery
+// ---------------------------------------------------------------------------
+
+interface SlashCommandInfo {
+  name: string;
+  description: string;
+  argumentHint?: string;
+}
+
+/** Cache for slash commands keyed by cwd — avoids re-spawning on every keystroke */
+const commandsCache = new Map<string, { commands: SlashCommandInfo[]; timestamp: number }>();
+const COMMANDS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+/** Track in-flight fetches to avoid duplicate temporary subprocesses */
+const commandsFetching = new Map<string, Promise<SlashCommandInfo[]>>();
+
+function mapCommands(commands: Array<{ name: string; description: string; argumentHint?: string }>): SlashCommandInfo[] {
+  return commands.map((cmd) => ({
+    name: cmd.name,
+    description: cmd.description,
+    argumentHint: cmd.argumentHint,
+  }));
+}
+
+/**
+ * Get supported slash commands.
+ * If a subprocess ID is provided and active, uses its Query object.
+ * Otherwise spawns a temporary subprocess to fetch commands, then closes it.
+ */
+export async function getSupportedCommands(
+  subprocessId: string | null,
+  cwd: string,
+): Promise<SlashCommandInfo[]> {
+  // 1. Try existing subprocess first
+  if (subprocessId) {
+    const managed = activeProcesses.get(subprocessId);
+    if (managed?.query && managed.status !== "stopped" && managed.status !== "error") {
+      try {
+        const result = mapCommands(await managed.query.supportedCommands());
+        commandsCache.set(cwd, { commands: result, timestamp: Date.now() });
+        return result;
+      } catch (err) {
+        console.error(`[subprocess-manager] getSupportedCommands error for subprocess ${subprocessId}:`, err);
+      }
+    }
+  }
+
+  // 2. Check cache
+  const cached = commandsCache.get(cwd);
+  if (cached && Date.now() - cached.timestamp < COMMANDS_CACHE_TTL) {
+    return cached.commands;
+  }
+
+  // 3. Deduplicate in-flight fetches for this cwd
+  const inflight = commandsFetching.get(cwd);
+  if (inflight) return inflight;
+
+  // 4. Spawn a temporary subprocess to fetch commands
+  const fetchPromise = fetchCommandsViaTemporaryQuery(cwd);
+  commandsFetching.set(cwd, fetchPromise);
+  try {
+    const result = await fetchPromise;
+    commandsCache.set(cwd, { commands: result, timestamp: Date.now() });
+    return result;
+  } finally {
+    commandsFetching.delete(cwd);
+  }
+}
+
+/**
+ * Spawn a short-lived SDK query solely to call supportedCommands(), then close it.
+ */
+async function fetchCommandsViaTemporaryQuery(cwd: string): Promise<SlashCommandInfo[]> {
+  const sdk = await import("@anthropic-ai/claude-agent-sdk");
+  const { query: sdkQuery } = sdk as {
+    query: (opts: {
+      prompt: string | AsyncIterable<unknown>;
+      options?: Record<string, unknown>;
+    }) => import("@anthropic-ai/claude-agent-sdk").Query;
+  };
+
+  const cliInfo = discoverClaudeCli();
+  if (!cliInfo) return [];
+
+  // Async iterable that never yields — keeps the subprocess alive until close()
+  const neverYield: AsyncIterable<unknown> = {
+    [Symbol.asyncIterator]() {
+      return { next: () => new Promise<IteratorResult<unknown>>(() => {}) };
+    },
+  };
+
+  let queryObj: import("@anthropic-ai/claude-agent-sdk").Query | null = null;
+  try {
+    queryObj = sdkQuery({
+      prompt: neverYield,
+      options: { cwd, permissionMode: "bypassPermissions", pathToClaudeCodeExecutable: cliInfo.path },
+    });
+    return mapCommands(await queryObj.supportedCommands());
+  } catch (err) {
+    console.error("[subprocess-manager] fetchCommandsViaTemporaryQuery error:", err);
+    return [];
+  } finally {
+    try { queryObj?.close(); } catch { /* already closed */ }
+  }
+}
+
 // Export channel constants for use in preload and main
 export { ASK_USER_QUESTION_CHANNEL, ASK_USER_ANSWER_CHANNEL };
