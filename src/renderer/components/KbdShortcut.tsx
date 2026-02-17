@@ -6,7 +6,7 @@
 import { CommandIcon, CornerDownLeftIcon, ArrowUpIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
-const ICON_SIZE = "size-3";
+const ICON_SIZE = "size-2.5";
 
 const KEY_MAP: Record<string, ReactNode> = {
   cmd: <CommandIcon className={ICON_SIZE} />,
@@ -16,7 +16,7 @@ const KEY_MAP: Record<string, ReactNode> = {
 
 export function KbdShortcut({ keys }: { keys: string[] }) {
   return (
-    <kbd className="ml-2 inline-flex items-center gap-0.5 rounded border border-current/20 bg-current/10 px-1.5 py-0.5 text-[10px] font-medium opacity-70">
+    <kbd className="ml-2 inline-flex items-center gap-0.5 rounded border border-current/20 bg-current/10 px-1.5 py-0.5 text-[10px] font-medium opacity-70 [&_svg]:!size-2.5">
       {keys.map((k, i) => {
         const icon = KEY_MAP[k.toLowerCase()];
         return icon ? <span key={i}>{icon}</span> : <span key={i}>{k}</span>;

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   createRootRoute,
   Outlet,
@@ -17,6 +17,7 @@ import {
 import type { PanelSize } from "react-resizable-panels";
 import { trpc } from "@/trpc";
 import { getActiveFocusZone } from "@/lib/focus-zones";
+import { CommandPalette } from "@/components/CommandPalette";
 
 const ZONE_ORDER = ["left-sidebar", "main-content", "right-sidebar"] as const;
 
@@ -45,6 +46,7 @@ function RootLayout() {
   const leftWidth = useDebouncedSetting("sidebar_left_width");
   const navigate = useNavigate();
   const leftSidebarRef = useRef<HTMLDivElement>(null);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
 
   // Auto-focus left sidebar on mount
   useEffect(() => {
@@ -127,6 +129,16 @@ function RootLayout() {
     (e) => {
       e.preventDefault();
       void navigate({ to: "/settings" });
+    },
+    { enableOnFormTags: true },
+  );
+
+  // CMD+K -> open command palette
+  useHotkeys(
+    "meta+k",
+    (e) => {
+      e.preventDefault();
+      setCommandPaletteOpen((prev) => !prev);
     },
     { enableOnFormTags: true },
   );
@@ -278,7 +290,12 @@ function RootLayout() {
           </main>
         </ResizablePanel>
       </ResizablePanelGroup>
-
+      <CommandPalette
+        open={commandPaletteOpen}
+        onOpenChange={setCommandPaletteOpen}
+        activeProjectId={activeProjectId}
+        activeFeatureId={activeFeatureId}
+      />
     </div>
   );
 }
