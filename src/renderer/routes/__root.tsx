@@ -58,7 +58,11 @@ function RootLayout() {
   const routeParams = (routerState.location.pathname.match(
     /\/projects\/(\d+)(?:\/features\/(\d+))?/,
   ) ?? []) as string[];
-  const activeProjectId = routeParams[1] ? Number(routeParams[1]) : null;
+  const activeProjectId = routeParams[1]
+    ? Number(routeParams[1])
+    : routerState.location.search?.projectId
+      ? Number(routerState.location.search.projectId)
+      : null;
 
   // Extract active feature ID from the current route
   const activeFeatureId = routeParams[2] ? Number(routeParams[2]) : null;

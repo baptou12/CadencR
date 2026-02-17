@@ -210,7 +210,7 @@ export function ProjectList({
       });
     } else {
       // Navigate to home when project has no features
-      void navigate({ to: "/" });
+      void navigate({ to: "/", search: { projectId } });
     }
   };
 

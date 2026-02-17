@@ -4,34 +4,41 @@ import { trpc } from "../trpc";
 
 export const Route = createFileRoute("/")({
   component: HomePage,
+  validateSearch: (search: Record<string, unknown>): { projectId?: number } => {
+    const result: { projectId?: number } = {};
+    if (search.projectId) result.projectId = Number(search.projectId);
+    return result;
+  },
 });
 
 function HomePage() {
   const navigate = useNavigate();
+  const { projectId: searchProjectId } = Route.useSearch();
   const projectsQuery = trpc.projects.list.useQuery();
-  const firstProjectId = projectsQuery.data?.[0]?.id ?? null;
+  const fallbackProjectId = projectsQuery.data?.[0]?.id ?? null;
+  const targetProjectId = searchProjectId ?? fallbackProjectId;
 
   const featuresQuery = trpc.features.listByProject.useQuery(
-    { project_id: firstProjectId! },
-    { enabled: firstProjectId != null },
+    { project_id: targetProjectId! },
+    { enabled: targetProjectId != null },
   );
   const firstFeatureId = featuresQuery.data?.[0]?.id ?? null;
 
   useEffect(() => {
-    if (firstProjectId != null && firstFeatureId != null) {
+    if (targetProjectId != null && firstFeatureId != null) {
       void navigate({
         to: "/projects/$projectId/features/$featureId",
         params: {
-          projectId: String(firstProjectId),
+          projectId: String(targetProjectId),
           featureId: String(firstFeatureId),
         },
         replace: true,
       });
     }
-  }, [firstProjectId, firstFeatureId, navigate]);
+  }, [targetProjectId, firstFeatureId, navigate]);
 
   // Show helpful message if project exists but has no features
-  if (projectsQuery.isSuccess && firstProjectId != null && featuresQuery.isSuccess && firstFeatureId == null) {
+  if (projectsQuery.isSuccess && targetProjectId != null && featuresQuery.isSuccess && firstFeatureId == null) {
     return (
       <div className="flex h-full items-center justify-center p-6">
         <div className="text-center">
@@ -43,7 +50,7 @@ function HomePage() {
   }
 
   // Show message if no projects exist
-  if (projectsQuery.isSuccess && firstProjectId == null) {
+  if (projectsQuery.isSuccess && targetProjectId == null) {
     return (
       <div className="flex h-full items-center justify-center p-6">
         <div className="text-center">
