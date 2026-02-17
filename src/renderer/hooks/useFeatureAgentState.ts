@@ -154,6 +154,13 @@ export function eventToBlock(
         action: "append",
         block: { type: "user_message", content: e.content, parentToolUseId: event.parentToolUseId },
       };
+    case "system": {
+      const sysEvent = e as { subtype?: string };
+      if (sysEvent.subtype === "compact_boundary") {
+        return { action: "append", block: { type: "compact_divider" as const, content: "" } };
+      }
+      return null;
+    }
     default:
       return null;
   }

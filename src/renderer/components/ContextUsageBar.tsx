@@ -32,9 +32,6 @@ export function ContextUsageBar({ usage }: { usage: ContextUsageState | null | u
       </div>
       <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
         {formatTokenCount(usage.totalTokens)} / {formatTokenCount(usage.contextWindow)}
-        {usage.wasCompacted && (
-          <span className="ml-1 text-yellow-500" title="Context was compacted">compacted</span>
-        )}
       </span>
     </div>
   );

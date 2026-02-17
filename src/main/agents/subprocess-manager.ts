@@ -290,6 +290,7 @@ function handleSdkMessage(
         subtype,
         session_id: msg.session_id as string | undefined,
         pre_tokens: msg.pre_tokens as number | undefined,
+        compact_metadata: msg.compact_metadata as { trigger: string; pre_tokens: number } | undefined,
       },
       parentToolUseId,
     );

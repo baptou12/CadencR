@@ -1,5 +1,5 @@
 import type { ManagedSubprocess } from "./subprocess-manager";
-import type { AgentType, StreamEvent } from "./types";
+import type { AgentType, StreamEvent, StreamSystemEvent } from "./types";
 import { getDatabase } from "../db/database";
 
 const AGENT_EVENT_CHANNEL = "agent:event";
@@ -132,8 +132,17 @@ export function persistStreamEvent(
         result = insert.run(sessionDbId, "system", event.error.message, "error", null, null, ptuid) as { lastInsertRowid: number | bigint };
         break;
       }
+      case "system": {
+        const sysEvent = event as StreamSystemEvent;
+        if (sysEvent.subtype === "compact_boundary") {
+          result = insert.run(
+            sessionDbId, "system", "compact_boundary", "compact_divider", null, null, ptuid,
+          ) as { lastInsertRowid: number | bigint };
+        }
+        break;
+      }
       default:
-        // Skip non-content events (message_start, message_stop, message_delta, system)
+        // Skip non-content events (message_start, message_stop, message_delta)
         break;
     }
     return result ? Number(result.lastInsertRowid) : null;

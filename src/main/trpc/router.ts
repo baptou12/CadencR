@@ -299,6 +299,9 @@ function buildBlocks(messages: AgentMessageRow[]): AgentBlock[] {
       case "error":
         list.push({ id, type: "text", content: `Error: ${msg.content}`, parentToolUseId: msg.parent_tool_use_id });
         break;
+      case "compact_divider":
+        list.push({ id, type: "compact_divider", content: "", parentToolUseId: msg.parent_tool_use_id });
+        break;
     }
   }
   return blocks;

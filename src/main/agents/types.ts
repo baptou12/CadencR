@@ -80,6 +80,7 @@ export interface StreamSystemEvent {
   subtype: string;
   session_id?: string;
   pre_tokens?: number;
+  compact_metadata?: { trigger: string; pre_tokens: number };
   [key: string]: unknown;
 }
 
