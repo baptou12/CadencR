@@ -244,7 +244,7 @@ function RootLayout() {
         style={{
           height: 28,
           WebkitAppRegion: "drag",
-          backgroundColor: "#1a1b26",
+          backgroundColor: import.meta.env.DEV ? "#CC7A30" : "#1a1b26",
         } as React.CSSProperties}
       />
       <ResizablePanelGroup orientation="horizontal">
