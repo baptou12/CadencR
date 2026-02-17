@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useHotkeys } from "react-hotkeys-hook";
 import { Settings } from "lucide-react";
+import logoSvg from "@/logo.svg";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { ProjectList } from "@/components/ProjectList";
@@ -107,6 +108,7 @@ export function Sidebar() {
   return (
     <aside ref={sidebarRef} className="flex h-full flex-col bg-sidebar">
       <div className="flex items-center justify-between px-4 py-2">
+        <img src={logoSvg} alt="ProductDevR" className="size-8" />
         <span className="text-sm font-semibold">ProductDevR</span>
         <div className="flex items-center gap-1 ml-auto">
           <UsageIndicator />

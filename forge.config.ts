@@ -7,6 +7,7 @@ import fs from "node:fs";
 
 const config: ForgeConfig = {
   packagerConfig: {
+    icon: path.join(__dirname, "assets", "icon"),
     asar: {
       unpack: "**/{better-sqlite3,bindings,file-uri-to-path}/**",
     },
