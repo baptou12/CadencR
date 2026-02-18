@@ -91,13 +91,15 @@ Replace `bypassPermissions` with `acceptEdits` mode + `settingSources` + smart `
 - **Implementation notes**: (1) Added migration v26 for `pending_permission TEXT` column on `agent_sessions`. (2) Added `pending_permission` to `AgentSessionRow` type in `db/types.ts`. (3) Added `onToolPermission`/`offToolPermission` IPC handlers in preload.ts following the same pattern as `onAskUserQuestion`. (4) Added `submitToolPermission` tRPC mutation in router.ts that imports and calls the already-existing `submitToolPermission()` from subprocess-manager. (5) Updated `getFeatureAgentState` query to SELECT and expose `pending_permission` as `pendingPermission` (parsed from JSON, same pattern as `pendingPlanApproval`). (6) The `requestToolPermission()` function in subprocess-manager.ts already persists/clears `pending_permission` from Phase 2's implementation.
 - **Validation results**: `pnpm run lint` passed with 0 warnings and 0 errors.
 
-### Phase 5: Renderer permission prompt UI
+### ✅ Phase 5: Renderer permission prompt UI
 - **Step**: 4
 - **Complexity**: 3
 - **Tasks**:
-  - Create `src/renderer/components/ToolPermissionPrompt.tsx`: inline component showing tool name, description of what it's trying to do, three options with CMD+number shortcuts (CMD+1 allow once, CMD+2 allow future, CMD+3 deny with text input for feedback)
-  - Update `src/renderer/hooks/useFeatureAgentState.ts` to parse `pending_permission` from agent session state (same pattern as `pending_questions`)
-  - Integrate `ToolPermissionPrompt` into agent session display (same location as `AgentQuestionDrawer`)
-  - Wire up `submitToolPermission` tRPC mutation from the permission prompt component
-- **Files**: src/renderer/components/ToolPermissionPrompt.tsx, src/renderer/hooks/useFeatureAgentState.ts, src/renderer/components/AgentSession.tsx
+  - [x] Create `src/renderer/components/ToolPermissionPrompt.tsx`: inline component showing tool name, description of what it's trying to do, three options with CMD+number shortcuts (CMD+1 allow once, CMD+2 allow future, CMD+3 deny with text input for feedback)
+  - [x] Update `src/renderer/hooks/useFeatureAgentState.ts` to parse `pending_permission` from agent session state (same pattern as `pending_questions`)
+  - [x] Integrate `ToolPermissionPrompt` into agent session display (same location as `AgentQuestionDrawer`)
+  - [x] Wire up `submitToolPermission` tRPC mutation from the permission prompt component
+- **Files**: src/renderer/components/ToolPermissionPrompt.tsx, src/renderer/hooks/useFeatureAgentState.ts, src/renderer/components/AgentSession.tsx, src/renderer/components/FeatureWorkflowView.tsx, src/renderer/routes/projects/$projectId/features/$featureId.tsx
 - **Commit message**: feat: add permission prompt UI with CMD+number shortcuts
+- **Implementation notes**: (1) Created `ToolPermissionPrompt.tsx` with `PendingPermission` interface and inline component showing tool name, description, and three button options with CMD+1/2/3 hotkeys via `react-hotkeys-hook`. CMD+3 (deny) toggles a feedback text input; pressing CMD+3 again or Enter submits the denial. Uses the same flash-highlight animation pattern as `AgentQuestionDrawer`. (2) Added `PendingPermission` type and `pendingPermission` field to `FeatureSession` interface in `useFeatureAgentState.ts`. The server already returns `pendingPermission` (parsed JSON from `pending_permission` column) via `getFeatureAgentState` query (done in Phase 4). (3) Added `pendingPermission` and `onPermissionDecision` props to `AgentSessionProps`. The `ToolPermissionPrompt` renders in both full-screen and collapsible modes, positioned between the model switcher and prompt bar (same layer as other inline UI elements). (4) Wired up `submitToolPermission` tRPC mutation in both `FeatureWorkflowView.tsx` (workflow features) and `$featureId.tsx` (session features), passing `subprocessId`, `decision`, and optional `feedback` to the backend.
+- **Validation results**: `pnpm run lint` passed with 0 warnings and 0 errors.
