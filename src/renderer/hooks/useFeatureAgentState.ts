@@ -14,6 +14,7 @@ import type { AgentBlockData } from "@/components/AgentBlock";
 import type { AgentEvent, AgentType } from "../../main/agents/types";
 import type { AgentStatus } from "@/components/AgentSession";
 import type { AgentQuestion } from "@/components/AgentQuestionDrawer";
+import type { PendingPermission } from "@/components/ToolPermissionPrompt";
 
 // ---------------------------------------------------------------------------
 // Block helpers
@@ -225,6 +226,7 @@ export interface FeatureSession {
   todos: TodoItem[] | null;
   permissionMode: string;
   pendingPlanApproval: { allowedPrompts?: Array<{ tool: string; prompt: string }> } | null;
+  pendingPermission: PendingPermission | null;
   inputTokens: number;
   outputTokens: number;
   contextWindow: number;
@@ -527,6 +529,7 @@ export function useFeatureAgentState(featureId: number) {
       todos,
       permissionMode: s.permissionMode ?? "bypassPermissions",
       pendingPlanApproval: s.pendingPlanApproval ?? null,
+      pendingPermission: s.pendingPermission ?? null,
       inputTokens: s.inputTokens ?? 0,
       outputTokens: s.outputTokens ?? 0,
       contextWindow: s.contextWindow ?? 200000,

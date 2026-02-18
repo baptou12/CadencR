@@ -42,6 +42,8 @@ import type { AgentType } from "../../main/agents/types";
 import type { AgentQuestion } from "./AgentQuestionDrawer";
 import type { TodoItem } from "@/hooks/useFeatureAgentState";
 import type { ContextUsageState } from "@/hooks/useContextUsage";
+import type { PendingPermission } from "./ToolPermissionPrompt";
+import { ToolPermissionPrompt } from "./ToolPermissionPrompt";
 import { AGENT_ICONS } from "./agent-icons";
 import { CLAUDE_MODELS } from "../../shared/models";
 
@@ -182,6 +184,10 @@ export interface AgentSessionProps {
   projectId?: number;
   /** Active subprocess ID for slash command support in the prompt bar */
   subprocessId?: string;
+  /** Pending tool permission request from canUseTool callback */
+  pendingPermission?: PendingPermission | null;
+  /** Called when user makes a permission decision */
+  onPermissionDecision?: (decision: "allow_once" | "allow_future" | "deny", feedback?: string) => void;
 }
 
 /** Handle exposed by AgentSession via forwardRef */
@@ -235,6 +241,8 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
   featureId,
   projectId,
   subprocessId,
+  pendingPermission,
+  onPermissionDecision,
 }, ref) {
   const promptBarRef = useRef<AgentPromptBarHandle>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -375,6 +383,15 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
     </div>
   ) : null;
 
+  // ---- Permission prompt bar ----
+  const permissionBar = pendingPermission && onPermissionDecision ? (
+    <ToolPermissionPrompt
+      permission={pendingPermission}
+      onDecision={onPermissionDecision}
+      disableShortcuts={disableShortcuts}
+    />
+  ) : null;
+
   // ---- Stream content ----
   const streamContent = (
     <>
@@ -438,6 +455,9 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
 
         {/* Model switcher */}
         {modelBar}
+
+        {/* Permission prompt */}
+        {permissionBar}
 
         {/* Prompt bar pinned at bottom */}
         {promptBar && (
@@ -543,6 +563,9 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
 
           {/* Model switcher */}
           {modelBar}
+
+          {/* Permission prompt */}
+          {permissionBar}
 
           {/* Prompt bar */}
           {promptBar && (

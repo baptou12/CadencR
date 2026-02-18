@@ -34,6 +34,20 @@ export function FeatureWorkflowView({
   // --- Model settings for inline model switcher ---
   const { resolveModel, handleModelChange } = useResolvedModel(featureId, projectId);
 
+  const submitToolPermissionMutation = trpc.agents.submitToolPermission.useMutation();
+
+  const handlePermissionDecision = useCallback(
+    (entry: FeatureSession, decision: "allow_once" | "allow_future" | "deny", feedback?: string) => {
+      if (!entry.subprocessId) return;
+      submitToolPermissionMutation.mutate({
+        subprocessId: entry.subprocessId,
+        decision,
+        feedback,
+      });
+    },
+    [submitToolPermissionMutation],
+  );
+
   const deleteSession = trpc.agents.deleteSession.useMutation({
     onSuccess: () => {
       utils.agents.getFeatureAgentState.invalidate({ featureId });
@@ -350,6 +364,8 @@ export function FeatureWorkflowView({
                   featureId={featureId}
                   projectId={projectId}
                   subprocessId={entry.subprocessId ?? undefined}
+                  pendingPermission={entry.pendingPermission}
+                  onPermissionDecision={(decision, feedback) => handlePermissionDecision(entry, decision, feedback)}
                 />
               );
             })}

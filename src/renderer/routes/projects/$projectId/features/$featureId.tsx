@@ -102,6 +102,7 @@ function SessionFeatureView({
   const setPermissionModeMutation = trpc.agents.setPermissionMode.useMutation();
   const submitAnswersMutation = trpc.agents.submitAnswers.useMutation();
   const submitPlanApprovalMutation = trpc.agents.submitPlanApproval.useMutation();
+  const submitToolPermissionMutation = trpc.agents.submitToolPermission.useMutation();
 
   const handlePermissionModeToggle = useCallback(() => {
     const newMode = permissionMode === "bypassPermissions" ? "plan" : "bypassPermissions";
@@ -110,6 +111,18 @@ function SessionFeatureView({
       setPermissionModeMutation.mutate({ sessionId: session.sessionDbId, mode: newMode });
     }
   }, [permissionMode, session?.sessionDbId, setPermissionModeMutation]);
+
+  const handlePermissionDecision = useCallback(
+    (decision: "allow_once" | "allow_future" | "deny", feedback?: string) => {
+      if (!session?.subprocessId) return;
+      submitToolPermissionMutation.mutate({
+        subprocessId: session.subprocessId,
+        decision,
+        feedback,
+      });
+    },
+    [session?.subprocessId, submitToolPermissionMutation],
+  );
 
   const handlePlanApprove = useCallback(() => {
     if (!session?.subprocessId) return;
@@ -228,6 +241,8 @@ function SessionFeatureView({
         featureId={featureId}
         projectId={projectId}
         subprocessId={session?.subprocessId ?? undefined}
+        pendingPermission={session?.pendingPermission}
+        onPermissionDecision={handlePermissionDecision}
         className="min-h-0"
       />
       <DiffViewerModal
