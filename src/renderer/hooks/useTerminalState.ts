@@ -35,20 +35,24 @@ export function useTerminalState(featureId: number) {
     setState({ isOpen: false, isMinimized: false, panes: [] });
   }
 
-  /** Toggle the terminal panel open/closed. Opens with one pane if none exist. */
+  /**
+   * Toggle the terminal panel:
+   * - No panes → create first pane and show
+   * - Panel visible → hide (PTYs stay alive in background)
+   * - Panel hidden → show existing panes
+   */
   const togglePanel = useCallback(() => {
     setState((prev) => {
-      if (prev.isOpen && !prev.isMinimized) {
-        // Minimize (hide but keep PTYs alive)
-        return { ...prev, isMinimized: true };
+      if (prev.panes.length === 0) {
+        // No terminal yet — create first pane and show
+        return { isOpen: true, isMinimized: false, panes: [{ id: nextPaneId() }] };
       }
-      if (prev.isOpen && prev.isMinimized) {
-        // Restore from minimized
-        return { ...prev, isMinimized: false };
+      if (prev.isOpen) {
+        // Terminal is visible — hide it (keep PTYs alive)
+        return { ...prev, isOpen: false, isMinimized: false };
       }
-      // Open — create first pane if none exist
-      const panes = prev.panes.length > 0 ? prev.panes : [{ id: nextPaneId() }];
-      return { isOpen: true, isMinimized: false, panes };
+      // Terminal is hidden — show it
+      return { ...prev, isOpen: true, isMinimized: false };
     });
   }, []);
 

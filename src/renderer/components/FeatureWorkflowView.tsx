@@ -14,17 +14,11 @@ import { getActiveFocusZone } from "@/lib/focus-zones";
 import { DiffViewerModal, type ExecuteAgentState } from "@/components/diff/DiffViewerModal";
 import { WorktreeSetupSection } from "@/components/WorktreeSetupSection";
 import { TerminalPanel } from "@/components/terminal/TerminalPanel";
-import {
-  ResizablePanelGroup,
-  ResizablePanel,
-  ResizableHandle,
-} from "@/components/ui/resizable";
 import type { FeatureSession } from "@/hooks/useFeatureAgentState";
 import { useContextUsage } from "@/hooks/useContextUsage";
 import { useResolvedModel } from "@/hooks/useResolvedModel";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import { useTerminalState } from "@/hooks/useTerminalState";
-import type { PanelSize } from "react-resizable-panels";
 
 export function FeatureWorkflowView({
   featureId,
@@ -287,20 +281,38 @@ export function FeatureWorkflowView({
 
   // Terminal panel state
   const terminalState = useTerminalState(featureId);
-  const terminalHeight = useDebouncedSetting("terminal_panel_height");
+  const terminalHeightSetting = useDebouncedSetting("terminal_panel_height_px");
+  const [terminalHeightPx, setTerminalHeightPx] = useState(300);
 
-  const handleTerminalResize = useCallback(
-    (panelSize: PanelSize) => {
-      terminalHeight.setValue(String(Math.round(panelSize.inPixels)));
-    },
-    [terminalHeight],
-  );
+  // Sync height from DB when setting loads
+  useEffect(() => {
+    const saved = Number(terminalHeightSetting.value);
+    if (saved > 0) setTerminalHeightPx(saved);
+  }, [terminalHeightSetting.value]);
 
-  const defaultTerminalHeight = terminalHeight.value ? `${terminalHeight.value}px` : "300px";
+  const handleTerminalToolbarMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startHeight = terminalHeightPx;
+    const onMouseMove = (ev: MouseEvent) => {
+      const delta = startY - ev.clientY;
+      const newHeight = Math.round(Math.max(80, Math.min(window.innerHeight * 0.8, startHeight + delta)));
+      setTerminalHeightPx(newHeight);
+      terminalHeightSetting.setValue(String(newHeight));
+    };
+    const onMouseUp = () => {
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+      document.body.style.userSelect = "";
+    };
+    document.body.style.userSelect = "none";
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  }, [terminalHeightPx, terminalHeightSetting]);
 
   // Ctrl+` — toggle terminal panel
   useHotkeys(
-    "ctrl+`",
+    "ctrl+backquote",
     (e) => {
       e.preventDefault();
       terminalState.togglePanel();
@@ -310,7 +322,7 @@ export function FeatureWorkflowView({
 
   // Ctrl+Shift+` — add a new split pane (only when panel is open)
   useHotkeys(
-    "ctrl+shift+`",
+    "ctrl+shift+backquote",
     (e) => {
       if (!terminalState.isOpen || terminalState.isMinimized) return;
       e.preventDefault();
@@ -322,10 +334,9 @@ export function FeatureWorkflowView({
   return (
     <div className="relative flex h-full flex-col">
       <FeatureTopBar featureId={featureId} projectId={projectId} />
-      <ResizablePanelGroup orientation="vertical" className="min-h-0 flex-1">
-        <ResizablePanel defaultSize="1fr" minSize="120px">
-          <div className="flex flex-1 min-h-0 overflow-hidden">
-          <div className="min-h-0 flex-1 flex flex-col overflow-hidden">
+      <div className="relative min-h-0 flex-1 overflow-hidden">
+        <div className="flex h-full min-h-0 overflow-hidden">
+        <div className="min-h-0 flex-1 flex flex-col overflow-hidden">
             {view === "plan-input" && (
               <div className="shrink-0 overflow-auto p-6">
                 <PlanInputView
@@ -538,29 +549,27 @@ export function FeatureWorkflowView({
           </div>
           <PlanSidebar featureId={featureId} />
           </div>
-        </ResizablePanel>
-        {terminalState.isOpen && (
-          <>
-            <ResizableHandle className="bg-[#292e42] hover:bg-[#3b4261] transition-colors" />
-            <ResizablePanel
-              defaultSize={defaultTerminalHeight}
-              minSize="80px"
-              maxSize="80%"
-              onResize={handleTerminalResize}
-            >
-              <TerminalPanel
-                featureId={featureId}
-                projectId={projectId}
-                state={terminalState}
-                togglePanel={terminalState.togglePanel}
-                addPane={terminalState.addPane}
-                removePane={terminalState.removePane}
-                minimize={terminalState.minimize}
-              />
-            </ResizablePanel>
-          </>
+        {terminalState.panes.length > 0 && (
+          <div
+            className="absolute bottom-0 left-0 right-0 border-t border-[#292e42] transition-transform duration-150 ease-in-out"
+            style={{
+              height: terminalState.isMinimized ? 32 : terminalHeightPx,
+              transform: terminalState.isOpen ? "translateY(0)" : "translateY(100%)",
+            }}
+          >
+            <TerminalPanel
+              featureId={featureId}
+              projectId={projectId}
+              state={terminalState}
+              togglePanel={terminalState.togglePanel}
+              addPane={terminalState.addPane}
+              removePane={terminalState.removePane}
+              minimize={terminalState.minimize}
+              onToolbarMouseDown={handleTerminalToolbarMouseDown}
+            />
+          </div>
         )}
-      </ResizablePanelGroup>
+      </div>
 
       <DiffViewerModal
         featureId={featureId}
