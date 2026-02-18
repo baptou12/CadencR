@@ -46,18 +46,28 @@ Make worktree creation block before plan/brainstorm agents start, with live prog
 - **Validation results**:
   - `pnpm run lint`: 0 warnings, 0 errors -- PASSED
 
-### Phase 2: Wire up renderer for sequential worktree → auto-start plan flow
+### ✅ Phase 2: Wire up renderer for sequential worktree → auto-start plan flow
 - **Step**: 2
 - **Complexity**: 2
 - **Tasks**:
-  - Remove fire-and-forget auto-naming and worktree setup from `startPlan` mutation (lines 460-467) and `startBrainstorm` mutation (lines 491-498) in `src/main/trpc/router.ts` — these are now handled by `ensureWorktree`
-  - Update `handleStartPlanning` in `src/renderer/hooks/useWorkflowAgents.ts` to:
+  - [x] Remove fire-and-forget auto-naming and worktree setup from `startPlan` mutation (lines 460-467) and `startBrainstorm` mutation (lines 491-498) in `src/main/trpc/router.ts` — these are now handled by `ensureWorktree`
+  - [x] Update `handleStartPlanning` in `src/renderer/hooks/useWorkflowAgents.ts` to:
     1. `await ensureWorktreeMutation.mutateAsync({ featureId, projectId, description })` — blocks with live progress shown by existing `WorktreeSetupSection`
     2. `await startPlanMutation.mutateAsync({ featureId, projectId, description })` — auto-starts plan agent using the now-available worktree path
-  - Update `handleStartBrainstorming` with the same sequential pattern
-  - Expose `isPreparingWorktree` loading state from the hook (from `ensureWorktreeMutation.isPending`) so the UI can show the "Start Planning" button in a loading state during worktree creation
+  - [x] Update `handleStartBrainstorming` with the same sequential pattern
+  - [x] Expose `isPreparingWorktree` loading state from the hook (from `ensureWorktreeMutation.isPending`) so the UI can show the "Start Planning" button in a loading state during worktree creation
 - **Files**: src/main/trpc/router.ts, src/renderer/hooks/useWorkflowAgents.ts
 - **Commit message**: fix: sequential worktree-then-agent flow with auto-start
+- **Implementation notes**:
+  - Removed the `if (hasDefaultTitle) { autoNameFeature(...) } else { setupWorktreeForFeature(...) }` blocks from both `startPlan` and `startBrainstorm` mutations in `router.ts`. These mutations now only resolve the CWD and start the agent -- worktree creation is handled by `ensureWorktree` called from the renderer before the agent start.
+  - Added `ensureWorktreeMutation = trpc.agents.ensureWorktree.useMutation()` to the hook.
+  - Both `handleStartPlanning` and `handleStartBrainstorming` now sequentially: (1) await `ensureWorktreeMutation.mutateAsync(...)` to block until worktree is created, then (2) await the respective agent start mutation.
+  - Exposed `isPreparingWorktree: ensureWorktreeMutation.isLoading` in the return object.
+  - Also made `isStartingPlan` and `isStartingBrainstorm` include the worktree loading state (OR'd with `ensureWorktreeMutation.isLoading`) so existing button consumers show loading during the full sequence without needing to check a separate flag.
+  - Note: Used `.isLoading` (React Query v4) rather than `.isPending` (v5) per the project constraint that tRPC v10 + React Query v4 must be used.
+- **Validation results**:
+  - `pnpm run lint`: 0 warnings, 0 errors -- PASSED
+  - Manual UI validation conditions (worktree exists before agent, live progress, plan auto-starts, agent CWD is worktree) require runtime testing with a running Electron app.
 
 ### Phase 3: Add CWD validation guard
 - **Step**: 3

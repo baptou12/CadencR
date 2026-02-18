@@ -457,15 +457,6 @@ const agentsRouter = router({
         cwd,
       });
 
-      if (hasDefaultTitle(input.featureId)) {
-        autoNameFeature(input.featureId, input.description, cwd, input.projectId);
-      } else {
-        // Feature already has a name, create worktree directly
-        setupWorktreeForFeature(input.projectId, input.featureId).catch((err) => {
-          console.error("[startPlan] Worktree setup failed:", err);
-        });
-      }
-
       return result;
     }),
 
@@ -487,15 +478,6 @@ const agentsRouter = router({
         description: input.description,
         cwd,
       });
-
-      if (hasDefaultTitle(input.featureId)) {
-        autoNameFeature(input.featureId, input.description, cwd, input.projectId);
-      } else {
-        // Feature already has a name, create worktree directly
-        setupWorktreeForFeature(input.projectId, input.featureId).catch((err) => {
-          console.error("[startBrainstorm] Worktree setup failed:", err);
-        });
-      }
 
       return result;
     }),

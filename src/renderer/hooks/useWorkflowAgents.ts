@@ -42,6 +42,7 @@ export function useWorkflowAgents({
   const { sessions, refetch } = useFeatureAgentState(featureId);
 
   // Mutations
+  const ensureWorktreeMutation = trpc.agents.ensureWorktree.useMutation();
   const startPlanMutation = trpc.agents.startPlan.useMutation();
   const startBrainstormMutation = trpc.agents.startBrainstorm.useMutation();
   const startExecuteMutation = trpc.agents.startExecute.useMutation();
@@ -152,6 +153,13 @@ export function useWorkflowAgents({
   const handleStartPlanning = async () => {
     if (!description.trim()) return;
     try {
+      // Step 1: Ensure worktree exists (blocks with live progress via WorktreeSetupSection)
+      await ensureWorktreeMutation.mutateAsync({
+        featureId,
+        projectId,
+        description: description.trim(),
+      });
+      // Step 2: Start plan agent — worktree path is now available via resolveAgentCwd
       await startPlanMutation.mutateAsync({
         featureId,
         projectId,
@@ -166,6 +174,13 @@ export function useWorkflowAgents({
   const handleStartBrainstorming = async () => {
     if (!description.trim()) return;
     try {
+      // Step 1: Ensure worktree exists (blocks with live progress via WorktreeSetupSection)
+      await ensureWorktreeMutation.mutateAsync({
+        featureId,
+        projectId,
+        description: description.trim(),
+      });
+      // Step 2: Start brainstorm agent — worktree path is now available via resolveAgentCwd
       await startBrainstormMutation.mutateAsync({
         featureId,
         projectId,
@@ -347,8 +362,9 @@ export function useWorkflowAgents({
     resumableByType: new Map<string, { claudeSessionId: string; sessionDbId: number }>(),
     reviewComplete,
     reviewVerdict,
-    isStartingPlan: startPlanMutation.isLoading,
-    isStartingBrainstorm: startBrainstormMutation.isLoading,
+    isPreparingWorktree: ensureWorktreeMutation.isLoading,
+    isStartingPlan: startPlanMutation.isLoading || ensureWorktreeMutation.isLoading,
+    isStartingBrainstorm: startBrainstormMutation.isLoading || ensureWorktreeMutation.isLoading,
     isStartingExecute: startExecuteMutation.isLoading,
     isStartingRisk: startRiskMutation.isLoading,
     isStartingReview: startReviewMutation.isLoading,
