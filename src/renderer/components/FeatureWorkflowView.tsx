@@ -62,6 +62,9 @@ export function FeatureWorkflowView({
     }
   }, [deleteSession]);
 
+  // --- Maximized agent state ---
+  const [maximizedAgent, setMaximizedAgent] = useState<string | null>(null);
+
   // --- Inline diff viewer modal state ---
   const [inlineDiffOpen, setInlineDiffOpen] = useState(false);
   const handleViewDiff = useCallback(() => setInlineDiffOpen(true), []);
@@ -281,7 +284,7 @@ export function FeatureWorkflowView({
           </div>
         )}
 
-        {view !== "plan-input" && (
+        {view !== "plan-input" && !maximizedAgent && (
           <div className="shrink-0 px-6 pt-6">
             <WorktreeSetupSection featureId={featureId} projectId={projectId} />
           </div>
@@ -298,6 +301,9 @@ export function FeatureWorkflowView({
                 : AGENT_LABELS[entry.agentType] ?? entry.agentType;
               const sessionKey = `${entry.agentType}-${entry.sessionDbId}`;
               const questions = entry.pendingQuestions ?? [];
+              const isThisMaximized = maximizedAgent === sessionKey;
+              // Hide non-maximized agents when another is maximized
+              if (maximizedAgent && !isThisMaximized) return null;
               return (
                 <AgentSession
                   key={sessionKey}
@@ -315,6 +321,12 @@ export function FeatureWorkflowView({
                   }
                   onToggle={() =>
                     wf.setOpenAgent((prev) =>
+                      prev === sessionKey ? null : sessionKey,
+                    )
+                  }
+                  maximized={isThisMaximized}
+                  onToggleMaximize={() =>
+                    setMaximizedAgent((prev) =>
                       prev === sessionKey ? null : sessionKey,
                     )
                   }
@@ -374,33 +386,35 @@ export function FeatureWorkflowView({
               );
             })}
 
-            <div className="shrink-0">
-              <NextStepsBar
-                show={
-                  wf.noAgentsRunning &&
-                  (actions.canStartBuild ||
-                    actions.canStartRisk ||
-                    actions.canStartReview ||
-                    wf.canContinueBuild)
-                }
-                canStartBuild={actions.canStartBuild}
-                canStartRisk={actions.canStartRisk}
-                canStartReview={actions.canStartReview}
-                executeStatus={wf.execute.status}
-                onStartBuilding={wf.handleStartBuilding}
-                onStartRisk={wf.handleStartRisk}
-                onStartReview={wf.handleStartReview}
-                isStartingExecute={wf.isStartingExecute}
-                isStartingRisk={wf.isStartingRisk}
-                isStartingReview={wf.isStartingReview}
-                canContinueBuild={wf.canContinueBuild}
-                onContinueBuild={wf.handleContinueBuild}
-                isContinuingBuild={wf.isContinuingBuild}
-                nextStepNumber={wf.executeWaitingNextStep}
-              />
-            </div>
+            {!maximizedAgent && (
+              <div className="shrink-0">
+                <NextStepsBar
+                  show={
+                    wf.noAgentsRunning &&
+                    (actions.canStartBuild ||
+                      actions.canStartRisk ||
+                      actions.canStartReview ||
+                      wf.canContinueBuild)
+                  }
+                  canStartBuild={actions.canStartBuild}
+                  canStartRisk={actions.canStartRisk}
+                  canStartReview={actions.canStartReview}
+                  executeStatus={wf.execute.status}
+                  onStartBuilding={wf.handleStartBuilding}
+                  onStartRisk={wf.handleStartRisk}
+                  onStartReview={wf.handleStartReview}
+                  isStartingExecute={wf.isStartingExecute}
+                  isStartingRisk={wf.isStartingRisk}
+                  isStartingReview={wf.isStartingReview}
+                  canContinueBuild={wf.canContinueBuild}
+                  onContinueBuild={wf.handleContinueBuild}
+                  isContinuingBuild={wf.isContinuingBuild}
+                  nextStepNumber={wf.executeWaitingNextStep}
+                />
+              </div>
+            )}
 
-            {view === "done" && (
+            {!maximizedAgent && view === "done" && (
               <div className="shrink-0 flex items-center gap-3 pt-4">
                 <CheckCircle2Icon className="size-8 text-green-600" />
                 <div>

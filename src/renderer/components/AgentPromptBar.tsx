@@ -46,6 +46,8 @@ export interface AgentPromptBarProps {
   projectId?: number;
   /** Active subprocess ID for slash command support */
   subprocessId?: string;
+  /** Called when CMD+Enter is pressed to toggle maximize */
+  onToggleMaximize?: () => void;
 }
 
 /** Handle exposed by AgentPromptBar via forwardRef */
@@ -73,6 +75,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
   featureId,
   projectId,
   subprocessId,
+  onToggleMaximize,
 }, ref) {
   const [text, setText] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -151,7 +154,10 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
         return;
       }
 
-      if (e.code === "KeyP" && e.altKey && e.shiftKey && onCycleModel) {
+      if (e.key === "Enter" && e.metaKey && onToggleMaximize) {
+        e.preventDefault();
+        onToggleMaximize();
+      } else if (e.code === "KeyP" && e.altKey && e.shiftKey && onCycleModel) {
         e.preventDefault();
         onCycleModel();
       } else if (e.key === "Tab" && e.shiftKey && onPermissionModeToggle) {
@@ -170,7 +176,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
         e.preventDefault();
       }
     },
-    [canSend, handleSend, isRunning, onStop, onCollapse, onPermissionModeToggle, onCycleModel, mention, slash, text],
+    [canSend, handleSend, isRunning, onStop, onCollapse, onPermissionModeToggle, onCycleModel, onToggleMaximize, mention, slash, text],
   );
 
   const handleChange = useCallback(

@@ -25,6 +25,8 @@ import {
   Trash2Icon,
   ChevronDownIcon,
   CheckIcon,
+  Maximize2Icon,
+  Minimize2Icon,
 } from "lucide-react";
 import { AgentStream } from "./AgentStream";
 import { AgentPromptBar, type AgentPromptBarHandle } from "./AgentPromptBar";
@@ -188,6 +190,10 @@ export interface AgentSessionProps {
   pendingPermission?: PendingPermission | null;
   /** Called when user makes a permission decision */
   onPermissionDecision?: (decision: "allow_once" | "allow_future" | "deny", feedback?: string) => void;
+  /** Whether this agent is maximized (takes full height, hides others) */
+  maximized?: boolean;
+  /** Called when user clicks maximize/minimize */
+  onToggleMaximize?: () => void;
 }
 
 /** Handle exposed by AgentSession via forwardRef */
@@ -243,6 +249,8 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
   subprocessId,
   pendingPermission,
   onPermissionDecision,
+  maximized,
+  onToggleMaximize,
 }, ref) {
   const promptBarRef = useRef<AgentPromptBarHandle>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -430,6 +438,7 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
       featureId={featureId}
       projectId={projectId}
       subprocessId={subprocessId}
+      onToggleMaximize={onToggleMaximize}
     />
   ) : null;
 
@@ -510,34 +519,50 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
           {badge.icon}
           {badge.label}
         </Badge>
-        {resumable && onResume && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="ml-auto h-6 gap-1 px-2 text-xs"
-            onClick={(e) => {
-              e.stopPropagation();
-              onResume();
-            }}
-          >
-            <RotateCcwIcon className="size-3" />
-            Resume
-          </Button>
-        )}
-        {canDelete && onDelete && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className={cn("h-6 gap-1 px-2 text-xs text-muted-foreground hover:text-red-400", !resumable && "ml-auto")}
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete();
-            }}
-          >
-            <Trash2Icon className="size-3" />
-            Remove
-          </Button>
-        )}
+        <div className="ml-auto flex items-center gap-1">
+          {resumable && onResume && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 gap-1 px-2 text-xs"
+              onClick={(e) => {
+                e.stopPropagation();
+                onResume();
+              }}
+            >
+              <RotateCcwIcon className="size-3" />
+              Resume
+            </Button>
+          )}
+          {canDelete && onDelete && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 gap-1 px-2 text-xs text-muted-foreground hover:text-red-400"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete();
+              }}
+            >
+              <Trash2Icon className="size-3" />
+              Remove
+            </Button>
+          )}
+          {isOpen && onToggleMaximize && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleMaximize();
+              }}
+              title={maximized ? "Minimize" : "Maximize"}
+            >
+              {maximized ? <Minimize2Icon className="size-3" /> : <Maximize2Icon className="size-3" />}
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Collapsible content */}
