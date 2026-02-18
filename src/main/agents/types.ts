@@ -231,5 +231,7 @@ export interface UnifiedAgentConfig {
   /** Existing DB session ID to reuse (for resume — skips creating a new row) */
   existingSessionDbId?: number;
   /** Permission mode for the subprocess */
-  permissionMode?: "bypassPermissions" | "plan";
+  permissionMode?: "bypassPermissions" | "plan" | "acceptEdits";
+  /** Worktree path for permission resolution (auto-allow tools inside this path) */
+  worktreePath?: string;
 }

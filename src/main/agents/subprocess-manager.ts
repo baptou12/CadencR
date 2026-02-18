@@ -3,6 +3,7 @@ import { getDatabase } from "../db/database";
 import { discoverClaudeCli } from "./cli-discovery";
 import { getSessionDbId, persistStreamEvent, persistClaudeSessionId, notifyDbUpdated } from "./ipc-bridge";
 import { DEFAULT_MODEL } from "./models";
+import { resolvePermission, appendToSettingsLocal } from "./permissions";
 import type { AgentEvent, AgentType, StreamEvent } from "./types";
 import EventEmitter from "node:events";
 
@@ -10,6 +11,7 @@ const MAX_CONCURRENT = 10;
 const AGENT_EVENT_CHANNEL = "agent:event";
 const ASK_USER_QUESTION_CHANNEL = "agent:ask-user-question";
 const ASK_USER_ANSWER_CHANNEL = "agent:ask-user-answer";
+const TOOL_PERMISSION_CHANNEL = "agent:tool-permission";
 
 // Global event emitter for question/answer coordination
 const questionEmitter = new EventEmitter();
@@ -30,7 +32,9 @@ export interface SubprocessOptions {
   /** Claude model to use (defaults to DEFAULT_MODEL) */
   model?: string;
   /** Permission mode for the SDK query */
-  permissionMode?: "bypassPermissions" | "plan";
+  permissionMode?: "bypassPermissions" | "plan" | "acceptEdits";
+  /** Worktree path for permission resolution (auto-allow tools inside this directory) */
+  worktreePath?: string;
 }
 
 
@@ -55,6 +59,10 @@ export interface ManagedSubprocess {
   sdkSessionId?: string;
   /** Original options used to start this subprocess (needed for resume) */
   originalOptions?: SubprocessOptions;
+  /** Worktree path for permission resolution */
+  worktreePath?: string;
+  /** Session-scoped permission approvals (patterns already approved by user) */
+  cachedPermissions: Set<string>;
 }
 
 const activeProcesses = new Map<string, ManagedSubprocess>();
@@ -170,8 +178,8 @@ function handleSdkMessage(
             const toolInput = block.input as Record<string, unknown>;
 
             // Detect EnterPlanMode tool call — update DB so UI reflects plan mode.
-            // In bypassPermissions mode the SDK auto-allows this without calling
-            // canUseTool, so we catch it here in the message stream instead.
+            // We catch it here in the message stream to ensure the DB always
+            // reflects plan mode, regardless of how the SDK handles the tool.
             if (toolName === "EnterPlanMode" && sessionDbId) {
               try {
                 const db2 = getDatabase();
@@ -319,6 +327,8 @@ export function startSubprocess(options: SubprocessOptions): ManagedSubprocess {
     eventListeners: [],
     completionListeners: [],
     originalOptions: options,
+    worktreePath: options.worktreePath,
+    cachedPermissions: new Set<string>(),
   };
 
   activeProcesses.set(id, managed);
@@ -455,9 +465,10 @@ async function runSdkQuery(
 
   const queryOptions: Record<string, unknown> = {
     cwd: options.cwd,
-    permissionMode: options.permissionMode ?? "bypassPermissions",
+    permissionMode: options.permissionMode ?? "acceptEdits",
     pathToClaudeCodeExecutable: cliInfo.path,
     model: options.model ?? DEFAULT_MODEL,
+    settingSources: ["user", "project", "local"],
   };
 
   if (options.systemPrompt) {
@@ -476,11 +487,75 @@ async function runSdkQuery(
     queryOptions.abortController = managed.abortController;
   }
 
-  // Add canUseTool callback to handle AskUserQuestion and track file changes
+  // Add canUseTool callback to handle permissions, AskUserQuestion, and track file changes
   queryOptions.canUseTool = async (
     toolName: string,
     input: Record<string, unknown>,
   ) => {
+    // --- Smart permission resolution ---
+    // Before handling special tools (AskUserQuestion, ExitPlanMode), check
+    // whether this tool call should be auto-allowed, denied, or prompted.
+    if (managed.worktreePath && toolName !== "AskUserQuestion" && toolName !== "ExitPlanMode") {
+      const permResult = resolvePermission(
+        toolName,
+        input,
+        managed.worktreePath,
+        managed.cachedPermissions,
+      );
+
+      if (permResult === "allow") {
+        return { behavior: "allow" as const, updatedInput: input };
+      }
+
+      if ("denied" in permResult) {
+        return {
+          behavior: "deny" as const,
+          message: permResult.reason,
+        };
+      }
+
+      // needs_prompt — ask the user
+      if ("needs_prompt" in permResult) {
+        try {
+          const decision = await requestToolPermission(managed.id, {
+            toolName,
+            input,
+            description: permResult.description,
+            pattern: permResult.pattern,
+          });
+
+          if (decision.decision === "allow_once") {
+            managed.cachedPermissions.add(permResult.pattern);
+            return { behavior: "allow" as const, updatedInput: input };
+          }
+
+          if (decision.decision === "allow_future") {
+            managed.cachedPermissions.add(permResult.pattern);
+            // Persist to settings.local.json so the SDK auto-allows next time
+            try {
+              appendToSettingsLocal(managed.worktreePath!, permResult.pattern);
+            } catch (err) {
+              console.error("[subprocess-manager] Failed to write settings.local.json:", err);
+            }
+            return { behavior: "allow" as const, updatedInput: input };
+          }
+
+          // deny
+          return {
+            behavior: "deny" as const,
+            message: decision.feedback || "User denied this tool call.",
+          };
+        } catch (err) {
+          console.error("[subprocess-manager] Permission prompt failed:", err);
+          // On error, deny to be safe
+          return {
+            behavior: "deny" as const,
+            message: "Permission prompt timed out or failed.",
+          };
+        }
+      }
+    }
+
     if (toolName === "AskUserQuestion") {
       // Persist questions to DB before broadcasting
       const sDbId = getSessionDbId(managed.id);
@@ -580,15 +655,16 @@ async function runSdkQuery(
         });
 
         if (result.approved) {
-          // Switch permission mode to bypassPermissions so Claude starts executing
+          // Switch permission mode to acceptEdits so Claude starts executing
+          // (smart canUseTool callback handles fine-grained permissions)
           if (managed.query) {
-            await managed.query.setPermissionMode("bypassPermissions");
+            await managed.query.setPermissionMode("acceptEdits");
           }
-          // Update DB: permission_mode = 'bypassPermissions', clear pending_plan_approval
+          // Update DB: permission_mode = 'acceptEdits', clear pending_plan_approval
           if (sDbId) {
             try {
               const db2 = getDatabase();
-              db2.prepare("UPDATE agent_sessions SET permission_mode = 'bypassPermissions', pending_plan_approval = NULL WHERE id = ?")
+              db2.prepare("UPDATE agent_sessions SET permission_mode = 'acceptEdits', pending_plan_approval = NULL WHERE id = ?")
                 .run(sDbId);
               if (featureIdForNotify) notifyDbUpdated("agent_session", featureIdForNotify);
             } catch { /* best-effort */ }
@@ -706,7 +782,7 @@ async function runSdkQuery(
  */
 export async function setSubprocessPermissionMode(
   id: string,
-  mode: "bypassPermissions" | "plan",
+  mode: "bypassPermissions" | "plan" | "acceptEdits",
 ): Promise<boolean> {
   const managed = activeProcesses.get(id);
   if (!managed || !managed.query || managed.status !== "running") return false;
@@ -902,6 +978,101 @@ async function requestUserAnswers(
       }
     }
   });
+}
+
+/**
+ * Request permission from the user for a tool call.
+ * Mirrors the pattern of `requestUserAnswers()` — broadcasts via IPC and waits
+ * for the renderer to emit a response on `questionEmitter`.
+ */
+async function requestToolPermission(
+  subprocessId: string,
+  permissionRequest: {
+    toolName: string;
+    input: Record<string, unknown>;
+    description: string;
+    pattern: string;
+  },
+): Promise<{ decision: "allow_once" | "allow_future" | "deny"; feedback?: string }> {
+  // Persist pending permission to DB before broadcasting
+  const sDbId = getSessionDbId(subprocessId);
+  let featureIdForNotify: number | null = null;
+  if (sDbId) {
+    try {
+      const db2 = getDatabase();
+      db2.prepare("UPDATE agent_sessions SET pending_permission = ? WHERE id = ?")
+        .run(JSON.stringify(permissionRequest), sDbId);
+      const row = db2.prepare("SELECT feature_id FROM agent_sessions WHERE id = ?").get(sDbId) as { feature_id: number } | undefined;
+      if (row) {
+        featureIdForNotify = row.feature_id;
+        notifyDbUpdated("agent_session", row.feature_id);
+      }
+    } catch { /* best-effort */ }
+  }
+
+  try {
+    const result = await new Promise<{ decision: "allow_once" | "allow_future" | "deny"; feedback?: string }>((resolve, reject) => {
+      const timeout = setTimeout(
+        () => {
+          questionEmitter.removeAllListeners(`permission:${subprocessId}`);
+          reject(new Error("Tool permission timeout (15m)"));
+        },
+        15 * 60 * 1000,
+      );
+
+      questionEmitter.once(
+        `permission:${subprocessId}`,
+        (response: { decision: "allow_once" | "allow_future" | "deny"; feedback?: string }) => {
+          clearTimeout(timeout);
+          resolve(response);
+        },
+      );
+
+      // Broadcast permission request to all renderer windows
+      const windows = BrowserWindow.getAllWindows();
+      for (const win of windows) {
+        if (!win.isDestroyed()) {
+          win.webContents.send(TOOL_PERMISSION_CHANNEL, {
+            subprocessId,
+            ...permissionRequest,
+          });
+        }
+      }
+    });
+
+    // Clear pending_permission on response
+    if (sDbId) {
+      try {
+        const db2 = getDatabase();
+        db2.prepare("UPDATE agent_sessions SET pending_permission = NULL WHERE id = ?").run(sDbId);
+        if (featureIdForNotify) notifyDbUpdated("agent_session", featureIdForNotify);
+      } catch { /* best-effort */ }
+    }
+
+    return result;
+  } catch (error) {
+    // Clear pending_permission on error
+    if (sDbId) {
+      try {
+        const db2 = getDatabase();
+        db2.prepare("UPDATE agent_sessions SET pending_permission = NULL WHERE id = ?").run(sDbId);
+        if (featureIdForNotify) notifyDbUpdated("agent_session", featureIdForNotify);
+      } catch { /* best-effort */ }
+    }
+    throw error;
+  }
+}
+
+/**
+ * Submit a tool permission decision from the renderer.
+ * Called via tRPC when the user responds to a permission prompt.
+ */
+export function submitToolPermission(
+  subprocessId: string,
+  decision: "allow_once" | "allow_future" | "deny",
+  feedback?: string,
+): void {
+  questionEmitter.emit(`permission:${subprocessId}`, { decision, feedback });
 }
 
 /**
@@ -1112,4 +1283,4 @@ async function fetchCommandsViaTemporaryQuery(cwd: string): Promise<SlashCommand
 }
 
 // Export channel constants for use in preload and main
-export { ASK_USER_QUESTION_CHANNEL, ASK_USER_ANSWER_CHANNEL };
+export { ASK_USER_QUESTION_CHANNEL, ASK_USER_ANSWER_CHANNEL, TOOL_PERMISSION_CHANNEL };
