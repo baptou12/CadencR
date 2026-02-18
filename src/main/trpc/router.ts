@@ -14,6 +14,7 @@ import {
   listSubprocesses,
   submitUserAnswers,
   submitPlanApproval,
+  submitToolPermission,
   sendMessageToSubprocess,
   setSubprocessPermissionMode,
   getSupportedCommands,
@@ -436,6 +437,20 @@ const agentsRouter = router({
       return { success: true };
     }),
 
+  /** Submit a tool permission decision from the renderer */
+  submitToolPermission: publicProcedure
+    .input(
+      z.object({
+        subprocessId: z.string(),
+        decision: z.enum(["allow_once", "allow_future", "deny"]),
+        feedback: z.string().optional(),
+      }),
+    )
+    .mutation(({ input }) => {
+      submitToolPermission(input.subprocessId, input.decision, input.feedback);
+      return { success: true };
+    }),
+
   /** Send a message to a running agent subprocess */
   sendMessage: publicProcedure
     .input(z.object({ id: z.string(), message: z.string() }))
@@ -777,7 +792,7 @@ const agentsRouter = router({
       const db = getDatabase();
       const sessions = db
         .prepare(
-          "SELECT id, feature_id, agent_type, claude_session_id, status, started_at, ended_at, run_id, phase_id, subprocess_id, model, pending_questions, has_file_changes, permission_mode, pending_plan_approval, input_tokens, output_tokens, context_window, was_compacted FROM agent_sessions WHERE feature_id = ? ORDER BY id ASC",
+          "SELECT id, feature_id, agent_type, claude_session_id, status, started_at, ended_at, run_id, phase_id, subprocess_id, model, pending_questions, has_file_changes, permission_mode, pending_plan_approval, pending_permission, input_tokens, output_tokens, context_window, was_compacted FROM agent_sessions WHERE feature_id = ? ORDER BY id ASC",
         )
         .all(input.featureId) as AgentSessionRow[];
 
@@ -858,6 +873,7 @@ const agentsRouter = router({
             todos,
             permissionMode: s.permission_mode ?? "bypassPermissions",
             pendingPlanApproval: s.pending_plan_approval ? (() => { try { return JSON.parse(s.pending_plan_approval); } catch { return null; } })() : null,
+            pendingPermission: s.pending_permission ? (() => { try { return JSON.parse(s.pending_permission); } catch { return null; } })() : null,
             inputTokens: s.input_tokens ?? 0,
             outputTokens: s.output_tokens ?? 0,
             contextWindow: s.context_window ?? 200000,

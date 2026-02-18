@@ -7,6 +7,7 @@ import { exposeElectronTRPC } from "electron-trpc/main";
 const AGENT_EVENT_CHANNEL = "agent:event";
 const ASK_USER_QUESTION_CHANNEL = "agent:ask-user-question";
 const AGENT_PATTERN_MATCH_CHANNEL = "agent:pattern-match";
+const TOOL_PERMISSION_CHANNEL = "agent:tool-permission";
 const DB_UPDATED_CHANNEL = "db:updated";
 
 process.once("loaded", () => {
@@ -63,6 +64,23 @@ process.once("loaded", () => {
         );
       } else {
         ipcRenderer.removeAllListeners(AGENT_PATTERN_MATCH_CHANNEL);
+      }
+    },
+    onToolPermission: (callback: (data: unknown) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, data: unknown) => {
+        callback(data);
+      };
+      ipcRenderer.on(TOOL_PERMISSION_CHANNEL, listener);
+      return listener;
+    },
+    offToolPermission: (listener?: (...args: unknown[]) => void) => {
+      if (listener) {
+        ipcRenderer.removeListener(
+          TOOL_PERMISSION_CHANNEL,
+          listener as (...args: unknown[]) => void,
+        );
+      } else {
+        ipcRenderer.removeAllListeners(TOOL_PERMISSION_CHANNEL);
       }
     },
     onDbUpdated: (callback: (data: { entity: string; featureId: number }) => void) => {

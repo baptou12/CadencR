@@ -78,16 +78,18 @@ Replace `bypassPermissions` with `acceptEdits` mode + `settingSources` + smart `
 - **Implementation notes**: Added `worktreePath?: string` to `UnifiedAgentConfig` in types.ts. Updated `resolveAgentCwd()` in router.ts to return `{ cwd, worktreePath }` instead of just a string, then updated all 8 call sites (resume, startPlan, startBrainstorm, startExecute, startRisk, startReview, getSupportedCommands). Added `worktreePath` to all 6 config factory option interfaces (Plan, Brainstorm, Risk, Review, Session config options) and all 6 factory return objects in agent-configs.ts. Updated all 5 individual agent wrapper files (plan-agent.ts, brainstorm-agent.ts, risk-agent.ts, review-agent.ts, session-agent.ts) to accept and forward `worktreePath` in their options interfaces. Updated `ExecuteAgentOptions` and `continueExecuteAgent()` in execute-agent.ts to extract `worktreePath` from the worktree setting and pass it through to the `UnifiedAgentConfig`. Phase 2 (running in parallel) updated unified-agent.ts to use `config.worktreePath ?? config.cwd` as the fallback, which is compatible.
 - **Validation results**: `pnpm run lint` passed with 0 warnings and 0 errors.
 
-### Phase 4: DB migration and IPC for permission prompts
+### ✅ Phase 4: DB migration and IPC for permission prompts
 - **Step**: 3
 - **Complexity**: 2
 - **Tasks**:
-  - Add migration in `src/main/db/migrations.ts`: `ALTER TABLE agent_sessions ADD COLUMN pending_permission TEXT`
-  - Add `onToolPermission`/`offToolPermission` IPC handlers in `src/preload.ts` (same pattern as `onAskUserQuestion`)
-  - Add `submitToolPermission` tRPC endpoint in `src/main/trpc/router.ts`: accepts `{ subprocessId, decision: "allow_once"|"allow_future"|"deny", feedback?: string }`, emits on `questionEmitter`
-  - In `requestToolPermission()`: persist pending_permission to DB before broadcasting (same as pending_questions pattern), clear on response
+  - [x] Add migration in `src/main/db/migrations.ts`: `ALTER TABLE agent_sessions ADD COLUMN pending_permission TEXT`
+  - [x] Add `onToolPermission`/`offToolPermission` IPC handlers in `src/preload.ts` (same pattern as `onAskUserQuestion`)
+  - [x] Add `submitToolPermission` tRPC endpoint in `src/main/trpc/router.ts`: accepts `{ subprocessId, decision: "allow_once"|"allow_future"|"deny", feedback?: string }`, emits on `questionEmitter`
+  - [x] In `requestToolPermission()`: persist pending_permission to DB before broadcasting (same as pending_questions pattern), clear on response
 - **Files**: src/main/db/migrations.ts, src/preload.ts, src/main/trpc/router.ts, src/main/agents/subprocess-manager.ts
 - **Commit message**: feat: add IPC and DB support for permission prompts
+- **Implementation notes**: (1) Added migration v26 for `pending_permission TEXT` column on `agent_sessions`. (2) Added `pending_permission` to `AgentSessionRow` type in `db/types.ts`. (3) Added `onToolPermission`/`offToolPermission` IPC handlers in preload.ts following the same pattern as `onAskUserQuestion`. (4) Added `submitToolPermission` tRPC mutation in router.ts that imports and calls the already-existing `submitToolPermission()` from subprocess-manager. (5) Updated `getFeatureAgentState` query to SELECT and expose `pending_permission` as `pendingPermission` (parsed from JSON, same pattern as `pendingPlanApproval`). (6) The `requestToolPermission()` function in subprocess-manager.ts already persists/clears `pending_permission` from Phase 2's implementation.
+- **Validation results**: `pnpm run lint` passed with 0 warnings and 0 errors.
 
 ### Phase 5: Renderer permission prompt UI
 - **Step**: 4

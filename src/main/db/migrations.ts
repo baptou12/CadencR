@@ -314,6 +314,13 @@ const migrations: Migration[] = [
       db.exec("ALTER TABLE agent_sessions ADD COLUMN was_compacted INTEGER DEFAULT 0");
     },
   },
+  {
+    version: 26,
+    description: "Add pending_permission column to agent_sessions",
+    up: (db) => {
+      db.exec("ALTER TABLE agent_sessions ADD COLUMN pending_permission TEXT");
+    },
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {
