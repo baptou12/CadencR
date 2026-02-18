@@ -594,7 +594,7 @@ const agentsRouter = router({
         featureId: z.number(),
         projectId: z.number(),
         prompt: z.string(),
-        permissionMode: z.enum(["bypassPermissions", "plan"]).optional(),
+        permissionMode: z.enum(["acceptEdits", "plan"]).optional(),
       }),
     )
     .mutation(({ input }) => {
@@ -737,7 +737,7 @@ const agentsRouter = router({
     .input(
       z.object({
         sessionId: z.number(),
-        mode: z.enum(["bypassPermissions", "plan"]),
+        mode: z.enum(["acceptEdits", "plan"]),
       }),
     )
     .mutation(async ({ input }) => {
@@ -871,7 +871,7 @@ const agentsRouter = router({
             phaseId: s.phase_id,
             phaseTitle: s.phase_id != null ? phaseTitleMap.get(s.phase_id) ?? null : null,
             todos,
-            permissionMode: s.permission_mode ?? "bypassPermissions",
+            permissionMode: s.permission_mode ?? "acceptEdits",
             pendingPlanApproval: s.pending_plan_approval ? (() => { try { return JSON.parse(s.pending_plan_approval); } catch { return null; } })() : null,
             pendingPermission: s.pending_permission ? (() => { try { return JSON.parse(s.pending_permission); } catch { return null; } })() : null,
             inputTokens: s.input_tokens ?? 0,

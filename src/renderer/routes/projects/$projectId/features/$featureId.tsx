@@ -84,13 +84,13 @@ function SessionFeatureView({
   const todos = session?.todos ?? null;
 
   // Permission mode state — initialized from DB, toggled locally
-  const [permissionMode, setPermissionMode] = useState<"bypassPermissions" | "plan">(
-    (session?.permissionMode as "bypassPermissions" | "plan") ?? "bypassPermissions",
+  const [permissionMode, setPermissionMode] = useState<"acceptEdits" | "plan">(
+    (session?.permissionMode as "acceptEdits" | "plan") ?? "acceptEdits",
   );
   // Sync from DB when session data loads/changes
   useEffect(() => {
     if (session?.permissionMode) {
-      setPermissionMode(session.permissionMode as "bypassPermissions" | "plan");
+      setPermissionMode(session.permissionMode as "acceptEdits" | "plan");
     }
   }, [session?.permissionMode]);
 
@@ -105,7 +105,7 @@ function SessionFeatureView({
   const submitToolPermissionMutation = trpc.agents.submitToolPermission.useMutation();
 
   const handlePermissionModeToggle = useCallback(() => {
-    const newMode = permissionMode === "bypassPermissions" ? "plan" : "bypassPermissions";
+    const newMode = permissionMode === "plan" ? "acceptEdits" : "plan";
     setPermissionMode(newMode);
     if (session?.sessionDbId) {
       setPermissionModeMutation.mutate({ sessionId: session.sessionDbId, mode: newMode });
@@ -127,8 +127,8 @@ function SessionFeatureView({
   const handlePlanApprove = useCallback(() => {
     if (!session?.subprocessId) return;
     submitPlanApprovalMutation.mutate({ subprocessId: session.subprocessId, approved: true });
-    // Optimistically update local permission mode
-    setPermissionMode("bypassPermissions");
+    // Optimistically update local permission mode (plan approved → back to normal)
+    setPermissionMode("acceptEdits");
   }, [session?.subprocessId, submitPlanApprovalMutation]);
 
   const handlePlanRequestChanges = useCallback((feedback: string) => {

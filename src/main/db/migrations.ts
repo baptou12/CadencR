@@ -321,6 +321,14 @@ const migrations: Migration[] = [
       db.exec("ALTER TABLE agent_sessions ADD COLUMN pending_permission TEXT");
     },
   },
+  {
+    version: 27,
+    description: "Change permission_mode default from bypassPermissions to acceptEdits",
+    up: (db) => {
+      // Update any existing rows that still have the old default
+      db.exec("UPDATE agent_sessions SET permission_mode = 'acceptEdits' WHERE permission_mode = 'bypassPermissions'");
+    },
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

@@ -163,7 +163,7 @@ export interface AgentSessionProps {
   /** Todo list from TodoWrite tool calls */
   todos?: TodoItem[] | null;
   /** Current permission mode (session agents only) */
-  permissionMode?: "bypassPermissions" | "plan";
+  permissionMode?: "acceptEdits" | "plan";
   /** Called when user toggles permission mode */
   onPermissionModeToggle?: () => void;
   /** Pending plan approval from ExitPlanMode tool call */

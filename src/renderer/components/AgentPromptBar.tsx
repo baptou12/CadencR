@@ -29,7 +29,7 @@ export interface AgentPromptBarProps {
   /** Called when CMD+SHIFT+Z is pressed to collapse the agent */
   onCollapse?: () => void;
   /** Current permission mode (session agents only) */
-  permissionMode?: "bypassPermissions" | "plan";
+  permissionMode?: "acceptEdits" | "plan";
   /** Called when user toggles permission mode */
   onPermissionModeToggle?: () => void;
   /** Pending plan approval from ExitPlanMode tool call */

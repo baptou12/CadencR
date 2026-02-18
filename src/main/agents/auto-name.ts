@@ -50,7 +50,7 @@ async function runAutoName(
     prompt,
     options: {
       cwd,
-      permissionMode: "bypassPermissions" as const,
+      permissionMode: "acceptEdits" as const,
       pathToClaudeCodeExecutable: cliInfo.path,
       model: AUTO_NAME_MODEL,
       systemPrompt: AUTO_NAME_SYSTEM_PROMPT,
@@ -139,7 +139,7 @@ export async function runAutoNameBlocking(
     prompt,
     options: {
       cwd,
-      permissionMode: "bypassPermissions" as const,
+      permissionMode: "acceptEdits" as const,
       pathToClaudeCodeExecutable: cliInfo.path,
       model: AUTO_NAME_MODEL,
       systemPrompt: AUTO_NAME_SYSTEM_PROMPT,

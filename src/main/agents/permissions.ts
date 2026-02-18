@@ -8,6 +8,7 @@
 
 import * as path from "node:path";
 import * as fs from "node:fs";
+import * as os from "node:os";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -16,7 +17,7 @@ import * as fs from "node:fs";
 /** Result when a tool is auto-allowed */
 export type PermissionAllow = "allow";
 
-/** Result when a tool is always denied (e.g. git push) */
+/** Result when a tool is always denied */
 export interface PermissionDeny {
   denied: true;
   /** Human-readable reason for the denial */
@@ -81,6 +82,14 @@ function isPathAllowed(resolvedPath: string, worktreePath: string): boolean {
 }
 
 /**
+ * Check if a resolved path is an .env file (contains secrets).
+ */
+function isEnvFile(resolvedPath: string): boolean {
+  const basename = path.basename(resolvedPath);
+  return basename === ".env" || basename.startsWith(".env.") || basename.endsWith(".env");
+}
+
+/**
  * Extract the primary path from a tool's input based on tool name.
  * Returns null if the tool doesn't operate on file paths.
  */
@@ -105,13 +114,53 @@ function extractToolPath(
 // Bash command analysis
 // ---------------------------------------------------------------------------
 
+interface DestructiveCommandMatch {
+  description: string;
+  pattern: string;
+}
+
 /**
- * Check if a bash command contains `git push`.
+ * Detect destructive or sensitive bash commands that require user confirmation.
+ * Returns a prompt descriptor if the command matches, null otherwise.
  */
-function containsGitPush(command: string): boolean {
-  // Match "git push" as a standalone command (not inside a string like "echo git push")
-  // Simple heuristic: look for git push at word boundaries
-  return /\bgit\s+push\b/.test(command);
+function detectDestructiveCommand(command: string): DestructiveCommandMatch | null {
+  if (/\bgit\s+push\b/.test(command)) {
+    return {
+      description: "git push will push commits to a remote repository",
+      pattern: "Bash(git push:*)",
+    };
+  }
+  if (/\brm\s+(?:-\w*[rR]\w*[fF]\w*|-\w*[fF]\w*[rR]\w*)\b/.test(command)) {
+    return {
+      description: "rm -rf will recursively and forcefully delete files",
+      pattern: "Bash(rm -rf:*)",
+    };
+  }
+  if (/\bgit\s+reset\s+--hard\b/.test(command)) {
+    return {
+      description: "git reset --hard will discard all uncommitted changes",
+      pattern: "Bash(git reset --hard:*)",
+    };
+  }
+  if (/\bgit\s+clean\s+-\w*[fF]/.test(command)) {
+    return {
+      description: "git clean -f will remove untracked files from the repository",
+      pattern: "Bash(git clean -f:*)",
+    };
+  }
+  if (/\bgit\s+checkout\s+--\s/.test(command)) {
+    return {
+      description: "git checkout -- will discard changes in working files",
+      pattern: "Bash(git checkout --:*)",
+    };
+  }
+  if (/\bsudo\s+rm\b/.test(command)) {
+    return {
+      description: "sudo rm will delete files with root privileges",
+      pattern: "Bash(sudo rm:*)",
+    };
+  }
+  return null;
 }
 
 /**
@@ -143,6 +192,53 @@ function findOutsidePath(
   }
 
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// Settings loading
+// ---------------------------------------------------------------------------
+
+/**
+ * Load pre-approved permission patterns from settings files.
+ * Reads from three locations (union, no duplicates):
+ * 1. ~/.claude/settings.json (global user settings)
+ * 2. <worktreePath>/.claude/settings.json (project settings)
+ * 3. <worktreePath>/.claude/settings.local.json (local settings, where "Allow future" writes)
+ */
+export function loadAllowedPatterns(worktreePath: string): Set<string> {
+  const patterns = new Set<string>();
+
+  const settingsFiles = [
+    path.join(os.homedir(), ".claude", "settings.json"),
+    path.join(worktreePath, ".claude", "settings.json"),
+    path.join(worktreePath, ".claude", "settings.local.json"),
+  ];
+
+  for (const filePath of settingsFiles) {
+    try {
+      const content = fs.readFileSync(filePath, "utf-8");
+      const parsed = JSON.parse(content) as Record<string, unknown>;
+      const permissions = parsed.permissions;
+      if (
+        permissions &&
+        typeof permissions === "object" &&
+        !Array.isArray(permissions)
+      ) {
+        const allow = (permissions as Record<string, unknown>).allow;
+        if (Array.isArray(allow)) {
+          for (const pattern of allow) {
+            if (typeof pattern === "string") {
+              patterns.add(pattern);
+            }
+          }
+        }
+      }
+    } catch {
+      // File doesn't exist or has invalid JSON — skip
+    }
+  }
+
+  return patterns;
 }
 
 // ---------------------------------------------------------------------------
@@ -179,11 +275,16 @@ export function resolvePermission(
     const command =
       typeof input.command === "string" ? input.command : "";
 
-    // Always deny git push — pushing is never allowed from agents
-    if (containsGitPush(command)) {
+    // Check for destructive commands — prompt user rather than hard-deny
+    const destructive = detectDestructiveCommand(command);
+    if (destructive) {
+      if (sessionCache.has(destructive.pattern)) {
+        return "allow";
+      }
       return {
-        denied: true,
-        reason: "git push is not allowed from agents. Push changes manually.",
+        needs_prompt: true,
+        description: destructive.description,
+        pattern: destructive.pattern,
       };
     }
 
@@ -211,6 +312,19 @@ export function resolvePermission(
     const resolvedPath = path.isAbsolute(toolPath)
       ? path.resolve(toolPath)
       : path.resolve(worktreePath, toolPath);
+
+    // Protect .env files — prompt even within the worktree (may contain secrets)
+    if (FILE_PATH_TOOLS.has(toolName) && isEnvFile(resolvedPath)) {
+      const pattern = `${toolName}(${resolvedPath})`;
+      if (sessionCache.has(pattern)) {
+        return "allow";
+      }
+      return {
+        needs_prompt: true,
+        description: `${toolName} wants to read \`${resolvedPath}\`, which may contain secrets.`,
+        pattern,
+      };
+    }
 
     if (isPathAllowed(resolvedPath, worktreePath)) {
       return "allow";

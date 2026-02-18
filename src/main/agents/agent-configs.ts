@@ -381,7 +381,7 @@ export interface SessionConfigOptions {
   cwd: string;
   prompt: string;
   resumeSessionId?: string;
-  permissionMode?: "bypassPermissions" | "plan";
+  permissionMode?: "acceptEdits" | "plan";
   /** Worktree path for permission resolution */
   worktreePath?: string;
 }

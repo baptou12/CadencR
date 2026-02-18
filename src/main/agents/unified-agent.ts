@@ -82,7 +82,7 @@ export function startUnifiedAgent(config: UnifiedAgentConfig): UnifiedAgentResul
       .prepare(
         "INSERT INTO agent_sessions (feature_id, agent_type, status, started_at, run_id, phase_id, model, permission_mode) VALUES (?, ?, ?, datetime('now'), ?, ?, ?, ?)",
       )
-      .run(config.featureId ?? null, config.agentType, "running", config.runId ?? null, config.phaseId ?? null, model, config.permissionMode ?? "bypassPermissions");
+      .run(config.featureId ?? null, config.agentType, "running", config.runId ?? null, config.phaseId ?? null, model, config.permissionMode ?? "acceptEdits");
     sessionDbId = Number(sessionResult.lastInsertRowid);
   }
 

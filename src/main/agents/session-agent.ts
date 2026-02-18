@@ -21,7 +21,7 @@ export interface SessionAgentOptions {
   /** Existing Claude session ID to resume */
   resumeSessionId?: string;
   /** Permission mode for the subprocess */
-  permissionMode?: "bypassPermissions" | "plan";
+  permissionMode?: "acceptEdits" | "plan";
   /** Worktree path for permission resolution */
   worktreePath?: string;
 }

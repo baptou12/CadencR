@@ -3,7 +3,7 @@ import { getDatabase } from "../db/database";
 import { discoverClaudeCli } from "./cli-discovery";
 import { getSessionDbId, persistStreamEvent, persistClaudeSessionId, notifyDbUpdated } from "./ipc-bridge";
 import { DEFAULT_MODEL } from "./models";
-import { resolvePermission, appendToSettingsLocal } from "./permissions";
+import { resolvePermission, appendToSettingsLocal, loadAllowedPatterns } from "./permissions";
 import type { AgentEvent, AgentType, StreamEvent } from "./types";
 import EventEmitter from "node:events";
 
@@ -32,7 +32,7 @@ export interface SubprocessOptions {
   /** Claude model to use (defaults to DEFAULT_MODEL) */
   model?: string;
   /** Permission mode for the SDK query */
-  permissionMode?: "bypassPermissions" | "plan" | "acceptEdits";
+  permissionMode?: "acceptEdits" | "plan";
   /** Worktree path for permission resolution (auto-allow tools inside this directory) */
   worktreePath?: string;
 }
@@ -328,7 +328,9 @@ export function startSubprocess(options: SubprocessOptions): ManagedSubprocess {
     completionListeners: [],
     originalOptions: options,
     worktreePath: options.worktreePath,
-    cachedPermissions: new Set<string>(),
+    cachedPermissions: options.worktreePath
+      ? loadAllowedPatterns(options.worktreePath)
+      : new Set<string>(),
   };
 
   activeProcesses.set(id, managed);
@@ -782,7 +784,7 @@ async function runSdkQuery(
  */
 export async function setSubprocessPermissionMode(
   id: string,
-  mode: "bypassPermissions" | "plan" | "acceptEdits",
+  mode: "acceptEdits" | "plan",
 ): Promise<boolean> {
   const managed = activeProcesses.get(id);
   if (!managed || !managed.query || managed.status !== "running") return false;
@@ -1271,7 +1273,7 @@ async function fetchCommandsViaTemporaryQuery(cwd: string): Promise<SlashCommand
   try {
     queryObj = sdkQuery({
       prompt: neverYield,
-      options: { cwd, permissionMode: "bypassPermissions", pathToClaudeCodeExecutable: cliInfo.path },
+      options: { cwd, permissionMode: "acceptEdits", pathToClaudeCodeExecutable: cliInfo.path },
     });
     return mapCommands(await queryObj.supportedCommands());
   } catch (err) {

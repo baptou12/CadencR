@@ -527,7 +527,7 @@ export function useFeatureAgentState(featureId: number) {
       phaseId: s.phaseId,
       phaseTitle: s.phaseTitle,
       todos,
-      permissionMode: s.permissionMode ?? "bypassPermissions",
+      permissionMode: s.permissionMode ?? "acceptEdits",
       pendingPlanApproval: s.pendingPlanApproval ?? null,
       pendingPermission: s.pendingPermission ?? null,
       inputTokens: s.inputTokens ?? 0,
