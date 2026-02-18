@@ -267,27 +267,31 @@ export function FeatureWorkflowView({
     <div className="relative flex h-full flex-col">
       <FeatureTopBar featureId={featureId} projectId={projectId} />
       <div className="flex flex-1 min-h-0 overflow-hidden">
-      <div className="min-h-0 flex-1 overflow-auto p-6">
+      <div className="min-h-0 flex-1 flex flex-col overflow-hidden">
         {view === "plan-input" && (
-          <PlanInputView
-            description={wf.description}
-            onDescriptionChange={wf.setDescription}
-            onStartPlanning={wf.handleStartPlanning}
-            onStartBrainstorming={wf.handleStartBrainstorming}
-            isStartingPlan={wf.isStartingPlan}
-            isStartingBrainstorm={wf.isStartingBrainstorm}
-          />
+          <div className="shrink-0 overflow-auto p-6">
+            <PlanInputView
+              description={wf.description}
+              onDescriptionChange={wf.setDescription}
+              onStartPlanning={wf.handleStartPlanning}
+              onStartBrainstorming={wf.handleStartBrainstorming}
+              isStartingPlan={wf.isStartingPlan}
+              isStartingBrainstorm={wf.isStartingBrainstorm}
+            />
+          </div>
         )}
 
         {view !== "plan-input" && (
-          <WorktreeSetupSection featureId={featureId} projectId={projectId} />
+          <div className="shrink-0 px-6 pt-6">
+            <WorktreeSetupSection featureId={featureId} projectId={projectId} />
+          </div>
         )}
 
         {(wf.hasAnyAgentOutput ||
           actions.canStartBuild ||
           actions.canStartRisk ||
           actions.canStartReview) && (
-          <div className="space-y-2">
+          <div className="flex flex-col gap-2 flex-1 min-h-0 px-6 py-2">
             {wf.sessionEntries.map((entry, index) => {
               const label = entry.agentType === "execute" && entry.phaseTitle
                 ? `Execute - ${entry.phaseTitle}`
@@ -370,32 +374,34 @@ export function FeatureWorkflowView({
               );
             })}
 
-            <NextStepsBar
-              show={
-                wf.noAgentsRunning &&
-                (actions.canStartBuild ||
-                  actions.canStartRisk ||
-                  actions.canStartReview ||
-                  wf.canContinueBuild)
-              }
-              canStartBuild={actions.canStartBuild}
-              canStartRisk={actions.canStartRisk}
-              canStartReview={actions.canStartReview}
-              executeStatus={wf.execute.status}
-              onStartBuilding={wf.handleStartBuilding}
-              onStartRisk={wf.handleStartRisk}
-              onStartReview={wf.handleStartReview}
-              isStartingExecute={wf.isStartingExecute}
-              isStartingRisk={wf.isStartingRisk}
-              isStartingReview={wf.isStartingReview}
-              canContinueBuild={wf.canContinueBuild}
-              onContinueBuild={wf.handleContinueBuild}
-              isContinuingBuild={wf.isContinuingBuild}
-              nextStepNumber={wf.executeWaitingNextStep}
-            />
+            <div className="shrink-0">
+              <NextStepsBar
+                show={
+                  wf.noAgentsRunning &&
+                  (actions.canStartBuild ||
+                    actions.canStartRisk ||
+                    actions.canStartReview ||
+                    wf.canContinueBuild)
+                }
+                canStartBuild={actions.canStartBuild}
+                canStartRisk={actions.canStartRisk}
+                canStartReview={actions.canStartReview}
+                executeStatus={wf.execute.status}
+                onStartBuilding={wf.handleStartBuilding}
+                onStartRisk={wf.handleStartRisk}
+                onStartReview={wf.handleStartReview}
+                isStartingExecute={wf.isStartingExecute}
+                isStartingRisk={wf.isStartingRisk}
+                isStartingReview={wf.isStartingReview}
+                canContinueBuild={wf.canContinueBuild}
+                onContinueBuild={wf.handleContinueBuild}
+                isContinuingBuild={wf.isContinuingBuild}
+                nextStepNumber={wf.executeWaitingNextStep}
+              />
+            </div>
 
             {view === "done" && (
-              <div className="flex items-center gap-3 pt-4">
+              <div className="shrink-0 flex items-center gap-3 pt-4">
                 <CheckCircle2Icon className="size-8 text-green-600" />
                 <div>
                   <h2 className="text-lg font-semibold">Feature Complete</h2>
@@ -409,7 +415,7 @@ export function FeatureWorkflowView({
         )}
 
         {view === "done" && !wf.hasAnyAgentOutput && (
-          <div className="mx-auto max-w-2xl space-y-4">
+          <div className="mx-auto max-w-2xl space-y-4 p-6">
             <div className="flex items-center gap-3">
               <CheckCircle2Icon className="size-8 text-green-600" />
               <div>

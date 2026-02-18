@@ -479,13 +479,15 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
     <div
       className={cn(
         "flex flex-col rounded-lg border border-border bg-background",
+        isOpen && "flex-1 min-h-0",
+        !isOpen && "shrink-0",
         className,
       )}
     >
       {/* Header -- clickable to toggle */}
       <div
         ref={headerRef}
-        className="flex cursor-pointer items-center gap-2 px-3 py-2 outline-none hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:bg-blue-500/10"
+        className="shrink-0 flex cursor-pointer items-center gap-2 px-3 py-2 outline-none hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:bg-blue-500/10"
         onClick={handleToggle}
         data-nav-item
         {...(navAgentIndex != null ? { "data-nav-agent-index": navAgentIndex } : {})}
@@ -541,7 +543,7 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
       {/* Collapsible content */}
       {isOpen && (
         <>
-          <div ref={scrollContainerRef} className="border-t border-border overflow-y-auto" style={{ overflowAnchor: "none" }}>
+          <div ref={scrollContainerRef} className="flex-1 min-h-0 border-t border-border overflow-y-auto" style={{ overflowAnchor: "none" }}>
             {/* Stream content */}
             {blocks.length === 0 && status === "idle" ? (
               <div className="flex flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
@@ -552,30 +554,33 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
             )}
           </div>
 
-          {/* Review verdict actions */}
-          {reviewVerdictSection}
+          {/* Bottom section — pinned below scroll area */}
+          <div className="shrink-0">
+            {/* Review verdict actions */}
+            {reviewVerdictSection}
 
-          {/* Inline diff trigger */}
-          {diffBar}
+            {/* Inline diff trigger */}
+            {diffBar}
 
-          {/* Todo list */}
-          {todoBar}
+            {/* Todo list */}
+            {todoBar}
 
-          {/* Model switcher */}
-          {modelBar}
+            {/* Model switcher */}
+            {modelBar}
 
-          {/* Permission prompt */}
-          {permissionBar}
+            {/* Permission prompt */}
+            {permissionBar}
 
-          {/* Prompt bar */}
-          {promptBar && (
-            <div className="border-t border-border">
-              {promptBar}
-            </div>
-          )}
+            {/* Prompt bar */}
+            {promptBar && (
+              <div className="border-t border-border">
+                {promptBar}
+              </div>
+            )}
 
-          {/* Context usage bar */}
-          <ContextUsageBar usage={contextUsage} />
+            {/* Context usage bar */}
+            <ContextUsageBar usage={contextUsage} />
+          </div>
         </>
       )}
     </div>
