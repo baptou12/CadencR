@@ -9,6 +9,7 @@ import {
   FileTextIcon,
   MessageSquareIcon,
   ArrowLeftIcon,
+  TerminalIcon,
 } from "lucide-react";
 import {
   CommandDialog,
@@ -304,6 +305,26 @@ export function CommandPalette({
               <DiffIcon className="mr-2" />
               Open Diff
               <span className="ml-auto"><KbdShortcut keys={["cmd", "shift", "D"]} /></span>
+            </CommandItem>
+          )}
+          {activeFeatureId != null && (
+            <CommandItem
+              onSelect={() => {
+                // Dispatch Ctrl+` to toggle terminal panel
+                window.dispatchEvent(
+                  new KeyboardEvent("keydown", {
+                    key: "`",
+                    code: "Backquote",
+                    ctrlKey: true,
+                    bubbles: true,
+                  }),
+                );
+                close();
+              }}
+            >
+              <TerminalIcon className="mr-2" />
+              Toggle Terminal
+              <span className="ml-auto"><KbdShortcut keys={["ctrl", "`"]} /></span>
             </CommandItem>
           )}
         </CommandGroup>

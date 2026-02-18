@@ -55,13 +55,27 @@ function resolveTerminalCwd(featureId: number, projectId: number): string {
     .prepare("SELECT path FROM projects WHERE id = ?")
     .get(projectId) as Pick<ProjectRow, "path"> | undefined;
 
-  if (!project?.path) throw new Error("No working directory found for this feature");
+  if (!project?.path) return os.homedir();
   return project.path;
 }
 
 // ---------------------------------------------------------------------------
 // Terminal TRPC router
 // ---------------------------------------------------------------------------
+
+/**
+ * Kill all PTY instances. Used during app shutdown for graceful cleanup.
+ */
+export function killAllTerminalPtys(): void {
+  for (const [id, instance] of ptyInstances) {
+    try {
+      instance.ptyProcess.kill();
+    } catch {
+      // PTY may already be dead — ignore
+    }
+    ptyInstances.delete(id);
+  }
+}
 
 export const terminalRouter = router({
   /** Create a new PTY terminal for a feature/session */
