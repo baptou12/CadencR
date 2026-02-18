@@ -110,3 +110,83 @@ async function runAutoName(
     });
   }
 }
+
+/**
+ * Run ONLY the auto-naming logic (blocking). Does NOT chain worktree setup.
+ * Returns the generated name, or null if naming failed.
+ */
+export async function runAutoNameBlocking(
+  featureId: number,
+  userInput: string,
+  cwd: string,
+): Promise<string | null> {
+  const cliInfo = discoverClaudeCli();
+  if (!cliInfo) return null;
+
+  const sdk = await import("@anthropic-ai/claude-agent-sdk");
+  const { query } = sdk as {
+    query: (opts: {
+      prompt: string;
+      options?: Record<string, unknown>;
+    }) => AsyncIterable<Record<string, unknown>>;
+  };
+
+  const prompt = `Now name this session. User's first message: "${userInput.replace(/"/g, '\\"')}". Reply with ONLY: __FEATURE_NAME_START__<name>__FEATURE_NAME_END__`;
+
+  let accumulatedText = "";
+
+  const result = query({
+    prompt,
+    options: {
+      cwd,
+      permissionMode: "bypassPermissions" as const,
+      pathToClaudeCodeExecutable: cliInfo.path,
+      model: AUTO_NAME_MODEL,
+      systemPrompt: AUTO_NAME_SYSTEM_PROMPT,
+      allowedTools: [],
+    },
+  });
+
+  for await (const msg of result) {
+    const type = msg.type as string;
+    if (type === "stream_event") {
+      const event = msg.event as Record<string, unknown>;
+      if (!event) continue;
+      if (
+        event.type === "content_block_start" &&
+        (event.content_block as Record<string, unknown>)?.type === "text"
+      ) {
+        accumulatedText += (event.content_block as Record<string, unknown>).text as string;
+      } else if (
+        event.type === "content_block_delta" &&
+        (event.delta as Record<string, unknown>)?.type === "text_delta"
+      ) {
+        accumulatedText += (event.delta as Record<string, unknown>).text as string;
+      }
+    } else if (type === "assistant") {
+      const message = msg.message as Record<string, unknown> | undefined;
+      const content = message?.content as Array<Record<string, unknown>> | undefined;
+      if (content) {
+        for (const block of content) {
+          if (block.type === "text") {
+            accumulatedText += block.text as string;
+          }
+        }
+      }
+    }
+  }
+
+  const match = accumulatedText.match(
+    /__FEATURE_NAME_START__(.+?)__FEATURE_NAME_END__/,
+  );
+  const name = (match ? match[1] : accumulatedText)
+    .trim()
+    .replace(/^["']|["']$/g, "");
+  if (!name) return null;
+
+  const db = getDatabase();
+  db.prepare("UPDATE features SET title = ? WHERE id = ?").run(name, featureId);
+  notifyDbUpdated("feature", featureId);
+
+  return name;
+}

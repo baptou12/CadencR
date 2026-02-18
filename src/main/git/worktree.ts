@@ -185,7 +185,8 @@ function setFeatureSetting(featureId: number, key: string, value: string): void 
 export async function setupWorktreeForFeature(
   projectId: number,
   featureId: number,
-): Promise<void> {
+  options?: { skipSetupCommands?: boolean; onlySetupCommands?: boolean },
+): Promise<string | void> {
   const db = getDatabase();
 
   const feature = db
@@ -197,6 +198,18 @@ export async function setupWorktreeForFeature(
     .prepare("SELECT name, path FROM projects WHERE id = ?")
     .get(projectId) as { name: string; path: string } | undefined;
   if (!project?.path) throw new Error(`Project path not found: ${projectId}`);
+
+  // If onlySetupCommands, skip straight to running setup commands on an existing worktree
+  if (options?.onlySetupCommands) {
+    const wtRow = db
+      .prepare(
+        "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
+      )
+      .get(featureId) as { value: string } | undefined;
+    if (!wtRow) throw new Error(`No worktree path found for feature ${featureId}`);
+    await runSetupCommands(projectId, featureId, wtRow.value);
+    return;
+  }
 
   // Step 1: Naming is already done
   setFeatureSetting(featureId, "worktree_setup_step", "named");
@@ -221,47 +234,13 @@ export async function setupWorktreeForFeature(
     setFeatureSetting(featureId, "worktree_setup_step", "created");
     notifyDbUpdated("feature", featureId);
 
-    // Step 3: Run setup commands
-    const setupRow = db
-      .prepare(
-        "SELECT value FROM project_settings WHERE project_id = ? AND key = 'setup_worktree'",
-      )
-      .get(projectId) as { value: string } | undefined;
-    const setupCommands = setupRow?.value?.trim();
-
-    if (setupCommands) {
-      setFeatureSetting(featureId, "worktree_setup_step", "setup");
-      setFeatureSetting(featureId, "worktree_setup_log", "");
-      notifyDbUpdated("feature", featureId);
-
-      const lines = setupCommands.split("\n").filter((l) => l.trim());
-      let accumulatedLog = "";
-
-      for (const cmd of lines) {
-        try {
-          accumulatedLog += `$ ${cmd}\n`;
-          setFeatureSetting(featureId, "worktree_setup_log", accumulatedLog);
-          notifyDbUpdated("feature", featureId);
-
-          const { stdout, stderr } = await execAsync(cmd, {
-            cwd: wt.worktreePath,
-            timeout: 120_000,
-          });
-          if (stdout) accumulatedLog += stdout;
-          if (stderr) accumulatedLog += stderr;
-          setFeatureSetting(featureId, "worktree_setup_log", accumulatedLog);
-          notifyDbUpdated("feature", featureId);
-        } catch (err: unknown) {
-          const errorMessage = err instanceof Error ? err.message : String(err);
-          accumulatedLog += `ERROR: ${errorMessage}\n`;
-          setFeatureSetting(featureId, "worktree_setup_log", accumulatedLog);
-          setFeatureSetting(featureId, "worktree_setup_step", "error");
-          setFeatureSetting(featureId, "worktree_setup_error", errorMessage);
-          notifyDbUpdated("feature", featureId);
-          return;
-        }
-      }
+    // If skipSetupCommands, return the worktree path immediately without running setup commands
+    if (options?.skipSetupCommands) {
+      return wt.worktreePath;
     }
+
+    // Step 3: Run setup commands
+    await runSetupCommands(projectId, featureId, wt.worktreePath);
 
     setFeatureSetting(featureId, "worktree_setup_step", "done");
     notifyDbUpdated("feature", featureId);
@@ -271,6 +250,58 @@ export async function setupWorktreeForFeature(
     setFeatureSetting(featureId, "worktree_setup_step", "error");
     setFeatureSetting(featureId, "worktree_setup_error", errorMessage);
     notifyDbUpdated("feature", featureId);
+  }
+}
+
+/**
+ * Run setup commands in a worktree directory.
+ * Extracted from setupWorktreeForFeature to allow running setup commands separately.
+ */
+async function runSetupCommands(
+  projectId: number,
+  featureId: number,
+  worktreePath: string,
+): Promise<void> {
+  const db = getDatabase();
+  const setupRow = db
+    .prepare(
+      "SELECT value FROM project_settings WHERE project_id = ? AND key = 'setup_worktree'",
+    )
+    .get(projectId) as { value: string } | undefined;
+  const setupCommands = setupRow?.value?.trim();
+
+  if (setupCommands) {
+    setFeatureSetting(featureId, "worktree_setup_step", "setup");
+    setFeatureSetting(featureId, "worktree_setup_log", "");
+    notifyDbUpdated("feature", featureId);
+
+    const lines = setupCommands.split("\n").filter((l) => l.trim());
+    let accumulatedLog = "";
+
+    for (const cmd of lines) {
+      try {
+        accumulatedLog += `$ ${cmd}\n`;
+        setFeatureSetting(featureId, "worktree_setup_log", accumulatedLog);
+        notifyDbUpdated("feature", featureId);
+
+        const { stdout, stderr } = await execAsync(cmd, {
+          cwd: worktreePath,
+          timeout: 120_000,
+        });
+        if (stdout) accumulatedLog += stdout;
+        if (stderr) accumulatedLog += stderr;
+        setFeatureSetting(featureId, "worktree_setup_log", accumulatedLog);
+        notifyDbUpdated("feature", featureId);
+      } catch (err: unknown) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        accumulatedLog += `ERROR: ${errorMessage}\n`;
+        setFeatureSetting(featureId, "worktree_setup_log", accumulatedLog);
+        setFeatureSetting(featureId, "worktree_setup_step", "error");
+        setFeatureSetting(featureId, "worktree_setup_error", errorMessage);
+        notifyDbUpdated("feature", featureId);
+        return;
+      }
+    }
   }
 }
 

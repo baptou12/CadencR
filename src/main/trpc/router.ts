@@ -42,7 +42,7 @@ import { startExecuteAgent, continueExecuteAgent } from "../agents/execute-agent
 import { startRiskAgent } from "../agents/risk-agent";
 import { startReviewAgent, addFixPhase } from "../agents/review-agent";
 import { startSessionAgent } from "../agents/session-agent";
-import { autoNameFeature } from "../agents/auto-name";
+import { autoNameFeature, runAutoNameBlocking } from "../agents/auto-name";
 
 /**
  * Resolve the git directory for a feature.
@@ -609,6 +609,54 @@ const agentsRouter = router({
       }
 
       return result;
+    }),
+
+  /** Ensure a worktree exists for a feature, blocking until created.
+   *  Auto-names the feature first if it has a default title.
+   *  Returns the worktree path as `cwd`.
+   *  Setup commands are fired off in the background (non-blocking). */
+  ensureWorktree: publicProcedure
+    .input(
+      z.object({
+        featureId: z.number(),
+        projectId: z.number(),
+        description: z.string(),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      const db = getDatabase();
+      const project = db
+        .prepare("SELECT path FROM projects WHERE id = ?")
+        .get(input.projectId) as Pick<ProjectRow, "path"> | undefined;
+      if (!project?.path) throw new Error("Project path not found");
+
+      // Step 1: Auto-name if feature has a default title
+      const feature = db
+        .prepare("SELECT title FROM features WHERE id = ?")
+        .get(input.featureId) as { title: string } | undefined;
+      if (!feature) throw new Error(`Feature not found: ${input.featureId}`);
+
+      if (/^(Untitled Feature|Session \d+)$/i.test(feature.title)) {
+        await runAutoNameBlocking(input.featureId, input.description, project.path);
+      }
+
+      // Step 2: Create worktree (blocking) — returns after worktree exists on disk
+      const worktreePath = await setupWorktreeForFeature(
+        input.projectId,
+        input.featureId,
+        { skipSetupCommands: true },
+      );
+
+      // Step 3: Fire off setup commands in background (non-blocking)
+      setupWorktreeForFeature(input.projectId, input.featureId, {
+        onlySetupCommands: true,
+      }).catch((err) => {
+        console.error("[ensureWorktree] Setup commands failed:", err);
+      });
+
+      // worktreePath is the returned path from skipSetupCommands mode
+      const cwd = worktreePath ?? project.path;
+      return { cwd };
     }),
 
   /** Get sessions for a feature (optionally filter by status) */
