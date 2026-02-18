@@ -13,7 +13,7 @@ import { useWorkflowAgents } from "@/hooks/useWorkflowAgents";
 import { getActiveFocusZone } from "@/lib/focus-zones";
 import { DiffViewerModal, type ExecuteAgentState } from "@/components/diff/DiffViewerModal";
 import { WorktreeSetupSection } from "@/components/WorktreeSetupSection";
-import { TerminalPanel } from "@/components/terminal/TerminalPanel";
+import { TerminalPanel, type TerminalPanelHandle } from "@/components/terminal/TerminalPanel";
 import type { FeatureSession } from "@/hooks/useFeatureAgentState";
 import { useContextUsage } from "@/hooks/useContextUsage";
 import { useResolvedModel } from "@/hooks/useResolvedModel";
@@ -280,6 +280,7 @@ export function FeatureWorkflowView({
   ).length;
 
   // Terminal panel state
+  const terminalRef = useRef<TerminalPanelHandle>(null);
   const terminalState = useTerminalState(featureId);
   const terminalHeightSetting = useDebouncedSetting("terminal_panel_height_px");
   const [terminalHeightPx, setTerminalHeightPx] = useState(300);
@@ -310,12 +311,31 @@ export function FeatureWorkflowView({
     document.addEventListener("mouseup", onMouseUp);
   }, [terminalHeightPx, terminalHeightSetting]);
 
+  /** Focus the last active agent's prompt (used when terminal collapses) */
+  const focusLastAgentPrompt = useCallback(() => {
+    requestAnimationFrame(() => {
+      // Try to focus the last running/paused agent, otherwise the last agent
+      const entries = wf.sessionEntries;
+      const activeIndex = entries.findLastIndex((e) => e.status === "running" || e.status === "paused");
+      const targetIndex = activeIndex >= 0 ? activeIndex : entries.length - 1;
+      if (targetIndex >= 0) {
+        agentRefs.current.get(targetIndex)?.focusActiveInput();
+      }
+    });
+  }, [wf.sessionEntries]);
+
   // Ctrl+` — toggle terminal panel
   useHotkeys(
     "ctrl+backquote",
     (e) => {
       e.preventDefault();
+      const wasOpen = terminalState.isOpen && !terminalState.isMinimized;
       terminalState.togglePanel();
+      if (wasOpen) {
+        focusLastAgentPrompt();
+      } else {
+        requestAnimationFrame(() => terminalRef.current?.focusActivePane());
+      }
     },
     { enableOnFormTags: true },
   );
@@ -558,6 +578,7 @@ export function FeatureWorkflowView({
             }}
           >
             <TerminalPanel
+              ref={terminalRef}
               featureId={featureId}
               projectId={projectId}
               state={terminalState}
@@ -566,6 +587,7 @@ export function FeatureWorkflowView({
               removePane={terminalState.removePane}
               minimize={terminalState.minimize}
               onToolbarMouseDown={handleTerminalToolbarMouseDown}
+              onCollapse={focusLastAgentPrompt}
             />
           </div>
         )}

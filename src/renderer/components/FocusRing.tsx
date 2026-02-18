@@ -1,7 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 
 const IMPORTANT_SELECTOR = [
-  "textarea",
   "[data-nav-item]",
   "[data-focus-ring]",
   "[data-permission-area] button",

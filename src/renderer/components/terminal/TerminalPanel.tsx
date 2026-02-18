@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useRef, useState } from "react";
+import { Fragment, forwardRef, useCallback, useImperativeHandle, useRef, useState } from "react";
 import { Plus, SplitSquareHorizontal, Minus, X, TerminalIcon } from "lucide-react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { XTermInstance, type XTermInstanceHandle } from "./XTermInstance";
@@ -21,9 +21,16 @@ interface TerminalPanelProps {
   minimize: () => void;
   /** Mousedown handler for the toolbar — used by the parent to implement drag-to-resize */
   onToolbarMouseDown?: (e: React.MouseEvent) => void;
+  /** Called when terminal is collapsed/minimized — parent can use this to refocus the prompt */
+  onCollapse?: () => void;
 }
 
-export function TerminalPanel({
+export interface TerminalPanelHandle {
+  /** Focus the active (or first) terminal pane */
+  focusActivePane: () => void;
+}
+
+export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>(function TerminalPanel({
   featureId,
   projectId,
   state,
@@ -32,7 +39,8 @@ export function TerminalPanel({
   removePane,
   minimize,
   onToolbarMouseDown,
-}: TerminalPanelProps) {
+  onCollapse,
+}, ref) {
   const { isMinimized, panes } = state;
   const paneRefs = useRef<Map<string, XTermInstanceHandle>>(new Map());
   const [activePaneIndex, setActivePaneIndex] = useState(0);
@@ -67,6 +75,12 @@ export function TerminalPanel({
   const focusFirstPane = useCallback(() => {
     focusPaneByIndex(0);
   }, [focusPaneByIndex]);
+
+  useImperativeHandle(ref, () => ({
+    focusActivePane: () => {
+      focusPaneByIndex(activePaneIndex);
+    },
+  }), [activePaneIndex, focusPaneByIndex]);
 
   // CMD+OPT+LEFT — focus previous terminal pane
   useHotkeys(
@@ -163,7 +177,14 @@ export function TerminalPanel({
           {/* Minimize / Restore */}
           <button
             type="button"
-            onClick={isMinimized ? togglePanel : minimize}
+            onClick={() => {
+              if (isMinimized) {
+                togglePanel();
+              } else {
+                minimize();
+                onCollapse?.();
+              }
+            }}
             className="flex size-6 items-center justify-center rounded text-[#565f89] transition-colors hover:bg-[#292e42] hover:text-[#c0caf5]"
             title={isMinimized ? "Restore terminal" : "Minimize terminal"}
           >
@@ -213,4 +234,4 @@ export function TerminalPanel({
       </div>
     </div>
   );
-}
+});

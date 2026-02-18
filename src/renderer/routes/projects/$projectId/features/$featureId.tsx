@@ -6,7 +6,7 @@ import { FeatureTopBar } from "@/components/FeatureTopBar";
 import { AgentSession, type AgentSessionHandle } from "@/components/AgentSession";
 import { FeatureWorkflowView } from "@/components/FeatureWorkflowView";
 import { DiffViewerModal } from "@/components/diff/DiffViewerModal";
-import { TerminalPanel } from "@/components/terminal/TerminalPanel";
+import { TerminalPanel, type TerminalPanelHandle } from "@/components/terminal/TerminalPanel";
 import { useFeatureAgentState } from "@/hooks/useFeatureAgentState";
 import { useContextUsage } from "@/hooks/useContextUsage";
 import { useResolvedModel } from "@/hooks/useResolvedModel";
@@ -227,6 +227,7 @@ function SessionFeatureView({
   }, [session?.subprocessId, interruptMutation, refetch]);
 
   // Terminal panel state
+  const terminalRef = useRef<TerminalPanelHandle>(null);
   const terminalState = useTerminalState(featureId);
   const terminalHeightSetting = useDebouncedSetting("terminal_panel_height_px");
   const [terminalHeightPx, setTerminalHeightPx] = useState(300);
@@ -257,12 +258,25 @@ function SessionFeatureView({
     document.addEventListener("mouseup", onMouseUp);
   }, [terminalHeightPx, terminalHeightSetting]);
 
+  /** Focus the session prompt bar (used when terminal collapses) */
+  const focusSessionPrompt = useCallback(() => {
+    requestAnimationFrame(() => {
+      agentRef.current?.focusActiveInput();
+    });
+  }, []);
+
   // Ctrl+` — toggle terminal panel
   useHotkeys(
     "ctrl+backquote",
     (e) => {
       e.preventDefault();
+      const wasOpen = terminalState.isOpen && !terminalState.isMinimized;
       terminalState.togglePanel();
+      if (wasOpen) {
+        focusSessionPrompt();
+      } else {
+        requestAnimationFrame(() => terminalRef.current?.focusActivePane());
+      }
     },
     { enableOnFormTags: true },
   );
@@ -324,6 +338,7 @@ function SessionFeatureView({
             }}
           >
             <TerminalPanel
+              ref={terminalRef}
               featureId={featureId}
               projectId={projectId}
               state={terminalState}
@@ -332,6 +347,7 @@ function SessionFeatureView({
               removePane={terminalState.removePane}
               minimize={terminalState.minimize}
               onToolbarMouseDown={handleTerminalToolbarMouseDown}
+              onCollapse={focusSessionPrompt}
             />
           </div>
         )}
