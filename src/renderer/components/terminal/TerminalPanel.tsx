@@ -1,8 +1,7 @@
 import { useCallback } from "react";
-import { useHotkeys } from "react-hotkeys-hook";
 import { Plus, SplitSquareHorizontal, Minus, X, TerminalIcon } from "lucide-react";
 import { XTermInstance } from "./XTermInstance";
-import { useTerminalState } from "@/hooks/useTerminalState";
+import type { TerminalPanelState } from "@/hooks/useTerminalState";
 import {
   ResizablePanelGroup,
   ResizablePanel,
@@ -12,39 +11,24 @@ import {
 interface TerminalPanelProps {
   featureId: number;
   projectId: number;
+  /** Terminal panel state (provided by parent via useTerminalState) */
+  state: TerminalPanelState;
+  togglePanel: () => void;
+  addPane: () => void;
+  removePane: (paneId: string) => void;
+  minimize: () => void;
 }
 
-export function TerminalPanel({ featureId, projectId }: TerminalPanelProps) {
-  const {
-    isOpen,
-    isMinimized,
-    panes,
-    togglePanel,
-    addPane,
-    removePane,
-    minimize,
-  } = useTerminalState(featureId);
-
-  // Ctrl+` — toggle terminal panel
-  useHotkeys(
-    "ctrl+`",
-    (e) => {
-      e.preventDefault();
-      togglePanel();
-    },
-    { enableOnFormTags: true },
-  );
-
-  // Ctrl+Shift+` — add a new split pane (only when panel is open)
-  useHotkeys(
-    "ctrl+shift+`",
-    (e) => {
-      if (!isOpen || isMinimized) return;
-      e.preventDefault();
-      addPane();
-    },
-    { enableOnFormTags: true },
-  );
+export function TerminalPanel({
+  featureId,
+  projectId,
+  state,
+  togglePanel,
+  addPane,
+  removePane,
+  minimize,
+}: TerminalPanelProps) {
+  const { isOpen, isMinimized, panes } = state;
 
   const handlePaneExit = useCallback(
     (ptyId: string, paneId: string) => {
@@ -59,7 +43,7 @@ export function TerminalPanel({ featureId, projectId }: TerminalPanelProps) {
   if (!isOpen) return null;
 
   return (
-    <div className="flex flex-col border-t border-border">
+    <div className="flex h-full flex-col border-t border-border">
       {/* Toolbar — always visible when panel is open */}
       <div className="flex h-8 shrink-0 items-center justify-between border-b border-border bg-[#1e1e2e] px-2">
         <div className="flex items-center gap-1">
@@ -102,8 +86,8 @@ export function TerminalPanel({ featureId, projectId }: TerminalPanelProps) {
 
       {/* Terminal panes — hidden when minimized but kept mounted so PTYs stay alive */}
       <div
-        className="flex-1 overflow-hidden"
-        style={{ height: isMinimized ? 0 : 300, minHeight: isMinimized ? 0 : 120 }}
+        className="min-h-0 flex-1 overflow-hidden"
+        style={isMinimized ? { height: 0, minHeight: 0 } : undefined}
       >
         {panes.length === 1 ? (
           <div className="relative h-full">

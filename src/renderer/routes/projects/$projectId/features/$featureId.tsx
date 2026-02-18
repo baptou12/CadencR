@@ -6,10 +6,19 @@ import { FeatureTopBar } from "@/components/FeatureTopBar";
 import { AgentSession, type AgentSessionHandle } from "@/components/AgentSession";
 import { FeatureWorkflowView } from "@/components/FeatureWorkflowView";
 import { DiffViewerModal } from "@/components/diff/DiffViewerModal";
+import { TerminalPanel } from "@/components/terminal/TerminalPanel";
+import {
+  ResizablePanelGroup,
+  ResizablePanel,
+  ResizableHandle,
+} from "@/components/ui/resizable";
 import { useFeatureAgentState } from "@/hooks/useFeatureAgentState";
 import { useContextUsage } from "@/hooks/useContextUsage";
 import { useResolvedModel } from "@/hooks/useResolvedModel";
 import { getActiveFocusZone } from "@/lib/focus-zones";
+import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
+import { useTerminalState } from "@/hooks/useTerminalState";
+import type { PanelSize } from "react-resizable-panels";
 
 export const Route = createFileRoute(
   "/projects/$projectId/features/$featureId",
@@ -223,6 +232,40 @@ function SessionFeatureView({
     void refetch();
   }, [session?.subprocessId, interruptMutation, refetch]);
 
+  // Terminal panel state
+  const terminalState = useTerminalState(featureId);
+  const terminalHeight = useDebouncedSetting("terminal_panel_height");
+
+  const handleTerminalResize = useCallback(
+    (panelSize: PanelSize) => {
+      terminalHeight.setValue(String(Math.round(panelSize.inPixels)));
+    },
+    [terminalHeight],
+  );
+
+  const defaultTerminalHeight = terminalHeight.value ? `${terminalHeight.value}px` : "300px";
+
+  // Ctrl+` — toggle terminal panel
+  useHotkeys(
+    "ctrl+`",
+    (e) => {
+      e.preventDefault();
+      terminalState.togglePanel();
+    },
+    { enableOnFormTags: true },
+  );
+
+  // Ctrl+Shift+` — add a new split pane (only when panel is open)
+  useHotkeys(
+    "ctrl+shift+`",
+    (e) => {
+      if (!terminalState.isOpen || terminalState.isMinimized) return;
+      e.preventDefault();
+      terminalState.addPane();
+    },
+    { enableOnFormTags: true },
+  );
+
   return (
     <div className="flex h-full flex-col">
       <FeatureTopBar featureId={featureId} projectId={projectId} mode="session" className="shrink-0" />
@@ -231,34 +274,59 @@ function SessionFeatureView({
           Previous session paused — type a message to resume.
         </div>
       )}
-      <AgentSession
-        ref={agentRef}
-        agentType="session"
-        blocks={blocks}
-        status={status}
-        onSend={handleSend}
-        onStop={handleStop}
-        pendingQuestions={session?.pendingQuestions ?? undefined}
-        onAnswerSubmit={handleAnswerSubmit}
-        disabled={startSessionMutation.isLoading || resumeMutation.isLoading}
-        hasFileChanges={hasFileChanges}
-        onViewDiff={handleViewDiff}
-        todos={todos}
-        permissionMode={permissionMode}
-        onPermissionModeToggle={handlePermissionModeToggle}
-        pendingPlanApproval={session?.pendingPlanApproval}
-        onPlanApprove={handlePlanApprove}
-        onPlanRequestChanges={handlePlanRequestChanges}
-        contextUsage={session ? contextUsageMap.get(session.sessionDbId) : null}
-        currentModelId={currentModelId}
-        onModelChange={handleModelChange}
-        featureId={featureId}
-        projectId={projectId}
-        subprocessId={session?.subprocessId ?? undefined}
-        pendingPermission={session?.pendingPermission}
-        onPermissionDecision={handlePermissionDecision}
-        className="min-h-0"
-      />
+      <ResizablePanelGroup orientation="vertical" className="min-h-0 flex-1">
+        <ResizablePanel defaultSize="1fr" minSize="120px">
+          <AgentSession
+            ref={agentRef}
+            agentType="session"
+            blocks={blocks}
+            status={status}
+            onSend={handleSend}
+            onStop={handleStop}
+            pendingQuestions={session?.pendingQuestions ?? undefined}
+            onAnswerSubmit={handleAnswerSubmit}
+            disabled={startSessionMutation.isLoading || resumeMutation.isLoading}
+            hasFileChanges={hasFileChanges}
+            onViewDiff={handleViewDiff}
+            todos={todos}
+            permissionMode={permissionMode}
+            onPermissionModeToggle={handlePermissionModeToggle}
+            pendingPlanApproval={session?.pendingPlanApproval}
+            onPlanApprove={handlePlanApprove}
+            onPlanRequestChanges={handlePlanRequestChanges}
+            contextUsage={session ? contextUsageMap.get(session.sessionDbId) : null}
+            currentModelId={currentModelId}
+            onModelChange={handleModelChange}
+            featureId={featureId}
+            projectId={projectId}
+            subprocessId={session?.subprocessId ?? undefined}
+            pendingPermission={session?.pendingPermission}
+            onPermissionDecision={handlePermissionDecision}
+            className="h-full"
+          />
+        </ResizablePanel>
+        {terminalState.isOpen && (
+          <>
+            <ResizableHandle />
+            <ResizablePanel
+              defaultSize={defaultTerminalHeight}
+              minSize="80px"
+              maxSize="80%"
+              onResize={handleTerminalResize}
+            >
+              <TerminalPanel
+                featureId={featureId}
+                projectId={projectId}
+                state={terminalState}
+                togglePanel={terminalState.togglePanel}
+                addPane={terminalState.addPane}
+                removePane={terminalState.removePane}
+                minimize={terminalState.minimize}
+              />
+            </ResizablePanel>
+          </>
+        )}
+      </ResizablePanelGroup>
       <DiffViewerModal
         featureId={featureId}
         open={inlineDiffOpen}
