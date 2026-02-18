@@ -15,6 +15,7 @@
  * individual agent start functions.
  */
 
+import fs from "node:fs";
 import { BrowserWindow } from "electron";
 import { getDatabase } from "../db/database";
 import { startSubprocess } from "./subprocess-manager";
@@ -50,6 +51,19 @@ export interface UnifiedAgentResult {
  * actions — everything else is handled uniformly.
  */
 export function startUnifiedAgent(config: UnifiedAgentConfig): UnifiedAgentResult {
+  // 0. Validate CWD exists and is a directory
+  if (!fs.existsSync(config.cwd)) {
+    throw new Error(
+      `Agent working directory does not exist: ${config.cwd}. The worktree may not have been created yet or was removed.`,
+    );
+  }
+  const cwdStat = fs.statSync(config.cwd);
+  if (!cwdStat.isDirectory()) {
+    throw new Error(
+      `Agent working directory is not a directory: ${config.cwd}`,
+    );
+  }
+
   const db = getDatabase();
 
   // 1. Resolve model

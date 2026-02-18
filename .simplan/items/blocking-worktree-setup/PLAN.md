@@ -69,11 +69,17 @@ Make worktree creation block before plan/brainstorm agents start, with live prog
   - `pnpm run lint`: 0 warnings, 0 errors -- PASSED
   - Manual UI validation conditions (worktree exists before agent, live progress, plan auto-starts, agent CWD is worktree) require runtime testing with a running Electron app.
 
-### Phase 3: Add CWD validation guard
+### ✅ Phase 3: Add CWD validation guard
 - **Step**: 3
 - **Complexity**: 1
 - **Tasks**:
-  - Add `fs.existsSync(cwd)` check in `resolveAgentCwd()` in `src/main/trpc/router.ts` — throw descriptive error if directory doesn't exist
-  - Add CWD validation at top of `startUnifiedAgent()` in `src/main/agents/unified-agent.ts` — verify cwd exists and is a directory before spawning subprocess
+  - [x] Add `fs.existsSync(cwd)` check in `resolveAgentCwd()` in `src/main/trpc/router.ts` — throw descriptive error if directory doesn't exist
+  - [x] Add CWD validation at top of `startUnifiedAgent()` in `src/main/agents/unified-agent.ts` — verify cwd exists and is a directory before spawning subprocess
 - **Files**: src/main/trpc/router.ts, src/main/agents/unified-agent.ts
 - **Commit message**: fix: validate agent working directory exists before spawning
+- **Implementation notes**:
+  - In `resolveAgentCwd()` (router.ts): Added `fs.existsSync(cwd)` check after the path is resolved but before returning. Throws a descriptive error mentioning the path and suggesting the worktree may not have been created yet. `fs` was already imported in this file.
+  - In `startUnifiedAgent()` (unified-agent.ts): Added step "0" at the very top of the function, before any DB operations. Checks both `fs.existsSync(config.cwd)` and `fs.statSync(config.cwd).isDirectory()` to ensure the path exists and is actually a directory. Added `import fs from "node:fs"` since it was not previously imported.
+  - This provides defense-in-depth: `resolveAgentCwd` catches bad paths at the tRPC layer, and `startUnifiedAgent` catches them at the agent layer (for any caller, not just tRPC).
+- **Validation results**:
+  - `pnpm run lint`: 0 warnings, 0 errors -- PASSED

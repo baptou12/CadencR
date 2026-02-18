@@ -180,6 +180,11 @@ function resolveAgentCwd(featureId: number, projectId: number): string {
 
   const cwd = wtRow?.value ?? project?.path;
   if (!cwd) throw new Error("No working directory found for this feature");
+  if (!fs.existsSync(cwd)) {
+    throw new Error(
+      `Agent working directory does not exist: ${cwd}. The worktree may not have been created yet or was removed.`,
+    );
+  }
   return cwd;
 }
 
