@@ -8,7 +8,6 @@ import {
   SelectValue,
 } from "./ui/select";
 import { AGENT_ICONS } from "./agent-icons";
-import { CLAUDE_MODELS } from "../../shared/models";
 
 const AGENT_TYPES = ["plan", "brainstorm", "execute", "risk", "review"] as const;
 type AgentType = (typeof AGENT_TYPES)[number];
@@ -31,6 +30,8 @@ interface ModelSelectorProps {
 
 export function ModelSelector({ level, projectId, featureId }: ModelSelectorProps) {
   const utils = trpc.useUtils();
+  const availableModels = trpc.settings.getAvailableModels.useQuery();
+  const models = availableModels.data ?? [];
 
   // Fetch model settings for this level
   const globalSettings = trpc.settings.getModelSettings.useQuery(undefined, {
@@ -87,7 +88,7 @@ export function ModelSelector({ level, projectId, featureId }: ModelSelectorProp
   }
 
   function getModelLabel(modelId: string): string {
-    return CLAUDE_MODELS.find((m) => m.id === modelId)?.label ?? modelId;
+    return models.find((m) => m.id === modelId)?.label ?? modelId;
   }
 
   function handleChange(agentType: AgentType, value: string) {
@@ -147,7 +148,7 @@ export function ModelSelector({ level, projectId, featureId }: ModelSelectorProp
                     Inherit default ({getModelLabel(effectiveModel)})
                   </SelectItem>
                 )}
-                {CLAUDE_MODELS.map((model) => (
+                {models.map((model) => (
                   <SelectItem key={model.id} value={model.id}>
                     {model.label}
                   </SelectItem>

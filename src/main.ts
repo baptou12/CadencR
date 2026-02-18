@@ -5,6 +5,7 @@ import { appRouter } from "./main/trpc/router";
 import { closeDatabase } from "./main/db/database";
 import { hasRunningSubprocesses, gracefulShutdown } from "./main/agents/subprocess-manager";
 import { restoreSessionMap } from "./main/agents/ipc-bridge";
+import { fetchAvailableModels } from "./main/agents/available-models";
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 import electronSquirrelStartup from "electron-squirrel-startup";
@@ -67,6 +68,7 @@ let isQuitting = false;
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 app.on("ready", () => {
+  fetchAvailableModels().catch(() => {}); // warm up cache
   // Restore in-memory session map from DB (for reconnection after restart)
   restoreSessionMap();
   createWindow();

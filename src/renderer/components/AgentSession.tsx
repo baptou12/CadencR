@@ -10,7 +10,7 @@
  * match data is provided).
  */
 
-import { useState, useEffect, useCallback, createElement, useRef, useImperativeHandle, forwardRef, useLayoutEffect } from "react";
+import { useState, useEffect, useCallback, useMemo, createElement, useRef, useImperativeHandle, forwardRef, useLayoutEffect } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -47,7 +47,7 @@ import type { ContextUsageState } from "@/hooks/useContextUsage";
 import type { PendingPermission } from "./ToolPermissionPrompt";
 import { ToolPermissionPrompt } from "./ToolPermissionPrompt";
 import { AGENT_ICONS } from "./agent-icons";
-import { CLAUDE_MODELS } from "../../shared/models";
+import { trpc } from "../trpc";
 
 // ---------------------------------------------------------------------------
 // Shared types & constants (previously in AgentPanel, now canonical here)
@@ -255,6 +255,8 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
   const promptBarRef = useRef<AgentPromptBarHandle>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [promptBarFocused, setPromptBarFocused] = useState(false);
+  const availableModels = trpc.settings.getAvailableModels.useQuery();
+  const models = useMemo(() => availableModels.data ?? [], [availableModels.data]);
 
   // Auto-scroll: only scroll to bottom when the prompt bar is focused
   useLayoutEffect(() => {
@@ -352,15 +354,14 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
   const todoBar = todos && todos.length > 0 ? <AgentTodoList todos={todos} /> : null;
 
   // ---- Inline model switcher ----
-  const currentModelLabel = CLAUDE_MODELS.find((m) => m.id === currentModelId)?.label
-    ?? CLAUDE_MODELS.find((m) => m.id === "claude-opus-4-6")!.label;
+  const currentModelLabel = models.find((m) => m.id === currentModelId)?.label ?? currentModelId ?? "Model";
 
   const handleCycleModel = useCallback(() => {
-    if (!onModelChange) return;
-    const idx = CLAUDE_MODELS.findIndex((m) => m.id === currentModelId);
-    const next = CLAUDE_MODELS[(idx + 1) % CLAUDE_MODELS.length];
+    if (!onModelChange || models.length === 0) return;
+    const idx = models.findIndex((m) => m.id === currentModelId);
+    const next = models[(idx + 1) % models.length];
     onModelChange(next.id);
-  }, [currentModelId, onModelChange]);
+  }, [currentModelId, onModelChange, models]);
 
   const modelBar = onModelChange ? (
     <div className="flex items-center justify-between border-t border-border bg-muted/30 px-3 py-1">
@@ -375,7 +376,7 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="min-w-[160px]">
-          {CLAUDE_MODELS.map((m) => (
+          {models.map((m) => (
             <DropdownMenuItem
               key={m.id}
               onClick={() => onModelChange(m.id)}

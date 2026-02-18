@@ -44,6 +44,7 @@ import { startRiskAgent } from "../agents/risk-agent";
 import { startReviewAgent, addFixPhase } from "../agents/review-agent";
 import { startSessionAgent } from "../agents/session-agent";
 import { autoNameFeature, runAutoNameBlocking } from "../agents/auto-name";
+import { fetchAvailableModels } from "../agents/available-models";
 
 /**
  * Resolve the git directory for a feature.
@@ -134,6 +135,11 @@ const settingsRouter = router({
       ).run(key, input.modelId);
       return { success: true };
     }),
+
+  /** Get available models from Claude CLI (cached after first call) */
+  getAvailableModels: publicProcedure.query(async () => {
+    return await fetchAvailableModels();
+  }),
 
   /** Set a custom Claude CLI path (validates the file exists) */
   setClaudeCliPath: publicProcedure
