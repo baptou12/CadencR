@@ -18,6 +18,8 @@ export interface BrainstormAgentOptions {
   description: string;
   /** Working directory (worktree path or project path) */
   cwd: string;
+  /** Worktree path for permission resolution */
+  worktreePath?: string;
 }
 
 export interface BrainstormAgentResult {
@@ -52,6 +54,7 @@ export function startBrainstormAgent(options: BrainstormAgentOptions): Brainstor
     cwd: options.cwd,
     description: options.description,
     planId,
+    worktreePath: options.worktreePath,
   });
 
   const result: UnifiedAgentResult = startUnifiedAgent(config);

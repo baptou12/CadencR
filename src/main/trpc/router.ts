@@ -150,7 +150,7 @@ const settingsRouter = router({
 });
 
 /** Resolve the working directory for an agent, preferring worktree path over project path. */
-function resolveAgentCwd(featureId: number, projectId: number): string {
+function resolveAgentCwd(featureId: number, projectId: number): { cwd: string; worktreePath?: string } {
   const db = getDatabase();
 
   const wtRow = db
@@ -185,7 +185,7 @@ function resolveAgentCwd(featureId: number, projectId: number): string {
       `Agent working directory does not exist: ${cwd}. The worktree may not have been created yet or was removed.`,
     );
   }
-  return cwd;
+  return { cwd, worktreePath: wtRow?.value };
 }
 
 /** Check if a feature still has its default auto-generated title (e.g. "Session 3") */
@@ -386,7 +386,7 @@ const agentsRouter = router({
       }),
     )
     .mutation(({ input }) => {
-      const cwd = resolveAgentCwd(input.featureId, input.projectId);
+      const { cwd, worktreePath } = resolveAgentCwd(input.featureId, input.projectId);
 
       const db = getDatabase();
       const originalSession = db
@@ -403,6 +403,7 @@ const agentsRouter = router({
         runId: originalSession?.run_id ?? undefined,
         phaseId: originalSession?.phase_id ?? undefined,
         existingSessionDbId: input.originalSessionDbId,
+        worktreePath,
       });
 
       return { subprocessId: result.subprocessId, agentType: result.agentType, sessionDbId: result.sessionDbId };
@@ -453,13 +454,14 @@ const agentsRouter = router({
       }),
     )
     .mutation(({ input }) => {
-      const cwd = resolveAgentCwd(input.featureId, input.projectId);
+      const { cwd, worktreePath } = resolveAgentCwd(input.featureId, input.projectId);
 
       const result = startPlanAgent({
         featureId: input.featureId,
         projectId: input.projectId,
         description: input.description,
         cwd,
+        worktreePath,
       });
 
       return result;
@@ -475,13 +477,14 @@ const agentsRouter = router({
       }),
     )
     .mutation(({ input }) => {
-      const cwd = resolveAgentCwd(input.featureId, input.projectId);
+      const { cwd, worktreePath } = resolveAgentCwd(input.featureId, input.projectId);
 
       const result = startBrainstormAgent({
         featureId: input.featureId,
         projectId: input.projectId,
         description: input.description,
         cwd,
+        worktreePath,
       });
 
       return result;
@@ -496,12 +499,13 @@ const agentsRouter = router({
       }),
     )
     .mutation(({ input }) => {
-      const cwd = resolveAgentCwd(input.featureId, input.projectId);
+      const { cwd, worktreePath } = resolveAgentCwd(input.featureId, input.projectId);
 
       const result = startExecuteAgent({
         featureId: input.featureId,
         projectId: input.projectId,
         cwd,
+        worktreePath,
       });
 
       return result;
@@ -523,12 +527,13 @@ const agentsRouter = router({
       }),
     )
     .mutation(({ input }) => {
-      const cwd = resolveAgentCwd(input.featureId, input.projectId);
+      const { cwd, worktreePath } = resolveAgentCwd(input.featureId, input.projectId);
 
       const result = startRiskAgent({
         featureId: input.featureId,
         projectId: input.projectId,
         cwd,
+        worktreePath,
       });
 
       return result;
@@ -543,12 +548,13 @@ const agentsRouter = router({
       }),
     )
     .mutation(({ input }) => {
-      const cwd = resolveAgentCwd(input.featureId, input.projectId);
+      const { cwd, worktreePath } = resolveAgentCwd(input.featureId, input.projectId);
 
       const result = startReviewAgent({
         featureId: input.featureId,
         projectId: input.projectId,
         cwd,
+        worktreePath,
       });
 
       return result;
@@ -880,7 +886,7 @@ const agentsRouter = router({
       projectId: z.number(),
     }))
     .query(async ({ input }) => {
-      const cwd = resolveAgentCwd(input.featureId, input.projectId);
+      const { cwd } = resolveAgentCwd(input.featureId, input.projectId);
       return getSupportedCommands(input.subprocessId ?? null, cwd);
     }),
 });

@@ -16,6 +16,8 @@ export interface RiskAgentOptions {
   projectId: number;
   /** Working directory (worktree path or project path) */
   cwd: string;
+  /** Worktree path for permission resolution */
+  worktreePath?: string;
 }
 
 export interface RiskAgentResult {
@@ -49,6 +51,7 @@ Start by exploring the codebase to understand the full context and impact of the
     projectId: options.projectId,
     cwd: options.cwd,
     prompt,
+    worktreePath: options.worktreePath,
   });
 
   const result: UnifiedAgentResult = startUnifiedAgent(config);

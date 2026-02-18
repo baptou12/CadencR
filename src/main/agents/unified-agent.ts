@@ -95,6 +95,7 @@ export function startUnifiedAgent(config: UnifiedAgentConfig): UnifiedAgentResul
     resumeSessionId: config.resumeSessionId,
     model,
     permissionMode: config.permissionMode,
+    worktreePath: config.worktreePath ?? config.cwd,
   });
 
   // 3b. Persist subprocess ID to DB for reconnection after refresh

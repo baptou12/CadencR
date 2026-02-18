@@ -24,6 +24,8 @@ export interface ExecuteAgentOptions {
   projectId: number;
   /** Working directory (worktree path or project path) */
   cwd: string;
+  /** Worktree path for permission resolution */
+  worktreePath?: string;
 }
 
 export interface ExecuteAgentResult {
@@ -260,6 +262,7 @@ function executePhase(
       prompt,
       runId: options.sessionDbId,
       phaseId: phase.id,
+      worktreePath: options.worktreePath,
     };
 
     try {
@@ -512,6 +515,7 @@ export function continueExecuteAgent(sessionDbId: number): { subprocessIds: stri
     .get(feature.project_id) as { path: string } | undefined;
   const cwd = wtRow?.value ?? projectRow?.path;
   if (!cwd) throw new Error("No working directory found");
+  const worktreePath = wtRow?.value;
 
   // Get the active plan
   const plan = db
@@ -554,6 +558,7 @@ export function continueExecuteAgent(sessionDbId: number): { subprocessIds: stri
     featureId: session.feature_id,
     projectId: feature.project_id,
     cwd,
+    worktreePath,
     sessionDbId,
   };
 

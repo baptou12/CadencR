@@ -342,6 +342,8 @@ export interface PlanConfigOptions {
   description: string;
   /** Plan ID — must be created by the caller before calling this factory */
   planId: number;
+  /** Worktree path for permission resolution */
+  worktreePath?: string;
 }
 
 export interface BrainstormConfigOptions {
@@ -351,6 +353,8 @@ export interface BrainstormConfigOptions {
   description: string;
   /** Plan ID — must be created by the caller before calling this factory */
   planId: number;
+  /** Worktree path for permission resolution */
+  worktreePath?: string;
 }
 
 export interface RiskConfigOptions {
@@ -359,12 +363,16 @@ export interface RiskConfigOptions {
   cwd: string;
   /** Pre-built prompt that includes plan context (caller fetches plan) */
   prompt: string;
+  /** Worktree path for permission resolution */
+  worktreePath?: string;
 }
 
 export interface ReviewConfigOptions {
   featureId: number;
   projectId: number;
   cwd: string;
+  /** Worktree path for permission resolution */
+  worktreePath?: string;
 }
 
 export interface SessionConfigOptions {
@@ -374,6 +382,8 @@ export interface SessionConfigOptions {
   prompt: string;
   resumeSessionId?: string;
   permissionMode?: "bypassPermissions" | "plan";
+  /** Worktree path for permission resolution */
+  worktreePath?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -480,6 +490,7 @@ Start by exploring the codebase to understand the project structure and existing
     projectId: opts.projectId,
     cwd: opts.cwd,
     prompt,
+    worktreePath: opts.worktreePath,
   };
 }
 
@@ -563,6 +574,7 @@ Start by thoroughly exploring the codebase to understand the full context. Resea
     projectId: opts.projectId,
     cwd: opts.cwd,
     prompt,
+    worktreePath: opts.worktreePath,
   };
 }
 
@@ -594,6 +606,7 @@ export function createRiskConfig(opts: RiskConfigOptions): UnifiedAgentConfig {
     projectId: opts.projectId,
     cwd: opts.cwd,
     prompt: opts.prompt,
+    worktreePath: opts.worktreePath,
   };
 }
 
@@ -652,6 +665,7 @@ followed by a brief summary of the fixes needed (one per line).`;
     projectId: opts.projectId,
     cwd: opts.cwd,
     prompt,
+    worktreePath: opts.worktreePath,
   };
 }
 
@@ -671,5 +685,6 @@ export function createSessionConfig(opts: SessionConfigOptions): UnifiedAgentCon
     prompt: opts.prompt,
     resumeSessionId: opts.resumeSessionId,
     permissionMode: opts.permissionMode,
+    worktreePath: opts.worktreePath,
   };
 }

@@ -22,6 +22,8 @@ export interface SessionAgentOptions {
   resumeSessionId?: string;
   /** Permission mode for the subprocess */
   permissionMode?: "bypassPermissions" | "plan";
+  /** Worktree path for permission resolution */
+  worktreePath?: string;
 }
 
 export interface SessionAgentResult {
@@ -41,6 +43,7 @@ export function startSessionAgent(options: SessionAgentOptions): SessionAgentRes
     prompt: options.prompt,
     resumeSessionId: options.resumeSessionId,
     permissionMode: options.permissionMode,
+    worktreePath: options.worktreePath,
   });
 
   const result: UnifiedAgentResult = startUnifiedAgent(config);

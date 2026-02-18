@@ -22,6 +22,8 @@ export interface PlanAgentOptions {
   description: string;
   /** Working directory (worktree path or project path) */
   cwd: string;
+  /** Worktree path for permission resolution */
+  worktreePath?: string;
 }
 
 export interface PlanAgentResult {
@@ -56,6 +58,7 @@ export function startPlanAgent(options: PlanAgentOptions): PlanAgentResult {
     cwd: options.cwd,
     description: options.description,
     planId,
+    worktreePath: options.worktreePath,
   });
 
   const result: UnifiedAgentResult = startUnifiedAgent(config);

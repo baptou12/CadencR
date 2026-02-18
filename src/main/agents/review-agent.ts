@@ -19,6 +19,8 @@ export interface ReviewAgentOptions {
   projectId: number;
   /** Working directory (worktree path or project path) */
   cwd: string;
+  /** Worktree path for permission resolution */
+  worktreePath?: string;
 }
 
 export interface ReviewAgentResult {
@@ -42,6 +44,7 @@ export function startReviewAgent(options: ReviewAgentOptions): ReviewAgentResult
     featureId: options.featureId,
     projectId: options.projectId,
     cwd: options.cwd,
+    worktreePath: options.worktreePath,
   });
 
   const result: UnifiedAgentResult = startUnifiedAgent(config);
