@@ -1,6 +1,6 @@
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import { Plus, SplitSquareHorizontal, Minus, X, TerminalIcon } from "lucide-react";
-import { XTermInstance } from "./XTermInstance";
+import { XTermInstance, type XTermInstanceHandle } from "./XTermInstance";
 import type { TerminalPanelState } from "@/hooks/useTerminalState";
 import {
   ResizablePanelGroup,
@@ -29,6 +29,27 @@ export function TerminalPanel({
   minimize,
 }: TerminalPanelProps) {
   const { isOpen, isMinimized, panes } = state;
+  const paneRefs = useRef<Map<string, XTermInstanceHandle>>(new Map());
+
+  const setPaneRef = useCallback((paneId: string, handle: XTermInstanceHandle | null) => {
+    if (handle) {
+      paneRefs.current.set(paneId, handle);
+    } else {
+      paneRefs.current.delete(paneId);
+    }
+  }, []);
+
+  /** Focus a specific pane's terminal */
+  const focusPane = useCallback((paneId: string) => {
+    paneRefs.current.get(paneId)?.focus();
+  }, []);
+
+  /** Focus the first available pane */
+  const focusFirstPane = useCallback(() => {
+    if (panes.length > 0) {
+      paneRefs.current.get(panes[0].id)?.focus();
+    }
+  }, [panes]);
 
   const handlePaneExit = useCallback(
     (ptyId: string, paneId: string) => {
@@ -43,13 +64,23 @@ export function TerminalPanel({
   if (!isOpen) return null;
 
   return (
-    <div className="flex h-full flex-col border-t border-border">
+    <div
+      className="flex h-full flex-col border-t border-[#292e42]"
+      data-focus-zone="terminal"
+      tabIndex={0}
+      onFocus={(e) => {
+        // When the zone wrapper itself receives focus (e.g. from focus cycling), delegate to first pane
+        if (e.target === e.currentTarget) {
+          focusFirstPane();
+        }
+      }}
+    >
       {/* Toolbar — always visible when panel is open */}
-      <div className="flex h-8 shrink-0 items-center justify-between border-b border-border bg-[#1e1e2e] px-2">
-        <div className="flex items-center gap-1">
-          <TerminalIcon className="size-3.5 text-muted-foreground" />
-          <span className="text-xs font-medium text-muted-foreground">Terminal</span>
-          <span className="ml-1 text-xs text-muted-foreground/60">
+      <div className="flex h-8 shrink-0 items-center justify-between border-b border-[#292e42] bg-[#1a1b26] px-2">
+        <div className="flex items-center gap-1.5">
+          <TerminalIcon className="size-3.5 text-[#565f89]" />
+          <span className="text-xs font-medium text-[#a9b1d6]">Terminal</span>
+          <span className="ml-0.5 text-xs text-[#565f89]">
             ({panes.length})
           </span>
         </div>
@@ -58,7 +89,7 @@ export function TerminalPanel({
           <button
             type="button"
             onClick={addPane}
-            className="flex size-6 items-center justify-center rounded text-muted-foreground hover:bg-white/10 hover:text-foreground"
+            className="flex size-6 items-center justify-center rounded text-[#565f89] transition-colors hover:bg-[#292e42] hover:text-[#c0caf5]"
             title="New terminal (Ctrl+Shift+`)"
           >
             <Plus className="size-3.5" />
@@ -67,7 +98,7 @@ export function TerminalPanel({
           <button
             type="button"
             onClick={addPane}
-            className="flex size-6 items-center justify-center rounded text-muted-foreground hover:bg-white/10 hover:text-foreground"
+            className="flex size-6 items-center justify-center rounded text-[#565f89] transition-colors hover:bg-[#292e42] hover:text-[#c0caf5]"
             title="Split terminal (Ctrl+Shift+`)"
           >
             <SplitSquareHorizontal className="size-3.5" />
@@ -76,7 +107,7 @@ export function TerminalPanel({
           <button
             type="button"
             onClick={isMinimized ? togglePanel : minimize}
-            className="flex size-6 items-center justify-center rounded text-muted-foreground hover:bg-white/10 hover:text-foreground"
+            className="flex size-6 items-center justify-center rounded text-[#565f89] transition-colors hover:bg-[#292e42] hover:text-[#c0caf5]"
             title={isMinimized ? "Restore terminal" : "Minimize terminal"}
           >
             <Minus className="size-3.5" />
@@ -86,20 +117,24 @@ export function TerminalPanel({
 
       {/* Terminal panes — hidden when minimized but kept mounted so PTYs stay alive */}
       <div
-        className="min-h-0 flex-1 overflow-hidden"
+        className="min-h-0 flex-1 overflow-hidden transition-[height] duration-150 ease-in-out"
         style={isMinimized ? { height: 0, minHeight: 0 } : undefined}
       >
         {panes.length === 1 ? (
-          <div className="relative h-full">
+          <div
+            className="relative h-full cursor-text"
+            onClick={() => focusPane(panes[0].id)}
+          >
             <button
               type="button"
-              onClick={() => removePane(panes[0].id)}
-              className="absolute right-2 top-1 z-10 flex size-5 items-center justify-center rounded text-muted-foreground/60 hover:bg-white/10 hover:text-foreground"
+              onClick={(e) => { e.stopPropagation(); removePane(panes[0].id); }}
+              className="absolute right-2 top-1 z-10 flex size-5 items-center justify-center rounded text-[#565f89] transition-colors hover:bg-[#292e42] hover:text-[#c0caf5]"
               title="Close terminal"
             >
               <X className="size-3" />
             </button>
             <XTermInstance
+              ref={(handle) => setPaneRef(panes[0].id, handle)}
               key={panes[0].id}
               featureId={featureId}
               projectId={projectId}
@@ -111,16 +146,20 @@ export function TerminalPanel({
             {panes.map((pane, index) => (
               <PaneWithHandle key={pane.id} isFirst={index === 0}>
                 <ResizablePanel minSize={10}>
-                  <div className="relative h-full">
+                  <div
+                    className="relative h-full cursor-text"
+                    onClick={() => focusPane(pane.id)}
+                  >
                     <button
                       type="button"
-                      onClick={() => removePane(pane.id)}
-                      className="absolute right-2 top-1 z-10 flex size-5 items-center justify-center rounded text-muted-foreground/60 hover:bg-white/10 hover:text-foreground"
+                      onClick={(e) => { e.stopPropagation(); removePane(pane.id); }}
+                      className="absolute right-2 top-1 z-10 flex size-5 items-center justify-center rounded text-[#565f89] transition-colors hover:bg-[#292e42] hover:text-[#c0caf5]"
                       title="Close terminal"
                     >
                       <X className="size-3" />
                     </button>
                     <XTermInstance
+                      ref={(handle) => setPaneRef(pane.id, handle)}
                       featureId={featureId}
                       projectId={projectId}
                       onExit={(ptyId) => handlePaneExit(ptyId, pane.id)}
@@ -149,7 +188,7 @@ function PaneWithHandle({
   if (isFirst) return <>{children}</>;
   return (
     <>
-      <ResizableHandle />
+      <ResizableHandle className="bg-[#292e42] hover:bg-[#3b4261] transition-colors" />
       {children}
     </>
   );

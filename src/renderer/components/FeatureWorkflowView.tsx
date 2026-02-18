@@ -541,7 +541,7 @@ export function FeatureWorkflowView({
         </ResizablePanel>
         {terminalState.isOpen && (
           <>
-            <ResizableHandle />
+            <ResizableHandle className="bg-[#292e42] hover:bg-[#3b4261] transition-colors" />
             <ResizablePanel
               defaultSize={defaultTerminalHeight}
               minSize="80px"

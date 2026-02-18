@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useImperativeHandle, forwardRef } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
@@ -12,13 +12,24 @@ interface XTermInstanceProps {
   onExit?: (ptyId: string) => void;
 }
 
-export function XTermInstance({ featureId, projectId, onExit }: XTermInstanceProps) {
+export interface XTermInstanceHandle {
+  /** Focus this terminal instance */
+  focus: () => void;
+}
+
+export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>(function XTermInstance({ featureId, projectId, onExit }, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const ptyIdRef = useRef<string | null>(null);
   const mountedRef = useRef(true);
   const exitedRef = useRef(false);
+
+  useImperativeHandle(ref, () => ({
+    focus: () => {
+      terminalRef.current?.focus();
+    },
+  }));
 
   const createMutation = trpc.terminal.create.useMutation();
   const writeMutation = trpc.terminal.write.useMutation();
@@ -32,10 +43,17 @@ export function XTermInstance({ featureId, projectId, onExit }: XTermInstancePro
     if (!container) return;
 
     // Create xterm.js Terminal instance
+    // Tokyo Night theme — consistent with the app's dark theme (#1a1b26 background)
     const terminal = new Terminal({
       cursorBlink: true,
+      cursorStyle: "bar",
+      cursorWidth: 2,
       fontSize: 13,
-      fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', Menlo, monospace",
+      lineHeight: 1.2,
+      fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'SF Mono', Menlo, Monaco, 'Courier New', monospace",
+      fontWeight: "400",
+      fontWeightBold: "600",
+      letterSpacing: 0,
       theme: {
         background: "#1a1b26",
         foreground: "#c0caf5",
@@ -43,6 +61,7 @@ export function XTermInstance({ featureId, projectId, onExit }: XTermInstancePro
         cursorAccent: "#1a1b26",
         selectionBackground: "#33467c",
         selectionForeground: "#c0caf5",
+        selectionInactiveBackground: "#283457",
         black: "#15161e",
         red: "#f7768e",
         green: "#9ece6a",
@@ -185,4 +204,4 @@ export function XTermInstance({ featureId, projectId, onExit }: XTermInstancePro
       style={{ backgroundColor: "#1a1b26" }}
     />
   );
-}
+});

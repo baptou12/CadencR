@@ -20,7 +20,7 @@ import { getActiveFocusZone } from "@/lib/focus-zones";
 import { CommandPalette } from "@/components/CommandPalette";
 import { FocusRing } from "@/components/FocusRing";
 
-const ZONE_ORDER = ["left-sidebar", "main-content", "right-sidebar"] as const;
+const ZONE_ORDER = ["left-sidebar", "main-content", "terminal", "right-sidebar"] as const;
 
 function focusZoneByDirection(direction: "left" | "right") {
   const currentZone = getActiveFocusZone();
