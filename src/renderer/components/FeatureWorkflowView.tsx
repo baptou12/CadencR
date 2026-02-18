@@ -94,32 +94,40 @@ export function FeatureWorkflowView({
     }
   }, []);
 
-  const getMainNavItems = useCallback(() => {
-    const zone = document.querySelector('[data-focus-zone="main-content"]');
-    if (!zone) return [];
-    return Array.from(zone.querySelectorAll("[data-nav-agent-index]")) as HTMLElement[];
-  }, []);
-
   const moveFocus = useCallback((direction: "up" | "down") => {
-    const items = getMainNavItems();
-    if (items.length === 0) return;
-    const currentIndex = items.findIndex((el) => el === document.activeElement);
-    let nextIndex: number;
-    if (currentIndex === -1) {
-      nextIndex = direction === "down" ? 0 : items.length - 1;
-    } else if (direction === "down") {
-      nextIndex = currentIndex >= items.length - 1 ? 0 : currentIndex + 1;
-    } else {
-      nextIndex = currentIndex <= 0 ? items.length - 1 : currentIndex - 1;
+    const count = wf.sessionEntries.length;
+    if (count === 0) return;
+
+    // Find which agent currently contains focus by walking up the DOM
+    let currentAgentIndex = -1;
+    let el: HTMLElement | null = document.activeElement as HTMLElement | null;
+    while (el) {
+      const containerAttr = el.getAttribute("data-agent-container");
+      if (containerAttr != null) {
+        currentAgentIndex = Number(containerAttr);
+        break;
+      }
+      el = el.parentElement;
     }
-    items[nextIndex].focus({ focusVisible: true } as FocusOptions);
-  }, [getMainNavItems]);
+
+    let nextIndex: number;
+    if (currentAgentIndex === -1) {
+      nextIndex = direction === "down" ? 0 : count - 1;
+    } else if (direction === "down") {
+      nextIndex = currentAgentIndex >= count - 1 ? 0 : currentAgentIndex + 1;
+    } else {
+      nextIndex = currentAgentIndex <= 0 ? count - 1 : currentAgentIndex - 1;
+    }
+
+    agentRefs.current.get(nextIndex)?.focusActiveInput();
+  }, [wf.sessionEntries]);
 
   // CMD+OPT+DOWN: move focus to next agent session
   useHotkeys(
     "meta+alt+down",
     (e) => {
-      if (getActiveFocusZone() !== "main-content") return;
+      const zone = getActiveFocusZone();
+      if (zone && zone !== "main-content") return;
       e.preventDefault();
       moveFocus("down");
     },
@@ -130,7 +138,8 @@ export function FeatureWorkflowView({
   useHotkeys(
     "meta+alt+up",
     (e) => {
-      if (getActiveFocusZone() !== "main-content") return;
+      const zone = getActiveFocusZone();
+      if (zone && zone !== "main-content") return;
       e.preventDefault();
       moveFocus("up");
     },
@@ -160,7 +169,7 @@ export function FeatureWorkflowView({
           wf.setOpenAgent(sessionKey);
         }
         requestAnimationFrame(() => {
-          agentRefs.current.get(agentIndex)?.focusPromptBar();
+          agentRefs.current.get(agentIndex)?.focusActiveInput();
         });
       } else {
         e.preventDefault();

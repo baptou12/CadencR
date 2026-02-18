@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { createFileRoute } from "@tanstack/react-router";
+import { useHotkeys } from "react-hotkeys-hook";
 import { trpc } from "@/trpc";
 import { FeatureTopBar } from "@/components/FeatureTopBar";
 import { AgentSession, type AgentSessionHandle } from "@/components/AgentSession";
@@ -8,6 +9,7 @@ import { DiffViewerModal } from "@/components/diff/DiffViewerModal";
 import { useFeatureAgentState } from "@/hooks/useFeatureAgentState";
 import { useContextUsage } from "@/hooks/useContextUsage";
 import { useResolvedModel } from "@/hooks/useResolvedModel";
+import { getActiveFocusZone } from "@/lib/focus-zones";
 
 export const Route = createFileRoute(
   "/projects/$projectId/features/$featureId",
@@ -75,6 +77,18 @@ function SessionFeatureView({
       agentRef.current?.focusPromptBar();
     });
   }, []);
+
+  // CMD+OPT+UP/DOWN: focus the active input (prompt, permission, or question)
+  useHotkeys(
+    "meta+alt+down,meta+alt+up",
+    (e) => {
+      const zone = getActiveFocusZone();
+      if (zone && zone !== "main-content") return;
+      e.preventDefault();
+      agentRef.current?.focusActiveInput();
+    },
+    { enableOnFormTags: true },
+  );
 
   // Find the latest session agent
   const session = sessions.find((s) => s.agentType === "session");

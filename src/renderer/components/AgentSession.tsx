@@ -200,6 +200,15 @@ export interface AgentSessionProps {
 export interface AgentSessionHandle {
   /** Focus the prompt bar textarea */
   focusPromptBar: () => void;
+  /**
+   * Focus the most relevant interactive element in priority order:
+   * 1. Permission prompt first button (if pending)
+   * 2. Prompt bar / question drawer
+   * 3. Header (fallback)
+   */
+  focusActiveInput: () => void;
+  /** Whether the collapsible panel is currently open */
+  isOpen: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -254,6 +263,7 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
 }, ref) {
   const promptBarRef = useRef<AgentPromptBarHandle>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [promptBarFocused, setPromptBarFocused] = useState(false);
   const availableModels = trpc.settings.getAvailableModels.useQuery();
   const models = useMemo(() => availableModels.data ?? [], [availableModels.data]);
@@ -266,11 +276,6 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
     }
   }, [promptBarFocused, blocks.length]);
 
-  useImperativeHandle(ref, () => ({
-    focusPromptBar: () => {
-      promptBarRef.current?.focusInput();
-    },
-  }));
   // ---- Collapsible state ----
   const [internalOpen, setInternalOpen] = useState(true);
   const isControlled = controlledOpen !== undefined;
@@ -284,6 +289,28 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
   }, [status, isControlled]);
 
   const headerRef = useRef<HTMLDivElement>(null);
+
+  useImperativeHandle(ref, () => ({
+    focusPromptBar: () => {
+      promptBarRef.current?.focusInput();
+    },
+    focusActiveInput: () => {
+      const container = containerRef.current;
+
+      // Priority 1: first button in permission prompt area
+      const permBtn = container?.querySelector<HTMLElement>('[data-permission-area] button');
+      if (permBtn) { permBtn.scrollIntoView({ block: "nearest" }); permBtn.focus(); return; }
+      // Priority 2: first focusable element in the question/plan-approval area
+      const questionEl = container?.querySelector<HTMLElement>('[data-question-area] button, [data-question-area] input');
+      if (questionEl) { questionEl.scrollIntoView({ block: "nearest" }); questionEl.focus(); return; }
+      // Priority 3: prompt bar textarea
+      const textarea = container?.querySelector<HTMLTextAreaElement>('textarea');
+      if (textarea) { textarea.scrollIntoView({ block: "nearest" }); textarea.focus(); return; }
+      // Priority 4: header
+      if (headerRef.current) { headerRef.current.scrollIntoView({ block: "nearest" }); headerRef.current.focus(); }
+    },
+    isOpen,
+  }), [isOpen]);
 
   const handleToggle = () => {
     if (onToggle) {
@@ -394,11 +421,13 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
 
   // ---- Permission prompt bar ----
   const permissionBar = pendingPermission && onPermissionDecision ? (
-    <ToolPermissionPrompt
-      permission={pendingPermission}
-      onDecision={onPermissionDecision}
-      disableShortcuts={disableShortcuts}
-    />
+    <div data-permission-area>
+      <ToolPermissionPrompt
+        permission={pendingPermission}
+        onDecision={onPermissionDecision}
+        disableShortcuts={disableShortcuts}
+      />
+    </div>
   ) : null;
 
   // ---- Stream content ----
@@ -448,7 +477,7 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
   // ===========================================================================
   if (!collapsible) {
     return (
-      <div className={cn("flex h-full flex-col", className)}>
+      <div ref={containerRef} className={cn("flex h-full flex-col", className)}>
         {/* Scrollable agent output */}
         <div ref={scrollContainerRef} className="flex-1 overflow-auto p-4" style={{ overflowAnchor: "none" }}>
           {streamContent}
@@ -487,17 +516,19 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
   // ===========================================================================
   return (
     <div
+      ref={containerRef}
       className={cn(
         "flex flex-col rounded-lg border border-border bg-background",
         isOpen && "flex-1 min-h-0",
         !isOpen && "shrink-0",
         className,
       )}
+      {...(navAgentIndex != null ? { "data-agent-container": navAgentIndex } : {})}
     >
       {/* Header -- clickable to toggle */}
       <div
         ref={headerRef}
-        className="shrink-0 flex cursor-pointer items-center gap-2 px-3 py-2 outline-none hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:bg-blue-500/10"
+        className="shrink-0 flex cursor-pointer items-center gap-2 px-3 py-2 outline-none hover:bg-muted/50"
         onClick={handleToggle}
         data-nav-item
         {...(navAgentIndex != null ? { "data-nav-agent-index": navAgentIndex } : {})}

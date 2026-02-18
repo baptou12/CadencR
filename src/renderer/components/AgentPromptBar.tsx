@@ -228,24 +228,28 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
   // When plan approval is pending, render the approval bar instead of the prompt input
   if (pendingPlanApproval && onPlanApprove && onPlanRequestChanges) {
     return (
-      <PlanApprovalBar
-        allowedPrompts={pendingPlanApproval.allowedPrompts}
-        onApprove={onPlanApprove}
-        onRequestChanges={onPlanRequestChanges}
-      />
+      <div data-question-area>
+        <PlanApprovalBar
+          allowedPrompts={pendingPlanApproval.allowedPrompts}
+          onApprove={onPlanApprove}
+          onRequestChanges={onPlanRequestChanges}
+        />
+      </div>
     );
   }
 
   // When questions are pending, render the question form inline instead of the prompt input
   if (hasQuestions && onQuestionResponse) {
     return (
-      <AgentQuestionDrawer
-        questions={pendingQuestions}
-        open={true}
-        onSubmit={onQuestionResponse}
-        inline
-        disableShortcuts={disableShortcuts}
-      />
+      <div data-question-area>
+        <AgentQuestionDrawer
+          questions={pendingQuestions}
+          open={true}
+          onSubmit={onQuestionResponse}
+          inline
+          disableShortcuts={disableShortcuts}
+        />
+      </div>
     );
   }
 

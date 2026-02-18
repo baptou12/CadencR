@@ -18,6 +18,7 @@ import type { PanelSize } from "react-resizable-panels";
 import { trpc } from "@/trpc";
 import { getActiveFocusZone } from "@/lib/focus-zones";
 import { CommandPalette } from "@/components/CommandPalette";
+import { FocusRing } from "@/components/FocusRing";
 
 const ZONE_ORDER = ["left-sidebar", "main-content", "right-sidebar"] as const;
 
@@ -149,7 +150,7 @@ function RootLayout() {
 
   // CMD+SHIFT+[ -> cycle focus left
   useHotkeys(
-    "meta+shift+bracketleft",
+    "meta+alt+left",
     (e) => {
       e.preventDefault();
       focusZoneByDirection("left");
@@ -159,7 +160,7 @@ function RootLayout() {
 
   // CMD+SHIFT+] -> cycle focus right
   useHotkeys(
-    "meta+shift+bracketright",
+    "meta+alt+right",
     (e) => {
       e.preventDefault();
       focusZoneByDirection("right");
@@ -258,7 +259,7 @@ function RootLayout() {
             ref={leftSidebarRef}
             data-focus-zone="left-sidebar"
             tabIndex={0}
-            className="h-full outline-none focus-within:ring-2 focus-within:ring-blue-400/70"
+            className="h-full outline-none"
             onFocus={(e) => {
               // When the wrapper itself gets focus via keyboard (not click), move to the first nav item
               if (e.target === e.currentTarget && !e.currentTarget.matches(":active")) {
@@ -275,7 +276,7 @@ function RootLayout() {
           <main
             data-focus-zone="main-content"
             tabIndex={0}
-            className="h-full overflow-hidden outline-none focus-within:ring-2 focus-within:ring-blue-400/70"
+            className="h-full overflow-hidden outline-none"
             onFocus={(e) => {
               // When the wrapper itself gets focus via keyboard (not click), move to the first focusable item
               if (e.target === e.currentTarget && !e.currentTarget.matches(":active")) {
@@ -300,6 +301,7 @@ function RootLayout() {
         activeProjectId={activeProjectId}
         activeFeatureId={activeFeatureId}
       />
+      <FocusRing />
     </div>
   );
 }

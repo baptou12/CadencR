@@ -239,7 +239,7 @@ export function ProjectList({
               data-nav-type="project"
               data-nav-id={String(project.id)}
               onClick={() => void handleProjectClick(project.id)}
-              className={`group flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:bg-blue-500/10 ${
+              className={`group flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm outline-none transition-colors ${
                 selectedProjectId === project.id
                   ? "bg-accent text-accent-foreground"
                   : "hover:bg-accent/50"
