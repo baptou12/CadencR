@@ -36,6 +36,7 @@ import {
 } from "../git/worktree";
 import { diffCommentsRouter } from "./diff-comments";
 import { usageRouter } from "./usage";
+import { terminalRouter } from "./terminal";
 import { startUnifiedAgent } from "../agents/unified-agent";
 import { startPlanAgent } from "../agents/plan-agent";
 import { startBrainstormAgent } from "../agents/brainstorm-agent";
@@ -1112,6 +1113,7 @@ export const appRouter = router({
   git: gitRouter,
   diffComments: diffCommentsRouter,
   usage: usageRouter,
+  terminal: terminalRouter,
 });
 
 export type AppRouter = typeof appRouter;
