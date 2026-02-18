@@ -9,7 +9,7 @@ const config: ForgeConfig = {
   packagerConfig: {
     icon: path.join(__dirname, "assets", "icon"),
     asar: {
-      unpack: "**/{better-sqlite3,bindings,file-uri-to-path}/**",
+      unpack: "**/{better-sqlite3,node-pty,bindings,file-uri-to-path}/**",
     },
     afterCopy: [
       (buildPath, electronVersion, _platform, arch, callback) => {
@@ -19,6 +19,7 @@ const config: ForgeConfig = {
         // Only keep native dependencies for production install
         pkg.dependencies = {
           "better-sqlite3": pkg.dependencies["better-sqlite3"],
+          "node-pty": pkg.dependencies["node-pty"],
           bindings: pkg.dependencies["bindings"] || "*",
           "file-uri-to-path":
             pkg.dependencies["file-uri-to-path"] || "*",
@@ -35,7 +36,7 @@ const config: ForgeConfig = {
           "node_modules/.bin/electron-rebuild",
         );
         execSync(
-          `"${rebuildBin}" --version "${electronVersion}" --arch "${arch}" --module-dir "${buildPath}" --only better-sqlite3`,
+          `"${rebuildBin}" --version "${electronVersion}" --arch "${arch}" --module-dir "${buildPath}" --only better-sqlite3,node-pty`,
           {
             cwd: buildPath,
             stdio: "inherit",

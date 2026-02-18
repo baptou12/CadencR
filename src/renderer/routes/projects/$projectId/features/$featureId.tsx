@@ -6,10 +6,13 @@ import { FeatureTopBar } from "@/components/FeatureTopBar";
 import { AgentSession, type AgentSessionHandle } from "@/components/AgentSession";
 import { FeatureWorkflowView } from "@/components/FeatureWorkflowView";
 import { DiffViewerModal } from "@/components/diff/DiffViewerModal";
+import { TerminalPanel } from "@/components/terminal/TerminalPanel";
 import { useFeatureAgentState } from "@/hooks/useFeatureAgentState";
 import { useContextUsage } from "@/hooks/useContextUsage";
 import { useResolvedModel } from "@/hooks/useResolvedModel";
 import { getActiveFocusZone } from "@/lib/focus-zones";
+import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
+import { useTerminalState } from "@/hooks/useTerminalState";
 
 export const Route = createFileRoute(
   "/projects/$projectId/features/$featureId",
@@ -223,6 +226,58 @@ function SessionFeatureView({
     void refetch();
   }, [session?.subprocessId, interruptMutation, refetch]);
 
+  // Terminal panel state
+  const terminalState = useTerminalState(featureId);
+  const terminalHeightSetting = useDebouncedSetting("terminal_panel_height_px");
+  const [terminalHeightPx, setTerminalHeightPx] = useState(300);
+
+  // Sync height from DB when setting loads
+  useEffect(() => {
+    const saved = Number(terminalHeightSetting.value);
+    if (saved > 0) setTerminalHeightPx(saved);
+  }, [terminalHeightSetting.value]);
+
+  const handleTerminalToolbarMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startHeight = terminalHeightPx;
+    const onMouseMove = (ev: MouseEvent) => {
+      const delta = startY - ev.clientY;
+      const newHeight = Math.round(Math.max(80, Math.min(window.innerHeight * 0.8, startHeight + delta)));
+      setTerminalHeightPx(newHeight);
+      terminalHeightSetting.setValue(String(newHeight));
+    };
+    const onMouseUp = () => {
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+      document.body.style.userSelect = "";
+    };
+    document.body.style.userSelect = "none";
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  }, [terminalHeightPx, terminalHeightSetting]);
+
+  // Ctrl+` — toggle terminal panel
+  useHotkeys(
+    "ctrl+backquote",
+    (e) => {
+      e.preventDefault();
+      terminalState.togglePanel();
+    },
+    { enableOnFormTags: true },
+  );
+
+  // Ctrl+Shift+` — add a new split pane (only when panel is open)
+  useHotkeys(
+    "ctrl+shift+backquote",
+    (e) => {
+      if (!terminalState.isOpen || terminalState.isMinimized) return;
+      e.preventDefault();
+      terminalState.addPane();
+    },
+    { enableOnFormTags: true },
+  );
+
   return (
     <div className="flex h-full flex-col">
       <FeatureTopBar featureId={featureId} projectId={projectId} mode="session" className="shrink-0" />
@@ -231,34 +286,56 @@ function SessionFeatureView({
           Previous session paused — type a message to resume.
         </div>
       )}
-      <AgentSession
-        ref={agentRef}
-        agentType="session"
-        blocks={blocks}
-        status={status}
-        onSend={handleSend}
-        onStop={handleStop}
-        pendingQuestions={session?.pendingQuestions ?? undefined}
-        onAnswerSubmit={handleAnswerSubmit}
-        disabled={startSessionMutation.isLoading || resumeMutation.isLoading}
-        hasFileChanges={hasFileChanges}
-        onViewDiff={handleViewDiff}
-        todos={todos}
-        permissionMode={permissionMode}
-        onPermissionModeToggle={handlePermissionModeToggle}
-        pendingPlanApproval={session?.pendingPlanApproval}
-        onPlanApprove={handlePlanApprove}
-        onPlanRequestChanges={handlePlanRequestChanges}
-        contextUsage={session ? contextUsageMap.get(session.sessionDbId) : null}
-        currentModelId={currentModelId}
-        onModelChange={handleModelChange}
-        featureId={featureId}
-        projectId={projectId}
-        subprocessId={session?.subprocessId ?? undefined}
-        pendingPermission={session?.pendingPermission}
-        onPermissionDecision={handlePermissionDecision}
-        className="min-h-0"
-      />
+      <div className="relative min-h-0 flex-1 overflow-hidden">
+        <AgentSession
+          ref={agentRef}
+          agentType="session"
+          blocks={blocks}
+          status={status}
+          onSend={handleSend}
+          onStop={handleStop}
+          pendingQuestions={session?.pendingQuestions ?? undefined}
+          onAnswerSubmit={handleAnswerSubmit}
+          disabled={startSessionMutation.isLoading || resumeMutation.isLoading}
+          hasFileChanges={hasFileChanges}
+          onViewDiff={handleViewDiff}
+          todos={todos}
+          permissionMode={permissionMode}
+          onPermissionModeToggle={handlePermissionModeToggle}
+          pendingPlanApproval={session?.pendingPlanApproval}
+          onPlanApprove={handlePlanApprove}
+          onPlanRequestChanges={handlePlanRequestChanges}
+          contextUsage={session ? contextUsageMap.get(session.sessionDbId) : null}
+          currentModelId={currentModelId}
+          onModelChange={handleModelChange}
+          featureId={featureId}
+          projectId={projectId}
+          subprocessId={session?.subprocessId ?? undefined}
+          pendingPermission={session?.pendingPermission}
+          onPermissionDecision={handlePermissionDecision}
+          className="h-full"
+        />
+        {terminalState.panes.length > 0 && (
+          <div
+            className="absolute bottom-0 left-0 right-0 border-t border-[#292e42] transition-transform duration-150 ease-in-out"
+            style={{
+              height: terminalState.isMinimized ? 32 : terminalHeightPx,
+              transform: terminalState.isOpen ? "translateY(0)" : "translateY(100%)",
+            }}
+          >
+            <TerminalPanel
+              featureId={featureId}
+              projectId={projectId}
+              state={terminalState}
+              togglePanel={terminalState.togglePanel}
+              addPane={terminalState.addPane}
+              removePane={terminalState.removePane}
+              minimize={terminalState.minimize}
+              onToolbarMouseDown={handleTerminalToolbarMouseDown}
+            />
+          </div>
+        )}
+      </div>
       <DiffViewerModal
         featureId={featureId}
         open={inlineDiffOpen}

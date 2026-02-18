@@ -9,6 +9,8 @@ const ASK_USER_QUESTION_CHANNEL = "agent:ask-user-question";
 const AGENT_PATTERN_MATCH_CHANNEL = "agent:pattern-match";
 const TOOL_PERMISSION_CHANNEL = "agent:tool-permission";
 const DB_UPDATED_CHANNEL = "db:updated";
+const TERMINAL_DATA_CHANNEL = "terminal:data";
+const TERMINAL_EXIT_CHANNEL = "terminal:exit";
 
 process.once("loaded", () => {
   exposeElectronTRPC();
@@ -98,6 +100,40 @@ process.once("loaded", () => {
         );
       } else {
         ipcRenderer.removeAllListeners(DB_UPDATED_CHANNEL);
+      }
+    },
+    onTerminalData: (callback: (data: { ptyId: string; data: string }) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, data: { ptyId: string; data: string }) => {
+        callback(data);
+      };
+      ipcRenderer.on(TERMINAL_DATA_CHANNEL, listener);
+      return listener;
+    },
+    offTerminalData: (listener?: (...args: unknown[]) => void) => {
+      if (listener) {
+        ipcRenderer.removeListener(
+          TERMINAL_DATA_CHANNEL,
+          listener as (...args: unknown[]) => void,
+        );
+      } else {
+        ipcRenderer.removeAllListeners(TERMINAL_DATA_CHANNEL);
+      }
+    },
+    onTerminalExit: (callback: (data: { ptyId: string; exitCode: number; signal?: number }) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, data: { ptyId: string; exitCode: number; signal?: number }) => {
+        callback(data);
+      };
+      ipcRenderer.on(TERMINAL_EXIT_CHANNEL, listener);
+      return listener;
+    },
+    offTerminalExit: (listener?: (...args: unknown[]) => void) => {
+      if (listener) {
+        ipcRenderer.removeListener(
+          TERMINAL_EXIT_CHANNEL,
+          listener as (...args: unknown[]) => void,
+        );
+      } else {
+        ipcRenderer.removeAllListeners(TERMINAL_EXIT_CHANNEL);
       }
     },
   });

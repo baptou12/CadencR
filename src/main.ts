@@ -6,6 +6,7 @@ import { closeDatabase } from "./main/db/database";
 import { hasRunningSubprocesses, gracefulShutdown } from "./main/agents/subprocess-manager";
 import { restoreSessionMap } from "./main/agents/ipc-bridge";
 import { fetchAvailableModels } from "./main/agents/available-models";
+import { killAllTerminalPtys } from "./main/trpc/terminal";
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 import electronSquirrelStartup from "electron-squirrel-startup";
@@ -55,6 +56,7 @@ const createWindow = () => {
         })
         .then(({ response }) => {
           if (response === 1) {
+            killAllTerminalPtys();
             gracefulShutdown();
             mainWindow.destroy();
           }
@@ -99,6 +101,7 @@ app.on("before-quit", (e) => {
         .then(({ response }) => {
           if (response === 1) {
             isQuitting = true;
+            killAllTerminalPtys();
             gracefulShutdown();
             closeDatabase();
             app.quit();
@@ -106,6 +109,7 @@ app.on("before-quit", (e) => {
         });
     }
   } else {
+    killAllTerminalPtys();
     gracefulShutdown();
     closeDatabase();
   }
