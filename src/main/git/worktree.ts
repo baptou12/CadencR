@@ -522,7 +522,7 @@ export function openInTerminal(dirPath: string): void {
   // shell.openPath opens with the default application for that type
   // For directories on macOS, this opens Finder — so we use a different approach
   if (process.platform === "darwin") {
-    execSync(`open -a Terminal "${dirPath}"`, { stdio: "pipe" });
+    execSync(`open -a iTerm "${dirPath}"`, { stdio: "pipe" });
   } else if (process.platform === "win32") {
     execSync(`start cmd /K "cd /d ${dirPath}"`, { stdio: "pipe", shell: "cmd.exe" });
   } else {
