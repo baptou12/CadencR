@@ -208,6 +208,8 @@ export async function setupWorktreeForFeature(
       .get(featureId) as { value: string } | undefined;
     if (!wtRow) throw new Error(`No worktree path found for feature ${featureId}`);
     await runSetupCommands(projectId, featureId, wtRow.value);
+    setFeatureSetting(featureId, "worktree_setup_step", "done");
+    notifyDbUpdated("feature", featureId);
     return;
   }
 
