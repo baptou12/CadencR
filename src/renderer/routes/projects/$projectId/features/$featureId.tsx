@@ -177,9 +177,17 @@ function SessionFeatureView({
 
   const handleSend = useCallback(
     async (message: string) => {
-      // 1. Active subprocess — send follow-up message directly
-      if (session?.subprocessId && status === "running") {
+      // 1. Active subprocess — send follow-up message directly.
+      //    For session agents, the subprocess stays alive in activeProcesses even
+      //    after a turn completes (status becomes "completed"). The backend's
+      //    sendMessageToSubprocess handles "completed" status by re-running the
+      //    SDK query with resume, so we can route follow-up messages through it
+      //    instead of spawning a brand-new subprocess via the resume mutation.
+      if (session?.subprocessId && (status === "running" || status === "completed")) {
         sendMessageMutation.mutate({ id: session.subprocessId, message });
+        // When resuming from "completed", the backend sets DB status back to "running".
+        // Refetch so the renderer picks up the new status.
+        if (status === "completed") void refetch();
         return;
       }
 

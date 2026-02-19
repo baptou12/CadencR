@@ -395,9 +395,24 @@ const agentsRouter = router({
       }),
     )
     .mutation(({ input }) => {
-      const { cwd, worktreePath } = resolveAgentCwd(input.featureId, input.projectId);
-
       const db = getDatabase();
+
+      // Session-type agents are always started with the project path as cwd
+      // (not the worktree), so we must resume with the same cwd.  Otherwise
+      // the Claude CLI looks for the session file under a different project
+      // directory and fails with "No conversation found".
+      let cwd: string;
+      let worktreePath: string | undefined;
+      if (input.agentType === "session") {
+        const project = db
+          .prepare("SELECT path FROM projects WHERE id = ?")
+          .get(input.projectId) as Pick<ProjectRow, "path"> | undefined;
+        if (!project?.path) throw new Error("Project path not found");
+        cwd = project.path;
+      } else {
+        ({ cwd, worktreePath } = resolveAgentCwd(input.featureId, input.projectId));
+      }
+
       const originalSession = db
         .prepare("SELECT run_id, phase_id FROM agent_sessions WHERE id = ?")
         .get(input.originalSessionDbId) as Pick<AgentSessionRow, "run_id" | "phase_id"> | undefined;
