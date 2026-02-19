@@ -2,7 +2,7 @@ import { Fragment, forwardRef, useCallback, useImperativeHandle, useRef, useStat
 import { Plus, SplitSquareHorizontal, Minus, X, TerminalIcon } from "lucide-react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { XTermInstance, type XTermInstanceHandle } from "./XTermInstance";
-import type { TerminalPanelState } from "@/hooks/useTerminalState";
+import { type TerminalPanelState, useTerminalStore } from "@/hooks/useTerminalState";
 import { getActiveFocusZone } from "@/lib/focus-zones";
 import {
   ResizablePanelGroup,
@@ -44,6 +44,7 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
   const { isMinimized, panes } = state;
   const paneRefs = useRef<Map<string, XTermInstanceHandle>>(new Map());
   const [activePaneIndex, setActivePaneIndex] = useState(0);
+  const setPtyId = useTerminalStore((s) => s.setPtyId);
 
   const setPaneRef = useCallback((paneId: string, handle: XTermInstanceHandle | null) => {
     if (handle) {
@@ -108,6 +109,9 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
 
   /** Close a pane and move focus to the nearest neighbor (previous, or next if first) */
   const closePane = useCallback((paneId: string) => {
+    // Mark the XTerm instance to kill its PTY before React unmounts it
+    paneRefs.current.get(paneId)?.markForKill();
+
     const index = panes.findIndex((p) => p.id === paneId);
     const neighborIndex = index > 0 ? index - 1 : index + 1;
     const neighbor = panes[neighborIndex];
@@ -224,6 +228,8 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
                     ref={(handle) => setPaneRef(pane.id, handle)}
                     featureId={featureId}
                     projectId={projectId}
+                    existingPtyId={pane.ptyId}
+                    onPtyReady={(ptyId) => setPtyId(featureId, pane.id, ptyId)}
                     onExit={(ptyId) => handlePaneExit(ptyId, pane.id)}
                   />
                 </div>

@@ -10,9 +10,15 @@ import os from "node:os";
 // PTY instance management
 // ---------------------------------------------------------------------------
 
+/** Max bytes of scrollback to keep per PTY for reconnection */
+const SCROLLBACK_BUFFER_SIZE = 100_000;
+
 interface PtyInstance {
   ptyProcess: pty.IPty;
   featureId: number;
+  /** Circular buffer of recent output for reconnection replay */
+  scrollback: string[];
+  scrollbackLen: number;
 }
 
 const ptyInstances = new Map<string, PtyInstance>();
@@ -100,13 +106,24 @@ export const terminalRouter = router({
         env: process.env as Record<string, string>,
       });
 
-      ptyInstances.set(ptyId, {
+      const instance: PtyInstance = {
         ptyProcess,
         featureId: input.featureId,
-      });
+        scrollback: [],
+        scrollbackLen: 0,
+      };
+      ptyInstances.set(ptyId, instance);
 
-      // Forward PTY data to renderer
+      // Forward PTY data to renderer and buffer for reconnection
       ptyProcess.onData((data: string) => {
+        // Append to scrollback buffer
+        instance.scrollback.push(data);
+        instance.scrollbackLen += data.length;
+        // Trim from front if over budget
+        while (instance.scrollbackLen > SCROLLBACK_BUFFER_SIZE && instance.scrollback.length > 1) {
+          const removed = instance.scrollback.shift()!;
+          instance.scrollbackLen -= removed.length;
+        }
         broadcast(TERMINAL_DATA_CHANNEL, { ptyId, data });
       });
 
@@ -117,6 +134,15 @@ export const terminalRouter = router({
       });
 
       return { ptyId, cwd };
+    }),
+
+  /** Reconnect to an existing PTY — returns buffered scrollback */
+  reconnect: publicProcedure
+    .input(z.object({ ptyId: z.string() }))
+    .query(({ input }) => {
+      const instance = ptyInstances.get(input.ptyId);
+      if (!instance) return { alive: false as const, scrollback: "" };
+      return { alive: true as const, scrollback: instance.scrollback.join("") };
     }),
 
   /** Write data to a PTY */

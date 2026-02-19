@@ -1,8 +1,11 @@
-import { useState, useCallback, useRef } from "react";
+import { useCallback } from "react";
+import { create } from "zustand";
 
 /** State for a single terminal pane */
 export interface TerminalPane {
   id: string;
+  /** PTY ID assigned by the backend — set after creation, used for reconnection */
+  ptyId?: string;
 }
 
 /** State for the terminal panel for a given feature */
@@ -15,75 +18,125 @@ export interface TerminalPanelState {
   panes: TerminalPane[];
 }
 
+const defaultState: TerminalPanelState = {
+  isOpen: false,
+  isMinimized: false,
+  panes: [],
+};
+
 let paneCounter = 0;
 function nextPaneId(): string {
   return `pane-${Date.now()}-${++paneCounter}`;
 }
 
-export function useTerminalState(featureId: number) {
-  const [state, setState] = useState<TerminalPanelState>({
-    isOpen: false,
-    isMinimized: false,
-    panes: [],
-  });
+// ---------------------------------------------------------------------------
+// Zustand store — keyed by featureId so terminal state persists across
+// route navigations. PTYs stay alive in the backend while panes exist.
+// ---------------------------------------------------------------------------
 
-  // Track the current featureId to reset state on navigation
-  const featureIdRef = useRef(featureId);
-  if (featureIdRef.current !== featureId) {
-    featureIdRef.current = featureId;
-    // Reset terminal state when switching features
-    setState({ isOpen: false, isMinimized: false, panes: [] });
-  }
+interface TerminalStore {
+  /** Per-feature terminal panel state */
+  features: Record<number, TerminalPanelState>;
 
-  /**
-   * Toggle the terminal panel:
-   * - No panes → create first pane and show
-   * - Panel visible → hide (PTYs stay alive in background)
-   * - Panel hidden → show existing panes
-   */
-  const togglePanel = useCallback(() => {
-    setState((prev) => {
+  /** Get state for a feature (returns default if not yet initialized) */
+  getFeature: (featureId: number) => TerminalPanelState;
+
+  togglePanel: (featureId: number) => void;
+  addPane: (featureId: number) => void;
+  removePane: (featureId: number, paneId: string) => void;
+  minimize: (featureId: number) => void;
+  closePanel: (featureId: number) => void;
+
+  /** Associate a backend PTY ID with a pane (called after PTY creation) */
+  setPtyId: (featureId: number, paneId: string, ptyId: string) => void;
+}
+
+export const useTerminalStore = create<TerminalStore>((set, get) => ({
+  features: {},
+
+  getFeature: (featureId) => get().features[featureId] ?? defaultState,
+
+  togglePanel: (featureId) =>
+    set((state) => {
+      const prev = state.features[featureId] ?? defaultState;
+      let next: TerminalPanelState;
+
       if (prev.panes.length === 0) {
-        // No terminal yet — create first pane and show
-        return { isOpen: true, isMinimized: false, panes: [{ id: nextPaneId() }] };
+        next = { isOpen: true, isMinimized: false, panes: [{ id: nextPaneId() }] };
+      } else if (prev.isOpen) {
+        next = { ...prev, isOpen: false, isMinimized: false };
+      } else {
+        next = { ...prev, isOpen: true, isMinimized: false };
       }
-      if (prev.isOpen) {
-        // Terminal is visible — hide it (keep PTYs alive)
-        return { ...prev, isOpen: false, isMinimized: false };
-      }
-      // Terminal is hidden — show it
-      return { ...prev, isOpen: true, isMinimized: false };
-    });
-  }, []);
 
-  /** Add a new terminal pane */
-  const addPane = useCallback(() => {
-    setState((prev) => ({
-      ...prev,
-      panes: [...prev.panes, { id: nextPaneId() }],
-    }));
-  }, []);
+      return { features: { ...state.features, [featureId]: next } };
+    }),
 
-  /** Remove a pane by ID. If it's the last pane, close the panel entirely. */
-  const removePane = useCallback((paneId: string) => {
-    setState((prev) => {
+  addPane: (featureId) =>
+    set((state) => {
+      const prev = state.features[featureId] ?? defaultState;
+      return {
+        features: {
+          ...state.features,
+          [featureId]: { ...prev, panes: [...prev.panes, { id: nextPaneId() }] },
+        },
+      };
+    }),
+
+  removePane: (featureId, paneId) =>
+    set((state) => {
+      const prev = state.features[featureId] ?? defaultState;
       const remaining = prev.panes.filter((p) => p.id !== paneId);
-      if (remaining.length === 0) {
-        return { isOpen: false, isMinimized: false, panes: [] };
-      }
-      return { ...prev, panes: remaining };
-    });
-  }, []);
+      const next =
+        remaining.length === 0
+          ? { isOpen: false, isMinimized: false, panes: [] as TerminalPane[] }
+          : { ...prev, panes: remaining };
+      return { features: { ...state.features, [featureId]: next } };
+    }),
 
-  /** Minimize the panel (hide without killing PTYs) */
-  const minimize = useCallback(() => {
-    setState((prev) => ({ ...prev, isMinimized: true }));
-  }, []);
+  minimize: (featureId) =>
+    set((state) => {
+      const prev = state.features[featureId] ?? defaultState;
+      return { features: { ...state.features, [featureId]: { ...prev, isMinimized: true } } };
+    }),
 
-  /** Close the panel entirely */
-  const closePanel = useCallback(() => {
-    setState({ isOpen: false, isMinimized: false, panes: [] });
-  }, []);
+  closePanel: (featureId) =>
+    set((state) => ({
+      features: {
+        ...state.features,
+        [featureId]: { isOpen: false, isMinimized: false, panes: [] },
+      },
+    })),
+
+  setPtyId: (featureId, paneId, ptyId) =>
+    set((state) => {
+      const prev = state.features[featureId] ?? defaultState;
+      return {
+        features: {
+          ...state.features,
+          [featureId]: {
+            ...prev,
+            panes: prev.panes.map((p) => (p.id === paneId ? { ...p, ptyId } : p)),
+          },
+        },
+      };
+    }),
+}));
+
+// ---------------------------------------------------------------------------
+// Convenience hook — returns the same interface as before so callers barely
+// need to change.
+// ---------------------------------------------------------------------------
+
+export function useTerminalState(featureId: number) {
+  const state = useTerminalStore((s) => s.getFeature(featureId));
+  const store = useTerminalStore();
+
+  const togglePanel = useCallback(() => store.togglePanel(featureId), [store, featureId]);
+  const addPane = useCallback(() => store.addPane(featureId), [store, featureId]);
+  const removePane = useCallback((paneId: string) => store.removePane(featureId, paneId), [store, featureId]);
+  const minimize = useCallback(() => store.minimize(featureId), [store, featureId]);
+  const closePanel = useCallback(() => store.closePanel(featureId), [store, featureId]);
 
   return {
     ...state,

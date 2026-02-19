@@ -8,29 +8,58 @@ import { trpc } from "@/trpc";
 interface XTermInstanceProps {
   featureId: number;
   projectId: number;
+  /** Existing PTY ID to reconnect to (from zustand store) */
+  existingPtyId?: string;
   /** Called when the PTY process exits (e.g. Ctrl+D) */
   onExit?: (ptyId: string) => void;
+  /** Called after a PTY is created or reconnected — parent stores the ptyId */
+  onPtyReady?: (ptyId: string) => void;
+  /** If true, kill the PTY when unmounting (explicit close). Default: false (detach only). */
+  killOnUnmount?: boolean;
 }
 
 export interface XTermInstanceHandle {
   /** Focus this terminal instance */
   focus: () => void;
+  /** Mark this instance for PTY kill on next unmount */
+  markForKill: () => void;
 }
 
-export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>(function XTermInstance({ featureId, projectId, onExit }, ref) {
+export const XTermInstance = forwardRef<
+  XTermInstanceHandle,
+  XTermInstanceProps
+>(function XTermInstance(
+  {
+    featureId,
+    projectId,
+    existingPtyId,
+    onExit,
+    onPtyReady,
+    killOnUnmount = false,
+  },
+  ref,
+) {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
-  const ptyIdRef = useRef<string | null>(null);
+  const ptyIdRef = useRef<string | null>(existingPtyId ?? null);
   const mountedRef = useRef(true);
   const exitedRef = useRef(false);
+  const shouldKillRef = useRef(killOnUnmount);
+
+  // Keep shouldKillRef in sync with prop
+  shouldKillRef.current = killOnUnmount;
 
   useImperativeHandle(ref, () => ({
     focus: () => {
       terminalRef.current?.focus();
     },
+    markForKill: () => {
+      shouldKillRef.current = true;
+    },
   }));
 
+  const utils = trpc.useUtils();
   const createMutation = trpc.terminal.create.useMutation();
   const writeMutation = trpc.terminal.write.useMutation();
   const resizeMutation = trpc.terminal.resize.useMutation();
@@ -43,14 +72,14 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
     if (!container) return;
 
     // Create xterm.js Terminal instance
-    // Tokyo Night theme — consistent with the app's dark theme (#1a1b26 background)
     const terminal = new Terminal({
       cursorBlink: true,
       cursorStyle: "bar",
       cursorWidth: 2,
       fontSize: 13,
       lineHeight: 1.2,
-      fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'SF Mono', Menlo, Monaco, 'Courier New', monospace",
+      fontFamily:
+        "'Fira Code', 'Cascadia Code', 'SF Mono', Menlo, Monaco, 'Courier New', monospace",
       fontWeight: "400",
       fontWeightBold: "600",
       letterSpacing: 0,
@@ -109,20 +138,26 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
     });
 
     // Listen for terminal:data IPC events → write to xterm
-    const dataListener = window.api.onTerminalData((event: { ptyId: string; data: string }) => {
-      if (event.ptyId === ptyIdRef.current && mountedRef.current) {
-        terminal.write(event.data);
-      }
-    });
+    const dataListener = window.api.onTerminalData(
+      (event: { ptyId: string; data: string }) => {
+        if (event.ptyId === ptyIdRef.current && mountedRef.current) {
+          terminal.write(event.data);
+        }
+      },
+    );
 
     // Listen for terminal:exit IPC events
-    const exitListener = window.api.onTerminalExit((event: { ptyId: string; exitCode: number; signal?: number }) => {
-      if (event.ptyId === ptyIdRef.current && mountedRef.current) {
-        exitedRef.current = true;
-        terminal.write(`\r\n\x1b[90m[Process exited with code ${event.exitCode}]\x1b[0m\r\n`);
-        onExit?.(event.ptyId);
-      }
-    });
+    const exitListener = window.api.onTerminalExit(
+      (event: { ptyId: string; exitCode: number; signal?: number }) => {
+        if (event.ptyId === ptyIdRef.current && mountedRef.current) {
+          exitedRef.current = true;
+          terminal.write(
+            `\r\n\x1b[90m[Process exited with code ${event.exitCode}]\x1b[0m\r\n`,
+          );
+          onExit?.(event.ptyId);
+        }
+      },
+    );
 
     // ResizeObserver for auto-fitting
     const resizeObserver = new ResizeObserver(() => {
@@ -144,22 +179,30 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
     });
     resizeObserver.observe(container);
 
-    // Create the PTY
-    createMutation.mutate(
-      { featureId, projectId },
-      {
-        onSuccess: (result) => {
-          if (!mountedRef.current) {
-            // Component unmounted before PTY was created — kill it immediately
-            killMutation.mutate({ ptyId: result.ptyId });
+    // Reconnect to existing PTY or create a new one
+    if (existingPtyId) {
+      ptyIdRef.current = existingPtyId;
+      // Fetch buffered scrollback and replay it
+      utils.terminal.reconnect
+        .fetch({ ptyId: existingPtyId })
+        .then((result) => {
+          if (!mountedRef.current) return;
+          if (!result.alive) {
+            // PTY died while we were away — show message
+            exitedRef.current = true;
+            terminal.write("\r\n\x1b[90m[Terminal session ended]\x1b[0m\r\n");
+            onExit?.(existingPtyId);
             return;
           }
-          ptyIdRef.current = result.ptyId;
-          // Sync initial size
+          // Replay buffered output
+          if (result.scrollback) {
+            terminal.write(result.scrollback);
+          }
+          // Sync size
           try {
             fitAddon.fit();
             resizeMutation.mutate({
-              ptyId: result.ptyId,
+              ptyId: existingPtyId,
               cols: terminal.cols,
               rows: terminal.rows,
             });
@@ -167,16 +210,51 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
             // Ignore
           }
           terminal.focus();
-        },
-        onError: (err) => {
+        })
+        .catch(() => {
           if (mountedRef.current) {
-            terminal.write(`\r\n\x1b[31m[Failed to create terminal: ${err.message}]\x1b[0m\r\n`);
+            terminal.write("\r\n\x1b[31m[Failed to reconnect to terminal]\x1b[0m\r\n");
           }
+        });
+    } else {
+      // Create a new PTY
+      createMutation.mutate(
+        { featureId, projectId },
+        {
+          onSuccess: (result) => {
+            if (!mountedRef.current) {
+              // Component unmounted before PTY was created — kill it immediately
+              killMutation.mutate({ ptyId: result.ptyId });
+              return;
+            }
+            ptyIdRef.current = result.ptyId;
+            onPtyReady?.(result.ptyId);
+            // Sync initial size
+            try {
+              fitAddon.fit();
+              resizeMutation.mutate({
+                ptyId: result.ptyId,
+                cols: terminal.cols,
+                rows: terminal.rows,
+              });
+            } catch {
+              // Ignore
+            }
+            terminal.focus();
+          },
+          onError: (err) => {
+            if (mountedRef.current) {
+              terminal.write(
+                `\r\n\x1b[31m[Failed to create terminal: ${err.message}]\x1b[0m\r\n`,
+              );
+            }
+          },
         },
-      },
-    );
+      );
+    }
 
-    // Cleanup
+    // Cleanup — only kill PTY if explicitly requested (pane close).
+    // On feature switch we just detach listeners and dispose xterm UI.
     return () => {
       mountedRef.current = false;
       resizeObserver.disconnect();
@@ -185,7 +263,7 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
       window.api.offTerminalExit(exitListener);
 
       const id = ptyIdRef.current;
-      if (id && !exitedRef.current) {
+      if (id && !exitedRef.current && shouldKillRef.current) {
         killMutation.mutate({ ptyId: id });
       }
       ptyIdRef.current = null;
@@ -195,7 +273,7 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
       fitAddonRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [featureId, projectId]);
+  }, [featureId, projectId, existingPtyId]);
 
   return (
     <div
