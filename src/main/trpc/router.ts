@@ -391,6 +391,7 @@ const agentsRouter = router({
         agentType: agentTypeSchema,
         sessionId: z.string(),
         originalSessionDbId: z.number(),
+        prompt: z.string().optional(),
       }),
     )
     .mutation(({ input }) => {
@@ -406,7 +407,7 @@ const agentsRouter = router({
         featureId: input.featureId,
         projectId: input.projectId,
         cwd,
-        prompt: "Continue from where you left off.",
+        prompt: input.prompt ?? "Continue from where you left off.",
         resumeSessionId: input.sessionId,
         runId: originalSession?.run_id ?? undefined,
         phaseId: originalSession?.phase_id ?? undefined,

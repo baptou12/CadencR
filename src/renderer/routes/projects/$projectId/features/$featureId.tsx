@@ -94,7 +94,7 @@ function SessionFeatureView({
   );
 
   // Find the latest session agent
-  const session = sessions.find((s) => s.agentType === "session");
+  const session = sessions.findLast((s) => s.agentType === "session");
   const status = session?.status ?? "idle";
   const blocks = session?.blocks ?? [];
   const hasFileChanges = session?.hasFileChanges ?? false;
@@ -177,30 +177,31 @@ function SessionFeatureView({
 
   const handleSend = useCallback(
     async (message: string) => {
-      if (session?.subprocessId && (status === "running" || status === "paused")) {
+      // 1. Active subprocess — send follow-up message directly
+      if (session?.subprocessId && status === "running") {
         sendMessageMutation.mutate({ id: session.subprocessId, message });
         return;
       }
 
-      // Resume a paused session
-      if (status === "paused" && session?.claudeSessionId) {
+      // 2. Existing session with a claude session ID — resume it
+      if (session?.claudeSessionId) {
         try {
-          const result = await resumeMutation.mutateAsync({
+          await resumeMutation.mutateAsync({
             featureId,
             projectId,
             agentType: "session",
             sessionId: session.claudeSessionId,
             originalSessionDbId: session.sessionDbId,
+            prompt: message,
           });
-          sendMessageMutation.mutate({ id: result.subprocessId, message });
           void refetch();
         } catch {
-          // Error shown via refetch
+          // Error persisted to DB and shown via refetch
         }
         return;
       }
 
-      // Start a new session
+      // 3. No session yet — start a new one
       try {
         await startSessionMutation.mutateAsync({
           featureId,
@@ -295,7 +296,7 @@ function SessionFeatureView({
   return (
     <div className="flex h-full flex-col">
       <FeatureTopBar featureId={featureId} projectId={projectId} mode="session" className="shrink-0" />
-      {status === "paused" && !session?.subprocessId && (
+      {(status === "paused" || status === "completed") && !session?.subprocessId && session?.claudeSessionId && (
         <div className="border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 text-sm text-amber-300">
           Previous session paused — type a message to resume.
         </div>

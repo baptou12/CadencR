@@ -57,6 +57,8 @@ export interface ManagedSubprocess {
   completionListeners: Array<(exitCode: number) => void | Promise<void>>;
   /** SDK session ID for resume after interrupt */
   sdkSessionId?: string;
+  /** Original claude_session_id we're resuming from (to restore on failure) */
+  resumingFromSessionId?: string;
   /** Original options used to start this subprocess (needed for resume) */
   originalOptions?: SubprocessOptions;
   /** Worktree path for permission resolution */
@@ -479,6 +481,8 @@ async function runSdkQuery(
 
   if (options.resumeSessionId) {
     queryOptions.resume = options.resumeSessionId;
+    managed.resumingFromSessionId = options.resumeSessionId;
+    console.log(`[subprocess-manager] Resuming session ${options.resumeSessionId} for ${managed.id}, model=${options.model}`);
   }
 
   if (options.allowedTools && options.allowedTools.length > 0) {
@@ -716,11 +720,17 @@ async function runSdkQuery(
 
   managed.query = queryObj;
 
+  const isResume = !!options.resumeSessionId;
+  let messageCount = 0;
+
   try {
     for await (const message of queryObj) {
+      messageCount++;
       if (managed.status === "stopped") break;
       handleSdkMessage(managed, message as Record<string, unknown>);
     }
+
+    console.log(`[subprocess-manager] SDK query finished for ${managed.id}: status=${managed.status}, messages=${messageCount}, resume=${isResume}`);
 
     if (managed.status === "running") {
       managed.status = "completed";
@@ -758,12 +768,38 @@ async function runSdkQuery(
         exitCode: 1,
       });
     } else {
+      console.error(`[subprocess-manager] SDK query failed for ${managed.id}:`, err);
+      // If this was a resume attempt that failed, restore the original claude_session_id
+      // and keep status as 'paused' so the user can retry
+      if (managed.resumingFromSessionId) {
+        const sDbId = getSessionDbId(managed.id);
+        if (sDbId) {
+          try {
+            const db = getDatabase();
+            persistClaudeSessionId(sDbId, managed.resumingFromSessionId);
+            db.prepare("UPDATE agent_sessions SET status = 'paused', ended_at = datetime('now'), subprocess_id = NULL WHERE id = ?").run(sDbId);
+            console.log(`[subprocess-manager] Restored session ${sDbId} to paused with original session ID ${managed.resumingFromSessionId}`);
+          } catch { /* best-effort */ }
+        }
+      }
       managed.status = "error";
+      const rawMessage = err instanceof Error ? err.message : String(err);
+      const errorMessage = managed.resumingFromSessionId
+        ? `Failed to resume session: ${rawMessage}. The session may have expired. You can try again or start a new session.`
+        : rawMessage;
+      // Persist error message to DB so it survives the stream buffer clear
+      const errorSessionDbId = getSessionDbId(managed.id);
+      if (errorSessionDbId) {
+        persistStreamEvent(errorSessionDbId, {
+          type: "error",
+          error: { type: "sdk_error", message: errorMessage },
+        } as StreamEvent);
+      }
       broadcastEvent(managed.id, managed.agentType, {
         type: "error",
         error: {
           type: "sdk_error",
-          message: err instanceof Error ? err.message : String(err),
+          message: errorMessage,
         },
       });
       for (const listener of managed.completionListeners) listener(1);
@@ -799,7 +835,7 @@ export function sendMessageToSubprocess(id: string, message: string): boolean {
   const managed = activeProcesses.get(id);
   if (!managed) return false;
 
-  if (managed.status !== "running" && managed.status !== "paused") {
+  if (managed.status !== "running" && managed.status !== "paused" && managed.status !== "completed") {
     return false;
   }
 
@@ -818,8 +854,8 @@ export function sendMessageToSubprocess(id: string, message: string): boolean {
     }
   }
 
-  // Resume from paused state — start a new query with resume session ID
-  if (managed.status === "paused") {
+  // Resume from paused or completed state — start a new query with resume session ID
+  if (managed.status === "paused" || managed.status === "completed") {
     if (!managed.sdkSessionId || !managed.originalOptions) {
       return false;
     }
@@ -1130,6 +1166,10 @@ export function saveAllSessionStates(): void {
     // Mark running sessions as paused and clear subprocess_id since the process is dead
     db.prepare(
       "UPDATE agent_sessions SET status = 'paused', ended_at = datetime('now'), subprocess_id = NULL WHERE status = 'running'",
+    ).run();
+    // Clear subprocess_id for completed/paused/error sessions since the process is dead after restart
+    db.prepare(
+      "UPDATE agent_sessions SET subprocess_id = NULL WHERE status IN ('completed', 'paused', 'error') AND subprocess_id IS NOT NULL",
     ).run();
   } catch {
     // Best-effort: database may already be closed
