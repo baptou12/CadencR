@@ -5,15 +5,13 @@ import { Settings } from "lucide-react";
 import logoSvg from "@/logo.svg";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { ProjectList } from "@/components/ProjectList";
-import { FeatureList } from "@/components/FeatureList";
+import { ProjectTree } from "@/components/ProjectTree";
 import { getActiveFocusZone } from "@/lib/focus-zones";
 import { UsageIndicator } from "@/components/UsageIndicator";
 
 export function Sidebar() {
   const navigate = useNavigate();
   const sidebarRef = useRef<HTMLElement>(null);
-  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
   const [selectedFeatureId, setSelectedFeatureId] = useState<number | null>(null);
 
   // Detect active project/feature from current route
@@ -24,8 +22,6 @@ export function Sidebar() {
   const activeProjectId = routeParams[1] ? Number(routeParams[1]) : null;
   const activeFeatureId = routeParams[2] ? Number(routeParams[2]) : null;
 
-  // Sync sidebar selection with route
-  const effectiveProjectId = activeProjectId ?? selectedProjectId;
   const effectiveFeatureId = activeFeatureId ?? selectedFeatureId;
 
   const getNavItems = () => {
@@ -90,16 +86,8 @@ export function Sidebar() {
           params: { projectId, featureId: id },
         });
       } else if (type === "project" && id) {
-        // Focus the first feature of this project, or trigger the project click to navigate
-        const firstFeature = sidebarRef.current?.querySelector(
-          `[data-nav-type="feature"][data-nav-project-id="${id}"]`,
-        ) as HTMLElement | null;
-        if (firstFeature) {
-          firstFeature.focus({ focusVisible: true } as FocusOptions);
-        } else {
-          // No features - trigger the project button click to navigate to home
-          focused.click();
-        }
+        // Toggle expand by clicking the project button
+        focused.click();
       }
     },
     { enableOnFormTags: false },
@@ -123,27 +111,12 @@ export function Sidebar() {
 
       <Separator />
 
-      <div className="shrink-0 p-2">
-        <ProjectList
-          selectedProjectId={effectiveProjectId}
-          onSelectProject={setSelectedProjectId}
+      <div className="flex-1 overflow-auto p-2">
+        <ProjectTree
+          activeProjectId={activeProjectId}
+          activeFeatureId={effectiveFeatureId}
+          onSelectFeature={setSelectedFeatureId}
         />
-      </div>
-
-      <Separator />
-
-      <div className="flex-[2] overflow-auto p-2">
-        {effectiveProjectId !== null ? (
-          <FeatureList
-            projectId={effectiveProjectId}
-            selectedFeatureId={effectiveFeatureId ?? undefined}
-            onSelectFeature={setSelectedFeatureId}
-          />
-        ) : (
-          <p className="px-2 py-4 text-center text-xs text-muted-foreground">
-            Select a project to see features
-          </p>
-        )}
       </div>
     </aside>
   );
