@@ -42,6 +42,12 @@ export function ProjectSettingsDialog({
   const branchPrefix = settings?.branch_prefix ?? "";
   const agentAutonomy = settings?.agent_autonomy ?? "1";
   const [setupWorktree, setSetupWorktree] = useState(settings?.setup_worktree ?? "");
+  const [qaPrompt, setQaPrompt] = useState(settings?.qa_prompt ?? "");
+  useEffect(() => {
+    if (settings?.qa_prompt != null) {
+      setQaPrompt(settings.qa_prompt);
+    }
+  }, [settings?.qa_prompt]);
   useEffect(() => {
     if (settings?.setup_worktree != null) {
       setSetupWorktree(settings.setup_worktree);
@@ -131,6 +137,31 @@ export function ProjectSettingsDialog({
               </Select>
               <p className="text-xs text-muted-foreground">
                 Controls how much the execute agent does automatically
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <h4 className="text-sm font-semibold">QA &amp; Testing</h4>
+
+            <div className="space-y-1">
+              <span className="text-xs font-medium">QA Testing Procedure</span>
+              <Textarea
+                placeholder={"e.g. pnpm test\npnpm run lint\nVerify the app starts with pnpm start"}
+                rows={4}
+                value={qaPrompt}
+                onChange={(e) => setQaPrompt(e.target.value)}
+                onBlur={() =>
+                  setSettingMutation.mutate({
+                    project_id: projectId,
+                    key: "qa_prompt",
+                    value: qaPrompt,
+                  })
+                }
+                className="text-sm"
+              />
+              <p className="text-xs text-muted-foreground">
+                Commands and steps the QA agent will follow to verify implementations
               </p>
             </div>
           </div>

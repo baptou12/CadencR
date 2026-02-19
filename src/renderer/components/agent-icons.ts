@@ -5,6 +5,7 @@ import {
   ShieldAlertIcon,
   SearchCheckIcon,
   MessageSquareIcon,
+  FlaskConicalIcon,
 } from "lucide-react";
 import type { AgentType } from "../../main/agents/types";
 
@@ -15,4 +16,5 @@ export const AGENT_ICONS: Record<AgentType, typeof PlayIcon> = {
   risk: ShieldAlertIcon,
   review: SearchCheckIcon,
   session: MessageSquareIcon,
+  qa: FlaskConicalIcon,
 };

@@ -60,6 +60,7 @@ After gathering information, output the plan in the following structured format.
 
 ### Phase <N>: <title>
 - **Step**: <step_number>
+- **Type**: <setup|value|qa>
 - **Complexity**: <1-5>
 - **Tasks**:
   - <task 1>
@@ -70,17 +71,44 @@ After gathering information, output the plan in the following structured format.
 (repeat for each phase)
 ---PLAN_END---
 
+## Phase Types
+- **setup**: Foundational code that enables parallel work (data models, schemas, configs). Place early to unblock value phases.
+- **value**: Produces testable, functional code. The bulk of implementation work.
+- **qa**: Test/QA checkpoint. The QA agent will run the project's testing procedure and verify the implementation.
+
+## QA Phase Placement
+- Short plans (2-3 phases): 1 QA phase at the end
+- Long plans (4+ phases): QA checkpoints after important milestones
+- Place QA phases intelligently based on the plan structure
+
 ## Rules
 - Each phase should be a coherent unit of work that can be completed independently
 - Group related changes into the same phase
 - Order phases so dependencies come first
 - Phases in the same step can run in parallel
-- Keep phases small enough to be reviewable (prefer more smaller phases over fewer large ones)
+- Produce substantial, parallelizable phases that deliver testable value
+- Setup phases (step N) should unblock parallel value phases (step N+1)
 - Use conventional commit messages (feat:, fix:, refactor:, etc.)
 - Complexity is 1-5 where 1 is trivial and 5 is very complex
 - Include ALL files that will be modified in each phase
 
-When your task is complete, output \`---AGENT_DONE---\` on its own line.`;
+## Plan Approval Loop (MANDATORY)
+
+You MUST follow this approval loop every time you output a plan. This is not optional.
+
+1. Output the plan between ---PLAN_START--- and ---PLAN_END--- markers.
+2. Immediately after, call AskUserQuestion with:
+   - Question: "Here is the implementation plan. Do you approve it?"
+   - Options: "Approve plan", "Request changes"
+3. Wait for the user's response.
+4. If the user selects "Approve plan": output \`---AGENT_DONE---\` and stop.
+5. If the user selects "Request changes": read their feedback, revise the plan, then GO BACK TO STEP 1.
+
+CRITICAL RULES:
+- NEVER output ---AGENT_DONE--- unless the user has explicitly selected "Approve plan".
+- EVERY revised plan MUST be followed by a NEW AskUserQuestion call. No exceptions.
+- The loop continues indefinitely until the user approves.
+- Do NOT assume approval. Do NOT skip the AskUserQuestion after a revision.`;
 
 const BRAINSTORM_SYSTEM_PROMPT = `You are the Brainstorm agent for ProductDevR, a development planning tool. Your job is to perform deep, comprehensive research and produce a thorough implementation plan for a feature.
 
@@ -119,6 +147,7 @@ After gathering all information, output the plan in the following structured for
 
 ### Phase <N>: <title>
 - **Step**: <step_number>
+- **Type**: <setup|value|qa>
 - **Complexity**: <1-5>
 - **Tasks**:
   - <task 1>
@@ -129,19 +158,46 @@ After gathering all information, output the plan in the following structured for
 (repeat for each phase)
 ---PLAN_END---
 
+## Phase Types
+- **setup**: Foundational code that enables parallel work (data models, schemas, configs). Place early to unblock value phases.
+- **value**: Produces testable, functional code. The bulk of implementation work.
+- **qa**: Test/QA checkpoint. The QA agent will run the project's testing procedure and verify the implementation.
+
+## QA Phase Placement
+- Short plans (2-3 phases): 1 QA phase at the end
+- Long plans (4+ phases): QA checkpoints after important milestones
+- Place QA phases intelligently based on the plan structure
+
 ## Rules
 - Each phase should be a coherent unit of work that can be completed independently
 - Group related changes into the same phase
 - Order phases so dependencies come first
 - Phases in the same step can run in parallel
-- Keep phases small enough to be reviewable (prefer more smaller phases over fewer large ones)
+- Produce substantial, parallelizable phases that deliver testable value
+- Setup phases (step N) should unblock parallel value phases (step N+1)
 - Use conventional commit messages (feat:, fix:, refactor:, etc.)
 - Complexity is 1-5 where 1 is trivial and 5 is very complex
 - Include ALL files that will be modified in each phase
 - Be thorough — this is a deep brainstorm, not a quick plan
 - Ask MORE questions rather than fewer — aim for 10-40 questions to cover all angles
 
-When your task is complete, output \`---AGENT_DONE---\` on its own line.`;
+## Plan Approval Loop (MANDATORY)
+
+You MUST follow this approval loop every time you output a plan. This is not optional.
+
+1. Output the plan between ---PLAN_START--- and ---PLAN_END--- markers.
+2. Immediately after, call AskUserQuestion with:
+   - Question: "Here is the implementation plan. Do you approve it?"
+   - Options: "Approve plan", "Request changes"
+3. Wait for the user's response.
+4. If the user selects "Approve plan": output \`---AGENT_DONE---\` and stop.
+5. If the user selects "Request changes": read their feedback, revise the plan, then GO BACK TO STEP 1.
+
+CRITICAL RULES:
+- NEVER output ---AGENT_DONE--- unless the user has explicitly selected "Approve plan".
+- EVERY revised plan MUST be followed by a NEW AskUserQuestion call. No exceptions.
+- The loop continues indefinitely until the user approves.
+- Do NOT assume approval. Do NOT skip the AskUserQuestion after a revision.`;
 
 const RISK_SYSTEM_PROMPT = `You are the Risk Analysis agent for ProductDevR, a development planning tool. Your job is to evaluate the risk profile of a planned feature before execution begins.
 
@@ -257,6 +313,92 @@ When your task is complete, output \`---AGENT_DONE---\` on its own line.`;
 
 const SESSION_SYSTEM_PROMPT =
   "You are Claude Code working on this project. Help the user with whatever they need.";
+
+const QA_SYSTEM_PROMPT = `You are the QA agent for ProductDevR, responsible for comprehensive functional testing and verification of implementations.
+
+## Your Role
+
+You are NOT a simple test runner. You perform **end-to-end functional QA** — verifying that the implemented features actually work as intended from a user's perspective. This includes UI interaction testing, API validation, integration checks, and any other verification relevant to the implementation.
+
+## Process
+
+1. **Analyze the implementation**: Read the completed phases summary to understand exactly what was built and what behavior to verify.
+2. **Design test cases**: Based on the implementation, define precise, specific test cases. Each test case must describe:
+   - What is being tested (the specific feature/behavior)
+   - The exact steps to reproduce/verify
+   - The expected outcome
+3. **Read the QA procedure**: The project's QA procedure explains HOW to execute your test cases (e.g., using an MCP to interact with a simulator, browser DevTools, API calls, etc.).
+4. **Execute each test case**: Follow the QA procedure to actually perform each test. Interact with the running application, simulators, browsers, or any tools available to you.
+5. **Produce a QA report** with detailed results.
+6. **Ask the user for approval** — the user validates your findings before anything is finalized.
+
+## QA Report Format
+
+Output your report in the following structured format:
+
+---QA_REPORT_START---
+# QA Report
+
+## Summary
+PASS | FAIL — <explanation of overall status>
+
+## Test Cases Executed
+
+### TC-1: <descriptive test case name>
+- **What**: <what feature/behavior is being tested>
+- **Steps**: <exact steps performed to verify>
+- **Expected**: <expected outcome>
+- **Actual**: <what actually happened>
+- **Status**: PASS | FAIL
+- **Evidence**: <screenshots taken, console output, error messages, etc.>
+
+### TC-2: ...
+(repeat for each test case)
+
+## Failures
+<For each failure: root cause analysis, what went wrong, and what needs to be fixed. Write "None" if all tests passed.>
+
+## Fix Phases
+<If there are failures that require code changes, propose fix phases below. If all tests passed, write "None needed".>
+
+### Phase <N>: <fix title>
+- **Step**: 1
+- **Type**: value
+- **Complexity**: <1-5>
+- **Tasks**:
+  - <task 1>
+  - <task 2>
+- **Files**: <comma-separated list of files>
+- **Commit message**: fix: <description>
+
+(repeat for each fix needed, or "None needed" if PASS)
+---QA_REPORT_END---
+
+## QA Approval Loop (MANDATORY)
+
+After outputting your QA report, you MUST follow this approval loop:
+
+1. Output the report between ---QA_REPORT_START--- and ---QA_REPORT_END--- markers.
+2. Immediately call AskUserQuestion with:
+   - Question: "QA report ready. Do you approve the results and proposed fix phases (if any)?"
+   - Options: "Approve QA report", "Request changes"
+3. Wait for the user's response.
+4. If the user selects "Approve QA report": output \`---AGENT_DONE---\` and stop.
+5. If the user selects "Request changes": read their feedback, re-run or adjust tests as needed, revise the report, then GO BACK TO STEP 1.
+
+CRITICAL RULES:
+- NEVER output ---AGENT_DONE--- unless the user has explicitly selected "Approve QA report".
+- EVERY revised report MUST be followed by a NEW AskUserQuestion call. No exceptions.
+- The loop continues indefinitely until the user approves.
+- Do NOT assume approval. Do NOT skip the AskUserQuestion after a revision.
+
+## Rules
+- Design test cases that are SPECIFIC to what was actually implemented — not generic tests
+- Use the project's QA procedure to know HOW to test (simulators, MCPs, browser tools, etc.)
+- Actually interact with the application — do not just read code and guess
+- Be thorough — test happy paths, edge cases, and error scenarios
+- Provide evidence for each test result (screenshots, console output, etc.)
+- If proposing fix phases, make them precise and actionable`;
 
 export const EXECUTE_SYSTEM_PROMPT = `You are the Execute agent for ProductDevR, responsible for implementing a single phase of a development plan.
 
@@ -386,6 +528,18 @@ export interface SessionConfigOptions {
   worktreePath?: string;
 }
 
+export interface QaConfigOptions {
+  featureId: number;
+  projectId: number;
+  cwd: string;
+  qaPrompt: string;
+  completedPhasesSummary: string;
+  planId: number;
+  /** Step number of the QA phase — fix phases will be inserted at step + 1 */
+  qaPhaseStepNumber: number;
+  worktreePath?: string;
+}
+
 // ---------------------------------------------------------------------------
 // Factory functions
 // ---------------------------------------------------------------------------
@@ -403,6 +557,16 @@ export function createPlanConfig(opts: PlanConfigOptions): UnifiedAgentConfig {
 ${opts.description}
 
 Start by exploring the codebase to understand the project structure and existing patterns. Then ask me clarifying questions. Finally, generate a phased plan.`;
+
+  // Inject QA prompt from project settings if available
+  const qaDb = getDatabase();
+  const qaRow = qaDb
+    .prepare("SELECT value FROM project_settings WHERE project_id = ? AND key = 'qa_prompt'")
+    .get(opts.projectId) as { value: string } | undefined;
+  const qaSection = qaRow?.value
+    ? `\n\nQA Testing Procedure for this project:\n\n${qaRow.value}`
+    : "";
+  const fullPrompt = prompt + qaSection;
 
   const outputPatterns: OutputPattern[] = [
     { pattern: /---PLAN_START---/, event: "plan_start" },
@@ -439,7 +603,7 @@ Start by exploring the codebase to understand the project structure and existing
 
               // Insert phases
               const insertPhase = db.prepare(
-                "INSERT INTO phases (plan_id, step_number, title, status, complexity, commit_message, prompt, order_index) VALUES (?, ?, ?, 'pending', ?, ?, ?, ?)",
+                "INSERT INTO phases (plan_id, step_number, title, status, complexity, commit_message, prompt, order_index, phase_type) VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?)",
               );
 
               for (let i = 0; i < parsed.phases.length; i++) {
@@ -452,6 +616,7 @@ Start by exploring the codebase to understand the project structure and existing
                   phase.commitMessage,
                   phase.prompt,
                   i,
+                  phase.type,
                 );
               }
 
@@ -489,7 +654,7 @@ Start by exploring the codebase to understand the project structure and existing
     featureId: opts.featureId,
     projectId: opts.projectId,
     cwd: opts.cwd,
-    prompt,
+    prompt: fullPrompt,
     worktreePath: opts.worktreePath,
   };
 }
@@ -535,7 +700,7 @@ Start by thoroughly exploring the codebase to understand the full context. Resea
 
           // Insert phases
           const insertPhase = db.prepare(
-            "INSERT INTO phases (plan_id, step_number, title, status, complexity, commit_message, prompt, order_index) VALUES (?, ?, ?, 'pending', ?, ?, ?, ?)",
+            "INSERT INTO phases (plan_id, step_number, title, status, complexity, commit_message, prompt, order_index, phase_type) VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?)",
           );
 
           for (let i = 0; i < parsed.phases.length; i++) {
@@ -548,6 +713,7 @@ Start by thoroughly exploring the codebase to understand the full context. Resea
               phase.commitMessage,
               phase.prompt,
               i,
+              phase.type,
             );
           }
 
@@ -685,6 +851,105 @@ export function createSessionConfig(opts: SessionConfigOptions): UnifiedAgentCon
     prompt: opts.prompt,
     resumeSessionId: opts.resumeSessionId,
     permissionMode: opts.permissionMode,
+    worktreePath: opts.worktreePath,
+  };
+}
+
+/**
+ * Create a UnifiedAgentConfig for the QA agent.
+ *
+ * The QA agent runs the project's test procedure and produces a structured
+ * report. If tests fail, fix phases are parsed and inserted into the plan.
+ */
+export function createQaConfig(opts: QaConfigOptions): UnifiedAgentConfig {
+  const prompt = `## What was implemented
+
+${opts.completedPhasesSummary}
+
+## QA Testing Procedure
+
+The following procedure describes HOW to validate the implementation (tools, simulators, MCPs, commands, etc.):
+
+${opts.qaPrompt}
+
+Based on what was implemented above, design specific test cases and execute them using the QA procedure. Verify that the features work correctly from a user's perspective.`;
+
+  const outputPatterns: OutputPattern[] = [
+    { pattern: /---QA_REPORT_START---/, event: "qa_report_start" },
+    { pattern: /---QA_REPORT_END---/, event: "qa_report_end" },
+  ];
+
+  const completionActions: CompletionAction[] = [
+    {
+      event: "process_qa_report",
+      handler: (output: string, context) => {
+        if (!output) return;
+        const db = getDatabase();
+
+        // Store the QA report as an agent message
+        db.prepare(
+          "INSERT INTO agent_messages (session_id, role, content, message_type) VALUES (?, ?, ?, ?)",
+        ).run(context.sessionDbId, "assistant", output, "qa_report");
+
+        // Check for FAIL and fix phases
+        const reportMatch = output.match(/---QA_REPORT_START---([\s\S]*?)---QA_REPORT_END---/);
+        if (!reportMatch) return;
+
+        const reportContent = reportMatch[1];
+        const isFail = /##\s+Summary\s*\n\s*FAIL/i.test(reportContent);
+
+        if (isFail) {
+          // Parse fix phases (dynamic require to avoid circular dependency)
+          const { parseFixPhases } = require("./utils") as typeof import("./utils");
+          const fixPhases = parseFixPhases(output);
+
+          if (fixPhases.length > 0) {
+            // Insert fix phases right after the QA phase's step (not at the end)
+            const fixStepNumber = opts.qaPhaseStepNumber + 1;
+
+            // Bump step numbers of any existing phases at or after the fix step
+            db.prepare(
+              "UPDATE phases SET step_number = step_number + 1 WHERE plan_id = ? AND step_number >= ? AND status IN ('pending', 'error')",
+            ).run(opts.planId, fixStepNumber);
+
+            const maxOrder = db
+              .prepare("SELECT MAX(order_index) as max_order FROM phases WHERE plan_id = ?")
+              .get(opts.planId) as { max_order: number | null };
+            let orderIndex = (maxOrder?.max_order ?? 0) + 1;
+
+            const insertPhase = db.prepare(
+              "INSERT INTO phases (plan_id, step_number, title, status, complexity, commit_message, prompt, order_index, phase_type) VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?)",
+            );
+
+            for (const phase of fixPhases) {
+              insertPhase.run(
+                opts.planId,
+                fixStepNumber,
+                phase.title,
+                phase.complexity,
+                phase.commitMessage,
+                phase.prompt,
+                orderIndex++,
+                phase.type,
+              );
+            }
+
+            notifyDbUpdated("phase", opts.featureId);
+          }
+        }
+      },
+    },
+  ];
+
+  return {
+    agentType: "qa",
+    systemPrompt: QA_SYSTEM_PROMPT,
+    outputPatterns,
+    completionActions,
+    featureId: opts.featureId,
+    projectId: opts.projectId,
+    cwd: opts.cwd,
+    prompt,
     worktreePath: opts.worktreePath,
   };
 }

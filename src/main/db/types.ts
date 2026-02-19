@@ -71,6 +71,7 @@ export interface PhaseRow {
   order_index: number;
   implementation_notes: string | null;
   deviations: string | null;
+  phase_type: string;
 }
 
 // -- agent sessions & messages --

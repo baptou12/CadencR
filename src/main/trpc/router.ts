@@ -44,6 +44,7 @@ import { startExecuteAgent, continueExecuteAgent } from "../agents/execute-agent
 import { startRiskAgent } from "../agents/risk-agent";
 import { startReviewAgent, addFixPhase } from "../agents/review-agent";
 import { startSessionAgent } from "../agents/session-agent";
+import { startQaAgent } from "../agents/qa-agent";
 import { autoNameFeature, runAutoNameBlocking } from "../agents/auto-name";
 import { fetchAvailableModels } from "../agents/available-models";
 
@@ -124,7 +125,7 @@ const settingsRouter = router({
   setModelSetting: publicProcedure
     .input(
       z.object({
-        agentType: z.enum(["plan", "brainstorm", "execute", "risk", "review"]),
+        agentType: z.enum(["plan", "brainstorm", "execute", "risk", "review", "qa"]),
         modelId: z.string(),
       }),
     )
@@ -203,7 +204,7 @@ function hasDefaultTitle(featureId: number): boolean {
   return row != null && /^Session \d+$/i.test(row.title);
 }
 
-const agentTypeSchema = z.enum(["plan", "brainstorm", "execute", "risk", "review", "session"]);
+const agentTypeSchema = z.enum(["plan", "brainstorm", "execute", "risk", "review", "session", "qa"]);
 
 // ---------------------------------------------------------------------------
 // Block builder — converts agent_messages rows into a nested block tree
@@ -595,6 +596,26 @@ const agentsRouter = router({
         worktreePath,
       });
 
+      return result;
+    }),
+
+  /** Start the QA agent for a feature */
+  startQa: publicProcedure
+    .input(
+      z.object({
+        featureId: z.number(),
+        projectId: z.number(),
+      }),
+    )
+    .mutation(({ input }) => {
+      const { cwd, worktreePath } = resolveAgentCwd(input.featureId, input.projectId);
+
+      const result = startQaAgent({
+        featureId: input.featureId,
+        projectId: input.projectId,
+        cwd,
+        worktreePath,
+      });
       return result;
     }),
 

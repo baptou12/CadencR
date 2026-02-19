@@ -1,4 +1,4 @@
-import { CircleIcon, Loader2, CheckCircle2, XCircle, Maximize, RotateCcw } from "lucide-react";
+import { CircleIcon, Loader2, CheckCircle2, XCircle, Maximize, RotateCcw, FlaskConical, Wrench } from "lucide-react";
 import { Markdown } from "@/components/Markdown";
 import { cn } from "@/lib/utils";
 
@@ -14,6 +14,7 @@ export interface PhaseData {
   order_index: number;
   implementation_notes: string | null;
   deviations: string | null;
+  phase_type: string;
 }
 
 interface PhaseCardProps {
@@ -52,6 +53,18 @@ export function PhaseCard({ phase, displayNumber, onExpand, canReset, onReset }:
           >
             {config.label}
           </span>
+          {phase.phase_type === 'qa' && (
+            <span className="flex items-center gap-0.5 rounded-full bg-[var(--drac-purple)]/20 px-1.5 py-0.5 text-[10px] font-medium leading-none text-[var(--drac-purple)]">
+              <FlaskConical className="size-2.5" />
+              QA
+            </span>
+          )}
+          {phase.phase_type === 'setup' && (
+            <span className="flex items-center gap-0.5 rounded-full bg-[var(--drac-cyan)]/20 px-1.5 py-0.5 text-[10px] font-medium leading-none text-[var(--drac-cyan)]">
+              <Wrench className="size-2.5" />
+              Setup
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-0.5 shrink-0">
           {canReset && onReset && (

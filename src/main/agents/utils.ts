@@ -54,6 +54,7 @@ export interface ParsedPhase {
   commitMessage: string;
   /** Raw phase body text to pass directly to the execute agent */
   prompt: string;
+  type: 'setup' | 'value' | 'qa';
 }
 
 /**
@@ -69,8 +70,8 @@ export function parsePlanOutput(output: string): ParsedPlan | null {
   const endMarker = "---PLAN_END---";
 
   let planContent = output;
-  const startIdx = output.indexOf(startMarker);
-  const endIdx = output.indexOf(endMarker);
+  const startIdx = output.lastIndexOf(startMarker);
+  const endIdx = output.lastIndexOf(endMarker);
 
   if (startIdx !== -1 && endIdx !== -1) {
     planContent = output.substring(startIdx + startMarker.length, endIdx).trim();
@@ -123,6 +124,10 @@ export function parsePlanOutput(output: string): ParsedPlan | null {
       ? commitMatch[1].trim().replace(/`/g, "")
       : `phase ${phaseNum}`;
 
+    // Parse type
+    const typeMatch = phaseBody.match(/\*\*Type\*\*:\s*(setup|value|qa)/);
+    const type = typeMatch ? (typeMatch[1] as 'setup' | 'value' | 'qa') : 'value';
+
     phases.push({
       number: phaseNum,
       title: phaseTitle,
@@ -130,6 +135,7 @@ export function parsePlanOutput(output: string): ParsedPlan | null {
       complexity,
       commitMessage,
       prompt: phaseBody.trim(),
+      type,
     });
   }
 
@@ -138,4 +144,64 @@ export function parsePlanOutput(output: string): ParsedPlan | null {
   }
 
   return { title, summary, context, clarifications, completionConditions, phases };
+}
+
+/**
+ * Parse fix phases from a QA report output.
+ * Extracts phases between ---QA_REPORT_START--- / ---QA_REPORT_END--- markers
+ * that appear under "## Fix Phases" section.
+ */
+export function parseFixPhases(output: string): ParsedPhase[] {
+  const startMarker = "---QA_REPORT_START---";
+  const endMarker = "---QA_REPORT_END---";
+
+  const startIdx = output.lastIndexOf(startMarker);
+  const endIdx = output.lastIndexOf(endMarker);
+
+  if (startIdx === -1) return [];
+
+  const reportContent = endIdx > startIdx
+    ? output.substring(startIdx + startMarker.length, endIdx)
+    : output.substring(startIdx + startMarker.length);
+
+  // Check if there are fix phases
+  if (reportContent.includes("None needed") && !reportContent.includes("### Phase")) return [];
+
+  // Reuse the same phase regex as parsePlanOutput
+  const phaseRegex =
+    /###\s+Phase\s+(\d+):\s*([^\n]+)([\s\S]*?)(?=\n###\s+Phase|\n---QA_REPORT_END---|$)/g;
+  const phases: ParsedPhase[] = [];
+
+  let match;
+  while ((match = phaseRegex.exec(reportContent)) !== null) {
+    const phaseNum = parseInt(match[1], 10);
+    const phaseTitle = match[2].trim();
+    const phaseBody = match[0];
+
+    const stepMatch = phaseBody.match(/\*\*Step\*\*:\s*(\d+)/);
+    const step = stepMatch ? parseInt(stepMatch[1], 10) : 1;
+
+    const complexityMatch = phaseBody.match(/\*\*Complexity\*\*:\s*(\d+)/);
+    const complexity = complexityMatch ? parseInt(complexityMatch[1], 10) : 2;
+
+    const commitMatch = phaseBody.match(/\*\*Commit message\*\*:\s*(.+)/);
+    const commitMessage = commitMatch
+      ? commitMatch[1].trim().replace(/`/g, "")
+      : `fix: phase ${phaseNum}`;
+
+    const typeMatch = phaseBody.match(/\*\*Type\*\*:\s*(setup|value|qa)/);
+    const type = typeMatch ? (typeMatch[1] as 'setup' | 'value' | 'qa') : 'value';
+
+    phases.push({
+      number: phaseNum,
+      title: phaseTitle,
+      step,
+      complexity,
+      commitMessage,
+      prompt: phaseBody.trim(),
+      type,
+    });
+  }
+
+  return phases;
 }

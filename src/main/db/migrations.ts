@@ -329,6 +329,13 @@ const migrations: Migration[] = [
       db.exec("UPDATE agent_sessions SET permission_mode = 'acceptEdits' WHERE permission_mode = 'bypassPermissions'");
     },
   },
+  {
+    version: 28,
+    description: "Add phase_type column to phases",
+    up: (db) => {
+      db.exec("ALTER TABLE phases ADD COLUMN phase_type TEXT NOT NULL DEFAULT 'value'");
+    },
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

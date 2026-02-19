@@ -3,7 +3,7 @@
  * These represent the structured events emitted by `claude --output-format stream-json`.
  */
 
-export type AgentType = "plan" | "brainstorm" | "execute" | "risk" | "review" | "session";
+export type AgentType = "plan" | "brainstorm" | "execute" | "risk" | "review" | "session" | "qa";
 
 /** Message start event — beginning of an assistant turn */
 export interface StreamMessageStart {

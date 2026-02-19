@@ -62,6 +62,7 @@ export const AGENT_LABELS: Record<AgentType, string> = {
   risk: "Risk Analysis",
   review: "Review",
   session: "Session",
+  qa: "QA",
 };
 
 // ---------------------------------------------------------------------------

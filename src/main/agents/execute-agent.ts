@@ -16,7 +16,7 @@ import { getDatabase } from "../db/database";
 import type { PhaseRow, PlanRow, SettingRow } from "../db/types";
 import { notifyDbUpdated } from "./ipc-bridge";
 import { startUnifiedAgent } from "./unified-agent";
-import { EXECUTE_SYSTEM_PROMPT } from "./agent-configs";
+import { EXECUTE_SYSTEM_PROMPT, createQaConfig } from "./agent-configs";
 import type { AgentEvent, UnifiedAgentConfig, CompletionAction } from "./types";
 
 export interface ExecuteAgentOptions {
@@ -65,7 +65,7 @@ export function startExecuteAgent(options: ExecuteAgentOptions): ExecuteAgentRes
   // Get all pending phases ordered by step_number, then order_index
   const phases = db
     .prepare(
-      "SELECT id, plan_id, step_number, title, status, complexity, commit_message, prompt, order_index FROM phases WHERE plan_id = ? AND status IN ('pending', 'error') ORDER BY step_number, order_index",
+      "SELECT id, plan_id, step_number, title, status, complexity, commit_message, prompt, order_index, phase_type FROM phases WHERE plan_id = ? AND status IN ('pending', 'error') ORDER BY step_number, order_index",
     )
     .all(plan.id) as PhaseRow[];
 
@@ -95,7 +95,7 @@ export function startExecuteAgent(options: ExecuteAgentOptions): ExecuteAgentRes
   const optionsWithSession = { ...options, sessionDbId };
   const firstStepSubprocessIds: string[] = [];
   const firstStepPromises = firstStepPhases.map((phase) =>
-    executePhase(phase, optionsWithSession, autonomyLevel, firstStepSubprocessIds),
+    dispatchPhase(phase, optionsWithSession, autonomyLevel, firstStepSubprocessIds),
   );
 
   // Continue remaining steps asynchronously after first step completes.
@@ -103,7 +103,7 @@ export function startExecuteAgent(options: ExecuteAgentOptions): ExecuteAgentRes
     await Promise.allSettled(firstStepPromises);
 
     const firstStepResult = getStepOutcome(plan.id, firstStepNumber);
-    if (firstStepResult !== "ok") {
+    if (firstStepResult !== "ok" && firstStepResult !== "qa_fail_with_fixes") {
       db.prepare(
         "UPDATE agent_sessions SET status = ?, ended_at = datetime('now') WHERE id = ?",
       ).run(firstStepResult === "paused" ? "paused" : "error", sessionDbId);
@@ -136,15 +136,37 @@ export function startExecuteAgent(options: ExecuteAgentOptions): ExecuteAgentRes
 /**
  * Check step outcome: "ok" if all phases completed, "error" if any errored,
  * "paused" if any were reset to pending (i.e. paused/interrupted).
+ * "qa_fail_with_fixes" if a QA phase failed but fix phases were injected.
  */
-function getStepOutcome(planId: number, stepNumber: number): "ok" | "error" | "paused" {
+function getStepOutcome(planId: number, stepNumber: number): "ok" | "error" | "paused" | "qa_fail_with_fixes" {
   const db = getDatabase();
   const errorRow = db
     .prepare(
       "SELECT COUNT(*) as cnt FROM phases WHERE plan_id = ? AND step_number = ? AND status = 'error'",
     )
     .get(planId, stepNumber) as { cnt: number };
-  if (errorRow.cnt > 0) return "error";
+
+  if (errorRow.cnt > 0) {
+    // Check if the errors are only from QA phases that injected fix phases
+    const qaErrors = db
+      .prepare(
+        "SELECT COUNT(*) as cnt FROM phases WHERE plan_id = ? AND step_number = ? AND status = 'error' AND phase_type = 'qa'",
+      )
+      .get(planId, stepNumber) as { cnt: number };
+    const nonQaErrors = errorRow.cnt - qaErrors.cnt;
+
+    if (nonQaErrors > 0) return "error";
+
+    // QA failed — check if fix phases were injected (pending phases with higher step numbers)
+    const fixPhases = db
+      .prepare(
+        "SELECT COUNT(*) as cnt FROM phases WHERE plan_id = ? AND step_number > ? AND status = 'pending'",
+      )
+      .get(planId, stepNumber) as { cnt: number };
+
+    if (fixPhases.cnt > 0) return "qa_fail_with_fixes";
+    return "error";
+  }
 
   const pendingRow = db
     .prepare(
@@ -193,6 +215,116 @@ function broadcastExecutePaused(sessionDbId: number): void {
       win.webContents.send(AGENT_EVENT_CHANNEL, event);
     }
   }
+}
+
+/**
+ * Dispatch a phase to the appropriate executor based on phase_type.
+ */
+function dispatchPhase(
+  phase: PhaseRow,
+  options: ExecuteAgentOptions & { sessionDbId: number },
+  autonomyLevel: 1 | 2 | 3,
+  allSubprocessIds: string[],
+): Promise<void> {
+  if (phase.phase_type === "qa") {
+    return executeQaPhase(phase, options, allSubprocessIds);
+  }
+  return executePhase(phase, options, autonomyLevel, allSubprocessIds);
+}
+
+/**
+ * Execute a QA phase by starting the QA agent.
+ * Returns a promise that resolves when the QA check completes.
+ */
+function executeQaPhase(
+  phase: PhaseRow,
+  options: ExecuteAgentOptions & { sessionDbId: number },
+  allSubprocessIds: string[],
+): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const db = getDatabase();
+
+    // Update phase status to running
+    db.prepare("UPDATE phases SET status = 'running' WHERE id = ?").run(phase.id);
+    notifyDbUpdated("phase", options.featureId);
+
+    // Get QA prompt from project settings
+    const qaRow = db
+      .prepare("SELECT value FROM project_settings WHERE project_id = ? AND key = 'qa_prompt'")
+      .get(options.projectId) as { value: string } | undefined;
+    const qaPrompt = qaRow?.value || "Run any available tests and verify the implementation works correctly.";
+
+    // Build summary of completed phases
+    const completedPhases = db
+      .prepare(
+        "SELECT step_number, title, implementation_notes FROM phases WHERE plan_id = ? AND status = 'completed' ORDER BY step_number, order_index",
+      )
+      .all(phase.plan_id) as { step_number: number; title: string; implementation_notes: string | null }[];
+
+    const completedPhasesSummary = completedPhases.length > 0
+      ? "The following phases have been completed:\n\n" +
+        completedPhases
+          .map((p) => {
+            let entry = `- **Phase (step ${p.step_number}): ${p.title}**`;
+            if (p.implementation_notes) entry += `\n  - ${p.implementation_notes}`;
+            return entry;
+          })
+          .join("\n")
+      : "No phases have been completed yet.";
+
+    const qaConfig = createQaConfig({
+      featureId: options.featureId,
+      projectId: options.projectId,
+      cwd: options.cwd,
+      qaPrompt,
+      completedPhasesSummary,
+      planId: phase.plan_id,
+      qaPhaseStepNumber: phase.step_number,
+      worktreePath: options.worktreePath,
+    });
+
+    // Override completion actions to also update phase status
+    const originalActions = qaConfig.completionActions ?? [];
+    qaConfig.completionActions = [
+      ...originalActions,
+      {
+        event: "qa_phase_status",
+        handler: (output: string, context) => {
+          const db2 = getDatabase();
+          const session = db2.prepare("SELECT status FROM agent_sessions WHERE id = ?").get(context.sessionDbId) as { status: string } | undefined;
+          const wasInterrupted = session?.status === "paused";
+
+          if (wasInterrupted) {
+            db2.prepare("UPDATE phases SET status = 'pending' WHERE id = ? AND status = 'running'").run(phase.id);
+          } else if (context.exitCode === 0) {
+            // Check if QA passed or failed
+            const isFail = /---QA_REPORT_START---[\s\S]*?##\s+Summary\s*\n\s*FAIL/i.test(output);
+            db2.prepare("UPDATE phases SET status = ? WHERE id = ?").run(
+              isFail ? "error" : "completed",
+              phase.id,
+            );
+          } else {
+            db2.prepare("UPDATE phases SET status = 'error' WHERE id = ?").run(phase.id);
+          }
+          notifyDbUpdated("phase", options.featureId);
+          resolve();
+        },
+      },
+    ];
+
+    // Set run/phase IDs for the orchestrator
+    qaConfig.runId = options.sessionDbId;
+    qaConfig.phaseId = phase.id;
+
+    try {
+      const result = startUnifiedAgent(qaConfig);
+      allSubprocessIds.push(result.subprocessId);
+    } catch {
+      db.prepare("UPDATE phases SET status = 'error' WHERE id = ?").run(phase.id);
+      notifyDbUpdated("phase", options.featureId);
+      resolve();
+    }
+  });
 }
 
 /**
@@ -410,11 +542,13 @@ function getAutonomyLevel(featureId: number, projectId: number): 1 | 2 | 3 {
 /**
  * Execute remaining steps starting from a given index in the sorted steps array.
  * Shared by both initial launch and continueExecuteAgent.
+ *
+ * Re-queries phases from DB after each step to pick up fix phases injected by QA.
  */
 async function executeRemainingSteps(
-  sortedSteps: number[],
+  _sortedSteps: number[],
   startIndex: number,
-  stepGroups: Map<number, PhaseRow[]>,
+  _stepGroups: Map<number, PhaseRow[]>,
   options: ExecuteAgentOptions & { sessionDbId: number },
   autonomyLevel: 1 | 2 | 3,
   planId: number,
@@ -422,17 +556,21 @@ async function executeRemainingSteps(
 ): Promise<void> {
   const db = getDatabase();
 
+  // Use the initial sorted steps for the first iteration, then re-query
+  let sortedSteps = _sortedSteps;
+  let stepGroups = _stepGroups;
+
   for (let i = startIndex; i < sortedSteps.length; i++) {
     const stepNumber = sortedSteps[i];
     const stepPhases = stepGroups.get(stepNumber) ?? [];
     const stepSubprocessIds: string[] = [];
     const phasePromises = stepPhases.map((phase) =>
-      executePhase(phase, options, autonomyLevel, stepSubprocessIds),
+      dispatchPhase(phase, options, autonomyLevel, stepSubprocessIds),
     );
     await Promise.allSettled(phasePromises);
 
     const stepResult = getStepOutcome(planId, stepNumber);
-    if (stepResult !== "ok") {
+    if (stepResult !== "ok" && stepResult !== "qa_fail_with_fixes") {
       db.prepare(
         "UPDATE agent_sessions SET status = ?, ended_at = datetime('now') WHERE id = ?",
       ).run(stepResult === "paused" ? "paused" : "error", sessionDbId);
@@ -444,12 +582,32 @@ async function executeRemainingSteps(
       return;
     }
 
+    // Re-query pending phases from DB (QA may have injected fix phases)
+    const pendingPhases = db
+      .prepare(
+        "SELECT id, plan_id, step_number, title, status, complexity, commit_message, prompt, order_index, phase_type FROM phases WHERE plan_id = ? AND status IN ('pending', 'error') ORDER BY step_number, order_index",
+      )
+      .all(planId) as PhaseRow[];
+
+    if (pendingPhases.length === 0) break;
+
+    // Rebuild step groups from fresh data
+    stepGroups = new Map<number, PhaseRow[]>();
+    for (const phase of pendingPhases) {
+      const existing = stepGroups.get(phase.step_number) ?? [];
+      existing.push(phase);
+      stepGroups.set(phase.step_number, existing);
+    }
+    sortedSteps = Array.from(stepGroups.keys()).toSorted((a, b) => a - b);
+    // Reset index to 0 since we rebuilt the list
+    i = -1; // will be incremented to 0 by the for loop
+
     // For Level 2, stop after each step and wait for user to continue
-    if (autonomyLevel === 2 && i < sortedSteps.length - 1) {
+    if (autonomyLevel === 2) {
       db.prepare(
         "UPDATE agent_sessions SET status = 'waiting' WHERE id = ?",
       ).run(sessionDbId);
-      broadcastExecuteWaiting(sessionDbId, sortedSteps[i + 1]);
+      broadcastExecuteWaiting(sessionDbId, sortedSteps[0]);
       return;
     }
   }
@@ -527,7 +685,7 @@ export function continueExecuteAgent(sessionDbId: number): { subprocessIds: stri
   // Get pending phases
   const phases = db
     .prepare(
-      "SELECT id, plan_id, step_number, title, status, complexity, commit_message, prompt, order_index FROM phases WHERE plan_id = ? AND status IN ('pending', 'error') ORDER BY step_number, order_index",
+      "SELECT id, plan_id, step_number, title, status, complexity, commit_message, prompt, order_index, phase_type FROM phases WHERE plan_id = ? AND status IN ('pending', 'error') ORDER BY step_number, order_index",
     )
     .all(plan.id) as PhaseRow[];
 
@@ -567,7 +725,7 @@ export function continueExecuteAgent(sessionDbId: number): { subprocessIds: stri
   const firstStepPhases = stepGroups.get(firstStepNumber) ?? [];
   const firstStepSubprocessIds: string[] = [];
   const firstStepPromises = firstStepPhases.map((phase) =>
-    executePhase(phase, options, autonomyLevel, firstStepSubprocessIds),
+    dispatchPhase(phase, options, autonomyLevel, firstStepSubprocessIds),
   );
 
   // Continue remaining steps asynchronously
@@ -575,7 +733,7 @@ export function continueExecuteAgent(sessionDbId: number): { subprocessIds: stri
     await Promise.allSettled(firstStepPromises);
 
     const firstStepResult = getStepOutcome(plan.id, firstStepNumber);
-    if (firstStepResult !== "ok") {
+    if (firstStepResult !== "ok" && firstStepResult !== "qa_fail_with_fixes") {
       db.prepare(
         "UPDATE agent_sessions SET status = ?, ended_at = datetime('now') WHERE id = ?",
       ).run(firstStepResult === "paused" ? "paused" : "error", sessionDbId);
