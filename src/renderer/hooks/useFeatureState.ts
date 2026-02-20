@@ -7,7 +7,8 @@ export type FeatureStatus =
   | "planned"
   | "in-progress"
   | "review"
-  | "done";
+  | "done"
+  | "archived";
 
 /** Which top-level view the feature page should render */
 export type FeatureView =
@@ -65,7 +66,7 @@ export function useFeatureState(
     const isPlanned = status === "planned";
     const isInProgress = status === "in-progress";
     const isReview = status === "review";
-    const isDone = status === "done";
+    const isDone = status === "done" || status === "archived";
 
     // Agent has output if it has blocks or is not idle
     const hasAgentOutput = (a: AgentInfo) =>
