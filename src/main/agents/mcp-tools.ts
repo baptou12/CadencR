@@ -251,6 +251,28 @@ function removePhaseTool(planId: number, featureId: number) {
 }
 
 // ---------------------------------------------------------------------------
+// Universal mark_agent_done tool helper
+// ---------------------------------------------------------------------------
+
+function createAgentDoneTool(sessionDbId: number, featureId: number) {
+  return tool(
+    "mark_agent_done",
+    "Signal that the agent has completed its work. Call this when you are finished. Optionally provide a summary of what was accomplished.",
+    {
+      summary: z.string().optional().describe("Optional summary of what was accomplished"),
+    },
+    async (_args) => {
+      const db = getDatabase();
+      db.prepare(
+        "UPDATE agent_sessions SET status = 'completed', ended_at = datetime('now') WHERE id = ?",
+      ).run(sessionDbId);
+      notifyDbUpdated("agent_session", featureId);
+      return textResult("Agent marked as done. Session completed.");
+    },
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Plan agent MCP server
 // ---------------------------------------------------------------------------
 
@@ -268,7 +290,7 @@ const approvedPlans = new Set<number>();
  * subprocess ID to produce the actual callback. This avoids the mutable ref
  * pattern where the subprocess ID isn't known at server creation time.
  */
-export function createPlanMcpServer(planId: number, featureId: number, onShowPlan?: PlanApprovalCallback) {
+export function createPlanMcpServer(planId: number, featureId: number, sessionDbId: number, onShowPlan?: PlanApprovalCallback) {
   return createSdkMcpServer({
     name: "productdevr-plan",
     tools: [
@@ -278,6 +300,7 @@ export function createPlanMcpServer(planId: number, featureId: number, onShowPla
       createPhaseTool(featureId),
       updatePhaseTool(planId, featureId),
       removePhaseTool(planId, featureId),
+      createAgentDoneTool(sessionDbId, featureId),
 
       tool(
         "update_plan",
@@ -382,13 +405,14 @@ export function createPlanMcpServer(planId: number, featureId: number, onShowPla
 // Execute agent MCP server
 // ---------------------------------------------------------------------------
 
-export function createExecuteMcpServer(featureId: number) {
+export function createExecuteMcpServer(featureId: number, sessionDbId: number) {
   return createSdkMcpServer({
     name: "productdevr-execute",
     tools: [
       readPlanTool,
       readPhaseTool,
       listPhasesTool,
+      createAgentDoneTool(sessionDbId, featureId),
       tool(
         "mark_phase_in_progress",
         "Mark a phase as in-progress (running). Call this at the start of phase execution.",
@@ -445,7 +469,7 @@ export function createExecuteMcpServer(featureId: number) {
 // QA agent MCP server
 // ---------------------------------------------------------------------------
 
-export function createQaMcpServer(planId: number, featureId: number) {
+export function createQaMcpServer(planId: number, featureId: number, sessionDbId: number) {
   return createSdkMcpServer({
     name: "productdevr-qa",
     tools: [
@@ -455,6 +479,7 @@ export function createQaMcpServer(planId: number, featureId: number) {
       createPhaseTool(featureId),
       updatePhaseTool(planId, featureId),
       removePhaseTool(planId, featureId),
+      createAgentDoneTool(sessionDbId, featureId),
 
       tool(
         "finalize_phases",
@@ -480,6 +505,63 @@ export function createQaMcpServer(planId: number, featureId: number) {
           return textResult(`Finalized ${draftPhases.length} phases:\n${listing}`);
         },
       ),
+    ],
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Review agent MCP server
+// ---------------------------------------------------------------------------
+
+export function createReviewMcpServer(planId: number, featureId: number, sessionDbId: number) {
+  return createSdkMcpServer({
+    name: "productdevr-review",
+    tools: [
+      readPlanTool,
+      readPhaseTool,
+      listPhasesTool,
+      createPhaseTool(featureId),
+      updatePhaseTool(planId, featureId),
+      removePhaseTool(planId, featureId),
+      createAgentDoneTool(sessionDbId, featureId),
+
+      tool(
+        "finalize_phases",
+        "Finalize all draft fix phases created during review — sets them to 'pending' so the execute orchestrator picks them up.",
+        {
+          plan_id: z.number().describe("The plan ID"),
+        },
+        async (args) => {
+          if (args.plan_id !== planId) {
+            return errorResult(`Expected plan_id ${planId}, got ${args.plan_id}`);
+          }
+          const db = getDatabase();
+          const draftPhases = db
+            .prepare("SELECT id, title, step_number FROM phases WHERE plan_id = ? AND status = 'draft' ORDER BY step_number, order_index")
+            .all(planId) as Array<{ id: number; title: string; step_number: number }>;
+
+          if (draftPhases.length === 0) return errorResult("No draft phases to finalize");
+
+          db.prepare("UPDATE phases SET status = 'pending' WHERE plan_id = ? AND status = 'draft'").run(planId);
+          notifyDbUpdated("phase", featureId);
+
+          const listing = draftPhases.map((p) => `- Phase ${p.id}: "${p.title}" (step ${p.step_number})`).join("\n");
+          return textResult(`Finalized ${draftPhases.length} fix phases:\n${listing}`);
+        },
+      ),
+    ],
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Common MCP server (for agents without dedicated servers: Risk, Session)
+// ---------------------------------------------------------------------------
+
+export function createCommonMcpServer(sessionDbId: number, featureId: number) {
+  return createSdkMcpServer({
+    name: "productdevr-common",
+    tools: [
+      createAgentDoneTool(sessionDbId, featureId),
     ],
   });
 }

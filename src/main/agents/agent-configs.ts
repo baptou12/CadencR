@@ -15,10 +15,9 @@
  */
 
 import { getDatabase } from "../db/database";
-import { transitionFeature } from "./state-transitions";
-import { createPlanMcpServer, createQaMcpServer } from "./mcp-tools";
+import { createPlanMcpServer, createQaMcpServer, createReviewMcpServer, createCommonMcpServer } from "./mcp-tools";
 import { waitForPlanApproval } from "./plan-approval";
-import type { UnifiedAgentConfig, CompletionAction, OutputPattern } from "./types";
+import type { UnifiedAgentConfig, CompletionAction } from "./types";
 
 // ---------------------------------------------------------------------------
 // System prompts — extracted from individual agent files
@@ -70,11 +69,11 @@ You MUST follow this approval loop every time. This is not optional.
 
 1. Call \`show_plan\` to display the plan to the user and wait for their approval.
 2. \`show_plan\` will block until the user responds. If approved, it succeeds. If rejected, it fails with the user's feedback.
-3. If approved: call \`finalize_plan\`, then output \`---AGENT_DONE---\` and stop.
+3. If approved: call \`finalize_plan\`, then call \`mark_agent_done\` and stop.
 4. If rejected: read the feedback, revise the plan using the MCP tools, then GO BACK TO STEP 1.
 
 CRITICAL RULES:
-- NEVER output ---AGENT_DONE--- unless the user has approved via \`show_plan\`.
+- NEVER call mark_agent_done unless the user has approved via \`show_plan\`.
 - NEVER call finalize_plan unless \`show_plan\` succeeded (user approved).
 - EVERY revision MUST be followed by a NEW \`show_plan\` call. No exceptions.
 - The loop continues indefinitely until the user approves.
@@ -143,11 +142,11 @@ You MUST follow this approval loop every time. This is not optional.
 
 1. Call \`show_plan\` to display the plan to the user and wait for their approval.
 2. \`show_plan\` will block until the user responds. If approved, it succeeds. If rejected, it fails with the user's feedback.
-3. If approved: call \`finalize_plan\`, then output \`---AGENT_DONE---\` and stop.
+3. If approved: call \`finalize_plan\`, then call \`mark_agent_done\` and stop.
 4. If rejected: read the feedback, revise using the MCP tools, then GO BACK TO STEP 1.
 
 CRITICAL RULES:
-- NEVER output ---AGENT_DONE--- unless the user has approved via \`show_plan\`.
+- NEVER call mark_agent_done unless the user has approved via \`show_plan\`.
 - NEVER call finalize_plan unless \`show_plan\` succeeded (user approved).
 - EVERY revision MUST be followed by a NEW \`show_plan\` call. No exceptions.
 - The loop continues indefinitely until the user approves.
@@ -209,7 +208,7 @@ Specific actionable recommendations to mitigate identified risks.
 - The verification checklist should be practical and specific to this feature
 - If the plan is low-risk, say so clearly — don't inflate risks unnecessarily
 
-When your task is complete, output \`---AGENT_DONE---\` on its own line.`;
+When your task is complete, call \`mark_agent_done\` and stop.`;
 
 const REVIEW_SYSTEM_PROMPT = `You are the Review agent for ProductDevR, a development planning tool. Your job is to review code changes made during feature implementation and identify issues.
 
@@ -223,6 +222,12 @@ const REVIEW_SYSTEM_PROMPT = `You are the Review agent for ProductDevR, a develo
    - **Code quality**: Dead code, unclear naming, missing error handling, inconsistent style
    - **Missing tests**: Important logic without test coverage
 3. **Present findings**: Output a structured review report.
+4. **Ask for user approval** via AskUserQuestion.
+5. **Act on the result**: If approved, call \`mark_agent_done\`. If changes needed, create fix phases via MCP tools.
+
+## MCP Tools
+
+You have MCP tools available (prefixed with mcp__productdevr-review__) for managing fix phases. Use them to create and finalize fix phases when issues are found.
 
 ## Review Report Format
 
@@ -256,14 +261,24 @@ State one of:
 - **APPROVED_WITH_SUGGESTIONS** — Minor suggestions but OK to merge
 - **CHANGES_REQUESTED** — Issues must be fixed before merging
 
+## Review Approval Loop (MANDATORY)
+
+After presenting your review report, you MUST follow this approval loop:
+
+1. Call AskUserQuestion with:
+   - Question: "Review complete. Approve changes and mark done?"
+   - Options: "Approve (no issues)", "Approve with suggestions", "Request changes"
+2. Wait for the user's response.
+3. If the user selects "Approve (no issues)" or "Approve with suggestions": call \`mark_agent_done\` and stop.
+4. If the user selects "Request changes": read their feedback, create fix phases using the MCP tools (\`create_phase\` for each fix needed, then \`finalize_phases\`), then call \`mark_agent_done\` and stop.
+
 ## Rules
 - Be thorough but fair — don't nitpick excessively
 - Focus on real issues, not style preferences
 - Always explain WHY something is an issue
 - If the code is good, say so
 - Include file paths and line numbers for every issue
-
-When your task is complete, output \`---AGENT_DONE---\` on its own line.`;
+- Use MCP tools to create fix phases when changes are requested — do NOT just output text descriptions`;
 
 const SESSION_SYSTEM_PROMPT =
   "You are Claude Code working on this project. Help the user with whatever they need.";
@@ -329,11 +344,11 @@ After presenting your QA report and creating any fix phases, you MUST follow thi
    - Question: "QA report ready. Do you approve the results and fix phases (if any)?"
    - Options: "Approve QA report", "Request changes"
 2. Wait for the user's response.
-3. If the user selects "Approve QA report": output \`---AGENT_DONE---\` and stop.
+3. If the user selects "Approve QA report": call \`mark_agent_done\` and stop.
 4. If the user selects "Request changes": read their feedback, re-run or adjust tests as needed, revise and GO BACK TO STEP 1.
 
 CRITICAL RULES:
-- NEVER output ---AGENT_DONE--- unless the user has explicitly selected "Approve QA report".
+- NEVER call mark_agent_done unless the user has explicitly selected "Approve QA report".
 - EVERY revised report MUST be followed by a NEW AskUserQuestion call. No exceptions.
 - The loop continues indefinitely until the user approves.
 - Do NOT assume approval. Do NOT skip the AskUserQuestion after a revision.
@@ -417,7 +432,7 @@ After completing your implementation:
 - Quality over speed
 - Always call mark_phase_done, even if everything went exactly to plan
 
-When your task is complete, output \`---AGENT_DONE---\` on its own line.`;
+When your task is complete, call \`mark_agent_done\` and stop.`;
 
 // ---------------------------------------------------------------------------
 // Factory function option types
@@ -459,6 +474,8 @@ export interface ReviewConfigOptions {
   featureId: number;
   projectId: number;
   cwd: string;
+  /** Plan ID for MCP tool access */
+  planId: number;
   /** Worktree path for permission resolution */
   worktreePath?: string;
 }
@@ -536,8 +553,8 @@ Start by exploring the codebase to understand the project structure and existing
     cwd: opts.cwd,
     prompt,
     worktreePath: opts.worktreePath,
-    mcpServerFactory: (subprocessId: string) => ({
-      "productdevr-plan": createPlanMcpServer(opts.planId, opts.featureId, async (planMarkdown) => {
+    mcpServerFactory: (subprocessId: string, sessionDbId: number) => ({
+      "productdevr-plan": createPlanMcpServer(opts.planId, opts.featureId, sessionDbId, async (planMarkdown) => {
         return waitForPlanApproval(subprocessId, planMarkdown);
       }),
     }),
@@ -588,8 +605,8 @@ Start by thoroughly exploring the codebase to understand the full context. Resea
     cwd: opts.cwd,
     prompt,
     worktreePath: opts.worktreePath,
-    mcpServerFactory: (subprocessId: string) => ({
-      "productdevr-plan": createPlanMcpServer(opts.planId, opts.featureId, async (planMarkdown) => {
+    mcpServerFactory: (subprocessId: string, sessionDbId: number) => ({
+      "productdevr-plan": createPlanMcpServer(opts.planId, opts.featureId, sessionDbId, async (planMarkdown) => {
         return waitForPlanApproval(subprocessId, planMarkdown);
       }),
     }),
@@ -625,32 +642,24 @@ export function createRiskConfig(opts: RiskConfigOptions): UnifiedAgentConfig {
     cwd: opts.cwd,
     prompt: opts.prompt,
     worktreePath: opts.worktreePath,
+    mcpServerFactory: (_subprocessId: string, sessionDbId: number) => ({
+      "productdevr-common": createCommonMcpServer(sessionDbId, opts.featureId),
+    }),
   };
 }
 
 /**
  * Create a UnifiedAgentConfig for the review agent.
  *
- * Output patterns detect `---REVIEW_APPROVED---` and `---REVIEW_CHANGES_REQUESTED---`.
- * Completion action stores the review report and conditionally updates feature status
- * to "done" if approved.
+ * The review agent uses MCP tools to create fix phases when changes are needed.
+ * Completion action stores the review report as an agent_message.
  */
 export function createReviewConfig(opts: ReviewConfigOptions): UnifiedAgentConfig {
   const prompt = `Please review the code changes for this feature.
 
 Start by running \`git diff\` and \`git diff --cached\` to see all changes. Then review each change carefully and produce a detailed review report.
 
-After presenting your review, if your verdict is APPROVED or APPROVED_WITH_SUGGESTIONS, end with:
----REVIEW_APPROVED---
-
-If your verdict is CHANGES_REQUESTED, end with:
----REVIEW_CHANGES_REQUESTED---
-followed by a brief summary of the fixes needed (one per line).`;
-
-  const outputPatterns: OutputPattern[] = [
-    { pattern: /---REVIEW_APPROVED---/, event: "review_approved" },
-    { pattern: /---REVIEW_CHANGES_REQUESTED---/, event: "review_changes_requested" },
-  ];
+You have MCP tools available (prefixed with mcp__productdevr-review__) to create fix phases if changes are needed. After presenting your review, use AskUserQuestion to get user approval, then either call \`mark_agent_done\` (if approved) or create fix phases via the MCP tools and then call \`mark_agent_done\`.`;
 
   const completionActions: CompletionAction[] = [
     {
@@ -663,12 +672,6 @@ followed by a brief summary of the fixes needed (one per line).`;
         db.prepare(
           "INSERT INTO agent_messages (session_id, role, content, message_type) VALUES (?, ?, ?, ?)",
         ).run(context.sessionDbId, "assistant", output, "review_report");
-
-        // Check verdict and update feature status
-        if (output.includes("---REVIEW_APPROVED---")) {
-          transitionFeature(db, opts.featureId, "done");
-        }
-        // If changes requested, feature stays in "review" status
       },
     },
   ];
@@ -676,13 +679,15 @@ followed by a brief summary of the fixes needed (one per line).`;
   return {
     agentType: "review",
     systemPrompt: REVIEW_SYSTEM_PROMPT,
-    outputPatterns,
     completionActions,
     featureId: opts.featureId,
     projectId: opts.projectId,
     cwd: opts.cwd,
     prompt,
     worktreePath: opts.worktreePath,
+    mcpServerFactory: (_subprocessId: string, sessionDbId: number) => ({
+      "productdevr-review": createReviewMcpServer(opts.planId, opts.featureId, sessionDbId),
+    }),
   };
 }
 
@@ -703,6 +708,9 @@ export function createSessionConfig(opts: SessionConfigOptions): UnifiedAgentCon
     resumeSessionId: opts.resumeSessionId,
     permissionMode: opts.permissionMode,
     worktreePath: opts.worktreePath,
+    mcpServerFactory: (_subprocessId: string, sessionDbId: number) => ({
+      "productdevr-common": createCommonMcpServer(sessionDbId, opts.featureId ?? 0),
+    }),
   };
 }
 
@@ -741,8 +749,6 @@ Based on what was implemented above, design specific test cases and execute them
     },
   ];
 
-  const mcpServer = createQaMcpServer(opts.planId, opts.featureId);
-
   return {
     agentType: "qa",
     systemPrompt: QA_SYSTEM_PROMPT,
@@ -752,6 +758,8 @@ Based on what was implemented above, design specific test cases and execute them
     cwd: opts.cwd,
     prompt,
     worktreePath: opts.worktreePath,
-    mcpServers: { "productdevr-qa": mcpServer },
+    mcpServerFactory: (_subprocessId: string, sessionDbId: number) => ({
+      "productdevr-qa": createQaMcpServer(opts.planId, opts.featureId, sessionDbId),
+    }),
   };
 }

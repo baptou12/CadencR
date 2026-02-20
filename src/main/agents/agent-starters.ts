@@ -148,8 +148,15 @@ export function startReviewAgent(options: {
   // Update feature status to review
   transitionFeature(db, options.featureId, "review");
 
+  // Look up plan ID for the review MCP server
+  const plan = db
+    .prepare("SELECT id FROM plans WHERE feature_id = ? ORDER BY id DESC LIMIT 1")
+    .get(options.featureId) as { id: number } | undefined;
+
+  if (!plan) throw new Error("No plan found for this feature");
+
   return startUnifiedAgent(
-    createReviewConfig(options),
+    createReviewConfig({ ...options, planId: plan.id }),
   );
 }
 

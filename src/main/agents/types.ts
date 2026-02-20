@@ -170,14 +170,6 @@ export interface AgentInfo {
 // Unified agent configuration
 // ---------------------------------------------------------------------------
 
-/** An output pattern to match against accumulated agent output text. */
-export interface OutputPattern {
-  /** Regex to test against the full accumulated output */
-  pattern: RegExp;
-  /** Logical name for this match (e.g. "plan_complete", "review_approved") */
-  event: string;
-}
-
 /** Context object passed to completion action handlers. */
 export interface CompletionContext {
   /** The agent type that completed */
@@ -205,15 +197,13 @@ export interface CompletionAction {
  *
  * All agent types (plan, brainstorm, execute, risk, review, session) can be
  * expressed as a UnifiedAgentConfig — the only differences are the system
- * prompt, output patterns, and completion actions.
+ * prompt and completion actions.
  */
 export interface UnifiedAgentConfig {
   /** The agent type identifier */
   agentType: AgentType;
   /** System prompt for the Claude session */
   systemPrompt?: string;
-  /** Patterns to match against accumulated output during streaming */
-  outputPatterns?: OutputPattern[];
   /** Actions to run when the subprocess exits */
   completionActions?: CompletionAction[];
   /** Feature ID (optional — sessions can run without a feature) */
@@ -243,5 +233,5 @@ export interface UnifiedAgentConfig {
    * Called by unified-agent after subprocess spawn, replacing mcpServers.
    * This avoids the timing hazard of needing the subprocess ID before it exists.
    */
-  mcpServerFactory?: (subprocessId: string) => Record<string, McpServerConfig>;
+  mcpServerFactory?: (subprocessId: string, sessionDbId: number) => Record<string, McpServerConfig>;
 }

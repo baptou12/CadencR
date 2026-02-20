@@ -113,21 +113,13 @@ export function useWorkflowAgents({
   }, [waitingOrchestrator, continueBuild]);
 
   // --- Review state (pure derivation — no useState) ---
+  // The review agent uses MCP tools to signal completion and create fix phases directly.
+  // A completed review session means the agent has finished (approved or fix phases created).
   const { reviewComplete, reviewVerdict } = useMemo(() => {
     if (!reviewSession || reviewSession.status !== "completed") {
       return { reviewComplete: false, reviewVerdict: null as "approved" | "changes_requested" | null };
     }
-    const fullText = reviewSession.blocks
-      .filter((b) => b.type === "text")
-      .map((b) => b.content)
-      .join("");
-    if (fullText.includes("---REVIEW_APPROVED---")) {
-      return { reviewComplete: true, reviewVerdict: "approved" as const };
-    }
-    if (fullText.includes("---REVIEW_CHANGES_REQUESTED---")) {
-      return { reviewComplete: true, reviewVerdict: "changes_requested" as const };
-    }
-    return { reviewComplete: false, reviewVerdict: null };
+    return { reviewComplete: true, reviewVerdict: "approved" as const };
   }, [reviewSession]);
 
   // --- Generic question response handler (works for ANY agent type) ---
