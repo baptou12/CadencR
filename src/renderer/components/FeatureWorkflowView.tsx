@@ -218,6 +218,17 @@ export function FeatureWorkflowView({
     { enableOnFormTags: true },
   );
 
+  // CMD+SHIFT+S: start a workflow session agent
+  useHotkeys(
+    "meta+shift+s",
+    (e) => {
+      if (!actions.canStartWorkflowSession || wf.isStartingWorkflowSession) return;
+      e.preventDefault();
+      wf.handleStartWorkflowSession();
+    },
+    { enableOnFormTags: true },
+  );
+
   // Escape: stop the focused running agent
   useHotkeys(
     "escape",
@@ -430,6 +441,10 @@ export function FeatureWorkflowView({
                         questions.length > 0 ? questions : undefined
                       }
                       disableShortcuts={agentsWithQuestions > 1}
+                      onMarkDone={entry.agentType === "session" && (entry.status === "running" || entry.status === "paused")
+                        ? () => wf.handleMarkSessionDone(entry.sessionDbId)
+                        : undefined
+                      }
                       onAnswerSubmit={
                         entry.agentType === "plan"
                           ? wf.handleQuestionResponse
@@ -507,6 +522,7 @@ export function FeatureWorkflowView({
                           })}
                         </div>
                       )}
+
                     </>
                   );
                 })()}
@@ -519,6 +535,7 @@ export function FeatureWorkflowView({
                         (actions.canStartBuild ||
                           actions.canStartRisk ||
                           actions.canStartReview ||
+                          actions.canStartWorkflowSession ||
                           wf.canContinueBuild)
                       }
                       canStartBuild={actions.canStartBuild}
@@ -535,6 +552,9 @@ export function FeatureWorkflowView({
                       onContinueBuild={wf.handleContinueBuild}
                       isContinuingBuild={wf.isContinuingBuild}
                       nextStepNumber={wf.executeWaitingNextStep}
+                      canStartWorkflowSession={actions.canStartWorkflowSession}
+                      onStartWorkflowSession={wf.handleStartWorkflowSession}
+                      isStartingWorkflowSession={wf.isStartingWorkflowSession}
                     />
                   </div>
                 )}

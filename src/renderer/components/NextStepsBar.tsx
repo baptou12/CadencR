@@ -20,6 +20,9 @@ interface NextStepsBarProps {
   onContinueBuild?: () => void;
   isContinuingBuild?: boolean;
   nextStepNumber?: number | null;
+  canStartWorkflowSession?: boolean;
+  onStartWorkflowSession?: () => void;
+  isStartingWorkflowSession?: boolean;
 }
 
 export function NextStepsBar({
@@ -38,6 +41,9 @@ export function NextStepsBar({
   onContinueBuild,
   isContinuingBuild,
   nextStepNumber,
+  canStartWorkflowSession,
+  onStartWorkflowSession,
+  isStartingWorkflowSession,
 }: NextStepsBarProps) {
   if (!show) return null;
 
@@ -82,6 +88,21 @@ export function NextStepsBar({
             )}
             {executeStatus === "error" ? "Retry Build" : "Start Building"}
             <KbdShortcut keys={["cmd", "shift", "B"]} />
+          </Button>
+        )}
+        {canStartWorkflowSession && onStartWorkflowSession && (
+          <Button
+            variant="outline"
+            onClick={onStartWorkflowSession}
+            disabled={isStartingWorkflowSession}
+          >
+            {isStartingWorkflowSession ? (
+              <Loader2Icon className="mr-2 size-4 animate-spin" />
+            ) : (
+              <AGENT_ICONS.session className="mr-2 size-4" />
+            )}
+            Start Session
+            <KbdShortcut keys={["cmd", "shift", "S"]} />
           </Button>
         )}
         {canStartRisk && (

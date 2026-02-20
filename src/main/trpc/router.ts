@@ -640,6 +640,30 @@ const agentsRouter = router({
       return addFixPhase(input.featureId, input.fixDescription);
     }),
 
+  /** Start a session agent within a feature workflow (uses worktree).
+   *  Starts immediately with a placeholder prompt — the user's first
+   *  message in the prompt bar becomes the real task. */
+  startWorkflowSession: publicProcedure
+    .input(
+      z.object({
+        featureId: z.number(),
+        projectId: z.number(),
+      }),
+    )
+    .mutation(({ input }) => {
+      const { cwd, worktreePath } = resolveAgentCwd(input.featureId, input.projectId);
+
+      const result = startSessionAgent({
+        featureId: input.featureId,
+        projectId: input.projectId,
+        prompt: "You are Claude Code working on this feature. Wait for the user's instructions.",
+        cwd,
+        worktreePath,
+      });
+
+      return result;
+    }),
+
   /** Start a free-form session agent on a project */
   startSession: publicProcedure
     .input(
@@ -748,11 +772,23 @@ const agentsRouter = router({
     .mutation(async ({ input }) => {
       const db = getDatabase();
       const session = db
-        .prepare("SELECT subprocess_id FROM agent_sessions WHERE id = ?")
-        .get(input.sessionId) as Pick<AgentSessionRow, "subprocess_id"> | undefined;
-      if (!session?.subprocess_id) return { success: false };
-      const stopped = await stopSubprocess(session.subprocess_id);
-      return { success: stopped };
+        .prepare("SELECT subprocess_id, status FROM agent_sessions WHERE id = ?")
+        .get(input.sessionId) as Pick<AgentSessionRow, "subprocess_id" | "status"> | undefined;
+      if (!session) return { success: false };
+
+      // Try to stop the subprocess if it's still alive
+      if (session.subprocess_id) {
+        const stopped = await stopSubprocess(session.subprocess_id);
+        if (stopped) return { success: true };
+      }
+
+      // Subprocess already gone — update DB directly if still marked as running/paused
+      if (session.status === "running" || session.status === "paused") {
+        db.prepare(
+          "UPDATE agent_sessions SET status = 'completed', ended_at = datetime('now'), subprocess_id = NULL WHERE id = ?",
+        ).run(input.sessionId);
+      }
+      return { success: true };
     }),
 
   /** Interrupt a running agent by its DB session ID */

@@ -191,6 +191,8 @@ export interface AgentSessionProps {
   pendingPermission?: PendingPermission | null;
   /** Called when user makes a permission decision */
   onPermissionDecision?: (decision: "allow_once" | "allow_future" | "deny", feedback?: string) => void;
+  /** Called when user clicks "Mark Done" (session agents in workflow) */
+  onMarkDone?: () => void;
   /** Whether this agent is maximized (takes full height, hides others) */
   maximized?: boolean;
   /** Called when user clicks maximize/minimize */
@@ -259,6 +261,7 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
   subprocessId,
   pendingPermission,
   onPermissionDecision,
+  onMarkDone,
   maximized,
   onToggleMaximize,
 }, ref) {
@@ -553,6 +556,20 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
           {badge.label}
         </Badge>
         <div className="ml-auto flex items-center gap-1">
+          {onMarkDone && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 gap-1 px-2 text-xs text-muted-foreground hover:text-green-400"
+              onClick={(e) => {
+                e.stopPropagation();
+                onMarkDone();
+              }}
+            >
+              <CheckCircleIcon className="size-3" />
+              Mark Done
+            </Button>
+          )}
           {resumable && onResume && (
             <Button
               variant="ghost"

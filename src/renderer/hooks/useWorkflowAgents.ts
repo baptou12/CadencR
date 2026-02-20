@@ -59,6 +59,7 @@ export function useWorkflowAgents({
   const sendMessageMutation = trpc.agents.sendMessage.useMutation();
   const resumeMutation = trpc.agents.resume.useMutation();
   const continueExecuteMutation = trpc.agents.continueExecute.useMutation();
+  const startWorkflowSessionMutation = trpc.agents.startWorkflowSession.useMutation();
 
   // --- Session entry list for display ---
   // Group sessions into display entries
@@ -364,6 +365,25 @@ export function useWorkflowAgents({
     }
   };
 
+  // --- Workflow session handlers ---
+  const handleStartWorkflowSession = useCallback(async () => {
+    try {
+      await startWorkflowSessionMutation.mutateAsync({ featureId, projectId });
+      void refetch();
+    } catch {
+      // Error will show via query refetch
+    }
+  }, [startWorkflowSessionMutation, featureId, projectId, refetch]);
+
+  const handleMarkSessionDone = useCallback(async (sessionDbId: number) => {
+    try {
+      await stopBySessionIdMutation.mutateAsync({ sessionId: sessionDbId });
+    } catch {
+      // best effort
+    }
+    void refetch();
+  }, [stopBySessionIdMutation, refetch]);
+
   // Track open agent panel
   const [openAgent, setOpenAgent] = useState<string | null>(null); // stores unique key like "execute-123" or "plan-45"
 
@@ -419,5 +439,9 @@ export function useWorkflowAgents({
     noAgentsRunning,
     openAgent,
     setOpenAgent,
+    // Workflow session
+    handleStartWorkflowSession,
+    handleMarkSessionDone,
+    isStartingWorkflowSession: startWorkflowSessionMutation.isLoading,
   };
 }
