@@ -6,7 +6,6 @@ import { exposeElectronTRPC } from "electron-trpc/main";
 
 const AGENT_EVENT_CHANNEL = "agent:event";
 const ASK_USER_QUESTION_CHANNEL = "agent:ask-user-question";
-const AGENT_PATTERN_MATCH_CHANNEL = "agent:pattern-match";
 const TOOL_PERMISSION_CHANNEL = "agent:tool-permission";
 const DB_UPDATED_CHANNEL = "db:updated";
 const TERMINAL_DATA_CHANNEL = "terminal:data";
@@ -49,23 +48,6 @@ process.once("loaded", () => {
         );
       } else {
         ipcRenderer.removeAllListeners(ASK_USER_QUESTION_CHANNEL);
-      }
-    },
-    onPatternMatch: (callback: (data: unknown) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, data: unknown) => {
-        callback(data);
-      };
-      ipcRenderer.on(AGENT_PATTERN_MATCH_CHANNEL, listener);
-      return listener;
-    },
-    offPatternMatch: (listener?: (...args: unknown[]) => void) => {
-      if (listener) {
-        ipcRenderer.removeListener(
-          AGENT_PATTERN_MATCH_CHANNEL,
-          listener as (...args: unknown[]) => void,
-        );
-      } else {
-        ipcRenderer.removeAllListeners(AGENT_PATTERN_MATCH_CHANNEL);
       }
     },
     onToolPermission: (callback: (data: unknown) => void) => {

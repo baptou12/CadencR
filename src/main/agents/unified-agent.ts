@@ -8,7 +8,7 @@
  *   1. Creates a session record in the database
  *   2. Spawns a Claude CLI subprocess via the subprocess manager
  *   3. Bridges events to the renderer
- *   4. Accumulates output text and checks output patterns
+ *   4. Accumulates output text for completion actions
  *   5. Runs completion actions when the subprocess exits
  *
  * This generalises the logic that was previously copy-pasted across the
@@ -22,12 +22,10 @@ import { registerSessionPersistence } from "./session-persistence";
 import { transitionAgentSession } from "./state-transitions";
 import { resolveModel } from "./models";
 import { extractTextFromEvent } from "./utils";
-import { broadcast, AGENT_PATTERN_MATCH_CHANNEL } from "./broadcast";
 import type {
   AgentType,
   StreamEvent,
   UnifiedAgentConfig,
-  OutputPattern,
 } from "./types";
 
 /** Result returned after starting a unified agent. */
@@ -120,25 +118,13 @@ export function startUnifiedAgent(config: UnifiedAgentConfig): UnifiedAgentResul
     ).run(sessionDbId, "user", config.prompt, "user_message", null);
   }
 
-  // 6. Accumulate output and check patterns
+  // 6. Accumulate output for completion actions
   let fullOutput = "";
-  const matchedPatterns = new Set<string>();
 
   managed.eventListeners.push((event: StreamEvent) => {
     const text = extractTextFromEvent(event);
     if (text) {
       fullOutput += text;
-
-      // Check output patterns
-      if (config.outputPatterns) {
-        checkPatterns(
-          config.outputPatterns,
-          fullOutput,
-          matchedPatterns,
-          managed.id,
-          config.agentType,
-        );
-      }
     }
   });
 
@@ -192,45 +178,3 @@ export function startUnifiedAgent(config: UnifiedAgentConfig): UnifiedAgentResul
   };
 }
 
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Check accumulated output against registered patterns.
- * When a pattern matches for the first time, broadcast a typed event via IPC.
- */
-function checkPatterns(
-  patterns: OutputPattern[],
-  fullOutput: string,
-  matchedPatterns: Set<string>,
-  subprocessId: string,
-  agentType: AgentType,
-): void {
-  for (const { pattern, event } of patterns) {
-    if (matchedPatterns.has(event)) continue;
-
-    if (pattern.test(fullOutput)) {
-      matchedPatterns.add(event);
-      broadcastPatternMatch(subprocessId, agentType, event);
-    }
-  }
-}
-
-/**
- * Broadcast a pattern-match event to all renderer windows.
- */
-function broadcastPatternMatch(
-  subprocessId: string,
-  agentType: AgentType,
-  event: string,
-): void {
-  broadcast(AGENT_PATTERN_MATCH_CHANNEL, {
-    subprocessId,
-    agentType,
-    event,
-    timestamp: Date.now(),
-  });
-}
-
-export { AGENT_PATTERN_MATCH_CHANNEL };
