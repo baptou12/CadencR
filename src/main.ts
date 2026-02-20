@@ -4,7 +4,7 @@ import { createIPCHandler } from "electron-trpc/main";
 import { appRouter } from "./main/trpc/router";
 import { closeDatabase } from "./main/db/database";
 import { hasRunningSubprocesses, gracefulShutdown } from "./main/agents/subprocess-manager";
-import { restoreSessionMap } from "./main/agents/ipc-bridge";
+import { restoreSessionMap } from "./main/agents/session-persistence";
 import { fetchAvailableModels } from "./main/agents/available-models";
 import { killAllTerminalPtys } from "./main/trpc/terminal";
 

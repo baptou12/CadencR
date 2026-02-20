@@ -6,7 +6,7 @@
  */
 
 import type Database from "better-sqlite3";
-import { notifyDbUpdated } from "./ipc-bridge";
+import { notifyDbUpdated } from "./session-persistence";
 
 // ---------------------------------------------------------------------------
 // Status types

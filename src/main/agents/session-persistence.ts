@@ -1,33 +1,13 @@
-import type { ManagedSubprocess } from "./subprocess-manager";
-import type { AgentType, StreamEvent, StreamSystemEvent } from "./types";
+import type { StreamEvent, StreamSystemEvent } from "./types";
 import { getDatabase } from "../db/database";
-import { AGENT_EVENT_CHANNEL } from "./broadcast";
-
-/**
- * Bridge subprocess events to the renderer.
- * With the SDK-based subprocess manager, event broadcasting is handled
- * internally by the subprocess manager. This function now only sets up
- * persistence of session IDs and messages.
- */
-export function bridgeSubprocessToRenderer(
-  managed: ManagedSubprocess,
-  agentType: AgentType,
-  sessionDbId?: number,
-): void {
-  // The SDK-based subprocess manager broadcasts events directly.
-  // This function is kept for backward compatibility but is now a no-op
-  // for event broadcasting. Session persistence is handled separately.
-
-  if (sessionDbId) {
-    // Register this session for persistence tracking
-    registerSessionPersistence(managed.id, sessionDbId);
-  }
-}
 
 // Map of subprocess ID -> session DB ID for persistence
 const sessionMap = new Map<string, number>();
 
-function registerSessionPersistence(
+/**
+ * Register a subprocess for session persistence tracking.
+ */
+export function registerSessionPersistence(
   subprocessId: string,
   sessionDbId: number,
 ): void {
@@ -243,4 +223,4 @@ function markSessionHasFileChanges(sessionDbId: number): void {
   } catch { /* best-effort */ }
 }
 
-export { AGENT_EVENT_CHANNEL, DB_UPDATED_CHANNEL } from "./broadcast";
+export { DB_UPDATED_CHANNEL } from "./broadcast";

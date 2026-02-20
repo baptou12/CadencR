@@ -18,7 +18,7 @@
 import fs from "node:fs";
 import { getDatabase } from "../db/database";
 import { startSubprocess, generateSubprocessId } from "./subprocess-manager";
-import { bridgeSubprocessToRenderer } from "./ipc-bridge";
+import { registerSessionPersistence } from "./session-persistence";
 import { transitionAgentSession } from "./state-transitions";
 import { resolveModel } from "./models";
 import { extractTextFromEvent } from "./utils";
@@ -110,8 +110,8 @@ export function startUnifiedAgent(config: UnifiedAgentConfig): UnifiedAgentResul
   // 3b. Persist subprocess ID to DB for reconnection after refresh
   db.prepare("UPDATE agent_sessions SET subprocess_id = ? WHERE id = ?").run(managed.id, sessionDbId);
 
-  // 4. Bridge events to the renderer
-  bridgeSubprocessToRenderer(managed, config.agentType, sessionDbId);
+  // 4. Register session for persistence tracking
+  registerSessionPersistence(managed.id, sessionDbId);
 
   // 5. Persist the initial user message
   if (config.prompt) {

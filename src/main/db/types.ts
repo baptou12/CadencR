@@ -14,6 +14,16 @@ export interface ProjectRow {
   name: string;
   path: string;
   created_at: string;
+  model_plan: string | null;
+  model_brainstorm: string | null;
+  model_execute: string | null;
+  model_risk: string | null;
+  model_review: string | null;
+  model_session: string | null;
+  model_qa: string | null;
+  agent_autonomy: string | null;
+  branch_prefix: string | null;
+  qa_prompt: string | null;
 }
 
 export interface ProjectSettingRow {
@@ -34,6 +44,14 @@ export interface FeatureRow {
   type: FeatureType;
   status: string;
   created_at: string;
+  model_plan: string | null;
+  model_brainstorm: string | null;
+  model_execute: string | null;
+  model_risk: string | null;
+  model_review: string | null;
+  model_session: string | null;
+  model_qa: string | null;
+  agent_autonomy: string | null;
 }
 
 export interface FeatureSettingRow {

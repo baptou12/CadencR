@@ -13,6 +13,7 @@
  */
 
 import { getDatabase } from "../db/database";
+import { resolveSetting } from "../db/settings";
 import type { PhaseRow, PlanRow, SettingRow } from "../db/types";
 import { transitionFeature, transitionPhase, transitionPhaseIf, transitionAgentSession } from "./state-transitions";
 import { startUnifiedAgent } from "./unified-agent";
@@ -233,11 +234,11 @@ function executeQaPhase(
     // Update phase status to running
     transitionPhase(db, phase.id, "running", options.featureId);
 
-    // Get QA prompt from project settings
+    // Get QA prompt from project column
     const qaRow = db
-      .prepare("SELECT value FROM project_settings WHERE project_id = ? AND key = 'qa_prompt'")
-      .get(options.projectId) as { value: string } | undefined;
-    const qaPrompt = qaRow?.value || "Run any available tests and verify the implementation works correctly.";
+      .prepare("SELECT qa_prompt FROM projects WHERE id = ?")
+      .get(options.projectId) as { qa_prompt: string | null } | undefined;
+    const qaPrompt = qaRow?.qa_prompt || "Run any available tests and verify the implementation works correctly.";
 
     // Build summary of completed phases
     const completedPhases = db
@@ -459,39 +460,9 @@ function buildEnrichedPrompt(phase: PhaseRow, autonomyLevel: 1 | 2 | 3 = 3): str
  * Returns 1 (ask before commit), 2 (manual continue), or 3 (full auto).
  */
 function getAutonomyLevel(featureId: number, projectId: number): 1 | 2 | 3 {
-  const db = getDatabase();
-
-  // Check feature-level setting first
-  const featureRow = db
-    .prepare("SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'agent_autonomy'")
-    .get(featureId) as SettingRow | undefined;
-
-  if (featureRow) {
-    const val = Number(featureRow.value);
-    if (val === 1 || val === 2 || val === 3) return val;
-  }
-
-  // Fall back to project-level setting
-  const projectRow = db
-    .prepare("SELECT value FROM project_settings WHERE project_id = ? AND key = 'agent_autonomy'")
-    .get(projectId) as SettingRow | undefined;
-
-  if (projectRow) {
-    const val = Number(projectRow.value);
-    if (val === 1 || val === 2 || val === 3) return val;
-  }
-
-  // Fall back to global setting
-  const globalRow = db
-    .prepare("SELECT value FROM settings WHERE key = 'agent_autonomy'")
-    .get() as SettingRow | undefined;
-
-  if (globalRow) {
-    const val = Number(globalRow.value);
-    if (val === 1 || val === 2 || val === 3) return val;
-  }
-
-  // Default: ask before commit
+  const raw = resolveSetting("agent_autonomy", { featureId, projectId, defaultValue: "1" });
+  const val = Number(raw);
+  if (val === 1 || val === 2 || val === 3) return val;
   return 1;
 }
 

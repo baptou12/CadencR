@@ -19,7 +19,7 @@ import {
   setSubprocessPermissionMode,
   getSupportedCommands,
 } from "../agents/subprocess-manager";
-import { bridgeSubprocessToRenderer, getSubprocessIdForSession } from "../agents/ipc-bridge";
+import { getSubprocessIdForSession } from "../agents/session-persistence";
 import type { AgentType } from "../agents/types";
 import { execSync } from "node:child_process";
 import {
@@ -350,9 +350,6 @@ const agentsRouter = router({
         allowedTools: input.allowedTools,
       });
 
-      // Bridge the subprocess stdout to renderer windows
-      bridgeSubprocessToRenderer(managed, input.agentType as AgentType);
-
       return {
         id: managed.id,
         agentType: managed.agentType,
@@ -499,138 +496,55 @@ const agentsRouter = router({
 
   /** Start the plan agent for a feature */
   startPlan: publicProcedure
-    .input(
-      z.object({
-        featureId: z.number(),
-        projectId: z.number(),
-        description: z.string(),
-      }),
-    )
+    .input(z.object({ featureId: z.number(), projectId: z.number(), description: z.string() }))
     .mutation(({ input }) => {
       const { cwd, worktreePath } = resolveAgentCwd(input.featureId, input.projectId);
-
-      const result = startPlanAgent({
-        featureId: input.featureId,
-        projectId: input.projectId,
-        description: input.description,
-        cwd,
-        worktreePath,
-      });
-
-      return result;
+      return startPlanAgent({ ...input, cwd, worktreePath });
     }),
 
   /** Start the brainstorm agent for a feature */
   startBrainstorm: publicProcedure
-    .input(
-      z.object({
-        featureId: z.number(),
-        projectId: z.number(),
-        description: z.string(),
-      }),
-    )
+    .input(z.object({ featureId: z.number(), projectId: z.number(), description: z.string() }))
     .mutation(({ input }) => {
       const { cwd, worktreePath } = resolveAgentCwd(input.featureId, input.projectId);
-
-      const result = startBrainstormAgent({
-        featureId: input.featureId,
-        projectId: input.projectId,
-        description: input.description,
-        cwd,
-        worktreePath,
-      });
-
-      return result;
+      return startBrainstormAgent({ ...input, cwd, worktreePath });
     }),
 
   /** Start the execute agent for a feature (runs plan phases) */
   startExecute: publicProcedure
-    .input(
-      z.object({
-        featureId: z.number(),
-        projectId: z.number(),
-      }),
-    )
+    .input(z.object({ featureId: z.number(), projectId: z.number() }))
     .mutation(({ input }) => {
       const { cwd, worktreePath } = resolveAgentCwd(input.featureId, input.projectId);
-
-      const result = startExecuteAgent({
-        featureId: input.featureId,
-        projectId: input.projectId,
-        cwd,
-        worktreePath,
-      });
-
-      return result;
+      return startExecuteAgent({ ...input, cwd, worktreePath });
     }),
 
   /** Continue a waiting execute orchestrator (Level 2 autonomy) */
   continueExecute: publicProcedure
     .input(z.object({ sessionDbId: z.number() }))
-    .mutation(({ input }) => {
-      return continueExecuteAgent(input.sessionDbId);
-    }),
+    .mutation(({ input }) => continueExecuteAgent(input.sessionDbId)),
 
   /** Start the risk analysis agent for a feature */
   startRisk: publicProcedure
-    .input(
-      z.object({
-        featureId: z.number(),
-        projectId: z.number(),
-      }),
-    )
+    .input(z.object({ featureId: z.number(), projectId: z.number() }))
     .mutation(({ input }) => {
       const { cwd, worktreePath } = resolveAgentCwd(input.featureId, input.projectId);
-
-      const result = startRiskAgent({
-        featureId: input.featureId,
-        projectId: input.projectId,
-        cwd,
-        worktreePath,
-      });
-
-      return result;
+      return startRiskAgent({ ...input, cwd, worktreePath });
     }),
 
   /** Start the review agent for a feature */
   startReview: publicProcedure
-    .input(
-      z.object({
-        featureId: z.number(),
-        projectId: z.number(),
-      }),
-    )
+    .input(z.object({ featureId: z.number(), projectId: z.number() }))
     .mutation(({ input }) => {
       const { cwd, worktreePath } = resolveAgentCwd(input.featureId, input.projectId);
-
-      const result = startReviewAgent({
-        featureId: input.featureId,
-        projectId: input.projectId,
-        cwd,
-        worktreePath,
-      });
-
-      return result;
+      return startReviewAgent({ ...input, cwd, worktreePath });
     }),
 
   /** Start the QA agent for a feature */
   startQa: publicProcedure
-    .input(
-      z.object({
-        featureId: z.number(),
-        projectId: z.number(),
-      }),
-    )
+    .input(z.object({ featureId: z.number(), projectId: z.number() }))
     .mutation(({ input }) => {
       const { cwd, worktreePath } = resolveAgentCwd(input.featureId, input.projectId);
-
-      const result = startQaAgent({
-        featureId: input.featureId,
-        projectId: input.projectId,
-        cwd,
-        worktreePath,
-      });
-      return result;
+      return startQaAgent({ ...input, cwd, worktreePath });
     }),
 
   /** Add a fix phase to the plan based on review findings */
@@ -1016,13 +930,11 @@ const gitRouter = router({
         .get(input.projectId) as ProjectRow | undefined;
       if (!project) throw new Error(`Project not found: ${input.projectId}`);
 
-      // Get branch prefix from project settings (default: "feature/")
+      // Get branch prefix from project column (default: "feature/")
       const prefixRow = db
-        .prepare(
-          "SELECT value FROM project_settings WHERE project_id = ? AND key = 'branch_prefix'",
-        )
-        .get(input.projectId) as SettingRow | undefined;
-      const prefix = prefixRow?.value ?? "feature/";
+        .prepare("SELECT branch_prefix FROM projects WHERE id = ?")
+        .get(input.projectId) as { branch_prefix: string | null } | undefined;
+      const prefix = prefixRow?.branch_prefix ?? "feature/";
 
       const branchName = buildBranchName(prefix, input.featureTitle);
       const result = createWorktree(project.path, branchName, project.name);

@@ -5,7 +5,7 @@ import os from "node:os";
 import fs from "node:fs";
 import crypto from "node:crypto";
 import { getDatabase } from "../db/database";
-import { notifyDbUpdated } from "../agents/ipc-bridge";
+import { notifyDbUpdated } from "../agents/session-persistence";
 
 const execAsync = promisify(exec);
 export interface WorktreeInfo {
@@ -223,11 +223,9 @@ export async function setupWorktreeForFeature(
     notifyDbUpdated("feature", featureId);
 
     const prefixRow = db
-      .prepare(
-        "SELECT value FROM project_settings WHERE project_id = ? AND key = 'branch_prefix'",
-      )
-      .get(projectId) as { value: string } | undefined;
-    const prefix = prefixRow?.value ?? "feature/";
+      .prepare("SELECT branch_prefix FROM projects WHERE id = ?")
+      .get(projectId) as { branch_prefix: string | null } | undefined;
+    const prefix = prefixRow?.branch_prefix ?? "feature/";
     const branchName = buildBranchName(prefix, feature.title);
     const wt = createWorktree(project.path, branchName, project.name);
 

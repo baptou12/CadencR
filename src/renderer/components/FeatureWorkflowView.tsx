@@ -19,6 +19,7 @@ import { useContextUsage } from "@/hooks/useContextUsage";
 import { useResolvedModel } from "@/hooks/useResolvedModel";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import { useTerminalState } from "@/hooks/useTerminalState";
+import { useAgentChat } from "@/hooks/useAgentChat";
 
 export function FeatureWorkflowView({
   featureId,
@@ -42,19 +43,7 @@ export function FeatureWorkflowView({
   // --- Model settings for inline model switcher ---
   const { resolveModel, handleModelChange } = useResolvedModel(featureId, projectId);
 
-  const submitToolPermissionMutation = trpc.agents.submitToolPermission.useMutation();
-
-  const handlePermissionDecision = useCallback(
-    (entry: FeatureSession, decision: "allow_once" | "allow_future" | "deny", feedback?: string) => {
-      if (!entry.subprocessId) return;
-      submitToolPermissionMutation.mutate({
-        subprocessId: entry.subprocessId,
-        decision,
-        feedback,
-      });
-    },
-    [submitToolPermissionMutation],
-  );
+  const chat = useAgentChat({ featureId, projectId, refetch: () => utils.agents.getFeatureAgentState.invalidate({ featureId }) });
 
   const deleteSession = trpc.agents.deleteSession.useMutation({
     onSuccess: () => {
@@ -73,8 +62,7 @@ export function FeatureWorkflowView({
   // --- Maximized agent state ---
   const [maximizedAgent, setMaximizedAgent] = useState<string | null>(null);
 
-  // --- Plan approval (for MCP show_plan) ---
-  const submitPlanApprovalMutation = trpc.agents.submitPlanApproval.useMutation();
+  // Plan approval handled by chat.handlePlanApprove / chat.handlePlanRequestChanges
 
   // --- Inline diff viewer modal state ---
   const [inlineDiffOpen, setInlineDiffOpen] = useState(false);
@@ -489,11 +477,11 @@ export function FeatureWorkflowView({
                       projectId={projectId}
                       subprocessId={entry.subprocessId ?? undefined}
                       pendingPermission={entry.pendingPermission}
-                      onPermissionDecision={(decision, feedback) => handlePermissionDecision(entry, decision, feedback)}
+                      onPermissionDecision={(decision, feedback) => chat.handlePermissionDecision(entry.subprocessId, decision, feedback)}
                       pendingPlanApproval={entry.pendingPlanApproval}
                       planApproveLabel="Approve"
-                      onPlanApprove={entry.subprocessId ? () => submitPlanApprovalMutation.mutate({ subprocessId: entry.subprocessId!, approved: true }) : undefined}
-                      onPlanRequestChanges={entry.subprocessId ? (feedback: string) => submitPlanApprovalMutation.mutate({ subprocessId: entry.subprocessId!, approved: false, feedback }) : undefined}
+                      onPlanApprove={entry.subprocessId ? () => chat.handlePlanApprove(entry.subprocessId) : undefined}
+                      onPlanRequestChanges={entry.subprocessId ? (feedback: string) => chat.handlePlanRequestChanges(entry.subprocessId, feedback) : undefined}
                       className={isGridItem ? "min-h-0 h-full overflow-hidden" : undefined}
                     />
                   );

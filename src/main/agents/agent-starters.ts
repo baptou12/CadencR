@@ -193,10 +193,10 @@ export function startQaAgent(options: {
   const db = getDatabase();
 
   const qaRow = db
-    .prepare("SELECT value FROM project_settings WHERE project_id = ? AND key = 'qa_prompt'")
-    .get(options.projectId) as { value: string } | undefined;
+    .prepare("SELECT qa_prompt FROM projects WHERE id = ?")
+    .get(options.projectId) as { qa_prompt: string | null } | undefined;
 
-  const qaPrompt = qaRow?.value || "Run any available tests and verify the implementation works correctly.";
+  const qaPrompt = qaRow?.qa_prompt || "Run any available tests and verify the implementation works correctly.";
 
   const plan = db
     .prepare("SELECT id FROM plans WHERE feature_id = ? AND status = 'active' ORDER BY id DESC LIMIT 1")

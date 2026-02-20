@@ -3,7 +3,7 @@
  * try { db.prepare().run() } catch {} + notifyDbUpdated() pattern.
  */
 import { getDatabase } from "../db/database";
-import { notifyDbUpdated } from "./ipc-bridge";
+import { notifyDbUpdated } from "./session-persistence";
 
 /**
  * Update an agent session's fields. Automatically calls notifyDbUpdated.

@@ -336,6 +336,54 @@ const migrations: Migration[] = [
       db.exec("ALTER TABLE phases ADD COLUMN phase_type TEXT NOT NULL DEFAULT 'value'");
     },
   },
+  {
+    version: 29,
+    description: "Add real columns for model/autonomy settings to projects and features",
+    up: (db) => {
+      // Add columns to projects
+      const modelCols = ["model_plan", "model_brainstorm", "model_execute", "model_risk", "model_review", "model_session", "model_qa"];
+      for (const col of modelCols) {
+        db.exec(`ALTER TABLE projects ADD COLUMN ${col} TEXT`);
+      }
+      db.exec("ALTER TABLE projects ADD COLUMN agent_autonomy TEXT");
+      db.exec("ALTER TABLE projects ADD COLUMN branch_prefix TEXT");
+      db.exec("ALTER TABLE projects ADD COLUMN qa_prompt TEXT");
+
+      // Add columns to features
+      for (const col of modelCols) {
+        db.exec(`ALTER TABLE features ADD COLUMN ${col} TEXT`);
+      }
+      db.exec("ALTER TABLE features ADD COLUMN agent_autonomy TEXT");
+
+      // Migrate project_settings EAV data to real columns
+      const projectKeys = [...modelCols, "agent_autonomy", "branch_prefix", "qa_prompt"];
+      for (const key of projectKeys) {
+        db.exec(`
+          UPDATE projects SET ${key} = (
+            SELECT value FROM project_settings WHERE project_settings.project_id = projects.id AND project_settings.key = '${key}'
+          )
+          WHERE EXISTS (
+            SELECT 1 FROM project_settings WHERE project_settings.project_id = projects.id AND project_settings.key = '${key}'
+          )
+        `);
+        db.exec(`DELETE FROM project_settings WHERE key = '${key}'`);
+      }
+
+      // Migrate feature_settings EAV data to real columns
+      const featureKeys = [...modelCols, "agent_autonomy"];
+      for (const key of featureKeys) {
+        db.exec(`
+          UPDATE features SET ${key} = (
+            SELECT value FROM feature_settings WHERE feature_settings.feature_id = features.id AND feature_settings.key = '${key}'
+          )
+          WHERE EXISTS (
+            SELECT 1 FROM feature_settings WHERE feature_settings.feature_id = features.id AND feature_settings.key = '${key}'
+          )
+        `);
+        db.exec(`DELETE FROM feature_settings WHERE key = '${key}'`);
+      }
+    },
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

@@ -3,7 +3,7 @@ import { router, publicProcedure } from "./trpc";
 import { getDatabase } from "../db/database";
 import type { FeatureRow, PlanRow, PhaseRow, CountRow, SettingRow } from "../db/types";
 import type { AgentType } from "../agents/types";
-import { getSubprocessIdsForSessionDbIds } from "../agents/ipc-bridge";
+import { getSubprocessIdsForSessionDbIds } from "../agents/session-persistence";
 import { stopSubprocess } from "../agents/subprocess-manager";
 
 export const FEATURE_STATUSES = ["draft", "planned", "in-progress", "review", "done"] as const;
@@ -195,10 +195,25 @@ export const featuresRouter = router({
     .input(z.object({ feature_id: z.number() }))
     .query(({ input }) => {
       const db = getDatabase();
+      // Combine real columns + remaining EAV rows (worktree_path, worktree_branch, etc.)
+      const feature = db
+        .prepare("SELECT model_plan, model_brainstorm, model_execute, model_risk, model_review, model_session, model_qa, agent_autonomy FROM features WHERE id = ?")
+        .get(input.feature_id) as Record<string, string | null> | undefined;
+
+      const result: Record<string, string> = {};
+      if (feature) {
+        for (const [key, value] of Object.entries(feature)) {
+          if (value != null) result[key] = value;
+        }
+      }
+
       const rows = db
         .prepare("SELECT key, value FROM feature_settings WHERE feature_id = ?")
         .all(input.feature_id) as SettingRow[];
-      return Object.fromEntries(rows.map((r) => [r.key, r.value]));
+      for (const r of rows) {
+        result[r.key] = r.value;
+      }
+      return result;
     }),
 
   resetPhase: publicProcedure
@@ -241,24 +256,35 @@ export const featuresRouter = router({
     .input(z.object({ feature_id: z.number(), key: z.string(), value: z.string() }))
     .mutation(({ input }) => {
       const db = getDatabase();
-      db.prepare(
-        "INSERT INTO feature_settings (feature_id, key, value) VALUES (?, ?, ?) ON CONFLICT(feature_id, key) DO UPDATE SET value = excluded.value",
-      ).run(input.feature_id, input.key, input.value);
+      const realColumns = new Set([
+        "model_plan", "model_brainstorm", "model_execute", "model_risk", "model_review",
+        "model_session", "model_qa", "agent_autonomy",
+      ]);
+
+      if (realColumns.has(input.key)) {
+        db.prepare(`UPDATE features SET "${input.key}" = ? WHERE id = ?`)
+          .run(input.value, input.feature_id);
+      } else {
+        db.prepare(
+          "INSERT INTO feature_settings (feature_id, key, value) VALUES (?, ?, ?) ON CONFLICT(feature_id, key) DO UPDATE SET value = excluded.value",
+        ).run(input.feature_id, input.key, input.value);
+      }
       return { success: true };
     }),
 
-  /** Get model settings for all agent types from feature settings (empty string = inherit from parent) */
+  /** Get model settings for all agent types from feature columns (empty string = inherit from parent) */
   getModelSettings: publicProcedure
     .input(z.object({ featureId: z.number() }))
     .query(({ input }) => {
       const db = getDatabase();
+      const row = db
+        .prepare("SELECT model_plan, model_brainstorm, model_execute, model_risk, model_review, model_session, model_qa FROM features WHERE id = ?")
+        .get(input.featureId) as Record<string, string | null> | undefined;
+
       const agentTypes = ["plan", "brainstorm", "execute", "risk", "review", "session"] as const;
       const result: Record<string, string> = {};
       for (const at of agentTypes) {
-        const row = db
-          .prepare("SELECT value FROM feature_settings WHERE feature_id = ? AND key = ?")
-          .get(input.featureId, `model_${at}`) as SettingRow | undefined;
-        result[at] = row?.value ?? "";
+        result[at] = row?.[`model_${at}`] ?? "";
       }
       return result as Record<AgentType, string>;
     }),
@@ -274,10 +300,9 @@ export const featuresRouter = router({
     )
     .mutation(({ input }) => {
       const db = getDatabase();
-      const key = `model_${input.agentType}`;
-      db.prepare(
-        "INSERT INTO feature_settings (feature_id, key, value) VALUES (?, ?, ?) ON CONFLICT(feature_id, key) DO UPDATE SET value = excluded.value",
-      ).run(input.featureId, key, input.modelId);
+      const col = `model_${input.agentType}`;
+      db.prepare(`UPDATE features SET "${col}" = ? WHERE id = ?`)
+        .run(input.modelId, input.featureId);
       return { success: true };
     }),
 });

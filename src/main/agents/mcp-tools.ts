@@ -9,7 +9,7 @@
 import { z } from "zod";
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { getDatabase } from "../db/database";
-import { notifyDbUpdated } from "./ipc-bridge";
+import { notifyDbUpdated } from "./session-persistence";
 import { transitionPhase, transitionFeature } from "./state-transitions";
 import type { PhaseRow, PlanRow } from "../db/types";
 

@@ -1,6 +1,6 @@
 import { getDatabase } from "../db/database";
 import { discoverClaudeCli } from "./cli-discovery";
-import { notifyDbUpdated } from "./ipc-bridge";
+import { notifyDbUpdated } from "./session-persistence";
 
 const AUTO_NAME_SYSTEM_PROMPT =
   "You are a feature naming assistant. Your ONLY job is to output a short name (3-7 words) for a coding session. ALWAYS output a name, even if the input is vague — just pick a reasonable generic name. Examples: 'hi' → 'General Coding Session', 'fix the login bug' → 'Fix Login Bug', 'I want to add dark mode' → 'Add Dark Mode Support'.";

@@ -13,7 +13,7 @@ import { useResolvedModel } from "@/hooks/useResolvedModel";
 import { getActiveFocusZone } from "@/lib/focus-zones";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import { useTerminalState } from "@/hooks/useTerminalState";
-import { parseQuestionAnswers } from "@/lib/parse-question-answers";
+import { useAgentChat, usePermissionMode } from "@/hooks/useAgentChat";
 
 export const Route = createFileRoute(
   "/projects/$projectId/features/$featureId",
@@ -101,95 +101,15 @@ function SessionFeatureView({
   const hasFileChanges = session?.hasFileChanges ?? false;
   const todos = session?.todos ?? null;
 
-  // Permission mode state — initialized from DB, toggled locally
-  const [permissionMode, setPermissionMode] = useState<"acceptEdits" | "plan">(
-    (session?.permissionMode as "acceptEdits" | "plan") ?? "acceptEdits",
-  );
-  // Sync from DB when session data loads/changes
-  useEffect(() => {
-    if (session?.permissionMode) {
-      setPermissionMode(session.permissionMode as "acceptEdits" | "plan");
-    }
-  }, [session?.permissionMode]);
+  // Shared agent chat handlers (permission, plan approval, answers)
+  const chat = useAgentChat({ featureId, projectId, refetch });
+  const { permissionMode, handlePermissionModeToggle, setPermissionMode } = usePermissionMode(session);
 
-  // Mutations
+  // Session-specific mutations
   const startSessionMutation = trpc.agents.startSession.useMutation();
   const sendMessageMutation = trpc.agents.sendMessage.useMutation();
   const interruptMutation = trpc.agents.interrupt.useMutation();
   const resumeMutation = trpc.agents.resume.useMutation();
-  const setPermissionModeMutation = trpc.agents.setPermissionMode.useMutation();
-  const submitAnswersMutation = trpc.agents.submitAnswers.useMutation();
-  const submitPlanApprovalMutation = trpc.agents.submitPlanApproval.useMutation();
-  const submitToolPermissionMutation = trpc.agents.submitToolPermission.useMutation();
-
-  const handlePermissionModeToggle = useCallback(() => {
-    const newMode = permissionMode === "plan" ? "acceptEdits" : "plan";
-    setPermissionMode(newMode);
-    if (session?.sessionDbId) {
-      setPermissionModeMutation.mutate({ sessionId: session.sessionDbId, mode: newMode });
-    }
-  }, [permissionMode, session?.sessionDbId, setPermissionModeMutation]);
-
-  const handlePermissionDecision = useCallback(
-    (decision: "allow_once" | "allow_future" | "deny", feedback?: string) => {
-      if (!session?.subprocessId) return;
-      submitToolPermissionMutation.mutate({
-        subprocessId: session.subprocessId,
-        decision,
-        feedback,
-      });
-    },
-    [session?.subprocessId, submitToolPermissionMutation],
-  );
-
-  const handlePlanApprove = useCallback(() => {
-    if (!session?.subprocessId) return;
-    submitPlanApprovalMutation.mutate({ subprocessId: session.subprocessId, approved: true });
-    // Optimistically update local permission mode (plan approved → back to normal)
-    setPermissionMode("acceptEdits");
-  }, [session?.subprocessId, submitPlanApprovalMutation]);
-
-  const handlePlanRequestChanges = useCallback((feedback: string) => {
-    if (!session?.subprocessId) return;
-    submitPlanApprovalMutation.mutate({ subprocessId: session.subprocessId, approved: false, feedback });
-  }, [session?.subprocessId, submitPlanApprovalMutation]);
-
-  const handleAnswerSubmit = useCallback(
-    async (response: string) => {
-      if (!session?.pendingQuestions?.length) return;
-      const answers = parseQuestionAnswers(session.pendingQuestions, response);
-
-      // 1. Live subprocess — submit directly
-      if (session.subprocessId) {
-        submitAnswersMutation.mutate({
-          subprocessId: session.subprocessId,
-          answers,
-        });
-        return;
-      }
-
-      // 2. No subprocess (e.g. after restart) — resume with answer as prompt
-      if (session.claudeSessionId) {
-        const formatted = Object.entries(answers)
-          .map(([q, a]) => `${q}\nAnswer: ${a}`)
-          .join("\n\n");
-        try {
-          await resumeMutation.mutateAsync({
-            featureId,
-            projectId,
-            agentType: "session",
-            sessionId: session.claudeSessionId,
-            originalSessionDbId: session.sessionDbId,
-            prompt: formatted,
-          });
-        } catch (err) {
-          console.error("[SessionFeatureView] Failed to resume for question answer:", err);
-        }
-        void refetch();
-      }
-    },
-    [session, featureId, projectId, submitAnswersMutation, resumeMutation, refetch],
-  );
 
   const handleSend = useCallback(
     async (message: string) => {
@@ -341,7 +261,7 @@ function SessionFeatureView({
           onSend={handleSend}
           onStop={handleStop}
           pendingQuestions={session?.pendingQuestions ?? undefined}
-          onAnswerSubmit={handleAnswerSubmit}
+          onAnswerSubmit={(response) => chat.handleAnswerSubmit(session, response)}
           disabled={startSessionMutation.isLoading || resumeMutation.isLoading}
           hasFileChanges={hasFileChanges}
           onViewDiff={handleViewDiff}
@@ -349,8 +269,11 @@ function SessionFeatureView({
           permissionMode={permissionMode}
           onPermissionModeToggle={handlePermissionModeToggle}
           pendingPlanApproval={session?.pendingPlanApproval}
-          onPlanApprove={handlePlanApprove}
-          onPlanRequestChanges={handlePlanRequestChanges}
+          onPlanApprove={() => {
+            chat.handlePlanApprove(session?.subprocessId);
+            setPermissionMode("acceptEdits");
+          }}
+          onPlanRequestChanges={(feedback) => chat.handlePlanRequestChanges(session?.subprocessId, feedback)}
           contextUsage={session ? contextUsageMap.get(session.sessionDbId) : null}
           currentModelId={currentModelId}
           onModelChange={handleModelChange}
@@ -358,7 +281,7 @@ function SessionFeatureView({
           projectId={projectId}
           subprocessId={session?.subprocessId ?? undefined}
           pendingPermission={session?.pendingPermission}
-          onPermissionDecision={handlePermissionDecision}
+          onPermissionDecision={(decision, feedback) => chat.handlePermissionDecision(session?.subprocessId, decision, feedback)}
           className="h-full"
         />
         {terminalState.panes.length > 0 && (

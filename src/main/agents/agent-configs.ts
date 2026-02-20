@@ -17,7 +17,7 @@
 import { getDatabase } from "../db/database";
 import { transitionFeature } from "./state-transitions";
 import { createPlanMcpServer, createQaMcpServer } from "./mcp-tools";
-import { waitForPlanApproval } from "./subprocess-manager";
+import { waitForPlanApproval } from "./plan-approval";
 import type { UnifiedAgentConfig, CompletionAction, OutputPattern } from "./types";
 
 // ---------------------------------------------------------------------------
