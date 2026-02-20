@@ -7,7 +7,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TerminalIcon, SettingsIcon, GitCompareArrowsIcon } from "lucide-react";
 import { trpc } from "@/trpc";
-import { DiffViewerModal } from "./diff/DiffViewerModal";
+import { DiffViewerModal, type ExecuteAgentState } from "./diff/DiffViewerModal";
 import { ModelSelector } from "./ModelSelector";
 
 const STATUS_COLORS: Record<string, string> = {
@@ -22,10 +22,11 @@ interface FeatureTopBarProps {
   featureId: number;
   projectId: number;
   mode?: "feature" | "session";
+  executeState?: ExecuteAgentState;
   className?: string;
 }
 
-export function FeatureTopBar({ featureId, projectId: _projectId, mode = "feature", className }: FeatureTopBarProps) {
+export function FeatureTopBar({ featureId, projectId: _projectId, mode = "feature", executeState, className }: FeatureTopBarProps) {
   const isSession = mode === "session";
   const [diffOpen, setDiffOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -192,6 +193,8 @@ export function FeatureTopBar({ featureId, projectId: _projectId, mode = "featur
         open={diffOpen}
         onOpenChange={setDiffOpen}
         diffMode={isSession ? "worktree" : "branch"}
+        executeState={isSession ? executeState : undefined}
+        hideFooter={!isSession}
       />
     </div>
   );

@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useMemo, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { useHotkeys } from "react-hotkeys-hook";
 import { trpc } from "@/trpc";
@@ -66,20 +66,21 @@ export function FeatureWorkflowView({
 
   // --- Inline diff viewer modal state ---
   const [inlineDiffOpen, setInlineDiffOpen] = useState(false);
-  const handleViewDiff = useCallback(() => setInlineDiffOpen(true), []);
+  // Track which agent opened the diff modal so comments go to the right agent
+  const [diffAgentState, setDiffAgentState] = useState<ExecuteAgentState | undefined>(undefined);
 
-  // Derive execute agent state for the diff viewer modal
-  const executeState: ExecuteAgentState | undefined = useMemo(() => {
-    const execEntry = wf.sessionEntries.find(
-      (e) => e.agentType === "execute" && e.subprocessId && (e.status === "running" || e.status === "paused"),
-    );
-    if (!execEntry?.subprocessId) return undefined;
-    return {
-      subprocessId: execEntry.subprocessId,
-      status: execEntry.status,
-      pendingQuestions: execEntry.pendingQuestions,
-    };
-  }, [wf.sessionEntries]);
+  const handleViewDiffForAgent = useCallback((entry: FeatureSession) => {
+    if (entry.subprocessId && (entry.status === "running" || entry.status === "completed" || entry.status === "paused")) {
+      setDiffAgentState({
+        subprocessId: entry.subprocessId,
+        status: entry.status,
+        pendingQuestions: entry.pendingQuestions,
+      });
+    } else {
+      setDiffAgentState(undefined);
+    }
+    setInlineDiffOpen(true);
+  }, []);
 
   // --- Keyboard navigation (DOM-based focus) ---
   const agentRefs = useRef<Map<number, AgentSessionHandle>>(new Map());
@@ -466,7 +467,7 @@ export function FeatureWorkflowView({
                       isAddingFixPhase={wf.isAddingFixPhase}
                       isStartingFix={wf.isStartingFix}
                       hasFileChanges={entry.hasFileChanges}
-                      onViewDiff={handleViewDiff}
+                      onViewDiff={() => handleViewDiffForAgent(entry)}
                       todos={entry.todos}
                       currentModelId={resolveModel(entry.agentType)}
                       onModelChange={(modelId) => handleModelChange(entry.agentType, modelId)}
@@ -606,7 +607,7 @@ export function FeatureWorkflowView({
         featureId={featureId}
         open={inlineDiffOpen}
         onOpenChange={setInlineDiffOpen}
-        executeState={executeState}
+        executeState={diffAgentState}
       />
     </div>
   );

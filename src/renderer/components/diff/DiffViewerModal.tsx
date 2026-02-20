@@ -25,6 +25,7 @@ interface DiffViewerModalProps {
   onOpenChange: (open: boolean) => void;
   executeState?: ExecuteAgentState;
   diffMode?: "worktree" | "branch";
+  hideFooter?: boolean;
 }
 
 function formatCommentsForAgent(
@@ -52,6 +53,7 @@ export function DiffViewerModal({
   onOpenChange,
   executeState,
   diffMode = "worktree",
+  hideFooter = false,
 }: DiffViewerModalProps) {
   const [sending, setSending] = useState(false);
 
@@ -70,7 +72,7 @@ export function DiffViewerModal({
   const hasPendingQuestions = !!(
     executeState?.pendingQuestions && executeState.pendingQuestions.length > 0
   );
-  const isAgentRunning = executeState?.status === "running" && !hasPendingQuestions;
+  const isAgentRunning = (executeState?.status === "running" || executeState?.status === "completed") && !hasPendingQuestions;
 
   const buttonLabel = useMemo(() => {
     const count = pendingComments.length;
@@ -144,22 +146,24 @@ export function DiffViewerModal({
           <DiffViewer featureId={featureId} mode={diffMode} />
         </div>
 
-        <DialogFooter className="border-t px-4 py-3">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={pendingComments.length === 0 || sending}
-            onClick={handleSendToAgent}
-          >
-            {sending ? (
-              <Loader2Icon className="mr-2 size-4 animate-spin" />
-            ) : (
-              <SendIcon className="mr-2 size-4" />
-            )}
-            {buttonLabel}
-            <KbdShortcut keys={["cmd", "enter"]} />
-          </Button>
-        </DialogFooter>
+        {!hideFooter && (
+          <DialogFooter className="border-t px-4 py-3">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={pendingComments.length === 0 || sending}
+              onClick={handleSendToAgent}
+            >
+              {sending ? (
+                <Loader2Icon className="mr-2 size-4 animate-spin" />
+              ) : (
+                <SendIcon className="mr-2 size-4" />
+              )}
+              {buttonLabel}
+              <KbdShortcut keys={["cmd", "enter"]} />
+            </Button>
+          </DialogFooter>
+        )}
       </DialogContent>
     </Dialog>
   );

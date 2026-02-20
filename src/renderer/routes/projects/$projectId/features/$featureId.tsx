@@ -1,11 +1,11 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useHotkeys } from "react-hotkeys-hook";
 import { trpc } from "@/trpc";
 import { FeatureTopBar } from "@/components/FeatureTopBar";
 import { AgentSession, type AgentSessionHandle } from "@/components/AgentSession";
 import { FeatureWorkflowView } from "@/components/FeatureWorkflowView";
-import { DiffViewerModal } from "@/components/diff/DiffViewerModal";
+import { DiffViewerModal, type ExecuteAgentState } from "@/components/diff/DiffViewerModal";
 import { TerminalPanel, type TerminalPanelHandle } from "@/components/terminal/TerminalPanel";
 import { useFeatureAgentState } from "@/hooks/useFeatureAgentState";
 import { useContextUsage } from "@/hooks/useContextUsage";
@@ -96,6 +96,15 @@ function SessionFeatureView({
 
   // Find the latest session agent
   const session = sessions.findLast((s) => s.agentType === "session");
+  const sessionAgentState: ExecuteAgentState | undefined = useMemo(() => {
+    if (!session?.subprocessId) return undefined;
+    if (session.status !== "running" && session.status !== "completed" && session.status !== "paused") return undefined;
+    return {
+      subprocessId: session.subprocessId,
+      status: session.status,
+      pendingQuestions: session.pendingQuestions ?? null,
+    };
+  }, [session?.subprocessId, session?.status, session?.pendingQuestions]);
   const status = session?.status ?? "idle";
   const blocks = session?.blocks ?? [];
   const hasFileChanges = session?.hasFileChanges ?? false;
@@ -246,7 +255,7 @@ function SessionFeatureView({
 
   return (
     <div className="flex h-full flex-col">
-      <FeatureTopBar featureId={featureId} projectId={projectId} mode="session" className="shrink-0" />
+      <FeatureTopBar featureId={featureId} projectId={projectId} mode="session" executeState={sessionAgentState} className="shrink-0" />
       {(status === "paused" || status === "completed") && !session?.subprocessId && session?.claudeSessionId && (
         <div className="border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 text-sm text-amber-300">
           Previous session paused — type a message to resume.
@@ -311,6 +320,7 @@ function SessionFeatureView({
         featureId={featureId}
         open={inlineDiffOpen}
         onOpenChange={setInlineDiffOpen}
+        executeState={sessionAgentState}
       />
     </div>
   );
