@@ -42,6 +42,7 @@ export interface FeatureRow {
   project_id: number;
   title: string;
   type: FeatureType;
+  /** Possible values: "draft" | "planned" | "in-progress" | "review" | "done" | "archived" */
   status: string;
   created_at: string;
   model_plan: string | null;

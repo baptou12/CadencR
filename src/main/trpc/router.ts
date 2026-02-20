@@ -33,6 +33,11 @@ import {
   getChangedFiles,
   getCurrentBranch,
   setupWorktreeForFeature,
+  getOriginalBranch,
+  checkMergeConflicts,
+  mergeBranch,
+  deleteLocalBranch,
+  hasUncommittedChanges,
 } from "../git/worktree";
 import { diffCommentsRouter } from "./diff-comments";
 import { usageRouter } from "./usage";
@@ -1096,6 +1101,125 @@ const gitRouter = router({
       if (!gitPath) return [];
       const output = execSync("git ls-files", { cwd: gitPath, encoding: "utf-8", maxBuffer: 10 * 1024 * 1024 });
       return output.split("\n").filter(Boolean);
+    }),
+
+  /** Get the original branch from which the feature's worktree branch was created */
+  getOriginalBranch: publicProcedure
+    .input(z.object({ projectId: z.number(), featureId: z.number() }))
+    .query(async ({ input }) => {
+      const db = getDatabase();
+      const project = db
+        .prepare("SELECT path FROM projects WHERE id = ?")
+        .get(input.projectId) as Pick<ProjectRow, "path"> | undefined;
+      if (!project?.path) throw new Error("Project not found");
+
+      const branchRow = db
+        .prepare("SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_branch'")
+        .get(input.featureId) as SettingRow | undefined;
+      if (!branchRow?.value) throw new Error("No worktree branch found for this feature");
+
+      const originalBranch = await getOriginalBranch(project.path, branchRow.value);
+      return { originalBranch, worktreeBranch: branchRow.value };
+    }),
+
+  /** Check if merging the feature branch into its original branch would conflict */
+  checkMergeConflicts: publicProcedure
+    .input(z.object({ projectId: z.number(), featureId: z.number() }))
+    .query(async ({ input }) => {
+      const db = getDatabase();
+      const project = db
+        .prepare("SELECT path FROM projects WHERE id = ?")
+        .get(input.projectId) as Pick<ProjectRow, "path"> | undefined;
+      if (!project?.path) throw new Error("Project not found");
+
+      const branchRow = db
+        .prepare("SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_branch'")
+        .get(input.featureId) as SettingRow | undefined;
+      if (!branchRow?.value) throw new Error("No worktree branch found for this feature");
+
+      const targetBranch = await getOriginalBranch(project.path, branchRow.value);
+      return checkMergeConflicts(project.path, branchRow.value, targetBranch);
+    }),
+
+  /** Merge the feature branch into its original branch using --no-ff */
+  mergeFeatureBranch: publicProcedure
+    .input(z.object({ projectId: z.number(), featureId: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = getDatabase();
+      const project = db
+        .prepare("SELECT path FROM projects WHERE id = ?")
+        .get(input.projectId) as Pick<ProjectRow, "path"> | undefined;
+      if (!project?.path) throw new Error("Project not found");
+
+      const branchRow = db
+        .prepare("SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_branch'")
+        .get(input.featureId) as SettingRow | undefined;
+      if (!branchRow?.value) throw new Error("No worktree branch found for this feature");
+
+      const targetBranch = await getOriginalBranch(project.path, branchRow.value);
+      return mergeBranch(project.path, branchRow.value, targetBranch);
+    }),
+
+  /** Delete the feature's local branch (-d, safe — only if fully merged) */
+  deleteFeatureBranch: publicProcedure
+    .input(z.object({ projectId: z.number(), featureId: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = getDatabase();
+      const project = db
+        .prepare("SELECT path FROM projects WHERE id = ?")
+        .get(input.projectId) as Pick<ProjectRow, "path"> | undefined;
+      if (!project?.path) throw new Error("Project not found");
+
+      const branchRow = db
+        .prepare("SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_branch'")
+        .get(input.featureId) as SettingRow | undefined;
+      if (!branchRow?.value) throw new Error("No worktree branch found for this feature");
+
+      return deleteLocalBranch(project.path, branchRow.value);
+    }),
+
+  /** Check if the feature's worktree has uncommitted/untracked changes */
+  hasUncommittedChanges: publicProcedure
+    .input(z.object({ projectId: z.number(), featureId: z.number() }))
+    .query(async ({ input }) => {
+      const db = getDatabase();
+      const wtRow = db
+        .prepare("SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'")
+        .get(input.featureId) as SettingRow | undefined;
+      if (!wtRow?.value) return { hasChanges: false };
+      const hasChanges = await hasUncommittedChanges(wtRow.value);
+      return { hasChanges };
+    }),
+
+  /** Delete the feature's worktree (only if no uncommitted changes) */
+  deleteWorktree: publicProcedure
+    .input(z.object({ projectId: z.number(), featureId: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = getDatabase();
+      const project = db
+        .prepare("SELECT path FROM projects WHERE id = ?")
+        .get(input.projectId) as Pick<ProjectRow, "path"> | undefined;
+      if (!project?.path) throw new Error("Project not found");
+
+      const wtRow = db
+        .prepare("SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'")
+        .get(input.featureId) as SettingRow | undefined;
+      if (!wtRow?.value) throw new Error("No worktree found for this feature");
+
+      const hasChanges = await hasUncommittedChanges(wtRow.value);
+      if (hasChanges) {
+        return { success: false, error: "Worktree has uncommitted or untracked changes" };
+      }
+
+      try {
+        removeWorktree(project.path, wtRow.value);
+        db.prepare(
+          "DELETE FROM feature_settings WHERE feature_id = ? AND key IN ('worktree_path', 'worktree_branch')",
+        ).run(input.featureId);
+        return { success: true };
+      } catch (err) {
+        return { success: false, error: err instanceof Error ? err.message : String(err) };
+      }
     }),
 });
 
