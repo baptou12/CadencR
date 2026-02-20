@@ -839,6 +839,8 @@ export function saveAllSessionStates(): void {
     db.prepare(
       "UPDATE agent_sessions SET status = 'paused', ended_at = datetime('now'), subprocess_id = NULL WHERE status = 'running'",
     ).run();
+    // Reset running phases — no subprocess can be executing them after shutdown
+    db.prepare("UPDATE phases SET status = 'pending' WHERE status = 'running'").run();
     // Clear subprocess_id for completed/paused/error sessions since the process is dead after restart
     db.prepare(
       "UPDATE agent_sessions SET subprocess_id = NULL WHERE status IN ('completed', 'paused', 'error') AND subprocess_id IS NOT NULL",

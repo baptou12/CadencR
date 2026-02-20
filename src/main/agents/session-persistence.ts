@@ -195,6 +195,8 @@ export function restoreSessionMap(): void {
     db.prepare(
       "UPDATE agent_sessions SET status = 'paused', subprocess_id = NULL WHERE status = 'running'",
     ).run();
+    // Reset orphaned running phases — no subprocess can be executing them after restart
+    db.prepare("UPDATE phases SET status = 'pending' WHERE status = 'running'").run();
     // Re-populate session map for paused sessions with subprocess_id (for event routing)
     const rows = db
       .prepare(

@@ -167,6 +167,14 @@ function getStepOutcome(planId: number, stepNumber: number): "ok" | "error" | "p
     return "error";
   }
 
+  // A phase still running means something went wrong (e.g., agent died without cleanup)
+  const runningRow = db
+    .prepare(
+      "SELECT COUNT(*) as cnt FROM phases WHERE plan_id = ? AND step_number = ? AND status = 'running'",
+    )
+    .get(planId, stepNumber) as { cnt: number };
+  if (runningRow.cnt > 0) return "error";
+
   const pendingRow = db
     .prepare(
       "SELECT COUNT(*) as cnt FROM phases WHERE plan_id = ? AND step_number = ? AND status = 'pending'",
@@ -702,8 +710,8 @@ export function buildPhaseCompletionAction(phaseId: number, featureId: number): 
         // Agent errored out — mark phase as error (the agent may not have called mark_phase_done)
         transitionPhaseIf(db2, phaseId, "running", "error", featureId);
       }
-      // If exitCode === 0, the agent should have already called mark_phase_done via MCP tool.
-      // If it didn't, the phase stays as 'running' which is a signal something went wrong.
+      // If exitCode === 0 but mark_phase_done wasn't called, the phase stays 'running'.
+      // The user can resume the agent from the UI to let it finish and call mark_phase_done.
     },
   };
 }
