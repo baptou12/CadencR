@@ -53,7 +53,7 @@ import { trpc } from "../trpc";
 // Shared types & constants (previously in AgentPanel, now canonical here)
 // ---------------------------------------------------------------------------
 
-export type AgentStatus = "idle" | "running" | "completed" | "error" | "paused";
+export type AgentStatus = "idle" | "running" | "completed" | "error" | "paused" | "waiting";
 
 export const AGENT_LABELS: Record<AgentType, string> = {
   plan: "Plan",
@@ -92,6 +92,11 @@ const STATUS_BADGE: Record<
   paused: {
     label: "Paused",
     className: "bg-orange-500/15 text-orange-300",
+    icon: <PauseCircleIcon className="size-3" />,
+  },
+  waiting: {
+    label: "Waiting",
+    className: "bg-blue-500/15 text-blue-300",
     icon: <PauseCircleIcon className="size-3" />,
   },
 };

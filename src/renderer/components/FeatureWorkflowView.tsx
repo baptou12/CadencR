@@ -31,7 +31,11 @@ export function FeatureWorkflowView({
   feature: { id: number; title: string; status: string; type: string; project_id: number; created_at: string } | undefined;
   featureQuery: { refetch: () => unknown };
 }) {
-  const wf = useWorkflowAgents({ featureId, projectId, featureQuery });
+  // UI state that was previously inside useWorkflowAgents
+  const [description, setDescription] = useState("");
+  const [openAgent, setOpenAgent] = useState<string | null>(null);
+
+  const wf = useWorkflowAgents({ featureId, projectId, featureQuery, getDescription: () => description });
   const contextUsageMap = useContextUsage(featureId, wf.sessionEntries);
   const utils = trpc.useUtils();
 
@@ -168,18 +172,18 @@ export function FeatureWorkflowView({
       const sessionKey = `${entry.agentType}-${entry.sessionDbId}`;
       const isWorking = entry.status === "running" || entry.status === "paused";
       const isOpen =
-        wf.openAgent === sessionKey || isWorking;
+        openAgent === sessionKey || isWorking;
       if (isWorking) {
         e.preventDefault();
         if (!isOpen) {
-          wf.setOpenAgent(sessionKey);
+          setOpenAgent(sessionKey);
         }
         requestAnimationFrame(() => {
           agentRefs.current.get(agentIndex)?.focusActiveInput();
         });
       } else {
         e.preventDefault();
-        wf.setOpenAgent((prev) =>
+        setOpenAgent((prev) =>
           prev === sessionKey ? null : sessionKey,
         );
       }
@@ -374,8 +378,8 @@ export function FeatureWorkflowView({
             {view === "plan-input" && (
               <div className="shrink-0 overflow-auto p-6">
                 <PlanInputView
-                  description={wf.description}
-                  onDescriptionChange={wf.setDescription}
+                  description={description}
+                  onDescriptionChange={setDescription}
                   onStartPlanning={wf.handleStartPlanning}
                   onStartBrainstorming={wf.handleStartBrainstorming}
                   isStartingPlan={wf.isStartingPlan}
@@ -425,12 +429,12 @@ export function FeatureWorkflowView({
                       status={entry.status}
                       blocks={entry.blocks}
                       open={
-                        wf.openAgent === sessionKey ||
+                        openAgent === sessionKey ||
                         entry.status === "running" ||
                         entry.status === "paused"
                       }
                       onToggle={() =>
-                        wf.setOpenAgent((prev) =>
+                        setOpenAgent((prev) =>
                           prev === sessionKey ? null : sessionKey,
                         )
                       }
@@ -448,18 +452,8 @@ export function FeatureWorkflowView({
                         ? () => wf.handleMarkSessionDone(entry.sessionDbId)
                         : undefined
                       }
-                      onAnswerSubmit={
-                        entry.agentType === "plan"
-                          ? wf.handleQuestionResponse
-                          : entry.agentType === "brainstorm"
-                            ? wf.handleBrainstormQuestionResponse
-                            : entry.agentType === "execute"
-                              ? wf.handleExecuteQuestionResponse
-                              : entry.agentType === "risk"
-                                ? wf.handleRiskQuestionResponse
-                                : entry.agentType === "review"
-                                  ? wf.handleReviewQuestionResponse
-                                  : undefined
+                      onAnswerSubmit={(response) =>
+                        wf.handleSessionQuestionResponse(entry.sessionDbId, response)
                       }
                       onSend={(message) => {
                         if (entry.agentType === "execute" && entry.subprocessId) {

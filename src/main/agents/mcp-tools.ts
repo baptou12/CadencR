@@ -10,6 +10,7 @@ import { z } from "zod";
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { getDatabase } from "../db/database";
 import { notifyDbUpdated } from "./ipc-bridge";
+import { transitionPhase, transitionFeature } from "./state-transitions";
 import type { PhaseRow, PlanRow } from "../db/types";
 
 // ---------------------------------------------------------------------------
@@ -363,12 +364,11 @@ export function createPlanMcpServer(planId: number, featureId: number, onShowPla
           db.transaction(() => {
             db.prepare("UPDATE phases SET status = 'pending' WHERE plan_id = ? AND status = 'draft'").run(args.plan_id);
             db.prepare("UPDATE plans SET status = 'active', updated_at = datetime('now') WHERE id = ?").run(args.plan_id);
-            db.prepare("UPDATE features SET status = 'planned' WHERE id = ?").run(plan.feature_id);
+            transitionFeature(db, plan.feature_id, "planned");
           })();
 
           approvedPlans.delete(args.plan_id);
           notifyDbUpdated("phase", plan.feature_id);
-          notifyDbUpdated("feature", plan.feature_id);
 
           const markdown = renderPlanMarkdown(args.plan_id);
           return textResult(`Plan finalized successfully. ${draftCount.cnt} phases are now pending.\n\n${markdown}`);
@@ -406,8 +406,7 @@ export function createExecuteMcpServer(featureId: number) {
             return errorResult(`Phase ${args.phase_id} has status '${phase.status}', expected 'pending' or 'error'`);
           }
 
-          db.prepare("UPDATE phases SET status = 'running' WHERE id = ?").run(args.phase_id);
-          notifyDbUpdated("phase", featureId);
+          transitionPhase(db, args.phase_id, "running", featureId);
           return textResult(`Phase ${args.phase_id} is now running`);
         },
       ),
@@ -431,10 +430,10 @@ export function createExecuteMcpServer(featureId: number) {
             return errorResult(`Phase ${args.phase_id} has status '${phase.status}', expected 'running'`);
           }
 
-          db.prepare(
-            "UPDATE phases SET status = 'completed', implementation_notes = ?, deviations = ? WHERE id = ?",
-          ).run(args.implementation_notes ?? null, args.deviations ?? null, args.phase_id);
-          notifyDbUpdated("phase", featureId);
+          transitionPhase(db, args.phase_id, "completed", featureId, {
+            implementation_notes: args.implementation_notes ?? null,
+            deviations: args.deviations ?? null,
+          });
           return textResult(`Phase ${args.phase_id} marked as completed`);
         },
       ),

@@ -15,7 +15,7 @@
  */
 
 import { getDatabase } from "../db/database";
-import { notifyDbUpdated } from "./ipc-bridge";
+import { transitionFeature } from "./state-transitions";
 import { createPlanMcpServer, createQaMcpServer } from "./mcp-tools";
 import { waitForPlanApproval } from "./subprocess-manager";
 import type { UnifiedAgentConfig, CompletionAction, OutputPattern } from "./types";
@@ -666,8 +666,7 @@ followed by a brief summary of the fixes needed (one per line).`;
 
         // Check verdict and update feature status
         if (output.includes("---REVIEW_APPROVED---")) {
-          db.prepare("UPDATE features SET status = 'done' WHERE id = ?").run(opts.featureId);
-          notifyDbUpdated("feature", opts.featureId);
+          transitionFeature(db, opts.featureId, "done");
         }
         // If changes requested, feature stays in "review" status
       },

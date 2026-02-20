@@ -8,7 +8,7 @@
  */
 
 import { getDatabase } from "../db/database";
-import { notifyDbUpdated } from "./ipc-bridge";
+import { transitionFeature } from "./state-transitions";
 import { startUnifiedAgent } from "./unified-agent";
 import {
   createSessionConfig,
@@ -146,8 +146,7 @@ export function startReviewAgent(options: {
   const db = getDatabase();
 
   // Update feature status to review
-  db.prepare("UPDATE features SET status = 'review' WHERE id = ?").run(options.featureId);
-  notifyDbUpdated("feature", options.featureId);
+  transitionFeature(db, options.featureId, "review");
 
   return startUnifiedAgent(
     createReviewConfig(options),

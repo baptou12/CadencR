@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import {
   ChevronRight,
@@ -53,7 +53,7 @@ export function ProjectTree({
   });
 
   // Track which project the create mutation was triggered for
-  const pendingProjectIdRef = { current: 0 };
+  const pendingProjectIdRef = useRef(0);
 
   const createFeatureMutation = trpc.features.create.useMutation({
     onSuccess: (feature) => {

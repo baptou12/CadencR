@@ -143,7 +143,7 @@ export const featuresRouter = router({
       const done = (
         db
           .prepare(
-            "SELECT COUNT(*) as count FROM phases WHERE plan_id = ? AND status = 'done'",
+            "SELECT COUNT(*) as count FROM phases WHERE plan_id = ? AND status = 'completed'",
           )
           .get(plan.id) as CountRow
       ).count;
@@ -166,7 +166,7 @@ export const featuresRouter = router({
       const done = (
         db
           .prepare(
-            "SELECT COUNT(*) as count FROM phases WHERE plan_id = ? AND status = 'done'",
+            "SELECT COUNT(*) as count FROM phases WHERE plan_id = ? AND status = 'completed'",
           )
           .get(plan.id) as CountRow
       ).count;
@@ -209,15 +209,15 @@ export const featuresRouter = router({
       // Get the phase and its plan
       const phase = db.prepare("SELECT id, plan_id, step_number, status FROM phases WHERE id = ?").get(input.phase_id) as Pick<PhaseRow, "id" | "plan_id" | "step_number" | "status"> | undefined;
       if (!phase) throw new Error("Phase not found");
-      if (phase.status !== "completed" && phase.status !== "done" && phase.status !== "error") {
+      if (phase.status !== "completed" && phase.status !== "error") {
         throw new Error("Can only reset phases in completed or error status");
       }
 
-      // Check that the next phase (by step_number) is not done/completed
+      // Check that the next phase (by step_number) is not completed
       const nextPhase = db.prepare(
         "SELECT id, status FROM phases WHERE plan_id = ? AND step_number > ? ORDER BY step_number ASC, order_index ASC LIMIT 1"
       ).get(phase.plan_id, phase.step_number) as Pick<PhaseRow, "id" | "status"> | undefined;
-      if (nextPhase && (nextPhase.status === "done" || nextPhase.status === "completed")) {
+      if (nextPhase && nextPhase.status === "completed") {
         throw new Error("Cannot reset a phase when the next phase is already completed");
       }
 

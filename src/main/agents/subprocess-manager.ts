@@ -1,6 +1,7 @@
 import { getDatabase } from "../db/database";
 import { discoverClaudeCli } from "./cli-discovery";
 import { getSessionDbId, persistStreamEvent, persistClaudeSessionId, notifyDbUpdated } from "./ipc-bridge";
+import { transitionAgentSession } from "./state-transitions";
 import { DEFAULT_MODEL } from "./models";
 import { resolvePermission, appendToSettingsLocal, loadAllowedPatterns } from "./permissions";
 import { broadcast, AGENT_EVENT_CHANNEL, ASK_USER_QUESTION_CHANNEL, ASK_USER_ANSWER_CHANNEL, TOOL_PERMISSION_CHANNEL } from "./broadcast";
@@ -70,6 +71,53 @@ export interface ManagedSubprocess {
 
 const activeProcesses = new Map<string, ManagedSubprocess>();
 
+// ---------------------------------------------------------------------------
+// Throttled DB update notifications — batches rapid stream events into
+// a single notifyDbUpdated call per session every 200ms.
+// ---------------------------------------------------------------------------
+const pendingNotifyTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const pendingNotifyFeatureIds = new Map<string, number>();
+
+function throttledNotifyDbUpdated(sessionKey: string, featureId: number): void {
+  pendingNotifyFeatureIds.set(sessionKey, featureId);
+  if (pendingNotifyTimers.has(sessionKey)) return; // already scheduled
+  pendingNotifyTimers.set(
+    sessionKey,
+    setTimeout(() => {
+      pendingNotifyTimers.delete(sessionKey);
+      const fid = pendingNotifyFeatureIds.get(sessionKey);
+      pendingNotifyFeatureIds.delete(sessionKey);
+      if (fid != null) notifyDbUpdated("agent_session", fid);
+    }, 200),
+  );
+}
+
+function flushNotifyDbUpdated(sessionKey: string): void {
+  const timer = pendingNotifyTimers.get(sessionKey);
+  if (timer) {
+    clearTimeout(timer);
+    pendingNotifyTimers.delete(sessionKey);
+  }
+  const fid = pendingNotifyFeatureIds.get(sessionKey);
+  pendingNotifyFeatureIds.delete(sessionKey);
+  if (fid != null) notifyDbUpdated("agent_session", fid);
+}
+
+/** Resolve the feature ID for a managed subprocess (for throttled notifications). */
+const featureIdCache = new Map<string, number>();
+function getFeatureIdForSubprocess(managedId: string): number | null {
+  const cached = featureIdCache.get(managedId);
+  if (cached != null) return cached;
+  const sessionDbId = getSessionDbId(managedId);
+  if (!sessionDbId) return null;
+  try {
+    const db = getDatabase();
+    const row = db.prepare("SELECT feature_id FROM agent_sessions WHERE id = ?").get(sessionDbId) as { feature_id: number } | undefined;
+    if (row) { featureIdCache.set(managedId, row.feature_id); return row.feature_id; }
+    return null;
+  } catch { return null; }
+}
+
 let idCounter = 0;
 
 function generateId(): string {
@@ -88,7 +136,7 @@ function persistSessionStatus(managedId: string, status: string, sdkSessionId?: 
   if (!dbId) return;
   try {
     const db = getDatabase();
-    db.prepare("UPDATE agent_sessions SET status = ?, ended_at = datetime('now') WHERE id = ?").run(status, dbId);
+    transitionAgentSession(db, dbId, status as import("./state-transitions").AgentSessionStatus, undefined, { ended_at: "datetime('now')" });
     if (sdkSessionId) persistClaudeSessionId(dbId, sdkSessionId);
   } catch (e) {
     console.warn("[subprocess-manager] Failed to persist session status:", e);
@@ -138,8 +186,10 @@ function handleSdkMessage(
     // SDKPartialAssistantMessage — contains the granular content_block_start/delta/stop events
     const innerEvent = msg.event as StreamEvent;
     if (innerEvent) {
-      const msgId = sessionDbId ? persistStreamEvent(sessionDbId, innerEvent, parentToolUseId) : null;
-      broadcastEvent(id, agentType, innerEvent, parentToolUseId, msgId);
+      if (sessionDbId) persistStreamEvent(sessionDbId, innerEvent, parentToolUseId);
+      // Throttled DB notification instead of broadcasting raw stream events
+      const fid = getFeatureIdForSubprocess(id);
+      if (fid != null) throttledNotifyDbUpdated(id, fid);
       for (const listener of managed.eventListeners) listener(innerEvent);
     }
   } else if (type === "assistant") {
@@ -163,14 +213,6 @@ function handleSdkMessage(
           db2.prepare("UPDATE agent_sessions SET input_tokens = ?, output_tokens = ? WHERE id = ?")
             .run(totalInput, totalOutput, sessionDbId);
         } catch (e) { console.warn("[subprocess-manager] best-effort op failed:", e); }
-
-        // Broadcast usage to renderer for live updates
-        broadcastEvent(id, agentType, {
-          type: "system",
-          subtype: "usage_update",
-          input_tokens: totalInput,
-          output_tokens: totalOutput,
-        } as StreamEvent);
       }
     }
     if (message) {
@@ -186,8 +228,7 @@ function handleSdkMessage(
               index: i,
               content_block: { type: "text", text: block.text as string },
             };
-            const msgId = sessionDbId ? persistStreamEvent(sessionDbId, event, parentToolUseId) : null;
-            broadcastEvent(id, agentType, event, parentToolUseId, msgId);
+            if (sessionDbId) persistStreamEvent(sessionDbId, event, parentToolUseId);
             for (const listener of managed.eventListeners) listener(event);
           } else if (block.type === "tool_use") {
             const toolName = block.name as string;
@@ -215,12 +256,14 @@ function handleSdkMessage(
                 input: toolInput,
               },
             };
-            const msgId = sessionDbId ? persistStreamEvent(sessionDbId, event, parentToolUseId) : null;
-            broadcastEvent(id, agentType, event, parentToolUseId, msgId);
+            if (sessionDbId) persistStreamEvent(sessionDbId, event, parentToolUseId);
             for (const listener of managed.eventListeners) listener(event);
 
           }
         }
+        // Throttled DB notification for assistant content blocks
+        const fid2 = getFeatureIdForSubprocess(id);
+        if (fid2 != null) throttledNotifyDbUpdated(id, fid2);
       }
     }
   } else if (type === "user") {
@@ -245,10 +288,12 @@ function handleSdkMessage(
               content: resultContent,
               is_error: (block.is_error as boolean) ?? false,
             };
-            const msgId = sessionDbId ? persistStreamEvent(sessionDbId, toolResultEvent, parentToolUseId) : null;
-            broadcastEvent(id, agentType, toolResultEvent, parentToolUseId, msgId);
+            if (sessionDbId) persistStreamEvent(sessionDbId, toolResultEvent, parentToolUseId);
           }
         }
+        // Throttled DB notification for user tool results
+        const fid3 = getFeatureIdForSubprocess(id);
+        if (fid3 != null) throttledNotifyDbUpdated(id, fid3);
       }
     }
   } else if (type === "tool_result" || type === "result") {
@@ -263,8 +308,9 @@ function handleSdkMessage(
             : JSON.stringify(msg.content),
         is_error: (msg.is_error as boolean) ?? false,
       };
-      const msgId = sessionDbId ? persistStreamEvent(sessionDbId, toolResultEvent, parentToolUseId) : null;
-      broadcastEvent(id, agentType, toolResultEvent, parentToolUseId, msgId);
+      if (sessionDbId) persistStreamEvent(sessionDbId, toolResultEvent, parentToolUseId);
+      const fid4 = getFeatureIdForSubprocess(id);
+      if (fid4 != null) throttledNotifyDbUpdated(id, fid4);
     } else {
       broadcastEvent(
         id,
@@ -306,18 +352,9 @@ function handleSdkMessage(
         db2.prepare("UPDATE agent_sessions SET was_compacted = 1 WHERE id = ?").run(sessionDbId);
       } catch (e) { console.warn("[subprocess-manager] best-effort op failed:", e); }
     }
-    broadcastEvent(
-      id,
-      agentType,
-      {
-        type: "system",
-        subtype,
-        session_id: msg.session_id as string | undefined,
-        pre_tokens: msg.pre_tokens as number | undefined,
-        compact_metadata: msg.compact_metadata as { trigger: string; pre_tokens: number } | undefined,
-      },
-      parentToolUseId,
-    );
+    // System events are persisted to DB (e.g. compact_boundary); use throttled notify
+    const fid5 = getFeatureIdForSubprocess(id);
+    if (fid5 != null) throttledNotifyDbUpdated(id, fid5);
   }
 }
 
@@ -355,6 +392,7 @@ export function startSubprocess(options: SubprocessOptions): ManagedSubprocess {
   runSdkQuery(managed, options).catch((err) => {
     console.error("[subprocess-manager] SDK query error:", err);
     managed.status = "error";
+    flushNotifyDbUpdated(id);
     broadcastEvent(id, options.agentType, {
       type: "error",
       error: {
@@ -746,6 +784,7 @@ async function runSdkQuery(
     if (managed.status === "running") {
       managed.status = "completed";
       persistSessionStatus(managed.id, "completed", managed.sdkSessionId);
+      flushNotifyDbUpdated(managed.id);
       for (const listener of managed.completionListeners) listener(0);
       broadcastEvent(managed.id, managed.agentType, {
         type: "agent_done",
@@ -755,12 +794,14 @@ async function runSdkQuery(
       // Interrupted — broadcast paused event and call completion listeners with
       // exit code 2 (paused) so orchestrators (e.g. execute) can resolve their
       // Promise.allSettled and update their own status.
+      flushNotifyDbUpdated(managed.id);
       for (const listener of managed.completionListeners) listener(2);
       broadcastEvent(managed.id, managed.agentType, {
         type: "agent_paused",
       });
     } else if (managed.status === "stopped") {
       persistSessionStatus(managed.id, "completed", managed.sdkSessionId);
+      flushNotifyDbUpdated(managed.id);
       for (const listener of managed.completionListeners) listener(1);
       broadcastEvent(managed.id, managed.agentType, {
         type: "agent_done",
@@ -770,11 +811,13 @@ async function runSdkQuery(
   } catch (err) {
     if (managed.status === "paused") {
       // Interrupt threw — still treat as paused
+      flushNotifyDbUpdated(managed.id);
       for (const listener of managed.completionListeners) listener(2);
       broadcastEvent(managed.id, managed.agentType, {
         type: "agent_paused",
       });
     } else if (managed.status === "stopped") {
+      flushNotifyDbUpdated(managed.id);
       for (const listener of managed.completionListeners) listener(1);
       broadcastEvent(managed.id, managed.agentType, {
         type: "agent_done",
@@ -790,12 +833,13 @@ async function runSdkQuery(
           try {
             const db = getDatabase();
             persistClaudeSessionId(sDbId, managed.resumingFromSessionId);
-            db.prepare("UPDATE agent_sessions SET status = 'paused', ended_at = datetime('now'), subprocess_id = NULL WHERE id = ?").run(sDbId);
+            transitionAgentSession(db, sDbId, "paused", undefined, { ended_at: "datetime('now')", subprocess_id: null });
             console.log(`[subprocess-manager] Restored session ${sDbId} to paused with original session ID ${managed.resumingFromSessionId}`);
           } catch (e) { console.warn("[subprocess-manager] best-effort op failed:", e); }
         }
       }
       managed.status = "error";
+      flushNotifyDbUpdated(managed.id);
       // Persist error status to DB
       if (!managed.resumingFromSessionId) {
         persistSessionStatus(managed.id, "error");
@@ -862,16 +906,16 @@ export function sendMessageToSubprocess(id: string, message: string): SendMessag
     return { success: false, reason: "invalid_status" };
   }
 
-  // Persist the user message to the database and broadcast to renderer
+  // Persist the user message to the database and notify renderer via DB update
   const sessionDbId = getSessionDbId(id);
   if (sessionDbId) {
     try {
       const db = getDatabase();
-      const result = db.prepare(
+      db.prepare(
         "INSERT INTO agent_messages (session_id, role, content, message_type, tool_name) VALUES (?, ?, ?, ?, ?)",
       ).run(sessionDbId, "user", message, "user_message", null);
-      const msgDbId = Number(result.lastInsertRowid);
-      broadcastEvent(id, managed.agentType, { type: "user_message", content: message }, null, msgDbId);
+      const fid = getFeatureIdForSubprocess(id);
+      if (fid != null) notifyDbUpdated("agent_session", fid);
     } catch {
       // Best-effort persistence
     }
@@ -887,7 +931,7 @@ export function sendMessageToSubprocess(id: string, message: string): SendMessag
     const resumeDbId = getSessionDbId(id);
     if (resumeDbId) {
       const db = getDatabase();
-      db.prepare("UPDATE agent_sessions SET status = 'running', ended_at = NULL WHERE id = ?").run(resumeDbId);
+      transitionAgentSession(db, resumeDbId, "running", undefined, { ended_at: null });
     }
     // Fresh abort controller for the resumed query
     managed.abortController = new AbortController();
@@ -935,10 +979,11 @@ export async function pauseSubprocess(id: string, opts?: { allowPaused?: boolean
   const sessionDbId = getSessionDbId(id);
   if (sessionDbId) {
     const db = getDatabase();
-    db.prepare("UPDATE agent_sessions SET status = 'paused', ended_at = datetime('now'), subprocess_id = NULL WHERE id = ?").run(sessionDbId);
+    transitionAgentSession(db, sessionDbId, "paused", undefined, { ended_at: "datetime('now')", subprocess_id: null });
     if (managed.sdkSessionId) persistClaudeSessionId(sessionDbId, managed.sdkSessionId);
   }
 
+  flushNotifyDbUpdated(managed.id);
   broadcastEvent(managed.id, managed.agentType, { type: "agent_paused" });
   return true;
 }
@@ -1112,17 +1157,14 @@ export function submitUserAnswers(
   const sessionDbId = getSessionDbId(subprocessId);
   if (sessionDbId) {
     try {
-      const managed = activeProcesses.get(subprocessId);
       const lines = Object.entries(answers).map(([q, a]) => `**${q}**\n${a}`);
       const content = lines.join("\n\n");
       const db = getDatabase();
-      const result = db.prepare(
+      db.prepare(
         "INSERT INTO agent_messages (session_id, role, content, message_type, tool_name) VALUES (?, ?, ?, ?, ?)",
       ).run(sessionDbId, "user", content, "user_message", null);
-      const msgDbId = Number(result.lastInsertRowid);
-      if (managed) {
-        broadcastEvent(subprocessId, managed.agentType, { type: "user_message", content }, null, msgDbId);
-      }
+      const fid = getFeatureIdForSubprocess(subprocessId);
+      if (fid != null) notifyDbUpdated("agent_session", fid);
     } catch {
       // Best-effort persistence
     }
@@ -1185,16 +1227,13 @@ export function submitPlanApproval(
     const sessionDbId = getSessionDbId(subprocessId);
     if (sessionDbId) {
       try {
-        const managed = activeProcesses.get(subprocessId);
         const content = `**Plan feedback:**\n${feedback}`;
         const db = getDatabase();
-        const result = db.prepare(
+        db.prepare(
           "INSERT INTO agent_messages (session_id, role, content, message_type, tool_name) VALUES (?, ?, ?, ?, ?)",
         ).run(sessionDbId, "user", content, "user_message", null);
-        const msgDbId = Number(result.lastInsertRowid);
-        if (managed) {
-          broadcastEvent(subprocessId, managed.agentType, { type: "user_message", content }, null, msgDbId);
-        }
+        const fid = getFeatureIdForSubprocess(subprocessId);
+        if (fid != null) notifyDbUpdated("agent_session", fid);
       } catch {
         // Best-effort persistence
       }
@@ -1219,7 +1258,6 @@ export async function waitForPlanApproval(
   subprocessId: string,
   planMarkdown: string,
 ): Promise<{ approved: boolean; feedback?: string }> {
-  const managed = activeProcesses.get(subprocessId);
   const sDbId = getSessionDbId(subprocessId);
   let featureIdForNotify: number | null = null;
 
@@ -1233,24 +1271,13 @@ export async function waitForPlanApproval(
     try {
       const db2 = getDatabase();
       // Persist to agent_messages so the block survives page reloads
-      const result = db2.prepare(
+      db2.prepare(
         "INSERT INTO agent_messages (session_id, role, content, message_type, tool_name, tool_use_id) VALUES (?, ?, ?, ?, ?, ?)",
       ).run(sDbId, "assistant", toolArgs, "tool_call", toolName, syntheticToolUseId);
-      const msgDbId = Number(result.lastInsertRowid);
 
-      // Broadcast a synthetic content_block_start so the live UI picks it up
-      if (managed) {
-        broadcastEvent(subprocessId, managed.agentType, {
-          type: "content_block_start",
-          index: 0,
-          content_block: {
-            type: "tool_use",
-            id: syntheticToolUseId,
-            name: toolName,
-            input: { plan: planMarkdown },
-          },
-        } as StreamEvent, null, msgDbId);
-      }
+      // Notify renderer via DB update (it will pick up the new block on refetch)
+      const row2 = db2.prepare("SELECT feature_id FROM agent_sessions WHERE id = ?").get(sDbId) as { feature_id: number } | undefined;
+      if (row2) notifyDbUpdated("agent_session", row2.feature_id);
     } catch (err) {
       console.error("[subprocess-manager] Failed to emit synthetic show_plan block:", err);
     }

@@ -155,19 +155,45 @@ function SessionFeatureView({
   }, [session?.subprocessId, submitPlanApprovalMutation]);
 
   const handleAnswerSubmit = useCallback(
-    (response: string) => {
-      if (!session?.subprocessId || !session.pendingQuestions?.length) return;
+    async (response: string) => {
+      if (!session?.pendingQuestions?.length) return;
       const answers = parseQuestionAnswers(session.pendingQuestions, response);
-      submitAnswersMutation.mutate({
-        subprocessId: session.subprocessId,
-        answers,
-      });
+
+      // 1. Live subprocess — submit directly
+      if (session.subprocessId) {
+        submitAnswersMutation.mutate({
+          subprocessId: session.subprocessId,
+          answers,
+        });
+        return;
+      }
+
+      // 2. No subprocess (e.g. after restart) — resume with answer as prompt
+      if (session.claudeSessionId) {
+        const formatted = Object.entries(answers)
+          .map(([q, a]) => `${q}\nAnswer: ${a}`)
+          .join("\n\n");
+        try {
+          await resumeMutation.mutateAsync({
+            featureId,
+            projectId,
+            agentType: "session",
+            sessionId: session.claudeSessionId,
+            originalSessionDbId: session.sessionDbId,
+            prompt: formatted,
+          });
+        } catch (err) {
+          console.error("[SessionFeatureView] Failed to resume for question answer:", err);
+        }
+        void refetch();
+      }
     },
-    [session?.subprocessId, session?.pendingQuestions, submitAnswersMutation],
+    [session, featureId, projectId, submitAnswersMutation, resumeMutation, refetch],
   );
 
   const handleSend = useCallback(
     async (message: string) => {
+      console.log("[SessionFeatureView] handleSend", { hasSession: !!session, subprocessId: session?.subprocessId, status, permissionMode, claudeSessionId: session?.claudeSessionId });
       // 1. Active subprocess — send follow-up message directly.
       //    For session agents, the subprocess stays alive in activeProcesses even
       //    after a turn completes (status becomes "completed"). The backend's
@@ -178,8 +204,8 @@ function SessionFeatureView({
         try {
           const result = await sendMessageMutation.mutateAsync({ id: session.subprocessId, message });
           if (result.success) {
-            // When resuming from "completed", the backend sets DB status back to "running".
-            if (status === "completed") void refetch();
+            // Always refetch so the user message appears immediately in the chat
+            void refetch();
             return;
           }
           // Send failed (e.g., process dead after restart) — fall through to resume/start paths
@@ -199,10 +225,10 @@ function SessionFeatureView({
             originalSessionDbId: session.sessionDbId,
             prompt: message,
           });
-          void refetch();
-        } catch {
-          // Error persisted to DB and shown via refetch
+        } catch (err) {
+          console.error("[SessionFeatureView] Failed to resume session:", err);
         }
+        void refetch();
         return;
       }
 
@@ -214,10 +240,10 @@ function SessionFeatureView({
           prompt: message,
           permissionMode,
         });
-        void refetch();
-      } catch {
-        // Error shown via refetch
+      } catch (err) {
+        console.error("[SessionFeatureView] Failed to start session:", err);
       }
+      void refetch();
     },
     [session, status, featureId, projectId, permissionMode, sendMessageMutation, startSessionMutation, resumeMutation, refetch],
   );

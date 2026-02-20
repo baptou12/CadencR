@@ -19,6 +19,7 @@ import fs from "node:fs";
 import { getDatabase } from "../db/database";
 import { startSubprocess, generateSubprocessId } from "./subprocess-manager";
 import { bridgeSubprocessToRenderer } from "./ipc-bridge";
+import { transitionAgentSession } from "./state-transitions";
 import { resolveModel } from "./models";
 import { extractTextFromEvent } from "./utils";
 import { broadcast, AGENT_PATTERN_MATCH_CHANNEL } from "./broadcast";
@@ -151,9 +152,7 @@ export function startUnifiedAgent(config: UnifiedAgentConfig): UnifiedAgentResul
 
     if (!wasInterrupted) {
       // Update session status
-      db2.prepare(
-        "UPDATE agent_sessions SET status = ?, ended_at = datetime('now') WHERE id = ?",
-      ).run(exitCode === 0 ? "completed" : "error", sessionDbId);
+      transitionAgentSession(db2, sessionDbId, exitCode === 0 ? "completed" : "error", config.featureId, { ended_at: "datetime('now')" });
     }
 
     // Safety-net: persist session ID if not yet saved

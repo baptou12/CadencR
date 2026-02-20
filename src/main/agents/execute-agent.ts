@@ -14,7 +14,7 @@
 
 import { getDatabase } from "../db/database";
 import type { PhaseRow, PlanRow, SettingRow } from "../db/types";
-import { notifyDbUpdated } from "./ipc-bridge";
+import { transitionFeature, transitionPhase, transitionPhaseIf, transitionAgentSession } from "./state-transitions";
 import { startUnifiedAgent } from "./unified-agent";
 import { EXECUTE_SYSTEM_PROMPT, createQaConfig } from "./agent-configs";
 import { createExecuteMcpServer } from "./mcp-tools";
@@ -44,8 +44,7 @@ export function startExecuteAgent(options: ExecuteAgentOptions): ExecuteAgentRes
   const db = getDatabase();
 
   // Update feature status to in-progress
-  db.prepare("UPDATE features SET status = 'in-progress' WHERE id = ?").run(options.featureId);
-  notifyDbUpdated("feature", options.featureId);
+  transitionFeature(db, options.featureId, "in-progress");
 
   // Create orchestrator session record (tracks overall execution)
   const sessionResult = db
@@ -106,9 +105,8 @@ export function startExecuteAgent(options: ExecuteAgentOptions): ExecuteAgentRes
 
     const firstStepResult = getStepOutcome(plan.id, firstStepNumber);
     if (firstStepResult !== "ok" && firstStepResult !== "qa_fail_with_fixes") {
-      db.prepare(
-        "UPDATE agent_sessions SET status = ?, ended_at = datetime('now') WHERE id = ?",
-      ).run(firstStepResult === "paused" ? "paused" : "error", sessionDbId);
+      const status = firstStepResult === "paused" ? "paused" : "error";
+      transitionAgentSession(db, sessionDbId, status, options.featureId, { ended_at: "datetime('now')" });
       if (firstStepResult === "paused") {
         broadcastExecutePaused(sessionDbId);
       } else {
@@ -119,9 +117,7 @@ export function startExecuteAgent(options: ExecuteAgentOptions): ExecuteAgentRes
 
     // For Level 2 (manual continue), stop after first step and wait
     if (autonomyLevel === 2 && sortedSteps.length > 1) {
-      db.prepare(
-        "UPDATE agent_sessions SET status = 'waiting' WHERE id = ?",
-      ).run(sessionDbId);
+      transitionAgentSession(db, sessionDbId, "waiting", options.featureId);
       broadcastExecuteWaiting(sessionDbId, sortedSteps[1]);
       return;
     }
@@ -235,8 +231,7 @@ function executeQaPhase(
     const db = getDatabase();
 
     // Update phase status to running
-    db.prepare("UPDATE phases SET status = 'running' WHERE id = ?").run(phase.id);
-    notifyDbUpdated("phase", options.featureId);
+    transitionPhase(db, phase.id, "running", options.featureId);
 
     // Get QA prompt from project settings
     const qaRow = db
@@ -285,18 +280,14 @@ function executeQaPhase(
           const wasInterrupted = session?.status === "paused";
 
           if (wasInterrupted) {
-            db2.prepare("UPDATE phases SET status = 'pending' WHERE id = ? AND status = 'running'").run(phase.id);
+            transitionPhaseIf(db2, phase.id, "running", "pending", options.featureId);
           } else if (context.exitCode === 0) {
             // Check if QA passed or failed
             const isFail = /---QA_REPORT_START---[\s\S]*?##\s+Summary\s*\n\s*FAIL/i.test(output);
-            db2.prepare("UPDATE phases SET status = ? WHERE id = ?").run(
-              isFail ? "error" : "completed",
-              phase.id,
-            );
+            transitionPhase(db2, phase.id, isFail ? "error" : "completed", options.featureId);
           } else {
-            db2.prepare("UPDATE phases SET status = 'error' WHERE id = ?").run(phase.id);
+            transitionPhase(db2, phase.id, "error", options.featureId);
           }
-          notifyDbUpdated("phase", options.featureId);
           resolve();
         },
       },
@@ -310,8 +301,7 @@ function executeQaPhase(
       const result = startUnifiedAgent(qaConfig);
       allSubprocessIds.push(result.subprocessId);
     } catch {
-      db.prepare("UPDATE phases SET status = 'error' WHERE id = ?").run(phase.id);
-      notifyDbUpdated("phase", options.featureId);
+      transitionPhase(db, phase.id, "error", options.featureId);
       resolve();
     }
   });
@@ -331,8 +321,7 @@ function executePhase(
     const db = getDatabase();
 
     // Update phase status to running
-    db.prepare("UPDATE phases SET status = 'running' WHERE id = ?").run(phase.id);
-    notifyDbUpdated("phase", options.featureId);
+    transitionPhase(db, phase.id, "running", options.featureId);
 
     // Build enriched prompt with plan-level context and completed phases
     const prompt = buildEnrichedPrompt(phase, autonomyLevel);
@@ -370,8 +359,7 @@ function executePhase(
       allSubprocessIds.push(result.subprocessId);
     } catch {
       // Could not start subprocess (e.g., max concurrent limit)
-      db.prepare("UPDATE phases SET status = 'error' WHERE id = ?").run(phase.id);
-      notifyDbUpdated("phase", options.featureId);
+      transitionPhase(db, phase.id, "error", options.featureId);
       resolve();
     }
   });
@@ -539,9 +527,8 @@ async function executeRemainingSteps(
 
     const stepResult = getStepOutcome(planId, stepNumber);
     if (stepResult !== "ok" && stepResult !== "qa_fail_with_fixes") {
-      db.prepare(
-        "UPDATE agent_sessions SET status = ?, ended_at = datetime('now') WHERE id = ?",
-      ).run(stepResult === "paused" ? "paused" : "error", sessionDbId);
+      const status = stepResult === "paused" ? "paused" : "error";
+      transitionAgentSession(db, sessionDbId, status, undefined, { ended_at: "datetime('now')" });
       if (stepResult === "paused") {
         broadcastExecutePaused(sessionDbId);
       } else {
@@ -572,17 +559,13 @@ async function executeRemainingSteps(
 
     // For Level 2, stop after each step and wait for user to continue
     if (autonomyLevel === 2) {
-      db.prepare(
-        "UPDATE agent_sessions SET status = 'waiting' WHERE id = ?",
-      ).run(sessionDbId);
+      transitionAgentSession(db, sessionDbId, "waiting");
       broadcastExecuteWaiting(sessionDbId, sortedSteps[0]);
       return;
     }
   }
 
-  db.prepare(
-    "UPDATE agent_sessions SET status = 'completed', ended_at = datetime('now') WHERE id = ?",
-  ).run(sessionDbId);
+  transitionAgentSession(db, sessionDbId, "completed", undefined, { ended_at: "datetime('now')" });
 
   broadcastExecuteAllDone(sessionDbId, 0);
 }
@@ -653,9 +636,7 @@ export function continueExecuteAgent(sessionDbId: number): { subprocessIds: stri
 
   if (phases.length === 0) {
     // All phases done — mark session as completed
-    db.prepare(
-      "UPDATE agent_sessions SET status = 'completed', ended_at = datetime('now') WHERE id = ?",
-    ).run(sessionDbId);
+    transitionAgentSession(db, sessionDbId, "completed", session.feature_id, { ended_at: "datetime('now')" });
     broadcastExecuteAllDone(sessionDbId, 0);
     return { subprocessIds: [] };
   }
@@ -672,7 +653,7 @@ export function continueExecuteAgent(sessionDbId: number): { subprocessIds: stri
   const sortedSteps = Array.from(stepGroups.keys()).toSorted((a, b) => a - b);
 
   // Update session to running
-  db.prepare("UPDATE agent_sessions SET status = 'running' WHERE id = ?").run(sessionDbId);
+  transitionAgentSession(db, sessionDbId, "running", session.feature_id);
 
   const options = {
     featureId: session.feature_id,
@@ -696,9 +677,8 @@ export function continueExecuteAgent(sessionDbId: number): { subprocessIds: stri
 
     const firstStepResult = getStepOutcome(plan.id, firstStepNumber);
     if (firstStepResult !== "ok" && firstStepResult !== "qa_fail_with_fixes") {
-      db.prepare(
-        "UPDATE agent_sessions SET status = ?, ended_at = datetime('now') WHERE id = ?",
-      ).run(firstStepResult === "paused" ? "paused" : "error", sessionDbId);
+      const status = firstStepResult === "paused" ? "paused" : "error";
+      transitionAgentSession(db, sessionDbId, status, session.feature_id, { ended_at: "datetime('now')" });
       if (firstStepResult === "paused") {
         broadcastExecutePaused(sessionDbId);
       } else {
@@ -710,18 +690,14 @@ export function continueExecuteAgent(sessionDbId: number): { subprocessIds: stri
     if (sortedSteps.length > 1) {
       // For Level 2, stop after this step
       if (autonomyLevel === 2) {
-        db.prepare(
-          "UPDATE agent_sessions SET status = 'waiting' WHERE id = ?",
-        ).run(sessionDbId);
+        transitionAgentSession(db, sessionDbId, "waiting", session.feature_id);
         broadcastExecuteWaiting(sessionDbId, sortedSteps[1]);
         return;
       }
 
       await executeRemainingSteps(sortedSteps, 1, stepGroups, options, autonomyLevel, plan.id, sessionDbId);
     } else {
-      db.prepare(
-        "UPDATE agent_sessions SET status = 'completed', ended_at = datetime('now') WHERE id = ?",
-      ).run(sessionDbId);
+      transitionAgentSession(db, sessionDbId, "completed", session.feature_id, { ended_at: "datetime('now')" });
       broadcastExecuteAllDone(sessionDbId, 0);
     }
   })();
@@ -745,12 +721,10 @@ export function buildPhaseCompletionAction(phaseId: number, featureId: number): 
 
       if (wasInterrupted) {
         // Reset to pending if the agent was interrupted
-        db2.prepare("UPDATE phases SET status = 'pending' WHERE id = ? AND status = 'running'").run(phaseId);
-        notifyDbUpdated("phase", featureId);
+        transitionPhaseIf(db2, phaseId, "running", "pending", featureId);
       } else if (context.exitCode !== 0) {
         // Agent errored out — mark phase as error (the agent may not have called mark_phase_done)
-        db2.prepare("UPDATE phases SET status = 'error' WHERE id = ? AND status = 'running'").run(phaseId);
-        notifyDbUpdated("phase", featureId);
+        transitionPhaseIf(db2, phaseId, "running", "error", featureId);
       }
       // If exitCode === 0, the agent should have already called mark_phase_done via MCP tool.
       // If it didn't, the phase stays as 'running' which is a signal something went wrong.

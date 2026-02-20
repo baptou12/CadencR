@@ -48,6 +48,7 @@ import {
   startQaAgent,
 } from "../agents/agent-starters";
 import { startExecuteAgent, continueExecuteAgent, buildPhaseCompletionAction } from "../agents/execute-agent";
+import { transitionAgentSession } from "../agents/state-transitions";
 import { autoNameFeature, runAutoNameBlocking } from "../agents/auto-name";
 import { fetchAvailableModels } from "../agents/available-models";
 
@@ -421,6 +422,10 @@ const agentsRouter = router({
         .prepare("SELECT run_id, phase_id FROM agent_sessions WHERE id = ?")
         .get(input.originalSessionDbId) as Pick<AgentSessionRow, "run_id" | "phase_id"> | undefined;
 
+      // Clear any pending questions — the user's answer is now the resume prompt
+      db.prepare("UPDATE agent_sessions SET pending_questions = NULL WHERE id = ?")
+        .run(input.originalSessionDbId);
+
       // When resuming an execute session tied to a phase, wire up the phase
       // completion action so the phase status is synced when the agent finishes.
       const completionActions = originalSession?.phase_id
@@ -784,9 +789,7 @@ const agentsRouter = router({
 
       // Subprocess already gone — update DB directly if still marked as running/paused
       if (session.status === "running" || session.status === "paused") {
-        db.prepare(
-          "UPDATE agent_sessions SET status = 'completed', ended_at = datetime('now'), subprocess_id = NULL WHERE id = ?",
-        ).run(input.sessionId);
+        transitionAgentSession(db, input.sessionId, "completed", undefined, { ended_at: "datetime('now')", subprocess_id: null });
       }
       return { success: true };
     }),
