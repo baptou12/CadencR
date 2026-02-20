@@ -515,7 +515,7 @@ export function useFeatureAgentState(featureId: number) {
     return {
       sessionDbId: s.sessionDbId,
       agentType: s.agentType as AgentType,
-      status: bufferBlocks.length > 0 && status !== "running" ? "running" : status,
+      status,
       subprocessId: s.subprocessId,
       model: s.model,
       blocks: merged,

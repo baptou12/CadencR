@@ -1,8 +1,7 @@
 import type { ManagedSubprocess } from "./subprocess-manager";
 import type { AgentType, StreamEvent, StreamSystemEvent } from "./types";
 import { getDatabase } from "../db/database";
-
-const AGENT_EVENT_CHANNEL = "agent:event";
+import { AGENT_EVENT_CHANNEL } from "./broadcast";
 
 /**
  * Bridge subprocess events to the renderer.
@@ -169,7 +168,7 @@ export function persistClaudeSessionId(
   }
 }
 
-const DB_UPDATED_CHANNEL = "db:updated";
+import { broadcast, DB_UPDATED_CHANNEL } from "./broadcast";
 
 export type DbEntity = "feature" | "phase" | "plan" | "agent_session";
 
@@ -183,13 +182,7 @@ export interface DbUpdateEvent {
  * The renderer listens for this and invalidates TanStack Query caches.
  */
 export function notifyDbUpdated(entity: DbEntity, featureId: number): void {
-  const { BrowserWindow } = require("electron") as typeof import("electron");
-  const event: DbUpdateEvent = { entity, featureId };
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (!win.isDestroyed()) {
-      win.webContents.send(DB_UPDATED_CHANNEL, event);
-    }
-  }
+  broadcast(DB_UPDATED_CHANNEL, { entity, featureId } satisfies DbUpdateEvent);
 }
 
 /**
@@ -211,15 +204,21 @@ export function getSubprocessIdsForSessionDbIds(
 
 /**
  * Restore the in-memory sessionMap from the database on app startup.
- * Re-populates entries for sessions that were running/paused with a subprocess_id,
- * so that event routing and stop/interrupt work after app restart.
+ * Also marks any sessions that claim to be 'running' as 'paused' — after an app
+ * restart no subprocess can actually be running, and leaving them as 'running'
+ * causes the renderer to try sending messages to dead processes.
  */
 export function restoreSessionMap(): void {
   try {
     const db = getDatabase();
+    // Mark stale 'running' sessions as 'paused' — they can't be running after restart
+    db.prepare(
+      "UPDATE agent_sessions SET status = 'paused', subprocess_id = NULL WHERE status = 'running'",
+    ).run();
+    // Re-populate session map for paused sessions with subprocess_id (for event routing)
     const rows = db
       .prepare(
-        "SELECT id, subprocess_id FROM agent_sessions WHERE status IN ('running', 'paused') AND subprocess_id IS NOT NULL",
+        "SELECT id, subprocess_id FROM agent_sessions WHERE status = 'paused' AND subprocess_id IS NOT NULL",
       )
       .all() as Array<{ id: number; subprocess_id: string }>;
     for (const row of rows) {
@@ -244,4 +243,4 @@ function markSessionHasFileChanges(sessionDbId: number): void {
   } catch { /* best-effort */ }
 }
 
-export { AGENT_EVENT_CHANNEL, DB_UPDATED_CHANNEL };
+export { AGENT_EVENT_CHANNEL, DB_UPDATED_CHANNEL } from "./broadcast";

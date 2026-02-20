@@ -8,6 +8,7 @@ import { trpc } from "@/trpc";
 import { useFeatureAgentState, type FeatureSession } from "@/hooks/useFeatureAgentState";
 import type { AgentType } from "../../main/agents/types";
 import type { AgentStatus } from "@/components/AgentSession";
+import { parseQuestionAnswers } from "@/lib/parse-question-answers";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -225,19 +226,7 @@ export function useWorkflowAgents({
   const handleQuestionResponse = useCallback(
     (session: FeatureSession | undefined, response: string) => {
       if (!session?.subprocessId || !session.pendingQuestions?.length) return;
-
-      const answers: Record<string, string> = {};
-      const sections = response.split("\n\n");
-      session.pendingQuestions.forEach((q, index) => {
-        const section = sections[index];
-        if (section) {
-          const answerMatch = section.match(/Answer:\s*(.+)/s);
-          if (answerMatch) {
-            answers[q.question] = answerMatch[1].trim();
-          }
-        }
-      });
-
+      const answers = parseQuestionAnswers(session.pendingQuestions, response);
       submitAnswersMutation.mutate({
         subprocessId: session.subprocessId,
         answers,
@@ -272,14 +261,38 @@ export function useWorkflowAgents({
   );
 
   const handleAgentSend = useCallback(
-    (agentType: AgentType, message: string) => {
+    async (agentType: AgentType, message: string) => {
       const session = sessions.find(
         (s) => s.agentType === agentType && s.subprocessId,
       );
       if (!session?.subprocessId) return;
-      sendMessageMutation.mutate({ id: session.subprocessId, message });
+      try {
+        const result = await sendMessageMutation.mutateAsync({ id: session.subprocessId, message });
+        if (result.success) return;
+      } catch {
+        // fall through to resume
+      }
+      // Send failed — try to resume if we have a claude session ID
+      const resumable = sessions.find(
+        (s) => s.agentType === agentType && s.claudeSessionId,
+      );
+      if (resumable?.claudeSessionId) {
+        try {
+          await resumeMutation.mutateAsync({
+            featureId,
+            projectId,
+            agentType,
+            sessionId: resumable.claudeSessionId,
+            originalSessionDbId: resumable.sessionDbId,
+            prompt: message,
+          });
+          void refetch();
+        } catch {
+          // Error shown via refetch
+        }
+      }
     },
-    [sessions, sendMessageMutation],
+    [sessions, sendMessageMutation, resumeMutation, featureId, projectId, refetch],
   );
 
   const handleAgentStop = useCallback(
@@ -303,8 +316,12 @@ export function useWorkflowAgents({
   );
 
   const sendToExecuteSubprocess = useCallback(
-    (subprocessId: string, message: string) => {
-      sendMessageMutation.mutate({ id: subprocessId, message });
+    async (subprocessId: string, message: string) => {
+      try {
+        await sendMessageMutation.mutateAsync({ id: subprocessId, message });
+      } catch {
+        // Best-effort — execute subprocess messages are orchestrator-driven
+      }
     },
     [sendMessageMutation],
   );

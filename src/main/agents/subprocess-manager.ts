@@ -1,17 +1,14 @@
-import { BrowserWindow } from "electron";
 import { getDatabase } from "../db/database";
 import { discoverClaudeCli } from "./cli-discovery";
 import { getSessionDbId, persistStreamEvent, persistClaudeSessionId, notifyDbUpdated } from "./ipc-bridge";
 import { DEFAULT_MODEL } from "./models";
 import { resolvePermission, appendToSettingsLocal, loadAllowedPatterns } from "./permissions";
+import { broadcast, AGENT_EVENT_CHANNEL, ASK_USER_QUESTION_CHANNEL, ASK_USER_ANSWER_CHANNEL, TOOL_PERMISSION_CHANNEL } from "./broadcast";
+import { getSdkClient, type SdkQuery } from "./sdk-client";
 import type { AgentEvent, AgentType, StreamEvent } from "./types";
 import EventEmitter from "node:events";
 
 const MAX_CONCURRENT = 10;
-const AGENT_EVENT_CHANNEL = "agent:event";
-const ASK_USER_QUESTION_CHANNEL = "agent:ask-user-question";
-const ASK_USER_ANSWER_CHANNEL = "agent:ask-user-answer";
-const TOOL_PERMISSION_CHANNEL = "agent:tool-permission";
 
 // Global event emitter for question/answer coordination
 const questionEmitter = new EventEmitter();
@@ -96,12 +93,7 @@ function broadcastEvent(
     messageDbId: messageDbId ?? undefined,
   };
 
-  const windows = BrowserWindow.getAllWindows();
-  for (const win of windows) {
-    if (!win.isDestroyed()) {
-      win.webContents.send(AGENT_EVENT_CHANNEL, agentEvent);
-    }
-  }
+  broadcast(AGENT_EVENT_CHANNEL, agentEvent);
 }
 
 // ---------------------------------------------------------------------------
@@ -451,14 +443,7 @@ async function runSdkQuery(
   managed: ManagedSubprocess,
   options: SubprocessOptions,
 ): Promise<void> {
-  // Dynamic import since the SDK is ESM
-  const sdk = await import("@anthropic-ai/claude-agent-sdk");
-  const { query } = sdk as {
-    query: (opts: {
-      prompt: string | AsyncIterable<unknown>;
-      options?: Record<string, unknown>;
-    }) => import("@anthropic-ai/claude-agent-sdk").Query;
-  };
+  const sdk = await getSdkClient();
 
   const cliInfo = discoverClaudeCli();
   if (!cliInfo) {
@@ -713,12 +698,12 @@ async function runSdkQuery(
   managed.pushMessage = messageStream.push;
   managed.closeMessageStream = messageStream.close;
 
-  const queryObj = query({
+  const queryObj = sdk.query({
     prompt: messageStream.generator,
     options: queryOptions,
   });
 
-  managed.query = queryObj;
+  managed.query = queryObj as import("@anthropic-ai/claude-agent-sdk").Query;
 
   const isResume = !!options.resumeSessionId;
   let messageCount = 0;
@@ -828,15 +813,21 @@ export async function setSubprocessPermissionMode(
   return true;
 }
 
+export type SendMessageResult = {
+  success: boolean;
+  reason: "sent" | "resumed" | "no_process" | "invalid_status" | "no_resume_id" | "no_push";
+};
+
 /**
  * Send a user message to a running subprocess via the streaming input generator.
+ * Returns a structured result so callers can distinguish failure modes and handle them.
  */
-export function sendMessageToSubprocess(id: string, message: string): boolean {
+export function sendMessageToSubprocess(id: string, message: string): SendMessageResult {
   const managed = activeProcesses.get(id);
-  if (!managed) return false;
+  if (!managed) return { success: false, reason: "no_process" };
 
   if (managed.status !== "running" && managed.status !== "paused" && managed.status !== "completed") {
-    return false;
+    return { success: false, reason: "invalid_status" };
   }
 
   // Persist the user message to the database and broadcast to renderer
@@ -857,7 +848,7 @@ export function sendMessageToSubprocess(id: string, message: string): boolean {
   // Resume from paused or completed state — start a new query with resume session ID
   if (managed.status === "paused" || managed.status === "completed") {
     if (!managed.sdkSessionId || !managed.originalOptions) {
-      return false;
+      return { success: false, reason: "no_resume_id" };
     }
     managed.status = "running";
     // Update DB status back to running
@@ -877,23 +868,29 @@ export function sendMessageToSubprocess(id: string, message: string): boolean {
     runSdkQuery(managed, resumeOptions).catch((err) => {
       console.error(`[subprocess-manager] Resume SDK query failed for ${id}:`, err);
     });
-    return true;
+    return { success: true, reason: "resumed" };
   }
 
-  if (!managed.pushMessage) return false;
+  if (!managed.pushMessage) return { success: false, reason: "no_push" };
   managed.pushMessage(message);
-  return true;
+  return { success: true, reason: "sent" };
 }
 
 /**
- * Stop a running subprocess — interrupts the SDK query and persists 'paused'
- * status to DB so the session can be resumed later (even after app restart).
+ * Pause a subprocess — interrupts the SDK query and persists 'paused' status to DB
+ * so the session can be resumed later (even after app restart).
+ *
+ * @param allowPaused - If true, also accepts already-paused subprocesses (used by stop).
+ *                      If false, only running subprocesses can be paused (used by interrupt).
  */
-export async function stopSubprocess(id: string): Promise<boolean> {
+export async function pauseSubprocess(id: string, opts?: { allowPaused?: boolean }): Promise<boolean> {
   const managed = activeProcesses.get(id);
-  if (!managed || (managed.status !== "running" && managed.status !== "paused")) {
-    return false;
-  }
+  if (!managed) return false;
+
+  const validStatuses = opts?.allowPaused
+    ? ["running", "paused"]
+    : ["running"];
+  if (!validStatuses.includes(managed.status)) return false;
 
   managed.status = "paused";
   if (managed.query) {
@@ -914,40 +911,14 @@ export async function stopSubprocess(id: string): Promise<boolean> {
   return true;
 }
 
-/**
- * Interrupt a running subprocess — pauses the current turn but keeps the session alive.
- * The user can send a follow-up message to resume. Also persists 'paused' status to DB.
- */
+/** Stop a subprocess (accepts running or paused). Alias for pauseSubprocess with allowPaused. */
+export async function stopSubprocess(id: string): Promise<boolean> {
+  return pauseSubprocess(id, { allowPaused: true });
+}
+
+/** Interrupt a running subprocess. Alias for pauseSubprocess (running only). */
 export async function interruptSubprocess(id: string): Promise<boolean> {
-  const managed = activeProcesses.get(id);
-  if (!managed || managed.status !== "running") {
-    return false;
-  }
-
-  managed.status = "paused";
-
-  if (managed.query) {
-    try {
-      await managed.query.interrupt();
-    } catch {
-      // interrupt may fail if the query already finished
-    }
-  }
-
-  // Persist paused status to DB and clear subprocess_id
-  const sessionDbId = getSessionDbId(id);
-  if (sessionDbId) {
-    const db = getDatabase();
-    db.prepare("UPDATE agent_sessions SET status = 'paused', ended_at = datetime('now'), subprocess_id = NULL WHERE id = ?").run(sessionDbId);
-    if (managed.sdkSessionId) persistClaudeSessionId(sessionDbId, managed.sdkSessionId);
-  }
-
-  // Broadcast paused event to the renderer
-  broadcastEvent(managed.id, managed.agentType, {
-    type: "agent_paused",
-  });
-
-  return true;
+  return pauseSubprocess(id);
 }
 
 /**
@@ -1006,15 +977,7 @@ async function requestUserAnswers(
     );
 
     // Broadcast question request to all renderer windows
-    const windows = BrowserWindow.getAllWindows();
-    for (const win of windows) {
-      if (!win.isDestroyed()) {
-        win.webContents.send(ASK_USER_QUESTION_CHANNEL, {
-          subprocessId,
-          questions,
-        });
-      }
-    }
+    broadcast(ASK_USER_QUESTION_CHANNEL, { subprocessId, questions });
   });
 }
 
@@ -1067,15 +1030,7 @@ async function requestToolPermission(
       );
 
       // Broadcast permission request to all renderer windows
-      const windows = BrowserWindow.getAllWindows();
-      for (const win of windows) {
-        if (!win.isDestroyed()) {
-          win.webContents.send(TOOL_PERMISSION_CHANNEL, {
-            subprocessId,
-            ...permissionRequest,
-          });
-        }
-      }
+      broadcast(TOOL_PERMISSION_CHANNEL, { subprocessId, ...permissionRequest });
     });
 
     // Clear pending_permission on response
@@ -1291,13 +1246,7 @@ export async function getSupportedCommands(
  * Spawn a short-lived SDK query solely to call supportedCommands(), then close it.
  */
 async function fetchCommandsViaTemporaryQuery(cwd: string): Promise<SlashCommandInfo[]> {
-  const sdk = await import("@anthropic-ai/claude-agent-sdk");
-  const { query: sdkQuery } = sdk as {
-    query: (opts: {
-      prompt: string | AsyncIterable<unknown>;
-      options?: Record<string, unknown>;
-    }) => import("@anthropic-ai/claude-agent-sdk").Query;
-  };
+  const sdk = await getSdkClient();
 
   const cliInfo = discoverClaudeCli();
   if (!cliInfo) return [];
@@ -1309,13 +1258,13 @@ async function fetchCommandsViaTemporaryQuery(cwd: string): Promise<SlashCommand
     },
   };
 
-  let queryObj: import("@anthropic-ai/claude-agent-sdk").Query | null = null;
+  let queryObj: SdkQuery | null = null;
   try {
-    queryObj = sdkQuery({
+    queryObj = sdk.query({
       prompt: neverYield,
       options: { cwd, permissionMode: "acceptEdits", pathToClaudeCodeExecutable: cliInfo.path },
     });
-    return mapCommands(await queryObj.supportedCommands());
+    return mapCommands(await queryObj.supportedCommands() as SlashCommandInfo[]);
   } catch (err) {
     console.error("[subprocess-manager] fetchCommandsViaTemporaryQuery error:", err);
     return [];
@@ -1324,5 +1273,5 @@ async function fetchCommandsViaTemporaryQuery(cwd: string): Promise<SlashCommand
   }
 }
 
-// Export channel constants for use in preload and main
-export { ASK_USER_QUESTION_CHANNEL, ASK_USER_ANSWER_CHANNEL, TOOL_PERMISSION_CHANNEL };
+// Re-export channel constants for use in preload and main
+export { ASK_USER_QUESTION_CHANNEL, ASK_USER_ANSWER_CHANNEL, TOOL_PERMISSION_CHANNEL } from "./broadcast";

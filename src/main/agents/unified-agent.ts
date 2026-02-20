@@ -16,21 +16,18 @@
  */
 
 import fs from "node:fs";
-import { BrowserWindow } from "electron";
 import { getDatabase } from "../db/database";
 import { startSubprocess } from "./subprocess-manager";
 import { bridgeSubprocessToRenderer } from "./ipc-bridge";
 import { resolveModel } from "./models";
 import { extractTextFromEvent } from "./utils";
+import { broadcast, AGENT_PATTERN_MATCH_CHANNEL } from "./broadcast";
 import type {
   AgentType,
   StreamEvent,
   UnifiedAgentConfig,
   OutputPattern,
 } from "./types";
-
-// IPC channel used for pattern-match notifications
-const AGENT_PATTERN_MATCH_CHANNEL = "agent:pattern-match";
 
 /** Result returned after starting a unified agent. */
 export interface UnifiedAgentResult {
@@ -218,16 +215,12 @@ function broadcastPatternMatch(
   agentType: AgentType,
   event: string,
 ): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (!win.isDestroyed()) {
-      win.webContents.send(AGENT_PATTERN_MATCH_CHANNEL, {
-        subprocessId,
-        agentType,
-        event,
-        timestamp: Date.now(),
-      });
-    }
-  }
+  broadcast(AGENT_PATTERN_MATCH_CHANNEL, {
+    subprocessId,
+    agentType,
+    event,
+    timestamp: Date.now(),
+  });
 }
 
 export { AGENT_PATTERN_MATCH_CHANNEL };

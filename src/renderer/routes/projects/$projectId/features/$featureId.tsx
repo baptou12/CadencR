@@ -13,6 +13,7 @@ import { useResolvedModel } from "@/hooks/useResolvedModel";
 import { getActiveFocusZone } from "@/lib/focus-zones";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import { useTerminalState } from "@/hooks/useTerminalState";
+import { parseQuestionAnswers } from "@/lib/parse-question-answers";
 
 export const Route = createFileRoute(
   "/projects/$projectId/features/$featureId",
@@ -156,17 +157,7 @@ function SessionFeatureView({
   const handleAnswerSubmit = useCallback(
     (response: string) => {
       if (!session?.subprocessId || !session.pendingQuestions?.length) return;
-      const answers: Record<string, string> = {};
-      const sections = response.split("\n\n");
-      session.pendingQuestions.forEach((q, index) => {
-        const section = sections[index];
-        if (section) {
-          const answerMatch = section.match(/Answer:\s*(.+)/s);
-          if (answerMatch) {
-            answers[q.question] = answerMatch[1].trim();
-          }
-        }
-      });
+      const answers = parseQuestionAnswers(session.pendingQuestions, response);
       submitAnswersMutation.mutate({
         subprocessId: session.subprocessId,
         answers,
@@ -184,11 +175,17 @@ function SessionFeatureView({
       //    SDK query with resume, so we can route follow-up messages through it
       //    instead of spawning a brand-new subprocess via the resume mutation.
       if (session?.subprocessId && (status === "running" || status === "completed")) {
-        sendMessageMutation.mutate({ id: session.subprocessId, message });
-        // When resuming from "completed", the backend sets DB status back to "running".
-        // Refetch so the renderer picks up the new status.
-        if (status === "completed") void refetch();
-        return;
+        try {
+          const result = await sendMessageMutation.mutateAsync({ id: session.subprocessId, message });
+          if (result.success) {
+            // When resuming from "completed", the backend sets DB status back to "running".
+            if (status === "completed") void refetch();
+            return;
+          }
+          // Send failed (e.g., process dead after restart) — fall through to resume/start paths
+        } catch {
+          // Mutation error — fall through to resume/start paths
+        }
       }
 
       // 2. Existing session with a claude session ID — resume it

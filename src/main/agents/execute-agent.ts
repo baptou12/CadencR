@@ -17,6 +17,7 @@ import type { PhaseRow, PlanRow, SettingRow } from "../db/types";
 import { notifyDbUpdated } from "./ipc-bridge";
 import { startUnifiedAgent } from "./unified-agent";
 import { EXECUTE_SYSTEM_PROMPT, createQaConfig } from "./agent-configs";
+import { broadcast, AGENT_EVENT_CHANNEL } from "./broadcast";
 import type { AgentEvent, UnifiedAgentConfig, CompletionAction } from "./types";
 
 export interface ExecuteAgentOptions {
@@ -183,38 +184,26 @@ function getStepOutcome(planId: number, stepNumber: number): "ok" | "error" | "p
  * Broadcast a synthetic event to the renderer indicating all execute phases are done.
  */
 function broadcastExecuteAllDone(sessionDbId: number, exitCode = 0): void {
-  const { BrowserWindow } = require("electron") as typeof import("electron");
   const event: AgentEvent = {
     subprocessId: `session-${sessionDbId}`,
     agentType: "execute",
     event: { type: "agent_done", exitCode },
     timestamp: Date.now(),
   };
-  const AGENT_EVENT_CHANNEL = "agent:event";
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (!win.isDestroyed()) {
-      win.webContents.send(AGENT_EVENT_CHANNEL, event);
-    }
-  }
+  broadcast(AGENT_EVENT_CHANNEL, event);
 }
 
 /**
  * Broadcast a synthetic event to the renderer indicating the execute orchestrator was paused.
  */
 function broadcastExecutePaused(sessionDbId: number): void {
-  const { BrowserWindow } = require("electron") as typeof import("electron");
   const event: AgentEvent = {
     subprocessId: `session-${sessionDbId}`,
     agentType: "execute",
     event: { type: "agent_paused" },
     timestamp: Date.now(),
   };
-  const AGENT_EVENT_CHANNEL = "agent:event";
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (!win.isDestroyed()) {
-      win.webContents.send(AGENT_EVENT_CHANNEL, event);
-    }
-  }
+  broadcast(AGENT_EVENT_CHANNEL, event);
 }
 
 /**
@@ -599,19 +588,13 @@ async function executeRemainingSteps(
  * for the user to continue to the next step (Level 2 autonomy).
  */
 function broadcastExecuteWaiting(sessionDbId: number, nextStepNumber: number): void {
-  const { BrowserWindow } = require("electron") as typeof import("electron");
   const event: AgentEvent = {
     subprocessId: `session-${sessionDbId}`,
     agentType: "execute",
     event: { type: "execute_waiting", nextStepNumber },
     timestamp: Date.now(),
   };
-  const AGENT_EVENT_CHANNEL = "agent:event";
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (!win.isDestroyed()) {
-      win.webContents.send(AGENT_EVENT_CHANNEL, event);
-    }
-  }
+  broadcast(AGENT_EVENT_CHANNEL, event);
 }
 
 /**

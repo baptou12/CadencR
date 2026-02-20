@@ -38,13 +38,16 @@ import { diffCommentsRouter } from "./diff-comments";
 import { usageRouter } from "./usage";
 import { terminalRouter } from "./terminal";
 import { startUnifiedAgent } from "../agents/unified-agent";
-import { startPlanAgent } from "../agents/plan-agent";
-import { startBrainstormAgent } from "../agents/brainstorm-agent";
+import {
+  startPlanAgent,
+  startBrainstormAgent,
+  startRiskAgent,
+  startReviewAgent,
+  addFixPhase,
+  startSessionAgent,
+  startQaAgent,
+} from "../agents/agent-starters";
 import { startExecuteAgent, continueExecuteAgent, buildPhaseCompletionAction } from "../agents/execute-agent";
-import { startRiskAgent } from "../agents/risk-agent";
-import { startReviewAgent, addFixPhase } from "../agents/review-agent";
-import { startSessionAgent } from "../agents/session-agent";
-import { startQaAgent } from "../agents/qa-agent";
 import { autoNameFeature, runAutoNameBlocking } from "../agents/auto-name";
 import { fetchAvailableModels } from "../agents/available-models";
 
@@ -486,8 +489,7 @@ const agentsRouter = router({
   sendMessage: publicProcedure
     .input(z.object({ id: z.string(), message: z.string() }))
     .mutation(async ({ input }) => {
-      const sent = await sendMessageToSubprocess(input.id, input.message);
-      return { success: sent };
+      return sendMessageToSubprocess(input.id, input.message);
     }),
 
   /** Start the plan agent for a feature */
