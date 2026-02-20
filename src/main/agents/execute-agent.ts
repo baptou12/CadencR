@@ -339,7 +339,7 @@ function executePhase(
       },
     ];
 
-    const mcpServer = createExecuteMcpServer(options.featureId);
+    const mcpServer = createExecuteMcpServer(options.featureId, options.sessionDbId);
 
     const config: UnifiedAgentConfig = {
       agentType: "execute",

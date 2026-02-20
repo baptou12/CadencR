@@ -243,5 +243,5 @@ export interface UnifiedAgentConfig {
    * Called by unified-agent after subprocess spawn, replacing mcpServers.
    * This avoids the timing hazard of needing the subprocess ID before it exists.
    */
-  mcpServerFactory?: (subprocessId: string) => Record<string, McpServerConfig>;
+  mcpServerFactory?: (subprocessId: string, sessionDbId: number) => Record<string, McpServerConfig>;
 }

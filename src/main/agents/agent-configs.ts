@@ -16,7 +16,7 @@
 
 import { getDatabase } from "../db/database";
 import { transitionFeature } from "./state-transitions";
-import { createPlanMcpServer, createQaMcpServer } from "./mcp-tools";
+import { createPlanMcpServer, createQaMcpServer, createReviewMcpServer, createCommonMcpServer } from "./mcp-tools";
 import { waitForPlanApproval } from "./plan-approval";
 import type { UnifiedAgentConfig, CompletionAction, OutputPattern } from "./types";
 
@@ -459,6 +459,8 @@ export interface ReviewConfigOptions {
   featureId: number;
   projectId: number;
   cwd: string;
+  /** Plan ID for MCP tool access */
+  planId: number;
   /** Worktree path for permission resolution */
   worktreePath?: string;
 }
@@ -536,8 +538,8 @@ Start by exploring the codebase to understand the project structure and existing
     cwd: opts.cwd,
     prompt,
     worktreePath: opts.worktreePath,
-    mcpServerFactory: (subprocessId: string) => ({
-      "productdevr-plan": createPlanMcpServer(opts.planId, opts.featureId, async (planMarkdown) => {
+    mcpServerFactory: (subprocessId: string, sessionDbId: number) => ({
+      "productdevr-plan": createPlanMcpServer(opts.planId, opts.featureId, sessionDbId, async (planMarkdown) => {
         return waitForPlanApproval(subprocessId, planMarkdown);
       }),
     }),
@@ -588,8 +590,8 @@ Start by thoroughly exploring the codebase to understand the full context. Resea
     cwd: opts.cwd,
     prompt,
     worktreePath: opts.worktreePath,
-    mcpServerFactory: (subprocessId: string) => ({
-      "productdevr-plan": createPlanMcpServer(opts.planId, opts.featureId, async (planMarkdown) => {
+    mcpServerFactory: (subprocessId: string, sessionDbId: number) => ({
+      "productdevr-plan": createPlanMcpServer(opts.planId, opts.featureId, sessionDbId, async (planMarkdown) => {
         return waitForPlanApproval(subprocessId, planMarkdown);
       }),
     }),
@@ -625,6 +627,9 @@ export function createRiskConfig(opts: RiskConfigOptions): UnifiedAgentConfig {
     cwd: opts.cwd,
     prompt: opts.prompt,
     worktreePath: opts.worktreePath,
+    mcpServerFactory: (_subprocessId: string, sessionDbId: number) => ({
+      "productdevr-common": createCommonMcpServer(sessionDbId, opts.featureId),
+    }),
   };
 }
 
@@ -683,6 +688,9 @@ followed by a brief summary of the fixes needed (one per line).`;
     cwd: opts.cwd,
     prompt,
     worktreePath: opts.worktreePath,
+    mcpServerFactory: (_subprocessId: string, sessionDbId: number) => ({
+      "productdevr-review": createReviewMcpServer(opts.planId, opts.featureId, sessionDbId),
+    }),
   };
 }
 
@@ -703,6 +711,9 @@ export function createSessionConfig(opts: SessionConfigOptions): UnifiedAgentCon
     resumeSessionId: opts.resumeSessionId,
     permissionMode: opts.permissionMode,
     worktreePath: opts.worktreePath,
+    mcpServerFactory: (_subprocessId: string, sessionDbId: number) => ({
+      "productdevr-common": createCommonMcpServer(sessionDbId, opts.featureId ?? 0),
+    }),
   };
 }
 
@@ -741,8 +752,6 @@ Based on what was implemented above, design specific test cases and execute them
     },
   ];
 
-  const mcpServer = createQaMcpServer(opts.planId, opts.featureId);
-
   return {
     agentType: "qa",
     systemPrompt: QA_SYSTEM_PROMPT,
@@ -752,6 +761,8 @@ Based on what was implemented above, design specific test cases and execute them
     cwd: opts.cwd,
     prompt,
     worktreePath: opts.worktreePath,
-    mcpServers: { "productdevr-qa": mcpServer },
+    mcpServerFactory: (_subprocessId: string, sessionDbId: number) => ({
+      "productdevr-qa": createQaMcpServer(opts.planId, opts.featureId, sessionDbId),
+    }),
   };
 }

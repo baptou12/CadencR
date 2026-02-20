@@ -90,7 +90,7 @@ export function startUnifiedAgent(config: UnifiedAgentConfig): UnifiedAgentResul
   const preGeneratedId = config.mcpServerFactory ? generateSubprocessId() : undefined;
 
   if (config.mcpServerFactory && preGeneratedId) {
-    mcpServers = config.mcpServerFactory(preGeneratedId);
+    mcpServers = config.mcpServerFactory(preGeneratedId, sessionDbId);
   }
 
   // 3a. Spawn subprocess
