@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ChevronRightIcon,
   CheckCircle2Icon,
@@ -51,6 +51,23 @@ function StepIcon({
   return <div className="size-4 rounded-full border border-muted-foreground/30" />;
 }
 
+function LogOutput({ log }: { log: string }) {
+  const ref = useRef<HTMLPreElement>(null);
+  useEffect(() => {
+    if (ref.current) {
+      ref.current.scrollTop = ref.current.scrollHeight;
+    }
+  }, [log]);
+  return (
+    <pre
+      ref={ref}
+      className="mt-1 max-h-40 overflow-auto rounded bg-muted/50 px-2 py-1.5 text-xs font-mono text-muted-foreground whitespace-pre-wrap"
+    >
+      {log}
+    </pre>
+  );
+}
+
 export function WorktreeSetupSection({
   featureId,
   projectId,
@@ -73,10 +90,9 @@ export function WorktreeSetupSection({
   const isError = step === "error";
   const isRunning = !!step && !isDone && !isError;
 
-  // Auto-collapse only when done with no log output; expand while running, on error, or when there's log output
-  const hasLog = !!log;
+  // Collapse by default when done; expand while running or on error
   const [userToggle, setUserToggle] = useState<boolean | null>(null);
-  const isOpen = userToggle ?? (isRunning || isError || hasLog);
+  const isOpen = userToggle ?? (isRunning || isError);
 
   // Don't render if setup hasn't started
   if (!step) return null;
@@ -177,9 +193,7 @@ export function WorktreeSetupSection({
                   )}
                 </div>
                 {s.showLog && log && (s.active || s.complete || s.error) && (
-                  <pre className="mt-1 max-h-40 overflow-auto rounded bg-muted/50 px-2 py-1.5 text-xs font-mono text-muted-foreground whitespace-pre-wrap">
-                    {log}
-                  </pre>
+                  <LogOutput log={log} />
                 )}
               </div>
             </div>
