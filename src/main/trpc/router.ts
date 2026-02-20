@@ -40,7 +40,7 @@ import { terminalRouter } from "./terminal";
 import { startUnifiedAgent } from "../agents/unified-agent";
 import { startPlanAgent } from "../agents/plan-agent";
 import { startBrainstormAgent } from "../agents/brainstorm-agent";
-import { startExecuteAgent, continueExecuteAgent } from "../agents/execute-agent";
+import { startExecuteAgent, continueExecuteAgent, buildPhaseCompletionAction } from "../agents/execute-agent";
 import { startRiskAgent } from "../agents/risk-agent";
 import { startReviewAgent, addFixPhase } from "../agents/review-agent";
 import { startSessionAgent } from "../agents/session-agent";
@@ -418,6 +418,12 @@ const agentsRouter = router({
         .prepare("SELECT run_id, phase_id FROM agent_sessions WHERE id = ?")
         .get(input.originalSessionDbId) as Pick<AgentSessionRow, "run_id" | "phase_id"> | undefined;
 
+      // When resuming an execute session tied to a phase, wire up the phase
+      // completion action so the phase status is synced when the agent finishes.
+      const completionActions = originalSession?.phase_id
+        ? [buildPhaseCompletionAction(originalSession.phase_id, input.featureId)]
+        : undefined;
+
       const result = startUnifiedAgent({
         agentType: input.agentType as AgentType,
         featureId: input.featureId,
@@ -428,6 +434,7 @@ const agentsRouter = router({
         runId: originalSession?.run_id ?? undefined,
         phaseId: originalSession?.phase_id ?? undefined,
         existingSessionDbId: input.originalSessionDbId,
+        completionActions,
         worktreePath,
       });
 

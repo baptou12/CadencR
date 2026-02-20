@@ -348,37 +348,12 @@ function executePhase(
     const prompt = buildEnrichedPrompt(phase, autonomyLevel);
 
     // Build completion actions for this phase
+    const phaseAction = buildPhaseCompletionAction(phase.id, options.featureId);
     const completionActions: CompletionAction[] = [
       {
-        event: "phase_complete",
-        handler: async (_output: string, context) => {
-          const db2 = getDatabase();
-
-          // Check if the session was interrupted — if so, don't update the
-          // phase status (it stays 'running' or whatever it was).
-          const session = db2.prepare("SELECT status FROM agent_sessions WHERE id = ?").get(context.sessionDbId) as { status: string } | undefined;
-          const wasInterrupted = session?.status === "paused";
-
-          if (wasInterrupted) {
-            // Reset phase from 'running' to 'pending' so it can be re-executed
-            db2.prepare("UPDATE phases SET status = 'pending' WHERE id = ? AND status = 'running'").run(phase.id);
-            notifyDbUpdated("phase", options.featureId);
-          } else if (context.exitCode === 0) {
-            // Parse implementation notes and deviations from agent output
-            const parsed = parsePhaseOutput(_output);
-            db2.prepare(
-              "UPDATE phases SET status = 'completed', implementation_notes = ?, deviations = ? WHERE id = ?",
-            ).run(parsed.implementationNotes, parsed.deviations, phase.id);
-            notifyDbUpdated("phase", options.featureId);
-
-            // Commits are handled by the agent subprocess itself (via prompt instructions)
-            // Level 1: agent asks user, commits if approved
-            // Level 2 & 3: agent auto-commits as part of its execution
-          } else {
-            db2.prepare("UPDATE phases SET status = 'error' WHERE id = ?").run(phase.id);
-            notifyDbUpdated("phase", options.featureId);
-          }
-
+        event: phaseAction.event,
+        handler: async (output, context) => {
+          await phaseAction.handler(output, context);
           resolve();
         },
       },
@@ -765,6 +740,37 @@ export function continueExecuteAgent(sessionDbId: number): { subprocessIds: stri
   })();
 
   return { subprocessIds: firstStepSubprocessIds };
+}
+
+/**
+ * Build a completion action that syncs phase status when an execute agent finishes.
+ * Used by both the normal dispatch path and the resume path (router.ts) so that
+ * resumed sessions correctly update their phase status.
+ */
+export function buildPhaseCompletionAction(phaseId: number, featureId: number): CompletionAction {
+  return {
+    event: "phase_complete",
+    handler: async (_output: string, context) => {
+      const db2 = getDatabase();
+
+      const session = db2.prepare("SELECT status FROM agent_sessions WHERE id = ?").get(context.sessionDbId) as { status: string } | undefined;
+      const wasInterrupted = session?.status === "paused";
+
+      if (wasInterrupted) {
+        db2.prepare("UPDATE phases SET status = 'pending' WHERE id = ? AND status = 'running'").run(phaseId);
+        notifyDbUpdated("phase", featureId);
+      } else if (context.exitCode === 0) {
+        const parsed = parsePhaseOutput(_output);
+        db2.prepare(
+          "UPDATE phases SET status = 'completed', implementation_notes = ?, deviations = ? WHERE id = ?",
+        ).run(parsed.implementationNotes, parsed.deviations, phaseId);
+        notifyDbUpdated("phase", featureId);
+      } else {
+        db2.prepare("UPDATE phases SET status = 'error' WHERE id = ?").run(phaseId);
+        notifyDbUpdated("phase", featureId);
+      }
+    },
+  };
 }
 
 /**
