@@ -399,18 +399,27 @@ const agentsRouter = router({
     .mutation(({ input }) => {
       const db = getDatabase();
 
-      // Session-type agents are always started with the project path as cwd
-      // (not the worktree), so we must resume with the same cwd.  Otherwise
-      // the Claude CLI looks for the session file under a different project
-      // directory and fails with "No conversation found".
+      // Resolve CWD to match the original session start path.
+      // Standalone session features use the project path; workflow session
+      // agents (within a feature) use the worktree — we must match this on
+      // resume or Claude CLI can't find the session file.
       let cwd: string;
       let worktreePath: string | undefined;
       if (input.agentType === "session") {
-        const project = db
-          .prepare("SELECT path FROM projects WHERE id = ?")
-          .get(input.projectId) as Pick<ProjectRow, "path"> | undefined;
-        if (!project?.path) throw new Error("Project path not found");
-        cwd = project.path;
+        const feature = db
+          .prepare("SELECT type FROM features WHERE id = ?")
+          .get(input.featureId) as { type: string } | undefined;
+        if (feature?.type === "feature") {
+          // Workflow session — was started with worktree CWD
+          ({ cwd, worktreePath } = resolveAgentCwd(input.featureId, input.projectId));
+        } else {
+          // Standalone session — was started with project path CWD
+          const project = db
+            .prepare("SELECT path FROM projects WHERE id = ?")
+            .get(input.projectId) as Pick<ProjectRow, "path"> | undefined;
+          if (!project?.path) throw new Error("Project path not found");
+          cwd = project.path;
+        }
       } else {
         ({ cwd, worktreePath } = resolveAgentCwd(input.featureId, input.projectId));
       }
@@ -567,6 +576,7 @@ const agentsRouter = router({
       z.object({
         featureId: z.number(),
         projectId: z.number(),
+        prompt: z.string().optional(),
       }),
     )
     .mutation(({ input }) => {
@@ -575,7 +585,7 @@ const agentsRouter = router({
       const result = startSessionAgent({
         featureId: input.featureId,
         projectId: input.projectId,
-        prompt: "You are Claude Code working on this feature. Wait for the user's instructions.",
+        prompt: input.prompt ?? "You are Claude Code working on this feature. Wait for the user's instructions.",
         cwd,
         worktreePath,
       });
@@ -871,7 +881,7 @@ const agentsRouter = router({
             maxMessageId,
             pendingQuestions,
             hasFileChanges: s.has_file_changes === 1,
-            resumable: s.status === "paused" && s.claude_session_id != null,
+            resumable: (s.status === "paused" || s.status === "completed" || s.status === "error") && s.claude_session_id != null,
             claudeSessionId: s.claude_session_id,
             runId: s.run_id,
             phaseId: s.phase_id,
