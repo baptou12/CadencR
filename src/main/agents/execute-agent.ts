@@ -283,8 +283,13 @@ function executeQaPhase(
           if (wasInterrupted) {
             transitionPhaseIf(db2, phase.id, "running", "pending", options.featureId);
           } else if (context.exitCode === 0) {
-            // Check if QA passed or failed
-            const isFail = /---QA_REPORT_START---[\s\S]*?##\s+Summary\s*\n\s*FAIL/i.test(output);
+            // Check if QA passed or failed by whether fix phases were created
+            const fixPhases = db2
+              .prepare(
+                "SELECT COUNT(*) as count FROM phases WHERE plan_id = (SELECT plan_id FROM phases WHERE id = ?) AND step_number > ? AND status IN ('pending', 'draft')",
+              )
+              .get(phase.id, phase.step_number) as { count: number };
+            const isFail = fixPhases.count > 0;
             transitionPhase(db2, phase.id, isFail ? "error" : "completed", options.featureId);
           } else {
             transitionPhase(db2, phase.id, "error", options.featureId);
@@ -443,12 +448,12 @@ function buildEnrichedPrompt(phase: PhaseRow, autonomyLevel: 1 | 2 | 3 = 3): str
   if (autonomyLevel === 1) {
     // Level 1: Ask user for approval, iterate if they request changes
     sections.push(
-      `## User Approval Required\n\nAfter outputting your implementation notes and deviations (the ---IMPLEMENTATION_NOTES_START--- block), you MUST ask the user for approval using AskUserQuestion:\n\n- Question: "Review complete. Approve changes and commit?"\n- Options: "Approve and commit", "Skip commit", "Request changes"\n\nIf the user selects "Request changes", they will provide feedback via the "Other" option. In that case:\n1. Read and address their feedback\n2. Make the necessary fixes\n3. Re-output the ---IMPLEMENTATION_NOTES_START--- block with updated notes and deviations\n4. Ask for approval again\n\nIf the user selects "Approve and commit":\n${commitInstructions}\n\nIf the user selects "Skip commit", do NOT commit.\n\nRepeat the approval loop until the user approves or skips. Only output ---AGENT_DONE--- after the user has approved or skipped.`,
+      `## User Approval Required\n\nAfter outputting your implementation notes and deviations, you MUST ask the user for approval using AskUserQuestion:\n\n- Question: "Review complete. Approve changes and commit?"\n- Options: "Approve and commit", "Skip commit", "Request changes"\n\nIf the user selects "Request changes", they will provide feedback via the "Other" option. In that case:\n1. Read and address their feedback\n2. Make the necessary fixes\n3. Re-output your updated implementation notes and deviations\n4. Ask for approval again\n\nIf the user selects "Approve and commit":\n${commitInstructions}\n\nIf the user selects "Skip commit", do NOT commit.\n\nRepeat the approval loop until the user approves or skips. Only call \`mark_agent_done\` after the user has approved or skipped.`,
     );
   } else {
     // Level 2 & 3: Auto-commit after implementation
     sections.push(
-      `## Auto-Commit\n\nAfter outputting your implementation notes and deviations (the ---IMPLEMENTATION_NOTES_START--- block), automatically commit your changes:\n${commitInstructions}\n\nThen output ---AGENT_DONE---.`,
+      `## Auto-Commit\n\nAfter completing your implementation, automatically commit your changes:\n${commitInstructions}\n\nThen call \`mark_agent_done\`.`,
     );
   }
 
