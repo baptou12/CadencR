@@ -17,6 +17,7 @@ import type { PhaseRow, PlanRow, SettingRow } from "../db/types";
 import { notifyDbUpdated } from "./ipc-bridge";
 import { startUnifiedAgent } from "./unified-agent";
 import { EXECUTE_SYSTEM_PROMPT, createQaConfig } from "./agent-configs";
+import { createExecuteMcpServer } from "./mcp-tools";
 import { broadcast, AGENT_EVENT_CHANNEL } from "./broadcast";
 import type { AgentEvent, UnifiedAgentConfig, CompletionAction } from "./types";
 
@@ -348,6 +349,8 @@ function executePhase(
       },
     ];
 
+    const mcpServer = createExecuteMcpServer(options.featureId);
+
     const config: UnifiedAgentConfig = {
       agentType: "execute",
       systemPrompt: EXECUTE_SYSTEM_PROMPT,
@@ -359,6 +362,7 @@ function executePhase(
       runId: options.sessionDbId,
       phaseId: phase.id,
       worktreePath: options.worktreePath,
+      mcpServers: { "productdevr-execute": mcpServer },
     };
 
     try {
@@ -440,7 +444,7 @@ function buildEnrichedPrompt(phase: PhaseRow, autonomyLevel: 1 | 2 | 3 = 3): str
 
   // Current phase body
   sections.push(
-    `## Current Phase: ${phase.title}\n\nExecute the following phase of the implementation plan:\n\n${phase.prompt}\n\nPlease implement all the tasks listed above. Focus only on this phase's scope.`,
+    `## Current Phase: ${phase.title}\n\nPhase ID: ${phase.id}\n\nExecute the following phase of the implementation plan:\n\n${phase.prompt}\n\nPlease implement all the tasks listed above. Focus only on this phase's scope.\n\nCall \`mark_phase_in_progress\` with phase_id=${phase.id} at the start, and \`mark_phase_done\` with phase_id=${phase.id} when complete.`,
   );
 
   // Add commit instructions based on autonomy level
@@ -740,52 +744,17 @@ export function buildPhaseCompletionAction(phaseId: number, featureId: number): 
       const wasInterrupted = session?.status === "paused";
 
       if (wasInterrupted) {
+        // Reset to pending if the agent was interrupted
         db2.prepare("UPDATE phases SET status = 'pending' WHERE id = ? AND status = 'running'").run(phaseId);
         notifyDbUpdated("phase", featureId);
-      } else if (context.exitCode === 0) {
-        const parsed = parsePhaseOutput(_output);
-        db2.prepare(
-          "UPDATE phases SET status = 'completed', implementation_notes = ?, deviations = ? WHERE id = ?",
-        ).run(parsed.implementationNotes, parsed.deviations, phaseId);
-        notifyDbUpdated("phase", featureId);
-      } else {
-        db2.prepare("UPDATE phases SET status = 'error' WHERE id = ?").run(phaseId);
+      } else if (context.exitCode !== 0) {
+        // Agent errored out — mark phase as error (the agent may not have called mark_phase_done)
+        db2.prepare("UPDATE phases SET status = 'error' WHERE id = ? AND status = 'running'").run(phaseId);
         notifyDbUpdated("phase", featureId);
       }
+      // If exitCode === 0, the agent should have already called mark_phase_done via MCP tool.
+      // If it didn't, the phase stays as 'running' which is a signal something went wrong.
     },
   };
 }
 
-/**
- * Parse implementation notes and deviations from the agent's accumulated output.
- * Looks for content between ---IMPLEMENTATION_NOTES_START--- and ---IMPLEMENTATION_NOTES_END--- delimiters,
- * then extracts ## Implementation Notes and ## Deviations sections.
- */
-function parsePhaseOutput(output: string): {
-  implementationNotes: string | null;
-  deviations: string | null;
-} {
-  const startDelim = "---IMPLEMENTATION_NOTES_START---";
-  const endDelim = "---IMPLEMENTATION_NOTES_END---";
-
-  const startIdx = output.lastIndexOf(startDelim);
-  if (startIdx === -1) {
-    return { implementationNotes: null, deviations: null };
-  }
-
-  const endIdx = output.indexOf(endDelim, startIdx);
-  const block = endIdx === -1
-    ? output.slice(startIdx + startDelim.length)
-    : output.slice(startIdx + startDelim.length, endIdx);
-
-  const extractSection = (heading: string): string | null => {
-    const pattern = new RegExp(`## ${heading}\\s*\\n([\\s\\S]*?)(?=\\n## |$)`);
-    const match = block.match(pattern);
-    return match ? match[1].trim() || null : null;
-  };
-
-  return {
-    implementationNotes: extractSection("Implementation Notes"),
-    deviations: extractSection("Deviations"),
-  };
-}

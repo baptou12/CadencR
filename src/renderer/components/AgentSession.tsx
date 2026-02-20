@@ -171,6 +171,8 @@ export interface AgentSessionProps {
   onPermissionModeToggle?: () => void;
   /** Pending plan approval from ExitPlanMode tool call */
   pendingPlanApproval?: { allowedPrompts?: Array<{ tool: string; prompt: string }> } | null;
+  /** Label for the approve button */
+  planApproveLabel?: string;
   /** Called when user approves the plan */
   onPlanApprove?: () => void;
   /** Called when user requests changes to the plan */
@@ -251,6 +253,7 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
   permissionMode,
   onPermissionModeToggle,
   pendingPlanApproval,
+  planApproveLabel,
   onPlanApprove,
   onPlanRequestChanges,
   contextUsage,
@@ -466,6 +469,7 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
       permissionMode={permissionMode}
       onPermissionModeToggle={onPermissionModeToggle}
       pendingPlanApproval={pendingPlanApproval}
+      planApproveLabel={planApproveLabel}
       onPlanApprove={onPlanApprove}
       onPlanRequestChanges={onPlanRequestChanges}
       onCycleModel={onModelChange ? handleCycleModel : undefined}

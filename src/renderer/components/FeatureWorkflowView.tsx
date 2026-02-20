@@ -69,6 +69,9 @@ export function FeatureWorkflowView({
   // --- Maximized agent state ---
   const [maximizedAgent, setMaximizedAgent] = useState<string | null>(null);
 
+  // --- Plan approval (for MCP show_plan) ---
+  const submitPlanApprovalMutation = trpc.agents.submitPlanApproval.useMutation();
+
   // --- Inline diff viewer modal state ---
   const [inlineDiffOpen, setInlineDiffOpen] = useState(false);
   const handleViewDiff = useCallback(() => setInlineDiffOpen(true), []);
@@ -493,6 +496,10 @@ export function FeatureWorkflowView({
                       subprocessId={entry.subprocessId ?? undefined}
                       pendingPermission={entry.pendingPermission}
                       onPermissionDecision={(decision, feedback) => handlePermissionDecision(entry, decision, feedback)}
+                      pendingPlanApproval={entry.pendingPlanApproval}
+                      planApproveLabel="Approve"
+                      onPlanApprove={entry.subprocessId ? () => submitPlanApprovalMutation.mutate({ subprocessId: entry.subprocessId!, approved: true }) : undefined}
+                      onPlanRequestChanges={entry.subprocessId ? (feedback: string) => submitPlanApprovalMutation.mutate({ subprocessId: entry.subprocessId!, approved: false, feedback }) : undefined}
                       className={isGridItem ? "min-h-0 h-full overflow-hidden" : undefined}
                     />
                   );

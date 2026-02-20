@@ -32,6 +32,10 @@ export interface SubprocessOptions {
   permissionMode?: "acceptEdits" | "plan";
   /** Worktree path for permission resolution (auto-allow tools inside this directory) */
   worktreePath?: string;
+  /** MCP servers to inject into the agent */
+  mcpServers?: Record<string, import("@anthropic-ai/claude-agent-sdk").McpServerConfig>;
+  /** Pre-generated subprocess ID (used when MCP server factory needs the ID before spawn) */
+  id?: string;
 }
 
 
@@ -71,6 +75,24 @@ let idCounter = 0;
 function generateId(): string {
   idCounter += 1;
   return `agent-${Date.now()}-${idCounter}`;
+}
+
+/** Pre-generate a subprocess ID for use before startSubprocess is called. */
+export function generateSubprocessId(): string {
+  return generateId();
+}
+
+/** Persist session status to DB (best-effort). Used on completed/stopped/error transitions. */
+function persistSessionStatus(managedId: string, status: string, sdkSessionId?: string): void {
+  const dbId = getSessionDbId(managedId);
+  if (!dbId) return;
+  try {
+    const db = getDatabase();
+    db.prepare("UPDATE agent_sessions SET status = ?, ended_at = datetime('now') WHERE id = ?").run(status, dbId);
+    if (sdkSessionId) persistClaudeSessionId(dbId, sdkSessionId);
+  } catch (e) {
+    console.warn("[subprocess-manager] Failed to persist session status:", e);
+  }
 }
 
 /**
@@ -140,7 +162,7 @@ function handleSdkMessage(
           const db2 = getDatabase();
           db2.prepare("UPDATE agent_sessions SET input_tokens = ?, output_tokens = ? WHERE id = ?")
             .run(totalInput, totalOutput, sessionDbId);
-        } catch { /* best-effort */ }
+        } catch (e) { console.warn("[subprocess-manager] best-effort op failed:", e); }
 
         // Broadcast usage to renderer for live updates
         broadcastEvent(id, agentType, {
@@ -180,7 +202,7 @@ function handleSdkMessage(
                 db2.prepare("UPDATE agent_sessions SET permission_mode = 'plan' WHERE id = ?").run(sessionDbId);
                 const row = db2.prepare("SELECT feature_id FROM agent_sessions WHERE id = ?").get(sessionDbId) as { feature_id: number } | undefined;
                 if (row) notifyDbUpdated("agent_session", row.feature_id);
-              } catch { /* best-effort */ }
+              } catch (e) { console.warn("[subprocess-manager] best-effort op failed:", e); }
             }
 
             const event: StreamEvent = {
@@ -282,7 +304,7 @@ function handleSdkMessage(
       try {
         const db2 = getDatabase();
         db2.prepare("UPDATE agent_sessions SET was_compacted = 1 WHERE id = ?").run(sessionDbId);
-      } catch { /* best-effort */ }
+      } catch (e) { console.warn("[subprocess-manager] best-effort op failed:", e); }
     }
     broadcastEvent(
       id,
@@ -309,7 +331,7 @@ export function startSubprocess(options: SubprocessOptions): ManagedSubprocess {
     );
   }
 
-  const id = generateId();
+  const id = options.id ?? generateId();
   const abortController = new AbortController();
 
   const managed: ManagedSubprocess = {
@@ -474,6 +496,10 @@ async function runSdkQuery(
     queryOptions.allowedTools = options.allowedTools;
   }
 
+  if (options.mcpServers) {
+    queryOptions.mcpServers = options.mcpServers;
+  }
+
   if (managed.abortController) {
     queryOptions.abortController = managed.abortController;
   }
@@ -561,7 +587,7 @@ async function runSdkQuery(
             featureIdForNotify = row.feature_id;
             notifyDbUpdated("agent_session", row.feature_id);
           }
-        } catch { /* best-effort */ }
+        } catch (e) { console.warn("[subprocess-manager] best-effort op failed:", e); }
       }
 
       try {
@@ -574,7 +600,7 @@ async function runSdkQuery(
             const db2 = getDatabase();
             db2.prepare("UPDATE agent_sessions SET pending_questions = NULL WHERE id = ?").run(sDbId);
             if (featureIdForNotify) notifyDbUpdated("agent_session", featureIdForNotify);
-          } catch { /* best-effort */ }
+          } catch (e) { console.warn("[subprocess-manager] best-effort op failed:", e); }
         }
 
         // Return the answers in the format expected by Claude
@@ -596,7 +622,7 @@ async function runSdkQuery(
             const db2 = getDatabase();
             db2.prepare("UPDATE agent_sessions SET pending_questions = NULL WHERE id = ?").run(sDbId);
             if (featureIdForNotify) notifyDbUpdated("agent_session", featureIdForNotify);
-          } catch { /* best-effort */ }
+          } catch (e) { console.warn("[subprocess-manager] best-effort op failed:", e); }
         }
         return {
           behavior: "allow" as const,
@@ -622,7 +648,7 @@ async function runSdkQuery(
             featureIdForNotify = row.feature_id;
             notifyDbUpdated("agent_session", row.feature_id);
           }
-        } catch { /* best-effort */ }
+        } catch (e) { console.warn("[subprocess-manager] best-effort op failed:", e); }
       }
 
       try {
@@ -658,7 +684,7 @@ async function runSdkQuery(
               db2.prepare("UPDATE agent_sessions SET permission_mode = 'acceptEdits', pending_plan_approval = NULL WHERE id = ?")
                 .run(sDbId);
               if (featureIdForNotify) notifyDbUpdated("agent_session", featureIdForNotify);
-            } catch { /* best-effort */ }
+            } catch (e) { console.warn("[subprocess-manager] best-effort op failed:", e); }
           }
           return { behavior: "allow" as const, updatedInput: input };
         } else {
@@ -668,7 +694,7 @@ async function runSdkQuery(
               const db2 = getDatabase();
               db2.prepare("UPDATE agent_sessions SET pending_plan_approval = NULL WHERE id = ?").run(sDbId);
               if (featureIdForNotify) notifyDbUpdated("agent_session", featureIdForNotify);
-            } catch { /* best-effort */ }
+            } catch (e) { console.warn("[subprocess-manager] best-effort op failed:", e); }
           }
           return {
             behavior: "deny" as const,
@@ -682,7 +708,7 @@ async function runSdkQuery(
             const db2 = getDatabase();
             db2.prepare("UPDATE agent_sessions SET pending_plan_approval = NULL WHERE id = ?").run(sDbId);
             if (featureIdForNotify) notifyDbUpdated("agent_session", featureIdForNotify);
-          } catch { /* best-effort */ }
+          } catch (e) { console.warn("[subprocess-manager] best-effort op failed:", e); }
         }
         console.error("[subprocess-manager] Plan approval failed:", error);
         return { behavior: "allow" as const, updatedInput: input };
@@ -719,6 +745,7 @@ async function runSdkQuery(
 
     if (managed.status === "running") {
       managed.status = "completed";
+      persistSessionStatus(managed.id, "completed", managed.sdkSessionId);
       for (const listener of managed.completionListeners) listener(0);
       broadcastEvent(managed.id, managed.agentType, {
         type: "agent_done",
@@ -733,6 +760,7 @@ async function runSdkQuery(
         type: "agent_paused",
       });
     } else if (managed.status === "stopped") {
+      persistSessionStatus(managed.id, "completed", managed.sdkSessionId);
       for (const listener of managed.completionListeners) listener(1);
       broadcastEvent(managed.id, managed.agentType, {
         type: "agent_done",
@@ -764,10 +792,14 @@ async function runSdkQuery(
             persistClaudeSessionId(sDbId, managed.resumingFromSessionId);
             db.prepare("UPDATE agent_sessions SET status = 'paused', ended_at = datetime('now'), subprocess_id = NULL WHERE id = ?").run(sDbId);
             console.log(`[subprocess-manager] Restored session ${sDbId} to paused with original session ID ${managed.resumingFromSessionId}`);
-          } catch { /* best-effort */ }
+          } catch (e) { console.warn("[subprocess-manager] best-effort op failed:", e); }
         }
       }
       managed.status = "error";
+      // Persist error status to DB
+      if (!managed.resumingFromSessionId) {
+        persistSessionStatus(managed.id, "error");
+      }
       const rawMessage = err instanceof Error ? err.message : String(err);
       const errorMessage = managed.resumingFromSessionId
         ? `Failed to resume session: ${rawMessage}. The session may have expired. You can try again or start a new session.`
@@ -1008,7 +1040,7 @@ async function requestToolPermission(
         featureIdForNotify = row.feature_id;
         notifyDbUpdated("agent_session", row.feature_id);
       }
-    } catch { /* best-effort */ }
+    } catch (e) { console.warn("[subprocess-manager] best-effort op failed:", e); }
   }
 
   try {
@@ -1039,7 +1071,7 @@ async function requestToolPermission(
         const db2 = getDatabase();
         db2.prepare("UPDATE agent_sessions SET pending_permission = NULL WHERE id = ?").run(sDbId);
         if (featureIdForNotify) notifyDbUpdated("agent_session", featureIdForNotify);
-      } catch { /* best-effort */ }
+      } catch (e) { console.warn("[subprocess-manager] best-effort op failed:", e); }
     }
 
     return result;
@@ -1050,7 +1082,7 @@ async function requestToolPermission(
         const db2 = getDatabase();
         db2.prepare("UPDATE agent_sessions SET pending_permission = NULL WHERE id = ?").run(sDbId);
         if (featureIdForNotify) notifyDbUpdated("agent_session", featureIdForNotify);
-      } catch { /* best-effort */ }
+      } catch (e) { console.warn("[subprocess-manager] best-effort op failed:", e); }
     }
     throw error;
   }
@@ -1170,6 +1202,107 @@ export function submitPlanApproval(
   }
 
   questionEmitter.emit(`plan-approval:${subprocessId}`, { approved, feedback });
+}
+
+// ---------------------------------------------------------------------------
+// Plan approval helper (used by MCP show_plan tool)
+// ---------------------------------------------------------------------------
+
+/**
+ * Block until the user approves or rejects a plan.
+ * Sets `pending_plan_approval` in the DB to trigger the approval UI,
+ * waits for the user response via questionEmitter, and cleans up.
+ *
+ * Returns `{ approved, feedback }`. Throws on timeout.
+ */
+export async function waitForPlanApproval(
+  subprocessId: string,
+  planMarkdown: string,
+): Promise<{ approved: boolean; feedback?: string }> {
+  const managed = activeProcesses.get(subprocessId);
+  const sDbId = getSessionDbId(subprocessId);
+  let featureIdForNotify: number | null = null;
+
+  // 1. Emit a synthetic tool_call block so the plan renders in the message list.
+  //    MCP tools are invisible to the SDK stream — we must create the block ourselves.
+  const syntheticToolUseId = `show_plan_${Date.now()}`;
+  const toolArgs = JSON.stringify({ plan: planMarkdown });
+  const toolName = "mcp__productdevr-plan__show_plan";
+
+  if (sDbId) {
+    try {
+      const db2 = getDatabase();
+      // Persist to agent_messages so the block survives page reloads
+      const result = db2.prepare(
+        "INSERT INTO agent_messages (session_id, role, content, message_type, tool_name, tool_use_id) VALUES (?, ?, ?, ?, ?, ?)",
+      ).run(sDbId, "assistant", toolArgs, "tool_call", toolName, syntheticToolUseId);
+      const msgDbId = Number(result.lastInsertRowid);
+
+      // Broadcast a synthetic content_block_start so the live UI picks it up
+      if (managed) {
+        broadcastEvent(subprocessId, managed.agentType, {
+          type: "content_block_start",
+          index: 0,
+          content_block: {
+            type: "tool_use",
+            id: syntheticToolUseId,
+            name: toolName,
+            input: { plan: planMarkdown },
+          },
+        } as StreamEvent, null, msgDbId);
+      }
+    } catch (err) {
+      console.error("[subprocess-manager] Failed to emit synthetic show_plan block:", err);
+    }
+  }
+
+  // 2. Set pending_plan_approval in DB to trigger the approval bar UI
+  if (sDbId) {
+    try {
+      const db2 = getDatabase();
+      db2.prepare("UPDATE agent_sessions SET pending_plan_approval = ? WHERE id = ?")
+        .run(JSON.stringify({ plan: planMarkdown }), sDbId);
+      const row = db2.prepare("SELECT feature_id FROM agent_sessions WHERE id = ?").get(sDbId) as { feature_id: number } | undefined;
+      if (row) {
+        featureIdForNotify = row.feature_id;
+        notifyDbUpdated("agent_session", row.feature_id);
+      }
+    } catch (e) { console.warn("[subprocess-manager] best-effort op failed:", e); }
+  }
+
+  // 3. Wait for user response
+  const cleanup = () => {
+    if (sDbId) {
+      try {
+        const db2 = getDatabase();
+        db2.prepare("UPDATE agent_sessions SET pending_plan_approval = NULL WHERE id = ?").run(sDbId);
+        if (featureIdForNotify) notifyDbUpdated("agent_session", featureIdForNotify);
+      } catch (e) { console.warn("[subprocess-manager] best-effort op failed:", e); }
+    }
+  };
+
+  try {
+    const result = await new Promise<{ approved: boolean; feedback?: string }>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        questionEmitter.removeAllListeners(`plan-approval:${subprocessId}`);
+        reject(new Error("Plan approval timeout (15m)"));
+      }, 15 * 60 * 1000);
+
+      questionEmitter.once(
+        `plan-approval:${subprocessId}`,
+        (response: { approved: boolean; feedback?: string }) => {
+          clearTimeout(timeout);
+          resolve(response);
+        },
+      );
+    });
+
+    cleanup();
+    return result;
+  } catch (error) {
+    cleanup();
+    throw error;
+  }
 }
 
 // ---------------------------------------------------------------------------

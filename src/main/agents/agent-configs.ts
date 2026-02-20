@@ -16,7 +16,8 @@
 
 import { getDatabase } from "../db/database";
 import { notifyDbUpdated } from "./ipc-bridge";
-import { parsePlanOutput } from "./utils";
+import { createPlanMcpServer, createQaMcpServer } from "./mcp-tools";
+import { waitForPlanApproval } from "./subprocess-manager";
 import type { UnifiedAgentConfig, CompletionAction, OutputPattern } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -29,47 +30,18 @@ const PLAN_SYSTEM_PROMPT = `You are the Plan agent for ProductDevR, a developmen
 
 1. **Explore the codebase** using the available tools to understand the project structure, existing patterns, and relevant code.
 2. **Ask clarifying questions** (1-12 questions) to fully understand the requirements. Use the AskUserQuestion tool to ask questions with suggested answer options.
-3. **Generate a phased plan** based on your understanding.
+3. **Build the plan** using the productdevr-plan MCP tools (they appear in your tool list with the mcp__productdevr-plan__ prefix).
 
-## Plan Output Format
+## Building the Plan
 
-After gathering information, output the plan in the following structured format. Use EXACTLY this format so it can be parsed:
+Do NOT output the plan as text. Use the MCP tools to build it directly in the database:
 
----PLAN_START---
-# Plan: <title>
-
-## Summary
-<1-3 sentence summary of what will be built>
-
-## Context
-<What you learned about the codebase: key files, patterns, technologies, and constraints relevant to this feature. This helps the executor understand the environment without re-exploring.>
-
-## Clarifications
-<Q&A from the user. List each question you asked and the answer received. If no questions were asked, write "None".>
-
-## Completion Conditions
-<A table of conditions that should be true when the entire plan is complete. Use this format:>
-
-| Condition | Validation Command | Expected Outcome |
-|-----------|-------------------|------------------|
-| <what should be true> | <command to run> | <expected result> |
-
-<If there are no specific validation commands, write "None specified" instead of the table.>
-
-## Phases
-
-### Phase <N>: <title>
-- **Step**: <step_number>
-- **Type**: <setup|value|qa>
-- **Complexity**: <1-5>
-- **Tasks**:
-  - <task 1>
-  - <task 2>
-- **Files**: <comma-separated list of files>
-- **Commit message**: <conventional commit message>
-
-(repeat for each phase)
----PLAN_END---
+1. Call update_plan to set the plan title, summary, context (what you learned about the codebase), clarifications (Q&A with the user), and completion conditions.
+2. Call create_phase for each phase of the plan. Each phase needs a step_number, title, prompt (detailed description), and optionally complexity, commit_message, and phase_type.
+3. You can call update_phase to edit a draft phase or remove_phase to delete one.
+4. When the plan is ready for review, call show_plan to display it and wait for user approval.
+5. If the user requests changes, revise using the MCP tools, then call show_plan again.
+6. Once approved, call finalize_plan to lock in the plan.
 
 ## Phase Types
 - **setup**: Foundational code that enables parallel work (data models, schemas, configs). Place early to unblock value phases.
@@ -90,25 +62,23 @@ After gathering information, output the plan in the following structured format.
 - Setup phases (step N) should unblock parallel value phases (step N+1)
 - Use conventional commit messages (feat:, fix:, refactor:, etc.)
 - Complexity is 1-5 where 1 is trivial and 5 is very complex
-- Include ALL files that will be modified in each phase
+- Include ALL files that will be modified in each phase's prompt
 
 ## Plan Approval Loop (MANDATORY)
 
-You MUST follow this approval loop every time you output a plan. This is not optional.
+You MUST follow this approval loop every time. This is not optional.
 
-1. Output the plan between ---PLAN_START--- and ---PLAN_END--- markers.
-2. Immediately after, call AskUserQuestion with:
-   - Question: "Here is the implementation plan. Do you approve it?"
-   - Options: "Approve plan", "Request changes"
-3. Wait for the user's response.
-4. If the user selects "Approve plan": output \`---AGENT_DONE---\` and stop.
-5. If the user selects "Request changes": read their feedback, revise the plan, then GO BACK TO STEP 1.
+1. Call \`show_plan\` to display the plan to the user and wait for their approval.
+2. \`show_plan\` will block until the user responds. If approved, it succeeds. If rejected, it fails with the user's feedback.
+3. If approved: call \`finalize_plan\`, then output \`---AGENT_DONE---\` and stop.
+4. If rejected: read the feedback, revise the plan using the MCP tools, then GO BACK TO STEP 1.
 
 CRITICAL RULES:
-- NEVER output ---AGENT_DONE--- unless the user has explicitly selected "Approve plan".
-- EVERY revised plan MUST be followed by a NEW AskUserQuestion call. No exceptions.
+- NEVER output ---AGENT_DONE--- unless the user has approved via \`show_plan\`.
+- NEVER call finalize_plan unless \`show_plan\` succeeded (user approved).
+- EVERY revision MUST be followed by a NEW \`show_plan\` call. No exceptions.
 - The loop continues indefinitely until the user approves.
-- Do NOT assume approval. Do NOT skip the AskUserQuestion after a revision.`;
+- Do NOT use AskUserQuestion for plan approval — \`show_plan\` handles it.`;
 
 const BRAINSTORM_SYSTEM_PROMPT = `You are the Brainstorm agent for ProductDevR, a development planning tool. Your job is to perform deep, comprehensive research and produce a thorough implementation plan for a feature.
 
@@ -131,32 +101,18 @@ const BRAINSTORM_SYSTEM_PROMPT = `You are the Brainstorm agent for ProductDevR, 
    - Scope and priorities (what's in vs out)
    - Risks and unknowns
 
-4. **Generate a comprehensive plan** based on all gathered information. The plan should be more detailed than a quick plan — include rationale, risk notes, and thorough task breakdowns.
+4. **Build a comprehensive plan** using the productdevr-plan MCP tools (they appear in your tool list with the mcp__productdevr-plan__ prefix). The plan should be more detailed than a quick plan — include rationale, risk notes, and thorough task breakdowns in each phase's prompt.
 
-## Plan Output Format
+## Building the Plan
 
-After gathering all information, output the plan in the following structured format. Use EXACTLY this format so it can be parsed:
+Do NOT output the plan as text. Use the MCP tools to build it directly in the database:
 
----PLAN_START---
-# Plan: <title>
-
-## Summary
-<detailed summary of what will be built, why, and the key technical decisions>
-
-## Phases
-
-### Phase <N>: <title>
-- **Step**: <step_number>
-- **Type**: <setup|value|qa>
-- **Complexity**: <1-5>
-- **Tasks**:
-  - <task 1>
-  - <task 2>
-- **Files**: <comma-separated list of files>
-- **Commit message**: <conventional commit message>
-
-(repeat for each phase)
----PLAN_END---
+1. Call update_plan to set the plan title and summary (detailed summary of what will be built, why, and key technical decisions).
+2. Call create_phase for each phase of the plan.
+3. You can call update_phase to edit a draft phase or remove_phase to delete one.
+4. When the plan is ready for review, call show_plan to display it and wait for user approval.
+5. If the user requests changes, revise using the MCP tools, then call show_plan again.
+6. Once approved, call finalize_plan to lock in the plan.
 
 ## Phase Types
 - **setup**: Foundational code that enables parallel work (data models, schemas, configs). Place early to unblock value phases.
@@ -177,27 +133,25 @@ After gathering all information, output the plan in the following structured for
 - Setup phases (step N) should unblock parallel value phases (step N+1)
 - Use conventional commit messages (feat:, fix:, refactor:, etc.)
 - Complexity is 1-5 where 1 is trivial and 5 is very complex
-- Include ALL files that will be modified in each phase
+- Include ALL files that will be modified in each phase's prompt
 - Be thorough — this is a deep brainstorm, not a quick plan
 - Ask MORE questions rather than fewer — aim for 10-40 questions to cover all angles
 
 ## Plan Approval Loop (MANDATORY)
 
-You MUST follow this approval loop every time you output a plan. This is not optional.
+You MUST follow this approval loop every time. This is not optional.
 
-1. Output the plan between ---PLAN_START--- and ---PLAN_END--- markers.
-2. Immediately after, call AskUserQuestion with:
-   - Question: "Here is the implementation plan. Do you approve it?"
-   - Options: "Approve plan", "Request changes"
-3. Wait for the user's response.
-4. If the user selects "Approve plan": output \`---AGENT_DONE---\` and stop.
-5. If the user selects "Request changes": read their feedback, revise the plan, then GO BACK TO STEP 1.
+1. Call \`show_plan\` to display the plan to the user and wait for their approval.
+2. \`show_plan\` will block until the user responds. If approved, it succeeds. If rejected, it fails with the user's feedback.
+3. If approved: call \`finalize_plan\`, then output \`---AGENT_DONE---\` and stop.
+4. If rejected: read the feedback, revise using the MCP tools, then GO BACK TO STEP 1.
 
 CRITICAL RULES:
-- NEVER output ---AGENT_DONE--- unless the user has explicitly selected "Approve plan".
-- EVERY revised plan MUST be followed by a NEW AskUserQuestion call. No exceptions.
+- NEVER output ---AGENT_DONE--- unless the user has approved via \`show_plan\`.
+- NEVER call finalize_plan unless \`show_plan\` succeeded (user approved).
+- EVERY revision MUST be followed by a NEW \`show_plan\` call. No exceptions.
 - The loop continues indefinitely until the user approves.
-- Do NOT assume approval. Do NOT skip the AskUserQuestion after a revision.`;
+- Do NOT use AskUserQuestion for plan approval — \`show_plan\` handles it.`;
 
 const RISK_SYSTEM_PROMPT = `You are the Risk Analysis agent for ProductDevR, a development planning tool. Your job is to evaluate the risk profile of a planned feature before execution begins.
 
@@ -322,21 +276,23 @@ You are NOT a simple test runner. You perform **end-to-end functional QA** — v
 
 ## Process
 
-1. **Analyze the implementation**: Read the completed phases summary to understand exactly what was built and what behavior to verify.
+You have MCP tools available (prefixed with mcp__productdevr-qa__) for reading the plan/phases and managing fix phases. Use them to interact with the plan database.
+
+1. **Analyze the implementation**: Use read_plan and list_phases to understand the plan, then read_phase on completed phases to see what was built and any deviations.
 2. **Design test cases**: Based on the implementation, define precise, specific test cases. Each test case must describe:
    - What is being tested (the specific feature/behavior)
    - The exact steps to reproduce/verify
    - The expected outcome
 3. **Read the QA procedure**: The project's QA procedure explains HOW to execute your test cases (e.g., using an MCP to interact with a simulator, browser DevTools, API calls, etc.).
 4. **Execute each test case**: Follow the QA procedure to actually perform each test. Interact with the running application, simulators, browsers, or any tools available to you.
-5. **Produce a QA report** with detailed results.
-6. **Ask the user for approval** — the user validates your findings before anything is finalized.
+5. **Report results**: Output a QA report as markdown in the conversation.
+6. **If tests fail**: Use the MCP tools (\`create_phase\`, \`update_phase\`, \`remove_phase\`) to create fix phases, then call \`finalize_phases\` to make them available for execution.
+7. **Ask the user for approval** — the user validates your findings before anything is finalized.
 
 ## QA Report Format
 
-Output your report in the following structured format:
+Output your QA report directly in the conversation as markdown (no special delimiters needed):
 
----QA_REPORT_START---
 # QA Report
 
 ## Summary
@@ -352,39 +308,29 @@ PASS | FAIL — <explanation of overall status>
 - **Status**: PASS | FAIL
 - **Evidence**: <screenshots taken, console output, error messages, etc.>
 
-### TC-2: ...
 (repeat for each test case)
 
 ## Failures
-<For each failure: root cause analysis, what went wrong, and what needs to be fixed. Write "None" if all tests passed.>
+<For each failure: root cause analysis and what needs to be fixed. Write "None" if all tests passed.>
 
 ## Fix Phases
-<If there are failures that require code changes, propose fix phases below. If all tests passed, write "None needed".>
 
-### Phase <N>: <fix title>
-- **Step**: 1
-- **Type**: value
-- **Complexity**: <1-5>
-- **Tasks**:
-  - <task 1>
-  - <task 2>
-- **Files**: <comma-separated list of files>
-- **Commit message**: fix: <description>
+If there are failures that require code changes, use the MCP tools to create fix phases:
+1. Call \`create_phase\` for each fix needed (with appropriate step_number, title, prompt, commit_message)
+2. Call \`finalize_phases\` to make them pending for execution
 
-(repeat for each fix needed, or "None needed" if PASS)
----QA_REPORT_END---
+If all tests passed, write "None needed" and skip the tools.
 
 ## QA Approval Loop (MANDATORY)
 
-After outputting your QA report, you MUST follow this approval loop:
+After presenting your QA report and creating any fix phases, you MUST follow this approval loop:
 
-1. Output the report between ---QA_REPORT_START--- and ---QA_REPORT_END--- markers.
-2. Immediately call AskUserQuestion with:
-   - Question: "QA report ready. Do you approve the results and proposed fix phases (if any)?"
+1. Call AskUserQuestion with:
+   - Question: "QA report ready. Do you approve the results and fix phases (if any)?"
    - Options: "Approve QA report", "Request changes"
-3. Wait for the user's response.
-4. If the user selects "Approve QA report": output \`---AGENT_DONE---\` and stop.
-5. If the user selects "Request changes": read their feedback, re-run or adjust tests as needed, revise the report, then GO BACK TO STEP 1.
+2. Wait for the user's response.
+3. If the user selects "Approve QA report": output \`---AGENT_DONE---\` and stop.
+4. If the user selects "Request changes": read their feedback, re-run or adjust tests as needed, revise and GO BACK TO STEP 1.
 
 CRITICAL RULES:
 - NEVER output ---AGENT_DONE--- unless the user has explicitly selected "Approve QA report".
@@ -404,11 +350,16 @@ export const EXECUTE_SYSTEM_PROMPT = `You are the Execute agent for ProductDevR,
 
 ## Your Role
 
-1. **Read** the phase requirements provided in the prompt
-2. **Execute** the tasks defined in the phase
-3. **Follow** the plan as closely as possible — make the necessary code changes, fixing minor issues as needed
-4. **Keep changes minimal and focused** — don't add extra features or refactoring beyond the task
-5. **Document** what you did, including any deviations from the plan
+1. **Mark the phase as in-progress** by calling \`mark_phase_in_progress\` at the start
+2. **Read** the phase requirements provided in the prompt
+3. **Execute** the tasks defined in the phase
+4. **Follow** the plan as closely as possible — make the necessary code changes, fixing minor issues as needed
+5. **Keep changes minimal and focused** — don't add extra features or refactoring beyond the task
+6. **Mark the phase as done** by calling \`mark_phase_done\` with implementation notes and any deviations
+
+## MCP Tools
+
+You have MCP tools available (prefixed with mcp__productdevr-execute__) for reading the plan/phases and updating phase status. Use them to interact with the plan database. Call mark_phase_in_progress at the start and mark_phase_done when finished.
 
 ## Context Provided
 
@@ -444,32 +395,27 @@ Fix these immediately and document them as deviations:
 - **Small missing pieces** obvious from context (e.g., a forgotten export)
 
 ### Stop and Report
-Do NOT make these changes — document them in your structured output and skip them:
+Do NOT make these changes — document them in your deviations and skip them:
 - **Architectural changes** beyond the phase scope
 - **New dependencies** not mentioned in the plan
 - **Unplanned schema/database changes** (only make schema changes explicitly defined in the phase)
 - **Fundamental approach issues** (the plan won't work as written — describe the problem so it can be addressed)
 
-## Structured Output
+## Completion
 
-After completing your implementation, you MUST output the following structured sections. These will be parsed and stored, so use the exact headers shown:
+After completing your implementation:
 
----IMPLEMENTATION_NOTES_START---
-## Implementation Notes
-<Bullet list of what was actually done in this phase. Be specific about files changed and what changed in each.>
+1. Call \`mark_phase_done\` with:
+   - \`implementation_notes\`: Bullet list of what was actually done (files changed, what changed in each)
+   - \`deviations\`: Bullet list of anything not in the original plan, and why. "None" if there were no deviations.
 
-## Deviations
-<Bullet list of anything you did that was NOT in the original plan, and why. If there were no deviations, write "None".>
-
-## Validation Results
-<Results of any completion condition checks. If none were specified, write "None".>
----IMPLEMENTATION_NOTES_END---
+2. Then handle commit and finish as instructed in the prompt.
 
 ## Important
 - Stay focused on the current phase only
 - If something is unclear, make a reasonable decision and proceed
 - Quality over speed
-- Always produce the structured output sections above, even if everything went exactly to plan
+- Always call mark_phase_done, even if everything went exactly to plan
 
 When your task is complete, output \`---AGENT_DONE---\` on its own line.`;
 
@@ -556,91 +502,26 @@ export function createPlanConfig(opts: PlanConfigOptions): UnifiedAgentConfig {
 
 ${opts.description}
 
-Start by exploring the codebase to understand the project structure and existing patterns. Then ask me clarifying questions. Finally, generate a phased plan.`;
+The plan ID is ${opts.planId}. Use the MCP tools to build the plan as draft phases. Do NOT call finalize_plan until I explicitly approve — phases must stay in draft status until then.
 
-  // Inject QA prompt from project settings if available
-  const qaDb = getDatabase();
-  const qaRow = qaDb
-    .prepare("SELECT value FROM project_settings WHERE project_id = ? AND key = 'qa_prompt'")
-    .get(opts.projectId) as { value: string } | undefined;
-  const qaSection = qaRow?.value
-    ? `\n\nQA Testing Procedure for this project:\n\n${qaRow.value}`
-    : "";
-  const fullPrompt = prompt + qaSection;
+Start by exploring the codebase to understand the project structure and existing patterns. Then ask me clarifying questions. Finally, build the phased plan using the tools, call show_plan, and ask for my approval.`;
 
-  const outputPatterns: OutputPattern[] = [
-    { pattern: /---PLAN_START---/, event: "plan_start" },
-    { pattern: /---PLAN_END---/, event: "plan_end" },
-  ];
-
+  // Fallback completion action: if the agent exits without finalizing, ensure plan stays draft
   const completionActions: CompletionAction[] = [
     {
-      event: "store_plan",
+      event: "plan_fallback",
       handler: (output: string) => {
         const db = getDatabase();
+        const plan = db
+          .prepare("SELECT status FROM plans WHERE id = ?")
+          .get(opts.planId) as { status: string } | undefined;
 
-        if (!output) {
-          db.prepare("UPDATE plans SET status = 'draft' WHERE id = ?").run(opts.planId);
-          return;
-        }
-
-        const parsed = parsePlanOutput(output);
-        if (parsed) {
-          try {
-            db.transaction(() => {
-              // Store raw markdown and parsed sections
-              db.prepare(
-                "UPDATE plans SET raw_markdown = ?, title = ?, summary = ?, context = ?, clarifications = ?, completion_conditions = ?, status = 'active' WHERE id = ?",
-              ).run(
-                output,
-                parsed.title,
-                parsed.summary,
-                parsed.context,
-                parsed.clarifications,
-                parsed.completionConditions,
-                opts.planId,
-              );
-
-              // Insert phases
-              const insertPhase = db.prepare(
-                "INSERT INTO phases (plan_id, step_number, title, status, complexity, commit_message, prompt, order_index, phase_type) VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?)",
-              );
-
-              for (let i = 0; i < parsed.phases.length; i++) {
-                const phase = parsed.phases[i];
-                insertPhase.run(
-                  opts.planId,
-                  phase.step,
-                  phase.title,
-                  phase.complexity,
-                  phase.commitMessage,
-                  phase.prompt,
-                  i,
-                  phase.type,
-                );
-              }
-
-              // Update feature status to planned
-              db.prepare("UPDATE features SET status = 'planned' WHERE id = ?").run(
-                opts.featureId,
-              );
-            })();
-            notifyDbUpdated("phase", opts.featureId);
-            notifyDbUpdated("feature", opts.featureId);
-          } catch (err) {
-            console.error("[agent-configs] Failed to save plan:", err);
-            // Still store raw output even if phase insertion fails
-            db.prepare("UPDATE plans SET raw_markdown = ?, status = 'draft' WHERE id = ?").run(
-              output,
-              opts.planId,
-            );
+        if (plan && plan.status === "draft") {
+          // Agent exited without finalizing — store raw output for reference
+          if (output) {
+            db.prepare("UPDATE plans SET raw_markdown = ? WHERE id = ?").run(output, opts.planId);
           }
-        } else {
-          // Could not parse -- store raw output anyway
-          db.prepare("UPDATE plans SET raw_markdown = ?, status = 'draft' WHERE id = ?").run(
-            output,
-            opts.planId,
-          );
+          console.warn(`[agent-configs] Plan agent exited without finalizing plan ${opts.planId}`);
         }
       },
     },
@@ -649,13 +530,17 @@ Start by exploring the codebase to understand the project structure and existing
   return {
     agentType: "plan",
     systemPrompt: PLAN_SYSTEM_PROMPT,
-    outputPatterns,
     completionActions,
     featureId: opts.featureId,
     projectId: opts.projectId,
     cwd: opts.cwd,
-    prompt: fullPrompt,
+    prompt,
     worktreePath: opts.worktreePath,
+    mcpServerFactory: (subprocessId: string) => ({
+      "productdevr-plan": createPlanMcpServer(opts.planId, opts.featureId, async (planMarkdown) => {
+        return waitForPlanApproval(subprocessId, planMarkdown);
+      }),
+    }),
   };
 }
 
@@ -670,62 +555,25 @@ export function createBrainstormConfig(opts: BrainstormConfigOptions): UnifiedAg
 
 ${opts.description}
 
-Start by thoroughly exploring the codebase to understand the full context. Research best practices if needed. Then ask me extensive clarifying questions (aim for 10-40 questions covering all aspects). Finally, generate a detailed phased plan.`;
+The plan ID is ${opts.planId}. Use the MCP tools to build the plan as draft phases. Do NOT call finalize_plan until I explicitly approve — phases must stay in draft status until then.
 
-  const outputPatterns: OutputPattern[] = [
-    { pattern: /---PLAN_START---/, event: "plan_start" },
-    { pattern: /---PLAN_END---/, event: "plan_end" },
-  ];
+Start by thoroughly exploring the codebase to understand the full context. Research best practices if needed. Then ask me extensive clarifying questions (aim for 10-40 questions covering all aspects). Finally, build the detailed phased plan using the tools, call show_plan, and ask for my approval.`;
 
+  // Fallback completion action: if the agent exits without finalizing, ensure plan stays draft
   const completionActions: CompletionAction[] = [
     {
-      event: "store_plan",
+      event: "plan_fallback",
       handler: (output: string) => {
         const db = getDatabase();
+        const plan = db
+          .prepare("SELECT status FROM plans WHERE id = ?")
+          .get(opts.planId) as { status: string } | undefined;
 
-        if (!output) {
-          db.prepare("UPDATE plans SET status = 'draft' WHERE id = ?").run(opts.planId);
-          return;
-        }
-
-        const parsed = parsePlanOutput(output);
-        if (parsed) {
-          // Store raw markdown and title (brainstorm doesn't store
-          // summary/context/clarifications in separate columns)
-          db.prepare("UPDATE plans SET raw_markdown = ?, title = ?, status = 'active' WHERE id = ?").run(
-            output,
-            parsed.title,
-            opts.planId,
-          );
-
-          // Insert phases
-          const insertPhase = db.prepare(
-            "INSERT INTO phases (plan_id, step_number, title, status, complexity, commit_message, prompt, order_index, phase_type) VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?)",
-          );
-
-          for (let i = 0; i < parsed.phases.length; i++) {
-            const phase = parsed.phases[i];
-            insertPhase.run(
-              opts.planId,
-              phase.step,
-              phase.title,
-              phase.complexity,
-              phase.commitMessage,
-              phase.prompt,
-              i,
-              phase.type,
-            );
+        if (plan && plan.status === "draft") {
+          if (output) {
+            db.prepare("UPDATE plans SET raw_markdown = ? WHERE id = ?").run(output, opts.planId);
           }
-
-          // Update feature status to planned
-          db.prepare("UPDATE features SET status = 'planned' WHERE id = ?").run(opts.featureId);
-          notifyDbUpdated("phase", opts.featureId);
-          notifyDbUpdated("feature", opts.featureId);
-        } else {
-          db.prepare("UPDATE plans SET raw_markdown = ?, status = 'draft' WHERE id = ?").run(
-            output,
-            opts.planId,
-          );
+          console.warn(`[agent-configs] Brainstorm agent exited without finalizing plan ${opts.planId}`);
         }
       },
     },
@@ -734,13 +582,17 @@ Start by thoroughly exploring the codebase to understand the full context. Resea
   return {
     agentType: "brainstorm",
     systemPrompt: BRAINSTORM_SYSTEM_PROMPT,
-    outputPatterns,
     completionActions,
     featureId: opts.featureId,
     projectId: opts.projectId,
     cwd: opts.cwd,
     prompt,
     worktreePath: opts.worktreePath,
+    mcpServerFactory: (subprocessId: string) => ({
+      "productdevr-plan": createPlanMcpServer(opts.planId, opts.featureId, async (planMarkdown) => {
+        return waitForPlanApproval(subprocessId, planMarkdown);
+      }),
+    }),
   };
 }
 
@@ -872,84 +724,35 @@ The following procedure describes HOW to validate the implementation (tools, sim
 
 ${opts.qaPrompt}
 
+The plan ID is ${opts.planId}. If you find failures that need fixes, use the MCP tools to create fix phases with step_number ${opts.qaPhaseStepNumber + 1}.
+
 Based on what was implemented above, design specific test cases and execute them using the QA procedure. Verify that the features work correctly from a user's perspective.`;
 
-  const outputPatterns: OutputPattern[] = [
-    { pattern: /---QA_REPORT_START---/, event: "qa_report_start" },
-    { pattern: /---QA_REPORT_END---/, event: "qa_report_end" },
-  ];
-
+  // Store QA report on completion
   const completionActions: CompletionAction[] = [
     {
-      event: "process_qa_report",
+      event: "store_qa_report",
       handler: (output: string, context) => {
         if (!output) return;
         const db = getDatabase();
-
-        // Store the QA report as an agent message
         db.prepare(
           "INSERT INTO agent_messages (session_id, role, content, message_type) VALUES (?, ?, ?, ?)",
         ).run(context.sessionDbId, "assistant", output, "qa_report");
-
-        // Check for FAIL and fix phases
-        const reportMatch = output.match(/---QA_REPORT_START---([\s\S]*?)---QA_REPORT_END---/);
-        if (!reportMatch) return;
-
-        const reportContent = reportMatch[1];
-        const isFail = /##\s+Summary\s*\n\s*FAIL/i.test(reportContent);
-
-        if (isFail) {
-          // Parse fix phases (dynamic require to avoid circular dependency)
-          const { parseFixPhases } = require("./utils") as typeof import("./utils");
-          const fixPhases = parseFixPhases(output);
-
-          if (fixPhases.length > 0) {
-            // Insert fix phases right after the QA phase's step (not at the end)
-            const fixStepNumber = opts.qaPhaseStepNumber + 1;
-
-            // Bump step numbers of any existing phases at or after the fix step
-            db.prepare(
-              "UPDATE phases SET step_number = step_number + 1 WHERE plan_id = ? AND step_number >= ? AND status IN ('pending', 'error')",
-            ).run(opts.planId, fixStepNumber);
-
-            const maxOrder = db
-              .prepare("SELECT MAX(order_index) as max_order FROM phases WHERE plan_id = ?")
-              .get(opts.planId) as { max_order: number | null };
-            let orderIndex = (maxOrder?.max_order ?? 0) + 1;
-
-            const insertPhase = db.prepare(
-              "INSERT INTO phases (plan_id, step_number, title, status, complexity, commit_message, prompt, order_index, phase_type) VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?)",
-            );
-
-            for (const phase of fixPhases) {
-              insertPhase.run(
-                opts.planId,
-                fixStepNumber,
-                phase.title,
-                phase.complexity,
-                phase.commitMessage,
-                phase.prompt,
-                orderIndex++,
-                phase.type,
-              );
-            }
-
-            notifyDbUpdated("phase", opts.featureId);
-          }
-        }
       },
     },
   ];
 
+  const mcpServer = createQaMcpServer(opts.planId, opts.featureId);
+
   return {
     agentType: "qa",
     systemPrompt: QA_SYSTEM_PROMPT,
-    outputPatterns,
     completionActions,
     featureId: opts.featureId,
     projectId: opts.projectId,
     cwd: opts.cwd,
     prompt,
     worktreePath: opts.worktreePath,
+    mcpServers: { "productdevr-qa": mcpServer },
   };
 }

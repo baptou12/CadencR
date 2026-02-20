@@ -82,7 +82,7 @@ export function AgentBlock({ block, isStreaming }: AgentBlockProps) {
       if (block.toolName === "Task" && block.childBlocks) {
         return <TaskAgentBlock block={block} isStreaming={isStreaming} />;
       }
-      if (block.toolName === "ExitPlanMode") {
+      if (block.toolName === "ExitPlanMode" || block.toolName?.endsWith("__show_plan")) {
         return <PlanBlock args={block.toolArgs} />;
       }
       if (block.toolName === "Write" || block.toolName === "Edit") {

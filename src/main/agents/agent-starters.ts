@@ -21,8 +21,6 @@ import {
 import type { AgentType, UnifiedAgentConfig } from "./types";
 import type { PlanRow, PhaseRow } from "../db/types";
 
-// Re-export parsePlanOutput for backwards compatibility
-export { parsePlanOutput, type ParsedPlan, type ParsedPhase } from "./utils";
 
 // ---------------------------------------------------------------------------
 // Common types

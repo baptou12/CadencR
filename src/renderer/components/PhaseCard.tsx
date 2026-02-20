@@ -1,6 +1,7 @@
-import { CircleIcon, Loader2, CheckCircle2, XCircle, Maximize, RotateCcw, FlaskConical, Wrench } from "lucide-react";
+import { Maximize, RotateCcw, FlaskConical, Wrench } from "lucide-react";
 import { Markdown } from "@/components/Markdown";
 import { cn } from "@/lib/utils";
+import { PHASE_STATUS_CONFIG } from "@/lib/phase-status";
 
 export interface PhaseData {
   id: number;
@@ -25,16 +26,8 @@ interface PhaseCardProps {
   onReset?: (phase: PhaseData) => void;
 }
 
-const statusConfig: Record<string, { icon: React.ElementType; className: string; badgeClassName: string; label: string }> = {
-  pending: { icon: CircleIcon, className: "text-muted-foreground", badgeClassName: "bg-muted text-foreground", label: "Pending" },
-  running: { icon: Loader2, className: "text-[var(--drac-orange)] animate-spin", badgeClassName: "bg-[var(--drac-orange)]/20 text-[var(--drac-orange)]", label: "Running" },
-  completed: { icon: CheckCircle2, className: "text-[var(--drac-green)]", badgeClassName: "bg-[var(--drac-green)]/20 text-[var(--drac-green)]", label: "Completed" },
-  done: { icon: CheckCircle2, className: "text-[var(--drac-green)]", badgeClassName: "bg-[var(--drac-green)]/20 text-[var(--drac-green)]", label: "Done" },
-  error: { icon: XCircle, className: "text-[var(--drac-red)]", badgeClassName: "bg-[var(--drac-red)]/20 text-[var(--drac-red)]", label: "Error" },
-};
-
 export function PhaseCard({ phase, displayNumber, onExpand, canReset, onReset }: PhaseCardProps) {
-  const config = statusConfig[phase.status] ?? statusConfig.pending;
+  const config = PHASE_STATUS_CONFIG[phase.status] ?? PHASE_STATUS_CONFIG.pending;
   const StatusIcon = config.icon;
 
   return (

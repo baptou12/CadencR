@@ -5,12 +5,14 @@ import { Textarea } from "@/components/ui/textarea";
 
 interface PlanApprovalBarProps {
   allowedPrompts?: Array<{ tool: string; prompt: string }>;
+  approveLabel?: string;
   onApprove: () => void;
   onRequestChanges: (feedback: string) => void;
 }
 
 export function PlanApprovalBar({
   allowedPrompts,
+  approveLabel,
   onApprove,
   onRequestChanges,
 }: PlanApprovalBarProps) {
@@ -82,7 +84,7 @@ export function PlanApprovalBar({
             className="gap-1.5"
           >
             <Play className="size-3.5" />
-            Approve & Execute
+            {approveLabel ?? "Approve & Execute"}
           </Button>
           <Button
             variant="ghost"

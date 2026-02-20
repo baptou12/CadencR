@@ -34,6 +34,8 @@ export interface AgentPromptBarProps {
   onPermissionModeToggle?: () => void;
   /** Pending plan approval from ExitPlanMode tool call */
   pendingPlanApproval?: { allowedPrompts?: Array<{ tool: string; prompt: string }> } | null;
+  /** Label for the approve button (defaults to "Approve & Execute") */
+  planApproveLabel?: string;
   /** Called when user approves the plan */
   onPlanApprove?: () => void;
   /** Called when user requests changes to the plan */
@@ -69,6 +71,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
   permissionMode,
   onPermissionModeToggle,
   pendingPlanApproval,
+  planApproveLabel,
   onPlanApprove,
   onPlanRequestChanges,
   onCycleModel,
@@ -231,6 +234,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
       <div data-question-area>
         <PlanApprovalBar
           allowedPrompts={pendingPlanApproval.allowedPrompts}
+          approveLabel={planApproveLabel}
           onApprove={onPlanApprove}
           onRequestChanges={onPlanRequestChanges}
         />

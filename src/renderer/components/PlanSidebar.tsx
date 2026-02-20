@@ -13,21 +13,15 @@ import { Badge } from "@/components/ui/badge";
 import { Markdown } from "@/components/Markdown";
 import { PhaseCard } from "@/components/PhaseCard";
 import type { PhaseData } from "@/components/PhaseCard";
-import { CircleIcon, Loader2, CheckCircle2, XCircle, RotateCcw } from "lucide-react";
+import { RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getActiveFocusZone } from "@/lib/focus-zones";
+import { PHASE_STATUS_CONFIG } from "@/lib/phase-status";
 
 interface PlanSidebarProps {
   featureId: number;
 }
 
-const statusConfig: Record<string, { icon: React.ElementType; className: string; badgeClassName: string; label: string }> = {
-  pending: { icon: CircleIcon, className: "text-muted-foreground", badgeClassName: "bg-muted text-foreground", label: "Pending" },
-  running: { icon: Loader2, className: "text-[var(--drac-orange)] animate-spin", badgeClassName: "bg-[var(--drac-orange)]/20 text-[var(--drac-orange)]", label: "Running" },
-  completed: { icon: CheckCircle2, className: "text-[var(--drac-green)]", badgeClassName: "bg-[var(--drac-green)]/20 text-[var(--drac-green)]", label: "Completed" },
-  done: { icon: CheckCircle2, className: "text-[var(--drac-green)]", badgeClassName: "bg-[var(--drac-green)]/20 text-[var(--drac-green)]", label: "Done" },
-  error: { icon: XCircle, className: "text-[var(--drac-red)]", badgeClassName: "bg-[var(--drac-red)]/20 text-[var(--drac-red)]", label: "Error" },
-};
 
 export function PlanSidebar({ featureId }: PlanSidebarProps) {
   const [expandedPhase, setExpandedPhase] = useState<PhaseData | null>(null);
@@ -123,7 +117,7 @@ export function PlanSidebar({ featureId }: PlanSidebarProps) {
   if (!plan) return null;
 
   const config = expandedPhase
-    ? statusConfig[expandedPhase.status] ?? statusConfig.pending
+    ? PHASE_STATUS_CONFIG[expandedPhase.status] ?? PHASE_STATUS_CONFIG.pending
     : null;
 
   return (

@@ -17,7 +17,7 @@
 
 import fs from "node:fs";
 import { getDatabase } from "../db/database";
-import { startSubprocess } from "./subprocess-manager";
+import { startSubprocess, generateSubprocessId } from "./subprocess-manager";
 import { bridgeSubprocessToRenderer } from "./ipc-bridge";
 import { resolveModel } from "./models";
 import { extractTextFromEvent } from "./utils";
@@ -83,7 +83,16 @@ export function startUnifiedAgent(config: UnifiedAgentConfig): UnifiedAgentResul
     sessionDbId = Number(sessionResult.lastInsertRowid);
   }
 
-  // 3. Spawn subprocess
+  // 3. Resolve MCP servers — use factory if provided (needs subprocess ID).
+  //    We pre-generate the ID so the factory can capture it before subprocess spawn.
+  let mcpServers = config.mcpServers;
+  const preGeneratedId = config.mcpServerFactory ? generateSubprocessId() : undefined;
+
+  if (config.mcpServerFactory && preGeneratedId) {
+    mcpServers = config.mcpServerFactory(preGeneratedId);
+  }
+
+  // 3a. Spawn subprocess
   const managed = startSubprocess({
     cwd: config.cwd,
     agentType: config.agentType,
@@ -93,6 +102,8 @@ export function startUnifiedAgent(config: UnifiedAgentConfig): UnifiedAgentResul
     model,
     permissionMode: config.permissionMode,
     worktreePath: config.worktreePath ?? config.cwd,
+    mcpServers,
+    id: preGeneratedId,
   });
 
   // 3b. Persist subprocess ID to DB for reconnection after refresh

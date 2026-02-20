@@ -3,6 +3,8 @@
  * These represent the structured events emitted by `claude --output-format stream-json`.
  */
 
+import type { McpServerConfig } from "@anthropic-ai/claude-agent-sdk";
+
 export type AgentType = "plan" | "brainstorm" | "execute" | "risk" | "review" | "session" | "qa";
 
 /** Message start event — beginning of an assistant turn */
@@ -234,4 +236,12 @@ export interface UnifiedAgentConfig {
   permissionMode?: "acceptEdits" | "plan";
   /** Worktree path for permission resolution (auto-allow tools inside this path) */
   worktreePath?: string;
+  /** MCP servers to inject into the agent subprocess */
+  mcpServers?: Record<string, McpServerConfig>;
+  /**
+   * Factory that creates MCP servers given the subprocess ID.
+   * Called by unified-agent after subprocess spawn, replacing mcpServers.
+   * This avoids the timing hazard of needing the subprocess ID before it exists.
+   */
+  mcpServerFactory?: (subprocessId: string) => Record<string, McpServerConfig>;
 }
