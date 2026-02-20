@@ -46,7 +46,7 @@ export function useWorkflowMutations({
 
   // --- Action handlers ---
 
-  const handleStartPlanning = async () => {
+  const handleStartPlanning = async (images?: Array<{ base64: string; mimeType: string }>) => {
     const description = getDescription();
     if (!description.trim()) return;
     try {
@@ -59,6 +59,7 @@ export function useWorkflowMutations({
         featureId,
         projectId,
         description: description.trim(),
+        ...(images && images.length > 0 ? { images } : {}),
       });
       void refetch();
     } catch {
@@ -66,7 +67,7 @@ export function useWorkflowMutations({
     }
   };
 
-  const handleStartBrainstorming = async () => {
+  const handleStartBrainstorming = async (images?: Array<{ base64: string; mimeType: string }>) => {
     const description = getDescription();
     if (!description.trim()) return;
     try {
@@ -79,6 +80,7 @@ export function useWorkflowMutations({
         featureId,
         projectId,
         description: description.trim(),
+        ...(images && images.length > 0 ? { images } : {}),
       });
       void refetch();
     } catch {
@@ -175,14 +177,14 @@ export function useWorkflowMutations({
   );
 
   const handleAgentSend = useCallback(
-    async (agentType: AgentType, message: string) => {
+    async (agentType: AgentType, message: string, images?: Array<{ base64: string; mimeType: string }>) => {
       // 1. Try active subprocess
       const session = sessions.find(
         (s) => s.agentType === agentType && s.subprocessId,
       );
       if (session?.subprocessId) {
         try {
-          const result = await sendMessageMutation.mutateAsync({ id: session.subprocessId, message });
+          const result = await sendMessageMutation.mutateAsync({ id: session.subprocessId, message, images });
           if (result.success) {
             void refetch();
             return;
@@ -235,9 +237,9 @@ export function useWorkflowMutations({
   );
 
   const sendToExecuteSubprocess = useCallback(
-    async (subprocessId: string, message: string) => {
+    async (subprocessId: string, message: string, images?: Array<{ base64: string; mimeType: string }>) => {
       try {
-        await sendMessageMutation.mutateAsync({ id: subprocessId, message });
+        await sendMessageMutation.mutateAsync({ id: subprocessId, message, images });
       } catch {
         // Best-effort
       }

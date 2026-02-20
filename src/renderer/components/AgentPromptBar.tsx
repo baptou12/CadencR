@@ -7,14 +7,17 @@ import { AgentQuestionDrawer } from "./AgentQuestionDrawer";
 import { PlanApprovalBar } from "./PlanApprovalBar";
 import { FileMentionPopover } from "./FileMentionPopover";
 import { SlashCommandPopover } from "./SlashCommandPopover";
+import { ImageAttachmentPreview } from "./ImageAttachmentPreview";
+import { ImageAttachmentButton } from "./ImageAttachmentButton";
 import { useFileMention } from "@/hooks/useFileMention";
 import { useSlashCommand } from "@/hooks/useSlashCommand";
+import { useImageAttachments } from "@/hooks/useImageAttachments";
 import { trpc } from "@/trpc";
 import type { AgentQuestion } from "./AgentQuestionDrawer";
 import type { AgentStatus } from "@/components/AgentSession";
 
 export interface AgentPromptBarProps {
-  onSend: (message: string) => void;
+  onSend: (message: string, images?: Array<{ base64: string; mimeType: string }>) => void;
   onStop: () => void;
   status: AgentStatus;
   disabled?: boolean;
@@ -82,6 +85,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
 }, ref) {
   const [text, setText] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const { attachments, addFiles, removeAttachment, clearAttachments, dragHandlers, isDragging } = useImageAttachments();
 
   // File mention support
   const filesQuery = trpc.git.listFiles.useQuery(
@@ -106,7 +110,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
 
   const isRunning = status === "running";
   const isPaused = status === "paused";
-  const canSend = text.trim().length > 0 && !disabled;
+  const canSend = (text.trim().length > 0 || attachments.length > 0) && !disabled;
   const hasQuestions = !!pendingQuestions && pendingQuestions.length > 0;
 
   // Auto-resize textarea to fit content
@@ -119,10 +123,14 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
 
   const handleSend = useCallback(() => {
     const trimmed = text.trim();
-    if (!trimmed) return;
-    onSend(trimmed);
+    if (!trimmed && attachments.length === 0) return;
+    const images = attachments.length > 0
+      ? attachments.map((a) => ({ base64: a.base64, mimeType: a.mimeType }))
+      : undefined;
+    onSend(trimmed, images);
     setText("");
-  }, [text, onSend]);
+    clearAttachments();
+  }, [text, attachments, onSend, clearAttachments]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -258,7 +266,14 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
   }
 
   return (
-    <div className="flex items-center gap-2 bg-muted/20 px-3 py-2">
+    <div
+      className={cn("flex flex-col bg-muted/20 px-3 py-2", isDragging && "ring-2 ring-primary/50 ring-inset")}
+      {...dragHandlers}
+    >
+      {attachments.length > 0 && (
+        <ImageAttachmentPreview attachments={attachments} onRemove={removeAttachment} className="mb-2" />
+      )}
+      <div className="flex items-center gap-2">
       {onPermissionModeToggle && (
         <button
           type="button"
@@ -305,13 +320,14 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
             onKeyDown={handleKeyDown}
             onFocus={() => onFocusChange?.(true)}
             onBlur={() => onFocusChange?.(false)}
-            placeholder={isPaused ? "Send a message to resume…" : "Send a message… (@ to mention files, / for commands)"}
+            placeholder={isPaused ? "Send a message to resume…" : "Send a message… (@ to mention files, / for commands, 📎 to attach images)"}
             disabled={disabled}
             rows={1}
             className="max-h-32 min-h-[42px] resize-none overflow-hidden border-border/50 bg-background py-2.5 text-sm leading-[22px] shadow-none focus-visible:ring-1 focus-visible:ring-ring/40"
           />
         </SlashCommandPopover>
       </FileMentionPopover>
+      <ImageAttachmentButton onFilesSelected={addFiles} />
       {isRunning ? (
         <Button
           variant="destructive"
@@ -334,6 +350,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
           <Send className="size-3.5" />
         </Button>
       )}
+      </div>
     </div>
   );
 });

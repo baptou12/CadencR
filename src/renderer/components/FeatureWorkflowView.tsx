@@ -440,8 +440,8 @@ export function FeatureWorkflowView({
                 <PlanInputView
                   description={description}
                   onDescriptionChange={setDescription}
-                  onStartPlanning={wf.handleStartPlanning}
-                  onStartBrainstorming={wf.handleStartBrainstorming}
+                  onStartPlanning={(images) => wf.handleStartPlanning(images)}
+                  onStartBrainstorming={(images) => wf.handleStartBrainstorming(images)}
                   isStartingPlan={wf.isStartingPlan}
                   isStartingBrainstorm={wf.isStartingBrainstorm}
                 />
@@ -529,7 +529,7 @@ export function FeatureWorkflowView({
                             response,
                           )
                         }
-                        onSend={(message) => {
+                        onSend={(message, images) => {
                           if (
                             entry.agentType === "execute" &&
                             entry.subprocessId
@@ -537,9 +537,10 @@ export function FeatureWorkflowView({
                             wf.sendToExecuteSubprocess(
                               entry.subprocessId,
                               message,
+                              images,
                             );
                           } else {
-                            wf.handleAgentSend(entry.agentType, message);
+                            wf.handleAgentSend(entry.agentType, message, images);
                           }
                         }}
                         onStop={() => {

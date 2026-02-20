@@ -3,11 +3,11 @@ import { Paperclip } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 interface ImageAttachmentButtonProps {
-  onFiles: (files: FileList) => void
+  onFilesSelected: (files: FileList | File[]) => void
   disabled?: boolean
 }
 
-export function ImageAttachmentButton({ onFiles, disabled }: ImageAttachmentButtonProps) {
+export function ImageAttachmentButton({ onFilesSelected, disabled }: ImageAttachmentButtonProps) {
   const inputRef = useRef<HTMLInputElement>(null)
 
   const handleClick = () => {
@@ -16,7 +16,7 @@ export function ImageAttachmentButton({ onFiles, disabled }: ImageAttachmentButt
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      onFiles(e.target.files)
+      onFilesSelected(e.target.files)
       // Reset so same files can be selected again
       e.target.value = ''
     }
