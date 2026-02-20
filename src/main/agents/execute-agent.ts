@@ -17,7 +17,7 @@ import { resolveSetting } from "../db/settings";
 import type { PhaseRow, PlanRow, SettingRow } from "../db/types";
 import { transitionFeature, transitionPhase, transitionPhaseIf, transitionAgentSession } from "./state-transitions";
 import { startUnifiedAgent } from "./unified-agent";
-import { EXECUTE_SYSTEM_PROMPT, createQaConfig } from "./agent-configs";
+import { buildExecuteSystemPrompt, createQaConfig } from "./agent-configs";
 import { createExecuteMcpServer } from "./mcp-tools";
 import { broadcast, AGENT_EVENT_CHANNEL } from "./broadcast";
 import type { AgentEvent, UnifiedAgentConfig, CompletionAction } from "./types";
@@ -348,7 +348,7 @@ function executePhase(
 
     const config: UnifiedAgentConfig = {
       agentType: "execute",
-      systemPrompt: EXECUTE_SYSTEM_PROMPT,
+      systemPrompt: buildExecuteSystemPrompt(autonomyLevel),
       completionActions,
       featureId: options.featureId,
       projectId: options.projectId,
@@ -448,12 +448,12 @@ function buildEnrichedPrompt(phase: PhaseRow, autonomyLevel: 1 | 2 | 3 = 3): str
   if (autonomyLevel === 1) {
     // Level 1: Ask user for approval, iterate if they request changes
     sections.push(
-      `## User Approval Required\n\nAfter outputting your implementation notes and deviations, you MUST ask the user for approval using AskUserQuestion:\n\n- Question: "Review complete. Approve changes and commit?"\n- Options: "Approve and commit", "Skip commit", "Request changes"\n\nIf the user selects "Request changes", they will provide feedback via the "Other" option. In that case:\n1. Read and address their feedback\n2. Make the necessary fixes\n3. Re-output your updated implementation notes and deviations\n4. Ask for approval again\n\nIf the user selects "Approve and commit":\n${commitInstructions}\n\nIf the user selects "Skip commit", do NOT commit.\n\nRepeat the approval loop until the user approves or skips. Only call \`mark_agent_done\` after the user has approved or skipped.`,
+      `## User Approval Required\n\nAfter outputting your implementation notes and deviations, you MUST ask the user for approval using AskUserQuestion:\n\n- Question: "Review complete. Approve changes and commit?"\n- Options: "Approve and commit", "Skip commit", "Request changes"\n\nIf the user selects "Request changes", they will provide feedback via the "Other" option. In that case:\n1. Read and address their feedback\n2. Make the necessary fixes\n3. Re-output your updated implementation notes and deviations\n4. Ask for approval again\n\nIf the user selects "Approve and commit":\n${commitInstructions}\n\nThen call \`mark_phase_done\` with your implementation notes and deviations.\n\n**Do NOT call \`mark_phase_done\` until after approval and successful commit.**\n\nIf the user selects "Skip commit", do NOT commit.\n\nRepeat the approval loop until the user approves or skips. Only call \`mark_agent_done\` after the user has approved or skipped.`,
     );
   } else {
-    // Level 2 & 3: Auto-commit after implementation
+    // Level 2 & 3: Auto-commit after implementation, then mark done
     sections.push(
-      `## Auto-Commit\n\nAfter completing your implementation, automatically commit your changes:\n${commitInstructions}\n\nThen call \`mark_agent_done\`.`,
+      `## Auto-Commit\n\nAfter completing your implementation, automatically commit your changes:\n${commitInstructions}\n\nAfter committing, call \`mark_phase_done\` with your implementation notes and deviations. **Do NOT call \`mark_phase_done\` before committing.**\n\nThen call \`mark_agent_done\`.`,
     );
   }
 
