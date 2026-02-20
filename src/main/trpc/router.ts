@@ -503,25 +503,75 @@ const agentsRouter = router({
 
   /** Send a message to a running agent subprocess */
   sendMessage: publicProcedure
-    .input(z.object({ id: z.string(), message: z.string() }))
+    .input(z.object({
+      id: z.string(),
+      message: z.string(),
+      images: z.array(z.object({ base64: z.string(), mimeType: z.string() })).optional(),
+    }))
     .mutation(async ({ input }) => {
-      return sendMessageToSubprocess(input.id, input.message);
+      let content: import("../agents/types").MessageContent;
+      if (input.images && input.images.length > 0) {
+        content = [
+          { type: "text" as const, text: input.message },
+          ...input.images.map((img) => ({
+            type: "image" as const,
+            source: { type: "base64" as const, media_type: img.mimeType, data: img.base64 },
+          })),
+        ];
+      } else {
+        content = input.message;
+      }
+      return sendMessageToSubprocess(input.id, content);
     }),
 
   /** Start the plan agent for a feature */
   startPlan: publicProcedure
-    .input(z.object({ featureId: z.number(), projectId: z.number(), description: z.string() }))
+    .input(z.object({
+      featureId: z.number(),
+      projectId: z.number(),
+      description: z.string(),
+      images: z.array(z.object({ base64: z.string(), mimeType: z.string() })).optional(),
+    }))
     .mutation(({ input }) => {
       const { cwd, worktreePath } = resolveAgentCwd(input.featureId, input.projectId);
-      return startPlanAgent({ ...input, cwd, worktreePath });
+      let description: import("../agents/types").MessageContent;
+      if (input.images && input.images.length > 0) {
+        description = [
+          { type: "text" as const, text: input.description },
+          ...input.images.map((img) => ({
+            type: "image" as const,
+            source: { type: "base64" as const, media_type: img.mimeType, data: img.base64 },
+          })),
+        ];
+      } else {
+        description = input.description;
+      }
+      return startPlanAgent({ featureId: input.featureId, projectId: input.projectId, description, cwd, worktreePath });
     }),
 
   /** Start the brainstorm agent for a feature */
   startBrainstorm: publicProcedure
-    .input(z.object({ featureId: z.number(), projectId: z.number(), description: z.string() }))
+    .input(z.object({
+      featureId: z.number(),
+      projectId: z.number(),
+      description: z.string(),
+      images: z.array(z.object({ base64: z.string(), mimeType: z.string() })).optional(),
+    }))
     .mutation(({ input }) => {
       const { cwd, worktreePath } = resolveAgentCwd(input.featureId, input.projectId);
-      return startBrainstormAgent({ ...input, cwd, worktreePath });
+      let description: import("../agents/types").MessageContent;
+      if (input.images && input.images.length > 0) {
+        description = [
+          { type: "text" as const, text: input.description },
+          ...input.images.map((img) => ({
+            type: "image" as const,
+            source: { type: "base64" as const, media_type: img.mimeType, data: img.base64 },
+          })),
+        ];
+      } else {
+        description = input.description;
+      }
+      return startBrainstormAgent({ featureId: input.featureId, projectId: input.projectId, description, cwd, worktreePath });
     }),
 
   /** Start the execute agent for a feature (runs plan phases) */

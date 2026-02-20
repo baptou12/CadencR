@@ -18,7 +18,7 @@ import {
   createReviewConfig,
   createQaConfig,
 } from "./agent-configs";
-import type { AgentType, UnifiedAgentConfig } from "./types";
+import type { AgentType, MessageContent, UnifiedAgentConfig } from "./types";
 import type { PlanRow, PhaseRow } from "../db/types";
 
 
@@ -55,7 +55,7 @@ export function startSessionAgent(options: {
 export function startPlanAgent(options: {
   featureId: number;
   projectId: number;
-  description: string;
+  description: MessageContent;
   cwd: string;
   worktreePath?: string;
 }): AgentResult {
@@ -84,7 +84,7 @@ export function startPlanAgent(options: {
 export function startBrainstormAgent(options: {
   featureId: number;
   projectId: number;
-  description: string;
+  description: MessageContent;
   cwd: string;
   worktreePath?: string;
 }): AgentResult {

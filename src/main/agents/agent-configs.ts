@@ -17,7 +17,7 @@
 import { getDatabase } from "../db/database";
 import { createPlanMcpServer, createQaMcpServer, createReviewMcpServer, createCommonMcpServer } from "./mcp-tools";
 import { waitForPlanApproval } from "./plan-approval";
-import type { UnifiedAgentConfig, CompletionAction } from "./types";
+import type { ImageBlock, MessageContent, UnifiedAgentConfig, CompletionAction } from "./types";
 
 // ---------------------------------------------------------------------------
 // System prompts — extracted from individual agent files
@@ -458,7 +458,7 @@ export interface PlanConfigOptions {
   featureId: number;
   projectId: number;
   cwd: string;
-  description: string;
+  description: MessageContent;
   /** Plan ID — must be created by the caller before calling this factory */
   planId: number;
   /** Worktree path for permission resolution */
@@ -469,7 +469,7 @@ export interface BrainstormConfigOptions {
   featureId: number;
   projectId: number;
   cwd: string;
-  description: string;
+  description: MessageContent;
   /** Plan ID — must be created by the caller before calling this factory */
   planId: number;
   /** Worktree path for permission resolution */
@@ -531,13 +531,25 @@ export interface QaConfigOptions {
  * closure to store the parsed plan and phases.
  */
 export function createPlanConfig(opts: PlanConfigOptions): UnifiedAgentConfig {
-  const prompt = `Please create a detailed implementation plan for the following feature:
-
-${opts.description}
-
-The plan ID is ${opts.planId}. Use the MCP tools to build the plan as draft phases. Do NOT call finalize_plan until I explicitly approve — phases must stay in draft status until then.
+  const planInstructions = `The plan ID is ${opts.planId}. Use the MCP tools to build the plan as draft phases. Do NOT call finalize_plan until I explicitly approve — phases must stay in draft status until then.
 
 Start by exploring the codebase to understand the project structure and existing patterns. Then ask me clarifying questions. Finally, build the phased plan using the tools, call show_plan, and ask for my approval.`;
+
+  let prompt: MessageContent;
+  if (typeof opts.description === "string") {
+    prompt = `Please create a detailed implementation plan for the following feature:\n\n${opts.description}\n\n${planInstructions}`;
+  } else {
+    // description is a content array — prepend instruction text block and append tail
+    const textPreamble: { type: "text"; text: string } = {
+      type: "text",
+      text: "Please create a detailed implementation plan for the following feature:\n\n",
+    };
+    const textPostamble: { type: "text"; text: string } = {
+      type: "text",
+      text: `\n\n${planInstructions}`,
+    };
+    prompt = [textPreamble, ...(opts.description as Array<{ type: "text"; text: string } | ImageBlock>), textPostamble];
+  }
 
   // Fallback completion action: if the agent exits without finalizing, ensure plan stays draft
   const completionActions: CompletionAction[] = [
@@ -584,13 +596,24 @@ Start by exploring the codebase to understand the project structure and existing
  * action that doesn't store summary/context/clarifications separately.
  */
 export function createBrainstormConfig(opts: BrainstormConfigOptions): UnifiedAgentConfig {
-  const prompt = `Please perform a deep brainstorm and create a comprehensive implementation plan for the following feature:
-
-${opts.description}
-
-The plan ID is ${opts.planId}. Use the MCP tools to build the plan as draft phases. Do NOT call finalize_plan until I explicitly approve — phases must stay in draft status until then.
+  const brainstormInstructions = `The plan ID is ${opts.planId}. Use the MCP tools to build the plan as draft phases. Do NOT call finalize_plan until I explicitly approve — phases must stay in draft status until then.
 
 Start by thoroughly exploring the codebase to understand the full context. Research best practices if needed. Then ask me extensive clarifying questions (aim for 10-40 questions covering all aspects). Finally, build the detailed phased plan using the tools, call show_plan, and ask for my approval.`;
+
+  let prompt: MessageContent;
+  if (typeof opts.description === "string") {
+    prompt = `Please perform a deep brainstorm and create a comprehensive implementation plan for the following feature:\n\n${opts.description}\n\n${brainstormInstructions}`;
+  } else {
+    const textPreamble: { type: "text"; text: string } = {
+      type: "text",
+      text: "Please perform a deep brainstorm and create a comprehensive implementation plan for the following feature:\n\n",
+    };
+    const textPostamble: { type: "text"; text: string } = {
+      type: "text",
+      text: `\n\n${brainstormInstructions}`,
+    };
+    prompt = [textPreamble, ...(opts.description as Array<{ type: "text"; text: string } | ImageBlock>), textPostamble];
+  }
 
   // Fallback completion action: if the agent exits without finalizing, ensure plan stays draft
   const completionActions: CompletionAction[] = [
