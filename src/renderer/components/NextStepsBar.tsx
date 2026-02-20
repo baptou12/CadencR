@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Loader2Icon, GitMergeIcon } from "lucide-react";
 import type { AgentStatus } from "@/components/AgentSession";
@@ -57,6 +57,21 @@ export function NextStepsBar({
 }: NextStepsBarProps) {
   const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
 
+  const canMerge = allPhasesDone && featureType === "feature" && projectId != null && featureId != null;
+
+  // CMD+SHIFT+M: open merge & archive dialog
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.metaKey && e.shiftKey && e.key.toLowerCase() === "m") {
+        if (!canMerge) return;
+        e.preventDefault();
+        setMergeDialogOpen(true);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [canMerge]);
+
   if (!show) return null;
 
   return (
@@ -71,7 +86,7 @@ export function NextStepsBar({
               : "Run a review or risk analysis on the current implementation."}
         </p>
       </div>
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         {canContinueBuild && onContinueBuild && (
           <Button
             onClick={onContinueBuild}
@@ -145,18 +160,19 @@ export function NextStepsBar({
             Start Review
           </Button>
         )}
-        {allPhasesDone && featureType === "feature" && projectId != null && featureId != null && (
+        {canMerge && (
           <Button
             variant="outline"
             onClick={() => setMergeDialogOpen(true)}
           >
             <GitMergeIcon className="mr-2 size-4" />
             Merge &amp; Archive
+            <KbdShortcut keys={["cmd", "shift", "M"]} />
           </Button>
         )}
       </div>
 
-      {allPhasesDone && featureType === "feature" && projectId != null && featureId != null && (
+      {canMerge && (
         <MergeArchiveDialog
           open={mergeDialogOpen}
           onOpenChange={setMergeDialogOpen}
