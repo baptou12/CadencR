@@ -247,6 +247,17 @@ export function FeatureWorkflowView({
     { enableOnFormTags: true },
   );
 
+  // Query plan phases to determine if all phases are done (for Merge & Archive button)
+  const planWithPhasesQuery = trpc.features.getPlanWithPhases.useQuery(
+    { feature_id: featureId },
+    { enabled: feature?.type === "feature" },
+  );
+  const allPhasesDone = useMemo(() => {
+    const phases = planWithPhasesQuery.data?.phases;
+    if (!phases || phases.length === 0) return false;
+    return phases.every((p) => p.status === "done" || p.status === "completed");
+  }, [planWithPhasesQuery.data]);
+
   const { view, actions } = useFeatureState({
     featureStatus: feature?.status as FeatureStatus | undefined,
     plan: { status: wf.plan.status, blocks: wf.plan.blocks },
@@ -526,7 +537,8 @@ export function FeatureWorkflowView({
                           actions.canStartRisk ||
                           actions.canStartReview ||
                           actions.canStartWorkflowSession ||
-                          wf.canContinueBuild)
+                          wf.canContinueBuild ||
+                          allPhasesDone)
                       }
                       canStartBuild={actions.canStartBuild}
                       canStartRisk={actions.canStartRisk}
@@ -545,6 +557,10 @@ export function FeatureWorkflowView({
                       canStartWorkflowSession={actions.canStartWorkflowSession}
                       onStartWorkflowSession={wf.handleStartWorkflowSession}
                       isStartingWorkflowSession={wf.isStartingWorkflowSession}
+                      allPhasesDone={allPhasesDone}
+                      projectId={projectId}
+                      featureId={featureId}
+                      featureType={feature?.type}
                     />
                   </div>
                 )}

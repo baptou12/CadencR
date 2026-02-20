@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { TrashIcon, Loader2Icon } from "lucide-react";
 import { trpc } from "@/trpc";
@@ -10,7 +11,7 @@ import {
   SelectTrigger,
 } from "@/components/ui/select";
 
-const STATUSES = ["draft", "planned", "in-progress", "review", "done"] as const;
+const STATUSES = ["draft", "planned", "in-progress", "review", "done", "archived"] as const;
 type FeatureStatus = (typeof STATUSES)[number];
 
 const STATUS_COLORS: Record<FeatureStatus, string> = {
@@ -19,6 +20,7 @@ const STATUS_COLORS: Record<FeatureStatus, string> = {
   "in-progress": "bg-yellow-500/15 text-yellow-300",
   review: "bg-purple-500/15 text-purple-300",
   done: "bg-green-500/15 text-green-300",
+  archived: "bg-gray-500/15 text-gray-400",
 };
 
 export function ProjectFeatures({
@@ -34,9 +36,12 @@ export function ProjectFeatures({
 }) {
   const navigate = useNavigate();
   const utils = trpc.useUtils();
+  const [showArchived, setShowArchived] = useState(false);
   const { data: features = [] } = trpc.features.listByProject.useQuery({
     project_id: projectId,
   });
+
+  const visibleFeatures = features.filter((f) => showArchived || f.status !== "archived");
 
   const invalidateFeatures = () => {
     void utils.features.listByProject.invalidate();
@@ -70,9 +75,11 @@ export function ProjectFeatures({
     },
   });
 
+  const archivedCount = features.filter((f) => f.status === "archived").length;
+
   return (
     <div className="flex flex-col gap-0.5">
-      {features.map((feature) => (
+      {visibleFeatures.map((feature) => (
         <div
           key={feature.id}
           role="button"
@@ -83,7 +90,7 @@ export function ProjectFeatures({
           data-nav-project-id={String(projectId)}
           className={`group/feature relative flex min-w-0 cursor-pointer items-center gap-2 overflow-hidden rounded-md py-1.5 pl-7 pr-2 text-sm outline-none transition-colors hover:bg-accent ${
             activeFeatureId === feature.id ? "bg-accent" : ""
-          }`}
+          } ${feature.status === "archived" ? "opacity-50" : ""}`}
           onClick={() => {
             onSelectFeature(feature.id);
             void navigate({
@@ -111,7 +118,7 @@ export function ProjectFeatures({
           {activeFeatureIds.includes(feature.id) && (
             <Loader2Icon className="size-3.5 shrink-0 animate-spin text-blue-500" />
           )}
-          <span className="truncate pr-1">{feature.title}</span>
+          <span className={`truncate pr-1 ${feature.status === "archived" ? "text-muted-foreground" : ""}`}>{feature.title}</span>
 
           <div className="absolute inset-y-0 right-0 flex items-center gap-1 rounded-r-md pr-1.5 pl-6 bg-gradient-to-l from-sidebar from-60% to-transparent group-hover/feature:from-accent group-[.bg-accent]/feature:from-accent">
             {feature.type !== "session" && (
@@ -161,6 +168,17 @@ export function ProjectFeatures({
           </div>
         </div>
       ))}
+      {archivedCount > 0 && (
+        <label className="flex items-center gap-1.5 px-2 pt-1 text-xs text-muted-foreground cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={showArchived}
+            onChange={(e) => setShowArchived(e.target.checked)}
+            className="size-3 accent-muted-foreground"
+          />
+          Show archived ({archivedCount})
+        </label>
+      )}
     </div>
   );
 }

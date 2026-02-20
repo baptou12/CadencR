@@ -516,6 +516,161 @@ export function getChangedFiles(
 }
 
 /**
+ * Detect the original branch from which a worktree branch was created.
+ * Tries tracking config first, then falls back to detecting the default branch.
+ */
+export async function getOriginalBranch(repoPath: string, worktreeBranch: string): Promise<string> {
+  const opts = { cwd: repoPath, stdio: "pipe" as const, encoding: "utf-8" as const };
+
+  // 1. Try tracking config: branch.<name>.merge
+  try {
+    const merge = execSync(`git config --get branch.${worktreeBranch}.merge`, opts).trim();
+    if (merge) {
+      // merge is like refs/heads/main — strip the prefix
+      return merge.replace(/^refs\/heads\//, "");
+    }
+  } catch {
+    // not configured
+  }
+
+  // 2. Try detecting the remote HEAD (origin/HEAD -> origin/main etc.)
+  try {
+    const remoteHead = execSync("git symbolic-ref refs/remotes/origin/HEAD", opts).trim();
+    if (remoteHead) {
+      return remoteHead.replace(/^refs\/remotes\/origin\//, "");
+    }
+  } catch {
+    // no remote HEAD
+  }
+
+  // 3. Fall back to checking for common default branch names
+  for (const candidate of ["main", "master", "develop", "trunk"]) {
+    try {
+      execSync(`git rev-parse --verify ${candidate}`, opts);
+      return candidate;
+    } catch {
+      // not found
+    }
+  }
+
+  throw new Error(`Cannot determine original branch for worktree branch: ${worktreeBranch}`);
+}
+
+/**
+ * Check if merging sourceBranch into targetBranch would produce conflicts.
+ * Uses `git merge-tree` for a read-only dry-run — does not touch the working tree or index.
+ * Must be run in the main repo (not a worktree).
+ */
+export async function checkMergeConflicts(
+  repoPath: string,
+  sourceBranch: string,
+  targetBranch: string,
+): Promise<{ hasConflicts: boolean; conflictFiles: string[] }> {
+  const opts = { cwd: repoPath, stdio: "pipe" as const, encoding: "utf-8" as const };
+
+  // Find the common ancestor (merge base)
+  const mergeBase = execSync(`git merge-base "${targetBranch}" "${sourceBranch}"`, opts).trim();
+
+  // git merge-tree performs a three-way merge entirely in-memory — no checkout needed.
+  // If the output contains conflict markers (<<<<<<<), there are conflicts.
+  let mergeTreeOutput = "";
+  try {
+    mergeTreeOutput = execSync(
+      `git merge-tree "${mergeBase}" "${targetBranch}" "${sourceBranch}"`,
+      { ...opts, maxBuffer: 50 * 1024 * 1024 },
+    );
+  } catch (err) {
+    // merge-tree exits non-zero when it detects conflicts on some git versions
+    mergeTreeOutput = err instanceof Error ? (err as NodeJS.ErrnoException & { stdout?: string }).stdout ?? err.message : String(err);
+  }
+
+  const hasConflicts = mergeTreeOutput.includes("<<<<<<<");
+
+  // Identify conflicting files: files changed in both branches since the merge base
+  const conflictFiles: string[] = [];
+  if (hasConflicts) {
+    const sourceFilesRaw = execSync(`git diff --name-only "${mergeBase}" "${sourceBranch}"`, opts).trim();
+    const targetFilesRaw = execSync(`git diff --name-only "${mergeBase}" "${targetBranch}"`, opts).trim();
+    const sourceFiles = new Set(sourceFilesRaw.split("\n").filter(Boolean));
+    for (const f of targetFilesRaw.split("\n").filter(Boolean)) {
+      if (sourceFiles.has(f)) conflictFiles.push(f);
+    }
+  }
+
+  return { hasConflicts, conflictFiles };
+}
+
+/**
+ * Merge sourceBranch into targetBranch using --no-ff from the main repo.
+ * Checks out target, merges, then restores the original branch.
+ */
+export async function mergeBranch(
+  repoPath: string,
+  sourceBranch: string,
+  targetBranch: string,
+): Promise<{ success: boolean; error?: string }> {
+  const opts = { cwd: repoPath, stdio: "pipe" as const, encoding: "utf-8" as const };
+
+  let originalBranch: string | null = null;
+  try {
+    originalBranch = execSync("git rev-parse --abbrev-ref HEAD", opts).trim();
+  } catch {
+    // ignore
+  }
+
+  try {
+    execSync(`git checkout "${targetBranch}"`, opts);
+    execSync(`git merge --no-ff "${sourceBranch}"`, opts);
+    return { success: true };
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    // Try to abort any partial merge
+    try { execSync("git merge --abort", opts); } catch { /* ignore */ }
+    return { success: false, error };
+  } finally {
+    // Restore original branch if different
+    if (originalBranch && originalBranch !== targetBranch) {
+      try { execSync(`git checkout "${originalBranch}"`, opts); } catch { /* ignore */ }
+    }
+  }
+}
+
+/**
+ * Delete a local branch using -d (safe — only if fully merged).
+ */
+export async function deleteLocalBranch(
+  repoPath: string,
+  branchName: string,
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    execSync(`git branch -d "${branchName}"`, {
+      cwd: repoPath,
+      stdio: "pipe",
+      encoding: "utf-8",
+    });
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * Check if a worktree has any uncommitted or untracked changes.
+ */
+export async function hasUncommittedChanges(worktreePath: string): Promise<boolean> {
+  try {
+    const output = execSync("git status --porcelain", {
+      cwd: worktreePath,
+      stdio: "pipe",
+      encoding: "utf-8",
+    });
+    return output.trim().length > 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Open a directory in the system's default terminal.
  */
 export function openInTerminal(dirPath: string): void {

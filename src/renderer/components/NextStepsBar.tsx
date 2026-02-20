@@ -1,8 +1,10 @@
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Loader2Icon } from "lucide-react";
+import { Loader2Icon, GitMergeIcon } from "lucide-react";
 import type { AgentStatus } from "@/components/AgentSession";
 import { AGENT_ICONS } from "@/components/agent-icons";
 import { KbdShortcut } from "@/components/KbdShortcut";
+import { MergeArchiveDialog } from "@/components/MergeArchiveDialog";
 
 interface NextStepsBarProps {
   show: boolean;
@@ -23,6 +25,10 @@ interface NextStepsBarProps {
   canStartWorkflowSession?: boolean;
   onStartWorkflowSession?: () => void;
   isStartingWorkflowSession?: boolean;
+  allPhasesDone?: boolean;
+  projectId?: number;
+  featureId?: number;
+  featureType?: string;
 }
 
 export function NextStepsBar({
@@ -44,7 +50,13 @@ export function NextStepsBar({
   canStartWorkflowSession,
   onStartWorkflowSession,
   isStartingWorkflowSession,
+  allPhasesDone,
+  projectId,
+  featureId,
+  featureType,
 }: NextStepsBarProps) {
+  const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
+
   if (!show) return null;
 
   return (
@@ -133,7 +145,25 @@ export function NextStepsBar({
             Start Review
           </Button>
         )}
+        {allPhasesDone && featureType === "feature" && projectId != null && featureId != null && (
+          <Button
+            variant="outline"
+            onClick={() => setMergeDialogOpen(true)}
+          >
+            <GitMergeIcon className="mr-2 size-4" />
+            Merge &amp; Archive
+          </Button>
+        )}
       </div>
+
+      {allPhasesDone && featureType === "feature" && projectId != null && featureId != null && (
+        <MergeArchiveDialog
+          open={mergeDialogOpen}
+          onOpenChange={setMergeDialogOpen}
+          projectId={projectId}
+          featureId={featureId}
+        />
+      )}
     </div>
   );
 }
