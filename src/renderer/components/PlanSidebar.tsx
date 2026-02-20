@@ -165,8 +165,8 @@ export function PlanSidebar({ featureId }: PlanSidebarProps) {
         onOpenChange={(open) => { if (!open) setExpandedPhase(null); }}
       >
         {expandedPhase && config && (
-          <DialogContent className="!max-w-[90vw] !w-[90vw] !max-h-[90vh] flex flex-col">
-            <DialogHeader>
+          <DialogContent className="!max-w-[90vw] !w-[90vw] !max-h-[90vh] !flex !flex-col overflow-hidden">
+            <DialogHeader className="shrink-0">
               <div className="flex items-center gap-3">
                 {(() => {
                   const StatusIcon = config.icon;
@@ -203,7 +203,7 @@ export function PlanSidebar({ featureId }: PlanSidebarProps) {
               </div>
             </DialogHeader>
 
-            <ScrollArea className="flex-1 min-h-0 mt-4">
+            <ScrollArea className="flex-1 min-h-0 mt-4 overflow-auto">
               {expandedPhase.prompt && (
                 <Markdown content={expandedPhase.prompt} />
               )}
