@@ -56,6 +56,8 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
     }
   }, [viewedFilesSet]);
 
+  const [focusedFileIndex, setFocusedFileIndex] = useState(-1);
+
   const [activeWidget, setActiveWidget] = useState<{
     filePath: string;
     lineNumber: number;
@@ -155,6 +157,27 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
     });
   }, [fileSections, shikiHighlighter]);
 
+  const fileNames = useMemo(
+    () =>
+      diffFiles.map(({ section }) =>
+        section.newFileName !== "/dev/null" ? section.newFileName : section.oldFileName,
+      ),
+    [diffFiles],
+  );
+
+  const scrollToFileIndex = useCallback(
+    (index: number) => {
+      const name = fileNames[index];
+      if (!name) return;
+      setSelectedFile(name);
+      requestAnimationFrame(() => {
+        const el = diffAreaRef.current?.querySelector(`[data-file="${CSS.escape(name)}"]`);
+        el?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    },
+    [fileNames],
+  );
+
   const toggleFile = useCallback((fileName: string) => {
     setCollapsedFiles((prev) => {
       const next = new Set(prev);
@@ -166,6 +189,65 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
       return next;
     });
   }, []);
+
+  // Keyboard shortcuts: Ctrl+J (next), Ctrl+K (prev), Ctrl+E (toggle expand), Ctrl+H (toggle viewed)
+  const focusedFileIndexRef = useRef(focusedFileIndex);
+  focusedFileIndexRef.current = focusedFileIndex;
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (!e.ctrlKey || e.metaKey || e.altKey) return;
+      const idx = focusedFileIndexRef.current;
+
+      if (e.code === "KeyJ") {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        const next = Math.min(idx + 1, fileNames.length - 1);
+        setFocusedFileIndex(next);
+        scrollToFileIndex(next);
+      } else if (e.code === "KeyK") {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        const next = Math.max(idx - 1, 0);
+        setFocusedFileIndex(next);
+        scrollToFileIndex(next);
+      } else if (e.code === "KeyL") {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        if (idx >= 0 && idx < fileNames.length) {
+          toggleFile(fileNames[idx]);
+        }
+      } else if (e.code === "KeyD") {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        if (diffAreaRef.current) {
+          diffAreaRef.current.scrollBy({ top: diffAreaRef.current.clientHeight / 2, behavior: "smooth" });
+        }
+      } else if (e.code === "KeyU") {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        if (diffAreaRef.current) {
+          diffAreaRef.current.scrollBy({ top: -diffAreaRef.current.clientHeight / 2, behavior: "smooth" });
+        }
+      } else if (e.code === "KeyH") {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        if (idx >= 0 && idx < fileNames.length) {
+          const name = fileNames[idx];
+          const sha = (blobShas as Record<string, string>)[name] ?? "";
+          if (viewedFilesSet.has(name)) {
+            unmarkViewed.mutate({ featureId, filePath: name });
+          } else {
+            markViewed.mutate({ featureId, filePath: name, blobSha: sha });
+            setCollapsedFiles((p) => new Set([...p, name]));
+          }
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handler, true);
+    return () => window.removeEventListener("keydown", handler, true);
+  }, [fileNames, blobShas, viewedFilesSet, featureId, scrollToFileIndex, toggleFile, markViewed, unmarkViewed]);
 
   const totalAdditions = diffFiles.reduce((sum, { file }) => sum + file.additionLength, 0);
   const totalDeletions = diffFiles.reduce((sum, { file }) => sum + file.deletionLength, 0);
@@ -268,16 +350,17 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
           />
         </div>
         <div ref={diffAreaRef} className="flex-1 overflow-y-auto">
-        {diffFiles.map(({ section, file }) => {
+        {diffFiles.map(({ section, file }, fileIndex) => {
           const displayName = section.newFileName !== "/dev/null" ? section.newFileName : section.oldFileName;
           const isCollapsed = collapsedFiles.has(displayName);
           const isFileViewed = viewedFilesSet.has(displayName);
           const currentBlobSha = (blobShas as Record<string, string>)[displayName] ?? "";
+          const isFocused = fileIndex === focusedFileIndex;
 
           return (
             <div key={displayName} data-file={displayName} className="border-b border-[#6272a4]">
               {/* File header */}
-              <div className="flex w-full items-center gap-2 bg-[#343746] px-4 py-1.5 text-sm text-[#f8f8f2] hover:bg-[#44475a]">
+              <div className={`sticky top-0 z-10 flex w-full items-center gap-2 bg-[#343746] px-4 py-1.5 text-sm text-[#f8f8f2] hover:bg-[#44475a] ${isFocused ? "ring-1 ring-inset ring-[#bd93f9] bg-[#44475a]" : ""}`}>
                 <button
                   className="flex items-center gap-2 flex-1 min-w-0 text-left"
                   onClick={() => toggleFile(displayName)}
