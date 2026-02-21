@@ -478,8 +478,8 @@ export function FeatureWorkflowView({
                     isGridItem: boolean,
                   ) => {
                     const label =
-                      entry.agentType === "execute" && entry.phaseTitle
-                        ? `Execute - ${entry.phaseTitle}`
+                      (entry.agentType === "execute" || entry.agentType === "qa") && entry.phaseTitle
+                        ? `${AGENT_LABELS[entry.agentType] ?? entry.agentType} - ${entry.phaseTitle}`
                         : (AGENT_LABELS[entry.agentType] ?? entry.agentType);
                     const sessionKey = `${entry.agentType}-${entry.sessionDbId}`;
                     const questions = entry.pendingQuestions ?? [];

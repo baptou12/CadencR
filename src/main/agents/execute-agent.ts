@@ -222,7 +222,7 @@ function dispatchPhase(
   allSubprocessIds: string[],
 ): Promise<void> {
   if (phase.phase_type === "qa") {
-    return executeQaPhase(phase, options, allSubprocessIds);
+    return executeQaPhase(phase, options, autonomyLevel, allSubprocessIds);
   }
   return executePhase(phase, options, autonomyLevel, allSubprocessIds);
 }
@@ -234,6 +234,7 @@ function dispatchPhase(
 function executeQaPhase(
   phase: PhaseRow,
   options: ExecuteAgentOptions & { sessionDbId: number },
+  autonomyLevel: 1 | 2 | 3,
   allSubprocessIds: string[],
 ): Promise<void> {
   return new Promise<void>((resolve) => {
@@ -275,6 +276,7 @@ function executeQaPhase(
       planId: phase.plan_id,
       qaPhaseStepNumber: phase.step_number,
       worktreePath: options.worktreePath,
+      autonomyLevel,
     });
 
     // Override completion actions to also update phase status
@@ -472,7 +474,7 @@ function buildEnrichedPrompt(phase: PhaseRow, autonomyLevel: 1 | 2 | 3 = 3): str
  * Get autonomy level: feature → project → global settings cascade.
  * Returns 1 (ask before commit), 2 (manual continue), or 3 (full auto).
  */
-function getAutonomyLevel(featureId: number, projectId: number): 1 | 2 | 3 {
+export function getAutonomyLevel(featureId: number, projectId: number): 1 | 2 | 3 {
   const raw = resolveSetting("agent_autonomy", { featureId, projectId, defaultValue: "1" });
   const val = Number(raw);
   if (val === 1 || val === 2 || val === 3) return val;
@@ -545,6 +547,32 @@ async function executeRemainingSteps(
     if (autonomyLevel === 2) {
       transitionAgentSession(db, sessionDbId, "waiting");
       broadcastExecuteWaiting(sessionDbId, sortedSteps[0]);
+      return;
+    }
+  }
+
+  // Safety check: verify no pending/draft phases remain before completing
+  const remaining = db.prepare(
+    "SELECT COUNT(*) as cnt FROM phases WHERE plan_id = ? AND status IN ('pending', 'draft')",
+  ).get(planId) as { cnt: number };
+
+  if (remaining.cnt > 0) {
+    // Re-query and continue instead of completing
+    const freshPhases = db
+      .prepare(
+        "SELECT id, plan_id, step_number, title, status, complexity, commit_message, prompt, order_index, phase_type FROM phases WHERE plan_id = ? AND status IN ('pending', 'error') ORDER BY step_number, order_index",
+      )
+      .all(planId) as PhaseRow[];
+
+    if (freshPhases.length > 0) {
+      const freshGroups = new Map<number, PhaseRow[]>();
+      for (const phase of freshPhases) {
+        const existing = freshGroups.get(phase.step_number) ?? [];
+        existing.push(phase);
+        freshGroups.set(phase.step_number, existing);
+      }
+      const freshSteps = Array.from(freshGroups.keys()).toSorted((a, b) => a - b);
+      await executeRemainingSteps(freshSteps, 0, freshGroups, options, autonomyLevel, planId, sessionDbId);
       return;
     }
   }
@@ -681,6 +709,32 @@ export function continueExecuteAgent(sessionDbId: number): { subprocessIds: stri
 
       await executeRemainingSteps(sortedSteps, 1, stepGroups, options, autonomyLevel, plan.id, sessionDbId);
     } else {
+      // Safety check: verify no pending/draft phases remain
+      const remaining = db.prepare(
+        "SELECT COUNT(*) as cnt FROM phases WHERE plan_id = ? AND status IN ('pending', 'draft')",
+      ).get(plan.id) as { cnt: number };
+
+      if (remaining.cnt > 0) {
+        // Re-query and continue
+        const freshPhases = db
+          .prepare(
+            "SELECT id, plan_id, step_number, title, status, complexity, commit_message, prompt, order_index, phase_type FROM phases WHERE plan_id = ? AND status IN ('pending', 'error') ORDER BY step_number, order_index",
+          )
+          .all(plan.id) as PhaseRow[];
+
+        if (freshPhases.length > 0) {
+          const freshGroups = new Map<number, PhaseRow[]>();
+          for (const phase of freshPhases) {
+            const existing = freshGroups.get(phase.step_number) ?? [];
+            existing.push(phase);
+            freshGroups.set(phase.step_number, existing);
+          }
+          const freshSteps = Array.from(freshGroups.keys()).toSorted((a, b) => a - b);
+          await executeRemainingSteps(freshSteps, 0, freshGroups, options, autonomyLevel, plan.id, sessionDbId);
+          return;
+        }
+      }
+
       transitionAgentSession(db, sessionDbId, "completed", session.feature_id, { ended_at: "datetime('now')" });
       broadcastExecuteAllDone(sessionDbId, 0);
     }

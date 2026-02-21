@@ -283,7 +283,8 @@ After presenting your review report, you MUST follow this approval loop:
 const SESSION_SYSTEM_PROMPT =
   "You are Claude Code working on this project. Help the user with whatever they need.";
 
-const QA_SYSTEM_PROMPT = `You are the QA agent for ProductDevR, responsible for comprehensive functional testing and verification of implementations.
+export function buildQaSystemPrompt(autonomyLevel: 1 | 2 | 3): string {
+  const basePrompt = `You are the QA agent for ProductDevR, responsible for comprehensive functional testing and verification of implementations.
 
 ## Your Role
 
@@ -301,8 +302,7 @@ You have MCP tools available (prefixed with mcp__productdevr-qa__) for reading t
 3. **Read the QA procedure**: The project's QA procedure explains HOW to execute your test cases (e.g., using an MCP to interact with a simulator, browser DevTools, API calls, etc.).
 4. **Execute each test case**: Follow the QA procedure to actually perform each test. Interact with the running application, simulators, browsers, or any tools available to you.
 5. **Report results**: Output a QA report as markdown in the conversation.
-6. **If tests fail**: Use the MCP tools (\`create_phase\`, \`update_phase\`, \`remove_phase\`) to create fix phases, then call \`finalize_phases\` to make them available for execution.
-7. **Ask the user for approval** — the user validates your findings before anything is finalized.
+6. **If tests fail**: Use the MCP tools (\`create_phase\`, \`update_phase\`, \`remove_phase\`) to create fix phases as drafts.
 
 ## QA Report Format
 
@@ -332,26 +332,39 @@ PASS | FAIL — <explanation of overall status>
 
 If there are failures that require code changes, use the MCP tools to create fix phases:
 1. Call \`create_phase\` for each fix needed (with appropriate step_number, title, prompt, commit_message)
-2. Call \`finalize_phases\` to make them pending for execution
 
-If all tests passed, write "None needed" and skip the tools.
+If all tests passed, write "None needed" and skip the tools.`;
 
-## QA Approval Loop (MANDATORY)
+  const completionSection =
+    autonomyLevel === 1
+      ? `## QA Approval Loop (MANDATORY)
 
-After presenting your QA report and creating any fix phases, you MUST follow this approval loop:
+After presenting your QA report and creating any fix phases (as drafts), you MUST follow this approval loop:
 
 1. Call AskUserQuestion with:
    - Question: "QA report ready. Do you approve the results and fix phases (if any)?"
    - Options: "Approve QA report", "Request changes"
 2. Wait for the user's response.
-3. If the user selects "Approve QA report": call \`mark_agent_done\` and stop.
+3. If the user selects "Approve QA report": call \`finalize_phases\` (if you created any fix phases), then call \`mark_agent_done\` and stop.
 4. If the user selects "Request changes": read their feedback, re-run or adjust tests as needed, revise and GO BACK TO STEP 1.
 
 CRITICAL RULES:
 - NEVER call mark_agent_done unless the user has explicitly selected "Approve QA report".
+- NEVER call finalize_phases until the user has approved — fix phases must stay as drafts until then.
 - EVERY revised report MUST be followed by a NEW AskUserQuestion call. No exceptions.
 - The loop continues indefinitely until the user approves.
-- Do NOT assume approval. Do NOT skip the AskUserQuestion after a revision.
+- Do NOT assume approval. Do NOT skip the AskUserQuestion after a revision.`
+      : `## Completion
+
+After presenting your QA report:
+1. If you created fix phases, call \`finalize_phases\` to make them pending for execution.
+2. Call \`mark_agent_done\` and stop.
+
+Do NOT use AskUserQuestion — proceed automatically.`;
+
+  return `${basePrompt}
+
+${completionSection}
 
 ## Rules
 - Design test cases that are SPECIFIC to what was actually implemented — not generic tests
@@ -360,6 +373,7 @@ CRITICAL RULES:
 - Be thorough — test happy paths, edge cases, and error scenarios
 - Provide evidence for each test result (screenshots, console output, etc.)
 - If proposing fix phases, make them precise and actionable`;
+}
 
 export function buildExecuteSystemPrompt(autonomyLevel: 1 | 2 | 3): string {
   const baseRole = `You are the Execute agent for ProductDevR, responsible for implementing a single phase of a development plan.
@@ -517,6 +531,7 @@ export interface QaConfigOptions {
   /** Step number of the QA phase — fix phases will be inserted at step + 1 */
   qaPhaseStepNumber: number;
   worktreePath?: string;
+  autonomyLevel?: 1 | 2 | 3;
 }
 
 // ---------------------------------------------------------------------------
@@ -767,7 +782,7 @@ Based on what was implemented above, design specific test cases and execute them
 
   return {
     agentType: "qa",
-    systemPrompt: QA_SYSTEM_PROMPT,
+    systemPrompt: buildQaSystemPrompt(opts.autonomyLevel ?? 1),
     completionActions,
     featureId: opts.featureId,
     projectId: opts.projectId,

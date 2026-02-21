@@ -120,7 +120,7 @@ export function useFeatureState(
         plan.status === "idle" &&
         brainstorm.status === "idle",
       canStartBuild:
-        (isPlanned || isInProgress) && (execute.status === "idle" || execute.status === "error"),
+        (isPlanned || isInProgress) && (execute.status === "idle" || execute.status === "error" || execute.status === "completed"),
       canStartRisk:
         (isPlanned || isInProgress) && risk.status === "idle",
       canStartReview:

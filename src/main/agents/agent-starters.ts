@@ -20,6 +20,7 @@ import {
 } from "./agent-configs";
 import type { AgentType, UnifiedAgentConfig } from "./types";
 import type { PlanRow, PhaseRow } from "../db/types";
+import { getAutonomyLevel } from "./execute-agent";
 
 
 // ---------------------------------------------------------------------------
@@ -233,12 +234,15 @@ export function startQaAgent(options: {
     .get(plan.id) as { max_step: number | null };
   const qaPhaseStepNumber = maxStepRow?.max_step ?? 0;
 
+  const autonomyLevel = getAutonomyLevel(options.featureId, options.projectId);
+
   const config: UnifiedAgentConfig = createQaConfig({
     ...options,
     qaPrompt,
     completedPhasesSummary,
     planId: plan.id,
     qaPhaseStepNumber,
+    autonomyLevel,
   });
 
   return startUnifiedAgent(config);
