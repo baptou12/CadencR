@@ -5,6 +5,7 @@
  */
 import React from "react";
 import { render as rtlRender, type RenderOptions } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { trpc } from "@/trpc";
 import { httpBatchLink } from "@trpc/client";
@@ -157,5 +158,9 @@ export function render(ui: React.ReactElement, options: CustomRenderOptions = {}
     );
   }
 
-  return rtlRender(ui, { wrapper: Wrapper, ...renderOptions });
+  const user = userEvent.setup();
+  return {
+    user,
+    ...rtlRender(ui, { wrapper: Wrapper, ...renderOptions }),
+  };
 }

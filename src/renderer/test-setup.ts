@@ -1,5 +1,9 @@
 import "@testing-library/jest-dom/vitest";
-import { vi } from "vitest";
+import { vi, afterEach } from "vitest";
+import { cleanup } from "@testing-library/react";
+
+// Automatically cleanup DOM after each test
+afterEach(cleanup);
 
 // ---------------------------------------------------------------------------
 // window.matchMedia
@@ -52,6 +56,24 @@ Object.defineProperty(window, "IntersectionObserver", {
   writable: true,
   value: MockIntersectionObserver,
 });
+
+// ---------------------------------------------------------------------------
+// scrollIntoView (not implemented in jsdom)
+// ---------------------------------------------------------------------------
+
+window.HTMLElement.prototype.scrollIntoView = vi.fn();
+
+// ---------------------------------------------------------------------------
+// Canvas (for components that use canvas text measurement)
+// ---------------------------------------------------------------------------
+
+HTMLCanvasElement.prototype.getContext = vi.fn(() => ({
+  font: "",
+  measureText: vi.fn(() => ({ width: 100 })),
+  fillText: vi.fn(),
+  clearRect: vi.fn(),
+  fillRect: vi.fn(),
+})) as unknown as typeof HTMLCanvasElement.prototype.getContext;
 
 // ---------------------------------------------------------------------------
 // window.api (Electron preload bridge) — default stub
