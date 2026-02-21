@@ -384,6 +384,23 @@ const migrations: Migration[] = [
       }
     },
   },
+  {
+    version: 30,
+    description: "Add prompt_history table and draft_prompt column to agent_sessions",
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS prompt_history (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          project_id INTEGER NOT NULL,
+          content TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_prompt_history_project ON prompt_history(project_id, created_at DESC);
+      `);
+      db.exec("ALTER TABLE agent_sessions ADD COLUMN draft_prompt TEXT DEFAULT NULL");
+    },
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {
