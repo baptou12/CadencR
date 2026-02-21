@@ -399,6 +399,7 @@ const agentsRouter = router({
         sessionId: z.string(),
         originalSessionDbId: z.number(),
         prompt: z.string().optional(),
+        images: z.array(z.object({ base64: z.string(), mimeType: z.string() })).optional(),
       }),
     )
     .mutation(({ input }) => {
@@ -443,12 +444,26 @@ const agentsRouter = router({
         ? [buildPhaseCompletionAction(originalSession.phase_id, input.featureId)]
         : undefined;
 
+      let resumePrompt: import("../agents/types").MessageContent;
+      const promptText = input.prompt ?? "Continue from where you left off.";
+      if (input.images && input.images.length > 0) {
+        resumePrompt = [
+          { type: "text" as const, text: promptText },
+          ...input.images.map((img) => ({
+            type: "image" as const,
+            source: { type: "base64" as const, media_type: img.mimeType, data: img.base64 },
+          })),
+        ];
+      } else {
+        resumePrompt = promptText;
+      }
+
       const result = startUnifiedAgent({
         agentType: input.agentType as AgentType,
         featureId: input.featureId,
         projectId: input.projectId,
         cwd,
-        prompt: input.prompt ?? "Continue from where you left off.",
+        prompt: resumePrompt,
         resumeSessionId: input.sessionId,
         runId: originalSession?.run_id ?? undefined,
         phaseId: originalSession?.phase_id ?? undefined,
@@ -503,25 +518,75 @@ const agentsRouter = router({
 
   /** Send a message to a running agent subprocess */
   sendMessage: publicProcedure
-    .input(z.object({ id: z.string(), message: z.string() }))
+    .input(z.object({
+      id: z.string(),
+      message: z.string(),
+      images: z.array(z.object({ base64: z.string(), mimeType: z.string() })).optional(),
+    }))
     .mutation(async ({ input }) => {
-      return sendMessageToSubprocess(input.id, input.message);
+      let content: import("../agents/types").MessageContent;
+      if (input.images && input.images.length > 0) {
+        content = [
+          { type: "text" as const, text: input.message },
+          ...input.images.map((img) => ({
+            type: "image" as const,
+            source: { type: "base64" as const, media_type: img.mimeType, data: img.base64 },
+          })),
+        ];
+      } else {
+        content = input.message;
+      }
+      return sendMessageToSubprocess(input.id, content);
     }),
 
   /** Start the plan agent for a feature */
   startPlan: publicProcedure
-    .input(z.object({ featureId: z.number(), projectId: z.number(), description: z.string() }))
+    .input(z.object({
+      featureId: z.number(),
+      projectId: z.number(),
+      description: z.string(),
+      images: z.array(z.object({ base64: z.string(), mimeType: z.string() })).optional(),
+    }))
     .mutation(({ input }) => {
       const { cwd, worktreePath } = resolveAgentCwd(input.featureId, input.projectId);
-      return startPlanAgent({ ...input, cwd, worktreePath });
+      let description: import("../agents/types").MessageContent;
+      if (input.images && input.images.length > 0) {
+        description = [
+          { type: "text" as const, text: input.description },
+          ...input.images.map((img) => ({
+            type: "image" as const,
+            source: { type: "base64" as const, media_type: img.mimeType, data: img.base64 },
+          })),
+        ];
+      } else {
+        description = input.description;
+      }
+      return startPlanAgent({ featureId: input.featureId, projectId: input.projectId, description, cwd, worktreePath });
     }),
 
   /** Start the brainstorm agent for a feature */
   startBrainstorm: publicProcedure
-    .input(z.object({ featureId: z.number(), projectId: z.number(), description: z.string() }))
+    .input(z.object({
+      featureId: z.number(),
+      projectId: z.number(),
+      description: z.string(),
+      images: z.array(z.object({ base64: z.string(), mimeType: z.string() })).optional(),
+    }))
     .mutation(({ input }) => {
       const { cwd, worktreePath } = resolveAgentCwd(input.featureId, input.projectId);
-      return startBrainstormAgent({ ...input, cwd, worktreePath });
+      let description: import("../agents/types").MessageContent;
+      if (input.images && input.images.length > 0) {
+        description = [
+          { type: "text" as const, text: input.description },
+          ...input.images.map((img) => ({
+            type: "image" as const,
+            source: { type: "base64" as const, media_type: img.mimeType, data: img.base64 },
+          })),
+        ];
+      } else {
+        description = input.description;
+      }
+      return startBrainstormAgent({ featureId: input.featureId, projectId: input.projectId, description, cwd, worktreePath });
     }),
 
   /** Start the execute agent for a feature (runs plan phases) */
@@ -634,6 +699,7 @@ const agentsRouter = router({
         featureId: z.number(),
         projectId: z.number(),
         prompt: z.string(),
+        images: z.array(z.object({ base64: z.string(), mimeType: z.string() })).optional(),
         permissionMode: z.enum(["acceptEdits", "plan"]).optional(),
       }),
     )
@@ -644,10 +710,23 @@ const agentsRouter = router({
         .get(input.projectId) as Pick<ProjectRow, "path"> | undefined;
       if (!project?.path) throw new Error("Project path not found");
 
+      let prompt: import("../agents/types").MessageContent;
+      if (input.images && input.images.length > 0) {
+        prompt = [
+          { type: "text" as const, text: input.prompt },
+          ...input.images.map((img) => ({
+            type: "image" as const,
+            source: { type: "base64" as const, media_type: img.mimeType, data: img.base64 },
+          })),
+        ];
+      } else {
+        prompt = input.prompt;
+      }
+
       const result = startSessionAgent({
         featureId: input.featureId,
         projectId: input.projectId,
-        prompt: input.prompt,
+        prompt,
         cwd: project.path,
         permissionMode: input.permissionMode,
       });

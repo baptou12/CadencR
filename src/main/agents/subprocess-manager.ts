@@ -7,7 +7,7 @@ import { loadAllowedPatterns } from "./permissions";
 import { broadcast, AGENT_EVENT_CHANNEL } from "./broadcast";
 import { getSdkClient } from "./sdk-client";
 import { createCanUseToolHandler } from "./tool-permissions";
-import type { AgentEvent, AgentType, StreamEvent } from "./types";
+import type { AgentEvent, AgentType, MessageContent, StreamEvent } from "./types";
 
 const MAX_CONCURRENT = 10;
 
@@ -19,7 +19,7 @@ export interface SubprocessOptions {
   /** System prompt to pass to Claude */
   systemPrompt?: string;
   /** Initial user message / prompt */
-  prompt: string;
+  prompt: MessageContent;
   /** Session ID for resuming a previous session */
   resumeSessionId?: string;
   /** Allowed tools configuration */
@@ -47,7 +47,7 @@ export interface ManagedSubprocess {
   /** The SDK Query object for close/interrupt */
   query?: import("@anthropic-ai/claude-agent-sdk").Query;
   /** Push a user message into the streaming input generator */
-  pushMessage?: (message: string) => void;
+  pushMessage?: (message: MessageContent) => void;
   /** Close the message stream (signals no more user messages) */
   closeMessageStream?: () => void;
   /** Event listeners registered by agent-specific code */
@@ -407,13 +407,13 @@ export function startSubprocess(options: SubprocessOptions): ManagedSubprocess {
  * The initial prompt is yielded immediately, and subsequent messages
  * are pushed via the returned `push` function.
  */
-function createMessageStream(initialPrompt: string) {
+function createMessageStream(initialPrompt: MessageContent) {
   // Queue of pending messages and a resolver for the current wait
-  const queue: string[] = [];
+  const queue: MessageContent[] = [];
   let resolver: ((value: IteratorResult<unknown, void>) => void) | null = null;
   let done = false;
 
-  function push(message: string) {
+  function push(message: MessageContent) {
     if (done) return;
     if (resolver) {
       const r = resolver;
@@ -451,7 +451,7 @@ function createMessageStream(initialPrompt: string) {
           done: false,
           value: {
             type: "user" as const,
-            message: { role: "user" as const, content: prompt },
+            message: { role: "user" as const, content: prompt as MessageContent },
             parent_tool_use_id: null,
             session_id: "",
           },
@@ -683,7 +683,7 @@ export type SendMessageResult = {
  * Send a user message to a running subprocess via the streaming input generator.
  * Returns a structured result so callers can distinguish failure modes and handle them.
  */
-export function sendMessageToSubprocess(id: string, message: string): SendMessageResult {
+export function sendMessageToSubprocess(id: string, message: MessageContent): SendMessageResult {
   const managed = activeProcesses.get(id);
   if (!managed) return { success: false, reason: "no_process" };
 
@@ -696,9 +696,10 @@ export function sendMessageToSubprocess(id: string, message: string): SendMessag
   if (sessionDbId) {
     try {
       const db = getDatabase();
+      const persistedContent = typeof message === "string" ? message : JSON.stringify(message);
       db.prepare(
         "INSERT INTO agent_messages (session_id, role, content, message_type, tool_name) VALUES (?, ?, ?, ?, ?)",
-      ).run(sessionDbId, "user", message, "user_message", null);
+      ).run(sessionDbId, "user", persistedContent, "user_message", null);
       const fid = getFeatureIdForSubprocess(id);
       if (fid != null) notifyDbUpdated("agent_session", fid);
     } catch {

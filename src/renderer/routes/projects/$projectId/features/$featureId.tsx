@@ -121,7 +121,7 @@ function SessionFeatureView({
   const resumeMutation = trpc.agents.resume.useMutation();
 
   const handleSend = useCallback(
-    async (message: string) => {
+    async (message: string, images?: Array<{ base64: string; mimeType: string }>) => {
       console.log("[SessionFeatureView] handleSend", { hasSession: !!session, subprocessId: session?.subprocessId, status, permissionMode, claudeSessionId: session?.claudeSessionId });
       // 1. Active subprocess — send follow-up message directly.
       //    For session agents, the subprocess stays alive in activeProcesses even
@@ -131,7 +131,7 @@ function SessionFeatureView({
       //    instead of spawning a brand-new subprocess via the resume mutation.
       if (session?.subprocessId && (status === "running" || status === "completed")) {
         try {
-          const result = await sendMessageMutation.mutateAsync({ id: session.subprocessId, message });
+          const result = await sendMessageMutation.mutateAsync({ id: session.subprocessId, message, images });
           if (result.success) {
             // Always refetch so the user message appears immediately in the chat
             void refetch();
@@ -153,6 +153,7 @@ function SessionFeatureView({
             sessionId: session.claudeSessionId,
             originalSessionDbId: session.sessionDbId,
             prompt: message,
+            images,
           });
         } catch (err) {
           console.error("[SessionFeatureView] Failed to resume session:", err);
@@ -167,6 +168,7 @@ function SessionFeatureView({
           featureId,
           projectId,
           prompt: message,
+          images,
           permissionMode,
         });
       } catch (err) {

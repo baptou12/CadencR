@@ -113,7 +113,7 @@ export interface AgentSessionProps {
   /** Current status of the agent */
   status: AgentStatus;
   /** Called when the user sends a message via the prompt bar */
-  onSend: (message: string) => void;
+  onSend: (message: string, images?: Array<{ base64: string; mimeType: string }>) => void;
   /** Called when the user clicks the stop button */
   onStop: () => void;
   /** Active questions from AskUserQuestion tool calls */

@@ -5,6 +5,17 @@
 
 import type { McpServerConfig } from "@anthropic-ai/claude-agent-sdk";
 
+/** An image content block in the Anthropic API format */
+export type ImageBlock = {
+  type: "image";
+  source: { type: "base64"; media_type: string; data: string };
+};
+
+/** Message content — either a plain string or an array of text/image blocks */
+export type MessageContent =
+  | string
+  | Array<{ type: "text"; text: string } | ImageBlock>;
+
 export type AgentType = "plan" | "brainstorm" | "execute" | "risk" | "review" | "session" | "qa";
 
 /** Message start event — beginning of an assistant turn */
@@ -213,7 +224,7 @@ export interface UnifiedAgentConfig {
   /** Working directory (project root or worktree path) */
   cwd: string;
   /** User prompt / initial message */
-  prompt: string;
+  prompt: MessageContent;
   /** Existing Claude session ID to resume */
   resumeSessionId?: string;
   /** Parent orchestrator session ID (for execute phase sessions) */
