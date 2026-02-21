@@ -143,7 +143,7 @@ describe("appRouter - settingsRouter", () => {
     const { discoverClaudeCli } = await import("../agents/cli-discovery");
     vi.mocked(discoverClaudeCli).mockReturnValue({ path: "/usr/bin/claude", source: "settings" });
     const result = await caller.settings.getClaudeCliPath();
-    expect(result).toEqual({ path: "/usr/bin/claude", source: "path" });
+    expect(result).toEqual({ path: "/usr/bin/claude", source: "settings" });
   });
 
   it("settings.getClaudeCliPath returns null when not found", async () => {
