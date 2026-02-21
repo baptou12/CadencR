@@ -110,6 +110,20 @@ export function FeatureWorkflowView({
 
   // Plan approval handled by chat.handlePlanApprove / chat.handlePlanRequestChanges
 
+  // --- Review fixer agent ---
+  const startReviewFixer = trpc.agents.startReviewFixer.useMutation({
+    onSuccess: () => {
+      utils.agents.getFeatureAgentState.invalidate({ featureId });
+    },
+  });
+
+  const handleStartReviewFixer = useCallback(
+    (formattedComments: string) => {
+      startReviewFixer.mutate({ featureId, projectId, prompt: formattedComments });
+    },
+    [featureId, projectId, startReviewFixer],
+  );
+
   // --- Inline diff viewer modal state ---
   const [inlineDiffOpen, setInlineDiffOpen] = useState(false);
   // Track which agent opened the diff modal so comments go to the right agent
@@ -857,6 +871,7 @@ export function FeatureWorkflowView({
         open={inlineDiffOpen}
         onOpenChange={setInlineDiffOpen}
         executeState={diffAgentState}
+        onStartReviewFixer={handleStartReviewFixer}
       />
     </div>
   );
