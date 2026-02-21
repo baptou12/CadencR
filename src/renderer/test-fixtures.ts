@@ -175,6 +175,51 @@ export function createMockAgentSession(
 }
 
 // ---------------------------------------------------------------------------
+// Diff mock factories
+// ---------------------------------------------------------------------------
+
+export interface MockDiffHunk {
+  content: string;
+  oldStart: number;
+  newStart: number;
+  oldLines: number;
+  newLines: number;
+  changes: { type: "normal" | "insert" | "delete"; content: string; oldLineNumber?: number; newLineNumber?: number }[];
+}
+
+export interface MockDiffFile {
+  oldFileName: string;
+  newFileName: string;
+  hunks: MockDiffHunk[];
+}
+
+export function createMockDiffHunk(overrides: Partial<MockDiffHunk> = {}): MockDiffHunk {
+  return {
+    content: "@@ -1,3 +1,4 @@",
+    oldStart: 1,
+    newStart: 1,
+    oldLines: 3,
+    newLines: 4,
+    changes: [
+      { type: "normal", content: " line1", oldLineNumber: 1, newLineNumber: 1 },
+      { type: "insert", content: "+added line", newLineNumber: 2 },
+      { type: "normal", content: " line2", oldLineNumber: 2, newLineNumber: 3 },
+      { type: "normal", content: " line3", oldLineNumber: 3, newLineNumber: 4 },
+    ],
+    ...overrides,
+  };
+}
+
+export function createMockDiffFile(overrides: Partial<MockDiffFile> = {}): MockDiffFile {
+  return {
+    oldFileName: "src/example.ts",
+    newFileName: "src/example.ts",
+    hunks: [createMockDiffHunk()],
+    ...overrides,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Reset helpers (call in beforeEach to reset auto-increment counters)
 // ---------------------------------------------------------------------------
 
