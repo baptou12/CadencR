@@ -15,7 +15,7 @@
  */
 
 import { getDatabase } from "../db/database";
-import { createPlanMcpServer, createQaMcpServer, createReviewMcpServer, createCommonMcpServer, createWorkflowSessionMcpServer } from "./mcp-tools";
+import { createPlanMcpServer, createQaMcpServer, createReviewMcpServer, createRiskMcpServer, createCommonMcpServer, createWorkflowSessionMcpServer } from "./mcp-tools";
 import { waitForPlanApproval } from "./plan-approval";
 import type { ImageBlock, MessageContent, UnifiedAgentConfig, CompletionAction } from "./types";
 
@@ -531,6 +531,8 @@ export interface RiskConfigOptions {
   cwd: string;
   /** Pre-built prompt that includes plan context (caller fetches plan) */
   prompt: string;
+  /** Plan ID — when provided, gives the risk agent MCP tools for reading/creating phases */
+  planId?: number;
   /** Worktree path for permission resolution */
   worktreePath?: string;
 }
@@ -733,9 +735,16 @@ export function createRiskConfig(opts: RiskConfigOptions): UnifiedAgentConfig {
     cwd: opts.cwd,
     prompt: opts.prompt,
     worktreePath: opts.worktreePath,
-    mcpServerFactory: (_subprocessId: string, sessionDbId: number) => ({
-      "productdevr-common": createCommonMcpServer(sessionDbId, opts.featureId),
-    }),
+    mcpServerFactory: (_subprocessId: string, sessionDbId: number) => {
+      if (opts.planId) {
+        return {
+          "productdevr-risk": createRiskMcpServer(opts.planId, opts.featureId, sessionDbId),
+        } as Record<string, ReturnType<typeof createRiskMcpServer>>;
+      }
+      return {
+        "productdevr-common": createCommonMcpServer(sessionDbId, opts.featureId),
+      } as Record<string, ReturnType<typeof createCommonMcpServer>>;
+    },
   };
 }
 

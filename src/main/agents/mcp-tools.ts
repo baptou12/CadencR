@@ -556,7 +556,51 @@ export function createReviewMcpServer(planId: number, featureId: number, session
 }
 
 // ---------------------------------------------------------------------------
-// Common MCP server (for agents without dedicated servers: Risk, Session)
+// Risk MCP server (read plan + create/update/remove phases for mitigations)
+// ---------------------------------------------------------------------------
+
+export function createRiskMcpServer(planId: number, featureId: number, sessionDbId: number) {
+  return createSdkMcpServer({
+    name: "productdevr-risk",
+    tools: [
+      readPlanTool,
+      readPhaseTool,
+      listPhasesTool,
+      createPhaseTool(featureId),
+      updatePhaseTool(planId, featureId),
+      removePhaseTool(planId, featureId),
+      createAgentDoneTool(sessionDbId, featureId),
+
+      tool(
+        "finalize_phases",
+        "Finalize all draft mitigation phases — sets them to 'pending' so they can be executed.",
+        {
+          plan_id: z.number().describe("The plan ID"),
+        },
+        async (args) => {
+          if (args.plan_id !== planId) {
+            return errorResult(`Expected plan_id ${planId}, got ${args.plan_id}`);
+          }
+          const db = getDatabase();
+          const draftPhases = db
+            .prepare("SELECT id, title, step_number FROM phases WHERE plan_id = ? AND status = 'draft' ORDER BY step_number, order_index")
+            .all(planId) as Array<{ id: number; title: string; step_number: number }>;
+
+          if (draftPhases.length === 0) return errorResult("No draft phases to finalize");
+
+          db.prepare("UPDATE phases SET status = 'pending' WHERE plan_id = ? AND status = 'draft'").run(planId);
+          notifyDbUpdated("phase", featureId);
+
+          const listing = draftPhases.map((p) => `- Phase ${p.id}: "${p.title}" (step ${p.step_number})`).join("\n");
+          return textResult(`Finalized ${draftPhases.length} mitigation phases:\n${listing}`);
+        },
+      ),
+    ],
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Common MCP server (for agents without dedicated servers: Session)
 // ---------------------------------------------------------------------------
 
 export function createCommonMcpServer(sessionDbId: number, featureId: number) {
