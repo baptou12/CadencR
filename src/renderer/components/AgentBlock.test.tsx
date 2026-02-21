@@ -170,5 +170,47 @@ describe("AgentBlock", () => {
       );
       expect(screen.getByText(/Output/)).toBeInTheDocument();
     });
+
+    it("renders colored spans for ANSI input in Bash output", () => {
+      const { container } = render(
+        <AgentBlock
+          block={makeBlock({
+            type: "tool_result",
+            content: "\x1b[31mred text\x1b[0m",
+            sourceToolName: "Bash",
+          })}
+        />,
+      );
+      const spans = container.querySelectorAll("span[style]");
+      expect(spans.length).toBeGreaterThan(0);
+    });
+
+    it("renders plain text Bash output without extra spans", () => {
+      render(
+        <AgentBlock
+          block={makeBlock({
+            type: "tool_result",
+            content: "plain output",
+            sourceToolName: "Bash",
+          })}
+        />,
+      );
+      expect(screen.getByText("plain output")).toBeInTheDocument();
+    });
+
+    it("renders error Bash output content", () => {
+      render(
+        <AgentBlock
+          block={makeBlock({
+            type: "tool_result",
+            content: "error occurred",
+            sourceToolName: "Bash",
+            isError: true,
+          })}
+        />,
+      );
+      // Content should still be rendered (plain text, no ANSI)
+      expect(screen.getByText("error occurred")).toBeInTheDocument();
+    });
   });
 });
