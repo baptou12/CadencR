@@ -98,3 +98,7 @@
     cursor: pointer;
   }
 }
+
+.user-message-markdown {
+  text-align: left;
+}

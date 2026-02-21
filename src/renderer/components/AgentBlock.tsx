@@ -294,7 +294,7 @@ function UserMessageBlock({ content }: { content: string }) {
   return (
     <div className="my-1 flex justify-end">
       <div className="rounded-md border border-primary/30 bg-primary/10 px-3 py-1.5 text-sm max-w-[80%]">
-        <span className="whitespace-pre-wrap text-foreground">{textContent}</span>
+        <Markdown content={textContent} className="user-message-markdown" />
         {imageBlocks.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-2">
             {imageBlocks.map((img, i) => (
