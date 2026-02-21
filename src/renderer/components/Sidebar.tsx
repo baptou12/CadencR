@@ -111,7 +111,7 @@ export function Sidebar() {
 
       <Separator />
 
-      <div className="flex-1 overflow-auto p-2">
+      <div className="flex-1 min-w-0 overflow-hidden p-2">
         <ProjectTree
           activeProjectId={activeProjectId}
           activeFeatureId={effectiveFeatureId}

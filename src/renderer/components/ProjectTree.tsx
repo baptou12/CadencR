@@ -35,7 +35,7 @@ export function ProjectTree({
   const projectsQuery = trpc.projects.list.useQuery();
   const projects = projectsQuery.data ?? [];
 
-  const { data: activeFeatureIds = [] } = trpc.agents.getActiveFeatureIds.useQuery(
+  const { data: featureTurnStates = {} } = trpc.agents.getFeatureTurnStates.useQuery(
     undefined,
     { refetchInterval: 3000 },
   );
@@ -105,7 +105,7 @@ export function ProjectTree({
   };
 
   return (
-    <div className="flex h-full flex-col gap-2">
+    <div className="flex h-full min-w-0 flex-col gap-2 overflow-hidden">
       <div className="flex items-center justify-between px-2">
         <span className="text-xs font-semibold uppercase text-muted-foreground">
           Projects
@@ -120,8 +120,8 @@ export function ProjectTree({
         </Button>
       </div>
 
-      <ScrollArea className="flex-1">
-        <div className="flex flex-col gap-0.5 px-1">
+      <ScrollArea className="flex-1 min-w-0">
+        <div className="flex min-w-0 flex-col gap-0.5 px-1">
           {projects.map((project) => {
             const isExpanded = expanded[project.id] ?? false;
             const isActive = activeProjectId === project.id;
@@ -135,7 +135,7 @@ export function ProjectTree({
                   data-nav-type="project"
                   data-nav-id={String(project.id)}
                   onClick={() => toggleExpand(project.id)}
-                  className={`group/project flex w-full items-center gap-1 rounded-md px-1.5 py-1.5 text-left text-sm outline-none transition-colors ${
+                  className={`group/project flex w-full min-w-0 items-center gap-1 rounded-md px-1.5 py-1.5 text-left text-sm outline-none transition-colors ${
                     isActive
                       ? "text-accent-foreground font-medium"
                       : "hover:bg-accent/50"
@@ -146,9 +146,9 @@ export function ProjectTree({
                   ) : (
                     <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
                   )}
-                  <span className="truncate">{project.name}</span>
+                  <span className="min-w-0 truncate">{project.name}</span>
 
-                  <div className="ml-auto flex items-center gap-0.5 opacity-0 group-hover/project:opacity-100">
+                  <div className="ml-auto flex shrink-0 items-center gap-0.5 opacity-0 group-hover/project:opacity-100">
                     {/* Add feature/session */}
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -228,7 +228,7 @@ export function ProjectTree({
                   <ProjectFeatures
                     projectId={project.id}
                     activeFeatureId={isActive ? activeFeatureId : null}
-                    activeFeatureIds={activeFeatureIds}
+                    featureTurnStates={featureTurnStates}
                     onSelectFeature={onSelectFeature}
                   />
                 )}

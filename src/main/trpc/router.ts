@@ -915,6 +915,25 @@ const agentsRouter = router({
     return rows.map((r) => r.feature_id);
   }),
 
+  /** Get turn states for features with running sessions */
+  getFeatureTurnStates: publicProcedure.query(() => {
+    const db = getDatabase();
+    const rows = db
+      .prepare(
+        `SELECT feature_id,
+          MAX(CASE WHEN pending_questions IS NOT NULL OR pending_permission IS NOT NULL OR pending_plan_approval IS NOT NULL THEN 1 ELSE 0 END) AS needs_input
+         FROM agent_sessions
+         WHERE status = 'running'
+         GROUP BY feature_id`,
+      )
+      .all() as Array<{ feature_id: number; needs_input: number }>;
+    const result: Record<number, 'claude' | 'askUser'> = {};
+    for (const row of rows) {
+      result[row.feature_id] = row.needs_input === 1 ? 'askUser' : 'claude';
+    }
+    return result;
+  }),
+
   /** Get supported slash commands (from active subprocess or temporary one) */
   getSupportedCommands: publicProcedure
     .input(z.object({
