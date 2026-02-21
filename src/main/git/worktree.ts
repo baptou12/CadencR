@@ -584,7 +584,7 @@ export async function checkMergeConflicts(
     mergeTreeOutput = err instanceof Error ? (err as NodeJS.ErrnoException & { stdout?: string }).stdout ?? err.message : String(err);
   }
 
-  const hasConflicts = mergeTreeOutput.includes("<<<<<<<");
+  const hasConflicts = /^<{7} /m.test(mergeTreeOutput);
 
   // Identify conflicting files: files changed in both branches since the merge base
   const conflictFiles: string[] = [];
