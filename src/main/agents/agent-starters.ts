@@ -118,20 +118,50 @@ export function startRiskAgent(options: {
 }): AgentResult {
   const db = getDatabase();
 
+  // 1. Query the feature
+  const feature = db
+    .prepare("SELECT title FROM features WHERE id = ?")
+    .get(options.featureId) as { title: string } | undefined;
+
+  // 2. Query the plan (rich fields)
   const plan = db
-    .prepare("SELECT id, raw_markdown, title FROM plans WHERE feature_id = ? ORDER BY id DESC LIMIT 1")
-    .get(options.featureId) as { id: number; raw_markdown: string | null; title: string } | undefined;
+    .prepare("SELECT id, summary, context, raw_markdown FROM plans WHERE feature_id = ? ORDER BY id DESC LIMIT 1")
+    .get(options.featureId) as { id: number; summary: string | null; context: string | null; raw_markdown: string | null } | undefined;
 
-  const planContext = plan?.raw_markdown
-    ? `\n\nHere is the implementation plan to evaluate:\n\n${plan.raw_markdown}`
-    : "";
+  // 3. Query phases
+  const phases = plan
+    ? (db
+        .prepare("SELECT title, status, step_number FROM phases WHERE plan_id = ? ORDER BY step_number, order_index")
+        .all(plan.id) as { title: string; status: string; step_number: number }[])
+    : [];
 
-  const prompt = `Please perform a risk analysis for this feature.${planContext}
+  // 4. Build rich context string
+  const contextParts: string[] = [];
+  contextParts.push(`## Feature: ${feature?.title ?? `#${options.featureId}`}`);
+  if (plan?.summary) contextParts.push(`**Plan Summary:** ${plan.summary}`);
+  if (plan?.context) contextParts.push(`**Codebase Context:** ${plan.context}`);
 
-Start by exploring the codebase to understand the full context and impact of these changes. Then generate a comprehensive risk report in markdown format.`;
+  if (phases.length > 0) {
+    contextParts.push("\n## Phases:");
+    for (const p of phases) {
+      contextParts.push(`${p.step_number}. ${p.title} — ${p.status}`);
+    }
+  }
+
+  if (plan?.raw_markdown) {
+    contextParts.push(`\n## Full Plan\n${plan.raw_markdown}`);
+  }
+
+  const richContext = contextParts.join("\n");
+
+  const prompt = `Please perform a risk analysis for this feature.
+
+${richContext}
+
+Start by running \`git diff main...HEAD\` (or the appropriate base branch) to see what code has actually changed. Then explore the codebase to understand the full context and impact of these changes. Generate a comprehensive risk report.`;
 
   return startUnifiedAgent(
-    createRiskConfig({ ...options, prompt }),
+    createRiskConfig({ ...options, prompt, planId: plan?.id }),
   );
 }
 
