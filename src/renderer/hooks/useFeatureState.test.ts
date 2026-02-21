@@ -172,6 +172,66 @@ describe("useFeatureState", () => {
     }
   });
 
+  it("canStartRisk is true when risk is completed (re-runnable)", () => {
+    const { result } = renderHook(() =>
+      useFeatureState({
+        featureStatus: "in-progress",
+        plan: idleAgent(),
+        brainstorm: idleAgent(),
+        execute: idleAgent(),
+        risk: idleAgent("completed"),
+        review: idleAgent(),
+      }),
+    );
+
+    expect(result.current.actions.canStartRisk).toBe(true);
+  });
+
+  it("canStartRisk is false when risk is running", () => {
+    const { result } = renderHook(() =>
+      useFeatureState({
+        featureStatus: "in-progress",
+        plan: idleAgent(),
+        brainstorm: idleAgent(),
+        execute: idleAgent(),
+        risk: idleAgent("running"),
+        review: idleAgent(),
+      }),
+    );
+
+    expect(result.current.actions.canStartRisk).toBe(false);
+  });
+
+  it("canStartReview is true when review is completed (re-runnable)", () => {
+    const { result } = renderHook(() =>
+      useFeatureState({
+        featureStatus: "in-progress",
+        plan: idleAgent(),
+        brainstorm: idleAgent(),
+        execute: idleAgent(),
+        risk: idleAgent(),
+        review: idleAgent("completed"),
+      }),
+    );
+
+    expect(result.current.actions.canStartReview).toBe(true);
+  });
+
+  it("canStartReview is false when review is running", () => {
+    const { result } = renderHook(() =>
+      useFeatureState({
+        featureStatus: "in-progress",
+        plan: idleAgent(),
+        brainstorm: idleAgent(),
+        execute: idleAgent(),
+        risk: idleAgent(),
+        review: idleAgent("running"),
+      }),
+    );
+
+    expect(result.current.actions.canStartReview).toBe(false);
+  });
+
   it("defaults featureStatus to draft when undefined", () => {
     const { result } = renderHook(() =>
       useFeatureState({

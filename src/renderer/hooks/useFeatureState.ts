@@ -122,9 +122,9 @@ export function useFeatureState(
       canStartBuild:
         (isPlanned || isInProgress) && (execute.status === "idle" || execute.status === "error" || execute.status === "completed"),
       canStartRisk:
-        (isPlanned || isInProgress) && risk.status === "idle",
+        (isPlanned || isInProgress) && risk.status !== "running",
       canStartReview:
-        (isInProgress || isReview) && review.status === "idle",
+        (isInProgress || isReview) && review.status !== "running",
       canStartWorkflowSession:
         isPlanned || isInProgress || isReview,
     };
