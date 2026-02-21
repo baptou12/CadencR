@@ -19,6 +19,7 @@ import { trpc } from "@/trpc";
 import { getActiveFocusZone } from "@/lib/focus-zones";
 import { CommandPalette } from "@/components/CommandPalette";
 import { FocusRing } from "@/components/FocusRing";
+import { KeyboardShortcutsModal } from "@/components/KeyboardShortcutsModal";
 
 const ZONE_ORDER = ["left-sidebar", "main-content", "terminal", "right-sidebar"] as const;
 
@@ -48,6 +49,7 @@ function RootLayout() {
   const navigate = useNavigate();
   const leftSidebarRef = useRef<HTMLDivElement>(null);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
 
   // Auto-focus left sidebar on mount
   useEffect(() => {
@@ -134,6 +136,16 @@ function RootLayout() {
     (e) => {
       e.preventDefault();
       void navigate({ to: "/settings" });
+    },
+    { enableOnFormTags: true },
+  );
+
+  // CMD+? -> open keyboard shortcuts help modal
+  useHotkeys(
+    "meta+shift+/",
+    (e) => {
+      e.preventDefault();
+      setShortcutsHelpOpen((prev) => !prev);
     },
     { enableOnFormTags: true },
   );
@@ -301,6 +313,7 @@ function RootLayout() {
         activeProjectId={activeProjectId}
         activeFeatureId={activeFeatureId}
       />
+      <KeyboardShortcutsModal open={shortcutsHelpOpen} onOpenChange={setShortcutsHelpOpen} />
       <FocusRing />
     </div>
   );

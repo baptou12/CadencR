@@ -94,6 +94,16 @@ function SessionFeatureView({
     { enableOnFormTags: true },
   );
 
+  // CMD+D — open diff modal for this session agent
+  useHotkeys(
+    "meta+d",
+    (e) => {
+      e.preventDefault();
+      setInlineDiffOpen(true);
+    },
+    { enableOnFormTags: true },
+  );
+
   // Find the latest session agent
   const session = sessions.findLast((s) => s.agentType === "session");
   const sessionAgentState: ExecuteAgentState | undefined = useMemo(() => {

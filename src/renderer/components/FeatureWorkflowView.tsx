@@ -414,6 +414,74 @@ export function FeatureWorkflowView({
     });
   }, [wf.sessionEntries]);
 
+  /** Get the FeatureSession entry for the currently focused agent (by DOM walk) */
+  const getFocusedEntry = useCallback((): FeatureSession | null => {
+    let el: HTMLElement | null = document.activeElement as HTMLElement | null;
+    while (el) {
+      const attr = el.getAttribute("data-agent-container");
+      if (attr != null) {
+        const idx = Number(attr);
+        return wf.sessionEntries[idx] ?? null;
+      }
+      el = el.parentElement;
+    }
+    return null;
+  }, [wf.sessionEntries]);
+
+  // CMD+D — open agent-scoped diff modal for focused agent
+  useHotkeys(
+    "meta+d",
+    (e) => {
+      e.preventDefault();
+      const entry = getFocusedEntry();
+      if (!entry) return;
+      handleViewDiffForAgent(entry);
+    },
+    { enableOnFormTags: true },
+  );
+
+  // CMD+M — mark focused session agent as done
+  useHotkeys(
+    "meta+m",
+    (e) => {
+      e.preventDefault();
+      const entry = getFocusedEntry();
+      if (!entry) return;
+      if (entry.agentType !== "session") return;
+      if (entry.status !== "running" && entry.status !== "paused") return;
+      wf.handleMarkSessionDone(entry.sessionDbId);
+    },
+    { enableOnFormTags: true },
+  );
+
+  // CMD+1 — approve plan for focused agent
+  useHotkeys(
+    "meta+1",
+    (e) => {
+      e.preventDefault();
+      const entry = getFocusedEntry();
+      if (!entry || !entry.pendingPlanApproval || !entry.subprocessId) return;
+      chat.handlePlanApprove(entry.subprocessId);
+    },
+    { enableOnFormTags: true },
+  );
+
+  // CMD+2 — request changes on plan for focused agent (focus prompt input)
+  useHotkeys(
+    "meta+2",
+    (e) => {
+      e.preventDefault();
+      const entry = getFocusedEntry();
+      if (!entry || !entry.pendingPlanApproval) return;
+      // Find the index of this entry and focus its active input so user can type feedback
+      const idx = wf.sessionEntries.indexOf(entry);
+      if (idx >= 0) {
+        agentRefs.current.get(idx)?.focusActiveInput();
+      }
+    },
+    { enableOnFormTags: true },
+  );
+
   // Ctrl+` — toggle terminal panel
   useHotkeys(
     "ctrl+backquote",

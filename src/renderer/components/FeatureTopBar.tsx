@@ -32,9 +32,19 @@ export function FeatureTopBar({ featureId, projectId: _projectId, mode = "featur
   const [diffOpen, setDiffOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  // OPT+P -> toggle feature settings popover
+  // OPT+P -> toggle feature settings popover (secondary shortcut)
   useHotkeys(
     "alt+p",
+    (e) => {
+      e.preventDefault();
+      setSettingsOpen((prev) => !prev);
+    },
+    { enableOnFormTags: true },
+  );
+
+  // CMD+SHIFT+P -> toggle feature settings popover (primary shortcut)
+  useHotkeys(
+    "meta+shift+p",
     (e) => {
       e.preventDefault();
       setSettingsOpen((prev) => !prev);
