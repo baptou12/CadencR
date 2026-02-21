@@ -281,7 +281,7 @@ export const featuresRouter = router({
         .prepare("SELECT model_plan, model_brainstorm, model_execute, model_risk, model_review, model_session, model_qa FROM features WHERE id = ?")
         .get(input.featureId) as Record<string, string | null> | undefined;
 
-      const agentTypes = ["plan", "brainstorm", "execute", "risk", "review", "session"] as const;
+      const agentTypes = ["plan", "brainstorm", "execute", "risk", "review", "session", "qa"] as const;
       const result: Record<string, string> = {};
       for (const at of agentTypes) {
         result[at] = row?.[`model_${at}`] ?? "";

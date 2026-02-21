@@ -97,7 +97,7 @@ export const projectsRouter = router({
         .prepare("SELECT model_plan, model_brainstorm, model_execute, model_risk, model_review, model_session, model_qa FROM projects WHERE id = ?")
         .get(input.projectId) as Record<string, string | null> | undefined;
 
-      const agentTypes = ["plan", "brainstorm", "execute", "risk", "review"] as const;
+      const agentTypes = ["plan", "brainstorm", "execute", "risk", "review", "session", "qa"] as const;
       const result: Record<string, string> = {};
       for (const at of agentTypes) {
         result[at] = row?.[`model_${at}`] ?? "";
@@ -110,7 +110,7 @@ export const projectsRouter = router({
     .input(
       z.object({
         projectId: z.number(),
-        agentType: z.enum(["plan", "brainstorm", "execute", "risk", "review", "qa"]),
+        agentType: z.enum(["plan", "brainstorm", "execute", "risk", "review", "session", "qa"]),
         modelId: z.string(),
       }),
     )

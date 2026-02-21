@@ -119,7 +119,7 @@ const settingsRouter = router({
   /** Get model settings for all agent types from global settings */
   getModelSettings: publicProcedure.query(() => {
     const db = getDatabase();
-    const agentTypes = ["plan", "brainstorm", "execute", "risk", "review"] as const;
+    const agentTypes = ["plan", "brainstorm", "execute", "risk", "review", "session", "qa"] as const;
     const result: Record<string, string> = {};
     for (const at of agentTypes) {
       const row = db
@@ -134,7 +134,7 @@ const settingsRouter = router({
   setModelSetting: publicProcedure
     .input(
       z.object({
-        agentType: z.enum(["plan", "brainstorm", "execute", "risk", "review", "qa"]),
+        agentType: z.enum(["plan", "brainstorm", "execute", "risk", "review", "session", "qa"]),
         modelId: z.string(),
       }),
     )
