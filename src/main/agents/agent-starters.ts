@@ -154,9 +154,11 @@ export function startRiskAgent(options: {
 
   const richContext = contextParts.join("\n");
 
+  const planIdNote = plan ? `\n\n**Plan ID: ${plan.id}** — Use this ID when calling MCP tools like \`read_plan\`, \`list_phases\`, \`create_phase\`, \`finalize_phases\`, etc.` : "";
+
   const prompt = `Please perform a risk analysis for this feature.
 
-${richContext}
+${richContext}${planIdNote}
 
 Start by running \`git diff main...HEAD\` (or the appropriate base branch) to see what code has actually changed. Then explore the codebase to understand the full context and impact of these changes. Generate a comprehensive risk report.`;
 

@@ -757,6 +757,8 @@ export function createRiskConfig(opts: RiskConfigOptions): UnifiedAgentConfig {
 export function createReviewConfig(opts: ReviewConfigOptions): UnifiedAgentConfig {
   const prompt = `Please review the code changes for this feature.
 
+**Plan ID: ${opts.planId}** — Use this ID when calling MCP tools like \`read_plan\`, \`list_phases\`, \`create_phase\`, \`finalize_phases\`, etc.
+
 Start by running \`git diff\` and \`git diff --cached\` to see all changes. Then review each change carefully and produce a detailed review report.
 
 You have MCP tools available (prefixed with mcp__productdevr-review__) to create fix phases if changes are needed. After presenting your review, use AskUserQuestion to get user approval, then either call \`mark_agent_done\` (if approved) or create fix phases via the MCP tools and then call \`mark_agent_done\`.`;
