@@ -67,7 +67,7 @@ describe("startUnifiedAgent", () => {
     (subprocessManager.startSubprocess as any).mockImplementation(() => mockManagedSubprocess);
 
     (getDatabase as any).mockReturnValue({
-      prepare: vi.fn().mockImplementation((sql: string) => ({
+      prepare: vi.fn().mockImplementation((_sql: string) => ({
         run: vi.fn().mockReturnValue({ lastInsertRowid: 42 }),
         get: vi.fn().mockReturnValue({ status: "running" }),
         all: vi.fn().mockReturnValue([]),

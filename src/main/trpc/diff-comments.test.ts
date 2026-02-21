@@ -11,17 +11,6 @@ vi.mock("../db/database", () => ({
 const { diffCommentsRouter } = await import("./diff-comments");
 const caller = diffCommentsRouter.createCaller({});
 
-// Helper to set up a statement mock for a given call sequence
-function setupStatement(mockFn: ReturnType<typeof vi.fn>, overrides: Partial<ReturnType<typeof createMockDb>["prepare"]> = {}) {
-  const stmt = {
-    get: vi.fn(),
-    all: vi.fn().mockReturnValue([]),
-    run: vi.fn().mockReturnValue({ changes: 1, lastInsertRowid: 42 }),
-    ...overrides,
-  };
-  mockFn.mockReturnValue(stmt);
-  return stmt;
-}
 
 describe("diffCommentsRouter", () => {
   beforeEach(() => {

@@ -3,7 +3,7 @@
  * stream event serialization, and DB notification.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createMockDb } from "../test-utils";
 
 // Mock dependencies

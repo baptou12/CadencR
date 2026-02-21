@@ -48,7 +48,7 @@ import {
 
 const mockExecSync = vi.mocked(execSync);
 const mockFsExistsSync = vi.mocked(fs.existsSync);
-const mockFsMkdirSync = vi.mocked(fs.mkdirSync);
+const _mockFsMkdirSync = vi.mocked(fs.mkdirSync);
 const mockFsReadFileSync = vi.mocked(fs.readFileSync);
 
 beforeEach(() => {

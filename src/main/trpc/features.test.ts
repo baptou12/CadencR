@@ -149,7 +149,7 @@ describe("featuresRouter", () => {
       vi.mocked(getSubprocessIdsForSessionDbIds).mockReturnValue(["proc-1"]);
       mockDb.prepare.mockImplementation(() => ({
         get: vi.fn().mockReturnValue(undefined),
-        all: vi.fn().mockImplementation((arg: unknown) => {
+        all: vi.fn().mockImplementation((_arg: unknown) => {
           // Return a running session on the first call (SELECT id FROM agent_sessions)
           return [{ id: 10 }];
         }),

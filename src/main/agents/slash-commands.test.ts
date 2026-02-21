@@ -10,7 +10,6 @@ vi.mock("./subprocess-manager", () => ({
   getActiveProcess: vi.fn(),
 }));
 
-import { getSupportedCommands } from "./slash-commands";
 import { discoverClaudeCli } from "./cli-discovery";
 import { getSdkClient } from "./sdk-client";
 import { getActiveProcess } from "./subprocess-manager";

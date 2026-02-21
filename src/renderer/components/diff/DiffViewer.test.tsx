@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => {
   const useMutationMock = vi.fn(() => ({ mutate: vi.fn(), mutateAsync: vi.fn() }));
   const useUtilsMock = vi.fn(() => ({
     diffComments: { list: { invalidate: vi.fn() } },
+    diffViewed: { list: { invalidate: vi.fn() } },
   }));
   return { useQueryMock, useMutationMock, useUtilsMock };
 });
@@ -18,7 +19,15 @@ vi.mock("@/trpc", () => {
       Provider: ({ children }: { children: unknown }) =>
         React.createElement(React.Fragment, null, children),
       useUtils: mocks.useUtilsMock,
-      git: { getDiff: { useQuery: mocks.useQueryMock } },
+      git: {
+        getDiff: { useQuery: mocks.useQueryMock },
+        getFileBlobShas: { useQuery: vi.fn(() => ({ data: {} })) },
+      },
+      diffViewed: {
+        list: { useQuery: vi.fn(() => ({ data: [] })) },
+        markViewed: { useMutation: mocks.useMutationMock },
+        unmarkViewed: { useMutation: mocks.useMutationMock },
+      },
       diffComments: {
         list: { useQuery: vi.fn(() => ({ data: [] })) },
         create: { useMutation: mocks.useMutationMock },

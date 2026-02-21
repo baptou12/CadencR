@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import {
   AGENT_EVENT_CHANNEL,
   ASK_USER_QUESTION_CHANNEL,

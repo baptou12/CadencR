@@ -165,7 +165,6 @@ vi.mock("@/hooks/useFeatureState", () => ({
   })),
 }));
 
-const agentState = { status: "idle" as const, blocks: [] };
 vi.mock("@/hooks/useWorkflowAgents", () => ({
   useWorkflowAgents: vi.fn(() => ({
     sessionEntries: [],

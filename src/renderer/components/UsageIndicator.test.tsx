@@ -10,7 +10,7 @@ const { mockGetUsage } = vi.hoisted(() => ({
 vi.mock("@/trpc", () => ({
   trpc: {
     createClient: vi.fn(() => ({})),
-    Provider: ({ children, queryClient }: { children: React.ReactNode; queryClient: unknown }) =>
+    Provider: ({ children, queryClient: _queryClient }: { children: React.ReactNode; queryClient: unknown }) =>
       React.createElement(React.Fragment, null, children),
     useUtils: vi.fn(() => ({})),
     usage: {

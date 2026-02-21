@@ -24,14 +24,14 @@ vi.mock("@/trpc", () => ({
 type DbUpdateListener = (data: { entity: string; featureId: number }) => void;
 
 describe("useDbUpdated", () => {
-  let onDbUpdatedListener: DbUpdateListener | null = null;
+  let _onDbUpdatedListener: DbUpdateListener | null = null;
   let mockOnDbUpdated: ReturnType<typeof vi.fn>;
   let mockOffDbUpdated: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
-    onDbUpdatedListener = null;
+    _onDbUpdatedListener = null;
     mockOnDbUpdated = vi.fn((cb: DbUpdateListener) => {
-      onDbUpdatedListener = cb;
+      _onDbUpdatedListener = cb;
       return cb;
     });
     mockOffDbUpdated = vi.fn();

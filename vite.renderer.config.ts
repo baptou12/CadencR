@@ -20,6 +20,7 @@ export default defineConfig({
     TanStackRouterVite({
       routesDirectory: "src/renderer/routes",
       generatedRouteTree: "src/renderer/routeTree.gen.ts",
+      routeFileIgnorePattern: ".test.tsx?$",
     }),
   ],
 });
