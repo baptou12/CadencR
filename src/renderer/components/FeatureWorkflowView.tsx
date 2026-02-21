@@ -96,6 +96,18 @@ export function FeatureWorkflowView({
   // --- Maximized agent state ---
   const [maximizedAgent, setMaximizedAgent] = useState<string | null>(null);
 
+  // Auto-clear maximize when the maximized agent finishes
+  useEffect(() => {
+    if (!maximizedAgent) return;
+    const entry = wf.sessionEntries.find((e) => {
+      const key = `${e.agentType}-${e.sessionDbId}`;
+      return key === maximizedAgent;
+    });
+    if (entry && entry.status !== "running" && entry.status !== "paused") {
+      setMaximizedAgent(null);
+    }
+  }, [maximizedAgent, wf.sessionEntries]);
+
   // Plan approval handled by chat.handlePlanApprove / chat.handlePlanRequestChanges
 
   // --- Inline diff viewer modal state ---
@@ -461,7 +473,7 @@ export function FeatureWorkflowView({
               actions.canStartBuild ||
               actions.canStartRisk ||
               actions.canStartReview) && (
-              <div className="flex flex-col gap-2 flex-1 min-h-0 px-6 py-2">
+              <div className="flex flex-col gap-2 flex-1 min-h-0 px-6 py-2 overflow-y-auto">
                 {(() => {
                   const activeEntries = wf.sessionEntries.filter(
                     (e) => e.status === "running" || e.status === "paused",
@@ -630,17 +642,33 @@ export function FeatureWorkflowView({
 
                   return (
                     <>
-                      {/* Inactive agents: vertical stack */}
-                      {inactiveEntries.map((entry) => {
-                        const idx = wf.sessionEntries.indexOf(entry);
-                        return renderAgent(entry, idx, false);
-                      })}
+                      {/* Inactive agents: vertical stack, height-capped when active agents exist */}
+                      {inactiveEntries.length > 0 && (
+                        <div
+                          className={cn(
+                            "shrink-0 overflow-y-auto flex flex-col gap-2",
+                            activeCount > 3
+                              ? "max-h-[33%]"
+                              : activeCount > 0
+                                ? "max-h-[67%]"
+                                : undefined,
+                          )}
+                        >
+                          {inactiveEntries.map((entry) => {
+                            const idx = wf.sessionEntries.indexOf(entry);
+                            return renderAgent(entry, idx, false);
+                          })}
+                        </div>
+                      )}
 
                       {/* Active agents: grid when multiple, vertical when single */}
                       {activeCount > 0 && (
                         <div
                           className={cn(
                             "flex-1 min-h-0 gap-2",
+                            activeCount <= 3
+                              ? "min-h-[33%]"
+                              : "min-h-[67%]",
                             useGrid
                               ? "grid overflow-auto auto-rows-[minmax(300px,1fr)]"
                               : "flex flex-col",
