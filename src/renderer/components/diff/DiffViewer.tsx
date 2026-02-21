@@ -28,6 +28,21 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
   useEffect(() => {
     getDiffViewHighlighter().then((h) => setShikiHighlighter(h));
   }, []);
+
+  const { data: viewedList = [] } = trpc.diffViewed.list.useQuery({ featureId });
+  const { data: blobShas = {} } = trpc.git.getFileBlobShas.useQuery({ featureId });
+
+  const viewedFilesSet = useMemo(() => {
+    const set = new Set<string>();
+    for (const v of viewedList) {
+      const currentSha = (blobShas as Record<string, string>)[v.file_path];
+      if (currentSha && currentSha === v.blob_sha) {
+        set.add(v.file_path);
+      }
+    }
+    return set;
+  }, [viewedList, blobShas]);
+
   const [activeWidget, setActiveWidget] = useState<{
     filePath: string;
     lineNumber: number;
@@ -42,6 +57,14 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
   });
 
   const utils = trpc.useUtils();
+
+  const markViewed = trpc.diffViewed.markViewed.useMutation({
+    onSuccess: () => utils.diffViewed.list.invalidate({ featureId }),
+  });
+  const unmarkViewed = trpc.diffViewed.unmarkViewed.useMutation({
+    onSuccess: () => utils.diffViewed.list.invalidate({ featureId }),
+  });
+
   const { data: comments = [] } = trpc.diffComments.list.useQuery({ featureId });
 
   const createComment = trpc.diffComments.create.useMutation({
@@ -201,6 +224,7 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
         <span>{diffFiles.length} file{diffFiles.length !== 1 ? "s" : ""} changed</span>
         <span className="text-[#50fa7b]">+{totalAdditions}</span>
         <span className="text-[#ff5555]">-{totalDeletions}</span>
+        <span className="text-[#6272a4]">{viewedFilesSet.size}/{diffFiles.length} viewed</span>
         <div className="ml-auto flex gap-2">
           <button
             className={`rounded px-2 py-0.5 text-xs ${diffMode === DiffModeEnum.Split ? "bg-[#44475a] text-[#f8f8f2]" : "text-[#6272a4]"}`}
@@ -225,6 +249,7 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
             files={changedFileEntries}
             expandedFiles={expandedFiles}
             selectedFile={selectedFile}
+            viewedFiles={viewedFilesSet}
             onToggleExpand={toggleFile}
             onSelectFile={handleSelectFile}
           />
@@ -233,23 +258,47 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
         {diffFiles.map(({ section, file }) => {
           const displayName = section.newFileName !== "/dev/null" ? section.newFileName : section.oldFileName;
           const isCollapsed = collapsedFiles.has(displayName);
+          const isFileViewed = viewedFilesSet.has(displayName);
+          const currentBlobSha = (blobShas as Record<string, string>)[displayName] ?? "";
 
           return (
             <div key={displayName} data-file={displayName} className="border-b border-[#6272a4]">
               {/* File header */}
-              <button
-                className="flex w-full items-center gap-2 bg-[#343746] px-4 py-1.5 text-left text-sm text-[#f8f8f2] hover:bg-[#44475a]"
-                onClick={() => toggleFile(displayName)}
-              >
-                {isCollapsed ? (
-                  <ChevronRight className="h-4 w-4 text-[#6272a4]" />
-                ) : (
-                  <ChevronDown className="h-4 w-4 text-[#6272a4]" />
-                )}
-                <span className="flex-1 font-mono text-xs">{displayName}</span>
-                <span className="text-xs text-[#50fa7b]">+{file.additionLength}</span>
-                <span className="text-xs text-[#ff5555]">-{file.deletionLength}</span>
-              </button>
+              <div className="flex w-full items-center gap-2 bg-[#343746] px-4 py-1.5 text-sm text-[#f8f8f2] hover:bg-[#44475a]">
+                <button
+                  className="flex items-center gap-2 flex-1 min-w-0 text-left"
+                  onClick={() => toggleFile(displayName)}
+                >
+                  {isCollapsed ? (
+                    <ChevronRight className="h-4 w-4 shrink-0 text-[#6272a4]" />
+                  ) : (
+                    <ChevronDown className="h-4 w-4 shrink-0 text-[#6272a4]" />
+                  )}
+                  <span className="flex-1 font-mono text-xs truncate">{displayName}</span>
+                </button>
+                <span className="text-xs text-[#50fa7b] shrink-0">+{file.additionLength}</span>
+                <span className="text-xs text-[#ff5555] shrink-0">-{file.deletionLength}</span>
+                {/* Viewed checkbox */}
+                <label
+                  className="flex items-center gap-1 text-xs text-[#6272a4] ml-2 cursor-pointer shrink-0"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isFileViewed}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        markViewed.mutate({ featureId, filePath: displayName, blobSha: currentBlobSha });
+                        setCollapsedFiles((prev) => new Set([...prev, displayName]));
+                      } else {
+                        unmarkViewed.mutate({ featureId, filePath: displayName });
+                      }
+                    }}
+                    className="accent-[#bd93f9] cursor-pointer"
+                  />
+                  Viewed
+                </label>
+              </div>
 
               {/* Diff content */}
               {!isCollapsed && (

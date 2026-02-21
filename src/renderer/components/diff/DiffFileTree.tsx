@@ -101,6 +101,7 @@ interface DiffFileTreeProps {
   files: ChangedFileEntry[];
   expandedFiles: Set<string>;
   selectedFile: string | null;
+  viewedFiles?: Set<string>;
   onToggleExpand: (filePath: string) => void;
   onSelectFile: (filePath: string) => void;
 }
@@ -109,6 +110,7 @@ export function DiffFileTree({
   files,
   expandedFiles,
   selectedFile,
+  viewedFiles,
   onToggleExpand,
   onSelectFile,
 }: DiffFileTreeProps) {
@@ -157,13 +159,14 @@ export function DiffFileTree({
     const fileEntry = node.file!;
     const isSelected = selectedFile === fileEntry.file;
     const isExpanded = expandedFiles.has(fileEntry.file);
+    const isViewed = viewedFiles?.has(fileEntry.file) ?? false;
 
     return (
       <div
         key={node.path}
         className={`group flex items-center gap-1 px-2 py-0.5 text-xs hover:bg-[#44475a] ${
           isSelected ? "bg-[#44475a]" : ""
-        }`}
+        } ${isViewed ? "opacity-50" : ""}`}
         style={{ paddingLeft: `${depth * 12 + 8}px` }}
       >
         {/* Expand/collapse button for this file's diff */}
@@ -185,12 +188,17 @@ export function DiffFileTree({
 
         {/* File name - clickable to scroll */}
         <button
-          className="min-w-0 flex-1 truncate text-left font-mono text-[#f8f8f2] hover:text-[#bd93f9]"
+          className={`min-w-0 flex-1 truncate text-left font-mono hover:text-[#bd93f9] ${isViewed ? "text-[#6272a4]" : "text-[#f8f8f2]"}`}
           onClick={() => onSelectFile(fileEntry.file)}
           title={fileEntry.file}
         >
           {node.name}
         </button>
+
+        {/* Viewed indicator */}
+        {isViewed && (
+          <span className="shrink-0 text-[#50fa7b]" title="Viewed">✓</span>
+        )}
       </div>
     );
   };
