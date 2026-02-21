@@ -193,14 +193,14 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
         return;
       }
 
-      if (e.key === "ArrowUp" && text.trim() === "" && projectId) {
+      if (e.key === "ArrowUp" && !e.metaKey && !e.altKey && text.trim() === "" && projectId) {
         const result = history.navigateUp(text);
         if (result !== null) {
           e.preventDefault();
           setText(result);
         }
         return;
-      } else if (e.key === "ArrowDown" && history.historyIndex >= 0 && projectId) {
+      } else if (e.key === "ArrowDown" && !e.metaKey && !e.altKey && history.historyIndex >= 0 && projectId) {
         const result = history.navigateDown();
         if (result !== null) {
           e.preventDefault();
