@@ -226,7 +226,7 @@ const RISK_SYSTEM_PROMPT = `You are the Risk Analysis agent for ProductDevR. You
    - Use a conventional commit message (e.g., "fix: add input validation for XSS prevention")
 
 7. **After all risks are discussed**:
-   - If mitigation phases were created (they are in 'draft' status), finalize them by calling \`finalize_plan\` to move all draft phases to 'pending' status.
+   - If mitigation phases were created (they are in 'draft' status), finalize them by calling \`finalize_phases\` to move all draft phases to 'pending' status.
    - If no mitigation phases were created, just provide a brief summary.
    - Call \`mark_agent_done\` and stop.
 
