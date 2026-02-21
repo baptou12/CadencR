@@ -15,7 +15,7 @@
  */
 
 import { getDatabase } from "../db/database";
-import { createPlanMcpServer, createQaMcpServer, createReviewMcpServer, createCommonMcpServer } from "./mcp-tools";
+import { createPlanMcpServer, createQaMcpServer, createReviewMcpServer, createCommonMcpServer, createWorkflowSessionMcpServer } from "./mcp-tools";
 import { waitForPlanApproval } from "./plan-approval";
 import type { UnifiedAgentConfig, CompletionAction } from "./types";
 
@@ -522,6 +522,8 @@ export interface SessionConfigOptions {
   permissionMode?: "acceptEdits" | "plan";
   /** Worktree path for permission resolution */
   worktreePath?: string;
+  /** When set, gives the session agent read-only MCP tools for the plan */
+  planId?: number;
 }
 
 export interface QaConfigOptions {
@@ -742,9 +744,20 @@ export function createSessionConfig(opts: SessionConfigOptions): UnifiedAgentCon
     resumeSessionId: opts.resumeSessionId,
     permissionMode: opts.permissionMode,
     worktreePath: opts.worktreePath,
-    mcpServerFactory: (_subprocessId: string, sessionDbId: number) => ({
-      "productdevr-common": createCommonMcpServer(sessionDbId, opts.featureId ?? 0),
-    }),
+    mcpServerFactory: (_subprocessId: string, sessionDbId: number) => {
+      if (opts.planId) {
+        return {
+          "productdevr-session": createWorkflowSessionMcpServer(
+            sessionDbId,
+            opts.featureId ?? 0,
+            ["read_plan", "list_phases", "read_phase", "mark_agent_done"],
+          ),
+        } as Record<string, ReturnType<typeof createWorkflowSessionMcpServer>>;
+      }
+      return {
+        "productdevr-common": createCommonMcpServer(sessionDbId, opts.featureId ?? 0),
+      } as Record<string, ReturnType<typeof createCommonMcpServer>>;
+    },
   };
 }
 

@@ -567,3 +567,26 @@ export function createCommonMcpServer(sessionDbId: number, featureId: number) {
     ],
   });
 }
+
+// ---------------------------------------------------------------------------
+// Workflow session MCP server (read-only plan tools + mark_agent_done)
+// ---------------------------------------------------------------------------
+
+type WorkflowSessionToolName = "read_plan" | "list_phases" | "read_phase" | "mark_agent_done";
+
+export function createWorkflowSessionMcpServer(
+  sessionDbId: number,
+  featureId: number,
+  allowedTools: WorkflowSessionToolName[],
+) {
+  const toolMap = {
+    read_plan: readPlanTool,
+    list_phases: listPhasesTool,
+    read_phase: readPhaseTool,
+    mark_agent_done: createAgentDoneTool(sessionDbId, featureId),
+  };
+  return createSdkMcpServer({
+    name: "productdevr-session",
+    tools: allowedTools.map((name) => toolMap[name]),
+  });
+}

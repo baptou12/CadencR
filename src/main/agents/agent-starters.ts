@@ -45,6 +45,7 @@ export function startSessionAgent(options: {
   resumeSessionId?: string;
   permissionMode?: "acceptEdits" | "plan";
   worktreePath?: string;
+  planId?: number;
 }): AgentResult {
   return startUnifiedAgent(createSessionConfig(options));
 }
