@@ -190,8 +190,12 @@ export interface AgentSessionProps {
   onModelChange?: (modelId: string) => void;
   /** Feature ID for file mention and slash command support in the prompt bar */
   featureId?: number;
-  /** Project ID for slash command support in the prompt bar */
+  /** Project ID for slash command support and prompt history in the prompt bar */
   projectId?: number;
+  /** Agent session DB ID for draft persistence */
+  sessionId?: number;
+  /** Initial draft text (restored from DB) */
+  initialDraft?: string | null;
   /** Active subprocess ID for slash command support in the prompt bar */
   subprocessId?: string;
   /** Pending tool permission request from canUseTool callback */
@@ -266,6 +270,8 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
   onModelChange,
   featureId,
   projectId,
+  sessionId,
+  initialDraft,
   subprocessId,
   pendingPermission,
   onPermissionDecision,
@@ -480,6 +486,8 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
       onCycleModel={onModelChange ? handleCycleModel : undefined}
       featureId={featureId}
       projectId={projectId}
+      sessionId={sessionId}
+      initialDraft={initialDraft}
       subprocessId={subprocessId}
       onToggleMaximize={onToggleMaximize}
     />

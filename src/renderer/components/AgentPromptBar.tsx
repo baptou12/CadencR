@@ -12,6 +12,8 @@ import { ImageAttachmentButton } from "./ImageAttachmentButton";
 import { useFileMention } from "@/hooks/useFileMention";
 import { useSlashCommand } from "@/hooks/useSlashCommand";
 import { useImageAttachments } from "@/hooks/useImageAttachments";
+import { usePromptDraft } from "@/hooks/usePromptDraft";
+import { usePromptHistory } from "@/hooks/usePromptHistory";
 import { trpc } from "@/trpc";
 import type { AgentQuestion } from "./AgentQuestionDrawer";
 import type { AgentStatus } from "@/components/AgentSession";
@@ -47,8 +49,12 @@ export interface AgentPromptBarProps {
   onCycleModel?: () => void;
   /** Feature ID for file mention and slash command support */
   featureId?: number;
-  /** Project ID for slash command support */
+  /** Project ID for slash command support and prompt history */
   projectId?: number;
+  /** Agent session DB ID for draft persistence */
+  sessionId?: number;
+  /** Initial draft text (restored from DB) */
+  initialDraft?: string | null;
   /** Active subprocess ID for slash command support */
   subprocessId?: string;
   /** Called when CMD+Enter is pressed to toggle maximize */
@@ -80,10 +86,18 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
   onCycleModel,
   featureId,
   projectId,
+  sessionId,
+  initialDraft,
   subprocessId,
   onToggleMaximize,
 }, ref) {
-  const [text, setText] = useState("");
+  const [text, setText] = useState(initialDraft ?? "");
+
+  // Draft persistence
+  const { saveDraft } = usePromptDraft({ sessionId, initialDraft: initialDraft ?? null });
+
+  // Prompt history (only when projectId is available)
+  const history = usePromptHistory(projectId ?? 0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { attachments, addFiles, removeAttachment, clearAttachments, dragHandlers, isDragging } = useImageAttachments();
 
@@ -123,14 +137,17 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
 
   const handleSend = useCallback(() => {
     const trimmed = text.trim();
+<<<<<<< HEAD
     if (!trimmed && attachments.length === 0) return;
+    if (projectId) history.addEntry(trimmed);
+    saveDraft(null);
     const images = attachments.length > 0
       ? attachments.map((a) => ({ base64: a.base64, mimeType: a.mimeType }))
       : undefined;
     onSend(trimmed, images);
     setText("");
     clearAttachments();
-  }, [text, attachments, onSend, clearAttachments]);
+  }, [text, attachments, onSend, clearAttachments, projectId, history, saveDraft]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -165,6 +182,22 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
         return;
       }
 
+      if (e.key === "ArrowUp" && text.trim() === "" && projectId) {
+        const result = history.navigateUp(text);
+        if (result !== null) {
+          e.preventDefault();
+          setText(result);
+        }
+        return;
+      } else if (e.key === "ArrowDown" && history.historyIndex >= 0 && projectId) {
+        const result = history.navigateDown();
+        if (result !== null) {
+          e.preventDefault();
+          setText(result);
+        }
+        return;
+      }
+
       if (e.key === "Enter" && e.metaKey && onToggleMaximize) {
         e.preventDefault();
         onToggleMaximize();
@@ -187,17 +220,19 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
         e.preventDefault();
       }
     },
-    [canSend, handleSend, isRunning, onStop, onCollapse, onPermissionModeToggle, onCycleModel, onToggleMaximize, mention, slash, text],
+    [canSend, handleSend, isRunning, onStop, onCollapse, onPermissionModeToggle, onCycleModel, onToggleMaximize, mention, slash, text, projectId, history],
   );
 
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
       const newValue = e.target.value;
       setText(newValue);
+      saveDraft(newValue);
+      history.resetNavigation();
       mention.handleChange(newValue, e.target.selectionStart);
       slash.handleChange(newValue, e.target.selectionStart);
     },
-    [mention, slash],
+    [mention, slash, saveDraft, history],
   );
 
   const handleSlashSelect = useCallback(
