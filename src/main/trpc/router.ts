@@ -921,9 +921,9 @@ const agentsRouter = router({
       const db = getDatabase();
       const sessions = db
         .prepare(
-          "SELECT id, feature_id, agent_type, claude_session_id, status, started_at, ended_at, run_id, phase_id, subprocess_id, model, pending_questions, has_file_changes, permission_mode, pending_plan_approval, pending_permission, input_tokens, output_tokens, context_window, was_compacted FROM agent_sessions WHERE feature_id = ? ORDER BY id ASC",
+          "SELECT id, feature_id, agent_type, claude_session_id, status, started_at, ended_at, run_id, phase_id, subprocess_id, model, pending_questions, has_file_changes, permission_mode, pending_plan_approval, pending_permission, input_tokens, output_tokens, context_window, was_compacted, draft_prompt FROM agent_sessions WHERE feature_id = ? ORDER BY id ASC",
         )
-        .all(input.featureId) as AgentSessionRow[];
+        .all(input.featureId) as (AgentSessionRow & { draft_prompt: string | null })[];
 
       if (sessions.length === 0) return { sessions: [] };
 
@@ -1007,6 +1007,7 @@ const agentsRouter = router({
             outputTokens: s.output_tokens ?? 0,
             contextWindow: s.context_window ?? 200000,
             wasCompacted: s.was_compacted === 1,
+            draftPrompt: s.draft_prompt ?? null,
           };
         }),
       };
@@ -1052,6 +1053,27 @@ const agentsRouter = router({
     .query(async ({ input }) => {
       const { cwd } = resolveAgentCwd(input.featureId, input.projectId);
       return getSupportedCommands(input.subprocessId ?? null, cwd);
+    }),
+
+  /** Save a draft prompt for a specific agent session */
+  saveDraft: publicProcedure
+    .input(z.object({ sessionId: z.number(), draft: z.string().nullable() }))
+    .mutation(({ input }) => {
+      const db = getDatabase();
+      db.prepare("UPDATE agent_sessions SET draft_prompt = ? WHERE id = ?")
+        .run(input.draft, input.sessionId);
+      return { success: true };
+    }),
+
+  /** Get the draft prompt for a specific agent session */
+  getDraft: publicProcedure
+    .input(z.object({ sessionId: z.number() }))
+    .query(({ input }) => {
+      const db = getDatabase();
+      const row = db
+        .prepare("SELECT draft_prompt FROM agent_sessions WHERE id = ?")
+        .get(input.sessionId) as { draft_prompt: string | null } | undefined;
+      return { draftPrompt: row?.draft_prompt ?? null };
     }),
 });
 
@@ -1360,6 +1382,51 @@ const gitRouter = router({
     }),
 });
 
+const promptHistoryRouter = router({
+  /** Get the last 100 prompt history entries for a project (most recent first) */
+  getHistory: publicProcedure
+    .input(z.object({ projectId: z.number() }))
+    .query(({ input }) => {
+      const db = getDatabase();
+      const rows = db
+        .prepare(
+          "SELECT content FROM prompt_history WHERE project_id = ? ORDER BY created_at DESC LIMIT 100",
+        )
+        .all(input.projectId) as Array<{ content: string }>;
+      return rows.map((r) => r.content);
+    }),
+
+  /** Add a new entry to the prompt history for a project (with dedup and 100-entry cap) */
+  addEntry: publicProcedure
+    .input(z.object({ projectId: z.number(), content: z.string() }))
+    .mutation(({ input }) => {
+      const db = getDatabase();
+
+      // Dedup: skip if the most recent entry has the same content
+      const latest = db
+        .prepare(
+          "SELECT content FROM prompt_history WHERE project_id = ? ORDER BY created_at DESC LIMIT 1",
+        )
+        .get(input.projectId) as { content: string } | undefined;
+
+      if (latest?.content === input.content) {
+        return { success: true, skipped: true };
+      }
+
+      // Insert new entry
+      db.prepare(
+        "INSERT INTO prompt_history (project_id, content) VALUES (?, ?)",
+      ).run(input.projectId, input.content);
+
+      // Trim to 100 entries: delete everything beyond the newest 100
+      db.prepare(
+        "DELETE FROM prompt_history WHERE project_id = ? AND id NOT IN (SELECT id FROM prompt_history WHERE project_id = ? ORDER BY created_at DESC LIMIT 100)",
+      ).run(input.projectId, input.projectId);
+
+      return { success: true, skipped: false };
+    }),
+});
+
 export const appRouter = router({
   hello: publicProcedure.input(z.object({ name: z.string().optional() })).query(({ input }) => {
     return { greeting: `Hello, ${input.name ?? "world"}!` };
@@ -1372,6 +1439,7 @@ export const appRouter = router({
   diffComments: diffCommentsRouter,
   usage: usageRouter,
   terminal: terminalRouter,
+  promptHistory: promptHistoryRouter,
 });
 
 export type AppRouter = typeof appRouter;
