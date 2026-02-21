@@ -1352,7 +1352,7 @@ const gitRouter = router({
       const result: Record<string, string> = {};
 
       try {
-        // Get list of changed files using git diff
+        // Get list of changed files using git diff (uncommitted)
         const changedFiles = execSync("git diff HEAD --name-only", {
           cwd: worktreePath,
           encoding: "utf-8",
@@ -1370,10 +1370,37 @@ const gitRouter = router({
           .split("\n")
           .filter(Boolean);
 
-        const allFiles = [...new Set([...changedFiles, ...untrackedFiles])];
+        // Also include files changed between the branch and its merge-base (committed changes)
+        let branchChangedFiles: string[] = [];
+        try {
+          const branchRow = db
+            .prepare("SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_branch'")
+            .get(input.featureId) as SettingRow | undefined;
+          if (branchRow?.value) {
+            const mergeBase = execSync(`git merge-base HEAD main || git merge-base HEAD master`, {
+              cwd: worktreePath,
+              encoding: "utf-8",
+              shell: "/bin/sh",
+            }).trim();
+            if (mergeBase) {
+              branchChangedFiles = execSync(`git diff ${mergeBase} HEAD --name-only`, {
+                cwd: worktreePath,
+                encoding: "utf-8",
+              })
+                .trim()
+                .split("\n")
+                .filter(Boolean);
+            }
+          }
+        } catch {
+          // merge-base may fail, that's ok
+        }
+
+        const allFiles = [...new Set([...changedFiles, ...untrackedFiles, ...branchChangedFiles])];
 
         for (const filePath of allFiles) {
           try {
+            // For tracked files, hash the current working tree version
             const blobSha = execSync(`git hash-object "${filePath}"`, {
               cwd: worktreePath,
               encoding: "utf-8",
@@ -1382,7 +1409,18 @@ const gitRouter = router({
               result[filePath] = blobSha;
             }
           } catch {
-            // File might not exist, skip
+            // For committed files not in worktree, hash from HEAD
+            try {
+              const blobSha = execSync(`git rev-parse HEAD:"${filePath}"`, {
+                cwd: worktreePath,
+                encoding: "utf-8",
+              }).trim();
+              if (blobSha) {
+                result[filePath] = blobSha;
+              }
+            } catch {
+              // File might not exist, skip
+            }
           }
         }
       } catch {

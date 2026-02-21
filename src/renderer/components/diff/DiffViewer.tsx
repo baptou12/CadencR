@@ -5,6 +5,7 @@ import "@git-diff-view/react/styles/diff-view.css";
 import "./dracula-diff.css";
 import { trpc } from "@/trpc";
 import { ChevronDown, ChevronRight } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { DiffFileTree, type ChangedFileEntry } from "./DiffFileTree";
 import {
   CommentWidgetLine,
@@ -36,12 +37,24 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
     const set = new Set<string>();
     for (const v of viewedList) {
       const currentSha = (blobShas as Record<string, string>)[v.file_path];
-      if (currentSha && currentSha === v.blob_sha) {
-        set.add(v.file_path);
+      // If we have a current SHA and it doesn't match, the file changed since viewed — skip it.
+      // If there's no current SHA (e.g. branch mode, committed files), trust the DB record.
+      if (currentSha && currentSha !== v.blob_sha) {
+        continue;
       }
+      set.add(v.file_path);
     }
     return set;
   }, [viewedList, blobShas]);
+
+  // Auto-collapse viewed files on initial load
+  const hasInitializedCollapse = useRef(false);
+  useEffect(() => {
+    if (!hasInitializedCollapse.current && viewedFilesSet.size > 0) {
+      hasInitializedCollapse.current = true;
+      setCollapsedFiles((prev) => new Set([...prev, ...viewedFilesSet]));
+    }
+  }, [viewedFilesSet]);
 
   const [activeWidget, setActiveWidget] = useState<{
     filePath: string;
@@ -279,25 +292,31 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
                 <span className="text-xs text-[#50fa7b] shrink-0">+{file.additionLength}</span>
                 <span className="text-xs text-[#ff5555] shrink-0">-{file.deletionLength}</span>
                 {/* Viewed checkbox */}
-                <label
-                  className="flex items-center gap-1 text-xs text-[#6272a4] ml-2 cursor-pointer shrink-0"
+                <div
+                  className="flex items-center gap-1.5 text-xs text-[#6272a4] ml-2 shrink-0"
                   onClick={(e) => e.stopPropagation()}
                 >
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={isFileViewed}
-                    onChange={(e) => {
-                      if (e.target.checked) {
+                    onCheckedChange={(checked) => {
+                      if (checked) {
                         markViewed.mutate({ featureId, filePath: displayName, blobSha: currentBlobSha });
                         setCollapsedFiles((prev) => new Set([...prev, displayName]));
                       } else {
                         unmarkViewed.mutate({ featureId, filePath: displayName });
                       }
                     }}
-                    className="accent-[#bd93f9] cursor-pointer"
+                    className="h-3.5 w-3.5 cursor-pointer"
                   />
-                  Viewed
-                </label>
+                  <span className="cursor-pointer select-none" onClick={() => {
+                    if (isFileViewed) {
+                      unmarkViewed.mutate({ featureId, filePath: displayName });
+                    } else {
+                      markViewed.mutate({ featureId, filePath: displayName, blobSha: currentBlobSha });
+                      setCollapsedFiles((prev) => new Set([...prev, displayName]));
+                    }
+                  }}>Viewed</span>
+                </div>
               </div>
 
               {/* Diff content */}
