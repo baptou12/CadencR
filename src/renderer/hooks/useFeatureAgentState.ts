@@ -79,6 +79,7 @@ export interface FeatureSession {
   outputTokens: number;
   contextWindow: number;
   wasCompacted: boolean;
+  draftPrompt: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -196,6 +197,7 @@ export function useFeatureAgentState(featureId: number) {
       outputTokens: s.outputTokens ?? 0,
       contextWindow: s.contextWindow ?? 200000,
       wasCompacted: s.wasCompacted ?? false,
+      draftPrompt: (s as unknown as { draftPrompt?: string | null }).draftPrompt ?? null,
     };
   });
 

@@ -607,6 +607,8 @@ export function FeatureWorkflowView({
                         contextUsage={contextUsageMap.get(entry.sessionDbId)}
                         featureId={featureId}
                         projectId={projectId}
+                        sessionId={entry.sessionDbId}
+                        initialDraft={entry.draftPrompt}
                         subprocessId={entry.subprocessId ?? undefined}
                         pendingPermission={entry.pendingPermission}
                         onPermissionDecision={(decision, feedback) =>

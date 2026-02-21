@@ -290,6 +290,8 @@ function SessionFeatureView({
           onModelChange={handleModelChange}
           featureId={featureId}
           projectId={projectId}
+          sessionId={session?.sessionDbId}
+          initialDraft={session?.draftPrompt ?? null}
           subprocessId={session?.subprocessId ?? undefined}
           pendingPermission={session?.pendingPermission}
           onPermissionDecision={(decision, feedback) => chat.handlePermissionDecision(session?.subprocessId, decision, feedback)}
