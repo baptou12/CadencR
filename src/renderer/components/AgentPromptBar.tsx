@@ -137,7 +137,6 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
 
   const handleSend = useCallback(() => {
     const trimmed = text.trim();
-<<<<<<< HEAD
     if (!trimmed && attachments.length === 0) return;
     if (projectId) history.addEntry(trimmed);
     saveDraft(null);
