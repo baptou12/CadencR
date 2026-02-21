@@ -52,6 +52,7 @@ import {
   addFixPhase,
   startSessionAgent,
   startQaAgent,
+  startReviewFixerAgent,
 } from "../agents/agent-starters";
 import { startExecuteAgent, continueExecuteAgent, buildPhaseCompletionAction } from "../agents/execute-agent";
 import { transitionAgentSession } from "../agents/state-transitions";
@@ -135,7 +136,7 @@ const settingsRouter = router({
   setModelSetting: publicProcedure
     .input(
       z.object({
-        agentType: z.enum(["plan", "brainstorm", "execute", "risk", "review", "session", "qa"]),
+        agentType: z.enum(["plan", "brainstorm", "execute", "risk", "review", "session", "qa", "review-fixer"]),
         modelId: z.string(),
       }),
     )
@@ -214,7 +215,7 @@ function hasDefaultTitle(featureId: number): boolean {
   return row != null && /^Session \d+$/i.test(row.title);
 }
 
-const agentTypeSchema = z.enum(["plan", "brainstorm", "execute", "risk", "review", "session", "qa"]);
+const agentTypeSchema = z.enum(["plan", "brainstorm", "execute", "risk", "review", "session", "qa", "review-fixer"]);
 
 // ---------------------------------------------------------------------------
 // Block builder — converts agent_messages rows into a nested block tree
@@ -625,6 +626,14 @@ const agentsRouter = router({
     .mutation(({ input }) => {
       const { cwd, worktreePath } = resolveAgentCwd(input.featureId, input.projectId);
       return startQaAgent({ ...input, cwd, worktreePath });
+    }),
+
+  /** Start the review-fixer agent to address diff comments */
+  startReviewFixer: publicProcedure
+    .input(z.object({ featureId: z.number(), projectId: z.number(), prompt: z.string() }))
+    .mutation(({ input }) => {
+      const { cwd, worktreePath } = resolveAgentCwd(input.featureId, input.projectId);
+      return startReviewFixerAgent({ ...input, cwd, worktreePath });
     }),
 
   /** Add a fix phase to the plan based on review findings */

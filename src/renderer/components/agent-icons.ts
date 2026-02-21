@@ -17,4 +17,5 @@ export const AGENT_ICONS: Record<AgentType, typeof PlayIcon> = {
   review: SearchCheckIcon,
   session: MessageSquareIcon,
   qa: FlaskConicalIcon,
+  "review-fixer": SearchCheckIcon,
 };

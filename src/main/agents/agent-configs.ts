@@ -315,6 +315,22 @@ After presenting your review report, you MUST follow this approval loop:
 const SESSION_SYSTEM_PROMPT =
   "You are Claude Code working on this project. Help the user with whatever they need.";
 
+const REVIEW_FIXER_SYSTEM_PROMPT = `You are a code review fixer for ProductDevR. You receive diff comments from the user that were left on code changes.
+
+## Your Role
+
+- For **questions** in comments: answer them clearly and thoroughly.
+- For **issues or requests** in comments: fix the code directly. Make the necessary edits using standard file editing tools.
+- Work in the project's worktree. Make changes using standard file editing tools.
+- After addressing all comments, provide a brief summary of what you did (which comments you addressed, what changes you made).
+- Stay available for follow-up questions or additional comments.
+
+## Rules
+- Be precise — only change what the comments ask for
+- Match existing code style and conventions
+- If a comment is ambiguous, make a reasonable interpretation and explain your choice
+- Do not refactor unrelated code`;
+
 export function buildQaSystemPrompt(autonomyLevel: 1 | 2 | 3): string {
   const basePrompt = `You are the QA agent for ProductDevR, responsible for comprehensive functional testing and verification of implementations.
 
@@ -558,6 +574,14 @@ export interface SessionConfigOptions {
   worktreePath?: string;
   /** When set, gives the session agent read-only MCP tools for the plan */
   planId?: number;
+}
+
+export interface ReviewFixerConfigOptions {
+  featureId: number;
+  projectId: number;
+  cwd: string;
+  prompt: MessageContent;
+  worktreePath?: string;
 }
 
 export interface QaConfigOptions {
@@ -874,5 +898,39 @@ Based on what was implemented above, design specific test cases and execute them
     mcpServerFactory: (_subprocessId: string, sessionDbId: number) => ({
       "productdevr-qa": createQaMcpServer(opts.planId, opts.featureId, sessionDbId),
     }),
+  };
+}
+
+/**
+ * Create a UnifiedAgentConfig for the review-fixer agent.
+ *
+ * This agent receives diff comments, fixes code or answers questions,
+ * and stays alive for follow-up. On completion, all 'sent' comments
+ * for the feature are marked as 'resolved'.
+ */
+export function createReviewFixerConfig(opts: ReviewFixerConfigOptions): UnifiedAgentConfig {
+  const completionActions: CompletionAction[] = [
+    {
+      event: "resolve_diff_comments",
+      handler: (_output: string, context) => {
+        if (!context.featureId) return;
+        const db = getDatabase();
+        db.prepare(
+          "UPDATE diff_comments SET status = 'resolved' WHERE feature_id = ? AND status = 'sent'",
+        ).run(context.featureId);
+      },
+    },
+  ];
+
+  return {
+    agentType: "review-fixer",
+    systemPrompt: REVIEW_FIXER_SYSTEM_PROMPT,
+    completionActions,
+    featureId: opts.featureId,
+    projectId: opts.projectId,
+    cwd: opts.cwd,
+    prompt: opts.prompt,
+    permissionMode: "acceptEdits",
+    worktreePath: opts.worktreePath,
   };
 }

@@ -294,7 +294,7 @@ export const featuresRouter = router({
     .input(
       z.object({
         featureId: z.number(),
-        agentType: z.enum(["plan", "brainstorm", "execute", "risk", "review", "session", "qa"]),
+        agentType: z.enum(["plan", "brainstorm", "execute", "risk", "review", "session", "qa", "review-fixer"]),
         modelId: z.string(),
       }),
     )
