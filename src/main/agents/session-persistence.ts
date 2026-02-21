@@ -192,10 +192,18 @@ export function restoreSessionMap(): void {
   try {
     const db = getDatabase();
     // Mark stale 'running' sessions as 'paused' — they can't be running after restart
+    const staleSessions = db.prepare("SELECT id, feature_id, agent_type, phase_id FROM agent_sessions WHERE status = 'running'").all() as Array<{ id: number; feature_id: number; agent_type: string; phase_id: number | null }>;
+    if (staleSessions.length > 0) {
+      console.log(`[startup-cleanup] Resetting ${staleSessions.length} running sessions to paused:`, staleSessions.map((s) => `session ${s.id} (${s.agent_type}, feature ${s.feature_id}, phase ${s.phase_id})`).join(", "));
+    }
     db.prepare(
       "UPDATE agent_sessions SET status = 'paused', subprocess_id = NULL WHERE status = 'running'",
     ).run();
     // Reset orphaned running phases — no subprocess can be executing them after restart
+    const stalePhases = db.prepare("SELECT p.id, p.title, p.phase_type, pl.feature_id FROM phases p JOIN plans pl ON p.plan_id = pl.id WHERE p.status = 'running'").all() as Array<{ id: number; title: string; phase_type: string; feature_id: number }>;
+    if (stalePhases.length > 0) {
+      console.log(`[startup-cleanup] Resetting ${stalePhases.length} running phases to pending:`, stalePhases.map((p) => `phase ${p.id} "${p.title}" (${p.phase_type}, feature ${p.feature_id})`).join(", "));
+    }
     db.prepare("UPDATE phases SET status = 'pending' WHERE status = 'running'").run();
     // Re-populate session map for paused sessions with subprocess_id (for event routing)
     const rows = db

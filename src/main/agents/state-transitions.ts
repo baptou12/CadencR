@@ -101,6 +101,8 @@ export function transitionPhase(
     console.warn(`[state-transitions] Invalid phase transition: ${from} -> ${to} (phase ${phaseId})`);
   }
 
+  console.log(`[phase-trace] phase ${phaseId}: ${from} -> ${to} (feature ${featureId})`, new Error().stack?.split("\n").slice(1, 4).join(" <- "));
+
   if (extraColumns && Object.keys(extraColumns).length > 0) {
     const keys = Object.keys(extraColumns);
     const sets = ["status = ?", ...keys.map((k) => `${k} = ?`)];
@@ -126,7 +128,10 @@ export function transitionPhaseIf(
 ): void {
   const result = db.prepare("UPDATE phases SET status = ? WHERE id = ? AND status = ?").run(to, phaseId, expectedFrom);
   if (result.changes > 0) {
+    console.log(`[phase-trace] phaseIf ${phaseId}: ${expectedFrom} -> ${to} (changed, feature ${featureId})`);
     notifyDbUpdated("phase", featureId);
+  } else {
+    console.log(`[phase-trace] phaseIf ${phaseId}: ${expectedFrom} -> ${to} (no-op, current status didn't match)`);
   }
 }
 
@@ -155,6 +160,8 @@ export function transitionAgentSession(
   if (allowed && !allowed.includes(to)) {
     console.warn(`[state-transitions] Invalid session transition: ${from} -> ${to} (session ${sessionId})`);
   }
+
+  console.log(`[session-trace] session ${sessionId}: ${from} -> ${to} (feature ${featureId ?? row.feature_id})`, new Error().stack?.split("\n").slice(1, 4).join(" <- "));
 
   const resolvedFeatureId = featureId ?? row.feature_id;
 

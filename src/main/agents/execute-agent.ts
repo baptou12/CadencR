@@ -277,7 +277,10 @@ function executeQaPhase(
         handler: (output: string, context) => {
           const db2 = getDatabase();
           const session = db2.prepare("SELECT status FROM agent_sessions WHERE id = ?").get(context.sessionDbId) as { status: string } | undefined;
+          const phaseRow = db2.prepare("SELECT status FROM phases WHERE id = ?").get(phase.id) as { status: string } | undefined;
           const wasInterrupted = session?.status === "paused";
+
+          console.log(`[qa-phase-trace] qa_phase_status handler: phase ${phase.id}, sessionDbId=${context.sessionDbId}, sessionStatus=${session?.status}, phaseStatus=${phaseRow?.status}, exitCode=${context.exitCode}, wasInterrupted=${wasInterrupted}`);
 
           if (wasInterrupted) {
             transitionPhaseIf(db2, phase.id, "running", "pending", options.featureId);
@@ -739,7 +742,10 @@ export function buildPhaseCompletionAction(phaseId: number, featureId: number): 
       const db2 = getDatabase();
 
       const session = db2.prepare("SELECT status FROM agent_sessions WHERE id = ?").get(context.sessionDbId) as { status: string } | undefined;
+      const phaseRow = db2.prepare("SELECT status FROM phases WHERE id = ?").get(phaseId) as { status: string } | undefined;
       const wasInterrupted = session?.status === "paused";
+
+      console.log(`[exec-phase-trace] phase_complete handler: phase ${phaseId}, sessionDbId=${context.sessionDbId}, sessionStatus=${session?.status}, phaseStatus=${phaseRow?.status}, exitCode=${context.exitCode}, wasInterrupted=${wasInterrupted}`);
 
       if (wasInterrupted) {
         // Reset to pending if the agent was interrupted

@@ -136,6 +136,8 @@ export function startUnifiedAgent(config: UnifiedAgentConfig): UnifiedAgentResul
     const current = db2.prepare("SELECT status FROM agent_sessions WHERE id = ?").get(sessionDbId) as { status: string } | undefined;
     const wasInterrupted = current?.status === "paused";
 
+    console.log(`[unified-agent] completion: session ${sessionDbId} (${config.agentType}), exitCode=${exitCode}, currentStatus=${current?.status}, wasInterrupted=${wasInterrupted}, phaseId=${config.phaseId ?? "none"}`);
+
     if (!wasInterrupted) {
       // Update session status
       transitionAgentSession(db2, sessionDbId, exitCode === 0 ? "completed" : "error", config.featureId, { ended_at: "datetime('now')" });

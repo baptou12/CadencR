@@ -263,6 +263,8 @@ function createAgentDoneTool(sessionDbId: number, featureId: number) {
     },
     async (_args) => {
       const db = getDatabase();
+      const current = db.prepare("SELECT status, agent_type FROM agent_sessions WHERE id = ?").get(sessionDbId) as { status: string; agent_type: string } | undefined;
+      console.log(`[session-trace] mark_agent_done: session ${sessionDbId} (${current?.agent_type}), ${current?.status} -> completed (feature ${featureId})`);
       db.prepare(
         "UPDATE agent_sessions SET status = 'completed', ended_at = datetime('now') WHERE id = ?",
       ).run(sessionDbId);
