@@ -6,8 +6,6 @@
 import React from "react";
 import { render as rtlRender, type RenderOptions } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { createRouter, createMemoryHistory, RouterProvider } from "@tanstack/react-router";
-import { createRootRoute, createRoute, Outlet } from "@tanstack/react-router";
 import { trpc } from "@/trpc";
 import { httpBatchLink } from "@trpc/client";
 import { vi } from "vitest";
@@ -136,53 +134,11 @@ export function mockIpcOff() {
 }
 
 // ---------------------------------------------------------------------------
-// Minimal router for testing
-// ---------------------------------------------------------------------------
-
-function createTestRouter() {
-  const rootRoute = createRootRoute({
-    component: () => <Outlet />,
-  });
-
-  const indexRoute = createRoute({
-    getParentRoute: () => rootRoute,
-    path: "/",
-    component: () => <div data-testid="test-route-outlet" />,
-  });
-
-  const routeTree = rootRoute.addChildren([indexRoute]);
-
-  return createRouter({
-    routeTree,
-    history: createMemoryHistory({ initialEntries: ["/"] }),
-  });
-}
-
-// ---------------------------------------------------------------------------
 // Custom render
 // ---------------------------------------------------------------------------
 
 interface CustomRenderOptions extends Omit<RenderOptions, "wrapper"> {
   queryClient?: QueryClient;
-}
-
-function AllProviders({
-  children,
-  queryClient,
-}: {
-  children: React.ReactNode;
-  queryClient: QueryClient;
-}) {
-  const [trpcClient] = React.useState(() => createMockTrpcClient());
-  const router = React.useMemo(() => createTestRouter(), []);
-
-  return (
-    <trpc.Provider client={trpcClient} queryClient={queryClient}>
-      <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} defaultComponent={() => <>{children}</>} />
-      </QueryClientProvider>
-    </trpc.Provider>
-  );
 }
 
 /**
