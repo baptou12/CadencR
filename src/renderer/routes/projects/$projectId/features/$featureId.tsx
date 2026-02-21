@@ -153,6 +153,7 @@ function SessionFeatureView({
             sessionId: session.claudeSessionId,
             originalSessionDbId: session.sessionDbId,
             prompt: message,
+            images,
           });
         } catch (err) {
           console.error("[SessionFeatureView] Failed to resume session:", err);
@@ -167,6 +168,7 @@ function SessionFeatureView({
           featureId,
           projectId,
           prompt: message,
+          images,
           permissionMode,
         });
       } catch (err) {

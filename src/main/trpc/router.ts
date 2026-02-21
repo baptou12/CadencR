@@ -399,6 +399,7 @@ const agentsRouter = router({
         sessionId: z.string(),
         originalSessionDbId: z.number(),
         prompt: z.string().optional(),
+        images: z.array(z.object({ base64: z.string(), mimeType: z.string() })).optional(),
       }),
     )
     .mutation(({ input }) => {
@@ -443,12 +444,26 @@ const agentsRouter = router({
         ? [buildPhaseCompletionAction(originalSession.phase_id, input.featureId)]
         : undefined;
 
+      let resumePrompt: import("../agents/types").MessageContent;
+      const promptText = input.prompt ?? "Continue from where you left off.";
+      if (input.images && input.images.length > 0) {
+        resumePrompt = [
+          { type: "text" as const, text: promptText },
+          ...input.images.map((img) => ({
+            type: "image" as const,
+            source: { type: "base64" as const, media_type: img.mimeType, data: img.base64 },
+          })),
+        ];
+      } else {
+        resumePrompt = promptText;
+      }
+
       const result = startUnifiedAgent({
         agentType: input.agentType as AgentType,
         featureId: input.featureId,
         projectId: input.projectId,
         cwd,
-        prompt: input.prompt ?? "Continue from where you left off.",
+        prompt: resumePrompt,
         resumeSessionId: input.sessionId,
         runId: originalSession?.run_id ?? undefined,
         phaseId: originalSession?.phase_id ?? undefined,
@@ -655,6 +670,7 @@ const agentsRouter = router({
         featureId: z.number(),
         projectId: z.number(),
         prompt: z.string(),
+        images: z.array(z.object({ base64: z.string(), mimeType: z.string() })).optional(),
         permissionMode: z.enum(["acceptEdits", "plan"]).optional(),
       }),
     )
@@ -665,10 +681,23 @@ const agentsRouter = router({
         .get(input.projectId) as Pick<ProjectRow, "path"> | undefined;
       if (!project?.path) throw new Error("Project path not found");
 
+      let prompt: import("../agents/types").MessageContent;
+      if (input.images && input.images.length > 0) {
+        prompt = [
+          { type: "text" as const, text: input.prompt },
+          ...input.images.map((img) => ({
+            type: "image" as const,
+            source: { type: "base64" as const, media_type: img.mimeType, data: img.base64 },
+          })),
+        ];
+      } else {
+        prompt = input.prompt;
+      }
+
       const result = startSessionAgent({
         featureId: input.featureId,
         projectId: input.projectId,
-        prompt: input.prompt,
+        prompt,
         cwd: project.path,
         permissionMode: input.permissionMode,
       });

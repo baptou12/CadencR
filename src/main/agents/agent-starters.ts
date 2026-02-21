@@ -39,7 +39,7 @@ export interface AgentResult {
 export function startSessionAgent(options: {
   featureId?: number;
   projectId: number;
-  prompt: string;
+  prompt: MessageContent;
   cwd: string;
   resumeSessionId?: string;
   permissionMode?: "acceptEdits" | "plan";

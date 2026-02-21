@@ -113,9 +113,10 @@ export function startUnifiedAgent(config: UnifiedAgentConfig): UnifiedAgentResul
 
   // 5. Persist the initial user message
   if (config.prompt) {
+    const persistedPrompt = typeof config.prompt === "string" ? config.prompt : JSON.stringify(config.prompt);
     db.prepare(
       "INSERT INTO agent_messages (session_id, role, content, message_type, tool_name) VALUES (?, ?, ?, ?, ?)",
-    ).run(sessionDbId, "user", config.prompt, "user_message", null);
+    ).run(sessionDbId, "user", persistedPrompt, "user_message", null);
   }
 
   // 6. Accumulate output for completion actions

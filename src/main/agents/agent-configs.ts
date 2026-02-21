@@ -500,7 +500,7 @@ export interface SessionConfigOptions {
   featureId?: number;
   projectId: number;
   cwd: string;
-  prompt: string;
+  prompt: MessageContent;
   resumeSessionId?: string;
   permissionMode?: "acceptEdits" | "plan";
   /** Worktree path for permission resolution */

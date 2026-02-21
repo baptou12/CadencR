@@ -206,6 +206,7 @@ export function useWorkflowMutations({
             sessionId: resumable.claudeSessionId,
             originalSessionDbId: resumable.sessionDbId,
             prompt: message,
+            images,
           });
         } catch (err) {
           console.error("[useWorkflowMutations] Failed to resume agent:", err);
