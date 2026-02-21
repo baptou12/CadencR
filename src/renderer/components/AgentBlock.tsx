@@ -6,6 +6,7 @@ import { Markdown } from "@/components/Markdown";
 import { InlineDiffBlock } from "@/components/InlineDiffBlock";
 import { ClipboardCheck } from "lucide-react";
 import { CollapsibleBlock } from "@/components/ui/collapsible-block";
+import { parseAnsi } from "@/lib/ansi-to-html";
 
 /** Reconstruct diff data from persisted tool args (for historical sessions). */
 function diffFromToolArgs(
@@ -224,7 +225,7 @@ function BashOutputBlock({ content, isError }: { content: string; isError?: bool
     >
       {({ showAll }) => (
         <pre className="whitespace-pre-wrap">
-          {showAll ? lines.join("\n") : lines.slice(-DEFAULT_BASH_LINES).join("\n")}
+          {parseAnsi(showAll ? lines.join("\n") : lines.slice(-DEFAULT_BASH_LINES).join("\n"))}
         </pre>
       )}
     </CollapsibleBlock>
@@ -390,7 +391,7 @@ function CompactBlock({ block }: { block: AgentBlockData }) {
           "text-xs py-0.5 truncate font-mono",
           block.isError ? "text-red-500" : "text-zinc-500"
         )}>
-          {lastLine.slice(0, 100)}
+          {parseAnsi(lastLine)}
         </div>
       );
     }
