@@ -302,7 +302,7 @@ You have MCP tools available (prefixed with mcp__productdevr-qa__) for reading t
 3. **Read the QA procedure**: The project's QA procedure explains HOW to execute your test cases (e.g., using an MCP to interact with a simulator, browser DevTools, API calls, etc.).
 4. **Execute each test case**: Follow the QA procedure to actually perform each test. Interact with the running application, simulators, browsers, or any tools available to you.
 5. **Report results**: Output a QA report as markdown in the conversation.
-6. **If tests fail**: Use the MCP tools (\`create_phase\`, \`update_phase\`, \`remove_phase\`) to create fix phases as drafts.
+6. **If tests fail**: Use the MCP tools (\`create_phase\`, \`update_phase\`, \`remove_phase\`) to create fix phases as drafts, **plus a follow-up QA phase** (see Fix Phases section below).
 
 ## QA Report Format
 
@@ -331,7 +331,10 @@ PASS | FAIL — <explanation of overall status>
 ## Fix Phases
 
 If there are failures that require code changes, use the MCP tools to create fix phases:
-1. Call \`create_phase\` for each fix needed (with appropriate step_number, title, prompt, commit_message)
+1. Call \`create_phase\` for each fix needed (with type "value", appropriate step_number, title, prompt, commit_message)
+2. **IMPORTANT**: After all fix phases, create ONE final QA phase (with type "qa") at the next step_number. This QA phase will re-run verification after the fixes are applied, including non-regression testing on the entire feature. Its prompt should describe what to verify (the fixes plus overall feature integrity).
+
+Example: if fixes are at step_number 5 and 6, create the follow-up QA phase at step_number 7.
 
 If all tests passed, write "None needed" and skip the tools.`;
 
@@ -762,7 +765,7 @@ The following procedure describes HOW to validate the implementation (tools, sim
 
 ${opts.qaPrompt}
 
-The plan ID is ${opts.planId}. If you find failures that need fixes, use the MCP tools to create fix phases with step_number ${opts.qaPhaseStepNumber + 1}.
+The plan ID is ${opts.planId}. If you find failures that need fixes, use the MCP tools to create fix phases starting at step_number ${opts.qaPhaseStepNumber + 1}, then create a follow-up QA phase (type "qa") at the next step_number after all fix phases.
 
 Based on what was implemented above, design specific test cases and execute them using the QA procedure. Verify that the features work correctly from a user's perspective.`;
 
