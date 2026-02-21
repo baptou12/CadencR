@@ -2,6 +2,9 @@
   "name": "productdevr",
   "version": "0.1.0",
   "description": "A desktop app providing a UI for Claude Code",
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "main": ".vite/build/main.js",
   "scripts": {
     "start": "electron-forge start",

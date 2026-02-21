@@ -5,10 +5,10 @@ export default defineConfig({
     environment: "node",
     include: ["src/main/**/*.test.ts"],
     setupFiles: ["src/main/test-setup.ts"],
-  },
-  build: {
-    rollupOptions: {
-      external: ["better-sqlite3", "node-pty", "electron"],
+    server: {
+      deps: {
+        external: ["better-sqlite3", "node-pty"],
+      },
     },
   },
 });

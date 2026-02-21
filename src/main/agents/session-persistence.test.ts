@@ -266,7 +266,6 @@ describe("session-persistence", () => {
       const mockRun = vi.fn();
       const mockAll = vi.fn()
         .mockReturnValueOnce([]) // stale running sessions
-        .mockReturnValueOnce([]) // stale running phases
         .mockReturnValueOnce([
           { id: 99, subprocess_id: "proc-restored" },
         ]);
