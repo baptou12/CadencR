@@ -100,22 +100,5 @@
 }
 
 .user-message-markdown {
-  text-align: right;
-}
-.user-message-markdown p,
-.user-message-markdown h1,
-.user-message-markdown h2,
-.user-message-markdown h3,
-.user-message-markdown h4,
-.user-message-markdown h5,
-.user-message-markdown h6 {
-  text-align: right;
-}
-.user-message-markdown pre,
-.user-message-markdown blockquote,
-.user-message-markdown table,
-.user-message-markdown ul,
-.user-message-markdown ol {
-  margin-left: auto;
-  margin-right: 0;
+  text-align: left;
 }
