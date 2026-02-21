@@ -11,7 +11,7 @@ vi.mock("@anthropic-ai/claude-agent-sdk", () => {
 });
 
 // Mock the electron module globally for main process tests
-vi.mock("electron", () => ({
+const mockElectron = {
   app: {
     getPath: (name: string) => `/tmp/productdevr-test/${name}`,
     getName: () => "ProductDevR",
@@ -19,10 +19,14 @@ vi.mock("electron", () => ({
     isReady: () => true,
     whenReady: () => Promise.resolve(),
   },
-  BrowserWindow: vi.fn(),
+  BrowserWindow: Object.assign(vi.fn(), { getAllWindows: vi.fn().mockReturnValue([]) }),
   ipcMain: {
     on: vi.fn(),
     handle: vi.fn(),
     removeHandler: vi.fn(),
   },
+};
+vi.mock("electron", () => ({
+  ...mockElectron,
+  default: mockElectron,
 }));
