@@ -721,7 +721,7 @@ export function FeatureWorkflowView({
                             activeCount > 3
                               ? "max-h-[33%]"
                               : activeCount > 0
-                                ? "max-h-[67%]"
+                                ? "max-h-[50%]"
                                 : undefined,
                           )}
                         >
@@ -738,7 +738,7 @@ export function FeatureWorkflowView({
                           className={cn(
                             "flex-1 min-h-0 gap-2",
                             activeCount <= 3
-                              ? "min-h-[33%]"
+                              ? "min-h-[50%]"
                               : "min-h-[67%]",
                             useGrid
                               ? "grid overflow-auto auto-rows-[minmax(300px,1fr)]"
