@@ -75,7 +75,6 @@ describe("renderPlanMarkdown", () => {
   });
 
   it("renders plan title and sections", () => {
-    let callIndex = 0;
     db.prepare.mockImplementation(() => ({
       get: vi.fn().mockReturnValue({
         id: 1,
