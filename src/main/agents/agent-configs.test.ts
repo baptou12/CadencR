@@ -1,0 +1,312 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+vi.mock("../db/database");
+vi.mock("./session-persistence", () => ({ notifyDbUpdated: vi.fn() }));
+vi.mock("./plan-approval", () => ({ waitForPlanApproval: vi.fn() }));
+vi.mock("./mcp-tools", () => ({
+  createPlanMcpServer: vi.fn().mockReturnValue({}),
+  createQaMcpServer: vi.fn().mockReturnValue({}),
+  createReviewMcpServer: vi.fn().mockReturnValue({}),
+  createCommonMcpServer: vi.fn().mockReturnValue({}),
+  createWorkflowSessionMcpServer: vi.fn().mockReturnValue({}),
+}));
+
+import {
+  createPlanConfig,
+  createBrainstormConfig,
+  createRiskConfig,
+  createReviewConfig,
+  createSessionConfig,
+  createQaConfig,
+  buildQaSystemPrompt,
+  buildExecuteSystemPrompt,
+} from "./agent-configs";
+import {
+  createPlanMcpServer,
+  createQaMcpServer,
+  createReviewMcpServer,
+  createCommonMcpServer,
+  createWorkflowSessionMcpServer,
+} from "./mcp-tools";
+
+describe("createPlanConfig", () => {
+  it("returns agentType plan with correct fields", () => {
+    const config = createPlanConfig({
+      featureId: 1,
+      projectId: 2,
+      cwd: "/cwd",
+      description: "Build a login system",
+      planId: 10,
+    });
+
+    expect(config.agentType).toBe("plan");
+    expect(config.featureId).toBe(1);
+    expect(config.projectId).toBe(2);
+    expect(config.cwd).toBe("/cwd");
+    expect(config.systemPrompt).toContain("Plan agent");
+    expect(config.mcpServerFactory).toBeDefined();
+  });
+
+  it("mcpServerFactory creates productdevr-plan MCP server", () => {
+    const config = createPlanConfig({
+      featureId: 1,
+      projectId: 2,
+      cwd: "/cwd",
+      description: "Feature",
+      planId: 10,
+    });
+
+    config.mcpServerFactory!("sub1", 5);
+    expect(createPlanMcpServer).toHaveBeenCalledWith(10, 1, 5, expect.any(Function));
+  });
+
+  it("includes planId in the prompt", () => {
+    const config = createPlanConfig({
+      featureId: 1,
+      projectId: 2,
+      cwd: "/cwd",
+      description: "Feature",
+      planId: 99,
+    });
+
+    expect(config.prompt).toContain("99");
+  });
+});
+
+describe("createBrainstormConfig", () => {
+  it("returns agentType brainstorm", () => {
+    const config = createBrainstormConfig({
+      featureId: 1,
+      projectId: 2,
+      cwd: "/cwd",
+      description: "Brainstorm feature",
+      planId: 20,
+    });
+
+    expect(config.agentType).toBe("brainstorm");
+    expect(config.systemPrompt).toContain("Brainstorm agent");
+  });
+
+  it("has a completion action for fallback", () => {
+    const config = createBrainstormConfig({
+      featureId: 1,
+      projectId: 2,
+      cwd: "/cwd",
+      description: "Feature",
+      planId: 20,
+    });
+
+    expect(config.completionActions?.length).toBeGreaterThan(0);
+    expect(config.completionActions?.[0].event).toBe("plan_fallback");
+  });
+});
+
+describe("createRiskConfig", () => {
+  it("returns agentType risk with correct MCP server", () => {
+    const config = createRiskConfig({
+      featureId: 1,
+      projectId: 2,
+      cwd: "/cwd",
+      prompt: "Analyze risk",
+    });
+
+    expect(config.agentType).toBe("risk");
+    expect(config.systemPrompt).toContain("risk");
+    // risk system prompt exists and has content
+    expect(config.systemPrompt?.length).toBeGreaterThan(0);
+
+    config.mcpServerFactory!("sub1", 5);
+    expect(createCommonMcpServer).toHaveBeenCalledWith(5, 1);
+  });
+
+  it("stores risk report in completion action", () => {
+    const config = createRiskConfig({
+      featureId: 1,
+      projectId: 2,
+      cwd: "/cwd",
+      prompt: "Risk analysis",
+    });
+
+    expect(config.completionActions?.[0].event).toBe("store_risk_report");
+  });
+});
+
+describe("createReviewConfig", () => {
+  it("returns agentType review with correct MCP server", () => {
+    const config = createReviewConfig({
+      featureId: 1,
+      projectId: 2,
+      cwd: "/cwd",
+      planId: 30,
+    });
+
+    expect(config.agentType).toBe("review");
+    expect(config.systemPrompt).toContain("review");
+    // review system prompt exists and has content
+    expect(config.systemPrompt?.length).toBeGreaterThan(0);
+
+    config.mcpServerFactory!("sub1", 5);
+    expect(createReviewMcpServer).toHaveBeenCalledWith(30, 1, 5);
+  });
+
+  it("stores review report in completion action", () => {
+    const config = createReviewConfig({
+      featureId: 1,
+      projectId: 2,
+      cwd: "/cwd",
+      planId: 30,
+    });
+
+    expect(config.completionActions?.[0].event).toBe("store_review_report");
+  });
+});
+
+describe("createSessionConfig", () => {
+  it("returns agentType session", () => {
+    const config = createSessionConfig({
+      projectId: 2,
+      cwd: "/cwd",
+      prompt: "Help me code",
+    });
+
+    expect(config.agentType).toBe("session");
+    expect(config.systemPrompt).toContain("Claude Code");
+  });
+
+  it("uses common MCP server when no planId", () => {
+    const config = createSessionConfig({
+      projectId: 2,
+      cwd: "/cwd",
+      prompt: "Help",
+    });
+
+    config.mcpServerFactory!("sub1", 5);
+    expect(createCommonMcpServer).toHaveBeenCalled();
+    expect(createWorkflowSessionMcpServer).not.toHaveBeenCalled();
+  });
+
+  it("uses workflow session MCP server when planId provided", () => {
+    const config = createSessionConfig({
+      featureId: 1,
+      projectId: 2,
+      cwd: "/cwd",
+      prompt: "Help",
+      planId: 10,
+    });
+
+    config.mcpServerFactory!("sub1", 5);
+    expect(createWorkflowSessionMcpServer).toHaveBeenCalled();
+  });
+
+  it("passes permissionMode and resumeSessionId", () => {
+    const config = createSessionConfig({
+      projectId: 2,
+      cwd: "/cwd",
+      prompt: "Help",
+      permissionMode: "plan",
+      resumeSessionId: "abc123",
+    });
+
+    expect(config.permissionMode).toBe("plan");
+    expect(config.resumeSessionId).toBe("abc123");
+  });
+});
+
+describe("createQaConfig", () => {
+  it("returns agentType qa", () => {
+    const config = createQaConfig({
+      featureId: 1,
+      projectId: 2,
+      cwd: "/cwd",
+      qaPrompt: "Run tests",
+      completedPhasesSummary: "Phase 1 done",
+      planId: 40,
+      qaPhaseStepNumber: 3,
+    });
+
+    expect(config.agentType).toBe("qa");
+  });
+
+  it("includes completed phases summary in prompt", () => {
+    const config = createQaConfig({
+      featureId: 1,
+      projectId: 2,
+      cwd: "/cwd",
+      qaPrompt: "Run tests",
+      completedPhasesSummary: "Phase 1: Added login",
+      planId: 40,
+      qaPhaseStepNumber: 3,
+    });
+
+    expect(config.prompt).toContain("Phase 1: Added login");
+  });
+
+  it("includes fix phase step number in prompt", () => {
+    const config = createQaConfig({
+      featureId: 1,
+      projectId: 2,
+      cwd: "/cwd",
+      qaPrompt: "Run tests",
+      completedPhasesSummary: "Done",
+      planId: 40,
+      qaPhaseStepNumber: 5,
+    });
+
+    expect(config.prompt).toContain("6"); // qaPhaseStepNumber + 1
+  });
+
+  it("stores qa report in completion action", () => {
+    const config = createQaConfig({
+      featureId: 1,
+      projectId: 2,
+      cwd: "/cwd",
+      qaPrompt: "Run tests",
+      completedPhasesSummary: "Done",
+      planId: 40,
+      qaPhaseStepNumber: 3,
+    });
+
+    expect(config.completionActions?.[0].event).toBe("store_qa_report");
+  });
+
+  it("uses qa MCP server", () => {
+    const config = createQaConfig({
+      featureId: 1,
+      projectId: 2,
+      cwd: "/cwd",
+      qaPrompt: "Run tests",
+      completedPhasesSummary: "Done",
+      planId: 40,
+      qaPhaseStepNumber: 3,
+    });
+
+    config.mcpServerFactory!("sub1", 5);
+    expect(createQaMcpServer).toHaveBeenCalledWith(40, 1, 5);
+  });
+});
+
+describe("buildQaSystemPrompt", () => {
+  it("returns a string for each autonomy level", () => {
+    expect(typeof buildQaSystemPrompt(1)).toBe("string");
+    expect(typeof buildQaSystemPrompt(2)).toBe("string");
+    expect(typeof buildQaSystemPrompt(3)).toBe("string");
+  });
+
+  it("includes QA content", () => {
+    const prompt = buildQaSystemPrompt(1);
+    expect(prompt.length).toBeGreaterThan(100);
+  });
+});
+
+describe("buildExecuteSystemPrompt", () => {
+  it("returns a string for each autonomy level", () => {
+    expect(typeof buildExecuteSystemPrompt(1)).toBe("string");
+    expect(typeof buildExecuteSystemPrompt(2)).toBe("string");
+    expect(typeof buildExecuteSystemPrompt(3)).toBe("string");
+  });
+
+  it("includes execute content", () => {
+    const prompt = buildExecuteSystemPrompt(1);
+    expect(prompt.length).toBeGreaterThan(100);
+  });
+});
