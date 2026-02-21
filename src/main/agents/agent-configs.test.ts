@@ -113,7 +113,7 @@ describe("createRiskConfig", () => {
     expect(config.agentType).toBe("risk");
     expect(config.systemPrompt).toContain("risk");
     // risk system prompt exists and has content
-    expect(config.systemPrompt.length).toBeGreaterThan(0);
+    expect(config.systemPrompt?.length).toBeGreaterThan(0);
 
     config.mcpServerFactory!("sub1", 5);
     expect(createCommonMcpServer).toHaveBeenCalledWith(5, 1);
@@ -143,7 +143,7 @@ describe("createReviewConfig", () => {
     expect(config.agentType).toBe("review");
     expect(config.systemPrompt).toContain("review");
     // review system prompt exists and has content
-    expect(config.systemPrompt.length).toBeGreaterThan(0);
+    expect(config.systemPrompt?.length).toBeGreaterThan(0);
 
     config.mcpServerFactory!("sub1", 5);
     expect(createReviewMcpServer).toHaveBeenCalledWith(30, 1, 5);
