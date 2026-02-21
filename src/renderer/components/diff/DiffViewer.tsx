@@ -1,6 +1,6 @@
-import { useState, useMemo, useCallback, useRef } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { DiffView, DiffFile, DiffModeEnum, SplitSide } from "@git-diff-view/react";
-import { highlighter } from "@git-diff-view/lowlight";
+import { getDiffViewHighlighter, type DiffHighlighter } from "@git-diff-view/shiki";
 import "@git-diff-view/react/styles/diff-view.css";
 import "./dracula-diff.css";
 import { trpc } from "@/trpc";
@@ -23,6 +23,11 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
   const [diffMode, setDiffMode] = useState<DiffModeEnum>(DiffModeEnum.Unified);
   const [collapsedFiles, setCollapsedFiles] = useState<Set<string>>(new Set());
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  const [shikiHighlighter, setShikiHighlighter] = useState<DiffHighlighter | null>(null);
+
+  useEffect(() => {
+    getDiffViewHighlighter().then((h) => setShikiHighlighter(h));
+  }, []);
   const [activeWidget, setActiveWidget] = useState<{
     filePath: string;
     lineNumber: number;
@@ -105,12 +110,14 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
       });
       file.initTheme("dark");
       file.initRaw();
-      file.initSyntax({ registerHighlighter: highlighter });
+      if (shikiHighlighter) {
+        file.initSyntax({ registerHighlighter: shikiHighlighter });
+      }
       file.buildSplitDiffLines();
       file.buildUnifiedDiffLines();
       return { section, file };
     });
-  }, [fileSections]);
+  }, [fileSections, shikiHighlighter]);
 
   const toggleFile = useCallback((fileName: string) => {
     setCollapsedFiles((prev) => {
@@ -253,7 +260,7 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
                   diffViewTheme="dark"
                   diffViewFontSize={13}
                   diffViewHighlight={true}
-                  registerHighlighter={highlighter}
+                  registerHighlighter={shikiHighlighter ?? undefined}
                   diffViewAddWidget={true}
                   extendData={buildExtendData(displayName)}
                   renderExtendLine={({ side, data, lineNumber }) => {
