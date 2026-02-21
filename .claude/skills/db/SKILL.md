@@ -10,7 +10,7 @@ allowed-tools: Bash(sqlite3 *)
 Run queries against the ProductDevR SQLite database at:
 `~/Library/Application Support/<app>/app.db`
 
-Use `sqlite3` for all operations. Always quote the DB path.
+Use `sqlite3` for all operations. Always wrap the DB path in double quotes (`"`) to avoid backslash escaping — e.g. `sqlite3 "$HOME/Library/Application Support/<app>/app.db"`.
 
 ## Tables
 
