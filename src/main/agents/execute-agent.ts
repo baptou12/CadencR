@@ -22,6 +22,37 @@ import { createExecuteMcpServer } from "./mcp-tools";
 import { broadcast, AGENT_EVENT_CHANNEL } from "./broadcast";
 import type { AgentEvent, UnifiedAgentConfig, CompletionAction } from "./types";
 
+/** Maximum number of concurrent agents per feature */
+const MAX_AGENTS_PER_FEATURE = 3;
+
+/**
+ * Simple concurrency limiter — runs up to `limit` tasks at a time from the
+ * provided array of thunks, returning when all have settled.
+ */
+async function runWithConcurrencyLimit<T>(
+  limit: number,
+  tasks: Array<() => Promise<T>>,
+): Promise<PromiseSettledResult<T>[]> {
+  const results: PromiseSettledResult<T>[] = Array.from<PromiseSettledResult<T>>({ length: tasks.length });
+  let nextIndex = 0;
+
+  async function worker(): Promise<void> {
+    while (nextIndex < tasks.length) {
+      const idx = nextIndex++;
+      try {
+        const value = await tasks[idx]();
+        results[idx] = { status: "fulfilled", value };
+      } catch (reason) {
+        results[idx] = { status: "rejected", reason };
+      }
+    }
+  }
+
+  const workers = Array.from({ length: Math.min(limit, tasks.length) }, () => worker());
+  await Promise.all(workers);
+  return results;
+}
+
 export interface ExecuteAgentOptions {
   featureId: number;
   projectId: number;
@@ -96,13 +127,13 @@ export function startExecuteAgent(options: ExecuteAgentOptions): ExecuteAgentRes
 
   const optionsWithSession = { ...options, sessionDbId };
   const firstStepSubprocessIds: string[] = [];
-  const firstStepPromises = firstStepPhases.map((phase) =>
-    dispatchPhase(phase, optionsWithSession, autonomyLevel, firstStepSubprocessIds),
+  const firstStepTasks = firstStepPhases.map((phase) =>
+    () => dispatchPhase(phase, optionsWithSession, autonomyLevel, firstStepSubprocessIds),
   );
 
   // Continue remaining steps asynchronously after first step completes.
   void (async () => {
-    await Promise.allSettled(firstStepPromises);
+    await runWithConcurrencyLimit(MAX_AGENTS_PER_FEATURE, firstStepTasks);
 
     const firstStepResult = getStepOutcome(plan.id, firstStepNumber);
     if (firstStepResult !== "ok" && firstStepResult !== "qa_fail_with_fixes") {
@@ -493,10 +524,10 @@ async function executeRemainingSteps(
     const stepNumber = sortedSteps[i];
     const stepPhases = stepGroups.get(stepNumber) ?? [];
     const stepSubprocessIds: string[] = [];
-    const phasePromises = stepPhases.map((phase) =>
-      dispatchPhase(phase, options, autonomyLevel, stepSubprocessIds),
+    const phaseTasks = stepPhases.map((phase) =>
+      () => dispatchPhase(phase, options, autonomyLevel, stepSubprocessIds),
     );
-    await Promise.allSettled(phasePromises);
+    await runWithConcurrencyLimit(MAX_AGENTS_PER_FEATURE, phaseTasks);
 
     const stepResult = getStepOutcome(planId, stepNumber);
     if (stepResult !== "ok" && stepResult !== "qa_fail_with_fixes") {

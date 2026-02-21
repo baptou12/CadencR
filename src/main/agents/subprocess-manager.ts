@@ -9,8 +9,6 @@ import { getSdkClient } from "./sdk-client";
 import { createCanUseToolHandler } from "./tool-permissions";
 import type { AgentEvent, AgentType, MessageContent, StreamEvent } from "./types";
 
-const MAX_CONCURRENT = 10;
-
 export interface SubprocessOptions {
   /** Working directory for the Claude CLI process */
   cwd: string;
@@ -359,12 +357,6 @@ function handleSdkMessage(
  * Start a new Claude Agent SDK query.
  */
 export function startSubprocess(options: SubprocessOptions): ManagedSubprocess {
-  if (activeProcesses.size >= MAX_CONCURRENT) {
-    throw new Error(
-      `Maximum concurrent agent limit reached (${MAX_CONCURRENT})`,
-    );
-  }
-
   const id = options.id ?? generateId();
   const abortController = new AbortController();
 
