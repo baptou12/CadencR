@@ -40,6 +40,7 @@ import {
   hasUncommittedChanges,
 } from "../git/worktree";
 import { diffCommentsRouter } from "./diff-comments";
+import { diffViewedRouter } from "./diff-viewed";
 import { usageRouter } from "./usage";
 import { terminalRouter } from "./terminal";
 import { startUnifiedAgent } from "../agents/unified-agent";
@@ -1337,6 +1338,98 @@ const gitRouter = router({
       return deleteLocalBranch(project.path, branchRow.value);
     }),
 
+  /** Get blob SHAs for all changed files in a feature's worktree */
+  getFileBlobShas: publicProcedure
+    .input(z.object({ featureId: z.number() }))
+    .query(({ input }) => {
+      const db = getDatabase();
+      const wtRow = db
+        .prepare("SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'")
+        .get(input.featureId) as SettingRow | undefined;
+      if (!wtRow?.value) return {};
+
+      const worktreePath = wtRow.value;
+      const result: Record<string, string> = {};
+
+      try {
+        // Get list of changed files using git diff (uncommitted)
+        const changedFiles = execSync("git diff HEAD --name-only", {
+          cwd: worktreePath,
+          encoding: "utf-8",
+        })
+          .trim()
+          .split("\n")
+          .filter(Boolean);
+
+        // Also include untracked files
+        const untrackedFiles = execSync("git ls-files --others --exclude-standard", {
+          cwd: worktreePath,
+          encoding: "utf-8",
+        })
+          .trim()
+          .split("\n")
+          .filter(Boolean);
+
+        // Also include files changed between the branch and its merge-base (committed changes)
+        let branchChangedFiles: string[] = [];
+        try {
+          const branchRow = db
+            .prepare("SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_branch'")
+            .get(input.featureId) as SettingRow | undefined;
+          if (branchRow?.value) {
+            const mergeBase = execSync(`git merge-base HEAD main || git merge-base HEAD master`, {
+              cwd: worktreePath,
+              encoding: "utf-8",
+              shell: "/bin/sh",
+            }).trim();
+            if (mergeBase) {
+              branchChangedFiles = execSync(`git diff ${mergeBase} HEAD --name-only`, {
+                cwd: worktreePath,
+                encoding: "utf-8",
+              })
+                .trim()
+                .split("\n")
+                .filter(Boolean);
+            }
+          }
+        } catch {
+          // merge-base may fail, that's ok
+        }
+
+        const allFiles = [...new Set([...changedFiles, ...untrackedFiles, ...branchChangedFiles])];
+
+        for (const filePath of allFiles) {
+          try {
+            // For tracked files, hash the current working tree version
+            const blobSha = execSync(`git hash-object "${filePath}"`, {
+              cwd: worktreePath,
+              encoding: "utf-8",
+            }).trim();
+            if (blobSha) {
+              result[filePath] = blobSha;
+            }
+          } catch {
+            // For committed files not in worktree, hash from HEAD
+            try {
+              const blobSha = execSync(`git rev-parse HEAD:"${filePath}"`, {
+                cwd: worktreePath,
+                encoding: "utf-8",
+              }).trim();
+              if (blobSha) {
+                result[filePath] = blobSha;
+              }
+            } catch {
+              // File might not exist, skip
+            }
+          }
+        }
+      } catch {
+        // If git commands fail, return empty map
+      }
+
+      return result;
+    }),
+
   /** Check if the feature's worktree has uncommitted/untracked changes */
   hasUncommittedChanges: publicProcedure
     .input(z.object({ projectId: z.number(), featureId: z.number() }))
@@ -1437,6 +1530,7 @@ export const appRouter = router({
   agents: agentsRouter,
   git: gitRouter,
   diffComments: diffCommentsRouter,
+  diffViewed: diffViewedRouter,
   usage: usageRouter,
   terminal: terminalRouter,
   promptHistory: promptHistoryRouter,

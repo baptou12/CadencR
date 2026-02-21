@@ -1,7 +1,7 @@
-import { useMemo } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { createTwoFilesPatch } from "diff";
 import { DiffView, DiffFile, DiffModeEnum } from "@git-diff-view/react";
-import { highlighter } from "@git-diff-view/lowlight";
+import { getDiffViewHighlighter, type DiffHighlighter } from "@git-diff-view/shiki";
 import "@git-diff-view/react/styles/diff-view.css";
 import "./diff/dracula-diff.css";
 import { langFromPath } from "@/lib/parse-unified-diff";
@@ -17,6 +17,12 @@ export interface InlineDiffBlockProps {
  * Uses @git-diff-view/react in unified mode with the Dracula theme.
  */
 export function InlineDiffBlock({ filePath, oldContent, newContent }: InlineDiffBlockProps) {
+  const [shikiHighlighter, setShikiHighlighter] = useState<DiffHighlighter | null>(null);
+
+  useEffect(() => {
+    getDiffViewHighlighter().then((h) => setShikiHighlighter(h));
+  }, []);
+
   const diffFile = useMemo(() => {
     if (oldContent === newContent) return null;
 
@@ -42,11 +48,13 @@ export function InlineDiffBlock({ filePath, oldContent, newContent }: InlineDiff
     });
     file.initTheme("dark");
     file.initRaw();
-    file.initSyntax({ registerHighlighter: highlighter });
+    if (shikiHighlighter) {
+      file.initSyntax({ registerHighlighter: shikiHighlighter });
+    }
     file.buildSplitDiffLines();
     file.buildUnifiedDiffLines();
     return file;
-  }, [filePath, oldContent, newContent]);
+  }, [filePath, oldContent, newContent, shikiHighlighter]);
 
   // Edge case: identical content
   if (oldContent === newContent || !diffFile) {
@@ -77,7 +85,7 @@ export function InlineDiffBlock({ filePath, oldContent, newContent }: InlineDiff
         diffViewTheme="dark"
         diffViewFontSize={13}
         diffViewHighlight={true}
-        registerHighlighter={highlighter}
+        registerHighlighter={shikiHighlighter ?? undefined}
       />
     </div>
   );

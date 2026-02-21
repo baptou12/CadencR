@@ -1,10 +1,11 @@
-import { useState, useMemo, useCallback, useRef } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { DiffView, DiffFile, DiffModeEnum, SplitSide } from "@git-diff-view/react";
-import { highlighter } from "@git-diff-view/lowlight";
+import { getDiffViewHighlighter, type DiffHighlighter } from "@git-diff-view/shiki";
 import "@git-diff-view/react/styles/diff-view.css";
 import "./dracula-diff.css";
 import { trpc } from "@/trpc";
 import { ChevronDown, ChevronRight } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { DiffFileTree, type ChangedFileEntry } from "./DiffFileTree";
 import {
   CommentWidgetLine,
@@ -23,6 +24,40 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
   const [diffMode, setDiffMode] = useState<DiffModeEnum>(DiffModeEnum.Unified);
   const [collapsedFiles, setCollapsedFiles] = useState<Set<string>>(new Set());
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  const [shikiHighlighter, setShikiHighlighter] = useState<DiffHighlighter | null>(null);
+
+  useEffect(() => {
+    getDiffViewHighlighter().then((h) => setShikiHighlighter(h));
+  }, []);
+
+  const { data: viewedList = [] } = trpc.diffViewed.list.useQuery({ featureId });
+  const { data: blobShas = {} } = trpc.git.getFileBlobShas.useQuery({ featureId });
+
+  const viewedFilesSet = useMemo(() => {
+    const set = new Set<string>();
+    for (const v of viewedList) {
+      const currentSha = (blobShas as Record<string, string>)[v.file_path];
+      // If we have a current SHA and it doesn't match, the file changed since viewed — skip it.
+      // If there's no current SHA (e.g. branch mode, committed files), trust the DB record.
+      if (currentSha && currentSha !== v.blob_sha) {
+        continue;
+      }
+      set.add(v.file_path);
+    }
+    return set;
+  }, [viewedList, blobShas]);
+
+  // Auto-collapse viewed files on initial load
+  const hasInitializedCollapse = useRef(false);
+  useEffect(() => {
+    if (!hasInitializedCollapse.current && viewedFilesSet.size > 0) {
+      hasInitializedCollapse.current = true;
+      setCollapsedFiles((prev) => new Set([...prev, ...viewedFilesSet]));
+    }
+  }, [viewedFilesSet]);
+
+  const [focusedFileIndex, setFocusedFileIndex] = useState(-1);
+
   const [activeWidget, setActiveWidget] = useState<{
     filePath: string;
     lineNumber: number;
@@ -37,6 +72,14 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
   });
 
   const utils = trpc.useUtils();
+
+  const markViewed = trpc.diffViewed.markViewed.useMutation({
+    onSuccess: () => utils.diffViewed.list.invalidate({ featureId }),
+  });
+  const unmarkViewed = trpc.diffViewed.unmarkViewed.useMutation({
+    onSuccess: () => utils.diffViewed.list.invalidate({ featureId }),
+  });
+
   const { data: comments = [] } = trpc.diffComments.list.useQuery({ featureId });
 
   const createComment = trpc.diffComments.create.useMutation({
@@ -105,12 +148,35 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
       });
       file.initTheme("dark");
       file.initRaw();
-      file.initSyntax({ registerHighlighter: highlighter });
+      if (shikiHighlighter) {
+        file.initSyntax({ registerHighlighter: shikiHighlighter });
+      }
       file.buildSplitDiffLines();
       file.buildUnifiedDiffLines();
       return { section, file };
     });
-  }, [fileSections]);
+  }, [fileSections, shikiHighlighter]);
+
+  const fileNames = useMemo(
+    () =>
+      diffFiles.map(({ section }) =>
+        section.newFileName !== "/dev/null" ? section.newFileName : section.oldFileName,
+      ),
+    [diffFiles],
+  );
+
+  const scrollToFileIndex = useCallback(
+    (index: number) => {
+      const name = fileNames[index];
+      if (!name) return;
+      setSelectedFile(name);
+      requestAnimationFrame(() => {
+        const el = diffAreaRef.current?.querySelector(`[data-file="${CSS.escape(name)}"]`);
+        el?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    },
+    [fileNames],
+  );
 
   const toggleFile = useCallback((fileName: string) => {
     setCollapsedFiles((prev) => {
@@ -123,6 +189,65 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
       return next;
     });
   }, []);
+
+  // Keyboard shortcuts: Ctrl+J (next), Ctrl+K (prev), Ctrl+E (toggle expand), Ctrl+H (toggle viewed)
+  const focusedFileIndexRef = useRef(focusedFileIndex);
+  focusedFileIndexRef.current = focusedFileIndex;
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (!e.ctrlKey || e.metaKey || e.altKey) return;
+      const idx = focusedFileIndexRef.current;
+
+      if (e.code === "KeyJ") {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        const next = Math.min(idx + 1, fileNames.length - 1);
+        setFocusedFileIndex(next);
+        scrollToFileIndex(next);
+      } else if (e.code === "KeyK") {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        const next = Math.max(idx - 1, 0);
+        setFocusedFileIndex(next);
+        scrollToFileIndex(next);
+      } else if (e.code === "KeyL") {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        if (idx >= 0 && idx < fileNames.length) {
+          toggleFile(fileNames[idx]);
+        }
+      } else if (e.code === "KeyD") {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        if (diffAreaRef.current) {
+          diffAreaRef.current.scrollBy({ top: diffAreaRef.current.clientHeight / 2, behavior: "smooth" });
+        }
+      } else if (e.code === "KeyU") {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        if (diffAreaRef.current) {
+          diffAreaRef.current.scrollBy({ top: -diffAreaRef.current.clientHeight / 2, behavior: "smooth" });
+        }
+      } else if (e.code === "KeyH") {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        if (idx >= 0 && idx < fileNames.length) {
+          const name = fileNames[idx];
+          const sha = (blobShas as Record<string, string>)[name] ?? "";
+          if (viewedFilesSet.has(name)) {
+            unmarkViewed.mutate({ featureId, filePath: name });
+          } else {
+            markViewed.mutate({ featureId, filePath: name, blobSha: sha });
+            setCollapsedFiles((p) => new Set([...p, name]));
+          }
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handler, true);
+    return () => window.removeEventListener("keydown", handler, true);
+  }, [fileNames, blobShas, viewedFilesSet, featureId, scrollToFileIndex, toggleFile, markViewed, unmarkViewed]);
 
   const totalAdditions = diffFiles.reduce((sum, { file }) => sum + file.additionLength, 0);
   const totalDeletions = diffFiles.reduce((sum, { file }) => sum + file.deletionLength, 0);
@@ -194,7 +319,16 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
         <span>{diffFiles.length} file{diffFiles.length !== 1 ? "s" : ""} changed</span>
         <span className="text-[#50fa7b]">+{totalAdditions}</span>
         <span className="text-[#ff5555]">-{totalDeletions}</span>
-        <div className="ml-auto flex gap-2">
+        <span className="text-[#6272a4]">{viewedFilesSet.size}/{diffFiles.length} viewed</span>
+        <div className="ml-auto flex items-center gap-3">
+          <div className="flex items-center gap-2 text-[10px] text-[#6272a4]">
+            <span><kbd className="rounded bg-[#44475a] px-1 py-0.5 text-[#f8f8f2]">⌃J</kbd> next</span>
+            <span><kbd className="rounded bg-[#44475a] px-1 py-0.5 text-[#f8f8f2]">⌃K</kbd> prev</span>
+            <span><kbd className="rounded bg-[#44475a] px-1 py-0.5 text-[#f8f8f2]">⌃L</kbd> expand</span>
+            <span><kbd className="rounded bg-[#44475a] px-1 py-0.5 text-[#f8f8f2]">⌃H</kbd> viewed</span>
+            <span><kbd className="rounded bg-[#44475a] px-1 py-0.5 text-[#f8f8f2]">⌃D</kbd>/<kbd className="rounded bg-[#44475a] px-1 py-0.5 text-[#f8f8f2]">⌃U</kbd> scroll</span>
+          </div>
+          <div className="h-4 w-px bg-[#6272a4]" />
           <button
             className={`rounded px-2 py-0.5 text-xs ${diffMode === DiffModeEnum.Split ? "bg-[#44475a] text-[#f8f8f2]" : "text-[#6272a4]"}`}
             onClick={() => setDiffMode(DiffModeEnum.Split)}
@@ -218,31 +352,63 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
             files={changedFileEntries}
             expandedFiles={expandedFiles}
             selectedFile={selectedFile}
+            viewedFiles={viewedFilesSet}
             onToggleExpand={toggleFile}
             onSelectFile={handleSelectFile}
           />
         </div>
         <div ref={diffAreaRef} className="flex-1 overflow-y-auto">
-        {diffFiles.map(({ section, file }) => {
+        {diffFiles.map(({ section, file }, fileIndex) => {
           const displayName = section.newFileName !== "/dev/null" ? section.newFileName : section.oldFileName;
           const isCollapsed = collapsedFiles.has(displayName);
+          const isFileViewed = viewedFilesSet.has(displayName);
+          const currentBlobSha = (blobShas as Record<string, string>)[displayName] ?? "";
+          const isFocused = fileIndex === focusedFileIndex;
 
           return (
             <div key={displayName} data-file={displayName} className="border-b border-[#6272a4]">
               {/* File header */}
-              <button
-                className="flex w-full items-center gap-2 bg-[#343746] px-4 py-1.5 text-left text-sm text-[#f8f8f2] hover:bg-[#44475a]"
-                onClick={() => toggleFile(displayName)}
-              >
-                {isCollapsed ? (
-                  <ChevronRight className="h-4 w-4 text-[#6272a4]" />
-                ) : (
-                  <ChevronDown className="h-4 w-4 text-[#6272a4]" />
-                )}
-                <span className="flex-1 font-mono text-xs">{displayName}</span>
-                <span className="text-xs text-[#50fa7b]">+{file.additionLength}</span>
-                <span className="text-xs text-[#ff5555]">-{file.deletionLength}</span>
-              </button>
+              <div className={`sticky top-0 z-10 flex w-full items-center gap-2 bg-[#343746] px-4 py-1.5 text-sm text-[#f8f8f2] hover:bg-[#44475a] ${isFocused ? "ring-1 ring-inset ring-[#bd93f9] bg-[#44475a]" : ""}`}>
+                <button
+                  className="flex items-center gap-2 flex-1 min-w-0 text-left"
+                  onClick={() => toggleFile(displayName)}
+                >
+                  {isCollapsed ? (
+                    <ChevronRight className="h-4 w-4 shrink-0 text-[#6272a4]" />
+                  ) : (
+                    <ChevronDown className="h-4 w-4 shrink-0 text-[#6272a4]" />
+                  )}
+                  <span className="flex-1 font-mono text-xs truncate">{displayName}</span>
+                </button>
+                <span className="text-xs text-[#50fa7b] shrink-0">+{file.additionLength}</span>
+                <span className="text-xs text-[#ff5555] shrink-0">-{file.deletionLength}</span>
+                {/* Viewed checkbox */}
+                <div
+                  className="flex items-center gap-1.5 text-xs text-[#6272a4] ml-2 shrink-0"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <Checkbox
+                    checked={isFileViewed}
+                    onCheckedChange={(checked) => {
+                      if (checked) {
+                        markViewed.mutate({ featureId, filePath: displayName, blobSha: currentBlobSha });
+                        setCollapsedFiles((prev) => new Set([...prev, displayName]));
+                      } else {
+                        unmarkViewed.mutate({ featureId, filePath: displayName });
+                      }
+                    }}
+                    className="h-3.5 w-3.5 cursor-pointer"
+                  />
+                  <span className="cursor-pointer select-none" onClick={() => {
+                    if (isFileViewed) {
+                      unmarkViewed.mutate({ featureId, filePath: displayName });
+                    } else {
+                      markViewed.mutate({ featureId, filePath: displayName, blobSha: currentBlobSha });
+                      setCollapsedFiles((prev) => new Set([...prev, displayName]));
+                    }
+                  }}>Viewed</span>
+                </div>
+              </div>
 
               {/* Diff content */}
               {!isCollapsed && (
@@ -253,7 +419,7 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
                   diffViewTheme="dark"
                   diffViewFontSize={13}
                   diffViewHighlight={true}
-                  registerHighlighter={highlighter}
+                  registerHighlighter={shikiHighlighter ?? undefined}
                   diffViewAddWidget={true}
                   extendData={buildExtendData(displayName)}
                   renderExtendLine={({ side, data, lineNumber }) => {

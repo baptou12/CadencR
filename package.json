@@ -24,6 +24,7 @@
     "@anthropic-ai/claude-agent-sdk": "^0.2.39",
     "@git-diff-view/lowlight": "^0.0.39",
     "@git-diff-view/react": "^0.0.39",
+    "@git-diff-view/shiki": "^0.0.39",
     "@tanstack/react-query": "^4.43.0",
     "@tanstack/react-router": "^1.159.5",
     "@tanstack/router-vite-plugin": "^1.159.5",

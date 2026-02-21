@@ -33,14 +33,23 @@
   background-color: #44475a;
 }
 
+/* Allow shiki token colors to show through on add/del lines.
+   A subtle tint is applied via background so syntax colors remain visible. */
+.dracula-diff .diff-line-old-content .diff-line-syntax-raw span[style],
+.dracula-diff .diff-line-del .diff-line-syntax-raw span[style] {
+  /* shiki inline styles take precedence; no override needed */
+}
+
 .dracula-diff .diff-line-old-content .diff-line-syntax-raw,
 .dracula-diff .diff-line-del .diff-line-syntax-raw {
-  color: #ff5555;
+  /* Default fallback color for lines without shiki token spans */
+  color: #ff8585;
 }
 
 .dracula-diff .diff-line-new-content .diff-line-syntax-raw,
 .dracula-diff .diff-line-add .diff-line-syntax-raw {
-  color: #50fa7b;
+  /* Default fallback color for lines without shiki token spans */
+  color: #69ff94;
 }
 
 .dracula-diff .diff-line-hunk-content {
