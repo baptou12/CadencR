@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ClipboardCheck, Play, MessageSquare, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { KbdShortcut } from "@/components/KbdShortcut";
 
 interface PlanApprovalBarProps {
   allowedPrompts?: Array<{ tool: string; prompt: string }>;
@@ -18,6 +19,23 @@ export function PlanApprovalBar({
 }: PlanApprovalBarProps) {
   const [showFeedback, setShowFeedback] = useState(false);
   const [feedback, setFeedback] = useState("");
+
+  useEffect(() => {
+    if (showFeedback) return;
+    const handler = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey)) return;
+
+      if (e.key === "1") {
+        e.preventDefault();
+        onApprove();
+      } else if (e.key === "2") {
+        e.preventDefault();
+        setShowFeedback(true);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [showFeedback, onApprove]);
 
   const handleSendFeedback = () => {
     const trimmed = feedback.trim();
@@ -85,6 +103,7 @@ export function PlanApprovalBar({
           >
             <Play className="size-3.5" />
             {approveLabel ?? "Approve & Execute"}
+            <KbdShortcut keys={["cmd", "1"]} />
           </Button>
           <Button
             variant="ghost"
@@ -94,6 +113,7 @@ export function PlanApprovalBar({
           >
             <MessageSquare className="size-3.5" />
             Request Changes
+            <KbdShortcut keys={["cmd", "2"]} />
           </Button>
         </div>
       )}
