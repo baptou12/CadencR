@@ -320,7 +320,15 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
         <span className="text-[#50fa7b]">+{totalAdditions}</span>
         <span className="text-[#ff5555]">-{totalDeletions}</span>
         <span className="text-[#6272a4]">{viewedFilesSet.size}/{diffFiles.length} viewed</span>
-        <div className="ml-auto flex gap-2">
+        <div className="ml-auto flex items-center gap-3">
+          <div className="flex items-center gap-2 text-[10px] text-[#6272a4]">
+            <span><kbd className="rounded bg-[#44475a] px-1 py-0.5 text-[#f8f8f2]">⌃J</kbd> next</span>
+            <span><kbd className="rounded bg-[#44475a] px-1 py-0.5 text-[#f8f8f2]">⌃K</kbd> prev</span>
+            <span><kbd className="rounded bg-[#44475a] px-1 py-0.5 text-[#f8f8f2]">⌃L</kbd> expand</span>
+            <span><kbd className="rounded bg-[#44475a] px-1 py-0.5 text-[#f8f8f2]">⌃H</kbd> viewed</span>
+            <span><kbd className="rounded bg-[#44475a] px-1 py-0.5 text-[#f8f8f2]">⌃D</kbd>/<kbd className="rounded bg-[#44475a] px-1 py-0.5 text-[#f8f8f2]">⌃U</kbd> scroll</span>
+          </div>
+          <div className="h-4 w-px bg-[#6272a4]" />
           <button
             className={`rounded px-2 py-0.5 text-xs ${diffMode === DiffModeEnum.Split ? "bg-[#44475a] text-[#f8f8f2]" : "text-[#6272a4]"}`}
             onClick={() => setDiffMode(DiffModeEnum.Split)}
