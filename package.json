@@ -14,10 +14,11 @@
     "lint:fix": "oxlint --fix src/",
     "format": "oxfmt .",
     "format:check": "oxfmt --check .",
-    "test": "vitest run --config vitest.main.config.ts && vitest run --config vitest.renderer.config.ts",
+    "test": "vitest run",
     "test:main": "vitest run --config vitest.main.config.ts",
     "test:renderer": "vitest run --config vitest.renderer.config.ts",
     "test:watch": "vitest",
+    "postinstall": "electron-rebuild -f -w better-sqlite3",
     "prepare": "husky"
   },
   "dependencies": {
