@@ -461,7 +461,7 @@ export function FeatureWorkflowView({
       e.preventDefault();
       const entry = getFocusedEntry();
       if (!entry) return;
-      if (entry.agentType !== "session") return;
+      if (entry.agentType !== "session" && entry.agentType !== "review-fixer") return;
       if (entry.status !== "running" && entry.status !== "paused") return;
       wf.handleMarkSessionDone(entry.sessionDbId);
     },
@@ -611,7 +611,7 @@ export function FeatureWorkflowView({
                         }
                         disableShortcuts={agentsWithQuestions > 1}
                         onMarkDone={
-                          entry.agentType === "session" &&
+                          (entry.agentType === "session" || entry.agentType === "review-fixer") &&
                           (entry.status === "running" ||
                             entry.status === "paused")
                             ? () => wf.handleMarkSessionDone(entry.sessionDbId)
