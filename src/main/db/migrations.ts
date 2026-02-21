@@ -401,6 +401,23 @@ const migrations: Migration[] = [
       db.exec("ALTER TABLE agent_sessions ADD COLUMN draft_prompt TEXT DEFAULT NULL");
     },
   },
+  {
+    version: 31,
+    description: "Create diff_viewed_files table for tracking viewed files in diff viewer",
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS diff_viewed_files (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          feature_id INTEGER NOT NULL,
+          file_path TEXT NOT NULL,
+          blob_sha TEXT NOT NULL,
+          viewed_at TEXT NOT NULL DEFAULT (datetime('now')),
+          FOREIGN KEY (feature_id) REFERENCES features(id),
+          UNIQUE(feature_id, file_path)
+        )
+      `);
+    },
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {
