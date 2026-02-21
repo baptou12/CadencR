@@ -141,14 +141,17 @@ function RootLayout() {
   );
 
   // CMD+? -> open keyboard shortcuts help modal
-  useHotkeys(
-    "meta+shift+/",
-    (e) => {
-      e.preventDefault();
-      setShortcutsHelpOpen((prev) => !prev);
-    },
-    { enableOnFormTags: true },
-  );
+  // Use native keydown because react-hotkeys-hook doesn't reliably catch meta+shift+/ on macOS
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.metaKey && (e.key === "?" || (e.shiftKey && e.key === "/"))) {
+        e.preventDefault();
+        setShortcutsHelpOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener("keydown", handler, true);
+    return () => window.removeEventListener("keydown", handler, true);
+  }, []);
 
   // CMD+K -> open command palette
   useHotkeys(

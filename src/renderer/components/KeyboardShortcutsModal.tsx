@@ -96,7 +96,7 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
 
 function KbdKey({ label }: { label: string }) {
   return (
-    <kbd className="inline-flex items-center justify-center rounded border border-border bg-muted px-1.5 py-0.5 text-[11px] font-mono font-medium text-muted-foreground shadow-sm min-w-[20px]">
+    <kbd className="inline-flex items-center justify-center rounded border border-border bg-muted px-1.5 py-0.5 text-[11px] font-mono font-medium text-foreground shadow-sm min-w-[20px]">
       {label}
     </kbd>
   );
@@ -105,7 +105,7 @@ function KbdKey({ label }: { label: string }) {
 function ShortcutRow({ keys, description }: ShortcutRow) {
   return (
     <div className="flex items-center justify-between gap-4 py-1">
-      <span className="text-sm text-muted-foreground">{description}</span>
+      <span className="text-sm text-foreground">{description}</span>
       <div className="flex items-center gap-0.5 shrink-0">
         {keys.map((key, i) => (
           <KbdKey key={i} label={key} />
@@ -123,7 +123,7 @@ interface KeyboardShortcutsModalProps {
 export function KeyboardShortcutsModal({ open, onOpenChange }: KeyboardShortcutsModalProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+      <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Keyboard Shortcuts</DialogTitle>
         </DialogHeader>
