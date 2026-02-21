@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect, useImperativeHandle, forwardRef } from "react";
+import { useHotkeys } from "react-hotkeys-hook";
 import { Send, Square, Zap, ClipboardList } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Textarea } from "@/components/ui/textarea";
@@ -45,7 +46,7 @@ export interface AgentPromptBarProps {
   onPlanApprove?: () => void;
   /** Called when user requests changes to the plan */
   onPlanRequestChanges?: (feedback: string) => void;
-  /** Called when OPT+SHIFT+P is pressed to cycle model */
+  /** Called when CMD+P is pressed to cycle model */
   onCycleModel?: () => void;
   /** Feature ID for file mention and slash command support */
   featureId?: number;
@@ -121,6 +122,17 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
       textareaRef.current?.focus({ focusVisible: true } as FocusOptions);
     },
   }));
+
+  // CMD+P — cycle model (replaces OPT+SHIFT+P)
+  useHotkeys(
+    "meta+p",
+    (e) => {
+      if (!onCycleModel) return;
+      e.preventDefault();
+      onCycleModel();
+    },
+    { enableOnFormTags: true },
+  );
 
   const isRunning = status === "running";
   const isPaused = status === "paused";
@@ -200,9 +212,6 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
       if (e.key === "Enter" && e.metaKey && onToggleMaximize) {
         e.preventDefault();
         onToggleMaximize();
-      } else if (e.code === "KeyP" && e.altKey && e.shiftKey && onCycleModel) {
-        e.preventDefault();
-        onCycleModel();
       } else if (e.key === "Tab" && e.shiftKey && onPermissionModeToggle) {
         e.preventDefault();
         onPermissionModeToggle();
@@ -219,7 +228,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
         e.preventDefault();
       }
     },
-    [canSend, handleSend, isRunning, onStop, onCollapse, onPermissionModeToggle, onCycleModel, onToggleMaximize, mention, slash, text, projectId, history],
+    [canSend, handleSend, isRunning, onStop, onCollapse, onPermissionModeToggle, onToggleMaximize, mention, slash, text, projectId, history],
   );
 
   const handleChange = useCallback(

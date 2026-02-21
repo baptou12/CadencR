@@ -19,6 +19,7 @@ import { trpc } from "@/trpc";
 import { getActiveFocusZone } from "@/lib/focus-zones";
 import { CommandPalette } from "@/components/CommandPalette";
 import { FocusRing } from "@/components/FocusRing";
+import { KeyboardShortcutsModal } from "@/components/KeyboardShortcutsModal";
 
 const ZONE_ORDER = ["left-sidebar", "main-content", "terminal", "right-sidebar"] as const;
 
@@ -48,6 +49,7 @@ function RootLayout() {
   const navigate = useNavigate();
   const leftSidebarRef = useRef<HTMLDivElement>(null);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
 
   // Auto-focus left sidebar on mount
   useEffect(() => {
@@ -137,6 +139,19 @@ function RootLayout() {
     },
     { enableOnFormTags: true },
   );
+
+  // CMD+? -> open keyboard shortcuts help modal
+  // Use native keydown because react-hotkeys-hook doesn't reliably catch meta+shift+/ on macOS
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.metaKey && (e.key === "?" || (e.shiftKey && e.key === "/"))) {
+        e.preventDefault();
+        setShortcutsHelpOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener("keydown", handler, true);
+    return () => window.removeEventListener("keydown", handler, true);
+  }, []);
 
   // CMD+K -> open command palette
   useHotkeys(
@@ -301,6 +316,7 @@ function RootLayout() {
         activeProjectId={activeProjectId}
         activeFeatureId={activeFeatureId}
       />
+      <KeyboardShortcutsModal open={shortcutsHelpOpen} onOpenChange={setShortcutsHelpOpen} />
       <FocusRing />
     </div>
   );

@@ -433,7 +433,7 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
           ))}
         </DropdownMenuContent>
       </DropdownMenu>
-      <span className="text-[10px] text-muted-foreground/50">⌥⇧P</span>
+      <span className="text-[10px] text-muted-foreground/50">⌘P</span>
     </div>
   ) : null;
 
