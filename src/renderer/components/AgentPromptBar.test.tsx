@@ -19,6 +19,7 @@ vi.mock("@/hooks/usePromptHistory", () => ({
     navigateUp: vi.fn(),
     navigateDown: vi.fn(),
     reset: vi.fn(),
+    resetNavigation: vi.fn(),
   })),
 }));
 
@@ -29,6 +30,7 @@ vi.mock("@/hooks/useFileMention", () => ({
     filteredFiles: [],
     selectedIndex: 0,
     handleKeyDown: vi.fn(),
+    handleChange: vi.fn(),
     selectFile: vi.fn(),
     triggerMention: vi.fn(),
     close: vi.fn(),
@@ -42,6 +44,7 @@ vi.mock("@/hooks/useSlashCommand", () => ({
     filteredCommands: [],
     selectedIndex: 0,
     handleKeyDown: vi.fn(),
+    handleChange: vi.fn(),
     selectCommand: vi.fn(),
     close: vi.fn(),
   })),
@@ -136,9 +139,10 @@ describe("AgentPromptBar", () => {
         onStop={onStop}
         status="paused"
         pendingQuestions={[{ question: "What do you need?" }]}
+        onQuestionResponse={vi.fn()}
       />,
     );
-    expect(screen.getByText("What do you need?")).toBeInTheDocument();
+    expect(screen.getByText(/What do you need/)).toBeInTheDocument();
   });
 
   it("renders with initialDraft text", () => {

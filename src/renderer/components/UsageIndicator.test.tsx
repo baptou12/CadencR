@@ -39,7 +39,7 @@ describe("UsageIndicator", () => {
       data: {
         five_hour: { utilization: 42, resets_at: null },
         seven_day: { utilization: 75, resets_at: null },
-      },
+      } as never,
       isLoading: false,
       isError: false,
     });

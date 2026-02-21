@@ -5,11 +5,12 @@ import type { ContextUsageState } from "@/hooks/useContextUsage";
 
 function makeUsage(overrides: Partial<ContextUsageState> = {}): ContextUsageState {
   return {
+    inputTokens: 10000,
+    outputTokens: 0,
     totalTokens: 10000,
     contextWindow: 200000,
     usageRatio: 0.05,
-    cacheReadTokens: 0,
-    cacheCreationTokens: 0,
+    wasCompacted: false,
     ...overrides,
   };
 }

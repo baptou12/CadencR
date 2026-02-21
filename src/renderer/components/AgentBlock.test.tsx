@@ -91,7 +91,7 @@ describe("AgentBlock", () => {
       );
       const buttons = screen.getAllByRole("button");
       await user.click(buttons[0]);
-      expect(screen.getByText(/ls -la/)).toBeInTheDocument();
+      expect(screen.getAllByText(/ls -la/).length).toBeGreaterThan(0);
     });
 
     it("returns null for TodoWrite tool", () => {

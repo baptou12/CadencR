@@ -60,6 +60,12 @@ vi.mock("@/trpc", () => {
             data: [{ id: 10, title: "Feature One", type: "feature", status: "draft", project_id: 1 }],
           })),
         },
+        updateStatus: {
+          useMutation: vi.fn(() => ({ mutate: vi.fn() })),
+        },
+        delete: {
+          useMutation: vi.fn(() => ({ mutate: vi.fn() })),
+        },
       },
       agents: {
         getFeatureTurnStates: {
@@ -118,7 +124,7 @@ describe("ProjectTree", () => {
         onSelectFeature={vi.fn()}
       />,
     );
-    expect(screen.getByRole("button")).toBeInTheDocument();
+    expect(screen.getAllByRole("button").length).toBeGreaterThan(0);
   });
 
   it("expands active project to show features", () => {

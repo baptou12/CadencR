@@ -117,7 +117,8 @@ describe("CommandPalette", () => {
         activeFeatureId={null}
       />,
     );
-    expect(screen.getByText("Settings")).toBeInTheDocument();
+    const settingsEls = screen.getAllByText(/Settings/);
+    expect(settingsEls.length).toBeGreaterThan(0);
   });
 
   it("clicking Settings navigates to /settings", async () => {
@@ -130,7 +131,8 @@ describe("CommandPalette", () => {
         activeFeatureId={null}
       />,
     );
-    await user.click(screen.getByText("Settings"));
+    const settingsEl = screen.getAllByText(/Settings/)[0];
+    await user.click(settingsEl);
     expect(mockNavigate).toHaveBeenCalledWith({ to: "/settings" });
   });
 

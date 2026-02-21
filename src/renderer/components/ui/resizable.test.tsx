@@ -5,7 +5,7 @@ import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "./resizabl
 describe("Resizable", () => {
   it("renders panels with content", () => {
     render(
-      <ResizablePanelGroup direction="horizontal">
+      <ResizablePanelGroup {...({ direction: "horizontal" } as Record<string, string>)}>
         <ResizablePanel defaultSize={50}>Left panel</ResizablePanel>
         <ResizableHandle />
         <ResizablePanel defaultSize={50}>Right panel</ResizablePanel>
@@ -17,7 +17,7 @@ describe("Resizable", () => {
 
   it("renders handle with grip icon when withHandle is true", () => {
     const { container } = render(
-      <ResizablePanelGroup direction="horizontal">
+      <ResizablePanelGroup {...({ direction: "horizontal" } as Record<string, string>)}>
         <ResizablePanel defaultSize={50}>Left</ResizablePanel>
         <ResizableHandle withHandle />
         <ResizablePanel defaultSize={50}>Right</ResizablePanel>
@@ -28,7 +28,7 @@ describe("Resizable", () => {
 
   it("renders panel group with data-slot", () => {
     const { container } = render(
-      <ResizablePanelGroup direction="vertical">
+      <ResizablePanelGroup {...({ direction: "vertical" } as Record<string, string>)}>
         <ResizablePanel defaultSize={100}>Content</ResizablePanel>
       </ResizablePanelGroup>
     );

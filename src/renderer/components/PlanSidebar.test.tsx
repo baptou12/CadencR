@@ -19,7 +19,7 @@ const mockPhases = [
 ];
 
 const { mockGetPlan, mockResetPhase } = vi.hoisted(() => ({
-  mockGetPlan: vi.fn(() => ({
+  mockGetPlan: vi.fn<() => { data: unknown }>(() => ({
     data: { id: 1, title: "My Plan", phases: mockPhases },
   })),
   mockResetPhase: vi.fn(),

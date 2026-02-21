@@ -62,7 +62,7 @@ describe("Markdown", () => {
 
   it("preprocesses PLAN_START/PLAN_END markers", () => {
     render(<Markdown content="---PLAN_START---\nPlan content\n---PLAN_END---" />);
-    expect(screen.getByText("Plan content")).toBeInTheDocument();
+    expect(screen.getByText(/Plan content/)).toBeInTheDocument();
   });
 
   it("renders blockquote", () => {

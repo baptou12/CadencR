@@ -3,7 +3,7 @@ import { render, screen } from "@/test-utils";
 import { SlashCommandPopover } from "./SlashCommandPopover";
 
 const commands = [
-  { name: "commit", description: "Commit changes", argumentHint: null },
+  { name: "commit", description: "Commit changes", argumentHint: undefined },
   { name: "plan", description: "Create a plan", argumentHint: "[description]" },
 ];
 

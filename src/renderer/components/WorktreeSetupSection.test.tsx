@@ -4,7 +4,7 @@ import { WorktreeSetupSection } from "./WorktreeSetupSection";
 import React from "react";
 
 const { mockGetSettings, mockRetryMutate } = vi.hoisted(() => ({
-  mockGetSettings: vi.fn(() => ({ data: null })),
+  mockGetSettings: vi.fn<() => { data: unknown }>(() => ({ data: null })),
   mockRetryMutate: vi.fn(),
 }));
 

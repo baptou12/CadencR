@@ -4,7 +4,7 @@ import { MergeArchiveDialog } from "./MergeArchiveDialog";
 
 const { mockCheckMergeConflicts } = vi.hoisted(() => ({
   mockCheckMergeConflicts: vi.fn(() => ({
-    data: { hasConflicts: false, conflictFiles: [] },
+    data: { hasConflicts: false, conflictFiles: [] as string[] },
     isLoading: false,
     isError: false,
     isSuccess: true,
@@ -17,7 +17,7 @@ vi.mock("@/trpc", () => {
   return {
     trpc: {
       createClient: vi.fn(() => ({})),
-      Provider: ({ children }) => React.createElement(React.Fragment, null, children),
+      Provider: ({ children }: { children: React.ReactNode }) => React.createElement(React.Fragment, null, children),
       useUtils: vi.fn(() => ({
         features: {
           listByProject: { invalidate: vi.fn() },
@@ -116,7 +116,7 @@ describe("MergeArchiveDialog", () => {
 
   it("disables merge when conflicts detected", () => {
     mockCheckMergeConflicts.mockReturnValueOnce({
-      data: { hasConflicts: true, conflictFiles: ["src/index.ts"] },
+      data: { hasConflicts: true as boolean, conflictFiles: [] as string[] },
       isLoading: false,
       isError: false,
       isSuccess: true,

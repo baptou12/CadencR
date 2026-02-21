@@ -42,6 +42,9 @@ vi.mock("@/trpc", () => {
       updateStatus: {
         useMutation: vi.fn(() => ({ mutate: mockUpdateFeatureStatus })),
       },
+      getPlanWithPhases: {
+        useQuery: vi.fn(() => ({ data: null })),
+      },
     },
     agents: {
       getFeatureAgentState: {
@@ -155,16 +158,25 @@ vi.mock("@/hooks/useFeatureState", () => ({
     canStartRisk: false,
     canStartReview: false,
     canStartQA: false,
+    canStartBuild: false,
     isRunning: false,
+    view: {},
+    actions: {},
   })),
 }));
 
+const agentState = { status: "idle" as const, blocks: [] };
 vi.mock("@/hooks/useWorkflowAgents", () => ({
   useWorkflowAgents: vi.fn(() => ({
     sessionEntries: [],
     startAgent: vi.fn(),
     stopAgent: vi.fn(),
     handleSend: vi.fn(),
+    plan: { status: "idle", blocks: [] },
+    brainstorm: { status: "idle", blocks: [] },
+    execute: { status: "idle", blocks: [] },
+    risk: { status: "idle", blocks: [] },
+    review: { status: "idle", blocks: [] },
   })),
 }));
 
@@ -187,6 +199,9 @@ vi.mock("@/hooks/useTerminalState", () => ({
   useTerminalState: vi.fn(() => ({
     terminalVisible: false,
     toggleTerminal: vi.fn(),
+    panes: [],
+    openPane: vi.fn(),
+    closePane: vi.fn(),
   })),
 }));
 
