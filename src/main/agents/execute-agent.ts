@@ -145,27 +145,7 @@ function getStepOutcome(planId: number, stepNumber: number): "ok" | "error" | "p
     )
     .get(planId, stepNumber) as { cnt: number };
 
-  if (errorRow.cnt > 0) {
-    // Check if the errors are only from QA phases that injected fix phases
-    const qaErrors = db
-      .prepare(
-        "SELECT COUNT(*) as cnt FROM phases WHERE plan_id = ? AND step_number = ? AND status = 'error' AND phase_type = 'qa'",
-      )
-      .get(planId, stepNumber) as { cnt: number };
-    const nonQaErrors = errorRow.cnt - qaErrors.cnt;
-
-    if (nonQaErrors > 0) return "error";
-
-    // QA failed — check if fix phases were injected (pending phases with higher step numbers)
-    const fixPhases = db
-      .prepare(
-        "SELECT COUNT(*) as cnt FROM phases WHERE plan_id = ? AND step_number > ? AND status = 'pending'",
-      )
-      .get(planId, stepNumber) as { cnt: number };
-
-    if (fixPhases.cnt > 0) return "qa_fail_with_fixes";
-    return "error";
-  }
+  if (errorRow.cnt > 0) return "error";
 
   // A phase still running means something went wrong (e.g., agent died without cleanup)
   const runningRow = db
@@ -181,6 +161,15 @@ function getStepOutcome(planId: number, stepNumber: number): "ok" | "error" | "p
     )
     .get(planId, stepNumber) as { cnt: number };
   if (pendingRow.cnt > 0) return "paused";
+
+  // All phases in this step completed — check if a QA phase injected fix phases
+  const fixPhases = db
+    .prepare(
+      "SELECT COUNT(*) as cnt FROM phases WHERE plan_id = ? AND step_number > ? AND status IN ('pending', 'draft')",
+    )
+    .get(planId, stepNumber) as { cnt: number };
+
+  if (fixPhases.cnt > 0) return "qa_fail_with_fixes";
 
   return "ok";
 }
@@ -293,14 +282,9 @@ function executeQaPhase(
           if (wasInterrupted) {
             transitionPhaseIf(db2, phase.id, "running", "pending", options.featureId);
           } else if (context.exitCode === 0) {
-            // Check if QA passed or failed by whether fix phases were created
-            const fixPhases = db2
-              .prepare(
-                "SELECT COUNT(*) as count FROM phases WHERE plan_id = (SELECT plan_id FROM phases WHERE id = ?) AND step_number > ? AND status IN ('pending', 'draft')",
-              )
-              .get(phase.id, phase.step_number) as { count: number };
-            const isFail = fixPhases.count > 0;
-            transitionPhase(db2, phase.id, isFail ? "error" : "completed", options.featureId);
+            // QA agent finished successfully — always mark completed.
+            // Fix phases (if any) are detected by getStepOutcome directly.
+            transitionPhase(db2, phase.id, "completed", options.featureId);
           } else {
             transitionPhase(db2, phase.id, "error", options.featureId);
           }
