@@ -1,8 +1,8 @@
 import { getDatabase } from "../db/database";
 import { discoverClaudeCli } from "./cli-discovery";
-import { getSessionDbId, persistStreamEvent, persistClaudeSessionId, notifyDbUpdated } from "./session-persistence";
+import { getSessionDbId, persistStreamEvent, persistClaudeSessionId, notifyDbUpdated, setSessionModel } from "./session-persistence";
 import { transitionAgentSession } from "./state-transitions";
-import { DEFAULT_MODEL } from "./models";
+import { DEFAULT_MODEL, resolveModel } from "./models";
 import { loadAllowedPatterns } from "./permissions";
 import { broadcast, AGENT_EVENT_CHANNEL } from "./broadcast";
 import { getSdkClient } from "./sdk-client";
@@ -96,6 +96,15 @@ function flushNotifyDbUpdated(sessionKey: string): void {
   const fid = pendingNotifyFeatureIds.get(sessionKey);
   pendingNotifyFeatureIds.delete(sessionKey);
   if (fid != null) notifyDbUpdated("agent_session", fid);
+}
+
+/** Resolve the current model for a subprocess by looking up its feature and project. */
+function resolveModelForSubprocess(agentType: AgentType, featureId: number): string | undefined {
+  try {
+    const db = getDatabase();
+    const row = db.prepare("SELECT project_id FROM features WHERE id = ?").get(featureId) as { project_id: number } | undefined;
+    return resolveModel(agentType, featureId, row?.project_id);
+  } catch { return undefined; }
 }
 
 /** Resolve the feature ID for a managed subprocess (for throttled notifications). */
@@ -215,6 +224,10 @@ function handleSdkMessage(
       }
     }
     if (message) {
+      // Capture the model from the full assistant message for per-message tracking
+      if (sessionDbId && typeof message.model === "string") {
+        setSessionModel(sessionDbId, message.model);
+      }
       const content = message.content as
         | Array<Record<string, unknown>>
         | undefined;
@@ -717,10 +730,17 @@ export function sendMessageToSubprocess(id: string, message: MessageContent): Se
     }
     // Fresh abort controller for the resumed query
     managed.abortController = new AbortController();
+    // Re-resolve model in case user changed settings since session started
+    let freshModel = managed.originalOptions.model;
+    const fid = getFeatureIdForSubprocess(id);
+    if (fid) {
+      freshModel = resolveModelForSubprocess(managed.agentType as AgentType, fid) ?? freshModel;
+    }
     const resumeOptions: SubprocessOptions = {
       ...managed.originalOptions,
       prompt: message,
       resumeSessionId: managed.sdkSessionId,
+      model: freshModel,
     };
     // Re-run the SDK query with resume
     runSdkQuery(managed, resumeOptions).catch((err) => {
@@ -730,6 +750,20 @@ export function sendMessageToSubprocess(id: string, message: MessageContent): Se
   }
 
   if (!managed.pushMessage) return { success: false, reason: "no_push" };
+
+  // Re-resolve the model in case the user changed it in settings since the session started
+  if (managed.query) {
+    try {
+      const fid = getFeatureIdForSubprocess(id);
+      const freshModel = fid
+        ? resolveModelForSubprocess(managed.agentType as AgentType, fid)
+        : undefined;
+      if (freshModel) {
+        void managed.query.setModel(freshModel);
+      }
+    } catch { /* best-effort */ }
+  }
+
   managed.pushMessage(message);
   return { success: true, reason: "sent" };
 }

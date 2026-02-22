@@ -135,6 +135,7 @@ export function createMockAgentMessage(
     tool_use_id: null,
     parent_tool_use_id: null,
     created_at: "2024-01-01T00:00:00.000Z",
+    model: null,
     ...overrides,
   };
 }

@@ -4,6 +4,16 @@ import { getDatabase } from "../db/database";
 // Map of subprocess ID -> session DB ID for persistence
 const sessionMap = new Map<string, number>();
 
+// Map of session DB ID -> current model (updated on each message_start event or full assistant message)
+const sessionModelMap = new Map<number, string>();
+
+/**
+ * Set the current model for a session (called from subprocess-manager for full assistant messages).
+ */
+export function setSessionModel(sessionDbId: number, model: string): void {
+  sessionModelMap.set(sessionDbId, model);
+}
+
 /**
  * Register a subprocess for session persistence tracking.
  */
@@ -44,14 +54,20 @@ export function persistStreamEvent(
   try {
     const db = getDatabase();
     const insert = db.prepare(
-      "INSERT INTO agent_messages (session_id, role, content, message_type, tool_name, tool_use_id, parent_tool_use_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO agent_messages (session_id, role, content, message_type, tool_name, tool_use_id, parent_tool_use_id, model) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
     );
 
     const ptuid = parentToolUseId ?? null;
     let result: { lastInsertRowid: number | bigint } | undefined;
 
     switch (event.type) {
+      case "message_start": {
+        // Capture the actual model used for this assistant turn
+        sessionModelMap.set(sessionDbId, event.message.model);
+        break;
+      }
       case "content_block_start": {
+        const model = sessionModelMap.get(sessionDbId) ?? null;
         if (event.content_block.type === "text" && event.content_block.text) {
           result = insert.run(
             sessionDbId,
@@ -61,6 +77,7 @@ export function persistStreamEvent(
             null,
             null,
             ptuid,
+            model,
           ) as { lastInsertRowid: number | bigint };
         } else if (event.content_block.type === "tool_use") {
           const toolName = event.content_block.name;
@@ -72,6 +89,7 @@ export function persistStreamEvent(
             toolName,
             event.content_block.id ?? null,
             ptuid,
+            model,
           ) as { lastInsertRowid: number | bigint };
 
           // Track file-modifying tools
@@ -82,6 +100,7 @@ export function persistStreamEvent(
         break;
       }
       case "content_block_delta": {
+        const model = sessionModelMap.get(sessionDbId) ?? null;
         if (event.delta.type === "text_delta" && event.delta.text) {
           result = insert.run(
             sessionDbId,
@@ -91,6 +110,7 @@ export function persistStreamEvent(
             null,
             null,
             ptuid,
+            model,
           ) as { lastInsertRowid: number | bigint };
         }
         break;
@@ -104,24 +124,25 @@ export function persistStreamEvent(
           null,
           event.tool_use_id ?? null,
           ptuid,
+          null,
         ) as { lastInsertRowid: number | bigint };
         break;
       }
       case "error": {
-        result = insert.run(sessionDbId, "system", event.error.message, "error", null, null, ptuid) as { lastInsertRowid: number | bigint };
+        result = insert.run(sessionDbId, "system", event.error.message, "error", null, null, ptuid, null) as { lastInsertRowid: number | bigint };
         break;
       }
       case "system": {
         const sysEvent = event as StreamSystemEvent;
         if (sysEvent.subtype === "compact_boundary") {
           result = insert.run(
-            sessionDbId, "system", "compact_boundary", "compact_divider", null, null, ptuid,
+            sessionDbId, "system", "compact_boundary", "compact_divider", null, null, ptuid, null,
           ) as { lastInsertRowid: number | bigint };
         }
         break;
       }
       default:
-        // Skip non-content events (message_start, message_stop, message_delta)
+        // Skip non-content events (message_stop, message_delta, ping, etc.)
         break;
     }
     return result ? Number(result.lastInsertRowid) : null;

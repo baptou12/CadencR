@@ -58,4 +58,16 @@ describe("resolveModel", () => {
       expect(mockResolveSetting).toHaveBeenCalledWith(`model_${type}`, expect.any(Object));
     }
   });
+
+  it('resolves literal "default" to DEFAULT_MODEL', () => {
+    mockResolveSetting.mockReturnValue("default");
+    const result = resolveModel("session");
+    expect(result).toBe("claude-opus-4-5-20251001");
+  });
+
+  it('does not replace model names containing "default" as a substring', () => {
+    mockResolveSetting.mockReturnValue("my-default-model");
+    const result = resolveModel("session");
+    expect(result).toBe("my-default-model");
+  });
 });

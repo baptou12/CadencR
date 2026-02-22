@@ -418,6 +418,13 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 32,
+    description: "Add model column to agent_messages for per-message model tracking",
+    up: (db) => {
+      db.exec("ALTER TABLE agent_messages ADD COLUMN model TEXT DEFAULT NULL");
+    },
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

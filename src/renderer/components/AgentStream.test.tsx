@@ -37,13 +37,40 @@ describe("AgentStream", () => {
         isStreaming
       />,
     );
-    // The streaming indicator shows the last tool name + "..."
-    expect(screen.getByText(/\.\.\./)).toBeInTheDocument();
+    expect(screen.getByText("Working...")).toBeInTheDocument();
   });
 
-  it("shows 'Generating...' when no tool calls and streaming", () => {
+  it("shows 'Working...' when streaming", () => {
     render(<AgentStream blocks={[]} isStreaming />);
-    expect(screen.getByText("Generating...")).toBeInTheDocument();
+    expect(screen.getByText("Working...")).toBeInTheDocument();
+  });
+
+  it("renders sender and timestamp header for text blocks", () => {
+    const block: AgentBlockData = {
+      ...makeBlock("1", "Hello"),
+      createdAt: "2026-02-22T10:30:00Z",
+      model: "claude-sonnet-4-6",
+    };
+    render(<AgentStream blocks={[block]} />);
+    expect(screen.getByText("claude-sonnet-4-6")).toBeInTheDocument();
+  });
+
+  it("renders 'User' header for user_message blocks", () => {
+    const block: AgentBlockData = {
+      ...makeBlock("1", "Hi there", "user_message"),
+      createdAt: "2026-02-22T10:30:00Z",
+    };
+    render(<AgentStream blocks={[block]} />);
+    expect(screen.getByText("User")).toBeInTheDocument();
+  });
+
+  it("renders 'unknown' when model is not set", () => {
+    const block: AgentBlockData = {
+      ...makeBlock("1", "Hello"),
+      createdAt: "2026-02-22T10:30:00Z",
+    };
+    render(<AgentStream blocks={[block]} />);
+    expect(screen.getByText("unknown")).toBeInTheDocument();
   });
 
   it("does not show streaming indicator when not streaming", () => {

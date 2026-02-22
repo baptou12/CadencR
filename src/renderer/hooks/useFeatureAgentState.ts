@@ -30,6 +30,8 @@ interface ServerBlock {
   parentToolUseId?: string | null;
   childBlocks?: ServerBlock[];
   sourceToolName?: string;
+  createdAt?: string;
+  model?: string;
 }
 
 function serverBlocksToAgentBlocks(serverBlocks: ServerBlock[]): AgentBlockData[] {
@@ -44,6 +46,8 @@ function serverBlocksToAgentBlocks(serverBlocks: ServerBlock[]): AgentBlockData[
     parentToolUseId: sb.parentToolUseId,
     childBlocks: sb.childBlocks ? serverBlocksToAgentBlocks(sb.childBlocks) : undefined,
     sourceToolName: sb.sourceToolName,
+    createdAt: sb.createdAt,
+    model: sb.model,
   }));
 }
 

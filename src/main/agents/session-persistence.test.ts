@@ -25,6 +25,7 @@ import {
   notifyDbUpdated,
   getSubprocessIdsForSessionDbIds,
   restoreSessionMap,
+  setSessionModel,
 } from "./session-persistence";
 import { broadcast } from "./broadcast";
 import { getDatabase } from "../db/database";
@@ -85,7 +86,7 @@ describe("session-persistence", () => {
   });
 
   describe("persistStreamEvent", () => {
-    it("persists text content_block_start event", () => {
+    it("persists text content_block_start event with null model by default", () => {
       const mockRun = vi.fn().mockReturnValue({ lastInsertRowid: 10 });
       mockDb.prepare.mockReturnValue({ run: mockRun });
 
@@ -99,7 +100,7 @@ describe("session-persistence", () => {
       expect(mockDb.prepare).toHaveBeenCalledWith(
         expect.stringContaining("INSERT INTO agent_messages"),
       );
-      expect(mockRun).toHaveBeenCalledWith(1, "assistant", "Hello world", "text", null, null, null);
+      expect(mockRun).toHaveBeenCalledWith(1, "assistant", "Hello world", "text", null, null, null, null);
     });
 
     it("persists tool_use content_block_start event", () => {
@@ -119,7 +120,7 @@ describe("session-persistence", () => {
 
       expect(id).toBe(11);
       expect(mockRun).toHaveBeenCalledWith(
-        1, "assistant", JSON.stringify({ command: "ls" }), "tool_call", "Bash", "tool-id-1", null,
+        1, "assistant", JSON.stringify({ command: "ls" }), "tool_call", "Bash", "tool-id-1", null, null,
       );
     });
 
@@ -133,7 +134,7 @@ describe("session-persistence", () => {
         delta: { type: "text_delta", text: "delta text" },
       });
 
-      expect(mockRun).toHaveBeenCalledWith(1, "assistant", "delta text", "text_delta", null, null, null);
+      expect(mockRun).toHaveBeenCalledWith(1, "assistant", "delta text", "text_delta", null, null, null, null);
     });
 
     it("persists tool_result event", () => {
@@ -148,7 +149,7 @@ describe("session-persistence", () => {
       });
 
       expect(mockRun).toHaveBeenCalledWith(
-        1, "tool", "command output", "tool_result", null, "tool-id-1", null,
+        1, "tool", "command output", "tool_result", null, "tool-id-1", null, null,
       );
     });
 
@@ -162,15 +163,52 @@ describe("session-persistence", () => {
       });
 
       expect(mockRun).toHaveBeenCalledWith(
-        1, "system", "Something went wrong", "error", null, null, null,
+        1, "system", "Something went wrong", "error", null, null, null, null,
       );
     });
 
-    it("skips non-content events (message_start, message_stop)", () => {
+    it("captures model from message_start and includes it in subsequent events", () => {
+      const mockRun = vi.fn().mockReturnValue({ lastInsertRowid: 15 });
+      mockDb.prepare.mockReturnValue({ run: mockRun });
+
+      // message_start sets the model for this session
+      persistStreamEvent(42, {
+        type: "message_start",
+        message: { id: "msg-1", type: "message", role: "assistant", model: "claude-sonnet-4-6" },
+      } as any);
+
+      // No INSERT for message_start itself
+      expect(mockRun).not.toHaveBeenCalled();
+
+      // Subsequent text block should carry the model
+      persistStreamEvent(42, {
+        type: "content_block_start",
+        index: 0,
+        content_block: { type: "text", text: "Hello" },
+      });
+
+      expect(mockRun).toHaveBeenCalledWith(42, "assistant", "Hello", "text", null, null, null, "claude-sonnet-4-6");
+    });
+
+    it("setSessionModel sets model for subsequent events", () => {
+      const mockRun = vi.fn().mockReturnValue({ lastInsertRowid: 16 });
+      mockDb.prepare.mockReturnValue({ run: mockRun });
+
+      setSessionModel(99, "claude-opus-4-6");
+
+      persistStreamEvent(99, {
+        type: "content_block_start",
+        index: 0,
+        content_block: { type: "text", text: "Hi" },
+      });
+
+      expect(mockRun).toHaveBeenCalledWith(99, "assistant", "Hi", "text", null, null, null, "claude-opus-4-6");
+    });
+
+    it("skips message_stop events (no INSERT)", () => {
       const mockRun = vi.fn();
       mockDb.prepare.mockReturnValue({ run: mockRun });
 
-      persistStreamEvent(1, { type: "message_start" } as any);
       persistStreamEvent(1, { type: "message_stop" } as any);
 
       expect(mockRun).not.toHaveBeenCalled();
@@ -203,7 +241,7 @@ describe("session-persistence", () => {
         "parent-tool-123",
       );
 
-      expect(mockRun).toHaveBeenCalledWith(1, "assistant", "nested", "text", null, null, "parent-tool-123");
+      expect(mockRun).toHaveBeenCalledWith(1, "assistant", "nested", "text", null, null, "parent-tool-123", null);
     });
   });
 

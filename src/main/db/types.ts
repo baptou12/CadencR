@@ -128,6 +128,7 @@ export interface AgentMessageRow {
   tool_use_id: string | null;
   parent_tool_use_id: string | null;
   created_at: string;
+  model: string | null;
 }
 
 // -- composite types --

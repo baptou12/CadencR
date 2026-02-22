@@ -7,11 +7,13 @@ export { DEFAULT_MODEL, type ClaudeModel } from "../../shared/models";
 
 /**
  * Resolve the model for a given agent type, checking feature → project → global → default.
+ * The literal value "default" is treated as unset and falls through to DEFAULT_MODEL.
  */
 export function resolveModel(
   agentType: AgentType,
   featureId?: number,
   projectId?: number,
 ): string {
-  return resolveSetting(`model_${agentType}`, { featureId, projectId, defaultValue: DEFAULT_MODEL })!;
+  const resolved = resolveSetting(`model_${agentType}`, { featureId, projectId, defaultValue: DEFAULT_MODEL })!;
+  return resolved === "default" ? DEFAULT_MODEL : resolved;
 }

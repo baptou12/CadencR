@@ -233,15 +233,17 @@ interface AgentBlock {
   parentToolUseId?: string | null;
   childBlocks?: AgentBlock[];
   sourceToolName?: string;
+  createdAt?: string;
+  model?: string;
 }
 
-function appendText(list: AgentBlock[], msgId: number, content: string, parentId?: string | null) {
+function appendText(list: AgentBlock[], msgId: number, content: string, parentId?: string | null, createdAt?: string, model?: string | null) {
   const last = list.length > 0 ? list[list.length - 1] : null;
   if (last && last.type === "text" && !last.parentToolUseId === !parentId) {
     last.content += content;
-    // Keep the first message's id for the merged block
+    // Keep the first message's id and createdAt for the merged block
   } else {
-    list.push({ id: `msg-${msgId}`, type: "text", content, parentToolUseId: parentId });
+    list.push({ id: `msg-${msgId}`, type: "text", content, parentToolUseId: parentId, createdAt, model: model ?? undefined });
   }
 }
 
@@ -264,7 +266,7 @@ function buildBlocks(messages: AgentMessageRow[]): AgentBlock[] {
     switch (msg.message_type) {
       case "text":
       case "text_delta":
-        appendText(list, msg.id, msg.content, msg.parent_tool_use_id);
+        appendText(list, msg.id, msg.content, msg.parent_tool_use_id, msg.created_at, msg.model);
         break;
       case "tool_call": {
         // Deduplicate: if we already have a block with this tool_use_id,
@@ -288,6 +290,7 @@ function buildBlocks(messages: AgentMessageRow[]): AgentBlock[] {
           toolUseId: msg.tool_use_id ?? undefined,
           parentToolUseId: msg.parent_tool_use_id,
           childBlocks: isTask ? [] : undefined,
+          createdAt: msg.created_at,
         };
         if (msg.tool_use_id) byToolUseId.set(msg.tool_use_id, block);
         list.push(block);
@@ -316,11 +319,12 @@ function buildBlocks(messages: AgentMessageRow[]): AgentBlock[] {
           isError: msg.message_type === "tool_error",
           parentToolUseId: msg.parent_tool_use_id,
           sourceToolName,
+          createdAt: msg.created_at,
         });
         break;
       }
       case "user_message":
-        list.push({ id, type: "user_message", content: msg.content, parentToolUseId: msg.parent_tool_use_id });
+        list.push({ id, type: "user_message", content: msg.content, parentToolUseId: msg.parent_tool_use_id, createdAt: msg.created_at });
         break;
       case "error":
         list.push({ id, type: "text", content: `Error: ${msg.content}`, parentToolUseId: msg.parent_tool_use_id });
@@ -990,7 +994,7 @@ const agentsRouter = router({
       const placeholders = sessionIds.map(() => "?").join(",");
       const allMessages = db
         .prepare(
-          `SELECT id, session_id, role, content, message_type, tool_name, tool_use_id, parent_tool_use_id, created_at FROM agent_messages WHERE session_id IN (${placeholders}) ORDER BY id ASC`,
+          `SELECT id, session_id, role, content, message_type, tool_name, tool_use_id, parent_tool_use_id, created_at, model FROM agent_messages WHERE session_id IN (${placeholders}) ORDER BY id ASC`,
         )
         .all(...sessionIds) as AgentMessageRow[];
 

@@ -64,6 +64,10 @@ export interface AgentBlockData {
   messageDbId?: number;
   /** The tool name that produced this tool_result (resolved from parent tool_call) */
   sourceToolName?: string;
+  /** ISO timestamp from the DB message */
+  createdAt?: string;
+  /** Model name for assistant messages (e.g. "claude-opus-4-6") */
+  model?: string;
 }
 
 interface AgentBlockProps {
