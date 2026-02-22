@@ -105,8 +105,6 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", executeS
 
   return (
     <div className={cn("flex items-center gap-3 border-b border-border px-4 py-2", className)}>
-      <h1 className="text-lg font-semibold">{feature.title}</h1>
-
       {!isSession && (
         <Badge
           variant="secondary"
@@ -116,27 +114,25 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", executeS
         </Badge>
       )}
 
+      <h1 className="text-lg font-semibold">{feature.title}</h1>
+
       {!isSession && progress && progress.total > 0 && (
         <span className="text-muted-foreground text-sm">
-          Phases: {progress.done}/{progress.total}
+          {progress.done}/{progress.total}
         </span>
       )}
+
+      <div className="flex-1" />
 
       {isSession ? (
         <span className="text-muted-foreground text-sm">
           {currentBranch ?? "--"}
         </span>
-      ) : worktreeBranch ? (
-        <span className="text-muted-foreground text-sm">
-          Worktree: {worktreeBranch}
-        </span>
       ) : (
         <span className="text-muted-foreground text-sm">
-          Worktree: pending
+          {worktreeBranch ?? "pending"}
         </span>
       )}
-
-      <div className="flex-1" />
 
       <Button
         variant="ghost"
