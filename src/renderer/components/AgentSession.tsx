@@ -27,6 +27,7 @@ import {
   CheckIcon,
   Maximize2Icon,
   Minimize2Icon,
+  WrenchIcon,
 } from "lucide-react";
 import { AgentStream } from "./AgentStream";
 import { AgentPromptBar, type AgentPromptBarHandle } from "./AgentPromptBar";
@@ -347,8 +348,8 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
 
   const isIdle = status === "idle" && blocks.length === 0;
   const badge = STATUS_BADGE[status];
-  const IconComponent = icon ?? AGENT_ICONS[agentType];
-  const displayLabel = label ?? AGENT_LABELS[agentType];
+  const IconComponent = icon ?? AGENT_ICONS[agentType] ?? WrenchIcon;
+  const displayLabel = label ?? AGENT_LABELS[agentType] ?? agentType;
 
   // Determine whether the prompt bar should be shown
   const shouldShowPromptBar = (() => {
