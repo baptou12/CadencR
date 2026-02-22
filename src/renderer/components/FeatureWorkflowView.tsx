@@ -1,5 +1,4 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
-import { cn } from "@/lib/utils";
 import { useHotkeys } from "react-hotkeys-hook";
 import { trpc } from "@/trpc";
 import { FeatureTopBar } from "@/components/FeatureTopBar";
@@ -555,17 +554,8 @@ export function FeatureWorkflowView({
               actions.canStartBuild ||
               actions.canStartRisk ||
               actions.canStartReview) && (
-              <div className="flex flex-col gap-2 flex-1 min-h-0 px-6 py-2 overflow-hidden">
+              <div className="flex flex-col gap-2 flex-1 min-h-0 px-6 py-2 overflow-y-auto">
                 {(() => {
-                  const activeEntries = wf.sessionEntries.filter(
-                    (e) => e.status === "running" || e.status === "paused",
-                  );
-                  const inactiveEntries = wf.sessionEntries.filter(
-                    (e) => e.status !== "running" && e.status !== "paused",
-                  );
-                  const activeCount = activeEntries.length;
-                  const useGrid = !maximizedAgent && activeCount > 1;
-
                   const renderAgent = (
                     entry: FeatureSession,
                     index: number,
@@ -725,44 +715,10 @@ export function FeatureWorkflowView({
 
                   return (
                     <>
-                      {/* Inactive agents: vertical stack, height-capped when active agents exist */}
-                      {inactiveEntries.length > 0 && (
-                        <div
-                          className={cn(
-                            "min-h-0 overflow-y-auto flex flex-col gap-2",
-                            activeCount > 0
-                              ? "shrink"
-                              : "shrink-0",
-                          )}
-                        >
-                          {inactiveEntries.map((entry) => {
-                            const idx = wf.sessionEntries.indexOf(entry);
-                            return renderAgent(entry, idx, false);
-                          })}
-                        </div>
-                      )}
-
-                      {/* Active agents: grid when multiple, vertical when single */}
-                      {activeCount > 0 && (
-                        <div
-                          className={cn(
-                            "flex-1 min-h-0 gap-2",
-                            activeCount <= 3
-                              ? "min-h-[66vh]"
-                              : "min-h-[75vh]",
-                            useGrid
-                              ? "grid auto-rows-[1fr]"
-                              : "flex flex-col",
-                            useGrid && activeCount === 2 && "grid-cols-2",
-                            useGrid && activeCount >= 3 && "grid-cols-3",
-                          )}
-                        >
-                          {activeEntries.map((entry) => {
-                            const idx = wf.sessionEntries.indexOf(entry);
-                            return renderAgent(entry, idx, useGrid);
-                          })}
-                        </div>
-                      )}
+                      {wf.sessionEntries.map((entry) => {
+                        const idx = wf.sessionEntries.indexOf(entry);
+                        return renderAgent(entry, idx, false);
+                      })}
                     </>
                   );
                 })()}

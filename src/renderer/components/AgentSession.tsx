@@ -546,7 +546,8 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
       ref={containerRef}
       className={cn(
         "flex flex-col rounded-lg border border-border bg-background",
-        isOpen && "flex-1 min-h-0",
+        isOpen && maximized && "flex-1 min-h-0",
+        isOpen && !maximized && "h-[60vh] min-h-0 shrink-0",
         !isOpen && "shrink-0",
         className,
       )}
