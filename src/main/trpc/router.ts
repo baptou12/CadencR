@@ -19,6 +19,7 @@ import {
   setSubprocessPermissionMode,
   getSupportedCommands,
 } from "../agents/subprocess-manager";
+import { getBackgroundTasks } from "../agents/background-tasks";
 import { getSubprocessIdForSession, notifyDbUpdated } from "../agents/session-persistence";
 import type { AgentType } from "../agents/types";
 import { execSync } from "node:child_process";
@@ -1123,6 +1124,30 @@ const agentsRouter = router({
         .prepare("SELECT draft_prompt FROM agent_sessions WHERE id = ?")
         .get(input.sessionId) as { draft_prompt: string | null } | undefined;
       return { draftPrompt: row?.draft_prompt ?? null };
+    }),
+
+  /** Get in-memory background tasks for a subprocess */
+  getBackgroundTasks: publicProcedure
+    .input(z.object({ subprocessId: z.string() }))
+    .query(({ input }) => {
+      return getBackgroundTasks(input.subprocessId);
+    }),
+
+  /** Ask the agent subprocess to kill a background task */
+  killBackgroundTask: publicProcedure
+    .input(
+      z.object({
+        subprocessId: z.string(),
+        taskId: z.string(),
+        kind: z.enum(["bash", "agent"]),
+      }),
+    )
+    .mutation(({ input }) => {
+      const message = input.kind === "bash"
+        ? `Please stop the background bash task with shell ID "${input.taskId}" by running KillBash with shell_id="${input.taskId}".`
+        : `Please stop the background task with task ID "${input.taskId}" by running TaskStop with task_id="${input.taskId}".`;
+      const result = sendMessageToSubprocess(input.subprocessId, message);
+      return result;
     }),
 });
 

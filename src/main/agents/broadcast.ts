@@ -9,6 +9,7 @@ export const ASK_USER_QUESTION_CHANNEL = "agent:ask-user-question";
 export const ASK_USER_ANSWER_CHANNEL = "agent:ask-user-answer";
 export const TOOL_PERMISSION_CHANNEL = "agent:tool-permission";
 export const DB_UPDATED_CHANNEL = "db:updated";
+export const BACKGROUND_TASK_CHANNEL = "agent:background-tasks";
 
 /**
  * Send a message to all non-destroyed renderer windows on the given channel.

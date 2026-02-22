@@ -10,6 +10,7 @@ const TOOL_PERMISSION_CHANNEL = "agent:tool-permission";
 const DB_UPDATED_CHANNEL = "db:updated";
 const TERMINAL_DATA_CHANNEL = "terminal:data";
 const TERMINAL_EXIT_CHANNEL = "terminal:exit";
+const BACKGROUND_TASK_CHANNEL = "agent:background-tasks";
 
 process.once("loaded", () => {
   exposeElectronTRPC();
@@ -116,6 +117,23 @@ process.once("loaded", () => {
         );
       } else {
         ipcRenderer.removeAllListeners(TERMINAL_EXIT_CHANNEL);
+      }
+    },
+    onBackgroundTasks: (callback: (data: unknown) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, data: unknown) => {
+        callback(data);
+      };
+      ipcRenderer.on(BACKGROUND_TASK_CHANNEL, listener);
+      return listener;
+    },
+    offBackgroundTasks: (listener?: (...args: unknown[]) => void) => {
+      if (listener) {
+        ipcRenderer.removeListener(
+          BACKGROUND_TASK_CHANNEL,
+          listener as (...args: unknown[]) => void,
+        );
+      } else {
+        ipcRenderer.removeAllListeners(BACKGROUND_TASK_CHANNEL);
       }
     },
   });

@@ -5,6 +5,7 @@ import {
   ASK_USER_ANSWER_CHANNEL,
   TOOL_PERMISSION_CHANNEL,
   DB_UPDATED_CHANNEL,
+  BACKGROUND_TASK_CHANNEL,
 } from "./broadcast";
 
 // Note: broadcast() itself calls require("electron") internally.
@@ -31,6 +32,10 @@ describe("broadcast channel constants", () => {
 
   it("exports correct db updated channel", () => {
     expect(DB_UPDATED_CHANNEL).toBe("db:updated");
+  });
+
+  it("exports correct background task channel", () => {
+    expect(BACKGROUND_TASK_CHANNEL).toBe("agent:background-tasks");
   });
 
   it("exports a broadcast function", async () => {
