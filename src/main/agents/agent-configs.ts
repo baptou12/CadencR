@@ -418,12 +418,13 @@ After presenting your QA report and creating any fix phases (as drafts), you MUS
    - Question: "QA report ready. Do you approve the results and fix phases (if any)?"
    - Options: "Approve QA report", "Request changes"
 2. Wait for the user's response.
-3. If the user selects "Approve QA report": call \`finalize_phases\` (if you created any fix phases), then call \`mark_agent_done\` and stop.
+3. If the user selects "Approve QA report": call \`finalize_phases\` (if you created any fix phases), then call \`mark_phase_done\` with your phase ID (provided in the prompt) and a summary of QA results as implementation_notes, then call \`mark_agent_done\` and stop.
 4. If the user selects "Request changes": read their feedback, re-run or adjust tests as needed, revise and GO BACK TO STEP 1.
 
 CRITICAL RULES:
 - NEVER call mark_agent_done unless the user has explicitly selected "Approve QA report".
 - NEVER call finalize_phases until the user has approved — fix phases must stay as drafts until then.
+- ALWAYS call mark_phase_done BEFORE mark_agent_done — the phase must be marked completed.
 - EVERY revised report MUST be followed by a NEW AskUserQuestion call. No exceptions.
 - The loop continues indefinitely until the user approves.
 - Do NOT assume approval. Do NOT skip the AskUserQuestion after a revision.`
@@ -431,7 +432,8 @@ CRITICAL RULES:
 
 After presenting your QA report:
 1. If you created fix phases, call \`finalize_phases\` to make them pending for execution.
-2. Call \`mark_agent_done\` and stop.
+2. Call \`mark_phase_done\` with your phase ID (provided in the prompt) and a summary of QA results as implementation_notes.
+3. Call \`mark_agent_done\` and stop.
 
 Do NOT use AskUserQuestion — proceed automatically.`;
 
@@ -453,15 +455,14 @@ export function buildExecuteSystemPrompt(autonomyLevel: 1 | 2 | 3): string {
 
 ## Your Role
 
-1. **Mark the phase as in-progress** by calling \`mark_phase_in_progress\` at the start
-2. **Read** the phase requirements provided in the prompt
+1. **Read** the phase requirements provided in the prompt
 3. **Execute** the tasks defined in the phase
 4. **Follow** the plan as closely as possible — make the necessary code changes, fixing minor issues as needed
 5. **Keep changes minimal and focused** — don't add extra features or refactoring beyond the task
 
 ## MCP Tools
 
-You have MCP tools available (prefixed with mcp__productdevr-execute__) for reading the plan/phases and updating phase status. Use them to interact with the plan database. Call mark_phase_in_progress at the start and mark_phase_done when finished.
+You have MCP tools available (prefixed with mcp__productdevr-execute__) for reading the plan/phases and updating phase status. Use them to interact with the plan database. Call mark_phase_done when finished.
 
 ## Context Provided
 
@@ -614,6 +615,8 @@ export interface QaConfigOptions {
   qaPrompt: string;
   completedPhasesSummary: string;
   planId: number;
+  /** The ID of the QA phase being executed — agent uses this to call mark_phase_done. Optional for standalone QA. */
+  phaseId?: number;
   /** Step number of the QA phase — fix phases will be inserted at step + 1 */
   qaPhaseStepNumber: number;
   worktreePath?: string;
@@ -891,7 +894,7 @@ The following procedure describes HOW to validate the implementation (tools, sim
 
 ${opts.qaPrompt}
 
-The plan ID is ${opts.planId}. If you find failures that need fixes, use the MCP tools to create fix phases starting at step_number ${opts.qaPhaseStepNumber + 1}, then create a follow-up QA phase (type "qa") at the next step_number after all fix phases.
+The plan ID is ${opts.planId}.${opts.phaseId ? ` Your phase ID is ${opts.phaseId}.` : ""} If you find failures that need fixes, use the MCP tools to create fix phases starting at step_number ${opts.qaPhaseStepNumber + 1}, then create a follow-up QA phase (type "qa") at the next step_number after all fix phases.
 
 Based on what was implemented above, design specific test cases and execute them using the QA procedure. Verify that the features work correctly from a user's perspective.`;
 

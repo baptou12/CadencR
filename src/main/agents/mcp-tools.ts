@@ -407,6 +407,39 @@ export function createPlanMcpServer(planId: number, featureId: number, sessionDb
 // Execute agent MCP server
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Reusable phase-status tool: agents mark their own phase as completed
+// ---------------------------------------------------------------------------
+
+function createMarkPhaseDoneTool(featureId: number) {
+  return tool(
+    "mark_phase_done",
+    "Mark a phase as completed. Call this after successfully finishing your work on the phase.",
+    {
+      phase_id: z.number().describe("The phase ID"),
+      implementation_notes: z.string().optional().describe("Summary of what was implemented or tested"),
+      deviations: z.string().optional().describe("Any deviations from the original plan"),
+    },
+    async (args) => {
+      const db = getDatabase();
+      const phase = db
+        .prepare("SELECT status FROM phases WHERE id = ?")
+        .get(args.phase_id) as { status: string } | undefined;
+
+      if (!phase) return errorResult(`Phase ${args.phase_id} not found`);
+      if (phase.status !== "running") {
+        return errorResult(`Phase ${args.phase_id} has status '${phase.status}', expected 'running'`);
+      }
+
+      transitionPhase(db, args.phase_id, "completed", featureId, {
+        implementation_notes: args.implementation_notes ?? null,
+        deviations: args.deviations ?? null,
+      });
+      return textResult(`Phase ${args.phase_id} marked as completed`);
+    },
+  );
+}
+
 export function createExecuteMcpServer(featureId: number, sessionDbId: number) {
   return createSdkMcpServer({
     name: "productdevr-execute",
@@ -415,54 +448,7 @@ export function createExecuteMcpServer(featureId: number, sessionDbId: number) {
       readPhaseTool,
       listPhasesTool,
       createAgentDoneTool(sessionDbId, featureId),
-      tool(
-        "mark_phase_in_progress",
-        "Mark a phase as in-progress (running). Call this at the start of phase execution.",
-        {
-          phase_id: z.number().describe("The phase ID"),
-        },
-        async (args) => {
-          const db = getDatabase();
-          const phase = db
-            .prepare("SELECT status FROM phases WHERE id = ?")
-            .get(args.phase_id) as { status: string } | undefined;
-
-          if (!phase) return errorResult(`Phase ${args.phase_id} not found`);
-          if (phase.status !== "pending" && phase.status !== "error") {
-            return errorResult(`Phase ${args.phase_id} has status '${phase.status}', expected 'pending' or 'error'`);
-          }
-
-          transitionPhase(db, args.phase_id, "running", featureId);
-          return textResult(`Phase ${args.phase_id} is now running`);
-        },
-      ),
-
-      tool(
-        "mark_phase_done",
-        "Mark a phase as completed. Call this after successfully implementing the phase.",
-        {
-          phase_id: z.number().describe("The phase ID"),
-          implementation_notes: z.string().optional().describe("Summary of what was implemented"),
-          deviations: z.string().optional().describe("Any deviations from the original plan"),
-        },
-        async (args) => {
-          const db = getDatabase();
-          const phase = db
-            .prepare("SELECT status FROM phases WHERE id = ?")
-            .get(args.phase_id) as { status: string } | undefined;
-
-          if (!phase) return errorResult(`Phase ${args.phase_id} not found`);
-          if (phase.status !== "running") {
-            return errorResult(`Phase ${args.phase_id} has status '${phase.status}', expected 'running'`);
-          }
-
-          transitionPhase(db, args.phase_id, "completed", featureId, {
-            implementation_notes: args.implementation_notes ?? null,
-            deviations: args.deviations ?? null,
-          });
-          return textResult(`Phase ${args.phase_id} marked as completed`);
-        },
-      ),
+      createMarkPhaseDoneTool(featureId),
     ],
   });
 }
@@ -481,6 +467,7 @@ export function createQaMcpServer(planId: number, featureId: number, sessionDbId
       createPhaseTool(featureId),
       updatePhaseTool(planId, featureId),
       removePhaseTool(planId, featureId),
+      createMarkPhaseDoneTool(featureId),
       createAgentDoneTool(sessionDbId, featureId),
 
       tool(

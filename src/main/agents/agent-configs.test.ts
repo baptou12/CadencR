@@ -221,6 +221,7 @@ describe("createQaConfig", () => {
       qaPrompt: "Run tests",
       completedPhasesSummary: "Phase 1 done",
       planId: 40,
+      phaseId: 99,
       qaPhaseStepNumber: 3,
     });
 
@@ -235,6 +236,7 @@ describe("createQaConfig", () => {
       qaPrompt: "Run tests",
       completedPhasesSummary: "Phase 1: Added login",
       planId: 40,
+      phaseId: 99,
       qaPhaseStepNumber: 3,
     });
 
@@ -249,6 +251,7 @@ describe("createQaConfig", () => {
       qaPrompt: "Run tests",
       completedPhasesSummary: "Done",
       planId: 40,
+      phaseId: 99,
       qaPhaseStepNumber: 5,
     });
 
@@ -263,6 +266,7 @@ describe("createQaConfig", () => {
       qaPrompt: "Run tests",
       completedPhasesSummary: "Done",
       planId: 40,
+      phaseId: 99,
       qaPhaseStepNumber: 3,
     });
 
@@ -277,6 +281,7 @@ describe("createQaConfig", () => {
       qaPrompt: "Run tests",
       completedPhasesSummary: "Done",
       planId: 40,
+      phaseId: 99,
       qaPhaseStepNumber: 3,
     });
 

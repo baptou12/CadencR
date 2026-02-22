@@ -591,52 +591,6 @@ describe("createExecuteMcpServer", () => {
     expect((server as any).name).toBe("productdevr-execute");
   });
 
-  describe("mark_phase_in_progress tool", () => {
-    it("transitions phase to running", async () => {
-      db.prepare.mockReturnValue({ get: vi.fn().mockReturnValue({ status: "pending" }) });
-
-      const server = createExecuteMcpServer(10, 100);
-      const handler = getToolHandler(server, "mark_phase_in_progress");
-      const result = await handler({ phase_id: 5 }) as any;
-
-      expect(result.content[0].text).toContain("running");
-      expect(mockTransitionPhase).toHaveBeenCalledWith(db, 5, "running", 10);
-    });
-
-    it("allows transitioning from 'error' status", async () => {
-      db.prepare.mockReturnValue({ get: vi.fn().mockReturnValue({ status: "error" }) });
-
-      const server = createExecuteMcpServer(10, 100);
-      const handler = getToolHandler(server, "mark_phase_in_progress");
-      const result = await handler({ phase_id: 5 }) as any;
-
-      expect(result.isError).toBeUndefined();
-      expect(mockTransitionPhase).toHaveBeenCalledWith(db, 5, "running", 10);
-    });
-
-    it("returns error when phase not found", async () => {
-      db.prepare.mockReturnValue({ get: vi.fn().mockReturnValue(undefined) });
-
-      const server = createExecuteMcpServer(10, 100);
-      const handler = getToolHandler(server, "mark_phase_in_progress");
-      const result = await handler({ phase_id: 99 }) as any;
-
-      expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain("not found");
-    });
-
-    it("returns error when phase has wrong status", async () => {
-      db.prepare.mockReturnValue({ get: vi.fn().mockReturnValue({ status: "completed" }) });
-
-      const server = createExecuteMcpServer(10, 100);
-      const handler = getToolHandler(server, "mark_phase_in_progress");
-      const result = await handler({ phase_id: 5 }) as any;
-
-      expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain("expected 'pending' or 'error'");
-    });
-  });
-
   describe("mark_phase_done tool", () => {
     it("transitions phase to completed", async () => {
       db.prepare.mockReturnValue({ get: vi.fn().mockReturnValue({ status: "running" }) });
@@ -703,6 +657,44 @@ describe("createQaMcpServer", () => {
   it("creates a server named 'productdevr-qa'", () => {
     const server = createQaMcpServer(1, 10, 100);
     expect((server as any).name).toBe("productdevr-qa");
+  });
+
+  describe("mark_phase_done tool (QA)", () => {
+    it("transitions phase to completed with implementation_notes", async () => {
+      db.prepare.mockReturnValue({ get: vi.fn().mockReturnValue({ status: "running" }) });
+
+      const server = createQaMcpServer(1, 10, 100);
+      const handler = getToolHandler(server, "mark_phase_done");
+      const result = await handler({ phase_id: 5, implementation_notes: "All tests passed", deviations: "None" }) as any;
+
+      expect(result.content[0].text).toContain("completed");
+      expect(mockTransitionPhase).toHaveBeenCalledWith(db, 5, "completed", 10, {
+        implementation_notes: "All tests passed",
+        deviations: "None",
+      });
+    });
+
+    it("returns error when phase is not running", async () => {
+      db.prepare.mockReturnValue({ get: vi.fn().mockReturnValue({ status: "pending" }) });
+
+      const server = createQaMcpServer(1, 10, 100);
+      const handler = getToolHandler(server, "mark_phase_done");
+      const result = await handler({ phase_id: 5 }) as any;
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("expected 'running'");
+    });
+
+    it("returns error when phase not found", async () => {
+      db.prepare.mockReturnValue({ get: vi.fn().mockReturnValue(undefined) });
+
+      const server = createQaMcpServer(1, 10, 100);
+      const handler = getToolHandler(server, "mark_phase_done");
+      const result = await handler({ phase_id: 99 }) as any;
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("not found");
+    });
   });
 
   describe("finalize_phases tool", () => {

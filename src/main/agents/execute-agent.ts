@@ -241,6 +241,19 @@ function dispatchPhase(
   autonomyLevel: 1 | 2 | 3,
   allSubprocessIds: string[],
 ): Promise<void> {
+  // Safety guard: no running phases from a different step should exist
+  const db = getDatabase();
+  const runningFromOtherStep = db
+    .prepare("SELECT id, step_number, phase_type FROM phases WHERE plan_id = ? AND status = 'running' AND step_number != ?")
+    .all(phase.plan_id, phase.step_number) as Array<{ id: number; step_number: number; phase_type: string }>;
+  if (runningFromOtherStep.length > 0) {
+    console.warn(
+      `[orchestrator-guard] Attempting to dispatch phase ${phase.id} (step ${phase.step_number}, type ${phase.phase_type}) ` +
+      `but ${runningFromOtherStep.length} phase(s) from other steps are still running: ` +
+      runningFromOtherStep.map((p) => `phase ${p.id} (step ${p.step_number}, type ${p.phase_type})`).join(", "),
+    );
+  }
+
   if (phase.phase_type === "qa") {
     return executeQaPhase(phase, options, autonomyLevel, allSubprocessIds);
   }
@@ -294,6 +307,7 @@ function executeQaPhase(
       qaPrompt,
       completedPhasesSummary,
       planId: phase.plan_id,
+      phaseId: phase.id,
       qaPhaseStepNumber: phase.step_number,
       worktreePath: options.worktreePath,
       autonomyLevel,
@@ -314,13 +328,14 @@ function executeQaPhase(
           console.log(`[qa-phase-trace] qa_phase_status handler: phase ${phase.id}, sessionDbId=${context.sessionDbId}, sessionStatus=${session?.status}, phaseStatus=${phaseRow?.status}, exitCode=${context.exitCode}, wasInterrupted=${wasInterrupted}`);
 
           if (wasInterrupted) {
+            // Agent was paused — reset phase so it can be re-dispatched
             transitionPhaseIf(db2, phase.id, "running", "pending", options.featureId);
-          } else if (context.exitCode === 0) {
-            // QA agent finished successfully — always mark completed.
-            // Fix phases (if any) are detected by getStepOutcome directly.
-            transitionPhase(db2, phase.id, "completed", options.featureId);
-          } else {
-            transitionPhase(db2, phase.id, "error", options.featureId);
+          } else if (phaseRow?.status === "running") {
+            // Agent exited without calling mark_phase_done — safety net
+            if (context.exitCode !== 0) {
+              transitionPhaseIf(db2, phase.id, "running", "error", options.featureId);
+            }
+            // exitCode === 0 but no mark_phase_done: stays running (user can resume)
           }
           resolve();
         },
@@ -466,7 +481,7 @@ function buildEnrichedPrompt(phase: PhaseRow, autonomyLevel: 1 | 2 | 3 = 3): str
 
   // Current phase body
   sections.push(
-    `## Current Phase: ${phase.title}\n\nPhase ID: ${phase.id}\n\nExecute the following phase of the implementation plan:\n\n${phase.prompt}\n\nPlease implement all the tasks listed above. Focus only on this phase's scope.\n\nCall \`mark_phase_in_progress\` with phase_id=${phase.id} at the start, and \`mark_phase_done\` with phase_id=${phase.id} when complete.`,
+    `## Current Phase: ${phase.title}\n\nPhase ID: ${phase.id}\n\nExecute the following phase of the implementation plan:\n\n${phase.prompt}\n\nPlease implement all the tasks listed above. Focus only on this phase's scope.\n\nCall \`mark_phase_done\` with phase_id=${phase.id} when complete.`,
   );
 
   // Add commit instructions based on autonomy level
