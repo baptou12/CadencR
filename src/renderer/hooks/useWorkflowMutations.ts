@@ -177,12 +177,13 @@ export function useWorkflowMutations({
   );
 
   const handleAgentSend = useCallback(
-    async (agentType: AgentType, message: string, images?: Array<{ base64: string; mimeType: string }>) => {
-      // 1. Try active subprocess
-      const session = sessions.find(
-        (s) => s.agentType === agentType && s.subprocessId,
-      );
-      if (session?.subprocessId) {
+    async (
+      session: Pick<FeatureSession, "agentType" | "sessionDbId" | "subprocessId" | "claudeSessionId">,
+      message: string,
+      images?: Array<{ base64: string; mimeType: string }>,
+    ) => {
+      // 1. Try active subprocess — use the EXACT session's subprocessId
+      if (session.subprocessId) {
         try {
           const result = await sendMessageMutation.mutateAsync({ id: session.subprocessId, message, images });
           if (result.success) {
@@ -193,18 +194,15 @@ export function useWorkflowMutations({
           // fall through to resume
         }
       }
-      // 2. Try resume via claude session ID
-      const resumable = sessions.find(
-        (s) => s.agentType === agentType && s.claudeSessionId,
-      );
-      if (resumable?.claudeSessionId) {
+      // 2. Try resume via this session's claude session ID
+      if (session.claudeSessionId) {
         try {
           await resumeMutation.mutateAsync({
             featureId,
             projectId,
-            agentType,
-            sessionId: resumable.claudeSessionId,
-            originalSessionDbId: resumable.sessionDbId,
+            agentType: session.agentType,
+            sessionId: session.claudeSessionId,
+            originalSessionDbId: session.sessionDbId,
             prompt: message,
             images,
           });
@@ -214,15 +212,11 @@ export function useWorkflowMutations({
         void refetch();
       }
     },
-    [sessions, sendMessageMutation, resumeMutation, featureId, projectId, refetch],
+    [sendMessageMutation, resumeMutation, featureId, projectId, refetch],
   );
 
   const handleAgentStop = useCallback(
-    async (agentType: AgentType) => {
-      const session = sessions.find(
-        (s) => s.agentType === agentType && (s.status === "running" || s.subprocessId),
-      );
-      if (!session) return;
+    async (session: Pick<FeatureSession, "subprocessId" | "sessionDbId">) => {
       try {
         if (session.subprocessId) {
           await stopMutation.mutateAsync({ id: session.subprocessId });
@@ -234,7 +228,7 @@ export function useWorkflowMutations({
       }
       void refetch();
     },
-    [sessions, stopMutation, stopBySessionIdMutation, refetch],
+    [stopMutation, stopBySessionIdMutation, refetch],
   );
 
   const sendToExecuteSubprocess = useCallback(

@@ -160,21 +160,23 @@ describe("useWorkflowMutations", () => {
     expect(mockResume).toHaveBeenCalled();
   });
 
-  it("handleAgentStop calls stop mutation when subprocess exists", async () => {
+  it("handleAgentStop calls stop mutation with the session's subprocessId", async () => {
     const session = makeSession({ agentType: "plan", subprocessId: "sub-1", status: "running" });
     const { result } = renderHook(() =>
       useWorkflowMutations({ featureId: 1, projectId: 1, sessions: [session], refetch: mockRefetch, getDescription: mockGetDescription }),
     );
-    await result.current.handleAgentStop("plan");
+    await result.current.handleAgentStop(session);
     expect(mockStop).toHaveBeenCalledWith({ id: "sub-1" });
   });
 
-  it("handleAgentStop does nothing when no matching session", async () => {
+  it("handleAgentStop falls back to stopBySessionId when no subprocessId", async () => {
+    const session = makeSession({ agentType: "plan", subprocessId: null, sessionDbId: 7 });
     const { result } = renderHook(() =>
-      useWorkflowMutations({ featureId: 1, projectId: 1, sessions: [], refetch: mockRefetch, getDescription: mockGetDescription }),
+      useWorkflowMutations({ featureId: 1, projectId: 1, sessions: [session], refetch: mockRefetch, getDescription: mockGetDescription }),
     );
-    await result.current.handleAgentStop("plan");
+    await result.current.handleAgentStop(session);
     expect(mockStop).not.toHaveBeenCalled();
+    expect(mockStopBySessionId).toHaveBeenCalledWith({ sessionId: 7 });
   });
 
   it("handleContinueBuild calls continueExecute", async () => {
@@ -210,6 +212,67 @@ describe("useWorkflowMutations", () => {
     );
     await result.current.handleMarkSessionDone(5);
     expect(mockStopBySessionId).toHaveBeenCalledWith({ sessionId: 5 });
+  });
+
+  // --- handleAgentSend tests ---
+
+  it("handleAgentSend sends to the specific session's subprocess", async () => {
+    const session = makeSession({ subprocessId: "sub-1", status: "running" });
+    const { result } = renderHook(() =>
+      useWorkflowMutations({ featureId: 1, projectId: 1, sessions: [session], refetch: mockRefetch, getDescription: mockGetDescription }),
+    );
+    await result.current.handleAgentSend(session, "hello");
+    expect(mockSendMessage).toHaveBeenCalledWith({ id: "sub-1", message: "hello", images: undefined });
+  });
+
+  it("handleAgentSend targets the passed session, not an errored one of the same type", async () => {
+    const erroredSession = makeSession({ sessionDbId: 1, subprocessId: "sub-old", status: "error", claudeSessionId: "old" });
+    const activeSession = makeSession({ sessionDbId: 2, subprocessId: "sub-new", status: "running", claudeSessionId: "new" });
+    const { result } = renderHook(() =>
+      useWorkflowMutations({ featureId: 1, projectId: 1, sessions: [erroredSession, activeSession], refetch: mockRefetch, getDescription: mockGetDescription }),
+    );
+    // Pass the active session directly — this is the key fix
+    await result.current.handleAgentSend(activeSession, "hello");
+    expect(mockSendMessage).toHaveBeenCalledWith({ id: "sub-new", message: "hello", images: undefined });
+    expect(mockSendMessage).not.toHaveBeenCalledWith(expect.objectContaining({ id: "sub-old" }));
+  });
+
+  it("handleAgentSend falls back to resume when no subprocessId", async () => {
+    const session = makeSession({ sessionDbId: 5, subprocessId: null, claudeSessionId: "claude-5" });
+    const { result } = renderHook(() =>
+      useWorkflowMutations({ featureId: 1, projectId: 1, sessions: [session], refetch: mockRefetch, getDescription: mockGetDescription }),
+    );
+    await result.current.handleAgentSend(session, "resume me");
+    expect(mockSendMessage).not.toHaveBeenCalled();
+    expect(mockResume).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: "claude-5",
+      originalSessionDbId: 5,
+      prompt: "resume me",
+    }));
+  });
+
+  it("handleAgentSend resumes the correct session, not an errored one", async () => {
+    const erroredSession = makeSession({ sessionDbId: 1, subprocessId: null, claudeSessionId: "old", status: "error" });
+    const activeSession = makeSession({ sessionDbId: 2, subprocessId: null, claudeSessionId: "new", status: "completed" });
+    const { result } = renderHook(() =>
+      useWorkflowMutations({ featureId: 1, projectId: 1, sessions: [erroredSession, activeSession], refetch: mockRefetch, getDescription: mockGetDescription }),
+    );
+    await result.current.handleAgentSend(activeSession, "continue");
+    expect(mockResume).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: "new",
+      originalSessionDbId: 2,
+    }));
+  });
+
+  it("handleAgentStop targets the specific session passed, not another of same type", async () => {
+    const erroredSession = makeSession({ sessionDbId: 1, subprocessId: "sub-old", status: "error" });
+    const runningSession = makeSession({ sessionDbId: 2, subprocessId: "sub-new", status: "running" });
+    const { result } = renderHook(() =>
+      useWorkflowMutations({ featureId: 1, projectId: 1, sessions: [erroredSession, runningSession], refetch: mockRefetch, getDescription: mockGetDescription }),
+    );
+    await result.current.handleAgentStop(runningSession);
+    expect(mockStop).toHaveBeenCalledWith({ id: "sub-new" });
+    expect(mockStop).not.toHaveBeenCalledWith({ id: "sub-old" });
   });
 
   it("exposes loading states", () => {

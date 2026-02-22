@@ -131,7 +131,11 @@ function persistSessionStatus(managedId: string, status: string, sdkSessionId?: 
   if (!dbId) return;
   try {
     const db = getDatabase();
-    transitionAgentSession(db, dbId, status as import("./state-transitions").AgentSessionStatus, undefined, { ended_at: "datetime('now')" });
+    const extras: Record<string, unknown> = { ended_at: "datetime('now')" };
+    if (status === "error") {
+      extras.subprocess_id = null;
+    }
+    transitionAgentSession(db, dbId, status as import("./state-transitions").AgentSessionStatus, undefined, extras);
     if (sdkSessionId) persistClaudeSessionId(dbId, sdkSessionId);
   } catch (e) {
     console.warn("[subprocess-manager] Failed to persist session status:", e);

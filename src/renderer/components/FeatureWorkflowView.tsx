@@ -320,7 +320,7 @@ export function FeatureWorkflowView({
       if (entry.agentType === "execute" && entry.subprocessId) {
         void wf.interruptExecuteSubprocess(entry.subprocessId);
       } else {
-        void wf.handleAgentStop(entry.agentType);
+        void wf.handleAgentStop(entry);
       }
     },
     { enableOnFormTags: true },
@@ -634,7 +634,7 @@ export function FeatureWorkflowView({
                               images,
                             );
                           } else {
-                            wf.handleAgentSend(entry.agentType, message, images);
+                            wf.handleAgentSend(entry, message, images);
                           }
                         }}
                         onStop={() => {
@@ -646,7 +646,7 @@ export function FeatureWorkflowView({
                               entry.subprocessId,
                             );
                           } else {
-                            void wf.handleAgentStop(entry.agentType);
+                            void wf.handleAgentStop(entry);
                           }
                         }}
                         resumable={entry.resumable}
