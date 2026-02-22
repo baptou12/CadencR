@@ -180,6 +180,8 @@ export interface AgentSessionProps {
   pendingPlanApproval?: { allowedPrompts?: Array<{ tool: string; prompt: string }> } | null;
   /** Label for the approve button */
   planApproveLabel?: string;
+  /** Error from a failed plan approval attempt */
+  planApprovalError?: string | null;
   /** Called when user approves the plan */
   onPlanApprove?: () => void;
   /** Called when user requests changes to the plan */
@@ -265,6 +267,7 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
   onPermissionModeToggle,
   pendingPlanApproval,
   planApproveLabel,
+  planApprovalError,
   onPlanApprove,
   onPlanRequestChanges,
   contextUsage,
@@ -483,6 +486,7 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
       onPermissionModeToggle={onPermissionModeToggle}
       pendingPlanApproval={pendingPlanApproval}
       planApproveLabel={planApproveLabel}
+      planApprovalError={planApprovalError}
       onPlanApprove={onPlanApprove}
       onPlanRequestChanges={onPlanRequestChanges}
       onCycleModel={onModelChange ? handleCycleModel : undefined}

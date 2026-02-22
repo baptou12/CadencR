@@ -290,11 +290,12 @@ function SessionFeatureView({
           permissionMode={permissionMode}
           onPermissionModeToggle={handlePermissionModeToggle}
           pendingPlanApproval={session?.pendingPlanApproval}
+          planApprovalError={chat.planApprovalError}
           onPlanApprove={() => {
-            chat.handlePlanApprove(session?.subprocessId);
+            chat.handlePlanApprove(session?.subprocessId, session?.sessionDbId);
             setPermissionMode("acceptEdits");
           }}
-          onPlanRequestChanges={(feedback) => chat.handlePlanRequestChanges(session?.subprocessId, feedback)}
+          onPlanRequestChanges={(feedback) => chat.handlePlanRequestChanges(session?.subprocessId, feedback, session?.sessionDbId)}
           contextUsage={session ? contextUsageMap.get(session.sessionDbId) : null}
           currentModelId={currentModelId}
           onModelChange={handleModelChange}

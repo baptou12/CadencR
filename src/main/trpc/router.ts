@@ -19,7 +19,7 @@ import {
   setSubprocessPermissionMode,
   getSupportedCommands,
 } from "../agents/subprocess-manager";
-import { getSubprocessIdForSession } from "../agents/session-persistence";
+import { getSubprocessIdForSession, notifyDbUpdated } from "../agents/session-persistence";
 import type { AgentType } from "../agents/types";
 import { execSync } from "node:child_process";
 import {
@@ -501,8 +501,22 @@ const agentsRouter = router({
       }),
     )
     .mutation(({ input }) => {
-      submitPlanApproval(input.subprocessId, input.approved, input.feedback);
-      return { success: true };
+      return submitPlanApproval(input.subprocessId, input.approved, input.feedback);
+    }),
+
+  /** Clear a stale pending_plan_approval (e.g. when subprocess is gone after restart) */
+  clearPlanApproval: publicProcedure
+    .input(z.object({ sessionDbId: z.number() }))
+    .mutation(({ input }) => {
+      try {
+        const db = getDatabase();
+        db.prepare("UPDATE agent_sessions SET pending_plan_approval = NULL WHERE id = ?").run(input.sessionDbId);
+        const row = db.prepare("SELECT feature_id FROM agent_sessions WHERE id = ?").get(input.sessionDbId) as { feature_id: number } | undefined;
+        if (row) notifyDbUpdated("agent_session", row.feature_id);
+        return { success: true };
+      } catch {
+        return { success: false };
+      }
     }),
 
   /** Submit a tool permission decision from the renderer */

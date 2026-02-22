@@ -5,6 +5,7 @@ import type { FeatureSession } from "./useFeatureAgentState";
 
 const mockSubmitToolPermission = vi.fn();
 const mockSubmitPlanApproval = vi.fn();
+const mockClearPlanApproval = vi.fn();
 const mockSubmitAnswers = vi.fn();
 const mockResumeMutate = vi.fn().mockResolvedValue({});
 const mockSetPermissionMode = vi.fn();
@@ -17,6 +18,9 @@ vi.mock("@/trpc", () => ({
       },
       submitPlanApproval: {
         useMutation: vi.fn(() => ({ mutate: mockSubmitPlanApproval })),
+      },
+      clearPlanApproval: {
+        useMutation: vi.fn(() => ({ mutate: mockClearPlanApproval })),
       },
       submitAnswers: {
         useMutation: vi.fn(() => ({ mutate: mockSubmitAnswers })),
@@ -124,13 +128,13 @@ describe("useAgentChat", () => {
       act(() => {
         result.current.handlePlanApprove("sub-1");
       });
-      expect(mockSubmitPlanApproval).toHaveBeenCalledWith({
-        subprocessId: "sub-1",
-        approved: true,
-      });
+      expect(mockSubmitPlanApproval).toHaveBeenCalledWith(
+        { subprocessId: "sub-1", approved: true },
+        expect.objectContaining({ onSuccess: expect.any(Function) }),
+      );
     });
 
-    it("does nothing when subprocessId is null", () => {
+    it("does nothing when subprocessId is null and no sessionDbId", () => {
       const { result } = renderHook(() =>
         useAgentChat({ featureId: 1, projectId: 1, refetch: mockRefetch }),
       );
@@ -138,6 +142,31 @@ describe("useAgentChat", () => {
         result.current.handlePlanApprove(null);
       });
       expect(mockSubmitPlanApproval).not.toHaveBeenCalled();
+      expect(mockClearPlanApproval).not.toHaveBeenCalled();
+    });
+
+    it("calls clearPlanApproval when subprocessId is null but sessionDbId is provided", () => {
+      const { result } = renderHook(() =>
+        useAgentChat({ featureId: 1, projectId: 1, refetch: mockRefetch }),
+      );
+      act(() => {
+        result.current.handlePlanApprove(null, 42);
+      });
+      expect(mockSubmitPlanApproval).not.toHaveBeenCalled();
+      expect(mockClearPlanApproval).toHaveBeenCalledWith(
+        { sessionDbId: 42 },
+        expect.objectContaining({ onSuccess: expect.any(Function) }),
+      );
+    });
+
+    it("sets planApprovalError when subprocessId is null and sessionDbId provided", () => {
+      const { result } = renderHook(() =>
+        useAgentChat({ featureId: 1, projectId: 1, refetch: mockRefetch }),
+      );
+      act(() => {
+        result.current.handlePlanApprove(null, 42);
+      });
+      expect(result.current.planApprovalError).toContain("no longer running");
     });
   });
 
@@ -149,11 +178,24 @@ describe("useAgentChat", () => {
       act(() => {
         result.current.handlePlanRequestChanges("sub-1", "Please fix X");
       });
-      expect(mockSubmitPlanApproval).toHaveBeenCalledWith({
-        subprocessId: "sub-1",
-        approved: false,
-        feedback: "Please fix X",
+      expect(mockSubmitPlanApproval).toHaveBeenCalledWith(
+        { subprocessId: "sub-1", approved: false, feedback: "Please fix X" },
+        expect.objectContaining({ onSuccess: expect.any(Function) }),
+      );
+    });
+
+    it("calls clearPlanApproval when subprocessId is null but sessionDbId is provided", () => {
+      const { result } = renderHook(() =>
+        useAgentChat({ featureId: 1, projectId: 1, refetch: mockRefetch }),
+      );
+      act(() => {
+        result.current.handlePlanRequestChanges(null, "Some feedback", 99);
       });
+      expect(mockSubmitPlanApproval).not.toHaveBeenCalled();
+      expect(mockClearPlanApproval).toHaveBeenCalledWith(
+        { sessionDbId: 99 },
+        expect.objectContaining({ onSuccess: expect.any(Function) }),
+      );
     });
   });
 

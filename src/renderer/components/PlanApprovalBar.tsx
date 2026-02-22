@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { ClipboardCheck, Play, MessageSquare, Send } from "lucide-react";
+import { ClipboardCheck, Play, MessageSquare, Send, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { KbdShortcut } from "@/components/KbdShortcut";
@@ -9,6 +9,7 @@ interface PlanApprovalBarProps {
   approveLabel?: string;
   onApprove: () => void;
   onRequestChanges: (feedback: string) => void;
+  error?: string | null;
 }
 
 export function PlanApprovalBar({
@@ -16,6 +17,7 @@ export function PlanApprovalBar({
   approveLabel,
   onApprove,
   onRequestChanges,
+  error,
 }: PlanApprovalBarProps) {
   const [showFeedback, setShowFeedback] = useState(false);
   const [feedback, setFeedback] = useState("");
@@ -60,6 +62,13 @@ export function PlanApprovalBar({
               <li key={i}>{p.prompt}</li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {error && (
+        <div className="flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          <AlertTriangle className="size-4 shrink-0" />
+          {error}
         </div>
       )}
 

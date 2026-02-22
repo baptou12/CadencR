@@ -262,6 +262,19 @@ describe("session-persistence", () => {
       );
     });
 
+    it("clears pending_plan_approval alongside subprocess_id on startup", () => {
+      const mockRun = vi.fn();
+      const mockAll = vi.fn().mockReturnValue([]);
+      mockDb.prepare.mockReturnValue({ run: mockRun, all: mockAll, get: vi.fn() });
+
+      restoreSessionMap();
+
+      const allSqls = mockDb.prepare.mock.calls.map((c) => c[0] as string);
+      const updateSql = allSqls.find((s) => s.includes("UPDATE agent_sessions SET status = 'paused'"));
+      expect(updateSql).toBeDefined();
+      expect(updateSql).toContain("pending_plan_approval = NULL");
+    });
+
     it("repopulates session map from paused sessions with subprocess IDs", () => {
       const mockRun = vi.fn();
       const mockAll = vi.fn()

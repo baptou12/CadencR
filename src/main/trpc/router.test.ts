@@ -18,7 +18,7 @@ vi.mock("../agents/subprocess-manager", () => ({
   interruptSubprocess: vi.fn().mockResolvedValue(true),
   listSubprocesses: vi.fn().mockReturnValue([]),
   submitUserAnswers: vi.fn(),
-  submitPlanApproval: vi.fn(),
+  submitPlanApproval: vi.fn().mockReturnValue({ success: true }),
   submitToolPermission: vi.fn(),
   sendMessageToSubprocess: vi.fn().mockResolvedValue(undefined),
   setSubprocessPermissionMode: vi.fn().mockResolvedValue(undefined),
@@ -28,6 +28,7 @@ vi.mock("../agents/subprocess-manager", () => ({
 vi.mock("../agents/session-persistence", () => ({
   getSubprocessIdForSession: vi.fn().mockReturnValue(null),
   getSubprocessIdsForSessionDbIds: vi.fn().mockReturnValue([]),
+  notifyDbUpdated: vi.fn(),
 }));
 
 vi.mock("../agents/cli-discovery", () => ({
@@ -309,6 +310,33 @@ describe("appRouter - agentsRouter", () => {
   it("agents.interruptBySessionId returns false when no subprocess", async () => {
     mockDb.prepare.mockReturnValue({ get: vi.fn().mockReturnValue(undefined), run: vi.fn(), all: vi.fn().mockReturnValue([]) });
     const result = await caller.agents.interruptBySessionId({ sessionId: 1 });
+    expect(result).toEqual({ success: false });
+  });
+
+  it("agents.clearPlanApproval clears pending_plan_approval and notifies", async () => {
+    const { notifyDbUpdated } = await import("../agents/session-persistence");
+    mockDb.prepare.mockImplementation((sql: string) => ({
+      run: vi.fn(),
+      get: vi.fn().mockReturnValue(sql.includes("SELECT feature_id") ? { feature_id: 42 } : undefined),
+      all: vi.fn().mockReturnValue([]),
+    }));
+
+    const result = await caller.agents.clearPlanApproval({ sessionDbId: 10 });
+
+    expect(result).toEqual({ success: true });
+    expect(mockDb.prepare).toHaveBeenCalledWith(
+      expect.stringContaining("UPDATE agent_sessions SET pending_plan_approval = NULL"),
+    );
+    expect(notifyDbUpdated).toHaveBeenCalledWith("agent_session", 42);
+  });
+
+  it("agents.clearPlanApproval returns success:false when DB throws", async () => {
+    mockDb.prepare.mockImplementation(() => {
+      throw new Error("DB error");
+    });
+
+    const result = await caller.agents.clearPlanApproval({ sessionDbId: 999 });
+
     expect(result).toEqual({ success: false });
   });
 });

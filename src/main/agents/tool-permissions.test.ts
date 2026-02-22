@@ -28,6 +28,10 @@ vi.mock("./broadcast", () => ({
   TOOL_PERMISSION_CHANNEL: "tool-permission",
 }));
 
+vi.mock("./subprocess-manager", () => ({
+  getActiveProcess: vi.fn().mockReturnValue(undefined),
+}));
+
 // ---------------------------------------------------------------------------
 // Imports after mocks
 // ---------------------------------------------------------------------------
@@ -44,6 +48,7 @@ import {
   submitPlanApproval,
   requestUserAnswers,
 } from "./tool-permissions";
+import { getActiveProcess } from "./subprocess-manager";
 import type { ManagedSubprocess } from "./subprocess-manager";
 
 // ---------------------------------------------------------------------------
@@ -473,27 +478,64 @@ describe("submitPlanApproval", () => {
   });
 
   it("persists feedback to DB as user message when rejecting", () => {
+    // Set up a listener so submitPlanApproval doesn't bail out early
+    questionEmitter.once("plan-approval:sub-plan-3", () => {});
     const { db, stmt } = makeMockDb();
     vi.mocked(getDatabase).mockReturnValue(db);
     vi.mocked(getSessionDbId).mockReturnValue(20);
     stmt.get.mockReturnValue({ feature_id: 3 });
 
-    submitPlanApproval("sub-plan-3", false, "Change the approach");
+    const result = submitPlanApproval("sub-plan-3", false, "Change the approach");
 
+    expect(result.success).toBe(true);
     expect(db.prepare).toHaveBeenCalledWith(
       expect.stringContaining("INSERT INTO agent_messages")
     );
   });
 
   it("does not write to DB when approving (no feedback)", () => {
+    // Set up a listener so submitPlanApproval doesn't bail out early
+    questionEmitter.once("plan-approval:sub-plan-4", () => {});
     const { db } = makeMockDb();
     vi.mocked(getDatabase).mockReturnValue(db);
     vi.mocked(getSessionDbId).mockReturnValue(20);
 
-    submitPlanApproval("sub-plan-4", true);
+    const result = submitPlanApproval("sub-plan-4", true);
 
+    expect(result.success).toBe(true);
     // DB should not be called for approval (no feedback to persist)
     expect(db.prepare).not.toHaveBeenCalled();
+  });
+
+  it("returns error when no listener and no active process", () => {
+    vi.mocked(getSessionDbId).mockReturnValue(undefined);
+    const result = submitPlanApproval("dead-subprocess", true);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("no longer running");
+  });
+
+  it("clears pending_plan_approval from DB when no listener and no active process", () => {
+    const { db, stmt } = makeMockDb();
+    vi.mocked(getDatabase).mockReturnValue(db);
+    vi.mocked(getSessionDbId).mockReturnValue(55);
+    stmt.get.mockReturnValue({ feature_id: 7 });
+
+    const result = submitPlanApproval("dead-subprocess-2", true);
+
+    expect(result.success).toBe(false);
+    expect(db.prepare).toHaveBeenCalledWith(
+      expect.stringContaining("UPDATE agent_sessions SET pending_plan_approval = NULL"),
+    );
+  });
+
+  it("returns success:false when no listener exists regardless of subprocess state", () => {
+    // Both "subprocess dead" and "subprocess alive but not waiting" paths return success:false.
+    // The mock returns undefined for getActiveProcess (subprocess dead path), which is
+    // the observable fallback when no listener is registered and no active process is found.
+    const result = submitPlanApproval("no-listener-subprocess", true);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBeDefined();
   });
 });
 

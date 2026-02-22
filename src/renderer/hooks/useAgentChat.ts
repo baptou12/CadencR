@@ -20,8 +20,12 @@ interface UseAgentChatParams {
 export function useAgentChat({ featureId, projectId, refetch }: UseAgentChatParams) {
   const submitToolPermissionMutation = trpc.agents.submitToolPermission.useMutation();
   const submitPlanApprovalMutation = trpc.agents.submitPlanApproval.useMutation();
+  const clearPlanApprovalMutation = trpc.agents.clearPlanApproval.useMutation();
   const submitAnswersMutation = trpc.agents.submitAnswers.useMutation();
   const resumeMutation = trpc.agents.resume.useMutation();
+
+  // Track plan approval errors to surface in UI
+  const [planApprovalError, setPlanApprovalError] = useState<string | null>(null);
 
   const handlePermissionDecision = useCallback(
     (subprocessId: string | null | undefined, decision: "allow_once" | "allow_future" | "deny", feedback?: string) => {
@@ -31,20 +35,67 @@ export function useAgentChat({ featureId, projectId, refetch }: UseAgentChatPara
     [submitToolPermissionMutation],
   );
 
-  const handlePlanApprove = useCallback(
-    (subprocessId: string | null | undefined) => {
-      if (!subprocessId) return;
-      submitPlanApprovalMutation.mutate({ subprocessId, approved: true });
+  // Helper to clear a stale plan approval when subprocess is gone
+  const clearStalePlan = useCallback(
+    (sessionDbId: number | undefined) => {
+      if (!sessionDbId) return;
+      setPlanApprovalError("Agent is no longer running. The plan approval has been cleared — resume the conversation to continue.");
+      clearPlanApprovalMutation.mutate(
+        { sessionDbId },
+        { onSuccess: () => void refetch() },
+      );
     },
-    [submitPlanApprovalMutation],
+    [clearPlanApprovalMutation, refetch],
+  );
+
+  const handlePlanApprove = useCallback(
+    (subprocessId: string | null | undefined, sessionDbId?: number) => {
+      if (!subprocessId) {
+        clearStalePlan(sessionDbId);
+        return;
+      }
+      setPlanApprovalError(null);
+      submitPlanApprovalMutation.mutate(
+        { subprocessId, approved: true },
+        {
+          onSuccess: (data) => {
+            if (!data.success) {
+              setPlanApprovalError(data.error ?? "Failed to approve plan.");
+              void refetch();
+            }
+          },
+          onError: () => {
+            setPlanApprovalError("Failed to communicate with the agent.");
+          },
+        },
+      );
+    },
+    [submitPlanApprovalMutation, clearStalePlan, refetch],
   );
 
   const handlePlanRequestChanges = useCallback(
-    (subprocessId: string | null | undefined, feedback: string) => {
-      if (!subprocessId) return;
-      submitPlanApprovalMutation.mutate({ subprocessId, approved: false, feedback });
+    (subprocessId: string | null | undefined, feedback: string, sessionDbId?: number) => {
+      if (!subprocessId) {
+        clearStalePlan(sessionDbId);
+        return;
+      }
+      setPlanApprovalError(null);
+      submitPlanApprovalMutation.mutate(
+        { subprocessId, approved: false, feedback },
+        {
+          onSuccess: (data) => {
+            if (!data.success) {
+              setPlanApprovalError(data.error ?? "Failed to send feedback.");
+              void refetch();
+            }
+          },
+          onError: () => {
+            setPlanApprovalError("Failed to communicate with the agent.");
+          },
+        },
+      );
     },
-    [submitPlanApprovalMutation],
+    [submitPlanApprovalMutation, clearStalePlan, refetch],
   );
 
   const handleAnswerSubmit = useCallback(
@@ -87,6 +138,7 @@ export function useAgentChat({ featureId, projectId, refetch }: UseAgentChatPara
     handlePlanRequestChanges,
     handleAnswerSubmit,
     resumeMutation,
+    planApprovalError,
   };
 }
 

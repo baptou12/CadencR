@@ -178,9 +178,9 @@ async function handleExitPlanMode(
       const timeout = setTimeout(
         () => {
           questionEmitter.removeAllListeners(`plan-approval:${managed.id}`);
-          reject(new Error("Plan approval timeout (15m)"));
+          reject(new Error("Plan approval timeout (5h)"));
         },
-        15 * 60 * 1000,
+        5 * 60 * 60 * 1000,
       );
 
       questionEmitter.once(
@@ -227,7 +227,7 @@ async function handleExitPlanMode(
       } catch (e) { console.warn("[tool-permissions] best-effort op failed:", e); }
     }
     console.error("[tool-permissions] Plan approval failed:", error);
-    return { behavior: "allow" as const, updatedInput: input };
+    return { behavior: "deny" as const, message: "Plan approval timed out or failed. Please re-submit the plan." };
   }
 }
 
@@ -371,12 +371,44 @@ export function submitUserAnswers(
 
 /**
  * Submit a plan approval or rejection for a pending ExitPlanMode tool call.
+ * Returns { success: true } if a listener was waiting, or { success: false, error } if not.
  */
 export function submitPlanApproval(
   subprocessId: string,
   approved: boolean,
   feedback?: string,
-): void {
+): { success: boolean; error?: string } {
+  // Check if anyone is actually listening for this approval
+  const eventName = `plan-approval:${subprocessId}`;
+  const hasListener = questionEmitter.listenerCount(eventName) > 0;
+
+  if (!hasListener) {
+    // Lazy import to avoid circular dependency (subprocess-manager imports tool-permissions)
+    let proc: unknown | undefined;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const sm = require("./subprocess-manager");
+      proc = sm.getActiveProcess(subprocessId);
+    } catch {
+      proc = undefined;
+    }
+    if (!proc) {
+      // Clear stale pending_plan_approval from DB
+      const sessionDbId = getSessionDbId(subprocessId);
+      if (sessionDbId) {
+        try {
+          const db = getDatabase();
+          db.prepare("UPDATE agent_sessions SET pending_plan_approval = NULL WHERE id = ?").run(sessionDbId);
+          const fid = getFeatureIdForSubprocess(subprocessId);
+          if (fid != null) notifyDbUpdated("agent_session", fid);
+        } catch { /* best-effort */ }
+      }
+      return { success: false, error: "Agent is no longer running. Please restart the agent to continue." };
+    }
+    // Process exists but no listener — could be a transient state, but still suspicious
+    return { success: false, error: "Agent is not waiting for plan approval. It may have timed out or been interrupted." };
+  }
+
   if (!approved && feedback) {
     const sessionDbId = getSessionDbId(subprocessId);
     if (sessionDbId) {
@@ -394,7 +426,8 @@ export function submitPlanApproval(
     }
   }
 
-  questionEmitter.emit(`plan-approval:${subprocessId}`, { approved, feedback });
+  questionEmitter.emit(eventName, { approved, feedback });
+  return { success: true };
 }
 
 // Helper — resolve feature ID for a subprocess (for DB notifications)

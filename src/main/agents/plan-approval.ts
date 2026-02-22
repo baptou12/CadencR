@@ -69,8 +69,8 @@ export async function waitForPlanApproval(
     const result = await new Promise<{ approved: boolean; feedback?: string }>((resolve, reject) => {
       const timeout = setTimeout(() => {
         questionEmitter.removeAllListeners(`plan-approval:${subprocessId}`);
-        reject(new Error("Plan approval timeout (15m)"));
-      }, 15 * 60 * 1000);
+        reject(new Error("Plan approval timeout (5h)"));
+      }, 5 * 60 * 60 * 1000);
 
       questionEmitter.once(
         `plan-approval:${subprocessId}`,

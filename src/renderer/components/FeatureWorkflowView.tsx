@@ -701,20 +701,18 @@ export function FeatureWorkflowView({
                           )
                         }
                         pendingPlanApproval={entry.pendingPlanApproval}
+                        planApprovalError={chat.planApprovalError}
                         planApproveLabel="Approve"
                         onPlanApprove={
-                          entry.subprocessId
-                            ? () => chat.handlePlanApprove(entry.subprocessId)
-                            : undefined
+                          () => chat.handlePlanApprove(entry.subprocessId, entry.sessionDbId)
                         }
                         onPlanRequestChanges={
-                          entry.subprocessId
-                            ? (feedback: string) =>
-                                chat.handlePlanRequestChanges(
-                                  entry.subprocessId,
-                                  feedback,
-                                )
-                            : undefined
+                          (feedback: string) =>
+                            chat.handlePlanRequestChanges(
+                              entry.subprocessId,
+                              feedback,
+                              entry.sessionDbId,
+                            )
                         }
                         className={
                           isGridItem

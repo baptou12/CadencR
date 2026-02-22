@@ -832,9 +832,9 @@ export function hasRunningSubprocesses(): boolean {
 export function saveAllSessionStates(): void {
   try {
     const db = getDatabase();
-    // Mark running sessions as paused and clear subprocess_id since the process is dead
+    // Mark running sessions as paused and clear subprocess_id + pending approvals since the process is dead
     db.prepare(
-      "UPDATE agent_sessions SET status = 'paused', ended_at = datetime('now'), subprocess_id = NULL WHERE status = 'running'",
+      "UPDATE agent_sessions SET status = 'paused', ended_at = datetime('now'), subprocess_id = NULL, pending_plan_approval = NULL WHERE status = 'running'",
     ).run();
     // Reset running phases — no subprocess can be executing them after shutdown
     db.prepare("UPDATE phases SET status = 'pending' WHERE status = 'running'").run();
