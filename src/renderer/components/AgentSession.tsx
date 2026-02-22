@@ -33,6 +33,8 @@ import { AgentStream } from "./AgentStream";
 import { AgentPromptBar, type AgentPromptBarHandle } from "./AgentPromptBar";
 import { AgentTodoList } from "./AgentTodoList";
 import { ContextUsageBar } from "./ContextUsageBar";
+import { BackgroundTasksBadge } from "./BackgroundTasksBadge";
+import { BackgroundTasksModal } from "./BackgroundTasksModal";
 import { ReviewVerdictActions } from "./ReviewVerdictActions";
 import {
   DropdownMenu,
@@ -42,6 +44,7 @@ import {
 } from "./ui/dropdown-menu";
 import type { AgentBlockData } from "./AgentBlock";
 import type { AgentType } from "../../main/agents/types";
+import { useBackgroundTasks } from "@/hooks/useBackgroundTasks";
 import type { AgentQuestion } from "./AgentQuestionDrawer";
 import type { TodoItem } from "@/hooks/useFeatureAgentState";
 import type { ContextUsageState } from "@/hooks/useContextUsage";
@@ -288,6 +291,9 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [promptBarFocused, setPromptBarFocused] = useState(false);
+  const [bgTasksOpen, setBgTasksOpen] = useState(false);
+  const { tasks: bgTasks, activeCount: bgActiveCount } = useBackgroundTasks(subprocessId);
+  const killBackgroundTask = trpc.agents.killBackgroundTask.useMutation();
   const availableModels = trpc.settings.getAvailableModels.useQuery();
   const models = useMemo(() => availableModels.data ?? [], [availableModels.data]);
 
@@ -531,8 +537,25 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
           </div>
         )}
 
-        {/* Context usage bar */}
-        <ContextUsageBar usage={contextUsage} />
+        {/* Context usage bar with background task badge */}
+        {(contextUsage || bgTasks.length > 0) && (
+          <div className="flex items-center px-3 py-1 gap-2">
+            <BackgroundTasksBadge
+              activeCount={bgActiveCount}
+              totalCount={bgTasks.length}
+              onClick={() => setBgTasksOpen(true)}
+            />
+            <ContextUsageBar usage={contextUsage} className="flex-1 px-0 py-0" />
+          </div>
+        )}
+        <BackgroundTasksModal
+          open={bgTasksOpen}
+          onOpenChange={setBgTasksOpen}
+          tasks={bgTasks}
+          onKillTask={(taskId, kind) =>
+            killBackgroundTask.mutate({ subprocessId: subprocessId!, taskId, kind })
+          }
+        />
       </div>
     );
   }
@@ -676,8 +699,25 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
               </div>
             )}
 
-            {/* Context usage bar */}
-            <ContextUsageBar usage={contextUsage} />
+            {/* Context usage bar with background task badge */}
+            {(contextUsage || bgTasks.length > 0) && (
+              <div className="flex items-center px-3 py-1 gap-2">
+                <BackgroundTasksBadge
+                  activeCount={bgActiveCount}
+                  totalCount={bgTasks.length}
+                  onClick={() => setBgTasksOpen(true)}
+                />
+                <ContextUsageBar usage={contextUsage} className="flex-1 px-0 py-0" />
+              </div>
+            )}
+            <BackgroundTasksModal
+              open={bgTasksOpen}
+              onOpenChange={setBgTasksOpen}
+              tasks={bgTasks}
+              onKillTask={(taskId, kind) =>
+                killBackgroundTask.mutate({ subprocessId: subprocessId!, taskId, kind })
+              }
+            />
           </div>
         </>
       )}
