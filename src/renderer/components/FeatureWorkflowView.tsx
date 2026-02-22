@@ -555,7 +555,7 @@ export function FeatureWorkflowView({
               actions.canStartBuild ||
               actions.canStartRisk ||
               actions.canStartReview) && (
-              <div className="flex flex-col gap-2 flex-1 min-h-0 px-6 py-2 overflow-y-auto">
+              <div className="flex flex-col gap-2 flex-1 min-h-0 px-6 py-2 overflow-hidden">
                 {(() => {
                   const activeEntries = wf.sessionEntries.filter(
                     (e) => e.status === "running" || e.status === "paused",
@@ -731,12 +731,10 @@ export function FeatureWorkflowView({
                       {inactiveEntries.length > 0 && (
                         <div
                           className={cn(
-                            "shrink-0 overflow-y-auto flex flex-col gap-2",
-                            activeCount > 3
-                              ? "max-h-[33%]"
-                              : activeCount > 0
-                                ? "max-h-[50%]"
-                                : undefined,
+                            "min-h-0 overflow-y-auto flex flex-col gap-2",
+                            activeCount > 0
+                              ? "shrink"
+                              : "shrink-0",
                           )}
                         >
                           {inactiveEntries.map((entry) => {
@@ -752,10 +750,10 @@ export function FeatureWorkflowView({
                           className={cn(
                             "flex-1 min-h-0 gap-2",
                             activeCount <= 3
-                              ? "min-h-[50%]"
-                              : "min-h-[67%]",
+                              ? "min-h-[66vh]"
+                              : "min-h-[75vh]",
                             useGrid
-                              ? "grid overflow-auto auto-rows-[minmax(300px,1fr)]"
+                              ? "grid auto-rows-[1fr]"
                               : "flex flex-col",
                             useGrid && activeCount === 2 && "grid-cols-2",
                             useGrid && activeCount >= 3 && "grid-cols-3",
