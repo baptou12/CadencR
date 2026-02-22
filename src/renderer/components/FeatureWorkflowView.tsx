@@ -29,6 +29,7 @@ import { useResolvedModel } from "@/hooks/useResolvedModel";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import { useTerminalState } from "@/hooks/useTerminalState";
 import { useAgentChat } from "@/hooks/useAgentChat";
+import { cn } from "@/lib/utils";
 
 export function FeatureWorkflowView({
   featureId,
@@ -118,7 +119,11 @@ export function FeatureWorkflowView({
 
   const handleStartReviewFixer = useCallback(
     (formattedComments: string) => {
-      startReviewFixer.mutate({ featureId, projectId, prompt: formattedComments });
+      startReviewFixer.mutate({
+        featureId,
+        projectId,
+        prompt: formattedComments,
+      });
     },
     [featureId, projectId, startReviewFixer],
   );
@@ -460,7 +465,8 @@ export function FeatureWorkflowView({
       e.preventDefault();
       const entry = getFocusedEntry();
       if (!entry) return;
-      if (entry.agentType !== "session" && entry.agentType !== "review-fixer") return;
+      if (entry.agentType !== "session" && entry.agentType !== "review-fixer")
+        return;
       if (entry.status !== "running" && entry.status !== "paused") return;
       wf.handleMarkSessionDone(entry.sessionDbId);
     },
@@ -534,7 +540,9 @@ export function FeatureWorkflowView({
                   description={description}
                   onDescriptionChange={setDescription}
                   onStartPlanning={(images) => wf.handleStartPlanning(images)}
-                  onStartBrainstorming={(images) => wf.handleStartBrainstorming(images)}
+                  onStartBrainstorming={(images) =>
+                    wf.handleStartBrainstorming(images)
+                  }
                   isStartingPlan={wf.isStartingPlan}
                   isStartingBrainstorm={wf.isStartingBrainstorm}
                 />
@@ -562,7 +570,9 @@ export function FeatureWorkflowView({
                     isGridItem: boolean,
                   ) => {
                     const label =
-                      (entry.agentType === "execute" || entry.agentType === "qa") && entry.phaseTitle
+                      (entry.agentType === "execute" ||
+                        entry.agentType === "qa") &&
+                      entry.phaseTitle
                         ? `${AGENT_LABELS[entry.agentType] ?? entry.agentType} - ${entry.phaseTitle}`
                         : (AGENT_LABELS[entry.agentType] ?? entry.agentType);
                     const sessionKey = `${entry.agentType}-${entry.sessionDbId}`;
@@ -601,17 +611,15 @@ export function FeatureWorkflowView({
                         }
                         disableShortcuts={agentsWithQuestions > 1}
                         onMarkDone={
-                          (entry.agentType === "session" || entry.agentType === "review-fixer") &&
+                          (entry.agentType === "session" ||
+                            entry.agentType === "review-fixer") &&
                           (entry.status === "running" ||
                             entry.status === "paused")
                             ? () => wf.handleMarkSessionDone(entry.sessionDbId)
                             : undefined
                         }
                         onAnswerSubmit={(response) =>
-                          wf.handleSessionQuestionResponse(
-                            entry,
-                            response,
-                          )
+                          wf.handleSessionQuestionResponse(entry, response)
                         }
                         onSend={(message, images) => {
                           if (
@@ -693,16 +701,18 @@ export function FeatureWorkflowView({
                         pendingPlanApproval={entry.pendingPlanApproval}
                         planApprovalError={chat.planApprovalError}
                         planApproveLabel="Approve"
-                        onPlanApprove={
-                          () => chat.handlePlanApprove(entry.subprocessId, entry.sessionDbId)
+                        onPlanApprove={() =>
+                          chat.handlePlanApprove(
+                            entry.subprocessId,
+                            entry.sessionDbId,
+                          )
                         }
-                        onPlanRequestChanges={
-                          (feedback: string) =>
-                            chat.handlePlanRequestChanges(
-                              entry.subprocessId,
-                              feedback,
-                              entry.sessionDbId,
-                            )
+                        onPlanRequestChanges={(feedback: string) =>
+                          chat.handlePlanRequestChanges(
+                            entry.subprocessId,
+                            feedback,
+                            entry.sessionDbId,
+                          )
                         }
                         className={
                           isGridItem
@@ -713,12 +723,43 @@ export function FeatureWorkflowView({
                     );
                   };
 
+                  const activeEntries = wf.sessionEntries.filter(
+                    (e) => e.status === "running" || e.status === "paused",
+                  );
+                  const inactiveEntries = wf.sessionEntries.filter(
+                    (e) => e.status !== "running" && e.status !== "paused",
+                  );
+                  const useGrid = activeEntries.length >= 2;
+
                   return (
                     <>
-                      {wf.sessionEntries.map((entry) => {
+                      {/* Inactive agents stacked vertically */}
+                      {inactiveEntries.map((entry) => {
                         const idx = wf.sessionEntries.indexOf(entry);
                         return renderAgent(entry, idx, false);
                       })}
+
+                      {/* Active agents side-by-side in a grid when multiple are running */}
+                      {useGrid ? (
+                        <div
+                          className={cn(
+                            "grid gap-2 min-h-0",
+                            activeEntries.length === 2 && "grid-cols-2",
+                            activeEntries.length >= 3 && "grid-cols-3",
+                          )}
+                          style={{ flex: "1 1 0", minHeight: 0 }}
+                        >
+                          {activeEntries.map((entry) => {
+                            const idx = wf.sessionEntries.indexOf(entry);
+                            return renderAgent(entry, idx, true);
+                          })}
+                        </div>
+                      ) : (
+                        activeEntries.map((entry) => {
+                          const idx = wf.sessionEntries.indexOf(entry);
+                          return renderAgent(entry, idx, false);
+                        })
+                      )}
                     </>
                   );
                 })()}
