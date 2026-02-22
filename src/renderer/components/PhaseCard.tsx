@@ -31,10 +31,10 @@ export function PhaseCard({ phase, displayNumber, onExpand, canReset, onReset }:
 
   return (
     <div
-      className="flex flex-col gap-0.5 rounded-lg px-3 py-2 cursor-pointer hover:bg-muted"
+      className="flex flex-col gap-0.5 rounded-lg px-3 py-2 cursor-pointer hover:bg-muted min-w-0"
       onClick={() => onExpand(phase)}
     >
-      <div className="flex items-center gap-2 min-w-0">
+      <div className="flex items-center gap-2 min-w-0 flex-wrap">
         <StatusIcon className={cn("size-4 shrink-0", config.className)} />
         <span className="text-xs font-medium text-muted-foreground shrink-0">
           Phase {displayNumber}
@@ -74,9 +74,9 @@ export function PhaseCard({ phase, displayNumber, onExpand, canReset, onReset }:
           </button>
         )}
       </div>
-      <h4 className="text-sm font-semibold leading-snug pl-6" title={phase.title}>
+      <p className="text-sm font-medium leading-snug pl-6 break-words" title={phase.title}>
         {phase.title}
-      </h4>
+      </p>
     </div>
   );
 }

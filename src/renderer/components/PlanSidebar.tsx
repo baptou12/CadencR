@@ -138,7 +138,7 @@ export function PlanSidebar({ featureId }: PlanSidebarProps) {
           <h3 className="text-sm font-semibold text-foreground">{plan.title}</h3>
         </div>
         <ScrollArea className="flex-1 min-h-0">
-          <div className="flex flex-col gap-0.5 px-4 py-2">
+          <div className="flex flex-col gap-0.5 px-4 py-2 overflow-hidden">
             {(() => {
               const grouped: Record<number, { phase: PhaseData; index: number }[]> = {};
               plan.phases.forEach((phase, index) => {
