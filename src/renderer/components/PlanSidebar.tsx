@@ -126,7 +126,7 @@ export function PlanSidebar({ featureId }: PlanSidebarProps) {
         ref={containerRef}
         data-focus-zone="right-sidebar"
         tabIndex={0}
-        className="flex h-full w-80 shrink-0 flex-col border-l border-border outline-none"
+        className="flex h-full w-80 shrink-0 flex-col outline-none"
         onFocus={(e) => {
           if (e.target === e.currentTarget && !e.currentTarget.matches(":active")) {
             const firstItem = e.currentTarget.querySelector("[data-nav-item]") as HTMLElement | null;
@@ -134,28 +134,45 @@ export function PlanSidebar({ featureId }: PlanSidebarProps) {
           }
         }}
       >
-        <div className="flex items-center border-b border-border px-4 py-3">
+        <div className="flex items-center px-4 py-3">
           <h3 className="text-sm font-semibold text-foreground">{plan.title}</h3>
         </div>
         <ScrollArea className="flex-1 min-h-0">
-          <div className="flex flex-col gap-3 p-3">
-            {plan.phases.map((phase, index) => (
-              <div
-                key={phase.id}
-                data-nav-item
-                data-nav-phase-index={index}
-                tabIndex={-1}
-                className="rounded-lg outline-none"
-              >
-                <PhaseCard
-                  phase={phase}
-                  displayNumber={index + 1}
-                  onExpand={setExpandedPhase}
-                  canReset={canResetPhase(phase, index)}
-                  onReset={handleResetPhase}
-                />
-              </div>
-            ))}
+          <div className="flex flex-col gap-0.5 px-4 py-2">
+            {(() => {
+              const grouped: Record<number, { phase: PhaseData; index: number }[]> = {};
+              plan.phases.forEach((phase, index) => {
+                const step = phase.step_number;
+                if (!grouped[step]) grouped[step] = [];
+                grouped[step].push({ phase, index });
+              });
+              return Object.entries(grouped).map(([stepNum, phases]) => (
+                <div key={stepNum}>
+                  <div className="flex items-center gap-1.5 px-2 py-1 text-xs text-muted-foreground">
+                    <span className="flex-1 border-t border-border/50" />
+                    <span className="shrink-0">Step {stepNum}</span>
+                    <span className="flex-1 border-t border-border/50" />
+                  </div>
+                  {phases.map(({ phase, index }) => (
+                    <div
+                      key={phase.id}
+                      data-nav-item
+                      data-nav-phase-index={index}
+                      tabIndex={-1}
+                      className="rounded-lg outline-none"
+                    >
+                      <PhaseCard
+                        phase={phase}
+                        displayNumber={index + 1}
+                        onExpand={setExpandedPhase}
+                        canReset={canResetPhase(phase, index)}
+                        onReset={handleResetPhase}
+                      />
+                    </div>
+                  ))}
+                </div>
+              ));
+            })()}
           </div>
         </ScrollArea>
       </div>

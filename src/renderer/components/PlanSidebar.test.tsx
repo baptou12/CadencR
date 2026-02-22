@@ -66,7 +66,7 @@ describe("PlanSidebar", () => {
 
   it("expands phase on expand click", async () => {
     const { user } = render(<PlanSidebar featureId={1} />);
-    await user.click(screen.getAllByTitle("Expand phase")[0]);
+    await user.click(screen.getByText("Phase Alpha"));
     expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 });

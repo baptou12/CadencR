@@ -72,7 +72,7 @@ describe("PhaseCard", () => {
     const { user } = render(
       <PhaseCard phase={phase} displayNumber={1} onExpand={onExpand} />
     );
-    await user.click(screen.getByTitle("Expand phase"));
+    await user.click(screen.getByText("Test Phase"));
     expect(onExpand).toHaveBeenCalledWith(phase);
   });
 
