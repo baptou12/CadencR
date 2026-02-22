@@ -124,11 +124,10 @@ export function useWorkflowAgents({
 
   // --- Generic question response handler (works for ANY agent type) ---
   const handleSessionQuestionResponse = useCallback(
-    (sessionDbId: number, response: string) => {
-      const session = sessions.find((s) => s.sessionDbId === sessionDbId);
-      questionResponse(session, response);
+    (entry: FeatureSession, response: string) => {
+      questionResponse(entry, response);
     },
-    [sessions, questionResponse],
+    [questionResponse],
   );
 
   // --- handleAddFixPhase wrapper (bind review blocks) ---

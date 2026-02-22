@@ -619,7 +619,7 @@ export function FeatureWorkflowView({
                         }
                         onAnswerSubmit={(response) =>
                           wf.handleSessionQuestionResponse(
-                            entry.sessionDbId,
+                            entry,
                             response,
                           )
                         }
