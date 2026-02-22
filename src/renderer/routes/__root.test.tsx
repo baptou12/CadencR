@@ -8,12 +8,14 @@ const mocks = vi.hoisted(() => {
   const mockCreateFeatureMutation = vi.fn(() => ({ mutate: vi.fn(), isLoading: false }));
   const mockCreateSessionMutation = vi.fn(() => ({ mutate: vi.fn(), isLoading: false }));
   const mockDeleteFeatureMutation = vi.fn(() => ({ mutate: vi.fn() }));
+  const mockUpdateStatusMutation = vi.fn(() => ({ mutate: vi.fn() }));
   return {
     mockNavigate,
     mockStopAllMutation,
     mockCreateFeatureMutation,
     mockCreateSessionMutation,
     mockDeleteFeatureMutation,
+    mockUpdateStatusMutation,
   };
 });
 
@@ -80,6 +82,7 @@ vi.mock("@/trpc", () => {
         create: { useMutation: mocks.mockCreateFeatureMutation },
         createSession: { useMutation: mocks.mockCreateSessionMutation },
         delete: { useMutation: mocks.mockDeleteFeatureMutation },
+        updateStatus: { useMutation: mocks.mockUpdateStatusMutation },
       },
     },
   };

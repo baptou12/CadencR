@@ -112,6 +112,7 @@ export const featuresRouter = router({
     db.prepare("DELETE FROM agent_sessions WHERE feature_id = ?").run(input.id);
     db.prepare("DELETE FROM feature_settings WHERE feature_id = ?").run(input.id);
     db.prepare("DELETE FROM diff_comments WHERE feature_id = ?").run(input.id);
+    db.prepare("DELETE FROM diff_viewed_files WHERE feature_id = ?").run(input.id);
     db.prepare("DELETE FROM features WHERE id = ?").run(input.id);
     return { success: true };
   }),

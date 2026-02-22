@@ -20,6 +20,7 @@ import { getActiveFocusZone } from "@/lib/focus-zones";
 import { CommandPalette } from "@/components/CommandPalette";
 import { FocusRing } from "@/components/FocusRing";
 import { KeyboardShortcutsModal } from "@/components/KeyboardShortcutsModal";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 const ZONE_ORDER = ["left-sidebar", "main-content", "terminal", "right-sidebar"] as const;
 
@@ -130,6 +131,29 @@ function RootLayout() {
     },
   });
 
+  const archiveNavTargetRef = useRef<number | null>(null);
+  const archiveFeatureMutation = trpc.features.updateStatus.useMutation({
+    onSuccess: () => {
+      invalidateFeatures();
+      if (activeProjectId == null) return;
+      const targetId = archiveNavTargetRef.current;
+      archiveNavTargetRef.current = null;
+      if (targetId != null) {
+        void navigate({
+          to: "/projects/$projectId/features/$featureId",
+          params: {
+            projectId: String(activeProjectId),
+            featureId: String(targetId),
+          },
+        });
+      } else {
+        void navigate({ to: "/" });
+      }
+    },
+  });
+
+  const [confirmAction, setConfirmAction] = useState<"archive" | "delete" | null>(null);
+
   // CMD+, -> navigate to settings
   useHotkeys(
     "meta+comma",
@@ -221,25 +245,30 @@ function RootLayout() {
     { enableOnFormTags: true },
   );
 
-  // CMD+SHIFT+X -> delete currently opened feature, navigate to feature above
+  // CMD+SHIFT+X -> archive or delete currently opened feature
   useHotkeys(
     "meta+shift+x",
     async (e) => {
       e.preventDefault();
       if (activeProjectId == null || activeFeatureId == null) return;
-      const confirmed = window.confirm("Delete this feature? This cannot be undone.");
-      if (!confirmed) return;
-      // Navigate to the feature above, or the first remaining feature, or project root
       try {
         const features = await utils.features.listByProject.fetch({ project_id: activeProjectId });
+        const feature = features.find((f: { id: number }) => f.id === activeFeatureId);
+        if (!feature) return;
+        // Pre-compute navigation target
         const idx = features.findIndex((f: { id: number }) => f.id === activeFeatureId);
         const remaining = features.filter((f: { id: number }) => f.id !== activeFeatureId);
         const target = idx > 0 ? features[idx - 1] : remaining[0] ?? null;
-        deleteNavTargetRef.current = target?.id ?? null;
+        if (feature.status === "archived") {
+          deleteNavTargetRef.current = target?.id ?? null;
+          setConfirmAction("delete");
+        } else {
+          archiveNavTargetRef.current = target?.id ?? null;
+          setConfirmAction("archive");
+        }
       } catch {
-        deleteNavTargetRef.current = null;
+        // ignore fetch errors
       }
-      deleteFeatureMutation.mutate({ id: activeFeatureId });
     },
     { enableOnFormTags: true },
   );
@@ -318,6 +347,22 @@ function RootLayout() {
       />
       <KeyboardShortcutsModal open={shortcutsHelpOpen} onOpenChange={setShortcutsHelpOpen} />
       <FocusRing />
+      <ConfirmDialog
+        open={confirmAction != null}
+        onOpenChange={(open) => { if (!open) setConfirmAction(null); }}
+        title={confirmAction === "delete" ? "Delete feature?" : "Archive feature?"}
+        description={confirmAction === "delete" ? "This cannot be undone." : undefined}
+        confirmText={confirmAction === "delete" ? "Delete" : "Archive"}
+        variant={confirmAction === "delete" ? "destructive" : "default"}
+        onConfirm={() => {
+          if (activeFeatureId == null) return;
+          if (confirmAction === "delete") {
+            deleteFeatureMutation.mutate({ id: activeFeatureId });
+          } else {
+            archiveFeatureMutation.mutate({ id: activeFeatureId, status: "archived" });
+          }
+        }}
+      />
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { TrashIcon, BotIcon, MessageCircleQuestionIcon, ChevronRightIcon, ChevronDownIcon } from "lucide-react";
+import { TrashIcon, ArchiveIcon, BotIcon, MessageCircleQuestionIcon, ChevronRightIcon, ChevronDownIcon } from "lucide-react";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { trpc } from "@/trpc";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -37,6 +38,7 @@ export function ProjectFeatures({
   const navigate = useNavigate();
   const utils = trpc.useUtils();
   const [showArchived, setShowArchived] = useState(false);
+  const [confirmFeatureId, setConfirmFeatureId] = useState<number | null>(null);
   const { data: features = [] } = trpc.features.listByProject.useQuery({
     project_id: projectId,
   });
@@ -169,20 +171,44 @@ export function ProjectFeatures({
             className="size-6 shrink-0 p-0 text-muted-foreground hover:text-foreground opacity-0 group-hover/feature:opacity-100"
             onClick={(e) => {
               e.stopPropagation();
-              deleteMutation.mutate({ id: feature.id });
+              setConfirmFeatureId(feature.id);
             }}
           >
-            <TrashIcon className="size-3.5" />
-            <span className="sr-only">Delete</span>
+            {feature.status === "archived" ? (
+              <TrashIcon className="size-3.5" />
+            ) : (
+              <ArchiveIcon className="size-3.5" />
+            )}
+            <span className="sr-only">{feature.status === "archived" ? "Delete" : "Archive"}</span>
           </Button>
         </div>
       </div>
     );
   };
 
+  const confirmFeature = features.find((f) => f.id === confirmFeatureId);
+  const isConfirmDelete = confirmFeature?.status === "archived";
+
   return (
     <div className="flex flex-col gap-0.5">
       {activeFeatures.map(renderFeature)}
+
+      <ConfirmDialog
+        open={confirmFeatureId != null}
+        onOpenChange={(open) => { if (!open) setConfirmFeatureId(null); }}
+        title={isConfirmDelete ? "Delete feature?" : "Archive feature?"}
+        description={isConfirmDelete ? "This cannot be undone." : undefined}
+        confirmText={isConfirmDelete ? "Delete" : "Archive"}
+        variant={isConfirmDelete ? "destructive" : "default"}
+        onConfirm={() => {
+          if (confirmFeatureId == null) return;
+          if (isConfirmDelete) {
+            deleteMutation.mutate({ id: confirmFeatureId });
+          } else {
+            updateStatusMutation.mutate({ id: confirmFeatureId, status: "archived" as FeatureStatus });
+          }
+        }}
+      />
 
       {archivedFeatures.length > 0 && (
         <>
