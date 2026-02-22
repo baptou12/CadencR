@@ -14,14 +14,20 @@ function getBarColor(ratio: number): string {
   return "bg-emerald-500";
 }
 
-export function ContextUsageBar({ usage }: { usage: ContextUsageState | null | undefined }) {
+export function ContextUsageBar({
+  usage,
+  className,
+}: {
+  usage: ContextUsageState | null | undefined;
+  className?: string;
+}) {
   if (!usage) return null;
 
   const color = getBarColor(usage.usageRatio);
   const hasUsage = usage.totalTokens > 0;
 
   return (
-    <div className="flex items-center gap-2 px-3 py-1">
+    <div className={cn("flex items-center gap-2 px-3 py-1", className)}>
       <div className="h-[2px] flex-1 rounded-full bg-muted">
         {hasUsage && (
           <div

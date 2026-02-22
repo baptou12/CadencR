@@ -9,6 +9,10 @@ vi.mock("react-hotkeys-hook", () => ({
 }));
 
 // Mock hooks to avoid cascading tRPC dependencies
+vi.mock("@/hooks/useBackgroundTasks", () => ({
+  useBackgroundTasks: vi.fn(() => ({ tasks: [], activeCount: 0 })),
+}));
+
 vi.mock("@/hooks/usePromptDraft", () => ({
   usePromptDraft: vi.fn(() => ({ saveDraft: vi.fn() })),
 }));
@@ -82,6 +86,12 @@ vi.mock("@/trpc", () => {
       agents: {
         getSupportedCommands: {
           useQuery: vi.fn(() => ({ data: undefined })),
+        },
+        getBackgroundTasks: {
+          useQuery: vi.fn(() => ({ data: [] })),
+        },
+        killBackgroundTask: {
+          useMutation: vi.fn(() => ({ mutate: vi.fn() })),
         },
       },
     },

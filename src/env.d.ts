@@ -23,5 +23,7 @@ interface Window {
     offTerminalData: (listener?: (...args: unknown[]) => void) => void;
     onTerminalExit: (callback: (data: { ptyId: string; exitCode: number; signal?: number }) => void) => (...args: unknown[]) => void;
     offTerminalExit: (listener?: (...args: unknown[]) => void) => void;
+    onBackgroundTasks: (callback: (data: unknown) => void) => (...args: unknown[]) => void;
+    offBackgroundTasks: (listener?: (...args: unknown[]) => void) => void;
   };
 }

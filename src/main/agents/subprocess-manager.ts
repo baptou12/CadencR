@@ -5,6 +5,7 @@ import { transitionAgentSession } from "./state-transitions";
 import { DEFAULT_MODEL, resolveModel } from "./models";
 import { loadAllowedPatterns } from "./permissions";
 import { broadcast, AGENT_EVENT_CHANNEL } from "./broadcast";
+import { addBackgroundTask, updateBackgroundTask, clearBackgroundTasks } from "./background-tasks";
 import { getSdkClient } from "./sdk-client";
 import { createCanUseToolHandler } from "./tool-permissions";
 import type { AgentEvent, AgentType, MessageContent, StreamEvent } from "./types";
@@ -258,6 +259,33 @@ function handleSdkMessage(
               } catch (e) { console.warn("[subprocess-manager] best-effort op failed:", e); }
             }
 
+            // Detect background Bash tasks
+            if (toolName === "Bash" && toolInput.run_in_background === true) {
+              const tempId = block.id as string;
+              addBackgroundTask(id, {
+                id: tempId,
+                tempId,
+                subprocessId: id,
+                kind: "bash",
+                status: "running",
+                command: typeof toolInput.command === "string" ? toolInput.command : undefined,
+                spawnedAt: Date.now(),
+              });
+            }
+
+            // Detect background Task (agent) spawns
+            if (toolName === "Task" && toolInput.run_in_background === true) {
+              const tempId = block.id as string;
+              addBackgroundTask(id, {
+                id: tempId,
+                tempId,
+                subprocessId: id,
+                kind: "agent",
+                status: "running",
+                spawnedAt: Date.now(),
+              });
+            }
+
             const event: StreamEvent = {
               type: "content_block_start",
               index: i,
@@ -301,6 +329,19 @@ function handleSdkMessage(
               is_error: (block.is_error as boolean) ?? false,
             };
             if (sessionDbId) persistStreamEvent(sessionDbId, toolResultEvent, parentToolUseId);
+
+            // Extract real task IDs from background task tool_results
+            const toolUseId = block.tool_use_id as string | undefined;
+            if (toolUseId && resultContent) {
+              // Try to parse shell_id from Bash background task result
+              const shellIdMatch = resultContent.match(/"?shell_?[Ii][Dd]"?\s*[:=]\s*"?([^",}\s]+)"?/);
+              const taskIdMatch = resultContent.match(/"?task_?[Ii][Dd]"?\s*[:=]\s*"?([^",}\s]+)"?/);
+              if (shellIdMatch?.[1]) {
+                updateBackgroundTask(id, toolUseId, { id: shellIdMatch[1] });
+              } else if (taskIdMatch?.[1]) {
+                updateBackgroundTask(id, toolUseId, { id: taskIdMatch[1] });
+              }
+            }
           }
         }
         // Throttled DB notification for user tool results
@@ -356,8 +397,28 @@ function handleSdkMessage(
         persistClaudeSessionId(sDbId, msg.session_id);
       }
     }
-    // Track compaction events
+    // Track compaction events and task notifications
     const subtype = (msg.subtype as string) ?? "unknown";
+
+    // SDKTaskNotificationMessage — background agent task completed/failed/stopped
+    if (subtype === "task_notification") {
+      const taskId = msg.task_id as string | undefined;
+      const taskStatus = msg.status as string | undefined;
+      const taskSummary = msg.summary as string | undefined;
+      const outputFile = msg.output_file as string | undefined;
+      if (taskId) {
+        const update: Partial<import("./background-tasks").BackgroundTask> = {
+          status: (taskStatus === "completed" || taskStatus === "failed" || taskStatus === "stopped")
+            ? taskStatus
+            : "completed",
+          completedAt: Date.now(),
+        };
+        if (taskSummary) update.summary = taskSummary;
+        if (outputFile) update.outputFile = outputFile;
+        updateBackgroundTask(id, taskId, update);
+      }
+    }
+
     if (subtype === "compact_boundary" && sessionDbId) {
       try {
         const db2 = getDatabase();
@@ -666,6 +727,8 @@ async function runSdkQuery(
   } finally {
     if (managed.status !== "paused") {
       messageStream.close();
+      // Clear in-memory background tasks for this subprocess
+      clearBackgroundTasks(managed.id);
     }
   }
 }
