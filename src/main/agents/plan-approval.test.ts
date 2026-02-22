@@ -125,6 +125,39 @@ describe("waitForPlanApproval", () => {
     expect(clearCalls.length).toBeGreaterThan(0);
   });
 
+  it("returns stored approval result immediately without waiting for eventEmitter", async () => {
+    const mockPrepare = vi.fn().mockImplementation((sql: string) => {
+      if (sql.includes("plan_approval_result") && sql.includes("SELECT")) {
+        return { get: () => ({ plan_approval_result: JSON.stringify({ approved: true, feedback: undefined }) }) };
+      }
+      if (sql.includes("UPDATE")) {
+        return { run: vi.fn() };
+      }
+      if (sql.includes("feature_id")) {
+        return { get: () => ({ feature_id: 5 }) };
+      }
+      return { get: vi.fn(), run: vi.fn(), all: vi.fn().mockReturnValue([]) };
+    });
+    (getDatabase as any).mockReturnValue({ prepare: mockPrepare });
+
+    const result = await waitForPlanApproval("proc-stored", "## Plan");
+
+    expect(result.approved).toBe(true);
+  });
+
+  it("does not check stored result when no session exists", async () => {
+    (sessionPersistence.getSessionDbId as any).mockReturnValue(undefined);
+
+    const promise = waitForPlanApproval("proc-no-stored", "## Plan");
+
+    process.nextTick(() => {
+      mockQuestionEmitter.emit("plan-approval:proc-no-stored", { approved: true });
+    });
+
+    const result = await promise;
+    expect(result.approved).toBe(true);
+  });
+
   it("works when no session exists for subprocess", async () => {
     (sessionPersistence.getSessionDbId as any).mockReturnValue(undefined);
 

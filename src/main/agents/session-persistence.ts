@@ -229,8 +229,9 @@ export function restoreSessionMap(): void {
     if (staleSessions.length > 0) {
       console.log(`[startup-cleanup] Resetting ${staleSessions.length} running sessions to paused:`, staleSessions.map((s) => `session ${s.id} (${s.agent_type}, feature ${s.feature_id}, phase ${s.phase_id})`).join(", "));
     }
+    // Preserve pending_plan_approval so the approval bar still shows after restart.
     db.prepare(
-      "UPDATE agent_sessions SET status = 'paused', subprocess_id = NULL, pending_plan_approval = NULL WHERE status = 'running'",
+      "UPDATE agent_sessions SET status = 'paused', subprocess_id = NULL WHERE status = 'running'",
     ).run();
     // Re-populate session map for paused sessions with subprocess_id (for event routing)
     const rows = db

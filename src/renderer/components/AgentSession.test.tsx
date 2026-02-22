@@ -275,4 +275,69 @@ describe("AgentSession", () => {
     );
     expect(screen.getByText("Tasks")).toBeInTheDocument();
   });
+
+  it("shows prompt bar for completed plan agent when pendingPlanApproval is set", () => {
+    render(
+      <AgentSession
+        agentType="plan"
+        blocks={[makeBlock("1", "Plan output")]}
+        status="completed"
+        onSend={onSend}
+        onStop={onStop}
+        collapsible
+        pendingPlanApproval={{ allowedPrompts: [] }}
+        onPlanApprove={vi.fn()}
+        onPlanRequestChanges={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("button", { name: /approve/i })).toBeInTheDocument();
+  });
+
+  it("shows prompt bar for completed brainstorm agent when pendingPlanApproval is set", () => {
+    render(
+      <AgentSession
+        agentType="brainstorm"
+        blocks={[makeBlock("1", "Brainstorm output")]}
+        status="completed"
+        onSend={onSend}
+        onStop={onStop}
+        collapsible
+        pendingPlanApproval={{ allowedPrompts: [] }}
+        onPlanApprove={vi.fn()}
+        onPlanRequestChanges={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("button", { name: /approve/i })).toBeInTheDocument();
+  });
+
+  it("hides prompt bar for completed plan agent when NO pendingPlanApproval", () => {
+    render(
+      <AgentSession
+        agentType="plan"
+        blocks={[makeBlock("1", "Plan output")]}
+        status="completed"
+        onSend={onSend}
+        onStop={onStop}
+        collapsible
+      />,
+    );
+    expect(screen.queryByText("Plan ready for review")).toBeNull();
+  });
+
+  it("shows prompt bar when agent is paused with pendingPlanApproval", () => {
+    render(
+      <AgentSession
+        agentType="plan"
+        blocks={[makeBlock("1", "Plan output")]}
+        status="paused"
+        onSend={onSend}
+        onStop={onStop}
+        collapsible
+        pendingPlanApproval={{ allowedPrompts: [] }}
+        onPlanApprove={vi.fn()}
+        onPlanRequestChanges={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("button", { name: /approve/i })).toBeInTheDocument();
+  });
 });

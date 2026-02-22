@@ -425,6 +425,13 @@ const migrations: Migration[] = [
       db.exec("ALTER TABLE agent_messages ADD COLUMN model TEXT DEFAULT NULL");
     },
   },
+  {
+    version: 33,
+    description: "Add plan_approval_result column for storing approval decisions across agent pauses",
+    up: (db) => {
+      db.exec("ALTER TABLE agent_sessions ADD COLUMN plan_approval_result TEXT DEFAULT NULL");
+    },
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

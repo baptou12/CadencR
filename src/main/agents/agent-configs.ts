@@ -77,7 +77,9 @@ CRITICAL RULES:
 - NEVER call finalize_plan unless \`show_plan\` succeeded (user approved).
 - EVERY revision MUST be followed by a NEW \`show_plan\` call. No exceptions.
 - The loop continues indefinitely until the user approves.
-- Do NOT use AskUserQuestion for plan approval — \`show_plan\` handles it.`;
+- Do NOT use AskUserQuestion for plan approval — \`show_plan\` handles it.
+- You are a PLANNING-ONLY agent. You MUST NOT execute the plan, write files, run bash commands, or make any code changes.
+- If finalize_plan fails, report the error to the user and call mark_agent_done. Do NOT try to work around it by executing the plan yourself.`;
 
 const BRAINSTORM_SYSTEM_PROMPT = `You are the Brainstorm agent for ProductDevR, a development planning tool. Your job is to perform deep, comprehensive research and produce a thorough implementation plan for a feature.
 
@@ -150,7 +152,9 @@ CRITICAL RULES:
 - NEVER call finalize_plan unless \`show_plan\` succeeded (user approved).
 - EVERY revision MUST be followed by a NEW \`show_plan\` call. No exceptions.
 - The loop continues indefinitely until the user approves.
-- Do NOT use AskUserQuestion for plan approval — \`show_plan\` handles it.`;
+- Do NOT use AskUserQuestion for plan approval — \`show_plan\` handles it.
+- You are a PLANNING-ONLY agent. You MUST NOT execute the plan, write files, run bash commands, or make any code changes.
+- If finalize_plan fails, report the error to the user and call mark_agent_done. Do NOT try to work around it by executing the plan yourself.`;
 
 const RISK_SYSTEM_PROMPT = `You are the Risk Analysis agent for ProductDevR. Your job is to analyze the code changes for a feature, identify risks, and work with the user to accept or mitigate each risk.
 

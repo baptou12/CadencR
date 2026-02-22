@@ -60,6 +60,20 @@ describe("createPlanConfig", () => {
     expect(createPlanMcpServer).toHaveBeenCalledWith(10, 1, 5, expect.any(Function));
   });
 
+  it("system prompt includes planning-only restriction", () => {
+    const config = createPlanConfig({
+      featureId: 1,
+      projectId: 2,
+      cwd: "/cwd",
+      description: "Feature",
+      planId: 10,
+    });
+
+    expect(config.systemPrompt).toContain("PLANNING-ONLY agent");
+    expect(config.systemPrompt).toContain("MUST NOT execute the plan");
+    expect(config.systemPrompt).toContain("MUST NOT");
+  });
+
   it("includes planId in the prompt", () => {
     const config = createPlanConfig({
       featureId: 1,
@@ -85,6 +99,20 @@ describe("createBrainstormConfig", () => {
 
     expect(config.agentType).toBe("brainstorm");
     expect(config.systemPrompt).toContain("Brainstorm agent");
+  });
+
+  it("system prompt includes planning-only restriction", () => {
+    const config = createBrainstormConfig({
+      featureId: 1,
+      projectId: 2,
+      cwd: "/cwd",
+      description: "Feature",
+      planId: 20,
+    });
+
+    expect(config.systemPrompt).toContain("PLANNING-ONLY agent");
+    expect(config.systemPrompt).toContain("MUST NOT execute the plan");
+    expect(config.systemPrompt).toContain("finalize_plan fails");
   });
 
   it("has a completion action for fallback", () => {

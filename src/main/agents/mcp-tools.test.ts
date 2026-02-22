@@ -198,6 +198,7 @@ describe("createPlanMcpServer", () => {
     it("calls onShowPlan callback and returns approved message", async () => {
       db.prepare.mockImplementation((sql: string) => {
         if (sql.includes("FROM plans")) return { get: vi.fn().mockReturnValue({ id: 1, title: "T", summary: null, context: null, clarifications: null, completion_conditions: null }) };
+        if (sql.includes("UPDATE plans")) return { run: vi.fn() };
         return { all: vi.fn().mockReturnValue([]) };
       });
 
@@ -265,11 +266,20 @@ describe("createPlanMcpServer", () => {
     });
 
     it("finalizes plan after approval", async () => {
-      // First approve via show_plan
+      // First approve via show_plan, then finalize
       const planId = 555;
+      let planStatus = "draft";
 
       db.prepare.mockImplementation((sql: string) => {
-        if (sql.includes("FROM plans WHERE id")) return { get: vi.fn().mockReturnValue({ id: planId, title: "T", summary: null, context: null, clarifications: null, completion_conditions: null, feature_id: 10 }) };
+        if (sql.includes("FROM plans WHERE id")) {
+          return { get: vi.fn().mockImplementation(() => ({
+            id: planId, title: "T", summary: null, context: null, clarifications: null,
+            completion_conditions: null, feature_id: 10, plan_status: planStatus,
+          })) };
+        }
+        if (sql.includes("UPDATE plans SET status = 'approved'")) {
+          return { run: vi.fn().mockImplementation(() => { planStatus = "approved"; }) };
+        }
         if (sql.includes("COUNT(*)")) return { get: vi.fn().mockReturnValue({ cnt: 3 }) };
         return { get: vi.fn(), all: vi.fn().mockReturnValue([]), run: vi.fn() };
       });
@@ -291,6 +301,22 @@ describe("createPlanMcpServer", () => {
       expect(result.content[0].text).toContain("finalized");
       expect(mockTransitionFeature).toHaveBeenCalledWith(db, 10, "planned");
       expect(mockNotify).toHaveBeenCalledWith("phase", 10);
+    });
+    it("rejects finalize when plan status is not 'approved' (DB-persisted approval)", async () => {
+      db.prepare.mockImplementation((sql: string) => {
+        if (sql.includes("FROM plans WHERE id")) {
+          return { get: vi.fn().mockReturnValue({ id: 1, feature_id: 10, plan_status: "draft" }) };
+        }
+        if (sql.includes("COUNT(*)")) return { get: vi.fn().mockReturnValue({ cnt: 3 }) };
+        return { get: vi.fn(), all: vi.fn().mockReturnValue([]), run: vi.fn() };
+      });
+
+      const server = createPlanMcpServer(1, 10, 100);
+      const handler = getToolHandler(server, "finalize_plan");
+      const result = await handler({ plan_id: 1 }) as any;
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("not been approved");
     });
   });
 

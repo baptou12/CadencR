@@ -160,6 +160,34 @@ async function handleExitPlanMode(
 ): Promise<CanUseToolResult> {
   const sDbId = getSessionDbId(managed.id);
   let featureIdForNotify: number | null = null;
+
+  // Check for a stored approval result (set when user approved while agent was paused/completed)
+  if (sDbId) {
+    try {
+      const db2 = getDatabase();
+      const stored = db2.prepare("SELECT plan_approval_result FROM agent_sessions WHERE id = ?").get(sDbId) as { plan_approval_result: string | null } | undefined;
+      if (stored?.plan_approval_result) {
+        const result = JSON.parse(stored.plan_approval_result) as { approved: boolean; feedback?: string };
+        db2.prepare("UPDATE agent_sessions SET plan_approval_result = NULL, pending_plan_approval = NULL WHERE id = ?").run(sDbId);
+        const row = db2.prepare("SELECT feature_id FROM agent_sessions WHERE id = ?").get(sDbId) as { feature_id: number } | undefined;
+        if (row) notifyDbUpdated("agent_session", row.feature_id);
+
+        if (result.approved) {
+          if (managed.query) await managed.query.setPermissionMode("acceptEdits");
+          if (sDbId) {
+            try {
+              const db3 = getDatabase();
+              db3.prepare("UPDATE agent_sessions SET permission_mode = 'acceptEdits' WHERE id = ?").run(sDbId);
+            } catch { /* best-effort */ }
+          }
+          return { behavior: "allow" as const, updatedInput: input };
+        } else {
+          return { behavior: "deny" as const, message: result.feedback || "User requested changes to the plan." };
+        }
+      }
+    } catch (e) { console.warn("[tool-permissions] Failed to check stored approval:", e); }
+  }
+
   if (sDbId) {
     try {
       const db2 = getDatabase();
@@ -393,20 +421,31 @@ export function submitPlanApproval(
       proc = undefined;
     }
     if (!proc) {
-      // Clear stale pending_plan_approval from DB
+      // Agent is paused/dead — store the approval result so it can be consumed on resume
       const sessionDbId = getSessionDbId(subprocessId);
       if (sessionDbId) {
         try {
           const db = getDatabase();
-          db.prepare("UPDATE agent_sessions SET pending_plan_approval = NULL WHERE id = ?").run(sessionDbId);
+          db.prepare("UPDATE agent_sessions SET plan_approval_result = ?, pending_plan_approval = NULL WHERE id = ?")
+            .run(JSON.stringify({ approved, feedback }), sessionDbId);
           const fid = getFeatureIdForSubprocess(subprocessId);
           if (fid != null) notifyDbUpdated("agent_session", fid);
         } catch { /* best-effort */ }
       }
-      return { success: false, error: "Agent is no longer running. Please restart the agent to continue." };
+      return { success: true };
     }
-    // Process exists but no listener — could be a transient state, but still suspicious
-    return { success: false, error: "Agent is not waiting for plan approval. It may have timed out or been interrupted." };
+    // Process exists but no listener — also store for when the listener registers
+    const sessionDbId2 = getSessionDbId(subprocessId);
+    if (sessionDbId2) {
+      try {
+        const db = getDatabase();
+        db.prepare("UPDATE agent_sessions SET plan_approval_result = ?, pending_plan_approval = NULL WHERE id = ?")
+          .run(JSON.stringify({ approved, feedback }), sessionDbId2);
+        const fid = getFeatureIdForSubprocess(subprocessId);
+        if (fid != null) notifyDbUpdated("agent_session", fid);
+      } catch { /* best-effort */ }
+    }
+    return { success: true };
   }
 
   if (!approved && feedback) {

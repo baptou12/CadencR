@@ -361,12 +361,11 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
     if (!collapsible) return true;
 
     // In collapsible mode:
-    // Show when agent has output, is running, or has pending questions.
-    // Hidden for one-shot agents (plan, brainstorm) once they complete.
+    // Show when agent has output, is running, has pending questions, or pending plan approval.
+    // Always show when there's a pending plan approval (e.g. plan/brainstorm agents waiting for user to approve).
+    if (pendingPlanApproval) return true;
     const hasOutput = blocks.length > 0;
     const hasQuestions = pendingQuestions && pendingQuestions.length > 0;
-    const isOneShot = agentType === "plan" || agentType === "brainstorm";
-    if (isOneShot && status === "completed") return false;
     return status !== "idle" || hasOutput || !!hasQuestions;
   })();
 

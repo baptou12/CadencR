@@ -281,8 +281,7 @@ function createAgentDoneTool(sessionDbId: number, featureId: number) {
 /** Callback type for show_plan approval — blocks until user responds */
 export type PlanApprovalCallback = (planMarkdown: string) => Promise<{ approved: boolean; feedback?: string }>;
 
-/** Tracks which plans have been approved via show_plan (server-side enforcement for finalize_plan) */
-const approvedPlans = new Set<number>();
+// Plan approval is now persisted in DB (plans.status = 'approved') instead of in-memory Set.
 
 /**
  * Create the plan MCP server.
@@ -350,7 +349,9 @@ export function createPlanMcpServer(planId: number, featureId: number, sessionDb
           try {
             const result = await onShowPlan(markdown);
             if (result.approved) {
-              approvedPlans.add(args.plan_id);
+              const db = getDatabase();
+              db.prepare("UPDATE plans SET status = 'approved', updated_at = datetime('now') WHERE id = ?").run(args.plan_id);
+              notifyDbUpdated("plan", featureId);
               return textResult("✅ Plan approved by the user. You may now call finalize_plan.");
             } else {
               return errorResult(`User requested changes: ${result.feedback || "No specific feedback provided."}`);
@@ -376,23 +377,21 @@ export function createPlanMcpServer(planId: number, featureId: number, sessionDb
 
           if (draftCount.cnt === 0) return errorResult("No draft phases to finalize");
 
-          if (!approvedPlans.has(args.plan_id)) {
-            return errorResult("Plan has not been approved via show_plan. Call show_plan first and get user approval before finalizing.");
-          }
-
           const plan = db
-            .prepare("SELECT feature_id FROM plans WHERE id = ?")
-            .get(args.plan_id) as { feature_id: number } | undefined;
+            .prepare("SELECT feature_id, status AS plan_status FROM plans WHERE id = ?")
+            .get(args.plan_id) as { feature_id: number; plan_status: string } | undefined;
 
           if (!plan) return errorResult("Plan not found");
+
+          if (plan.plan_status !== "approved") {
+            return errorResult("Plan has not been approved via show_plan. Call show_plan first and get user approval before finalizing.");
+          }
 
           db.transaction(() => {
             db.prepare("UPDATE phases SET status = 'pending' WHERE plan_id = ? AND status = 'draft'").run(args.plan_id);
             db.prepare("UPDATE plans SET status = 'active', updated_at = datetime('now') WHERE id = ?").run(args.plan_id);
             transitionFeature(db, plan.feature_id, "planned");
           })();
-
-          approvedPlans.delete(args.plan_id);
           notifyDbUpdated("phase", plan.feature_id);
 
           const markdown = renderPlanMarkdown(args.plan_id);

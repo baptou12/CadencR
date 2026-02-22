@@ -318,7 +318,7 @@ describe("session-persistence", () => {
       );
     });
 
-    it("clears pending_plan_approval alongside subprocess_id on startup", () => {
+    it("preserves pending_plan_approval on startup cleanup (not cleared)", () => {
       const mockRun = vi.fn();
       const mockAll = vi.fn().mockReturnValue([]);
       mockDb.prepare.mockReturnValue({ run: mockRun, all: mockAll, get: vi.fn() });
@@ -328,7 +328,7 @@ describe("session-persistence", () => {
       const allSqls = mockDb.prepare.mock.calls.map((c) => c[0] as string);
       const updateSql = allSqls.find((s) => s.includes("UPDATE agent_sessions SET status = 'paused'"));
       expect(updateSql).toBeDefined();
-      expect(updateSql).toContain("pending_plan_approval = NULL");
+      expect(updateSql).not.toContain("pending_plan_approval = NULL");
     });
 
     it("repopulates session map from paused sessions with subprocess IDs", () => {

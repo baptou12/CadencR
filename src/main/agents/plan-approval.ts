@@ -21,6 +21,21 @@ export async function waitForPlanApproval(
   const sDbId = getSessionDbId(subprocessId);
   let featureIdForNotify: number | null = null;
 
+  // 0. Check for a stored approval result (set when user approved while agent was paused/completed)
+  if (sDbId) {
+    try {
+      const db2 = getDatabase();
+      const stored = db2.prepare("SELECT plan_approval_result FROM agent_sessions WHERE id = ?").get(sDbId) as { plan_approval_result: string | null } | undefined;
+      if (stored?.plan_approval_result) {
+        const result = JSON.parse(stored.plan_approval_result) as { approved: boolean; feedback?: string };
+        db2.prepare("UPDATE agent_sessions SET plan_approval_result = NULL, pending_plan_approval = NULL WHERE id = ?").run(sDbId);
+        const row = db2.prepare("SELECT feature_id FROM agent_sessions WHERE id = ?").get(sDbId) as { feature_id: number } | undefined;
+        if (row) notifyDbUpdated("agent_session", row.feature_id);
+        return result;
+      }
+    } catch (e) { console.warn("[plan-approval] Failed to check stored approval:", e); }
+  }
+
   // 1. Emit a synthetic tool_call block so the plan renders in the message list.
   const syntheticToolUseId = `show_plan_${Date.now()}`;
   const toolArgs = JSON.stringify({ plan: planMarkdown });

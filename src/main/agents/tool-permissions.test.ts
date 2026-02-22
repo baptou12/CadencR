@@ -507,35 +507,29 @@ describe("submitPlanApproval", () => {
     expect(db.prepare).not.toHaveBeenCalled();
   });
 
-  it("returns error when no listener and no active process", () => {
-    vi.mocked(getSessionDbId).mockReturnValue(undefined);
-    const result = submitPlanApproval("dead-subprocess", true);
-    expect(result.success).toBe(false);
-    expect(result.error).toContain("no longer running");
-  });
-
-  it("clears pending_plan_approval from DB when no listener and no active process", () => {
+  it("stores approval result in DB when no listener and no active process", () => {
     const { db, stmt } = makeMockDb();
     vi.mocked(getDatabase).mockReturnValue(db);
     vi.mocked(getSessionDbId).mockReturnValue(55);
     stmt.get.mockReturnValue({ feature_id: 7 });
 
-    const result = submitPlanApproval("dead-subprocess-2", true);
-
-    expect(result.success).toBe(false);
+    const result = submitPlanApproval("dead-subprocess", true);
+    // Now returns success:true — approval is stored for consumption on resume
+    expect(result.success).toBe(true);
     expect(db.prepare).toHaveBeenCalledWith(
-      expect.stringContaining("UPDATE agent_sessions SET pending_plan_approval = NULL"),
+      expect.stringContaining("UPDATE agent_sessions SET plan_approval_result"),
     );
   });
 
-  it("returns success:false when no listener exists regardless of subprocess state", () => {
-    // Both "subprocess dead" and "subprocess alive but not waiting" paths return success:false.
-    // The mock returns undefined for getActiveProcess (subprocess dead path), which is
-    // the observable fallback when no listener is registered and no active process is found.
-    const result = submitPlanApproval("no-listener-subprocess", true);
+  it("stores approval result when no listener but process exists", () => {
+    const { db, stmt } = makeMockDb();
+    vi.mocked(getDatabase).mockReturnValue(db);
+    vi.mocked(getSessionDbId).mockReturnValue(55);
+    stmt.get.mockReturnValue({ feature_id: 7 });
 
-    expect(result.success).toBe(false);
-    expect(result.error).toBeDefined();
+    const result = submitPlanApproval("no-listener-subprocess", true);
+    // Now returns success:true — approval is stored for consumption when listener registers
+    expect(result.success).toBe(true);
   });
 });
 
