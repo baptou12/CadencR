@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { useHotkeys } from "react-hotkeys-hook";
 import { Badge } from "@/components/ui/badge";
@@ -27,11 +27,10 @@ interface FeatureTopBarProps {
   className?: string;
 }
 
-export function FeatureTopBar({ featureId, projectId: _projectId, mode = "feature", executeState, className }: FeatureTopBarProps) {
+export function FeatureTopBar({ featureId, projectId, mode = "feature", executeState, className }: FeatureTopBarProps) {
   const isSession = mode === "session";
   const [diffOpen, setDiffOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-
   // OPT+P -> toggle feature settings popover (secondary shortcut)
   useHotkeys(
     "alt+p",
@@ -74,12 +73,27 @@ export function FeatureTopBar({ featureId, projectId: _projectId, mode = "featur
     { refetchInterval: 10000 },
   );
   const { data: currentBranch } = trpc.git.getBranch.useQuery(
-    { projectId: _projectId },
+    { projectId },
     { enabled: isSession, refetchInterval: 10000 },
   );
   const openTerminal = trpc.git.openInTerminal.useMutation();
 
   const utils = trpc.useContext();
+
+  // Review fixer agent (start from diff viewer when no agent is running)
+  const startReviewFixer = trpc.agents.startReviewFixer.useMutation({
+    onSuccess: () => {
+      utils.agents.getFeatureAgentState.invalidate({ featureId });
+    },
+  });
+
+  const handleStartReviewFixer = useCallback(
+    (formattedComments: string) => {
+      startReviewFixer.mutate({ featureId, projectId, prompt: formattedComments });
+    },
+    [featureId, projectId, startReviewFixer],
+  );
+
   const setFeatureSetting = trpc.features.setSetting.useMutation({
     onSuccess: () => {
       utils.features.getSettings.invalidate({ feature_id: featureId });
@@ -166,7 +180,7 @@ export function FeatureTopBar({ featureId, projectId: _projectId, mode = "featur
               <h4 className="text-sm font-semibold">Model Configuration</h4>
               <p className="text-xs text-muted-foreground">Override models for this feature</p>
             </div>
-            <ModelSelector level="feature" featureId={featureId} projectId={_projectId} />
+            <ModelSelector level="feature" featureId={featureId} projectId={projectId} />
           </div>
 
           {!isSession && (
@@ -204,8 +218,8 @@ export function FeatureTopBar({ featureId, projectId: _projectId, mode = "featur
         open={diffOpen}
         onOpenChange={setDiffOpen}
         diffMode={isSession ? "worktree" : "branch"}
-        executeState={isSession ? executeState : undefined}
-        hideFooter={!isSession}
+        executeState={executeState}
+        onStartReviewFixer={handleStartReviewFixer}
       />
     </div>
   );

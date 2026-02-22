@@ -233,7 +233,8 @@ export function startReviewFixerAgent(options: {
   prompt: MessageContent;
   worktreePath?: string;
 }): AgentResult {
-  return startUnifiedAgent(createReviewFixerConfig(options));
+  const autonomyLevel = getAutonomyLevel(options.featureId, options.projectId);
+  return startUnifiedAgent(createReviewFixerConfig({ ...options, autonomyLevel }));
 }
 
 // ---------------------------------------------------------------------------

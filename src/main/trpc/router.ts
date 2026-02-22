@@ -632,8 +632,28 @@ const agentsRouter = router({
   startReviewFixer: publicProcedure
     .input(z.object({ featureId: z.number(), projectId: z.number(), prompt: z.string() }))
     .mutation(({ input }) => {
+      const db = getDatabase();
       const { cwd, worktreePath } = resolveAgentCwd(input.featureId, input.projectId);
-      return startReviewFixerAgent({ ...input, cwd, worktreePath });
+
+      // Build rich prompt with feature context (same as workflow session)
+      const feature = db.prepare("SELECT title FROM features WHERE id = ?").get(input.featureId) as { title: string } | undefined;
+      const plan = db.prepare("SELECT id, summary, context FROM plans WHERE feature_id = ? ORDER BY id DESC LIMIT 1").get(input.featureId) as { id: number; summary: string | null; context: string | null } | undefined;
+      const phases = plan
+        ? (db.prepare("SELECT title, status, step_number FROM phases WHERE plan_id = ? ORDER BY step_number, order_index").all(plan.id) as { title: string; status: string; step_number: number }[])
+        : [];
+
+      const parts: string[] = [];
+      if (feature) parts.push(`## Feature: ${feature.title}`);
+      if (plan?.summary) parts.push(`**Summary:** ${plan.summary}`);
+      if (plan?.context) parts.push(`**Context:** ${plan.context}`);
+      if (phases.length > 0) {
+        const phaseList = phases.map((p) => `${p.step_number}. ${p.title} — ${p.status}`).join("\n");
+        parts.push(`**Phases:**\n${phaseList}`);
+      }
+      parts.push("---", `## Diff Comments to Address\n\n${input.prompt}`);
+
+      const prompt = parts.join("\n\n");
+      return startReviewFixerAgent({ ...input, prompt, cwd, worktreePath });
     }),
 
   /** Add a fix phase to the plan based on review findings */
