@@ -615,8 +615,8 @@ export interface QaConfigOptions {
   qaPrompt: string;
   completedPhasesSummary: string;
   planId: number;
-  /** The ID of the QA phase being executed — agent uses this to call mark_phase_done. Optional for standalone QA. */
-  phaseId?: number;
+  /** The ID of the QA phase being executed — agent uses this to call mark_phase_done */
+  phaseId: number;
   /** Step number of the QA phase — fix phases will be inserted at step + 1 */
   qaPhaseStepNumber: number;
   worktreePath?: string;
@@ -894,7 +894,7 @@ The following procedure describes HOW to validate the implementation (tools, sim
 
 ${opts.qaPrompt}
 
-The plan ID is ${opts.planId}.${opts.phaseId ? ` Your phase ID is ${opts.phaseId}.` : ""} If you find failures that need fixes, use the MCP tools to create fix phases starting at step_number ${opts.qaPhaseStepNumber + 1}, then create a follow-up QA phase (type "qa") at the next step_number after all fix phases.
+The plan ID is ${opts.planId}. Your phase ID is ${opts.phaseId}. If you find failures that need fixes, use the MCP tools to create fix phases starting at step_number ${opts.qaPhaseStepNumber + 1}, then create a follow-up QA phase (type "qa") at the next step_number after all fix phases.
 
 Based on what was implemented above, design specific test cases and execute them using the QA procedure. Verify that the features work correctly from a user's perspective.`;
 

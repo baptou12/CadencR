@@ -317,7 +317,7 @@ describe("agent-starters", () => {
           if (sql.includes("MAX(step_number)")) {
             return { get: vi.fn().mockReturnValue({ max_step: 2 }) };
           }
-          return { run: vi.fn(), get: vi.fn(), all: vi.fn().mockReturnValue([]) };
+          return { run: vi.fn().mockReturnValue({ lastInsertRowid: 42 }), get: vi.fn(), all: vi.fn().mockReturnValue([]) };
         }),
       });
 

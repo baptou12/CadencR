@@ -279,9 +279,17 @@ export function startQaAgent(options: {
     : "No phases have been completed yet.";
 
   const maxStepRow = db
-    .prepare("SELECT MAX(step_number) as max_step FROM phases WHERE plan_id = ? AND status = 'completed'")
+    .prepare("SELECT MAX(step_number) as max_step FROM phases WHERE plan_id = ?")
     .get(plan.id) as { max_step: number | null };
-  const qaPhaseStepNumber = maxStepRow?.max_step ?? 0;
+  const qaPhaseStepNumber = (maxStepRow?.max_step ?? 0) + 1;
+
+  // Create a QA phase so the agent can mark it running → completed
+  const insertResult = db
+    .prepare(
+      "INSERT INTO phases (plan_id, step_number, title, status, phase_type, order_index) VALUES (?, ?, ?, 'running', 'qa', 0)",
+    )
+    .run(plan.id, qaPhaseStepNumber, "Manual QA");
+  const phaseId = Number(insertResult.lastInsertRowid);
 
   const autonomyLevel = getAutonomyLevel(options.featureId, options.projectId);
 
@@ -290,6 +298,7 @@ export function startQaAgent(options: {
     qaPrompt,
     completedPhasesSummary,
     planId: plan.id,
+    phaseId,
     qaPhaseStepNumber,
     autonomyLevel,
   });
