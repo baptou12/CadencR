@@ -287,6 +287,24 @@ describe("session-persistence", () => {
   });
 
   describe("restoreSessionMap", () => {
+    it("marks stale orchestrator sessions as error on startup", () => {
+      mockDb.prepare.mockImplementation((sql: string) => {
+        // Return a stale orchestrator from the SELECT so the UPDATE branch fires
+        if (sql.includes("SELECT id, feature_id FROM agent_sessions") && sql.includes("subprocess_id IS NULL")) {
+          return { all: vi.fn().mockReturnValue([{ id: 672, feature_id: 1 }]) };
+        }
+        return { run: vi.fn(), all: vi.fn().mockReturnValue([]), get: vi.fn() };
+      });
+
+      restoreSessionMap();
+
+      const allSqls = mockDb.prepare.mock.calls.map((c: unknown[]) => c[0] as string);
+      const orchestratorUpdate = allSqls.find((s) =>
+        s.includes("status = 'error'") && s.includes("subprocess_id IS NULL") && s.includes("phase_id IS NULL") && s.includes("UPDATE"),
+      );
+      expect(orchestratorUpdate).toBeDefined();
+    });
+
     it("marks running sessions as paused on startup", () => {
       const mockRun = vi.fn();
       const mockAll = vi.fn().mockReturnValue([]);
@@ -316,6 +334,7 @@ describe("session-persistence", () => {
     it("repopulates session map from paused sessions with subprocess IDs", () => {
       const mockRun = vi.fn();
       const mockAll = vi.fn()
+        .mockReturnValueOnce([]) // stale orchestrator sessions
         .mockReturnValueOnce([]) // stale running sessions
         .mockReturnValueOnce([
           { id: 99, subprocess_id: "proc-restored" },

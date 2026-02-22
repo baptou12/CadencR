@@ -155,7 +155,13 @@ export function startExecuteAgent(options: ExecuteAgentOptions): ExecuteAgentRes
     }
 
     await executeRemainingSteps(sortedSteps, 1, stepGroups, optionsWithSession, autonomyLevel, plan.id, sessionDbId);
-  })();
+  })().catch((err) => {
+    console.error(`[orchestrator] Unhandled error in execute orchestrator ${sessionDbId}:`, err);
+    try {
+      transitionAgentSession(db, sessionDbId, "error", options.featureId, { ended_at: "datetime('now')" });
+      broadcastExecuteAllDone(sessionDbId, 1);
+    } catch { /* best effort */ }
+  });
 
   return {
     subprocessIds: firstStepSubprocessIds,

@@ -301,6 +301,28 @@ describe("buildQaSystemPrompt", () => {
     const prompt = buildQaSystemPrompt(1);
     expect(prompt.length).toBeGreaterThan(100);
   });
+
+  it("level 1 requires AskUserQuestion approval loop", () => {
+    const prompt = buildQaSystemPrompt(1);
+    expect(prompt).toContain("AskUserQuestion");
+    expect(prompt).toContain("Approve QA report");
+    expect(prompt).toContain("QA Approval Loop (MANDATORY)");
+  });
+
+  it("level 2 proceeds automatically without approval loop", () => {
+    const prompt = buildQaSystemPrompt(2);
+    expect(prompt).toContain("NEVER use AskUserQuestion");
+    expect(prompt).not.toContain("QA Approval Loop (MANDATORY)");
+  });
+
+  it("level 3 full autonomy instructs agent to never ask user", () => {
+    const prompt = buildQaSystemPrompt(3);
+    expect(prompt).toContain("FULL AUTONOMY");
+    expect(prompt).toContain("NEVER use AskUserQuestion");
+    expect(prompt).toContain("NEVER ask for confirmation before creating fix phases");
+    expect(prompt).toContain("NEVER ask for confirmation before running tests or validating the repo");
+    expect(prompt).not.toContain("QA Approval Loop (MANDATORY)");
+  });
 });
 
 describe("buildExecuteSystemPrompt", () => {

@@ -323,7 +323,43 @@ describe("agent-starters", () => {
 
       startQaAgent({ featureId: 1, projectId: 2, cwd: "/project" });
 
-      expect(startUnifiedAgent).toHaveBeenCalledWith({ agentType: "execute" });
+      expect(startUnifiedAgent).toHaveBeenCalledWith(
+        expect.objectContaining({ agentType: "execute" }),
+      );
+    });
+
+    it("adds qa_auto_execute completion action to config", async () => {
+      const { createQaConfig } = await import("./agent-configs") as any;
+      const mockConfig = {
+        agentType: "qa",
+        completionActions: [{ event: "store_qa_report", handler: vi.fn() }],
+      };
+      createQaConfig.mockReturnValue(mockConfig);
+
+      (getDatabase as any).mockReturnValue({
+        prepare: vi.fn().mockImplementation((sql: string) => {
+          if (sql.includes("qa_prompt FROM projects")) {
+            return { get: vi.fn().mockReturnValue({ qa_prompt: "Run tests" }) };
+          }
+          if (sql.includes("SELECT id FROM plans WHERE")) {
+            return { get: vi.fn().mockReturnValue({ id: 5 }) };
+          }
+          if (sql.includes("step_number, title, implementation_notes")) {
+            return { all: vi.fn().mockReturnValue([]) };
+          }
+          if (sql.includes("MAX(step_number)")) {
+            return { get: vi.fn().mockReturnValue({ max_step: 2 }) };
+          }
+          return { run: vi.fn().mockReturnValue({ lastInsertRowid: 42 }), get: vi.fn(), all: vi.fn().mockReturnValue([]) };
+        }),
+      });
+
+      startQaAgent({ featureId: 1, projectId: 2, cwd: "/project" });
+
+      // The config passed to startUnifiedAgent should have qa_auto_execute action
+      const passedConfig = (startUnifiedAgent as any).mock.calls[0][0];
+      const actionEvents = passedConfig.completionActions.map((a: any) => a.event);
+      expect(actionEvents).toContain("qa_auto_execute");
     });
   });
 });

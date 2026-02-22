@@ -212,6 +212,18 @@ export function getSubprocessIdsForSessionDbIds(
 export function restoreSessionMap(): void {
   try {
     const db = getDatabase();
+    // Mark stale orchestrator sessions (execute with no subprocess) as error — they're
+    // just in-memory loops, not resumable, and leaving them as 'running' or 'paused' blocks the UI.
+    const staleOrchestrators = db.prepare(
+      "SELECT id, feature_id FROM agent_sessions WHERE status IN ('running', 'waiting') AND agent_type = 'execute' AND subprocess_id IS NULL AND phase_id IS NULL",
+    ).all() as Array<{ id: number; feature_id: number }>;
+    if (staleOrchestrators.length > 0) {
+      console.log(`[startup-cleanup] Marking ${staleOrchestrators.length} stale orchestrator sessions as error:`, staleOrchestrators.map((s) => `session ${s.id} (feature ${s.feature_id})`).join(", "));
+      db.prepare(
+        "UPDATE agent_sessions SET status = 'error', ended_at = datetime('now') WHERE status IN ('running', 'waiting') AND agent_type = 'execute' AND subprocess_id IS NULL AND phase_id IS NULL",
+      ).run();
+    }
+
     // Mark stale 'running' sessions as 'paused' — they can't be running after restart
     const staleSessions = db.prepare("SELECT id, feature_id, agent_type, phase_id FROM agent_sessions WHERE status = 'running'").all() as Array<{ id: number; feature_id: number; agent_type: string; phase_id: number | null }>;
     if (staleSessions.length > 0) {
