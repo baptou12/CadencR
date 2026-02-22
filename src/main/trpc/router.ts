@@ -25,6 +25,7 @@ import { execSync } from "node:child_process";
 import {
   createWorktree,
   removeWorktree,
+  listWorktrees,
   getWorktreeInfo,
   openInTerminal,
   buildBranchName,
@@ -1497,6 +1498,75 @@ const gitRouter = router({
         db.prepare(
           "DELETE FROM feature_settings WHERE feature_id = ? AND key IN ('worktree_path', 'worktree_branch')",
         ).run(input.featureId);
+        return { success: true };
+      } catch (err) {
+        return { success: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    }),
+
+  listProjectWorktrees: publicProcedure
+    .input(z.object({ projectId: z.number() }))
+    .query(({ input }) => {
+      const db = getDatabase();
+      const project = db
+        .prepare("SELECT path FROM projects WHERE id = ?")
+        .get(input.projectId) as Pick<ProjectRow, "path"> | undefined;
+      if (!project?.path) throw new Error("Project not found");
+
+      let worktrees;
+      try {
+        worktrees = listWorktrees(project.path);
+      } catch {
+        return [];
+      }
+
+      // Filter out the main worktree (repo root)
+      const repoRoot = project.path.replace(/\/+$/, "");
+      const secondary = worktrees.filter(
+        (w) => w.path.replace(/\/+$/, "") !== repoRoot && !w.isBare,
+      );
+
+      // For each worktree, look up associated feature
+      const featureLookup = db
+        .prepare(
+          `SELECT fs.value AS worktree_path, f.id AS feature_id, f.title AS feature_title, f.status AS feature_status
+           FROM feature_settings fs
+           JOIN features f ON f.id = fs.feature_id
+           WHERE fs.key = 'worktree_path' AND f.project_id = ?`,
+        )
+        .all(input.projectId) as Array<{
+        worktree_path: string;
+        feature_id: number;
+        feature_title: string;
+        feature_status: string;
+      }>;
+
+      const byPath = new Map(featureLookup.map((r) => [r.worktree_path, r]));
+
+      return secondary.map((w) => {
+        const feat = byPath.get(w.path);
+        return {
+          path: w.path,
+          branch: w.branch,
+          head: w.head,
+          featureId: feat?.feature_id ?? null,
+          featureTitle: feat?.feature_title ?? null,
+          featureStatus: feat?.feature_status ?? null,
+        };
+      });
+    }),
+
+  removeOrphanWorktree: publicProcedure
+    .input(z.object({ projectId: z.number(), worktreePath: z.string() }))
+    .mutation(({ input }) => {
+      const db = getDatabase();
+      const project = db
+        .prepare("SELECT path FROM projects WHERE id = ?")
+        .get(input.projectId) as Pick<ProjectRow, "path"> | undefined;
+      if (!project?.path) throw new Error("Project not found");
+
+      try {
+        removeWorktree(project.path, input.worktreePath);
         return { success: true };
       } catch (err) {
         return { success: false, error: err instanceof Error ? err.message : String(err) };

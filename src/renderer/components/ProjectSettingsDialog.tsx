@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ModelSelector } from "./ModelSelector";
+import { WorktreeList } from "./WorktreeList";
 
 export function ProjectSettingsDialog({
   projectId,
@@ -56,11 +57,11 @@ export function ProjectSettingsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[560px]">
+      <DialogContent className="sm:max-w-[900px] w-[90vw] max-h-[85vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>Project Settings: {projectName}</DialogTitle>
         </DialogHeader>
-        <div className="space-y-5">
+        <div className="space-y-5 overflow-y-auto flex-1 pr-1">
           <div className="space-y-3">
             <div>
               <h4 className="text-sm font-semibold">Model Configuration</h4>
@@ -164,6 +165,16 @@ export function ProjectSettingsDialog({
                 Commands and steps the QA agent will follow to verify implementations
               </p>
             </div>
+          </div>
+
+          <div className="space-y-3">
+            <div>
+              <h4 className="text-sm font-semibold">Worktrees</h4>
+              <p className="text-xs text-muted-foreground">
+                Git worktrees created for this project's features
+              </p>
+            </div>
+            <WorktreeList projectId={projectId} />
           </div>
         </div>
       </DialogContent>

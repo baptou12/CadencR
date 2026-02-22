@@ -24,6 +24,7 @@ vi.mock("@/trpc", () => ({
       projects: { getSettings: { invalidate: vi.fn() }, getModelSettings: { invalidate: vi.fn() } },
       settings: { getModelSettings: { invalidate: vi.fn() } },
       features: { getModelSettings: { invalidate: vi.fn() } },
+      git: { listProjectWorktrees: { invalidate: vi.fn() } },
     })),
     projects: {
       getSettings: { useQuery: mockGetSettings },
@@ -39,6 +40,11 @@ vi.mock("@/trpc", () => ({
     features: {
       getModelSettings: { useQuery: vi.fn(() => ({ data: {}, isLoading: false })) },
       setModelSetting: { useMutation: vi.fn(() => ({ mutate: vi.fn() })) },
+    },
+    git: {
+      listProjectWorktrees: { useQuery: vi.fn(() => ({ data: [], isLoading: false })) },
+      deleteWorktree: { useMutation: vi.fn(() => ({ mutate: vi.fn(), isLoading: false })) },
+      removeOrphanWorktree: { useMutation: vi.fn(() => ({ mutate: vi.fn(), isLoading: false })) },
     },
   },
 }));
