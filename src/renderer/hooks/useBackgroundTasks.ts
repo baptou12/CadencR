@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { trpc } from "@/trpc";
 import type { BackgroundTask } from "../../main/agents/background-tasks";
 
