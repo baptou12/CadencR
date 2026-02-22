@@ -109,7 +109,7 @@ describe("FeatureTopBar", () => {
 
   it("shows phase progress", () => {
     render(<FeatureTopBar featureId={1} projectId={1} />);
-    expect(screen.getByText("Phases: 2/5")).toBeInTheDocument();
+    expect(screen.getByText("2/5")).toBeInTheDocument();
   });
 
   it("renders in session mode without status badge", () => {
