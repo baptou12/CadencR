@@ -110,6 +110,20 @@ export function FeatureWorkflowView({
 
   // Plan approval handled by chat.handlePlanApprove / chat.handlePlanRequestChanges
 
+  // --- Review fixer agent ---
+  const startReviewFixer = trpc.agents.startReviewFixer.useMutation({
+    onSuccess: () => {
+      utils.agents.getFeatureAgentState.invalidate({ featureId });
+    },
+  });
+
+  const handleStartReviewFixer = useCallback(
+    (formattedComments: string) => {
+      startReviewFixer.mutate({ featureId, projectId, prompt: formattedComments });
+    },
+    [featureId, projectId, startReviewFixer],
+  );
+
   // --- Inline diff viewer modal state ---
   const [inlineDiffOpen, setInlineDiffOpen] = useState(false);
   // Track which agent opened the diff modal so comments go to the right agent
@@ -447,7 +461,7 @@ export function FeatureWorkflowView({
       e.preventDefault();
       const entry = getFocusedEntry();
       if (!entry) return;
-      if (entry.agentType !== "session") return;
+      if (entry.agentType !== "session" && entry.agentType !== "review-fixer") return;
       if (entry.status !== "running" && entry.status !== "paused") return;
       wf.handleMarkSessionDone(entry.sessionDbId);
     },
@@ -597,7 +611,7 @@ export function FeatureWorkflowView({
                         }
                         disableShortcuts={agentsWithQuestions > 1}
                         onMarkDone={
-                          entry.agentType === "session" &&
+                          (entry.agentType === "session" || entry.agentType === "review-fixer") &&
                           (entry.status === "running" ||
                             entry.status === "paused")
                             ? () => wf.handleMarkSessionDone(entry.sessionDbId)
@@ -857,6 +871,7 @@ export function FeatureWorkflowView({
         open={inlineDiffOpen}
         onOpenChange={setInlineDiffOpen}
         executeState={diffAgentState}
+        onStartReviewFixer={handleStartReviewFixer}
       />
     </div>
   );

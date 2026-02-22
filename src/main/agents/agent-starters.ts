@@ -17,6 +17,7 @@ import {
   createRiskConfig,
   createReviewConfig,
   createQaConfig,
+  createReviewFixerConfig,
 } from "./agent-configs";
 import type { AgentType, MessageContent, UnifiedAgentConfig } from "./types";
 import type { PlanRow, PhaseRow } from "../db/types";
@@ -219,6 +220,21 @@ export function addFixPhase(featureId: number, fixDescription: string): { phaseI
     .run(plan.id, stepNumber, "Review fixes", "pending", 2, "fix: address review findings", fixDescription, 0);
 
   return { phaseId: Number(result.lastInsertRowid) };
+}
+
+// ---------------------------------------------------------------------------
+// Review Fixer
+// ---------------------------------------------------------------------------
+
+export function startReviewFixerAgent(options: {
+  featureId: number;
+  projectId: number;
+  cwd: string;
+  prompt: MessageContent;
+  worktreePath?: string;
+}): AgentResult {
+  const autonomyLevel = getAutonomyLevel(options.featureId, options.projectId);
+  return startUnifiedAgent(createReviewFixerConfig({ ...options, autonomyLevel }));
 }
 
 // ---------------------------------------------------------------------------

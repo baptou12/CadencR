@@ -110,7 +110,7 @@ export const projectsRouter = router({
     .input(
       z.object({
         projectId: z.number(),
-        agentType: z.enum(["plan", "brainstorm", "execute", "risk", "review", "session", "qa"]),
+        agentType: z.enum(["plan", "brainstorm", "execute", "risk", "review", "session", "qa", "review-fixer"]),
         modelId: z.string(),
       }),
     )

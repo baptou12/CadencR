@@ -26,6 +26,7 @@ interface DiffViewerModalProps {
   executeState?: ExecuteAgentState;
   diffMode?: "worktree" | "branch";
   hideFooter?: boolean;
+  onStartReviewFixer?: (formattedComments: string) => void;
 }
 
 function formatCommentsForAgent(
@@ -54,6 +55,7 @@ export function DiffViewerModal({
   executeState,
   diffMode = "worktree",
   hideFooter = false,
+  onStartReviewFixer,
 }: DiffViewerModalProps) {
   const [sending, setSending] = useState(false);
 
@@ -79,8 +81,9 @@ export function DiffViewerModal({
     const noun = count !== 1 ? "comments" : "comment";
     if (hasPendingQuestions) return `Request changes with ${count} ${noun}`;
     if (isAgentRunning) return `Send ${count} ${noun} to agent`;
+    if (onStartReviewFixer) return `Fix ${count} ${noun}`;
     return `Send ${count} ${noun}`;
-  }, [pendingComments.length, hasPendingQuestions, isAgentRunning]);
+  }, [pendingComments.length, hasPendingQuestions, isAgentRunning, onStartReviewFixer]);
 
   const handleSendToAgent = useCallback(async () => {
     if (pendingComments.length === 0 || sending) return;
@@ -91,6 +94,9 @@ export function DiffViewerModal({
 
       if (deliveredToAgent) {
         await deletePending.mutateAsync({ featureId });
+      } else if (onStartReviewFixer) {
+        await deletePending.mutateAsync({ featureId });
+        onStartReviewFixer(message);
       } else {
         await markAsSent.mutateAsync({ featureId });
       }
@@ -118,7 +124,7 @@ export function DiffViewerModal({
     } finally {
       setSending(false);
     }
-  }, [pendingComments, sending, featureId, isAgentRunning, hasPendingQuestions, executeState, deletePending, markAsSent, utils.diffComments.list, sendMessage, submitAnswers, onOpenChange]);
+  }, [pendingComments, sending, featureId, isAgentRunning, hasPendingQuestions, executeState, deletePending, markAsSent, utils.diffComments.list, sendMessage, submitAnswers, onOpenChange, onStartReviewFixer]);
 
   useEffect(() => {
     if (!open) return;

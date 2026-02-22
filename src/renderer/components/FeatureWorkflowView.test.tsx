@@ -87,6 +87,9 @@ vi.mock("@/trpc", () => {
       markSessionDone: {
         useMutation: vi.fn(() => ({ mutate: vi.fn() })),
       },
+      startReviewFixer: {
+        useMutation: vi.fn(() => ({ mutate: vi.fn() })),
+      },
     },
     plans: {
       getByFeature: {
