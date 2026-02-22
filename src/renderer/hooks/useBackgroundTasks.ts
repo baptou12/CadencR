@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { trpc } from "@/trpc";
 import type { BackgroundTask } from "../../main/agents/background-tasks";
 
@@ -8,17 +8,13 @@ interface BackgroundTasksPayload {
 }
 
 export function useBackgroundTasks(subprocessId?: string) {
-  const { data: initialTasks = [] } = trpc.agents.getBackgroundTasks.useQuery(
+  const { data: initialTasks } = trpc.agents.getBackgroundTasks.useQuery(
     { subprocessId: subprocessId! },
     { enabled: !!subprocessId },
   );
 
-  const [tasks, setTasks] = useState<BackgroundTask[]>([]);
-
-  // Sync initial data from query
-  useEffect(() => {
-    setTasks(initialTasks);
-  }, [initialTasks]);
+  const [ipcTasks, setIpcTasks] = useState<BackgroundTask[] | null>(null);
+  const hasReceivedIpc = useRef(false);
 
   // Listen for real-time IPC updates
   useEffect(() => {
@@ -37,7 +33,8 @@ export function useBackgroundTasks(subprocessId?: string) {
     const listener = api.onBackgroundTasks((data: unknown) => {
       const payload = data as BackgroundTasksPayload;
       if (payload.subprocessId === subprocessId) {
-        setTasks(payload.tasks);
+        hasReceivedIpc.current = true;
+        setIpcTasks(payload.tasks);
       }
     });
 
@@ -46,6 +43,8 @@ export function useBackgroundTasks(subprocessId?: string) {
     };
   }, [subprocessId]);
 
+  // Use IPC data once received, otherwise fall back to query data
+  const tasks = hasReceivedIpc.current ? (ipcTasks ?? []) : (initialTasks ?? []);
   const activeCount = tasks.filter((t) => t.status === "running").length;
 
   return { tasks, activeCount };
