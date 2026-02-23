@@ -53,13 +53,15 @@ export function FeatureWorkflowView({
 }) {
   // UI state that was previously inside useWorkflowAgents
   const [description, setDescription] = useState("");
+  const descriptionRef = useRef(description);
+  descriptionRef.current = description;
   const [openAgent, setOpenAgent] = useState<string | null>(null);
 
   const wf = useWorkflowAgents({
     featureId,
     projectId,
     featureQuery,
-    getDescription: () => description,
+    getDescription: () => descriptionRef.current,
   });
   const contextUsageMap = useContextUsage(featureId, wf.sessionEntries);
   const utils = trpc.useUtils();
@@ -535,14 +537,18 @@ export function FeatureWorkflowView({
         <div className="flex h-full min-h-0 overflow-hidden">
           <div className="min-h-0 flex-1 flex flex-col overflow-hidden">
             {view === "plan-input" && (
-              <div className="shrink-0 overflow-auto p-6">
+              <div className="flex-1 flex items-center justify-center overflow-auto p-6">
                 <PlanInputView
-                  description={description}
-                  onDescriptionChange={setDescription}
-                  onStartPlanning={(images) => wf.handleStartPlanning(images)}
-                  onStartBrainstorming={(images) =>
-                    wf.handleStartBrainstorming(images)
-                  }
+                  onStartPlanning={(text, images) => {
+                    descriptionRef.current = text;
+                    setDescription(text);
+                    wf.handleStartPlanning(images);
+                  }}
+                  onStartBrainstorming={(text, images) => {
+                    descriptionRef.current = text;
+                    setDescription(text);
+                    wf.handleStartBrainstorming(images);
+                  }}
                   isStartingPlan={wf.isStartingPlan}
                   isStartingBrainstorm={wf.isStartingBrainstorm}
                 />

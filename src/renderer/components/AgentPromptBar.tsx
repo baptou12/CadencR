@@ -15,14 +15,26 @@ import { useSlashCommand } from "@/hooks/useSlashCommand";
 import { useImageAttachments } from "@/hooks/useImageAttachments";
 import { usePromptDraft } from "@/hooks/usePromptDraft";
 import { usePromptHistory } from "@/hooks/usePromptHistory";
+import { KbdShortcut } from "./KbdShortcut";
 import { trpc } from "@/trpc";
 import type { AgentQuestion } from "./AgentQuestionDrawer";
 import type { AgentStatus } from "@/components/AgentSession";
+
+export interface SplitSendAction {
+  label: string;
+  icon: React.ReactNode;
+  onClick: (text: string, images?: Array<{ base64: string; mimeType: string }>) => void;
+  variant?: "default" | "outline";
+  /** Keyboard shortcut keys to display on the button */
+  kbdShortcut?: string[];
+}
 
 export interface AgentPromptBarProps {
   onSend: (message: string, images?: Array<{ base64: string; mimeType: string }>) => void;
   onStop: () => void;
   status: AgentStatus;
+  /** When provided, replaces the single send button with multiple labeled action buttons */
+  splitSendActions?: SplitSendAction[];
   disabled?: boolean;
   /** Active questions from AskUserQuestion tool calls */
   pendingQuestions?: AgentQuestion[];
@@ -74,6 +86,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
   onSend,
   onStop,
   status,
+  splitSendActions,
   disabled,
   pendingQuestions,
   onQuestionResponse,
@@ -226,12 +239,23 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
         onStop();
       } else if (e.key === "Enter" && !e.shiftKey && canSend) {
         e.preventDefault();
-        handleSend();
+        if (splitSendActions && splitSendActions.length > 0) {
+          const trimmed = text.trim();
+          const images = attachments.length > 0
+            ? attachments.map((a) => ({ base64: a.base64, mimeType: a.mimeType }))
+            : undefined;
+          splitSendActions[0].onClick(trimmed, images);
+          setText("");
+          clearAttachments();
+          saveDraft(null);
+        } else {
+          handleSend();
+        }
       } else if (e.key === "Enter" && !e.shiftKey && !canSend) {
         e.preventDefault();
       }
     },
-    [canSend, handleSend, isRunning, onStop, onCollapse, onPermissionModeToggle, onToggleMaximize, mention, slash, text, projectId, history],
+    [canSend, handleSend, isRunning, onStop, onCollapse, onPermissionModeToggle, onToggleMaximize, mention, slash, text, projectId, history, splitSendActions, attachments, clearAttachments, saveDraft],
   );
 
   const handleChange = useCallback(
@@ -385,7 +409,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
         >
           <Square className="size-3.5" />
         </Button>
-      ) : (
+      ) : !splitSendActions ? (
         <Button
           variant="default"
           size="icon"
@@ -396,8 +420,35 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
         >
           <Send className="size-3.5" />
         </Button>
-      )}
+      ) : null}
       </div>
+      {splitSendActions && !isRunning && (
+        <div className="flex flex-col gap-1.5 pt-1">
+          {splitSendActions.map((action, i) => (
+            <Button
+              key={i}
+              variant={action.variant ?? "default"}
+              size="sm"
+              onClick={() => {
+                const trimmed = text.trim();
+                if (!trimmed && attachments.length === 0) return;
+                const images = attachments.length > 0
+                  ? attachments.map((a) => ({ base64: a.base64, mimeType: a.mimeType }))
+                  : undefined;
+                action.onClick(trimmed, images);
+                setText("");
+                clearAttachments();
+                saveDraft(null);
+              }}
+              disabled={!canSend}
+            >
+              {action.icon}
+              {action.label}
+              {action.kbdShortcut && <KbdShortcut keys={action.kbdShortcut} />}
+            </Button>
+          ))}
+        </div>
+      )}
     </div>
   );
 });
