@@ -198,7 +198,7 @@ describe("createSessionConfig", () => {
     });
 
     expect(config.agentType).toBe("session");
-    expect(config.systemPrompt).toContain("Claude Code");
+    expect(config.systemPrompt).toBeUndefined();
   });
 
   it("uses common MCP server when no planId", () => {

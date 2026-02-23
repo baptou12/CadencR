@@ -340,8 +340,6 @@ After presenting your review report, you MUST follow this approval loop:
 - Include file paths and line numbers for every issue
 - Use MCP tools to create fix phases when changes are requested — do NOT just output text descriptions`;
 
-const SESSION_SYSTEM_PROMPT =
-  "You are Claude Code working on this project. Help the user with whatever they need.";
 
 function buildReviewFixerSystemPrompt(autonomyLevel: 1 | 2 | 3): string {
   const completionSection =
@@ -887,7 +885,6 @@ You have MCP tools available (prefixed with mcp__productdevr-review__) to create
 export function createSessionConfig(opts: SessionConfigOptions): UnifiedAgentConfig {
   return {
     agentType: "session",
-    systemPrompt: SESSION_SYSTEM_PROMPT,
     featureId: opts.featureId,
     projectId: opts.projectId,
     cwd: opts.cwd,
