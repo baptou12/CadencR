@@ -11,6 +11,7 @@ const SHARED_COLUMNS = new Set([
   "model_session",
   "model_qa",
   "agent_autonomy",
+  "parallel_execution",
 ]);
 
 /** Column names that only exist on the projects table. */

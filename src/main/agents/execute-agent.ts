@@ -108,6 +108,7 @@ export function startExecuteAgent(options: ExecuteAgentOptions): ExecuteAgentRes
 
   // Resolve autonomy level: 1 = ask before commit, 2 = manual continue, 3 = full auto
   const autonomyLevel = getAutonomyLevel(options.featureId, options.projectId);
+  const concurrencyLimit = getConcurrencyLimit(options.featureId, options.projectId);
 
   // Group phases by step number
   const stepGroups = new Map<number, PhaseRow[]>();
@@ -133,7 +134,7 @@ export function startExecuteAgent(options: ExecuteAgentOptions): ExecuteAgentRes
 
   // Continue remaining steps asynchronously after first step completes.
   void (async () => {
-    await runWithConcurrencyLimit(MAX_AGENTS_PER_FEATURE, firstStepTasks);
+    await runWithConcurrencyLimit(concurrencyLimit, firstStepTasks);
 
     const firstStepResult = getStepOutcome(plan.id, firstStepNumber);
     if (firstStepResult !== "ok" && firstStepResult !== "qa_fail_with_fixes") {
@@ -154,7 +155,7 @@ export function startExecuteAgent(options: ExecuteAgentOptions): ExecuteAgentRes
       return;
     }
 
-    await executeRemainingSteps(sortedSteps, 1, stepGroups, optionsWithSession, autonomyLevel, plan.id, sessionDbId);
+    await executeRemainingSteps(sortedSteps, 1, stepGroups, optionsWithSession, autonomyLevel, plan.id, sessionDbId, concurrencyLimit);
   })().catch((err) => {
     console.error(`[orchestrator] Unhandled error in execute orchestrator ${sessionDbId}:`, err);
     try {
@@ -521,6 +522,15 @@ export function getAutonomyLevel(featureId: number, projectId: number): 1 | 2 | 
 }
 
 /**
+ * Check if parallel execution is enabled: feature → project → global settings cascade.
+ * Returns the concurrency limit (MAX_AGENTS_PER_FEATURE when enabled, 1 when disabled).
+ */
+function getConcurrencyLimit(featureId: number, projectId: number): number {
+  const raw = resolveSetting("parallel_execution", { featureId, projectId, defaultValue: "true" });
+  return raw === "false" ? 1 : MAX_AGENTS_PER_FEATURE;
+}
+
+/**
  * Execute remaining steps starting from a given index in the sorted steps array.
  * Shared by both initial launch and continueExecuteAgent.
  *
@@ -534,6 +544,7 @@ async function executeRemainingSteps(
   autonomyLevel: 1 | 2 | 3,
   planId: number,
   sessionDbId: number,
+  concurrencyLimit: number = MAX_AGENTS_PER_FEATURE,
 ): Promise<void> {
   const db = getDatabase();
 
@@ -548,7 +559,7 @@ async function executeRemainingSteps(
     const phaseTasks = stepPhases.map((phase) =>
       () => dispatchPhase(phase, options, autonomyLevel, stepSubprocessIds),
     );
-    await runWithConcurrencyLimit(MAX_AGENTS_PER_FEATURE, phaseTasks);
+    await runWithConcurrencyLimit(concurrencyLimit, phaseTasks);
 
     const stepResult = getStepOutcome(planId, stepNumber);
     if (stepResult !== "ok" && stepResult !== "qa_fail_with_fixes") {
@@ -611,7 +622,7 @@ async function executeRemainingSteps(
         freshGroups.set(phase.step_number, existing);
       }
       const freshSteps = Array.from(freshGroups.keys()).toSorted((a, b) => a - b);
-      await executeRemainingSteps(freshSteps, 0, freshGroups, options, autonomyLevel, planId, sessionDbId);
+      await executeRemainingSteps(freshSteps, 0, freshGroups, options, autonomyLevel, planId, sessionDbId, concurrencyLimit);
       return;
     }
   }
@@ -693,6 +704,7 @@ export function continueExecuteAgent(sessionDbId: number): { subprocessIds: stri
   }
 
   const autonomyLevel = getAutonomyLevel(session.feature_id, feature.project_id);
+  const concurrencyLimit = getConcurrencyLimit(session.feature_id, feature.project_id);
 
   // Group remaining phases by step
   const stepGroups = new Map<number, PhaseRow[]>();
@@ -746,7 +758,7 @@ export function continueExecuteAgent(sessionDbId: number): { subprocessIds: stri
         return;
       }
 
-      await executeRemainingSteps(sortedSteps, 1, stepGroups, options, autonomyLevel, plan.id, sessionDbId);
+      await executeRemainingSteps(sortedSteps, 1, stepGroups, options, autonomyLevel, plan.id, sessionDbId, concurrencyLimit);
     } else {
       // Safety check: verify no pending/draft phases remain
       const remaining = db.prepare(
@@ -769,7 +781,7 @@ export function continueExecuteAgent(sessionDbId: number): { subprocessIds: stri
             freshGroups.set(phase.step_number, existing);
           }
           const freshSteps = Array.from(freshGroups.keys()).toSorted((a, b) => a - b);
-          await executeRemainingSteps(freshSteps, 0, freshGroups, options, autonomyLevel, plan.id, sessionDbId);
+          await executeRemainingSteps(freshSteps, 0, freshGroups, options, autonomyLevel, plan.id, sessionDbId, concurrencyLimit);
           return;
         }
       }

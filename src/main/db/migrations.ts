@@ -432,6 +432,14 @@ const migrations: Migration[] = [
       db.exec("ALTER TABLE agent_sessions ADD COLUMN plan_approval_result TEXT DEFAULT NULL");
     },
   },
+  {
+    version: 34,
+    description: "Add parallel_execution column to projects and features",
+    up: (db) => {
+      db.exec("ALTER TABLE projects ADD COLUMN parallel_execution TEXT DEFAULT NULL");
+      db.exec("ALTER TABLE features ADD COLUMN parallel_execution TEXT DEFAULT NULL");
+    },
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

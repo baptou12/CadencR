@@ -33,6 +33,7 @@ export function createMockProject(overrides: Partial<ProjectRow> = {}): ProjectR
     model_session: null,
     model_qa: null,
     agent_autonomy: null,
+    parallel_execution: null,
     branch_prefix: "feature/",
     qa_prompt: null,
     ...overrides,
@@ -62,6 +63,7 @@ export function createMockFeature(overrides: Partial<FeatureRow> = {}): FeatureR
     model_session: null,
     model_qa: null,
     agent_autonomy: null,
+    parallel_execution: null,
     ...overrides,
   };
 }

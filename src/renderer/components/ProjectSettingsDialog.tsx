@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { trpc } from "@/trpc";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -138,6 +139,28 @@ export function ProjectSettingsDialog({
               </Select>
               <p className="text-xs text-muted-foreground">
                 Controls how much the execute agent does automatically
+              </p>
+            </div>
+
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="project-parallel-execution"
+                  checked={(settings?.parallel_execution ?? "true") === "true"}
+                  onCheckedChange={(checked) =>
+                    setSettingMutation.mutate({
+                      project_id: projectId,
+                      key: "parallel_execution",
+                      value: checked ? "true" : "false",
+                    })
+                  }
+                />
+                <label htmlFor="project-parallel-execution" className="text-xs font-medium cursor-pointer">
+                  Enable parallel agent execution
+                </label>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Run multiple agents in parallel within each execution step
               </p>
             </div>
           </div>

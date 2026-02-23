@@ -1,11 +1,39 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { ModelSelector } from "../components/ModelSelector";
 import { trpc } from "../trpc";
 
 export const Route = createFileRoute("/settings")({
   component: SettingsPage,
 });
+
+function ParallelExecutionCheckbox() {
+  const parallel = trpc.settings.get.useQuery({ key: "parallel_execution" });
+  const utils = trpc.useContext();
+  const setParallel = trpc.settings.set.useMutation({
+    onSuccess: () => {
+      utils.settings.get.invalidate({ key: "parallel_execution" });
+    },
+  });
+
+  const isChecked = (parallel.data ?? "true") === "true";
+
+  return (
+    <div className="flex items-center gap-2">
+      <Checkbox
+        id="parallel-execution"
+        checked={isChecked}
+        onCheckedChange={(checked) =>
+          setParallel.mutate({ key: "parallel_execution", value: checked ? "true" : "false" })
+        }
+      />
+      <label htmlFor="parallel-execution" className="text-sm cursor-pointer">
+        Enable parallel agent execution
+      </label>
+    </div>
+  );
+}
 
 function AgentAutonomySelect() {
   const autonomy = trpc.settings.get.useQuery({ key: "agent_autonomy" });
@@ -69,6 +97,16 @@ function SettingsPage() {
           </p>
         </div>
         <AgentAutonomySelect />
+      </section>
+
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-lg font-semibold">Parallel Execution</h2>
+          <p className="text-sm text-muted-foreground">
+            Run multiple agents in parallel within each execution step.
+          </p>
+        </div>
+        <ParallelExecutionCheckbox />
       </section>
 
       <section className="space-y-4">
