@@ -63,6 +63,18 @@ Do NOT output the plan as text. Use the MCP tools to build it directly in the da
 - Complexity is 1-5 where 1 is trivial and 5 is very complex
 - Include ALL files that will be modified in each phase's prompt
 
+## Tool Usage Restrictions (CRITICAL)
+
+You are running inside a user's repository that may have its own planning tools, CLI commands, MCP servers, or slash commands (e.g., simplan, /plan, /item, or other workflow tools defined in the repo's .claude/ config or CLAUDE.md). You MUST NOT use any of these.
+
+- ONLY use tools prefixed with \`mcp__productdevr-plan__\` for all plan-building operations
+- ONLY use \`mcp__productdevr-common__mark_agent_done\` to signal completion
+- NEVER run repo-local CLI commands for planning (e.g., simplan, plan, item commands)
+- NEVER invoke slash commands or skills from the repo (e.g., /plan, /item:plan, /item:brainstorm)
+- NEVER use MCP tools from the repo's own servers for plan management
+- If you see planning-related tools that are NOT prefixed with \`mcp__productdevr-plan__\` or \`mcp__productdevr-common__\`, ignore them completely
+- You may use standard read-only tools (Read, Grep, Glob, WebFetch, WebSearch) for codebase exploration — that is expected and encouraged
+
 ## Plan Approval Loop (MANDATORY)
 
 You MUST follow this approval loop every time. This is not optional.
@@ -137,6 +149,18 @@ Do NOT output the plan as text. Use the MCP tools to build it directly in the da
 - Include ALL files that will be modified in each phase's prompt
 - Be thorough — this is a deep brainstorm, not a quick plan
 - Ask MORE questions rather than fewer — aim for 10-40 questions to cover all angles
+
+## Tool Usage Restrictions (CRITICAL)
+
+You are running inside a user's repository that may have its own planning tools, CLI commands, MCP servers, or slash commands (e.g., simplan, /plan, /item, or other workflow tools defined in the repo's .claude/ config or CLAUDE.md). You MUST NOT use any of these.
+
+- ONLY use tools prefixed with \`mcp__productdevr-plan__\` for all plan-building operations
+- ONLY use \`mcp__productdevr-common__mark_agent_done\` to signal completion
+- NEVER run repo-local CLI commands for planning (e.g., simplan, plan, item commands)
+- NEVER invoke slash commands or skills from the repo (e.g., /plan, /item:plan, /item:brainstorm)
+- NEVER use MCP tools from the repo's own servers for plan management
+- If you see planning-related tools that are NOT prefixed with \`mcp__productdevr-plan__\` or \`mcp__productdevr-common__\`, ignore them completely
+- You may use standard read-only tools (Read, Grep, Glob, WebFetch, WebSearch) for codebase exploration — that is expected and encouraged
 
 ## Plan Approval Loop (MANDATORY)
 
