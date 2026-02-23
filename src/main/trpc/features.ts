@@ -3,7 +3,7 @@ import { router, publicProcedure } from "./trpc";
 import { getDatabase } from "../db/database";
 import type { FeatureRow, PlanRow, PhaseRow, CountRow, SettingRow } from "../db/types";
 import type { AgentType } from "../agents/types";
-import { getSubprocessIdsForSessionDbIds } from "../agents/session-persistence";
+import { getSubprocessIdsForSessionDbIds, notifyDbUpdated } from "../agents/session-persistence";
 import { stopSubprocess } from "../agents/subprocess-manager";
 
 export const FEATURE_STATUSES = ["draft", "planned", "in-progress", "review", "done", "archived"] as const;
@@ -249,6 +249,26 @@ export const featuresRouter = router({
       db.prepare(
         "UPDATE phases SET status = 'pending', implementation_notes = NULL, deviations = NULL WHERE id = ?"
       ).run(input.phase_id);
+
+      return { success: true };
+    }),
+
+  overridePhaseStatus: publicProcedure
+    .input(z.object({
+      phase_id: z.number(),
+      status: z.enum(["pending", "running", "completed", "error"]),
+    }))
+    .mutation(({ input }) => {
+      const db = getDatabase();
+      const phase = db.prepare("SELECT id, plan_id FROM phases WHERE id = ?")
+        .get(input.phase_id) as Pick<PhaseRow, "id" | "plan_id"> | undefined;
+      if (!phase) throw new Error("Phase not found");
+
+      db.prepare("UPDATE phases SET status = ? WHERE id = ?").run(input.status, input.phase_id);
+
+      const plan = db.prepare("SELECT feature_id FROM plans WHERE id = ?")
+        .get(phase.plan_id) as Pick<PlanRow, "feature_id"> | undefined;
+      if (plan) notifyDbUpdated("phase", plan.feature_id);
 
       return { success: true };
     }),

@@ -40,6 +40,7 @@ vi.mock("@/trpc", () => ({
     features: {
       getPlanWithPhases: { useQuery: mockGetPlan },
       resetPhase: { useMutation: vi.fn(() => ({ mutate: mockResetPhase, isLoading: false })) },
+      overridePhaseStatus: { useMutation: vi.fn(() => ({ mutate: vi.fn(), isLoading: false })) },
     },
   },
 }));

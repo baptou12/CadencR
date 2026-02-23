@@ -35,6 +35,12 @@ export function PlanSidebar({ featureId }: PlanSidebarProps) {
       utils.agents.getFeatureAgentState.invalidate({ featureId });
     },
   });
+  const overridePhaseStatus = trpc.features.overridePhaseStatus.useMutation({
+    onSuccess: () => {
+      utils.features.getPlanWithPhases.invalidate({ feature_id: featureId });
+      utils.agents.getFeatureAgentState.invalidate({ featureId });
+    },
+  });
 
   const canResetPhase = useCallback((phase: PhaseData, index: number) => {
     if (phase.status !== "completed" && phase.status !== "done" && phase.status !== "error") return false;
@@ -167,6 +173,9 @@ export function PlanSidebar({ featureId }: PlanSidebarProps) {
                         onExpand={setExpandedPhase}
                         canReset={canResetPhase(phase, index)}
                         onReset={handleResetPhase}
+                        onOverrideStatus={(phase, status) =>
+                          overridePhaseStatus.mutate({ phase_id: phase.id, status: status as "pending" | "running" | "completed" | "error" })
+                        }
                       />
                     </div>
                   ))}

@@ -1,6 +1,10 @@
+import { useState } from "react";
 import { RotateCcw, FlaskConical, Wrench } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PHASE_STATUS_CONFIG } from "@/lib/phase-status";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+
+const OVERRIDE_STATUSES = ["pending", "running", "completed", "error"] as const;
 
 export interface PhaseData {
   id: number;
@@ -23,9 +27,11 @@ interface PhaseCardProps {
   onExpand: (phase: PhaseData) => void;
   canReset?: boolean;
   onReset?: (phase: PhaseData) => void;
+  onOverrideStatus?: (phase: PhaseData, status: string) => void;
 }
 
-export function PhaseCard({ phase, displayNumber, onExpand, canReset, onReset }: PhaseCardProps) {
+export function PhaseCard({ phase, displayNumber, onExpand, canReset, onReset, onOverrideStatus }: PhaseCardProps) {
+  const [statusOpen, setStatusOpen] = useState(false);
   const config = PHASE_STATUS_CONFIG[phase.status] ?? PHASE_STATUS_CONFIG.pending;
   const StatusIcon = config.icon;
 
@@ -39,14 +45,41 @@ export function PhaseCard({ phase, displayNumber, onExpand, canReset, onReset }:
         <span className="text-xs font-medium text-muted-foreground shrink-0">
           Phase {displayNumber}
         </span>
-        <span
-          className={cn(
-            "rounded-full px-1.5 py-0.5 text-[10px] font-medium leading-none shrink-0",
-            config.badgeClassName,
-          )}
-        >
-          {config.label}
-        </span>
+        <Popover open={statusOpen} onOpenChange={setStatusOpen}>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              onClick={(e) => e.stopPropagation()}
+              className={cn(
+                "rounded-full px-1.5 py-0.5 text-[10px] font-medium leading-none shrink-0 cursor-pointer hover:ring-1 hover:ring-foreground/20",
+                config.badgeClassName,
+              )}
+            >
+              {config.label}
+            </button>
+          </PopoverTrigger>
+          <PopoverContent className="w-32 p-1" align="start" onClick={(e) => e.stopPropagation()}>
+            {OVERRIDE_STATUSES.map((s) => {
+              const c = PHASE_STATUS_CONFIG[s];
+              const Icon = c.icon;
+              return (
+                <button
+                  key={s}
+                  type="button"
+                  className="flex items-center gap-2 w-full rounded px-2 py-1 text-xs hover:bg-muted"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOverrideStatus?.(phase, s);
+                    setStatusOpen(false);
+                  }}
+                >
+                  <Icon className={cn("size-3", c.className)} />
+                  {c.label}
+                </button>
+              );
+            })}
+          </PopoverContent>
+        </Popover>
         {phase.phase_type === 'qa' && (
           <span className="flex items-center gap-0.5 rounded-full bg-[var(--drac-purple)]/20 px-1.5 py-0.5 text-[10px] font-medium leading-none text-[var(--drac-purple)] shrink-0">
             <FlaskConical className="size-2.5" />
