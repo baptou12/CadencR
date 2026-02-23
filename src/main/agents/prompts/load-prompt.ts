@@ -1,11 +1,9 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-
-const cache = new Map<string, string>();
+import { prompts } from "./index";
 
 export function loadPrompt(name: string): string {
-  if (cache.has(name)) return cache.get(name)!;
-  const text = readFileSync(join(__dirname, name), "utf-8");
-  cache.set(name, text);
+  const text = prompts[name as keyof typeof prompts];
+  if (!text) {
+    throw new Error(`Unknown prompt: ${name}`);
+  }
   return text;
 }
