@@ -901,7 +901,7 @@ export function createSessionConfig(opts: SessionConfigOptions): UnifiedAgentCon
           "productdevr-session": createWorkflowSessionMcpServer(
             sessionDbId,
             opts.featureId ?? 0,
-            ["read_plan", "list_phases", "read_phase", "mark_agent_done"],
+            ["read_plan", "list_phases", "read_phase", "mark_agent_done", "mark_phase_done"],
           ),
         } as Record<string, ReturnType<typeof createWorkflowSessionMcpServer>>;
       }

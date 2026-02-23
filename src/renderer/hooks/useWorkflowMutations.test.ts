@@ -204,8 +204,8 @@ describe("useWorkflowMutations", () => {
     const { result } = renderHook(() =>
       useWorkflowMutations({ featureId: 1, projectId: 1, sessions: [], refetch: mockRefetch, getDescription: mockGetDescription }),
     );
-    await result.current.handleStartWorkflowSession();
-    expect(mockStartWorkflowSession).toHaveBeenCalledWith({ featureId: 1, projectId: 1 });
+    await result.current.handleStartWorkflowSession("help me build this");
+    expect(mockStartWorkflowSession).toHaveBeenCalledWith({ featureId: 1, projectId: 1, prompt: "help me build this" });
   });
 
   it("handleMarkSessionDone calls stopBySessionId", async () => {

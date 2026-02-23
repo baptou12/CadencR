@@ -321,9 +321,10 @@ export function useWorkflowMutations({
     }
   };
 
-  const handleStartWorkflowSession = useCallback(async () => {
+  const handleStartWorkflowSession = useCallback(async (prompt: string, _images?: Array<{ base64: string; mimeType: string }>) => {
+    if (!prompt.trim()) return;
     try {
-      await startWorkflowSessionMutation.mutateAsync({ featureId, projectId });
+      await startWorkflowSessionMutation.mutateAsync({ featureId, projectId, prompt: prompt.trim() });
       void refetch();
     } catch {
       // Error will show via query refetch

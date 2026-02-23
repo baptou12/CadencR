@@ -298,14 +298,15 @@ export function FeatureWorkflowView({
     { enableOnFormTags: true },
   );
 
-  // CMD+SHIFT+S: start a workflow session agent
+  // CMD+SHIFT+S: open session prompt bar
+  const [sessionPromptTrigger, setSessionPromptTrigger] = useState(0);
   useHotkeys(
     "meta+shift+s",
     (e) => {
       if (!actions.canStartWorkflowSession || wf.isStartingWorkflowSession)
         return;
       e.preventDefault();
-      wf.handleStartWorkflowSession();
+      setSessionPromptTrigger((v) => v + 1);
     },
     { enableOnFormTags: true },
   );
@@ -808,6 +809,7 @@ export function FeatureWorkflowView({
                       onStartRefineBrainstorm={wf.handleStartRefineBrainstorm}
                       isStartingRefinePlan={wf.isStartingRefinePlan}
                       isStartingRefineBrainstorm={wf.isStartingRefineBrainstorm}
+                      openSessionPrompt={sessionPromptTrigger}
                     />
                   </div>
                 )}

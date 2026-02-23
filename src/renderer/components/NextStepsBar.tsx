@@ -25,7 +25,7 @@ interface NextStepsBarProps {
   isContinuingBuild?: boolean;
   nextStepNumber?: number | null;
   canStartWorkflowSession?: boolean;
-  onStartWorkflowSession?: () => void;
+  onStartWorkflowSession?: (prompt: string, images?: Array<{ base64: string; mimeType: string }>) => void;
   isStartingWorkflowSession?: boolean;
   allPhasesDone?: boolean;
   projectId?: number;
@@ -36,6 +36,7 @@ interface NextStepsBarProps {
   onStartRefineBrainstorm?: (description: string, images?: Array<{ base64: string; mimeType: string }>) => void;
   isStartingRefinePlan?: boolean;
   isStartingRefineBrainstorm?: boolean;
+  openSessionPrompt?: number;
 }
 
 export function NextStepsBar({
@@ -66,9 +67,11 @@ export function NextStepsBar({
   onStartRefineBrainstorm,
   isStartingRefinePlan,
   isStartingRefineBrainstorm,
+  openSessionPrompt,
 }: NextStepsBarProps) {
   const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
   const [showRefinePrompt, setShowRefinePrompt] = useState(false);
+  const [showSessionPrompt, setShowSessionPrompt] = useState(false);
 
   const canMerge = allPhasesDone && featureType === "feature" && projectId != null && featureId != null;
 
@@ -80,6 +83,20 @@ export function NextStepsBar({
       setShowRefinePrompt(false);
     }
   }, [isRefineDisabled]);
+
+  // Close session prompt when session agent starts
+  useEffect(() => {
+    if (isStartingWorkflowSession) {
+      setShowSessionPrompt(false);
+    }
+  }, [isStartingWorkflowSession]);
+
+  // Open session prompt when triggered externally (e.g. keyboard shortcut)
+  useEffect(() => {
+    if (openSessionPrompt && openSessionPrompt > 0) {
+      setShowSessionPrompt(true);
+    }
+  }, [openSessionPrompt]);
 
   // CMD+SHIFT+M: open merge & archive dialog
   useEffect(() => {
@@ -123,6 +140,25 @@ export function NextStepsBar({
       },
     ],
     [isStartingRefinePlan, isStartingRefineBrainstorm, onStartRefinePlan, onStartRefineBrainstorm],
+  );
+
+  const sessionSplitActions: SplitSendAction[] = useMemo(
+    () => [
+      {
+        label: "Start Session",
+        icon: isStartingWorkflowSession ? (
+          <Loader2Icon className="mr-2 size-4 animate-spin" />
+        ) : (
+          <AGENT_ICONS.session className="mr-2 size-4" />
+        ),
+        variant: "default" as const,
+        kbdShortcut: ["enter"],
+        onClick: (text: string, images?: Array<{ base64: string; mimeType: string }>) => {
+          onStartWorkflowSession?.(text, images);
+        },
+      },
+    ],
+    [isStartingWorkflowSession, onStartWorkflowSession],
   );
 
   if (!show && !canStartRefine) return null;
@@ -175,7 +211,7 @@ export function NextStepsBar({
             {canStartWorkflowSession && onStartWorkflowSession && (
               <Button
                 variant="outline"
-                onClick={onStartWorkflowSession}
+                onClick={() => setShowSessionPrompt((v) => !v)}
                 disabled={isStartingWorkflowSession}
               >
                 {isStartingWorkflowSession ? (
@@ -268,6 +304,18 @@ export function NextStepsBar({
             status="idle"
             disabled={isRefineDisabled}
             splitSendActions={refineSplitActions}
+          />
+        </div>
+      )}
+
+      {showSessionPrompt && canStartWorkflowSession && onStartWorkflowSession && (
+        <div className="w-full rounded-lg border border-border/50 overflow-hidden">
+          <AgentPromptBar
+            onSend={() => {}}
+            onStop={() => {}}
+            status="idle"
+            disabled={isStartingWorkflowSession}
+            splitSendActions={sessionSplitActions}
           />
         </div>
       )}
