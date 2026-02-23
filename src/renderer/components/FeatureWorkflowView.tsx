@@ -803,6 +803,11 @@ export function FeatureWorkflowView({
                       projectId={projectId}
                       featureId={featureId}
                       featureType={feature?.type}
+                      canStartRefine={actions.canStartRefine}
+                      onStartRefinePlan={wf.handleStartRefinePlan}
+                      onStartRefineBrainstorm={wf.handleStartRefineBrainstorm}
+                      isStartingRefinePlan={wf.isStartingRefinePlan}
+                      isStartingRefineBrainstorm={wf.isStartingRefineBrainstorm}
                     />
                   </div>
                 )}

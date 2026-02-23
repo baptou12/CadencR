@@ -33,6 +33,7 @@ export interface ActionAvailability {
   canStartRisk: boolean;
   canStartReview: boolean;
   canStartWorkflowSession: boolean;
+  canStartRefine: boolean;
 }
 
 export interface FeatureStateResult {
@@ -126,6 +127,8 @@ export function useFeatureState(
       canStartReview:
         (isInProgress || isReview) && review.status !== "running",
       canStartWorkflowSession:
+        isPlanned || isInProgress || isReview,
+      canStartRefine:
         isPlanned || isInProgress || isReview,
     };
 

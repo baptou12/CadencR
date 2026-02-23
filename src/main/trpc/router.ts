@@ -49,6 +49,8 @@ import { startUnifiedAgent } from "../agents/unified-agent";
 import {
   startPlanAgent,
   startBrainstormAgent,
+  startRefinePlanAgent,
+  startRefineBrainstormAgent,
   startRiskAgent,
   startReviewAgent,
   addFixPhase,
@@ -609,6 +611,56 @@ const agentsRouter = router({
         description = input.description;
       }
       return startBrainstormAgent({ featureId: input.featureId, projectId: input.projectId, description, cwd, worktreePath });
+    }),
+
+  /** Refine an existing plan — start a plan agent that appends new phases */
+  startRefinePlan: publicProcedure
+    .input(z.object({
+      featureId: z.number(),
+      projectId: z.number(),
+      description: z.string(),
+      images: z.array(z.object({ base64: z.string(), mimeType: z.string() })).optional(),
+    }))
+    .mutation(({ input }) => {
+      const { cwd, worktreePath } = resolveAgentCwd(input.featureId, input.projectId);
+      let description: import("../agents/types").MessageContent;
+      if (input.images && input.images.length > 0) {
+        description = [
+          { type: "text" as const, text: input.description },
+          ...input.images.map((img) => ({
+            type: "image" as const,
+            source: { type: "base64" as const, media_type: img.mimeType, data: img.base64 },
+          })),
+        ];
+      } else {
+        description = input.description;
+      }
+      return startRefinePlanAgent({ featureId: input.featureId, projectId: input.projectId, description, cwd, worktreePath });
+    }),
+
+  /** Refine an existing plan — start a brainstorm agent that appends new phases */
+  startRefineBrainstorm: publicProcedure
+    .input(z.object({
+      featureId: z.number(),
+      projectId: z.number(),
+      description: z.string(),
+      images: z.array(z.object({ base64: z.string(), mimeType: z.string() })).optional(),
+    }))
+    .mutation(({ input }) => {
+      const { cwd, worktreePath } = resolveAgentCwd(input.featureId, input.projectId);
+      let description: import("../agents/types").MessageContent;
+      if (input.images && input.images.length > 0) {
+        description = [
+          { type: "text" as const, text: input.description },
+          ...input.images.map((img) => ({
+            type: "image" as const,
+            source: { type: "base64" as const, media_type: img.mimeType, data: img.base64 },
+          })),
+        ];
+      } else {
+        description = input.description;
+      }
+      return startRefineBrainstormAgent({ featureId: input.featureId, projectId: input.projectId, description, cwd, worktreePath });
     }),
 
   /** Start the execute agent for a feature (runs plan phases) */

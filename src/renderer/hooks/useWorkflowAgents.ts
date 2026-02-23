@@ -182,5 +182,10 @@ export function useWorkflowAgents({
     handleStartWorkflowSession: mut.handleStartWorkflowSession,
     handleMarkSessionDone: mut.handleMarkSessionDone,
     isStartingWorkflowSession: mut.isStartingWorkflowSession,
+    // Refine
+    handleStartRefinePlan: mut.handleStartRefinePlan,
+    handleStartRefineBrainstorm: mut.handleStartRefineBrainstorm,
+    isStartingRefinePlan: mut.isStartingRefinePlan,
+    isStartingRefineBrainstorm: mut.isStartingRefineBrainstorm,
   };
 }

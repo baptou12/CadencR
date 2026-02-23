@@ -387,10 +387,15 @@ export function createPlanMcpServer(planId: number, featureId: number, sessionDb
             return errorResult("Plan has not been approved via show_plan. Call show_plan first and get user approval before finalizing.");
           }
 
+          // Check current feature status — only transition to 'planned' if still in draft
+          const feature = db.prepare("SELECT status FROM features WHERE id = ?").get(plan.feature_id) as { status: string } | undefined;
           db.transaction(() => {
             db.prepare("UPDATE phases SET status = 'pending' WHERE plan_id = ? AND status = 'draft'").run(args.plan_id);
             db.prepare("UPDATE plans SET status = 'active', updated_at = datetime('now') WHERE id = ?").run(args.plan_id);
-            transitionFeature(db, plan.feature_id, "planned");
+            // Only transition feature to 'planned' if it's still a draft — don't regress in-progress/review features
+            if (!feature || feature.status === "draft") {
+              transitionFeature(db, plan.feature_id, "planned");
+            }
           })();
           notifyDbUpdated("phase", plan.feature_id);
 

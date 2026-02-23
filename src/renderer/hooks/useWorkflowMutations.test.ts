@@ -40,6 +40,8 @@ vi.mock("@/trpc", () => ({
       resume: { useMutation: vi.fn(() => ({ mutateAsync: mockResume })) },
       continueExecute: { useMutation: vi.fn(() => ({ mutateAsync: mockContinueExecute, isLoading: false })) },
       startWorkflowSession: { useMutation: vi.fn(() => ({ mutateAsync: mockStartWorkflowSession, isLoading: false })) },
+      startRefinePlan: { useMutation: vi.fn(() => ({ mutateAsync: vi.fn(), isLoading: false })) },
+      startRefineBrainstorm: { useMutation: vi.fn(() => ({ mutateAsync: vi.fn(), isLoading: false })) },
     },
   },
 }));

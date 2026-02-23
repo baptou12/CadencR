@@ -108,6 +108,90 @@ export function startBrainstormAgent(options: {
 }
 
 // ---------------------------------------------------------------------------
+// Refine Plan / Brainstorm (append new phases to existing plan)
+// ---------------------------------------------------------------------------
+
+function buildRefineContext(db: ReturnType<typeof getDatabase>, featureId: number): { planId: number; context: string } {
+  const plan = db
+    .prepare("SELECT id, title, summary, context FROM plans WHERE feature_id = ? ORDER BY id DESC LIMIT 1")
+    .get(featureId) as { id: number; title: string | null; summary: string | null; context: string | null } | undefined;
+
+  if (!plan) throw new Error("No plan found for this feature — cannot refine without an existing plan.");
+
+  const phases = db
+    .prepare(
+      "SELECT step_number, title, status, implementation_notes, phase_type FROM phases WHERE plan_id = ? ORDER BY step_number, order_index",
+    )
+    .all(plan.id) as { step_number: number; title: string; status: string; implementation_notes: string | null; phase_type: string | null }[];
+
+  const maxStep = phases.length > 0 ? Math.max(...phases.map((p) => p.step_number)) : 0;
+
+  const parts: string[] = [];
+  if (plan.summary) parts.push(`**Plan Summary:** ${plan.summary}`);
+  if (plan.context) parts.push(`**Codebase Context:** ${plan.context}`);
+
+  if (phases.length > 0) {
+    parts.push("\n## Existing Phases:");
+    for (const p of phases) {
+      let line = `Step ${p.step_number}. [${p.status.toUpperCase()}] ${p.title}`;
+      if (p.phase_type) line += ` (${p.phase_type})`;
+      if (p.implementation_notes) line += `\n   Notes: ${p.implementation_notes}`;
+      parts.push(line);
+    }
+  }
+
+  const refineInstructions = `
+## Refinement Instructions
+This is a REFINEMENT of an existing plan (Plan ID: ${plan.id}). The phases listed above already exist.
+- Do NOT recreate or duplicate completed phases.
+- Add NEW phases to extend the plan based on the user's request below.
+- Use step numbers starting from ${maxStep + 1}.
+- You may also update or remove existing DRAFT or PENDING phases if needed.
+- After building the new phases, call show_plan for approval, then finalize_plan.`;
+
+  return { planId: plan.id, context: parts.join("\n") + refineInstructions };
+}
+
+export function startRefinePlanAgent(options: {
+  featureId: number;
+  projectId: number;
+  description: MessageContent;
+  cwd: string;
+  worktreePath?: string;
+}): AgentResult {
+  const db = getDatabase();
+  const { planId, context } = buildRefineContext(db, options.featureId);
+
+  // Augment description with existing plan context
+  const augmented: MessageContent = typeof options.description === "string"
+    ? `${context}\n\n## User's Refinement Request\n${options.description}`
+    : [{ type: "text" as const, text: `${context}\n\n## User's Refinement Request\n` }, ...(options.description as Array<{ type: "text"; text: string } | { type: "image"; source: { type: "base64"; media_type: string; data: string } }>)];
+
+  return startUnifiedAgent(
+    createPlanConfig({ ...options, description: augmented, planId }),
+  );
+}
+
+export function startRefineBrainstormAgent(options: {
+  featureId: number;
+  projectId: number;
+  description: MessageContent;
+  cwd: string;
+  worktreePath?: string;
+}): AgentResult {
+  const db = getDatabase();
+  const { planId, context } = buildRefineContext(db, options.featureId);
+
+  const augmented: MessageContent = typeof options.description === "string"
+    ? `${context}\n\n## User's Refinement Request\n${options.description}`
+    : [{ type: "text" as const, text: `${context}\n\n## User's Refinement Request\n` }, ...(options.description as Array<{ type: "text"; text: string } | { type: "image"; source: { type: "base64"; media_type: string; data: string } }>)];
+
+  return startUnifiedAgent(
+    createBrainstormConfig({ ...options, description: augmented, planId }),
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Risk
 // ---------------------------------------------------------------------------
 
