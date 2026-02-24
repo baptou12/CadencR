@@ -604,14 +604,41 @@ export function createPrdMcpServer(featureId: number, sessionDbId: number, onSho
       createAgentDoneTool(sessionDbId, featureId),
 
       tool(
-        "update_prd",
-        "Store or update the PRD markdown for this feature.",
+        "create_prd",
+        "Create the PRD for this feature. Use this for the initial PRD creation. Sends the full PRD markdown content.",
         {
           prd: z.string().describe("The full PRD markdown content"),
         },
         async (args) => {
           const db = getDatabase();
           db.prepare("UPDATE features SET prd = ? WHERE id = ?").run(args.prd, featureId);
+          notifyDbUpdated("feature", featureId);
+          return textResult("PRD created successfully.");
+        },
+      ),
+
+      tool(
+        "edit_prd",
+        "Edit the PRD by finding a string and replacing it. The old_string must match exactly (including whitespace and newlines). Use this for revisions instead of rewriting the entire PRD.",
+        {
+          old_string: z.string().describe("The exact string to find in the current PRD"),
+          new_string: z.string().describe("The string to replace it with"),
+        },
+        async (args) => {
+          const db = getDatabase();
+          const row = db.prepare("SELECT prd FROM features WHERE id = ?").get(featureId) as { prd: string | null } | undefined;
+          if (!row?.prd) {
+            return errorResult("No PRD exists yet. Use create_prd first.");
+          }
+          if (!row.prd.includes(args.old_string)) {
+            return errorResult("old_string not found in the current PRD. Make sure it matches exactly.");
+          }
+          const occurrences = row.prd.split(args.old_string).length - 1;
+          if (occurrences > 1) {
+            return errorResult(`old_string found ${occurrences} times in the PRD. Provide a larger/more unique string to match exactly once.`);
+          }
+          const updated = row.prd.replace(args.old_string, args.new_string);
+          db.prepare("UPDATE features SET prd = ? WHERE id = ?").run(updated, featureId);
           notifyDbUpdated("feature", featureId);
           return textResult("PRD updated successfully.");
         },

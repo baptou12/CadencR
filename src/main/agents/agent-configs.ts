@@ -248,7 +248,7 @@ Start by exploring the codebase to understand the project structure and existing
  * No plan row is created. Uses waitForPlanApproval for PRD approval flow.
  */
 export function createPrdConfig(opts: PrdConfigOptions): UnifiedAgentConfig {
-  const prdInstructions = `Use the MCP tools to build the PRD. Call update_prd to store the PRD content, then call show_prd to present it for approval. If rejected, revise and call show_prd again. Once approved, call mark_agent_done.`;
+  const prdInstructions = `Use the MCP tools to build the PRD. Call create_prd to store the initial PRD content, then call show_prd to present it for approval. If rejected, use edit_prd for targeted changes (or create_prd for full rewrites), then call show_prd again. Once approved, call mark_agent_done.`;
 
   let prompt: MessageContent;
   if (typeof opts.description === "string") {
