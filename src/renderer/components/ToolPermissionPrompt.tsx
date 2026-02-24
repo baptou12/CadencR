@@ -23,13 +23,22 @@ interface ToolPermissionPromptProps {
 
 /**
  * Inline permission prompt shown when an agent tool call requires user approval.
- * Displays the tool name, description, and three options with CMD+number shortcuts.
+ * Displays the tool name, description, raw command, and three options with CMD+number shortcuts.
  */
 export function ToolPermissionPrompt({ permission, onDecision, disableShortcuts }: ToolPermissionPromptProps) {
   const [feedback, setFeedback] = useState("");
   const [showFeedback, setShowFeedback] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState<number | null>(null);
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Extract the raw command/path for display
+  const rawCommand = typeof permission.input.command === "string"
+    ? permission.input.command
+    : typeof permission.input.file_path === "string"
+      ? permission.input.file_path
+      : typeof permission.input.path === "string"
+        ? permission.input.path
+        : null;
 
   // Clean up highlight timer on unmount
   useEffect(() => {
@@ -116,7 +125,14 @@ export function ToolPermissionPrompt({ permission, onDecision, disableShortcuts 
       </div>
 
       {/* Description */}
-      <p className="mb-3 text-sm text-foreground">{permission.description}</p>
+      <p className="mb-1.5 text-sm text-foreground">{permission.description}</p>
+
+      {/* Raw command / path */}
+      {rawCommand && (
+        <pre className="mb-3 max-h-40 overflow-auto rounded-md border border-border bg-muted/50 p-2 text-xs text-foreground font-mono whitespace-pre-wrap break-all">
+          {rawCommand}
+        </pre>
+      )}
 
       {/* Options */}
       <div className="mb-2 flex flex-col gap-1.5">

@@ -422,14 +422,16 @@ const agentsRouter = router({
       let cwd: string;
       let worktreePath: string | undefined;
       if (input.agentType === "session") {
-        const feature = db
-          .prepare("SELECT type FROM features WHERE id = ?")
-          .get(input.featureId) as { type: string } | undefined;
-        if (feature?.type === "feature") {
-          // Workflow session — was started with worktree CWD
-          ({ cwd, worktreePath } = resolveAgentCwd(input.featureId, input.projectId));
+        // Check if the feature has a worktree configured
+        const wtRow = db
+          .prepare("SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'")
+          .get(input.featureId) as { value: string } | undefined;
+        if (wtRow?.value) {
+          // Feature has a worktree — use it as cwd and for permission isolation
+          cwd = wtRow.value;
+          worktreePath = wtRow.value;
         } else {
-          // Standalone session — was started with project path CWD
+          // No worktree — use project path directly
           const project = db
             .prepare("SELECT path FROM projects WHERE id = ?")
             .get(input.projectId) as Pick<ProjectRow, "path"> | undefined;
@@ -805,11 +807,19 @@ const agentsRouter = router({
         prompt = input.prompt;
       }
 
+      // Resolve worktree path if the feature has one configured
+      const wtRow = db
+        .prepare("SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'")
+        .get(input.featureId) as { value: string } | undefined;
+      const cwd = wtRow?.value ?? project.path;
+      const worktreePath = wtRow?.value;
+
       const result = startSessionAgent({
         featureId: input.featureId,
         projectId: input.projectId,
         prompt,
-        cwd: project.path,
+        cwd,
+        worktreePath,
         permissionMode: input.permissionMode,
       });
 

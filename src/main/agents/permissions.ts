@@ -164,6 +164,41 @@ function detectDestructiveCommand(command: string): DestructiveCommandMatch | nu
 }
 
 /**
+ * Check if a candidate string looks like a real filesystem path
+ * rather than a sed/awk substitution pattern or regex.
+ *
+ * Sed patterns like `s/foo/bar/g` produce candidates like `/foo/bar/g`
+ * which are clearly not real paths.
+ */
+function looksLikeRealPath(candidate: string): boolean {
+  // Must have at least two characters (/ + something)
+  if (candidate.length < 2) return false;
+
+  // Real paths have a meaningful first component after the leading /.
+  // Sed/awk patterns like /foo/bar/g have short, flag-like trailing segments.
+  // Reject candidates where the second-to-last segment is a single char
+  // commonly used as sed/awk flags (e.g. /g, /p, /d, /i, /I, /w).
+  // More importantly: reject anything that doesn't start with a plausible
+  // directory name (letters, dots, ~) after the leading slash.
+  const firstComponent = candidate.split("/")[1];
+  if (!firstComponent) return false;
+
+  // If the first path component looks like a top-level directory, it's likely real
+  // e.g., /Users, /home, /opt, /var, /etc, /usr, /Library, /Applications
+  // If it looks like a short regex token or sed command char, it's likely not
+  if (firstComponent.length <= 1) return false;
+
+  // Reject patterns that end with common sed/awk flags: /g, /p, /d, /i, /I, /w, /e
+  if (/\/[gGpPdDiIwWe]$/.test(candidate)) {
+    // But allow if the path has enough real-looking directory depth (3+ components)
+    const components = candidate.split("/").filter(Boolean);
+    if (components.length < 3) return false;
+  }
+
+  return true;
+}
+
+/**
  * Extract absolute paths from a bash command and check if any are outside the worktree.
  * Returns the first offending path, or null if all paths are within bounds.
  */
@@ -171,8 +206,9 @@ function findOutsidePath(
   command: string,
   worktreePath: string,
 ): string | null {
-  // Match absolute paths (starting with /) in the command
-  // This regex captures sequences starting with / followed by non-whitespace, non-special chars
+  // Match absolute paths (starting with /) in the command.
+  // Must be preceded by whitespace, =, ", or start of string.
+  // The path must start with / followed by a plausible directory name component.
   const pathRegex = /(?:^|\s|=|")(\/[^\s"'`;|&><()]+)/g;
   let match: RegExpExecArray | null;
 
@@ -184,6 +220,10 @@ function findOutsidePath(
       candidate.startsWith("/dev/") ||
       candidate.startsWith("/proc/")
     ) {
+      continue;
+    }
+    // Skip sed/awk substitution patterns and regex-like strings
+    if (!looksLikeRealPath(candidate)) {
       continue;
     }
     if (!isPathAllowed(candidate, worktreePath)) {

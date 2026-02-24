@@ -100,7 +100,7 @@ export function startUnifiedAgent(config: UnifiedAgentConfig): UnifiedAgentResul
     resumeSessionId: config.resumeSessionId,
     model,
     permissionMode: config.permissionMode,
-    worktreePath: config.worktreePath ?? config.cwd,
+    worktreePath: config.worktreePath,
     mcpServers,
     id: preGeneratedId,
   });

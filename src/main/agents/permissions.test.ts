@@ -463,6 +463,362 @@ describe("resolvePermission", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Realistic project workflow scenarios
+// ---------------------------------------------------------------------------
+
+describe("resolvePermission — realistic project commands", () => {
+  const cache = new Set<string>();
+  const WT = "/Users/dev/Projects/my-app/.claude/worktrees/feature-auth";
+
+  beforeEach(() => cache.clear());
+
+  // --- sed / awk / grep regex: should NOT trigger false prompts ---
+
+  it("allows sed substitution with slashes (no false path detection)", () => {
+    expect(resolvePermission("Bash", { command: `sed -i 's/foo/bar/g' src/config.ts` }, WT, cache)).toBe("allow");
+  });
+
+  it("allows sed with complex regex containing absolute-looking patterns", () => {
+    expect(resolvePermission("Bash", { command: `sed 's|/old/path|/new/path|g' file.txt` }, WT, cache)).toBe("allow");
+  });
+
+  it("allows sed -e with multiple expressions", () => {
+    expect(resolvePermission("Bash", { command: `sed -e 's/a/b/g' -e 's/c/d/g' file.txt` }, WT, cache)).toBe("allow");
+  });
+
+  it("allows awk with field separators that look like paths", () => {
+    expect(resolvePermission("Bash", { command: `awk -F/ '{print $2}' file.txt` }, WT, cache)).toBe("allow");
+  });
+
+  it("allows grep -E with regex slashes", () => {
+    expect(resolvePermission("Bash", { command: `grep -E 's/[a-z]+/[A-Z]+/g' src/utils.ts` }, WT, cache)).toBe("allow");
+  });
+
+  it("allows perl -pi -e with substitution patterns", () => {
+    expect(resolvePermission("Bash", { command: `perl -pi -e 's/v1/v2/g' config.json` }, WT, cache)).toBe("allow");
+  });
+
+  // --- Common project commands: should be allowed ---
+
+  it("allows pnpm install", () => {
+    expect(resolvePermission("Bash", { command: "pnpm install" }, WT, cache)).toBe("allow");
+  });
+
+  it("allows pnpm test with file argument", () => {
+    expect(resolvePermission("Bash", { command: "pnpm test -- --run src/main/agents/permissions.test.ts" }, WT, cache)).toBe("allow");
+  });
+
+  it("allows git status", () => {
+    expect(resolvePermission("Bash", { command: "git status" }, WT, cache)).toBe("allow");
+  });
+
+  it("allows git diff with file paths", () => {
+    expect(resolvePermission("Bash", { command: "git diff HEAD -- src/index.ts src/app.tsx" }, WT, cache)).toBe("allow");
+  });
+
+  it("allows git log with formatting", () => {
+    expect(resolvePermission("Bash", { command: "git log --oneline -10" }, WT, cache)).toBe("allow");
+  });
+
+  it("allows git commit", () => {
+    expect(resolvePermission("Bash", { command: `git commit -m "feat: add auth module"` }, WT, cache)).toBe("allow");
+  });
+
+  it("allows git add with specific files", () => {
+    expect(resolvePermission("Bash", { command: "git add src/auth.ts src/auth.test.ts" }, WT, cache)).toBe("allow");
+  });
+
+  it("allows npx commands", () => {
+    expect(resolvePermission("Bash", { command: "npx vitest run" }, WT, cache)).toBe("allow");
+  });
+
+  it("allows piped commands within worktree", () => {
+    expect(resolvePermission("Bash", { command: "git log --oneline | head -5" }, WT, cache)).toBe("allow");
+  });
+
+  it("allows tsc --noEmit", () => {
+    expect(resolvePermission("Bash", { command: "pnpm exec tsc --noEmit" }, WT, cache)).toBe("allow");
+  });
+
+  // --- Commands with absolute paths INSIDE worktree: should be allowed ---
+
+  it("allows bash with absolute path inside worktree", () => {
+    expect(resolvePermission("Bash", { command: `cat ${WT}/src/index.ts` }, WT, cache)).toBe("allow");
+  });
+
+  it("allows bash with /tmp paths", () => {
+    expect(resolvePermission("Bash", { command: "node script.js > /tmp/output.log 2>&1" }, WT, cache)).toBe("allow");
+  });
+
+  // --- Commands with absolute paths OUTSIDE worktree: should prompt ---
+
+  it("prompts for cat of file outside worktree", () => {
+    const result = resolvePermission("Bash", { command: "cat /Users/dev/.ssh/id_rsa" }, WT, cache);
+    expect(result).toMatchObject({ needs_prompt: true });
+  });
+
+  it("prompts for cp from outside worktree", () => {
+    const result = resolvePermission("Bash", { command: "cp /Users/dev/other-project/config.json ." }, WT, cache);
+    expect(result).toMatchObject({ needs_prompt: true });
+  });
+
+  it("prompts for ls of directory outside worktree", () => {
+    const result = resolvePermission("Bash", { command: "ls /Users/dev/other-project/src" }, WT, cache);
+    expect(result).toMatchObject({ needs_prompt: true });
+  });
+
+  // --- File tools: realistic paths ---
+
+  it("allows Read of deeply nested file in worktree", () => {
+    expect(resolvePermission("Read", { file_path: `${WT}/src/main/agents/permissions.ts` }, WT, cache)).toBe("allow");
+  });
+
+  it("allows Edit of file in worktree", () => {
+    expect(resolvePermission("Edit", { file_path: `${WT}/package.json` }, WT, cache)).toBe("allow");
+  });
+
+  it("prompts for Read of project root outside worktree", () => {
+    const result = resolvePermission("Read", { file_path: "/Users/dev/Projects/my-app/package.json" }, WT, cache);
+    expect(result).toMatchObject({ needs_prompt: true });
+  });
+
+  it("prompts for Write to home directory", () => {
+    const result = resolvePermission("Write", { file_path: "/Users/dev/.bashrc" }, WT, cache);
+    expect(result).toMatchObject({ needs_prompt: true });
+  });
+
+  it("allows Glob inside worktree without explicit path (uses worktree as default)", () => {
+    // When path is omitted, Glob/Grep resolve relative to worktree — but extractToolPath returns null
+    // so it falls through to "unknown tool" auto-allow. This is fine since the SDK defaults to cwd.
+    expect(resolvePermission("Glob", { pattern: "**/*.ts" }, WT, cache)).toBe("allow");
+  });
+
+  it("prompts for Grep searching outside worktree", () => {
+    const result = resolvePermission("Grep", { path: "/Users/dev/Projects/other-project", pattern: "TODO" }, WT, cache);
+    expect(result).toMatchObject({ needs_prompt: true });
+  });
+
+  // --- Destructive commands in realistic contexts ---
+
+  it("prompts for git push to specific remote/branch", () => {
+    const result = resolvePermission("Bash", { command: "git push origin feature/auth --force" }, WT, cache);
+    expect(result).toMatchObject({ needs_prompt: true, pattern: "Bash(git push:*)" });
+  });
+
+  it("prompts for rm -rf of node_modules", () => {
+    const result = resolvePermission("Bash", { command: "rm -rf node_modules && pnpm install" }, WT, cache);
+    expect(result).toMatchObject({ needs_prompt: true, pattern: "Bash(rm -rf:*)" });
+  });
+
+  it("prompts for git clean -fd", () => {
+    const result = resolvePermission("Bash", { command: "git clean -fd" }, WT, cache);
+    expect(result).toMatchObject({ needs_prompt: true });
+  });
+
+  // --- Edge cases ---
+
+  it("allows /dev/null redirection", () => {
+    expect(resolvePermission("Bash", { command: "pnpm build 2>/dev/null" }, WT, cache)).toBe("allow");
+  });
+
+  it("allows commands referencing /proc paths", () => {
+    expect(resolvePermission("Bash", { command: "cat /proc/cpuinfo" }, WT, cache)).toBe("allow");
+  });
+
+  it("prompts for .env.production even inside worktree", () => {
+    const result = resolvePermission("Read", { file_path: `${WT}/.env.production` }, WT, cache);
+    expect(result).toMatchObject({ needs_prompt: true });
+  });
+
+  it("allows reading .environment.ts (not actually an env file)", () => {
+    expect(resolvePermission("Read", { file_path: `${WT}/src/environment.ts` }, WT, cache)).toBe("allow");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Worktree isolation (productdevr-style worktrees at ~/.productdevr/)
+// ---------------------------------------------------------------------------
+
+describe("resolvePermission — worktree isolation from original project", () => {
+  const cache = new Set<string>();
+  // Worktree is in ~/.productdevr, NOT inside the project directory
+  const WORKTREE_PATH = "/Users/dev/.productdevr/my-app/feature-auth-1234";
+  const PROJECT_PATH = "/Users/dev/Projects/my-app";
+
+  beforeEach(() => cache.clear());
+
+  // --- Any access to original project from worktree should prompt ---
+
+  it("prompts for Read of file in original project (outside worktree)", () => {
+    const result = resolvePermission(
+      "Read",
+      { file_path: `${PROJECT_PATH}/src/index.ts` },
+      WORKTREE_PATH,
+      cache,
+    );
+    expect(result).toMatchObject({ needs_prompt: true });
+  });
+
+  it("prompts for Edit of file in original project (outside worktree)", () => {
+    const result = resolvePermission(
+      "Edit",
+      { file_path: `${PROJECT_PATH}/package.json` },
+      WORKTREE_PATH,
+      cache,
+    );
+    expect(result).toMatchObject({ needs_prompt: true });
+  });
+
+  it("prompts for Write to original project (outside worktree)", () => {
+    const result = resolvePermission(
+      "Write",
+      { file_path: `${PROJECT_PATH}/src/new-file.ts` },
+      WORKTREE_PATH,
+      cache,
+    );
+    expect(result).toMatchObject({ needs_prompt: true });
+  });
+
+  it("prompts for Grep in original project directory", () => {
+    const result = resolvePermission(
+      "Grep",
+      { path: PROJECT_PATH, pattern: "TODO" },
+      WORKTREE_PATH,
+      cache,
+    );
+    expect(result).toMatchObject({ needs_prompt: true });
+  });
+
+  it("prompts for Glob in original project directory", () => {
+    const result = resolvePermission(
+      "Glob",
+      { path: PROJECT_PATH, pattern: "**/*.ts" },
+      WORKTREE_PATH,
+      cache,
+    );
+    expect(result).toMatchObject({ needs_prompt: true });
+  });
+
+  it("prompts for Bash cat of file in original project", () => {
+    const result = resolvePermission(
+      "Bash",
+      { command: `cat ${PROJECT_PATH}/src/index.ts` },
+      WORKTREE_PATH,
+      cache,
+    );
+    expect(result).toMatchObject({ needs_prompt: true });
+  });
+
+  it("prompts for Bash grep in original project", () => {
+    const result = resolvePermission(
+      "Bash",
+      { command: `grep -r "TODO" ${PROJECT_PATH}/src` },
+      WORKTREE_PATH,
+      cache,
+    );
+    expect(result).toMatchObject({ needs_prompt: true });
+  });
+
+  it("prompts for Bash find in original project", () => {
+    const result = resolvePermission(
+      "Bash",
+      { command: `find ${PROJECT_PATH}/src -name "*.ts" -type f` },
+      WORKTREE_PATH,
+      cache,
+    );
+    expect(result).toMatchObject({ needs_prompt: true });
+  });
+
+  // --- Same operations within worktree should be allowed ---
+
+  it("allows Read within the worktree", () => {
+    expect(resolvePermission(
+      "Read",
+      { file_path: `${WORKTREE_PATH}/src/index.ts` },
+      WORKTREE_PATH,
+      cache,
+    )).toBe("allow");
+  });
+
+  it("allows Edit within the worktree", () => {
+    expect(resolvePermission(
+      "Edit",
+      { file_path: `${WORKTREE_PATH}/package.json` },
+      WORKTREE_PATH,
+      cache,
+    )).toBe("allow");
+  });
+
+  it("allows Bash commands without absolute paths (relative to cwd)", () => {
+    expect(resolvePermission(
+      "Bash",
+      { command: "pnpm test -- --run src/agents/permissions.test.ts" },
+      WORKTREE_PATH,
+      cache,
+    )).toBe("allow");
+  });
+
+  it("allows git status within worktree", () => {
+    expect(resolvePermission(
+      "Bash",
+      { command: "git status" },
+      WORKTREE_PATH,
+      cache,
+    )).toBe("allow");
+  });
+
+  it("allows git diff within worktree", () => {
+    expect(resolvePermission(
+      "Bash",
+      { command: "git diff HEAD" },
+      WORKTREE_PATH,
+      cache,
+    )).toBe("allow");
+  });
+
+  it("allows git commit within worktree", () => {
+    expect(resolvePermission(
+      "Bash",
+      { command: `git commit -m "fix: auth bug"` },
+      WORKTREE_PATH,
+      cache,
+    )).toBe("allow");
+  });
+
+  it("prompts for git push (destructive even within worktree)", () => {
+    const result = resolvePermission(
+      "Bash",
+      { command: "git push origin feature-auth" },
+      WORKTREE_PATH,
+      cache,
+    );
+    expect(result).toMatchObject({ needs_prompt: true, pattern: "Bash(git push:*)" });
+  });
+
+  // --- Access to other unrelated paths should also prompt ---
+
+  it("prompts for Read of home directory file", () => {
+    const result = resolvePermission(
+      "Read",
+      { file_path: "/Users/dev/.ssh/id_rsa" },
+      WORKTREE_PATH,
+      cache,
+    );
+    expect(result).toMatchObject({ needs_prompt: true });
+  });
+
+  it("prompts for Bash accessing another project", () => {
+    const result = resolvePermission(
+      "Bash",
+      { command: "cat /Users/dev/Projects/other-project/secrets.json" },
+      WORKTREE_PATH,
+      cache,
+    );
+    expect(result).toMatchObject({ needs_prompt: true });
+  });
+});
+
+// ---------------------------------------------------------------------------
 // appendToSettingsLocal
 // ---------------------------------------------------------------------------
 
