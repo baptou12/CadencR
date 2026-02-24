@@ -317,6 +317,12 @@ describe("agent-starters", () => {
           if (sql.includes("MAX(step_number)")) {
             return { get: vi.fn().mockReturnValue({ max_step: 2 }) };
           }
+          if (sql.includes("phase_type IS NOT")) {
+            return { get: vi.fn().mockReturnValue({ cnt: 0 }) };
+          }
+          if (sql.includes("SELECT prd FROM features")) {
+            return { get: vi.fn().mockReturnValue({ prd: null }) };
+          }
           return { run: vi.fn().mockReturnValue({ lastInsertRowid: 42 }), get: vi.fn(), all: vi.fn().mockReturnValue([]) };
         }),
       });
@@ -349,6 +355,12 @@ describe("agent-starters", () => {
           }
           if (sql.includes("MAX(step_number)")) {
             return { get: vi.fn().mockReturnValue({ max_step: 2 }) };
+          }
+          if (sql.includes("phase_type IS NOT")) {
+            return { get: vi.fn().mockReturnValue({ cnt: 0 }) };
+          }
+          if (sql.includes("SELECT prd FROM features")) {
+            return { get: vi.fn().mockReturnValue({ prd: null }) };
           }
           return { run: vi.fn().mockReturnValue({ lastInsertRowid: 42 }), get: vi.fn(), all: vi.fn().mockReturnValue([]) };
         }),

@@ -65,6 +65,13 @@ export function startPlanAgent(options: {
 }): AgentResult {
   const db = getDatabase();
 
+  // If a PRD exists on the feature, use it as the description
+  const feature = db.prepare("SELECT prd FROM features WHERE id = ?").get(options.featureId) as { prd: string | null } | undefined;
+  const hasPrd = !!feature?.prd;
+  if (feature?.prd) {
+    options.description = feature.prd;
+  }
+
   // Create plan record (draft) — must exist before the completion action runs
   const planResult = db
     .prepare("INSERT INTO plans (feature_id, title, status) VALUES (?, ?, 'draft')")
@@ -77,7 +84,7 @@ export function startPlanAgent(options: {
   ).run(options.featureId, "current_plan_id", String(planId));
 
   return startUnifiedAgent(
-    createPlanConfig({ ...options, planId }),
+    createPlanConfig({ ...options, planId, hasPrd }),
   );
 }
 
@@ -393,6 +400,21 @@ export function startQaAgent(options: {
 
   const autonomyLevel = getAutonomyLevel(options.featureId, options.projectId);
 
+  // Check if this is the final QA phase (all non-QA phases are completed)
+  const pendingNonQa = db
+    .prepare(
+      "SELECT COUNT(*) as cnt FROM phases WHERE plan_id = ? AND phase_type IS NOT 'qa' AND status != 'completed'",
+    )
+    .get(plan.id) as { cnt: number };
+
+  let prd: string | undefined;
+  if (pendingNonQa.cnt === 0) {
+    const feature = db.prepare("SELECT prd FROM features WHERE id = ?").get(options.featureId) as { prd: string | null } | undefined;
+    if (feature?.prd) {
+      prd = feature.prd;
+    }
+  }
+
   const config: UnifiedAgentConfig = createQaConfig({
     ...options,
     qaPrompt,
@@ -401,6 +423,7 @@ export function startQaAgent(options: {
     phaseId,
     qaPhaseStepNumber,
     autonomyLevel,
+    prd,
   });
 
   // After QA finishes, auto-start execution if fix phases were created

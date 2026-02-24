@@ -95,6 +95,8 @@ export interface PlanConfigOptions {
   planId: number;
   /** Worktree path for permission resolution */
   worktreePath?: string;
+  /** When true, the description is a PRD — use PRD-specific preamble */
+  hasPrd?: boolean;
 }
 
 export interface BrainstormConfigOptions {
@@ -173,6 +175,8 @@ export interface QaConfigOptions {
   qaPhaseStepNumber: number;
   worktreePath?: string;
   autonomyLevel?: 1 | 2 | 3;
+  /** Full PRD markdown — included for the final QA phase to verify against functional requirements */
+  prd?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -191,14 +195,18 @@ export function createPlanConfig(opts: PlanConfigOptions): UnifiedAgentConfig {
 
 Start by exploring the codebase to understand the project structure and existing patterns. Then ask me clarifying questions. Finally, build the phased plan using the tools, call show_plan, and ask for my approval.`;
 
+  const preambleText = opts.hasPrd
+    ? "Please create a detailed implementation plan based on the following Product Requirements Document (PRD):\n\n"
+    : "Please create a detailed implementation plan for the following feature:\n\n";
+
   let prompt: MessageContent;
   if (typeof opts.description === "string") {
-    prompt = `Please create a detailed implementation plan for the following feature:\n\n${opts.description}\n\n${planInstructions}`;
+    prompt = `${preambleText}${opts.description}\n\n${planInstructions}`;
   } else {
     // description is a content array — prepend instruction text block and append tail
     const textPreamble: { type: "text"; text: string } = {
       type: "text",
-      text: "Please create a detailed implementation plan for the following feature:\n\n",
+      text: preambleText,
     };
     const textPostamble: { type: "text"; text: string } = {
       type: "text",
@@ -510,7 +518,17 @@ export function createSessionConfig(opts: SessionConfigOptions): UnifiedAgentCon
  * report. If tests fail, fix phases are parsed and inserted into the plan.
  */
 export function createQaConfig(opts: QaConfigOptions): UnifiedAgentConfig {
-  const prompt = `## What was implemented
+  const prdSection = opts.prd
+    ? `## Product Requirements Document (PRD)
+
+The following PRD defines the functional and business requirements. Verify that the implementation satisfies ALL requirements listed here:
+
+${opts.prd}
+
+`
+    : "";
+
+  const prompt = `${prdSection}## What was implemented
 
 ${opts.completedPhasesSummary}
 
