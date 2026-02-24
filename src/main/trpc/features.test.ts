@@ -228,7 +228,7 @@ describe("featuresRouter", () => {
   describe("getSettings", () => {
     it("returns combined feature columns and EAV settings", async () => {
       mockDb.prepare.mockImplementation(() => ({
-        get: vi.fn().mockReturnValue({ model_plan: "claude-3", model_brainstorm: null, model_prd: null, model_execute: null, model_risk: null, model_review: null, model_session: null, model_qa: null, agent_autonomy: "1" }),
+        get: vi.fn().mockReturnValue({ model_plan: "claude-3", model_prd: null, model_execute: null, model_risk: null, model_review: null, model_session: null, model_qa: null, agent_autonomy: "1" }),
         all: vi.fn().mockReturnValue([{ key: "worktree_path", value: "/path" }]),
         run: vi.fn(),
       }));
@@ -256,13 +256,12 @@ describe("featuresRouter", () => {
   describe("getModelSettings", () => {
     it("returns model settings with empty defaults", async () => {
       mockDb.prepare.mockReturnValue({
-        get: vi.fn().mockReturnValue({ model_plan: "claude-3", model_brainstorm: null, model_prd: null, model_execute: null, model_risk: null, model_review: null, model_session: null, model_qa: null }),
+        get: vi.fn().mockReturnValue({ model_plan: "claude-3", model_prd: null, model_execute: null, model_risk: null, model_review: null, model_session: null, model_qa: null }),
         all: vi.fn().mockReturnValue([]),
         run: vi.fn(),
       });
       const result = await caller.getModelSettings({ featureId: 1 });
       expect(result["plan"]).toBe("claude-3");
-      expect(result["brainstorm"]).toBe("");
     });
   });
 

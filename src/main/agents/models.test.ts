@@ -52,7 +52,7 @@ describe("resolveModel", () => {
 
   it("passes the correct key for each agent type", () => {
     mockResolveSetting.mockReturnValue("claude-opus-4-5-20251001");
-    const agentTypes = ["plan", "brainstorm", "prd", "execute", "risk", "review", "session", "qa"] as const;
+    const agentTypes = ["plan", "prd", "execute", "risk", "review", "session", "qa"] as const;
     for (const type of agentTypes) {
       resolveModel(type);
       expect(mockResolveSetting).toHaveBeenCalledWith(`model_${type}`, expect.any(Object));

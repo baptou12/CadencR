@@ -1,5 +1,4 @@
 import plan from "./plan.md?raw";
-import brainstorm from "./brainstorm.md?raw";
 import prd from "./prd.md?raw";
 import risk from "./risk.md?raw";
 import review from "./review.md?raw";
@@ -15,7 +14,6 @@ import executeCompletionAuto from "./execute-completion-auto.md?raw";
 
 export const prompts = {
   "plan.md": plan,
-  "brainstorm.md": brainstorm,
   "prd.md": prd,
   "risk.md": risk,
   "review.md": review,

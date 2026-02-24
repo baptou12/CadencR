@@ -49,10 +49,8 @@ import { terminalRouter } from "./terminal";
 import { startUnifiedAgent } from "../agents/unified-agent";
 import {
   startPlanAgent,
-  startBrainstormAgent,
   startPrdAgent,
   startRefinePlanAgent,
-  startRefineBrainstormAgent,
   startRiskAgent,
   startReviewAgent,
   addFixPhase,
@@ -127,7 +125,7 @@ const settingsRouter = router({
   /** Get model settings for all agent types from global settings */
   getModelSettings: publicProcedure.query(() => {
     const db = getDatabase();
-    const agentTypes = ["plan", "brainstorm", "prd", "execute", "risk", "review", "session", "qa"] as const;
+    const agentTypes = ["plan", "prd", "execute", "risk", "review", "session", "qa"] as const;
     const result: Record<string, string> = {};
     for (const at of agentTypes) {
       const row = db
@@ -142,7 +140,7 @@ const settingsRouter = router({
   setModelSetting: publicProcedure
     .input(
       z.object({
-        agentType: z.enum(["plan", "brainstorm", "prd", "execute", "risk", "review", "session", "qa", "review-fixer"]),
+        agentType: z.enum(["plan", "prd", "execute", "risk", "review", "session", "qa", "review-fixer"]),
         modelId: z.string(),
       }),
     )
@@ -221,7 +219,7 @@ function hasDefaultTitle(featureId: number): boolean {
   return row != null && /^Session \d+$/i.test(row.title);
 }
 
-const agentTypeSchema = z.enum(["plan", "brainstorm", "prd", "execute", "risk", "review", "session", "qa", "review-fixer"]);
+const agentTypeSchema = z.enum(["plan", "prd", "execute", "risk", "review", "session", "qa", "review-fixer"]);
 
 // ---------------------------------------------------------------------------
 // Block builder — converts agent_messages rows into a nested block tree
@@ -620,31 +618,6 @@ const agentsRouter = router({
       return startPlanAgent({ featureId: input.featureId, projectId: input.projectId, description, cwd, worktreePath });
     }),
 
-  /** Start the brainstorm agent for a feature */
-  startBrainstorm: publicProcedure
-    .input(z.object({
-      featureId: z.number(),
-      projectId: z.number(),
-      description: z.string(),
-      images: z.array(z.object({ base64: z.string(), mimeType: z.string() })).optional(),
-    }))
-    .mutation(({ input }) => {
-      const { cwd, worktreePath } = resolveAgentCwd(input.featureId, input.projectId);
-      let description: import("../agents/types").MessageContent;
-      if (input.images && input.images.length > 0) {
-        description = [
-          { type: "text" as const, text: input.description },
-          ...input.images.map((img) => ({
-            type: "image" as const,
-            source: { type: "base64" as const, media_type: img.mimeType, data: img.base64 },
-          })),
-        ];
-      } else {
-        description = input.description;
-      }
-      return startBrainstormAgent({ featureId: input.featureId, projectId: input.projectId, description, cwd, worktreePath });
-    }),
-
   /** Start the PRD agent for a feature */
   startPrd: publicProcedure
     .input(z.object({
@@ -693,31 +666,6 @@ const agentsRouter = router({
         description = input.description;
       }
       return startRefinePlanAgent({ featureId: input.featureId, projectId: input.projectId, description, cwd, worktreePath });
-    }),
-
-  /** Refine an existing plan — start a brainstorm agent that appends new phases */
-  startRefineBrainstorm: publicProcedure
-    .input(z.object({
-      featureId: z.number(),
-      projectId: z.number(),
-      description: z.string(),
-      images: z.array(z.object({ base64: z.string(), mimeType: z.string() })).optional(),
-    }))
-    .mutation(({ input }) => {
-      const { cwd, worktreePath } = resolveAgentCwd(input.featureId, input.projectId);
-      let description: import("../agents/types").MessageContent;
-      if (input.images && input.images.length > 0) {
-        description = [
-          { type: "text" as const, text: input.description },
-          ...input.images.map((img) => ({
-            type: "image" as const,
-            source: { type: "base64" as const, media_type: img.mimeType, data: img.base64 },
-          })),
-        ];
-      } else {
-        description = input.description;
-      }
-      return startRefineBrainstormAgent({ featureId: input.featureId, projectId: input.projectId, description, cwd, worktreePath });
     }),
 
   /** Start the execute agent for a feature (runs plan phases) */

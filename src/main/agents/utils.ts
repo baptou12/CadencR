@@ -2,7 +2,7 @@
  * Shared utilities for agent code.
  *
  * Centralises helpers that were previously duplicated across
- * plan-agent, brainstorm-agent, risk-agent, review-agent, and execute-agent.
+ * plan-agent, risk-agent, review-agent, and execute-agent.
  */
 
 import type {

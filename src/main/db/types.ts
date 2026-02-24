@@ -15,7 +15,6 @@ export interface ProjectRow {
   path: string;
   created_at: string;
   model_plan: string | null;
-  model_brainstorm: string | null;
   model_execute: string | null;
   model_risk: string | null;
   model_review: string | null;
@@ -48,7 +47,6 @@ export interface FeatureRow {
   status: string;
   created_at: string;
   model_plan: string | null;
-  model_brainstorm: string | null;
   model_execute: string | null;
   model_risk: string | null;
   model_review: string | null;

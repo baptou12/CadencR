@@ -118,7 +118,7 @@ export function useAgentChat({ featureId, projectId, refetch }: UseAgentChatPara
           await resumeMutation.mutateAsync({
             featureId,
             projectId,
-            agentType: session.agentType as "plan" | "brainstorm" | "execute" | "risk" | "review" | "session",
+            agentType: session.agentType as "plan" | "prd" | "execute" | "risk" | "review" | "session",
             sessionId: session.claudeSessionId,
             originalSessionDbId: session.sessionDbId,
             prompt: formatted,

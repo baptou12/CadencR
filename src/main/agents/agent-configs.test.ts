@@ -13,7 +13,6 @@ vi.mock("./mcp-tools", () => ({
 
 import {
   createPlanConfig,
-  createBrainstormConfig,
   createRiskConfig,
   createReviewConfig,
   createSessionConfig,
@@ -84,48 +83,6 @@ describe("createPlanConfig", () => {
     });
 
     expect(config.prompt).toContain("99");
-  });
-});
-
-describe("createBrainstormConfig", () => {
-  it("returns agentType brainstorm", () => {
-    const config = createBrainstormConfig({
-      featureId: 1,
-      projectId: 2,
-      cwd: "/cwd",
-      description: "Brainstorm feature",
-      planId: 20,
-    });
-
-    expect(config.agentType).toBe("brainstorm");
-    expect(config.systemPrompt).toContain("Brainstorm agent");
-  });
-
-  it("system prompt includes planning-only restriction", () => {
-    const config = createBrainstormConfig({
-      featureId: 1,
-      projectId: 2,
-      cwd: "/cwd",
-      description: "Feature",
-      planId: 20,
-    });
-
-    expect(config.systemPrompt).toContain("PLANNING-ONLY agent");
-    expect(config.systemPrompt).toContain("MUST NOT execute the plan");
-    expect(config.systemPrompt).toContain("finalize_plan fails");
-  });
-
-  it("has a completion action for fallback", () => {
-    const config = createBrainstormConfig({
-      featureId: 1,
-      projectId: 2,
-      cwd: "/cwd",
-      description: "Feature",
-      planId: 20,
-    });
-
-    expect(config.completionActions?.length).toBeGreaterThan(0);
-    expect(config.completionActions?.[0].event).toBe("plan_fallback");
   });
 });
 

@@ -1,7 +1,6 @@
 /**
  * Agent starter functions — consolidates the thin wrappers that were
- * previously spread across 6 separate files (plan-agent.ts, brainstorm-agent.ts,
- * session-agent.ts, review-agent.ts, risk-agent.ts, qa-agent.ts).
+ * previously spread across separate agent files.
  *
  * Each function does agent-specific DB pre-work, builds a config, and delegates
  * to startUnifiedAgent. The addFixPhase helper (review-specific) also lives here.
@@ -13,7 +12,6 @@ import { startUnifiedAgent } from "./unified-agent";
 import {
   createSessionConfig,
   createPlanConfig,
-  createBrainstormConfig,
   createPrdConfig,
   createRiskConfig,
   createReviewConfig,
@@ -89,33 +87,6 @@ export function startPlanAgent(options: {
 }
 
 // ---------------------------------------------------------------------------
-// Brainstorm
-// ---------------------------------------------------------------------------
-
-export function startBrainstormAgent(options: {
-  featureId: number;
-  projectId: number;
-  description: MessageContent;
-  cwd: string;
-  worktreePath?: string;
-}): AgentResult {
-  const db = getDatabase();
-
-  const planResult = db
-    .prepare("INSERT INTO plans (feature_id, title, status) VALUES (?, ?, 'draft')")
-    .run(options.featureId, `Brainstorm plan for feature #${options.featureId}`);
-  const planId = Number(planResult.lastInsertRowid);
-
-  db.prepare(
-    "INSERT INTO feature_settings (feature_id, key, value) VALUES (?, ?, ?) ON CONFLICT(feature_id, key) DO UPDATE SET value = excluded.value",
-  ).run(options.featureId, "current_plan_id", String(planId));
-
-  return startUnifiedAgent(
-    createBrainstormConfig({ ...options, planId }),
-  );
-}
-
-// ---------------------------------------------------------------------------
 // PRD
 // ---------------------------------------------------------------------------
 
@@ -131,7 +102,7 @@ export function startPrdAgent(options: {
 }
 
 // ---------------------------------------------------------------------------
-// Refine Plan / Brainstorm (append new phases to existing plan)
+// Refine Plan (append new phases to existing plan)
 // ---------------------------------------------------------------------------
 
 function buildRefineContext(db: ReturnType<typeof getDatabase>, featureId: number): { planId: number; context: string } {
@@ -192,25 +163,6 @@ export function startRefinePlanAgent(options: {
 
   return startUnifiedAgent(
     createPlanConfig({ ...options, description: augmented, planId }),
-  );
-}
-
-export function startRefineBrainstormAgent(options: {
-  featureId: number;
-  projectId: number;
-  description: MessageContent;
-  cwd: string;
-  worktreePath?: string;
-}): AgentResult {
-  const db = getDatabase();
-  const { planId, context } = buildRefineContext(db, options.featureId);
-
-  const augmented: MessageContent = typeof options.description === "string"
-    ? `${context}\n\n## User's Refinement Request\n${options.description}`
-    : [{ type: "text" as const, text: `${context}\n\n## User's Refinement Request\n` }, ...(options.description as Array<{ type: "text"; text: string } | { type: "image"; source: { type: "base64"; media_type: string; data: string } }>)];
-
-  return startUnifiedAgent(
-    createBrainstormConfig({ ...options, description: augmented, planId }),
   );
 }
 

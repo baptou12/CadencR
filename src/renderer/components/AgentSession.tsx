@@ -61,7 +61,6 @@ export type AgentStatus = "idle" | "running" | "completed" | "error" | "paused" 
 
 export const AGENT_LABELS: Record<AgentType, string> = {
   plan: "Plan",
-  brainstorm: "Brainstorm",
   prd: "PRD",
   execute: "Execute",
   risk: "Risk Analysis",

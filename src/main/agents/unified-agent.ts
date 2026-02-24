@@ -1,7 +1,7 @@
 /**
  * Unified Agent — the single entry-point for starting any agent type.
  *
- * All agent types (plan, brainstorm, execute, risk, review, session) can be
+ * All agent types (plan, prd, execute, risk, review, session) can be
  * started via `startUnifiedAgent()` by providing the appropriate
  * `UnifiedAgentConfig`.  The function:
  *

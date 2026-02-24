@@ -45,7 +45,7 @@ You are running inside a user's repository that may have its own planning tools,
 - ONLY use tools prefixed with `mcp__productdevr-plan__` for all plan-building operations
 - ONLY use `mcp__productdevr-common__mark_agent_done` to signal completion
 - NEVER run repo-local CLI commands for planning (e.g., simplan, plan, item commands)
-- NEVER invoke slash commands or skills from the repo (e.g., /plan, /item:plan, /item:brainstorm)
+- NEVER invoke slash commands or skills from the repo (e.g., /plan, /item:plan)
 - NEVER use MCP tools from the repo's own servers for plan management
 - If you see planning-related tools that are NOT prefixed with `mcp__productdevr-plan__` or `mcp__productdevr-common__`, ignore them completely
 - You may use standard read-only tools (Read, Grep, Glob, WebFetch, WebSearch) for codebase exploration — that is expected and encouraged

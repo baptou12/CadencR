@@ -25,7 +25,6 @@ import type { ImageBlock, MessageContent, UnifiedAgentConfig, CompletionAction }
 // ---------------------------------------------------------------------------
 
 const PLAN_SYSTEM_PROMPT = loadPrompt("plan.md");
-const BRAINSTORM_SYSTEM_PROMPT = loadPrompt("brainstorm.md");
 const PRD_SYSTEM_PROMPT = loadPrompt("prd.md");
 const RISK_SYSTEM_PROMPT = loadPrompt("risk.md");
 const REVIEW_SYSTEM_PROMPT = loadPrompt("review.md");
@@ -97,17 +96,6 @@ export interface PlanConfigOptions {
   worktreePath?: string;
   /** When true, the description is a PRD — use PRD-specific preamble */
   hasPrd?: boolean;
-}
-
-export interface BrainstormConfigOptions {
-  featureId: number;
-  projectId: number;
-  cwd: string;
-  description: MessageContent;
-  /** Plan ID — must be created by the caller before calling this factory */
-  planId: number;
-  /** Worktree path for permission resolution */
-  worktreePath?: string;
 }
 
 export interface PrdConfigOptions {
@@ -239,69 +227,6 @@ Start by exploring the codebase to understand the project structure and existing
   return {
     agentType: "plan",
     systemPrompt: PLAN_SYSTEM_PROMPT,
-    completionActions,
-    featureId: opts.featureId,
-    projectId: opts.projectId,
-    cwd: opts.cwd,
-    prompt,
-    worktreePath: opts.worktreePath,
-    mcpServerFactory: (subprocessId: string, sessionDbId: number) => ({
-      "productdevr-plan": createPlanMcpServer(opts.planId, opts.featureId, sessionDbId, async (planMarkdown) => {
-        return waitForPlanApproval(subprocessId, planMarkdown);
-      }),
-    }),
-  };
-}
-
-/**
- * Create a UnifiedAgentConfig for the brainstorm agent.
- *
- * Similar to plan but with BRAINSTORM_SYSTEM_PROMPT and a simpler completion
- * action that doesn't store summary/context/clarifications separately.
- */
-export function createBrainstormConfig(opts: BrainstormConfigOptions): UnifiedAgentConfig {
-  const brainstormInstructions = `The plan ID is ${opts.planId}. Use the MCP tools to build the plan as draft phases. Do NOT call finalize_plan until I explicitly approve — phases must stay in draft status until then.
-
-Start by thoroughly exploring the codebase to understand the full context. Research best practices if needed. Then ask me extensive clarifying questions (aim for 10-40 questions covering all aspects). Finally, build the detailed phased plan using the tools, call show_plan, and ask for my approval.`;
-
-  let prompt: MessageContent;
-  if (typeof opts.description === "string") {
-    prompt = `Please perform a deep brainstorm and create a comprehensive implementation plan for the following feature:\n\n${opts.description}\n\n${brainstormInstructions}`;
-  } else {
-    const textPreamble: { type: "text"; text: string } = {
-      type: "text",
-      text: "Please perform a deep brainstorm and create a comprehensive implementation plan for the following feature:\n\n",
-    };
-    const textPostamble: { type: "text"; text: string } = {
-      type: "text",
-      text: `\n\n${brainstormInstructions}`,
-    };
-    prompt = [textPreamble, ...(opts.description as Array<{ type: "text"; text: string } | ImageBlock>), textPostamble];
-  }
-
-  // Fallback completion action: if the agent exits without finalizing, ensure plan stays draft
-  const completionActions: CompletionAction[] = [
-    {
-      event: "plan_fallback",
-      handler: (output: string) => {
-        const db = getDatabase();
-        const plan = db
-          .prepare("SELECT status FROM plans WHERE id = ?")
-          .get(opts.planId) as { status: string } | undefined;
-
-        if (plan && plan.status === "draft") {
-          if (output) {
-            db.prepare("UPDATE plans SET raw_markdown = ? WHERE id = ?").run(output, opts.planId);
-          }
-          console.warn(`[agent-configs] Brainstorm agent exited without finalizing plan ${opts.planId}`);
-        }
-      },
-    },
-  ];
-
-  return {
-    agentType: "brainstorm",
-    systemPrompt: BRAINSTORM_SYSTEM_PROMPT,
     completionActions,
     featureId: opts.featureId,
     projectId: opts.projectId,

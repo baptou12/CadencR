@@ -1,6 +1,5 @@
 import {
   PlayIcon,
-  LightbulbIcon,
   FileTextIcon,
   HammerIcon,
   ShieldAlertIcon,
@@ -12,7 +11,6 @@ import type { AgentType } from "../../main/agents/types";
 
 export const AGENT_ICONS: Record<AgentType, typeof PlayIcon> = {
   plan: PlayIcon,
-  brainstorm: LightbulbIcon,
   prd: FileTextIcon,
   execute: HammerIcon,
   risk: ShieldAlertIcon,
