@@ -85,7 +85,7 @@ describe("projectsRouter", () => {
       let callCount = 0;
       mockDb.prepare.mockImplementation(() => ({
         get: vi.fn().mockImplementation(() => {
-          if (callCount++ === 0) return { branch_prefix: "feat/", qa_prompt: null, agent_autonomy: "2", model_plan: null, model_brainstorm: null, model_execute: null, model_risk: null, model_review: null, model_session: null, model_qa: null };
+          if (callCount++ === 0) return { branch_prefix: "feat/", qa_prompt: null, agent_autonomy: "2", model_plan: null, model_brainstorm: null, model_prd: null, model_execute: null, model_risk: null, model_review: null, model_session: null, model_qa: null };
           return undefined;
         }),
         all: vi.fn().mockReturnValue([{ key: "custom_key", value: "custom_val" }]),
@@ -125,7 +125,7 @@ describe("projectsRouter", () => {
   describe("getModelSettings", () => {
     it("returns model settings with empty string defaults", async () => {
       mockDb.prepare.mockReturnValue({
-        get: vi.fn().mockReturnValue({ model_plan: "claude-3", model_brainstorm: null, model_execute: null, model_risk: null, model_review: null, model_session: null, model_qa: null }),
+        get: vi.fn().mockReturnValue({ model_plan: "claude-3", model_brainstorm: null, model_prd: null, model_execute: null, model_risk: null, model_review: null, model_session: null, model_qa: null }),
         all: vi.fn().mockReturnValue([]),
         run: vi.fn(),
       });

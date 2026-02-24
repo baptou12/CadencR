@@ -21,6 +21,7 @@ export interface ProjectRow {
   model_review: string | null;
   model_session: string | null;
   model_qa: string | null;
+  model_prd: string | null;
   agent_autonomy: string | null;
   parallel_execution: string | null;
   branch_prefix: string | null;
@@ -53,8 +54,10 @@ export interface FeatureRow {
   model_review: string | null;
   model_session: string | null;
   model_qa: string | null;
+  model_prd: string | null;
   agent_autonomy: string | null;
   parallel_execution: string | null;
+  prd: string | null;
 }
 
 export interface FeatureSettingRow {

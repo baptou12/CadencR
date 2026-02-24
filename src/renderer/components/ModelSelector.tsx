@@ -9,12 +9,13 @@ import {
 } from "./ui/select";
 import { AGENT_ICONS } from "./agent-icons";
 
-const AGENT_TYPES = ["plan", "brainstorm", "execute", "risk", "review", "session", "qa"] as const;
+const AGENT_TYPES = ["plan", "brainstorm", "prd", "execute", "risk", "review", "session", "qa"] as const;
 type AgentType = (typeof AGENT_TYPES)[number];
 
 const AGENT_LABELS: Record<AgentType, string> = {
   plan: "Plan",
   brainstorm: "Brainstorm",
+  prd: "PRD",
   execute: "Execute",
   risk: "Risk",
   review: "Review",

@@ -10,6 +10,7 @@ const SHARED_COLUMNS = new Set([
   "model_review",
   "model_session",
   "model_qa",
+  "model_prd",
   "agent_autonomy",
   "parallel_execution",
 ]);

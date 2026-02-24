@@ -27,6 +27,7 @@ export function createMockProject(overrides: Partial<ProjectRow> = {}): ProjectR
     created_at: "2024-01-01T00:00:00.000Z",
     model_plan: null,
     model_brainstorm: null,
+    model_prd: null,
     model_execute: null,
     model_risk: null,
     model_review: null,
@@ -57,6 +58,7 @@ export function createMockFeature(overrides: Partial<FeatureRow> = {}): FeatureR
     created_at: "2024-01-01T00:00:00.000Z",
     model_plan: null,
     model_brainstorm: null,
+    model_prd: null,
     model_execute: null,
     model_risk: null,
     model_review: null,
@@ -64,6 +66,7 @@ export function createMockFeature(overrides: Partial<FeatureRow> = {}): FeatureR
     model_qa: null,
     agent_autonomy: null,
     parallel_execution: null,
+    prd: null,
     ...overrides,
   };
 }

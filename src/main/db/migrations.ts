@@ -440,6 +440,15 @@ const migrations: Migration[] = [
       db.exec("ALTER TABLE features ADD COLUMN parallel_execution TEXT DEFAULT NULL");
     },
   },
+  {
+    version: 35,
+    description: "Add prd column to features table and model_prd to projects/features",
+    up: (db) => {
+      db.exec("ALTER TABLE features ADD COLUMN prd TEXT");
+      db.exec("ALTER TABLE projects ADD COLUMN model_prd TEXT");
+      db.exec("ALTER TABLE features ADD COLUMN model_prd TEXT");
+    },
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {
