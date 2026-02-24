@@ -33,9 +33,7 @@ interface NextStepsBarProps {
   featureType?: string;
   canStartRefine?: boolean;
   onStartRefinePlan?: (description: string, images?: Array<{ base64: string; mimeType: string }>) => void;
-  onStartRefineBrainstorm?: (description: string, images?: Array<{ base64: string; mimeType: string }>) => void;
   isStartingRefinePlan?: boolean;
-  isStartingRefineBrainstorm?: boolean;
   openSessionPrompt?: number;
 }
 
@@ -64,9 +62,7 @@ export function NextStepsBar({
   featureType,
   canStartRefine,
   onStartRefinePlan,
-  onStartRefineBrainstorm,
   isStartingRefinePlan,
-  isStartingRefineBrainstorm,
   openSessionPrompt,
 }: NextStepsBarProps) {
   const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
@@ -75,7 +71,7 @@ export function NextStepsBar({
 
   const canMerge = allPhasesDone && featureType === "feature" && projectId != null && featureId != null;
 
-  const isRefineDisabled = isStartingRefinePlan || isStartingRefineBrainstorm;
+  const isRefineDisabled = !!isStartingRefinePlan;
 
   // Close refine prompt when a refine agent starts
   useEffect(() => {
@@ -126,20 +122,8 @@ export function NextStepsBar({
           onStartRefinePlan?.(text, images);
         },
       },
-      {
-        label: "Brainstorm",
-        icon: isStartingRefineBrainstorm ? (
-          <Loader2Icon className="mr-2 size-4 animate-spin" />
-        ) : (
-          <AGENT_ICONS.brainstorm className="mr-2 size-4" />
-        ),
-        variant: "outline" as const,
-        onClick: (text: string, images?: Array<{ base64: string; mimeType: string }>) => {
-          onStartRefineBrainstorm?.(text, images);
-        },
-      },
     ],
-    [isStartingRefinePlan, isStartingRefineBrainstorm, onStartRefinePlan, onStartRefineBrainstorm],
+    [isStartingRefinePlan, onStartRefinePlan],
   );
 
   const sessionSplitActions: SplitSendAction[] = useMemo(

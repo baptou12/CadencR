@@ -12,15 +12,15 @@ export type FeatureStatus =
 
 /** Which top-level view the feature page should render */
 export type FeatureView =
-  | "plan-input" // draft, no agents running — show description textarea + Plan/Brainstorm buttons
-  | "planning" // plan or brainstorm agent is active/has output
+  | "plan-input" // draft, no agents running — show description textarea + Plan/PRD buttons
+  | "planning" // plan or prd agent is active/has output
   | "ready-to-build" // planned, no agents active — show Build/Risk/Review buttons
   | "agents-active" // one or more of execute/risk/review agents have output
   | "done"; // feature is done — show summary
 
 export interface AgentVisibility {
   showPlanAgent: boolean;
-  showBrainstormAgent: boolean;
+  showPrdAgent: boolean;
   showExecuteAgent: boolean;
   showRiskAgent: boolean;
   showReviewAgent: boolean;
@@ -28,7 +28,7 @@ export interface AgentVisibility {
 
 export interface ActionAvailability {
   canStartPlan: boolean;
-  canStartBrainstorm: boolean;
+  canStartPrd: boolean;
   canStartBuild: boolean;
   canStartRisk: boolean;
   canStartReview: boolean;
@@ -50,7 +50,7 @@ interface AgentInfo {
 interface UseFeatureStateParams {
   featureStatus: FeatureStatus | undefined;
   plan: AgentInfo;
-  brainstorm: AgentInfo;
+  prd: AgentInfo;
   execute: AgentInfo;
   risk: AgentInfo;
   review: AgentInfo;
@@ -59,7 +59,7 @@ interface UseFeatureStateParams {
 export function useFeatureState(
   params: UseFeatureStateParams,
 ): FeatureStateResult {
-  const { featureStatus, plan, brainstorm, execute, risk, review } = params;
+  const { featureStatus, plan, prd, execute, risk, review } = params;
 
   return useMemo(() => {
     const status = featureStatus ?? "draft";
@@ -74,13 +74,13 @@ export function useFeatureState(
       a.status !== "idle" || a.blocks.length > 0;
 
     const planActive = hasAgentOutput(plan);
-    const brainstormActive = hasAgentOutput(brainstorm);
+    const prdActive = hasAgentOutput(prd);
     const executeActive = hasAgentOutput(execute);
     const riskActive = hasAgentOutput(risk);
     const reviewActive = hasAgentOutput(review);
 
     // Planning agents are active
-    const planningActive = planActive || brainstormActive;
+    const planningActive = planActive || prdActive;
 
     // Build/risk/review agents are active
     const buildPhaseAgentsActive =
@@ -105,7 +105,7 @@ export function useFeatureState(
 
     const agents: AgentVisibility = {
       showPlanAgent: planActive,
-      showBrainstormAgent: brainstormActive,
+      showPrdAgent: prdActive,
       showExecuteAgent: executeActive,
       showRiskAgent: riskActive,
       showReviewAgent: reviewActive,
@@ -115,11 +115,11 @@ export function useFeatureState(
       canStartPlan:
         isDraft &&
         plan.status === "idle" &&
-        brainstorm.status === "idle",
-      canStartBrainstorm:
+        prd.status === "idle",
+      canStartPrd:
         isDraft &&
         plan.status === "idle" &&
-        brainstorm.status === "idle",
+        prd.status === "idle",
       canStartBuild:
         (isPlanned || isInProgress) && (execute.status === "idle" || execute.status === "error" || execute.status === "completed"),
       canStartRisk:
@@ -133,5 +133,5 @@ export function useFeatureState(
     };
 
     return { view, agents, actions };
-  }, [featureStatus, plan, brainstorm, execute, risk, review]);
+  }, [featureStatus, plan, prd, execute, risk, review]);
 }

@@ -369,7 +369,7 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
 
     // In collapsible mode:
     // Show when agent has output, is running, has pending questions, or pending plan approval.
-    // Always show when there's a pending plan approval (e.g. plan/brainstorm agents waiting for user to approve).
+    // Always show when there's a pending plan approval (e.g. plan/prd agents waiting for user to approve).
     if (pendingPlanApproval) return true;
     const hasOutput = blocks.length > 0;
     const hasQuestions = pendingQuestions && pendingQuestions.length > 0;

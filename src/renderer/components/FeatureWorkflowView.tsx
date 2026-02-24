@@ -347,7 +347,7 @@ export function FeatureWorkflowView({
   const { view, actions } = useFeatureState({
     featureStatus: feature?.status as FeatureStatus | undefined,
     plan: { status: wf.plan.status, blocks: wf.plan.blocks },
-    brainstorm: { status: wf.brainstorm.status, blocks: wf.brainstorm.blocks },
+    prd: { status: wf.prd.status, blocks: wf.prd.blocks },
     execute: { status: wf.execute.status, blocks: wf.execute.blocks },
     risk: { status: wf.risk.status, blocks: wf.risk.blocks },
     review: { status: wf.review.status, blocks: wf.review.blocks },
@@ -545,13 +545,13 @@ export function FeatureWorkflowView({
                     setDescription(text);
                     wf.handleStartPlanning(images);
                   }}
-                  onStartBrainstorming={(text, images) => {
+                  onStartPrd={(text, images) => {
                     descriptionRef.current = text;
                     setDescription(text);
-                    wf.handleStartBrainstorming(images);
+                    wf.handleStartPrd(images);
                   }}
                   isStartingPlan={wf.isStartingPlan}
-                  isStartingBrainstorm={wf.isStartingBrainstorm}
+                  isStartingPrd={wf.isStartingPrd}
                 />
               </div>
             )}
@@ -806,9 +806,7 @@ export function FeatureWorkflowView({
                       featureType={feature?.type}
                       canStartRefine={actions.canStartRefine}
                       onStartRefinePlan={wf.handleStartRefinePlan}
-                      onStartRefineBrainstorm={wf.handleStartRefineBrainstorm}
                       isStartingRefinePlan={wf.isStartingRefinePlan}
-                      isStartingRefineBrainstorm={wf.isStartingRefineBrainstorm}
                       openSessionPrompt={sessionPromptTrigger}
                     />
                   </div>

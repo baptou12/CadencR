@@ -303,11 +303,11 @@ describe("AgentSession", () => {
     expect(screen.getByRole("button", { name: /approve/i })).toBeInTheDocument();
   });
 
-  it("shows prompt bar for completed brainstorm agent when pendingPlanApproval is set", () => {
+  it("shows prompt bar for completed prd agent when pendingPlanApproval is set", () => {
     render(
       <AgentSession
-        agentType="brainstorm"
-        blocks={[makeBlock("1", "Brainstorm output")]}
+        agentType="prd"
+        blocks={[makeBlock("1", "PRD output")]}
         status="completed"
         onSend={onSend}
         onStop={onStop}

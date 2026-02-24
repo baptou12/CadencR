@@ -17,7 +17,7 @@ interface UseWorkflowAgentsParams {
   featureId: number;
   projectId: number;
   featureQuery?: { refetch: () => unknown };
-  /** Current description text — needed by plan/brainstorm starters */
+  /** Current description text — needed by plan/prd starters */
   getDescription: () => string;
 }
 
@@ -75,7 +75,7 @@ export function useWorkflowAgents({
 
   // --- Derived state helpers ---
   const planSession = useMemo(() => findSession("plan"), [findSession]);
-  const brainstormSession = useMemo(() => findSession("brainstorm"), [findSession]);
+  const prdSession = useMemo(() => findSession("prd"), [findSession]);
   const riskSession = useMemo(() => findSession("risk"), [findSession]);
   const reviewSession = useMemo(() => findSession("review"), [findSession]);
 
@@ -139,7 +139,7 @@ export function useWorkflowAgents({
   return {
     // Simplified state accessors for useFeatureState compatibility
     plan: { status: statusOf(planSession), blocks: blocksOf(planSession) },
-    brainstorm: { status: statusOf(brainstormSession), blocks: blocksOf(brainstormSession) },
+    prd: { status: statusOf(prdSession), blocks: blocksOf(prdSession) },
     execute: { status: executeStatus, blocks: executeSessions.flatMap((s) => s.blocks) },
     risk: { status: statusOf(riskSession), blocks: blocksOf(riskSession) },
     review: { status: statusOf(reviewSession), blocks: blocksOf(reviewSession) },
@@ -149,7 +149,7 @@ export function useWorkflowAgents({
     // Loading states (from mutations)
     isPreparingWorktree: mut.isPreparingWorktree,
     isStartingPlan: mut.isStartingPlan,
-    isStartingBrainstorm: mut.isStartingBrainstorm,
+    isStartingPrd: mut.isStartingPrd,
     isStartingExecute: mut.isStartingExecute,
     isStartingRisk: mut.isStartingRisk,
     isStartingReview: mut.isStartingReview,
@@ -157,7 +157,7 @@ export function useWorkflowAgents({
     isStartingFix: mut.isStartingFix,
     // Action handlers
     handleStartPlanning: mut.handleStartPlanning,
-    handleStartBrainstorming: mut.handleStartBrainstorming,
+    handleStartPrd: mut.handleStartPrd,
     handleSessionQuestionResponse,
     handleStartBuilding: mut.handleStartBuilding,
     handleStartRisk: mut.handleStartRisk,
@@ -184,8 +184,6 @@ export function useWorkflowAgents({
     isStartingWorkflowSession: mut.isStartingWorkflowSession,
     // Refine
     handleStartRefinePlan: mut.handleStartRefinePlan,
-    handleStartRefineBrainstorm: mut.handleStartRefineBrainstorm,
     isStartingRefinePlan: mut.isStartingRefinePlan,
-    isStartingRefineBrainstorm: mut.isStartingRefineBrainstorm,
   };
 }
