@@ -16,7 +16,7 @@
 
 import { loadPrompt } from "./prompts/load-prompt";
 import { getDatabase } from "../db/database";
-import { createPlanMcpServer, createQaMcpServer, createReviewMcpServer, createRiskMcpServer, createCommonMcpServer, createWorkflowSessionMcpServer } from "./mcp-tools";
+import { createPlanMcpServer, createPrdMcpServer, createQaMcpServer, createReviewMcpServer, createRiskMcpServer, createCommonMcpServer, createWorkflowSessionMcpServer } from "./mcp-tools";
 import { waitForPlanApproval } from "./plan-approval";
 import type { ImageBlock, MessageContent, UnifiedAgentConfig, CompletionAction } from "./types";
 
@@ -26,6 +26,7 @@ import type { ImageBlock, MessageContent, UnifiedAgentConfig, CompletionAction }
 
 const PLAN_SYSTEM_PROMPT = loadPrompt("plan.md");
 const BRAINSTORM_SYSTEM_PROMPT = loadPrompt("brainstorm.md");
+const PRD_SYSTEM_PROMPT = loadPrompt("prd.md");
 const RISK_SYSTEM_PROMPT = loadPrompt("risk.md");
 const REVIEW_SYSTEM_PROMPT = loadPrompt("review.md");
 
@@ -104,6 +105,14 @@ export interface BrainstormConfigOptions {
   /** Plan ID — must be created by the caller before calling this factory */
   planId: number;
   /** Worktree path for permission resolution */
+  worktreePath?: string;
+}
+
+export interface PrdConfigOptions {
+  featureId: number;
+  projectId: number;
+  cwd: string;
+  description: MessageContent;
   worktreePath?: string;
 }
 
@@ -294,6 +303,81 @@ Start by thoroughly exploring the codebase to understand the full context. Resea
     mcpServerFactory: (subprocessId: string, sessionDbId: number) => ({
       "productdevr-plan": createPlanMcpServer(opts.planId, opts.featureId, sessionDbId, async (planMarkdown) => {
         return waitForPlanApproval(subprocessId, planMarkdown);
+      }),
+    }),
+  };
+}
+
+/**
+ * Create a UnifiedAgentConfig for the PRD agent.
+ *
+ * The PRD agent creates a Product Requirements Document on the features table.
+ * No plan row is created. Uses waitForPlanApproval for PRD approval flow.
+ */
+export function createPrdConfig(opts: PrdConfigOptions): UnifiedAgentConfig {
+  const prdInstructions = `Use the MCP tools to build the PRD. Call update_prd to store the PRD content, then call show_prd to present it for approval. If rejected, revise and call show_prd again. Once approved, call mark_agent_done.`;
+
+  let prompt: MessageContent;
+  if (typeof opts.description === "string") {
+    prompt = `Please create a comprehensive PRD for the following feature:\n\n${opts.description}\n\n${prdInstructions}`;
+  } else {
+    const textPreamble: { type: "text"; text: string } = {
+      type: "text",
+      text: "Please create a comprehensive PRD for the following feature:\n\n",
+    };
+    const textPostamble: { type: "text"; text: string } = {
+      type: "text",
+      text: `\n\n${prdInstructions}`,
+    };
+    prompt = [textPreamble, ...(opts.description as Array<{ type: "text"; text: string } | ImageBlock>), textPostamble];
+  }
+
+  const completionActions: CompletionAction[] = [
+    {
+      event: "prd_auto_start_plan",
+      handler: () => {
+        const db = getDatabase();
+        const feature = db.prepare("SELECT prd FROM features WHERE id = ?").get(opts.featureId) as { prd: string | null } | undefined;
+        if (!feature?.prd) {
+          console.warn(`[agent-configs] PRD agent exited without finalizing PRD for feature ${opts.featureId}`);
+          return;
+        }
+
+        // PRD exists — check autonomy level for auto-start
+        const { getAutonomyLevel } = require("./execute-agent");
+        const autonomyLevel = getAutonomyLevel(opts.featureId, opts.projectId);
+        if (autonomyLevel >= 2) {
+          // Auto-start plan agent with PRD as description
+          const { startPlanAgent } = require("./agent-starters");
+          try {
+            startPlanAgent({
+              featureId: opts.featureId,
+              projectId: opts.projectId,
+              description: feature.prd,
+              cwd: opts.cwd,
+              worktreePath: opts.worktreePath,
+            });
+            console.log(`[agent-configs] Auto-started plan agent for feature ${opts.featureId} after PRD approval`);
+          } catch (err) {
+            console.error(`[agent-configs] Failed to auto-start plan agent for feature ${opts.featureId}:`, err);
+          }
+        }
+      },
+    },
+  ];
+
+  return {
+    agentType: "prd",
+    systemPrompt: PRD_SYSTEM_PROMPT,
+    completionActions,
+    featureId: opts.featureId,
+    projectId: opts.projectId,
+    cwd: opts.cwd,
+    prompt,
+    worktreePath: opts.worktreePath,
+    mcpServerFactory: (subprocessId: string, sessionDbId: number) => ({
+      "productdevr-prd": createPrdMcpServer(opts.featureId, sessionDbId, async (prdMarkdown) => {
+        return waitForPlanApproval(subprocessId, prdMarkdown);
       }),
     }),
   };

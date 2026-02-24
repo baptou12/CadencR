@@ -14,6 +14,7 @@ import {
   listSubprocesses,
   submitUserAnswers,
   submitPlanApproval,
+  submitPrdApproval,
   submitToolPermission,
   sendMessageToSubprocess,
   setSubprocessPermissionMode,
@@ -49,6 +50,7 @@ import { startUnifiedAgent } from "../agents/unified-agent";
 import {
   startPlanAgent,
   startBrainstormAgent,
+  startPrdAgent,
   startRefinePlanAgent,
   startRefineBrainstormAgent,
   startRiskAgent,
@@ -528,6 +530,34 @@ const agentsRouter = router({
       }
     }),
 
+  /** Submit PRD approval or rejection for a pending show_prd tool call */
+  submitPrdApproval: publicProcedure
+    .input(
+      z.object({
+        subprocessId: z.string(),
+        approved: z.boolean(),
+        feedback: z.string().optional(),
+      }),
+    )
+    .mutation(({ input }) => {
+      return submitPrdApproval(input.subprocessId, input.approved, input.feedback);
+    }),
+
+  /** Clear a stale pending_prd_approval (e.g. when subprocess is gone after restart) */
+  clearPrdApproval: publicProcedure
+    .input(z.object({ sessionDbId: z.number() }))
+    .mutation(({ input }) => {
+      try {
+        const db = getDatabase();
+        db.prepare("UPDATE agent_sessions SET pending_prd_approval = NULL WHERE id = ?").run(input.sessionDbId);
+        const row = db.prepare("SELECT feature_id FROM agent_sessions WHERE id = ?").get(input.sessionDbId) as { feature_id: number } | undefined;
+        if (row) notifyDbUpdated("agent_session", row.feature_id);
+        return { success: true };
+      } catch {
+        return { success: false };
+      }
+    }),
+
   /** Submit a tool permission decision from the renderer */
   submitToolPermission: publicProcedure
     .input(
@@ -613,6 +643,31 @@ const agentsRouter = router({
         description = input.description;
       }
       return startBrainstormAgent({ featureId: input.featureId, projectId: input.projectId, description, cwd, worktreePath });
+    }),
+
+  /** Start the PRD agent for a feature */
+  startPrd: publicProcedure
+    .input(z.object({
+      featureId: z.number(),
+      projectId: z.number(),
+      description: z.string(),
+      images: z.array(z.object({ base64: z.string(), mimeType: z.string() })).optional(),
+    }))
+    .mutation(({ input }) => {
+      const { cwd, worktreePath } = resolveAgentCwd(input.featureId, input.projectId);
+      let description: import("../agents/types").MessageContent;
+      if (input.images && input.images.length > 0) {
+        description = [
+          { type: "text" as const, text: input.description },
+          ...input.images.map((img) => ({
+            type: "image" as const,
+            source: { type: "base64" as const, media_type: img.mimeType, data: img.base64 },
+          })),
+        ];
+      } else {
+        description = input.description;
+      }
+      return startPrdAgent({ featureId: input.featureId, projectId: input.projectId, description, cwd, worktreePath });
     }),
 
   /** Refine an existing plan — start a plan agent that appends new phases */
@@ -1013,7 +1068,7 @@ const agentsRouter = router({
       const db = getDatabase();
       const sessions = db
         .prepare(
-          "SELECT id, feature_id, agent_type, claude_session_id, status, started_at, ended_at, run_id, phase_id, subprocess_id, model, pending_questions, has_file_changes, permission_mode, pending_plan_approval, pending_permission, input_tokens, output_tokens, context_window, was_compacted, draft_prompt FROM agent_sessions WHERE feature_id = ? ORDER BY id ASC",
+          "SELECT id, feature_id, agent_type, claude_session_id, status, started_at, ended_at, run_id, phase_id, subprocess_id, model, pending_questions, has_file_changes, permission_mode, pending_plan_approval, pending_prd_approval, pending_permission, input_tokens, output_tokens, context_window, was_compacted, draft_prompt FROM agent_sessions WHERE feature_id = ? ORDER BY id ASC",
         )
         .all(input.featureId) as (AgentSessionRow & { draft_prompt: string | null })[];
 
@@ -1094,6 +1149,7 @@ const agentsRouter = router({
             todos,
             permissionMode: s.permission_mode ?? "acceptEdits",
             pendingPlanApproval: s.pending_plan_approval ? (() => { try { return JSON.parse(s.pending_plan_approval); } catch { return null; } })() : null,
+            pendingPrdApproval: s.pending_prd_approval ? (() => { try { return JSON.parse(s.pending_prd_approval); } catch { return null; } })() : null,
             pendingPermission: s.pending_permission ? (() => { try { return JSON.parse(s.pending_permission); } catch { return null; } })() : null,
             inputTokens: s.input_tokens ?? 0,
             outputTokens: s.output_tokens ?? 0,
@@ -1122,7 +1178,7 @@ const agentsRouter = router({
     const rows = db
       .prepare(
         `SELECT feature_id,
-          MAX(CASE WHEN pending_questions IS NOT NULL OR pending_permission IS NOT NULL OR pending_plan_approval IS NOT NULL THEN 1 ELSE 0 END) AS needs_input
+          MAX(CASE WHEN pending_questions IS NOT NULL OR pending_permission IS NOT NULL OR pending_plan_approval IS NOT NULL OR pending_prd_approval IS NOT NULL THEN 1 ELSE 0 END) AS needs_input
          FROM agent_sessions
          WHERE status = 'running'
          GROUP BY feature_id`,

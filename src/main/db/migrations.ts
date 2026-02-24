@@ -449,6 +449,14 @@ const migrations: Migration[] = [
       db.exec("ALTER TABLE features ADD COLUMN model_prd TEXT");
     },
   },
+  {
+    version: 36,
+    description: "Add pending_prd_approval and prd_approval_result columns to agent_sessions",
+    up: (db) => {
+      db.exec("ALTER TABLE agent_sessions ADD COLUMN pending_prd_approval TEXT");
+      db.exec("ALTER TABLE agent_sessions ADD COLUMN prd_approval_result TEXT DEFAULT NULL");
+    },
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

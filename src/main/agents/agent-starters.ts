@@ -14,6 +14,7 @@ import {
   createSessionConfig,
   createPlanConfig,
   createBrainstormConfig,
+  createPrdConfig,
   createRiskConfig,
   createReviewConfig,
   createQaConfig,
@@ -105,6 +106,21 @@ export function startBrainstormAgent(options: {
   return startUnifiedAgent(
     createBrainstormConfig({ ...options, planId }),
   );
+}
+
+// ---------------------------------------------------------------------------
+// PRD
+// ---------------------------------------------------------------------------
+
+export function startPrdAgent(options: {
+  featureId: number;
+  projectId: number;
+  description: MessageContent;
+  cwd: string;
+  worktreePath?: string;
+}): AgentResult {
+  // PRD is stored on the features table, no plan row needed
+  return startUnifiedAgent(createPrdConfig(options));
 }
 
 // ---------------------------------------------------------------------------

@@ -116,6 +116,7 @@ export interface AgentSessionRow {
   has_file_changes: number;
   permission_mode: string | null;
   pending_plan_approval: string | null;
+  pending_prd_approval: string | null;
   pending_permission: string | null;
   input_tokens: number;
   output_tokens: number;

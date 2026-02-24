@@ -171,6 +171,7 @@ export function createMockAgentSession(
     has_file_changes: 0,
     permission_mode: "acceptEdits",
     pending_plan_approval: null,
+    pending_prd_approval: null,
     pending_permission: null,
     input_tokens: 1000,
     output_tokens: 500,

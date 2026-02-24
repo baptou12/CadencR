@@ -591,6 +591,61 @@ export function createRiskMcpServer(planId: number, featureId: number, sessionDb
 }
 
 // ---------------------------------------------------------------------------
+// PRD agent MCP server
+// ---------------------------------------------------------------------------
+
+/** Callback type for show_prd approval — blocks until user responds */
+export type PrdApprovalCallback = (prdMarkdown: string) => Promise<{ approved: boolean; feedback?: string }>;
+
+export function createPrdMcpServer(featureId: number, sessionDbId: number, onShowPrd?: PrdApprovalCallback) {
+  return createSdkMcpServer({
+    name: "productdevr-prd",
+    tools: [
+      createAgentDoneTool(sessionDbId, featureId),
+
+      tool(
+        "update_prd",
+        "Store or update the PRD markdown for this feature.",
+        {
+          prd: z.string().describe("The full PRD markdown content"),
+        },
+        async (args) => {
+          const db = getDatabase();
+          db.prepare("UPDATE features SET prd = ? WHERE id = ?").run(args.prd, featureId);
+          notifyDbUpdated("feature", featureId);
+          return textResult("PRD updated successfully.");
+        },
+      ),
+
+      tool(
+        "show_prd",
+        "Display the current PRD for user approval. This tool BLOCKS until the user approves or rejects. If approved, returns success. If rejected, returns the user's feedback so you can revise.",
+        {},
+        async () => {
+          const db = getDatabase();
+          const row = db.prepare("SELECT prd FROM features WHERE id = ?").get(featureId) as { prd: string | null } | undefined;
+          const prdMarkdown = row?.prd ?? "(No PRD content found)";
+
+          if (!onShowPrd) {
+            return textResult(prdMarkdown);
+          }
+          try {
+            const result = await onShowPrd(prdMarkdown);
+            if (result.approved) {
+              return textResult("✅ PRD approved by the user. You may now call mark_agent_done.");
+            } else {
+              return errorResult(`User requested changes: ${result.feedback || "No specific feedback provided."}`);
+            }
+          } catch (error) {
+            return errorResult(`PRD approval failed: ${error instanceof Error ? error.message : String(error)}`);
+          }
+        },
+      ),
+    ],
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Common MCP server (for agents without dedicated servers: Session)
 // ---------------------------------------------------------------------------
 
