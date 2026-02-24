@@ -117,6 +117,14 @@ export const featuresRouter = router({
     return { success: true };
   }),
 
+  getPrd: publicProcedure
+    .input(z.object({ feature_id: z.number() }))
+    .query(({ input }) => {
+      const db = getDatabase();
+      const row = db.prepare("SELECT prd FROM features WHERE id = ?").get(input.feature_id) as { prd: string | null } | undefined;
+      return { prd: row?.prd ?? null };
+    }),
+
   getById: publicProcedure
     .input(z.object({ id: z.number() }))
     .query(({ input }) => {
