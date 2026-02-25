@@ -36,7 +36,7 @@ export function resolveSetting(
     const row = db
       .prepare(`SELECT "${column}" as v FROM features WHERE id = ?`)
       .get(opts.featureId) as { v: string | null } | undefined;
-    if (row?.v) return row.v;
+    if (row?.v != null) return row.v;
   }
 
   // 2. Project-level (real column)
@@ -44,14 +44,14 @@ export function resolveSetting(
     const row = db
       .prepare(`SELECT "${column}" as v FROM projects WHERE id = ?`)
       .get(opts.projectId) as { v: string | null } | undefined;
-    if (row?.v) return row.v;
+    if (row?.v != null) return row.v;
   }
 
   // 3. Global settings EAV table
   const row = db
     .prepare("SELECT value FROM settings WHERE key = ?")
     .get(column) as SettingRow | undefined;
-  if (row?.value) return row.value;
+  if (row?.value != null) return row.value;
 
   return defaultValue;
 }
