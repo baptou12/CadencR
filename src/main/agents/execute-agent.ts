@@ -437,14 +437,14 @@ function buildEnrichedPrompt(phase: PhaseRow, autonomyLevel: 1 | 2 | 3 = 3): str
     "summary" | "context" | "clarifications" | "completion_conditions"
   > | undefined;
 
-  // Fetch previously completed phases (earlier steps only)
+  // Fetch previously completed phase titles only (earlier steps)
   const completedPhases = db
     .prepare(
-      "SELECT step_number, title, prompt, implementation_notes, deviations FROM phases WHERE plan_id = ? AND status = 'completed' AND step_number < ? ORDER BY step_number, order_index",
+      "SELECT step_number, title FROM phases WHERE plan_id = ? AND status = 'completed' AND step_number < ? ORDER BY step_number, order_index",
     )
     .all(phase.plan_id, phase.step_number) as Pick<
     PhaseRow,
-    "step_number" | "title" | "prompt" | "implementation_notes" | "deviations"
+    "step_number" | "title"
   >[];
 
   const sections: string[] = [];
@@ -460,35 +460,19 @@ function buildEnrichedPrompt(phase: PhaseRow, autonomyLevel: 1 | 2 | 3 = 3): str
     sections.push(`## Clarifications\n\n${plan.clarifications}`);
   }
 
-  // Previously completed phases
+  // Previously completed phases (titles only — use read_phase MCP tool for details if needed)
   if (completedPhases.length > 0) {
     const phaseList = completedPhases
-      .map((p) => {
-        let entry = `- **Phase (step ${p.step_number}): ${p.title}**`;
-        if (p.implementation_notes) {
-          entry += `\n  - Implementation notes: ${p.implementation_notes}`;
-        }
-        if (p.deviations) {
-          entry += `\n  - Deviations: ${p.deviations}`;
-        }
-        return entry;
-      })
+      .map((p) => `- Step ${p.step_number}: ${p.title}`)
       .join("\n");
     sections.push(
-      `## Previously Completed Phases\n\nThe following phases have already been implemented:\n\n${phaseList}`,
-    );
-  }
-
-  // Completion conditions
-  if (plan?.completion_conditions) {
-    sections.push(
-      `## Completion Conditions\n\n${plan.completion_conditions}\n\nAfter implementing this phase, run each validation command listed above. If any validation fails, analyze the error, fix the issue, and re-run (up to 3 attempts per condition).`,
+      `## Previously Completed Phases\n\nThe following phases have already been implemented. Use the \`read_phase\` tool if you need details about a specific phase.\n\n${phaseList}`,
     );
   }
 
   // Current phase body
   sections.push(
-    `## Current Phase: ${phase.title}\n\nPhase ID: ${phase.id}\n\nExecute the following phase of the implementation plan:\n\n${phase.prompt}\n\nPlease implement all the tasks listed above. Focus only on this phase's scope.\n\nCall \`mark_phase_done\` with phase_id=${phase.id} when complete.`,
+    `## Current Phase: ${phase.title}\n\nPhase ID: ${phase.id}\n\n${phase.prompt}\n\nFocus only on this phase's scope. Call \`mark_phase_done\` with phase_id=${phase.id} when complete.`,
   );
 
   // Add commit instructions based on autonomy level

@@ -162,10 +162,10 @@ describe("agent-starters", () => {
     it("transitions feature to review status", () => {
       (getDatabase as any).mockReturnValue({
         prepare: vi.fn().mockImplementation((sql: string) => {
-          if (sql.includes("SELECT id FROM plans")) {
-            return { get: vi.fn().mockReturnValue({ id: 1 }) };
+          if (sql.includes("FROM plans")) {
+            return { get: vi.fn().mockReturnValue({ id: 1, summary: null, context: null, clarifications: null }) };
           }
-          return { run: vi.fn(), get: vi.fn(), all: vi.fn().mockReturnValue([]) };
+          return { run: vi.fn(), get: vi.fn().mockReturnValue(null), all: vi.fn().mockReturnValue([]) };
         }),
       });
 

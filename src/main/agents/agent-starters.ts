@@ -242,15 +242,35 @@ export function startReviewAgent(options: {
   // Update feature status to review
   transitionFeature(db, options.featureId, "review");
 
-  // Look up plan ID for the review MCP server
+  // Look up plan with context for the review prompt
   const plan = db
-    .prepare("SELECT id FROM plans WHERE feature_id = ? ORDER BY id DESC LIMIT 1")
-    .get(options.featureId) as { id: number } | undefined;
+    .prepare("SELECT id, summary, context, clarifications FROM plans WHERE feature_id = ? ORDER BY id DESC LIMIT 1")
+    .get(options.featureId) as { id: number; summary: string | null; context: string | null; clarifications: string | null } | undefined;
 
   if (!plan) throw new Error("No plan found for this feature");
 
+  // Fetch PRD if available
+  const feature = db
+    .prepare("SELECT prd FROM features WHERE id = ?")
+    .get(options.featureId) as { prd: string | null } | undefined;
+
+  // Fetch completed phase titles
+  const completedPhases = db
+    .prepare(
+      "SELECT step_number, title FROM phases WHERE plan_id = ? AND status = 'completed' ORDER BY step_number, order_index",
+    )
+    .all(plan.id) as { step_number: number; title: string }[];
+
   return startUnifiedAgent(
-    createReviewConfig({ ...options, planId: plan.id }),
+    createReviewConfig({
+      ...options,
+      planId: plan.id,
+      prd: feature?.prd ?? undefined,
+      planSummary: plan.summary ?? undefined,
+      planContext: plan.context ?? undefined,
+      planClarifications: plan.clarifications ?? undefined,
+      completedPhases,
+    }),
   );
 }
 

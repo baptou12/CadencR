@@ -126,6 +126,16 @@ export interface ReviewConfigOptions {
   planId: number;
   /** Worktree path for permission resolution */
   worktreePath?: string;
+  /** PRD content if available */
+  prd?: string;
+  /** Plan summary */
+  planSummary?: string;
+  /** Codebase context from plan */
+  planContext?: string;
+  /** Clarifications from plan */
+  planClarifications?: string;
+  /** Previously completed phase titles */
+  completedPhases?: { step_number: number; title: string }[];
 }
 
 export interface SessionConfigOptions {
@@ -365,13 +375,34 @@ export function createRiskConfig(opts: RiskConfigOptions): UnifiedAgentConfig {
  * Completion action stores the review report as an agent_message.
  */
 export function createReviewConfig(opts: ReviewConfigOptions): UnifiedAgentConfig {
-  const prompt = `Please review the code changes for this feature.
+  const sections: string[] = [];
 
-**Plan ID: ${opts.planId}** — Use this ID when calling MCP tools like \`read_plan\`, \`list_phases\`, \`create_phase\`, \`finalize_phases\`, etc.
+  if (opts.prd) {
+    sections.push(`## Product Requirements\n\n${opts.prd}`);
+  }
+  if (opts.planSummary) {
+    sections.push(`## Plan Summary\n\n${opts.planSummary}`);
+  }
+  if (opts.planContext) {
+    sections.push(`## Codebase Context\n\n${opts.planContext}`);
+  }
+  if (opts.planClarifications) {
+    sections.push(`## Clarifications\n\n${opts.planClarifications}`);
+  }
+  if (opts.completedPhases && opts.completedPhases.length > 0) {
+    const phaseList = opts.completedPhases
+      .map((p) => `- Step ${p.step_number}: ${p.title}`)
+      .join("\n");
+    sections.push(
+      `## Completed Phases\n\nThe following phases were implemented. Use the \`read_phase\` tool via \`list_phases\` if you need details about a specific phase.\n\n${phaseList}`,
+    );
+  }
 
-Start by running \`git diff\` and \`git diff --cached\` to see all changes. Then review each change carefully and produce a detailed review report.
+  sections.push(
+    `## Instructions\n\n**Plan ID: ${opts.planId}** — Use this ID when calling MCP tools like \`read_plan\`, \`list_phases\`, \`create_phase\`, \`finalize_phases\`, etc.\n\nReview the implementation against the specification above. Ask yourself: "If I had to build this from the spec, how should the code look?" Then compare with the actual changes.\n\nStart by running \`git diff\` and \`git diff --cached\` to see all changes. Review each change carefully and produce a detailed review report.\n\nYou have MCP tools available (prefixed with mcp__productdevr-review__) to create fix phases if changes are needed. After presenting your review, use AskUserQuestion to get user approval, then either call \`mark_agent_done\` (if approved) or create fix phases via the MCP tools and then call \`mark_agent_done\`.`,
+  );
 
-You have MCP tools available (prefixed with mcp__productdevr-review__) to create fix phases if changes are needed. After presenting your review, use AskUserQuestion to get user approval, then either call \`mark_agent_done\` (if approved) or create fix phases via the MCP tools and then call \`mark_agent_done\`.`;
+  const prompt = sections.join("\n\n---\n\n");
 
   const completionActions: CompletionAction[] = [
     {
