@@ -714,13 +714,13 @@ export function continueExecuteAgent(sessionDbId: number): { subprocessIds: stri
   const firstStepNumber = sortedSteps[0];
   const firstStepPhases = stepGroups.get(firstStepNumber) ?? [];
   const firstStepSubprocessIds: string[] = [];
-  const firstStepPromises = firstStepPhases.map((phase) =>
-    dispatchPhase(phase, options, autonomyLevel, firstStepSubprocessIds),
+  const firstStepTasks = firstStepPhases.map((phase) =>
+    () => dispatchPhase(phase, options, autonomyLevel, firstStepSubprocessIds),
   );
 
   // Continue remaining steps asynchronously
   void (async () => {
-    await Promise.allSettled(firstStepPromises);
+    await runWithConcurrencyLimit(concurrencyLimit, firstStepTasks);
 
     const firstStepResult = getStepOutcome(plan.id, firstStepNumber);
     if (firstStepResult !== "ok" && firstStepResult !== "qa_fail_with_fixes") {
