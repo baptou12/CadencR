@@ -16,8 +16,7 @@
 
 import { loadPrompt } from "./prompts/load-prompt";
 import { getDatabase } from "../db/database";
-import { createPlanMcpServer, createPrdMcpServer, createQaMcpServer, createReviewMcpServer, createRiskMcpServer, createCommonMcpServer, createWorkflowSessionMcpServer } from "./mcp-tools";
-import { waitForPlanApproval } from "./plan-approval";
+import { buildMcpServerFactory } from "./mcp-factory";
 import type { ImageBlock, MessageContent, UnifiedAgentConfig, CompletionAction } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -243,11 +242,7 @@ Start by exploring the codebase to understand the project structure and existing
     cwd: opts.cwd,
     prompt,
     worktreePath: opts.worktreePath,
-    mcpServerFactory: (subprocessId: string, sessionDbId: number) => ({
-      "productdevr-plan": createPlanMcpServer(opts.planId, opts.featureId, sessionDbId, async (planMarkdown) => {
-        return waitForPlanApproval(subprocessId, planMarkdown);
-      }),
-    }),
+    mcpServerFactory: buildMcpServerFactory("plan", opts.featureId, opts.planId),
   };
 }
 
@@ -318,11 +313,7 @@ export function createPrdConfig(opts: PrdConfigOptions): UnifiedAgentConfig {
     cwd: opts.cwd,
     prompt,
     worktreePath: opts.worktreePath,
-    mcpServerFactory: (subprocessId: string, sessionDbId: number) => ({
-      "productdevr-prd": createPrdMcpServer(opts.featureId, sessionDbId, async (prdMarkdown) => {
-        return waitForPlanApproval(subprocessId, prdMarkdown);
-      }),
-    }),
+    mcpServerFactory: buildMcpServerFactory("prd", opts.featureId),
   };
 }
 
@@ -355,16 +346,7 @@ export function createRiskConfig(opts: RiskConfigOptions): UnifiedAgentConfig {
     cwd: opts.cwd,
     prompt: opts.prompt,
     worktreePath: opts.worktreePath,
-    mcpServerFactory: (_subprocessId: string, sessionDbId: number) => {
-      if (opts.planId) {
-        return {
-          "productdevr-risk": createRiskMcpServer(opts.planId, opts.featureId, sessionDbId),
-        } as Record<string, ReturnType<typeof createRiskMcpServer>>;
-      }
-      return {
-        "productdevr-common": createCommonMcpServer(sessionDbId, opts.featureId),
-      } as Record<string, ReturnType<typeof createCommonMcpServer>>;
-    },
+    mcpServerFactory: buildMcpServerFactory("risk", opts.featureId, opts.planId),
   };
 }
 
@@ -428,9 +410,7 @@ export function createReviewConfig(opts: ReviewConfigOptions): UnifiedAgentConfi
     cwd: opts.cwd,
     prompt,
     worktreePath: opts.worktreePath,
-    mcpServerFactory: (_subprocessId: string, sessionDbId: number) => ({
-      "productdevr-review": createReviewMcpServer(opts.planId, opts.featureId, sessionDbId),
-    }),
+    mcpServerFactory: buildMcpServerFactory("review", opts.featureId, opts.planId),
   };
 }
 
@@ -450,20 +430,7 @@ export function createSessionConfig(opts: SessionConfigOptions): UnifiedAgentCon
     resumeSessionId: opts.resumeSessionId,
     permissionMode: opts.permissionMode,
     worktreePath: opts.worktreePath,
-    mcpServerFactory: (_subprocessId: string, sessionDbId: number) => {
-      if (opts.planId) {
-        return {
-          "productdevr-session": createWorkflowSessionMcpServer(
-            sessionDbId,
-            opts.featureId ?? 0,
-            ["read_plan", "list_phases", "read_phase", "mark_agent_done", "mark_phase_done"],
-          ),
-        } as Record<string, ReturnType<typeof createWorkflowSessionMcpServer>>;
-      }
-      return {
-        "productdevr-common": createCommonMcpServer(sessionDbId, opts.featureId ?? 0),
-      } as Record<string, ReturnType<typeof createCommonMcpServer>>;
-    },
+    mcpServerFactory: buildMcpServerFactory("session", opts.featureId ?? 0, opts.planId),
   };
 }
 
@@ -521,9 +488,7 @@ Based on what was implemented above, design specific test cases and execute them
     cwd: opts.cwd,
     prompt,
     worktreePath: opts.worktreePath,
-    mcpServerFactory: (_subprocessId: string, sessionDbId: number) => ({
-      "productdevr-qa": createQaMcpServer(opts.planId, opts.featureId, sessionDbId),
-    }),
+    mcpServerFactory: buildMcpServerFactory("qa", opts.featureId, opts.planId),
   };
 }
 

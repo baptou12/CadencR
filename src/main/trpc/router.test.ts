@@ -63,6 +63,10 @@ vi.mock("../agents/state-transitions", () => ({
   transitionAgentSession: vi.fn(),
 }));
 
+vi.mock("../agents/mcp-factory", () => ({
+  buildMcpServerFactoryForResume: vi.fn().mockReturnValue(undefined),
+}));
+
 vi.mock("../git/worktree", () => ({
   createWorktree: vi.fn().mockResolvedValue("/worktree/path"),
   removeWorktree: vi.fn().mockResolvedValue(undefined),

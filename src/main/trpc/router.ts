@@ -59,6 +59,7 @@ import {
   startReviewFixerAgent,
 } from "../agents/agent-starters";
 import { startExecuteAgent, continueExecuteAgent, buildPhaseCompletionAction } from "../agents/execute-agent";
+import { buildMcpServerFactoryForResume } from "../agents/mcp-factory";
 import { transitionAgentSession } from "../agents/state-transitions";
 import { autoNameFeature, runAutoNameBlocking } from "../agents/auto-name";
 import { fetchAvailableModels } from "../agents/available-models";
@@ -470,6 +471,13 @@ const agentsRouter = router({
         resumePrompt = promptText;
       }
 
+      // Reconstruct MCP servers so the resumed CLI process has the same tools
+      const mcpServerFactory = buildMcpServerFactoryForResume(
+        input.agentType as AgentType,
+        input.featureId,
+        originalSession?.phase_id,
+      );
+
       const result = startUnifiedAgent({
         agentType: input.agentType as AgentType,
         featureId: input.featureId,
@@ -482,6 +490,7 @@ const agentsRouter = router({
         existingSessionDbId: input.originalSessionDbId,
         completionActions,
         worktreePath,
+        mcpServerFactory,
       });
 
       return { subprocessId: result.subprocessId, agentType: result.agentType, sessionDbId: result.sessionDbId };

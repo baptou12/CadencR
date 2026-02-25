@@ -18,7 +18,7 @@ import type { PhaseRow, PlanRow, SettingRow } from "../db/types";
 import { transitionFeature, transitionPhase, transitionPhaseIf, transitionAgentSession } from "./state-transitions";
 import { startUnifiedAgent } from "./unified-agent";
 import { buildExecuteSystemPrompt, createQaConfig } from "./agent-configs";
-import { createExecuteMcpServer } from "./mcp-tools";
+import { buildMcpServerFactory } from "./mcp-factory";
 import { broadcast, AGENT_EVENT_CHANNEL } from "./broadcast";
 import type { AgentEvent, UnifiedAgentConfig, CompletionAction } from "./types";
 
@@ -394,8 +394,6 @@ function executePhase(
       },
     ];
 
-    const mcpServer = createExecuteMcpServer(options.featureId, options.sessionDbId);
-
     const config: UnifiedAgentConfig = {
       agentType: "execute",
       systemPrompt: buildExecuteSystemPrompt(autonomyLevel),
@@ -407,7 +405,7 @@ function executePhase(
       runId: options.sessionDbId,
       phaseId: phase.id,
       worktreePath: options.worktreePath,
-      mcpServers: { "productdevr-execute": mcpServer },
+      mcpServerFactory: buildMcpServerFactory("execute", options.featureId),
     };
 
     try {
