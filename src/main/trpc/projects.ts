@@ -47,7 +47,7 @@ export const projectsRouter = router({
       const db = getDatabase();
       // Combine real columns + remaining EAV rows
       const project = db
-        .prepare("SELECT branch_prefix, qa_prompt, agent_autonomy, model_plan, model_brainstorm, model_execute, model_risk, model_review, model_session, model_qa FROM projects WHERE id = ?")
+        .prepare("SELECT branch_prefix, qa_prompt, agent_autonomy, model_plan, model_prd, model_execute, model_risk, model_review, model_session, model_qa FROM projects WHERE id = ?")
         .get(input.project_id) as Record<string, string | null> | undefined;
 
       const result: Record<string, string> = {};
@@ -73,7 +73,7 @@ export const projectsRouter = router({
     .mutation(({ input }) => {
       const db = getDatabase();
       const realColumns = new Set([
-        "model_plan", "model_brainstorm", "model_execute", "model_risk", "model_review",
+        "model_plan", "model_prd", "model_execute", "model_risk", "model_review",
         "model_session", "model_qa", "agent_autonomy", "branch_prefix", "qa_prompt",
       ]);
 
@@ -94,10 +94,10 @@ export const projectsRouter = router({
     .query(({ input }) => {
       const db = getDatabase();
       const row = db
-        .prepare("SELECT model_plan, model_brainstorm, model_execute, model_risk, model_review, model_session, model_qa FROM projects WHERE id = ?")
+        .prepare("SELECT model_plan, model_prd, model_execute, model_risk, model_review, model_session, model_qa FROM projects WHERE id = ?")
         .get(input.projectId) as Record<string, string | null> | undefined;
 
-      const agentTypes = ["plan", "brainstorm", "execute", "risk", "review", "session", "qa"] as const;
+      const agentTypes = ["plan", "prd", "execute", "risk", "review", "session", "qa"] as const;
       const result: Record<string, string> = {};
       for (const at of agentTypes) {
         result[at] = row?.[`model_${at}`] ?? "";
@@ -110,7 +110,7 @@ export const projectsRouter = router({
     .input(
       z.object({
         projectId: z.number(),
-        agentType: z.enum(["plan", "brainstorm", "execute", "risk", "review", "session", "qa", "review-fixer"]),
+        agentType: z.enum(["plan", "prd", "execute", "risk", "review", "session", "qa", "review-fixer"]),
         modelId: z.string(),
       }),
     )

@@ -32,8 +32,7 @@ vi.mock("./state-transitions", () => ({
 vi.mock("./agent-configs", () => ({
   createSessionConfig: vi.fn().mockReturnValue({ agentType: "session" }),
   createPlanConfig: vi.fn().mockReturnValue({ agentType: "plan" }),
-  createBrainstormConfig: vi.fn().mockReturnValue({ agentType: "brainstorm" }),
-  createRiskConfig: vi.fn().mockReturnValue({ agentType: "risk" }),
+createRiskConfig: vi.fn().mockReturnValue({ agentType: "risk" }),
   createReviewConfig: vi.fn().mockReturnValue({ agentType: "review" }),
   createQaConfig: vi.fn().mockReturnValue({ agentType: "execute" }),
 }));
@@ -45,7 +44,6 @@ vi.mock("./execute-agent", () => ({
 import {
   startSessionAgent,
   startPlanAgent,
-  startBrainstormAgent,
   startRiskAgent,
   startReviewAgent,
   startQaAgent,
@@ -126,31 +124,6 @@ describe("agent-starters", () => {
       });
 
       expect(result.subprocessId).toBe("sub-1");
-    });
-  });
-
-  describe("startBrainstormAgent", () => {
-    it("creates a plan record before starting", () => {
-      const planRun = vi.fn().mockReturnValue({ lastInsertRowid: 6 });
-      (getDatabase as any).mockReturnValue({
-        prepare: vi.fn().mockImplementation((sql: string) => {
-          if (sql.includes("INSERT INTO plans")) return { run: planRun };
-          return {
-            run: vi.fn().mockReturnValue({ lastInsertRowid: 6 }),
-            get: vi.fn(),
-            all: vi.fn().mockReturnValue([]),
-          };
-        }),
-      });
-
-      startBrainstormAgent({
-        featureId: 1,
-        projectId: 2,
-        description: "Brainstorm ideas",
-        cwd: "/project",
-      });
-
-      expect(planRun).toHaveBeenCalledWith(1, expect.stringContaining("Brainstorm"));
     });
   });
 
@@ -317,6 +290,12 @@ describe("agent-starters", () => {
           if (sql.includes("MAX(step_number)")) {
             return { get: vi.fn().mockReturnValue({ max_step: 2 }) };
           }
+          if (sql.includes("phase_type IS NOT")) {
+            return { get: vi.fn().mockReturnValue({ cnt: 0 }) };
+          }
+          if (sql.includes("SELECT prd FROM features")) {
+            return { get: vi.fn().mockReturnValue({ prd: null }) };
+          }
           return { run: vi.fn().mockReturnValue({ lastInsertRowid: 42 }), get: vi.fn(), all: vi.fn().mockReturnValue([]) };
         }),
       });
@@ -349,6 +328,12 @@ describe("agent-starters", () => {
           }
           if (sql.includes("MAX(step_number)")) {
             return { get: vi.fn().mockReturnValue({ max_step: 2 }) };
+          }
+          if (sql.includes("phase_type IS NOT")) {
+            return { get: vi.fn().mockReturnValue({ cnt: 0 }) };
+          }
+          if (sql.includes("SELECT prd FROM features")) {
+            return { get: vi.fn().mockReturnValue({ prd: null }) };
           }
           return { run: vi.fn().mockReturnValue({ lastInsertRowid: 42 }), get: vi.fn(), all: vi.fn().mockReturnValue([]) };
         }),

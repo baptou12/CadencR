@@ -16,7 +16,7 @@
 
 import { loadPrompt } from "./prompts/load-prompt";
 import { getDatabase } from "../db/database";
-import { createPlanMcpServer, createQaMcpServer, createReviewMcpServer, createRiskMcpServer, createCommonMcpServer, createWorkflowSessionMcpServer } from "./mcp-tools";
+import { createPlanMcpServer, createPrdMcpServer, createQaMcpServer, createReviewMcpServer, createRiskMcpServer, createCommonMcpServer, createWorkflowSessionMcpServer } from "./mcp-tools";
 import { waitForPlanApproval } from "./plan-approval";
 import type { ImageBlock, MessageContent, UnifiedAgentConfig, CompletionAction } from "./types";
 
@@ -25,7 +25,7 @@ import type { ImageBlock, MessageContent, UnifiedAgentConfig, CompletionAction }
 // ---------------------------------------------------------------------------
 
 const PLAN_SYSTEM_PROMPT = loadPrompt("plan.md");
-const BRAINSTORM_SYSTEM_PROMPT = loadPrompt("brainstorm.md");
+const PRD_SYSTEM_PROMPT = loadPrompt("prd.md");
 const RISK_SYSTEM_PROMPT = loadPrompt("risk.md");
 const REVIEW_SYSTEM_PROMPT = loadPrompt("review.md");
 
@@ -94,16 +94,15 @@ export interface PlanConfigOptions {
   planId: number;
   /** Worktree path for permission resolution */
   worktreePath?: string;
+  /** When true, the description is a PRD — use PRD-specific preamble */
+  hasPrd?: boolean;
 }
 
-export interface BrainstormConfigOptions {
+export interface PrdConfigOptions {
   featureId: number;
   projectId: number;
   cwd: string;
   description: MessageContent;
-  /** Plan ID — must be created by the caller before calling this factory */
-  planId: number;
-  /** Worktree path for permission resolution */
   worktreePath?: string;
 }
 
@@ -164,6 +163,8 @@ export interface QaConfigOptions {
   qaPhaseStepNumber: number;
   worktreePath?: string;
   autonomyLevel?: 1 | 2 | 3;
+  /** Full PRD markdown — included for the final QA phase to verify against functional requirements */
+  prd?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -182,14 +183,18 @@ export function createPlanConfig(opts: PlanConfigOptions): UnifiedAgentConfig {
 
 Start by exploring the codebase to understand the project structure and existing patterns. Then ask me clarifying questions. Finally, build the phased plan using the tools, call show_plan, and ask for my approval.`;
 
+  const preambleText = opts.hasPrd
+    ? "Please create a detailed implementation plan based on the following Product Requirements Document (PRD):\n\n"
+    : "Please create a detailed implementation plan for the following feature:\n\n";
+
   let prompt: MessageContent;
   if (typeof opts.description === "string") {
-    prompt = `Please create a detailed implementation plan for the following feature:\n\n${opts.description}\n\n${planInstructions}`;
+    prompt = `${preambleText}${opts.description}\n\n${planInstructions}`;
   } else {
     // description is a content array — prepend instruction text block and append tail
     const textPreamble: { type: "text"; text: string } = {
       type: "text",
-      text: "Please create a detailed implementation plan for the following feature:\n\n",
+      text: preambleText,
     };
     const textPostamble: { type: "text"; text: string } = {
       type: "text",
@@ -237,54 +242,66 @@ Start by exploring the codebase to understand the project structure and existing
 }
 
 /**
- * Create a UnifiedAgentConfig for the brainstorm agent.
+ * Create a UnifiedAgentConfig for the PRD agent.
  *
- * Similar to plan but with BRAINSTORM_SYSTEM_PROMPT and a simpler completion
- * action that doesn't store summary/context/clarifications separately.
+ * The PRD agent creates a Product Requirements Document on the features table.
+ * No plan row is created. Uses waitForPlanApproval for PRD approval flow.
  */
-export function createBrainstormConfig(opts: BrainstormConfigOptions): UnifiedAgentConfig {
-  const brainstormInstructions = `The plan ID is ${opts.planId}. Use the MCP tools to build the plan as draft phases. Do NOT call finalize_plan until I explicitly approve — phases must stay in draft status until then.
-
-Start by thoroughly exploring the codebase to understand the full context. Research best practices if needed. Then ask me extensive clarifying questions (aim for 10-40 questions covering all aspects). Finally, build the detailed phased plan using the tools, call show_plan, and ask for my approval.`;
+export function createPrdConfig(opts: PrdConfigOptions): UnifiedAgentConfig {
+  const prdInstructions = `Use the MCP tools to build the PRD. Call create_prd to store the initial PRD content, then call show_prd to present it for approval. If rejected, use edit_prd for targeted changes (or create_prd for full rewrites), then call show_prd again. Once approved, call mark_agent_done.`;
 
   let prompt: MessageContent;
   if (typeof opts.description === "string") {
-    prompt = `Please perform a deep brainstorm and create a comprehensive implementation plan for the following feature:\n\n${opts.description}\n\n${brainstormInstructions}`;
+    prompt = `Please create a comprehensive PRD for the following feature:\n\n${opts.description}\n\n${prdInstructions}`;
   } else {
     const textPreamble: { type: "text"; text: string } = {
       type: "text",
-      text: "Please perform a deep brainstorm and create a comprehensive implementation plan for the following feature:\n\n",
+      text: "Please create a comprehensive PRD for the following feature:\n\n",
     };
     const textPostamble: { type: "text"; text: string } = {
       type: "text",
-      text: `\n\n${brainstormInstructions}`,
+      text: `\n\n${prdInstructions}`,
     };
     prompt = [textPreamble, ...(opts.description as Array<{ type: "text"; text: string } | ImageBlock>), textPostamble];
   }
 
-  // Fallback completion action: if the agent exits without finalizing, ensure plan stays draft
   const completionActions: CompletionAction[] = [
     {
-      event: "plan_fallback",
-      handler: (output: string) => {
+      event: "prd_auto_start_plan",
+      handler: () => {
         const db = getDatabase();
-        const plan = db
-          .prepare("SELECT status FROM plans WHERE id = ?")
-          .get(opts.planId) as { status: string } | undefined;
+        const feature = db.prepare("SELECT prd FROM features WHERE id = ?").get(opts.featureId) as { prd: string | null } | undefined;
+        if (!feature?.prd) {
+          console.warn(`[agent-configs] PRD agent exited without finalizing PRD for feature ${opts.featureId}`);
+          return;
+        }
 
-        if (plan && plan.status === "draft") {
-          if (output) {
-            db.prepare("UPDATE plans SET raw_markdown = ? WHERE id = ?").run(output, opts.planId);
+        // PRD exists — check autonomy level for auto-start
+        const { getAutonomyLevel } = require("./execute-agent");
+        const autonomyLevel = getAutonomyLevel(opts.featureId, opts.projectId);
+        if (autonomyLevel >= 2) {
+          // Auto-start plan agent with PRD as description
+          const { startPlanAgent } = require("./agent-starters");
+          try {
+            startPlanAgent({
+              featureId: opts.featureId,
+              projectId: opts.projectId,
+              description: feature.prd,
+              cwd: opts.cwd,
+              worktreePath: opts.worktreePath,
+            });
+            console.log(`[agent-configs] Auto-started plan agent for feature ${opts.featureId} after PRD approval`);
+          } catch (err) {
+            console.error(`[agent-configs] Failed to auto-start plan agent for feature ${opts.featureId}:`, err);
           }
-          console.warn(`[agent-configs] Brainstorm agent exited without finalizing plan ${opts.planId}`);
         }
       },
     },
   ];
 
   return {
-    agentType: "brainstorm",
-    systemPrompt: BRAINSTORM_SYSTEM_PROMPT,
+    agentType: "prd",
+    systemPrompt: PRD_SYSTEM_PROMPT,
     completionActions,
     featureId: opts.featureId,
     projectId: opts.projectId,
@@ -292,8 +309,8 @@ Start by thoroughly exploring the codebase to understand the full context. Resea
     prompt,
     worktreePath: opts.worktreePath,
     mcpServerFactory: (subprocessId: string, sessionDbId: number) => ({
-      "productdevr-plan": createPlanMcpServer(opts.planId, opts.featureId, sessionDbId, async (planMarkdown) => {
-        return waitForPlanApproval(subprocessId, planMarkdown);
+      "productdevr-prd": createPrdMcpServer(opts.featureId, sessionDbId, async (prdMarkdown) => {
+        return waitForPlanApproval(subprocessId, prdMarkdown);
       }),
     }),
   };
@@ -426,7 +443,17 @@ export function createSessionConfig(opts: SessionConfigOptions): UnifiedAgentCon
  * report. If tests fail, fix phases are parsed and inserted into the plan.
  */
 export function createQaConfig(opts: QaConfigOptions): UnifiedAgentConfig {
-  const prompt = `## What was implemented
+  const prdSection = opts.prd
+    ? `## Product Requirements Document (PRD)
+
+The following PRD defines the functional and business requirements. Verify that the implementation satisfies ALL requirements listed here:
+
+${opts.prd}
+
+`
+    : "";
+
+  const prompt = `${prdSection}## What was implemented
 
 ${opts.completedPhasesSummary}
 

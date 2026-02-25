@@ -11,18 +11,18 @@ export interface PlanInputImage {
 
 interface PlanInputViewProps {
   onStartPlanning: (description: string, images: PlanInputImage[]) => void;
-  onStartBrainstorming: (description: string, images: PlanInputImage[]) => void;
+  onStartPrd: (description: string, images: PlanInputImage[]) => void;
   isStartingPlan: boolean;
-  isStartingBrainstorm: boolean;
+  isStartingPrd: boolean;
 }
 
 export function PlanInputView({
   onStartPlanning,
-  onStartBrainstorming,
+  onStartPrd,
   isStartingPlan,
-  isStartingBrainstorm,
+  isStartingPrd,
 }: PlanInputViewProps) {
-  const isDisabled = isStartingPlan || isStartingBrainstorm;
+  const isDisabled = isStartingPlan || isStartingPrd;
 
   const splitSendActions: SplitSendAction[] = useMemo(
     () => [
@@ -40,19 +40,19 @@ export function PlanInputView({
         },
       },
       {
-        label: "Brainstorm",
-        icon: isStartingBrainstorm ? (
+        label: "PRD",
+        icon: isStartingPrd ? (
           <Loader2Icon className="mr-2 size-4 animate-spin" />
         ) : (
-          <AGENT_ICONS.brainstorm className="mr-2 size-4" />
+          <AGENT_ICONS.prd className="mr-2 size-4" />
         ),
         variant: "outline" as const,
         onClick: (text: string, images?: PlanInputImage[]) => {
-          onStartBrainstorming(text, images ?? []);
+          onStartPrd(text, images ?? []);
         },
       },
     ],
-    [isStartingPlan, isStartingBrainstorm, onStartPlanning, onStartBrainstorming],
+    [isStartingPlan, isStartingPrd, onStartPlanning, onStartPrd],
   );
 
   return (

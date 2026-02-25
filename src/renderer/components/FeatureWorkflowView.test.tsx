@@ -45,6 +45,9 @@ vi.mock("@/trpc", () => {
       getPlanWithPhases: {
         useQuery: vi.fn(() => ({ data: null })),
       },
+      getPrd: {
+        useQuery: vi.fn(() => ({ data: null })),
+      },
     },
     agents: {
       getFeatureAgentState: {
@@ -156,7 +159,7 @@ vi.mock("@/hooks/useFeatureState", () => ({
     featureStatus: "idle",
     workflowState: "idle",
     canStartPlan: true,
-    canStartBrainstorm: true,
+    canStartPrd: true,
     canStartExecute: false,
     canStartRisk: false,
     canStartReview: false,
@@ -175,7 +178,7 @@ vi.mock("@/hooks/useWorkflowAgents", () => ({
     stopAgent: vi.fn(),
     handleSend: vi.fn(),
     plan: { status: "idle", blocks: [] },
-    brainstorm: { status: "idle", blocks: [] },
+    prd: { status: "idle", blocks: [] },
     execute: { status: "idle", blocks: [] },
     risk: { status: "idle", blocks: [] },
     review: { status: "idle", blocks: [] },
@@ -254,7 +257,7 @@ vi.mock("@/components/AgentSession", () => ({
   AgentSession: vi.fn(() => null),
   AGENT_LABELS: {
     plan: "Plan",
-    brainstorm: "Brainstorm",
+    prd: "PRD",
     execute: "Execute",
     risk: "Risk Analysis",
     review: "Review",

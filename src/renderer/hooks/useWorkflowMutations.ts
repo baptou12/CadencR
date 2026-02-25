@@ -14,7 +14,7 @@ interface UseWorkflowMutationsParams {
   projectId: number;
   sessions: FeatureSession[];
   refetch: () => unknown;
-  /** Current description text from the component — needed by plan/brainstorm starters */
+  /** Current description text from the component — needed by plan/prd starters */
   getDescription: () => string;
 }
 
@@ -28,7 +28,7 @@ export function useWorkflowMutations({
   // Mutations
   const ensureWorktreeMutation = trpc.agents.ensureWorktree.useMutation();
   const startPlanMutation = trpc.agents.startPlan.useMutation();
-  const startBrainstormMutation = trpc.agents.startBrainstorm.useMutation();
+  const startPrdMutation = trpc.agents.startPrd.useMutation();
   const startExecuteMutation = trpc.agents.startExecute.useMutation();
   const startRiskMutation = trpc.agents.startRisk.useMutation();
   const startReviewMutation = trpc.agents.startReview.useMutation();
@@ -44,7 +44,6 @@ export function useWorkflowMutations({
   const continueExecuteMutation = trpc.agents.continueExecute.useMutation();
   const startWorkflowSessionMutation = trpc.agents.startWorkflowSession.useMutation();
   const startRefinePlanMutation = trpc.agents.startRefinePlan.useMutation();
-  const startRefineBrainstormMutation = trpc.agents.startRefineBrainstorm.useMutation();
 
   // --- Action handlers ---
 
@@ -69,7 +68,7 @@ export function useWorkflowMutations({
     }
   };
 
-  const handleStartBrainstorming = async (images?: Array<{ base64: string; mimeType: string }>) => {
+  const handleStartPrd = async (images?: Array<{ base64: string; mimeType: string }>) => {
     const description = getDescription();
     if (!description.trim()) return;
     try {
@@ -78,7 +77,7 @@ export function useWorkflowMutations({
         projectId,
         description: description.trim(),
       });
-      await startBrainstormMutation.mutateAsync({
+      await startPrdMutation.mutateAsync({
         featureId,
         projectId,
         description: description.trim(),
@@ -105,20 +104,6 @@ export function useWorkflowMutations({
     }
   };
 
-  const handleStartRefineBrainstorm = async (description: string, images?: Array<{ base64: string; mimeType: string }>) => {
-    if (!description.trim()) return;
-    try {
-      await startRefineBrainstormMutation.mutateAsync({
-        featureId,
-        projectId,
-        description: description.trim(),
-        ...(images && images.length > 0 ? { images } : {}),
-      });
-      void refetch();
-    } catch {
-      // Error will show via query refetch
-    }
-  };
 
   const handleStartBuilding = async () => {
     try {
@@ -344,7 +329,7 @@ export function useWorkflowMutations({
     // Loading states
     isPreparingWorktree: ensureWorktreeMutation.isLoading,
     isStartingPlan: startPlanMutation.isLoading || ensureWorktreeMutation.isLoading,
-    isStartingBrainstorm: startBrainstormMutation.isLoading || ensureWorktreeMutation.isLoading,
+    isStartingPrd: startPrdMutation.isLoading || ensureWorktreeMutation.isLoading,
     isStartingExecute: startExecuteMutation.isLoading,
     isStartingRisk: startRiskMutation.isLoading,
     isStartingReview: startReviewMutation.isLoading,
@@ -353,12 +338,10 @@ export function useWorkflowMutations({
     isContinuingBuild: continueExecuteMutation.isLoading,
     isStartingWorkflowSession: startWorkflowSessionMutation.isLoading,
     isStartingRefinePlan: startRefinePlanMutation.isLoading,
-    isStartingRefineBrainstorm: startRefineBrainstormMutation.isLoading,
     // Handlers
     handleStartPlanning,
-    handleStartBrainstorming,
+    handleStartPrd,
     handleStartRefinePlan,
-    handleStartRefineBrainstorm,
     handleStartBuilding,
     handleStartRisk,
     handleStartReview,

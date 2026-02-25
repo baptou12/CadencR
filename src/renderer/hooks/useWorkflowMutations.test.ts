@@ -6,7 +6,7 @@ import type { FeatureSession } from "./useFeatureAgentState";
 // All mutations
 const mockEnsureWorktree = vi.fn().mockResolvedValue({});
 const mockStartPlan = vi.fn().mockResolvedValue({});
-const mockStartBrainstorm = vi.fn().mockResolvedValue({});
+const mockStartPrd = vi.fn().mockResolvedValue({});
 const mockStartExecute = vi.fn().mockResolvedValue({});
 const mockStartRisk = vi.fn().mockResolvedValue({});
 const mockStartReview = vi.fn().mockResolvedValue({});
@@ -26,7 +26,7 @@ vi.mock("@/trpc", () => ({
     agents: {
       ensureWorktree: { useMutation: vi.fn(() => ({ mutateAsync: mockEnsureWorktree, isLoading: false })) },
       startPlan: { useMutation: vi.fn(() => ({ mutateAsync: mockStartPlan, isLoading: false })) },
-      startBrainstorm: { useMutation: vi.fn(() => ({ mutateAsync: mockStartBrainstorm, isLoading: false })) },
+      startPrd: { useMutation: vi.fn(() => ({ mutateAsync: mockStartPrd, isLoading: false })) },
       startExecute: { useMutation: vi.fn(() => ({ mutateAsync: mockStartExecute, isLoading: false })) },
       startRisk: { useMutation: vi.fn(() => ({ mutateAsync: mockStartRisk, isLoading: false })) },
       startReview: { useMutation: vi.fn(() => ({ mutateAsync: mockStartReview, isLoading: false })) },
@@ -41,7 +41,6 @@ vi.mock("@/trpc", () => ({
       continueExecute: { useMutation: vi.fn(() => ({ mutateAsync: mockContinueExecute, isLoading: false })) },
       startWorkflowSession: { useMutation: vi.fn(() => ({ mutateAsync: mockStartWorkflowSession, isLoading: false })) },
       startRefinePlan: { useMutation: vi.fn(() => ({ mutateAsync: vi.fn(), isLoading: false })) },
-      startRefineBrainstorm: { useMutation: vi.fn(() => ({ mutateAsync: vi.fn(), isLoading: false })) },
     },
   },
 }));
@@ -105,12 +104,12 @@ describe("useWorkflowMutations", () => {
     expect(mockEnsureWorktree).not.toHaveBeenCalled();
   });
 
-  it("handleStartBrainstorming calls startBrainstorm", async () => {
+  it("handleStartPrd calls startPrd", async () => {
     const { result } = renderHook(() =>
       useWorkflowMutations({ featureId: 1, projectId: 1, sessions: [], refetch: mockRefetch, getDescription: mockGetDescription }),
     );
-    await result.current.handleStartBrainstorming();
-    expect(mockStartBrainstorm).toHaveBeenCalled();
+    await result.current.handleStartPrd();
+    expect(mockStartPrd).toHaveBeenCalled();
   });
 
   it("handleStartBuilding calls startExecute", async () => {
@@ -282,7 +281,7 @@ describe("useWorkflowMutations", () => {
       useWorkflowMutations({ featureId: 1, projectId: 1, sessions: [], refetch: mockRefetch, getDescription: mockGetDescription }),
     );
     expect(result.current.isStartingPlan).toBe(false);
-    expect(result.current.isStartingBrainstorm).toBe(false);
+    expect(result.current.isStartingPrd).toBe(false);
     expect(result.current.isStartingExecute).toBe(false);
     expect(result.current.isStartingRisk).toBe(false);
     expect(result.current.isStartingReview).toBe(false);

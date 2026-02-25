@@ -16,7 +16,7 @@ export type MessageContent =
   | string
   | Array<{ type: "text"; text: string } | ImageBlock>;
 
-export type AgentType = "plan" | "brainstorm" | "execute" | "risk" | "review" | "session" | "qa" | "review-fixer";
+export type AgentType = "plan" | "prd" | "execute" | "risk" | "review" | "session" | "qa" | "review-fixer";
 
 /** Message start event — beginning of an assistant turn */
 export interface StreamMessageStart {
@@ -206,7 +206,7 @@ export interface CompletionAction {
 /**
  * Unified configuration for starting any agent type.
  *
- * All agent types (plan, brainstorm, execute, risk, review, session) can be
+ * All agent types (plan, prd, execute, risk, review, session) can be
  * expressed as a UnifiedAgentConfig — the only differences are the system
  * prompt and completion actions.
  */

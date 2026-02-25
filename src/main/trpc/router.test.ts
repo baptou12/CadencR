@@ -41,8 +41,7 @@ vi.mock("../agents/available-models", () => ({
 
 vi.mock("../agents/agent-starters", () => ({
   startPlanAgent: vi.fn().mockReturnValue({ subprocessId: "sp-1", agentType: "plan", sessionDbId: 1 }),
-  startBrainstormAgent: vi.fn().mockReturnValue({ subprocessId: "sp-1", agentType: "brainstorm", sessionDbId: 2 }),
-  startRiskAgent: vi.fn().mockReturnValue({ subprocessId: "sp-1", agentType: "risk", sessionDbId: 3 }),
+startRiskAgent: vi.fn().mockReturnValue({ subprocessId: "sp-1", agentType: "risk", sessionDbId: 3 }),
   startReviewAgent: vi.fn().mockReturnValue({ subprocessId: "sp-1", agentType: "review", sessionDbId: 4 }),
   startSessionAgent: vi.fn().mockReturnValue({ subprocessId: "sp-1", agentType: "session", sessionDbId: 5 }),
   startQaAgent: vi.fn().mockReturnValue({ subprocessId: "sp-1", agentType: "qa", sessionDbId: 6 }),
@@ -374,12 +373,6 @@ describe("appRouter - agentsRouter - agent starters", () => {
     const { startPlanAgent } = await import("../agents/agent-starters");
     await caller.agents.startPlan({ featureId: 1, projectId: 1, description: "Build feature" });
     expect(startPlanAgent).toHaveBeenCalledWith(expect.objectContaining({ featureId: 1, projectId: 1 }));
-  });
-
-  it("agents.startBrainstorm calls startBrainstormAgent", async () => {
-    const { startBrainstormAgent } = await import("../agents/agent-starters");
-    await caller.agents.startBrainstorm({ featureId: 1, projectId: 1, description: "Brainstorm" });
-    expect(startBrainstormAgent).toHaveBeenCalled();
   });
 
   it("agents.startExecute calls startExecuteAgent", async () => {

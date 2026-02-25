@@ -15,7 +15,7 @@ describe("useFeatureState", () => {
       useFeatureState({
         featureStatus: "draft",
         plan: idleAgent(),
-        brainstorm: idleAgent(),
+        prd: idleAgent(),
         execute: idleAgent(),
         risk: idleAgent(),
         review: idleAgent(),
@@ -24,7 +24,7 @@ describe("useFeatureState", () => {
 
     expect(result.current.view).toBe("plan-input");
     expect(result.current.actions.canStartPlan).toBe(true);
-    expect(result.current.actions.canStartBrainstorm).toBe(true);
+    expect(result.current.actions.canStartPrd).toBe(true);
   });
 
   it("returns planning view when plan agent has output", () => {
@@ -32,7 +32,7 @@ describe("useFeatureState", () => {
       useFeatureState({
         featureStatus: "draft",
         plan: idleAgent("running"),
-        brainstorm: idleAgent(),
+        prd: idleAgent(),
         execute: idleAgent(),
         risk: idleAgent(),
         review: idleAgent(),
@@ -41,10 +41,10 @@ describe("useFeatureState", () => {
 
     expect(result.current.view).toBe("planning");
     expect(result.current.agents.showPlanAgent).toBe(true);
-    expect(result.current.agents.showBrainstormAgent).toBe(false);
+    expect(result.current.agents.showPrdAgent).toBe(false);
   });
 
-  it("returns planning view when brainstorm agent has blocks", () => {
+  it("returns planning view when prd agent has blocks", () => {
     const blocks: AgentBlockData[] = [
       { id: "1", type: "text", content: "Some output" },
     ];
@@ -52,7 +52,7 @@ describe("useFeatureState", () => {
       useFeatureState({
         featureStatus: "draft",
         plan: idleAgent(),
-        brainstorm: idleAgent("idle", blocks),
+        prd: idleAgent("idle", blocks),
         execute: idleAgent(),
         risk: idleAgent(),
         review: idleAgent(),
@@ -60,7 +60,7 @@ describe("useFeatureState", () => {
     );
 
     expect(result.current.view).toBe("planning");
-    expect(result.current.agents.showBrainstormAgent).toBe(true);
+    expect(result.current.agents.showPrdAgent).toBe(true);
   });
 
   it("returns ready-to-build view for a planned feature with no agents active", () => {
@@ -68,7 +68,7 @@ describe("useFeatureState", () => {
       useFeatureState({
         featureStatus: "planned",
         plan: idleAgent(),
-        brainstorm: idleAgent(),
+        prd: idleAgent(),
         execute: idleAgent(),
         risk: idleAgent(),
         review: idleAgent(),
@@ -85,7 +85,7 @@ describe("useFeatureState", () => {
       useFeatureState({
         featureStatus: "in-progress",
         plan: idleAgent(),
-        brainstorm: idleAgent(),
+        prd: idleAgent(),
         execute: idleAgent("running"),
         risk: idleAgent(),
         review: idleAgent(),
@@ -101,7 +101,7 @@ describe("useFeatureState", () => {
       useFeatureState({
         featureStatus: "done",
         plan: idleAgent(),
-        brainstorm: idleAgent(),
+        prd: idleAgent(),
         execute: idleAgent(),
         risk: idleAgent(),
         review: idleAgent(),
@@ -116,7 +116,7 @@ describe("useFeatureState", () => {
       useFeatureState({
         featureStatus: "done",
         plan: idleAgent(),
-        brainstorm: idleAgent(),
+        prd: idleAgent(),
         execute: idleAgent("completed", [{ id: "1", type: "text", content: "done" }]),
         risk: idleAgent(),
         review: idleAgent(),
@@ -131,7 +131,7 @@ describe("useFeatureState", () => {
       useFeatureState({
         featureStatus: "draft",
         plan: idleAgent("running"),
-        brainstorm: idleAgent(),
+        prd: idleAgent(),
         execute: idleAgent(),
         risk: idleAgent(),
         review: idleAgent(),
@@ -146,7 +146,7 @@ describe("useFeatureState", () => {
       useFeatureState({
         featureStatus: "in-progress",
         plan: idleAgent(),
-        brainstorm: idleAgent(),
+        prd: idleAgent(),
         execute: idleAgent(),
         risk: idleAgent(),
         review: idleAgent("idle"),
@@ -162,7 +162,7 @@ describe("useFeatureState", () => {
         useFeatureState({
           featureStatus: status,
           plan: idleAgent(),
-          brainstorm: idleAgent(),
+          prd: idleAgent(),
           execute: idleAgent(),
           risk: idleAgent(),
           review: idleAgent(),
@@ -177,7 +177,7 @@ describe("useFeatureState", () => {
       useFeatureState({
         featureStatus: "in-progress",
         plan: idleAgent(),
-        brainstorm: idleAgent(),
+        prd: idleAgent(),
         execute: idleAgent(),
         risk: idleAgent("completed"),
         review: idleAgent(),
@@ -192,7 +192,7 @@ describe("useFeatureState", () => {
       useFeatureState({
         featureStatus: "in-progress",
         plan: idleAgent(),
-        brainstorm: idleAgent(),
+        prd: idleAgent(),
         execute: idleAgent(),
         risk: idleAgent("running"),
         review: idleAgent(),
@@ -207,7 +207,7 @@ describe("useFeatureState", () => {
       useFeatureState({
         featureStatus: "in-progress",
         plan: idleAgent(),
-        brainstorm: idleAgent(),
+        prd: idleAgent(),
         execute: idleAgent(),
         risk: idleAgent(),
         review: idleAgent("completed"),
@@ -222,7 +222,7 @@ describe("useFeatureState", () => {
       useFeatureState({
         featureStatus: "in-progress",
         plan: idleAgent(),
-        brainstorm: idleAgent(),
+        prd: idleAgent(),
         execute: idleAgent(),
         risk: idleAgent(),
         review: idleAgent("running"),
@@ -237,7 +237,7 @@ describe("useFeatureState", () => {
       useFeatureState({
         featureStatus: undefined,
         plan: idleAgent(),
-        brainstorm: idleAgent(),
+        prd: idleAgent(),
         execute: idleAgent(),
         risk: idleAgent(),
         review: idleAgent(),

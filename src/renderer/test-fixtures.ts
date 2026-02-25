@@ -26,7 +26,7 @@ export function createMockProject(overrides: Partial<ProjectRow> = {}): ProjectR
     path: `/home/user/projects/test-project-${id}`,
     created_at: "2024-01-01T00:00:00.000Z",
     model_plan: null,
-    model_brainstorm: null,
+    model_prd: null,
     model_execute: null,
     model_risk: null,
     model_review: null,
@@ -56,7 +56,7 @@ export function createMockFeature(overrides: Partial<FeatureRow> = {}): FeatureR
     status: "draft",
     created_at: "2024-01-01T00:00:00.000Z",
     model_plan: null,
-    model_brainstorm: null,
+    model_prd: null,
     model_execute: null,
     model_risk: null,
     model_review: null,
@@ -64,6 +64,7 @@ export function createMockFeature(overrides: Partial<FeatureRow> = {}): FeatureR
     model_qa: null,
     agent_autonomy: null,
     parallel_execution: null,
+    prd: null,
     ...overrides,
   };
 }
@@ -168,6 +169,7 @@ export function createMockAgentSession(
     has_file_changes: 0,
     permission_mode: "acceptEdits",
     pending_plan_approval: null,
+    pending_prd_approval: null,
     pending_permission: null,
     input_tokens: 1000,
     output_tokens: 500,

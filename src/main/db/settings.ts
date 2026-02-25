@@ -4,12 +4,12 @@ import type { SettingRow } from "./types";
 /** Column names that exist on both projects and features tables. */
 const SHARED_COLUMNS = new Set([
   "model_plan",
-  "model_brainstorm",
   "model_execute",
   "model_risk",
   "model_review",
   "model_session",
   "model_qa",
+  "model_prd",
   "agent_autonomy",
   "parallel_execution",
 ]);

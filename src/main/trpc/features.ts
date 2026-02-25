@@ -117,6 +117,14 @@ export const featuresRouter = router({
     return { success: true };
   }),
 
+  getPrd: publicProcedure
+    .input(z.object({ feature_id: z.number() }))
+    .query(({ input }) => {
+      const db = getDatabase();
+      const row = db.prepare("SELECT prd FROM features WHERE id = ?").get(input.feature_id) as { prd: string | null } | undefined;
+      return { prd: row?.prd ?? null };
+    }),
+
   getById: publicProcedure
     .input(z.object({ id: z.number() }))
     .query(({ input }) => {
@@ -198,7 +206,7 @@ export const featuresRouter = router({
       const db = getDatabase();
       // Combine real columns + remaining EAV rows (worktree_path, worktree_branch, etc.)
       const feature = db
-        .prepare("SELECT model_plan, model_brainstorm, model_execute, model_risk, model_review, model_session, model_qa, agent_autonomy FROM features WHERE id = ?")
+        .prepare("SELECT model_plan, model_prd, model_execute, model_risk, model_review, model_session, model_qa, agent_autonomy FROM features WHERE id = ?")
         .get(input.feature_id) as Record<string, string | null> | undefined;
 
       const result: Record<string, string> = {};
@@ -278,7 +286,7 @@ export const featuresRouter = router({
     .mutation(({ input }) => {
       const db = getDatabase();
       const realColumns = new Set([
-        "model_plan", "model_brainstorm", "model_execute", "model_risk", "model_review",
+        "model_plan", "model_prd", "model_execute", "model_risk", "model_review",
         "model_session", "model_qa", "agent_autonomy",
       ]);
 
@@ -299,10 +307,10 @@ export const featuresRouter = router({
     .query(({ input }) => {
       const db = getDatabase();
       const row = db
-        .prepare("SELECT model_plan, model_brainstorm, model_execute, model_risk, model_review, model_session, model_qa FROM features WHERE id = ?")
+        .prepare("SELECT model_plan, model_prd, model_execute, model_risk, model_review, model_session, model_qa FROM features WHERE id = ?")
         .get(input.featureId) as Record<string, string | null> | undefined;
 
-      const agentTypes = ["plan", "brainstorm", "execute", "risk", "review", "session", "qa"] as const;
+      const agentTypes = ["plan", "prd", "execute", "risk", "review", "session", "qa"] as const;
       const result: Record<string, string> = {};
       for (const at of agentTypes) {
         result[at] = row?.[`model_${at}`] ?? "";
@@ -315,7 +323,7 @@ export const featuresRouter = router({
     .input(
       z.object({
         featureId: z.number(),
-        agentType: z.enum(["plan", "brainstorm", "execute", "risk", "review", "session", "qa", "review-fixer"]),
+        agentType: z.enum(["plan", "prd", "execute", "risk", "review", "session", "qa", "review-fixer"]),
         modelId: z.string(),
       }),
     )

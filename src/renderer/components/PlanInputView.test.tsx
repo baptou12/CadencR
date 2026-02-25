@@ -4,9 +4,9 @@ import { PlanInputView } from "./PlanInputView";
 
 const defaultProps = {
   onStartPlanning: vi.fn(),
-  onStartBrainstorming: vi.fn(),
+  onStartPrd: vi.fn(),
   isStartingPlan: false,
-  isStartingBrainstorm: false,
+  isStartingPrd: false,
 };
 
 describe("PlanInputView", () => {
@@ -27,8 +27,8 @@ describe("PlanInputView", () => {
     expect(screen.getByRole("button", { name: /plan/i })).toBeInTheDocument();
   });
 
-  it("renders Brainstorm button", () => {
+  it("renders PRD button", () => {
     render(<PlanInputView {...defaultProps} />);
-    expect(screen.getByRole("button", { name: /brainstorm/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /prd/i })).toBeInTheDocument();
   });
 });

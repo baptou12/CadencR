@@ -469,6 +469,73 @@ export function submitPlanApproval(
   return { success: true };
 }
 
+/**
+ * Submit a PRD approval or rejection. Mirrors submitPlanApproval for the PRD flow.
+ */
+export function submitPrdApproval(
+  subprocessId: string,
+  approved: boolean,
+  feedback?: string,
+): { success: boolean; error?: string } {
+  const eventName = `prd-approval:${subprocessId}`;
+  const hasListener = questionEmitter.listenerCount(eventName) > 0;
+
+  if (!hasListener) {
+    let proc: unknown | undefined;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const sm = require("./subprocess-manager");
+      proc = sm.getActiveProcess(subprocessId);
+    } catch {
+      proc = undefined;
+    }
+    if (!proc) {
+      const sessionDbId = getSessionDbId(subprocessId);
+      if (sessionDbId) {
+        try {
+          const db = getDatabase();
+          db.prepare("UPDATE agent_sessions SET prd_approval_result = ?, pending_prd_approval = NULL WHERE id = ?")
+            .run(JSON.stringify({ approved, feedback }), sessionDbId);
+          const fid = getFeatureIdForSubprocess(subprocessId);
+          if (fid != null) notifyDbUpdated("agent_session", fid);
+        } catch { /* best-effort */ }
+      }
+      return { success: true };
+    }
+    const sessionDbId2 = getSessionDbId(subprocessId);
+    if (sessionDbId2) {
+      try {
+        const db = getDatabase();
+        db.prepare("UPDATE agent_sessions SET prd_approval_result = ?, pending_prd_approval = NULL WHERE id = ?")
+          .run(JSON.stringify({ approved, feedback }), sessionDbId2);
+        const fid = getFeatureIdForSubprocess(subprocessId);
+        if (fid != null) notifyDbUpdated("agent_session", fid);
+      } catch { /* best-effort */ }
+    }
+    return { success: true };
+  }
+
+  if (!approved && feedback) {
+    const sessionDbId = getSessionDbId(subprocessId);
+    if (sessionDbId) {
+      try {
+        const content = `**PRD feedback:**\n${feedback}`;
+        const db = getDatabase();
+        db.prepare(
+          "INSERT INTO agent_messages (session_id, role, content, message_type, tool_name) VALUES (?, ?, ?, ?, ?)",
+        ).run(sessionDbId, "user", content, "user_message", null);
+        const fid = getFeatureIdForSubprocess(subprocessId);
+        if (fid != null) notifyDbUpdated("agent_session", fid);
+      } catch {
+        // Best-effort persistence
+      }
+    }
+  }
+
+  questionEmitter.emit(eventName, { approved, feedback });
+  return { success: true };
+}
+
 // Helper — resolve feature ID for a subprocess (for DB notifications)
 function getFeatureIdForSubprocess(subprocessId: string): number | null {
   const sessionDbId = getSessionDbId(subprocessId);

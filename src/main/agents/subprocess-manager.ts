@@ -907,7 +907,7 @@ export function killAllSubprocesses(): void {
 }
 
 // Re-export from extracted modules for backward compatibility
-export { submitToolPermission, submitUserAnswers, submitPlanApproval } from "./tool-permissions";
+export { submitToolPermission, submitUserAnswers, submitPlanApproval, submitPrdApproval } from "./tool-permissions";
 export { getSupportedCommands } from "./slash-commands";
 
 /**

@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Markdown } from "@/components/Markdown";
 import { PhaseCard } from "@/components/PhaseCard";
 import type { PhaseData } from "@/components/PhaseCard";
-import { RotateCcw } from "lucide-react";
+import { RotateCcw, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getActiveFocusZone } from "@/lib/focus-zones";
 import { PHASE_STATUS_CONFIG } from "@/lib/phase-status";
@@ -25,10 +25,12 @@ interface PlanSidebarProps {
 
 export function PlanSidebar({ featureId }: PlanSidebarProps) {
   const [expandedPhase, setExpandedPhase] = useState<PhaseData | null>(null);
+  const [showPrd, setShowPrd] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const utils = trpc.useUtils();
   const { data: plan } = trpc.features.getPlanWithPhases.useQuery({ feature_id: featureId });
+  const { data: prdData } = trpc.features.getPrd.useQuery({ feature_id: featureId });
   const resetPhase = trpc.features.resetPhase.useMutation({
     onSuccess: () => {
       utils.features.getPlanWithPhases.invalidate({ feature_id: featureId });
@@ -120,7 +122,9 @@ export function PlanSidebar({ featureId }: PlanSidebarProps) {
     { enableOnFormTags: false },
   );
 
-  if (!plan) return null;
+  const prd = prdData?.prd;
+
+  if (!plan && !prd) return null;
 
   const config = expandedPhase
     ? PHASE_STATUS_CONFIG[expandedPhase.status] ?? PHASE_STATUS_CONFIG.pending
@@ -140,12 +144,24 @@ export function PlanSidebar({ featureId }: PlanSidebarProps) {
           }
         }}
       >
-        <div className="flex items-center px-4 py-3">
-          <h3 className="text-sm font-semibold text-foreground">{plan.title}</h3>
-        </div>
+        {plan && (
+          <div className="flex items-center px-4 py-3">
+            <h3 className="text-sm font-semibold text-foreground">{plan.title}</h3>
+          </div>
+        )}
         <ScrollArea className="flex-1 min-h-0">
           <div className="flex flex-col gap-0.5 px-4 py-2 overflow-hidden">
-            {(() => {
+            {prd && (
+              <button
+                type="button"
+                onClick={() => setShowPrd(true)}
+                className="mb-2 flex items-center gap-2 rounded-lg border border-[var(--drac-purple)]/40 bg-[var(--drac-purple)]/15 px-3 py-2.5 text-left transition-colors hover:bg-[var(--drac-purple)]/25"
+              >
+                <FileText className="size-4 shrink-0 text-[var(--drac-purple)]" />
+                <span className="text-sm font-medium text-foreground">PRD</span>
+              </button>
+            )}
+            {plan && (() => {
               const grouped: Record<number, { phase: PhaseData; index: number }[]> = {};
               plan.phases.forEach((phase, index) => {
                 const step = phase.step_number;
@@ -215,7 +231,7 @@ export function PlanSidebar({ featureId }: PlanSidebarProps) {
                   </Badge>
                 )}
                 {(() => {
-                  const idx = plan.phases.findIndex((p) => p.id === expandedPhase.id);
+                  const idx = plan?.phases.findIndex((p) => p.id === expandedPhase.id) ?? -1;
                   return canResetPhase(expandedPhase, idx) ? (
                     <button
                       onClick={() => handleResetPhase(expandedPhase)}
@@ -253,6 +269,28 @@ export function PlanSidebar({ featureId }: PlanSidebarProps) {
                   <Markdown content={expandedPhase.deviations} className="text-sm" />
                 </div>
               )}
+            </ScrollArea>
+          </DialogContent>
+        )}
+      </Dialog>
+
+      <Dialog
+        open={showPrd}
+        onOpenChange={(open) => { if (!open) setShowPrd(false); }}
+      >
+        {prd && (
+          <DialogContent className="!max-w-[90vw] !w-[90vw] !max-h-[90vh] !flex !flex-col overflow-hidden">
+            <DialogHeader className="shrink-0">
+              <div className="flex items-center gap-3">
+                <FileText className="size-5 shrink-0 text-[var(--drac-purple)]" />
+                <DialogTitle className="text-lg">Product Requirements Document</DialogTitle>
+              </div>
+              <DialogDescription className="sr-only">
+                Full product requirements document
+              </DialogDescription>
+            </DialogHeader>
+            <ScrollArea className="flex-1 min-h-0 mt-4 overflow-auto">
+              <Markdown content={prd} />
             </ScrollArea>
           </DialogContent>
         )}

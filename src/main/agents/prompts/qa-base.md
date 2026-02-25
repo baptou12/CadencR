@@ -51,3 +51,7 @@ If there are failures that require code changes, use the MCP tools to create fix
 Example: if fixes are at step_number 5 and 6, create the follow-up QA phase at step_number 7.
 
 If all tests passed, write "None needed" and skip the tools.
+
+## PRD Verification
+
+If a PRD (Product Requirements Document) is provided, you MUST verify each functional requirement in the PRD against the implementation. Report any requirements that are not fully satisfied.

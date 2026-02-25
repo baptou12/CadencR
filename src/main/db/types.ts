@@ -15,12 +15,12 @@ export interface ProjectRow {
   path: string;
   created_at: string;
   model_plan: string | null;
-  model_brainstorm: string | null;
   model_execute: string | null;
   model_risk: string | null;
   model_review: string | null;
   model_session: string | null;
   model_qa: string | null;
+  model_prd: string | null;
   agent_autonomy: string | null;
   parallel_execution: string | null;
   branch_prefix: string | null;
@@ -47,14 +47,15 @@ export interface FeatureRow {
   status: string;
   created_at: string;
   model_plan: string | null;
-  model_brainstorm: string | null;
   model_execute: string | null;
   model_risk: string | null;
   model_review: string | null;
   model_session: string | null;
   model_qa: string | null;
+  model_prd: string | null;
   agent_autonomy: string | null;
   parallel_execution: string | null;
+  prd: string | null;
 }
 
 export interface FeatureSettingRow {
@@ -113,6 +114,7 @@ export interface AgentSessionRow {
   has_file_changes: number;
   permission_mode: string | null;
   pending_plan_approval: string | null;
+  pending_prd_approval: string | null;
   pending_permission: string | null;
   input_tokens: number;
   output_tokens: number;
