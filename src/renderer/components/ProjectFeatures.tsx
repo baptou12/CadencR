@@ -188,6 +188,11 @@ export function ProjectFeatures({
 
   const confirmFeature = features.find((f) => f.id === confirmFeatureId);
   const isConfirmDelete = confirmFeature?.status === "archived";
+  const isEmptyQuery = trpc.features.isEmpty.useQuery(
+    { id: confirmFeatureId! },
+    { enabled: confirmFeatureId != null && !isConfirmDelete },
+  );
+  const shouldDirectDelete = !isConfirmDelete && (isEmptyQuery.data?.empty ?? false);
 
   return (
     <div className="flex flex-col gap-0.5">
@@ -196,13 +201,13 @@ export function ProjectFeatures({
       <ConfirmDialog
         open={confirmFeatureId != null}
         onOpenChange={(open) => { if (!open) setConfirmFeatureId(null); }}
-        title={isConfirmDelete ? "Delete feature?" : "Archive feature?"}
-        description={isConfirmDelete ? "This cannot be undone." : undefined}
-        confirmText={isConfirmDelete ? "Delete" : "Archive"}
-        variant={isConfirmDelete ? "destructive" : "default"}
+        title={isConfirmDelete || shouldDirectDelete ? "Delete feature?" : "Archive feature?"}
+        description={isConfirmDelete || shouldDirectDelete ? "This cannot be undone." : undefined}
+        confirmText={isConfirmDelete || shouldDirectDelete ? "Delete" : "Archive"}
+        variant={isConfirmDelete || shouldDirectDelete ? "destructive" : "default"}
         onConfirm={() => {
           if (confirmFeatureId == null) return;
-          if (isConfirmDelete) {
+          if (isConfirmDelete || shouldDirectDelete) {
             deleteMutation.mutate({ id: confirmFeatureId });
           } else {
             updateStatusMutation.mutate({ id: confirmFeatureId, status: "archived" as FeatureStatus });

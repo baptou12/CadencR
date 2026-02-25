@@ -37,6 +37,9 @@ vi.mock("@/trpc", () => {
       delete: {
         useMutation: vi.fn(() => ({ mutate: mockDelete })),
       },
+      isEmpty: {
+        useQuery: vi.fn(() => ({ data: { empty: false } })),
+      },
     },
       useUtils: vi.fn(() => ({
         features: {

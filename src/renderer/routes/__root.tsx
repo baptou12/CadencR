@@ -263,8 +263,15 @@ function RootLayout() {
           deleteNavTargetRef.current = target?.id ?? null;
           setConfirmAction("delete");
         } else {
-          archiveNavTargetRef.current = target?.id ?? null;
-          setConfirmAction("archive");
+          // Check if feature is empty — if so, skip archive and go straight to delete
+          const { empty } = await utils.features.isEmpty.fetch({ id: activeFeatureId });
+          if (empty) {
+            deleteNavTargetRef.current = target?.id ?? null;
+            setConfirmAction("delete");
+          } else {
+            archiveNavTargetRef.current = target?.id ?? null;
+            setConfirmAction("archive");
+          }
         }
       } catch {
         // ignore fetch errors

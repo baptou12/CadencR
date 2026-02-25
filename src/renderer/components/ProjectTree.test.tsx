@@ -66,6 +66,9 @@ vi.mock("@/trpc", () => {
         delete: {
           useMutation: vi.fn(() => ({ mutate: vi.fn() })),
         },
+        isEmpty: {
+          useQuery: vi.fn(() => ({ data: { empty: false } })),
+        },
       },
       agents: {
         getFeatureTurnStates: {

@@ -90,16 +90,16 @@ export const featuresRouter = router({
       return { success: true };
     }),
 
-  delete: publicProcedure.input(z.object({ id: z.number() })).mutation(({ input }) => {
+  delete: publicProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
     const db = getDatabase();
     // Stop any running subprocesses for this feature's agent sessions
     const sessionIds = db
-      .prepare("SELECT id FROM agent_sessions WHERE feature_id = ? AND status = 'running'")
+      .prepare("SELECT id FROM agent_sessions WHERE feature_id = ? AND status IN ('running', 'paused')")
       .all(input.id) as { id: number }[];
     if (sessionIds.length > 0) {
       const subprocessIds = getSubprocessIdsForSessionDbIds(sessionIds.map((s) => s.id));
       for (const spId of subprocessIds) {
-        try { stopSubprocess(spId); } catch { /* best effort */ }
+        try { await stopSubprocess(spId); } catch { /* best effort */ }
       }
     }
     // Delete child records that reference this feature
@@ -123,6 +123,30 @@ export const featuresRouter = router({
       const db = getDatabase();
       const row = db.prepare("SELECT prd FROM features WHERE id = ?").get(input.feature_id) as { prd: string | null } | undefined;
       return { prd: row?.prd ?? null };
+    }),
+
+  isEmpty: publicProcedure
+    .input(z.object({ id: z.number() }))
+    .query(({ input }) => {
+      const db = getDatabase();
+      const feature = db.prepare("SELECT type, prd FROM features WHERE id = ?").get(input.id) as { type: string; prd: string | null } | undefined;
+      if (!feature) return { empty: true };
+      // Never direct-delete if there are active (running/paused/waiting) sessions
+      const activeSession = db.prepare(
+        "SELECT 1 FROM agent_sessions WHERE feature_id = ? AND status IN ('running', 'paused', 'waiting') LIMIT 1",
+      ).get(input.id);
+      if (activeSession) return { empty: false };
+      if (feature.type === "session") {
+        // Standalone agent: empty if no messages in any agent conversation
+        const msg = db.prepare(
+          "SELECT 1 FROM agent_messages WHERE session_id IN (SELECT id FROM agent_sessions WHERE feature_id = ?) LIMIT 1",
+        ).get(input.id);
+        return { empty: !msg };
+      }
+      // Feature workflow: empty if no PRD and no plan
+      const hasPrd = feature.prd != null && feature.prd.trim() !== "";
+      const hasPlan = !!db.prepare("SELECT 1 FROM plans WHERE feature_id = ? LIMIT 1").get(input.id);
+      return { empty: !hasPrd && !hasPlan };
     }),
 
   getById: publicProcedure
