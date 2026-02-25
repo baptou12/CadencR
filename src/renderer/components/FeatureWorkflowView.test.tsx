@@ -45,6 +45,9 @@ vi.mock("@/trpc", () => {
       getPlanWithPhases: {
         useQuery: vi.fn(() => ({ data: null })),
       },
+      getPrd: {
+        useQuery: vi.fn(() => ({ data: null })),
+      },
     },
     agents: {
       getFeatureAgentState: {

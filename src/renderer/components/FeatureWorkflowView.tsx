@@ -7,7 +7,9 @@ import {
   AGENT_LABELS,
   type AgentSessionHandle,
 } from "@/components/AgentSession";
-import { CheckCircle2Icon } from "lucide-react";
+import { CheckCircle2Icon, Loader2Icon } from "lucide-react";
+import { AGENT_ICONS } from "@/components/agent-icons";
+import { Button } from "@/components/ui/button";
 import { useFeatureState, type FeatureStatus } from "@/hooks/useFeatureState";
 import { PlanSidebar } from "@/components/PlanSidebar";
 import { PlanInputView } from "@/components/PlanInputView";
@@ -57,11 +59,13 @@ export function FeatureWorkflowView({
   descriptionRef.current = description;
   const [openAgent, setOpenAgent] = useState<string | null>(null);
 
+  const { data: prdData } = trpc.features.getPrd.useQuery({ feature_id: featureId });
+
   const wf = useWorkflowAgents({
     featureId,
     projectId,
     featureQuery,
-    getDescription: () => descriptionRef.current,
+    getDescription: () => descriptionRef.current || prdData?.prd || "",
   });
   const contextUsageMap = useContextUsage(featureId, wf.sessionEntries);
   const utils = trpc.useUtils();
@@ -770,6 +774,24 @@ export function FeatureWorkflowView({
                     </>
                   );
                 })()}
+
+                {!maximizedAgent && actions.canStartPlan && wf.noAgentsRunning && (
+                  <div className="shrink-0 flex py-4">
+                    <Button
+                      size="lg"
+                      onClick={() => wf.handleStartPlanning()}
+                      disabled={wf.isStartingPlan}
+                      className="gap-2"
+                    >
+                      {wf.isStartingPlan ? (
+                        <Loader2Icon className="size-4 animate-spin" />
+                      ) : (
+                        <AGENT_ICONS.plan className="size-4" />
+                      )}
+                      Generate Plan
+                    </Button>
+                  </div>
+                )}
 
                 {!maximizedAgent && (
                   <div className="shrink-0">

@@ -115,7 +115,7 @@ export function useFeatureState(
       canStartPlan:
         isDraft &&
         plan.status === "idle" &&
-        prd.status === "idle",
+        (prd.status === "idle" || prd.status === "completed"),
       canStartPrd:
         isDraft &&
         plan.status === "idle" &&

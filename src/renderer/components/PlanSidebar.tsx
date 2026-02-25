@@ -122,13 +122,13 @@ export function PlanSidebar({ featureId }: PlanSidebarProps) {
     { enableOnFormTags: false },
   );
 
-  if (!plan) return null;
+  const prd = prdData?.prd;
+
+  if (!plan && !prd) return null;
 
   const config = expandedPhase
     ? PHASE_STATUS_CONFIG[expandedPhase.status] ?? PHASE_STATUS_CONFIG.pending
     : null;
-
-  const prd = prdData?.prd;
 
   return (
     <>
@@ -144,9 +144,11 @@ export function PlanSidebar({ featureId }: PlanSidebarProps) {
           }
         }}
       >
-        <div className="flex items-center px-4 py-3">
-          <h3 className="text-sm font-semibold text-foreground">{plan.title}</h3>
-        </div>
+        {plan && (
+          <div className="flex items-center px-4 py-3">
+            <h3 className="text-sm font-semibold text-foreground">{plan.title}</h3>
+          </div>
+        )}
         <ScrollArea className="flex-1 min-h-0">
           <div className="flex flex-col gap-0.5 px-4 py-2 overflow-hidden">
             {prd && (
@@ -159,7 +161,7 @@ export function PlanSidebar({ featureId }: PlanSidebarProps) {
                 <span className="text-sm font-medium text-foreground">PRD</span>
               </button>
             )}
-            {(() => {
+            {plan && (() => {
               const grouped: Record<number, { phase: PhaseData; index: number }[]> = {};
               plan.phases.forEach((phase, index) => {
                 const step = phase.step_number;
@@ -229,7 +231,7 @@ export function PlanSidebar({ featureId }: PlanSidebarProps) {
                   </Badge>
                 )}
                 {(() => {
-                  const idx = plan.phases.findIndex((p) => p.id === expandedPhase.id);
+                  const idx = plan?.phases.findIndex((p) => p.id === expandedPhase.id) ?? -1;
                   return canResetPhase(expandedPhase, idx) ? (
                     <button
                       onClick={() => handleResetPhase(expandedPhase)}
