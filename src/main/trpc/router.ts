@@ -924,12 +924,14 @@ const agentsRouter = router({
 
       // Try to stop the subprocess if it's still alive
       if (session.subprocess_id) {
-        const stopped = await stopSubprocess(session.subprocess_id);
-        if (stopped) return { success: true };
+        await stopSubprocess(session.subprocess_id);
       }
 
-      // Subprocess already gone — update DB directly if still marked as running/paused
-      if (session.status === "running" || session.status === "paused") {
+      // Mark as completed if still running/paused (either subprocess was stopped above or already gone)
+      const current = db
+        .prepare("SELECT status FROM agent_sessions WHERE id = ?")
+        .get(input.sessionId) as Pick<AgentSessionRow, "status"> | undefined;
+      if (current && (current.status === "running" || current.status === "paused")) {
         transitionAgentSession(db, input.sessionId, "completed", undefined, { ended_at: "datetime('now')", subprocess_id: null });
       }
       return { success: true };
