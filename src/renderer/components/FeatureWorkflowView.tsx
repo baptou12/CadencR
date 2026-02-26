@@ -573,7 +573,7 @@ export function FeatureWorkflowView({
               actions.canStartBuild ||
               actions.canStartRisk ||
               actions.canStartReview) && (
-              <div className={cn("flex flex-col gap-2 flex-1 min-h-0 px-6 py-2", maximizedAgent ? "overflow-hidden" : "overflow-y-auto")}>
+              <div className={cn("flex-1 min-h-0 px-6 py-2", maximizedAgent ? "flex flex-col overflow-hidden" : "overflow-y-auto space-y-2")}>
                 {(() => {
                   const renderAgent = (
                     entry: FeatureSession,
@@ -760,7 +760,7 @@ export function FeatureWorkflowView({
                             activeEntries.length === 2 && "grid-cols-2",
                             activeEntries.length >= 3 && "grid-cols-3",
                           )}
-                          style={{ flex: "1 1 0", minHeight: 0 }}
+                          style={{ height: "60vh" }}
                         >
                           {activeEntries.map((entry) => {
                             const idx = wf.sessionEntries.indexOf(entry);

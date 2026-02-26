@@ -569,7 +569,7 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
       className={cn(
         "flex flex-col rounded-lg border border-border bg-background",
         isOpen && maximized && "flex-1 min-h-0",
-        isOpen && !maximized && "h-[60vh] min-h-0 shrink-0",
+        isOpen && !maximized && "h-[60vh] min-h-0 shrink-0 overflow-hidden",
         !isOpen && "shrink-0",
         className,
       )}
@@ -652,6 +652,7 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
               onClick={(e) => {
                 e.stopPropagation();
                 onToggleMaximize();
+                requestAnimationFrame(() => promptBarRef.current?.focusInput());
               }}
               title={maximized ? "Minimize" : "Maximize"}
             >
