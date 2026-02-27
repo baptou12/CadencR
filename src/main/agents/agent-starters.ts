@@ -398,32 +398,5 @@ export function startQaAgent(options: {
     prd,
   });
 
-  // After QA finishes, auto-start execution if fix phases were created
-  const existingActions = config.completionActions ?? [];
-  config.completionActions = [
-    ...existingActions,
-    {
-      event: "qa_auto_execute",
-      handler: (_output: string) => {
-        const db2 = getDatabase();
-        const pending = db2
-          .prepare(
-            "SELECT COUNT(*) as cnt FROM phases WHERE plan_id = ? AND status = 'pending'",
-          )
-          .get(plan.id) as { cnt: number };
-
-        if (pending.cnt > 0) {
-          // Dynamically import to avoid circular dependency
-          const { startExecuteAgent } = require("./execute-agent");
-          try {
-            startExecuteAgent(options);
-          } catch (err) {
-            console.error("[qa-auto-execute] Failed to auto-start execution after QA:", err);
-          }
-        }
-      },
-    },
-  ];
-
   return startUnifiedAgent(config);
 }

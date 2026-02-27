@@ -612,6 +612,13 @@ async function executeRemainingSteps(
   transitionAgentSession(db, sessionDbId, "completed", undefined, { ended_at: "datetime('now')" });
 
   broadcastExecuteAllDone(sessionDbId, 0);
+
+  // Advance workflow if active
+  const wfFeat = db.prepare("SELECT workflow_step FROM features WHERE id = ?")
+    .get(options.featureId) as { workflow_step: string | null } | undefined;
+  if (wfFeat?.workflow_step === "execute") {
+    try { const { advanceWorkflow } = require("./workflow-orchestrator"); advanceWorkflow(options.featureId); } catch { /* */ }
+  }
 }
 
 /**
@@ -682,6 +689,14 @@ export function continueExecuteAgent(sessionDbId: number): { subprocessIds: stri
     // All phases done — mark session as completed
     transitionAgentSession(db, sessionDbId, "completed", session.feature_id, { ended_at: "datetime('now')" });
     broadcastExecuteAllDone(sessionDbId, 0);
+
+    // Advance workflow if active
+    const wfFeat2 = db.prepare("SELECT workflow_step FROM features WHERE id = ?")
+      .get(session.feature_id) as { workflow_step: string | null } | undefined;
+    if (wfFeat2?.workflow_step === "execute") {
+      try { const { advanceWorkflow } = require("./workflow-orchestrator"); advanceWorkflow(session.feature_id); } catch { /* */ }
+    }
+
     return { subprocessIds: [] };
   }
 
@@ -770,6 +785,13 @@ export function continueExecuteAgent(sessionDbId: number): { subprocessIds: stri
 
       transitionAgentSession(db, sessionDbId, "completed", session.feature_id, { ended_at: "datetime('now')" });
       broadcastExecuteAllDone(sessionDbId, 0);
+
+      // Advance workflow if active
+      const wfFeat3 = db.prepare("SELECT workflow_step FROM features WHERE id = ?")
+        .get(session.feature_id) as { workflow_step: string | null } | undefined;
+      if (wfFeat3?.workflow_step === "execute") {
+        try { const { advanceWorkflow } = require("./workflow-orchestrator"); advanceWorkflow(session.feature_id); } catch { /* */ }
+      }
     }
   })();
 

@@ -16,6 +16,16 @@ export function getDatabase(): Database.Database {
 
   runMigrations(db);
 
+  // Schedule workflow resumption after DB is ready (deferred to avoid circular imports)
+  queueMicrotask(() => {
+    try {
+      const { resumeWorkflows } = require("../agents/workflow-orchestrator");
+      resumeWorkflows();
+    } catch {
+      // Silently ignore — orchestrator may not be loaded yet
+    }
+  });
+
   return db;
 }
 

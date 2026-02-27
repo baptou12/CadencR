@@ -467,6 +467,7 @@ describe("createPlanMcpServer", () => {
       const runFn = vi.fn();
       db.prepare.mockImplementation((sql: string) => {
         if (sql.includes("SELECT status")) return { get: vi.fn().mockReturnValue({ status: "running", agent_type: "plan" }) };
+        if (sql.includes("workflow_step")) return { get: vi.fn().mockReturnValue(null) };
         return { run: runFn };
       });
 

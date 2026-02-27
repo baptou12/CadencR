@@ -230,7 +230,7 @@ export const featuresRouter = router({
       const db = getDatabase();
       // Combine real columns + remaining EAV rows (worktree_path, worktree_branch, etc.)
       const feature = db
-        .prepare("SELECT model_plan, model_prd, model_execute, model_risk, model_review, model_session, model_qa, agent_autonomy FROM features WHERE id = ?")
+        .prepare("SELECT model_plan, model_prd, model_execute, model_risk, model_review, model_session, model_qa, agent_autonomy, parallel_execution FROM features WHERE id = ?")
         .get(input.feature_id) as Record<string, string | null> | undefined;
 
       const result: Record<string, string> = {};
@@ -311,7 +311,7 @@ export const featuresRouter = router({
       const db = getDatabase();
       const realColumns = new Set([
         "model_plan", "model_prd", "model_execute", "model_risk", "model_review",
-        "model_session", "model_qa", "agent_autonomy",
+        "model_session", "model_qa", "agent_autonomy", "parallel_execution",
       ]);
 
       if (realColumns.has(input.key)) {

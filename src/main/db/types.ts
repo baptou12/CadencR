@@ -56,6 +56,8 @@ export interface FeatureRow {
   agent_autonomy: string | null;
   parallel_execution: string | null;
   prd: string | null;
+  workflow_step: string | null;
+  workflow_config: string | null;
 }
 
 export interface FeatureSettingRow {

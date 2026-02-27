@@ -63,6 +63,8 @@ import { buildMcpServerFactoryForResume } from "../agents/mcp-factory";
 import { transitionAgentSession } from "../agents/state-transitions";
 import { autoNameFeature, runAutoNameBlocking } from "../agents/auto-name";
 import { fetchAvailableModels } from "../agents/available-models";
+import { initWorkflow, continueWorkflow } from "../agents/workflow-orchestrator";
+import { resolveAgentCwd } from "../agents/resolve-cwd";
 
 /**
  * Resolve the git directory for a feature.
@@ -174,44 +176,7 @@ const settingsRouter = router({
     }),
 });
 
-/** Resolve the working directory for an agent, preferring worktree path over project path. */
-function resolveAgentCwd(featureId: number, projectId: number): { cwd: string; worktreePath?: string } {
-  const db = getDatabase();
-
-  const wtRow = db
-    .prepare(
-      "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
-    )
-    .get(featureId) as SettingRow | undefined;
-
-  const project = db
-    .prepare("SELECT path FROM projects WHERE id = ?")
-    .get(projectId) as Pick<ProjectRow, "path"> | undefined;
-
-  if (!wtRow) {
-    // Check if there was a worktree creation error
-    const errorRow = db
-      .prepare(
-        "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_error'",
-      )
-      .get(featureId) as SettingRow | undefined;
-
-    if (errorRow) {
-      console.warn(
-        `Worktree not available for feature ${featureId}, falling back to project path. Worktree error: ${errorRow.value}`,
-      );
-    }
-  }
-
-  const cwd = wtRow?.value ?? project?.path;
-  if (!cwd) throw new Error("No working directory found for this feature");
-  if (!fs.existsSync(cwd)) {
-    throw new Error(
-      `Agent working directory does not exist: ${cwd}. The worktree may not have been created yet or was removed.`,
-    );
-  }
-  return { cwd, worktreePath: wtRow?.value };
-}
+// resolveAgentCwd is imported from ../agents/resolve-cwd
 
 /** Check if a feature still has its default auto-generated title (e.g. "Session 3") */
 function hasDefaultTitle(featureId: number): boolean {
@@ -624,6 +589,7 @@ const agentsRouter = router({
       } else {
         description = input.description;
       }
+      initWorkflow(input.featureId, "plan");
       return startPlanAgent({ featureId: input.featureId, projectId: input.projectId, description, cwd, worktreePath });
     }),
 
@@ -649,7 +615,16 @@ const agentsRouter = router({
       } else {
         description = input.description;
       }
+      initWorkflow(input.featureId, "prd");
       return startPrdAgent({ featureId: input.featureId, projectId: input.projectId, description, cwd, worktreePath });
+    }),
+
+  /** Continue a paused workflow (autonomy level 1) */
+  continueWorkflow: publicProcedure
+    .input(z.object({ featureId: z.number() }))
+    .mutation(({ input }) => {
+      continueWorkflow(input.featureId);
+      return { success: true };
     }),
 
   /** Refine an existing plan — start a plan agent that appends new phases */

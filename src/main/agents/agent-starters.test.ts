@@ -307,7 +307,7 @@ describe("agent-starters", () => {
       );
     });
 
-    it("adds qa_auto_execute completion action to config", async () => {
+    it("delegates to startUnifiedAgent with QA config", async () => {
       const { createQaConfig } = await import("./agent-configs") as any;
       const mockConfig = {
         agentType: "qa",
@@ -341,10 +341,9 @@ describe("agent-starters", () => {
 
       startQaAgent({ featureId: 1, projectId: 2, cwd: "/project" });
 
-      // The config passed to startUnifiedAgent should have qa_auto_execute action
+      // The config passed to startUnifiedAgent should have the QA config
       const passedConfig = (startUnifiedAgent as any).mock.calls[0][0];
-      const actionEvents = passedConfig.completionActions.map((a: any) => a.event);
-      expect(actionEvents).toContain("qa_auto_execute");
+      expect(passedConfig.agentType).toBe("qa");
     });
   });
 });

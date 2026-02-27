@@ -65,6 +65,8 @@ export function createMockFeature(overrides: Partial<FeatureRow> = {}): FeatureR
     agent_autonomy: null,
     parallel_execution: null,
     prd: null,
+    workflow_step: null,
+    workflow_config: null,
     ...overrides,
   };
 }

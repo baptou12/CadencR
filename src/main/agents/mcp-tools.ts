@@ -269,6 +269,19 @@ function createAgentDoneTool(sessionDbId: number, featureId: number) {
         "UPDATE agent_sessions SET status = 'completed', ended_at = datetime('now') WHERE id = ?",
       ).run(sessionDbId);
       notifyDbUpdated("agent_session", featureId);
+
+      // Advance workflow if this feature has an active workflow
+      const wfFeat = db.prepare("SELECT workflow_step FROM features WHERE id = ?")
+        .get(featureId) as { workflow_step: string | null } | undefined;
+      if (wfFeat?.workflow_step) {
+        try {
+          const { advanceWorkflow } = require("./workflow-orchestrator");
+          advanceWorkflow(featureId);
+        } catch {
+          // workflow-orchestrator not available (e.g. in tests)
+        }
+      }
+
       return textResult("Agent marked as done. Session completed.");
     },
   );

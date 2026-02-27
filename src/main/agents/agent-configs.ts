@@ -270,39 +270,7 @@ export function createPrdConfig(opts: PrdConfigOptions): UnifiedAgentConfig {
     prompt = [textPreamble, ...(opts.description as Array<{ type: "text"; text: string } | ImageBlock>), textPostamble];
   }
 
-  const completionActions: CompletionAction[] = [
-    {
-      event: "prd_auto_start_plan",
-      handler: () => {
-        const db = getDatabase();
-        const feature = db.prepare("SELECT prd FROM features WHERE id = ?").get(opts.featureId) as { prd: string | null } | undefined;
-        if (!feature?.prd) {
-          console.warn(`[agent-configs] PRD agent exited without finalizing PRD for feature ${opts.featureId}`);
-          return;
-        }
-
-        // PRD exists — check autonomy level for auto-start
-        const { getAutonomyLevel } = require("./execute-agent");
-        const autonomyLevel = getAutonomyLevel(opts.featureId, opts.projectId);
-        if (autonomyLevel >= 2) {
-          // Auto-start plan agent with PRD as description
-          const { startPlanAgent } = require("./agent-starters");
-          try {
-            startPlanAgent({
-              featureId: opts.featureId,
-              projectId: opts.projectId,
-              description: feature.prd,
-              cwd: opts.cwd,
-              worktreePath: opts.worktreePath,
-            });
-            console.log(`[agent-configs] Auto-started plan agent for feature ${opts.featureId} after PRD approval`);
-          } catch (err) {
-            console.error(`[agent-configs] Failed to auto-start plan agent for feature ${opts.featureId}:`, err);
-          }
-        }
-      },
-    },
-  ];
+  const completionActions: CompletionAction[] = [];
 
   return {
     agentType: "prd",
