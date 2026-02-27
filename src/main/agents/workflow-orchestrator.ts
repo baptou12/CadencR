@@ -95,6 +95,35 @@ export function continueWorkflow(featureId: number): void {
   runStep(featureId, feat.project_id);
 }
 
+/**
+ * Standalone QA→Execute chaining — called when QA finishes outside a workflow.
+ * Checks for pending fix phases and auto-starts execute if autonomy >= 2.
+ */
+export function autoStartExecuteAfterQa(featureId: number, projectId: number): void {
+  const db = getDatabase();
+  const plan = db.prepare(
+    "SELECT id FROM plans WHERE feature_id = ? AND status = 'active' ORDER BY id DESC LIMIT 1",
+  ).get(featureId) as { id: number } | undefined;
+  if (!plan) return;
+
+  const pending = db.prepare(
+    "SELECT COUNT(*) as cnt FROM phases WHERE plan_id = ? AND status = 'pending'",
+  ).get(plan.id) as { cnt: number };
+  if (pending.cnt === 0) return;
+
+  const autonomy = getAutonomyLevel(featureId, projectId);
+  if (autonomy >= 2) {
+    const { cwd, worktreePath } = resolveAgentCwd(featureId, projectId);
+    const { startExecuteAgent } = require("./execute-agent");
+    try {
+      startExecuteAgent({ featureId, projectId, cwd, worktreePath });
+      console.log(`[workflow] Auto-started execute after standalone QA for feature ${featureId}`);
+    } catch (err) {
+      console.error(`[workflow] Failed to auto-start execute after QA for feature ${featureId}:`, err);
+    }
+  }
+}
+
 export function resumeWorkflows(): void {
   const db = getDatabase();
   const features = db.prepare(

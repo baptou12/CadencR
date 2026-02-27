@@ -270,13 +270,21 @@ function createAgentDoneTool(sessionDbId: number, featureId: number) {
       ).run(sessionDbId);
       notifyDbUpdated("agent_session", featureId);
 
-      // Advance workflow if this feature has an active workflow
-      const wfFeat = db.prepare("SELECT workflow_step FROM features WHERE id = ?")
-        .get(featureId) as { workflow_step: string | null } | undefined;
+      // Advance workflow or handle standalone QA→Execute chaining
+      const wfFeat = db.prepare("SELECT workflow_step, project_id FROM features WHERE id = ?")
+        .get(featureId) as { workflow_step: string | null; project_id: number } | undefined;
       if (wfFeat?.workflow_step) {
         try {
           const { advanceWorkflow } = require("./workflow-orchestrator");
           advanceWorkflow(featureId);
+        } catch {
+          // workflow-orchestrator not available (e.g. in tests)
+        }
+      } else if (current?.agent_type === "qa" && wfFeat) {
+        // QA finished outside a workflow — check for pending fix phases and auto-start execute
+        try {
+          const { autoStartExecuteAfterQa } = require("./workflow-orchestrator");
+          autoStartExecuteAfterQa(featureId, wfFeat.project_id);
         } catch {
           // workflow-orchestrator not available (e.g. in tests)
         }
