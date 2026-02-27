@@ -142,7 +142,7 @@ export function startUnifiedAgent(config: UnifiedAgentConfig): UnifiedAgentResul
 
     if (!wasInterrupted && !alreadyCompleted) {
       // Update session status
-      transitionAgentSession(db2, sessionDbId, exitCode === 0 ? "completed" : "error", config.featureId, { ended_at: "datetime('now')" });
+      transitionAgentSession(db2, sessionDbId, exitCode === 0 ? "completed" : "error", config.featureId, { ended_at: new Date().toISOString() });
     }
 
     // Safety-net: persist session ID if not yet saved

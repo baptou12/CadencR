@@ -141,7 +141,7 @@ function persistSessionStatus(managedId: string, status: string, sdkSessionId?: 
   if (!dbId) return;
   try {
     const db = getDatabase();
-    const extras: Record<string, unknown> = { ended_at: "datetime('now')" };
+    const extras: Record<string, unknown> = { ended_at: new Date().toISOString() };
     if (status === "error") {
       extras.subprocess_id = null;
     }
@@ -688,7 +688,7 @@ async function runSdkQuery(
           try {
             const db = getDatabase();
             persistClaudeSessionId(sDbId, managed.resumingFromSessionId);
-            transitionAgentSession(db, sDbId, "paused", undefined, { ended_at: "datetime('now')", subprocess_id: null });
+            transitionAgentSession(db, sDbId, "paused", undefined, { ended_at: new Date().toISOString(), subprocess_id: null });
             console.log(`[subprocess-manager] Restored session ${sDbId} to paused with original session ID ${managed.resumingFromSessionId}`);
           } catch (e) { console.warn("[subprocess-manager] best-effort op failed:", e); }
         }
@@ -858,7 +858,7 @@ export async function pauseSubprocess(id: string, opts?: { allowPaused?: boolean
   const sessionDbId = getSessionDbId(id);
   if (sessionDbId) {
     const db = getDatabase();
-    transitionAgentSession(db, sessionDbId, "paused", undefined, { ended_at: "datetime('now')", subprocess_id: null });
+    transitionAgentSession(db, sessionDbId, "paused", undefined, { ended_at: new Date().toISOString(), subprocess_id: null });
     if (managed.sdkSessionId) persistClaudeSessionId(sessionDbId, managed.sdkSessionId);
   }
 

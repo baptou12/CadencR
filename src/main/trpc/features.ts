@@ -6,7 +6,7 @@ import type { AgentType } from "../agents/types";
 import { getSubprocessIdsForSessionDbIds, notifyDbUpdated } from "../agents/session-persistence";
 import { stopSubprocess } from "../agents/subprocess-manager";
 
-export const FEATURE_STATUSES = ["draft", "planned", "in-progress", "review", "done", "archived"] as const;
+export const FEATURE_STATUSES = ["draft", "planned", "in-progress", "done", "archived"] as const;
 export type FeatureStatus = (typeof FEATURE_STATUSES)[number];
 
 const featureStatusSchema = z.enum(FEATURE_STATUSES);

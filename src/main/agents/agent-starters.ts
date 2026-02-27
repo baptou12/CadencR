@@ -239,8 +239,8 @@ export function startReviewAgent(options: {
 }): AgentResult {
   const db = getDatabase();
 
-  // Update feature status to review
-  transitionFeature(db, options.featureId, "review");
+  // Keep feature in-progress during review
+  transitionFeature(db, options.featureId, "in-progress");
 
   // Look up plan with context for the review prompt
   const plan = db

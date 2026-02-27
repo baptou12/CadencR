@@ -159,7 +159,7 @@ describe("agent-starters", () => {
   });
 
   describe("startReviewAgent", () => {
-    it("transitions feature to review status", () => {
+    it("transitions feature to in-progress status", () => {
       (getDatabase as any).mockReturnValue({
         prepare: vi.fn().mockImplementation((sql: string) => {
           if (sql.includes("FROM plans")) {
@@ -171,7 +171,7 @@ describe("agent-starters", () => {
 
       startReviewAgent({ featureId: 1, projectId: 2, cwd: "/project" });
 
-      expect(transitionFeature).toHaveBeenCalledWith(expect.anything(), 1, "review");
+      expect(transitionFeature).toHaveBeenCalledWith(expect.anything(), 1, "in-progress");
     });
 
     it("throws if no plan found", () => {

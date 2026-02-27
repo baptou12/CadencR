@@ -907,7 +907,7 @@ const agentsRouter = router({
         .prepare("SELECT status FROM agent_sessions WHERE id = ?")
         .get(input.sessionId) as Pick<AgentSessionRow, "status"> | undefined;
       if (current && (current.status === "running" || current.status === "paused")) {
-        transitionAgentSession(db, input.sessionId, "completed", undefined, { ended_at: "datetime('now')", subprocess_id: null });
+        transitionAgentSession(db, input.sessionId, "completed", undefined, { ended_at: new Date().toISOString(), subprocess_id: null });
       }
       return { success: true };
     }),

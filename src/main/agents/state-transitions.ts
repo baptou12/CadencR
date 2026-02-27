@@ -12,7 +12,7 @@ import { notifyDbUpdated } from "./session-persistence";
 // Status types
 // ---------------------------------------------------------------------------
 
-export type FeatureStatus = "draft" | "planned" | "in-progress" | "review" | "done";
+export type FeatureStatus = "draft" | "planned" | "in-progress" | "done";
 
 export type PhaseStatus = "draft" | "pending" | "running" | "completed" | "error";
 
@@ -25,8 +25,7 @@ export type AgentSessionStatus = "running" | "waiting" | "paused" | "completed" 
 const FEATURE_TRANSITIONS: Record<FeatureStatus, FeatureStatus[]> = {
   draft: ["planned"],
   planned: ["in-progress"],
-  "in-progress": ["review", "done"],
-  review: ["done", "in-progress"],
+  "in-progress": ["done"],
   done: [],
 };
 
@@ -140,7 +139,7 @@ export function transitionPhaseIf(
  * If the transition is invalid, logs a warning but still performs the update.
  *
  * @param featureId - Required for notifyDbUpdated. If null, notification is skipped.
- * @param extraColumns - Optional extra column updates (e.g., { ended_at: "datetime('now')" }).
+ * @param extraColumns - Optional extra column updates (e.g., { ended_at: new Date().toISOString() }).
  */
 export function transitionAgentSession(
   db: Database.Database,
