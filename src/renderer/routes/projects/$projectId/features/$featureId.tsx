@@ -145,6 +145,7 @@ function SessionFeatureView({
           if (result.success) {
             // Always refetch so the user message appears immediately in the chat
             void refetch();
+            requestAnimationFrame(() => agentRef.current?.focusPromptBar());
             return;
           }
           // Send failed (e.g., process dead after restart) — fall through to resume/start paths
@@ -169,6 +170,7 @@ function SessionFeatureView({
           console.error("[SessionFeatureView] Failed to resume session:", err);
         }
         void refetch();
+        requestAnimationFrame(() => agentRef.current?.focusPromptBar());
         return;
       }
 
@@ -185,6 +187,8 @@ function SessionFeatureView({
         console.error("[SessionFeatureView] Failed to start session:", err);
       }
       void refetch();
+      // Re-focus the prompt bar so the user can keep typing
+      requestAnimationFrame(() => agentRef.current?.focusPromptBar());
     },
     [session, status, featureId, projectId, permissionMode, sendMessageMutation, startSessionMutation, resumeMutation, refetch],
   );

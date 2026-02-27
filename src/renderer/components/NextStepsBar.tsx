@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Loader2Icon, GitMergeIcon } from "lucide-react";
 import type { AgentStatus } from "@/components/AgentSession";
@@ -6,7 +6,7 @@ import { AGENT_ICONS } from "@/components/agent-icons";
 import { KbdShortcut } from "@/components/KbdShortcut";
 import { MergeArchiveDialog } from "@/components/MergeArchiveDialog";
 import { AgentPromptBar } from "@/components/AgentPromptBar";
-import type { SplitSendAction } from "@/components/AgentPromptBar";
+import type { SplitSendAction, AgentPromptBarHandle } from "@/components/AgentPromptBar";
 
 interface NextStepsBarProps {
   show: boolean;
@@ -68,6 +68,7 @@ export function NextStepsBar({
   const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
   const [showRefinePrompt, setShowRefinePrompt] = useState(false);
   const [showSessionPrompt, setShowSessionPrompt] = useState(false);
+  const sessionPromptRef = useRef<AgentPromptBarHandle>(null);
 
   const canMerge = allPhasesDone && featureType === "feature" && projectId != null && featureId != null;
 
@@ -93,6 +94,13 @@ export function NextStepsBar({
       setShowSessionPrompt(true);
     }
   }, [openSessionPrompt]);
+
+  // Auto-focus session prompt when it opens
+  useEffect(() => {
+    if (showSessionPrompt) {
+      requestAnimationFrame(() => sessionPromptRef.current?.focusInput());
+    }
+  }, [showSessionPrompt]);
 
   // CMD+SHIFT+M: open merge & archive dialog
   useEffect(() => {
@@ -295,6 +303,7 @@ export function NextStepsBar({
       {showSessionPrompt && canStartWorkflowSession && onStartWorkflowSession && (
         <div className="w-full rounded-lg border border-border/50 overflow-hidden">
           <AgentPromptBar
+            ref={sessionPromptRef}
             onSend={() => {}}
             onStop={() => {}}
             status="idle"
