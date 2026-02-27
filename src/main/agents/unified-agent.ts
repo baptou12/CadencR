@@ -136,10 +136,11 @@ export function startUnifiedAgent(config: UnifiedAgentConfig): UnifiedAgentResul
     // Don't overwrite 'paused' status — it was already set by stop/interrupt
     const current = db2.prepare("SELECT status FROM agent_sessions WHERE id = ?").get(sessionDbId) as { status: string } | undefined;
     const wasInterrupted = current?.status === "paused";
+    const alreadyCompleted = current?.status === "completed";
 
-    console.log(`[unified-agent] completion: session ${sessionDbId} (${config.agentType}), exitCode=${exitCode}, currentStatus=${current?.status}, wasInterrupted=${wasInterrupted}, phaseId=${config.phaseId ?? "none"}`);
+    console.log(`[unified-agent] completion: session ${sessionDbId} (${config.agentType}), exitCode=${exitCode}, currentStatus=${current?.status}, wasInterrupted=${wasInterrupted}, alreadyCompleted=${alreadyCompleted}, phaseId=${config.phaseId ?? "none"}`);
 
-    if (!wasInterrupted) {
+    if (!wasInterrupted && !alreadyCompleted) {
       // Update session status
       transitionAgentSession(db2, sessionDbId, exitCode === 0 ? "completed" : "error", config.featureId, { ended_at: "datetime('now')" });
     }
