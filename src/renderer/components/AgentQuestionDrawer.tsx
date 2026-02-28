@@ -3,7 +3,7 @@ import { useHotkeys } from "react-hotkeys-hook";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { SendIcon, MessageCircleQuestionIcon } from "lucide-react";
+import { SendIcon, MessageCircleQuestionIcon, ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 
 /** A single question from an AskUserQuestion tool call */
 export interface AgentQuestion {
@@ -34,10 +34,11 @@ interface AgentQuestionDrawerProps {
  */
 export function AgentQuestionDrawer({ questions, onSubmit, open, inline, disableShortcuts }: AgentQuestionDrawerProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [answers, setAnswers] = useState<string[]>([]);
+  const [answers, setAnswers] = useState<{ text: string; selectedOptions: Set<string>; freeText: string; showOther: boolean }[]>([]);
   const [selectedOptions, setSelectedOptions] = useState<Set<string>>(new Set());
   const [freeText, setFreeText] = useState("");
   const [showOther, setShowOther] = useState(false);
+  const freeTextFocusedRef = useRef(false);
   const [highlightedIndex, setHighlightedIndex] = useState<number | null>(null);
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -55,6 +56,68 @@ export function AgentQuestionDrawer({ questions, onSubmit, open, inline, disable
     setFreeText("");
     setShowOther(false);
   }, []);
+
+  const getCurrentAnswerText = useCallback((): string => {
+    const parts: string[] = [];
+    if (selectedOptions.size > 0) {
+      parts.push(Array.from(selectedOptions).join(", "));
+    }
+    if (showOther && freeText.trim()) {
+      parts.push(freeText.trim());
+    }
+    // If no options at all (free-text only question), use freeText directly
+    if (!currentQuestion?.options?.length && freeText.trim()) {
+      return freeText.trim();
+    }
+    return parts.join("; ");
+  }, [selectedOptions, showOther, freeText, currentQuestion]);
+
+  /** Save current UI state into answers array at a given index */
+  const saveCurrentState = useCallback((index: number) => {
+    const text = getCurrentAnswerText();
+    setAnswers((prev) => {
+      const next = [...prev];
+      next[index] = { text, selectedOptions: new Set(selectedOptions), freeText, showOther };
+      return next;
+    });
+  }, [getCurrentAnswerText, selectedOptions, freeText, showOther]);
+
+  /** Restore UI state from a saved answer */
+  const restoreState = useCallback((saved: { selectedOptions: Set<string>; freeText: string; showOther: boolean }) => {
+    setSelectedOptions(new Set(saved.selectedOptions));
+    setFreeText(saved.freeText);
+    setShowOther(saved.showOther);
+  }, []);
+
+  const canGoBack = currentIndex > 0;
+  const canGoForward = currentIndex < answers.length - 1 && answers[currentIndex + 1] != null;
+
+  const handleBack = useCallback(() => {
+    if (!canGoBack) return;
+    // Save current state before navigating
+    saveCurrentState(currentIndex);
+    const prevIndex = currentIndex - 1;
+    setCurrentIndex(prevIndex);
+    const saved = answers[prevIndex];
+    if (saved) {
+      restoreState(saved);
+    } else {
+      resetState();
+    }
+  }, [canGoBack, currentIndex, answers, saveCurrentState, restoreState, resetState]);
+
+  const handleForward = useCallback(() => {
+    if (!canGoForward) return;
+    saveCurrentState(currentIndex);
+    const nextIndex = currentIndex + 1;
+    setCurrentIndex(nextIndex);
+    const saved = answers[nextIndex];
+    if (saved) {
+      restoreState(saved);
+    } else {
+      resetState();
+    }
+  }, [canGoForward, currentIndex, answers, saveCurrentState, restoreState, resetState]);
 
   const handleOptionToggle = useCallback(
     (option: string) => {
@@ -90,35 +153,30 @@ export function AgentQuestionDrawer({ questions, onSubmit, open, inline, disable
     }
   }, [showOther, currentQuestion]);
 
-  const getCurrentAnswer = useCallback((): string => {
-    const parts: string[] = [];
-    if (selectedOptions.size > 0) {
-      parts.push(Array.from(selectedOptions).join(", "));
-    }
-    if (showOther && freeText.trim()) {
-      parts.push(freeText.trim());
-    }
-    // If no options at all (free-text only question), use freeText directly
-    if (!currentQuestion?.options?.length && freeText.trim()) {
-      return freeText.trim();
-    }
-    return parts.join("; ");
-  }, [selectedOptions, showOther, freeText, currentQuestion]);
-
   const handleNext = useCallback(() => {
-    const answer = getCurrentAnswer();
+    const answer = getCurrentAnswerText();
     if (!answer) return;
 
-    const newAnswers = [...answers, answer];
+    // Save structured state at current index
+    const newAnswers = [...answers];
+    newAnswers[currentIndex] = { text: answer, selectedOptions: new Set(selectedOptions), freeText, showOther };
 
     if (currentIndex < questions.length - 1) {
       setAnswers(newAnswers);
       setCurrentIndex((prev) => prev + 1);
-      resetState();
+      // Restore next answer if it exists (user went back then forward via Next)
+      const nextSaved = newAnswers[currentIndex + 1];
+      if (nextSaved) {
+        setSelectedOptions(new Set(nextSaved.selectedOptions));
+        setFreeText(nextSaved.freeText);
+        setShowOther(nextSaved.showOther);
+      } else {
+        resetState();
+      }
     } else {
       // All questions answered — format and submit
       const response = questions
-        .map((q, i) => `${q.question}\nAnswer: ${newAnswers[i]}`)
+        .map((q, i) => `${q.question}\nAnswer: ${newAnswers[i]?.text ?? ""}`)
         .join("\n\n");
       onSubmit(response);
 
@@ -127,7 +185,7 @@ export function AgentQuestionDrawer({ questions, onSubmit, open, inline, disable
       setAnswers([]);
       resetState();
     }
-  }, [getCurrentAnswer, answers, currentIndex, questions, onSubmit, resetState]);
+  }, [getCurrentAnswerText, answers, currentIndex, questions, onSubmit, resetState, selectedOptions, freeText, showOther]);
 
   const handleFreeTextSubmit = useCallback(() => {
     if (freeText.trim()) {
@@ -178,6 +236,29 @@ export function AgentQuestionDrawer({ questions, onSubmit, open, inline, disable
     [open, disableShortcuts, currentQuestion, showOther, handleNext],
   );
 
+  // Left/Right arrow keys to navigate between questions
+  useHotkeys(
+    "left",
+    (e) => {
+      if (!open || freeTextFocusedRef.current) return;
+      e.preventDefault();
+      handleBack();
+    },
+    { enabled: open && !disableShortcuts && canGoBack },
+    [open, disableShortcuts, canGoBack, handleBack],
+  );
+
+  useHotkeys(
+    "right",
+    (e) => {
+      if (!open || freeTextFocusedRef.current) return;
+      e.preventDefault();
+      handleForward();
+    },
+    { enabled: open && !disableShortcuts && canGoForward },
+    [open, disableShortcuts, canGoForward, handleForward],
+  );
+
   if (!open || !currentQuestion) {
     return null;
   }
@@ -195,13 +276,37 @@ export function AgentQuestionDrawer({ questions, onSubmit, open, inline, disable
       "bg-muted/20",
       inline ? "px-3 py-2" : "border-t border-border px-4 py-3"
     )}>
-      {/* Progress indicator for multiple questions */}
+      {/* Progress indicator with navigation arrows */}
       {questions.length > 1 && (
-        <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
+        <div className="mb-2 flex items-center gap-1 text-xs text-muted-foreground">
+          <button
+            type="button"
+            disabled={!canGoBack}
+            onClick={handleBack}
+            className={cn(
+              "inline-flex size-5 items-center justify-center rounded hover:bg-muted/50 transition-colors",
+              canGoBack ? "text-foreground cursor-pointer" : "opacity-30 cursor-default"
+            )}
+            aria-label="Previous question"
+          >
+            <ChevronLeftIcon className="size-3.5" />
+          </button>
           <MessageCircleQuestionIcon className="size-3" />
           <span>
             Question {currentIndex + 1} of {questions.length}
           </span>
+          <button
+            type="button"
+            disabled={!canGoForward}
+            onClick={handleForward}
+            className={cn(
+              "inline-flex size-5 items-center justify-center rounded hover:bg-muted/50 transition-colors",
+              canGoForward ? "text-foreground cursor-pointer" : "opacity-30 cursor-default"
+            )}
+            aria-label="Next question"
+          >
+            <ChevronRightIcon className="size-3.5" />
+          </button>
         </div>
       )}
 
@@ -259,6 +364,8 @@ export function AgentQuestionDrawer({ questions, onSubmit, open, inline, disable
           <Input
             value={freeText}
             onChange={(e) => setFreeText(e.target.value)}
+            onFocus={() => { freeTextFocusedRef.current = true; }}
+            onBlur={() => { freeTextFocusedRef.current = false; }}
             onKeyDown={(e) => {
               if (e.key === "Enter") handleFreeTextSubmit();
             }}
