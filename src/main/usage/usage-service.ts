@@ -45,7 +45,17 @@ export async function getUsage(): Promise<UsageResponse | null> {
 
     if (!res.ok) return null;
 
-    const data = (await res.json()) as UsageResponse;
+    const raw = await res.json();
+    const data: UsageResponse = {
+      five_hour: {
+        utilization: Number(raw?.five_hour?.utilization) || 0,
+        resets_at: typeof raw?.five_hour?.resets_at === 'string' ? raw.five_hour.resets_at : null,
+      },
+      seven_day: {
+        utilization: Number(raw?.seven_day?.utilization) || 0,
+        resets_at: typeof raw?.seven_day?.resets_at === 'string' ? raw.seven_day.resets_at : null,
+      },
+    };
     cachedResult = { data, timestamp: Date.now() };
     return data;
   } catch {
