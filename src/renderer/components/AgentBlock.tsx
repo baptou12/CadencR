@@ -240,7 +240,7 @@ function BashOutputBlock({ content, isError }: { content: string; isError?: bool
 }
 
 function ThinkingBlock({ content }: { content: string }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
 
   return (
     <div className="my-1 rounded-md border border-border bg-purple-500/5">

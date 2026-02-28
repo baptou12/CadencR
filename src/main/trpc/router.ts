@@ -237,6 +237,9 @@ function buildBlocks(messages: AgentMessageRow[]): AgentBlock[] {
       case "text_delta":
         appendText(list, msg.id, msg.content, msg.parent_tool_use_id, msg.created_at, msg.model);
         break;
+      case "thinking":
+        list.push({ id, type: "thinking", content: msg.content, parentToolUseId: msg.parent_tool_use_id, createdAt: msg.created_at });
+        break;
       case "tool_call": {
         // Deduplicate: if we already have a block with this tool_use_id,
         // update its content instead of creating a duplicate (the SDK sends

@@ -36,7 +36,8 @@ export interface StreamContentBlockStart {
   index: number;
   content_block:
     | { type: "text"; text: string }
-    | { type: "tool_use"; id: string; name: string; input: Record<string, unknown> };
+    | { type: "tool_use"; id: string; name: string; input: Record<string, unknown> }
+    | { type: "thinking"; thinking: string };
 }
 
 /** Content block delta — incremental content update */
@@ -45,7 +46,8 @@ export interface StreamContentBlockDelta {
   index: number;
   delta:
     | { type: "text_delta"; text: string }
-    | { type: "input_json_delta"; partial_json: string };
+    | { type: "input_json_delta"; partial_json: string }
+    | { type: "thinking_delta"; thinking: string };
 }
 
 /** Content block stop — end of a content block */

@@ -243,6 +243,14 @@ function handleSdkMessage(
             };
             if (sessionDbId) persistStreamEvent(sessionDbId, event, parentToolUseId);
             for (const listener of managed.eventListeners) listener(event);
+          } else if (block.type === "thinking") {
+            const event: StreamEvent = {
+              type: "content_block_start",
+              index: i,
+              content_block: { type: "thinking", thinking: block.thinking as string },
+            };
+            if (sessionDbId) persistStreamEvent(sessionDbId, event, parentToolUseId);
+            for (const listener of managed.eventListeners) listener(event);
           } else if (block.type === "tool_use") {
             const toolName = block.name as string;
             const toolInput = block.input as Record<string, unknown>;
