@@ -15,7 +15,6 @@ const STATUS_COLORS: Record<string, string> = {
   draft: "bg-gray-500/15 text-gray-300",
   planned: "bg-blue-500/15 text-blue-300",
   "in-progress": "bg-yellow-500/15 text-yellow-300",
-  review: "bg-purple-500/15 text-purple-300",
   done: "bg-green-500/15 text-green-300",
   archived: "bg-gray-500/15 text-gray-400",
 };

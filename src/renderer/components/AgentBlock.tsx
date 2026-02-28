@@ -74,9 +74,11 @@ interface AgentBlockProps {
   block: AgentBlockData;
   /** Whether the parent agent is still streaming */
   isStreaming?: boolean;
+  /** Base path to strip from file paths in diffs */
+  basePath?: string;
 }
 
-export function AgentBlock({ block, isStreaming }: AgentBlockProps) {
+export function AgentBlock({ block, isStreaming, basePath }: AgentBlockProps) {
   switch (block.type) {
     case "text":
       return <TextBlock content={block.content} />;
@@ -84,7 +86,7 @@ export function AgentBlock({ block, isStreaming }: AgentBlockProps) {
       return <CodeBlock content={block.content} language={block.language} />;
     case "tool_call":
       if (block.toolName === "TodoWrite") return null;
-      if (block.toolName === "Task" && block.childBlocks) {
+      if ((block.toolName === "Task" || block.toolName === "Agent") && block.childBlocks) {
         return <TaskAgentBlock block={block} isStreaming={isStreaming} />;
       }
       if (block.toolName === "ExitPlanMode" || block.toolName?.endsWith("__show_plan")) {
@@ -100,6 +102,7 @@ export function AgentBlock({ block, isStreaming }: AgentBlockProps) {
                 filePath={diff.filePath}
                 oldContent={diff.oldContent}
                 newContent={diff.newContent}
+                basePath={basePath}
               />
             </div>
           );
@@ -237,7 +240,7 @@ function BashOutputBlock({ content, isError }: { content: string; isError?: bool
 }
 
 function ThinkingBlock({ content }: { content: string }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
 
   return (
     <div className="my-1 rounded-md border border-border bg-purple-500/5">
@@ -346,7 +349,7 @@ function TaskAgentBlock({ block, isStreaming }: { block: AgentBlockData; isStrea
       truncationClassName="text-indigo-800"
       header={<>
         <LayersIcon className="size-3 text-indigo-400" />
-        <span className="font-medium text-indigo-300">Task</span>
+        <span className="font-medium text-indigo-300">{block.toolName}</span>
         <span className="truncate text-muted-foreground">{description}</span>
         {isRunning && (
           <LoaderIcon className="size-3 animate-spin text-indigo-500 shrink-0" />

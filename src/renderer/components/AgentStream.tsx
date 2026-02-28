@@ -16,9 +16,11 @@ interface AgentStreamProps {
   blocks: AgentBlockData[];
   /** Whether the agent is currently streaming */
   isStreaming?: boolean;
+  /** Base path to strip from file paths in diffs */
+  basePath?: string;
 }
 
-export function AgentStream({ blocks, isStreaming }: AgentStreamProps) {
+export function AgentStream({ blocks, isStreaming, basePath }: AgentStreamProps) {
   return (
     <div className="space-y-1 p-3">
       {blocks.filter((b) => !b.parentToolUseId).map((block) => (
@@ -35,6 +37,7 @@ export function AgentStream({ blocks, isStreaming }: AgentStreamProps) {
           <AgentBlock
             block={block}
             isStreaming={isStreaming}
+            basePath={basePath}
           />
         </div>
       ))}

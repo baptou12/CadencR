@@ -263,12 +263,40 @@ function createAgentDoneTool(sessionDbId: number, featureId: number) {
     },
     async (_args) => {
       const db = getDatabase();
-      const current = db.prepare("SELECT status, agent_type FROM agent_sessions WHERE id = ?").get(sessionDbId) as { status: string; agent_type: string } | undefined;
+      const current = db.prepare("SELECT status, agent_type, run_id FROM agent_sessions WHERE id = ?").get(sessionDbId) as { status: string; agent_type: string; run_id: number | null } | undefined;
       console.log(`[session-trace] mark_agent_done: session ${sessionDbId} (${current?.agent_type}), ${current?.status} -> completed (feature ${featureId})`);
       db.prepare(
         "UPDATE agent_sessions SET status = 'completed', ended_at = datetime('now') WHERE id = ?",
       ).run(sessionDbId);
       notifyDbUpdated("agent_session", featureId);
+
+      // Only advance workflow / chain QA→Execute for top-level sessions.
+      // Phase-level agents dispatched by the execute orchestrator have a run_id
+      // pointing to their parent orchestrator session — the orchestrator itself
+      // handles workflow advancement when all phases finish.
+      const isOrchestratorChild = current?.run_id != null;
+
+      if (!isOrchestratorChild) {
+        const wfFeat = db.prepare("SELECT workflow_step, project_id FROM features WHERE id = ?")
+          .get(featureId) as { workflow_step: string | null; project_id: number } | undefined;
+        if (wfFeat?.workflow_step) {
+          try {
+            const { onStepCompleted } = require("./workflow-orchestrator");
+            onStepCompleted(featureId);
+          } catch {
+            // workflow-orchestrator not available (e.g. in tests)
+          }
+        } else if (current?.agent_type === "qa" && wfFeat) {
+          // QA finished outside a workflow — check for pending fix phases and auto-start execute
+          try {
+            const { autoStartExecuteAfterQa } = require("./workflow-orchestrator");
+            autoStartExecuteAfterQa(featureId, wfFeat.project_id);
+          } catch {
+            // workflow-orchestrator not available (e.g. in tests)
+          }
+        }
+      }
+
       return textResult("Agent marked as done. Session completed.");
     },
   );

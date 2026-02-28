@@ -156,8 +156,8 @@ describe("useFeatureState", () => {
     expect(result.current.actions.canStartReview).toBe(true);
   });
 
-  it("canStartWorkflowSession is true for planned/in-progress/review feature", () => {
-    for (const status of ["planned", "in-progress", "review"] as const) {
+  it("canStartWorkflowSession is true for planned/in-progress feature", () => {
+    for (const status of ["planned", "in-progress"] as const) {
       const { result } = renderHook(() =>
         useFeatureState({
           featureStatus: status,

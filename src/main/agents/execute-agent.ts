@@ -139,7 +139,7 @@ export function startExecuteAgent(options: ExecuteAgentOptions): ExecuteAgentRes
     const firstStepResult = getStepOutcome(plan.id, firstStepNumber);
     if (firstStepResult !== "ok" && firstStepResult !== "qa_fail_with_fixes") {
       const status = firstStepResult === "paused" ? "paused" : "error";
-      transitionAgentSession(db, sessionDbId, status, options.featureId, { ended_at: "datetime('now')" });
+      transitionAgentSession(db, sessionDbId, status, options.featureId, { ended_at: new Date().toISOString() });
       if (firstStepResult === "paused") {
         broadcastExecutePaused(sessionDbId);
       } else {
@@ -159,7 +159,7 @@ export function startExecuteAgent(options: ExecuteAgentOptions): ExecuteAgentRes
   })().catch((err) => {
     console.error(`[orchestrator] Unhandled error in execute orchestrator ${sessionDbId}:`, err);
     try {
-      transitionAgentSession(db, sessionDbId, "error", options.featureId, { ended_at: "datetime('now')" });
+      transitionAgentSession(db, sessionDbId, "error", options.featureId, { ended_at: new Date().toISOString() });
       broadcastExecuteAllDone(sessionDbId, 1);
     } catch { /* best effort */ }
   });
@@ -546,7 +546,7 @@ async function executeRemainingSteps(
     const stepResult = getStepOutcome(planId, stepNumber);
     if (stepResult !== "ok" && stepResult !== "qa_fail_with_fixes") {
       const status = stepResult === "paused" ? "paused" : "error";
-      transitionAgentSession(db, sessionDbId, status, undefined, { ended_at: "datetime('now')" });
+      transitionAgentSession(db, sessionDbId, status, undefined, { ended_at: new Date().toISOString() });
       if (stepResult === "paused") {
         broadcastExecutePaused(sessionDbId);
       } else {
@@ -609,9 +609,12 @@ async function executeRemainingSteps(
     }
   }
 
-  transitionAgentSession(db, sessionDbId, "completed", undefined, { ended_at: "datetime('now')" });
+  transitionAgentSession(db, sessionDbId, "completed", undefined, { ended_at: new Date().toISOString() });
 
   broadcastExecuteAllDone(sessionDbId, 0);
+
+  // Advance workflow if active
+  try { const { onStepCompleted } = require("./workflow-orchestrator"); onStepCompleted(options.featureId); } catch { /* */ }
 }
 
 /**
@@ -680,8 +683,12 @@ export function continueExecuteAgent(sessionDbId: number): { subprocessIds: stri
 
   if (phases.length === 0) {
     // All phases done — mark session as completed
-    transitionAgentSession(db, sessionDbId, "completed", session.feature_id, { ended_at: "datetime('now')" });
+    transitionAgentSession(db, sessionDbId, "completed", session.feature_id, { ended_at: new Date().toISOString() });
     broadcastExecuteAllDone(sessionDbId, 0);
+
+    // Advance workflow if active
+    try { const { onStepCompleted } = require("./workflow-orchestrator"); onStepCompleted(session.feature_id); } catch { /* */ }
+
     return { subprocessIds: [] };
   }
 
@@ -723,7 +730,7 @@ export function continueExecuteAgent(sessionDbId: number): { subprocessIds: stri
     const firstStepResult = getStepOutcome(plan.id, firstStepNumber);
     if (firstStepResult !== "ok" && firstStepResult !== "qa_fail_with_fixes") {
       const status = firstStepResult === "paused" ? "paused" : "error";
-      transitionAgentSession(db, sessionDbId, status, session.feature_id, { ended_at: "datetime('now')" });
+      transitionAgentSession(db, sessionDbId, status, session.feature_id, { ended_at: new Date().toISOString() });
       if (firstStepResult === "paused") {
         broadcastExecutePaused(sessionDbId);
       } else {
@@ -768,8 +775,11 @@ export function continueExecuteAgent(sessionDbId: number): { subprocessIds: stri
         }
       }
 
-      transitionAgentSession(db, sessionDbId, "completed", session.feature_id, { ended_at: "datetime('now')" });
+      transitionAgentSession(db, sessionDbId, "completed", session.feature_id, { ended_at: new Date().toISOString() });
       broadcastExecuteAllDone(sessionDbId, 0);
+
+      // Advance workflow if active
+      try { const { onStepCompleted } = require("./workflow-orchestrator"); onStepCompleted(session.feature_id); } catch { /* */ }
     }
   })();
 

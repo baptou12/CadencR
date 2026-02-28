@@ -201,10 +201,8 @@ export interface AgentSessionProps {
   onToggle?: () => void;
 
   // --- Review verdict props (shown when agentType === "review") ---
-  /** Whether the review agent has completed */
-  reviewComplete?: boolean;
-  /** The review verdict detected from pattern matching */
-  reviewVerdict?: "approved" | "changes_requested" | null;
+  /** The review verdict: "changes_requested" if fix phases were created, null otherwise */
+  reviewVerdict?: "changes_requested" | null;
   /** Called when user clicks "Add Fix Phase" */
   onAddFixPhase?: () => void;
   /** Called when user clicks "Fix Immediately" */
@@ -308,7 +306,6 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
   disabled,
   open: controlledOpen,
   onToggle,
-  reviewComplete,
   reviewVerdict,
   onAddFixPhase,
   onFixImmediately,
@@ -350,6 +347,11 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
   const killBackgroundTask = trpc.agents.killBackgroundTask.useMutation();
   const availableModels = trpc.settings.getAvailableModels.useQuery();
   const models = useMemo(() => availableModels.data ?? [], [availableModels.data]);
+  const cwdQuery = trpc.features.resolveWorkingDir.useQuery(
+    { featureId: featureId!, projectId: projectId! },
+    { enabled: featureId != null && projectId != null },
+  );
+  const projectPath = cwdQuery.data ?? undefined;
 
   // Auto-scroll: only scroll to bottom when the prompt bar is focused
   useLayoutEffect(() => {
@@ -436,7 +438,6 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
     onFixImmediately ? (
       <ReviewVerdictActions
         show={true}
-        reviewComplete={reviewComplete ?? false}
         reviewVerdict={reviewVerdict ?? null}
         onAddFixPhase={onAddFixPhase}
         onFixImmediately={onFixImmediately}
@@ -523,7 +524,7 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
         </div>
       )}
       {blocks.length > 0 && (
-        <AgentStream blocks={blocks} isStreaming={status === "running"} />
+        <AgentStream blocks={blocks} isStreaming={status === "running"} basePath={projectPath} />
       )}
     </>
   );
@@ -726,7 +727,7 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
                 No output yet
               </div>
             ) : (
-              <AgentStream blocks={blocks} isStreaming={status === "running"} />
+              <AgentStream blocks={blocks} isStreaming={status === "running"} basePath={projectPath} />
             )}
           </div>
 

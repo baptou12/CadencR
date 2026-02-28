@@ -1,12 +1,12 @@
 import { z } from "zod";
 import { router, publicProcedure } from "./trpc";
 import { getDatabase } from "../db/database";
-import type { FeatureRow, PlanRow, PhaseRow, CountRow, SettingRow } from "../db/types";
+import type { FeatureRow, PlanRow, PhaseRow, CountRow, SettingRow, ProjectRow } from "../db/types";
 import type { AgentType } from "../agents/types";
 import { getSubprocessIdsForSessionDbIds, notifyDbUpdated } from "../agents/session-persistence";
 import { stopSubprocess } from "../agents/subprocess-manager";
 
-export const FEATURE_STATUSES = ["draft", "planned", "in-progress", "review", "done", "archived"] as const;
+export const FEATURE_STATUSES = ["draft", "planned", "in-progress", "done", "archived"] as const;
 export type FeatureStatus = (typeof FEATURE_STATUSES)[number];
 
 const featureStatusSchema = z.enum(FEATURE_STATUSES);
@@ -230,7 +230,7 @@ export const featuresRouter = router({
       const db = getDatabase();
       // Combine real columns + remaining EAV rows (worktree_path, worktree_branch, etc.)
       const feature = db
-        .prepare("SELECT model_plan, model_prd, model_execute, model_risk, model_review, model_session, model_qa, agent_autonomy FROM features WHERE id = ?")
+        .prepare("SELECT model_plan, model_prd, model_execute, model_risk, model_review, model_session, model_qa, agent_autonomy, parallel_execution FROM features WHERE id = ?")
         .get(input.feature_id) as Record<string, string | null> | undefined;
 
       const result: Record<string, string> = {};
@@ -311,7 +311,7 @@ export const featuresRouter = router({
       const db = getDatabase();
       const realColumns = new Set([
         "model_plan", "model_prd", "model_execute", "model_risk", "model_review",
-        "model_session", "model_qa", "agent_autonomy",
+        "model_session", "model_qa", "agent_autonomy", "parallel_execution",
       ]);
 
       if (realColumns.has(input.key)) {
@@ -322,6 +322,26 @@ export const featuresRouter = router({
           "INSERT INTO feature_settings (feature_id, key, value) VALUES (?, ?, ?) ON CONFLICT(feature_id, key) DO UPDATE SET value = excluded.value",
         ).run(input.feature_id, input.key, input.value);
       }
+
+      // When autonomy is raised to >= 2, resume paused workflows and waiting execute sessions
+      if (input.key === "agent_autonomy" && Number(input.value) >= 2) {
+        try {
+          const { continueWorkflow } = require("../agents/workflow-orchestrator");
+          continueWorkflow(input.feature_id);
+        } catch { /* */ }
+
+        // Find waiting execute session for this feature and continue it
+        const waitingSession = db.prepare(
+          "SELECT id FROM agent_sessions WHERE feature_id = ? AND agent_type = 'execute' AND status = 'waiting' ORDER BY id DESC LIMIT 1",
+        ).get(input.feature_id) as { id: number } | undefined;
+        if (waitingSession) {
+          try {
+            const { continueExecuteAgent } = require("../agents/execute-agent");
+            continueExecuteAgent(waitingSession.id);
+          } catch { /* */ }
+        }
+      }
+
       return { success: true };
     }),
 
@@ -357,5 +377,28 @@ export const featuresRouter = router({
       db.prepare(`UPDATE features SET "${col}" = ? WHERE id = ?`)
         .run(input.modelId, input.featureId);
       return { success: true };
+    }),
+
+  /** Resolve the working directory for a feature (worktree path or project path). */
+  resolveWorkingDir: publicProcedure
+    .input(z.object({ featureId: z.number(), projectId: z.number() }))
+    .query(({ input }) => {
+      const db = getDatabase();
+      const feature = db
+        .prepare("SELECT type FROM features WHERE id = ?")
+        .get(input.featureId) as { type: string } | undefined;
+
+      // For non-session features, prefer the worktree path
+      if (feature && feature.type !== "session") {
+        const wtRow = db
+          .prepare("SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'")
+          .get(input.featureId) as SettingRow | undefined;
+        if (wtRow) return wtRow.value;
+      }
+
+      const project = db
+        .prepare("SELECT path FROM projects WHERE id = ?")
+        .get(input.projectId) as Pick<ProjectRow, "path"> | undefined;
+      return project?.path ?? null;
     }),
 });

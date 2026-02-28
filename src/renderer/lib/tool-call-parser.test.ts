@@ -31,6 +31,11 @@ describe("parseToolCall", () => {
     expect(result).toEqual({ label: "Running subtask", detail: "Find agent files" });
   });
 
+  it("parses Agent tool with description (same as Task)", () => {
+    const result = parseToolCall("Agent", JSON.stringify({ description: "Find agent files" }));
+    expect(result).toEqual({ label: "Running subtask", detail: "Find agent files" });
+  });
+
   it("parses Glob tool with pattern only", () => {
     const result = parseToolCall("Glob", JSON.stringify({ pattern: "**/*.ts" }));
     expect(result).toEqual({ label: "Finding files", detail: "**/*.ts" });

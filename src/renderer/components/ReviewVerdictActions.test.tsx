@@ -7,7 +7,6 @@ describe("ReviewVerdictActions", () => {
     const { container } = render(
       <ReviewVerdictActions
         show={false}
-        reviewComplete={true}
         reviewVerdict="changes_requested"
         onAddFixPhase={vi.fn()}
         onFixImmediately={vi.fn()}
@@ -18,12 +17,11 @@ describe("ReviewVerdictActions", () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it("renders nothing when reviewComplete is false", () => {
+  it("renders nothing when reviewVerdict is null", () => {
     const { container } = render(
       <ReviewVerdictActions
         show={true}
-        reviewComplete={false}
-        reviewVerdict="changes_requested"
+        reviewVerdict={null}
         onAddFixPhase={vi.fn()}
         onFixImmediately={vi.fn()}
         isAddingFixPhase={false}
@@ -37,7 +35,6 @@ describe("ReviewVerdictActions", () => {
     render(
       <ReviewVerdictActions
         show={true}
-        reviewComplete={true}
         reviewVerdict="changes_requested"
         onAddFixPhase={vi.fn()}
         onFixImmediately={vi.fn()}
@@ -49,27 +46,11 @@ describe("ReviewVerdictActions", () => {
     expect(screen.getByRole("button", { name: /fix immediately/i })).toBeInTheDocument();
   });
 
-  it("renders approved message when verdict is approved", () => {
-    render(
-      <ReviewVerdictActions
-        show={true}
-        reviewComplete={true}
-        reviewVerdict="approved"
-        onAddFixPhase={vi.fn()}
-        onFixImmediately={vi.fn()}
-        isAddingFixPhase={false}
-        isStartingFix={false}
-      />
-    );
-    expect(screen.getByText(/review approved/i)).toBeInTheDocument();
-  });
-
   it("calls onAddFixPhase when button clicked", async () => {
     const onAddFixPhase = vi.fn();
     const { user } = render(
       <ReviewVerdictActions
         show={true}
-        reviewComplete={true}
         reviewVerdict="changes_requested"
         onAddFixPhase={onAddFixPhase}
         onFixImmediately={vi.fn()}
@@ -85,7 +66,6 @@ describe("ReviewVerdictActions", () => {
     render(
       <ReviewVerdictActions
         show={true}
-        reviewComplete={true}
         reviewVerdict="changes_requested"
         onAddFixPhase={vi.fn()}
         onFixImmediately={vi.fn()}

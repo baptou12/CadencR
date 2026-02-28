@@ -63,6 +63,8 @@ import { buildMcpServerFactoryForResume } from "../agents/mcp-factory";
 import { transitionAgentSession } from "../agents/state-transitions";
 import { autoNameFeature, runAutoNameBlocking } from "../agents/auto-name";
 import { fetchAvailableModels } from "../agents/available-models";
+import { initWorkflow, continueWorkflow } from "../agents/workflow-orchestrator";
+import { resolveAgentCwd } from "../agents/resolve-cwd";
 
 /**
  * Resolve the git directory for a feature.
@@ -174,44 +176,7 @@ const settingsRouter = router({
     }),
 });
 
-/** Resolve the working directory for an agent, preferring worktree path over project path. */
-function resolveAgentCwd(featureId: number, projectId: number): { cwd: string; worktreePath?: string } {
-  const db = getDatabase();
-
-  const wtRow = db
-    .prepare(
-      "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
-    )
-    .get(featureId) as SettingRow | undefined;
-
-  const project = db
-    .prepare("SELECT path FROM projects WHERE id = ?")
-    .get(projectId) as Pick<ProjectRow, "path"> | undefined;
-
-  if (!wtRow) {
-    // Check if there was a worktree creation error
-    const errorRow = db
-      .prepare(
-        "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_error'",
-      )
-      .get(featureId) as SettingRow | undefined;
-
-    if (errorRow) {
-      console.warn(
-        `Worktree not available for feature ${featureId}, falling back to project path. Worktree error: ${errorRow.value}`,
-      );
-    }
-  }
-
-  const cwd = wtRow?.value ?? project?.path;
-  if (!cwd) throw new Error("No working directory found for this feature");
-  if (!fs.existsSync(cwd)) {
-    throw new Error(
-      `Agent working directory does not exist: ${cwd}. The worktree may not have been created yet or was removed.`,
-    );
-  }
-  return { cwd, worktreePath: wtRow?.value };
-}
+// resolveAgentCwd is imported from ../agents/resolve-cwd
 
 /** Check if a feature still has its default auto-generated title (e.g. "Session 3") */
 function hasDefaultTitle(featureId: number): boolean {
@@ -272,6 +237,9 @@ function buildBlocks(messages: AgentMessageRow[]): AgentBlock[] {
       case "text_delta":
         appendText(list, msg.id, msg.content, msg.parent_tool_use_id, msg.created_at, msg.model);
         break;
+      case "thinking":
+        list.push({ id, type: "thinking", content: msg.content, parentToolUseId: msg.parent_tool_use_id, createdAt: msg.created_at });
+        break;
       case "tool_call": {
         // Deduplicate: if we already have a block with this tool_use_id,
         // update its content instead of creating a duplicate (the SDK sends
@@ -284,7 +252,7 @@ function buildBlocks(messages: AgentMessageRow[]): AgentBlock[] {
           }
           break;
         }
-        const isTask = msg.tool_name === "Task";
+        const isTask = msg.tool_name === "Task" || msg.tool_name === "Agent";
         const block: AgentBlock = {
           id,
           type: "tool_call",
@@ -624,6 +592,7 @@ const agentsRouter = router({
       } else {
         description = input.description;
       }
+      initWorkflow(input.featureId, "plan");
       return startPlanAgent({ featureId: input.featureId, projectId: input.projectId, description, cwd, worktreePath });
     }),
 
@@ -649,7 +618,16 @@ const agentsRouter = router({
       } else {
         description = input.description;
       }
+      initWorkflow(input.featureId, "prd");
       return startPrdAgent({ featureId: input.featureId, projectId: input.projectId, description, cwd, worktreePath });
+    }),
+
+  /** Continue a paused workflow (autonomy level 1) */
+  continueWorkflow: publicProcedure
+    .input(z.object({ featureId: z.number() }))
+    .mutation(({ input }) => {
+      continueWorkflow(input.featureId);
+      return { success: true };
     }),
 
   /** Refine an existing plan — start a plan agent that appends new phases */
@@ -819,12 +797,21 @@ const agentsRouter = router({
         prompt = input.prompt;
       }
 
-      // Resolve worktree path if the feature has one configured
-      const wtRow = db
-        .prepare("SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'")
-        .get(input.featureId) as { value: string } | undefined;
-      const cwd = wtRow?.value ?? project.path;
-      const worktreePath = wtRow?.value;
+      // Session-type features always use the project path directly (no worktree)
+      const featureRow = db
+        .prepare("SELECT type FROM features WHERE id = ?")
+        .get(input.featureId) as { type: string } | undefined;
+      let cwd = project.path;
+      let worktreePath: string | undefined;
+      if (featureRow?.type !== "session") {
+        const wtRow = db
+          .prepare("SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'")
+          .get(input.featureId) as { value: string } | undefined;
+        if (wtRow?.value) {
+          cwd = wtRow.value;
+          worktreePath = wtRow.value;
+        }
+      }
 
       const result = startSessionAgent({
         featureId: input.featureId,
@@ -863,9 +850,14 @@ const agentsRouter = router({
 
       // Step 1: Auto-name if feature has a default title
       const feature = db
-        .prepare("SELECT title FROM features WHERE id = ?")
-        .get(input.featureId) as { title: string } | undefined;
+        .prepare("SELECT title, type FROM features WHERE id = ?")
+        .get(input.featureId) as { title: string; type: string } | undefined;
       if (!feature) throw new Error(`Feature not found: ${input.featureId}`);
+
+      // Session-type features should never have worktrees
+      if (feature.type === "session") {
+        return { cwd: project.path };
+      }
 
       if (/^(Untitled Feature|Session \d+)$/i.test(feature.title)) {
         await runAutoNameBlocking(input.featureId, input.description, project.path);
@@ -932,7 +924,7 @@ const agentsRouter = router({
         .prepare("SELECT status FROM agent_sessions WHERE id = ?")
         .get(input.sessionId) as Pick<AgentSessionRow, "status"> | undefined;
       if (current && (current.status === "running" || current.status === "paused")) {
-        transitionAgentSession(db, input.sessionId, "completed", undefined, { ended_at: "datetime('now')", subprocess_id: null });
+        transitionAgentSession(db, input.sessionId, "completed", undefined, { ended_at: new Date().toISOString(), subprocess_id: null });
       }
       return { success: true };
     }),

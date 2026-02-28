@@ -178,19 +178,31 @@ describe("useWorkflowAgents", () => {
     expect(result.current.isContinuingBuild).toBe(false);
   });
 
-  it("reviewComplete is false when review session is not completed", () => {
+  it("reviewVerdict is null when review session is not completed", () => {
     mockSessions.push(makeSession({ agentType: "review", status: "running" }));
     const { result } = renderHook(() =>
       useWorkflowAgents({ featureId: 1, projectId: 1, getDescription: () => "desc" }),
     );
-    expect(result.current.reviewComplete).toBe(false);
+    expect(result.current.reviewVerdict).toBeNull();
   });
 
-  it("reviewComplete is true when review session is completed", () => {
+  it("reviewVerdict is null when review completed without fix phases", () => {
     mockSessions.push(makeSession({ agentType: "review", status: "completed" }));
     const { result } = renderHook(() =>
       useWorkflowAgents({ featureId: 1, projectId: 1, getDescription: () => "desc" }),
     );
-    expect(result.current.reviewComplete).toBe(true);
+    expect(result.current.reviewVerdict).toBeNull();
+  });
+
+  it("reviewVerdict is changes_requested when review called finalize_phases", () => {
+    mockSessions.push(makeSession({
+      agentType: "review",
+      status: "completed",
+      blocks: [{ id: "1", type: "tool_call", content: "", toolName: "finalize_phases" }],
+    }));
+    const { result } = renderHook(() =>
+      useWorkflowAgents({ featureId: 1, projectId: 1, getDescription: () => "desc" }),
+    );
+    expect(result.current.reviewVerdict).toBe("changes_requested");
   });
 });

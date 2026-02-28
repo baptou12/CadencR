@@ -79,6 +79,17 @@ export function persistStreamEvent(
             ptuid,
             model,
           ) as { lastInsertRowid: number | bigint };
+        } else if (event.content_block.type === "thinking" && event.content_block.thinking) {
+          result = insert.run(
+            sessionDbId,
+            "assistant",
+            event.content_block.thinking,
+            "thinking",
+            null,
+            null,
+            ptuid,
+            model,
+          ) as { lastInsertRowid: number | bigint };
         } else if (event.content_block.type === "tool_use") {
           const toolName = event.content_block.name;
           result = insert.run(
@@ -101,7 +112,18 @@ export function persistStreamEvent(
       }
       case "content_block_delta": {
         const model = sessionModelMap.get(sessionDbId) ?? null;
-        if (event.delta.type === "text_delta" && event.delta.text) {
+        if (event.delta.type === "thinking_delta" && event.delta.thinking) {
+          result = insert.run(
+            sessionDbId,
+            "assistant",
+            event.delta.thinking,
+            "thinking",
+            null,
+            null,
+            ptuid,
+            model,
+          ) as { lastInsertRowid: number | bigint };
+        } else if (event.delta.type === "text_delta" && event.delta.text) {
           result = insert.run(
             sessionDbId,
             "assistant",

@@ -83,6 +83,11 @@ vi.mock("@/trpc", () => {
           useQuery: vi.fn(() => ({ data: undefined })),
         },
       },
+      features: {
+        resolveWorkingDir: {
+          useQuery: vi.fn(() => ({ data: undefined })),
+        },
+      },
       agents: {
         getSupportedCommands: {
           useQuery: vi.fn(() => ({ data: undefined })),

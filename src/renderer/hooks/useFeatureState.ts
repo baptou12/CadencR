@@ -6,7 +6,6 @@ export type FeatureStatus =
   | "draft"
   | "planned"
   | "in-progress"
-  | "review"
   | "done"
   | "archived";
 
@@ -66,7 +65,6 @@ export function useFeatureState(
     const isDraft = status === "draft";
     const isPlanned = status === "planned";
     const isInProgress = status === "in-progress";
-    const isReview = status === "review";
     const isDone = status === "done" || status === "archived";
 
     // Agent has output if it has blocks or is not idle
@@ -95,7 +93,7 @@ export function useFeatureState(
     } else if (buildPhaseAgentsActive) {
       view = "agents-active";
     } else if (
-      (isPlanned || isInProgress || isReview) &&
+      (isPlanned || isInProgress) &&
       !planningActive
     ) {
       view = "ready-to-build";
@@ -125,11 +123,11 @@ export function useFeatureState(
       canStartRisk:
         (isPlanned || isInProgress) && risk.status !== "running",
       canStartReview:
-        (isInProgress || isReview) && review.status !== "running",
+        isInProgress && review.status !== "running",
       canStartWorkflowSession:
-        isPlanned || isInProgress || isReview,
+        isPlanned || isInProgress,
       canStartRefine:
-        isPlanned || isInProgress || isReview,
+        isPlanned || isInProgress,
     };
 
     return { view, agents, actions };

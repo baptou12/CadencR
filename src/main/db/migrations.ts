@@ -457,6 +457,24 @@ const migrations: Migration[] = [
       db.exec("ALTER TABLE agent_sessions ADD COLUMN prd_approval_result TEXT DEFAULT NULL");
     },
   },
+  {
+    version: 37,
+    description: "Add workflow columns and fix parallel_execution EAV data",
+    up: (db) => {
+      db.exec("ALTER TABLE features ADD COLUMN workflow_step TEXT");
+      db.exec("ALTER TABLE features ADD COLUMN workflow_config TEXT");
+      // Move parallel_execution values from EAV to real column
+      db.exec(`
+        UPDATE features SET parallel_execution = (
+          SELECT value FROM feature_settings
+          WHERE feature_settings.feature_id = features.id AND key = 'parallel_execution'
+        ) WHERE id IN (
+          SELECT feature_id FROM feature_settings WHERE key = 'parallel_execution'
+        )
+      `);
+      db.exec("DELETE FROM feature_settings WHERE key = 'parallel_execution'");
+    },
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

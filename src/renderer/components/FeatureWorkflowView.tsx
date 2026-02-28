@@ -668,7 +668,6 @@ export function FeatureWorkflowView({
                                 )
                             : undefined
                         }
-                        reviewComplete={wf.reviewComplete}
                         reviewVerdict={wf.reviewVerdict}
                         onAddFixPhase={
                           entry.agentType === "review"
