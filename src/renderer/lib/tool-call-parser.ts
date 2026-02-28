@@ -20,6 +20,11 @@ const toolParsers: Record<string, ToolParser> = {
     detail: typeof args.description === "string" ? args.description : undefined,
   }),
 
+  Agent: (args) => ({
+    label: "Running subtask",
+    detail: typeof args.description === "string" ? args.description : undefined,
+  }),
+
   Bash: (args) => ({
     label: "Running command",
     detail: typeof args.command === "string" ? args.command : undefined,

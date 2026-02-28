@@ -86,7 +86,7 @@ export function AgentBlock({ block, isStreaming, basePath }: AgentBlockProps) {
       return <CodeBlock content={block.content} language={block.language} />;
     case "tool_call":
       if (block.toolName === "TodoWrite") return null;
-      if (block.toolName === "Task" && block.childBlocks) {
+      if ((block.toolName === "Task" || block.toolName === "Agent") && block.childBlocks) {
         return <TaskAgentBlock block={block} isStreaming={isStreaming} />;
       }
       if (block.toolName === "ExitPlanMode" || block.toolName?.endsWith("__show_plan")) {
@@ -349,7 +349,7 @@ function TaskAgentBlock({ block, isStreaming }: { block: AgentBlockData; isStrea
       truncationClassName="text-indigo-800"
       header={<>
         <LayersIcon className="size-3 text-indigo-400" />
-        <span className="font-medium text-indigo-300">Task</span>
+        <span className="font-medium text-indigo-300">{block.toolName}</span>
         <span className="truncate text-muted-foreground">{description}</span>
         {isRunning && (
           <LoaderIcon className="size-3 animate-spin text-indigo-500 shrink-0" />

@@ -274,7 +274,7 @@ function handleSdkMessage(
             }
 
             // Detect background Task (agent) spawns
-            if (toolName === "Task" && toolInput.run_in_background === true) {
+            if ((toolName === "Task" || toolName === "Agent") && toolInput.run_in_background === true) {
               const tempId = block.id as string;
               addBackgroundTask(id, {
                 id: tempId,

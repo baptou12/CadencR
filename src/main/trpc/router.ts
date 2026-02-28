@@ -249,7 +249,7 @@ function buildBlocks(messages: AgentMessageRow[]): AgentBlock[] {
           }
           break;
         }
-        const isTask = msg.tool_name === "Task";
+        const isTask = msg.tool_name === "Task" || msg.tool_name === "Agent";
         const block: AgentBlock = {
           id,
           type: "tool_call",
