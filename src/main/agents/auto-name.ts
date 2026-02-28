@@ -102,12 +102,15 @@ async function runAutoName(
   );
   notifyDbUpdated("feature", featureId);
 
-  // Chain worktree setup after naming
+  // Chain worktree setup after naming (only for non-session features)
   if (projectId != null) {
-    const { setupWorktreeForFeature } = await import("../git/worktree");
-    setupWorktreeForFeature(projectId, featureId).catch((err) => {
-      console.error("[auto-name] Worktree setup failed:", err);
-    });
+    const feature = db.prepare("SELECT type FROM features WHERE id = ?").get(featureId) as { type: string } | undefined;
+    if (feature?.type !== "session") {
+      const { setupWorktreeForFeature } = await import("../git/worktree");
+      setupWorktreeForFeature(projectId, featureId).catch((err) => {
+        console.error("[auto-name] Worktree setup failed:", err);
+      });
+    }
   }
 }
 
