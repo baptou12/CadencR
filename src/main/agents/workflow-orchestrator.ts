@@ -1,22 +1,32 @@
 /**
  * Workflow Orchestrator — drives the feature workflow (PRD → Plan → Execute → QA → Review)
- * as a single state machine instead of scattered completion actions.
+ * using a centralized transition table instead of scattered advancement logic.
  */
 
 import { getDatabase } from "../db/database";
 import { getAutonomyLevel } from "./execute-agent";
 import { notifyDbUpdated } from "./session-persistence";
+import { resolveAgentCwd } from "./resolve-cwd";
+import { transitionFeature } from "./state-transitions";
 
-type WorkflowStep = "prd" | "plan" | "execute" | "qa" | "review";
+type WorkflowStep = "prd" | "plan" | "execute" | "qa" | "review" | "done";
 
-interface WorkflowConfig {
-  steps: WorkflowStep[];
+interface WorkflowContext {
+  hasPendingFixes: boolean;
 }
 
-const PRD_FIRST_STEPS: WorkflowStep[] = ["prd", "plan", "execute", "qa", "review"];
-const PLAN_FIRST_STEPS: WorkflowStep[] = ["plan", "execute", "qa", "review"];
+// ---------------------------------------------------------------------------
+// Transition Table — ALL workflow logic lives here
+// ---------------------------------------------------------------------------
 
-import { resolveAgentCwd } from "./resolve-cwd";
+const TRANSITIONS: Record<WorkflowStep, (ctx: WorkflowContext) => WorkflowStep> = {
+  prd:     () => "plan",
+  plan:    () => "execute",
+  execute: () => "qa",
+  qa:      (ctx) => ctx.hasPendingFixes ? "execute" : "review",
+  review:  (ctx) => ctx.hasPendingFixes ? "execute" : "done",
+  done:    () => "done",
+};
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -24,53 +34,35 @@ import { resolveAgentCwd } from "./resolve-cwd";
 
 export function initWorkflow(featureId: number, startStep: "prd" | "plan"): void {
   const db = getDatabase();
-  const steps = startStep === "prd" ? PRD_FIRST_STEPS : PLAN_FIRST_STEPS;
-  const config: WorkflowConfig = { steps };
   db.prepare("UPDATE features SET workflow_step = ?, workflow_config = ? WHERE id = ?")
-    .run(startStep, JSON.stringify(config), featureId);
+    .run(startStep, JSON.stringify({}), featureId);
 }
 
-export function advanceWorkflow(featureId: number): void {
+/**
+ * Central workflow advancement — called when any step completes.
+ * Reads current step, builds context, looks up next step from transition table,
+ * updates DB, and auto-runs if autonomy >= 2.
+ */
+export function onStepCompleted(featureId: number): void {
   const db = getDatabase();
-  const feat = db.prepare("SELECT workflow_step, workflow_config, project_id FROM features WHERE id = ?")
-    .get(featureId) as { workflow_step: string | null; workflow_config: string | null; project_id: number } | undefined;
+  const feat = db.prepare("SELECT workflow_step, project_id FROM features WHERE id = ?")
+    .get(featureId) as { workflow_step: string | null; project_id: number } | undefined;
 
-  if (!feat?.workflow_step || !feat.workflow_config) return;
+  if (!feat?.workflow_step) return;
 
-  const config: WorkflowConfig = JSON.parse(feat.workflow_config);
-  const currentIdx = config.steps.indexOf(feat.workflow_step as WorkflowStep);
-  if (currentIdx === -1) return;
+  const currentStep = feat.workflow_step as WorkflowStep;
+  if (currentStep === "done") return;
 
-  let nextStep: WorkflowStep | null = null;
+  // Build context by querying for pending fix phases
+  const ctx = buildWorkflowContext(featureId);
 
-  // If QA just finished, check for pending fix phases → loop back to execute
-  if (feat.workflow_step === "qa") {
-    const plan = db.prepare(
-      "SELECT id FROM plans WHERE feature_id = ? AND status = 'active' ORDER BY id DESC LIMIT 1",
-    ).get(featureId) as { id: number } | undefined;
-    if (plan) {
-      const pending = db.prepare(
-        "SELECT COUNT(*) as cnt FROM phases WHERE plan_id = ? AND status = 'pending'",
-      ).get(plan.id) as { cnt: number };
-      if (pending.cnt > 0) {
-        nextStep = "execute";
-      }
-    }
-  }
+  // Look up next step
+  const nextStep = TRANSITIONS[currentStep](ctx);
 
-  // Normal advancement
-  if (!nextStep) {
-    if (currentIdx + 1 < config.steps.length) {
-      nextStep = config.steps[currentIdx + 1];
-    }
-  }
-
-  if (!nextStep) {
+  if (nextStep === "done") {
     // Workflow complete
     db.prepare("UPDATE features SET workflow_step = NULL, workflow_config = NULL WHERE id = ?")
       .run(featureId);
-    // Transition feature to done
-    const { transitionFeature } = require("./state-transitions");
     transitionFeature(db, featureId, "done");
     notifyDbUpdated("feature", featureId);
     return;
@@ -80,12 +72,15 @@ export function advanceWorkflow(featureId: number): void {
     .run(nextStep, featureId);
   notifyDbUpdated("feature", featureId);
 
-  // Check autonomy — auto-run if >= 2
+  // Auto-run if autonomy >= 2
   const autonomy = getAutonomyLevel(featureId, feat.project_id);
   if (autonomy >= 2) {
     runStep(featureId, feat.project_id);
   }
 }
+
+/** Alias for backwards compatibility */
+export const advanceWorkflow = onStepCompleted;
 
 export function continueWorkflow(featureId: number): void {
   const db = getDatabase();
@@ -131,13 +126,12 @@ export function resumeWorkflows(): void {
   ).all() as { id: number; project_id: number; workflow_step: string }[];
 
   for (const feat of features) {
-    // Check if the current step's session is completed but workflow hasn't advanced
     const session = db.prepare(
       "SELECT id, status FROM agent_sessions WHERE feature_id = ? AND agent_type = ? ORDER BY id DESC LIMIT 1",
     ).get(feat.id, feat.workflow_step === "execute" ? "execute" : feat.workflow_step) as { id: number; status: string } | undefined;
 
     if (session?.status === "completed") {
-      advanceWorkflow(feat.id);
+      onStepCompleted(feat.id);
     }
   }
 }
@@ -145,6 +139,21 @@ export function resumeWorkflows(): void {
 // ---------------------------------------------------------------------------
 // Internal
 // ---------------------------------------------------------------------------
+
+function buildWorkflowContext(featureId: number): WorkflowContext {
+  const db = getDatabase();
+  const plan = db.prepare(
+    "SELECT id FROM plans WHERE feature_id = ? AND status = 'active' ORDER BY id DESC LIMIT 1",
+  ).get(featureId) as { id: number } | undefined;
+
+  if (!plan) return { hasPendingFixes: false };
+
+  const pending = db.prepare(
+    "SELECT COUNT(*) as cnt FROM phases WHERE plan_id = ? AND status = 'pending'",
+  ).get(plan.id) as { cnt: number };
+
+  return { hasPendingFixes: pending.cnt > 0 };
+}
 
 function runStep(featureId: number, projectId: number): void {
   const db = getDatabase();
@@ -156,7 +165,6 @@ function runStep(featureId: number, projectId: number): void {
 
   switch (feat.workflow_step as WorkflowStep) {
     case "prd": {
-      // PRD needs a description — read from feature prd or title
       const feature = db.prepare("SELECT prd, title FROM features WHERE id = ?")
         .get(featureId) as { prd: string | null; title: string } | undefined;
       const { startPrdAgent } = require("./agent-starters");

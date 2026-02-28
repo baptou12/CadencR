@@ -322,6 +322,26 @@ export const featuresRouter = router({
           "INSERT INTO feature_settings (feature_id, key, value) VALUES (?, ?, ?) ON CONFLICT(feature_id, key) DO UPDATE SET value = excluded.value",
         ).run(input.feature_id, input.key, input.value);
       }
+
+      // When autonomy is raised to >= 2, resume paused workflows and waiting execute sessions
+      if (input.key === "agent_autonomy" && Number(input.value) >= 2) {
+        try {
+          const { continueWorkflow } = require("../agents/workflow-orchestrator");
+          continueWorkflow(input.feature_id);
+        } catch { /* */ }
+
+        // Find waiting execute session for this feature and continue it
+        const waitingSession = db.prepare(
+          "SELECT id FROM agent_sessions WHERE feature_id = ? AND agent_type = 'execute' AND status = 'waiting' ORDER BY id DESC LIMIT 1",
+        ).get(input.feature_id) as { id: number } | undefined;
+        if (waitingSession) {
+          try {
+            const { continueExecuteAgent } = require("../agents/execute-agent");
+            continueExecuteAgent(waitingSession.id);
+          } catch { /* */ }
+        }
+      }
+
       return { success: true };
     }),
 

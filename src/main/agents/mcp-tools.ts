@@ -281,8 +281,8 @@ function createAgentDoneTool(sessionDbId: number, featureId: number) {
           .get(featureId) as { workflow_step: string | null; project_id: number } | undefined;
         if (wfFeat?.workflow_step) {
           try {
-            const { advanceWorkflow } = require("./workflow-orchestrator");
-            advanceWorkflow(featureId);
+            const { onStepCompleted } = require("./workflow-orchestrator");
+            onStepCompleted(featureId);
           } catch {
             // workflow-orchestrator not available (e.g. in tests)
           }
