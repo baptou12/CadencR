@@ -114,12 +114,15 @@ export function useWorkflowAgents({
 
   // --- Review state (pure derivation — no useState) ---
   // The review agent uses MCP tools to signal completion and create fix phases directly.
-  // A completed review session means the agent has finished (approved or fix phases created).
-  const { reviewComplete, reviewVerdict } = useMemo(() => {
-    if (!reviewSession || reviewSession.status !== "completed") {
-      return { reviewComplete: false, reviewVerdict: null as "approved" | "changes_requested" | null };
-    }
-    return { reviewComplete: true, reviewVerdict: "approved" as const };
+  // Verdict is derived from whether the review created fix phases (finalize_phases tool call).
+  // Derive review verdict from whether the review agent created fix phases.
+  // null = no action needed (approved or not yet complete), "changes_requested" = fix phases created.
+  const reviewVerdict = useMemo((): "changes_requested" | null => {
+    if (!reviewSession || reviewSession.status !== "completed") return null;
+    const calledFinalizePhases = reviewSession.blocks.some(
+      (b) => b.type === "tool_call" && b.toolName === "finalize_phases",
+    );
+    return calledFinalizePhases ? "changes_requested" : null;
   }, [reviewSession]);
 
   // --- Generic question response handler (works for ANY agent type) ---
@@ -144,7 +147,6 @@ export function useWorkflowAgents({
     risk: { status: statusOf(riskSession), blocks: blocksOf(riskSession) },
     review: { status: statusOf(reviewSession), blocks: blocksOf(reviewSession) },
     resumableByType: new Map<string, { claudeSessionId: string; sessionDbId: number }>(),
-    reviewComplete,
     reviewVerdict,
     // Loading states (from mutations)
     isPreparingWorktree: mut.isPreparingWorktree,

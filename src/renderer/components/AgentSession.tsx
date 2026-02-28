@@ -201,10 +201,8 @@ export interface AgentSessionProps {
   onToggle?: () => void;
 
   // --- Review verdict props (shown when agentType === "review") ---
-  /** Whether the review agent has completed */
-  reviewComplete?: boolean;
-  /** The review verdict detected from pattern matching */
-  reviewVerdict?: "approved" | "changes_requested" | null;
+  /** The review verdict: "changes_requested" if fix phases were created, null otherwise */
+  reviewVerdict?: "changes_requested" | null;
   /** Called when user clicks "Add Fix Phase" */
   onAddFixPhase?: () => void;
   /** Called when user clicks "Fix Immediately" */
@@ -308,7 +306,6 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
   disabled,
   open: controlledOpen,
   onToggle,
-  reviewComplete,
   reviewVerdict,
   onAddFixPhase,
   onFixImmediately,
@@ -436,7 +433,6 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
     onFixImmediately ? (
       <ReviewVerdictActions
         show={true}
-        reviewComplete={reviewComplete ?? false}
         reviewVerdict={reviewVerdict ?? null}
         onAddFixPhase={onAddFixPhase}
         onFixImmediately={onFixImmediately}
