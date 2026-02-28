@@ -136,10 +136,9 @@ export function listWorktrees(repoPath: string): WorktreeInfo[] {
 /**
  * Remove a git worktree.
  */
-export function removeWorktree(repoPath: string, worktreePath: string): void {
-  execSync(`git worktree remove "${worktreePath}" --force`, {
+export async function removeWorktree(repoPath: string, worktreePath: string): Promise<void> {
+  await execAsync(`git worktree remove "${worktreePath}" --force`, {
     cwd: repoPath,
-    stdio: "pipe",
     encoding: "utf-8",
   });
 }

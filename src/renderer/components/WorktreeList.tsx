@@ -30,6 +30,7 @@ export function WorktreeList({ projectId }: { projectId: number }) {
   });
 
   const [confirmPath, setConfirmPath] = useState<string | null>(null);
+  const [deletingPaths, setDeletingPaths] = useState<Set<string>>(new Set());
 
   if (isLoading) {
     return (
@@ -54,10 +55,17 @@ export function WorktreeList({ projectId }: { projectId: number }) {
       return;
     }
     setConfirmPath(null);
+    setDeletingPaths((prev) => new Set(prev).add(wt.path));
+    const onSettled = () =>
+      setDeletingPaths((prev) => {
+        const next = new Set(prev);
+        next.delete(wt.path);
+        return next;
+      });
     if (wt.featureId) {
-      deleteWorktree.mutate({ projectId, featureId: wt.featureId });
+      deleteWorktree.mutate({ projectId, featureId: wt.featureId }, { onSettled });
     } else {
-      removeOrphan.mutate({ projectId, worktreePath: wt.path });
+      removeOrphan.mutate({ projectId, worktreePath: wt.path }, { onSettled });
     }
   }
 
@@ -97,12 +105,16 @@ export function WorktreeList({ projectId }: { projectId: number }) {
             size="icon"
             className="h-6 w-6 shrink-0"
             onClick={() => handleDelete(wt)}
-            disabled={deleteWorktree.isLoading || removeOrphan.isLoading}
+            disabled={deletingPaths.has(wt.path)}
             title={
               confirmPath === wt.path ? "Click again to confirm" : "Remove worktree"
             }
           >
-            <Trash2 className="h-3 w-3" />
+            {deletingPaths.has(wt.path) ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <Trash2 className="h-3 w-3" />
+            )}
           </Button>
         </div>
       ))}

@@ -3,9 +3,14 @@ import path from "node:path";
 import os from "node:os";
 
 // Mock child_process before importing worktree
+const { mockExecCb } = vi.hoisted(() => ({
+  mockExecCb: vi.fn((_cmd: string, _opts: unknown, cb: (err: Error | null, result: { stdout: string; stderr: string }) => void) => {
+    cb(null, { stdout: "", stderr: "" });
+  }),
+}));
 vi.mock("node:child_process", () => ({
   execSync: vi.fn(),
-  exec: vi.fn(),
+  exec: mockExecCb,
 }));
 
 vi.mock("node:fs", () => ({
@@ -255,20 +260,31 @@ describe("createWorktree", () => {
 // ─── removeWorktree ──────────────────────────────────────────────────────────
 
 describe("removeWorktree", () => {
-  it("calls git worktree remove --force", () => {
-    mockExecSync.mockReturnValue("" as any);
-    removeWorktree("/repo", "/worktree/path");
-    expect(mockExecSync).toHaveBeenCalledWith(
+  it("calls git worktree remove --force asynchronously", async () => {
+    mockExecCb.mockImplementationOnce((_cmd: string, _opts: unknown, cb: (err: Error | null, result: { stdout: string; stderr: string }) => void) => {
+      cb(null, { stdout: "", stderr: "" });
+    });
+    await removeWorktree("/repo", "/worktree/path");
+    expect(mockExecCb).toHaveBeenCalledWith(
       'git worktree remove "/worktree/path" --force',
       expect.objectContaining({ cwd: "/repo" }),
+      expect.any(Function),
     );
   });
 
-  it("propagates errors from git", () => {
-    mockExecSync.mockImplementation(() => {
-      throw new Error("fatal: worktree not found");
+  it("does not block the event loop (returns a promise)", () => {
+    mockExecCb.mockImplementationOnce((_cmd: string, _opts: unknown, cb: (err: Error | null, result: { stdout: string; stderr: string }) => void) => {
+      cb(null, { stdout: "", stderr: "" });
     });
-    expect(() => removeWorktree("/repo", "/bad/path")).toThrow("fatal: worktree not found");
+    const result = removeWorktree("/repo", "/worktree/path");
+    expect(result).toBeInstanceOf(Promise);
+  });
+
+  it("propagates errors from git", async () => {
+    mockExecCb.mockImplementationOnce((_cmd: string, _opts: unknown, cb: (err: Error | null, result: { stdout: string; stderr: string }) => void) => {
+      cb(new Error("fatal: worktree not found"), { stdout: "", stderr: "" });
+    });
+    await expect(removeWorktree("/repo", "/bad/path")).rejects.toThrow("fatal: worktree not found");
   });
 });
 

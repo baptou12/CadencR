@@ -1596,7 +1596,7 @@ const gitRouter = router({
       }
 
       try {
-        removeWorktree(project.path, wtRow.value);
+        await removeWorktree(project.path, wtRow.value);
         db.prepare(
           "DELETE FROM feature_settings WHERE feature_id = ? AND key IN ('worktree_path', 'worktree_branch')",
         ).run(input.featureId);
@@ -1660,7 +1660,7 @@ const gitRouter = router({
 
   removeOrphanWorktree: publicProcedure
     .input(z.object({ projectId: z.number(), worktreePath: z.string() }))
-    .mutation(({ input }) => {
+    .mutation(async ({ input }) => {
       const db = getDatabase();
       const project = db
         .prepare("SELECT path FROM projects WHERE id = ?")
@@ -1668,7 +1668,7 @@ const gitRouter = router({
       if (!project?.path) throw new Error("Project not found");
 
       try {
-        removeWorktree(project.path, input.worktreePath);
+        await removeWorktree(project.path, input.worktreePath);
         return { success: true };
       } catch (err) {
         return { success: false, error: err instanceof Error ? err.message : String(err) };
