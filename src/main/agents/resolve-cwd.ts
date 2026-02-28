@@ -10,11 +10,18 @@ import type { SettingRow, ProjectRow } from "../db/types";
 export function resolveAgentCwd(featureId: number, projectId: number): { cwd: string; worktreePath?: string } {
   const db = getDatabase();
 
-  const wtRow = db
-    .prepare(
-      "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
-    )
-    .get(featureId) as SettingRow | undefined;
+  // Session-type features never use worktrees
+  const feature = db
+    .prepare("SELECT type FROM features WHERE id = ?")
+    .get(featureId) as { type: string } | undefined;
+
+  const wtRow = feature?.type === "session"
+    ? undefined
+    : db
+        .prepare(
+          "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
+        )
+        .get(featureId) as SettingRow | undefined;
 
   const project = db
     .prepare("SELECT path FROM projects WHERE id = ?")

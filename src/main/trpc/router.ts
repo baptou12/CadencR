@@ -794,12 +794,21 @@ const agentsRouter = router({
         prompt = input.prompt;
       }
 
-      // Resolve worktree path if the feature has one configured
-      const wtRow = db
-        .prepare("SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'")
-        .get(input.featureId) as { value: string } | undefined;
-      const cwd = wtRow?.value ?? project.path;
-      const worktreePath = wtRow?.value;
+      // Session-type features always use the project path directly (no worktree)
+      const featureRow = db
+        .prepare("SELECT type FROM features WHERE id = ?")
+        .get(input.featureId) as { type: string } | undefined;
+      let cwd = project.path;
+      let worktreePath: string | undefined;
+      if (featureRow?.type !== "session") {
+        const wtRow = db
+          .prepare("SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'")
+          .get(input.featureId) as { value: string } | undefined;
+        if (wtRow?.value) {
+          cwd = wtRow.value;
+          worktreePath = wtRow.value;
+        }
+      }
 
       const result = startSessionAgent({
         featureId: input.featureId,
@@ -838,9 +847,14 @@ const agentsRouter = router({
 
       // Step 1: Auto-name if feature has a default title
       const feature = db
-        .prepare("SELECT title FROM features WHERE id = ?")
-        .get(input.featureId) as { title: string } | undefined;
+        .prepare("SELECT title, type FROM features WHERE id = ?")
+        .get(input.featureId) as { title: string; type: string } | undefined;
       if (!feature) throw new Error(`Feature not found: ${input.featureId}`);
+
+      // Session-type features should never have worktrees
+      if (feature.type === "session") {
+        return { cwd: project.path };
+      }
 
       if (/^(Untitled Feature|Session \d+)$/i.test(feature.title)) {
         await runAutoNameBlocking(input.featureId, input.description, project.path);
