@@ -5,7 +5,7 @@ import type { FeatureSession } from "./useFeatureAgentState";
 
 const mockSubmitToolPermission = vi.fn();
 const mockSubmitPlanApproval = vi.fn();
-const mockClearPlanApproval = vi.fn();
+const mockStorePlanApproval = vi.fn();
 const mockSubmitAnswers = vi.fn();
 const mockResumeMutate = vi.fn().mockResolvedValue({});
 const mockSetPermissionMode = vi.fn();
@@ -19,8 +19,8 @@ vi.mock("@/trpc", () => ({
       submitPlanApproval: {
         useMutation: vi.fn(() => ({ mutate: mockSubmitPlanApproval })),
       },
-      clearPlanApproval: {
-        useMutation: vi.fn(() => ({ mutate: mockClearPlanApproval })),
+      storePlanApproval: {
+        useMutation: vi.fn(() => ({ mutate: mockStorePlanApproval })),
       },
       submitAnswers: {
         useMutation: vi.fn(() => ({ mutate: mockSubmitAnswers })),
@@ -75,6 +75,7 @@ describe("useAgentChat", () => {
   beforeEach(() => {
     mockSubmitToolPermission.mockClear();
     mockSubmitPlanApproval.mockClear();
+    mockStorePlanApproval.mockClear();
     mockSubmitAnswers.mockClear();
     mockResumeMutate.mockClear();
     mockRefetch.mockClear();
@@ -142,10 +143,10 @@ describe("useAgentChat", () => {
         result.current.handlePlanApprove(null);
       });
       expect(mockSubmitPlanApproval).not.toHaveBeenCalled();
-      expect(mockClearPlanApproval).not.toHaveBeenCalled();
+      expect(mockStorePlanApproval).not.toHaveBeenCalled();
     });
 
-    it("calls clearPlanApproval when subprocessId is null but sessionDbId is provided", () => {
+    it("stores approval in DB when subprocessId is null but sessionDbId is provided", () => {
       const { result } = renderHook(() =>
         useAgentChat({ featureId: 1, projectId: 1, refetch: mockRefetch }),
       );
@@ -153,20 +154,20 @@ describe("useAgentChat", () => {
         result.current.handlePlanApprove(null, 42);
       });
       expect(mockSubmitPlanApproval).not.toHaveBeenCalled();
-      expect(mockClearPlanApproval).toHaveBeenCalledWith(
-        { sessionDbId: 42 },
+      expect(mockStorePlanApproval).toHaveBeenCalledWith(
+        { sessionDbId: 42, approved: true },
         expect.objectContaining({ onSuccess: expect.any(Function) }),
       );
     });
 
-    it("sets planApprovalError when subprocessId is null and sessionDbId provided", () => {
+    it("does not set planApprovalError when storing approval for paused agent", () => {
       const { result } = renderHook(() =>
         useAgentChat({ featureId: 1, projectId: 1, refetch: mockRefetch }),
       );
       act(() => {
         result.current.handlePlanApprove(null, 42);
       });
-      expect(result.current.planApprovalError).toContain("no longer running");
+      expect(result.current.planApprovalError).toBeNull();
     });
   });
 
@@ -184,7 +185,7 @@ describe("useAgentChat", () => {
       );
     });
 
-    it("calls clearPlanApproval when subprocessId is null but sessionDbId is provided", () => {
+    it("stores rejection in DB when subprocessId is null but sessionDbId is provided", () => {
       const { result } = renderHook(() =>
         useAgentChat({ featureId: 1, projectId: 1, refetch: mockRefetch }),
       );
@@ -192,8 +193,8 @@ describe("useAgentChat", () => {
         result.current.handlePlanRequestChanges(null, "Some feedback", 99);
       });
       expect(mockSubmitPlanApproval).not.toHaveBeenCalled();
-      expect(mockClearPlanApproval).toHaveBeenCalledWith(
-        { sessionDbId: 99 },
+      expect(mockStorePlanApproval).toHaveBeenCalledWith(
+        { sessionDbId: 99, approved: false, feedback: "Some feedback" },
         expect.objectContaining({ onSuccess: expect.any(Function) }),
       );
     });

@@ -4,6 +4,7 @@
  * ExitPlanMode, and smart permission resolution.
  */
 
+import * as fs from "fs";
 import { getDatabase } from "../db/database";
 import { getSessionDbId, notifyDbUpdated } from "./session-persistence";
 import { resolvePermission, appendToSettingsLocal } from "./permissions";
@@ -188,11 +189,47 @@ async function handleExitPlanMode(
     } catch (e) { console.warn("[tool-permissions] Failed to check stored approval:", e); }
   }
 
+  // Read plan content from the last Write to .claude/plans/ in this session's messages
+  let planMarkdown: string | undefined;
   if (sDbId) {
     try {
       const db2 = getDatabase();
+      const planMsg = db2.prepare(
+        "SELECT content FROM agent_messages WHERE session_id = ? AND message_type = 'tool_call' AND tool_name = 'Write' AND content LIKE '%/.claude/plans/%' ORDER BY id DESC LIMIT 1",
+      ).get(sDbId) as { content: string } | undefined;
+      if (planMsg) {
+        const parsed = JSON.parse(planMsg.content) as { file_path?: string };
+        if (parsed.file_path) {
+          try { planMarkdown = fs.readFileSync(parsed.file_path, "utf-8"); } catch { /* file may not exist */ }
+        }
+      }
+    } catch (e) { console.warn("[tool-permissions] Failed to read plan file:", e); }
+  }
+
+  // Insert a synthetic show_plan block so the plan renders in the message list
+  if (sDbId && planMarkdown) {
+    try {
+      const db2 = getDatabase();
+      const syntheticToolUseId = `show_plan_${Date.now()}`;
+      const toolArgs = JSON.stringify({ plan: planMarkdown });
+      db2.prepare(
+        "INSERT INTO agent_messages (session_id, role, content, message_type, tool_name, tool_use_id) VALUES (?, ?, ?, ?, ?, ?)",
+      ).run(sDbId, "assistant", toolArgs, "tool_call", "mcp__productdevr-plan__show_plan", syntheticToolUseId);
+      const row2 = db2.prepare("SELECT feature_id FROM agent_sessions WHERE id = ?").get(sDbId) as { feature_id: number } | undefined;
+      if (row2) notifyDbUpdated("agent_session", row2.feature_id);
+    } catch (err) {
+      console.error("[tool-permissions] Failed to emit synthetic show_plan block:", err);
+    }
+  }
+
+  if (sDbId) {
+    try {
+      const db2 = getDatabase();
+      const approvalPayload = planMarkdown
+        ? JSON.stringify({ ...input, plan: planMarkdown })
+        : JSON.stringify(input);
       db2.prepare("UPDATE agent_sessions SET pending_plan_approval = ? WHERE id = ?")
-        .run(JSON.stringify(input), sDbId);
+        .run(approvalPayload, sDbId);
       const row = db2.prepare("SELECT feature_id FROM agent_sessions WHERE id = ?").get(sDbId) as { feature_id: number } | undefined;
       if (row) {
         featureIdForNotify = row.feature_id;

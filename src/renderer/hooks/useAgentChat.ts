@@ -20,7 +20,7 @@ interface UseAgentChatParams {
 export function useAgentChat({ featureId, projectId, refetch }: UseAgentChatParams) {
   const submitToolPermissionMutation = trpc.agents.submitToolPermission.useMutation();
   const submitPlanApprovalMutation = trpc.agents.submitPlanApproval.useMutation();
-  const clearPlanApprovalMutation = trpc.agents.clearPlanApproval.useMutation();
+  const storePlanApprovalMutation = trpc.agents.storePlanApproval.useMutation();
   const submitAnswersMutation = trpc.agents.submitAnswers.useMutation();
   const resumeMutation = trpc.agents.resume.useMutation();
 
@@ -35,26 +35,19 @@ export function useAgentChat({ featureId, projectId, refetch }: UseAgentChatPara
     [submitToolPermissionMutation],
   );
 
-  // Helper to clear a stale plan approval when subprocess is gone
-  const clearStalePlan = useCallback(
-    (sessionDbId: number | undefined) => {
-      if (!sessionDbId) return;
-      setPlanApprovalError("Agent is no longer running. The plan approval has been cleared — resume the conversation to continue.");
-      clearPlanApprovalMutation.mutate(
-        { sessionDbId },
-        { onSuccess: () => void refetch() },
-      );
-    },
-    [clearPlanApprovalMutation, refetch],
-  );
-
   const handlePlanApprove = useCallback(
     (subprocessId: string | null | undefined, sessionDbId?: number) => {
+      setPlanApprovalError(null);
       if (!subprocessId) {
-        clearStalePlan(sessionDbId);
+        // Subprocess gone (e.g. after restart) — store approval in DB for consumption on resume
+        if (sessionDbId) {
+          storePlanApprovalMutation.mutate(
+            { sessionDbId, approved: true },
+            { onSuccess: () => void refetch() },
+          );
+        }
         return;
       }
-      setPlanApprovalError(null);
       submitPlanApprovalMutation.mutate(
         { subprocessId, approved: true },
         {
@@ -70,16 +63,22 @@ export function useAgentChat({ featureId, projectId, refetch }: UseAgentChatPara
         },
       );
     },
-    [submitPlanApprovalMutation, clearStalePlan, refetch],
+    [submitPlanApprovalMutation, storePlanApprovalMutation, refetch],
   );
 
   const handlePlanRequestChanges = useCallback(
     (subprocessId: string | null | undefined, feedback: string, sessionDbId?: number) => {
+      setPlanApprovalError(null);
       if (!subprocessId) {
-        clearStalePlan(sessionDbId);
+        // Subprocess gone — store rejection in DB for consumption on resume
+        if (sessionDbId) {
+          storePlanApprovalMutation.mutate(
+            { sessionDbId, approved: false, feedback },
+            { onSuccess: () => void refetch() },
+          );
+        }
         return;
       }
-      setPlanApprovalError(null);
       submitPlanApprovalMutation.mutate(
         { subprocessId, approved: false, feedback },
         {
@@ -95,7 +94,7 @@ export function useAgentChat({ featureId, projectId, refetch }: UseAgentChatPara
         },
       );
     },
-    [submitPlanApprovalMutation, clearStalePlan, refetch],
+    [submitPlanApprovalMutation, storePlanApprovalMutation, refetch],
   );
 
   const handleAnswerSubmit = useCallback(

@@ -515,6 +515,25 @@ const agentsRouter = router({
       }
     }),
 
+  /** Store plan approval/rejection in DB when subprocess is gone (paused/dead) — consumed on resume */
+  storePlanApproval: publicProcedure
+    .input(z.object({ sessionDbId: z.number(), approved: z.boolean(), feedback: z.string().optional() }))
+    .mutation(({ input }) => {
+      try {
+        const db = getDatabase();
+        db.prepare("UPDATE agent_sessions SET plan_approval_result = ?, pending_plan_approval = NULL WHERE id = ?")
+          .run(JSON.stringify({ approved: input.approved, feedback: input.feedback }), input.sessionDbId);
+        if (input.approved) {
+          db.prepare("UPDATE agent_sessions SET permission_mode = 'acceptEdits' WHERE id = ?").run(input.sessionDbId);
+        }
+        const row = db.prepare("SELECT feature_id FROM agent_sessions WHERE id = ?").get(input.sessionDbId) as { feature_id: number } | undefined;
+        if (row) notifyDbUpdated("agent_session", row.feature_id);
+        return { success: true };
+      } catch {
+        return { success: false };
+      }
+    }),
+
   /** Submit PRD approval or rejection for a pending show_prd tool call */
   submitPrdApproval: publicProcedure
     .input(
