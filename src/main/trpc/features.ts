@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { router, publicProcedure } from "./trpc";
 import { getDatabase } from "../db/database";
-import type { FeatureRow, PlanRow, PhaseRow, CountRow, SettingRow } from "../db/types";
+import type { FeatureRow, PlanRow, PhaseRow, CountRow, SettingRow, ProjectRow } from "../db/types";
 import type { AgentType } from "../agents/types";
 import { getSubprocessIdsForSessionDbIds, notifyDbUpdated } from "../agents/session-persistence";
 import { stopSubprocess } from "../agents/subprocess-manager";
@@ -377,5 +377,28 @@ export const featuresRouter = router({
       db.prepare(`UPDATE features SET "${col}" = ? WHERE id = ?`)
         .run(input.modelId, input.featureId);
       return { success: true };
+    }),
+
+  /** Resolve the working directory for a feature (worktree path or project path). */
+  resolveWorkingDir: publicProcedure
+    .input(z.object({ featureId: z.number(), projectId: z.number() }))
+    .query(({ input }) => {
+      const db = getDatabase();
+      const feature = db
+        .prepare("SELECT type FROM features WHERE id = ?")
+        .get(input.featureId) as { type: string } | undefined;
+
+      // For non-session features, prefer the worktree path
+      if (feature && feature.type !== "session") {
+        const wtRow = db
+          .prepare("SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'")
+          .get(input.featureId) as SettingRow | undefined;
+        if (wtRow) return wtRow.value;
+      }
+
+      const project = db
+        .prepare("SELECT path FROM projects WHERE id = ?")
+        .get(input.projectId) as Pick<ProjectRow, "path"> | undefined;
+      return project?.path ?? null;
     }),
 });

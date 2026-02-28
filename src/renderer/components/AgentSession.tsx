@@ -347,6 +347,11 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
   const killBackgroundTask = trpc.agents.killBackgroundTask.useMutation();
   const availableModels = trpc.settings.getAvailableModels.useQuery();
   const models = useMemo(() => availableModels.data ?? [], [availableModels.data]);
+  const cwdQuery = trpc.features.resolveWorkingDir.useQuery(
+    { featureId: featureId!, projectId: projectId! },
+    { enabled: featureId != null && projectId != null },
+  );
+  const projectPath = cwdQuery.data ?? undefined;
 
   // Auto-scroll: only scroll to bottom when the prompt bar is focused
   useLayoutEffect(() => {
@@ -519,7 +524,7 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
         </div>
       )}
       {blocks.length > 0 && (
-        <AgentStream blocks={blocks} isStreaming={status === "running"} />
+        <AgentStream blocks={blocks} isStreaming={status === "running"} basePath={projectPath} />
       )}
     </>
   );
@@ -722,7 +727,7 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
                 No output yet
               </div>
             ) : (
-              <AgentStream blocks={blocks} isStreaming={status === "running"} />
+              <AgentStream blocks={blocks} isStreaming={status === "running"} basePath={projectPath} />
             )}
           </div>
 

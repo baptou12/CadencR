@@ -10,13 +10,20 @@ export interface InlineDiffBlockProps {
   filePath: string;
   oldContent: string;
   newContent: string;
+  /** Base path to strip from filePath for display (e.g. project or worktree root) */
+  basePath?: string;
 }
 
 /**
  * Compact inline diff block for displaying file changes during agent execution.
  * Uses @git-diff-view/react in unified mode with the Dracula theme.
  */
-export function InlineDiffBlock({ filePath, oldContent, newContent }: InlineDiffBlockProps) {
+export function InlineDiffBlock({ filePath, oldContent, newContent, basePath }: InlineDiffBlockProps) {
+  // Show relative path when file is inside the base path (resolved cwd)
+  const displayPath = useMemo(() => {
+    if (!basePath || !filePath.startsWith(basePath)) return filePath;
+    return filePath.slice(basePath.endsWith("/") ? basePath.length : basePath.length + 1);
+  }, [filePath, basePath]);
   const [shikiHighlighter, setShikiHighlighter] = useState<DiffHighlighter | null>(null);
 
   useEffect(() => {
@@ -72,7 +79,7 @@ export function InlineDiffBlock({ filePath, oldContent, newContent }: InlineDiff
     <div className="dracula-diff overflow-hidden rounded-lg border border-[#6272a4] bg-[#282a36]">
       {/* Compact file header */}
       <div className="flex items-center gap-2 border-b border-[#6272a4] bg-[color-mix(in_srgb,var(--drac-cyan)_15%,#282a36)] px-3 py-1 text-xs">
-        <span className="flex-1 truncate font-mono text-[#f8f8f2]">{filePath}</span>
+        <span className="flex-1 truncate font-mono text-[#f8f8f2]" title={filePath}>{displayPath}</span>
         <span className="text-[#50fa7b]">+{additions}</span>
         <span className="text-[#ff5555]">-{deletions}</span>
       </div>

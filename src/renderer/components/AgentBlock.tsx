@@ -74,9 +74,11 @@ interface AgentBlockProps {
   block: AgentBlockData;
   /** Whether the parent agent is still streaming */
   isStreaming?: boolean;
+  /** Base path to strip from file paths in diffs */
+  basePath?: string;
 }
 
-export function AgentBlock({ block, isStreaming }: AgentBlockProps) {
+export function AgentBlock({ block, isStreaming, basePath }: AgentBlockProps) {
   switch (block.type) {
     case "text":
       return <TextBlock content={block.content} />;
@@ -100,6 +102,7 @@ export function AgentBlock({ block, isStreaming }: AgentBlockProps) {
                 filePath={diff.filePath}
                 oldContent={diff.oldContent}
                 newContent={diff.newContent}
+                basePath={basePath}
               />
             </div>
           );
