@@ -353,13 +353,15 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
   );
   const projectPath = cwdQuery.data ?? undefined;
 
-  // Auto-scroll: only scroll to bottom when the prompt bar is focused
+  // Auto-scroll: scroll to bottom when the prompt bar is focused and blocks update.
+  // Use `blocks` (not `blocks.length`) so streaming deltas that update content
+  // within existing blocks also trigger a scroll.
   useLayoutEffect(() => {
     const el = scrollContainerRef.current;
     if (promptBarFocused && el) {
       el.scrollTop = el.scrollHeight;
     }
-  }, [promptBarFocused, blocks.length]);
+  }, [promptBarFocused, blocks]);
 
   // ---- Collapsible state ----
   const [internalOpen, setInternalOpen] = useState(true);
