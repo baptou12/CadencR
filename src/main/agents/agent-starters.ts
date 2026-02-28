@@ -261,6 +261,8 @@ export function startReviewAgent(options: {
     )
     .all(plan.id) as { step_number: number; title: string }[];
 
+  const autonomyLevel = getAutonomyLevel(options.featureId, options.projectId);
+
   return startUnifiedAgent(
     createReviewConfig({
       ...options,
@@ -270,6 +272,7 @@ export function startReviewAgent(options: {
       planContext: plan.context ?? undefined,
       planClarifications: plan.clarifications ?? undefined,
       completedPhases,
+      autonomyLevel,
     }),
   );
 }

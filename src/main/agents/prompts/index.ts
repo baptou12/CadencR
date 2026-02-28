@@ -2,6 +2,8 @@ import plan from "./plan.md?raw";
 import prd from "./prd.md?raw";
 import risk from "./risk.md?raw";
 import review from "./review.md?raw";
+import reviewCompletionApproval from "./review-completion-approval.md?raw";
+import reviewCompletionAuto from "./review-completion-auto.md?raw";
 import reviewFixer from "./review-fixer.md?raw";
 import reviewFixerCompletionApproval from "./review-fixer-completion-approval.md?raw";
 import reviewFixerCompletionAuto from "./review-fixer-completion-auto.md?raw";
@@ -17,6 +19,8 @@ export const prompts = {
   "prd.md": prd,
   "risk.md": risk,
   "review.md": review,
+  "review-completion-approval.md": reviewCompletionApproval,
+  "review-completion-auto.md": reviewCompletionAuto,
   "review-fixer.md": reviewFixer,
   "review-fixer-completion-approval.md": reviewFixerCompletionApproval,
   "review-fixer-completion-auto.md": reviewFixerCompletionAuto,

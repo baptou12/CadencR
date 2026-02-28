@@ -26,7 +26,15 @@ import type { ImageBlock, MessageContent, UnifiedAgentConfig, CompletionAction }
 const PLAN_SYSTEM_PROMPT = loadPrompt("plan.md");
 const PRD_SYSTEM_PROMPT = loadPrompt("prd.md");
 const RISK_SYSTEM_PROMPT = loadPrompt("risk.md");
-const REVIEW_SYSTEM_PROMPT = loadPrompt("review.md");
+function buildReviewSystemPrompt(autonomyLevel: 1 | 2 | 3): string {
+  const basePrompt = loadPrompt("review.md");
+  const completionSection =
+    autonomyLevel === 1
+      ? loadPrompt("review-completion-approval.md")
+      : loadPrompt("review-completion-auto.md");
+
+  return `${basePrompt}\n\n${completionSection}`;
+}
 
 
 function buildReviewFixerSystemPrompt(autonomyLevel: 1 | 2 | 3): string {
@@ -135,6 +143,7 @@ export interface ReviewConfigOptions {
   planClarifications?: string;
   /** Previously completed phase titles */
   completedPhases?: { step_number: number; title: string }[];
+  autonomyLevel?: 1 | 2 | 3;
 }
 
 export interface SessionConfigOptions {
@@ -349,7 +358,7 @@ export function createReviewConfig(opts: ReviewConfigOptions): UnifiedAgentConfi
   }
 
   sections.push(
-    `## Instructions\n\n**Plan ID: ${opts.planId}** — Use this ID when calling MCP tools like \`read_plan\`, \`list_phases\`, \`create_phase\`, \`finalize_phases\`, etc.\n\nReview the implementation against the specification above. Ask yourself: "If I had to build this from the spec, how should the code look?" Then compare with the actual changes.\n\nStart by running \`git diff\` and \`git diff --cached\` to see all changes. Review each change carefully and produce a detailed review report.\n\nYou have MCP tools available (prefixed with mcp__productdevr-review__) to create fix phases if changes are needed. After presenting your review, use AskUserQuestion to get user approval, then either call \`mark_agent_done\` (if approved) or create fix phases via the MCP tools and then call \`mark_agent_done\`.`,
+    `## Instructions\n\n**Plan ID: ${opts.planId}** — Use this ID when calling MCP tools like \`read_plan\`, \`list_phases\`, \`create_phase\`, \`finalize_phases\`, etc.\n\nReview the implementation against the specification above. Ask yourself: "If I had to build this from the spec, how should the code look?" Then compare with the actual changes.\n\nStart by running \`git diff\` and \`git diff --cached\` to see all changes. Review each change carefully and produce a detailed review report.\n\nYou have MCP tools available (prefixed with mcp__productdevr-review__) to create fix phases if changes are needed. Follow the completion instructions in your system prompt to finalize your review.`,
   );
 
   const prompt = sections.join("\n\n---\n\n");
@@ -371,7 +380,7 @@ export function createReviewConfig(opts: ReviewConfigOptions): UnifiedAgentConfi
 
   return {
     agentType: "review",
-    systemPrompt: REVIEW_SYSTEM_PROMPT,
+    systemPrompt: buildReviewSystemPrompt(opts.autonomyLevel ?? 1),
     completionActions,
     featureId: opts.featureId,
     projectId: opts.projectId,
