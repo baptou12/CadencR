@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 import { render, screen, waitFor } from "@/test-utils";
 import { WorktreeList } from "./WorktreeList";
 
-type MutateFn = (...args: unknown[]) => void;
 type OnSettledFn = () => void;
 
 const worktreeData = [
@@ -188,7 +187,7 @@ describe("WorktreeList", () => {
       ...hookOpts,
     }));
 
-    const { user, rerender } = render(<WorktreeList projectId={1} />);
+    const { user } = render(<WorktreeList projectId={1} />);
     const buttons = screen.getAllByRole("button");
 
     // Trigger delete

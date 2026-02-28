@@ -323,7 +323,7 @@ function UserMessageBlock({ content }: { content: string }) {
 const DEFAULT_VISIBLE_CHILDREN = 5;
 
 function TaskAgentBlock({ block, isStreaming }: { block: AgentBlockData; isStreaming?: boolean }) {
-  const children = block.childBlocks ?? [];
+  const toolCalls = (block.childBlocks ?? []).filter((c) => c.type === "tool_call");
   const isRunning = !block.taskComplete && !!isStreaming;
 
   // Parse description from args
@@ -339,7 +339,7 @@ function TaskAgentBlock({ block, isStreaming }: { block: AgentBlockData; isStrea
 
   return (
     <CollapsibleBlock
-      totalCount={children.length}
+      totalCount={toolCalls.length}
       visibleCount={DEFAULT_VISIBLE_CHILDREN}
       unit="actions"
       className="border-indigo-700 bg-indigo-500/5"
@@ -354,14 +354,14 @@ function TaskAgentBlock({ block, isStreaming }: { block: AgentBlockData; isStrea
         {isRunning && (
           <LoaderIcon className="size-3 animate-spin text-indigo-500 shrink-0" />
         )}
-        <span className="ml-auto text-muted-foreground shrink-0">{children.length} action{children.length !== 1 ? "s" : ""}</span>
+        <span className="ml-auto text-muted-foreground shrink-0">{toolCalls.length} action{toolCalls.length !== 1 ? "s" : ""}</span>
       </>}
     >
       {({ showAll }) => (<>
-        {(showAll ? children : children.slice(-DEFAULT_VISIBLE_CHILDREN)).map((child) => (
+        {(showAll ? toolCalls : toolCalls.slice(-DEFAULT_VISIBLE_CHILDREN)).map((child) => (
           <CompactBlock key={child.id} block={child} />
         ))}
-        {isRunning && children.length > 0 && (
+        {isRunning && toolCalls.length > 0 && (
           <div className="flex items-center gap-1.5 pt-1 text-xs text-muted-foreground">
             <LoaderIcon className="size-3 animate-spin" />
             Working...
@@ -374,6 +374,9 @@ function TaskAgentBlock({ block, isStreaming }: { block: AgentBlockData; isStrea
 
 function CompactBlock({ block }: { block: AgentBlockData }) {
   if (block.type === "tool_call" && block.toolName) {
+    if (block.toolName === "ExitPlanMode" || block.toolName.endsWith("__show_plan")) {
+      return <PlanBlock args={block.toolArgs} />;
+    }
     const summary = parseToolCall(block.toolName, block.toolArgs);
     return (
       <div className="flex items-center gap-1.5 text-xs text-muted-foreground py-0.5">
@@ -387,6 +390,15 @@ function CompactBlock({ block }: { block: AgentBlockData }) {
     const preview = block.content.length > 120 ? block.content.slice(0, 120) + "..." : block.content;
     return (
       <div className="text-xs text-muted-foreground py-0.5 truncate">{preview}</div>
+    );
+  }
+  if (block.type === "thinking" && block.content) {
+    const preview = block.content.length > 120 ? block.content.slice(0, 120) + "..." : block.content;
+    return (
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground py-0.5">
+        <BrainIcon className="size-2.5 text-purple-500 shrink-0" />
+        <span className="truncate">{preview}</span>
+      </div>
     );
   }
   if (block.type === "tool_result") {

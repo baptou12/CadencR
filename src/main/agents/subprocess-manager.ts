@@ -232,9 +232,42 @@ function handleSdkMessage(
       const content = message.content as
         | Array<Record<string, unknown>>
         | undefined;
-      // Content blocks are already persisted via stream_event handler (includePartialMessages).
-      // We only need to scan for side effects (EnterPlanMode, background tasks) here.
+      // Content blocks from the *parent* agent are already persisted via the
+      // stream_event handler (includePartialMessages).  However, subagent turns
+      // (parent_tool_use_id != null) do NOT produce stream_event messages, so we
+      // must persist their content blocks here from the full assistant message.
       if (content) {
+        const isSubagent = !!parentToolUseId;
+        if (isSubagent && sessionDbId) {
+          for (const block of content) {
+            if (block.type === "text" && typeof block.text === "string" && block.text) {
+              persistStreamEvent(sessionDbId, {
+                type: "content_block_start",
+                index: 0,
+                content_block: { type: "text", text: block.text },
+              } as StreamEvent, parentToolUseId);
+            } else if (block.type === "thinking" && typeof block.thinking === "string" && block.thinking) {
+              persistStreamEvent(sessionDbId, {
+                type: "content_block_start",
+                index: 0,
+                content_block: { type: "thinking", thinking: block.thinking },
+              } as StreamEvent, parentToolUseId);
+            } else if (block.type === "tool_use") {
+              persistStreamEvent(sessionDbId, {
+                type: "content_block_start",
+                index: 0,
+                content_block: {
+                  type: "tool_use",
+                  id: block.id as string,
+                  name: block.name as string,
+                  input: block.input as Record<string, unknown>,
+                },
+              } as StreamEvent, parentToolUseId);
+            }
+          }
+          const fid = getFeatureIdForSubprocess(id);
+          if (fid != null) throttledNotifyDbUpdated(id, fid);
+        }
         for (let i = 0; i < content.length; i++) {
           const block = content[i];
           if (block.type === "tool_use") {

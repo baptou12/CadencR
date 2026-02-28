@@ -48,7 +48,6 @@ import {
   submitPlanApproval,
   requestUserAnswers,
 } from "./tool-permissions";
-import { getActiveProcess } from "./subprocess-manager";
 import type { ManagedSubprocess } from "./subprocess-manager";
 
 // ---------------------------------------------------------------------------
