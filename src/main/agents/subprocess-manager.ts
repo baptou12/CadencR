@@ -232,32 +232,16 @@ function handleSdkMessage(
       const content = message.content as
         | Array<Record<string, unknown>>
         | undefined;
+      // Content blocks are already persisted via stream_event handler (includePartialMessages).
+      // We only need to scan for side effects (EnterPlanMode, background tasks) here.
       if (content) {
         for (let i = 0; i < content.length; i++) {
           const block = content[i];
-          if (block.type === "text") {
-            const event: StreamEvent = {
-              type: "content_block_start",
-              index: i,
-              content_block: { type: "text", text: block.text as string },
-            };
-            if (sessionDbId) persistStreamEvent(sessionDbId, event, parentToolUseId);
-            for (const listener of managed.eventListeners) listener(event);
-          } else if (block.type === "thinking") {
-            const event: StreamEvent = {
-              type: "content_block_start",
-              index: i,
-              content_block: { type: "thinking", thinking: block.thinking as string },
-            };
-            if (sessionDbId) persistStreamEvent(sessionDbId, event, parentToolUseId);
-            for (const listener of managed.eventListeners) listener(event);
-          } else if (block.type === "tool_use") {
+          if (block.type === "tool_use") {
             const toolName = block.name as string;
             const toolInput = block.input as Record<string, unknown>;
 
             // Detect EnterPlanMode tool call — update DB so UI reflects plan mode.
-            // We catch it here in the message stream to ensure the DB always
-            // reflects plan mode, regardless of how the SDK handles the tool.
             if (toolName === "EnterPlanMode" && sessionDbId) {
               try {
                 const db2 = getDatabase();
@@ -293,25 +277,8 @@ function handleSdkMessage(
                 spawnedAt: Date.now(),
               });
             }
-
-            const event: StreamEvent = {
-              type: "content_block_start",
-              index: i,
-              content_block: {
-                type: "tool_use",
-                id: block.id as string,
-                name: toolName,
-                input: toolInput,
-              },
-            };
-            if (sessionDbId) persistStreamEvent(sessionDbId, event, parentToolUseId);
-            for (const listener of managed.eventListeners) listener(event);
-
           }
         }
-        // Throttled DB notification for assistant content blocks
-        const fid2 = getFeatureIdForSubprocess(id);
-        if (fid2 != null) throttledNotifyDbUpdated(id, fid2);
       }
     }
   } else if (type === "user") {
@@ -593,6 +560,7 @@ async function runSdkQuery(
     pathToClaudeCodeExecutable: cliInfo.path,
     model: options.model ?? DEFAULT_MODEL,
     settingSources: ["user", "project", "local"],
+    includePartialMessages: true,
   };
 
   if (options.systemPrompt) {

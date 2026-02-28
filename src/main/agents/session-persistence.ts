@@ -7,6 +7,10 @@ const sessionMap = new Map<string, number>();
 // Map of session DB ID -> current model (updated on each message_start event or full assistant message)
 const sessionModelMap = new Map<number, string>();
 
+// Track in-progress tool_use blocks so we can accumulate input_json_delta chunks
+// Key: "sessionDbId:blockIndex" -> { dbRowId, partialJson }
+const pendingToolInputMap = new Map<string, { dbRowId: number; partialJson: string }>();
+
 /**
  * Set the current model for a session (called from subprocess-manager for full assistant messages).
  */
@@ -103,6 +107,13 @@ export function persistStreamEvent(
             model,
           ) as { lastInsertRowid: number | bigint };
 
+          // Track row ID so input_json_delta can update it
+          const key = `${sessionDbId}:${event.index}`;
+          pendingToolInputMap.set(key, {
+            dbRowId: Number(result.lastInsertRowid),
+            partialJson: "",
+          });
+
           // Track file-modifying tools
           if (toolName === "Write" || toolName === "Edit" || toolName === "NotebookEdit") {
             markSessionHasFileChanges(sessionDbId);
@@ -117,12 +128,26 @@ export function persistStreamEvent(
             sessionDbId,
             "assistant",
             event.delta.thinking,
-            "thinking",
+            "thinking_delta",
             null,
             null,
             ptuid,
             model,
           ) as { lastInsertRowid: number | bigint };
+        } else if (event.delta.type === "input_json_delta" && event.delta.partial_json) {
+          // Accumulate partial JSON for tool_use input and update the DB row
+          const key = `${sessionDbId}:${event.index}`;
+          const pending = pendingToolInputMap.get(key);
+          if (pending) {
+            pending.partialJson += event.delta.partial_json;
+            try {
+              const parsed = JSON.parse(pending.partialJson);
+              db.prepare("UPDATE agent_messages SET content = ? WHERE id = ?")
+                .run(JSON.stringify(parsed), pending.dbRowId);
+            } catch {
+              // JSON not yet complete — will update on next delta or content_block_stop
+            }
+          }
         } else if (event.delta.type === "text_delta" && event.delta.text) {
           result = insert.run(
             sessionDbId,
@@ -134,6 +159,23 @@ export function persistStreamEvent(
             ptuid,
             model,
           ) as { lastInsertRowid: number | bigint };
+        }
+        break;
+      }
+      case "content_block_stop": {
+        // Finalize any pending tool input accumulation
+        const stopKey = `${sessionDbId}:${event.index}`;
+        const pending = pendingToolInputMap.get(stopKey);
+        if (pending) {
+          // Final update with whatever JSON we accumulated
+          if (pending.partialJson) {
+            try {
+              const parsed = JSON.parse(pending.partialJson);
+              db.prepare("UPDATE agent_messages SET content = ? WHERE id = ?")
+                .run(JSON.stringify(parsed), pending.dbRowId);
+            } catch { /* best effort */ }
+          }
+          pendingToolInputMap.delete(stopKey);
         }
         break;
       }

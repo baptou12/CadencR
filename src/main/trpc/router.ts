@@ -216,6 +216,15 @@ function appendText(list: AgentBlock[], msgId: number, content: string, parentId
   }
 }
 
+function appendThinking(list: AgentBlock[], msgId: number, content: string, parentId?: string | null, createdAt?: string) {
+  const last = list.length > 0 ? list[list.length - 1] : null;
+  if (last && last.type === "thinking" && !last.parentToolUseId === !parentId) {
+    last.content += content;
+  } else {
+    list.push({ id: `msg-${msgId}`, type: "thinking", content, parentToolUseId: parentId, createdAt });
+  }
+}
+
 function buildBlocks(messages: AgentMessageRow[]): AgentBlock[] {
   const blocks: AgentBlock[] = [];
   const byToolUseId = new Map<string, AgentBlock>();
@@ -238,7 +247,8 @@ function buildBlocks(messages: AgentMessageRow[]): AgentBlock[] {
         appendText(list, msg.id, msg.content, msg.parent_tool_use_id, msg.created_at, msg.model);
         break;
       case "thinking":
-        list.push({ id, type: "thinking", content: msg.content, parentToolUseId: msg.parent_tool_use_id, createdAt: msg.created_at });
+      case "thinking_delta":
+        appendThinking(list, msg.id, msg.content, msg.parent_tool_use_id, msg.created_at);
         break;
       case "tool_call": {
         // Deduplicate: if we already have a block with this tool_use_id,
