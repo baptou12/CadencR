@@ -1,6 +1,15 @@
 import { describe, it, expect, vi } from "vitest";
+import { getDatabase } from "../db/database";
 
-vi.mock("../db/database");
+vi.mock("../db/database", () => ({
+  getDatabase: vi.fn(() => ({
+    prepare: vi.fn(() => ({
+      get: vi.fn(() => undefined),
+      all: vi.fn(() => []),
+      run: vi.fn(() => ({ lastInsertRowid: 1 })),
+    })),
+  })),
+}));
 vi.mock("./session-persistence", () => ({ notifyDbUpdated: vi.fn() }));
 vi.mock("./plan-approval", () => ({ waitForPlanApproval: vi.fn() }));
 vi.mock("./mcp-tools", () => ({
