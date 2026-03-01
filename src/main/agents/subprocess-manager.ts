@@ -863,7 +863,14 @@ export function killAllSubprocesses(): void {
 }
 
 // Re-export from extracted modules for backward compatibility
-export { submitToolPermission, submitUserAnswers, submitPlanApproval, submitPrdApproval } from "./tool-permissions";
+export { submitToolPermission, submitUserAnswers } from "./tool-permissions";
+import { submitPlanApproval as _submitPlanApproval, submitPrdApproval as _submitPrdApproval } from "./tool-permissions";
+export function submitPlanApproval(subprocessId: string, approved: boolean, feedback?: string) {
+  return _submitPlanApproval(subprocessId, approved, feedback, getActiveProcess);
+}
+export function submitPrdApproval(subprocessId: string, approved: boolean, feedback?: string) {
+  return _submitPrdApproval(subprocessId, approved, feedback, getActiveProcess);
+}
 import { getSupportedCommands as _getSupportedCommands } from "./slash-commands";
 export function getSupportedCommands(subprocessId: string | null, cwd: string) {
   return _getSupportedCommands(subprocessId, cwd, getActiveProcess);

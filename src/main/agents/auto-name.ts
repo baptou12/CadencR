@@ -1,4 +1,5 @@
 import { getDatabase } from "../db/database";
+import { setupWorktreeForFeature } from "../git/worktree";
 import { discoverClaudeCli } from "./cli-discovery";
 import { notifyDbUpdated } from "./session-persistence";
 
@@ -106,7 +107,6 @@ async function runAutoName(
   if (projectId != null) {
     const feature = db.prepare("SELECT type FROM features WHERE id = ?").get(featureId) as { type: string } | undefined;
     if (feature?.type !== "session") {
-      const { setupWorktreeForFeature } = await import("../git/worktree");
       setupWorktreeForFeature(projectId, featureId).catch((err) => {
         console.error("[auto-name] Worktree setup failed:", err);
       });

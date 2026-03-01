@@ -442,21 +442,14 @@ export function submitPlanApproval(
   subprocessId: string,
   approved: boolean,
   feedback?: string,
+  getActiveProcess?: (id: string) => unknown | undefined,
 ): { success: boolean; error?: string } {
   // Check if anyone is actually listening for this approval
   const eventName = `plan-approval:${subprocessId}`;
   const hasListener = questionEmitter.listenerCount(eventName) > 0;
 
   if (!hasListener) {
-    // Lazy import to avoid circular dependency (subprocess-manager imports tool-permissions)
-    let proc: unknown | undefined;
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const sm = require("./subprocess-manager");
-      proc = sm.getActiveProcess(subprocessId);
-    } catch {
-      proc = undefined;
-    }
+    const proc = getActiveProcess?.(subprocessId);
     if (!proc) {
       // Agent is paused/dead — store the approval result so it can be consumed on resume
       const sessionDbId = getSessionDbId(subprocessId);
@@ -513,19 +506,13 @@ export function submitPrdApproval(
   subprocessId: string,
   approved: boolean,
   feedback?: string,
+  getActiveProcess?: (id: string) => unknown | undefined,
 ): { success: boolean; error?: string } {
   const eventName = `prd-approval:${subprocessId}`;
   const hasListener = questionEmitter.listenerCount(eventName) > 0;
 
   if (!hasListener) {
-    let proc: unknown | undefined;
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const sm = require("./subprocess-manager");
-      proc = sm.getActiveProcess(subprocessId);
-    } catch {
-      proc = undefined;
-    }
+    const proc = getActiveProcess?.(subprocessId);
     if (!proc) {
       const sessionDbId = getSessionDbId(subprocessId);
       if (sessionDbId) {

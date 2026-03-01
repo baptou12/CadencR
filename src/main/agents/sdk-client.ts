@@ -31,7 +31,7 @@ export interface SdkClient {
 }
 
 // ---------------------------------------------------------------------------
-// Default implementation — real SDK
+// Default implementation — real SDK (lazy-loaded to allow test mocking)
 // ---------------------------------------------------------------------------
 
 let cachedSdk: SdkClient | null = null;
