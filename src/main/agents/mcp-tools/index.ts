@@ -6,6 +6,7 @@
  */
 
 export { renderPlanMarkdown } from "./helpers";
+export type { OnAgentDoneCallback } from "./shared-tools";
 export {
   readPlanTool,
   listPhasesTool,
