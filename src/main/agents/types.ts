@@ -16,7 +16,7 @@ export type MessageContent =
   | string
   | Array<{ type: "text"; text: string } | ImageBlock>;
 
-export type AgentType = "plan" | "prd" | "execute" | "risk" | "review" | "session" | "qa" | "review-fixer";
+export type AgentType = "plan" | "prd" | "execute" | "risk" | "review" | "session" | "qa" | "review-fixer" | "retro";
 
 /** Message start event — beginning of an assistant turn */
 export interface StreamMessageStart {

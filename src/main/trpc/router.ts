@@ -143,7 +143,7 @@ const settingsRouter = router({
   setModelSetting: publicProcedure
     .input(
       z.object({
-        agentType: z.enum(["plan", "prd", "execute", "risk", "review", "session", "qa", "review-fixer"]),
+        agentType: z.enum(["plan", "prd", "execute", "risk", "review", "session", "qa", "review-fixer", "retro"]),
         modelId: z.string(),
       }),
     )
@@ -185,7 +185,7 @@ function hasDefaultTitle(featureId: number): boolean {
   return row != null && /^Session \d+$/i.test(row.title);
 }
 
-const agentTypeSchema = z.enum(["plan", "prd", "execute", "risk", "review", "session", "qa", "review-fixer"]);
+const agentTypeSchema = z.enum(["plan", "prd", "execute", "risk", "review", "session", "qa", "review-fixer", "retro"]);
 
 // ---------------------------------------------------------------------------
 // Block builder — converts agent_messages rows into a nested block tree

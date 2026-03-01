@@ -68,6 +68,7 @@ export const AGENT_LABELS: Record<AgentType, string> = {
   session: "Session",
   qa: "QA",
   "review-fixer": "Review Fixer",
+  retro: "Retro",
 };
 
 // ---------------------------------------------------------------------------
