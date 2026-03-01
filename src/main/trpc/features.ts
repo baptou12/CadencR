@@ -1,6 +1,8 @@
 import { z } from "zod";
+import { Option } from "@swan-io/boxed";
 import { router, publicProcedure } from "./trpc";
 import { getDatabase } from "../db/database";
+import { queryOne, queryAll } from "../db/query";
 import type { FeatureRow, PlanRow, PhaseRow, CountRow, SettingRow, ProjectRow } from "../db/types";
 import type { AgentType } from "../agents/types";
 import { getSubprocessIdsForSessionDbIds, notifyDbUpdated } from "../agents/session-persistence";
@@ -20,19 +22,16 @@ export const featuresRouter = router({
       }),
     )
     .query(({ input }) => {
-      const db = getDatabase();
       if (input.status) {
-        return db
-          .prepare(
-            "SELECT id, project_id, title, status, type, created_at FROM features WHERE project_id = ? AND status = ? ORDER BY created_at DESC",
-          )
-          .all(input.project_id, input.status) as FeatureRow[];
+        return queryAll<FeatureRow>(
+          "SELECT id, project_id, title, status, type, created_at FROM features WHERE project_id = ? AND status = ? ORDER BY created_at DESC",
+          input.project_id, input.status,
+        ).getOr([]);
       }
-      return db
-        .prepare(
-          "SELECT id, project_id, title, status, type, created_at FROM features WHERE project_id = ? ORDER BY created_at DESC",
-        )
-        .all(input.project_id) as FeatureRow[];
+      return queryAll<FeatureRow>(
+        "SELECT id, project_id, title, status, type, created_at FROM features WHERE project_id = ? ORDER BY created_at DESC",
+        input.project_id,
+      ).getOr([]);
     }),
 
   create: publicProcedure
@@ -41,33 +40,27 @@ export const featuresRouter = router({
       const db = getDatabase();
       let title = input.title?.trim();
       if (!title) {
-        // Auto-generate "Session X" using unified counter across both feature types
-        const maxRow = db
-          .prepare(
-            "SELECT MAX(CAST(REPLACE(title, 'Session ', '') AS INTEGER)) as max_num FROM features WHERE project_id = ? AND title LIKE 'Session %'",
-          )
-          .get(input.project_id) as { max_num: number | null };
-        title = `Session ${(maxRow.max_num ?? 0) + 1}`;
+        const maxNum = queryOne<{ max_num: number | null }>(
+          "SELECT MAX(CAST(REPLACE(title, 'Session ', '') AS INTEGER)) as max_num FROM features WHERE project_id = ? AND title LIKE 'Session %'",
+          input.project_id,
+        ).map((r) => r.max_num ?? 0).getOr(0);
+        title = `Session ${maxNum + 1}`;
       }
       const result = db
         .prepare("INSERT INTO features (project_id, title) VALUES (?, ?)")
         .run(input.project_id, title);
-      const featureId = Number(result.lastInsertRowid);
-      return { id: featureId };
+      return { id: Number(result.lastInsertRowid) };
     }),
 
   createSession: publicProcedure
     .input(z.object({ project_id: z.number() }))
     .mutation(({ input }) => {
       const db = getDatabase();
-      // Use MAX to extract the highest session number so deletions don't cause collisions
-      // Unified counter across both feature types
-      const maxRow = db
-        .prepare(
-          "SELECT MAX(CAST(REPLACE(title, 'Session ', '') AS INTEGER)) as max_num FROM features WHERE project_id = ? AND title LIKE 'Session %'",
-        )
-        .get(input.project_id) as { max_num: number | null };
-      const title = `Session ${(maxRow.max_num ?? 0) + 1}`;
+      const maxNum = queryOne<{ max_num: number | null }>(
+        "SELECT MAX(CAST(REPLACE(title, 'Session ', '') AS INTEGER)) as max_num FROM features WHERE project_id = ? AND title LIKE 'Session %'",
+        input.project_id,
+      ).map((r) => r.max_num ?? 0).getOr(0);
+      const title = `Session ${maxNum + 1}`;
       const result = db
         .prepare("INSERT INTO features (project_id, title, type) VALUES (?, ?, 'session')")
         .run(input.project_id, title);
@@ -93,9 +86,10 @@ export const featuresRouter = router({
   delete: publicProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
     const db = getDatabase();
     // Stop any running subprocesses for this feature's agent sessions
-    const sessionIds = db
-      .prepare("SELECT id FROM agent_sessions WHERE feature_id = ? AND status IN ('running', 'paused')")
-      .all(input.id) as { id: number }[];
+    const sessionIds = queryAll<{ id: number }>(
+      "SELECT id FROM agent_sessions WHERE feature_id = ? AND status IN ('running', 'paused')",
+      input.id,
+    ).getOr([]);
     if (sessionIds.length > 0) {
       const subprocessIds = getSubprocessIdsForSessionDbIds(sessionIds.map((s) => s.id));
       for (const spId of subprocessIds) {
@@ -103,7 +97,7 @@ export const featuresRouter = router({
       }
     }
     // Delete child records that reference this feature
-    const planIds = db.prepare("SELECT id FROM plans WHERE feature_id = ?").all(input.id) as { id: number }[];
+    const planIds = queryAll<{ id: number }>("SELECT id FROM plans WHERE feature_id = ?", input.id).getOr([]);
     for (const plan of planIds) {
       db.prepare("DELETE FROM phases WHERE plan_id = ?").run(plan.id);
     }
@@ -120,115 +114,122 @@ export const featuresRouter = router({
   getPrd: publicProcedure
     .input(z.object({ feature_id: z.number() }))
     .query(({ input }) => {
-      const db = getDatabase();
-      const row = db.prepare("SELECT prd FROM features WHERE id = ?").get(input.feature_id) as { prd: string | null } | undefined;
-      return { prd: row?.prd ?? null };
+      const prd = queryOne<{ prd: string | null }>(
+        "SELECT prd FROM features WHERE id = ?",
+        input.feature_id,
+      ).flatMap((r) => Option.fromNullable(r.prd));
+      return { prd: prd.toNull() };
     }),
 
   isEmpty: publicProcedure
     .input(z.object({ id: z.number() }))
     .query(({ input }) => {
-      const db = getDatabase();
-      const feature = db.prepare("SELECT type, prd FROM features WHERE id = ?").get(input.id) as { type: string; prd: string | null } | undefined;
-      if (!feature) return { empty: true };
-      // Never direct-delete if there are active (running/paused/waiting) sessions
-      const activeSession = db.prepare(
-        "SELECT 1 FROM agent_sessions WHERE feature_id = ? AND status IN ('running', 'paused', 'waiting') LIMIT 1",
-      ).get(input.id);
-      if (activeSession) return { empty: false };
-      if (feature.type === "session") {
-        // Standalone agent: empty if no messages in any agent conversation
-        const msg = db.prepare(
-          "SELECT 1 FROM agent_messages WHERE session_id IN (SELECT id FROM agent_sessions WHERE feature_id = ?) LIMIT 1",
-        ).get(input.id);
-        return { empty: !msg };
-      }
-      // Feature workflow: empty if no PRD and no plan
-      const hasPrd = feature.prd != null && feature.prd.trim() !== "";
-      const hasPlan = !!db.prepare("SELECT 1 FROM plans WHERE feature_id = ? LIMIT 1").get(input.id);
-      return { empty: !hasPrd && !hasPlan };
+      return queryOne<{ type: string; prd: string | null }>(
+        "SELECT type, prd FROM features WHERE id = ?",
+        input.id,
+      ).match({
+        None: () => ({ empty: true }),
+        Some: (feature) => {
+          // Never direct-delete if there are active (running/paused/waiting) sessions
+          const activeSession = queryOne<Record<string, unknown>>(
+            "SELECT 1 FROM agent_sessions WHERE feature_id = ? AND status IN ('running', 'paused', 'waiting') LIMIT 1",
+            input.id,
+          );
+          if (activeSession.isSome()) return { empty: false };
+
+          if (feature.type === "session") {
+            const msg = queryOne<Record<string, unknown>>(
+              "SELECT 1 FROM agent_messages WHERE session_id IN (SELECT id FROM agent_sessions WHERE feature_id = ?) LIMIT 1",
+              input.id,
+            );
+            return { empty: msg.isNone() };
+          }
+
+          const hasPrd = feature.prd != null && feature.prd.trim() !== "";
+          const hasPlan = queryOne<Record<string, unknown>>(
+            "SELECT 1 FROM plans WHERE feature_id = ? LIMIT 1",
+            input.id,
+          ).isSome();
+          return { empty: !hasPrd && !hasPlan };
+        },
+      });
     }),
 
   getById: publicProcedure
     .input(z.object({ id: z.number() }))
     .query(({ input }) => {
-      const db = getDatabase();
-      return (db
-        .prepare(
-          "SELECT id, project_id, title, status, type, created_at FROM features WHERE id = ?",
-        )
-        .get(input.id) as FeatureRow | undefined) ?? null;
+      return queryOne<FeatureRow>(
+        "SELECT id, project_id, title, status, type, created_at FROM features WHERE id = ?",
+        input.id,
+      ).toNull();
     }),
 
   getPlanProgress: publicProcedure
     .input(z.object({ feature_id: z.number() }))
     .query(({ input }) => {
-      const db = getDatabase();
-      const plan = db
-        .prepare("SELECT id FROM plans WHERE feature_id = ? LIMIT 1")
-        .get(input.feature_id) as Pick<PlanRow, "id"> | undefined;
-      if (!plan) {
-        return { total: 0, done: 0 };
-      }
-      const total = (
-        db.prepare("SELECT COUNT(*) as count FROM phases WHERE plan_id = ?").get(plan.id) as CountRow
-      ).count;
-      const done = (
-        db
-          .prepare(
+      return queryOne<Pick<PlanRow, "id">>(
+        "SELECT id FROM plans WHERE feature_id = ? LIMIT 1",
+        input.feature_id,
+      ).match({
+        None: () => ({ total: 0, done: 0 }),
+        Some: (plan) => {
+          const total = queryOne<CountRow>(
+            "SELECT COUNT(*) as count FROM phases WHERE plan_id = ?",
+            plan.id,
+          ).map((r) => r.count).getOr(0);
+          const done = queryOne<CountRow>(
             "SELECT COUNT(*) as count FROM phases WHERE plan_id = ? AND status = 'completed'",
-          )
-          .get(plan.id) as CountRow
-      ).count;
-      return { total, done };
+            plan.id,
+          ).map((r) => r.count).getOr(0);
+          return { total, done };
+        },
+      });
     }),
 
   getProgress: publicProcedure
     .input(z.object({ feature_id: z.number() }))
     .query(({ input }) => {
-      const db = getDatabase();
-      const plan = db
-        .prepare("SELECT id FROM plans WHERE feature_id = ? ORDER BY created_at DESC LIMIT 1")
-        .get(input.feature_id) as Pick<PlanRow, "id"> | undefined;
-      if (!plan) {
-        return { total: 0, done: 0 };
-      }
-      const total = (
-        db.prepare("SELECT COUNT(*) as count FROM phases WHERE plan_id = ?").get(plan.id) as CountRow
-      ).count;
-      const done = (
-        db
-          .prepare(
+      return queryOne<Pick<PlanRow, "id">>(
+        "SELECT id FROM plans WHERE feature_id = ? ORDER BY created_at DESC LIMIT 1",
+        input.feature_id,
+      ).match({
+        None: () => ({ total: 0, done: 0 }),
+        Some: (plan) => {
+          const total = queryOne<CountRow>(
+            "SELECT COUNT(*) as count FROM phases WHERE plan_id = ?",
+            plan.id,
+          ).map((r) => r.count).getOr(0);
+          const done = queryOne<CountRow>(
             "SELECT COUNT(*) as count FROM phases WHERE plan_id = ? AND status = 'completed'",
-          )
-          .get(plan.id) as CountRow
-      ).count;
-      return { total, done };
+            plan.id,
+          ).map((r) => r.count).getOr(0);
+          return { total, done };
+        },
+      });
     }),
 
   getPlanWithPhases: publicProcedure
     .input(z.object({ feature_id: z.number() }))
     .query(({ input }) => {
-      const db = getDatabase();
-      const plan = db
-        .prepare(
-          "SELECT id, feature_id, title, status, raw_markdown, created_at, updated_at FROM plans WHERE feature_id = ? ORDER BY created_at DESC LIMIT 1",
-        )
-        .get(input.feature_id) as PlanRow | undefined;
-      if (!plan) return null;
-      const phases = db
-        .prepare(
-          "SELECT id, plan_id, step_number, title, status, complexity, commit_message, prompt, order_index, implementation_notes, deviations, phase_type FROM phases WHERE plan_id = ? ORDER BY step_number ASC, order_index ASC",
-        )
-        .all(plan.id) as PhaseRow[];
-      return { ...plan, phases };
+      return queryOne<PlanRow>(
+        "SELECT id, feature_id, title, status, raw_markdown, created_at, updated_at FROM plans WHERE feature_id = ? ORDER BY created_at DESC LIMIT 1",
+        input.feature_id,
+      ).match({
+        None: () => null,
+        Some: (plan) => {
+          const phases = queryAll<PhaseRow>(
+            "SELECT id, plan_id, step_number, title, status, complexity, commit_message, prompt, order_index, implementation_notes, deviations, phase_type FROM phases WHERE plan_id = ? ORDER BY step_number ASC, order_index ASC",
+            plan.id,
+          ).getOr([]);
+          return { ...plan, phases };
+        },
+      });
     }),
 
   getSettings: publicProcedure
     .input(z.object({ feature_id: z.number() }))
     .query(({ input }) => {
       const db = getDatabase();
-      // Combine real columns + remaining EAV rows (worktree_path, worktree_branch, etc.)
       const feature = db
         .prepare("SELECT model_plan, model_prd, model_execute, model_risk, model_review, model_session, model_qa, agent_autonomy, parallel_execution FROM features WHERE id = ?")
         .get(input.feature_id) as Record<string, string | null> | undefined;
@@ -240,9 +241,10 @@ export const featuresRouter = router({
         }
       }
 
-      const rows = db
-        .prepare("SELECT key, value FROM feature_settings WHERE feature_id = ?")
-        .all(input.feature_id) as SettingRow[];
+      const rows = queryAll<SettingRow>(
+        "SELECT key, value FROM feature_settings WHERE feature_id = ?",
+        input.feature_id,
+      ).getOr([]);
       for (const r of rows) {
         result[r.key] = r.value;
       }
@@ -254,18 +256,24 @@ export const featuresRouter = router({
     .mutation(({ input }) => {
       const db = getDatabase();
 
-      // Get the phase and its plan
-      const phase = db.prepare("SELECT id, plan_id, step_number, status FROM phases WHERE id = ?").get(input.phase_id) as Pick<PhaseRow, "id" | "plan_id" | "step_number" | "status"> | undefined;
-      if (!phase) throw new Error("Phase not found");
+      const phase = queryOne<Pick<PhaseRow, "id" | "plan_id" | "step_number" | "status">>(
+        "SELECT id, plan_id, step_number, status FROM phases WHERE id = ?",
+        input.phase_id,
+      ).toResult("Phase not found").match({
+        Error: (msg) => { throw new Error(msg); },
+        Ok: (v) => v,
+      });
+
       if (phase.status !== "completed" && phase.status !== "error") {
         throw new Error("Can only reset phases in completed or error status");
       }
 
       // Check that the next phase (by step_number) is not completed
-      const nextPhase = db.prepare(
-        "SELECT id, status FROM phases WHERE plan_id = ? AND step_number > ? ORDER BY step_number ASC, order_index ASC LIMIT 1"
-      ).get(phase.plan_id, phase.step_number) as Pick<PhaseRow, "id" | "status"> | undefined;
-      if (nextPhase && nextPhase.status === "completed") {
+      const nextPhase = queryOne<Pick<PhaseRow, "id" | "status">>(
+        "SELECT id, status FROM phases WHERE plan_id = ? AND step_number > ? ORDER BY step_number ASC, order_index ASC LIMIT 1",
+        phase.plan_id, phase.step_number,
+      );
+      if (nextPhase.isSome() && nextPhase.get().status === "completed") {
         throw new Error("Cannot reset a phase when the next phase is already completed");
       }
 
@@ -292,15 +300,21 @@ export const featuresRouter = router({
     }))
     .mutation(({ input }) => {
       const db = getDatabase();
-      const phase = db.prepare("SELECT id, plan_id FROM phases WHERE id = ?")
-        .get(input.phase_id) as Pick<PhaseRow, "id" | "plan_id"> | undefined;
-      if (!phase) throw new Error("Phase not found");
+
+      const phase = queryOne<Pick<PhaseRow, "id" | "plan_id">>(
+        "SELECT id, plan_id FROM phases WHERE id = ?",
+        input.phase_id,
+      ).toResult("Phase not found").match({
+        Error: (msg) => { throw new Error(msg); },
+        Ok: (v) => v,
+      });
 
       db.prepare("UPDATE phases SET status = ? WHERE id = ?").run(input.status, input.phase_id);
 
-      const plan = db.prepare("SELECT feature_id FROM plans WHERE id = ?")
-        .get(phase.plan_id) as Pick<PlanRow, "feature_id"> | undefined;
-      if (plan) notifyDbUpdated("phase", plan.feature_id);
+      queryOne<Pick<PlanRow, "feature_id">>(
+        "SELECT feature_id FROM plans WHERE id = ?",
+        phase.plan_id,
+      ).tapSome((plan) => notifyDbUpdated("phase", plan.feature_id));
 
       return { success: true };
     }),
@@ -330,39 +344,36 @@ export const featuresRouter = router({
           continueWorkflow(input.feature_id);
         } catch { /* */ }
 
-        // Find waiting execute session for this feature and continue it
-        const waitingSession = db.prepare(
+        queryOne<{ id: number }>(
           "SELECT id FROM agent_sessions WHERE feature_id = ? AND agent_type = 'execute' AND status = 'waiting' ORDER BY id DESC LIMIT 1",
-        ).get(input.feature_id) as { id: number } | undefined;
-        if (waitingSession) {
+          input.feature_id,
+        ).tapSome((session) => {
           try {
             const { continueExecuteAgent } = require("../agents/execute-agent");
-            continueExecuteAgent(waitingSession.id);
+            continueExecuteAgent(session.id);
           } catch { /* */ }
-        }
+        });
       }
 
       return { success: true };
     }),
 
-  /** Get model settings for all agent types from feature columns (empty string = inherit from parent) */
   getModelSettings: publicProcedure
     .input(z.object({ featureId: z.number() }))
     .query(({ input }) => {
-      const db = getDatabase();
-      const row = db
-        .prepare("SELECT model_plan, model_prd, model_execute, model_risk, model_review, model_session, model_qa FROM features WHERE id = ?")
-        .get(input.featureId) as Record<string, string | null> | undefined;
+      const row = queryOne<Record<string, string | null>>(
+        "SELECT model_plan, model_prd, model_execute, model_risk, model_review, model_session, model_qa FROM features WHERE id = ?",
+        input.featureId,
+      );
 
       const agentTypes = ["plan", "prd", "execute", "risk", "review", "session", "qa"] as const;
       const result: Record<string, string> = {};
       for (const at of agentTypes) {
-        result[at] = row?.[`model_${at}`] ?? "";
+        result[at] = row.map((r) => r[`model_${at}`] ?? "").getOr("");
       }
       return result as Record<AgentType, string>;
     }),
 
-  /** Set a model for a specific agent type in feature settings */
   setModelSetting: publicProcedure
     .input(
       z.object({
@@ -379,26 +390,28 @@ export const featuresRouter = router({
       return { success: true };
     }),
 
-  /** Resolve the working directory for a feature (worktree path or project path). */
   resolveWorkingDir: publicProcedure
     .input(z.object({ featureId: z.number(), projectId: z.number() }))
     .query(({ input }) => {
-      const db = getDatabase();
-      const feature = db
-        .prepare("SELECT type FROM features WHERE id = ?")
-        .get(input.featureId) as { type: string } | undefined;
-
-      // For non-session features, prefer the worktree path
-      if (feature && feature.type !== "session") {
-        const wtRow = db
-          .prepare("SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'")
-          .get(input.featureId) as SettingRow | undefined;
-        if (wtRow) return wtRow.value;
-      }
-
-      const project = db
-        .prepare("SELECT path FROM projects WHERE id = ?")
-        .get(input.projectId) as Pick<ProjectRow, "path"> | undefined;
-      return project?.path ?? null;
+      return queryOne<{ type: string }>(
+        "SELECT type FROM features WHERE id = ?",
+        input.featureId,
+      ).flatMap((feature) => {
+        if (feature.type !== "session") {
+          return queryOne<SettingRow>(
+            "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
+            input.featureId,
+          ).map((r) => r.value);
+        }
+        return Option.None();
+      }).match({
+        Some: (path) => path,
+        None: () => {
+          return queryOne<Pick<ProjectRow, "path">>(
+            "SELECT path FROM projects WHERE id = ?",
+            input.projectId,
+          ).map((p) => p.path).toNull();
+        },
+      });
     }),
 });

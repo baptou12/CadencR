@@ -26,6 +26,7 @@
     "@git-diff-view/lowlight": "^0.0.39",
     "@git-diff-view/react": "^0.0.39",
     "@git-diff-view/shiki": "^0.0.39",
+    "@swan-io/boxed": "^3.2.1",
     "@tanstack/react-query": "^4.43.0",
     "@tanstack/react-router": "^1.159.5",
     "@tanstack/router-vite-plugin": "^1.159.5",
