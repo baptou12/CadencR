@@ -32,11 +32,11 @@ interface ModelSelectorProps {
 
 export function ModelSelector({ level, projectId, featureId }: ModelSelectorProps) {
   const utils = trpc.useUtils();
-  const availableModels = trpc.settings.getAvailableModels.useQuery();
+  const availableModels = trpc.workspace.getAvailableModels.useQuery();
   const models = availableModels.data ?? [];
 
   // Fetch model settings for this level
-  const globalSettings = trpc.settings.getModelSettings.useQuery(undefined, {
+  const globalSettings = trpc.workspace.getModelSettings.useQuery(undefined, {
     enabled: level === "global",
   });
   const projectSettings = trpc.projects.getModelSettings.useQuery(
@@ -49,7 +49,7 @@ export function ModelSelector({ level, projectId, featureId }: ModelSelectorProp
   );
 
   // Also fetch parent settings to show effective model as placeholder
-  const parentGlobalSettings = trpc.settings.getModelSettings.useQuery(undefined, {
+  const parentGlobalSettings = trpc.workspace.getModelSettings.useQuery(undefined, {
     enabled: level !== "global",
   });
   const parentProjectSettings = trpc.projects.getModelSettings.useQuery(
@@ -57,8 +57,8 @@ export function ModelSelector({ level, projectId, featureId }: ModelSelectorProp
     { enabled: level === "feature" && projectId != null },
   );
 
-  const globalMutation = trpc.settings.setModelSetting.useMutation({
-    onSuccess: () => utils.settings.getModelSettings.invalidate(),
+  const globalMutation = trpc.workspace.setModelSetting.useMutation({
+    onSuccess: () => utils.workspace.getModelSettings.invalidate(),
   });
   const projectMutation = trpc.projects.setModelSetting.useMutation({
     onSuccess: () => utils.projects.getModelSettings.invalidate(),

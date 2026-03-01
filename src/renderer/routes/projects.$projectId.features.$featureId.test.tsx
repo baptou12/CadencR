@@ -114,8 +114,10 @@ vi.mock("@/trpc", () => {
       features: {
         getById: { useQuery: mocks.mockGetByIdQuery },
       },
-      agents: {
+      workflow: {
         startSession: { useMutation: vi.fn(() => ({ mutateAsync: vi.fn(), isLoading: false })) },
+      },
+      agents: {
         sendMessage: { useMutation: vi.fn(() => ({ mutateAsync: vi.fn() })) },
         interrupt: { useMutation: vi.fn(() => ({ mutateAsync: vi.fn() })) },
         resume: { useMutation: vi.fn(() => ({ mutateAsync: vi.fn() })) },

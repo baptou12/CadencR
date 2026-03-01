@@ -8,8 +8,8 @@ import { trpc } from "@/trpc";
 
 export function usePromptHistory(projectId: number) {
   const utils = trpc.useContext();
-  const historyQuery = trpc.promptHistory.getHistory.useQuery({ projectId });
-  const addEntryMutation = trpc.promptHistory.addEntry.useMutation();
+  const historyQuery = trpc.workspace.getPromptHistory.useQuery({ projectId });
+  const addEntryMutation = trpc.workspace.addPromptEntry.useMutation();
 
   // Use a ref so callbacks don't recreate when data changes
   const historyRef = useRef<string[]>([]);
@@ -78,14 +78,14 @@ export function usePromptHistory(projectId: number) {
         { projectId, content },
         {
           onSuccess: () => {
-            void utils.promptHistory.getHistory.invalidate({ projectId });
+            void utils.workspace.getPromptHistory.invalidate({ projectId });
           },
         },
       );
       setHistoryIndex(-1);
       setTempDraft("");
     },
-    [projectId, addEntryMutation, utils.promptHistory.getHistory],
+    [projectId, addEntryMutation, utils.workspace.getPromptHistory],
   );
 
   /**

@@ -35,7 +35,7 @@ export function ProjectTree({
   const projectsQuery = trpc.projects.list.useQuery();
   const projects = projectsQuery.data ?? [];
 
-  const { data: featureTurnStates = {} } = trpc.agents.getFeatureTurnStates.useQuery(
+  const { data: featureTurnStates = {} } = trpc.sessions.getFeatureTurnStates.useQuery(
     undefined,
     { refetchInterval: 3000 },
   );

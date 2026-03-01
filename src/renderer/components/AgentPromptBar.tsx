@@ -127,7 +127,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
 
   // Slash command support
   const slashEnabled = !!featureId && !!projectId;
-  const commandsQuery = trpc.agents.getSupportedCommands.useQuery(
+  const commandsQuery = trpc.sessions.getSupportedCommands.useQuery(
     { subprocessId: subprocessId ?? null, featureId: featureId!, projectId: projectId! },
     { enabled: slashEnabled },
   );

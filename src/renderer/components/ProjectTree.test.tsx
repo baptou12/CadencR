@@ -70,7 +70,7 @@ vi.mock("@/trpc", () => {
           useQuery: vi.fn(() => ({ data: { empty: false } })),
         },
       },
-      agents: {
+      sessions: {
         getFeatureTurnStates: {
           useQuery: vi.fn(() => ({ data: {} })),
         },

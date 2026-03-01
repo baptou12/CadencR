@@ -55,7 +55,7 @@ vi.mock("@/trpc", () => {
           useQuery: vi.fn(() => ({ data: [] })),
         },
       },
-      agents: {
+      sessions: {
         getFeatureTurnStates: {
           useQuery: vi.fn(() => ({ data: {} })),
         },

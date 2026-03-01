@@ -12,7 +12,7 @@ interface UsePromptDraftOptions {
 }
 
 export function usePromptDraft({ sessionId, initialDraft }: UsePromptDraftOptions) {
-  const saveDraftMutation = trpc.agents.saveDraft.useMutation();
+  const saveDraftMutation = trpc.sessions.saveDraft.useMutation();
 
   // Pending debounced save value
   const pendingRef = useRef<string | null | undefined>(undefined); // undefined = no pending save

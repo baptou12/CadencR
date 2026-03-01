@@ -26,25 +26,25 @@ export function useWorkflowMutations({
   getDescription,
 }: UseWorkflowMutationsParams) {
   // Mutations
-  const ensureWorktreeMutation = trpc.agents.ensureWorktree.useMutation();
-  const startPlanMutation = trpc.agents.startPlan.useMutation();
-  const startPrdMutation = trpc.agents.startPrd.useMutation();
-  const startExecuteMutation = trpc.agents.startExecute.useMutation();
-  const startRiskMutation = trpc.agents.startRisk.useMutation();
-  const startReviewMutation = trpc.agents.startReview.useMutation();
-  const startRetroMutation = trpc.agents.startRetro.useMutation();
-  const addFixPhaseMutation = trpc.agents.addFixPhase.useMutation();
-  const startExecuteForFixMutation = trpc.agents.startExecute.useMutation();
+  const ensureWorktreeMutation = trpc.workflow.ensureWorktree.useMutation();
+  const startPlanMutation = trpc.workflow.startPlan.useMutation();
+  const startPrdMutation = trpc.workflow.startPrd.useMutation();
+  const startExecuteMutation = trpc.workflow.startExecute.useMutation();
+  const startRiskMutation = trpc.workflow.startRisk.useMutation();
+  const startReviewMutation = trpc.workflow.startReview.useMutation();
+  const startRetroMutation = trpc.workflow.startRetro.useMutation();
+  const addFixPhaseMutation = trpc.workflow.addFixPhase.useMutation();
+  const startExecuteForFixMutation = trpc.workflow.startExecute.useMutation();
   const submitAnswersMutation = trpc.agents.submitAnswers.useMutation();
   const stopMutation = trpc.agents.stop.useMutation();
-  const stopBySessionIdMutation = trpc.agents.stopBySessionId.useMutation();
+  const stopBySessionIdMutation = trpc.sessions.stopBySessionId.useMutation();
   const interruptMutation = trpc.agents.interrupt.useMutation();
-  const interruptBySessionIdMutation = trpc.agents.interruptBySessionId.useMutation();
+  const interruptBySessionIdMutation = trpc.sessions.interruptBySessionId.useMutation();
   const sendMessageMutation = trpc.agents.sendMessage.useMutation();
   const resumeMutation = trpc.agents.resume.useMutation();
-  const continueExecuteMutation = trpc.agents.continueExecute.useMutation();
-  const startWorkflowSessionMutation = trpc.agents.startWorkflowSession.useMutation();
-  const startRefinePlanMutation = trpc.agents.startRefinePlan.useMutation();
+  const continueExecuteMutation = trpc.workflow.continueExecute.useMutation();
+  const startWorkflowSessionMutation = trpc.workflow.startWorkflowSession.useMutation();
+  const startRefinePlanMutation = trpc.workflow.startRefinePlan.useMutation();
 
   // --- Action handlers ---
 

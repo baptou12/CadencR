@@ -79,12 +79,12 @@ export function FeatureWorkflowView({
   const chat = useAgentChat({
     featureId,
     projectId,
-    refetch: () => utils.agents.getFeatureAgentState.invalidate({ featureId }),
+    refetch: () => utils.sessions.getFeatureAgentState.invalidate({ featureId }),
   });
 
-  const deleteSession = trpc.agents.deleteSession.useMutation({
+  const deleteSession = trpc.sessions.deleteSession.useMutation({
     onSuccess: () => {
-      utils.agents.getFeatureAgentState.invalidate({ featureId });
+      utils.sessions.getFeatureAgentState.invalidate({ featureId });
     },
   });
 
@@ -117,9 +117,9 @@ export function FeatureWorkflowView({
   // Plan approval handled by chat.handlePlanApprove / chat.handlePlanRequestChanges
 
   // --- Review fixer agent ---
-  const startReviewFixer = trpc.agents.startReviewFixer.useMutation({
+  const startReviewFixer = trpc.workflow.startReviewFixer.useMutation({
     onSuccess: () => {
-      utils.agents.getFeatureAgentState.invalidate({ featureId });
+      utils.sessions.getFeatureAgentState.invalidate({ featureId });
     },
   });
 

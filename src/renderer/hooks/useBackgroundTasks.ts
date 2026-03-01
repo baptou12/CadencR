@@ -8,7 +8,7 @@ interface BackgroundTasksPayload {
 }
 
 export function useBackgroundTasks(subprocessId?: string) {
-  const { data: initialTasks } = trpc.agents.getBackgroundTasks.useQuery(
+  const { data: initialTasks } = trpc.sessions.getBackgroundTasks.useQuery(
     { subprocessId: subprocessId! },
     { enabled: !!subprocessId },
   );

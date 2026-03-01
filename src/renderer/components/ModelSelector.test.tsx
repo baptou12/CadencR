@@ -19,11 +19,11 @@ vi.mock("@/trpc", () => ({
     Provider: ({ children }: { children: React.ReactNode }) =>
       React.createElement(React.Fragment, null, children),
     useUtils: vi.fn(() => ({
-      settings: { getModelSettings: { invalidate: vi.fn() } },
+      workspace: { getModelSettings: { invalidate: vi.fn() } },
       projects: { getModelSettings: { invalidate: vi.fn() } },
       features: { getModelSettings: { invalidate: vi.fn() } },
     })),
-    settings: {
+    workspace: {
       getAvailableModels: { useQuery: mockGetAvailableModels },
       getModelSettings: { useQuery: mockGetGlobalSettings },
       setModelSetting: { useMutation: vi.fn(() => ({ mutate: vi.fn() })) },

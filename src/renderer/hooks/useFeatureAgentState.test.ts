@@ -7,7 +7,7 @@ const mockUseQuery = vi.fn();
 
 vi.mock("@/trpc", () => ({
   trpc: {
-    agents: {
+    sessions: {
       getFeatureAgentState: {
         useQuery: (...args: unknown[]) => mockUseQuery(...args),
       },

@@ -44,10 +44,12 @@ vi.mock("@/trpc", () => {
           useMutation: vi.fn(() => ({ mutate: mockSetFeatureSetting })),
         },
       },
-      agents: {
+      workflow: {
         startReviewFixer: {
           useMutation: vi.fn(() => ({ mutate: vi.fn() })),
         },
+      },
+      sessions: {
         getFeatureAgentState: { invalidate: vi.fn() },
       },
       git: {
@@ -70,7 +72,7 @@ vi.mock("@/trpc", () => {
         features: {
           getSettings: { invalidate: mockInvalidate },
         },
-        agents: {
+        sessions: {
           getFeatureAgentState: { invalidate: vi.fn() },
         },
       })),

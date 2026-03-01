@@ -108,7 +108,7 @@ vi.mock("node:fs", async () => {
 // Import the appRouter after mocks are set up
 const { appRouter } = await import("./router");
 
-describe("appRouter - settingsRouter", () => {
+describe("appRouter - workspaceRouter", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockDb.prepare.mockImplementation(() => ({
@@ -122,18 +122,18 @@ describe("appRouter - settingsRouter", () => {
 
   it("settings.get returns null when key not found", async () => {
     mockDb.prepare.mockReturnValue({ get: vi.fn().mockReturnValue(undefined) });
-    const result = await caller.settings.get({ key: "model_plan" });
+    const result = await caller.workspace.get({ key: "model_plan" });
     expect(result).toBeNull();
   });
 
   it("settings.get returns value when key found", async () => {
     mockDb.prepare.mockReturnValue({ get: vi.fn().mockReturnValue({ value: "claude-opus" }) });
-    const result = await caller.settings.get({ key: "model_plan" });
+    const result = await caller.workspace.get({ key: "model_plan" });
     expect(result).toBe("claude-opus");
   });
 
   it("settings.set stores a value", async () => {
-    const result = await caller.settings.set({ key: "model_plan", value: "claude-sonnet" });
+    const result = await caller.workspace.set({ key: "model_plan", value: "claude-sonnet" });
     expect(mockDb.prepare).toHaveBeenCalledWith(expect.stringContaining("INSERT INTO settings"));
     expect(result).toEqual({ success: true });
   });
@@ -141,63 +141,63 @@ describe("appRouter - settingsRouter", () => {
   it("settings.list returns all settings", async () => {
     const rows = [{ key: "model_plan", value: "claude-opus" }];
     mockDb.prepare.mockReturnValue({ all: vi.fn().mockReturnValue(rows) });
-    const result = await caller.settings.list();
+    const result = await caller.workspace.list();
     expect(result).toEqual(rows);
   });
 
   it("settings.getClaudeCliPath returns path from discovery", async () => {
     const { discoverClaudeCli } = await import("../agents/cli-discovery");
     vi.mocked(discoverClaudeCli).mockReturnValue({ path: "/usr/bin/claude", source: "settings" });
-    const result = await caller.settings.getClaudeCliPath();
+    const result = await caller.workspace.getClaudeCliPath();
     expect(result).toEqual({ path: "/usr/bin/claude", source: "settings" });
   });
 
   it("settings.getClaudeCliPath returns null when not found", async () => {
     const { discoverClaudeCli } = await import("../agents/cli-discovery");
     vi.mocked(discoverClaudeCli).mockReturnValue(null);
-    const result = await caller.settings.getClaudeCliPath();
+    const result = await caller.workspace.getClaudeCliPath();
     expect(result).toBeNull();
   });
 
   it("settings.getModelSettings returns models for all agent types", async () => {
     mockDb.prepare.mockReturnValue({ get: vi.fn().mockReturnValue({ value: "claude-opus" }) });
-    const result = await caller.settings.getModelSettings();
+    const result = await caller.workspace.getModelSettings();
     expect(result).toHaveProperty("plan");
     expect(result).toHaveProperty("execute");
     expect(result["plan"]).toBe("claude-opus");
   });
 
   it("settings.setModelSetting stores model for agent type", async () => {
-    const result = await caller.settings.setModelSetting({ agentType: "plan", modelId: "claude-3" });
+    const result = await caller.workspace.setModelSetting({ agentType: "plan", modelId: "claude-3" });
     expect(mockDb.prepare).toHaveBeenCalledWith(expect.stringContaining("INSERT INTO settings"));
     expect(result).toEqual({ success: true });
   });
 
   it("settings.setModelSetting rejects invalid agent type", async () => {
     await expect(
-      caller.settings.setModelSetting({ agentType: "invalid" as any, modelId: "x" }),
+      caller.workspace.setModelSetting({ agentType: "invalid" as any, modelId: "x" }),
     ).rejects.toThrow();
   });
 
   it("settings.getAvailableModels returns model list", async () => {
-    const result = await caller.settings.getAvailableModels();
+    const result = await caller.workspace.getAvailableModels();
     expect(result).toContain("claude-opus-4-5");
   });
 
   it("settings.setClaudeCliPath stores path when file exists", async () => {
     mockExistsSync.mockReturnValue(true);
-    const result = await caller.settings.setClaudeCliPath({ path: "/usr/bin/claude" });
+    const result = await caller.workspace.setClaudeCliPath({ path: "/usr/bin/claude" });
     expect(result).toMatchObject({ success: true, path: "/usr/bin/claude" });
   });
 
   it("settings.setClaudeCliPath throws when file not found", async () => {
     mockExistsSync.mockReturnValue(false);
-    await expect(caller.settings.setClaudeCliPath({ path: "/nope" })).rejects.toThrow("File not found");
+    await expect(caller.workspace.setClaudeCliPath({ path: "/nope" })).rejects.toThrow("File not found");
     mockExistsSync.mockReturnValue(true); // restore
   });
 });
 
-describe("appRouter - agentsRouter", () => {
+describe("appRouter - agentsRouter & sessionsRouter", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockDb.prepare.mockImplementation(() => ({
@@ -258,20 +258,20 @@ describe("appRouter - agentsRouter", () => {
   it("agents.getSessions returns sessions for feature", async () => {
     const sessions = [{ id: 1, feature_id: 1, agent_type: "plan", status: "completed" }];
     mockDb.prepare.mockReturnValue({ all: vi.fn().mockReturnValue(sessions) });
-    const result = await caller.agents.getSessions({ featureId: 1 });
+    const result = await caller.sessions.getSessions({ featureId: 1 });
     expect(result).toEqual(sessions);
   });
 
   it("agents.getSessions filters by status when provided", async () => {
     mockDb.prepare.mockReturnValue({ all: vi.fn().mockReturnValue([]) });
-    await caller.agents.getSessions({ featureId: 1, status: "running" });
+    await caller.sessions.getSessions({ featureId: 1, status: "running" });
     const sql = mockDb.prepare.mock.calls[0][0] as string;
     expect(sql).toContain("AND status = ?");
   });
 
   it("agents.deleteSession throws when session not found", async () => {
     mockDb.prepare.mockReturnValue({ get: vi.fn().mockReturnValue(undefined), run: vi.fn(), all: vi.fn().mockReturnValue([]) });
-    await expect(caller.agents.deleteSession({ sessionId: 999 })).rejects.toThrow("Session not found");
+    await expect(caller.sessions.deleteSession({ sessionId: 999 })).rejects.toThrow("Session not found");
   });
 
   it("agents.deleteSession throws for completed session", async () => {
@@ -280,7 +280,7 @@ describe("appRouter - agentsRouter", () => {
       run: vi.fn(),
       all: vi.fn().mockReturnValue([]),
     });
-    await expect(caller.agents.deleteSession({ sessionId: 1 })).rejects.toThrow("Cannot delete");
+    await expect(caller.sessions.deleteSession({ sessionId: 1 })).rejects.toThrow("Cannot delete");
   });
 
   it("agents.deleteSession deletes non-completed session", async () => {
@@ -289,13 +289,13 @@ describe("appRouter - agentsRouter", () => {
       run: vi.fn().mockReturnValue({ changes: 1 }),
       all: vi.fn().mockReturnValue([]),
     });
-    const result = await caller.agents.deleteSession({ sessionId: 1 });
+    const result = await caller.sessions.deleteSession({ sessionId: 1 });
     expect(result).toEqual({ success: true });
   });
 
   it("agents.stopBySessionId returns false when session not found", async () => {
     mockDb.prepare.mockReturnValue({ get: vi.fn().mockReturnValue(undefined), run: vi.fn(), all: vi.fn().mockReturnValue([]) });
-    const result = await caller.agents.stopBySessionId({ sessionId: 999 });
+    const result = await caller.sessions.stopBySessionId({ sessionId: 999 });
     expect(result).toEqual({ success: false });
   });
 
@@ -307,14 +307,14 @@ describe("appRouter - agentsRouter", () => {
       run: vi.fn(),
       all: vi.fn().mockReturnValue([]),
     });
-    const result = await caller.agents.stopBySessionId({ sessionId: 1 });
+    const result = await caller.sessions.stopBySessionId({ sessionId: 1 });
     expect(stopSubprocess).toHaveBeenCalledWith("sp-1");
     expect(result).toEqual({ success: true });
   });
 
   it("agents.interruptBySessionId returns false when no subprocess", async () => {
     mockDb.prepare.mockReturnValue({ get: vi.fn().mockReturnValue(undefined), run: vi.fn(), all: vi.fn().mockReturnValue([]) });
-    const result = await caller.agents.interruptBySessionId({ sessionId: 1 });
+    const result = await caller.sessions.interruptBySessionId({ sessionId: 1 });
     expect(result).toEqual({ success: false });
   });
 
@@ -349,7 +349,7 @@ describe("appRouter - agentsRouter", () => {
 // Note: there is no standalone getMessages procedure - messages are retrieved via getFeatureAgentState
 // We test the buildBlocks logic indirectly through getFeatureAgentState
 
-describe("appRouter - agentsRouter - agent starters", () => {
+describe("appRouter - workflowRouter - agent starters", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     // fs.existsSync must return true for resolveAgentCwd to pass the directory check
@@ -377,49 +377,49 @@ describe("appRouter - agentsRouter - agent starters", () => {
 
   it("agents.startPlan calls startPlanAgent with cwd", async () => {
     const { startPlanAgent } = await import("../agents/agent-starters");
-    await caller.agents.startPlan({ featureId: 1, projectId: 1, description: "Build feature" });
+    await caller.workflow.startPlan({ featureId: 1, projectId: 1, description: "Build feature" });
     expect(startPlanAgent).toHaveBeenCalledWith(expect.objectContaining({ featureId: 1, projectId: 1 }));
   });
 
   it("agents.startExecute calls startExecuteAgent", async () => {
     const { startExecuteAgent } = await import("../agents/execute-agent");
-    await caller.agents.startExecute({ featureId: 1, projectId: 1 });
+    await caller.workflow.startExecute({ featureId: 1, projectId: 1 });
     expect(startExecuteAgent).toHaveBeenCalled();
   });
 
   it("agents.startRisk calls startRiskAgent", async () => {
     const { startRiskAgent } = await import("../agents/agent-starters");
-    await caller.agents.startRisk({ featureId: 1, projectId: 1 });
+    await caller.workflow.startRisk({ featureId: 1, projectId: 1 });
     expect(startRiskAgent).toHaveBeenCalled();
   });
 
   it("agents.startRetro calls startRetroAgent", async () => {
     const { startRetroAgent } = await import("../agents/agent-starters");
-    await caller.agents.startRetro({ featureId: 1, projectId: 1 });
+    await caller.workflow.startRetro({ featureId: 1, projectId: 1 });
     expect(startRetroAgent).toHaveBeenCalled();
   });
 
   it("agents.startReview calls startReviewAgent", async () => {
     const { startReviewAgent } = await import("../agents/agent-starters");
-    await caller.agents.startReview({ featureId: 1, projectId: 1 });
+    await caller.workflow.startReview({ featureId: 1, projectId: 1 });
     expect(startReviewAgent).toHaveBeenCalled();
   });
 
   it("agents.startQa calls startQaAgent", async () => {
     const { startQaAgent } = await import("../agents/agent-starters");
-    await caller.agents.startQa({ featureId: 1, projectId: 1 });
+    await caller.workflow.startQa({ featureId: 1, projectId: 1 });
     expect(startQaAgent).toHaveBeenCalled();
   });
 
   it("agents.addFixPhase calls addFixPhase", async () => {
     const { addFixPhase } = await import("../agents/agent-starters");
-    await caller.agents.addFixPhase({ featureId: 1, fixDescription: "Fix the bug" });
+    await caller.workflow.addFixPhase({ featureId: 1, fixDescription: "Fix the bug" });
     expect(addFixPhase).toHaveBeenCalledWith(1, "Fix the bug");
   });
 
   it("agents.continueExecute calls continueExecuteAgent", async () => {
     const { continueExecuteAgent } = await import("../agents/execute-agent");
-    await caller.agents.continueExecute({ sessionDbId: 1 });
+    await caller.workflow.continueExecute({ sessionDbId: 1 });
     expect(continueExecuteAgent).toHaveBeenCalledWith(1);
   });
 });
