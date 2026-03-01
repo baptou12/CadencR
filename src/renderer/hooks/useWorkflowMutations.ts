@@ -32,6 +32,7 @@ export function useWorkflowMutations({
   const startExecuteMutation = trpc.agents.startExecute.useMutation();
   const startRiskMutation = trpc.agents.startRisk.useMutation();
   const startReviewMutation = trpc.agents.startReview.useMutation();
+  const startRetroMutation = trpc.agents.startRetro.useMutation();
   const addFixPhaseMutation = trpc.agents.addFixPhase.useMutation();
   const startExecuteForFixMutation = trpc.agents.startExecute.useMutation();
   const submitAnswersMutation = trpc.agents.submitAnswers.useMutation();
@@ -126,6 +127,15 @@ export function useWorkflowMutations({
   const handleStartReview = async () => {
     try {
       await startReviewMutation.mutateAsync({ featureId, projectId });
+      void refetch();
+    } catch {
+      // Error will show via query refetch
+    }
+  };
+
+  const handleStartRetro = async () => {
+    try {
+      await startRetroMutation.mutateAsync({ featureId, projectId });
       void refetch();
     } catch {
       // Error will show via query refetch
@@ -333,6 +343,7 @@ export function useWorkflowMutations({
     isStartingExecute: startExecuteMutation.isLoading,
     isStartingRisk: startRiskMutation.isLoading,
     isStartingReview: startReviewMutation.isLoading,
+    isStartingRetro: startRetroMutation.isLoading,
     isAddingFixPhase: addFixPhaseMutation.isLoading,
     isStartingFix: startExecuteForFixMutation.isLoading,
     isContinuingBuild: continueExecuteMutation.isLoading,
@@ -345,6 +356,7 @@ export function useWorkflowMutations({
     handleStartBuilding,
     handleStartRisk,
     handleStartReview,
+    handleStartRetro,
     handleQuestionResponse,
     handleResume,
     handleAgentSend,

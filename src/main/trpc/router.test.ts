@@ -45,6 +45,7 @@ startRiskAgent: vi.fn().mockReturnValue({ subprocessId: "sp-1", agentType: "risk
   startReviewAgent: vi.fn().mockReturnValue({ subprocessId: "sp-1", agentType: "review", sessionDbId: 4 }),
   startSessionAgent: vi.fn().mockReturnValue({ subprocessId: "sp-1", agentType: "session", sessionDbId: 5 }),
   startQaAgent: vi.fn().mockReturnValue({ subprocessId: "sp-1", agentType: "qa", sessionDbId: 6 }),
+  startRetroAgent: vi.fn().mockReturnValue({ subprocessId: "sp-1", agentType: "retro", sessionDbId: 8 }),
   addFixPhase: vi.fn().mockReturnValue({ phaseId: 99 }),
 }));
 
@@ -389,6 +390,12 @@ describe("appRouter - agentsRouter - agent starters", () => {
     const { startRiskAgent } = await import("../agents/agent-starters");
     await caller.agents.startRisk({ featureId: 1, projectId: 1 });
     expect(startRiskAgent).toHaveBeenCalled();
+  });
+
+  it("agents.startRetro calls startRetroAgent", async () => {
+    const { startRetroAgent } = await import("../agents/agent-starters");
+    await caller.agents.startRetro({ featureId: 1, projectId: 1 });
+    expect(startRetroAgent).toHaveBeenCalled();
   });
 
   it("agents.startReview calls startReviewAgent", async () => {

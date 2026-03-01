@@ -10,6 +10,7 @@ const mockStartPrd = vi.fn().mockResolvedValue({});
 const mockStartExecute = vi.fn().mockResolvedValue({});
 const mockStartRisk = vi.fn().mockResolvedValue({});
 const mockStartReview = vi.fn().mockResolvedValue({});
+const mockStartRetro = vi.fn().mockResolvedValue({});
 const mockAddFixPhase = vi.fn().mockResolvedValue({});
 const mockSubmitAnswers = vi.fn();
 const mockStop = vi.fn().mockResolvedValue({});
@@ -30,6 +31,7 @@ vi.mock("@/trpc", () => ({
       startExecute: { useMutation: vi.fn(() => ({ mutateAsync: mockStartExecute, isLoading: false })) },
       startRisk: { useMutation: vi.fn(() => ({ mutateAsync: mockStartRisk, isLoading: false })) },
       startReview: { useMutation: vi.fn(() => ({ mutateAsync: mockStartReview, isLoading: false })) },
+      startRetro: { useMutation: vi.fn(() => ({ mutateAsync: mockStartRetro, isLoading: false })) },
       addFixPhase: { useMutation: vi.fn(() => ({ mutateAsync: mockAddFixPhase, isLoading: false })) },
       submitAnswers: { useMutation: vi.fn(() => ({ mutate: mockSubmitAnswers })) },
       stop: { useMutation: vi.fn(() => ({ mutateAsync: mockStop })) },
@@ -126,6 +128,14 @@ describe("useWorkflowMutations", () => {
     );
     await result.current.handleStartRisk();
     expect(mockStartRisk).toHaveBeenCalledWith({ featureId: 1, projectId: 1 });
+  });
+
+  it("handleStartRetro calls startRetro", async () => {
+    const { result } = renderHook(() =>
+      useWorkflowMutations({ featureId: 1, projectId: 1, sessions: [], refetch: mockRefetch, getDescription: mockGetDescription }),
+    );
+    await result.current.handleStartRetro();
+    expect(mockStartRetro).toHaveBeenCalledWith({ featureId: 1, projectId: 1 });
   });
 
   it("handleStartReview calls startReview", async () => {

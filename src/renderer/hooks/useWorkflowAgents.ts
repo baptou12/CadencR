@@ -155,6 +155,7 @@ export function useWorkflowAgents({
     isStartingExecute: mut.isStartingExecute,
     isStartingRisk: mut.isStartingRisk,
     isStartingReview: mut.isStartingReview,
+    isStartingRetro: mut.isStartingRetro,
     isAddingFixPhase: mut.isAddingFixPhase,
     isStartingFix: mut.isStartingFix,
     // Action handlers
@@ -164,6 +165,7 @@ export function useWorkflowAgents({
     handleStartBuilding: mut.handleStartBuilding,
     handleStartRisk: mut.handleStartRisk,
     handleStartReview: mut.handleStartReview,
+    handleStartRetro: mut.handleStartRetro,
     handleAddFixPhase,
     handleFixImmediately: mut.handleFixImmediately,
     handleResume: mut.handleResume,

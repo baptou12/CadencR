@@ -35,6 +35,9 @@ interface NextStepsBarProps {
   onStartRefinePlan?: (description: string, images?: Array<{ base64: string; mimeType: string }>) => void;
   isStartingRefinePlan?: boolean;
   openSessionPrompt?: number;
+  canStartRetro?: boolean;
+  onStartRetro?: () => void;
+  isStartingRetro?: boolean;
 }
 
 export function NextStepsBar({
@@ -64,6 +67,9 @@ export function NextStepsBar({
   onStartRefinePlan,
   isStartingRefinePlan,
   openSessionPrompt,
+  canStartRetro,
+  onStartRetro,
+  isStartingRetro,
 }: NextStepsBarProps) {
   const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
   const [showRefinePrompt, setShowRefinePrompt] = useState(false);
@@ -265,6 +271,20 @@ export function NextStepsBar({
                 <GitMergeIcon className="mr-2 size-4" />
                 Merge &amp; Archive
                 <KbdShortcut keys={["cmd", "shift", "M"]} />
+              </Button>
+            )}
+            {canStartRetro && (
+              <Button
+                variant="outline"
+                onClick={onStartRetro}
+                disabled={isStartingRetro}
+              >
+                {isStartingRetro ? (
+                  <Loader2Icon className="mr-2 size-4 animate-spin" />
+                ) : (
+                  <AGENT_ICONS.retro className="mr-2 size-4" />
+                )}
+                Run Retrospective
               </Button>
             )}
           </div>
