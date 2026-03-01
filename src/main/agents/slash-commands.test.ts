@@ -6,17 +6,12 @@ vi.mock("./cli-discovery", () => ({
 vi.mock("./sdk-client", () => ({
   getSdkClient: vi.fn(),
 }));
-vi.mock("./subprocess-manager", () => ({
-  getActiveProcess: vi.fn(),
-}));
-
 import { discoverClaudeCli } from "./cli-discovery";
 import { getSdkClient } from "./sdk-client";
-import { getActiveProcess } from "./subprocess-manager";
 
 const mockDiscoverCli = vi.mocked(discoverClaudeCli);
 const mockGetSdkClient = vi.mocked(getSdkClient);
-const mockGetActiveProcess = vi.mocked(getActiveProcess);
+const mockGetActiveProcess = vi.fn();
 
 describe("getSupportedCommands", () => {
   beforeEach(() => {
@@ -34,7 +29,7 @@ describe("getSupportedCommands", () => {
     } as any);
 
     const { getSupportedCommands: fn } = await import("./slash-commands");
-    const result = await fn("sub1", "/cwd");
+    const result = await fn("sub1", "/cwd", mockGetActiveProcess);
 
     expect(result).toEqual([{ name: "/continue", description: "Continue", argumentHint: undefined }]);
     expect(mockSupportedCommands).toHaveBeenCalled();
@@ -63,7 +58,7 @@ describe("getSupportedCommands", () => {
     mockGetSdkClient.mockResolvedValue(mockClient as any);
 
     const { getSupportedCommands: fn } = await import("./slash-commands");
-    const result = await fn(null, "/cwd2");
+    const result = await fn(null, "/cwd2", mockGetActiveProcess);
 
     expect(result).toEqual([{ name: "/fix", description: "Fix issues", argumentHint: "description" }]);
     expect(mockClose).toHaveBeenCalled();
@@ -75,7 +70,7 @@ describe("getSupportedCommands", () => {
     mockGetSdkClient.mockResolvedValue({ query: vi.fn() } as any);
 
     const { getSupportedCommands: fn } = await import("./slash-commands");
-    const result = await fn(null, "/cwd3");
+    const result = await fn(null, "/cwd3", mockGetActiveProcess);
 
     expect(result).toEqual([]);
   });
@@ -89,7 +84,7 @@ describe("getSupportedCommands", () => {
     mockGetSdkClient.mockResolvedValue({ query: vi.fn() } as any);
 
     const { getSupportedCommands: fn } = await import("./slash-commands");
-    const result = await fn("sub1", "/cwd");
+    const result = await fn("sub1", "/cwd", mockGetActiveProcess);
 
     expect(result).toEqual([]);
   });

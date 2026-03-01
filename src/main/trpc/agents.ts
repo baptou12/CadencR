@@ -17,7 +17,7 @@ import {
 import { notifyDbUpdated } from "../agents/session-persistence";
 import type { AgentType } from "../agents/types";
 import { startUnifiedAgent } from "../agents/unified-agent";
-import { buildPhaseCompletionAction } from "../agents/execute-agent";
+import { buildPhaseCompletionAction, processNextPhase } from "../agents/execute-agent";
 import { buildMcpServerFactoryForResume } from "../agents/mcp-factory";
 import { resolveAgentCwd } from "../agents/resolve-cwd";
 import { agentTypeSchema } from "./shared";
@@ -141,10 +141,14 @@ export const agentsRouter = router({
         resumePrompt = promptText;
       }
 
+      const onAgentDone: import("../agents/mcp-tools").OnAgentDoneCallback = (opts) => {
+        processNextPhase({ featureId: opts.featureId, projectId: opts.projectId, cwd: opts.cwd, worktreePath: opts.worktreePath ?? undefined });
+      };
       const mcpServerFactory = buildMcpServerFactoryForResume(
         input.agentType as AgentType,
         input.featureId,
         originalSession?.phase_id,
+        onAgentDone,
       );
 
       const result = startUnifiedAgent({

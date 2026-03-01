@@ -10,6 +10,7 @@
 import { getDatabase } from "../db/database";
 import { queryOne, queryAll } from "../db/query";
 import { resolveSetting } from "../db/settings";
+import { getAutonomyLevel } from "./autonomy";
 import type { PhaseRow, PlanRow } from "../db/types";
 import { transitionFeature, transitionPhase, transitionPhaseIf } from "./state-transitions";
 import { startUnifiedAgent } from "./unified-agent";
@@ -17,7 +18,13 @@ import { buildExecuteSystemPrompt, createQaConfig } from "./agent-configs";
 import { buildMcpServerFactory } from "./mcp-factory";
 import { notifyDbUpdated } from "./session-persistence";
 import { startReviewAgent } from "./agent-starters";
+import type { OnAgentDoneCallback } from "./mcp-tools";
 import type { UnifiedAgentConfig, CompletionAction } from "./types";
+
+/** Callback adapter that bridges OnAgentDoneCallback to processNextPhase */
+const processNextPhaseCallback: OnAgentDoneCallback = (opts) => {
+  processNextPhase({ featureId: opts.featureId, projectId: opts.projectId, cwd: opts.cwd, worktreePath: opts.worktreePath ?? undefined });
+};
 
 /** Maximum number of concurrent agents per feature */
 const MAX_AGENTS_PER_FEATURE = 3;
@@ -182,6 +189,7 @@ function handleNoPendingPhases(options: ExecuteAgentOptions, _planId: number): v
       projectId,
       cwd: options.cwd,
       worktreePath: options.worktreePath,
+      onAgentDone: processNextPhaseCallback,
     });
   } catch (err) {
     console.error(`[processNextPhase] Failed to start review for feature ${featureId}:`, err);
@@ -240,7 +248,7 @@ function executePhase(
       prompt,
       phaseId: phase.id,
       worktreePath: options.worktreePath,
-      mcpServerFactory: buildMcpServerFactory("execute", options.featureId),
+      mcpServerFactory: buildMcpServerFactory("execute", options.featureId, undefined, processNextPhaseCallback),
     };
 
     try {
@@ -299,6 +307,7 @@ function executeQaPhase(
       qaPhaseStepNumber: phase.step_number,
       worktreePath: options.worktreePath,
       autonomyLevel,
+      onAgentDone: processNextPhaseCallback,
     });
 
     const originalActions = qaConfig.completionActions ?? [];
@@ -401,16 +410,8 @@ function buildEnrichedPrompt(phase: PhaseRow, autonomyLevel: 1 | 2 | 3 = 3): str
   return sections.join("\n\n---\n\n");
 }
 
-/**
- * Get autonomy level: feature → project → global settings cascade.
- * Returns 1 (ask before commit), 2 (manual continue), or 3 (full auto).
- */
-export function getAutonomyLevel(featureId: number, projectId: number): 1 | 2 | 3 {
-  const raw = resolveSetting("agent_autonomy", { featureId, projectId, defaultValue: "1" });
-  const val = Number(raw);
-  if (val === 1 || val === 2 || val === 3) return val;
-  return 1;
-}
+// getAutonomyLevel moved to ./autonomy.ts to break circular dependency
+export { getAutonomyLevel } from "./autonomy";
 
 /**
  * Check if parallel execution is enabled: feature → project → global settings cascade.

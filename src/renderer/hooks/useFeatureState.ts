@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import type { AgentStatus } from "@/components/AgentSession";
+import type { AgentStatus } from "@/types/agent";
 import type { AgentBlockData } from "@/components/AgentBlock";
 
 export type FeatureStatus =

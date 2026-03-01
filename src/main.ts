@@ -5,6 +5,7 @@ import { appRouter } from "./main/trpc/router";
 import { closeDatabase } from "./main/db/database";
 import { hasRunningSubprocesses, gracefulShutdown } from "./main/agents/subprocess-manager";
 import { restoreSessionMap } from "./main/agents/session-persistence";
+import { resumeInProgressFeatures } from "./main/agents/resume-features";
 import { fetchAvailableModels } from "./main/agents/available-models";
 import { killAllTerminalPtys } from "./main/trpc/terminal";
 
@@ -73,6 +74,7 @@ app.on("ready", () => {
   fetchAvailableModels().catch(() => {}); // warm up cache
   // Restore in-memory session map from DB (for reconnection after restart)
   restoreSessionMap();
+  resumeInProgressFeatures();
   createWindow();
 });
 

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { CheckIcon, ChevronDownIcon, CircleIcon, Loader2Icon } from "lucide-react";
-import type { TodoItem } from "@/hooks/useFeatureAgentState";
+import type { TodoItem } from "@/types/agent";
 
 interface AgentTodoListProps {
   todos: TodoItem[];

@@ -17,6 +17,7 @@
 import { loadPrompt } from "./prompts/load-prompt";
 import { getDatabase } from "../db/database";
 import { buildMcpServerFactory } from "./mcp-factory";
+import type { OnAgentDoneCallback } from "./mcp-tools";
 import type { ImageBlock, MessageContent, UnifiedAgentConfig, CompletionAction } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -104,6 +105,8 @@ export interface PlanConfigOptions {
   worktreePath?: string;
   /** When true, the description is a PRD — use PRD-specific preamble */
   hasPrd?: boolean;
+  /** Callback for phase chaining when agent marks done */
+  onAgentDone?: OnAgentDoneCallback;
 }
 
 export interface PrdConfigOptions {
@@ -112,6 +115,7 @@ export interface PrdConfigOptions {
   cwd: string;
   description: MessageContent;
   worktreePath?: string;
+  onAgentDone?: OnAgentDoneCallback;
 }
 
 export interface RiskConfigOptions {
@@ -124,6 +128,7 @@ export interface RiskConfigOptions {
   planId?: number;
   /** Worktree path for permission resolution */
   worktreePath?: string;
+  onAgentDone?: OnAgentDoneCallback;
 }
 
 export interface ReviewConfigOptions {
@@ -145,6 +150,7 @@ export interface ReviewConfigOptions {
   /** Previously completed phase titles */
   completedPhases?: { step_number: number; title: string }[];
   autonomyLevel?: 1 | 2 | 3;
+  onAgentDone?: OnAgentDoneCallback;
 }
 
 export interface SessionConfigOptions {
@@ -191,6 +197,7 @@ export interface QaConfigOptions {
   autonomyLevel?: 1 | 2 | 3;
   /** Full PRD markdown — included for the final QA phase to verify against functional requirements */
   prd?: string;
+  onAgentDone?: OnAgentDoneCallback;
 }
 
 // ---------------------------------------------------------------------------
@@ -259,7 +266,7 @@ Start by exploring the codebase to understand the project structure and existing
     cwd: opts.cwd,
     prompt,
     worktreePath: opts.worktreePath,
-    mcpServerFactory: buildMcpServerFactory("plan", opts.featureId, opts.planId),
+    mcpServerFactory: buildMcpServerFactory("plan", opts.featureId, opts.planId, opts.onAgentDone),
   };
 }
 
@@ -298,7 +305,7 @@ export function createPrdConfig(opts: PrdConfigOptions): UnifiedAgentConfig {
     cwd: opts.cwd,
     prompt,
     worktreePath: opts.worktreePath,
-    mcpServerFactory: buildMcpServerFactory("prd", opts.featureId),
+    mcpServerFactory: buildMcpServerFactory("prd", opts.featureId, undefined, opts.onAgentDone),
   };
 }
 
@@ -331,7 +338,7 @@ export function createRiskConfig(opts: RiskConfigOptions): UnifiedAgentConfig {
     cwd: opts.cwd,
     prompt: opts.prompt,
     worktreePath: opts.worktreePath,
-    mcpServerFactory: buildMcpServerFactory("risk", opts.featureId, opts.planId),
+    mcpServerFactory: buildMcpServerFactory("risk", opts.featureId, opts.planId, opts.onAgentDone),
   };
 }
 
@@ -395,7 +402,7 @@ export function createReviewConfig(opts: ReviewConfigOptions): UnifiedAgentConfi
     cwd: opts.cwd,
     prompt,
     worktreePath: opts.worktreePath,
-    mcpServerFactory: buildMcpServerFactory("review", opts.featureId, opts.planId),
+    mcpServerFactory: buildMcpServerFactory("review", opts.featureId, opts.planId, opts.onAgentDone),
   };
 }
 
@@ -473,7 +480,7 @@ Based on what was implemented above, design specific test cases and execute them
     cwd: opts.cwd,
     prompt,
     worktreePath: opts.worktreePath,
-    mcpServerFactory: buildMcpServerFactory("qa", opts.featureId, opts.planId),
+    mcpServerFactory: buildMcpServerFactory("qa", opts.featureId, opts.planId, opts.onAgentDone),
   };
 }
 

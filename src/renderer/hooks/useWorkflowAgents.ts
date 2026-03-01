@@ -7,7 +7,7 @@ import { useMemo, useCallback } from "react";
 import { useFeatureAgentState, type FeatureSession } from "@/hooks/useFeatureAgentState";
 import { useWorkflowMutations } from "@/hooks/useWorkflowMutations";
 import type { AgentType } from "../../main/agents/types";
-import type { AgentStatus } from "@/components/AgentSession";
+import type { AgentStatus } from "@/types/agent";
 
 // ---------------------------------------------------------------------------
 // Types

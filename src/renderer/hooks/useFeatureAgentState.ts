@@ -11,7 +11,7 @@ import { useEffect, useRef, useCallback } from "react";
 import { trpc } from "@/trpc";
 import type { AgentBlockData } from "@/components/AgentBlock";
 import type { AgentEvent, AgentType } from "../../main/agents/types";
-import type { AgentStatus } from "@/components/AgentSession";
+import type { AgentStatus, TodoItem } from "@/types/agent";
 import type { AgentQuestion } from "@/components/AgentQuestionDrawer";
 import type { PendingPermission } from "@/components/ToolPermissionPrompt";
 
@@ -55,11 +55,8 @@ function serverBlocksToAgentBlocks(serverBlocks: ServerBlock[]): AgentBlockData[
 // Session shape exposed to consumers
 // ---------------------------------------------------------------------------
 
-export interface TodoItem {
-  content: string;
-  status: "pending" | "in_progress" | "completed";
-  activeForm: string;
-}
+// Re-exported from @/types/agent
+export type { TodoItem } from "@/types/agent";
 
 export interface FeatureSession {
   sessionDbId: number;

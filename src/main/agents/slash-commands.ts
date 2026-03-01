@@ -5,7 +5,7 @@
 
 import { discoverClaudeCli } from "./cli-discovery";
 import { getSdkClient, type SdkQuery } from "./sdk-client";
-import { getActiveProcess } from "./subprocess-manager";
+import type { ManagedSubprocess } from "./types";
 
 export interface SlashCommandInfo {
   name: string;
@@ -36,9 +36,10 @@ function mapCommands(commands: Array<{ name: string; description: string; argume
 export async function getSupportedCommands(
   subprocessId: string | null,
   cwd: string,
+  getActiveProcess?: (id: string) => ManagedSubprocess | undefined,
 ): Promise<SlashCommandInfo[]> {
   // 1. Try existing subprocess first
-  if (subprocessId) {
+  if (subprocessId && getActiveProcess) {
     const managed = getActiveProcess(subprocessId);
     if (managed?.query && managed.status !== "stopped" && managed.status !== "error") {
       try {

@@ -19,7 +19,9 @@
     "test:renderer": "vitest run --config vitest.renderer.config.ts",
     "test:watch": "vitest",
     "postinstall": "electron-rebuild -f -w better-sqlite3",
-    "prepare": "husky"
+    "prepare": "husky",
+    "knip": "knip",
+    "circular": "madge --circular --extensions ts,tsx src/"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.39",
@@ -78,6 +80,8 @@
     "electron": "^33.2.0",
     "husky": "^9.1.7",
     "jsdom": "^28.1.0",
+    "knip": "^5.85.0",
+    "madge": "^8.0.0",
     "oxfmt": "^0.31.0",
     "oxlint": "^1.46.0",
     "postcss": "^8.5.6",

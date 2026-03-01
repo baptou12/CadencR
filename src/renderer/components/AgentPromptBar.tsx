@@ -18,7 +18,7 @@ import { usePromptHistory } from "@/hooks/usePromptHistory";
 import { KbdShortcut } from "./KbdShortcut";
 import { trpc } from "@/trpc";
 import type { AgentQuestion } from "./AgentQuestionDrawer";
-import type { AgentStatus } from "@/components/AgentSession";
+import type { AgentStatus } from "@/types/agent";
 
 export interface SplitSendAction {
   label: string;

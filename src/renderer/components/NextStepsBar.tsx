@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Loader2Icon, GitMergeIcon } from "lucide-react";
-import type { AgentStatus } from "@/components/AgentSession";
+import type { AgentStatus } from "@/types/agent";
 import { AGENT_ICONS } from "@/components/agent-icons";
 import { KbdShortcut } from "@/components/KbdShortcut";
 import { MergeArchiveDialog } from "@/components/MergeArchiveDialog";

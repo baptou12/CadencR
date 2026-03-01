@@ -9,7 +9,7 @@ import { getDatabase } from "../db/database";
 import { getSessionDbId, notifyDbUpdated } from "./session-persistence";
 import { resolvePermission, appendToSettingsLocal } from "./permissions";
 import { broadcast, ASK_USER_QUESTION_CHANNEL, TOOL_PERMISSION_CHANNEL } from "./broadcast";
-import type { ManagedSubprocess } from "./subprocess-manager";
+import type { ManagedSubprocess } from "./types";
 import EventEmitter from "node:events";
 
 // Global event emitter for question/answer coordination

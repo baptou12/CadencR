@@ -46,7 +46,7 @@ import type { AgentBlockData } from "./AgentBlock";
 import type { AgentType } from "../../main/agents/types";
 import { useBackgroundTasks } from "@/hooks/useBackgroundTasks";
 import type { AgentQuestion } from "./AgentQuestionDrawer";
-import type { TodoItem } from "@/hooks/useFeatureAgentState";
+import type { TodoItem } from "@/types/agent";
 import type { ContextUsageState } from "@/hooks/useContextUsage";
 import type { PendingPermission } from "./ToolPermissionPrompt";
 import { ToolPermissionPrompt } from "./ToolPermissionPrompt";
@@ -57,7 +57,9 @@ import { trpc } from "../trpc";
 // Shared types & constants (previously in AgentPanel, now canonical here)
 // ---------------------------------------------------------------------------
 
-export type AgentStatus = "idle" | "running" | "completed" | "error" | "paused" | "waiting";
+// Re-exported from @/types/agent to maintain backward compat
+export type { AgentStatus } from "@/types/agent";
+import type { AgentStatus } from "@/types/agent";
 
 export const AGENT_LABELS: Record<AgentType, string> = {
   plan: "Plan",

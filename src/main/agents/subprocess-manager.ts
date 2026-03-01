@@ -8,62 +8,9 @@ import { broadcast, AGENT_EVENT_CHANNEL } from "./broadcast";
 import { addBackgroundTask, updateBackgroundTask, clearBackgroundTasks } from "./background-tasks";
 import { getSdkClient } from "./sdk-client";
 import { createCanUseToolHandler } from "./tool-permissions";
-import type { AgentEvent, AgentType, MessageContent, StreamEvent } from "./types";
+import type { AgentEvent, AgentType, MessageContent, StreamEvent, ManagedSubprocess, SubprocessOptions } from "./types";
 
-export interface SubprocessOptions {
-  /** Working directory for the Claude CLI process */
-  cwd: string;
-  /** Agent type identifier */
-  agentType: string;
-  /** System prompt to pass to Claude */
-  systemPrompt?: string;
-  /** Initial user message / prompt */
-  prompt: MessageContent;
-  /** Session ID for resuming a previous session */
-  resumeSessionId?: string;
-  /** Allowed tools configuration */
-  allowedTools?: string[];
-  /** Claude model to use (defaults to DEFAULT_MODEL) */
-  model?: string;
-  /** Permission mode for the SDK query */
-  permissionMode?: "acceptEdits" | "plan";
-  /** Worktree path for permission resolution (auto-allow tools inside this directory) */
-  worktreePath?: string;
-  /** MCP servers to inject into the agent */
-  mcpServers?: Record<string, import("@anthropic-ai/claude-agent-sdk").McpServerConfig>;
-  /** Pre-generated subprocess ID (used when MCP server factory needs the ID before spawn) */
-  id?: string;
-}
-
-
-export interface ManagedSubprocess {
-  id: string;
-  agentType: string;
-  startedAt: Date;
-  status: "running" | "stopped" | "error" | "completed" | "paused";
-  /** Abort controller to cancel the SDK query */
-  abortController?: AbortController;
-  /** The SDK Query object for close/interrupt */
-  query?: import("@anthropic-ai/claude-agent-sdk").Query;
-  /** Push a user message into the streaming input generator */
-  pushMessage?: (message: MessageContent) => void;
-  /** Close the message stream (signals no more user messages) */
-  closeMessageStream?: () => void;
-  /** Event listeners registered by agent-specific code */
-  eventListeners: Array<(event: StreamEvent) => void>;
-  /** Completion listeners called when the query finishes */
-  completionListeners: Array<(exitCode: number) => void | Promise<void>>;
-  /** SDK session ID for resume after interrupt */
-  sdkSessionId?: string;
-  /** Original claude_session_id we're resuming from (to restore on failure) */
-  resumingFromSessionId?: string;
-  /** Original options used to start this subprocess (needed for resume) */
-  originalOptions?: SubprocessOptions;
-  /** Worktree path for permission resolution */
-  worktreePath?: string;
-  /** Session-scoped permission approvals (patterns already approved by user) */
-  cachedPermissions: Set<string>;
-}
+export type { ManagedSubprocess, SubprocessOptions };
 
 const activeProcesses = new Map<string, ManagedSubprocess>();
 
@@ -917,7 +864,10 @@ export function killAllSubprocesses(): void {
 
 // Re-export from extracted modules for backward compatibility
 export { submitToolPermission, submitUserAnswers, submitPlanApproval, submitPrdApproval } from "./tool-permissions";
-export { getSupportedCommands } from "./slash-commands";
+import { getSupportedCommands as _getSupportedCommands } from "./slash-commands";
+export function getSupportedCommands(subprocessId: string | null, cwd: string) {
+  return _getSupportedCommands(subprocessId, cwd, getActiveProcess);
+}
 
 /**
  * Check if any subprocesses are currently running.

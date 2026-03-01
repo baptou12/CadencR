@@ -21,7 +21,7 @@ import {
 } from "./agent-configs";
 import type { AgentType, MessageContent, UnifiedAgentConfig } from "./types";
 import type { PlanRow, PhaseRow } from "../db/types";
-import { getAutonomyLevel } from "./execute-agent";
+import { getAutonomyLevel } from "./autonomy";
 
 
 // ---------------------------------------------------------------------------
@@ -237,6 +237,7 @@ export function startReviewAgent(options: {
   projectId: number;
   cwd: string;
   worktreePath?: string;
+  onAgentDone?: import("./mcp-tools").OnAgentDoneCallback;
 }): AgentResult {
   const db = getDatabase();
 
@@ -274,6 +275,7 @@ export function startReviewAgent(options: {
       planClarifications: plan.clarifications ?? undefined,
       completedPhases,
       autonomyLevel,
+      onAgentDone: options.onAgentDone,
     }),
   );
 }

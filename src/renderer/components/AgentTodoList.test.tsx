@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@/test-utils";
 import userEvent from "@testing-library/user-event";
 import { AgentTodoList } from "./AgentTodoList";
-import type { TodoItem } from "@/hooks/useFeatureAgentState";
+import type { TodoItem } from "@/types/agent";
 
 const pendingTodo: TodoItem = {
   content: "Pending task",

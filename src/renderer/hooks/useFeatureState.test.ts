@@ -1,7 +1,7 @@
 import { renderHook } from "@testing-library/react";
 import { describe, it, expect } from "vitest";
 import { useFeatureState } from "./useFeatureState";
-import type { AgentStatus } from "@/components/AgentSession";
+import type { AgentStatus } from "@/types/agent";
 import type { AgentBlockData } from "@/components/AgentBlock";
 
 const idleAgent = (status: AgentStatus = "idle", blocks: AgentBlockData[] = []) => ({

@@ -11,9 +11,11 @@ import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { getDatabase } from "../db/database";
 import { notifyDbUpdated } from "./session-persistence";
 import { transitionPhase, transitionFeature } from "./state-transitions";
-import { processNextPhase } from "./execute-agent";
 import { resolveAgentCwd } from "./resolve-cwd";
 import type { PhaseRow, PlanRow } from "../db/types";
+
+/** Callback invoked when an execute/qa/review agent calls mark_agent_done */
+export type OnAgentDoneCallback = (options: { featureId: number; projectId: number; cwd: string; worktreePath: string | null }) => void;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -256,7 +258,7 @@ function removePhaseTool(planId: number, featureId: number) {
 // Universal mark_agent_done tool helper
 // ---------------------------------------------------------------------------
 
-function createAgentDoneTool(sessionDbId: number, featureId: number) {
+function createAgentDoneTool(sessionDbId: number, featureId: number, onAgentDone?: OnAgentDoneCallback) {
   return tool(
     "mark_agent_done",
     "Signal that the agent has completed its work. Call this when you are finished. Optionally provide a summary of what was accomplished.",
@@ -272,14 +274,14 @@ function createAgentDoneTool(sessionDbId: number, featureId: number) {
       ).run(sessionDbId);
       notifyDbUpdated("agent_session", featureId);
 
-      // After any execute/qa/review agent completes, chain processNextPhase
-      if (["execute", "qa", "review"].includes(current?.agent_type ?? "")) {
+      // After any execute/qa/review agent completes, chain via callback
+      if (onAgentDone && ["execute", "qa", "review"].includes(current?.agent_type ?? "")) {
         try {
           const wfFeat = db.prepare("SELECT project_id FROM features WHERE id = ?")
             .get(featureId) as { project_id: number } | undefined;
           if (wfFeat) {
             const { cwd, worktreePath } = resolveAgentCwd(featureId, wfFeat.project_id);
-            processNextPhase({ featureId, projectId: wfFeat.project_id, cwd, worktreePath });
+            onAgentDone({ featureId, projectId: wfFeat.project_id, cwd, worktreePath: worktreePath ?? null });
           }
         } catch { /* */ }
       }
@@ -306,7 +308,7 @@ export type PlanApprovalCallback = (planMarkdown: string) => Promise<{ approved:
  * subprocess ID to produce the actual callback. This avoids the mutable ref
  * pattern where the subprocess ID isn't known at server creation time.
  */
-export function createPlanMcpServer(planId: number, featureId: number, sessionDbId: number, onShowPlan?: PlanApprovalCallback) {
+export function createPlanMcpServer(planId: number, featureId: number, sessionDbId: number, onShowPlan?: PlanApprovalCallback, onAgentDone?: OnAgentDoneCallback) {
   return createSdkMcpServer({
     name: "productdevr-plan",
     tools: [
@@ -316,7 +318,7 @@ export function createPlanMcpServer(planId: number, featureId: number, sessionDb
       createPhaseTool(featureId),
       updatePhaseTool(planId, featureId),
       removePhaseTool(planId, featureId),
-      createAgentDoneTool(sessionDbId, featureId),
+      createAgentDoneTool(sessionDbId, featureId, onAgentDone),
 
       tool(
         "update_plan",
@@ -459,14 +461,14 @@ function createMarkPhaseDoneTool(featureId: number) {
   );
 }
 
-export function createExecuteMcpServer(featureId: number, sessionDbId: number) {
+export function createExecuteMcpServer(featureId: number, sessionDbId: number, onAgentDone?: OnAgentDoneCallback) {
   return createSdkMcpServer({
     name: "productdevr-execute",
     tools: [
       readPlanTool,
       readPhaseTool,
       listPhasesTool,
-      createAgentDoneTool(sessionDbId, featureId),
+      createAgentDoneTool(sessionDbId, featureId, onAgentDone),
       createMarkPhaseDoneTool(featureId),
     ],
   });
@@ -476,7 +478,7 @@ export function createExecuteMcpServer(featureId: number, sessionDbId: number) {
 // QA agent MCP server
 // ---------------------------------------------------------------------------
 
-export function createQaMcpServer(planId: number, featureId: number, sessionDbId: number) {
+export function createQaMcpServer(planId: number, featureId: number, sessionDbId: number, onAgentDone?: OnAgentDoneCallback) {
   return createSdkMcpServer({
     name: "productdevr-qa",
     tools: [
@@ -487,7 +489,7 @@ export function createQaMcpServer(planId: number, featureId: number, sessionDbId
       updatePhaseTool(planId, featureId),
       removePhaseTool(planId, featureId),
       createMarkPhaseDoneTool(featureId),
-      createAgentDoneTool(sessionDbId, featureId),
+      createAgentDoneTool(sessionDbId, featureId, onAgentDone),
 
       tool(
         "finalize_phases",
@@ -521,7 +523,7 @@ export function createQaMcpServer(planId: number, featureId: number, sessionDbId
 // Review agent MCP server
 // ---------------------------------------------------------------------------
 
-export function createReviewMcpServer(planId: number, featureId: number, sessionDbId: number) {
+export function createReviewMcpServer(planId: number, featureId: number, sessionDbId: number, onAgentDone?: OnAgentDoneCallback) {
   return createSdkMcpServer({
     name: "productdevr-review",
     tools: [
@@ -531,7 +533,7 @@ export function createReviewMcpServer(planId: number, featureId: number, session
       createPhaseTool(featureId),
       updatePhaseTool(planId, featureId),
       removePhaseTool(planId, featureId),
-      createAgentDoneTool(sessionDbId, featureId),
+      createAgentDoneTool(sessionDbId, featureId, onAgentDone),
 
       tool(
         "finalize_phases",
@@ -565,7 +567,7 @@ export function createReviewMcpServer(planId: number, featureId: number, session
 // Risk MCP server (read plan + create/update/remove phases for mitigations)
 // ---------------------------------------------------------------------------
 
-export function createRiskMcpServer(planId: number, featureId: number, sessionDbId: number) {
+export function createRiskMcpServer(planId: number, featureId: number, sessionDbId: number, onAgentDone?: OnAgentDoneCallback) {
   return createSdkMcpServer({
     name: "productdevr-risk",
     tools: [
@@ -575,7 +577,7 @@ export function createRiskMcpServer(planId: number, featureId: number, sessionDb
       createPhaseTool(featureId),
       updatePhaseTool(planId, featureId),
       removePhaseTool(planId, featureId),
-      createAgentDoneTool(sessionDbId, featureId),
+      createAgentDoneTool(sessionDbId, featureId, onAgentDone),
 
       tool(
         "finalize_phases",
@@ -612,11 +614,11 @@ export function createRiskMcpServer(planId: number, featureId: number, sessionDb
 /** Callback type for show_prd approval — blocks until user responds */
 export type PrdApprovalCallback = (prdMarkdown: string) => Promise<{ approved: boolean; feedback?: string }>;
 
-export function createPrdMcpServer(featureId: number, sessionDbId: number, onShowPrd?: PrdApprovalCallback) {
+export function createPrdMcpServer(featureId: number, sessionDbId: number, onShowPrd?: PrdApprovalCallback, onAgentDone?: OnAgentDoneCallback) {
   return createSdkMcpServer({
     name: "productdevr-prd",
     tools: [
-      createAgentDoneTool(sessionDbId, featureId),
+      createAgentDoneTool(sessionDbId, featureId, onAgentDone),
 
       tool(
         "create_prd",
@@ -691,14 +693,14 @@ export function createPrdMcpServer(featureId: number, sessionDbId: number, onSho
 // Retro agent MCP server
 // ---------------------------------------------------------------------------
 
-export function createRetroMcpServer(featureId: number, sessionDbId: number) {
+export function createRetroMcpServer(featureId: number, sessionDbId: number, onAgentDone?: OnAgentDoneCallback) {
   return createSdkMcpServer({
     name: "productdevr-retro",
     tools: [
       readPlanTool,
       listPhasesTool,
       readPhaseTool,
-      createAgentDoneTool(sessionDbId, featureId),
+      createAgentDoneTool(sessionDbId, featureId, onAgentDone),
 
       tool(
         "read_prd",
@@ -800,11 +802,11 @@ export function createRetroMcpServer(featureId: number, sessionDbId: number) {
 // Common MCP server (for agents without dedicated servers: Session)
 // ---------------------------------------------------------------------------
 
-export function createCommonMcpServer(sessionDbId: number, featureId: number) {
+export function createCommonMcpServer(sessionDbId: number, featureId: number, onAgentDone?: OnAgentDoneCallback) {
   return createSdkMcpServer({
     name: "productdevr-common",
     tools: [
-      createAgentDoneTool(sessionDbId, featureId),
+      createAgentDoneTool(sessionDbId, featureId, onAgentDone),
     ],
   });
 }

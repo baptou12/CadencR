@@ -16,6 +16,7 @@ import {
   createCommonMcpServer,
   createWorkflowSessionMcpServer,
   createRetroMcpServer,
+  type OnAgentDoneCallback,
 } from "./mcp-tools";
 import { waitForPlanApproval } from "./plan-approval";
 import { getDatabase } from "../db/database";
@@ -35,6 +36,7 @@ export function buildMcpServerFactory(
   agentType: AgentType,
   featureId: number,
   planId?: number,
+  onAgentDone?: OnAgentDoneCallback,
 ): McpServerFactory | undefined {
   switch (agentType) {
     case "plan": {
@@ -42,7 +44,7 @@ export function buildMcpServerFactory(
       return (subprocessId: string, sessionDbId: number) => ({
         "productdevr-plan": createPlanMcpServer(planId, featureId, sessionDbId, async (planMarkdown) => {
           return waitForPlanApproval(subprocessId, planMarkdown);
-        }),
+        }, onAgentDone),
       });
     }
 
@@ -50,27 +52,27 @@ export function buildMcpServerFactory(
       return (subprocessId: string, sessionDbId: number) => ({
         "productdevr-prd": createPrdMcpServer(featureId, sessionDbId, async (prdMarkdown) => {
           return waitForPlanApproval(subprocessId, prdMarkdown);
-        }),
+        }, onAgentDone),
       });
     }
 
     case "execute": {
       return (_subprocessId: string, sessionDbId: number) => ({
-        "productdevr-execute": createExecuteMcpServer(featureId, sessionDbId),
+        "productdevr-execute": createExecuteMcpServer(featureId, sessionDbId, onAgentDone),
       });
     }
 
     case "qa": {
       if (!planId) return undefined;
       return (_subprocessId: string, sessionDbId: number) => ({
-        "productdevr-qa": createQaMcpServer(planId, featureId, sessionDbId),
+        "productdevr-qa": createQaMcpServer(planId, featureId, sessionDbId, onAgentDone),
       });
     }
 
     case "review": {
       if (!planId) return undefined;
       return (_subprocessId: string, sessionDbId: number) => ({
-        "productdevr-review": createReviewMcpServer(planId, featureId, sessionDbId),
+        "productdevr-review": createReviewMcpServer(planId, featureId, sessionDbId, onAgentDone),
       });
     }
 
@@ -142,9 +144,10 @@ export function buildMcpServerFactoryForResume(
   agentType: AgentType,
   featureId: number,
   phaseId?: number | null,
+  onAgentDone?: OnAgentDoneCallback,
 ): McpServerFactory | undefined {
   const planId = phaseId
     ? getPlanIdFromPhase(phaseId)
     : getActivePlanId(featureId);
-  return buildMcpServerFactory(agentType, featureId, planId);
+  return buildMcpServerFactory(agentType, featureId, planId, onAgentDone);
 }

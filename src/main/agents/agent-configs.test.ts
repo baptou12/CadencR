@@ -67,7 +67,7 @@ describe("createPlanConfig", () => {
     });
 
     config.mcpServerFactory!("sub1", 5);
-    expect(createPlanMcpServer).toHaveBeenCalledWith(10, 1, 5, expect.any(Function));
+    expect(createPlanMcpServer).toHaveBeenCalledWith(10, 1, 5, expect.any(Function), undefined);
   });
 
   it("system prompt includes planning-only restriction", () => {
@@ -142,7 +142,7 @@ describe("createReviewConfig", () => {
     expect(config.systemPrompt?.length).toBeGreaterThan(0);
 
     config.mcpServerFactory!("sub1", 5);
-    expect(createReviewMcpServer).toHaveBeenCalledWith(30, 1, 5);
+    expect(createReviewMcpServer).toHaveBeenCalledWith(30, 1, 5, undefined);
   });
 
   it("stores review report in completion action", () => {
@@ -282,7 +282,7 @@ describe("createQaConfig", () => {
     });
 
     config.mcpServerFactory!("sub1", 5);
-    expect(createQaMcpServer).toHaveBeenCalledWith(40, 1, 5);
+    expect(createQaMcpServer).toHaveBeenCalledWith(40, 1, 5, undefined);
   });
 });
 
