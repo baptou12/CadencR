@@ -33,6 +33,7 @@ export interface ActionAvailability {
   canStartReview: boolean;
   canStartWorkflowSession: boolean;
   canStartRefine: boolean;
+  canStartRetro: boolean;
 }
 
 export interface FeatureStateResult {
@@ -128,6 +129,8 @@ export function useFeatureState(
         isPlanned || isInProgress,
       canStartRefine:
         isPlanned || isInProgress,
+      canStartRetro:
+        isDone,
     };
 
     return { view, agents, actions };

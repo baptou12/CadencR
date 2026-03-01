@@ -15,6 +15,7 @@ import {
   createRiskMcpServer,
   createCommonMcpServer,
   createWorkflowSessionMcpServer,
+  createRetroMcpServer,
 } from "./mcp-tools";
 import { waitForPlanApproval } from "./plan-approval";
 import { getDatabase } from "../db/database";
@@ -96,6 +97,12 @@ export function buildMcpServerFactory(
       }
       return (_subprocessId: string, sessionDbId: number) => ({
         "productdevr-common": createCommonMcpServer(sessionDbId, featureId),
+      });
+    }
+
+    case "retro": {
+      return (_subprocessId: string, sessionDbId: number) => ({
+        "productdevr-retro": createRetroMcpServer(featureId, sessionDbId),
       });
     }
 

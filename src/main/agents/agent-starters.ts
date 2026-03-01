@@ -17,6 +17,7 @@ import {
   createReviewConfig,
   createQaConfig,
   createReviewFixerConfig,
+  createRetroConfig,
 } from "./agent-configs";
 import type { AgentType, MessageContent, UnifiedAgentConfig } from "./types";
 import type { PlanRow, PhaseRow } from "../db/types";
@@ -317,6 +318,19 @@ export function startReviewFixerAgent(options: {
 }): AgentResult {
   const autonomyLevel = getAutonomyLevel(options.featureId, options.projectId);
   return startUnifiedAgent(createReviewFixerConfig({ ...options, autonomyLevel }));
+}
+
+// ---------------------------------------------------------------------------
+// Retro
+// ---------------------------------------------------------------------------
+
+export function startRetroAgent(options: {
+  featureId: number;
+  projectId: number;
+  cwd: string;
+  worktreePath?: string;
+}): AgentResult {
+  return startUnifiedAgent(createRetroConfig(options));
 }
 
 // ---------------------------------------------------------------------------

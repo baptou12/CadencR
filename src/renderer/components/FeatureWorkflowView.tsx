@@ -572,7 +572,8 @@ export function FeatureWorkflowView({
             {(wf.hasAnyAgentOutput ||
               actions.canStartBuild ||
               actions.canStartRisk ||
-              actions.canStartReview) && (
+              actions.canStartReview ||
+              actions.canStartRetro) && (
               <div className={cn("flex-1 min-h-0 px-6 py-2", maximizedAgent ? "flex flex-col overflow-hidden" : "overflow-y-auto space-y-2")}>
                 {(() => {
                   const renderAgent = (
@@ -804,7 +805,8 @@ export function FeatureWorkflowView({
                           actions.canStartReview ||
                           actions.canStartWorkflowSession ||
                           wf.canContinueBuild ||
-                          allPhasesDone)
+                          allPhasesDone ||
+                          actions.canStartRetro)
                       }
                       canStartBuild={actions.canStartBuild}
                       canStartRisk={actions.canStartRisk}
@@ -831,6 +833,9 @@ export function FeatureWorkflowView({
                       onStartRefinePlan={wf.handleStartRefinePlan}
                       isStartingRefinePlan={wf.isStartingRefinePlan}
                       openSessionPrompt={sessionPromptTrigger}
+                      canStartRetro={actions.canStartRetro}
+                      onStartRetro={wf.handleStartRetro}
+                      isStartingRetro={wf.isStartingRetro}
                     />
                   </div>
                 )}

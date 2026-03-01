@@ -6,6 +6,7 @@ import {
   SearchCheckIcon,
   MessageSquareIcon,
   FlaskConicalIcon,
+  ClipboardListIcon,
 } from "lucide-react";
 import type { AgentType } from "../../main/agents/types";
 
@@ -18,4 +19,5 @@ export const AGENT_ICONS: Record<AgentType, typeof PlayIcon> = {
   session: MessageSquareIcon,
   qa: FlaskConicalIcon,
   "review-fixer": SearchCheckIcon,
+  retro: ClipboardListIcon,
 };

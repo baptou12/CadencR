@@ -57,6 +57,7 @@ import {
   startSessionAgent,
   startQaAgent,
   startReviewFixerAgent,
+  startRetroAgent,
 } from "../agents/agent-starters";
 import { startExecuteAgent, continueExecuteAgent, buildPhaseCompletionAction } from "../agents/execute-agent";
 import { buildMcpServerFactoryForResume } from "../agents/mcp-factory";
@@ -143,7 +144,7 @@ const settingsRouter = router({
   setModelSetting: publicProcedure
     .input(
       z.object({
-        agentType: z.enum(["plan", "prd", "execute", "risk", "review", "session", "qa", "review-fixer"]),
+        agentType: z.enum(["plan", "prd", "execute", "risk", "review", "session", "qa", "review-fixer", "retro"]),
         modelId: z.string(),
       }),
     )
@@ -185,7 +186,7 @@ function hasDefaultTitle(featureId: number): boolean {
   return row != null && /^Session \d+$/i.test(row.title);
 }
 
-const agentTypeSchema = z.enum(["plan", "prd", "execute", "risk", "review", "session", "qa", "review-fixer"]);
+const agentTypeSchema = z.enum(["plan", "prd", "execute", "risk", "review", "session", "qa", "review-fixer", "retro"]);
 
 // ---------------------------------------------------------------------------
 // Block builder — converts agent_messages rows into a nested block tree
@@ -711,6 +712,14 @@ const agentsRouter = router({
     .mutation(({ input }) => {
       const { cwd, worktreePath } = resolveAgentCwd(input.featureId, input.projectId);
       return startReviewAgent({ ...input, cwd, worktreePath });
+    }),
+
+  /** Start the retro agent for a feature */
+  startRetro: publicProcedure
+    .input(z.object({ featureId: z.number(), projectId: z.number() }))
+    .mutation(({ input }) => {
+      const { cwd, worktreePath } = resolveAgentCwd(input.featureId, input.projectId);
+      return startRetroAgent({ ...input, cwd, worktreePath });
     }),
 
   /** Start the QA agent for a feature */

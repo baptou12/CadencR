@@ -26,6 +26,7 @@ import type { ImageBlock, MessageContent, UnifiedAgentConfig, CompletionAction }
 const PLAN_SYSTEM_PROMPT = loadPrompt("plan.md");
 const PRD_SYSTEM_PROMPT = loadPrompt("prd.md");
 const RISK_SYSTEM_PROMPT = loadPrompt("risk.md");
+const RETRO_SYSTEM_PROMPT = loadPrompt("retro.md");
 function buildReviewSystemPrompt(autonomyLevel: 1 | 2 | 3): string {
   const basePrompt = loadPrompt("review.md");
   const completionSection =
@@ -166,6 +167,13 @@ export interface ReviewFixerConfigOptions {
   prompt: MessageContent;
   worktreePath?: string;
   autonomyLevel?: 1 | 2 | 3;
+}
+
+export interface RetroConfigOptions {
+  featureId: number;
+  projectId: number;
+  cwd: string;
+  worktreePath?: string;
 }
 
 export interface QaConfigOptions {
@@ -466,6 +474,43 @@ Based on what was implemented above, design specific test cases and execute them
     prompt,
     worktreePath: opts.worktreePath,
     mcpServerFactory: buildMcpServerFactory("qa", opts.featureId, opts.planId),
+  };
+}
+
+/**
+ * Create a UnifiedAgentConfig for the retro agent.
+ *
+ * Read-only agent that reads all feature data and produces a retrospective
+ * report stored as a `retro_report` message in agent_messages.
+ */
+export function createRetroConfig(opts: RetroConfigOptions): UnifiedAgentConfig {
+  const prompt = `Please produce a retrospective report for feature ID ${opts.featureId}.
+
+Use the available MCP tools to read the PRD, plan, phases, and agent conversation history, then write the retrospective report in chat. When finished, call \`mark_agent_done\`.`;
+
+  const completionActions: CompletionAction[] = [
+    {
+      event: "store_retro_report",
+      handler: (output: string, context) => {
+        if (!output) return;
+        const db = getDatabase();
+        db.prepare(
+          "INSERT INTO agent_messages (session_id, role, content, message_type) VALUES (?, ?, ?, ?)",
+        ).run(context.sessionDbId, "assistant", output, "retro_report");
+      },
+    },
+  ];
+
+  return {
+    agentType: "retro",
+    systemPrompt: RETRO_SYSTEM_PROMPT,
+    completionActions,
+    featureId: opts.featureId,
+    projectId: opts.projectId,
+    cwd: opts.cwd,
+    prompt,
+    worktreePath: opts.worktreePath,
+    mcpServerFactory: buildMcpServerFactory("retro", opts.featureId),
   };
 }
 
