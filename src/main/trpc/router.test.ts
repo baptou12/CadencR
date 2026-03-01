@@ -73,6 +73,7 @@ vi.mock("../git/worktree", () => ({
   removeWorktree: vi.fn().mockResolvedValue(undefined),
   getWorktreeInfo: vi.fn().mockReturnValue(null),
   openInTerminal: vi.fn(),
+  openInZed: vi.fn(),
   buildBranchName: vi.fn().mockReturnValue("feat/branch"),
   getGitStats: vi.fn().mockReturnValue({ branch: "main", uncommittedChanges: 0, untrackedFiles: 0 }),
   getDiff: vi.fn().mockReturnValue(""),

@@ -30,6 +30,7 @@ import {
   listWorktrees,
   getWorktreeInfo,
   openInTerminal,
+  openInZed,
   buildBranchName,
   getGitStats,
   getDiff,
@@ -1397,19 +1398,25 @@ const gitRouter = router({
       return { success: true };
     }),
 
-  /** Open a worktree path in the system terminal */
+  /** Open a worktree/project path in the system terminal */
   openInTerminal: publicProcedure
     .input(z.object({ featureId: z.number() }))
     .mutation(({ input }) => {
-      const db = getDatabase();
-      const wtRow = db
-        .prepare(
-          "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
-        )
-        .get(input.featureId) as SettingRow | undefined;
-      if (!wtRow) throw new Error("No worktree found for this feature");
+      const gitPath = resolveFeatureGitPath(input.featureId);
+      if (!gitPath) throw new Error("No working directory found for this feature");
 
-      openInTerminal(wtRow.value);
+      openInTerminal(gitPath);
+      return { success: true };
+    }),
+
+  /** Open a worktree/project path in Zed editor */
+  openInZed: publicProcedure
+    .input(z.object({ featureId: z.number() }))
+    .mutation(({ input }) => {
+      const gitPath = resolveFeatureGitPath(input.featureId);
+      if (!gitPath) throw new Error("No working directory found for this feature");
+
+      openInZed(gitPath);
       return { success: true };
     }),
 

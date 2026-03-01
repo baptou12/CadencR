@@ -62,6 +62,9 @@ vi.mock("@/trpc", () => {
         openInTerminal: {
           useMutation: vi.fn(() => ({ mutate: mockOpenTerminal })),
         },
+        openInZed: {
+          useMutation: vi.fn(() => ({ mutate: vi.fn() })),
+        },
       },
       useContext: vi.fn(() => ({
         features: {

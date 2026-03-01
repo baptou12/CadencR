@@ -689,3 +689,10 @@ export function openInTerminal(dirPath: string): void {
     }
   }
 }
+
+/**
+ * Open a directory in the Zed editor.
+ */
+export function openInZed(dirPath: string): void {
+  execSync(`zed "${dirPath}"`, { stdio: "pipe" });
+}

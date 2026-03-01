@@ -10,6 +10,7 @@ import { TerminalIcon, SettingsIcon, GitCompareArrowsIcon } from "lucide-react";
 import { trpc } from "@/trpc";
 import { DiffViewerModal, type ExecuteAgentState } from "./diff/DiffViewerModal";
 import { ModelSelector } from "./ModelSelector";
+import zedLogo from "../../../assets/zed-logo.png";
 
 const STATUS_COLORS: Record<string, string> = {
   draft: "bg-gray-500/15 text-gray-300",
@@ -77,6 +78,7 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", executeS
     { enabled: isSession, refetchInterval: 10000 },
   );
   const openTerminal = trpc.git.openInTerminal.useMutation();
+  const openZed = trpc.git.openInZed.useMutation();
 
   const utils = trpc.useContext();
 
@@ -151,18 +153,27 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", executeS
         ) : null}
       </Button>
 
-      {!isSession && (
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-7"
-          title="Open terminal"
-          disabled={!worktreeBranch}
-          onClick={() => openTerminal.mutate({ featureId })}
-        >
-          <TerminalIcon className="size-4" />
-        </Button>
-      )}
+      <Button
+        variant="ghost"
+        size="icon"
+        className="size-7"
+        title="Open in Zed"
+        disabled={!isSession && !worktreeBranch}
+        onClick={() => openZed.mutate({ featureId })}
+      >
+        <img src={zedLogo} alt="Zed" className="size-4" />
+      </Button>
+
+      <Button
+        variant="ghost"
+        size="icon"
+        className="size-7"
+        title="Open terminal"
+        disabled={!isSession && !worktreeBranch}
+        onClick={() => openTerminal.mutate({ featureId })}
+      >
+        <TerminalIcon className="size-4" />
+      </Button>
 
       <Popover open={settingsOpen} onOpenChange={setSettingsOpen}>
         <PopoverTrigger asChild>

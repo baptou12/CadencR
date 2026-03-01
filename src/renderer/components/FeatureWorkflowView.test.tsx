@@ -118,6 +118,9 @@ vi.mock("@/trpc", () => {
       openInTerminal: {
         useMutation: vi.fn(() => ({ mutate: vi.fn() })),
       },
+      openInZed: {
+        useMutation: vi.fn(() => ({ mutate: vi.fn() })),
+      },
       getWorktreeStatus: {
         useQuery: vi.fn(() => ({ data: null })),
       },
