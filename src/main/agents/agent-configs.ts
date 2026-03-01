@@ -484,7 +484,19 @@ Based on what was implemented above, design specific test cases and execute them
  * report stored as a `retro_report` message in agent_messages.
  */
 export function createRetroConfig(opts: RetroConfigOptions): UnifiedAgentConfig {
+  // Look up the plan ID so the agent knows which plan to read
+  const db = getDatabase();
+  const planRow = db
+    .prepare("SELECT id FROM plans WHERE feature_id = ? ORDER BY id DESC LIMIT 1")
+    .get(opts.featureId) as { id: number } | undefined;
+
+  const planHint = planRow
+    ? `The plan ID for this feature is **${planRow.id}**. Use this when calling \`read_plan\` and \`list_phases\`.`
+    : "No plan was found for this feature — skip plan/phase reading and focus on PRD and conversations.";
+
   const prompt = `Please produce a retrospective report for feature ID ${opts.featureId}.
+
+${planHint}
 
 Use the available MCP tools to read the PRD, plan, phases, and agent conversation history, then write the retrospective report in chat. When finished, call \`mark_agent_done\`.`;
 
