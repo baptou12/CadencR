@@ -126,9 +126,9 @@ export function useFeatureState(
       canStartReview:
         isInProgress && review.status !== "running",
       canStartWorkflowSession:
-        isPlanned || isInProgress,
+        isPlanned || isInProgress || isDone,
       canStartRefine:
-        isPlanned || isInProgress,
+        isPlanned || isInProgress || isDone,
       canStartRetro:
         isDone,
     };
