@@ -9,6 +9,7 @@ vi.mock("./mcp-tools", () => ({
   createReviewMcpServer: vi.fn().mockReturnValue({}),
   createCommonMcpServer: vi.fn().mockReturnValue({}),
   createWorkflowSessionMcpServer: vi.fn().mockReturnValue({}),
+  createRetroMcpServer: vi.fn().mockReturnValue({}),
 }));
 
 import {
@@ -17,6 +18,7 @@ import {
   createReviewConfig,
   createSessionConfig,
   createQaConfig,
+  createRetroConfig,
   buildQaSystemPrompt,
   buildExecuteSystemPrompt,
 } from "./agent-configs";
@@ -26,6 +28,7 @@ import {
   createReviewMcpServer,
   createCommonMcpServer,
   createWorkflowSessionMcpServer,
+  createRetroMcpServer,
 } from "./mcp-tools";
 
 describe("createPlanConfig", () => {
@@ -307,6 +310,56 @@ describe("buildQaSystemPrompt", () => {
     expect(prompt).toContain("NEVER ask for confirmation before creating fix phases");
     expect(prompt).toContain("NEVER ask for confirmation before running tests or validating the repo");
     expect(prompt).not.toContain("QA Approval Loop (MANDATORY)");
+  });
+});
+
+describe("createRetroConfig", () => {
+  it("returns agentType retro with correct fields", () => {
+    const config = createRetroConfig({
+      featureId: 1,
+      projectId: 2,
+      cwd: "/cwd",
+    });
+
+    expect(config.agentType).toBe("retro");
+    expect(config.featureId).toBe(1);
+    expect(config.projectId).toBe(2);
+    expect(config.cwd).toBe("/cwd");
+  });
+
+  it("has a systemPrompt", () => {
+    const config = createRetroConfig({
+      featureId: 1,
+      projectId: 2,
+      cwd: "/cwd",
+    });
+
+    expect(config.systemPrompt).toBeDefined();
+    expect(config.systemPrompt!.length).toBeGreaterThan(0);
+  });
+
+  it("has a store_retro_report completion action", () => {
+    const config = createRetroConfig({
+      featureId: 1,
+      projectId: 2,
+      cwd: "/cwd",
+    });
+
+    expect(config.completionActions).toBeDefined();
+    expect(config.completionActions!.length).toBeGreaterThan(0);
+    expect(config.completionActions![0].event).toBe("store_retro_report");
+  });
+
+  it("has mcpServerFactory defined", () => {
+    const config = createRetroConfig({
+      featureId: 1,
+      projectId: 2,
+      cwd: "/cwd",
+    });
+
+    expect(config.mcpServerFactory).toBeDefined();
+    config.mcpServerFactory!("sub1", 5);
+    expect(createRetroMcpServer).toHaveBeenCalledWith(1, 5);
   });
 });
 

@@ -13,6 +13,7 @@ import qaCompletionAuto from "./qa-completion-auto.md?raw";
 import executeBase from "./execute-base.md?raw";
 import executeCompletionApproval from "./execute-completion-approval.md?raw";
 import executeCompletionAuto from "./execute-completion-auto.md?raw";
+import retro from "./retro.md?raw";
 
 export const prompts = {
   "plan.md": plan,
@@ -30,4 +31,5 @@ export const prompts = {
   "execute-base.md": executeBase,
   "execute-completion-approval.md": executeCompletionApproval,
   "execute-completion-auto.md": executeCompletionAuto,
+  "retro.md": retro,
 } as const;
