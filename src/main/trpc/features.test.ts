@@ -12,6 +12,15 @@ vi.mock("../agents/session-persistence", () => ({
   getSubprocessIdForSession: vi.fn().mockReturnValue(null),
 }));
 
+vi.mock("../agents/execute-agent", () => ({
+  processNextPhase: vi.fn(),
+  getAutonomyLevel: vi.fn().mockReturnValue(1),
+}));
+
+vi.mock("../agents/resolve-cwd", () => ({
+  resolveAgentCwd: vi.fn().mockReturnValue({ cwd: "/tmp", worktreePath: undefined }),
+}));
+
 vi.mock("../agents/subprocess-manager", () => ({
   stopSubprocess: vi.fn().mockResolvedValue(true),
   startSubprocess: vi.fn(),

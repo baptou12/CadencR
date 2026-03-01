@@ -14,9 +14,8 @@ import {
   startReviewFixerAgent,
   startRetroAgent,
 } from "../agents/agent-starters";
-import { startExecuteAgent, continueExecuteAgent } from "../agents/execute-agent";
+import { processNextPhase } from "../agents/execute-agent";
 import { autoNameFeature, runAutoNameBlocking } from "../agents/auto-name";
-import { initWorkflow, continueWorkflow } from "../agents/workflow-orchestrator";
 import { resolveAgentCwd } from "../agents/resolve-cwd";
 import { setupWorktreeForFeature } from "../git/worktree";
 import { hasDefaultTitle } from "./shared";
@@ -44,7 +43,6 @@ export const workflowRouter = router({
       } else {
         description = input.description;
       }
-      initWorkflow(input.featureId, "plan");
       return startPlanAgent({ featureId: input.featureId, projectId: input.projectId, description, cwd, worktreePath });
     }),
 
@@ -70,15 +68,15 @@ export const workflowRouter = router({
       } else {
         description = input.description;
       }
-      initWorkflow(input.featureId, "prd");
       return startPrdAgent({ featureId: input.featureId, projectId: input.projectId, description, cwd, worktreePath });
     }),
 
-  /** Continue a paused workflow (autonomy level 1) */
+  /** Continue a paused workflow — triggers processNextPhase */
   continueWorkflow: publicProcedure
-    .input(z.object({ featureId: z.number() }))
+    .input(z.object({ featureId: z.number(), projectId: z.number() }))
     .mutation(({ input }) => {
-      continueWorkflow(input.featureId);
+      const { cwd, worktreePath } = resolveAgentCwd(input.featureId, input.projectId);
+      processNextPhase({ featureId: input.featureId, projectId: input.projectId, cwd, worktreePath });
       return { success: true };
     }),
 
@@ -112,13 +110,18 @@ export const workflowRouter = router({
     .input(z.object({ featureId: z.number(), projectId: z.number() }))
     .mutation(({ input }) => {
       const { cwd, worktreePath } = resolveAgentCwd(input.featureId, input.projectId);
-      return startExecuteAgent({ ...input, cwd, worktreePath });
+      processNextPhase({ featureId: input.featureId, projectId: input.projectId, cwd, worktreePath });
+      return { success: true };
     }),
 
-  /** Continue a waiting execute orchestrator (Level 2 autonomy) */
+  /** Continue execute phases (Level 2 autonomy — user clicks "continue") */
   continueExecute: publicProcedure
-    .input(z.object({ sessionDbId: z.number() }))
-    .mutation(({ input }) => continueExecuteAgent(input.sessionDbId)),
+    .input(z.object({ featureId: z.number(), projectId: z.number() }))
+    .mutation(({ input }) => {
+      const { cwd, worktreePath } = resolveAgentCwd(input.featureId, input.projectId);
+      processNextPhase({ featureId: input.featureId, projectId: input.projectId, cwd, worktreePath });
+      return { success: true };
+    }),
 
   /** Start the risk analysis agent for a feature */
   startRisk: publicProcedure

@@ -198,8 +198,8 @@ describe("useWorkflowMutations", () => {
     const { result } = renderHook(() =>
       useWorkflowMutations({ featureId: 1, projectId: 1, sessions: [], refetch: mockRefetch, getDescription: mockGetDescription }),
     );
-    await result.current.handleContinueBuild(42);
-    expect(mockContinueExecute).toHaveBeenCalledWith({ sessionDbId: 42 });
+    await result.current.handleContinueBuild();
+    expect(mockContinueExecute).toHaveBeenCalledWith({ featureId: 1, projectId: 1 });
   });
 
   it("handleAddFixPhase calls addFixPhase with fix description", async () => {

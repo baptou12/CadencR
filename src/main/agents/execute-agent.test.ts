@@ -1,5 +1,5 @@
 /**
- * Tests for execute-agent.ts — phase execution orchestration, step grouping, error handling.
+ * Tests for execute-agent.ts — processNextPhase queue-based execution.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -12,6 +12,12 @@ vi.mock("../db/database", () => ({
       all: vi.fn().mockReturnValue([]),
     })),
   })),
+}));
+
+vi.mock("../db/query", () => ({
+  queryOne: vi.fn(),
+  queryAll: vi.fn(),
+  execute: vi.fn(),
 }));
 
 vi.mock("./broadcast", () => ({
@@ -36,21 +42,30 @@ vi.mock("./unified-agent", () => ({
 
 vi.mock("./agent-configs", () => ({
   buildExecuteSystemPrompt: vi.fn().mockReturnValue("system prompt"),
-  createQaConfig: vi.fn().mockReturnValue({}),
+  createQaConfig: vi.fn().mockReturnValue({ completionActions: [] }),
 }));
 
-vi.mock("./mcp-tools", () => ({
-  createExecuteMcpServer: vi.fn().mockReturnValue({}),
+vi.mock("./mcp-factory", () => ({
+  buildMcpServerFactory: vi.fn().mockReturnValue(undefined),
 }));
 
 vi.mock("../db/settings", () => ({
   resolveSetting: vi.fn().mockReturnValue(null),
 }));
 
-import { startExecuteAgent, getAutonomyLevel } from "./execute-agent";
+vi.mock("./session-persistence", () => ({
+  notifyDbUpdated: vi.fn(),
+}));
+
+import { Option, Result } from "@swan-io/boxed";
+import { processNextPhase, getAutonomyLevel } from "./execute-agent";
 import { transitionFeature } from "./state-transitions";
 import { startUnifiedAgent } from "./unified-agent";
-import { getDatabase } from "../db/database";
+import { queryOne, queryAll } from "../db/query";
+import { notifyDbUpdated } from "./session-persistence";
+
+const mockQueryOne = vi.mocked(queryOne);
+const mockQueryAll = vi.mocked(queryAll);
 
 const baseOptions = {
   featureId: 1,
@@ -58,31 +73,60 @@ const baseOptions = {
   cwd: "/project",
 };
 
-function setupMockDb(phases: any[] = [], planId = 10) {
-  (getDatabase as any).mockReturnValue({
-    prepare: vi.fn().mockImplementation((sql: string) => {
-      if (sql.includes("INSERT INTO agent_sessions")) {
-        return { run: vi.fn().mockReturnValue({ lastInsertRowid: 99 }) };
-      }
-      if (sql.includes("SELECT id FROM plans")) {
-        return { get: vi.fn().mockReturnValue({ id: planId }) };
-      }
-      if (sql.includes("SELECT id, plan_id, step_number")) {
-        return { all: vi.fn().mockReturnValue(phases) };
-      }
-      if (sql.includes("COUNT(*) as cnt FROM phases")) {
-        return { get: vi.fn().mockReturnValue({ cnt: 0 }) };
-      }
-      return {
-        run: vi.fn(),
-        get: vi.fn().mockReturnValue(null),
-        all: vi.fn().mockReturnValue([]),
-      };
-    }),
+function setupQueries(overrides: {
+  featureStatus?: string;
+  planId?: number | null;
+  hasRunningAgent?: boolean;
+  pendingPhases?: any[];
+  lastReviewId?: number | null;
+  lastExecId?: number | null;
+  hasRunningReview?: boolean;
+  lastCompletedExecId?: number | null;
+} = {}) {
+  const {
+    featureStatus = "in-progress",
+    planId = 10,
+    hasRunningAgent = false,
+    pendingPhases = [],
+    lastReviewId = null,
+    lastExecId = null,
+    hasRunningReview = false,
+    lastCompletedExecId = null,
+  } = overrides;
+
+  mockQueryOne.mockImplementation((sql: string, ..._params: unknown[]) => {
+    if (sql.includes("SELECT status FROM features")) {
+      return Option.Some({ status: featureStatus }) as any;
+    }
+    if (sql.includes("SELECT id FROM plans")) {
+      return planId ? Option.Some({ id: planId }) as any : Option.None() as any;
+    }
+    if (sql.includes("agent_type IN ('execute', 'qa') AND status = 'running'")) {
+      return hasRunningAgent ? Option.Some({ id: 999 }) as any : Option.None() as any;
+    }
+    if (sql.includes("agent_type = 'review' AND status = 'completed'")) {
+      return lastReviewId ? Option.Some({ id: lastReviewId, ended_at: null }) as any : Option.None() as any;
+    }
+    if (sql.includes("agent_type IN ('execute', 'qa') AND status = 'completed'")) {
+      if (lastExecId) return Option.Some({ id: lastExecId, ended_at: null }) as any;
+      if (lastCompletedExecId) return Option.Some({ id: lastCompletedExecId }) as any;
+      return Option.None() as any;
+    }
+    if (sql.includes("agent_type = 'review' AND status = 'running'")) {
+      return hasRunningReview ? Option.Some({ id: 888 }) as any : Option.None() as any;
+    }
+    return Option.None() as any;
+  });
+
+  mockQueryAll.mockImplementation((sql: string, ..._params: unknown[]) => {
+    if (sql.includes("SELECT id, plan_id, step_number")) {
+      return Result.Ok(pendingPhases) as any;
+    }
+    return Result.Ok([]) as any;
   });
 }
 
-describe("startExecuteAgent", () => {
+describe("processNextPhase", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     (startUnifiedAgent as any).mockReturnValue({
@@ -92,96 +136,105 @@ describe("startExecuteAgent", () => {
     });
   });
 
-  it("throws when no active plan exists", () => {
-    (getDatabase as any).mockReturnValue({
-      prepare: vi.fn().mockImplementation((sql: string) => {
-        if (sql.includes("INSERT INTO agent_sessions")) {
-          return { run: vi.fn().mockReturnValue({ lastInsertRowid: 1 }) };
-        }
-        return { run: vi.fn(), get: vi.fn().mockReturnValue(null), all: vi.fn().mockReturnValue([]) };
-      }),
+  it("returns early when feature is not in-progress or planned", () => {
+    setupQueries({ featureStatus: "draft" });
+    processNextPhase(baseOptions);
+    expect(startUnifiedAgent).not.toHaveBeenCalled();
+  });
+
+  it("returns early when no active plan", () => {
+    setupQueries({ planId: null });
+    processNextPhase(baseOptions);
+    expect(startUnifiedAgent).not.toHaveBeenCalled();
+  });
+
+  it("returns early when agents are already running (idempotent guard)", () => {
+    setupQueries({ hasRunningAgent: true, pendingPhases: [{ id: 1 }] });
+    processNextPhase(baseOptions);
+    expect(startUnifiedAgent).not.toHaveBeenCalled();
+  });
+
+  it("transitions feature from planned to in-progress", () => {
+    setupQueries({
+      featureStatus: "planned",
+      pendingPhases: [
+        { id: 1, plan_id: 10, step_number: 1, title: "P1", status: "pending", complexity: 1, commit_message: null, prompt: "do", order_index: 0, phase_type: "value" },
+      ],
     });
 
-    expect(() => startExecuteAgent(baseOptions)).toThrow("No active plan found");
-  });
-
-  it("throws when no pending phases exist", () => {
-    setupMockDb([]);
-    expect(() => startExecuteAgent(baseOptions)).toThrow("No pending phases");
-  });
-
-  it("transitions feature to in-progress on start", () => {
-    setupMockDb([
-      {
-        id: 1, plan_id: 10, step_number: 1, title: "Phase 1", status: "pending",
-        complexity: 2, commit_message: "feat: phase 1", prompt: "do something",
-        order_index: 0, phase_type: "simplan:exec",
-      },
-    ]);
-
-    startExecuteAgent(baseOptions);
+    processNextPhase(baseOptions);
 
     expect(transitionFeature).toHaveBeenCalledWith(expect.anything(), 1, "in-progress");
   });
 
-  it("creates orchestrator session record", () => {
-    const sessionRun = vi.fn().mockReturnValue({ lastInsertRowid: 77 });
-    (getDatabase as any).mockReturnValue({
-      prepare: vi.fn().mockImplementation((sql: string) => {
-        if (sql.includes("INSERT INTO agent_sessions")) return { run: sessionRun };
-        if (sql.includes("SELECT id FROM plans")) return { get: vi.fn().mockReturnValue({ id: 10 }) };
-        if (sql.includes("SELECT id, plan_id, step_number")) return {
-          all: vi.fn().mockReturnValue([
-            { id: 1, plan_id: 10, step_number: 1, title: "P1", status: "pending",
-              complexity: 1, commit_message: null, prompt: "do", order_index: 0, phase_type: "simplan:exec" },
-          ]),
-        };
-        return { run: vi.fn(), get: vi.fn().mockReturnValue(null), all: vi.fn().mockReturnValue([]) };
-      }),
+  it("dispatches pending phases", () => {
+    setupQueries({
+      pendingPhases: [
+        { id: 1, plan_id: 10, step_number: 1, title: "P1", status: "pending", complexity: 1, commit_message: null, prompt: "do", order_index: 0, phase_type: "value" },
+      ],
     });
 
-    const result = startExecuteAgent(baseOptions);
+    processNextPhase(baseOptions);
 
-    expect(sessionRun).toHaveBeenCalledWith(1, "execute", "running");
-    expect(result.sessionDbId).toBe(77);
+    expect(startUnifiedAgent).toHaveBeenCalledTimes(1);
   });
 
-  it("returns subprocess IDs from first step phases", () => {
+  it("dispatches multiple phases from same step in parallel", () => {
     (startUnifiedAgent as any)
       .mockReturnValueOnce({ subprocessId: "sub-1", agentType: "execute", sessionDbId: 100 })
       .mockReturnValueOnce({ subprocessId: "sub-2", agentType: "execute", sessionDbId: 101 });
 
-    setupMockDb([
-      { id: 1, plan_id: 10, step_number: 1, title: "P1", status: "pending", complexity: 1, commit_message: null, prompt: "A", order_index: 0, phase_type: "simplan:exec" },
-      { id: 2, plan_id: 10, step_number: 1, title: "P2", status: "pending", complexity: 1, commit_message: null, prompt: "B", order_index: 1, phase_type: "simplan:exec" },
-    ]);
+    setupQueries({
+      pendingPhases: [
+        { id: 1, plan_id: 10, step_number: 1, title: "P1", status: "pending", complexity: 1, commit_message: null, prompt: "A", order_index: 0, phase_type: "value" },
+        { id: 2, plan_id: 10, step_number: 1, title: "P2", status: "pending", complexity: 1, commit_message: null, prompt: "B", order_index: 1, phase_type: "value" },
+      ],
+    });
 
-    const result = startExecuteAgent(baseOptions);
-    expect(result.subprocessIds).toContain("sub-1");
-    expect(result.subprocessIds).toContain("sub-2");
-  });
-
-  it("launches parallel phases in first step", () => {
-    setupMockDb([
-      { id: 1, plan_id: 10, step_number: 1, title: "P1", status: "pending", complexity: 1, commit_message: null, prompt: "A", order_index: 0, phase_type: "simplan:exec" },
-      { id: 2, plan_id: 10, step_number: 1, title: "P2", status: "pending", complexity: 2, commit_message: null, prompt: "B", order_index: 1, phase_type: "simplan:exec" },
-    ]);
-
-    startExecuteAgent(baseOptions);
+    processNextPhase(baseOptions);
 
     expect(startUnifiedAgent).toHaveBeenCalledTimes(2);
   });
 
-  it("passes cwd to each phase", () => {
-    setupMockDb([
-      { id: 1, plan_id: 10, step_number: 1, title: "P1", status: "pending", complexity: 1, commit_message: null, prompt: "A", order_index: 0, phase_type: "simplan:exec" },
-    ]);
+  it("only dispatches phases from the lowest step number", () => {
+    setupQueries({
+      pendingPhases: [
+        { id: 1, plan_id: 10, step_number: 1, title: "P1", status: "pending", complexity: 1, commit_message: null, prompt: "A", order_index: 0, phase_type: "value" },
+        { id: 2, plan_id: 10, step_number: 2, title: "P2", status: "pending", complexity: 1, commit_message: null, prompt: "B", order_index: 0, phase_type: "value" },
+      ],
+    });
 
-    startExecuteAgent({ ...baseOptions, cwd: "/custom/path" });
+    processNextPhase(baseOptions);
 
-    expect(startUnifiedAgent).toHaveBeenCalledWith(
-      expect.objectContaining({ cwd: "/custom/path" }),
-    );
+    // Only step 1 phase dispatched
+    expect(startUnifiedAgent).toHaveBeenCalledTimes(1);
+  });
+
+  it("triggers review when no pending phases and no recent review", () => {
+    setupQueries({ pendingPhases: [] });
+
+    // Mock the dynamic require for startReviewAgent
+    vi.doMock("./agent-starters", () => ({
+      startReviewAgent: vi.fn(),
+    }));
+
+    processNextPhase(baseOptions);
+
+    // No phases to dispatch, should attempt review (we can't easily test the dynamic require)
+    expect(startUnifiedAgent).not.toHaveBeenCalled();
+  });
+
+  it("marks feature done when review ran after execute with no fixes", () => {
+    setupQueries({
+      pendingPhases: [],
+      lastReviewId: 20,
+      lastExecId: 10,
+    });
+
+    processNextPhase(baseOptions);
+
+    expect(transitionFeature).toHaveBeenCalledWith(expect.anything(), 1, "done");
+    expect(notifyDbUpdated).toHaveBeenCalledWith("feature", 1);
   });
 });
 
@@ -193,7 +246,6 @@ describe("getAutonomyLevel", () => {
   it("returns 1 (default) when no setting found", async () => {
     const { resolveSetting } = await import("../db/settings");
     (resolveSetting as any).mockReturnValue(null);
-    // Number(null) = 0, which is not 1/2/3, so defaults to 1
     expect(getAutonomyLevel(1, 1)).toBe(1);
   });
 

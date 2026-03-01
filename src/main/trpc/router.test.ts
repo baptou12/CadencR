@@ -50,8 +50,7 @@ startRiskAgent: vi.fn().mockReturnValue({ subprocessId: "sp-1", agentType: "risk
 }));
 
 vi.mock("../agents/execute-agent", () => ({
-  startExecuteAgent: vi.fn().mockReturnValue({ subprocessId: "sp-1", agentType: "execute", sessionDbId: 7 }),
-  continueExecuteAgent: vi.fn().mockReturnValue(undefined),
+  processNextPhase: vi.fn(),
   buildPhaseCompletionAction: vi.fn().mockReturnValue({ type: "complete_phase", phaseId: 1, featureId: 1 }),
 }));
 
@@ -381,10 +380,10 @@ describe("appRouter - workflowRouter - agent starters", () => {
     expect(startPlanAgent).toHaveBeenCalledWith(expect.objectContaining({ featureId: 1, projectId: 1 }));
   });
 
-  it("agents.startExecute calls startExecuteAgent", async () => {
-    const { startExecuteAgent } = await import("../agents/execute-agent");
+  it("agents.startExecute calls processNextPhase", async () => {
+    const { processNextPhase } = await import("../agents/execute-agent");
     await caller.workflow.startExecute({ featureId: 1, projectId: 1 });
-    expect(startExecuteAgent).toHaveBeenCalled();
+    expect(processNextPhase).toHaveBeenCalled();
   });
 
   it("agents.startRisk calls startRiskAgent", async () => {
@@ -417,10 +416,10 @@ describe("appRouter - workflowRouter - agent starters", () => {
     expect(addFixPhase).toHaveBeenCalledWith(1, "Fix the bug");
   });
 
-  it("agents.continueExecute calls continueExecuteAgent", async () => {
-    const { continueExecuteAgent } = await import("../agents/execute-agent");
-    await caller.workflow.continueExecute({ sessionDbId: 1 });
-    expect(continueExecuteAgent).toHaveBeenCalledWith(1);
+  it("agents.continueExecute calls processNextPhase", async () => {
+    const { processNextPhase } = await import("../agents/execute-agent");
+    await caller.workflow.continueExecute({ featureId: 1, projectId: 1 });
+    expect(processNextPhase).toHaveBeenCalled();
   });
 });
 

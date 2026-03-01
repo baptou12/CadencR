@@ -60,7 +60,6 @@ export function useWorkflowAgents({
   // --- Session entry list for display ---
   const sessionEntries: FeatureSession[] = useMemo(() => {
     return sessions.filter((s) => {
-      if (s.agentType === "execute" && s.runId == null && !s.subprocessId) return false;
       if (s.status === "idle" && s.blocks.length === 0) return false;
       return true;
     });
@@ -80,7 +79,7 @@ export function useWorkflowAgents({
   const reviewSession = useMemo(() => findSession("review"), [findSession]);
 
   const executeSessions = useMemo(
-    () => sessions.filter((s) => s.agentType === "execute" && s.subprocessId),
+    () => sessions.filter((s) => s.agentType === "execute"),
     [sessions],
   );
 
@@ -88,29 +87,27 @@ export function useWorkflowAgents({
   const noAgentsRunning = sessions.every((s) => s.status !== "running");
 
   // --- Continue build state ---
-  const waitingOrchestrator = useMemo(
-    () => sessions.find((s) => s.agentType === "execute" && s.runId == null && s.status === "paused"),
-    [sessions],
-  );
-  const canContinueBuild = waitingOrchestrator != null;
+  // Level 2 autonomy: can continue if there are pending phases and no running agents
+  const canContinueBuild = useMemo(() => {
+    const hasRunning = sessions.some((s) =>
+      ["execute", "qa"].includes(s.agentType) && s.status === "running",
+    );
+    return !hasRunning && noAgentsRunning;
+  }, [sessions, noAgentsRunning]);
 
   const executeStatus: AgentStatus = useMemo(() => {
-    if (executeSessions.length === 0) {
-      if (waitingOrchestrator) return "paused";
-      return "idle";
-    }
+    if (executeSessions.length === 0) return "idle";
     if (executeSessions.some((s) => s.status === "running")) return "running";
     if (executeSessions.some((s) => s.status === "paused")) return "paused";
     if (executeSessions.some((s) => s.status === "error")) return "error";
     if (executeSessions.every((s) => s.status === "completed")) return "completed";
     return "idle";
-  }, [executeSessions, waitingOrchestrator]);
+  }, [executeSessions]);
 
-  // Wrap handleContinueBuild to inject the orchestrator session ID
+  // Continue build: call processNextPhase via tRPC
   const handleContinueBuild = useCallback(async () => {
-    if (!waitingOrchestrator) return;
-    await continueBuild(waitingOrchestrator.sessionDbId);
-  }, [waitingOrchestrator, continueBuild]);
+    await continueBuild();
+  }, [continueBuild]);
 
   // --- Review state (pure derivation — no useState) ---
   // The review agent uses MCP tools to signal completion and create fix phases directly.

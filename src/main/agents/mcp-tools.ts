@@ -11,6 +11,8 @@ import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { getDatabase } from "../db/database";
 import { notifyDbUpdated } from "./session-persistence";
 import { transitionPhase, transitionFeature } from "./state-transitions";
+import { processNextPhase } from "./execute-agent";
+import { resolveAgentCwd } from "./resolve-cwd";
 import type { PhaseRow, PlanRow } from "../db/types";
 
 // ---------------------------------------------------------------------------
@@ -270,31 +272,16 @@ function createAgentDoneTool(sessionDbId: number, featureId: number) {
       ).run(sessionDbId);
       notifyDbUpdated("agent_session", featureId);
 
-      // Only advance workflow / chain QA→Execute for top-level sessions.
-      // Phase-level agents dispatched by the execute orchestrator have a run_id
-      // pointing to their parent orchestrator session — the orchestrator itself
-      // handles workflow advancement when all phases finish.
-      const isOrchestratorChild = current?.run_id != null;
-
-      if (!isOrchestratorChild) {
-        const wfFeat = db.prepare("SELECT workflow_step, project_id FROM features WHERE id = ?")
-          .get(featureId) as { workflow_step: string | null; project_id: number } | undefined;
-        if (wfFeat?.workflow_step) {
-          try {
-            const { onStepCompleted } = require("./workflow-orchestrator");
-            onStepCompleted(featureId);
-          } catch {
-            // workflow-orchestrator not available (e.g. in tests)
+      // After any execute/qa/review agent completes, chain processNextPhase
+      if (["execute", "qa", "review"].includes(current?.agent_type ?? "")) {
+        try {
+          const wfFeat = db.prepare("SELECT project_id FROM features WHERE id = ?")
+            .get(featureId) as { project_id: number } | undefined;
+          if (wfFeat) {
+            const { cwd, worktreePath } = resolveAgentCwd(featureId, wfFeat.project_id);
+            processNextPhase({ featureId, projectId: wfFeat.project_id, cwd, worktreePath });
           }
-        } else if (current?.agent_type === "qa" && wfFeat) {
-          // QA finished outside a workflow — check for pending fix phases and auto-start execute
-          try {
-            const { autoStartExecuteAfterQa } = require("./workflow-orchestrator");
-            autoStartExecuteAfterQa(featureId, wfFeat.project_id);
-          } catch {
-            // workflow-orchestrator not available (e.g. in tests)
-          }
-        }
+        } catch { /* */ }
       }
 
       return textResult("Agent marked as done. Session completed.");

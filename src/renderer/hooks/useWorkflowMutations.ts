@@ -283,14 +283,14 @@ export function useWorkflowMutations({
     [interruptMutation, interruptBySessionIdMutation, refetch],
   );
 
-  const handleContinueBuild = useCallback(async (orchestratorSessionDbId: number) => {
+  const handleContinueBuild = useCallback(async () => {
     try {
-      await continueExecuteMutation.mutateAsync({ sessionDbId: orchestratorSessionDbId });
+      await continueExecuteMutation.mutateAsync({ featureId, projectId });
       void refetch();
     } catch {
       // error handled by query refetch
     }
-  }, [continueExecuteMutation, refetch]);
+  }, [continueExecuteMutation, featureId, projectId, refetch]);
 
   const handleAddFixPhase = useCallback(async (reviewBlocks: FeatureSession["blocks"]) => {
     const reviewText = reviewBlocks

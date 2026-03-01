@@ -1,6 +1,6 @@
 /**
  * Resolve the working directory for an agent, preferring worktree path over project path.
- * Shared between router.ts and workflow-orchestrator.ts.
+ * Shared between router.ts and execute-agent.ts.
  */
 
 import fs from "node:fs";

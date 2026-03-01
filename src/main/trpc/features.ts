@@ -7,6 +7,8 @@ import type { FeatureRow, PlanRow, PhaseRow, CountRow, SettingRow, ProjectRow } 
 import type { AgentType } from "../agents/types";
 import { getSubprocessIdsForSessionDbIds, notifyDbUpdated } from "../agents/session-persistence";
 import { stopSubprocess } from "../agents/subprocess-manager";
+import { processNextPhase } from "../agents/execute-agent";
+import { resolveAgentCwd } from "../agents/resolve-cwd";
 
 export const FEATURE_STATUSES = ["draft", "planned", "in-progress", "done", "archived"] as const;
 export type FeatureStatus = (typeof FEATURE_STATUSES)[number];
@@ -337,21 +339,18 @@ export const featuresRouter = router({
         ).run(input.feature_id, input.key, input.value);
       }
 
-      // When autonomy is raised to >= 2, resume paused workflows and waiting execute sessions
+      // When autonomy is raised to >= 2, resume execution if feature is in-progress
       if (input.key === "agent_autonomy" && Number(input.value) >= 2) {
-        try {
-          const { continueWorkflow } = require("../agents/workflow-orchestrator");
-          continueWorkflow(input.feature_id);
-        } catch { /* */ }
-
-        queryOne<{ id: number }>(
-          "SELECT id FROM agent_sessions WHERE feature_id = ? AND agent_type = 'execute' AND status = 'waiting' ORDER BY id DESC LIMIT 1",
+        queryOne<{ status: string; project_id: number }>(
+          "SELECT status, project_id FROM features WHERE id = ?",
           input.feature_id,
-        ).tapSome((session) => {
-          try {
-            const { continueExecuteAgent } = require("../agents/execute-agent");
-            continueExecuteAgent(session.id);
-          } catch { /* */ }
+        ).tapSome((feat) => {
+          if (feat.status === "in-progress") {
+            try {
+              const { cwd, worktreePath } = resolveAgentCwd(input.feature_id, feat.project_id);
+              processNextPhase({ featureId: input.feature_id, projectId: feat.project_id, cwd, worktreePath });
+            } catch { /* */ }
+          }
         });
       }
 
