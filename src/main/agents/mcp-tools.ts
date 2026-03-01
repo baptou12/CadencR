@@ -36,6 +36,11 @@ export type OnAgentDoneCallback = (options: { featureId: number; projectId: numb
 // Re-export for backward compatibility
 export { renderPlanMarkdown };
 
+// QA, Review, and Risk servers have been extracted to mcp-tools/{qa,review,risk}-server.ts
+export { createQaMcpServer } from "./mcp-tools/qa-server";
+export { createReviewMcpServer } from "./mcp-tools/review-server";
+export { createRiskMcpServer } from "./mcp-tools/risk-server";
+
 // ---------------------------------------------------------------------------
 // Plan agent MCP server
 // ---------------------------------------------------------------------------
@@ -183,67 +188,6 @@ export function createExecuteMcpServer(featureId: number, sessionDbId: number, o
       listPhasesTool,
       createAgentDoneTool(sessionDbId, featureId, onAgentDone),
       createMarkPhaseDoneTool(featureId),
-    ],
-  });
-}
-
-// ---------------------------------------------------------------------------
-// QA agent MCP server
-// ---------------------------------------------------------------------------
-
-export function createQaMcpServer(planId: number, featureId: number, sessionDbId: number, onAgentDone?: OnAgentDoneCallback) {
-  return createSdkMcpServer({
-    name: "productdevr-qa",
-    tools: [
-      readPlanTool,
-      readPhaseTool,
-      listPhasesTool,
-      createPhaseTool(featureId),
-      updatePhaseTool(planId, featureId),
-      removePhaseTool(planId, featureId),
-      createMarkPhaseDoneTool(featureId),
-      createAgentDoneTool(sessionDbId, featureId, onAgentDone),
-      createFinalizePhasesTool(planId, featureId, "phases"),
-    ],
-  });
-}
-
-// ---------------------------------------------------------------------------
-// Review agent MCP server
-// ---------------------------------------------------------------------------
-
-export function createReviewMcpServer(planId: number, featureId: number, sessionDbId: number, onAgentDone?: OnAgentDoneCallback) {
-  return createSdkMcpServer({
-    name: "productdevr-review",
-    tools: [
-      readPlanTool,
-      readPhaseTool,
-      listPhasesTool,
-      createPhaseTool(featureId),
-      updatePhaseTool(planId, featureId),
-      removePhaseTool(planId, featureId),
-      createAgentDoneTool(sessionDbId, featureId, onAgentDone),
-      createFinalizePhasesTool(planId, featureId, "fix phases"),
-    ],
-  });
-}
-
-// ---------------------------------------------------------------------------
-// Risk MCP server (read plan + create/update/remove phases for mitigations)
-// ---------------------------------------------------------------------------
-
-export function createRiskMcpServer(planId: number, featureId: number, sessionDbId: number, onAgentDone?: OnAgentDoneCallback) {
-  return createSdkMcpServer({
-    name: "productdevr-risk",
-    tools: [
-      readPlanTool,
-      readPhaseTool,
-      listPhasesTool,
-      createPhaseTool(featureId),
-      updatePhaseTool(planId, featureId),
-      removePhaseTool(planId, featureId),
-      createAgentDoneTool(sessionDbId, featureId, onAgentDone),
-      createFinalizePhasesTool(planId, featureId, "mitigation phases"),
     ],
   });
 }

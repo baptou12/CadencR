@@ -18,17 +18,21 @@ export {
   createFinalizePhasesTool,
 } from "./shared-tools";
 
-// Re-export server factories (still in the parent mcp-tools.ts for now — will be
-// moved in subsequent phases). We re-export types too.
+// Extracted server factories
+export { createQaMcpServer } from "./qa-server";
+export { createReviewMcpServer } from "./review-server";
+export { createRiskMcpServer } from "./risk-server";
+
+// Extracted server factories
+export { createPlanMcpServer } from "./plan-server";
+export type { PlanApprovalCallback } from "./plan-server";
+export { createExecuteMcpServer } from "./execute-server";
+
+// Server factories still in the parent mcp-tools.ts (will be moved in subsequent phases)
 export {
-  createPlanMcpServer,
-  createExecuteMcpServer,
-  createQaMcpServer,
-  createReviewMcpServer,
-  createRiskMcpServer,
   createPrdMcpServer,
   createRetroMcpServer,
   createCommonMcpServer,
   createWorkflowSessionMcpServer,
 } from "../mcp-tools";
-export type { PlanApprovalCallback, PrdApprovalCallback } from "../mcp-tools";
+export type { PrdApprovalCallback } from "../mcp-tools";
