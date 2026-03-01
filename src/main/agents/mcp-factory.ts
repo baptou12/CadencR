@@ -90,7 +90,7 @@ export function buildMcpServerFactory(
           "productdevr-session": createWorkflowSessionMcpServer(
             sessionDbId,
             featureId,
-            ["read_plan", "list_phases", "read_phase", "mark_agent_done", "mark_phase_done"],
+            ["read_plan", "list_phases", "read_phase", "read_prd", "mark_agent_done", "mark_phase_done"],
           ),
         });
       }
