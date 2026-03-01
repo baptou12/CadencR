@@ -28,11 +28,9 @@ export { createPlanMcpServer } from "./plan-server";
 export type { PlanApprovalCallback } from "./plan-server";
 export { createExecuteMcpServer } from "./execute-server";
 
-// Server factories still in the parent mcp-tools.ts (will be moved in subsequent phases)
-export {
-  createPrdMcpServer,
-  createRetroMcpServer,
-  createCommonMcpServer,
-  createWorkflowSessionMcpServer,
-} from "../mcp-tools";
-export type { PrdApprovalCallback } from "../mcp-tools";
+// Extracted server factories
+export { createPrdMcpServer } from "./prd-server";
+export type { PrdApprovalCallback } from "./prd-server";
+export { createRetroMcpServer } from "./retro-server";
+export { createCommonMcpServer, createWorkflowSessionMcpServer } from "./common-server";
+export type { WorkflowSessionToolName } from "./common-server";
