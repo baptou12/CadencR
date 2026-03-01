@@ -22,7 +22,7 @@ vi.mock("@/trpc", () => ({
       React.createElement(React.Fragment, null, children),
     useUtils: vi.fn(() => ({
       projects: { getSettings: { invalidate: vi.fn() }, getModelSettings: { invalidate: vi.fn() } },
-      settings: { getModelSettings: { invalidate: vi.fn() } },
+      workspace: { getModelSettings: { invalidate: vi.fn() } },
       features: { getModelSettings: { invalidate: vi.fn() } },
       git: { listProjectWorktrees: { invalidate: vi.fn() } },
     })),
@@ -32,7 +32,7 @@ vi.mock("@/trpc", () => ({
       getModelSettings: { useQuery: vi.fn(() => ({ data: {}, isLoading: false })) },
       setModelSetting: { useMutation: vi.fn(() => ({ mutate: vi.fn() })) },
     },
-    settings: {
+    workspace: {
       getAvailableModels: { useQuery: vi.fn(() => ({ data: [{ id: "claude-opus-4-6", label: "Claude Opus 4.6" }] })) },
       getModelSettings: { useQuery: vi.fn(() => ({ data: {}, isLoading: false })) },
       setModelSetting: { useMutation: vi.fn(() => ({ mutate: vi.fn() })) },

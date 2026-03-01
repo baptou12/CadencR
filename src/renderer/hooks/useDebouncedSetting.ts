@@ -6,8 +6,8 @@ import { trpc } from "@/trpc";
  * plus the current persisted value (or null if not yet set).
  */
 export function useDebouncedSetting(key: string, debounceMs = 300) {
-  const query = trpc.settings.get.useQuery({ key });
-  const mutation = trpc.settings.set.useMutation();
+  const query = trpc.workspace.get.useQuery({ key });
+  const mutation = trpc.workspace.set.useMutation();
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const setValue = useCallback(

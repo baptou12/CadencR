@@ -39,12 +39,12 @@ vi.mock("../trpc", () => {
       Provider: ({ children }: { children: unknown }) =>
         React.createElement(React.Fragment, null, children),
       useContext: vi.fn(() => ({
-        settings: { get: { invalidate: vi.fn() } },
+        workspace: { get: { invalidate: vi.fn() } },
       })),
       useUtils: vi.fn(() => ({
-        settings: { get: { invalidate: vi.fn() } },
+        workspace: { get: { invalidate: vi.fn() } },
       })),
-      settings: {
+      workspace: {
         get: { useQuery: mocks.mockGetQuery },
         list: {
           useQuery: () => ({

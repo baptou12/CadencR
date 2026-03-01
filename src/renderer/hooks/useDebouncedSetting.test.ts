@@ -7,7 +7,7 @@ const mockUseQuery = vi.fn(() => ({ data: "stored-value", isLoading: false }));
 
 vi.mock("@/trpc", () => ({
   trpc: {
-    settings: {
+    workspace: {
       get: {
         useQuery: () => mockUseQuery(),
       },

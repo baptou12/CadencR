@@ -36,7 +36,7 @@ vi.mock("@/trpc", () => ({
         useQuery: () => mockProjectSettings(),
       },
     },
-    settings: {
+    workspace: {
       getModelSettings: {
         useQuery: () => mockGlobalSettings(),
       },

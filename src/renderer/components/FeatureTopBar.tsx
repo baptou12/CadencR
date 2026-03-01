@@ -83,9 +83,9 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", executeS
   const utils = trpc.useContext();
 
   // Review fixer agent (start from diff viewer when no agent is running)
-  const startReviewFixer = trpc.agents.startReviewFixer.useMutation({
+  const startReviewFixer = trpc.workflow.startReviewFixer.useMutation({
     onSuccess: () => {
-      utils.agents.getFeatureAgentState.invalidate({ featureId });
+      utils.sessions.getFeatureAgentState.invalidate({ featureId });
     },
   });
 

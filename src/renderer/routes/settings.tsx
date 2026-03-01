@@ -9,11 +9,11 @@ export const Route = createFileRoute("/settings")({
 });
 
 function ParallelExecutionCheckbox() {
-  const parallel = trpc.settings.get.useQuery({ key: "parallel_execution" });
+  const parallel = trpc.workspace.get.useQuery({ key: "parallel_execution" });
   const utils = trpc.useContext();
-  const setParallel = trpc.settings.set.useMutation({
+  const setParallel = trpc.workspace.set.useMutation({
     onSuccess: () => {
-      utils.settings.get.invalidate({ key: "parallel_execution" });
+      utils.workspace.get.invalidate({ key: "parallel_execution" });
     },
   });
 
@@ -36,11 +36,11 @@ function ParallelExecutionCheckbox() {
 }
 
 function AgentAutonomySelect() {
-  const autonomy = trpc.settings.get.useQuery({ key: "agent_autonomy" });
+  const autonomy = trpc.workspace.get.useQuery({ key: "agent_autonomy" });
   const utils = trpc.useContext();
-  const setAutonomy = trpc.settings.set.useMutation({
+  const setAutonomy = trpc.workspace.set.useMutation({
     onSuccess: () => {
-      utils.settings.get.invalidate({ key: "agent_autonomy" });
+      utils.workspace.get.invalidate({ key: "agent_autonomy" });
     },
   });
 
@@ -65,8 +65,8 @@ function SettingsPage() {
   const [key, setKey] = useState("");
   const [value, setValue] = useState("");
 
-  const settingsList = trpc.settings.list.useQuery();
-  const setSetting = trpc.settings.set.useMutation({
+  const settingsList = trpc.workspace.list.useQuery();
+  const setSetting = trpc.workspace.set.useMutation({
     onSuccess: () => {
       settingsList.refetch();
       setKey("");

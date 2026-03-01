@@ -125,7 +125,7 @@ function SessionFeatureView({
   const { permissionMode, handlePermissionModeToggle, setPermissionMode } = usePermissionMode(session);
 
   // Session-specific mutations
-  const startSessionMutation = trpc.agents.startSession.useMutation();
+  const startSessionMutation = trpc.workflow.startSession.useMutation();
   const sendMessageMutation = trpc.agents.sendMessage.useMutation();
   const interruptMutation = trpc.agents.interrupt.useMutation();
   const resumeMutation = trpc.agents.resume.useMutation();

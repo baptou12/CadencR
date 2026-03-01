@@ -50,24 +50,11 @@ vi.mock("@/trpc", () => {
       },
     },
     agents: {
-      getFeatureAgentState: {
-        useQuery: vi.fn(() => ({
-          data: {
-            featureStatus: "idle",
-            sessions: [],
-            activeRunId: null,
-          },
-          refetch: vi.fn(),
-        })),
-      },
       start: {
         useMutation: vi.fn(() => ({ mutate: vi.fn(), isLoading: false })),
       },
       stop: {
         useMutation: vi.fn(() => ({ mutate: vi.fn() })),
-      },
-      deleteSession: {
-        useMutation: vi.fn(() => ({ mutate: mockDeleteSession })),
       },
       submitAnswers: {
         useMutation: vi.fn(() => ({ mutate: vi.fn() })),
@@ -84,12 +71,29 @@ vi.mock("@/trpc", () => {
       setPermissionMode: {
         useMutation: vi.fn(() => ({ mutate: vi.fn() })),
       },
-      getFeatureTurnStates: {
-        useQuery: vi.fn(() => ({ data: {} })),
-      },
       markSessionDone: {
         useMutation: vi.fn(() => ({ mutate: vi.fn() })),
       },
+    },
+    sessions: {
+      getFeatureAgentState: {
+        useQuery: vi.fn(() => ({
+          data: {
+            featureStatus: "idle",
+            sessions: [],
+            activeRunId: null,
+          },
+          refetch: vi.fn(),
+        })),
+      },
+      deleteSession: {
+        useMutation: vi.fn(() => ({ mutate: mockDeleteSession })),
+      },
+      getFeatureTurnStates: {
+        useQuery: vi.fn(() => ({ data: {} })),
+      },
+    },
+    workflow: {
       startReviewFixer: {
         useMutation: vi.fn(() => ({ mutate: vi.fn() })),
       },
@@ -128,7 +132,7 @@ vi.mock("@/trpc", () => {
         useMutation: vi.fn(() => ({ mutate: vi.fn(), isLoading: false })),
       },
     },
-    settings: {
+    workspace: {
       get: {
         useQuery: vi.fn(() => ({ data: null })),
       },
@@ -145,7 +149,7 @@ vi.mock("@/trpc", () => {
       },
     },
     useUtils: vi.fn(() => ({
-      agents: { getFeatureAgentState: { invalidate: mockInvalidate } },
+      sessions: { getFeatureAgentState: { invalidate: mockInvalidate } },
       features: {
         getById: { invalidate: mockInvalidate },
         getProgress: { invalidate: mockInvalidate },

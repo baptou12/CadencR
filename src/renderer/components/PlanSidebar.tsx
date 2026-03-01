@@ -34,13 +34,13 @@ export function PlanSidebar({ featureId }: PlanSidebarProps) {
   const resetPhase = trpc.features.resetPhase.useMutation({
     onSuccess: () => {
       utils.features.getPlanWithPhases.invalidate({ feature_id: featureId });
-      utils.agents.getFeatureAgentState.invalidate({ featureId });
+      utils.sessions.getFeatureAgentState.invalidate({ featureId });
     },
   });
   const overridePhaseStatus = trpc.features.overridePhaseStatus.useMutation({
     onSuccess: () => {
       utils.features.getPlanWithPhases.invalidate({ feature_id: featureId });
-      utils.agents.getFeatureAgentState.invalidate({ featureId });
+      utils.sessions.getFeatureAgentState.invalidate({ featureId });
     },
   });
 

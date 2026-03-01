@@ -39,9 +39,9 @@ export function useDbUpdated() {
           void utils.features.getPlanWithPhases.invalidate({ feature_id: featureId });
           break;
         case "agent_session":
-          void utils.agents.getActiveFeatureIds.invalidate();
-          void utils.agents.getSessions.invalidate({ featureId });
-          void utils.agents.getFeatureAgentState.invalidate({ featureId });
+          void utils.sessions.getActiveFeatureIds.invalidate();
+          void utils.sessions.getSessions.invalidate({ featureId });
+          void utils.sessions.getFeatureAgentState.invalidate({ featureId });
           break;
       }
     });

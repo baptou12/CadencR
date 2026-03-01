@@ -6,7 +6,7 @@ const mockSaveDraftMutate = vi.fn();
 
 vi.mock("@/trpc", () => ({
   trpc: {
-    agents: {
+    sessions: {
       saveDraft: {
         useMutation: vi.fn(() => ({ mutate: mockSaveDraftMutate })),
       },

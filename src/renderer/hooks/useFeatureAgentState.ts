@@ -2,7 +2,7 @@
  * Single hook that provides all agent state for a feature.
  *
  * Data flows through a single path:
- *   1. `trpc.agents.getFeatureAgentState` — canonical state from DB (pre-built nested blocks)
+ *   1. `trpc.sessions.getFeatureAgentState` — canonical state from DB (pre-built nested blocks)
  *   2. `useDbUpdated` invalidates the query on throttled `db:updated` events from main process
  *   3. Terminal events (agent_done, agent_paused) trigger an immediate refetch
  */
@@ -91,7 +91,7 @@ export interface FeatureSession {
 // ---------------------------------------------------------------------------
 
 export function useFeatureAgentState(featureId: number) {
-  const query = trpc.agents.getFeatureAgentState.useQuery({ featureId });
+  const query = trpc.sessions.getFeatureAgentState.useQuery({ featureId });
 
   // Stable ref to query.refetch so the IPC effect doesn't re-register every render
   const refetchRef = useRef(query.refetch);

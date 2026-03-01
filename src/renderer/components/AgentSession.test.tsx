@@ -73,7 +73,7 @@ vi.mock("@/trpc", () => {
       createClient: vi.fn(() => ({})),
       Provider: ({ children }: { children: unknown }) =>
         React.createElement(React.Fragment, null, children),
-      settings: {
+      workspace: {
         getAvailableModels: {
           useQuery: vi.fn(() => ({ data: [] })),
         },
@@ -88,7 +88,7 @@ vi.mock("@/trpc", () => {
           useQuery: vi.fn(() => ({ data: undefined })),
         },
       },
-      agents: {
+      sessions: {
         getSupportedCommands: {
           useQuery: vi.fn(() => ({ data: undefined })),
         },

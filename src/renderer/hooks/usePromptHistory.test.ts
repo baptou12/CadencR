@@ -9,15 +9,15 @@ const mockHistoryQuery = vi.fn((): { data: string[] } => ({ data: [] }));
 vi.mock("@/trpc", () => ({
   trpc: {
     useContext: vi.fn(() => ({
-      promptHistory: {
-        getHistory: { invalidate: mockInvalidate },
+      workspace: {
+        getPromptHistory: { invalidate: mockInvalidate },
       },
     })),
-    promptHistory: {
-      getHistory: {
+    workspace: {
+      getPromptHistory: {
         useQuery: () => mockHistoryQuery(),
       },
-      addEntry: {
+      addPromptEntry: {
         useMutation: vi.fn(() => ({
           mutate: (data: unknown, opts?: { onSuccess?: () => void }) => {
             mockAddEntryMutate(data);

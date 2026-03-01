@@ -14,7 +14,7 @@ export function useResolvedModel(featureId: number, projectId: number) {
 
   const featureSettings = trpc.features.getModelSettings.useQuery({ featureId });
   const projectSettings = trpc.projects.getModelSettings.useQuery({ projectId });
-  const globalSettings = trpc.settings.getModelSettings.useQuery();
+  const globalSettings = trpc.workspace.getModelSettings.useQuery();
 
   const setModelMutation = trpc.features.setModelSetting.useMutation({
     onSuccess: () => utils.features.getModelSettings.invalidate(),

@@ -345,8 +345,8 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
   const [promptBarFocused, setPromptBarFocused] = useState(false);
   const [bgTasksOpen, setBgTasksOpen] = useState(false);
   const { tasks: bgTasks, activeCount: bgActiveCount } = useBackgroundTasks(subprocessId);
-  const killBackgroundTask = trpc.agents.killBackgroundTask.useMutation();
-  const availableModels = trpc.settings.getAvailableModels.useQuery();
+  const killBackgroundTask = trpc.sessions.killBackgroundTask.useMutation();
+  const availableModels = trpc.workspace.getAvailableModels.useQuery();
   const models = useMemo(() => availableModels.data ?? [], [availableModels.data]);
   const cwdQuery = trpc.features.resolveWorkingDir.useQuery(
     { featureId: featureId!, projectId: projectId! },

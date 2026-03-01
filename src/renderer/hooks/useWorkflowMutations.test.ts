@@ -24,7 +24,7 @@ const mockStartWorkflowSession = vi.fn().mockResolvedValue({});
 
 vi.mock("@/trpc", () => ({
   trpc: {
-    agents: {
+    workflow: {
       ensureWorktree: { useMutation: vi.fn(() => ({ mutateAsync: mockEnsureWorktree, isLoading: false })) },
       startPlan: { useMutation: vi.fn(() => ({ mutateAsync: mockStartPlan, isLoading: false })) },
       startPrd: { useMutation: vi.fn(() => ({ mutateAsync: mockStartPrd, isLoading: false })) },
@@ -33,16 +33,20 @@ vi.mock("@/trpc", () => ({
       startReview: { useMutation: vi.fn(() => ({ mutateAsync: mockStartReview, isLoading: false })) },
       startRetro: { useMutation: vi.fn(() => ({ mutateAsync: mockStartRetro, isLoading: false })) },
       addFixPhase: { useMutation: vi.fn(() => ({ mutateAsync: mockAddFixPhase, isLoading: false })) },
-      submitAnswers: { useMutation: vi.fn(() => ({ mutate: mockSubmitAnswers })) },
-      stop: { useMutation: vi.fn(() => ({ mutateAsync: mockStop })) },
-      stopBySessionId: { useMutation: vi.fn(() => ({ mutateAsync: mockStopBySessionId })) },
-      interrupt: { useMutation: vi.fn(() => ({ mutateAsync: mockInterrupt })) },
-      interruptBySessionId: { useMutation: vi.fn(() => ({ mutateAsync: mockInterruptBySessionId })) },
-      sendMessage: { useMutation: vi.fn(() => ({ mutateAsync: mockSendMessage })) },
-      resume: { useMutation: vi.fn(() => ({ mutateAsync: mockResume })) },
       continueExecute: { useMutation: vi.fn(() => ({ mutateAsync: mockContinueExecute, isLoading: false })) },
       startWorkflowSession: { useMutation: vi.fn(() => ({ mutateAsync: mockStartWorkflowSession, isLoading: false })) },
       startRefinePlan: { useMutation: vi.fn(() => ({ mutateAsync: vi.fn(), isLoading: false })) },
+    },
+    sessions: {
+      stopBySessionId: { useMutation: vi.fn(() => ({ mutateAsync: mockStopBySessionId })) },
+      interruptBySessionId: { useMutation: vi.fn(() => ({ mutateAsync: mockInterruptBySessionId })) },
+    },
+    agents: {
+      submitAnswers: { useMutation: vi.fn(() => ({ mutate: mockSubmitAnswers })) },
+      stop: { useMutation: vi.fn(() => ({ mutateAsync: mockStop })) },
+      interrupt: { useMutation: vi.fn(() => ({ mutateAsync: mockInterrupt })) },
+      sendMessage: { useMutation: vi.fn(() => ({ mutateAsync: mockSendMessage })) },
+      resume: { useMutation: vi.fn(() => ({ mutateAsync: mockResume })) },
     },
   },
 }));
