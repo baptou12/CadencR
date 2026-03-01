@@ -9,287 +9,32 @@
 import { z } from "zod";
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { getDatabase } from "../db/database";
+import { queryOne, queryAll, execute } from "../db/query";
 import { notifyDbUpdated } from "./session-persistence";
-import { transitionPhase, transitionFeature } from "./state-transitions";
+import { transitionFeature } from "./state-transitions";
 import { resolveAgentCwd } from "./resolve-cwd";
-import type { PhaseRow, PlanRow } from "../db/types";
+import {
+  textResult,
+  errorResult,
+  renderPlanMarkdown,
+} from "./mcp-tools/helpers";
+import {
+  readPlanTool,
+  listPhasesTool,
+  readPhaseTool,
+  createPhaseTool,
+  updatePhaseTool,
+  removePhaseTool,
+  createAgentDoneTool,
+  createMarkPhaseDoneTool,
+  createFinalizePhasesTool,
+} from "./mcp-tools/shared-tools";
 
 /** Callback invoked when an execute/qa/review agent calls mark_agent_done */
 export type OnAgentDoneCallback = (options: { featureId: number; projectId: number; cwd: string; worktreePath: string | null }) => void;
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function textResult(text: string) {
-  return { content: [{ type: "text" as const, text }] };
-}
-
-function errorResult(text: string) {
-  return { content: [{ type: "text" as const, text }], isError: true };
-}
-
-/**
- * Render a plan and its phases as formatted markdown.
- */
-export function renderPlanMarkdown(planId: number): string {
-  const db = getDatabase();
-  const plan = db
-    .prepare("SELECT * FROM plans WHERE id = ?")
-    .get(planId) as PlanRow | undefined;
-
-  if (!plan) return "Plan not found.";
-
-  const phases = db
-    .prepare(
-      "SELECT * FROM phases WHERE plan_id = ? ORDER BY step_number, order_index",
-    )
-    .all(planId) as PhaseRow[];
-
-  const sections: string[] = [];
-  sections.push(`# Plan: ${plan.title}`);
-
-  if (plan.summary) sections.push(`## Summary\n\n${plan.summary}`);
-  if (plan.context) sections.push(`## Context\n\n${plan.context}`);
-  if (plan.clarifications) sections.push(`## Clarifications\n\n${plan.clarifications}`);
-  if (plan.completion_conditions) sections.push(`## Completion Conditions\n\n${plan.completion_conditions}`);
-
-  if (phases.length > 0) {
-    sections.push("## Phases\n");
-    for (const phase of phases) {
-      const lines = [`### Phase ${phase.step_number}: ${phase.title}`];
-      lines.push(`- **Step**: ${phase.step_number}`);
-      lines.push(`- **Type**: ${phase.phase_type}`);
-      lines.push(`- **Complexity**: ${phase.complexity}`);
-      lines.push(`- **Status**: ${phase.status}`);
-      if (phase.commit_message) lines.push(`- **Commit message**: ${phase.commit_message}`);
-      if (phase.prompt) lines.push(`\n${phase.prompt}`);
-      sections.push(lines.join("\n"));
-    }
-  }
-
-  return sections.join("\n\n");
-}
-
-// ---------------------------------------------------------------------------
-// Shared read-only tools (available to all agents)
-// ---------------------------------------------------------------------------
-
-const readPlanTool = tool(
-  "read_plan",
-  "Read a plan's metadata (title, summary, context, clarifications, completion conditions) and list all its phases with their current status.",
-  {
-    plan_id: z.number().describe("The plan ID to read"),
-  },
-  async (args) => {
-    return textResult(renderPlanMarkdown(args.plan_id));
-  },
-);
-
-const listPhasesTool = tool(
-  "list_phases",
-  "List all phases of a plan with their IDs, titles, step numbers, statuses, and types. Useful for getting an overview of what phases exist.",
-  {
-    plan_id: z.number().describe("The plan ID"),
-  },
-  async (args) => {
-    const db = getDatabase();
-    const phases = db
-      .prepare(
-        "SELECT id, step_number, title, status, phase_type, complexity FROM phases WHERE plan_id = ? ORDER BY step_number, order_index",
-      )
-      .all(args.plan_id) as Array<{ id: number; step_number: number; title: string; status: string; phase_type: string; complexity: number }>;
-
-    if (phases.length === 0) return textResult("No phases found for this plan.");
-
-    const lines = phases.map(
-      (p) => `- [${p.status}] Phase ${p.id} (step ${p.step_number}): ${p.title} — type=${p.phase_type}, complexity=${p.complexity}`,
-    );
-    return textResult(`${phases.length} phases:\n${lines.join("\n")}`);
-  },
-);
-
-const readPhaseTool = tool(
-  "read_phase",
-  "Read a specific phase's full details including its prompt, status, complexity, and implementation notes.",
-  {
-    phase_id: z.number().describe("The phase ID to read"),
-  },
-  async (args) => {
-    const db = getDatabase();
-    const phase = db
-      .prepare("SELECT * FROM phases WHERE id = ?")
-      .get(args.phase_id) as PhaseRow | undefined;
-
-    if (!phase) return errorResult(`Phase ${args.phase_id} not found`);
-
-    const lines = [
-      `# Phase ${phase.id}: ${phase.title}`,
-      `- **Plan ID**: ${phase.plan_id}`,
-      `- **Step**: ${phase.step_number}`,
-      `- **Status**: ${phase.status}`,
-      `- **Type**: ${phase.phase_type}`,
-      `- **Complexity**: ${phase.complexity}`,
-      `- **Commit message**: ${phase.commit_message ?? "(none)"}`,
-      `- **Order index**: ${phase.order_index}`,
-    ];
-    if (phase.prompt) lines.push(`\n## Prompt\n\n${phase.prompt}`);
-    if (phase.implementation_notes) lines.push(`\n## Implementation Notes\n\n${phase.implementation_notes}`);
-    if (phase.deviations) lines.push(`\n## Deviations\n\n${phase.deviations}`);
-
-    return textResult(lines.join("\n"));
-  },
-);
-
-// ---------------------------------------------------------------------------
-// Shared phase tools (used by plan + QA agents)
-// ---------------------------------------------------------------------------
-
-function createPhaseTool(featureId: number) {
-  return tool(
-    "create_phase",
-    "Create a new draft phase in the plan. The phase starts with status 'draft' and must be finalized before execution.",
-    {
-      plan_id: z.number().describe("The plan ID to add the phase to"),
-      step_number: z.number().describe("Step number (phases in the same step run in parallel)"),
-      title: z.string().describe("Short title for this phase"),
-      prompt: z.string().describe("Detailed description of what this phase should implement"),
-      complexity: z.number().min(1).max(5).optional().describe("Complexity 1-5 (default 3)"),
-      commit_message: z.string().optional().describe("Conventional commit message (e.g. 'feat: add login form')"),
-      phase_type: z.enum(["setup", "value", "qa"]).optional().describe("Phase type: setup (foundational), value (feature work), qa (test checkpoint). Default: value"),
-    },
-    async (args) => {
-      const db = getDatabase();
-      // Get max order_index for this plan
-      const maxOrder = db
-        .prepare("SELECT MAX(order_index) as max_idx FROM phases WHERE plan_id = ?")
-        .get(args.plan_id) as { max_idx: number | null } | undefined;
-      const orderIndex = (maxOrder?.max_idx ?? -1) + 1;
-
-      const result = db
-        .prepare(
-          "INSERT INTO phases (plan_id, step_number, title, status, complexity, commit_message, prompt, order_index, phase_type) VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?)",
-        )
-        .run(
-          args.plan_id,
-          args.step_number,
-          args.title,
-          args.complexity ?? 3,
-          args.commit_message ?? null,
-          args.prompt,
-          orderIndex,
-          args.phase_type ?? "value",
-        );
-
-      notifyDbUpdated("phase", featureId);
-      return textResult(`Phase created with id=${result.lastInsertRowid}, title="${args.title}", step=${args.step_number}`);
-    },
-  );
-}
-
-function updatePhaseTool(planId: number, featureId: number) {
-  return tool(
-    "update_phase",
-    "Update an existing draft phase. Only phases with status 'draft' can be edited.",
-    {
-      phase_id: z.number().describe("The phase ID to update"),
-      title: z.string().optional().describe("New title"),
-      step_number: z.number().optional().describe("New step number"),
-      complexity: z.number().min(1).max(5).optional().describe("New complexity"),
-      commit_message: z.string().optional().describe("New commit message"),
-      prompt: z.string().optional().describe("New prompt/description"),
-      phase_type: z.enum(["setup", "value", "qa"]).optional().describe("New phase type"),
-    },
-    async (args) => {
-      const db = getDatabase();
-      const phase = db
-        .prepare("SELECT status, plan_id FROM phases WHERE id = ?")
-        .get(args.phase_id) as { status: string; plan_id: number } | undefined;
-
-      if (!phase) return errorResult(`Phase ${args.phase_id} not found`);
-      if (phase.plan_id !== planId) return errorResult(`Phase ${args.phase_id} does not belong to plan ${planId}`);
-      if (phase.status !== "draft") return errorResult(`Phase ${args.phase_id} has status '${phase.status}', only 'draft' phases can be edited`);
-
-      const updates: string[] = [];
-      const values: unknown[] = [];
-
-      if (args.title !== undefined) { updates.push("title = ?"); values.push(args.title); }
-      if (args.step_number !== undefined) { updates.push("step_number = ?"); values.push(args.step_number); }
-      if (args.complexity !== undefined) { updates.push("complexity = ?"); values.push(args.complexity); }
-      if (args.commit_message !== undefined) { updates.push("commit_message = ?"); values.push(args.commit_message); }
-      if (args.prompt !== undefined) { updates.push("prompt = ?"); values.push(args.prompt); }
-      if (args.phase_type !== undefined) { updates.push("phase_type = ?"); values.push(args.phase_type); }
-
-      if (updates.length === 0) return errorResult("No fields to update");
-
-      values.push(args.phase_id);
-      db.prepare(`UPDATE phases SET ${updates.join(", ")} WHERE id = ?`).run(...values);
-      notifyDbUpdated("phase", featureId);
-      return textResult(`Phase ${args.phase_id} updated`);
-    },
-  );
-}
-
-function removePhaseTool(planId: number, featureId: number) {
-  return tool(
-    "remove_phase",
-    "Remove a draft phase from the plan. Only phases with status 'draft' can be removed.",
-    {
-      phase_id: z.number().describe("The phase ID to remove"),
-    },
-    async (args) => {
-      const db = getDatabase();
-      const phase = db
-        .prepare("SELECT status, plan_id FROM phases WHERE id = ?")
-        .get(args.phase_id) as { status: string; plan_id: number } | undefined;
-
-      if (!phase) return errorResult(`Phase ${args.phase_id} not found`);
-      if (phase.plan_id !== planId) return errorResult(`Phase ${args.phase_id} does not belong to plan ${planId}`);
-      if (phase.status !== "draft") return errorResult(`Phase ${args.phase_id} has status '${phase.status}', only 'draft' phases can be removed`);
-
-      db.prepare("DELETE FROM phases WHERE id = ?").run(args.phase_id);
-      notifyDbUpdated("phase", featureId);
-      return textResult(`Phase ${args.phase_id} removed`);
-    },
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Universal mark_agent_done tool helper
-// ---------------------------------------------------------------------------
-
-function createAgentDoneTool(sessionDbId: number, featureId: number, onAgentDone?: OnAgentDoneCallback) {
-  return tool(
-    "mark_agent_done",
-    "Signal that the agent has completed its work. Call this when you are finished. Optionally provide a summary of what was accomplished.",
-    {
-      summary: z.string().optional().describe("Optional summary of what was accomplished"),
-    },
-    async (_args) => {
-      const db = getDatabase();
-      const current = db.prepare("SELECT status, agent_type, run_id FROM agent_sessions WHERE id = ?").get(sessionDbId) as { status: string; agent_type: string; run_id: number | null } | undefined;
-      console.log(`[session-trace] mark_agent_done: session ${sessionDbId} (${current?.agent_type}), ${current?.status} -> completed (feature ${featureId})`);
-      db.prepare(
-        "UPDATE agent_sessions SET status = 'completed', ended_at = datetime('now') WHERE id = ?",
-      ).run(sessionDbId);
-      notifyDbUpdated("agent_session", featureId);
-
-      // After any execute/qa/review agent completes, chain via callback
-      if (onAgentDone && ["execute", "qa", "review"].includes(current?.agent_type ?? "")) {
-        try {
-          const wfFeat = db.prepare("SELECT project_id FROM features WHERE id = ?")
-            .get(featureId) as { project_id: number } | undefined;
-          if (wfFeat) {
-            const { cwd, worktreePath } = resolveAgentCwd(featureId, wfFeat.project_id);
-            onAgentDone({ featureId, projectId: wfFeat.project_id, cwd, worktreePath: worktreePath ?? null });
-          }
-        } catch { /* */ }
-      }
-
-      return textResult("Agent marked as done. Session completed.");
-    },
-  );
-}
+// Re-export for backward compatibility
+export { renderPlanMarkdown };
 
 // ---------------------------------------------------------------------------
 // Plan agent MCP server
@@ -297,8 +42,6 @@ function createAgentDoneTool(sessionDbId: number, featureId: number, onAgentDone
 
 /** Callback type for show_plan approval — blocks until user responds */
 export type PlanApprovalCallback = (planMarkdown: string) => Promise<{ approved: boolean; feedback?: string }>;
-
-// Plan approval is now persisted in DB (plans.status = 'approved') instead of in-memory Set.
 
 /**
  * Create the plan MCP server.
@@ -332,7 +75,6 @@ export function createPlanMcpServer(planId: number, featureId: number, sessionDb
           completion_conditions: z.string().optional().describe("Conditions that should be true when the plan is complete"),
         },
         async (args) => {
-          const db = getDatabase();
           const updates: string[] = [];
           const values: unknown[] = [];
 
@@ -346,7 +88,7 @@ export function createPlanMcpServer(planId: number, featureId: number, sessionDb
 
           updates.push("updated_at = datetime('now')");
           values.push(args.plan_id);
-          db.prepare(`UPDATE plans SET ${updates.join(", ")} WHERE id = ?`).run(...values);
+          execute(`UPDATE plans SET ${updates.join(", ")} WHERE id = ?`, ...values);
           notifyDbUpdated("plan", featureId);
           return textResult("Plan updated");
         },
@@ -366,8 +108,7 @@ export function createPlanMcpServer(planId: number, featureId: number, sessionDb
           try {
             const result = await onShowPlan(markdown);
             if (result.approved) {
-              const db = getDatabase();
-              db.prepare("UPDATE plans SET status = 'approved', updated_at = datetime('now') WHERE id = ?").run(args.plan_id);
+              execute("UPDATE plans SET status = 'approved', updated_at = datetime('now') WHERE id = ?", args.plan_id);
               notifyDbUpdated("plan", featureId);
               return textResult("✅ Plan approved by the user. You may now call finalize_plan.");
             } else {
@@ -386,17 +127,17 @@ export function createPlanMcpServer(planId: number, featureId: number, sessionDb
           plan_id: z.number().describe("The plan ID"),
         },
         async (args) => {
-          const db = getDatabase();
+          const draftCount = queryOne<{ cnt: number }>(
+            "SELECT COUNT(*) as cnt FROM phases WHERE plan_id = ? AND status = 'draft'",
+            args.plan_id,
+          ).map((r) => r.cnt).getOr(0);
 
-          const draftCount = db
-            .prepare("SELECT COUNT(*) as cnt FROM phases WHERE plan_id = ? AND status = 'draft'")
-            .get(args.plan_id) as { cnt: number };
+          if (draftCount === 0) return errorResult("No draft phases to finalize");
 
-          if (draftCount.cnt === 0) return errorResult("No draft phases to finalize");
-
-          const plan = db
-            .prepare("SELECT feature_id, status AS plan_status FROM plans WHERE id = ?")
-            .get(args.plan_id) as { feature_id: number; plan_status: string } | undefined;
+          const plan = queryOne<{ feature_id: number; plan_status: string }>(
+            "SELECT feature_id, status AS plan_status FROM plans WHERE id = ?",
+            args.plan_id,
+          ).toUndefined();
 
           if (!plan) return errorResult("Plan not found");
 
@@ -405,7 +146,12 @@ export function createPlanMcpServer(planId: number, featureId: number, sessionDb
           }
 
           // Check current feature status — only transition to 'planned' if still in draft
-          const feature = db.prepare("SELECT status FROM features WHERE id = ?").get(plan.feature_id) as { status: string } | undefined;
+          const feature = queryOne<{ status: string }>(
+            "SELECT status FROM features WHERE id = ?",
+            plan.feature_id,
+          ).toUndefined();
+
+          const db = getDatabase();
           db.transaction(() => {
             db.prepare("UPDATE phases SET status = 'pending' WHERE plan_id = ? AND status = 'draft'").run(args.plan_id);
             db.prepare("UPDATE plans SET status = 'active', updated_at = datetime('now') WHERE id = ?").run(args.plan_id);
@@ -417,7 +163,7 @@ export function createPlanMcpServer(planId: number, featureId: number, sessionDb
           notifyDbUpdated("phase", plan.feature_id);
 
           const markdown = renderPlanMarkdown(args.plan_id);
-          return textResult(`Plan finalized successfully. ${draftCount.cnt} phases are now pending.\n\n${markdown}`);
+          return textResult(`Plan finalized successfully. ${draftCount} phases are now pending.\n\n${markdown}`);
         },
       ),
     ],
@@ -427,39 +173,6 @@ export function createPlanMcpServer(planId: number, featureId: number, sessionDb
 // ---------------------------------------------------------------------------
 // Execute agent MCP server
 // ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// Reusable phase-status tool: agents mark their own phase as completed
-// ---------------------------------------------------------------------------
-
-function createMarkPhaseDoneTool(featureId: number) {
-  return tool(
-    "mark_phase_done",
-    "Mark a phase as completed. Call this after successfully finishing your work on the phase.",
-    {
-      phase_id: z.number().describe("The phase ID"),
-      implementation_notes: z.string().optional().describe("Summary of what was implemented or tested"),
-      deviations: z.string().optional().describe("Any deviations from the original plan"),
-    },
-    async (args) => {
-      const db = getDatabase();
-      const phase = db
-        .prepare("SELECT status FROM phases WHERE id = ?")
-        .get(args.phase_id) as { status: string } | undefined;
-
-      if (!phase) return errorResult(`Phase ${args.phase_id} not found`);
-      if (phase.status !== "running") {
-        return errorResult(`Phase ${args.phase_id} has status '${phase.status}', expected 'running'`);
-      }
-
-      transitionPhase(db, args.phase_id, "completed", featureId, {
-        implementation_notes: args.implementation_notes ?? null,
-        deviations: args.deviations ?? null,
-      });
-      return textResult(`Phase ${args.phase_id} marked as completed`);
-    },
-  );
-}
 
 export function createExecuteMcpServer(featureId: number, sessionDbId: number, onAgentDone?: OnAgentDoneCallback) {
   return createSdkMcpServer({
@@ -490,31 +203,7 @@ export function createQaMcpServer(planId: number, featureId: number, sessionDbId
       removePhaseTool(planId, featureId),
       createMarkPhaseDoneTool(featureId),
       createAgentDoneTool(sessionDbId, featureId, onAgentDone),
-
-      tool(
-        "finalize_phases",
-        "Finalize all draft phases created during QA — sets them to 'pending' so the execute orchestrator picks them up.",
-        {
-          plan_id: z.number().describe("The plan ID"),
-        },
-        async (args) => {
-          if (args.plan_id !== planId) {
-            return errorResult(`Expected plan_id ${planId}, got ${args.plan_id}`);
-          }
-          const db = getDatabase();
-          const draftPhases = db
-            .prepare("SELECT id, title, step_number FROM phases WHERE plan_id = ? AND status = 'draft' ORDER BY step_number, order_index")
-            .all(planId) as Array<{ id: number; title: string; step_number: number }>;
-
-          if (draftPhases.length === 0) return errorResult("No draft phases to finalize");
-
-          db.prepare("UPDATE phases SET status = 'pending' WHERE plan_id = ? AND status = 'draft'").run(planId);
-          notifyDbUpdated("phase", featureId);
-
-          const listing = draftPhases.map((p) => `- Phase ${p.id}: "${p.title}" (step ${p.step_number})`).join("\n");
-          return textResult(`Finalized ${draftPhases.length} phases:\n${listing}`);
-        },
-      ),
+      createFinalizePhasesTool(planId, featureId, "phases"),
     ],
   });
 }
@@ -534,31 +223,7 @@ export function createReviewMcpServer(planId: number, featureId: number, session
       updatePhaseTool(planId, featureId),
       removePhaseTool(planId, featureId),
       createAgentDoneTool(sessionDbId, featureId, onAgentDone),
-
-      tool(
-        "finalize_phases",
-        "Finalize all draft fix phases created during review — sets them to 'pending' so the execute orchestrator picks them up.",
-        {
-          plan_id: z.number().describe("The plan ID"),
-        },
-        async (args) => {
-          if (args.plan_id !== planId) {
-            return errorResult(`Expected plan_id ${planId}, got ${args.plan_id}`);
-          }
-          const db = getDatabase();
-          const draftPhases = db
-            .prepare("SELECT id, title, step_number FROM phases WHERE plan_id = ? AND status = 'draft' ORDER BY step_number, order_index")
-            .all(planId) as Array<{ id: number; title: string; step_number: number }>;
-
-          if (draftPhases.length === 0) return errorResult("No draft phases to finalize");
-
-          db.prepare("UPDATE phases SET status = 'pending' WHERE plan_id = ? AND status = 'draft'").run(planId);
-          notifyDbUpdated("phase", featureId);
-
-          const listing = draftPhases.map((p) => `- Phase ${p.id}: "${p.title}" (step ${p.step_number})`).join("\n");
-          return textResult(`Finalized ${draftPhases.length} fix phases:\n${listing}`);
-        },
-      ),
+      createFinalizePhasesTool(planId, featureId, "fix phases"),
     ],
   });
 }
@@ -578,31 +243,7 @@ export function createRiskMcpServer(planId: number, featureId: number, sessionDb
       updatePhaseTool(planId, featureId),
       removePhaseTool(planId, featureId),
       createAgentDoneTool(sessionDbId, featureId, onAgentDone),
-
-      tool(
-        "finalize_phases",
-        "Finalize all draft mitigation phases — sets them to 'pending' so they can be executed.",
-        {
-          plan_id: z.number().describe("The plan ID"),
-        },
-        async (args) => {
-          if (args.plan_id !== planId) {
-            return errorResult(`Expected plan_id ${planId}, got ${args.plan_id}`);
-          }
-          const db = getDatabase();
-          const draftPhases = db
-            .prepare("SELECT id, title, step_number FROM phases WHERE plan_id = ? AND status = 'draft' ORDER BY step_number, order_index")
-            .all(planId) as Array<{ id: number; title: string; step_number: number }>;
-
-          if (draftPhases.length === 0) return errorResult("No draft phases to finalize");
-
-          db.prepare("UPDATE phases SET status = 'pending' WHERE plan_id = ? AND status = 'draft'").run(planId);
-          notifyDbUpdated("phase", featureId);
-
-          const listing = draftPhases.map((p) => `- Phase ${p.id}: "${p.title}" (step ${p.step_number})`).join("\n");
-          return textResult(`Finalized ${draftPhases.length} mitigation phases:\n${listing}`);
-        },
-      ),
+      createFinalizePhasesTool(planId, featureId, "mitigation phases"),
     ],
   });
 }
@@ -627,8 +268,7 @@ export function createPrdMcpServer(featureId: number, sessionDbId: number, onSho
           prd: z.string().describe("The full PRD markdown content"),
         },
         async (args) => {
-          const db = getDatabase();
-          db.prepare("UPDATE features SET prd = ? WHERE id = ?").run(args.prd, featureId);
+          execute("UPDATE features SET prd = ? WHERE id = ?", args.prd, featureId);
           notifyDbUpdated("feature", featureId);
           return textResult("PRD created successfully.");
         },
@@ -642,8 +282,11 @@ export function createPrdMcpServer(featureId: number, sessionDbId: number, onSho
           new_string: z.string().describe("The string to replace it with"),
         },
         async (args) => {
-          const db = getDatabase();
-          const row = db.prepare("SELECT prd FROM features WHERE id = ?").get(featureId) as { prd: string | null } | undefined;
+          const row = queryOne<{ prd: string | null }>(
+            "SELECT prd FROM features WHERE id = ?",
+            featureId,
+          ).toUndefined();
+
           if (!row?.prd) {
             return errorResult("No PRD exists yet. Use create_prd first.");
           }
@@ -655,7 +298,7 @@ export function createPrdMcpServer(featureId: number, sessionDbId: number, onSho
             return errorResult(`old_string found ${occurrences} times in the PRD. Provide a larger/more unique string to match exactly once.`);
           }
           const updated = row.prd.replace(args.old_string, args.new_string);
-          db.prepare("UPDATE features SET prd = ? WHERE id = ?").run(updated, featureId);
+          execute("UPDATE features SET prd = ? WHERE id = ?", updated, featureId);
           notifyDbUpdated("feature", featureId);
           return textResult("PRD updated successfully.");
         },
@@ -666,8 +309,10 @@ export function createPrdMcpServer(featureId: number, sessionDbId: number, onSho
         "Display the current PRD for user approval. This tool BLOCKS until the user approves or rejects. If approved, returns success. If rejected, returns the user's feedback so you can revise.",
         {},
         async () => {
-          const db = getDatabase();
-          const row = db.prepare("SELECT prd FROM features WHERE id = ?").get(featureId) as { prd: string | null } | undefined;
+          const row = queryOne<{ prd: string | null }>(
+            "SELECT prd FROM features WHERE id = ?",
+            featureId,
+          ).toUndefined();
           const prdMarkdown = row?.prd ?? "(No PRD content found)";
 
           if (!onShowPrd) {
@@ -707,10 +352,10 @@ export function createRetroMcpServer(featureId: number, sessionDbId: number, onA
         "Read the PRD (Product Requirements Document) for this feature.",
         {},
         async () => {
-          const db = getDatabase();
-          const row = db
-            .prepare("SELECT prd FROM features WHERE id = ?")
-            .get(featureId) as { prd: string | null } | undefined;
+          const row = queryOne<{ prd: string | null }>(
+            "SELECT prd FROM features WHERE id = ?",
+            featureId,
+          ).toUndefined();
           return textResult(row?.prd ?? "No PRD available.");
         },
       ),
@@ -720,25 +365,24 @@ export function createRetroMcpServer(featureId: number, sessionDbId: number, onA
         "List all agent sessions for this feature with metadata and message counts. Use this to get an overview before reading individual conversations.",
         {},
         async () => {
-          const db = getDatabase();
-          const sessions = db
-            .prepare(
-              `SELECT s.id, s.agent_type, s.status, s.started_at, s.ended_at,
+          const result = queryAll<{
+            id: number;
+            agent_type: string;
+            status: string;
+            started_at: string | null;
+            ended_at: string | null;
+            message_count: number;
+          }>(
+            `SELECT s.id, s.agent_type, s.status, s.started_at, s.ended_at,
                 COUNT(m.id) as message_count
               FROM agent_sessions s
               LEFT JOIN agent_messages m ON m.session_id = s.id
               WHERE s.feature_id = ?
               GROUP BY s.id
               ORDER BY s.id ASC`,
-            )
-            .all(featureId) as Array<{
-              id: number;
-              agent_type: string;
-              status: string;
-              started_at: string | null;
-              ended_at: string | null;
-              message_count: number;
-            }>;
+            featureId,
+          );
+          const sessions = result.getOr([]);
 
           if (sessions.length === 0) return textResult("No agent sessions found for this feature.");
 
@@ -759,26 +403,26 @@ export function createRetroMcpServer(featureId: number, sessionDbId: number, onA
           limit: z.number().optional().describe("Max messages to return (default 50)"),
         },
         async (args) => {
-          const db = getDatabase();
           const resolvedOffset = args.offset ?? 0;
           const resolvedLimit = args.limit ?? 50;
 
-          const total = (
-            db
-              .prepare("SELECT COUNT(*) as cnt FROM agent_messages WHERE session_id = ?")
-              .get(args.session_id) as { cnt: number } | undefined
-          )?.cnt ?? 0;
+          const total = queryOne<{ cnt: number }>(
+            "SELECT COUNT(*) as cnt FROM agent_messages WHERE session_id = ?",
+            args.session_id,
+          ).map((r) => r.cnt).getOr(0);
 
-          const messages = db
-            .prepare(
-              "SELECT role, content, message_type, tool_name FROM agent_messages WHERE session_id = ? ORDER BY id ASC LIMIT ? OFFSET ?",
-            )
-            .all(args.session_id, resolvedLimit, resolvedOffset) as Array<{
-              role: string;
-              content: string;
-              message_type: string;
-              tool_name: string | null;
-            }>;
+          const msgResult = queryAll<{
+            role: string;
+            content: string;
+            message_type: string;
+            tool_name: string | null;
+          }>(
+            "SELECT role, content, message_type, tool_name FROM agent_messages WHERE session_id = ? ORDER BY id ASC LIMIT ? OFFSET ?",
+            args.session_id,
+            resolvedLimit,
+            resolvedOffset,
+          );
+          const messages = msgResult.getOr([]);
 
           if (messages.length === 0 && resolvedOffset === 0) {
             return textResult(`No messages found for session ${args.session_id}.`);
@@ -819,8 +463,10 @@ type WorkflowSessionToolName = "read_plan" | "list_phases" | "read_phase" | "rea
 
 function createReadPrdTool(featureId: number) {
   return tool("read_prd", "Read the PRD for this feature.", {}, async () => {
-    const db = getDatabase();
-    const row = db.prepare("SELECT prd FROM features WHERE id = ?").get(featureId) as { prd: string | null } | undefined;
+    const row = queryOne<{ prd: string | null }>(
+      "SELECT prd FROM features WHERE id = ?",
+      featureId,
+    ).toUndefined();
     if (!row?.prd) return textResult("No PRD exists for this feature.");
     return textResult(row.prd);
   });
