@@ -1,5 +1,4 @@
 import { describe, it, expect, vi } from "vitest";
-import { getDatabase } from "../db/database";
 
 vi.mock("../db/database", () => ({
   getDatabase: vi.fn(() => ({
