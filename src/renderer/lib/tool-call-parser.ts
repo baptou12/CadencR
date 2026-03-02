@@ -81,6 +81,11 @@ const toolParsers: Record<string, ToolParser> = {
     detail: typeof args.url === "string" ? args.url : undefined,
   }),
 
+  Skill: (args) => ({
+    label: "Running skill",
+    detail: typeof args.skill === "string" ? args.skill : undefined,
+  }),
+
   ExitPlanMode: () => ({
     label: "Plan ready for review",
   }),
