@@ -87,7 +87,7 @@ export function AgentBlock({ block, isStreaming, basePath }: AgentBlockProps) {
     case "tool_call":
       if (block.toolName === "TodoWrite") return null;
       if ((block.toolName === "Task" || block.toolName === "Agent") && block.childBlocks) {
-        return <TaskAgentBlock block={block} isStreaming={isStreaming} />;
+        return <TaskAgentBlock block={block} isStreaming={isStreaming} basePath={basePath} />;
       }
       if (block.toolName === "ExitPlanMode" || block.toolName?.endsWith("__show_plan")) {
         return <PlanBlock args={block.toolArgs} />;
@@ -97,7 +97,7 @@ export function AgentBlock({ block, isStreaming, basePath }: AgentBlockProps) {
         if (diff && !diff.filePath.includes("/.claude/plans/")) {
           return (
             <div>
-              <ToolCallBlock name={block.toolName} args={block.toolArgs} />
+              <ToolCallBlock name={block.toolName} args={block.toolArgs} basePath={basePath} />
               <InlineDiffBlock
                 filePath={diff.filePath}
                 oldContent={diff.oldContent}
@@ -108,7 +108,7 @@ export function AgentBlock({ block, isStreaming, basePath }: AgentBlockProps) {
           );
         }
       }
-      return <ToolCallBlock name={block.toolName ?? "unknown"} args={block.toolArgs} />;
+      return <ToolCallBlock name={block.toolName ?? "unknown"} args={block.toolArgs} basePath={basePath} />;
     case "tool_result":
       if (block.sourceToolName === "Bash") {
         return <BashOutputBlock content={block.content} isError={block.isError} />;
@@ -173,9 +173,16 @@ function CodeBlock({ content, language }: { content: string; language?: string }
   );
 }
 
-function ToolCallBlock({ name, args }: { name: string; args?: string }) {
+/** Strip the project base path prefix to show a relative path. */
+function toRelativePath(filePath: string, basePath?: string): string {
+  if (!basePath || !filePath.startsWith(basePath)) return filePath;
+  return filePath.slice(basePath.endsWith("/") ? basePath.length : basePath.length + 1);
+}
+
+function ToolCallBlock({ name, args, basePath }: { name: string; args?: string; basePath?: string }) {
   const [expanded, setExpanded] = useState(false);
   const summary = parseToolCall(name, args);
+  const detail = summary?.detail && basePath ? toRelativePath(summary.detail, basePath) : summary?.detail;
 
   return (
     <div className="my-1 rounded-md border border-border bg-blue-500/5">
@@ -186,8 +193,8 @@ function ToolCallBlock({ name, args }: { name: string; args?: string }) {
       >
         <WrenchIcon className="size-3 text-blue-400" />
         <span className="font-medium text-blue-300">{name}</span>
-        {summary?.detail && (
-          <span className="truncate text-muted-foreground">{summary.detail}</span>
+        {detail && (
+          <span className="truncate text-muted-foreground">{detail}</span>
         )}
         <ChevronRightIcon
           className={cn(
@@ -322,7 +329,7 @@ function UserMessageBlock({ content }: { content: string }) {
 
 const DEFAULT_VISIBLE_CHILDREN = 5;
 
-function TaskAgentBlock({ block, isStreaming }: { block: AgentBlockData; isStreaming?: boolean }) {
+function TaskAgentBlock({ block, isStreaming, basePath }: { block: AgentBlockData; isStreaming?: boolean; basePath?: string }) {
   const toolCalls = (block.childBlocks ?? []).filter((c) => c.type === "tool_call");
   const isRunning = !block.taskComplete && !!isStreaming;
 
@@ -359,7 +366,7 @@ function TaskAgentBlock({ block, isStreaming }: { block: AgentBlockData; isStrea
     >
       {({ showAll }) => (<>
         {(showAll ? toolCalls : toolCalls.slice(-DEFAULT_VISIBLE_CHILDREN)).map((child) => (
-          <CompactBlock key={child.id} block={child} />
+          <CompactBlock key={child.id} block={child} basePath={basePath} />
         ))}
         {isRunning && toolCalls.length > 0 && (
           <div className="flex items-center gap-1.5 pt-1 text-xs text-muted-foreground">
@@ -372,17 +379,18 @@ function TaskAgentBlock({ block, isStreaming }: { block: AgentBlockData; isStrea
   );
 }
 
-function CompactBlock({ block }: { block: AgentBlockData }) {
+function CompactBlock({ block, basePath }: { block: AgentBlockData; basePath?: string }) {
   if (block.type === "tool_call" && block.toolName) {
     if (block.toolName === "ExitPlanMode" || block.toolName.endsWith("__show_plan")) {
       return <PlanBlock args={block.toolArgs} />;
     }
     const summary = parseToolCall(block.toolName, block.toolArgs);
+    const detail = summary?.detail && basePath ? toRelativePath(summary.detail, basePath) : summary?.detail;
     return (
       <div className="flex items-center gap-1.5 text-xs text-muted-foreground py-0.5">
         <WrenchIcon className="size-2.5 text-blue-500 shrink-0" />
         <span className="font-medium text-foreground/70">{block.toolName}</span>
-        {summary?.detail && <span className="truncate">{summary.detail}</span>}
+        {detail && <span className="truncate">{detail}</span>}
       </div>
     );
   }
