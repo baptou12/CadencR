@@ -356,20 +356,44 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
   );
   const projectPath = cwdQuery.data ?? undefined;
 
-  // Auto-scroll: scroll to bottom when the prompt bar is focused and blocks update.
-  // Use `blocks` (not `blocks.length`) so streaming deltas that update content
-  // within existing blocks also trigger a scroll.
-  useLayoutEffect(() => {
-    const el = scrollContainerRef.current;
-    if (promptBarFocused && el) {
-      el.scrollTop = el.scrollHeight;
-    }
-  }, [promptBarFocused, blocks]);
-
   // ---- Collapsible state ----
   const [internalOpen, setInternalOpen] = useState(true);
   const isControlled = controlledOpen !== undefined;
   const isOpen = isControlled ? controlledOpen : internalOpen;
+
+  // Auto-scroll: enabled by default, disabled when user scrolls up,
+  // re-enabled when the prompt bar is focused.
+  const autoScrollRef = useRef(true);
+
+  // Disable autoscroll when user scrolls up, re-enable when scrolled to bottom.
+  // Re-attach when the collapsible panel toggles (scroll container remounts).
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+      autoScrollRef.current = atBottom;
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [isOpen]);
+
+  // Re-enable autoscroll when prompt bar is focused.
+  useEffect(() => {
+    if (promptBarFocused) {
+      autoScrollRef.current = true;
+      const el = scrollContainerRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+    }
+  }, [promptBarFocused]);
+
+  // Scroll to bottom on new content when autoscroll is active.
+  useLayoutEffect(() => {
+    const el = scrollContainerRef.current;
+    if (autoScrollRef.current && el) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [blocks]);
 
   // Auto-open when agent starts running (uncontrolled mode only)
   useEffect(() => {
