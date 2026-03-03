@@ -37,11 +37,11 @@ describe("transitionFeature", () => {
   it("warns but still updates for invalid transition", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     db.prepare.mockImplementation((sql: string) => {
-      if (sql.includes("SELECT")) return { get: () => ({ status: "done" }) };
+      if (sql.includes("SELECT")) return { get: () => ({ status: "draft" }) };
       return { run: vi.fn() };
     });
 
-    transitionFeature(db as any, 1, "planned");
+    transitionFeature(db as any, 1, "done");
 
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Invalid feature transition"));
     expect(mockNotify).toHaveBeenCalled();

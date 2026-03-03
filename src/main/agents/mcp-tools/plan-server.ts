@@ -135,8 +135,8 @@ export function createPlanMcpServer(planId: number, featureId: number, sessionDb
           db.transaction(() => {
             db.prepare("UPDATE phases SET status = 'pending' WHERE plan_id = ? AND status = 'draft'").run(args.plan_id);
             db.prepare("UPDATE plans SET status = 'active', updated_at = datetime('now') WHERE id = ?").run(args.plan_id);
-            // Only transition feature to 'planned' if it's still a draft — don't regress in-progress/review features
-            if (!feature || feature.status === "draft") {
+            // Transition feature to 'planned' if it's a draft or done (refinement resets done features)
+            if (!feature || feature.status === "draft" || feature.status === "done") {
               transitionFeature(db, plan.feature_id, "planned");
             }
           })();

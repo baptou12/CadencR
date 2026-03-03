@@ -26,7 +26,7 @@ const FEATURE_TRANSITIONS: Record<FeatureStatus, FeatureStatus[]> = {
   draft: ["planned"],
   planned: ["in-progress"],
   "in-progress": ["done"],
-  done: [],
+  done: ["planned"],
 };
 
 const PHASE_TRANSITIONS: Record<PhaseStatus, PhaseStatus[]> = {
