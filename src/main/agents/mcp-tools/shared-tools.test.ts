@@ -270,7 +270,7 @@ describe("createAgentDoneTool", () => {
 // createMarkPhaseDoneTool
 // ---------------------------------------------------------------------------
 describe("createMarkPhaseDoneTool", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => vi.resetAllMocks());
 
   it("transitions phase to completed", async () => {
     mockQueryOne.mockReturnValue(Option.Some({ status: "running" }));
