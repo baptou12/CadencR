@@ -16,7 +16,7 @@ import type { OnAgentDoneCallback } from "./shared-tools";
 
 export function createRetroMcpServer(featureId: number, sessionDbId: number, onAgentDone?: OnAgentDoneCallback) {
   return createSdkMcpServer({
-    name: "productdevr-retro",
+    name: "cadence-retro",
     tools: [
       readPlanTool,
       listPhasesTool,

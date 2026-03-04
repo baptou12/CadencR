@@ -17,7 +17,7 @@ import type { OnAgentDoneCallback } from "./shared-tools";
 
 export function createRiskMcpServer(planId: number, featureId: number, sessionDbId: number, onAgentDone?: OnAgentDoneCallback) {
   return createSdkMcpServer({
-    name: "productdevr-risk",
+    name: "cadence-risk",
     tools: [
       readPlanTool,
       readPhaseTool,

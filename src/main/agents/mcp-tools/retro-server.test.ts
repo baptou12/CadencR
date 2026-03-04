@@ -48,9 +48,9 @@ describe("createRetroMcpServer", () => {
     vi.clearAllMocks();
   });
 
-  it("creates a server named 'productdevr-retro'", () => {
+  it("creates a server named 'cadence-retro'", () => {
     const server = createRetroMcpServer(10, 100);
-    expect((server as any).name).toBe("productdevr-retro");
+    expect((server as any).name).toBe("cadence-retro");
   });
 
   describe("read_prd tool", () => {

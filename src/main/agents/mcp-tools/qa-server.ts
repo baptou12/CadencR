@@ -18,7 +18,7 @@ import type { OnAgentDoneCallback } from "./shared-tools";
 
 export function createQaMcpServer(planId: number, featureId: number, sessionDbId: number, onAgentDone?: OnAgentDoneCallback) {
   return createSdkMcpServer({
-    name: "productdevr-qa",
+    name: "cadence-qa",
     tools: [
       readPlanTool,
       readPhaseTool,

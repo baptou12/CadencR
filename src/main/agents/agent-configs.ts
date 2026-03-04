@@ -373,7 +373,7 @@ export function createReviewConfig(opts: ReviewConfigOptions): UnifiedAgentConfi
   }
 
   sections.push(
-    `## Instructions\n\n**Plan ID: ${opts.planId}** — Use this ID when calling MCP tools like \`read_plan\`, \`list_phases\`, \`create_phase\`, \`finalize_phases\`, etc.\n\nReview the implementation against the specification above. Ask yourself: "If I had to build this from the spec, how should the code look?" Then compare with the actual changes.\n\nStart by running \`git diff\` and \`git diff --cached\` to see all changes. Review each change carefully and produce a detailed review report.\n\nYou have MCP tools available (prefixed with mcp__productdevr-review__) to create fix phases if changes are needed. Follow the completion instructions in your system prompt to finalize your review.`,
+    `## Instructions\n\n**Plan ID: ${opts.planId}** — Use this ID when calling MCP tools like \`read_plan\`, \`list_phases\`, \`create_phase\`, \`finalize_phases\`, etc.\n\nReview the implementation against the specification above. Ask yourself: "If I had to build this from the spec, how should the code look?" Then compare with the actual changes.\n\nStart by running \`git diff\` and \`git diff --cached\` to see all changes. Review each change carefully and produce a detailed review report.\n\nYou have MCP tools available (prefixed with mcp__cadence-review__) to create fix phases if changes are needed. Follow the completion instructions in your system prompt to finalize your review.`,
   );
 
   const prompt = sections.join("\n\n---\n\n");

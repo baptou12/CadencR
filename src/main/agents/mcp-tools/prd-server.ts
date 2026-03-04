@@ -15,7 +15,7 @@ export type PrdApprovalCallback = (prdMarkdown: string) => Promise<{ approved: b
 
 export function createPrdMcpServer(featureId: number, sessionDbId: number, onShowPrd?: PrdApprovalCallback, onAgentDone?: OnAgentDoneCallback) {
   return createSdkMcpServer({
-    name: "productdevr-prd",
+    name: "cadence-prd",
     tools: [
       createAgentDoneTool(sessionDbId, featureId, onAgentDone),
 

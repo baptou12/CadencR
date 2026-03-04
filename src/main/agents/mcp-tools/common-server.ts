@@ -20,7 +20,7 @@ import type { OnAgentDoneCallback } from "./shared-tools";
 
 export function createCommonMcpServer(sessionDbId: number, featureId: number, onAgentDone?: OnAgentDoneCallback) {
   return createSdkMcpServer({
-    name: "productdevr-common",
+    name: "cadence-common",
     tools: [
       createAgentDoneTool(sessionDbId, featureId, onAgentDone),
     ],
@@ -58,7 +58,7 @@ export function createWorkflowSessionMcpServer(
     mark_phase_done: createMarkPhaseDoneTool(featureId),
   };
   return createSdkMcpServer({
-    name: "productdevr-session",
+    name: "cadence-session",
     tools: allowedTools.map((name) => toolMap[name]),
   });
 }

@@ -50,9 +50,9 @@ describe("createPrdMcpServer", () => {
     vi.clearAllMocks();
   });
 
-  it("creates a server named 'productdevr-prd'", () => {
+  it("creates a server named 'cadence-prd'", () => {
     const server = createPrdMcpServer(10, 100);
-    expect((server as any).name).toBe("productdevr-prd");
+    expect((server as any).name).toBe("cadence-prd");
   });
 
   describe("create_prd tool", () => {

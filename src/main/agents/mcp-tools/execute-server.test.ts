@@ -50,9 +50,9 @@ describe("createExecuteMcpServer", () => {
     vi.clearAllMocks();
   });
 
-  it("creates a server named 'productdevr-execute'", () => {
+  it("creates a server named 'cadence-execute'", () => {
     const server = createExecuteMcpServer(10, 100);
-    expect((server as any).name).toBe("productdevr-execute");
+    expect((server as any).name).toBe("cadence-execute");
   });
 
   describe("mark_phase_done tool", () => {

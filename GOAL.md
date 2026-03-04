@@ -1,4 +1,4 @@
-# ProductDevR — Claude Code UI
+# Cadence — Claude Code UI
 
 ## Vision
 
@@ -6,7 +6,7 @@ A desktop application that provides a fully-fledged UI for Claude Code, replacin
 
 ## Problems Solved
 
-- **Diff readability**: Terminal diffs are hard to parse. ProductDevR provides a visual diff viewer with inline commenting.
+- **Diff readability**: Terminal diffs are hard to parse. Cadence provides a visual diff viewer with inline commenting.
 - **Parallel execution**: Running multiple Claude Code instances on the same project is fragile. The app manages concurrent agents with proper coordination.
 - **Task planning**: No structured way to plan, track, and review features. The app provides a full feature lifecycle (plan → execute → review → test).
 - **Command management**: Repetitive prompt engineering for common tasks. Dedicated agents handle specific concerns (planning, coding, risk analysis).

@@ -39,7 +39,7 @@ export async function waitForPlanApproval(
   // 1. Emit a synthetic tool_call block so the plan renders in the message list.
   const syntheticToolUseId = `show_plan_${Date.now()}`;
   const toolArgs = JSON.stringify({ plan: planMarkdown });
-  const toolName = "mcp__productdevr-plan__show_plan";
+  const toolName = "mcp__cadence-plan__show_plan";
 
   if (sDbId) {
     try {
@@ -133,7 +133,7 @@ export async function waitForPrdApproval(
   // 1. Emit a synthetic tool_call block so the PRD renders in the message list.
   const syntheticToolUseId = `show_prd_${Date.now()}`;
   const toolArgs = JSON.stringify({ prd: prdMarkdown });
-  const toolName = "mcp__productdevr-prd__show_prd";
+  const toolName = "mcp__cadence-prd__show_prd";
 
   if (sDbId) {
     try {

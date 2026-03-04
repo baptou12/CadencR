@@ -1,16 +1,16 @@
 ---
 name: db
-description: Query or modify the ProductDevR SQLite database
+description: Query or modify the Cadence SQLite database
 user-invocable: true
 allowed-tools: Bash(sqlite3 *)
 ---
 
-# ProductDevR Database
+# Cadence Database
 
-Run queries against the ProductDevR SQLite database at:
-`~/Library/Application Support/<app>/app.db`
+Run queries against the Cadence SQLite database at:
+`~/Library/Application Support/Cadence/cadence.db`
 
-Use `sqlite3` for all operations. Always wrap the DB path in double quotes (`"`) to avoid backslash escaping — e.g. `sqlite3 "$HOME/Library/Application Support/<app>/app.db"`.
+Use `sqlite3` for all operations. Always wrap the DB path in double quotes (`"`) to avoid backslash escaping — e.g. `sqlite3 "$HOME/Library/Application Support/Cadence/cadence.db"`.
 
 ## Tables
 

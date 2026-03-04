@@ -69,7 +69,7 @@ describe("listWorktrees", () => {
       "HEAD abc123",
       "branch refs/heads/main",
       "",
-      "worktree /home/user/.productdevr/myproject/feature-foo",
+      "worktree /home/user/.cadence/myproject/feature-foo",
       "HEAD def456",
       "branch refs/heads/feature/foo",
       "",
@@ -86,7 +86,7 @@ describe("listWorktrees", () => {
       isBare: false,
     });
     expect(result[1]).toEqual({
-      path: "/home/user/.productdevr/myproject/feature-foo",
+      path: "/home/user/.cadence/myproject/feature-foo",
       branch: "feature/foo",
       head: "def456",
       isBare: false,
@@ -145,7 +145,7 @@ describe("createWorktree", () => {
   const repoPath = "/home/user/myrepo";
   const branchName = "feature/my-feature";
   const projectName = "myproject";
-  const expectedDir = path.join(os.homedir(), ".productdevr", projectName, "feature-my-feature");
+  const expectedDir = path.join(os.homedir(), ".cadence", projectName, "feature-my-feature");
 
   beforeEach(() => {
     // First call: git rev-parse --git-dir (success)

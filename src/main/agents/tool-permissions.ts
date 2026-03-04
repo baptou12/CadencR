@@ -214,7 +214,7 @@ async function handleExitPlanMode(
       const toolArgs = JSON.stringify({ plan: planMarkdown });
       db2.prepare(
         "INSERT INTO agent_messages (session_id, role, content, message_type, tool_name, tool_use_id) VALUES (?, ?, ?, ?, ?, ?)",
-      ).run(sDbId, "assistant", toolArgs, "tool_call", "mcp__productdevr-plan__show_plan", syntheticToolUseId);
+      ).run(sDbId, "assistant", toolArgs, "tool_call", "mcp__cadence-plan__show_plan", syntheticToolUseId);
       const row2 = db2.prepare("SELECT feature_id FROM agent_sessions WHERE id = ?").get(sDbId) as { feature_id: number } | undefined;
       if (row2) notifyDbUpdated("agent_session", row2.feature_id);
     } catch (err) {

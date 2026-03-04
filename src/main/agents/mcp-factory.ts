@@ -42,7 +42,7 @@ export function buildMcpServerFactory(
     case "plan": {
       if (!planId) return undefined;
       return (subprocessId: string, sessionDbId: number) => ({
-        "productdevr-plan": createPlanMcpServer(planId, featureId, sessionDbId, async (planMarkdown) => {
+        "cadence-plan": createPlanMcpServer(planId, featureId, sessionDbId, async (planMarkdown) => {
           return waitForPlanApproval(subprocessId, planMarkdown);
         }, onAgentDone),
       });
@@ -50,7 +50,7 @@ export function buildMcpServerFactory(
 
     case "prd": {
       return (subprocessId: string, sessionDbId: number) => ({
-        "productdevr-prd": createPrdMcpServer(featureId, sessionDbId, async (prdMarkdown) => {
+        "cadence-prd": createPrdMcpServer(featureId, sessionDbId, async (prdMarkdown) => {
           return waitForPlanApproval(subprocessId, prdMarkdown);
         }, onAgentDone),
       });
@@ -58,39 +58,39 @@ export function buildMcpServerFactory(
 
     case "execute": {
       return (_subprocessId: string, sessionDbId: number) => ({
-        "productdevr-execute": createExecuteMcpServer(featureId, sessionDbId, onAgentDone),
+        "cadence-execute": createExecuteMcpServer(featureId, sessionDbId, onAgentDone),
       });
     }
 
     case "qa": {
       if (!planId) return undefined;
       return (_subprocessId: string, sessionDbId: number) => ({
-        "productdevr-qa": createQaMcpServer(planId, featureId, sessionDbId, onAgentDone),
+        "cadence-qa": createQaMcpServer(planId, featureId, sessionDbId, onAgentDone),
       });
     }
 
     case "review": {
       if (!planId) return undefined;
       return (_subprocessId: string, sessionDbId: number) => ({
-        "productdevr-review": createReviewMcpServer(planId, featureId, sessionDbId, onAgentDone),
+        "cadence-review": createReviewMcpServer(planId, featureId, sessionDbId, onAgentDone),
       });
     }
 
     case "risk": {
       if (planId) {
         return (_subprocessId: string, sessionDbId: number) => ({
-          "productdevr-risk": createRiskMcpServer(planId, featureId, sessionDbId),
+          "cadence-risk": createRiskMcpServer(planId, featureId, sessionDbId),
         });
       }
       return (_subprocessId: string, sessionDbId: number) => ({
-        "productdevr-common": createCommonMcpServer(sessionDbId, featureId),
+        "cadence-common": createCommonMcpServer(sessionDbId, featureId),
       });
     }
 
     case "session": {
       if (planId) {
         return (_subprocessId: string, sessionDbId: number) => ({
-          "productdevr-session": createWorkflowSessionMcpServer(
+          "cadence-session": createWorkflowSessionMcpServer(
             sessionDbId,
             featureId,
             ["read_plan", "list_phases", "read_phase", "read_prd", "mark_agent_done", "mark_phase_done"],
@@ -98,13 +98,13 @@ export function buildMcpServerFactory(
         });
       }
       return (_subprocessId: string, sessionDbId: number) => ({
-        "productdevr-common": createCommonMcpServer(sessionDbId, featureId),
+        "cadence-common": createCommonMcpServer(sessionDbId, featureId),
       });
     }
 
     case "retro": {
       return (_subprocessId: string, sessionDbId: number) => ({
-        "productdevr-retro": createRetroMcpServer(featureId, sessionDbId),
+        "cadence-retro": createRetroMcpServer(featureId, sessionDbId),
       });
     }
 

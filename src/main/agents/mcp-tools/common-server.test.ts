@@ -29,9 +29,9 @@ vi.mock("../state-transitions", () => ({
 import { createCommonMcpServer, createWorkflowSessionMcpServer } from "./common-server";
 
 describe("createCommonMcpServer", () => {
-  it("creates a server named 'productdevr-common'", () => {
+  it("creates a server named 'cadence-common'", () => {
     const server = createCommonMcpServer(100, 10);
-    expect((server as any).name).toBe("productdevr-common");
+    expect((server as any).name).toBe("cadence-common");
   });
 
   it("only has mark_agent_done tool", () => {
@@ -43,9 +43,9 @@ describe("createCommonMcpServer", () => {
 });
 
 describe("createWorkflowSessionMcpServer", () => {
-  it("creates a server named 'productdevr-session'", () => {
+  it("creates a server named 'cadence-session'", () => {
     const server = createWorkflowSessionMcpServer(100, 10, ["mark_agent_done"]);
-    expect((server as any).name).toBe("productdevr-session");
+    expect((server as any).name).toBe("cadence-session");
   });
 
   it("only includes specified tools", () => {

@@ -50,9 +50,9 @@ describe("createReviewMcpServer", () => {
     vi.clearAllMocks();
   });
 
-  it("creates a server named 'productdevr-review'", () => {
+  it("creates a server named 'cadence-review'", () => {
     const server = createReviewMcpServer(1, 10, 100);
-    expect((server as any).name).toBe("productdevr-review");
+    expect((server as any).name).toBe("cadence-review");
   });
 
   describe("finalize_phases tool (review)", () => {

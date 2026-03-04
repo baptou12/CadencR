@@ -13,8 +13,8 @@ vi.mock("@anthropic-ai/claude-agent-sdk", () => {
 // Mock the electron module globally for main process tests
 const mockElectron = {
   app: {
-    getPath: (name: string) => `/tmp/productdevr-test/${name}`,
-    getName: () => "ProductDevR",
+    getPath: (name: string) => `/tmp/cadence-test/${name}`,
+    getName: () => "Cadence",
     getVersion: () => "0.0.0-test",
     isReady: () => true,
     whenReady: () => Promise.resolve(),

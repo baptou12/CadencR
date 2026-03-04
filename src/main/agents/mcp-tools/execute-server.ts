@@ -14,7 +14,7 @@ import type { OnAgentDoneCallback } from "./shared-tools";
 
 export function createExecuteMcpServer(featureId: number, sessionDbId: number, onAgentDone?: OnAgentDoneCallback) {
   return createSdkMcpServer({
-    name: "productdevr-execute",
+    name: "cadence-execute",
     tools: [
       readPlanTool,
       readPhaseTool,

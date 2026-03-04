@@ -50,9 +50,9 @@ describe("createRiskMcpServer", () => {
     vi.clearAllMocks();
   });
 
-  it("creates a server named 'productdevr-risk'", () => {
+  it("creates a server named 'cadence-risk'", () => {
     const server = createRiskMcpServer(1, 10, 100);
-    expect((server as any).name).toBe("productdevr-risk");
+    expect((server as any).name).toBe("cadence-risk");
   });
 
   describe("finalize_phases tool (risk)", () => {

@@ -8,7 +8,7 @@ let db: Database.Database | null = null;
 export function getDatabase(): Database.Database {
   if (db) return db;
 
-  const dbPath = path.join(app.getPath("userData"), "productdevr.db");
+  const dbPath = path.join(app.getPath("userData"), "cadence.db");
   db = new Database(dbPath);
 
   // Enable WAL mode for better concurrent read performance

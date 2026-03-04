@@ -636,13 +636,13 @@ describe("resolvePermission — realistic project commands", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Worktree isolation (productdevr-style worktrees at ~/.productdevr/)
+// Worktree isolation (cadence-style worktrees at ~/.cadence/)
 // ---------------------------------------------------------------------------
 
 describe("resolvePermission — worktree isolation from original project", () => {
   const cache = new Set<string>();
-  // Worktree is in ~/.productdevr, NOT inside the project directory
-  const WORKTREE_PATH = "/Users/dev/.productdevr/my-app/feature-auth-1234";
+  // Worktree is in ~/.cadence, NOT inside the project directory
+  const WORKTREE_PATH = "/Users/dev/.cadence/my-app/feature-auth-1234";
   const PROJECT_PATH = "/Users/dev/Projects/my-app";
 
   beforeEach(() => cache.clear());

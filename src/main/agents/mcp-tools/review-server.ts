@@ -17,7 +17,7 @@ import type { OnAgentDoneCallback } from "./shared-tools";
 
 export function createReviewMcpServer(planId: number, featureId: number, sessionDbId: number, onAgentDone?: OnAgentDoneCallback) {
   return createSdkMcpServer({
-    name: "productdevr-review",
+    name: "cadence-review",
     tools: [
       readPlanTool,
       readPhaseTool,

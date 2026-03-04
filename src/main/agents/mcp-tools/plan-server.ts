@@ -33,7 +33,7 @@ export type PlanApprovalCallback = (planMarkdown: string) => Promise<{ approved:
  */
 export function createPlanMcpServer(planId: number, featureId: number, sessionDbId: number, onShowPlan?: PlanApprovalCallback, onAgentDone?: OnAgentDoneCallback) {
   return createSdkMcpServer({
-    name: "productdevr-plan",
+    name: "cadence-plan",
     tools: [
       readPlanTool,
       readPhaseTool,

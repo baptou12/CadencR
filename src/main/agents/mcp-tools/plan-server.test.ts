@@ -52,9 +52,9 @@ describe("createPlanMcpServer", () => {
     vi.clearAllMocks();
   });
 
-  it("creates a server named 'productdevr-plan'", () => {
+  it("creates a server named 'cadence-plan'", () => {
     const server = createPlanMcpServer(1, 10, 100);
-    expect((server as any).name).toBe("productdevr-plan");
+    expect((server as any).name).toBe("cadence-plan");
   });
 
   describe("update_plan tool", () => {

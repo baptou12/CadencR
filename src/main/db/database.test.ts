@@ -78,7 +78,7 @@ describe("database", () => {
     const { getDatabase } = await import("./database");
     getDatabase();
     const callArg = DatabaseConstructor.mock.calls[0][0] as string;
-    expect(callArg).toContain("productdevr.db");
+    expect(callArg).toContain("cadence.db");
     expect(callArg).toContain("userData");
   });
 });

@@ -46,7 +46,7 @@ export function createWorktree(
 
   // Sanitize branch name for use in directory names
   const safeBranch = branchName.replace(/\//g, "-");
-  const worktreePath = path.join(os.homedir(), ".productdevr", projectName, safeBranch);
+  const worktreePath = path.join(os.homedir(), ".cadence", projectName, safeBranch);
 
   // Check if worktree directory already exists
   if (fs.existsSync(worktreePath)) {

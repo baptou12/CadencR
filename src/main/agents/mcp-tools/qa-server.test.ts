@@ -52,9 +52,9 @@ describe("createQaMcpServer", () => {
     vi.clearAllMocks();
   });
 
-  it("creates a server named 'productdevr-qa'", () => {
+  it("creates a server named 'cadence-qa'", () => {
     const server = createQaMcpServer(1, 10, 100);
-    expect((server as any).name).toBe("productdevr-qa");
+    expect((server as any).name).toBe("cadence-qa");
   });
 
   describe("mark_phase_done tool (QA)", () => {

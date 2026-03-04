@@ -57,7 +57,7 @@ describe("createPlanConfig", () => {
     expect(config.mcpServerFactory).toBeDefined();
   });
 
-  it("mcpServerFactory creates productdevr-plan MCP server", () => {
+  it("mcpServerFactory creates cadence-plan MCP server", () => {
     const config = createPlanConfig({
       featureId: 1,
       projectId: 2,
