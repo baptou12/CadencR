@@ -216,7 +216,7 @@ describe("subprocess-manager", () => {
     it("persists compact_divider message and broadcasts event", async () => {
       (sessionPersistence.getSessionDbId as any).mockReturnValue(42);
 
-      const managed = startSubprocess({
+      startSubprocess({
         cwd: "/project",
         agentType: "session",
         prompt: "Do something",
