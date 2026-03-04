@@ -380,6 +380,10 @@ function handleSdkMessage(
         const db2 = getDatabase();
         db2.prepare("UPDATE agent_sessions SET was_compacted = 1 WHERE id = ?").run(sessionDbId);
       } catch (e) { console.warn("[subprocess-manager] best-effort op failed:", e); }
+      // Persist the compact_divider message row so the divider renders in the block list
+      persistStreamEvent(sessionDbId, { type: "system", subtype: "compact_boundary" } as StreamEvent, parentToolUseId);
+      // Broadcast so useContextUsage picks up the live wasCompacted update
+      broadcastEvent(id, agentType, { type: "system", subtype: "compact_boundary" } as StreamEvent, parentToolUseId);
     }
     // System events are persisted to DB (e.g. compact_boundary); use throttled notify
     const fid5 = getFeatureIdForSubprocess(id);
