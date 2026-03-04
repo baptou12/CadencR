@@ -23,14 +23,16 @@ const components: Components = {
   h6: ({ children }) => (
     <h6 className="text-xs font-semibold mt-1 mb-0.5 text-[var(--drac-yellow)]">{children}</h6>
   ),
-  code: ({ className, children, ...props }) => {
+  code: ({ className, children, node, ...props }) => {
     const match = /language-(\w+)/.exec(className || "");
-    if (match) {
+    const isBlock = node?.position && node.position.start.line !== node.position.end.line;
+    if (match || isBlock) {
+      const lang = match?.[1] ?? "text";
       return (
         <div className="my-1 rounded-md border border-border bg-muted/50 overflow-hidden">
           <div className="flex items-center gap-1.5 border-b border-border bg-muted px-3 py-1 text-xs text-muted-foreground">
             <CodeIcon className="size-3" />
-            {match[1]}
+            {lang}
           </div>
           <pre className="overflow-x-auto p-3 text-xs leading-relaxed">
             <code>{children}</code>

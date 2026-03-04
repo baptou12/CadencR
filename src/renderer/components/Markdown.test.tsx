@@ -53,6 +53,12 @@ describe("Markdown", () => {
     expect(screen.getByText("const x = 1;")).toBeInTheDocument();
   });
 
+  it("renders fenced code block without language as a block with 'text' label", () => {
+    render(<Markdown content={"```\nsome output\n```"} />);
+    expect(screen.getByText("text")).toBeInTheDocument();
+    expect(screen.getByText("some output")).toBeInTheDocument();
+  });
+
   it("applies custom className", () => {
     const { container } = render(
       <Markdown content="text" className="custom-class" />,
