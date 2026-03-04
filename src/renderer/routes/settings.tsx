@@ -61,6 +61,48 @@ function AgentAutonomySelect() {
   );
 }
 
+function LanguageInput() {
+  const language = trpc.workspace.get.useQuery({ key: "language" });
+  const utils = trpc.useContext();
+  const setLanguage = trpc.workspace.set.useMutation({
+    onSuccess: () => {
+      utils.workspace.get.invalidate({ key: "language" });
+    },
+  });
+
+  const [draft, setDraft] = useState(language.data ?? "");
+  const committed = language.data ?? "";
+
+  // Sync draft when server data loads
+  if (language.isSuccess && draft === "" && committed !== "") {
+    setDraft(committed);
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <input
+        className="border rounded px-3 py-1.5 text-sm bg-background w-64"
+        placeholder="English (default)"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => {
+          const trimmed = draft.trim();
+          if (trimmed !== committed) {
+            if (trimmed) {
+              setLanguage.mutate({ key: "language", value: trimmed });
+            } else {
+              setLanguage.mutate({ key: "language", value: "" });
+            }
+          }
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+        }}
+      />
+    </div>
+  );
+}
+
 function SettingsPage() {
   const [key, setKey] = useState("");
   const [value, setValue] = useState("");
@@ -107,6 +149,16 @@ function SettingsPage() {
           </p>
         </div>
         <ParallelExecutionCheckbox />
+      </section>
+
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-lg font-semibold">Language</h2>
+          <p className="text-sm text-muted-foreground">
+            Set the language Claude uses when responding. Leave blank for English.
+          </p>
+        </div>
+        <LanguageInput />
       </section>
 
       <section className="space-y-4">

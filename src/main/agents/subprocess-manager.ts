@@ -1,4 +1,5 @@
 import { getDatabase } from "../db/database";
+import { resolveSetting } from "../db/settings";
 import { discoverClaudeCli } from "./cli-discovery";
 import { getSessionDbId, persistStreamEvent, persistClaudeSessionId, notifyDbUpdated, setSessionModel } from "./session-persistence";
 import { transitionAgentSession } from "./state-transitions";
@@ -534,6 +535,8 @@ async function runSdkQuery(
     );
   }
 
+  const language = resolveSetting("language", {}) ?? undefined;
+
   const queryOptions: Record<string, unknown> = {
     cwd: options.cwd,
     permissionMode: options.permissionMode ?? "acceptEdits",
@@ -541,6 +544,7 @@ async function runSdkQuery(
     model: options.model ?? DEFAULT_MODEL,
     settingSources: ["user", "project", "local"],
     includePartialMessages: true,
+    ...(language && { language }),
   };
 
   if (options.systemPrompt) {
