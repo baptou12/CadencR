@@ -96,7 +96,7 @@ export function Sidebar() {
   return (
     <aside ref={sidebarRef} className="flex h-full flex-col bg-sidebar">
       <div className="flex items-center px-4 h-12">
-        <img src={logoSvg} alt="Cadence" className="size-7 mr-2 shrink-0 -translate-y-px" />
+        <img src={logoSvg} alt="Cadence" className="size-9 mr-2 shrink-0 -translate-y-px" />
         <span className="text-xl font-bold uppercase tracking-widest leading-none" style={{ fontFamily: "'Avenir Next', 'Montserrat', 'Helvetica Neue', sans-serif" }}>Cadence</span>
         <div className="flex items-center gap-1 ml-auto">
           <UsageIndicator />
