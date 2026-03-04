@@ -88,12 +88,12 @@ describe("Sidebar", () => {
 
   it("renders the app name", () => {
     render(<Sidebar />);
-    expect(screen.getByText("ProductDevR")).toBeInTheDocument();
+    expect(screen.getByText("Cadence")).toBeInTheDocument();
   });
 
   it("renders the logo", () => {
     render(<Sidebar />);
-    expect(screen.getByAltText("ProductDevR")).toBeInTheDocument();
+    expect(screen.getByAltText("Cadence")).toBeInTheDocument();
   });
 
   it("renders settings link", () => {
@@ -113,6 +113,6 @@ describe("Sidebar", () => {
 
   it("renders without crashing on any route", () => {
     render(<Sidebar />);
-    expect(screen.getByText("ProductDevR")).toBeInTheDocument();
+    expect(screen.getByText("Cadence")).toBeInTheDocument();
   });
 });
