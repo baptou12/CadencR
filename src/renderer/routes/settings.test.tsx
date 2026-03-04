@@ -103,34 +103,9 @@ describe("SettingsPage route", () => {
     expect(screen.getByRole("combobox")).toBeInTheDocument();
   });
 
-  it("renders custom settings section", () => {
+  it("renders language section", () => {
     render(<SettingsPage />);
-    expect(screen.getByText("Custom Settings")).toBeInTheDocument();
-    expect(screen.getByPlaceholderText("Key")).toBeInTheDocument();
-    expect(screen.getByPlaceholderText("Value")).toBeInTheDocument();
-  });
-
-  it("shows 'No settings stored yet' when list is empty", () => {
-    render(<SettingsPage />);
-    expect(screen.getByText("No settings stored yet.")).toBeInTheDocument();
-  });
-
-  it("displays stored settings", () => {
-    mocks.mockListQueryData.mockReturnValue({
-      data: [{ key: "my_key", value: "my_value" }],
-    });
-    render(<SettingsPage />);
-    expect(screen.getByText("my_key")).toBeInTheDocument();
-    expect(screen.getByText("my_value")).toBeInTheDocument();
-  });
-
-  it("allows entering key/value and clicking save", () => {
-    const mutate = vi.fn();
-    mocks.mockSetMutation.mockReturnValue({ mutate, mutateAsync: vi.fn(), isLoading: false });
-    render(<SettingsPage />);
-    fireEvent.change(screen.getByPlaceholderText("Key"), { target: { value: "test_key" } });
-    fireEvent.change(screen.getByPlaceholderText("Value"), { target: { value: "test_val" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    expect(mutate).toHaveBeenCalledWith({ key: "test_key", value: "test_val" });
+    expect(screen.getByText("Language")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("English (default)")).toBeInTheDocument();
   });
 });
