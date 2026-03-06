@@ -104,9 +104,15 @@ export function useOperationToasts() {
     const extra = unique.length - display.length;
     const lines = [...display];
     if (extra > 0) lines.push(`and ${extra} more...`);
-    const description = lines.join("\n");
 
-    toast.loading(description, { id: TOAST_ID });
+    toast.loading(
+      <div className="flex flex-col gap-0.5">
+        {lines.map((line, i) => (
+          <span key={i}>{line}</span>
+        ))}
+      </div>,
+      { id: TOAST_ID },
+    );
     prevActiveRef.current = true;
   }, [fetchCount, mutateCount, queryClient]);
 }
