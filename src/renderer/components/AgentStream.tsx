@@ -1,15 +1,11 @@
+import { format, isToday } from "date-fns";
 import { AgentBlock, type AgentBlockData } from "./AgentBlock";
+import { parseUTCDateTime } from "@/lib/date-utils";
 
 function formatTimestamp(iso: string): string {
-  const date = new Date(iso);
-  const now = new Date();
-  const isToday = date.toDateString() === now.toDateString();
-  const hhmm = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
-  if (isToday) return hhmm;
-  const yyyy = date.getFullYear();
-  const mm = String(date.getMonth() + 1).padStart(2, "0");
-  const dd = String(date.getDate()).padStart(2, "0");
-  return `${yyyy}/${mm}/${dd} ${hhmm}`;
+  const date = parseUTCDateTime(iso);
+  if (isToday(date)) return format(date, "HH:mm");
+  return format(date, "yyyy/MM/dd HH:mm");
 }
 
 interface AgentStreamProps {

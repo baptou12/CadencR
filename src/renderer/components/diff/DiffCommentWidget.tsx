@@ -1,5 +1,7 @@
 import { useState } from "react";
+import { format } from "date-fns";
 import { Pencil, Trash2, X } from "lucide-react";
+import { parseUTCDateTime } from "@/lib/date-utils";
 
 export interface DiffComment {
   id: number;
@@ -132,7 +134,7 @@ export function CommentDisplay({
         >
           {comment.status}
         </span>
-        <span className="!text-[#8892b0]">{new Date(comment.created_at).toLocaleString()}</span>
+        <span className="!text-[#8892b0]">{format(parseUTCDateTime(comment.created_at), "MMM d, yyyy h:mm a")}</span>
       </div>
     </div>
   );
