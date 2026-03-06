@@ -80,7 +80,7 @@ export async function getSupportedCommands(
 async function fetchCommandsViaTemporaryQuery(cwd: string): Promise<SlashCommandInfo[]> {
   const sdk = await getSdkClient();
 
-  const cliInfo = discoverClaudeCli();
+  const cliInfo = await discoverClaudeCli();
   if (!cliInfo) return [];
 
   // Async iterable that never yields — keeps the subprocess alive until close()

@@ -29,8 +29,8 @@ export const workflowRouter = router({
       description: z.string(),
       images: z.array(z.object({ base64: z.string(), mimeType: z.string() })).optional(),
     }))
-    .mutation(({ input }) => {
-      const { cwd, worktreePath } = resolveAgentCwd(input.featureId, input.projectId);
+    .mutation(async ({ input }) => {
+      const { cwd, worktreePath } = await resolveAgentCwd(input.featureId, input.projectId);
       let description: import("../agents/types").MessageContent;
       if (input.images && input.images.length > 0) {
         description = [
@@ -54,8 +54,8 @@ export const workflowRouter = router({
       description: z.string(),
       images: z.array(z.object({ base64: z.string(), mimeType: z.string() })).optional(),
     }))
-    .mutation(({ input }) => {
-      const { cwd, worktreePath } = resolveAgentCwd(input.featureId, input.projectId);
+    .mutation(async ({ input }) => {
+      const { cwd, worktreePath } = await resolveAgentCwd(input.featureId, input.projectId);
       let description: import("../agents/types").MessageContent;
       if (input.images && input.images.length > 0) {
         description = [
@@ -74,8 +74,8 @@ export const workflowRouter = router({
   /** Continue a paused workflow — triggers processNextPhase */
   continueWorkflow: publicProcedure
     .input(z.object({ featureId: z.number(), projectId: z.number() }))
-    .mutation(({ input }) => {
-      const { cwd, worktreePath } = resolveAgentCwd(input.featureId, input.projectId);
+    .mutation(async ({ input }) => {
+      const { cwd, worktreePath } = await resolveAgentCwd(input.featureId, input.projectId);
       processNextPhase({ featureId: input.featureId, projectId: input.projectId, cwd, worktreePath });
       return { success: true };
     }),
@@ -88,8 +88,8 @@ export const workflowRouter = router({
       description: z.string(),
       images: z.array(z.object({ base64: z.string(), mimeType: z.string() })).optional(),
     }))
-    .mutation(({ input }) => {
-      const { cwd, worktreePath } = resolveAgentCwd(input.featureId, input.projectId);
+    .mutation(async ({ input }) => {
+      const { cwd, worktreePath } = await resolveAgentCwd(input.featureId, input.projectId);
       let description: import("../agents/types").MessageContent;
       if (input.images && input.images.length > 0) {
         description = [
@@ -108,8 +108,8 @@ export const workflowRouter = router({
   /** Start the execute agent for a feature (runs plan phases) */
   startExecute: publicProcedure
     .input(z.object({ featureId: z.number(), projectId: z.number() }))
-    .mutation(({ input }) => {
-      const { cwd, worktreePath } = resolveAgentCwd(input.featureId, input.projectId);
+    .mutation(async ({ input }) => {
+      const { cwd, worktreePath } = await resolveAgentCwd(input.featureId, input.projectId);
       processNextPhase({ featureId: input.featureId, projectId: input.projectId, cwd, worktreePath });
       return { success: true };
     }),
@@ -117,8 +117,8 @@ export const workflowRouter = router({
   /** Continue execute phases (Level 2 autonomy — user clicks "continue") */
   continueExecute: publicProcedure
     .input(z.object({ featureId: z.number(), projectId: z.number() }))
-    .mutation(({ input }) => {
-      const { cwd, worktreePath } = resolveAgentCwd(input.featureId, input.projectId);
+    .mutation(async ({ input }) => {
+      const { cwd, worktreePath } = await resolveAgentCwd(input.featureId, input.projectId);
       processNextPhase({ featureId: input.featureId, projectId: input.projectId, cwd, worktreePath });
       return { success: true };
     }),
@@ -126,41 +126,41 @@ export const workflowRouter = router({
   /** Start the risk analysis agent for a feature */
   startRisk: publicProcedure
     .input(z.object({ featureId: z.number(), projectId: z.number() }))
-    .mutation(({ input }) => {
-      const { cwd, worktreePath } = resolveAgentCwd(input.featureId, input.projectId);
+    .mutation(async ({ input }) => {
+      const { cwd, worktreePath } = await resolveAgentCwd(input.featureId, input.projectId);
       return startRiskAgent({ ...input, cwd, worktreePath });
     }),
 
   /** Start the review agent for a feature */
   startReview: publicProcedure
     .input(z.object({ featureId: z.number(), projectId: z.number() }))
-    .mutation(({ input }) => {
-      const { cwd, worktreePath } = resolveAgentCwd(input.featureId, input.projectId);
+    .mutation(async ({ input }) => {
+      const { cwd, worktreePath } = await resolveAgentCwd(input.featureId, input.projectId);
       return startReviewAgent({ ...input, cwd, worktreePath });
     }),
 
   /** Start the retro agent for a feature */
   startRetro: publicProcedure
     .input(z.object({ featureId: z.number(), projectId: z.number() }))
-    .mutation(({ input }) => {
-      const { cwd, worktreePath } = resolveAgentCwd(input.featureId, input.projectId);
+    .mutation(async ({ input }) => {
+      const { cwd, worktreePath } = await resolveAgentCwd(input.featureId, input.projectId);
       return startRetroAgent({ ...input, cwd, worktreePath });
     }),
 
   /** Start the QA agent for a feature */
   startQa: publicProcedure
     .input(z.object({ featureId: z.number(), projectId: z.number() }))
-    .mutation(({ input }) => {
-      const { cwd, worktreePath } = resolveAgentCwd(input.featureId, input.projectId);
+    .mutation(async ({ input }) => {
+      const { cwd, worktreePath } = await resolveAgentCwd(input.featureId, input.projectId);
       return startQaAgent({ ...input, cwd, worktreePath });
     }),
 
   /** Start the review-fixer agent to address diff comments */
   startReviewFixer: publicProcedure
     .input(z.object({ featureId: z.number(), projectId: z.number(), prompt: z.string() }))
-    .mutation(({ input }) => {
+    .mutation(async ({ input }) => {
       const db = getDatabase();
-      const { cwd, worktreePath } = resolveAgentCwd(input.featureId, input.projectId);
+      const { cwd, worktreePath } = await resolveAgentCwd(input.featureId, input.projectId);
 
       // Build rich prompt with feature context (same as workflow session)
       const feature = db.prepare("SELECT title FROM features WHERE id = ?").get(input.featureId) as { title: string } | undefined;
@@ -204,8 +204,8 @@ export const workflowRouter = router({
         prompt: z.string(),
       }),
     )
-    .mutation(({ input }) => {
-      const { cwd, worktreePath } = resolveAgentCwd(input.featureId, input.projectId);
+    .mutation(async ({ input }) => {
+      const { cwd, worktreePath } = await resolveAgentCwd(input.featureId, input.projectId);
       const db = getDatabase();
 
       const feature = db.prepare("SELECT title FROM features WHERE id = ?").get(input.featureId) as { title: string } | undefined;
@@ -215,7 +215,7 @@ export const workflowRouter = router({
 
       const prompt = `Context: you're building "${feature.title}" (plan ID: ${plan.id})\n\n${input.prompt}`;
 
-      const result = startSessionAgent({
+      const result = await startSessionAgent({
         featureId: input.featureId,
         projectId: input.projectId,
         prompt,
@@ -238,7 +238,7 @@ export const workflowRouter = router({
         permissionMode: z.enum(["acceptEdits", "plan"]).optional(),
       }),
     )
-    .mutation(({ input }) => {
+    .mutation(async ({ input }) => {
       const db = getDatabase();
       const project = db
         .prepare("SELECT path FROM projects WHERE id = ?")
@@ -274,7 +274,7 @@ export const workflowRouter = router({
         }
       }
 
-      const result = startSessionAgent({
+      const result = await startSessionAgent({
         featureId: input.featureId,
         projectId: input.projectId,
         prompt,

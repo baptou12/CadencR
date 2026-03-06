@@ -38,7 +38,7 @@ export interface AgentResult {
 // Session
 // ---------------------------------------------------------------------------
 
-export function startSessionAgent(options: {
+export async function startSessionAgent(options: {
   featureId?: number;
   projectId: number;
   prompt: MessageContent;
@@ -47,7 +47,7 @@ export function startSessionAgent(options: {
   permissionMode?: "acceptEdits" | "plan";
   worktreePath?: string;
   planId?: number;
-}): AgentResult {
+}): Promise<AgentResult> {
   return startUnifiedAgent(createSessionConfig(options));
 }
 
@@ -55,13 +55,13 @@ export function startSessionAgent(options: {
 // Plan
 // ---------------------------------------------------------------------------
 
-export function startPlanAgent(options: {
+export async function startPlanAgent(options: {
   featureId: number;
   projectId: number;
   description: MessageContent;
   cwd: string;
   worktreePath?: string;
-}): AgentResult {
+}): Promise<AgentResult> {
   const db = getDatabase();
 
   // If a PRD exists on the feature, use it as the description
@@ -91,13 +91,13 @@ export function startPlanAgent(options: {
 // PRD
 // ---------------------------------------------------------------------------
 
-export function startPrdAgent(options: {
+export async function startPrdAgent(options: {
   featureId: number;
   projectId: number;
   description: MessageContent;
   cwd: string;
   worktreePath?: string;
-}): AgentResult {
+}): Promise<AgentResult> {
   // PRD is stored on the features table, no plan row needed
   return startUnifiedAgent(createPrdConfig(options));
 }
@@ -147,13 +147,13 @@ This is a REFINEMENT of an existing plan (Plan ID: ${plan.id}). The phases liste
   return { planId: plan.id, context: parts.join("\n") + refineInstructions };
 }
 
-export function startRefinePlanAgent(options: {
+export async function startRefinePlanAgent(options: {
   featureId: number;
   projectId: number;
   description: MessageContent;
   cwd: string;
   worktreePath?: string;
-}): AgentResult {
+}): Promise<AgentResult> {
   const db = getDatabase();
   const { planId, context } = buildRefineContext(db, options.featureId);
 
@@ -171,12 +171,12 @@ export function startRefinePlanAgent(options: {
 // Risk
 // ---------------------------------------------------------------------------
 
-export function startRiskAgent(options: {
+export async function startRiskAgent(options: {
   featureId: number;
   projectId: number;
   cwd: string;
   worktreePath?: string;
-}): AgentResult {
+}): Promise<AgentResult> {
   const db = getDatabase();
 
   // 1. Query the feature
@@ -232,13 +232,13 @@ Start by running \`git diff main...HEAD\` (or the appropriate base branch) to se
 // Review
 // ---------------------------------------------------------------------------
 
-export function startReviewAgent(options: {
+export async function startReviewAgent(options: {
   featureId: number;
   projectId: number;
   cwd: string;
   worktreePath?: string;
   onAgentDone?: import("./mcp-tools").OnAgentDoneCallback;
-}): AgentResult {
+}): Promise<AgentResult> {
   const db = getDatabase();
 
   // Keep feature in-progress during review
@@ -311,13 +311,13 @@ export function addFixPhase(featureId: number, fixDescription: string): { phaseI
 // Review Fixer
 // ---------------------------------------------------------------------------
 
-export function startReviewFixerAgent(options: {
+export async function startReviewFixerAgent(options: {
   featureId: number;
   projectId: number;
   cwd: string;
   prompt: MessageContent;
   worktreePath?: string;
-}): AgentResult {
+}): Promise<AgentResult> {
   const autonomyLevel = getAutonomyLevel(options.featureId, options.projectId);
   return startUnifiedAgent(createReviewFixerConfig({ ...options, autonomyLevel }));
 }
@@ -326,12 +326,12 @@ export function startReviewFixerAgent(options: {
 // Retro
 // ---------------------------------------------------------------------------
 
-export function startRetroAgent(options: {
+export async function startRetroAgent(options: {
   featureId: number;
   projectId: number;
   cwd: string;
   worktreePath?: string;
-}): AgentResult {
+}): Promise<AgentResult> {
   return startUnifiedAgent(createRetroConfig(options));
 }
 
@@ -339,12 +339,12 @@ export function startRetroAgent(options: {
 // QA
 // ---------------------------------------------------------------------------
 
-export function startQaAgent(options: {
+export async function startQaAgent(options: {
   featureId: number;
   projectId: number;
   cwd: string;
   worktreePath?: string;
-}): AgentResult {
+}): Promise<AgentResult> {
   const db = getDatabase();
 
   const qaRow = db

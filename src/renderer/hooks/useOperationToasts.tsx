@@ -27,6 +27,21 @@ const OPERATION_LABELS: Record<string, string> = {
   "git.retryWorktreeSetup": "Retrying workspace setup",
   "projects.list": "Loading projects",
   "usage.get": "Checking usage",
+  "workspace.getClaudeCliPath": "Discovering Claude CLI",
+  "workspace.setClaudeCliPath": "Validating CLI path",
+  "workflow.startPlan": "Starting plan agent",
+  "workflow.startPrd": "Starting PRD agent",
+  "workflow.startExecute": "Starting execution",
+  "workflow.continueExecute": "Continuing execution",
+  "workflow.continueWorkflow": "Continuing workflow",
+  "workflow.startRisk": "Starting risk analysis",
+  "workflow.startReview": "Starting review",
+  "workflow.startRetro": "Starting retrospective",
+  "workflow.startQa": "Starting QA",
+  "workflow.startRefinePlan": "Refining plan",
+  "workflow.startReviewFixer": "Starting review fixer",
+  "workflow.startSession": "Starting session",
+  "workflow.startWorkflowSession": "Starting workflow session",
 };
 
 /** Excluded prefixes — high-frequency polling/streaming queries that shouldn't show toasts */

@@ -14,7 +14,7 @@ export function fetchAvailableModels(): Promise<ClaudeModel[]> {
 
 async function doFetch(): Promise<ClaudeModel[]> {
   try {
-    const cliInfo = discoverClaudeCli();
+    const cliInfo = await discoverClaudeCli();
     if (!cliInfo) return CLAUDE_MODELS;
 
     const { query } = await import("@anthropic-ai/claude-agent-sdk");

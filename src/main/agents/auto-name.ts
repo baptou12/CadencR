@@ -32,7 +32,7 @@ async function runAutoName(
   cwd: string,
   projectId?: number,
 ): Promise<void> {
-  const cliInfo = discoverClaudeCli();
+  const cliInfo = await discoverClaudeCli();
   if (!cliInfo) return;
 
   const sdk = await import("@anthropic-ai/claude-agent-sdk");
@@ -123,7 +123,7 @@ export async function runAutoNameBlocking(
   userInput: string,
   cwd: string,
 ): Promise<string | null> {
-  const cliInfo = discoverClaudeCli();
+  const cliInfo = await discoverClaudeCli();
   if (!cliInfo) return null;
 
   const sdk = await import("@anthropic-ai/claude-agent-sdk");

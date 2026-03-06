@@ -250,7 +250,7 @@ export const sessionsRouter = router({
       projectId: z.number(),
     }))
     .query(async ({ input }) => {
-      const { cwd } = resolveAgentCwd(input.featureId, input.projectId);
+      const { cwd } = await resolveAgentCwd(input.featureId, input.projectId);
       return getSupportedCommands(input.subprocessId ?? null, cwd);
     }),
 

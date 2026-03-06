@@ -19,6 +19,10 @@ vi.mock("node:fs", () => ({
   default: {
     existsSync: vi.fn().mockReturnValue(true),
     statSync: vi.fn().mockReturnValue({ isDirectory: () => true }),
+    promises: {
+      access: vi.fn().mockResolvedValue(undefined),
+      stat: vi.fn().mockResolvedValue({ isDirectory: () => true }),
+    },
   },
 }));
 
@@ -76,12 +80,14 @@ describe("startUnifiedAgent", () => {
 
     (fs.existsSync as any).mockReturnValue(true);
     (fs.statSync as any).mockReturnValue({ isDirectory: () => true });
+    (fs.promises.access as any).mockResolvedValue(undefined);
+    (fs.promises.stat as any).mockResolvedValue({ isDirectory: () => true });
   });
 
-  it("validates CWD exists before starting", () => {
-    (fs.existsSync as any).mockReturnValueOnce(false);
+  it("validates CWD exists before starting", async () => {
+    (fs.promises.access as any).mockRejectedValueOnce(new Error("ENOENT"));
 
-    expect(() =>
+    await expect(
       startUnifiedAgent({
         cwd: "/nonexistent",
         agentType: "plan",
@@ -89,13 +95,13 @@ describe("startUnifiedAgent", () => {
         projectId: 1,
         prompt: "Test",
       } as any),
-    ).toThrow("does not exist");
+    ).rejects.toThrow("does not exist");
   });
 
-  it("validates CWD is a directory", () => {
-    (fs.statSync as any).mockReturnValueOnce({ isDirectory: () => false });
+  it("validates CWD is a directory", async () => {
+    (fs.promises.stat as any).mockResolvedValueOnce({ isDirectory: () => false });
 
-    expect(() =>
+    await expect(
       startUnifiedAgent({
         cwd: "/some/file",
         agentType: "plan",
@@ -103,10 +109,10 @@ describe("startUnifiedAgent", () => {
         projectId: 1,
         prompt: "Test",
       } as any),
-    ).toThrow("not a directory");
+    ).rejects.toThrow("not a directory");
   });
 
-  it("creates a new DB session on start", () => {
+  it("creates a new DB session on start", async () => {
     const insertRun = vi.fn().mockReturnValue({ lastInsertRowid: 55 });
     (getDatabase as any).mockReturnValue({
       prepare: vi.fn().mockImplementation((sql: string) => {
@@ -119,7 +125,7 @@ describe("startUnifiedAgent", () => {
       }),
     });
 
-    const result = startUnifiedAgent({
+    const result = await startUnifiedAgent({
       cwd: "/some/dir",
       agentType: "plan",
       featureId: 1,
@@ -131,8 +137,8 @@ describe("startUnifiedAgent", () => {
     expect(result.sessionDbId).toBe(55);
   });
 
-  it("returns subprocess ID from managed subprocess", () => {
-    const result = startUnifiedAgent({
+  it("returns subprocess ID from managed subprocess", async () => {
+    const result = await startUnifiedAgent({
       cwd: "/some/dir",
       agentType: "session",
       featureId: 1,
@@ -144,7 +150,7 @@ describe("startUnifiedAgent", () => {
     expect(result.agentType).toBe("session");
   });
 
-  it("reuses existing session when existingSessionDbId is provided", () => {
+  it("reuses existing session when existingSessionDbId is provided", async () => {
     const updateRun = vi.fn();
     const insertRun = vi.fn().mockReturnValue({ lastInsertRowid: 42 });
     (getDatabase as any).mockReturnValue({
@@ -159,7 +165,7 @@ describe("startUnifiedAgent", () => {
       }),
     });
 
-    startUnifiedAgent({
+    await startUnifiedAgent({
       cwd: "/some/dir",
       agentType: "session",
       featureId: 1,
@@ -172,7 +178,7 @@ describe("startUnifiedAgent", () => {
     expect(insertRun).not.toHaveBeenCalled();
   });
 
-  it("persists initial user message to DB", () => {
+  it("persists initial user message to DB", async () => {
     const msgRun = vi.fn();
     (getDatabase as any).mockReturnValue({
       prepare: vi.fn().mockImplementation((sql: string) => {
@@ -185,7 +191,7 @@ describe("startUnifiedAgent", () => {
       }),
     });
 
-    startUnifiedAgent({
+    await startUnifiedAgent({
       cwd: "/some/dir",
       agentType: "plan",
       featureId: 1,
@@ -205,7 +211,7 @@ describe("startUnifiedAgent", () => {
   it("calls completion actions on subprocess completion", async () => {
     const completionHandler = vi.fn();
 
-    startUnifiedAgent({
+    await startUnifiedAgent({
       cwd: "/some/dir",
       agentType: "plan",
       featureId: 1,
@@ -225,7 +231,7 @@ describe("startUnifiedAgent", () => {
     );
   });
 
-  it("stores subprocess_id in DB after spawning", () => {
+  it("stores subprocess_id in DB after spawning", async () => {
     const subprocRun = vi.fn();
     (getDatabase as any).mockReturnValue({
       prepare: vi.fn().mockImplementation((sql: string) => {
@@ -238,7 +244,7 @@ describe("startUnifiedAgent", () => {
       }),
     });
 
-    startUnifiedAgent({
+    await startUnifiedAgent({
       cwd: "/some/dir",
       agentType: "plan",
       featureId: 1,
@@ -249,10 +255,10 @@ describe("startUnifiedAgent", () => {
     expect(subprocRun).toHaveBeenCalledWith("subprocess-1", expect.any(Number));
   });
 
-  it("uses mcpServerFactory when provided", () => {
+  it("uses mcpServerFactory when provided", async () => {
     const factory = vi.fn().mockReturnValue({ "my-server": { command: "run" } });
 
-    startUnifiedAgent({
+    await startUnifiedAgent({
       cwd: "/some/dir",
       agentType: "execute",
       featureId: 1,
@@ -282,7 +288,7 @@ describe("startUnifiedAgent", () => {
 
     const { transitionAgentSession } = await import("./state-transitions");
 
-    startUnifiedAgent({
+    await startUnifiedAgent({
       cwd: "/some/dir",
       agentType: "plan",
       featureId: 1,

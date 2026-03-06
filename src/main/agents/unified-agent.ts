@@ -46,14 +46,16 @@ export interface UnifiedAgentResult {
  * config that describes system prompt, output patterns, and completion
  * actions — everything else is handled uniformly.
  */
-export function startUnifiedAgent(config: UnifiedAgentConfig): UnifiedAgentResult {
+export async function startUnifiedAgent(config: UnifiedAgentConfig): Promise<UnifiedAgentResult> {
   // 0. Validate CWD exists and is a directory
-  if (!fs.existsSync(config.cwd)) {
+  try {
+    await fs.promises.access(config.cwd);
+  } catch {
     throw new Error(
       `Agent working directory does not exist: ${config.cwd}. The worktree may not have been created yet or was removed.`,
     );
   }
-  const cwdStat = fs.statSync(config.cwd);
+  const cwdStat = await fs.promises.stat(config.cwd);
   if (!cwdStat.isDirectory()) {
     throw new Error(
       `Agent working directory is not a directory: ${config.cwd}`,

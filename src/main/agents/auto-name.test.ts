@@ -51,7 +51,7 @@ describe("runAutoNameBlocking", () => {
   });
 
   it("returns null if CLI not found", async () => {
-    mockDiscoverCli.mockReturnValue(null);
+    mockDiscoverCli.mockResolvedValue(null);
 
     const result = await runAutoNameBlocking(1, "build dark mode", "/cwd");
 
@@ -59,7 +59,7 @@ describe("runAutoNameBlocking", () => {
   });
 
   it("extracts name from __FEATURE_NAME_START__...__FEATURE_NAME_END__ markers", async () => {
-    mockDiscoverCli.mockReturnValue({ path: "/usr/bin/claude", source: "settings" });
+    mockDiscoverCli.mockResolvedValue({ path: "/usr/bin/claude", source: "settings" });
     const runFn = vi.fn();
     db.prepare.mockReturnValue({ run: runFn });
 
@@ -81,7 +81,7 @@ describe("runAutoNameBlocking", () => {
   });
 
   it("uses content_block_start text as accumulated text", async () => {
-    mockDiscoverCli.mockReturnValue({ path: "/usr/bin/claude", source: "shell-path" });
+    mockDiscoverCli.mockResolvedValue({ path: "/usr/bin/claude", source: "shell-path" });
     const runFn = vi.fn();
     db.prepare.mockReturnValue({ run: runFn });
 
@@ -101,7 +101,7 @@ describe("runAutoNameBlocking", () => {
   });
 
   it("handles assistant message type", async () => {
-    mockDiscoverCli.mockReturnValue({ path: "/usr/bin/claude", source: "process-path" });
+    mockDiscoverCli.mockResolvedValue({ path: "/usr/bin/claude", source: "process-path" });
     const runFn = vi.fn();
     db.prepare.mockReturnValue({ run: runFn });
 
@@ -120,7 +120,7 @@ describe("runAutoNameBlocking", () => {
   });
 
   it("strips quotes from extracted name", async () => {
-    mockDiscoverCli.mockReturnValue({ path: "/usr/bin/claude", source: "common-location" });
+    mockDiscoverCli.mockResolvedValue({ path: "/usr/bin/claude", source: "common-location" });
     const runFn = vi.fn();
     db.prepare.mockReturnValue({ run: runFn });
 
@@ -140,7 +140,7 @@ describe("runAutoNameBlocking", () => {
   });
 
   it("returns null if name is empty after extraction", async () => {
-    mockDiscoverCli.mockReturnValue({ path: "/usr/bin/claude", source: "settings" });
+    mockDiscoverCli.mockResolvedValue({ path: "/usr/bin/claude", source: "settings" });
     mockQuery.mockReturnValue(makeAsyncIterable([]));
 
     const result = await runAutoNameBlocking(1, "hello", "/cwd");
@@ -149,7 +149,7 @@ describe("runAutoNameBlocking", () => {
   });
 
   it("passes correct options to query", async () => {
-    mockDiscoverCli.mockReturnValue({ path: "/opt/homebrew/bin/claude", source: "common-location" });
+    mockDiscoverCli.mockResolvedValue({ path: "/opt/homebrew/bin/claude", source: "common-location" });
     db.prepare.mockReturnValue({ run: vi.fn() });
 
     mockQuery.mockReturnValue(makeAsyncIterable([

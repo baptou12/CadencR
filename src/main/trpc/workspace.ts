@@ -1,6 +1,7 @@
 import { z } from "zod";
 import fs from "node:fs";
 import { router, publicProcedure } from "./trpc";
+
 import { getDatabase } from "../db/database";
 import type { SettingRow } from "../db/types";
 import { discoverClaudeCli } from "../agents/cli-discovery";
@@ -34,8 +35,8 @@ export const workspaceRouter = router({
   }),
 
   /** Get the current Claude CLI path (from settings or auto-discovered) */
-  getClaudeCliPath: publicProcedure.query(() => {
-    const cliInfo = discoverClaudeCli();
+  getClaudeCliPath: publicProcedure.query(async () => {
+    const cliInfo = await discoverClaudeCli();
     return cliInfo ? { path: cliInfo.path, source: cliInfo.source } : null;
   }),
 
@@ -78,8 +79,10 @@ export const workspaceRouter = router({
   /** Set a custom Claude CLI path (validates the file exists) */
   setClaudeCliPath: publicProcedure
     .input(z.object({ path: z.string() }))
-    .mutation(({ input }) => {
-      if (!fs.existsSync(input.path)) {
+    .mutation(async ({ input }) => {
+      try {
+        await fs.promises.access(input.path);
+      } catch {
         throw new Error(`File not found: ${input.path}`);
       }
       const db = getDatabase();

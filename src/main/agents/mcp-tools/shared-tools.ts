@@ -232,7 +232,7 @@ export function createAgentDoneTool(sessionDbId: number, featureId: number, onAg
             featureId,
           ).toUndefined();
           if (wfFeat) {
-            const { cwd, worktreePath } = resolveAgentCwd(featureId, wfFeat.project_id);
+            const { cwd, worktreePath } = await resolveAgentCwd(featureId, wfFeat.project_id);
             onAgentDone({ featureId, projectId: wfFeat.project_id, cwd, worktreePath: worktreePath ?? null });
           }
         } catch { /* */ }

@@ -4,7 +4,7 @@
  * ExitPlanMode, and smart permission resolution.
  */
 
-import * as fs from "fs";
+import * as fs from "node:fs";
 import { getDatabase } from "../db/database";
 import { getSessionDbId, notifyDbUpdated } from "./session-persistence";
 import { resolvePermission, appendToSettingsLocal } from "./permissions";
@@ -200,7 +200,7 @@ async function handleExitPlanMode(
       if (planMsg) {
         const parsed = JSON.parse(planMsg.content) as { file_path?: string };
         if (parsed.file_path) {
-          try { planMarkdown = fs.readFileSync(parsed.file_path, "utf-8"); } catch { /* file may not exist */ }
+          try { planMarkdown = await fs.promises.readFile(parsed.file_path, "utf-8"); } catch { /* file may not exist */ }
         }
       }
     } catch (e) { console.warn("[tool-permissions] Failed to read plan file:", e); }

@@ -37,7 +37,7 @@ describe("getSupportedCommands", () => {
 
   it("spawns temporary query when no active subprocess", async () => {
     mockGetActiveProcess.mockReturnValue(undefined);
-    mockDiscoverCli.mockReturnValue({ path: "/usr/bin/claude", source: "settings" });
+    mockDiscoverCli.mockResolvedValue({ path: "/usr/bin/claude", source: "settings" });
 
     const mockClose = vi.fn();
     const mockSupportedCommands = vi.fn().mockResolvedValue([
@@ -66,7 +66,7 @@ describe("getSupportedCommands", () => {
 
   it("returns empty array when CLI not found", async () => {
     mockGetActiveProcess.mockReturnValue(undefined);
-    mockDiscoverCli.mockReturnValue(null);
+    mockDiscoverCli.mockResolvedValue(null);
     mockGetSdkClient.mockResolvedValue({ query: vi.fn() } as any);
 
     const { getSupportedCommands: fn } = await import("./slash-commands");
@@ -80,7 +80,7 @@ describe("getSupportedCommands", () => {
       query: { supportedCommands: vi.fn() },
       status: "stopped",
     } as any);
-    mockDiscoverCli.mockReturnValue(null);
+    mockDiscoverCli.mockResolvedValue(null);
     mockGetSdkClient.mockResolvedValue({ query: vi.fn() } as any);
 
     const { getSupportedCommands: fn } = await import("./slash-commands");

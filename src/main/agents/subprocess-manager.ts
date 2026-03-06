@@ -532,7 +532,7 @@ async function runSdkQuery(
 ): Promise<void> {
   const sdk = await getSdkClient();
 
-  const cliInfo = discoverClaudeCli();
+  const cliInfo = await discoverClaudeCli();
   if (!cliInfo) {
     throw new Error(
       "Claude CLI not found. Please install it or configure the path in Settings.",

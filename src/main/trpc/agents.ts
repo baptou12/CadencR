@@ -91,7 +91,7 @@ export const agentsRouter = router({
         images: z.array(z.object({ base64: z.string(), mimeType: z.string() })).optional(),
       }),
     )
-    .mutation(({ input }) => {
+    .mutation(async ({ input }) => {
       const db = getDatabase();
 
       // Resolve CWD to match the original session start path.
@@ -112,7 +112,7 @@ export const agentsRouter = router({
           cwd = project.path;
         }
       } else {
-        ({ cwd, worktreePath } = resolveAgentCwd(input.featureId, input.projectId));
+        ({ cwd, worktreePath } = await resolveAgentCwd(input.featureId, input.projectId));
       }
 
       const originalSession = db
@@ -151,7 +151,7 @@ export const agentsRouter = router({
         onAgentDone,
       );
 
-      const result = startUnifiedAgent({
+      const result = await startUnifiedAgent({
         agentType: input.agentType as AgentType,
         featureId: input.featureId,
         projectId: input.projectId,

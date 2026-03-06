@@ -33,7 +33,7 @@ vi.mock("./state-transitions", () => ({
 }));
 
 vi.mock("./unified-agent", () => ({
-  startUnifiedAgent: vi.fn().mockReturnValue({
+  startUnifiedAgent: vi.fn().mockResolvedValue({
     subprocessId: "sub-1",
     agentType: "execute",
     sessionDbId: 100,
@@ -129,7 +129,7 @@ function setupQueries(overrides: {
 describe("processNextPhase", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    (startUnifiedAgent as any).mockReturnValue({
+    (startUnifiedAgent as any).mockResolvedValue({
       subprocessId: "sub-1",
       agentType: "execute",
       sessionDbId: 100,
@@ -181,8 +181,8 @@ describe("processNextPhase", () => {
 
   it("dispatches multiple phases from same step in parallel", () => {
     (startUnifiedAgent as any)
-      .mockReturnValueOnce({ subprocessId: "sub-1", agentType: "execute", sessionDbId: 100 })
-      .mockReturnValueOnce({ subprocessId: "sub-2", agentType: "execute", sessionDbId: 101 });
+      .mockResolvedValueOnce({ subprocessId: "sub-1", agentType: "execute", sessionDbId: 100 })
+      .mockResolvedValueOnce({ subprocessId: "sub-2", agentType: "execute", sessionDbId: 101 });
 
     setupQueries({
       pendingPhases: [

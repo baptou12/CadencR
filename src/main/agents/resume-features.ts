@@ -18,7 +18,7 @@ export function resumeInProgressFeatures(): void {
       const inProgress = db.prepare("SELECT id, project_id FROM features WHERE status = 'in-progress'").all() as { id: number; project_id: number }[];
       for (const feat of inProgress) {
         try {
-          const { cwd, worktreePath } = resolveAgentCwd(feat.id, feat.project_id);
+          const { cwd, worktreePath } = await resolveAgentCwd(feat.id, feat.project_id);
           processNextPhase({ featureId: feat.id, projectId: feat.project_id, cwd, worktreePath });
         } catch { /* individual feature recovery failure is ok */ }
       }

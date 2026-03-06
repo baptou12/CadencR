@@ -15,7 +15,7 @@ vi.mock("../db/database", () => ({
 }));
 
 vi.mock("./unified-agent", () => ({
-  startUnifiedAgent: vi.fn().mockReturnValue({
+  startUnifiedAgent: vi.fn().mockResolvedValue({
     subprocessId: "sub-1",
     agentType: "plan",
     sessionDbId: 1,
@@ -56,7 +56,7 @@ import { getDatabase } from "../db/database";
 describe("agent-starters", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    (startUnifiedAgent as any).mockReturnValue({
+    (startUnifiedAgent as any).mockResolvedValue({
       subprocessId: "sub-1",
       agentType: "plan",
       sessionDbId: 1,
@@ -71,8 +71,8 @@ describe("agent-starters", () => {
   });
 
   describe("startSessionAgent", () => {
-    it("calls startUnifiedAgent with session config", () => {
-      const result = startSessionAgent({
+    it("calls startUnifiedAgent with session config", async () => {
+      const result = await startSessionAgent({
         featureId: 1,
         projectId: 2,
         prompt: "Hello",
@@ -85,7 +85,7 @@ describe("agent-starters", () => {
   });
 
   describe("startPlanAgent", () => {
-    it("creates a plan record before starting", () => {
+    it("creates a plan record before starting", async () => {
       const planRun = vi.fn().mockReturnValue({ lastInsertRowid: 5 });
       const settingsRun = vi.fn();
       (getDatabase as any).mockReturnValue({
@@ -96,7 +96,7 @@ describe("agent-starters", () => {
         }),
       });
 
-      startPlanAgent({
+      await startPlanAgent({
         featureId: 1,
         projectId: 2,
         description: "Build a feature",
@@ -107,7 +107,7 @@ describe("agent-starters", () => {
       expect(settingsRun).toHaveBeenCalledWith(1, "current_plan_id", "5");
     });
 
-    it("returns result from startUnifiedAgent", () => {
+    it("returns result from startUnifiedAgent", async () => {
       (getDatabase as any).mockReturnValue({
         prepare: vi.fn().mockImplementation(() => ({
           run: vi.fn().mockReturnValue({ lastInsertRowid: 5 }),
@@ -116,7 +116,7 @@ describe("agent-starters", () => {
         })),
       });
 
-      const result = startPlanAgent({
+      const result = await startPlanAgent({
         featureId: 1,
         projectId: 2,
         description: "Build feature",
@@ -128,7 +128,7 @@ describe("agent-starters", () => {
   });
 
   describe("startRiskAgent", () => {
-    it("fetches plan for context and calls startUnifiedAgent", () => {
+    it("fetches plan for context and calls startUnifiedAgent", async () => {
       (getDatabase as any).mockReturnValue({
         prepare: vi.fn().mockImplementation((sql: string) => {
           if (sql.includes("SELECT id, raw_markdown, title FROM plans")) {
@@ -138,12 +138,12 @@ describe("agent-starters", () => {
         }),
       });
 
-      startRiskAgent({ featureId: 1, projectId: 2, cwd: "/project" });
+      await startRiskAgent({ featureId: 1, projectId: 2, cwd: "/project" });
 
       expect(startUnifiedAgent).toHaveBeenCalledWith({ agentType: "risk" });
     });
 
-    it("works without a plan (no raw_markdown)", () => {
+    it("works without a plan (no raw_markdown)", async () => {
       (getDatabase as any).mockReturnValue({
         prepare: vi.fn().mockImplementation(() => ({
           run: vi.fn(),
@@ -152,14 +152,14 @@ describe("agent-starters", () => {
         })),
       });
 
-      expect(() =>
+      await expect(
         startRiskAgent({ featureId: 1, projectId: 2, cwd: "/project" }),
-      ).not.toThrow();
+      ).resolves.not.toThrow();
     });
   });
 
   describe("startReviewAgent", () => {
-    it("transitions feature to in-progress status", () => {
+    it("transitions feature to in-progress status", async () => {
       (getDatabase as any).mockReturnValue({
         prepare: vi.fn().mockImplementation((sql: string) => {
           if (sql.includes("FROM plans")) {
@@ -169,12 +169,12 @@ describe("agent-starters", () => {
         }),
       });
 
-      startReviewAgent({ featureId: 1, projectId: 2, cwd: "/project" });
+      await startReviewAgent({ featureId: 1, projectId: 2, cwd: "/project" });
 
       expect(transitionFeature).toHaveBeenCalledWith(expect.anything(), 1, "in-progress");
     });
 
-    it("throws if no plan found", () => {
+    it("throws if no plan found", async () => {
       (getDatabase as any).mockReturnValue({
         prepare: vi.fn().mockImplementation(() => ({
           run: vi.fn(),
@@ -183,9 +183,9 @@ describe("agent-starters", () => {
         })),
       });
 
-      expect(() =>
+      await expect(
         startReviewAgent({ featureId: 1, projectId: 2, cwd: "/project" }),
-      ).toThrow("No plan found");
+      ).rejects.toThrow("No plan found");
     });
   });
 
@@ -256,7 +256,7 @@ describe("agent-starters", () => {
   });
 
   describe("startQaAgent", () => {
-    it("throws when no active plan", () => {
+    it("throws when no active plan", async () => {
       (getDatabase as any).mockReturnValue({
         prepare: vi.fn().mockImplementation((sql: string) => {
           if (sql.includes("qa_prompt FROM projects")) {
@@ -270,12 +270,12 @@ describe("agent-starters", () => {
         }),
       });
 
-      expect(() =>
+      await expect(
         startQaAgent({ featureId: 1, projectId: 2, cwd: "/project" }),
-      ).toThrow("No active plan found for QA");
+      ).rejects.toThrow("No active plan found for QA");
     });
 
-    it("calls startUnifiedAgent with QA config", () => {
+    it("calls startUnifiedAgent with QA config", async () => {
       (getDatabase as any).mockReturnValue({
         prepare: vi.fn().mockImplementation((sql: string) => {
           if (sql.includes("qa_prompt FROM projects")) {
@@ -300,7 +300,7 @@ describe("agent-starters", () => {
         }),
       });
 
-      startQaAgent({ featureId: 1, projectId: 2, cwd: "/project" });
+      await startQaAgent({ featureId: 1, projectId: 2, cwd: "/project" });
 
       expect(startUnifiedAgent).toHaveBeenCalledWith(
         expect.objectContaining({ agentType: "execute" }),
@@ -339,7 +339,7 @@ describe("agent-starters", () => {
         }),
       });
 
-      startQaAgent({ featureId: 1, projectId: 2, cwd: "/project" });
+      await startQaAgent({ featureId: 1, projectId: 2, cwd: "/project" });
 
       // The config passed to startUnifiedAgent should have the QA config
       const passedConfig = (startUnifiedAgent as any).mock.calls[0][0];

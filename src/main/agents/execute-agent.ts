@@ -144,7 +144,7 @@ export function processNextPhase(options: ExecuteAgentOptions): void {
 /**
  * When no pending phases remain, decide: run review or mark done.
  */
-function handleNoPendingPhases(options: ExecuteAgentOptions, _planId: number): void {
+async function handleNoPendingPhases(options: ExecuteAgentOptions, _planId: number): Promise<void> {
   const { featureId, projectId } = options;
 
   // Check: did a review session complete more recently than the last execute/qa session?
@@ -184,7 +184,7 @@ function handleNoPendingPhases(options: ExecuteAgentOptions, _planId: number): v
   // Start review agent
   console.log(`[processNextPhase] Starting review for feature ${featureId}`);
   try {
-    startReviewAgent({
+    await startReviewAgent({
       featureId,
       projectId,
       cwd: options.cwd,
@@ -251,12 +251,10 @@ function executePhase(
       mcpServerFactory: buildMcpServerFactory("execute", options.featureId, undefined, processNextPhaseCallback),
     };
 
-    try {
-      startUnifiedAgent(config);
-    } catch {
+    startUnifiedAgent(config).catch(() => {
       transitionPhase(db, phase.id, "error", options.featureId);
       resolve();
-    }
+    });
   });
 }
 
@@ -336,12 +334,10 @@ function executeQaPhase(
 
     qaConfig.phaseId = phase.id;
 
-    try {
-      startUnifiedAgent(qaConfig);
-    } catch {
+    startUnifiedAgent(qaConfig).catch(() => {
       transitionPhase(db, phase.id, "error", options.featureId);
       resolve();
-    }
+    });
   });
 }
 

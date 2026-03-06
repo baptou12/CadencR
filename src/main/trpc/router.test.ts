@@ -32,7 +32,7 @@ vi.mock("../agents/session-persistence", () => ({
 }));
 
 vi.mock("../agents/cli-discovery", () => ({
-  discoverClaudeCli: vi.fn().mockReturnValue({ path: "/usr/bin/claude", source: "path" }),
+  discoverClaudeCli: vi.fn().mockResolvedValue({ path: "/usr/bin/claude", source: "path" }),
 }));
 
 vi.mock("../agents/available-models", () => ({
@@ -40,12 +40,12 @@ vi.mock("../agents/available-models", () => ({
 }));
 
 vi.mock("../agents/agent-starters", () => ({
-  startPlanAgent: vi.fn().mockReturnValue({ subprocessId: "sp-1", agentType: "plan", sessionDbId: 1 }),
-startRiskAgent: vi.fn().mockReturnValue({ subprocessId: "sp-1", agentType: "risk", sessionDbId: 3 }),
-  startReviewAgent: vi.fn().mockReturnValue({ subprocessId: "sp-1", agentType: "review", sessionDbId: 4 }),
-  startSessionAgent: vi.fn().mockReturnValue({ subprocessId: "sp-1", agentType: "session", sessionDbId: 5 }),
-  startQaAgent: vi.fn().mockReturnValue({ subprocessId: "sp-1", agentType: "qa", sessionDbId: 6 }),
-  startRetroAgent: vi.fn().mockReturnValue({ subprocessId: "sp-1", agentType: "retro", sessionDbId: 8 }),
+  startPlanAgent: vi.fn().mockResolvedValue({ subprocessId: "sp-1", agentType: "plan", sessionDbId: 1 }),
+  startRiskAgent: vi.fn().mockResolvedValue({ subprocessId: "sp-1", agentType: "risk", sessionDbId: 3 }),
+  startReviewAgent: vi.fn().mockResolvedValue({ subprocessId: "sp-1", agentType: "review", sessionDbId: 4 }),
+  startSessionAgent: vi.fn().mockResolvedValue({ subprocessId: "sp-1", agentType: "session", sessionDbId: 5 }),
+  startQaAgent: vi.fn().mockResolvedValue({ subprocessId: "sp-1", agentType: "qa", sessionDbId: 6 }),
+  startRetroAgent: vi.fn().mockResolvedValue({ subprocessId: "sp-1", agentType: "retro", sessionDbId: 8 }),
   addFixPhase: vi.fn().mockReturnValue({ phaseId: 99 }),
 }));
 
@@ -96,12 +96,13 @@ vi.mock("node:child_process", () => ({
 }));
 
 let mockExistsSync = vi.fn().mockReturnValue(true);
+let mockAccess = vi.fn().mockResolvedValue(undefined);
 
 vi.mock("node:fs", async () => {
   const actual = await vi.importActual<typeof import("node:fs")>("node:fs");
   const mockPromises = {
     ...actual.promises,
-    access: vi.fn().mockRejectedValue(new Error("ENOENT")),
+    access: (...args: any[]) => mockAccess(...args),
     mkdir: vi.fn().mockResolvedValue(undefined),
     readFile: vi.fn().mockResolvedValue(""),
   };
@@ -159,14 +160,14 @@ describe("appRouter - workspaceRouter", () => {
 
   it("settings.getClaudeCliPath returns path from discovery", async () => {
     const { discoverClaudeCli } = await import("../agents/cli-discovery");
-    vi.mocked(discoverClaudeCli).mockReturnValue({ path: "/usr/bin/claude", source: "settings" });
+    vi.mocked(discoverClaudeCli).mockResolvedValue({ path: "/usr/bin/claude", source: "settings" });
     const result = await caller.workspace.getClaudeCliPath();
     expect(result).toEqual({ path: "/usr/bin/claude", source: "settings" });
   });
 
   it("settings.getClaudeCliPath returns null when not found", async () => {
     const { discoverClaudeCli } = await import("../agents/cli-discovery");
-    vi.mocked(discoverClaudeCli).mockReturnValue(null);
+    vi.mocked(discoverClaudeCli).mockResolvedValue(null);
     const result = await caller.workspace.getClaudeCliPath();
     expect(result).toBeNull();
   });
@@ -203,9 +204,8 @@ describe("appRouter - workspaceRouter", () => {
   });
 
   it("settings.setClaudeCliPath throws when file not found", async () => {
-    mockExistsSync.mockReturnValue(false);
+    mockAccess.mockRejectedValueOnce(new Error("ENOENT"));
     await expect(caller.workspace.setClaudeCliPath({ path: "/nope" })).rejects.toThrow("File not found");
-    mockExistsSync.mockReturnValue(true); // restore
   });
 });
 

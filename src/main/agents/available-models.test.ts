@@ -28,7 +28,7 @@ describe("fetchAvailableModels", () => {
   });
 
   it("returns static models if CLI not found", async () => {
-    mockDiscoverCli.mockReturnValue(null);
+    mockDiscoverCli.mockResolvedValue(null);
 
     // Re-import to get fresh module state
     const { fetchAvailableModels } = await import("./available-models");
@@ -41,7 +41,7 @@ describe("fetchAvailableModels", () => {
   });
 
   it("returns static models on SDK error", async () => {
-    mockDiscoverCli.mockReturnValue({ path: "/usr/bin/claude", source: "settings" });
+    mockDiscoverCli.mockResolvedValue({ path: "/usr/bin/claude", source: "settings" });
     mockQuery.mockImplementation(() => { throw new Error("SDK error"); });
 
     const { fetchAvailableModels } = await import("./available-models");
@@ -52,7 +52,7 @@ describe("fetchAvailableModels", () => {
   });
 
   it("fetches models from SDK on system init event", async () => {
-    mockDiscoverCli.mockReturnValue({ path: "/usr/bin/claude", source: "settings" });
+    mockDiscoverCli.mockResolvedValue({ path: "/usr/bin/claude", source: "settings" });
 
     const mockSupportedModels = vi.fn().mockResolvedValue([
       { value: "claude-3-5-sonnet-20241022", displayName: "Claude 3.5 Sonnet" },

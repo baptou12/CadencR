@@ -1,24 +1,49 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Mock node modules
+// Mock node modules — exec needs callback signature for promisify(exec) = execAsync
 vi.mock("node:child_process", () => ({
   execSync: vi.fn(),
+  exec: vi.fn(),
 }));
+
+const mockAccess = vi.fn();
 vi.mock("node:fs", () => ({
-  default: { existsSync: vi.fn() },
+  default: {
+    existsSync: vi.fn(),
+    promises: {
+      access: (...args: any[]) => mockAccess(...args),
+    },
+  },
   existsSync: vi.fn(),
+  promises: {
+    access: (...args: any[]) => mockAccess(...args),
+  },
 }));
+
 vi.mock("../db/database");
 
-import { execSync } from "node:child_process";
-import fs from "node:fs";
+import { exec } from "node:child_process";
 import { discoverClaudeCli, getResolvedPath } from "./cli-discovery";
 import { getDatabase } from "../db/database";
 import { createMockDb } from "../test-utils";
 
-const mockExecSync = vi.mocked(execSync);
-const mockExistsSync = vi.mocked(fs.existsSync);
+const mockExec = vi.mocked(exec);
 const mockGetDatabase = vi.mocked(getDatabase);
+
+/**
+ * Helper: make the `exec` mock call its callback with an error.
+ */
+function mockExecError(message = "not found") {
+  mockExec.mockImplementation((_cmd: any, _opts: any, cb: any) => {
+    const err = new Error(message);
+    if (typeof _opts === "function") {
+      _opts(err, { stdout: "", stderr: "" });
+    } else if (typeof cb === "function") {
+      cb(err, { stdout: "", stderr: "" });
+    }
+    return {} as any;
+  });
+}
 
 describe("discoverClaudeCli", () => {
   let db: ReturnType<typeof createMockDb>;
@@ -27,78 +52,96 @@ describe("discoverClaudeCli", () => {
     db = createMockDb();
     mockGetDatabase.mockReturnValue(db as any);
     vi.clearAllMocks();
-    // By default, no files exist
-    mockExistsSync.mockReturnValue(false);
-    // By default, execSync throws (not found)
-    mockExecSync.mockImplementation(() => { throw new Error("not found"); });
+    // By default, all fs.promises.access calls reject (file not found)
+    mockAccess.mockRejectedValue(new Error("ENOENT"));
+    // By default, exec calls error (not found)
+    mockExecError();
   });
 
-  it("returns null if claude is not found anywhere", () => {
+  it("returns null if claude is not found anywhere", async () => {
     db.prepare.mockReturnValue({ get: vi.fn().mockReturnValue(undefined) });
 
-    const result = discoverClaudeCli();
+    const result = await discoverClaudeCli();
     expect(result).toBeNull();
   });
 
-  it("returns configured path from settings first", () => {
+  it("returns configured path from settings first", async () => {
     const configuredPath = "/custom/path/claude";
     db.prepare.mockReturnValue({ get: vi.fn().mockReturnValue({ value: configuredPath }) });
-    mockExistsSync.mockImplementation((p) => p === configuredPath);
+    mockAccess.mockImplementation((p: string) =>
+      p === configuredPath ? Promise.resolve() : Promise.reject(new Error("ENOENT")),
+    );
 
-    const result = discoverClaudeCli();
+    const result = await discoverClaudeCli();
 
     expect(result).toEqual({ path: configuredPath, source: "settings" });
   });
 
-  it("falls back to shell PATH when settings not configured", () => {
+  it("falls back to shell PATH when settings not configured", async () => {
     db.prepare.mockReturnValue({ get: vi.fn().mockReturnValue(undefined) });
     const shellPath = "/usr/local/bin/claude";
-    mockExecSync.mockImplementation((cmd: unknown) => {
+    // exec mock: `which claude` returns the shell path
+    mockExec.mockImplementation((cmd: any, _opts: any, cb: any) => {
       const cmdStr = cmd as string;
-      if (cmdStr.includes("which claude")) return shellPath as any;
-      throw new Error("not found");
+      if (cmdStr.includes("which claude")) {
+        const callback = typeof _opts === "function" ? _opts : cb;
+        callback(null, { stdout: shellPath, stderr: "" });
+      } else {
+        const callback = typeof _opts === "function" ? _opts : cb;
+        callback(new Error("not found"), { stdout: "", stderr: "" });
+      }
+      return {} as any;
     });
-    mockExistsSync.mockImplementation((p) => p === shellPath);
+    mockAccess.mockImplementation((p: string) =>
+      p === shellPath ? Promise.resolve() : Promise.reject(new Error("ENOENT")),
+    );
 
-    const result = discoverClaudeCli();
+    const result = await discoverClaudeCli();
 
     expect(result).toEqual({ path: shellPath, source: "shell-path" });
   });
 
-  it("falls back to process PATH when shell PATH fails", () => {
+  it("falls back to process PATH when shell PATH fails", async () => {
     db.prepare.mockReturnValue({ get: vi.fn().mockReturnValue(undefined) });
-    mockExecSync.mockImplementation(() => { throw new Error("not found"); });
+    mockExecError();
 
     const processPath = "/usr/bin/claude";
     const origPath = process.env.PATH;
     process.env.PATH = "/usr/bin:/usr/local/bin";
-    mockExistsSync.mockImplementation((p) => p === processPath);
+    mockAccess.mockImplementation((p: string) =>
+      p === processPath ? Promise.resolve() : Promise.reject(new Error("ENOENT")),
+    );
 
-    const result = discoverClaudeCli();
+    const result = await discoverClaudeCli();
     process.env.PATH = origPath;
 
     expect(result).toEqual({ path: processPath, source: "process-path" });
   });
 
-  it("falls back to common locations last", () => {
+  it("falls back to common locations last", async () => {
     db.prepare.mockReturnValue({ get: vi.fn().mockReturnValue(undefined) });
-    mockExecSync.mockImplementation(() => { throw new Error(); });
+    mockExecError();
+    const origPath = process.env.PATH;
     process.env.PATH = "";
 
     const commonPath = "/usr/local/bin/claude";
-    mockExistsSync.mockImplementation((p) => p === commonPath);
+    mockAccess.mockImplementation((p: string) =>
+      p === commonPath ? Promise.resolve() : Promise.reject(new Error("ENOENT")),
+    );
 
-    const result = discoverClaudeCli();
+    const result = await discoverClaudeCli();
+    process.env.PATH = origPath;
 
     expect(result?.source).toBe("common-location");
     expect(result?.path).toBe(commonPath);
   });
 
-  it("skips configured path if file does not exist", () => {
+  it("skips configured path if file does not exist", async () => {
     db.prepare.mockReturnValue({ get: vi.fn().mockReturnValue({ value: "/nonexistent/claude" }) });
-    mockExistsSync.mockReturnValue(false);
+    // All access calls reject
+    mockAccess.mockRejectedValue(new Error("ENOENT"));
 
-    const result = discoverClaudeCli();
+    const result = await discoverClaudeCli();
 
     // Since shell/process/common also fail, should be null
     expect(result).toBeNull();
@@ -110,23 +153,27 @@ describe("getResolvedPath", () => {
     vi.clearAllMocks();
   });
 
-  it("returns shell PATH from execSync", () => {
-    mockExecSync.mockImplementation((cmd: unknown) => {
-      const cmdStr = cmd as string;
-      if (cmdStr.includes("echo $PATH")) return "/usr/local/bin:/usr/bin:/bin" as any;
-      throw new Error("not found");
+  it("returns shell PATH from exec", async () => {
+    mockExec.mockImplementation((_cmd: any, _opts: any, cb: any) => {
+      const callback = typeof _opts === "function" ? _opts : cb;
+      callback(null, { stdout: "/usr/local/bin:/usr/bin:/bin", stderr: "" });
+      return {} as any;
     });
 
-    const result = getResolvedPath();
+    const result = await getResolvedPath();
     expect(result).toBe("/usr/local/bin:/usr/bin:/bin");
   });
 
-  it("falls back to process PATH on error", () => {
-    mockExecSync.mockImplementation(() => { throw new Error("shell not found"); });
+  it("falls back to process PATH on error", async () => {
+    mockExec.mockImplementation((_cmd: any, _opts: any, cb: any) => {
+      const callback = typeof _opts === "function" ? _opts : cb;
+      callback(new Error("shell not found"), { stdout: "", stderr: "" });
+      return {} as any;
+    });
     const origPath = process.env.PATH;
     process.env.PATH = "/fallback/path";
 
-    const result = getResolvedPath();
+    const result = await getResolvedPath();
     process.env.PATH = origPath;
 
     expect(result).toBe("/fallback/path");

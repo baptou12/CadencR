@@ -341,17 +341,17 @@ export const featuresRouter = router({
 
       // When autonomy is raised to >= 2, resume execution if feature is in-progress
       if (input.key === "agent_autonomy" && Number(input.value) >= 2) {
-        queryOne<{ status: string; project_id: number }>(
+        const feat = queryOne<{ status: string; project_id: number }>(
           "SELECT status, project_id FROM features WHERE id = ?",
           input.feature_id,
-        ).tapSome((feat) => {
-          if (feat.status === "in-progress") {
-            try {
-              const { cwd, worktreePath } = resolveAgentCwd(input.feature_id, feat.project_id);
+        ).toUndefined();
+        if (feat && feat.status === "in-progress") {
+          resolveAgentCwd(input.feature_id, feat.project_id)
+            .then(({ cwd, worktreePath }) => {
               processNextPhase({ featureId: input.feature_id, projectId: feat.project_id, cwd, worktreePath });
-            } catch { /* */ }
-          }
-        });
+            })
+            .catch(() => { /* */ });
+        }
       }
 
       return { success: true };

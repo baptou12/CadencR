@@ -7,7 +7,7 @@ import fs from "node:fs";
 import { getDatabase } from "../db/database";
 import type { SettingRow, ProjectRow } from "../db/types";
 
-export function resolveAgentCwd(featureId: number, projectId: number): { cwd: string; worktreePath?: string } {
+export async function resolveAgentCwd(featureId: number, projectId: number): Promise<{ cwd: string; worktreePath?: string }> {
   const db = getDatabase();
 
   // Session-type features never use worktrees
@@ -43,7 +43,9 @@ export function resolveAgentCwd(featureId: number, projectId: number): { cwd: st
 
   const cwd = wtRow?.value ?? project?.path;
   if (!cwd) throw new Error("No working directory found for this feature");
-  if (!fs.existsSync(cwd)) {
+  try {
+    await fs.promises.access(cwd);
+  } catch {
     throw new Error(
       `Agent working directory does not exist: ${cwd}. The worktree may not have been created yet or was removed.`,
     );

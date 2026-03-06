@@ -1,7 +1,7 @@
-import { execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { execAsync } from "../git/worktree";
 import { getDatabase } from "../db/database";
 
 const COMMON_LOCATIONS = [
@@ -18,15 +18,15 @@ const COMMON_LOCATIONS = [
  * macOS GUI apps don't inherit the shell PATH, so we need to
  * explicitly source the user's profile to find binaries.
  */
-function getShellPath(): string {
+async function getShellPath(): Promise<string> {
   try {
     const shell = process.env.SHELL || "/bin/zsh";
-    const result = execSync(`${shell} -ilc 'echo $PATH'`, {
+    const { stdout } = await execAsync(`${shell} -ilc 'echo $PATH'`, {
       encoding: "utf-8",
       timeout: 5000,
       env: { ...process.env, HOME: os.homedir() },
-    }).trim();
-    return result;
+    });
+    return stdout.trim();
   } catch {
     return process.env.PATH || "";
   }
@@ -35,16 +35,22 @@ function getShellPath(): string {
 /**
  * Try to find `claude` binary using the shell PATH (resolves macOS GUI PATH issue).
  */
-function findClaudeInShellPath(): string | null {
+async function findClaudeInShellPath(): Promise<string | null> {
   try {
     const shell = process.env.SHELL || "/bin/zsh";
-    const result = execSync(`${shell} -ilc 'which claude'`, {
+    const { stdout } = await execAsync(`${shell} -ilc 'which claude'`, {
       encoding: "utf-8",
       timeout: 5000,
       env: { ...process.env, HOME: os.homedir() },
-    }).trim();
-    if (result && fs.existsSync(result)) {
-      return result;
+    });
+    const result = stdout.trim();
+    if (result) {
+      try {
+        await fs.promises.access(result);
+        return result;
+      } catch {
+        return null;
+      }
     }
   } catch {
     // claude not found in shell PATH
@@ -55,14 +61,19 @@ function findClaudeInShellPath(): string | null {
 /**
  * Check if the configured path in settings is valid.
  */
-function getConfiguredPath(): string | null {
+async function getConfiguredPath(): Promise<string | null> {
   try {
     const db = getDatabase();
     const row = db.prepare("SELECT value FROM settings WHERE key = ?").get("claude_cli_path") as
       | { value: string }
       | undefined;
-    if (row?.value && fs.existsSync(row.value)) {
-      return row.value;
+    if (row?.value) {
+      try {
+        await fs.promises.access(row.value);
+        return row.value;
+      } catch {
+        return null;
+      }
     }
   } catch {
     // DB not ready or setting not found
@@ -73,10 +84,13 @@ function getConfiguredPath(): string | null {
 /**
  * Check common installation locations for the claude binary.
  */
-function findClaudeInCommonLocations(): string | null {
+async function findClaudeInCommonLocations(): Promise<string | null> {
   for (const location of COMMON_LOCATIONS) {
-    if (fs.existsSync(location)) {
+    try {
+      await fs.promises.access(location);
       return location;
+    } catch {
+      // not found at this location
     }
   }
   return null;
@@ -85,12 +99,15 @@ function findClaudeInCommonLocations(): string | null {
 /**
  * Try to find `claude` in the current process PATH (works if launched from terminal).
  */
-function findClaudeInProcessPath(): string | null {
+async function findClaudeInProcessPath(): Promise<string | null> {
   const pathDirs = (process.env.PATH || "").split(path.delimiter);
   for (const dir of pathDirs) {
     const candidate = path.join(dir, "claude");
-    if (fs.existsSync(candidate)) {
+    try {
+      await fs.promises.access(candidate);
       return candidate;
+    } catch {
+      // not found in this dir
     }
   }
   return null;
@@ -105,27 +122,27 @@ export interface ClaudeCliInfo {
  * Discover the Claude CLI binary path.
  * Priority: user settings > shell PATH > process PATH > common locations.
  */
-export function discoverClaudeCli(): ClaudeCliInfo | null {
+export async function discoverClaudeCli(): Promise<ClaudeCliInfo | null> {
   // 1. Check user-configured path in settings
-  const configured = getConfiguredPath();
+  const configured = await getConfiguredPath();
   if (configured) {
     return { path: configured, source: "settings" };
   }
 
   // 2. Source user's shell profile to get full PATH (handles macOS GUI issue)
-  const shellPath = findClaudeInShellPath();
+  const shellPath = await findClaudeInShellPath();
   if (shellPath) {
     return { path: shellPath, source: "shell-path" };
   }
 
   // 3. Check process PATH (works when launched from terminal)
-  const processPath = findClaudeInProcessPath();
+  const processPath = await findClaudeInProcessPath();
   if (processPath) {
     return { path: processPath, source: "process-path" };
   }
 
   // 4. Check common installation locations
-  const commonPath = findClaudeInCommonLocations();
+  const commonPath = await findClaudeInCommonLocations();
   if (commonPath) {
     return { path: commonPath, source: "common-location" };
   }
@@ -137,6 +154,6 @@ export function discoverClaudeCli(): ClaudeCliInfo | null {
  * Get the shell environment PATH (with user profile sourced).
  * Useful for spawning subprocesses with the correct PATH.
  */
-export function getResolvedPath(): string {
+export async function getResolvedPath(): Promise<string> {
   return getShellPath();
 }
