@@ -81,6 +81,30 @@ describe("parseUnifiedDiff", () => {
     const result = parseUnifiedDiff(withPreamble);
     expect(result).toHaveLength(1);
   });
+
+  it("skips files with --- and +++ but no @@ hunk headers", () => {
+    const noHunkDiff = `diff --git a/image.png b/image.png
+--- a/image.png
++++ b/image.png
+Binary files a/image.png and b/image.png differ`;
+    const result = parseUnifiedDiff(noHunkDiff);
+    expect(result).toHaveLength(0);
+  });
+
+  it("skips mode-only changes without hunks alongside valid diffs", () => {
+    const mixed = `diff --git a/script.sh b/script.sh
+old mode 100644
+new mode 100755
+diff --git a/src/a.ts b/src/a.ts
+--- a/src/a.ts
++++ b/src/a.ts
+@@ -1 +1 @@
+-old
++new`;
+    const result = parseUnifiedDiff(mixed);
+    expect(result).toHaveLength(1);
+    expect(result[0].newFileName).toBe("src/a.ts");
+  });
 });
 
 describe("langFromPath", () => {

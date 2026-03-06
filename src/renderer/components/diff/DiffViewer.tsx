@@ -131,29 +131,34 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
   const fileSections = useMemo(() => parseUnifiedDiff(rawDiff ?? ""), [rawDiff]);
 
   const diffFiles = useMemo(() => {
-    return fileSections.map((section) => {
+    return fileSections.flatMap((section) => {
       const lang = langFromPath(section.newFileName !== "/dev/null" ? section.newFileName : section.oldFileName);
-      const file = DiffFile.createInstance({
-        oldFile: {
-          fileName: section.oldFileName,
-          fileLang: lang,
-          content: "",
-        },
-        newFile: {
-          fileName: section.newFileName,
-          fileLang: lang,
-          content: "",
-        },
-        hunks: section.hunks,
-      });
-      file.initTheme("dark");
-      file.initRaw();
-      if (shikiHighlighter) {
-        file.initSyntax({ registerHighlighter: shikiHighlighter });
+      try {
+        const file = DiffFile.createInstance({
+          oldFile: {
+            fileName: section.oldFileName,
+            fileLang: lang,
+            content: "",
+          },
+          newFile: {
+            fileName: section.newFileName,
+            fileLang: lang,
+            content: "",
+          },
+          hunks: section.hunks,
+        });
+        file.initTheme("dark");
+        file.initRaw();
+        if (shikiHighlighter) {
+          file.initSyntax({ registerHighlighter: shikiHighlighter });
+        }
+        file.buildSplitDiffLines();
+        file.buildUnifiedDiffLines();
+        return [{ section, file }];
+      } catch {
+        // Skip files with unparseable diffs (e.g. binary, malformed hunks)
+        return [];
       }
-      file.buildSplitDiffLines();
-      file.buildUnifiedDiffLines();
-      return { section, file };
     });
   }, [fileSections, shikiHighlighter]);
 

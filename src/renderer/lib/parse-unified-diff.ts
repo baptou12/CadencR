@@ -49,11 +49,15 @@ export function parseUnifiedDiff(rawDiff: string): FileDiffSection[] {
       // DiffFile.createInstance expects hunks as an array with
       // the full diff text (headers + hunks) as a single string entry
       const fullBlock = lines.slice(blockStart, i).join("\n");
-      sections.push({
-        oldFileName: oldFileName || "/dev/null",
-        newFileName: newFileName || "/dev/null",
-        hunks: [fullBlock],
-      });
+      // Only include sections that have actual @@ hunk headers —
+      // diffs without them (e.g. binary files, mode-only changes) can't be parsed
+      if (fullBlock.includes("\n@@")) {
+        sections.push({
+          oldFileName: oldFileName || "/dev/null",
+          newFileName: newFileName || "/dev/null",
+          hunks: [fullBlock],
+        });
+      }
     }
   }
 

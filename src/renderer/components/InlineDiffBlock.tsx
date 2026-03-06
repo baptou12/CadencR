@@ -40,27 +40,31 @@ export function InlineDiffBlock({ filePath, oldContent, newContent, basePath }: 
     if (!patch.includes("@@")) return null;
 
     const lang = langFromPath(filePath);
-    const file = DiffFile.createInstance({
-      oldFile: {
-        fileName: filePath,
-        fileLang: lang,
-        content: "",
-      },
-      newFile: {
-        fileName: filePath,
-        fileLang: lang,
-        content: "",
-      },
-      hunks: [patch],
-    });
-    file.initTheme("dark");
-    file.initRaw();
-    if (shikiHighlighter) {
-      file.initSyntax({ registerHighlighter: shikiHighlighter });
+    try {
+      const file = DiffFile.createInstance({
+        oldFile: {
+          fileName: filePath,
+          fileLang: lang,
+          content: "",
+        },
+        newFile: {
+          fileName: filePath,
+          fileLang: lang,
+          content: "",
+        },
+        hunks: [patch],
+      });
+      file.initTheme("dark");
+      file.initRaw();
+      if (shikiHighlighter) {
+        file.initSyntax({ registerHighlighter: shikiHighlighter });
+      }
+      file.buildSplitDiffLines();
+      file.buildUnifiedDiffLines();
+      return file;
+    } catch {
+      return null;
     }
-    file.buildSplitDiffLines();
-    file.buildUnifiedDiffLines();
-    return file;
   }, [filePath, oldContent, newContent, shikiHighlighter]);
 
   // Edge case: identical content
