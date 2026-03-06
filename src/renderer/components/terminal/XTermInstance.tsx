@@ -108,6 +108,7 @@ export const XTermInstance = forwardRef<
         brightCyan: "#7dcfff",
         brightWhite: "#c0caf5",
       },
+      macOptionIsMeta: true,
       allowProposedApi: true,
       scrollback: 5000,
     });
@@ -118,6 +119,30 @@ export const XTermInstance = forwardRef<
     terminal.loadAddon(fitAddon);
     terminal.loadAddon(webLinksAddon);
     terminal.open(container);
+
+    // macOS-style navigation: Cmd+Arrow (line) and Option+Arrow (word)
+    terminal.attachCustomKeyEventHandler((event) => {
+      if (event.type !== "keydown") return true;
+      const id = ptyIdRef.current;
+      if (!id || exitedRef.current) return true;
+      if (event.metaKey && event.key === "ArrowLeft") {
+        writeMutation.mutate({ ptyId: id, data: "\x01" }); // Ctrl+A – start of line
+        return false;
+      }
+      if (event.metaKey && event.key === "ArrowRight") {
+        writeMutation.mutate({ ptyId: id, data: "\x05" }); // Ctrl+E – end of line
+        return false;
+      }
+      if (event.altKey && event.key === "ArrowLeft") {
+        writeMutation.mutate({ ptyId: id, data: "\x1bb" }); // ESC b – word back
+        return false;
+      }
+      if (event.altKey && event.key === "ArrowRight") {
+        writeMutation.mutate({ ptyId: id, data: "\x1bf" }); // ESC f – word forward
+        return false;
+      }
+      return true;
+    });
 
     terminalRef.current = terminal;
     fitAddonRef.current = fitAddon;
