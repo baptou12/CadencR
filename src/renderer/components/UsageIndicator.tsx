@@ -14,6 +14,9 @@ function formatTimeUntilReset(resetsAt: string | null | undefined): string {
 export function UsageIndicator() {
   const { data, isLoading, isError } = trpc.usage.getUsage.useQuery(undefined, {
     refetchInterval: 3 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    retry: false,
+    staleTime: 3 * 60 * 1000,
   });
 
   if (isLoading || isError || !data) {
