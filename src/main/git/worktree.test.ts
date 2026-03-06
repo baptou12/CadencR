@@ -56,7 +56,9 @@ import {
   getOriginalBranch,
   checkMergeConflicts,
   hasUncommittedChanges,
+  setupWorktreeForFeature,
 } from "./worktree";
+import { getDatabase } from "../db/database";
 
 /** Helper to set up sequential exec responses */
 function mockExecResponses(...responses: Array<{ stdout?: string; stderr?: string; err?: Error }>) {
@@ -637,5 +639,84 @@ describe("hasUncommittedChanges", () => {
     mockExecResponses({ err: new Error("not a repo") });
     const result = await hasUncommittedChanges("/bad");
     expect(result).toBe(false);
+  });
+});
+
+// ─── setupWorktreeForFeature — session guard ─────────────────────────────────
+
+describe("setupWorktreeForFeature", () => {
+  function mockDb(featureRow: Record<string, unknown> | undefined, projectRow: Record<string, unknown> | undefined) {
+    const mockRun = vi.fn();
+    const mockPrepare = vi.fn((sql: string) => {
+      if (sql.includes("FROM features")) {
+        return { get: vi.fn(() => featureRow), run: mockRun };
+      }
+      if (sql.includes("FROM projects")) {
+        return { get: vi.fn(() => projectRow), run: mockRun };
+      }
+      // feature_settings inserts/updates, project_settings, etc.
+      return { get: vi.fn(() => undefined), run: mockRun };
+    });
+
+    vi.mocked(getDatabase).mockReturnValue({ prepare: mockPrepare } as never);
+    return { mockPrepare, mockRun };
+  }
+
+  it("skips worktree creation for session-type features", async () => {
+    mockDb(
+      { title: "Explore Codebase", type: "session" },
+      { name: "myproject", path: "/home/user/myproject" },
+    );
+
+    const result = await setupWorktreeForFeature(1, 42);
+    expect(result).toBeUndefined();
+    // Should NOT have called git worktree add
+    expect(mockExecCb).not.toHaveBeenCalledWith(
+      expect.stringContaining("git worktree add"),
+      expect.any(Object),
+      expect.any(Function),
+    );
+  });
+
+  it("skips worktree creation for session-type features even with skipSetupCommands", async () => {
+    mockDb(
+      { title: "Fix Bug Session", type: "session" },
+      { name: "myproject", path: "/home/user/myproject" },
+    );
+
+    const result = await setupWorktreeForFeature(1, 42, { skipSetupCommands: true });
+    expect(result).toBeUndefined();
+    expect(mockExecCb).not.toHaveBeenCalledWith(
+      expect.stringContaining("git worktree add"),
+      expect.any(Object),
+      expect.any(Function),
+    );
+  });
+
+  it("proceeds with worktree creation for feature-type features", async () => {
+    const { mockRun } = mockDb(
+      { title: "Add Dark Mode", type: "feature" },
+      { name: "myproject", path: "/home/user/myproject" },
+    );
+
+    await setupWorktreeForFeature(1, 42);
+    // Should have attempted git worktree add
+    expect(mockExecCb).toHaveBeenCalledWith(
+      expect.stringContaining("git worktree add"),
+      expect.any(Object),
+      expect.any(Function),
+    );
+    // Should have stored the worktree_path setting
+    expect(mockRun).toHaveBeenCalled();
+  });
+
+  it("throws when feature not found", async () => {
+    mockDb(undefined, { name: "myproject", path: "/path" });
+    await expect(setupWorktreeForFeature(1, 999)).rejects.toThrow(/Feature not found/);
+  });
+
+  it("throws when project path not found", async () => {
+    mockDb({ title: "Test", type: "feature" }, undefined);
+    await expect(setupWorktreeForFeature(1, 42)).rejects.toThrow(/Project path not found/);
   });
 });

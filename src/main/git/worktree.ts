@@ -186,9 +186,15 @@ export async function setupWorktreeForFeature(
   const db = getDatabase();
 
   const feature = db
-    .prepare("SELECT title FROM features WHERE id = ?")
-    .get(featureId) as { title: string } | undefined;
+    .prepare("SELECT title, type FROM features WHERE id = ?")
+    .get(featureId) as { title: string; type: string } | undefined;
   if (!feature) throw new Error(`Feature not found: ${featureId}`);
+
+  // Session-type features must never have worktrees — they always use the project path directly
+  if (feature.type === "session") {
+    console.warn(`[worktree-setup] Skipping worktree for session-type feature ${featureId}`);
+    return;
+  }
 
   const project = db
     .prepare("SELECT name, path FROM projects WHERE id = ?")
