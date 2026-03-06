@@ -1,4 +1,4 @@
-import { execSync, exec } from "node:child_process";
+import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import path from "node:path";
 import os from "node:os";
@@ -7,7 +7,7 @@ import crypto from "node:crypto";
 import { getDatabase } from "../db/database";
 import { notifyDbUpdated } from "../agents/session-persistence";
 
-const execAsync = promisify(exec);
+export const execAsync = promisify(exec);
 export interface WorktreeInfo {
   path: string;
   branch: string;
@@ -19,16 +19,15 @@ export interface WorktreeInfo {
  * Create a git worktree with a new branch.
  * Places the worktree at `../<project-name>-<branch>` relative to the repo root.
  */
-export function createWorktree(
+export async function createWorktree(
   repoPath: string,
   branchName: string,
   projectName: string,
-): { worktreePath: string; branch: string } {
+): Promise<{ worktreePath: string; branch: string }> {
   // Pre-flight: verify repoPath is a git repo
   try {
-    execSync("git rev-parse --git-dir", {
+    await execAsync("git rev-parse --git-dir", {
       cwd: repoPath,
-      stdio: "pipe",
       encoding: "utf-8",
     });
   } catch {
@@ -49,9 +48,10 @@ export function createWorktree(
   const worktreePath = path.join(os.homedir(), ".cadence", projectName, safeBranch);
 
   // Check if worktree directory already exists
-  if (fs.existsSync(worktreePath)) {
+  const dirExists = await fs.promises.access(worktreePath).then(() => true).catch(() => false);
+  if (dirExists) {
     // Check if it's already a valid worktree
-    const existing = listWorktrees(repoPath);
+    const existing = await listWorktrees(repoPath);
     const alreadyExists = existing.find((w) => w.path === worktreePath);
     if (alreadyExists) {
       return { worktreePath, branch: branchName };
@@ -59,21 +59,19 @@ export function createWorktree(
     throw new Error(`Directory already exists but is not a worktree: ${worktreePath}`);
   }
 
-  fs.mkdirSync(path.dirname(worktreePath), { recursive: true });
+  await fs.promises.mkdir(path.dirname(worktreePath), { recursive: true });
 
   try {
-    execSync(`git worktree add "${worktreePath}" -b "${branchName}"`, {
+    await execAsync(`git worktree add "${worktreePath}" -b "${branchName}"`, {
       cwd: repoPath,
-      stdio: "pipe",
       encoding: "utf-8",
     });
   } catch (err: unknown) {
     // If branch already exists, try without -b
     const message = err instanceof Error ? err.message : String(err);
     if (message.includes("already exists")) {
-      execSync(`git worktree add "${worktreePath}" "${branchName}"`, {
+      await execAsync(`git worktree add "${worktreePath}" "${branchName}"`, {
         cwd: repoPath,
-        stdio: "pipe",
         encoding: "utf-8",
       });
     } else {
@@ -87,10 +85,9 @@ export function createWorktree(
 /**
  * List all worktrees for a repository.
  */
-export function listWorktrees(repoPath: string): WorktreeInfo[] {
-  const output = execSync("git worktree list --porcelain", {
+export async function listWorktrees(repoPath: string): Promise<WorktreeInfo[]> {
+  const { stdout: output } = await execAsync("git worktree list --porcelain", {
     cwd: repoPath,
-    stdio: "pipe",
     encoding: "utf-8",
   });
 
@@ -146,11 +143,11 @@ export async function removeWorktree(repoPath: string, worktreePath: string): Pr
 /**
  * Get info for a specific worktree by its path.
  */
-export function getWorktreeInfo(
+export async function getWorktreeInfo(
   repoPath: string,
   worktreePath: string,
-): WorktreeInfo | null {
-  const all = listWorktrees(repoPath);
+): Promise<WorktreeInfo | null> {
+  const all = await listWorktrees(repoPath);
   return all.find((w) => w.path === worktreePath) ?? null;
 }
 
@@ -226,7 +223,7 @@ export async function setupWorktreeForFeature(
       .get(projectId) as { branch_prefix: string | null } | undefined;
     const prefix = prefixRow?.branch_prefix ?? "feature/";
     const branchName = buildBranchName(prefix, feature.title);
-    const wt = createWorktree(project.path, branchName, project.name);
+    const wt = await createWorktree(project.path, branchName, project.name);
 
     setFeatureSetting(featureId, "worktree_path", wt.worktreePath);
     setFeatureSetting(featureId, "worktree_branch", wt.branch);
@@ -304,13 +301,13 @@ async function runSetupCommands(
   }
 }
 
-export function getCurrentBranch(repoPath: string): string | null {
+export async function getCurrentBranch(repoPath: string): Promise<string | null> {
   try {
-    return execSync("git rev-parse --abbrev-ref HEAD", {
+    const { stdout } = await execAsync("git rev-parse --abbrev-ref HEAD", {
       cwd: repoPath,
-      stdio: "pipe",
       encoding: "utf-8",
-    }).trim() || null;
+    });
+    return stdout.trim() || null;
   } catch {
     return null;
   }
@@ -319,17 +316,17 @@ export function getCurrentBranch(repoPath: string): string | null {
 /**
  * Get git diff stats for a worktree (lines added/removed).
  */
-export function getGitStats(
+export async function getGitStats(
   worktreePath: string,
   mode: "worktree" | "branch" = "worktree",
   targetBranch?: string,
-): {
+): Promise<{
   filesChanged: number;
   insertions: number;
   deletions: number;
-} {
+}> {
   try {
-    const opts = { cwd: worktreePath, stdio: "pipe" as const, encoding: "utf-8" as const };
+    const opts = { cwd: worktreePath, encoding: "utf-8" as const };
     const statRegex =
       /(\d+)\s+files?\s+changed(?:,\s+(\d+)\s+insertions?\(\+\))?(?:,\s+(\d+)\s+deletions?\(-\))?/;
 
@@ -345,30 +342,43 @@ export function getGitStats(
 
     if (mode === "branch") {
       const branch = targetBranch ?? "main";
-      const result = parseStatLine(execSync(`git diff ${branch}...HEAD --stat`, opts));
+      const { stdout } = await execAsync(`git diff ${branch}...HEAD --stat`, opts);
+      const result = parseStatLine(stdout);
       return result ?? { filesChanged: 0, insertions: 0, deletions: 0 };
     }
 
     // Worktree mode: unstaged + staged + untracked
-    const unstaged = parseStatLine(execSync("git diff --stat", opts));
-    const staged = parseStatLine(execSync("git diff --cached --stat", opts));
+    const [unstagedResult, stagedResult, untrackedResult] = await Promise.all([
+      execAsync("git diff --stat", opts),
+      execAsync("git diff --cached --stat", opts),
+      execAsync("git ls-files --others --exclude-standard", opts),
+    ]);
+
+    const unstaged = parseStatLine(unstagedResult.stdout);
+    const staged = parseStatLine(stagedResult.stdout);
 
     let filesChanged = (unstaged?.filesChanged ?? 0) + (staged?.filesChanged ?? 0);
     let insertions = (unstaged?.insertions ?? 0) + (staged?.insertions ?? 0);
     let deletions = (unstaged?.deletions ?? 0) + (staged?.deletions ?? 0);
 
     // Count untracked files — each line counts as an insertion
-    const untrackedRaw = execSync("git ls-files --others --exclude-standard", opts);
-    const untrackedFiles = untrackedRaw.trim().split("\n").filter(Boolean);
-    for (const file of untrackedFiles) {
-      try {
-        const fullPath = path.join(worktreePath, file);
-        const content = fs.readFileSync(fullPath, "utf-8");
-        const lineCount = content.split("\n").filter((_, i, arr) => i < arr.length - 1 || arr[arr.length - 1] !== "").length;
+    const untrackedFiles = untrackedResult.stdout.trim().split("\n").filter(Boolean);
+    const fileReadResults = await Promise.all(
+      untrackedFiles.map(async (file) => {
+        try {
+          const fullPath = path.join(worktreePath, file);
+          const content = await fs.promises.readFile(fullPath, "utf-8");
+          const lineCount = content.split("\n").filter((_, i, arr) => i < arr.length - 1 || arr[arr.length - 1] !== "").length;
+          return { lines: lineCount };
+        } catch {
+          return null;
+        }
+      }),
+    );
+    for (const result of fileReadResults) {
+      if (result) {
         filesChanged++;
-        insertions += lineCount;
-      } catch {
-        // skip unreadable files
+        insertions += result.lines;
       }
     }
 
@@ -394,45 +404,52 @@ export interface ChangedFile {
  * - "worktree" mode: unstaged + staged + untracked changes
  * - "branch" mode: `git diff <targetBranch>...HEAD`
  */
-export function getDiff(
+export async function getDiff(
   worktreePath: string,
   mode: "worktree" | "branch",
   targetBranch?: string,
-): string {
+): Promise<string> {
   const branch = targetBranch ?? "main";
   try {
     if (mode === "worktree") {
-      const opts = { cwd: worktreePath, stdio: "pipe" as const, encoding: "utf-8" as const, maxBuffer: 50 * 1024 * 1024 };
-      // Unstaged changes to tracked files
-      const unstagedDiff = execSync("git diff", opts);
-      // Staged changes to tracked files
-      const stagedDiff = execSync("git diff --cached", opts);
+      const opts = { cwd: worktreePath, encoding: "utf-8" as const, maxBuffer: 50 * 1024 * 1024 };
+      // Run git commands in parallel
+      const [unstagedResult, stagedResult, untrackedResult] = await Promise.all([
+        execAsync("git diff", opts),
+        execAsync("git diff --cached", opts),
+        execAsync("git ls-files --others --exclude-standard", { ...opts, maxBuffer: 1024 * 1024 }),
+      ]);
+
+      const unstagedDiff = unstagedResult.stdout;
+      const stagedDiff = stagedResult.stdout;
+      const untrackedFiles = untrackedResult.stdout.trim().split("\n").filter(Boolean);
+
       // Build unified diffs for untracked (new) files by reading their content
-      const untrackedRaw = execSync("git ls-files --others --exclude-standard", { ...opts, maxBuffer: 1024 * 1024 });
-      const untrackedFiles = untrackedRaw.trim().split("\n").filter(Boolean);
-      let untrackedDiff = "";
-      for (const file of untrackedFiles) {
-        try {
-          const fullPath = path.join(worktreePath, file);
-          const content = fs.readFileSync(fullPath, "utf-8");
-          const lines = content.split("\n");
-          // Remove trailing empty line from final newline
-          if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
-          const lineCount = lines.length;
-          const addedLines = lines.map((l) => `+${l}`).join("\n");
-          untrackedDiff += `diff --git a/${file} b/${file}\nnew file mode 100644\n--- /dev/null\n+++ b/${file}\n@@ -0,0 +1,${lineCount} @@\n${addedLines}\n`;
-        } catch {
-          // skip files we can't read
-        }
-      }
-      return unstagedDiff + stagedDiff + untrackedDiff;
+      const untrackedDiffs = await Promise.all(
+        untrackedFiles.map(async (file) => {
+          try {
+            const fullPath = path.join(worktreePath, file);
+            const content = await fs.promises.readFile(fullPath, "utf-8");
+            const lines = content.split("\n");
+            // Remove trailing empty line from final newline
+            if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
+            const lineCount = lines.length;
+            const addedLines = lines.map((l) => `+${l}`).join("\n");
+            return `diff --git a/${file} b/${file}\nnew file mode 100644\n--- /dev/null\n+++ b/${file}\n@@ -0,0 +1,${lineCount} @@\n${addedLines}\n`;
+          } catch {
+            return "";
+          }
+        }),
+      );
+
+      return unstagedDiff + stagedDiff + untrackedDiffs.join("");
     }
-    return execSync(`git diff ${branch}...HEAD`, {
+    const { stdout } = await execAsync(`git diff ${branch}...HEAD`, {
       cwd: worktreePath,
-      stdio: "pipe",
       encoding: "utf-8",
       maxBuffer: 50 * 1024 * 1024,
     });
+    return stdout;
   } catch {
     return "";
   }
@@ -441,30 +458,31 @@ export function getDiff(
 /**
  * Get list of changed files with per-file addition/deletion counts.
  */
-export function getChangedFiles(
+export async function getChangedFiles(
   worktreePath: string,
   mode: "worktree" | "branch",
   targetBranch?: string,
-): ChangedFile[] {
+): Promise<ChangedFile[]> {
   const branch = targetBranch ?? "main";
   const diffArg = mode === "worktree" ? "" : `${branch}...HEAD`;
 
   try {
-    // Get name-status for file statuses
-    const nameStatus = execSync(`git diff --name-status ${diffArg}`, {
-      cwd: worktreePath,
-      stdio: "pipe",
-      encoding: "utf-8",
-    }).trim();
+    // Get name-status and numstat in parallel
+    const [nameStatusResult, numstatResult] = await Promise.all([
+      execAsync(`git diff --name-status ${diffArg}`, {
+        cwd: worktreePath,
+        encoding: "utf-8",
+      }),
+      execAsync(`git diff --numstat ${diffArg}`, {
+        cwd: worktreePath,
+        encoding: "utf-8",
+      }),
+    ]);
 
+    const nameStatus = nameStatusResult.stdout.trim();
     if (!nameStatus) return [];
 
-    // Get numstat for line counts
-    const numstat = execSync(`git diff --numstat ${diffArg}`, {
-      cwd: worktreePath,
-      stdio: "pipe",
-      encoding: "utf-8",
-    }).trim();
+    const numstat = numstatResult.stdout.trim();
 
     // Build numstat lookup: file -> { additions, deletions }
     const statMap = new Map<string, { additions: number; deletions: number }>();
@@ -519,11 +537,12 @@ export function getChangedFiles(
  * Tries tracking config first, then falls back to detecting the default branch.
  */
 export async function getOriginalBranch(repoPath: string, worktreeBranch: string): Promise<string> {
-  const opts = { cwd: repoPath, stdio: "pipe" as const, encoding: "utf-8" as const };
+  const opts = { cwd: repoPath, encoding: "utf-8" as const };
 
   // 1. Try tracking config: branch.<name>.merge
   try {
-    const merge = execSync(`git config --get branch.${worktreeBranch}.merge`, opts).trim();
+    const { stdout } = await execAsync(`git config --get branch.${worktreeBranch}.merge`, opts);
+    const merge = stdout.trim();
     if (merge) {
       // merge is like refs/heads/main — strip the prefix
       return merge.replace(/^refs\/heads\//, "");
@@ -534,7 +553,8 @@ export async function getOriginalBranch(repoPath: string, worktreeBranch: string
 
   // 2. Try detecting the remote HEAD (origin/HEAD -> origin/main etc.)
   try {
-    const remoteHead = execSync("git symbolic-ref refs/remotes/origin/HEAD", opts).trim();
+    const { stdout } = await execAsync("git symbolic-ref refs/remotes/origin/HEAD", opts);
+    const remoteHead = stdout.trim();
     if (remoteHead) {
       return remoteHead.replace(/^refs\/remotes\/origin\//, "");
     }
@@ -545,7 +565,7 @@ export async function getOriginalBranch(repoPath: string, worktreeBranch: string
   // 3. Fall back to checking for common default branch names
   for (const candidate of ["main", "master", "develop", "trunk"]) {
     try {
-      execSync(`git rev-parse --verify ${candidate}`, opts);
+      await execAsync(`git rev-parse --verify ${candidate}`, opts);
       return candidate;
     } catch {
       // not found
@@ -565,19 +585,21 @@ export async function checkMergeConflicts(
   sourceBranch: string,
   targetBranch: string,
 ): Promise<{ hasConflicts: boolean; conflictFiles: string[] }> {
-  const opts = { cwd: repoPath, stdio: "pipe" as const, encoding: "utf-8" as const };
+  const opts = { cwd: repoPath, encoding: "utf-8" as const };
 
   // Find the common ancestor (merge base)
-  const mergeBase = execSync(`git merge-base "${targetBranch}" "${sourceBranch}"`, opts).trim();
+  const { stdout: mergeBaseRaw } = await execAsync(`git merge-base "${targetBranch}" "${sourceBranch}"`, opts);
+  const mergeBase = mergeBaseRaw.trim();
 
   // git merge-tree performs a three-way merge entirely in-memory — no checkout needed.
   // If the output contains conflict markers (<<<<<<<), there are conflicts.
   let mergeTreeOutput = "";
   try {
-    mergeTreeOutput = execSync(
+    const { stdout } = await execAsync(
       `git merge-tree "${mergeBase}" "${targetBranch}" "${sourceBranch}"`,
       { ...opts, maxBuffer: 50 * 1024 * 1024 },
     );
+    mergeTreeOutput = stdout;
   } catch (err) {
     // merge-tree exits non-zero when it detects conflicts on some git versions
     mergeTreeOutput = err instanceof Error ? (err as NodeJS.ErrnoException & { stdout?: string }).stdout ?? err.message : String(err);
@@ -588,10 +610,12 @@ export async function checkMergeConflicts(
   // Identify conflicting files: files changed in both branches since the merge base
   const conflictFiles: string[] = [];
   if (hasConflicts) {
-    const sourceFilesRaw = execSync(`git diff --name-only "${mergeBase}" "${sourceBranch}"`, opts).trim();
-    const targetFilesRaw = execSync(`git diff --name-only "${mergeBase}" "${targetBranch}"`, opts).trim();
-    const sourceFiles = new Set(sourceFilesRaw.split("\n").filter(Boolean));
-    for (const f of targetFilesRaw.split("\n").filter(Boolean)) {
+    const [sourceResult, targetResult] = await Promise.all([
+      execAsync(`git diff --name-only "${mergeBase}" "${sourceBranch}"`, opts),
+      execAsync(`git diff --name-only "${mergeBase}" "${targetBranch}"`, opts),
+    ]);
+    const sourceFiles = new Set(sourceResult.stdout.trim().split("\n").filter(Boolean));
+    for (const f of targetResult.stdout.trim().split("\n").filter(Boolean)) {
       if (sourceFiles.has(f)) conflictFiles.push(f);
     }
   }
@@ -608,28 +632,29 @@ export async function mergeBranch(
   sourceBranch: string,
   targetBranch: string,
 ): Promise<{ success: boolean; error?: string }> {
-  const opts = { cwd: repoPath, stdio: "pipe" as const, encoding: "utf-8" as const };
+  const opts = { cwd: repoPath, encoding: "utf-8" as const };
 
   let originalBranch: string | null = null;
   try {
-    originalBranch = execSync("git rev-parse --abbrev-ref HEAD", opts).trim();
+    const { stdout } = await execAsync("git rev-parse --abbrev-ref HEAD", opts);
+    originalBranch = stdout.trim();
   } catch {
     // ignore
   }
 
   try {
-    execSync(`git checkout "${targetBranch}"`, opts);
-    execSync(`git merge --no-ff "${sourceBranch}"`, opts);
+    await execAsync(`git checkout "${targetBranch}"`, opts);
+    await execAsync(`git merge --no-ff "${sourceBranch}"`, opts);
     return { success: true };
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
     // Try to abort any partial merge
-    try { execSync("git merge --abort", opts); } catch { /* ignore */ }
+    try { await execAsync("git merge --abort", opts); } catch { /* ignore */ }
     return { success: false, error };
   } finally {
     // Restore original branch if different
     if (originalBranch && originalBranch !== targetBranch) {
-      try { execSync(`git checkout "${originalBranch}"`, opts); } catch { /* ignore */ }
+      try { await execAsync(`git checkout "${originalBranch}"`, opts); } catch { /* ignore */ }
     }
   }
 }
@@ -642,9 +667,8 @@ export async function deleteLocalBranch(
   branchName: string,
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    execSync(`git branch -d "${branchName}"`, {
+    await execAsync(`git branch -d "${branchName}"`, {
       cwd: repoPath,
-      stdio: "pipe",
       encoding: "utf-8",
     });
     return { success: true };
@@ -658,12 +682,11 @@ export async function deleteLocalBranch(
  */
 export async function hasUncommittedChanges(worktreePath: string): Promise<boolean> {
   try {
-    const output = execSync("git status --porcelain", {
+    const { stdout } = await execAsync("git status --porcelain", {
       cwd: worktreePath,
-      stdio: "pipe",
       encoding: "utf-8",
     });
-    return output.trim().length > 0;
+    return stdout.trim().length > 0;
   } catch {
     return false;
   }
@@ -672,20 +695,18 @@ export async function hasUncommittedChanges(worktreePath: string): Promise<boole
 /**
  * Open a directory in the system's default terminal.
  */
-export function openInTerminal(dirPath: string): void {
-  // shell.openPath opens with the default application for that type
-  // For directories on macOS, this opens Finder — so we use a different approach
+export async function openInTerminal(dirPath: string): Promise<void> {
   if (process.platform === "darwin") {
-    execSync(`open -a iTerm "${dirPath}"`, { stdio: "pipe" });
+    await execAsync(`open -a iTerm "${dirPath}"`);
   } else if (process.platform === "win32") {
-    execSync(`start cmd /K "cd /d ${dirPath}"`, { stdio: "pipe", shell: "cmd.exe" });
+    await execAsync(`start cmd /K "cd /d ${dirPath}"`, { shell: "cmd.exe" });
   } else {
     // Linux — try common terminal emulators
     try {
-      execSync(`x-terminal-emulator --working-directory="${dirPath}"`, { stdio: "pipe" });
+      await execAsync(`x-terminal-emulator --working-directory="${dirPath}"`);
     } catch {
       // fallback to xterm
-      execSync(`xterm -e "cd '${dirPath}' && $SHELL"`, { stdio: "pipe" });
+      await execAsync(`xterm -e "cd '${dirPath}' && $SHELL"`);
     }
   }
 }
@@ -693,6 +714,6 @@ export function openInTerminal(dirPath: string): void {
 /**
  * Open a directory in the Zed editor.
  */
-export function openInZed(dirPath: string): void {
-  execSync(`zed "${dirPath}"`, { stdio: "pipe" });
+export async function openInZed(dirPath: string): Promise<void> {
+  await execAsync(`zed "${dirPath}"`);
 }

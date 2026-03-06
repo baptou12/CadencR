@@ -68,38 +68,51 @@ vi.mock("../agents/mcp-factory", () => ({
 }));
 
 vi.mock("../git/worktree", () => ({
+  execAsync: vi.fn().mockResolvedValue({ stdout: "", stderr: "" }),
   createWorktree: vi.fn().mockResolvedValue("/worktree/path"),
   removeWorktree: vi.fn().mockResolvedValue(undefined),
-  getWorktreeInfo: vi.fn().mockReturnValue(null),
-  openInTerminal: vi.fn(),
-  openInZed: vi.fn(),
+  getWorktreeInfo: vi.fn().mockResolvedValue(null),
+  listWorktrees: vi.fn().mockResolvedValue([]),
+  openInTerminal: vi.fn().mockResolvedValue(undefined),
+  openInZed: vi.fn().mockResolvedValue(undefined),
   buildBranchName: vi.fn().mockReturnValue("feat/branch"),
-  getGitStats: vi.fn().mockReturnValue({ branch: "main", uncommittedChanges: 0, untrackedFiles: 0 }),
-  getDiff: vi.fn().mockReturnValue(""),
-  getChangedFiles: vi.fn().mockReturnValue([]),
-  getCurrentBranch: vi.fn().mockReturnValue("main"),
+  getGitStats: vi.fn().mockResolvedValue({ branch: "main", uncommittedChanges: 0, untrackedFiles: 0 }),
+  getDiff: vi.fn().mockResolvedValue(""),
+  getChangedFiles: vi.fn().mockResolvedValue([]),
+  getCurrentBranch: vi.fn().mockResolvedValue("main"),
   setupWorktreeForFeature: vi.fn().mockResolvedValue("/worktree/path"),
-  getOriginalBranch: vi.fn().mockReturnValue("main"),
-  checkMergeConflicts: vi.fn().mockReturnValue(false),
+  getOriginalBranch: vi.fn().mockResolvedValue("main"),
+  checkMergeConflicts: vi.fn().mockResolvedValue(false),
   mergeBranch: vi.fn().mockResolvedValue(undefined),
   deleteLocalBranch: vi.fn().mockResolvedValue(undefined),
-  hasUncommittedChanges: vi.fn().mockReturnValue(false),
+  hasUncommittedChanges: vi.fn().mockResolvedValue(false),
 }));
 
 vi.mock("node:child_process", () => ({
   execSync: vi.fn().mockReturnValue(""),
+  exec: vi.fn((_cmd: string, _opts: unknown, cb: (err: Error | null, result: { stdout: string; stderr: string }) => void) => {
+    cb(null, { stdout: "", stderr: "" });
+  }),
 }));
 
 let mockExistsSync = vi.fn().mockReturnValue(true);
 
 vi.mock("node:fs", async () => {
   const actual = await vi.importActual<typeof import("node:fs")>("node:fs");
+  const mockPromises = {
+    ...actual.promises,
+    access: vi.fn().mockRejectedValue(new Error("ENOENT")),
+    mkdir: vi.fn().mockResolvedValue(undefined),
+    readFile: vi.fn().mockResolvedValue(""),
+  };
   return {
     ...actual,
     existsSync: (...args: Parameters<typeof import("node:fs").existsSync>) => mockExistsSync(...args),
+    promises: mockPromises,
     default: {
       ...(actual as any).default,
       existsSync: (...args: Parameters<typeof import("node:fs").existsSync>) => mockExistsSync(...args),
+      promises: mockPromises,
     },
   };
 });
@@ -442,7 +455,7 @@ describe("appRouter - git procedures", () => {
 
   it("git.getStats returns stats for feature", async () => {
     const { getGitStats } = await import("../git/worktree");
-    vi.mocked(getGitStats).mockReturnValue({ filesChanged: 2, insertions: 10, deletions: 3 } as any);
+    vi.mocked(getGitStats).mockResolvedValue({ filesChanged: 2, insertions: 10, deletions: 3 });
     const result = await caller.git.getStats({ featureId: 1 });
     expect(result).toMatchObject({ filesChanged: 2 });
   });
@@ -456,14 +469,14 @@ describe("appRouter - git procedures", () => {
 
   it("git.getDiff returns diff string", async () => {
     const { getDiff } = await import("../git/worktree");
-    vi.mocked(getDiff).mockReturnValue("diff --git a/foo.ts...");
+    vi.mocked(getDiff).mockResolvedValue("diff --git a/foo.ts...");
     const result = await caller.git.getDiff({ featureId: 1, mode: "worktree" });
     expect(result).toBe("diff --git a/foo.ts...");
   });
 
   it("git.getChangedFiles returns changed file list", async () => {
     const { getChangedFiles } = await import("../git/worktree");
-    vi.mocked(getChangedFiles).mockReturnValue([{ status: "M", path: "src/foo.ts" }] as any);
+    vi.mocked(getChangedFiles).mockResolvedValue([{ status: "M", path: "src/foo.ts" }] as any);
     const result = await caller.git.getChangedFiles({ featureId: 1, mode: "worktree" });
     expect(result).toHaveLength(1);
   });
@@ -471,7 +484,7 @@ describe("appRouter - git procedures", () => {
   it("git.createWorktree calls createWorktree and saves path to DB", async () => {
     const { createWorktree, buildBranchName } = await import("../git/worktree");
     vi.mocked(buildBranchName).mockReturnValue("feature/my-feature");
-    vi.mocked(createWorktree).mockReturnValue({ worktreePath: "/worktrees/my-feature", branch: "feature/my-feature" } as any);
+    vi.mocked(createWorktree).mockResolvedValue({ worktreePath: "/worktrees/my-feature", branch: "feature/my-feature" });
     const result = await caller.git.createWorktree({ featureId: 1, projectId: 1, featureTitle: "My Feature" });
     expect(createWorktree).toHaveBeenCalled();
     expect(result).toMatchObject({ worktreePath: "/worktrees/my-feature" });
@@ -479,7 +492,7 @@ describe("appRouter - git procedures", () => {
 
   it("git.removeWorktree calls removeWorktree", async () => {
     const { removeWorktree } = await import("../git/worktree");
-    vi.mocked(removeWorktree).mockReturnValue(undefined as any);
+    vi.mocked(removeWorktree).mockResolvedValue(undefined);
     const result = await caller.git.removeWorktree({ featureId: 1, projectId: 1 });
     expect(removeWorktree).toHaveBeenCalled();
     expect(result).toMatchObject({ success: true });
@@ -487,7 +500,7 @@ describe("appRouter - git procedures", () => {
 
   it("git.getBranch returns current branch for project", async () => {
     const { getCurrentBranch } = await import("../git/worktree");
-    vi.mocked(getCurrentBranch).mockReturnValue("main");
+    vi.mocked(getCurrentBranch).mockResolvedValue("main");
     const result = await caller.git.getBranch({ projectId: 1 });
     expect(result).toBe("main");
   });

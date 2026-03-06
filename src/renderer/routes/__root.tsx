@@ -7,7 +7,9 @@ import {
 } from "@tanstack/react-router";
 import { useHotkeys } from "react-hotkeys-hook";
 import { Sidebar } from "@/components/Sidebar";
+import { Toaster } from "@/components/ui/sonner";
 import { useDbUpdated } from "@/hooks/useDbUpdated";
+import { useOperationToasts } from "@/hooks/useOperationToasts";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import {
   ResizablePanelGroup,
@@ -46,6 +48,7 @@ export const Route = createRootRoute({
 
 function RootLayout() {
   useDbUpdated();
+  useOperationToasts();
   const leftWidth = useDebouncedSetting("sidebar_left_width");
   const navigate = useNavigate();
   const leftSidebarRef = useRef<HTMLDivElement>(null);
@@ -353,6 +356,7 @@ function RootLayout() {
         activeFeatureId={activeFeatureId}
       />
       <KeyboardShortcutsModal open={shortcutsHelpOpen} onOpenChange={setShortcutsHelpOpen} />
+      <Toaster position="top-center" richColors />
       <FocusRing />
       <ConfirmDialog
         open={confirmAction != null}

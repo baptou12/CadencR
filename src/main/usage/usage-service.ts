@@ -1,4 +1,7 @@
-import { execSync } from 'child_process';
+import { exec } from 'node:child_process';
+import { promisify } from 'node:util';
+
+const execAsync = promisify(exec);
 
 export interface UsageBucket {
   utilization: number;
@@ -13,12 +16,13 @@ export interface UsageResponse {
 let cachedResult: { data: UsageResponse; timestamp: number } | null = null;
 const CACHE_TTL_MS = 3 * 60 * 1000; // 3 minutes
 
-function getOAuthToken(): string | null {
+async function getOAuthToken(): Promise<string | null> {
   try {
-    const raw = execSync(
+    const { stdout } = await execAsync(
       'security find-generic-password -s "Claude Code-credentials" -w',
-      { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] },
-    ).trim();
+      { encoding: 'utf-8' },
+    );
+    const raw = stdout.trim();
     const parsed = JSON.parse(raw);
     const token = parsed?.claudeAiOauth?.accessToken;
     return typeof token === 'string' ? token : null;
@@ -32,7 +36,7 @@ export async function getUsage(): Promise<UsageResponse | null> {
     return cachedResult.data;
   }
 
-  const token = getOAuthToken();
+  const token = await getOAuthToken();
   if (!token) return null;
 
   try {

@@ -2,8 +2,8 @@ import { z } from "zod";
 import { router, publicProcedure } from "./trpc";
 import { getDatabase } from "../db/database";
 import type { SettingRow, ProjectRow } from "../db/types";
-import { execSync } from "node:child_process";
 import {
+  execAsync,
   createWorktree,
   removeWorktree,
   listWorktrees,
@@ -34,7 +34,7 @@ export const gitRouter = router({
         featureTitle: z.string(),
       }),
     )
-    .mutation(({ input }) => {
+    .mutation(async ({ input }) => {
       const db = getDatabase();
       const project = db
         .prepare("SELECT id, name, path FROM projects WHERE id = ?")
@@ -47,7 +47,7 @@ export const gitRouter = router({
       const prefix = prefixRow?.branch_prefix ?? "feature/";
 
       const branchName = buildBranchName(prefix, input.featureTitle);
-      const result = createWorktree(project.path, branchName, project.name);
+      const result = await createWorktree(project.path, branchName, project.name);
 
       db.prepare(
         "INSERT INTO feature_settings (feature_id, key, value) VALUES (?, ?, ?) ON CONFLICT(feature_id, key) DO UPDATE SET value = excluded.value",
@@ -67,7 +67,7 @@ export const gitRouter = router({
         featureId: z.number(),
       }),
     )
-    .mutation(({ input }) => {
+    .mutation(async ({ input }) => {
       const db = getDatabase();
       const project = db
         .prepare("SELECT path FROM projects WHERE id = ?")
@@ -81,7 +81,7 @@ export const gitRouter = router({
         .get(input.featureId) as SettingRow | undefined;
       if (!wtRow) throw new Error("No worktree found for this feature");
 
-      removeWorktree(project.path, wtRow.value);
+      await removeWorktree(project.path, wtRow.value);
 
       db.prepare(
         "DELETE FROM feature_settings WHERE feature_id = ? AND key IN ('worktree_path', 'worktree_branch')",
@@ -98,7 +98,7 @@ export const gitRouter = router({
         featureId: z.number(),
       }),
     )
-    .query(({ input }) => {
+    .query(async ({ input }) => {
       const db = getDatabase();
       const project = db
         .prepare("SELECT path FROM projects WHERE id = ?")
@@ -122,7 +122,7 @@ export const gitRouter = router({
       mode: z.enum(["worktree", "branch"]).optional(),
       targetBranch: z.string().optional(),
     }))
-    .query(({ input }) => {
+    .query(async ({ input }) => {
       const gitPath = resolveFeatureGitPath(input.featureId);
       if (!gitPath) return { filesChanged: 0, insertions: 0, deletions: 0 };
       return getGitStats(gitPath, input.mode ?? "worktree", input.targetBranch);
@@ -131,7 +131,7 @@ export const gitRouter = router({
   /** Get the current branch for a project */
   getBranch: publicProcedure
     .input(z.object({ projectId: z.number() }))
-    .query(({ input }) => {
+    .query(async ({ input }) => {
       const db = getDatabase();
       const project = db
         .prepare("SELECT path FROM projects WHERE id = ?")
@@ -149,7 +149,7 @@ export const gitRouter = router({
         targetBranch: z.string().optional(),
       }),
     )
-    .query(({ input }) => {
+    .query(async ({ input }) => {
       const gitPath = resolveFeatureGitPath(input.featureId);
       if (!gitPath) return "";
       return getDiff(gitPath, input.mode, input.targetBranch);
@@ -164,7 +164,7 @@ export const gitRouter = router({
         targetBranch: z.string().optional(),
       }),
     )
-    .query(({ input }) => {
+    .query(async ({ input }) => {
       const gitPath = resolveFeatureGitPath(input.featureId);
       if (!gitPath) return [];
       return getChangedFiles(gitPath, input.mode, input.targetBranch);
@@ -183,33 +183,33 @@ export const gitRouter = router({
   /** Open a worktree/project path in the system terminal */
   openInTerminal: publicProcedure
     .input(z.object({ featureId: z.number() }))
-    .mutation(({ input }) => {
+    .mutation(async ({ input }) => {
       const gitPath = resolveFeatureGitPath(input.featureId);
       if (!gitPath) throw new Error("No working directory found for this feature");
 
-      openInTerminal(gitPath);
+      await openInTerminal(gitPath);
       return { success: true };
     }),
 
   /** Open a worktree/project path in Zed editor */
   openInZed: publicProcedure
     .input(z.object({ featureId: z.number() }))
-    .mutation(({ input }) => {
+    .mutation(async ({ input }) => {
       const gitPath = resolveFeatureGitPath(input.featureId);
       if (!gitPath) throw new Error("No working directory found for this feature");
 
-      openInZed(gitPath);
+      await openInZed(gitPath);
       return { success: true };
     }),
 
   /** List all git-tracked files for a feature's worktree/project */
   listFiles: publicProcedure
     .input(z.object({ featureId: z.number() }))
-    .query(({ input }) => {
+    .query(async ({ input }) => {
       const gitPath = resolveFeatureGitPath(input.featureId);
       if (!gitPath) return [];
-      const output = execSync("git ls-files", { cwd: gitPath, encoding: "utf-8", maxBuffer: 10 * 1024 * 1024 });
-      return output.split("\n").filter(Boolean);
+      const { stdout } = await execAsync("git ls-files", { cwd: gitPath, encoding: "utf-8", maxBuffer: 10 * 1024 * 1024 });
+      return stdout.split("\n").filter(Boolean);
     }),
 
   /** Get the original branch from which the feature's worktree branch was created */
@@ -290,7 +290,7 @@ export const gitRouter = router({
   /** Get blob SHAs for all changed files in a feature's worktree */
   getFileBlobShas: publicProcedure
     .input(z.object({ featureId: z.number() }))
-    .query(({ input }) => {
+    .query(async ({ input }) => {
       const db = getDatabase();
       const wtRow = db
         .prepare("SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'")
@@ -301,21 +301,13 @@ export const gitRouter = router({
       const result: Record<string, string> = {};
 
       try {
-        const changedFiles = execSync("git diff HEAD --name-only", {
-          cwd: worktreePath,
-          encoding: "utf-8",
-        })
-          .trim()
-          .split("\n")
-          .filter(Boolean);
+        const [changedResult, untrackedResult] = await Promise.all([
+          execAsync("git diff HEAD --name-only", { cwd: worktreePath, encoding: "utf-8" }),
+          execAsync("git ls-files --others --exclude-standard", { cwd: worktreePath, encoding: "utf-8" }),
+        ]);
 
-        const untrackedFiles = execSync("git ls-files --others --exclude-standard", {
-          cwd: worktreePath,
-          encoding: "utf-8",
-        })
-          .trim()
-          .split("\n")
-          .filter(Boolean);
+        const changedFiles = changedResult.stdout.trim().split("\n").filter(Boolean);
+        const untrackedFiles = untrackedResult.stdout.trim().split("\n").filter(Boolean);
 
         let branchChangedFiles: string[] = [];
         try {
@@ -323,19 +315,18 @@ export const gitRouter = router({
             .prepare("SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_branch'")
             .get(input.featureId) as SettingRow | undefined;
           if (branchRow?.value) {
-            const mergeBase = execSync(`git merge-base HEAD main || git merge-base HEAD master`, {
+            const { stdout: mergeBaseOut } = await execAsync(`git merge-base HEAD main || git merge-base HEAD master`, {
               cwd: worktreePath,
               encoding: "utf-8",
               shell: "/bin/sh",
-            }).trim();
+            });
+            const mergeBase = mergeBaseOut.trim();
             if (mergeBase) {
-              branchChangedFiles = execSync(`git diff ${mergeBase} HEAD --name-only`, {
+              const { stdout: branchDiffOut } = await execAsync(`git diff ${mergeBase} HEAD --name-only`, {
                 cwd: worktreePath,
                 encoding: "utf-8",
-              })
-                .trim()
-                .split("\n")
-                .filter(Boolean);
+              });
+              branchChangedFiles = branchDiffOut.trim().split("\n").filter(Boolean);
             }
           }
         } catch {
@@ -344,29 +335,31 @@ export const gitRouter = router({
 
         const allFiles = [...new Set([...changedFiles, ...untrackedFiles, ...branchChangedFiles])];
 
-        for (const filePath of allFiles) {
-          try {
-            const blobSha = execSync(`git hash-object "${filePath}"`, {
-              cwd: worktreePath,
-              encoding: "utf-8",
-            }).trim();
-            if (blobSha) {
-              result[filePath] = blobSha;
-            }
-          } catch {
+        await Promise.all(
+          allFiles.map(async (filePath) => {
             try {
-              const blobSha = execSync(`git rev-parse HEAD:"${filePath}"`, {
+              const { stdout: blobSha } = await execAsync(`git hash-object "${filePath}"`, {
                 cwd: worktreePath,
                 encoding: "utf-8",
-              }).trim();
-              if (blobSha) {
-                result[filePath] = blobSha;
+              });
+              if (blobSha.trim()) {
+                result[filePath] = blobSha.trim();
               }
             } catch {
-              // File might not exist, skip
+              try {
+                const { stdout: blobSha } = await execAsync(`git rev-parse HEAD:"${filePath}"`, {
+                  cwd: worktreePath,
+                  encoding: "utf-8",
+                });
+                if (blobSha.trim()) {
+                  result[filePath] = blobSha.trim();
+                }
+              } catch {
+                // File might not exist, skip
+              }
             }
-          }
-        }
+          }),
+        );
       } catch {
         // If git commands fail, return empty map
       }
@@ -420,7 +413,7 @@ export const gitRouter = router({
 
   listProjectWorktrees: publicProcedure
     .input(z.object({ projectId: z.number() }))
-    .query(({ input }) => {
+    .query(async ({ input }) => {
       const db = getDatabase();
       const project = db
         .prepare("SELECT path FROM projects WHERE id = ?")
@@ -429,7 +422,7 @@ export const gitRouter = router({
 
       let worktrees;
       try {
-        worktrees = listWorktrees(project.path);
+        worktrees = await listWorktrees(project.path);
       } catch {
         return [];
       }
