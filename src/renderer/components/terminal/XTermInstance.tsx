@@ -16,6 +16,10 @@ interface XTermInstanceProps {
   onPtyReady?: (ptyId: string) => void;
   /** If true, kill the PTY when unmounting (explicit close). Default: false (detach only). */
   killOnUnmount?: boolean;
+  /** Command to write to the PTY after creation (does NOT press Enter — command includes \n if needed) */
+  initialCommand?: string;
+  /** Called after the initial command has been written so the parent can clear it from state */
+  onInitialCommandConsumed?: () => void;
 }
 
 export interface XTermInstanceHandle {
@@ -36,6 +40,8 @@ export const XTermInstance = forwardRef<
     onExit,
     onPtyReady,
     killOnUnmount = false,
+    initialCommand,
+    onInitialCommandConsumed,
   },
   ref,
 ) {
@@ -47,8 +53,12 @@ export const XTermInstance = forwardRef<
   const exitedRef = useRef(false);
   const shouldKillRef = useRef(killOnUnmount);
 
-  // Keep shouldKillRef in sync with prop
+  // Keep refs in sync with props
   shouldKillRef.current = killOnUnmount;
+  const initialCommandRef = useRef(initialCommand);
+  initialCommandRef.current = initialCommand;
+  const onInitialCommandConsumedRef = useRef(onInitialCommandConsumed);
+  onInitialCommandConsumedRef.current = onInitialCommandConsumed;
 
   useImperativeHandle(ref, () => ({
     focus: () => {
@@ -264,6 +274,17 @@ export const XTermInstance = forwardRef<
               });
             } catch {
               // Ignore
+            }
+            // Write initial command if provided (e.g. "send to terminal" from code block)
+            const cmd = initialCommandRef.current;
+            if (cmd) {
+              // Small delay to let the shell prompt render first
+              setTimeout(() => {
+                if (mountedRef.current && ptyIdRef.current) {
+                  writeMutation.mutate({ ptyId: ptyIdRef.current, data: cmd });
+                }
+                onInitialCommandConsumedRef.current?.();
+              }, 150);
             }
             terminal.focus();
           },

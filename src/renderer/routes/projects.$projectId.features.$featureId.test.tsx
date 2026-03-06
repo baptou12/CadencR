@@ -81,6 +81,9 @@ vi.mock("@/hooks/useTerminalState", () => ({
     removePane: vi.fn(),
     minimize: vi.fn(),
   })),
+  useTerminalStore: vi.fn((selector) =>
+    selector({ sendToTerminal: vi.fn(), clearInitialCommand: vi.fn() }),
+  ),
 }));
 
 vi.mock("@/hooks/useAgentChat", () => ({

@@ -29,8 +29,9 @@ import type { FeatureSession } from "@/hooks/useFeatureAgentState";
 import { useContextUsage } from "@/hooks/useContextUsage";
 import { useResolvedModel } from "@/hooks/useResolvedModel";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
-import { useTerminalState } from "@/hooks/useTerminalState";
+import { useTerminalState, useTerminalStore } from "@/hooks/useTerminalState";
 import { useAgentChat } from "@/hooks/useAgentChat";
+import { CodeBlockActionsContext, type CodeBlockActions } from "@/components/CodeBlockActionsContext";
 import { cn } from "@/lib/utils";
 
 export function FeatureWorkflowView({
@@ -390,6 +391,11 @@ export function FeatureWorkflowView({
   // Terminal panel state
   const terminalRef = useRef<TerminalPanelHandle>(null);
   const terminalState = useTerminalState(featureId);
+  const sendToTerminalStore = useTerminalStore((s) => s.sendToTerminal);
+  const codeBlockActions = useMemo<CodeBlockActions>(
+    () => ({ sendToTerminal: (cmd) => sendToTerminalStore(featureId, cmd) }),
+    [sendToTerminalStore, featureId],
+  );
   const terminalHeightSetting = useDebouncedSetting("terminal_panel_height_px");
   const [terminalHeightPx, setTerminalHeightPx] = useState(300);
 
@@ -536,6 +542,7 @@ export function FeatureWorkflowView({
   );
 
   return (
+    <CodeBlockActionsContext.Provider value={codeBlockActions}>
     <div className="relative flex h-full flex-col">
       <FeatureTopBar featureId={featureId} projectId={projectId} />
       <div className="relative min-h-0 flex-1 overflow-hidden">
@@ -906,5 +913,6 @@ export function FeatureWorkflowView({
         onStartReviewFixer={handleStartReviewFixer}
       />
     </div>
+    </CodeBlockActionsContext.Provider>
   );
 }

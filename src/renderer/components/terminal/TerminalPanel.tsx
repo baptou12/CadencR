@@ -45,6 +45,7 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
   const paneRefs = useRef<Map<string, XTermInstanceHandle>>(new Map());
   const [activePaneIndex, setActivePaneIndex] = useState(0);
   const setPtyId = useTerminalStore((s) => s.setPtyId);
+  const clearInitialCommand = useTerminalStore((s) => s.clearInitialCommand);
 
   const setPaneRef = useCallback((paneId: string, handle: XTermInstanceHandle | null) => {
     if (handle) {
@@ -229,6 +230,8 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
                     featureId={featureId}
                     projectId={projectId}
                     existingPtyId={pane.ptyId}
+                    initialCommand={pane.initialCommand}
+                    onInitialCommandConsumed={() => clearInitialCommand(featureId, pane.id)}
                     onPtyReady={(ptyId) => setPtyId(featureId, pane.id, ptyId)}
                     onExit={(ptyId) => handlePaneExit(ptyId, pane.id)}
                   />

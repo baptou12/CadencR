@@ -6,6 +6,8 @@ export interface TerminalPane {
   id: string;
   /** PTY ID assigned by the backend — set after creation, used for reconnection */
   ptyId?: string;
+  /** Command to write to the terminal once the PTY is ready (consumed once) */
+  initialCommand?: string;
 }
 
 /** State for the terminal panel for a given feature */
@@ -49,6 +51,12 @@ interface TerminalStore {
 
   /** Associate a backend PTY ID with a pane (called after PTY creation) */
   setPtyId: (featureId: number, paneId: string, ptyId: string) => void;
+
+  /** Open terminal (or add split), queue a command to be written once the PTY is ready */
+  sendToTerminal: (featureId: number, command: string) => void;
+
+  /** Clear the initial command for a pane (called after it has been consumed) */
+  clearInitialCommand: (featureId: number, paneId: string) => void;
 }
 
 export const useTerminalStore = create<TerminalStore>((set, get) => ({
@@ -117,6 +125,51 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
           [featureId]: {
             ...prev,
             panes: prev.panes.map((p) => (p.id === paneId ? { ...p, ptyId } : p)),
+          },
+        },
+      };
+    }),
+
+  sendToTerminal: (featureId, command) =>
+    set((state) => {
+      const prev = state.features[featureId] ?? defaultState;
+      const newPane: TerminalPane = { id: nextPaneId(), initialCommand: command };
+
+      if (prev.panes.length === 0) {
+        // No terminal open — create with initial pane
+        return {
+          features: {
+            ...state.features,
+            [featureId]: { isOpen: true, isMinimized: false, panes: [newPane] },
+          },
+        };
+      }
+
+      // Terminal exists — add a split pane and ensure visible
+      return {
+        features: {
+          ...state.features,
+          [featureId]: {
+            ...prev,
+            isOpen: true,
+            isMinimized: false,
+            panes: [...prev.panes, newPane],
+          },
+        },
+      };
+    }),
+
+  clearInitialCommand: (featureId, paneId) =>
+    set((state) => {
+      const prev = state.features[featureId] ?? defaultState;
+      return {
+        features: {
+          ...state.features,
+          [featureId]: {
+            ...prev,
+            panes: prev.panes.map((p) =>
+              p.id === paneId ? { ...p, initialCommand: undefined } : p,
+            ),
           },
         },
       };

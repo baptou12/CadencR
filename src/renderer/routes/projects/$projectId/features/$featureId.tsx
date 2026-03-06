@@ -12,8 +12,9 @@ import { useContextUsage } from "@/hooks/useContextUsage";
 import { useResolvedModel } from "@/hooks/useResolvedModel";
 import { getActiveFocusZone } from "@/lib/focus-zones";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
-import { useTerminalState } from "@/hooks/useTerminalState";
+import { useTerminalState, useTerminalStore } from "@/hooks/useTerminalState";
 import { useAgentChat, usePermissionMode } from "@/hooks/useAgentChat";
+import { CodeBlockActionsContext, type CodeBlockActions } from "@/components/CodeBlockActionsContext";
 
 export const Route = createFileRoute(
   "/projects/$projectId/features/$featureId",
@@ -206,6 +207,11 @@ function SessionFeatureView({
   // Terminal panel state
   const terminalRef = useRef<TerminalPanelHandle>(null);
   const terminalState = useTerminalState(featureId);
+  const sendToTerminalStore = useTerminalStore((s) => s.sendToTerminal);
+  const codeBlockActions = useMemo<CodeBlockActions>(
+    () => ({ sendToTerminal: (cmd) => sendToTerminalStore(featureId, cmd) }),
+    [sendToTerminalStore, featureId],
+  );
   const terminalHeightSetting = useDebouncedSetting("terminal_panel_height_px");
   const [terminalHeightPx, setTerminalHeightPx] = useState(300);
 
@@ -270,6 +276,7 @@ function SessionFeatureView({
   );
 
   return (
+    <CodeBlockActionsContext.Provider value={codeBlockActions}>
     <div className="flex h-full flex-col">
       <FeatureTopBar featureId={featureId} projectId={projectId} mode="session" executeState={sessionAgentState} className="shrink-0" />
       {(status === "paused" || status === "completed") && !session?.subprocessId && session?.claudeSessionId && (
@@ -342,5 +349,6 @@ function SessionFeatureView({
         executeState={sessionAgentState}
       />
     </div>
+    </CodeBlockActionsContext.Provider>
   );
 }

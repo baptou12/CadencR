@@ -215,6 +215,9 @@ vi.mock("@/hooks/useTerminalState", () => ({
     openPane: vi.fn(),
     closePane: vi.fn(),
   })),
+  useTerminalStore: vi.fn((selector) =>
+    selector({ sendToTerminal: vi.fn(), clearInitialCommand: vi.fn() }),
+  ),
 }));
 
 vi.mock("@/hooks/useAgentChat", () => ({

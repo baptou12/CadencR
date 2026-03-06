@@ -1,12 +1,14 @@
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-import { ChevronRightIcon, WrenchIcon, BrainIcon, CodeIcon, LayersIcon, LoaderIcon, TerminalIcon } from "lucide-react";
+import { ChevronRightIcon, WrenchIcon, BrainIcon, LayersIcon, LoaderIcon, TerminalIcon } from "lucide-react";
 import { parseToolCall } from "@/lib/tool-call-parser";
 import { Markdown } from "@/components/Markdown";
 import { InlineDiffBlock } from "@/components/InlineDiffBlock";
 import { ClipboardCheck } from "lucide-react";
 import { CollapsibleBlock } from "@/components/ui/collapsible-block";
 import { parseAnsi } from "@/lib/ansi-to-html";
+import { CodeBlockHeader } from "@/components/CodeBlockHeader";
+import { useCodeBlockActions } from "@/components/CodeBlockActionsContext";
 
 /** Reconstruct diff data from persisted tool args (for historical sessions). */
 function diffFromToolArgs(
@@ -157,14 +159,21 @@ function PlanBlock({ args }: { args?: string }) {
   );
 }
 
+const SHELL_LANGUAGES = new Set(["bash", "sh", "zsh", "shell", "console", "terminal"]);
+
 function CodeBlock({ content, language }: { content: string; language?: string }) {
+  const { sendToTerminal } = useCodeBlockActions();
+  const isShell = !!language && SHELL_LANGUAGES.has(language);
+
   return (
-    <div className="my-1 rounded-md border border-border bg-muted/50 overflow-hidden">
+    <div className="my-1 rounded-md border border-border bg-muted/50 overflow-hidden group/codeblock">
       {language && (
-        <div className="flex items-center gap-1.5 border-b border-border bg-muted px-3 py-1 text-xs text-muted-foreground">
-          <CodeIcon className="size-3" />
-          {language}
-        </div>
+        <CodeBlockHeader
+          language={language}
+          code={content}
+          showTerminalButton={isShell && !!sendToTerminal}
+          onSendToTerminal={sendToTerminal}
+        />
       )}
       <pre className="overflow-x-auto p-3 text-xs leading-relaxed">
         <code>{content}</code>
