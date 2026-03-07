@@ -701,6 +701,166 @@ export async function hasUncommittedChanges(worktreePath: string): Promise<boole
 /**
  * Open a directory in the system's default terminal.
  */
+/**
+ * Get file content at a given ref, or from the working tree if no ref is provided.
+ */
+export async function getFileContent(
+  worktreePath: string,
+  filePath: string,
+  ref?: string,
+): Promise<string> {
+  if (!ref) {
+    try {
+      return await fs.promises.readFile(path.join(worktreePath, filePath), "utf-8");
+    } catch {
+      return "";
+    }
+  }
+  try {
+    const { stdout } = await execAsync(`git show "${ref}:${filePath}"`, {
+      cwd: worktreePath,
+      encoding: "utf-8",
+      maxBuffer: 50 * 1024 * 1024,
+    });
+    return stdout;
+  } catch {
+    return "";
+  }
+}
+
+export interface CommitInfo {
+  sha: string;
+  shortSha: string;
+  message: string;
+  body: string;
+  author: string;
+  date: string;
+  isPushed: boolean;
+}
+
+// Record separator for git log format (ASCII 0x1e)
+const RS = "\x1e";
+
+function parseGitLogOutput(output: string): CommitInfo[] {
+  if (!output.trim()) return [];
+  const entries = output.trim().split(RS).filter(Boolean);
+  const commits: CommitInfo[] = [];
+  for (const entry of entries) {
+    const lines = entry.trim().split("\n");
+    if (lines.length < 5) continue;
+    commits.push({
+      sha: lines[0],
+      shortSha: lines[1],
+      message: lines[2],
+      body: lines.slice(5).join("\n").trim(),
+      author: lines[3],
+      date: lines[4],
+      isPushed: true,
+    });
+  }
+  return commits;
+}
+
+const GIT_LOG_FORMAT = `${RS}%H%n%h%n%s%n%an%n%ai%n%b`;
+
+/**
+ * Determine which SHAs have NOT been pushed to the remote.
+ */
+async function getUnpushedShas(repoPath: string, branchName: string): Promise<Set<string> | "all"> {
+  try {
+    const { stdout } = await execAsync(
+      `git rev-list "origin/${branchName}..HEAD"`,
+      { cwd: repoPath, encoding: "utf-8" },
+    );
+    return new Set(stdout.trim().split("\n").filter(Boolean));
+  } catch {
+    return "all";
+  }
+}
+
+function applyPushedStatus(commits: CommitInfo[], unpushed: Set<string> | "all") {
+  for (const c of commits) {
+    c.isPushed = unpushed === "all" ? false : !unpushed.has(c.sha);
+  }
+}
+
+/**
+ * Get commit log for the current branch relative to a base branch.
+ */
+export async function getCommitLog(
+  worktreePath: string,
+  baseBranch: string,
+  branchName: string,
+): Promise<CommitInfo[]> {
+  const opts = { cwd: worktreePath, encoding: "utf-8" as const };
+
+  let logOutput: string;
+  try {
+    const { stdout } = await execAsync(
+      `git log "${baseBranch}..HEAD" --format="${GIT_LOG_FORMAT}" --reverse`,
+      opts,
+    );
+    logOutput = stdout;
+  } catch {
+    return [];
+  }
+
+  const commits = parseGitLogOutput(logOutput);
+  const unpushed = await getUnpushedShas(worktreePath, branchName);
+  applyPushedStatus(commits, unpushed);
+  return commits;
+}
+
+/**
+ * Get recent commits on the current branch (for session features on main).
+ */
+export async function getRecentCommits(
+  repoPath: string,
+  branchName: string,
+  limit: number,
+): Promise<CommitInfo[]> {
+  const opts = { cwd: repoPath, encoding: "utf-8" as const };
+
+  let logOutput: string;
+  try {
+    const { stdout } = await execAsync(
+      `git log --format="${GIT_LOG_FORMAT}" -${limit}`,
+      opts,
+    );
+    logOutput = stdout;
+  } catch {
+    return [];
+  }
+
+  const commits = parseGitLogOutput(logOutput);
+  const unpushed = await getUnpushedShas(repoPath, branchName);
+  applyPushedStatus(commits, unpushed);
+  return commits;
+}
+
+/**
+ * Get diff for a specific commit.
+ */
+export async function getCommitDiff(
+  worktreePath: string,
+  commitSha: string,
+): Promise<string> {
+  const opts = { cwd: worktreePath, encoding: "utf-8" as const, maxBuffer: 50 * 1024 * 1024 };
+  try {
+    // Try parent-based diff first
+    const { stdout } = await execAsync(`git diff "${commitSha}^..${commitSha}"`, opts);
+    return stdout;
+  } catch {
+    // First commit — no parent
+    try {
+      const { stdout } = await execAsync(`git diff-tree --root -p "${commitSha}"`, opts);
+      return stdout;
+    } catch {
+      return "";
+    }
+  }
+}
+
 export async function openInTerminal(dirPath: string): Promise<void> {
   if (process.platform === "darwin") {
     await execAsync(`open -a iTerm "${dirPath}"`);

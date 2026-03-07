@@ -22,6 +22,8 @@ const OPERATION_LABELS: Record<string, string> = {
   "git.deleteFeatureBranch": "Cleaning up branch",
   "git.listProjectWorktrees": "Loading workspaces",
   "git.hasUncommittedChanges": "Checking for unsaved changes",
+  "git.getCommitLog": "Loading commit history",
+  "git.getFileContent": "Loading file content",
   "git.openInTerminal": "Opening terminal",
   "git.openInZed": "Opening editor",
   "git.retryWorktreeSetup": "Retrying workspace setup",

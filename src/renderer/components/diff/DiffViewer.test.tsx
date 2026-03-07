@@ -22,6 +22,8 @@ vi.mock("@/trpc", () => {
       git: {
         getDiff: { useQuery: mocks.useQueryMock },
         getFileBlobShas: { useQuery: vi.fn(() => ({ data: {} })) },
+        getCommitLog: { useQuery: vi.fn(() => ({ data: { commits: [], isOnBaseBranch: true } })) },
+        getFileContent: { useQuery: vi.fn(() => ({ data: undefined })) },
       },
       diffViewed: {
         list: { useQuery: vi.fn(() => ({ data: [] })) },

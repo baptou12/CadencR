@@ -21,6 +21,10 @@ import {
   mergeBranch,
   deleteLocalBranch,
   hasUncommittedChanges,
+  getFileContent,
+  getCommitLog,
+  getRecentCommits,
+  getCommitDiff,
 } from "../git/worktree";
 import { resolveFeatureGitPath } from "./shared";
 
@@ -140,18 +144,22 @@ export const gitRouter = router({
       return getCurrentBranch(project.path);
     }),
 
-  /** Get raw unified diff for a feature */
+  /** Get raw unified diff for a feature (or a specific commit) */
   getDiff: publicProcedure
     .input(
       z.object({
         featureId: z.number(),
         mode: z.enum(["worktree", "branch"]),
         targetBranch: z.string().optional(),
+        commitSha: z.string().optional(),
       }),
     )
     .query(async ({ input }) => {
       const gitPath = resolveFeatureGitPath(input.featureId);
       if (!gitPath) return "";
+      if (input.commitSha) {
+        return getCommitDiff(gitPath, input.commitSha);
+      }
       return getDiff(gitPath, input.mode, input.targetBranch);
     }),
 
@@ -459,6 +467,91 @@ export const gitRouter = router({
           featureStatus: feat?.feature_status ?? null,
         };
       });
+    }),
+
+  /** Get file content for expand-in-diff (old + new versions) */
+  getFileContent: publicProcedure
+    .input(
+      z.object({
+        featureId: z.number(),
+        filePath: z.string(),
+        mode: z.enum(["worktree", "branch"]),
+        targetBranch: z.string().optional(),
+        commitSha: z.string().optional(),
+      }),
+    )
+    .query(async ({ input }) => {
+      const gitPath = resolveFeatureGitPath(input.featureId);
+      if (!gitPath) return { oldContent: "", newContent: "" };
+
+      if (input.commitSha) {
+        const [oldContent, newContent] = await Promise.all([
+          getFileContent(gitPath, input.filePath, `${input.commitSha}^`),
+          getFileContent(gitPath, input.filePath, input.commitSha),
+        ]);
+        return { oldContent, newContent };
+      }
+
+      if (input.mode === "worktree") {
+        const [oldContent, newContent] = await Promise.all([
+          getFileContent(gitPath, input.filePath, "HEAD"),
+          getFileContent(gitPath, input.filePath), // working tree
+        ]);
+        return { oldContent, newContent };
+      }
+
+      // Branch mode
+      const db = getDatabase();
+      const branchRow = db
+        .prepare("SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_branch'")
+        .get(input.featureId) as SettingRow | undefined;
+      const baseBranch = branchRow?.value
+        ? await getOriginalBranch(gitPath, branchRow.value)
+        : input.targetBranch ?? "main";
+
+      const [oldContent, newContent] = await Promise.all([
+        getFileContent(gitPath, input.filePath, baseBranch),
+        getFileContent(gitPath, input.filePath, "HEAD"),
+      ]);
+      return { oldContent, newContent };
+    }),
+
+  /** Get commit log for a feature's branch */
+  getCommitLog: publicProcedure
+    .input(z.object({
+      featureId: z.number(),
+      limit: z.number().default(20),
+    }))
+    .query(async ({ input }) => {
+      const db = getDatabase();
+      const gitPath = resolveFeatureGitPath(input.featureId);
+      if (!gitPath) return { commits: [], isOnBaseBranch: true };
+
+      // Determine current branch name
+      const branchRow = db
+        .prepare("SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_branch'")
+        .get(input.featureId) as SettingRow | undefined;
+      const branchName = branchRow?.value ?? await getCurrentBranch(gitPath);
+      if (!branchName) return { commits: [], isOnBaseBranch: true };
+
+      let baseBranch: string;
+      try {
+        baseBranch = await getOriginalBranch(gitPath, branchName);
+      } catch {
+        // Can't determine base branch — fall back to recent commits
+        const commits = await getRecentCommits(gitPath, branchName, input.limit);
+        return { commits, isOnBaseBranch: true };
+      }
+
+      // On the base branch — show recent commit history
+      if (branchName === baseBranch) {
+        const commits = await getRecentCommits(gitPath, branchName, input.limit);
+        return { commits, isOnBaseBranch: true };
+      }
+
+      // On a feature branch — show branch-specific commits
+      const commits = await getCommitLog(gitPath, baseBranch, branchName);
+      return { commits, isOnBaseBranch: false };
     }),
 
   removeOrphanWorktree: publicProcedure

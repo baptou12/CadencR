@@ -2,6 +2,8 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@/test-utils";
 import { DiffFileTree, type ChangedFileEntry } from "./DiffFileTree";
 
+const defaultCommitProps = { selectedCommit: null, onSelectCommit: vi.fn() };
+
 const mockFiles: ChangedFileEntry[] = [
   { file: "src/foo.ts", status: "M", additions: 5, deletions: 2 },
   { file: "src/bar.ts", status: "A", additions: 10, deletions: 0 },
@@ -17,6 +19,7 @@ describe("DiffFileTree", () => {
         selectedFile={null}
         onToggleExpand={vi.fn()}
         onSelectFile={vi.fn()}
+        {...defaultCommitProps}
       />,
     );
     expect(screen.getByText("foo.ts")).toBeInTheDocument();
@@ -32,6 +35,7 @@ describe("DiffFileTree", () => {
         selectedFile={null}
         onToggleExpand={vi.fn()}
         onSelectFile={vi.fn()}
+        {...defaultCommitProps}
       />,
     );
     expect(screen.getByText("No changed files")).toBeInTheDocument();
@@ -45,6 +49,7 @@ describe("DiffFileTree", () => {
         selectedFile="src/foo.ts"
         onToggleExpand={vi.fn()}
         onSelectFile={vi.fn()}
+        {...defaultCommitProps}
       />,
     );
     // Selected file row has bg-[#44475a] class
@@ -61,6 +66,7 @@ describe("DiffFileTree", () => {
         selectedFile={null}
         onToggleExpand={vi.fn()}
         onSelectFile={onSelectFile}
+        {...defaultCommitProps}
       />,
     );
     fireEvent.click(screen.getByTitle("src/foo.ts"));
@@ -76,6 +82,7 @@ describe("DiffFileTree", () => {
         selectedFile={null}
         onToggleExpand={onToggleExpand}
         onSelectFile={vi.fn()}
+        {...defaultCommitProps}
       />,
     );
     // The expand/collapse button (Plus/Minus) is before the file name button
@@ -92,6 +99,7 @@ describe("DiffFileTree", () => {
         selectedFile={null}
         onToggleExpand={vi.fn()}
         onSelectFile={vi.fn()}
+        {...defaultCommitProps}
       />,
     );
     const input = screen.getByPlaceholderText("Filter files...");
@@ -108,6 +116,7 @@ describe("DiffFileTree", () => {
         selectedFile={null}
         onToggleExpand={vi.fn()}
         onSelectFile={vi.fn()}
+        {...defaultCommitProps}
       />,
     );
     expect(screen.getByText("src")).toBeInTheDocument();

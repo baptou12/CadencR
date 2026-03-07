@@ -57,6 +57,10 @@ import {
   checkMergeConflicts,
   hasUncommittedChanges,
   setupWorktreeForFeature,
+  getFileContent,
+  getRecentCommits,
+  getCommitDiff,
+  getCommitLog,
 } from "./worktree";
 import { getDatabase } from "../db/database";
 
@@ -718,5 +722,200 @@ describe("setupWorktreeForFeature", () => {
   it("throws when project path not found", async () => {
     mockDb({ title: "Test", type: "feature" }, undefined);
     await expect(setupWorktreeForFeature(1, 42)).rejects.toThrow(/Project path not found/);
+  });
+});
+
+// ─── getFileContent ──────────────────────────────────────────────────────────
+
+describe("getFileContent", () => {
+  it("reads file from disk when no ref is given", async () => {
+    mockReadFile.mockResolvedValueOnce("file contents");
+    const result = await getFileContent("/worktree", "src/foo.ts");
+    expect(result).toBe("file contents");
+    expect(mockReadFile).toHaveBeenCalledWith("/worktree/src/foo.ts", "utf-8");
+  });
+
+  it("returns empty string when disk read fails", async () => {
+    mockReadFile.mockRejectedValueOnce(new Error("ENOENT"));
+    const result = await getFileContent("/worktree", "missing.ts");
+    expect(result).toBe("");
+  });
+
+  it("uses git show when ref is provided", async () => {
+    mockExecResponses({ stdout: "old content" });
+    const result = await getFileContent("/worktree", "src/foo.ts", "abc123");
+    expect(result).toBe("old content");
+    expect(mockExecCb).toHaveBeenCalledWith(
+      'git show "abc123:src/foo.ts"',
+      expect.objectContaining({ cwd: "/worktree" }),
+      expect.any(Function),
+    );
+  });
+
+  it("returns empty string when git show fails", async () => {
+    mockExecResponses({ err: new Error("fatal: path not found") });
+    const result = await getFileContent("/worktree", "missing.ts", "HEAD");
+    expect(result).toBe("");
+  });
+});
+
+// ─── getRecentCommits ────────────────────────────────────────────────────────
+
+describe("getRecentCommits", () => {
+  const RS = "\x1e";
+
+  it("parses recent commits and marks pushed status", async () => {
+    const logOutput = [
+      `${RS}aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111`,
+      "aaaa111",
+      "first commit",
+      "Alice",
+      "2025-01-01 12:00:00 +0000",
+      "",
+    ].join("\n");
+
+    mockExecResponses(
+      { stdout: logOutput },       // git log
+      { stdout: "" },              // git rev-list (no unpushed — means all pushed)
+    );
+
+    const commits = await getRecentCommits("/repo", "main", 5);
+    expect(commits).toHaveLength(1);
+    expect(commits[0].sha).toBe("aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111");
+    expect(commits[0].shortSha).toBe("aaaa111");
+    expect(commits[0].message).toBe("first commit");
+    expect(commits[0].author).toBe("Alice");
+    expect(commits[0].isPushed).toBe(true);
+  });
+
+  it("marks commits as unpushed when rev-list returns them", async () => {
+    const sha = "bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222";
+    const logOutput = [
+      `${RS}${sha}`,
+      "bbbb222",
+      "unpushed commit",
+      "Bob",
+      "2025-02-01 12:00:00 +0000",
+      "",
+    ].join("\n");
+
+    mockExecResponses(
+      { stdout: logOutput },       // git log
+      { stdout: `${sha}\n` },     // rev-list says this sha is unpushed
+    );
+
+    const commits = await getRecentCommits("/repo", "main", 5);
+    expect(commits[0].isPushed).toBe(false);
+  });
+
+  it("marks all as unpushed when rev-list fails (no remote)", async () => {
+    const logOutput = [
+      `${RS}cccc3333cccc3333cccc3333cccc3333cccc3333`,
+      "cccc333",
+      "local commit",
+      "Carol",
+      "2025-03-01 12:00:00 +0000",
+      "",
+    ].join("\n");
+
+    mockExecResponses(
+      { stdout: logOutput },
+      { err: new Error("fatal: no upstream") },
+    );
+
+    const commits = await getRecentCommits("/repo", "main", 5);
+    expect(commits[0].isPushed).toBe(false);
+  });
+
+  it("returns empty array on git log error", async () => {
+    mockExecResponses({ err: new Error("git error") });
+    const commits = await getRecentCommits("/repo", "main", 10);
+    expect(commits).toEqual([]);
+  });
+});
+
+// ─── getCommitDiff ───────────────────────────────────────────────────────────
+
+describe("getCommitDiff", () => {
+  it("returns diff using parent-based diff", async () => {
+    mockExecResponses({ stdout: "diff --git a/foo b/foo\n+hello\n" });
+    const diff = await getCommitDiff("/worktree", "abc123");
+    expect(diff).toContain("+hello");
+    expect(mockExecCb).toHaveBeenCalledWith(
+      'git diff "abc123^..abc123"',
+      expect.objectContaining({ cwd: "/worktree" }),
+      expect.any(Function),
+    );
+  });
+
+  it("falls back to diff-tree for root commit", async () => {
+    mockExecResponses(
+      { err: new Error("fatal: bad revision") },  // parent diff fails
+      { stdout: "root diff output\n" },            // diff-tree succeeds
+    );
+    const diff = await getCommitDiff("/worktree", "first");
+    expect(diff).toBe("root diff output\n");
+    expect(mockExecCb).toHaveBeenCalledWith(
+      'git diff-tree --root -p "first"',
+      expect.objectContaining({ cwd: "/worktree" }),
+      expect.any(Function),
+    );
+  });
+
+  it("returns empty string when both methods fail", async () => {
+    mockExecResponses(
+      { err: new Error("fail1") },
+      { err: new Error("fail2") },
+    );
+    const diff = await getCommitDiff("/worktree", "bad");
+    expect(diff).toBe("");
+  });
+});
+
+// ─── getCommitLog ────────────────────────────────────────────────────────────
+
+describe("getCommitLog", () => {
+  const RS = "\x1e";
+
+  it("returns commits between base and HEAD with pushed status", async () => {
+    const sha = "dddd4444dddd4444dddd4444dddd4444dddd4444";
+    const logOutput = [
+      `${RS}${sha}`,
+      "dddd444",
+      "feature commit",
+      "Dan",
+      "2025-04-01 12:00:00 +0000",
+      "Some body text",
+    ].join("\n");
+
+    mockExecResponses(
+      { stdout: logOutput },  // git log main..HEAD
+      { stdout: "" },         // rev-list (all pushed)
+    );
+
+    const commits = await getCommitLog("/worktree", "main", "feature/x");
+    expect(commits).toHaveLength(1);
+    expect(commits[0].message).toBe("feature commit");
+    expect(commits[0].body).toBe("Some body text");
+    expect(commits[0].isPushed).toBe(true);
+  });
+
+  it("returns empty array on git log error", async () => {
+    mockExecResponses({ err: new Error("git error") });
+    const commits = await getCommitLog("/worktree", "main", "feature/x");
+    expect(commits).toEqual([]);
+  });
+
+  it("uses base..HEAD range for log command", async () => {
+    mockExecResponses(
+      { stdout: "" },  // git log
+    );
+
+    await getCommitLog("/worktree", "develop", "feature/y");
+    expect(mockExecCb).toHaveBeenCalledWith(
+      expect.stringContaining('"develop..HEAD"'),
+      expect.objectContaining({ cwd: "/worktree" }),
+      expect.any(Function),
+    );
   });
 });

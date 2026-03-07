@@ -1,3 +1,20 @@
+/* Auto-scroll overflowing text */
+.auto-scroll-text {
+  display: inline-block;
+  white-space: nowrap;
+}
+.auto-scroll-wrapper {
+  overflow: hidden;
+}
+.auto-scroll-text[data-overflows="true"] {
+  animation: scroll-left 8s linear infinite;
+}
+@keyframes scroll-left {
+  0%, 15% { transform: translateX(0); }
+  45%, 55% { transform: translateX(var(--scroll-distance)); }
+  85%, 100% { transform: translateX(0); }
+}
+
 /**
  * Dracula theme overrides for @git-diff-view/react
  * Applied via .dracula-diff wrapper class
