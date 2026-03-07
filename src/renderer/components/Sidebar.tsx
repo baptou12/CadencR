@@ -4,7 +4,6 @@ import { useHotkeys } from "react-hotkeys-hook";
 import { Settings } from "lucide-react";
 import logoSvg from "@/logo.svg";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
 import { ProjectTree } from "@/components/ProjectTree";
 import { getActiveFocusZone } from "@/lib/focus-zones";
 import { UsageIndicator } from "@/components/UsageIndicator";
@@ -12,7 +11,9 @@ import { UsageIndicator } from "@/components/UsageIndicator";
 export function Sidebar() {
   const navigate = useNavigate();
   const sidebarRef = useRef<HTMLElement>(null);
-  const [selectedFeatureId, setSelectedFeatureId] = useState<number | null>(null);
+  const [selectedFeatureId, setSelectedFeatureId] = useState<number | null>(
+    null,
+  );
 
   // Detect active project/feature from current route
   const routerState = useRouterState();
@@ -26,7 +27,9 @@ export function Sidebar() {
 
   const getNavItems = () => {
     if (!sidebarRef.current) return [];
-    return Array.from(sidebarRef.current.querySelectorAll("[data-nav-item]")) as HTMLElement[];
+    return Array.from(
+      sidebarRef.current.querySelectorAll("[data-nav-item]"),
+    ) as HTMLElement[];
   };
 
   const moveFocus = (direction: "up" | "down") => {
@@ -96,20 +99,31 @@ export function Sidebar() {
   return (
     <aside ref={sidebarRef} className="flex h-full flex-col bg-sidebar">
       <div className="flex items-center px-4 h-12">
-        <img src={logoSvg} alt="Cadence" className="size-9 mr-2 shrink-0 -translate-y-px" />
-        <span className="text-xl font-bold uppercase tracking-widest leading-none" style={{ fontFamily: "'Avenir Next', 'Montserrat', 'Helvetica Neue', sans-serif" }}>Cadence</span>
+        <img
+          src={logoSvg}
+          alt="Cadence"
+          className="size-9 mr-2 shrink-0 -translate-y-px"
+        />
+        <span
+          className="text-xl font-bold uppercase tracking-widest leading-none"
+          style={{
+            fontFamily:
+              "'Avenir Next', 'Montserrat', 'Helvetica Neue', sans-serif",
+          }}
+        >
+          Cadence
+        </span>
         <div className="flex items-center gap-1 ml-auto">
-          <UsageIndicator />
           <Link to="/settings">
-          <Button variant="ghost" size="icon" className="size-7">
-            <Settings className="size-4" />
-            <span className="sr-only">Settings</span>
-          </Button>
-        </Link>
+            <Button variant="ghost" size="icon" className="size-7">
+              <Settings className="size-4" />
+              <span className="sr-only">Settings</span>
+            </Button>
+          </Link>
         </div>
       </div>
 
-      <Separator />
+      <UsageIndicator />
 
       <div className="flex-1 min-w-0 overflow-hidden p-2">
         <ProjectTree
