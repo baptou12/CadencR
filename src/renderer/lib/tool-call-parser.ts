@@ -86,6 +86,11 @@ const toolParsers: Record<string, ToolParser> = {
     detail: typeof args.skill === "string" ? args.skill : undefined,
   }),
 
+  ToolSearch: (args) => ({
+    label: "Searching tools",
+    detail: typeof args.query === "string" ? args.query : undefined,
+  }),
+
   ExitPlanMode: () => ({
     label: "Plan ready for review",
   }),
