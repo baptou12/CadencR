@@ -64,6 +64,14 @@ export async function startUnifiedAgent(config: UnifiedAgentConfig): Promise<Uni
 
   const db = getDatabase();
 
+  // 0b. If running in a worktree, prepend a working-directory hint to the system
+  //     prompt so the agent doesn't get confused by Claude Code's internal project
+  //     detection (which can resolve back to the main worktree via .git).
+  if (config.worktreePath && config.systemPrompt) {
+    const cwdHint = `IMPORTANT: Your working directory is ${config.cwd}. This is a git worktree — do NOT navigate to or operate in the main repository directory. All file operations, git commands, and tool calls should use this directory.`;
+    config.systemPrompt = `${cwdHint}\n\n${config.systemPrompt}`;
+  }
+
   // 1. Resolve model
   const model = resolveModel(config.agentType, config.featureId, config.projectId);
 
