@@ -37,7 +37,48 @@ export const projectsRouter = router({
 
   delete: publicProcedure.input(z.object({ id: z.number() })).mutation(({ input }) => {
     const db = getDatabase();
-    db.prepare("DELETE FROM projects WHERE id = ?").run(input.id);
+
+    const features = db
+      .prepare("SELECT id FROM features WHERE project_id = ?")
+      .all(input.id) as { id: number }[];
+    const featureIds = features.map((f) => f.id);
+
+    const transaction = db.transaction(() => {
+      if (featureIds.length > 0) {
+        const ph = featureIds.map(() => "?").join(",");
+
+        // Get child IDs
+        const planIds = (
+          db.prepare(`SELECT id FROM plans WHERE feature_id IN (${ph})`).all(...featureIds) as { id: number }[]
+        ).map((p) => p.id);
+        const sessionIds = (
+          db.prepare(`SELECT id FROM agent_sessions WHERE feature_id IN (${ph})`).all(...featureIds) as { id: number }[]
+        ).map((s) => s.id);
+
+        // Delete grandchildren
+        if (sessionIds.length > 0) {
+          const sp = sessionIds.map(() => "?").join(",");
+          db.prepare(`DELETE FROM agent_messages WHERE session_id IN (${sp})`).run(...sessionIds);
+        }
+        if (planIds.length > 0) {
+          const pp = planIds.map(() => "?").join(",");
+          db.prepare(`DELETE FROM phases WHERE plan_id IN (${pp})`).run(...planIds);
+        }
+
+        // Delete feature children
+        db.prepare(`DELETE FROM agent_sessions WHERE feature_id IN (${ph})`).run(...featureIds);
+        db.prepare(`DELETE FROM plans WHERE feature_id IN (${ph})`).run(...featureIds);
+        db.prepare(`DELETE FROM feature_settings WHERE feature_id IN (${ph})`).run(...featureIds);
+        db.prepare(`DELETE FROM diff_viewed_files WHERE feature_id IN (${ph})`).run(...featureIds);
+        db.prepare(`DELETE FROM features WHERE project_id = ?`).run(input.id);
+      }
+
+      // Delete project children
+      db.prepare("DELETE FROM project_settings WHERE project_id = ?").run(input.id);
+      db.prepare("DELETE FROM projects WHERE id = ?").run(input.id);
+    });
+
+    transaction();
     return { success: true };
   }),
 

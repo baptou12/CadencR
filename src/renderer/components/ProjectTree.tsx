@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
 import { ProjectFeatures } from "./ProjectFeatures";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 interface ProjectTreeProps {
   activeProjectId: number | null;
@@ -83,6 +84,10 @@ export function ProjectTree({
 
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
   const [settingsProject, setSettingsProject] = useState<{
+    id: number;
+    name: string;
+  } | null>(null);
+  const [deleteProject, setDeleteProject] = useState<{
     id: number;
     name: string;
   } | null>(null);
@@ -213,7 +218,7 @@ export function ProjectTree({
                           className="text-destructive focus:text-destructive"
                           onClick={(e) => {
                             e.stopPropagation();
-                            deleteProjectMutation.mutate({ id: project.id });
+                            setDeleteProject({ id: project.id, name: project.name });
                           }}
                         >
                           Delete Project
@@ -254,6 +259,22 @@ export function ProjectTree({
           }}
         />
       )}
+
+      <ConfirmDialog
+        open={deleteProject !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteProject(null);
+        }}
+        title={`Delete "${deleteProject?.name}"?`}
+        description="This will permanently delete the project and all its features, plans, sessions, and settings. This action cannot be undone."
+        confirmText="Delete"
+        variant="destructive"
+        onConfirm={() => {
+          if (deleteProject) {
+            deleteProjectMutation.mutate({ id: deleteProject.id });
+          }
+        }}
+      />
     </div>
   );
 }
