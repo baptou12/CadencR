@@ -35,7 +35,7 @@ export function ImageAttachmentButton({ onFilesSelected, disabled }: ImageAttach
       <Button
         type="button"
         variant="ghost"
-        size="icon"
+        size="icon-lg"
         onClick={handleClick}
         disabled={disabled}
         aria-label="Attach images"

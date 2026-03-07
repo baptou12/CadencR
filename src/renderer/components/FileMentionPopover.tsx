@@ -34,7 +34,7 @@ export function FileMentionPopover({
   }, [open, selectedIndex]);
 
   return (
-    <div className="relative min-w-0 flex-1">
+    <div className="relative flex min-w-0 flex-1 items-center">
       {children}
       {open && items.length > 0 && (
         <div
