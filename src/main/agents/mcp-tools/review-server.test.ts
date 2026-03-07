@@ -70,6 +70,9 @@ describe("createReviewMcpServer", () => {
       const result = await handler({ plan_id: 1 }) as any;
 
       expect(result.content[0].text).toContain("Finalized 1 fix phases");
+      expect(runFn).toHaveBeenCalled();
+      expect(db.prepare).toHaveBeenCalledWith(expect.stringContaining("UPDATE features SET status = 'in-progress'"));
+      expect(db.prepare).toHaveBeenCalledWith(expect.stringContaining("UPDATE plans SET status = 'active'"));
       expect(mockNotify).toHaveBeenCalledWith("phase", 10);
     });
 

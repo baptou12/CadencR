@@ -112,6 +112,8 @@ describe("createQaMcpServer", () => {
 
       expect(result.content[0].text).toContain("Finalized 2 phases");
       expect(runFn).toHaveBeenCalled();
+      expect(db.prepare).toHaveBeenCalledWith(expect.stringContaining("UPDATE features SET status = 'in-progress'"));
+      expect(db.prepare).toHaveBeenCalledWith(expect.stringContaining("UPDATE plans SET status = 'active'"));
       expect(mockNotify).toHaveBeenCalledWith("phase", 10);
     });
 

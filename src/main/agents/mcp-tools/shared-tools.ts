@@ -307,6 +307,14 @@ export function createFinalizePhasesTool(planId: number, featureId: number, labe
         "UPDATE phases SET status = 'pending' WHERE plan_id = ? AND status = 'draft'",
         planId,
       );
+      execute(
+        "UPDATE features SET status = 'in-progress' WHERE id = ?",
+        featureId,
+      );
+      execute(
+        "UPDATE plans SET status = 'active', updated_at = datetime('now') WHERE id = ?",
+        planId,
+      );
       notifyDbUpdated("phase", featureId);
 
       const listing = draftPhases.map((p) => `- Phase ${p.id}: "${p.title}" (step ${p.step_number})`).join("\n");
