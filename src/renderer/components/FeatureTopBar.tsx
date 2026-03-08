@@ -32,6 +32,24 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", executeS
   const isSession = mode === "session";
   const [diffOpen, setDiffOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+
+  const { data: feature } = trpc.features.getById.useQuery({ id: featureId });
+  const { data: progress } = trpc.features.getProgress.useQuery(
+    { feature_id: featureId },
+    { enabled: !isSession },
+  );
+  const { data: featureSettings } = trpc.features.getSettings.useQuery({
+    feature_id: featureId,
+  });
+  const { data: gitStats, refetch: refetchStats } = trpc.git.getStats.useQuery(
+    { featureId, mode: isSession ? "worktree" : "branch" },
+    { refetchInterval: 5 * 60 * 1000 },
+  );
+  const { data: currentBranch } = trpc.git.getBranch.useQuery(
+    { projectId },
+    { enabled: isSession, refetchInterval: 10000 },
+  );
+
   // OPT+P -> toggle feature settings popover (secondary shortcut)
   useHotkeys(
     "alt+p",
@@ -57,25 +75,12 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", executeS
     "meta+shift+d",
     (e) => {
       e.preventDefault();
-      setDiffOpen((prev) => !prev);
+      setDiffOpen((prev) => {
+        if (!prev) refetchStats();
+        return !prev;
+      });
     },
     { enableOnFormTags: true },
-  );
-  const { data: feature } = trpc.features.getById.useQuery({ id: featureId });
-  const { data: progress } = trpc.features.getProgress.useQuery(
-    { feature_id: featureId },
-    { enabled: !isSession },
-  );
-  const { data: featureSettings } = trpc.features.getSettings.useQuery({
-    feature_id: featureId,
-  });
-  const { data: gitStats } = trpc.git.getStats.useQuery(
-    { featureId, mode: isSession ? "worktree" : "branch" },
-    { refetchInterval: 10000 },
-  );
-  const { data: currentBranch } = trpc.git.getBranch.useQuery(
-    { projectId },
-    { enabled: isSession, refetchInterval: 10000 },
   );
   const openTerminal = trpc.git.openInTerminal.useMutation();
   const openZed = trpc.git.openInZed.useMutation();
@@ -142,7 +147,7 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", executeS
         className="h-7 gap-1.5 px-2"
         title="View Diff"
         disabled={!isSession && !worktreeBranch}
-        onClick={() => setDiffOpen(true)}
+        onClick={() => { refetchStats(); setDiffOpen(true); }}
       >
         <GitCompareArrowsIcon className="size-4" />
         {gitStats && (gitStats.insertions > 0 || gitStats.deletions > 0) ? (
