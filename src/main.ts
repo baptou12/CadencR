@@ -21,6 +21,7 @@ const createWindow = () => {
     width: 1200,
     height: 800,
     titleBarStyle: "hiddenInset",
+    trafficLightPosition: { x: 12, y: 26 },
     backgroundColor: "#1a1b26",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),

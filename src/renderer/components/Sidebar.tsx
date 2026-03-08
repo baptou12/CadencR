@@ -98,22 +98,30 @@ export function Sidebar() {
 
   return (
     <aside ref={sidebarRef} className="flex h-full flex-col bg-sidebar">
-      <div className="group relative flex items-center justify-center px-4 h-16">
-        <img
-          src={logoSvg}
-          alt="Cadence"
-          className="size-11 mr-2 shrink-0 -translate-y-px"
-        />
-        <span
-          className="text-2xl font-bold uppercase tracking-widest leading-none"
-          style={{
-            fontFamily:
-              "'Avenir Next', 'Montserrat', 'Helvetica Neue', sans-serif",
-          }}
+      <div
+        className="group relative h-16"
+        style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
+      >
+        <div className="absolute inset-0 flex items-center justify-center">
+          <img
+            src={logoSvg}
+            alt="Cadence"
+            className="size-11 mr-2 shrink-0 -translate-y-px"
+          />
+          <span
+            className="text-2xl font-bold uppercase tracking-widest leading-none"
+            style={{
+              fontFamily:
+                "'Avenir Next', 'Montserrat', 'Helvetica Neue', sans-serif",
+            }}
+          >
+            Cadence
+          </span>
+        </div>
+        <div
+          className="absolute right-4 inset-y-0 flex items-center opacity-0 group-hover:opacity-100 transition-opacity"
+          style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
         >
-          Cadence
-        </span>
-        <div className="absolute right-4 flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
           <Link to="/settings">
             <Button variant="ghost" size="icon" className="size-7">
               <Settings className="size-4" />

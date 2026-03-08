@@ -293,15 +293,7 @@ function RootLayout() {
   const defaultLeftSize = leftWidth.value ? `${leftWidth.value}px` : "256px";
 
   return (
-    <div className="flex h-screen" style={{ paddingTop: 28 }}>
-      <div
-        className="fixed top-0 left-0 right-0 z-50"
-        style={{
-          height: 28,
-          WebkitAppRegion: "drag",
-          backgroundColor: import.meta.env.DEV ? "#CC7A30" : "#1a1b26",
-        } as React.CSSProperties}
-      />
+    <div className="flex h-screen">
       <ResizablePanelGroup orientation="horizontal">
         <ResizablePanel
           defaultSize={defaultLeftSize}
