@@ -117,6 +117,11 @@ export function Sidebar() {
           >
             Cadence
           </span>
+          {import.meta.env.DEV && (
+            <span className="ml-2 self-start mt-2 text-[9px] font-semibold uppercase tracking-wider px-1 py-px rounded bg-orange-500/20 text-orange-400 leading-none">
+              dev
+            </span>
+          )}
         </div>
         <div
           className="absolute right-4 inset-y-0 flex items-center opacity-0 group-hover:opacity-100 transition-opacity"
