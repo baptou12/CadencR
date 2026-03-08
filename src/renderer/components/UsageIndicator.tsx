@@ -95,9 +95,11 @@ export function UsageIndicator() {
           <span className="text-muted-foreground">
             Updated: {formatTimestamp(data.updatedAt)}
           </span>
-          <span className={STATUS_COLOR[data.status]}>
-            {countdown ?? data.statusMessage ?? STATUS_LABEL[data.status]}
-          </span>
+          {(data.status === "rate_limited" || data.status === "error") && (
+            <span className={STATUS_COLOR[data.status]}>
+              {countdown ?? data.statusMessage ?? STATUS_LABEL[data.status]}
+            </span>
+          )}
         </div>
       )}
       {hasBuckets ? (
