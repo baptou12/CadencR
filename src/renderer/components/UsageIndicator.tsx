@@ -1,54 +1,5 @@
-import { useEffect, useState } from "react";
-import { format } from "date-fns";
-import type { UsageStatus } from "../../main/usage/usage-service";
+import { memo } from "react";
 import { trpc } from "@/trpc";
-
-const STATUS_LABEL: Record<UsageStatus, string> = {
-  success: "ok",
-  cached: "cached",
-  rate_limited: "429",
-  error: "error",
-};
-
-const STATUS_COLOR: Record<UsageStatus, string> = {
-  success: "text-(--drac-green)",
-  cached: "text-muted-foreground",
-  rate_limited: "text-(--drac-orange)",
-  error: "text-(--drac-red)",
-};
-
-function formatTimestamp(epoch: number): string {
-  return format(new Date(epoch), "HH:mm:ss");
-}
-
-function formatCountdown(seconds: number): string {
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return `${m}m${String(s).padStart(2, "0")}s`;
-}
-
-function useCountdown(retryAt: number | null | undefined): string | null {
-  const [remaining, setRemaining] = useState<number | null>(null);
-
-  useEffect(() => {
-    if (!retryAt) {
-      setRemaining(null);
-      return;
-    }
-
-    const tick = () => {
-      const diff = Math.max(0, Math.ceil((retryAt - Date.now()) / 1000));
-      setRemaining(diff);
-    };
-
-    tick();
-    const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
-  }, [retryAt]);
-
-  if (remaining === null || remaining <= 0) return null;
-  return `429 — retry in ${formatCountdown(remaining)}`;
-}
 
 function formatTimeUntilReset(
   resetsAt: string | null | undefined,
@@ -67,7 +18,7 @@ function formatTimeUntilReset(
   return hours > 0 ? `${hours}h${minutes}m` : `${minutes}m`;
 }
 
-export function UsageIndicator() {
+export const UsageIndicator = memo(function UsageIndicator() {
   const { data, isLoading } = trpc.usage.getUsage.useQuery(undefined, {
     refetchInterval: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
@@ -76,8 +27,6 @@ export function UsageIndicator() {
     retry: false,
     staleTime: 5 * 60 * 1000,
   });
-
-  const countdown = useCountdown(data?.retryAt);
 
   if (isLoading) {
     return <span className="text-xs text-muted-foreground">--</span>;
@@ -90,18 +39,6 @@ export function UsageIndicator() {
 
   return (
     <div className="flex flex-col gap-0.5">
-      {data && (
-        <div className="flex flex-row justify-between text-[10px] px-1">
-          <span className="text-muted-foreground">
-            Updated: {formatTimestamp(data.updatedAt)}
-          </span>
-          {(data.status === "rate_limited" || data.status === "error") && (
-            <span className={STATUS_COLOR[data.status]}>
-              {countdown ?? data.statusMessage ?? STATUS_LABEL[data.status]}
-            </span>
-          )}
-        </div>
-      )}
       {hasBuckets ? (
         <div className="flex flex-row relative gap-1">
           <div className="bg-(--drac-purple)/10 h-auto text-xs flex flex-row w-full justify-around relative p-1">
@@ -143,4 +80,4 @@ export function UsageIndicator() {
       )}
     </div>
   );
-}
+});

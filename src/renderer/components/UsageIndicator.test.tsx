@@ -29,7 +29,7 @@ describe("UsageIndicator", () => {
     expect(screen.getByText("--")).toBeInTheDocument();
   });
 
-  it("renders error status message when no data", () => {
+  it("renders placeholder when no bucket data", () => {
     mockGetUsage.mockReturnValue({
       data: {
         five_hour: null,
@@ -43,7 +43,6 @@ describe("UsageIndicator", () => {
       isLoading: false,
     });
     render(<UsageIndicator />);
-    expect(screen.getByText("No OAuth token")).toBeInTheDocument();
     expect(screen.getByText("--")).toBeInTheDocument();
   });
 
