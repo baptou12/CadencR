@@ -50,15 +50,11 @@ const { agentsRouter } = await import("./agents");
 const caller = agentsRouter.createCaller({});
 
 describe("agentsRouter.clearSession", () => {
-  let mockGet: ReturnType<typeof vi.fn>;
-  let mockRun: ReturnType<typeof vi.fn>;
   const preparedStatements: Array<{ sql: string; get: ReturnType<typeof vi.fn>; run: ReturnType<typeof vi.fn> }> = [];
 
   beforeEach(() => {
     vi.clearAllMocks();
     preparedStatements.length = 0;
-    mockGet = vi.fn();
-    mockRun = vi.fn().mockReturnValue({ changes: 1 });
 
     mockDb.prepare.mockImplementation((sql: string) => {
       const stmt = { get: vi.fn(), run: vi.fn().mockReturnValue({ changes: 1 }), all: vi.fn().mockReturnValue([]) };
