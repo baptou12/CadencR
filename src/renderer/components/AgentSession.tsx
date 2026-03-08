@@ -503,7 +503,7 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
 
   const metaBar = hasMeta ? (
     <div
-      className="relative z-10 -mt-6 flex items-center gap-1.5 px-3 py-3 backdrop-blur-sm"
+      className="relative -mt-6 flex items-center gap-1.5 px-3 py-3 backdrop-blur-sm"
       style={{
         background: "linear-gradient(to bottom, transparent 0%, hsl(var(--background) / 0.7) 8%, hsl(var(--background) / 0.9) 20%, hsl(var(--background)) 40%)",
       }}

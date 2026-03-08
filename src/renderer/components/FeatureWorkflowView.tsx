@@ -881,7 +881,7 @@ export function FeatureWorkflowView({
         </div>
         {terminalState.panes.length > 0 && (
           <div
-            className="absolute bottom-0 left-0 right-0 border-t border-[#292e42] transition-transform duration-150 ease-in-out"
+            className="absolute bottom-0 left-0 right-0 z-20 border-t border-[#292e42] transition-transform duration-150 ease-in-out"
             style={{
               height: terminalState.isMinimized ? 32 : terminalHeightPx,
               transform: terminalState.isOpen

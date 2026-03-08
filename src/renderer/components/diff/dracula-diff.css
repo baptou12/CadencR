@@ -79,6 +79,11 @@
   background-color: #44475a;
 }
 
+/* Reset z-index from diff library so it doesn't overlap the terminal panel */
+.dracula-diff .diff-tailwindcss-wrapper .z-\[1\] {
+  z-index: auto;
+}
+
 /* Ensure internal diff table elements don't break border-radius clipping */
 .dracula-diff .diff-table-wrapper {
   border-radius: inherit;
