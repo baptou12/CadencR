@@ -26,14 +26,14 @@ describe("ContextUsageBar", () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it("displays token count and context window", () => {
-    render(<ContextUsageBar usage={makeUsage({ totalTokens: 5000, contextWindow: 100000 })} />);
-    expect(screen.getByText("5.0k / 100.0k")).toBeInTheDocument();
+  it("displays usage as percentage", () => {
+    render(<ContextUsageBar usage={makeUsage({ usageRatio: 0.05 })} />);
+    expect(screen.getByText("5%")).toBeInTheDocument();
   });
 
-  it("displays usage in millions", () => {
-    render(<ContextUsageBar usage={makeUsage({ totalTokens: 1500000, contextWindow: 2000000, usageRatio: 0.75 })} />);
-    expect(screen.getByText("1.5M / 2.0M")).toBeInTheDocument();
+  it("displays high usage as percentage", () => {
+    render(<ContextUsageBar usage={makeUsage({ usageRatio: 0.75 })} />);
+    expect(screen.getByText("75%")).toBeInTheDocument();
   });
 
   it("renders low usage (green)", () => {

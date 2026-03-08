@@ -28,7 +28,10 @@ import {
   Maximize2Icon,
   Minimize2Icon,
   WrenchIcon,
+  Zap,
+  ClipboardList,
 } from "lucide-react";
+import { KbdShortcut } from "./KbdShortcut";
 import { AgentStream } from "./AgentStream";
 import { AgentPromptBar, type AgentPromptBarHandle } from "./AgentPromptBar";
 import { AgentTodoList } from "./AgentTodoList";
@@ -475,22 +478,8 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
       />
     ) : null;
 
-  // ---- Inline diff trigger bar ----
-  const showDiffBar =
-    hasFileChanges && onViewDiff;
-
-  const diffBar = showDiffBar ? (
-    <div
-      className="flex cursor-pointer items-center gap-2 border-t border-border bg-muted px-4 py-2 text-xs text-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
-      onClick={onViewDiff}
-    >
-      <FileEditIcon className="size-3.5" />
-      <span>Files changed &mdash; <span className="underline underline-offset-2">Review Changes</span></span>
-    </div>
-  ) : null;
-
-  // ---- Todo list bar ----
-  const todoBar = todos && todos.length > 0 ? <AgentTodoList todos={todos} /> : null;
+  // ---- Inline diff trigger ----
+  const showDiffBar = hasFileChanges && onViewDiff;
 
   // ---- Inline model switcher ----
   const currentModelLabel = models.find((m) => m.id === currentModelId)?.label ?? currentModelId ?? "Model";
@@ -502,32 +491,89 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
     onModelChange(next.id);
   }, [currentModelId, onModelChange, models]);
 
-  const modelBar = onModelChange ? (
-    <div className="flex items-center justify-between border-t border-border bg-muted/30 px-3 py-1">
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-          >
-            {currentModelLabel}
-            <ChevronDownIcon className="size-3" />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="min-w-[160px]">
-          {models.map((m) => (
-            <DropdownMenuItem
-              key={m.id}
-              onClick={() => onModelChange(m.id)}
-              className="flex items-center justify-between gap-2 text-xs"
+  // ---- Chip row (mode → model → review changes → tasks) ----
+  const hasMeta =
+    !!onPermissionModeToggle ||
+    !!onModelChange ||
+    showDiffBar ||
+    (todos && todos.length > 0);
+
+  const chipClass =
+    "flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors";
+
+  const metaBar = hasMeta ? (
+    <div
+      className="relative z-10 -mt-6 flex items-center gap-1.5 px-3 py-3 backdrop-blur-sm"
+      style={{
+        background: "linear-gradient(to bottom, transparent 0%, hsl(var(--background) / 0.3) 30%, hsl(var(--background) / 0.6) 60%, hsl(var(--background) / 0.85) 80%, hsl(var(--background)) 100%)",
+      }}
+    >
+      {/* Mode chip */}
+      {onPermissionModeToggle && (
+        <button
+          type="button"
+          onClick={onPermissionModeToggle}
+          title="Toggle permission mode (Shift+Tab)"
+          className={cn(
+            chipClass,
+            permissionMode === "plan"
+              ? "bg-green-500/15 text-green-400 hover:bg-green-500/25"
+              : "bg-blue-500/15 text-blue-400 hover:bg-blue-500/25",
+          )}
+        >
+          {permissionMode === "plan" ? (
+            <ClipboardList className="size-3" />
+          ) : (
+            <Zap className="size-3" />
+          )}
+          {permissionMode === "plan" ? "Plan" : "Auto"}
+          <KbdShortcut keys={["shift", "Tab"]} size="sm" />
+        </button>
+      )}
+
+      {/* Model chip — violet */}
+      {onModelChange && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className={cn(chipClass, "bg-violet-500/15 text-violet-400 hover:bg-violet-500/25")}
             >
-              {m.label}
-              {m.id === currentModelId && <CheckIcon className="size-3 text-green-400" />}
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuContent>
-      </DropdownMenu>
-      <span className="text-[10px] text-muted-foreground/50">⌘P</span>
+              {currentModelLabel}
+              <ChevronDownIcon className="size-3" />
+              <KbdShortcut keys={["cmd", "P"]} size="sm" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="min-w-[160px]">
+            {models.map((m) => (
+              <DropdownMenuItem
+                key={m.id}
+                onClick={() => onModelChange(m.id)}
+                className="flex items-center justify-between gap-2 text-xs"
+              >
+                {m.label}
+                {m.id === currentModelId && <CheckIcon className="size-3 text-violet-400" />}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
+
+      {/* Review Changes chip — orange */}
+      {showDiffBar && (
+        <button
+          type="button"
+          onClick={onViewDiff}
+          className={cn(chipClass, "bg-orange-500/15 text-orange-400 hover:bg-orange-500/25")}
+        >
+          <FileEditIcon className="size-3" />
+          Review Changes
+          <KbdShortcut keys={["cmd", "D"]} size="sm" />
+        </button>
+      )}
+
+      {/* Tasks chip — rose */}
+      {todos && todos.length > 0 && <AgentTodoList todos={todos} chipClass={chipClass} />}
     </div>
   ) : null;
 
@@ -599,39 +645,32 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
           {streamContent}
         </div>
 
-        {/* Review verdict actions */}
-        {reviewVerdictSection}
+        {/* Bottom section */}
+        <div className="shrink-0">
+          {/* Review verdict actions */}
+          {reviewVerdictSection}
 
-        {/* Inline diff trigger */}
-        {diffBar}
+          {/* Permission prompt */}
+          {permissionBar}
 
-        {/* Todo list */}
-        {todoBar}
+          {/* Meta toolbar: diff + todos + model */}
+          {metaBar}
 
-        {/* Model switcher */}
-        {modelBar}
+          {/* Prompt bar */}
+          {promptBar}
 
-        {/* Permission prompt */}
-        {permissionBar}
-
-        {/* Prompt bar pinned at bottom */}
-        {promptBar && (
-          <div>
-            {promptBar}
-          </div>
-        )}
-
-        {/* Context usage bar with background task badge */}
-        {(contextUsage || bgTasks.length > 0) && (
-          <div className="flex items-center px-3 py-1 gap-2">
-            <BackgroundTasksBadge
-              activeCount={bgActiveCount}
-              totalCount={bgTasks.length}
-              onClick={() => setBgTasksOpen(true)}
-            />
-            <ContextUsageBar usage={contextUsage} className="flex-1 px-0 py-0" />
-          </div>
-        )}
+          {/* Context usage bar with background task badge */}
+          {(contextUsage || bgTasks.length > 0) && (
+            <div className="flex items-center gap-2 px-3 pb-1.5 pt-0">
+              <BackgroundTasksBadge
+                activeCount={bgActiveCount}
+                totalCount={bgTasks.length}
+                onClick={() => setBgTasksOpen(true)}
+              />
+              <ContextUsageBar usage={contextUsage} className="flex-1 px-0 py-0" />
+            </div>
+          )}
+        </div>
         <BackgroundTasksModal
           open={bgTasksOpen}
           onOpenChange={setBgTasksOpen}
@@ -749,7 +788,7 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
       {/* Collapsible content */}
       {isOpen && (
         <>
-          <div ref={scrollContainerRef} className="flex-1 min-h-0 border-t border-border overflow-y-auto" style={{ overflowAnchor: "none" }}>
+          <div ref={scrollContainerRef} className="flex-1 min-h-0 border-t border-border/30 overflow-y-auto" style={{ overflowAnchor: "none" }}>
             {/* Stream content */}
             {blocks.length === 0 && status === "idle" ? (
               <div className="flex flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
@@ -762,31 +801,33 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
 
           {/* Bottom section — pinned below scroll area */}
           <div className="shrink-0">
+            {/* Gradient + blur fade — overlaps last ~64px of scroll content */}
+            <div
+              className="pointer-events-none h-16 -mt-16"
+              style={{
+                background: "linear-gradient(to bottom, transparent 0%, hsl(var(--background) / 0.3) 30%, hsl(var(--background) / 0.6) 60%, hsl(var(--background) / 0.85) 80%, hsl(var(--background)) 100%)",
+                backdropFilter: "blur(6px)",
+                WebkitBackdropFilter: "blur(6px)",
+                maskImage: "linear-gradient(to bottom, transparent 0%, black 60%)",
+                WebkitMaskImage: "linear-gradient(to bottom, transparent 0%, black 60%)",
+              }}
+            />
+
             {/* Review verdict actions */}
             {reviewVerdictSection}
-
-            {/* Inline diff trigger */}
-            {diffBar}
-
-            {/* Todo list */}
-            {todoBar}
-
-            {/* Model switcher */}
-            {modelBar}
 
             {/* Permission prompt */}
             {permissionBar}
 
+            {/* Meta toolbar: diff + todos + model */}
+            {metaBar}
+
             {/* Prompt bar */}
-            {promptBar && (
-              <div className="border-t border-border">
-                {promptBar}
-              </div>
-            )}
+            {promptBar}
 
             {/* Context usage bar with background task badge */}
             {(contextUsage || bgTasks.length > 0) && (
-              <div className="flex items-center px-3 py-1 gap-2">
+              <div className="flex items-center gap-2 px-3 pb-1.5 pt-0">
                 <BackgroundTasksBadge
                   activeCount={bgActiveCount}
                   totalCount={bgTasks.length}

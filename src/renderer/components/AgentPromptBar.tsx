@@ -7,7 +7,7 @@ import {
   forwardRef,
 } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
-import { Send, StopCircle, Zap, ClipboardList } from "lucide-react";
+import { Send, StopCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
@@ -111,7 +111,6 @@ export const AgentPromptBar = forwardRef<
     disableShortcuts,
     onFocusChange,
     onCollapse,
-    permissionMode,
     onPermissionModeToggle,
     pendingPlanApproval,
     planApproveLabel,
@@ -421,7 +420,7 @@ export const AgentPromptBar = forwardRef<
   return (
     <div
       className={cn(
-        "flex flex-col bg-muted/20 px-3 py-2",
+        "flex flex-col px-3 pb-3",
         isDragging && "ring-2 ring-primary/50 ring-inset",
       )}
       {...dragHandlers}
@@ -433,32 +432,9 @@ export const AgentPromptBar = forwardRef<
           className="mb-2"
         />
       )}
-      <div className="flex items-center gap-0 rounded-lg border border-border/50 bg-background px-1.5 py-1.5 focus-within:ring-1 focus-within:ring-ring/40">
-        {onPermissionModeToggle && (
-          <button
-            type="button"
-            onClick={onPermissionModeToggle}
-            className={cn(
-              "flex shrink-0 self-stretch items-center gap-1 rounded-md px-2 text-xs font-medium transition-colors",
-              permissionMode === "plan"
-                ? "bg-green-500/15 text-green-400 hover:bg-green-500/25"
-                : "bg-blue-500/15 text-blue-400 hover:bg-blue-500/25",
-            )}
-            title="Toggle permission mode (Shift+Tab)"
-          >
-            {permissionMode === "plan" ? (
-              <>
-                <ClipboardList className="size-3.5" />
-                Plan
-              </>
-            ) : (
-              <>
-                <Zap className="size-3.5" />
-                Auto
-              </>
-            )}
-          </button>
-        )}
+
+      {/* Fully-rounded pill input */}
+      <div className="flex items-center gap-0 rounded-3xl bg-muted/40 py-1.5 pl-4 pr-1.5 transition-colors focus-within:bg-muted/55">
         <FileMentionPopover
           open={mention.isOpen && !slash.isOpen}
           items={mention.filteredItems}
@@ -487,35 +463,36 @@ export const AgentPromptBar = forwardRef<
               }
               disabled={disabled}
               rows={1}
-              className="max-h-32 w-full resize-none overflow-y-auto border-0 bg-transparent px-2 py-2 text-sm leading-[22px] shadow-none focus-visible:ring-0"
+              className="max-h-32 min-h-0 flex-1 resize-none overflow-y-auto border-0 bg-transparent px-0 py-0 text-sm leading-[22px] shadow-none focus-visible:ring-0"
             />
           </SlashCommandPopover>
         </FileMentionPopover>
+
+        {/* Circle send / stop button */}
         {isRunning ? (
-          <Button
-            variant="ghost"
-            size="default"
+          <button
+            type="button"
             onClick={onStop}
             aria-label="Stop agent"
-            className="h-auto w-9 shrink-0 self-stretch rounded-md px-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
+            className="flex size-7 shrink-0 items-center justify-center rounded-full bg-destructive/15 text-destructive transition-colors hover:bg-destructive/25"
           >
             <StopCircle className="size-3.5" />
-          </Button>
+          </button>
         ) : !splitSendActions ? (
-          <Button
-            variant="default"
-            size="default"
+          <button
+            type="button"
             onClick={handleSend}
             disabled={!canSend}
             aria-label="Send message"
-            className="h-auto w-9 shrink-0 self-stretch rounded-md px-0"
+            className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-opacity disabled:opacity-30"
           >
             <Send className="size-3.5" />
-          </Button>
+          </button>
         ) : null}
       </div>
+
       {splitSendActions && !isRunning && (
-        <div className="flex flex-col gap-1.5 pt-1">
+        <div className="flex flex-col gap-1.5 pt-2">
           {splitSendActions.map((action, i) => (
             <Button
               key={i}

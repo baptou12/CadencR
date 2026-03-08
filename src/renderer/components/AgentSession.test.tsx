@@ -288,7 +288,7 @@ describe("AgentSession", () => {
         todos={[{ content: "Do the thing", activeForm: "Doing the thing", status: "in_progress" }]}
       />,
     );
-    expect(screen.getByText("Tasks")).toBeInTheDocument();
+    expect(screen.getByText("0/1")).toBeInTheDocument();
   });
 
   it("shows prompt bar for completed plan agent when pendingPlanApproval is set", () => {
