@@ -106,7 +106,7 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", executeS
   if (!feature) return null;
 
   return (
-    <div className={cn("flex items-center gap-3 border-b border-border px-4 py-2", className)}>
+    <div className={cn("flex items-center gap-3 border-b border-border px-6 py-3", className)}>
       {!isSession && (
         <Badge
           variant="secondary"
