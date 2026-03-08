@@ -3,10 +3,10 @@ import { cn } from "@/lib/utils";
 import { useHotkeys } from "react-hotkeys-hook";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { TerminalIcon, SettingsIcon, GitCompareArrowsIcon } from "lucide-react";
+import { TerminalIcon, SettingsIcon, GitCompareArrowsIcon, BrainCircuitIcon, CpuIcon } from "lucide-react";
 import { trpc } from "@/trpc";
 import { DiffViewerModal, type ExecuteAgentState } from "./diff/DiffViewerModal";
 import { ModelSelector } from "./ModelSelector";
@@ -181,46 +181,58 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", executeS
             <SettingsIcon className="size-4" />
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-[540px]" align="end">
-          <div className="space-y-3">
-            <div>
+        <PopoverContent className="w-[420px]" align="end">
+          <div className="space-y-4">
+            {/* Model Selection */}
+            <div className="space-y-2">
               <h4 className="text-sm font-semibold">Model Configuration</h4>
-              <p className="text-xs text-muted-foreground">Override models for this feature</p>
+              <ModelSelector level="feature" featureId={featureId} projectId={projectId} />
             </div>
-            <ModelSelector level="feature" featureId={featureId} projectId={projectId} />
-          </div>
 
-          {!isSession && (
-            <>
-              <div className="space-y-1">
-                <span className="text-xs font-medium">Agent Autonomy</span>
-                <Select
-                  value={featureSettings?.agent_autonomy ?? ""}
-                  onValueChange={(value) =>
-                    setFeatureSetting.mutate({
-                      feature_id: featureId,
-                      key: "agent_autonomy",
-                      value,
-                    })
-                  }
-                >
-                  <SelectTrigger className="h-8 text-sm">
-                    <SelectValue placeholder="Inherit from project" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="1">Low — ask before commit</SelectItem>
-                    <SelectItem value="2">Medium — manual continue</SelectItem>
-                    <SelectItem value="3">High — full auto</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">
-                  Controls how much the execute agent does automatically
-                </p>
-              </div>
+            {!isSession && (
+              <>
+                {/* Agent Autonomy */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-1.5">
+                    <BrainCircuitIcon className="size-3.5 text-muted-foreground" />
+                    <span className="text-xs font-medium">Agent Autonomy</span>
+                  </div>
+                  <Select
+                    value={featureSettings?.agent_autonomy ?? ""}
+                    onValueChange={(value) =>
+                      setFeatureSetting.mutate({
+                        feature_id: featureId,
+                        key: "agent_autonomy",
+                        value,
+                      })
+                    }
+                  >
+                    <SelectTrigger className="h-8 text-sm">
+                      <SelectValue placeholder="Inherit from project" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1">Low — ask before commit</SelectItem>
+                      <SelectItem value="2">Medium — manual continue</SelectItem>
+                      <SelectItem value="3">High — full auto</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Controls how much the execute agent does automatically
+                  </p>
+                </div>
 
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <Checkbox
+                {/* Parallel Execution */}
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-1.5">
+                      <CpuIcon className="size-3.5 text-muted-foreground" />
+                      <span className="text-xs font-medium">Parallel Execution</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Run multiple agents in parallel within each step
+                    </p>
+                  </div>
+                  <Switch
                     id="feature-parallel-execution"
                     checked={(featureSettings?.parallel_execution ?? "") === "true" || featureSettings?.parallel_execution == null}
                     onCheckedChange={(checked) =>
@@ -231,16 +243,10 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", executeS
                       })
                     }
                   />
-                  <label htmlFor="feature-parallel-execution" className="text-xs font-medium cursor-pointer">
-                    Enable parallel agent execution
-                  </label>
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  Run multiple agents in parallel within each step
-                </p>
-              </div>
-            </>
-          )}
+              </>
+            )}
+          </div>
         </PopoverContent>
       </Popover>
 

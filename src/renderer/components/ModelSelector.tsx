@@ -1,13 +1,11 @@
-import { createElement } from "react";
+import { createElement, useState } from "react";
 import { trpc } from "../trpc";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "./ui/select";
+import { Button } from "./ui/button";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "./ui/command";
+import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { AGENT_ICONS } from "./agent-icons";
+import { CheckIcon, ChevronsUpDownIcon } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 const AGENT_TYPES = ["plan", "prd", "execute", "risk", "review", "review-fixer", "session", "qa", "retro"] as const;
 type AgentType = (typeof AGENT_TYPES)[number];
@@ -37,7 +35,6 @@ export function ModelSelector({ level, projectId, featureId }: ModelSelectorProp
   const availableModels = trpc.workspace.getAvailableModels.useQuery();
   const models = availableModels.data ?? [];
 
-  // Fetch model settings for this level
   const globalSettings = trpc.workspace.getModelSettings.useQuery(undefined, {
     enabled: level === "global",
   });
@@ -50,7 +47,6 @@ export function ModelSelector({ level, projectId, featureId }: ModelSelectorProp
     { enabled: level === "feature" && featureId != null },
   );
 
-  // Also fetch parent settings to show effective model as placeholder
   const parentGlobalSettings = trpc.workspace.getModelSettings.useQuery(undefined, {
     enabled: level !== "global",
   });
@@ -76,8 +72,9 @@ export function ModelSelector({ level, projectId, featureId }: ModelSelectorProp
         ? projectSettings.data
         : featureSettings.data;
 
+  const [openFor, setOpenFor] = useState<AgentType | null>(null);
+
   function getEffectiveModel(agentType: AgentType): string {
-    // Resolve through parent hierarchy for placeholder display
     if (level === "feature") {
       const projectVal = parentProjectSettings.data?.[agentType];
       if (projectVal) return projectVal;
@@ -104,6 +101,7 @@ export function ModelSelector({ level, projectId, featureId }: ModelSelectorProp
     } else if (level === "feature" && featureId != null) {
       featureMutation.mutate({ featureId, agentType, modelId });
     }
+    setOpenFor(null);
   }
 
   function getCurrentValue(agentType: AgentType): string {
@@ -111,8 +109,15 @@ export function ModelSelector({ level, projectId, featureId }: ModelSelectorProp
     if (level === "global") {
       return val ?? "claude-opus-4-6";
     }
-    // For project/feature levels, empty or default means "inherit"
     return val && val !== "" ? val : INHERIT_VALUE;
+  }
+
+  function getDisplayLabel(agentType: AgentType): string {
+    const current = getCurrentValue(agentType);
+    if (current === INHERIT_VALUE) {
+      return `Inherit (${getModelLabel(getEffectiveModel(agentType))})`;
+    }
+    return getModelLabel(current);
   }
 
   const isLoading =
@@ -125,40 +130,61 @@ export function ModelSelector({ level, projectId, featureId }: ModelSelectorProp
   }
 
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    <div className="space-y-2">
       {AGENT_TYPES.map((agentType) => {
         const currentValue = getCurrentValue(agentType);
         const effectiveModel = getEffectiveModel(agentType);
 
         return (
-          <div key={agentType} className="space-y-1.5">
-            <label className="flex items-center gap-1.5 text-sm font-medium">
+          <div key={agentType} className="flex items-center gap-3">
+            <label className="flex w-24 shrink-0 items-center gap-1.5 text-xs font-medium text-muted-foreground">
               {createElement(AGENT_ICONS[agentType], { className: "size-3.5" })}
               {AGENT_LABELS[agentType]}
             </label>
-            <Select value={currentValue} onValueChange={(v) => handleChange(agentType, v)}>
-              <SelectTrigger className="w-full">
-                <SelectValue
-                  placeholder={
-                    level !== "global"
-                      ? `Inherit (${getModelLabel(effectiveModel)})`
-                      : undefined
-                  }
-                />
-              </SelectTrigger>
-              <SelectContent>
-                {level !== "global" && (
-                  <SelectItem value={INHERIT_VALUE}>
-                    Inherit default ({getModelLabel(effectiveModel)})
-                  </SelectItem>
-                )}
-                {models.map((model) => (
-                  <SelectItem key={model.id} value={model.id}>
-                    {model.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Popover open={openFor === agentType} onOpenChange={(open) => setOpenFor(open ? agentType : null)}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  role="combobox"
+                  className="h-7 flex-1 justify-between px-2 text-xs font-normal"
+                >
+                  <span className="truncate">{getDisplayLabel(agentType)}</span>
+                  <ChevronsUpDownIcon className="ml-1 size-3 shrink-0 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-64 p-0" align="start">
+                <Command>
+                  <CommandInput placeholder="Search models..." className="h-8 text-xs" />
+                  <CommandList>
+                    <CommandEmpty className="py-2 text-center text-xs">No model found.</CommandEmpty>
+                    <CommandGroup>
+                      {level !== "global" && (
+                        <CommandItem
+                          value={INHERIT_VALUE}
+                          onSelect={() => handleChange(agentType, INHERIT_VALUE)}
+                          className="text-xs"
+                        >
+                          <CheckIcon className={cn("mr-2 size-3", currentValue === INHERIT_VALUE ? "opacity-100" : "opacity-0")} />
+                          Inherit ({getModelLabel(effectiveModel)})
+                        </CommandItem>
+                      )}
+                      {models.map((model) => (
+                        <CommandItem
+                          key={model.id}
+                          value={model.id}
+                          keywords={[model.label]}
+                          onSelect={() => handleChange(agentType, model.id)}
+                          className="text-xs"
+                        >
+                          <CheckIcon className={cn("mr-2 size-3", currentValue === model.id ? "opacity-100" : "opacity-0")} />
+                          {model.label}
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
           </div>
         );
       })}
