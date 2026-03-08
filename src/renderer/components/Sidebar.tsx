@@ -123,8 +123,6 @@ export function Sidebar() {
         </div>
       </div>
 
-      <UsageIndicator />
-
       <div className="flex-1 min-w-0 overflow-hidden p-2">
         <ProjectTree
           activeProjectId={activeProjectId}
@@ -132,6 +130,8 @@ export function Sidebar() {
           onSelectFeature={setSelectedFeatureId}
         />
       </div>
+
+      <UsageIndicator />
     </aside>
   );
 }
