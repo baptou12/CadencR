@@ -130,9 +130,24 @@ function SessionFeatureView({
   const sendMessageMutation = trpc.agents.sendMessage.useMutation();
   const interruptMutation = trpc.agents.interrupt.useMutation();
   const resumeMutation = trpc.agents.resume.useMutation();
+  const clearSessionMutation = trpc.agents.clearSession.useMutation();
 
   const handleSend = useCallback(
     async (message: string, images?: Array<{ base64: string; mimeType: string }>) => {
+      // Handle /clear — intercept before sending to SDK
+      if (message.trim() === "/clear" && session) {
+        try {
+          await clearSessionMutation.mutateAsync({
+            subprocessId: session.subprocessId ?? undefined,
+            sessionDbId: session.sessionDbId,
+          });
+        } catch (err) {
+          console.error("[SessionFeatureView] Failed to clear session:", err);
+        }
+        void refetch();
+        return;
+      }
+
       console.log("[SessionFeatureView] handleSend", { hasSession: !!session, subprocessId: session?.subprocessId, status, permissionMode, claudeSessionId: session?.claudeSessionId });
       // 1. Active subprocess — send follow-up message directly.
       //    For session agents, the subprocess stays alive in activeProcesses even
@@ -155,14 +170,16 @@ function SessionFeatureView({
         }
       }
 
-      // 2. Existing session with a claude session ID — resume it
-      if (session?.claudeSessionId) {
+      // 2. Existing session — resume it (with or without claude session ID).
+      //    When claudeSessionId is null (after /clear), this starts a fresh SDK
+      //    query while reusing the same DB row to preserve message history.
+      if (session?.sessionDbId) {
         try {
           await resumeMutation.mutateAsync({
             featureId,
             projectId,
             agentType: "session",
-            sessionId: session.claudeSessionId,
+            sessionId: session.claudeSessionId ?? undefined,
             originalSessionDbId: session.sessionDbId,
             prompt: message,
             images,
@@ -191,7 +208,7 @@ function SessionFeatureView({
       // Re-focus the prompt bar so the user can keep typing
       requestAnimationFrame(() => agentRef.current?.focusPromptBar());
     },
-    [session, status, featureId, projectId, permissionMode, sendMessageMutation, startSessionMutation, resumeMutation, refetch],
+    [session, status, featureId, projectId, permissionMode, sendMessageMutation, startSessionMutation, resumeMutation, clearSessionMutation, refetch],
   );
 
   const handleStop = useCallback(async () => {

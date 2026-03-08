@@ -166,6 +166,9 @@ export function buildBlocks(messages: AgentMessageRow[]): AgentBlock[] {
       case "compact_divider":
         list.push({ id, type: "compact_divider", content: "", parentToolUseId: msg.parent_tool_use_id });
         break;
+      case "clear_divider":
+        list.push({ id, type: "clear_divider", content: "", parentToolUseId: msg.parent_tool_use_id });
+        break;
     }
   }
   return blocks;

@@ -40,7 +40,7 @@ function diffFromToolArgs(
 }
 
 /** Block types that the agent stream can produce */
-export type BlockType = "text" | "code" | "tool_call" | "tool_result" | "thinking" | "user_message" | "compact_divider";
+export type BlockType = "text" | "code" | "tool_call" | "tool_result" | "thinking" | "user_message" | "compact_divider" | "clear_divider";
 
 export interface AgentBlockData {
   id: string;
@@ -124,6 +124,8 @@ export function AgentBlock({ block, isStreaming, basePath }: AgentBlockProps) {
       return <UserMessageBlock content={block.content} />;
     case "compact_divider":
       return <CompactDivider />;
+    case "clear_divider":
+      return <ClearDivider />;
     default:
       return null;
   }
@@ -289,6 +291,16 @@ function CompactDivider() {
       <div className="h-px flex-1 bg-yellow-500/30" />
       <span className="text-xs font-medium text-yellow-500">Compacted</span>
       <div className="h-px flex-1 bg-yellow-500/30" />
+    </div>
+  );
+}
+
+function ClearDivider() {
+  return (
+    <div className="flex items-center gap-3 py-3">
+      <div className="h-px flex-1 bg-cyan-500/30" />
+      <span className="text-xs font-medium text-cyan-500">Cleared</span>
+      <div className="h-px flex-1 bg-cyan-500/30" />
     </div>
   );
 }

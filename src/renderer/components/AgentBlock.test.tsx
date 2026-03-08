@@ -144,6 +144,15 @@ describe("AgentBlock", () => {
     });
   });
 
+  describe("clear_divider block", () => {
+    it("renders cleared divider", () => {
+      render(
+        <AgentBlock block={makeBlock({ type: "clear_divider", content: "" })} />,
+      );
+      expect(screen.getByText("Cleared")).toBeInTheDocument();
+    });
+  });
+
   describe("tool_result block", () => {
     it("returns null for generic tool_result", () => {
       const { container } = render(

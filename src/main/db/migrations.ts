@@ -475,6 +475,21 @@ const migrations: Migration[] = [
       db.exec("DELETE FROM feature_settings WHERE key = 'parallel_execution'");
     },
   },
+  {
+    version: 38,
+    description: "Create session_claude_ids table for tracking session ID history",
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS session_claude_ids (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          session_id INTEGER NOT NULL REFERENCES agent_sessions(id),
+          claude_session_id TEXT NOT NULL,
+          created_at TEXT DEFAULT (datetime('now'))
+        )
+      `);
+      db.exec("CREATE INDEX IF NOT EXISTS idx_session_claude_ids_session ON session_claude_ids(session_id)");
+    },
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

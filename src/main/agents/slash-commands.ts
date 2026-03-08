@@ -13,6 +13,11 @@ export interface SlashCommandInfo {
   argumentHint?: string;
 }
 
+/** Custom app-level commands (not from the SDK) */
+const CUSTOM_COMMANDS: SlashCommandInfo[] = [
+  { name: "clear", description: "Clear conversation context and start fresh" },
+];
+
 /** Cache for slash commands keyed by cwd */
 const commandsCache = new Map<string, { commands: SlashCommandInfo[]; timestamp: number }>();
 const COMMANDS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
@@ -34,6 +39,15 @@ function mapCommands(commands: Array<{ name: string; description: string; argume
  * Otherwise spawns a temporary subprocess to fetch commands, then closes it.
  */
 export async function getSupportedCommands(
+  subprocessId: string | null,
+  cwd: string,
+  getActiveProcess?: (id: string) => ManagedSubprocess | undefined,
+): Promise<SlashCommandInfo[]> {
+  const sdkCommands = await getSdkCommands(subprocessId, cwd, getActiveProcess);
+  return [...CUSTOM_COMMANDS, ...sdkCommands];
+}
+
+async function getSdkCommands(
   subprocessId: string | null,
   cwd: string,
   getActiveProcess?: (id: string) => ManagedSubprocess | undefined,

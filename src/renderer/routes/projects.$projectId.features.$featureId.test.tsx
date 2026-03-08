@@ -124,6 +124,7 @@ vi.mock("@/trpc", () => {
         sendMessage: { useMutation: vi.fn(() => ({ mutateAsync: vi.fn() })) },
         interrupt: { useMutation: vi.fn(() => ({ mutateAsync: vi.fn() })) },
         resume: { useMutation: vi.fn(() => ({ mutateAsync: vi.fn() })) },
+        clearSession: { useMutation: vi.fn(() => ({ mutateAsync: vi.fn() })) },
       },
     },
   };

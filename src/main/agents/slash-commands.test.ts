@@ -31,7 +31,10 @@ describe("getSupportedCommands", () => {
     const { getSupportedCommands: fn } = await import("./slash-commands");
     const result = await fn("sub1", "/cwd", mockGetActiveProcess);
 
-    expect(result).toEqual([{ name: "/continue", description: "Continue", argumentHint: undefined }]);
+    expect(result).toEqual([
+      { name: "clear", description: "Clear conversation context and start fresh" },
+      { name: "/continue", description: "Continue", argumentHint: undefined },
+    ]);
     expect(mockSupportedCommands).toHaveBeenCalled();
   });
 
@@ -60,7 +63,10 @@ describe("getSupportedCommands", () => {
     const { getSupportedCommands: fn } = await import("./slash-commands");
     const result = await fn(null, "/cwd2", mockGetActiveProcess);
 
-    expect(result).toEqual([{ name: "/fix", description: "Fix issues", argumentHint: "description" }]);
+    expect(result).toEqual([
+      { name: "clear", description: "Clear conversation context and start fresh" },
+      { name: "/fix", description: "Fix issues", argumentHint: "description" },
+    ]);
     expect(mockClose).toHaveBeenCalled();
   });
 
@@ -72,7 +78,9 @@ describe("getSupportedCommands", () => {
     const { getSupportedCommands: fn } = await import("./slash-commands");
     const result = await fn(null, "/cwd3", mockGetActiveProcess);
 
-    expect(result).toEqual([]);
+    expect(result).toEqual([
+      { name: "clear", description: "Clear conversation context and start fresh" },
+    ]);
   });
 
   it("skips subprocess if it is stopped", async () => {
@@ -86,6 +94,8 @@ describe("getSupportedCommands", () => {
     const { getSupportedCommands: fn } = await import("./slash-commands");
     const result = await fn("sub1", "/cwd", mockGetActiveProcess);
 
-    expect(result).toEqual([]);
+    expect(result).toEqual([
+      { name: "clear", description: "Clear conversation context and start fresh" },
+    ]);
   });
 });

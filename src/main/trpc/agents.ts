@@ -85,7 +85,7 @@ export const agentsRouter = router({
         featureId: z.number(),
         projectId: z.number(),
         agentType: agentTypeSchema,
-        sessionId: z.string(),
+        sessionId: z.string().optional(),
         originalSessionDbId: z.number(),
         prompt: z.string().optional(),
         images: z.array(z.object({ base64: z.string(), mimeType: z.string() })).optional(),
@@ -157,7 +157,7 @@ export const agentsRouter = router({
         projectId: input.projectId,
         cwd,
         prompt: resumePrompt,
-        resumeSessionId: input.sessionId,
+        resumeSessionId: input.sessionId ?? undefined,
         runId: originalSession?.run_id ?? undefined,
         phaseId: originalSession?.phase_id ?? undefined,
         existingSessionDbId: input.originalSessionDbId,
@@ -292,6 +292,46 @@ export const agentsRouter = router({
         content = input.message;
       }
       return sendMessageToSubprocess(input.id, content);
+    }),
+
+  /** Clear session context — inserts a divider, archives the session ID, and resets for fresh start */
+  clearSession: publicProcedure
+    .input(z.object({
+      subprocessId: z.string().optional(),
+      sessionDbId: z.number(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = getDatabase();
+
+      // 1. Archive current claude_session_id
+      const session = db.prepare("SELECT claude_session_id, feature_id FROM agent_sessions WHERE id = ?")
+        .get(input.sessionDbId) as { claude_session_id: string | null; feature_id: number } | undefined;
+      if (!session) return { success: false, reason: "session_not_found" };
+
+      if (session.claude_session_id) {
+        db.prepare("INSERT INTO session_claude_ids (session_id, claude_session_id) VALUES (?, ?)")
+          .run(input.sessionDbId, session.claude_session_id);
+      }
+
+      // 2. Insert clear_divider message
+      db.prepare(
+        "INSERT INTO agent_messages (session_id, role, content, message_type) VALUES (?, 'system', 'clear_boundary', 'clear_divider')",
+      ).run(input.sessionDbId);
+
+      // 3. Stop the subprocess — this clears subprocess_id from DB and pauses it.
+      //    IMPORTANT: pauseSubprocess re-persists managed.sdkSessionId to DB,
+      //    so we must null out claude_session_id AFTER stopping.
+      if (input.subprocessId) {
+        await stopSubprocess(input.subprocessId);
+      }
+
+      // 4. Null out claude_session_id AFTER stop so pauseSubprocess can't overwrite it
+      db.prepare("UPDATE agent_sessions SET claude_session_id = NULL WHERE id = ?")
+        .run(input.sessionDbId);
+
+      // 5. Broadcast update
+      notifyDbUpdated("agent_session", session.feature_id);
+      return { success: true };
     }),
 
   /** Change the permission mode of a running session agent */

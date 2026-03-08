@@ -744,8 +744,9 @@ export function sendMessageToSubprocess(id: string, message: MessageContent): Se
   }
 
   // Resume from paused or completed state — start a new query with resume session ID
+  // If sdkSessionId is null (e.g. after /clear), start a fresh SDK query without resume
   if (managed.status === "paused" || managed.status === "completed") {
-    if (!managed.sdkSessionId || !managed.originalOptions) {
+    if (!managed.originalOptions) {
       return { success: false, reason: "no_resume_id" };
     }
     managed.status = "running";
@@ -766,10 +767,11 @@ export function sendMessageToSubprocess(id: string, message: MessageContent): Se
     const resumeOptions: SubprocessOptions = {
       ...managed.originalOptions,
       prompt: message,
-      resumeSessionId: managed.sdkSessionId,
+      // Only include resumeSessionId if available (null after /clear → fresh context)
+      ...(managed.sdkSessionId ? { resumeSessionId: managed.sdkSessionId } : {}),
       model: freshModel,
     };
-    // Re-run the SDK query with resume
+    // Re-run the SDK query (with resume if available, fresh if not)
     runSdkQuery(managed, resumeOptions).catch((err) => {
       console.error(`[subprocess-manager] Resume SDK query failed for ${id}:`, err);
     });
