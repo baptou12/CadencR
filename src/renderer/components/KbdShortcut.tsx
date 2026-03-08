@@ -32,7 +32,7 @@ export function KbdShortcut({ keys, size = "default" }: { keys: string[]; size?:
     }>
       {keys.map((k, i) => {
         const icon = map[k.toLowerCase()];
-        return icon ? <span key={i}>{icon}</span> : <span key={i}>{k}</span>;
+        return icon ? <span key={i} className="flex items-center">{icon}</span> : <span key={i} className="translate-y-[0.5px] leading-none">{k}</span>;
       })}
     </kbd>
   );

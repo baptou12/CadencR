@@ -505,7 +505,7 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
     <div
       className="relative z-10 -mt-6 flex items-center gap-1.5 px-3 py-3 backdrop-blur-sm"
       style={{
-        background: "linear-gradient(to bottom, transparent 0%, hsl(var(--background) / 0.3) 30%, hsl(var(--background) / 0.6) 60%, hsl(var(--background) / 0.85) 80%, hsl(var(--background)) 100%)",
+        background: "linear-gradient(to bottom, transparent 0%, hsl(var(--background) / 0.7) 8%, hsl(var(--background) / 0.9) 20%, hsl(var(--background)) 40%)",
       }}
     >
       {/* Mode chip */}
@@ -805,11 +805,11 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
             <div
               className="pointer-events-none h-16 -mt-16"
               style={{
-                background: "linear-gradient(to bottom, transparent 0%, hsl(var(--background) / 0.3) 30%, hsl(var(--background) / 0.6) 60%, hsl(var(--background) / 0.85) 80%, hsl(var(--background)) 100%)",
+                background: "linear-gradient(to bottom, transparent 0%, hsl(var(--background) / 0.7) 8%, hsl(var(--background) / 0.9) 20%, hsl(var(--background)) 40%)",
                 backdropFilter: "blur(6px)",
                 WebkitBackdropFilter: "blur(6px)",
-                maskImage: "linear-gradient(to bottom, transparent 0%, black 60%)",
-                WebkitMaskImage: "linear-gradient(to bottom, transparent 0%, black 60%)",
+                maskImage: "linear-gradient(to bottom, transparent 0%, black 25%)",
+                WebkitMaskImage: "linear-gradient(to bottom, transparent 0%, black 25%)",
               }}
             />
 
