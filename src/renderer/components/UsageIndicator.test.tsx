@@ -4,7 +4,8 @@ import { UsageIndicator } from "./UsageIndicator";
 import React from "react";
 
 const { mockGetUsage } = vi.hoisted(() => ({
-  mockGetUsage: vi.fn(() => ({ data: undefined, isLoading: true, isError: false })),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  mockGetUsage: vi.fn((): any => ({ data: undefined, isLoading: true })),
 }));
 
 vi.mock("@/trpc", () => ({
@@ -23,14 +24,26 @@ vi.mock("@/trpc", () => ({
 
 describe("UsageIndicator", () => {
   it("renders loading state placeholder", () => {
-    mockGetUsage.mockReturnValue({ data: undefined, isLoading: true, isError: false });
+    mockGetUsage.mockReturnValue({ data: undefined, isLoading: true });
     render(<UsageIndicator />);
     expect(screen.getByText("--")).toBeInTheDocument();
   });
 
-  it("renders error state placeholder", () => {
-    mockGetUsage.mockReturnValue({ data: undefined, isLoading: false, isError: true });
+  it("renders error status message when no data", () => {
+    mockGetUsage.mockReturnValue({
+      data: {
+        five_hour: null,
+        seven_day: null,
+        seven_day_sonnet: null,
+        status: "error",
+        statusMessage: "No OAuth token",
+        retryAt: null,
+        updatedAt: Date.now(),
+      },
+      isLoading: false,
+    });
     render(<UsageIndicator />);
+    expect(screen.getByText("No OAuth token")).toBeInTheDocument();
     expect(screen.getByText("--")).toBeInTheDocument();
   });
 
@@ -39,9 +52,13 @@ describe("UsageIndicator", () => {
       data: {
         five_hour: { utilization: 42, resets_at: null },
         seven_day: { utilization: 75, resets_at: null },
-      } as never,
+        seven_day_sonnet: { utilization: 10, resets_at: null },
+        status: "success",
+        statusMessage: null,
+        retryAt: null,
+        updatedAt: Date.now(),
+      },
       isLoading: false,
-      isError: false,
     });
     render(<UsageIndicator />);
     expect(screen.getByText(/42%/)).toBeInTheDocument();

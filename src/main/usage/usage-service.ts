@@ -8,16 +8,23 @@ export interface UsageBucket {
   resets_at: string | null;
 }
 
+export type UsageStatus = "success" | "cached" | "rate_limited" | "error";
+
 export interface UsageResponse {
-  five_hour: UsageBucket;
-  seven_day: UsageBucket;
-  seven_day_sonnet: UsageBucket;
+  five_hour: UsageBucket | null;
+  seven_day: UsageBucket | null;
+  seven_day_sonnet: UsageBucket | null;
+  status: UsageStatus;
+  statusMessage: string | null;
+  retryAt: number | null; // epoch ms when rate-limit backoff expires
+  updatedAt: number; // epoch ms of last successful fetch
 }
 
 let cachedResult: { data: UsageResponse; timestamp: number } | null = null;
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const MIN_RATE_LIMIT_MS = 20 * 60 * 1000; // 20 minutes floor for 429 backoff
 let rateLimitedUntil = 0;
-let inflight: Promise<UsageResponse | null> | null = null;
+let inflight: Promise<UsageResponse> | null = null;
 
 async function getOAuthToken(): Promise<string | null> {
   try {
@@ -33,13 +40,24 @@ async function getOAuthToken(): Promise<string | null> {
   }
 }
 
-export async function getUsage(): Promise<UsageResponse | null> {
+const EMPTY_USAGE: Omit<UsageResponse, "updatedAt" | "statusMessage"> = {
+  five_hour: null,
+  seven_day: null,
+  seven_day_sonnet: null,
+  status: "error",
+  retryAt: null,
+};
+
+export async function getUsage(): Promise<UsageResponse> {
   if (cachedResult && Date.now() - cachedResult.timestamp < CACHE_TTL_MS) {
-    return cachedResult.data;
+    return { ...cachedResult.data, status: "cached", statusMessage: null, retryAt: null, updatedAt: cachedResult.timestamp };
   }
 
   if (Date.now() < rateLimitedUntil) {
-    return cachedResult?.data ?? null;
+    if (cachedResult) {
+      return { ...cachedResult.data, status: "rate_limited", statusMessage: null, retryAt: rateLimitedUntil, updatedAt: cachedResult.timestamp };
+    }
+    return { ...EMPTY_USAGE, status: "rate_limited", statusMessage: null, retryAt: rateLimitedUntil, updatedAt: Date.now() };
   }
 
   // Deduplicate concurrent calls — reuse in-flight request
@@ -53,9 +71,9 @@ export async function getUsage(): Promise<UsageResponse | null> {
   }
 }
 
-async function fetchUsage(): Promise<UsageResponse | null> {
+async function fetchUsage(): Promise<UsageResponse> {
   const token = await getOAuthToken();
-  if (!token) return null;
+  if (!token) return { ...EMPTY_USAGE, statusMessage: "No OAuth token", retryAt: null, updatedAt: Date.now() };
 
   try {
     const res = await fetch("https://api.anthropic.com/api/oauth/usage", {
@@ -67,14 +85,21 @@ async function fetchUsage(): Promise<UsageResponse | null> {
 
     if (!res.ok) {
       if (res.status === 429) {
-        const retryAfter = res.headers.get("retry-after");
-        const backoffMs = retryAfter ? Number(retryAfter) * 1000 : 60_000;
-        rateLimitedUntil = Date.now() + backoffMs;
+        rateLimitedUntil = Date.now() + MIN_RATE_LIMIT_MS;
+        if (cachedResult) {
+          return { ...cachedResult.data, status: "rate_limited" as const, statusMessage: null, retryAt: rateLimitedUntil, updatedAt: cachedResult.timestamp };
+        }
+        return { ...EMPTY_USAGE, status: "rate_limited" as const, statusMessage: null, retryAt: rateLimitedUntil, updatedAt: Date.now() };
       }
-      return cachedResult?.data ?? null;
+      const msg = `${res.status} ${res.statusText}`;
+      if (cachedResult) {
+        return { ...cachedResult.data, status: "error" as const, statusMessage: msg, retryAt: null, updatedAt: cachedResult.timestamp };
+      }
+      return { ...EMPTY_USAGE, statusMessage: msg, retryAt: null, updatedAt: Date.now() };
     }
 
     const raw = await res.json();
+    const now = Date.now();
     const data: UsageResponse = {
       five_hour: {
         utilization: Number(raw?.five_hour?.utilization) || 0,
@@ -97,10 +122,18 @@ async function fetchUsage(): Promise<UsageResponse | null> {
             ? raw.seven_day_sonnet.resets_at
             : null,
       },
+      status: "success",
+      statusMessage: null,
+      retryAt: null,
+      updatedAt: now,
     };
-    cachedResult = { data, timestamp: Date.now() };
+    cachedResult = { data, timestamp: now };
     return data;
-  } catch {
-    return cachedResult?.data ?? null;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    if (cachedResult) {
+      return { ...cachedResult.data, status: "error" as const, statusMessage: msg, retryAt: null, updatedAt: cachedResult.timestamp };
+    }
+    return { ...EMPTY_USAGE, statusMessage: msg, retryAt: null, updatedAt: Date.now() };
   }
 }
