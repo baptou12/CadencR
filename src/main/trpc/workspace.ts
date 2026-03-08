@@ -43,7 +43,7 @@ export const workspaceRouter = router({
   /** Get model settings for all agent types from global settings */
   getModelSettings: publicProcedure.query(() => {
     const db = getDatabase();
-    const agentTypes = ["plan", "prd", "execute", "risk", "review", "session", "qa"] as const;
+    const agentTypes = ["plan", "prd", "execute", "risk", "review", "review-fixer", "session", "qa", "retro"] as const;
     const result: Record<string, string> = {};
     for (const at of agentTypes) {
       const row = db

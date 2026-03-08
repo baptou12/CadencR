@@ -490,6 +490,16 @@ const migrations: Migration[] = [
       db.exec("CREATE INDEX IF NOT EXISTS idx_session_claude_ids_session ON session_claude_ids(session_id)");
     },
   },
+  {
+    version: 39,
+    description: "Add model_review-fixer and model_retro columns to projects/features",
+    up: (db) => {
+      db.exec('ALTER TABLE projects ADD COLUMN "model_review-fixer" TEXT');
+      db.exec("ALTER TABLE projects ADD COLUMN model_retro TEXT");
+      db.exec('ALTER TABLE features ADD COLUMN "model_review-fixer" TEXT');
+      db.exec("ALTER TABLE features ADD COLUMN model_retro TEXT");
+    },
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

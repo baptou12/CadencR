@@ -9,7 +9,7 @@ import {
 } from "./ui/select";
 import { AGENT_ICONS } from "./agent-icons";
 
-const AGENT_TYPES = ["plan", "prd", "execute", "risk", "review", "session", "qa"] as const;
+const AGENT_TYPES = ["plan", "prd", "execute", "risk", "review", "review-fixer", "session", "qa", "retro"] as const;
 type AgentType = (typeof AGENT_TYPES)[number];
 
 const AGENT_LABELS: Record<AgentType, string> = {
@@ -18,8 +18,10 @@ const AGENT_LABELS: Record<AgentType, string> = {
   execute: "Execute",
   risk: "Risk",
   review: "Review",
+  "review-fixer": "Review Fixer",
   session: "Session",
   qa: "QA",
+  retro: "Retro",
 };
 
 const INHERIT_VALUE = "__inherit__";

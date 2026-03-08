@@ -135,10 +135,10 @@ export const projectsRouter = router({
     .query(({ input }) => {
       const db = getDatabase();
       const row = db
-        .prepare("SELECT model_plan, model_prd, model_execute, model_risk, model_review, model_session, model_qa FROM projects WHERE id = ?")
+        .prepare('SELECT model_plan, model_prd, model_execute, model_risk, model_review, "model_review-fixer", model_session, model_qa, model_retro FROM projects WHERE id = ?')
         .get(input.projectId) as Record<string, string | null> | undefined;
 
-      const agentTypes = ["plan", "prd", "execute", "risk", "review", "session", "qa"] as const;
+      const agentTypes = ["plan", "prd", "execute", "risk", "review", "review-fixer", "session", "qa", "retro"] as const;
       const result: Record<string, string> = {};
       for (const at of agentTypes) {
         result[at] = row?.[`model_${at}`] ?? "";

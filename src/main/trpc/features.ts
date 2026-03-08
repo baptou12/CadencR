@@ -361,11 +361,11 @@ export const featuresRouter = router({
     .input(z.object({ featureId: z.number() }))
     .query(({ input }) => {
       const row = queryOne<Record<string, string | null>>(
-        "SELECT model_plan, model_prd, model_execute, model_risk, model_review, model_session, model_qa FROM features WHERE id = ?",
+        'SELECT model_plan, model_prd, model_execute, model_risk, model_review, "model_review-fixer", model_session, model_qa, model_retro FROM features WHERE id = ?',
         input.featureId,
       );
 
-      const agentTypes = ["plan", "prd", "execute", "risk", "review", "session", "qa"] as const;
+      const agentTypes = ["plan", "prd", "execute", "risk", "review", "review-fixer", "session", "qa", "retro"] as const;
       const result: Record<string, string> = {};
       for (const at of agentTypes) {
         result[at] = row.map((r) => r[`model_${at}`] ?? "").getOr("");
