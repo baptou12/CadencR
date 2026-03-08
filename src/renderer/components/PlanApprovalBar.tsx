@@ -48,7 +48,7 @@ export function PlanApprovalBar({
   };
 
   return (
-    <div className="flex flex-col gap-2 bg-muted/20 px-3 py-3">
+    <div className="flex flex-col gap-2 bg-[#181A25] px-3 py-3">
       <div className="flex items-center gap-2 text-sm font-medium text-foreground">
         <ClipboardCheck className="size-4 text-blue-400" />
         Plan ready for review
@@ -90,7 +90,7 @@ export function PlanApprovalBar({
             placeholder="Describe the changes you'd like..."
             rows={2}
             autoFocus
-            className="max-h-24 min-h-[42px] resize-none border-border/50 bg-background py-2 text-sm shadow-none focus-visible:ring-1 focus-visible:ring-ring/40"
+            className="max-h-24 min-h-[42px] resize-none border-border/50 bg-muted/40 py-2 text-sm shadow-none focus-visible:ring-1 focus-visible:ring-ring/40"
           />
           <Button
             variant="default"

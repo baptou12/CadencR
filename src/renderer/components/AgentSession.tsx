@@ -801,17 +801,20 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
 
           {/* Bottom section — pinned below scroll area */}
           <div className="shrink-0">
-            {/* Gradient + blur fade — overlaps last ~64px of scroll content */}
-            <div
-              className="pointer-events-none h-16 -mt-16"
-              style={{
-                background: "linear-gradient(to bottom, transparent 0%, hsl(var(--background) / 0.7) 8%, hsl(var(--background) / 0.9) 20%, hsl(var(--background)) 40%)",
-                backdropFilter: "blur(6px)",
-                WebkitBackdropFilter: "blur(6px)",
-                maskImage: "linear-gradient(to bottom, transparent 0%, black 25%)",
-                WebkitMaskImage: "linear-gradient(to bottom, transparent 0%, black 25%)",
-              }}
-            />
+            {/* Gradient + blur fade — overlaps last ~64px of scroll content.
+               Skip when metaBar is visible since it already provides its own gradient + blur. */}
+            {!hasMeta && (
+              <div
+                className="pointer-events-none h-16 -mt-16"
+                style={{
+                  background: "linear-gradient(to bottom, transparent 0%, hsl(var(--background) / 0.7) 8%, hsl(var(--background) / 0.9) 20%, hsl(var(--background)) 40%)",
+                  backdropFilter: "blur(6px)",
+                  WebkitBackdropFilter: "blur(6px)",
+                  maskImage: "linear-gradient(to bottom, transparent 0%, black 25%)",
+                  WebkitMaskImage: "linear-gradient(to bottom, transparent 0%, black 25%)",
+                }}
+              />
+            )}
 
             {/* Review verdict actions */}
             {reviewVerdictSection}

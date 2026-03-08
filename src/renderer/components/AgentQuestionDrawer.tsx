@@ -273,7 +273,7 @@ export function AgentQuestionDrawer({ questions, onSubmit, open, inline, disable
 
   return (
     <div className={cn(
-      "bg-muted/20",
+      "bg-[#181A25]",
       inline ? "px-3 py-2" : "border-t border-border px-4 py-3"
     )}>
       {/* Progress indicator with navigation arrows */}
@@ -324,7 +324,7 @@ export function AgentQuestionDrawer({ questions, onSubmit, open, inline, disable
                 "w-full rounded-md border px-3 py-2 text-left transition-colors",
                 selectedOptions.has(option.label)
                   ? "border-primary bg-primary/5 ring-2 ring-primary/30"
-                  : "border-border bg-background hover:bg-muted/50",
+                  : "border-border bg-muted/40 hover:bg-muted/50",
                 highlightedIndex === optIdx && "ring-2 ring-blue-400 bg-blue-50/10 transition-none"
               )}
               onClick={() => handleOptionToggle(option.label)}
@@ -345,7 +345,7 @@ export function AgentQuestionDrawer({ questions, onSubmit, open, inline, disable
               "w-full rounded-md border px-3 py-2 text-left transition-colors",
               showOther
                 ? "border-primary bg-primary/5 ring-2 ring-primary/30"
-                : "border-border bg-background hover:bg-muted/50",
+                : "border-border bg-muted/40 hover:bg-muted/50",
               highlightedIndex === currentQuestion.options!.length && "ring-2 ring-blue-400 bg-blue-50/10 transition-none"
             )}
             onClick={handleOtherToggle}
@@ -372,7 +372,7 @@ export function AgentQuestionDrawer({ questions, onSubmit, open, inline, disable
             placeholder="Type your answer..."
             className={cn(
               "text-sm",
-              inline && "h-8 border-border/50 bg-background shadow-none focus-visible:ring-1 focus-visible:ring-ring/40"
+              inline && "h-8 border-border/50 bg-muted/40 shadow-none focus-visible:ring-1 focus-visible:ring-ring/40"
             )}
             autoFocus
           />

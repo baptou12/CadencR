@@ -115,7 +115,7 @@ export function ToolPermissionPrompt({ permission, onDecision, disableShortcuts 
   );
 
   return (
-    <div className="border-t border-amber-500/30 bg-amber-500/5 px-3 py-2">
+    <div className="border-t border-amber-500/30 bg-[#181A25] px-3 py-2">
       {/* Header */}
       <div className="mb-2 flex items-center gap-2 text-xs text-amber-400">
         <ShieldAlertIcon className="size-3.5" />
@@ -129,7 +129,7 @@ export function ToolPermissionPrompt({ permission, onDecision, disableShortcuts 
 
       {/* Raw command / path */}
       {rawCommand && (
-        <pre className="mb-3 max-h-40 overflow-auto rounded-md border border-border bg-muted/50 p-2 text-xs text-foreground font-mono whitespace-pre-wrap break-all">
+        <pre className="mb-3 max-h-40 overflow-auto rounded-md border border-border bg-muted/40 p-2 text-xs text-foreground font-mono whitespace-pre-wrap break-all">
           {rawCommand}
         </pre>
       )}
@@ -141,7 +141,7 @@ export function ToolPermissionPrompt({ permission, onDecision, disableShortcuts 
           type="button"
           className={cn(
             "w-full rounded-md border px-3 py-2 text-left transition-colors",
-            "border-border bg-background hover:bg-muted/50",
+            "border-border bg-muted/40 hover:bg-muted/50",
             highlightedIndex === 0 && "ring-2 ring-blue-400 bg-blue-50/10 transition-none",
           )}
           onClick={handleAllowOnce}
@@ -158,7 +158,7 @@ export function ToolPermissionPrompt({ permission, onDecision, disableShortcuts 
           type="button"
           className={cn(
             "w-full rounded-md border px-3 py-2 text-left transition-colors",
-            "border-border bg-background hover:bg-muted/50",
+            "border-border bg-muted/40 hover:bg-muted/50",
             highlightedIndex === 1 && "ring-2 ring-blue-400 bg-blue-50/10 transition-none",
           )}
           onClick={handleAllowFuture}
@@ -177,7 +177,7 @@ export function ToolPermissionPrompt({ permission, onDecision, disableShortcuts 
           type="button"
           className={cn(
             "w-full rounded-md border px-3 py-2 text-left transition-colors",
-            "border-border bg-background hover:bg-muted/50",
+            "border-border bg-muted/40 hover:bg-muted/50",
             highlightedIndex === 2 && "ring-2 ring-blue-400 bg-blue-50/10 transition-none",
           )}
           onClick={handleDeny}
@@ -200,7 +200,7 @@ export function ToolPermissionPrompt({ permission, onDecision, disableShortcuts 
               if (e.key === "Enter") handleDenyWithEnter();
             }}
             placeholder="Reason for denying (optional)..."
-            className="h-8 border-border/50 bg-background text-sm shadow-none focus-visible:ring-1 focus-visible:ring-ring/40"
+            className="h-8 border-border/50 bg-muted/40 text-sm shadow-none focus-visible:ring-1 focus-visible:ring-ring/40"
             autoFocus
           />
           <Button size="sm" onClick={handleDenyWithEnter} className="h-8">
