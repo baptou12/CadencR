@@ -97,7 +97,7 @@ describe("createQaMcpServer", () => {
 
   describe("finalize_phases tool", () => {
     it("finalizes draft phases", async () => {
-      const runFn = vi.fn();
+      const runFn = vi.fn().mockReturnValue({ changes: 1, lastInsertRowid: 0 });
       db.prepare.mockImplementation((sql: string) => {
         if (sql.includes("SELECT id")) return { all: vi.fn().mockReturnValue([
           { id: 5, title: "Phase A", step_number: 1 },

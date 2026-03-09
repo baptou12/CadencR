@@ -3,6 +3,7 @@
  */
 
 import { z } from "zod";
+import { Effect } from "effect";
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { queryOne, queryAll } from "../../db/query";
 import { textResult } from "./helpers";
@@ -28,10 +29,10 @@ export function createRetroMcpServer(featureId: number, sessionDbId: number, onA
         "Read the PRD (Product Requirements Document) for this feature.",
         {},
         async () => {
-          const row = queryOne<{ prd: string | null }>(
+          const row = Effect.runSync(queryOne<{ prd: string | null }>(
             "SELECT prd FROM features WHERE id = ?",
             featureId,
-          ).toUndefined();
+          ));
           return textResult(row?.prd ?? "No PRD available.");
         },
       ),
@@ -41,7 +42,7 @@ export function createRetroMcpServer(featureId: number, sessionDbId: number, onA
         "List all agent sessions for this feature with metadata and message counts. Use this to get an overview before reading individual conversations.",
         {},
         async () => {
-          const result = queryAll<{
+          const sessions = Effect.runSync(queryAll<{
             id: number;
             agent_type: string;
             status: string;
@@ -57,8 +58,7 @@ export function createRetroMcpServer(featureId: number, sessionDbId: number, onA
               GROUP BY s.id
               ORDER BY s.id ASC`,
             featureId,
-          );
-          const sessions = result.getOr([]);
+          ));
 
           if (sessions.length === 0) return textResult("No agent sessions found for this feature.");
 
@@ -82,12 +82,13 @@ export function createRetroMcpServer(featureId: number, sessionDbId: number, onA
           const resolvedOffset = args.offset ?? 0;
           const resolvedLimit = args.limit ?? 50;
 
-          const total = queryOne<{ cnt: number }>(
+          const totalRow = Effect.runSync(queryOne<{ cnt: number }>(
             "SELECT COUNT(*) as cnt FROM agent_messages WHERE session_id = ?",
             args.session_id,
-          ).map((r) => r.cnt).getOr(0);
+          ));
+          const total = totalRow?.cnt ?? 0;
 
-          const msgResult = queryAll<{
+          const messages = Effect.runSync(queryAll<{
             role: string;
             content: string;
             message_type: string;
@@ -97,8 +98,7 @@ export function createRetroMcpServer(featureId: number, sessionDbId: number, onA
             args.session_id,
             resolvedLimit,
             resolvedOffset,
-          );
-          const messages = msgResult.getOr([]);
+          ));
 
           if (messages.length === 0 && resolvedOffset === 0) {
             return textResult(`No messages found for session ${args.session_id}.`);

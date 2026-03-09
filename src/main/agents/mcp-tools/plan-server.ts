@@ -3,6 +3,7 @@
  */
 
 import { z } from "zod";
+import { Effect } from "effect";
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { getDatabase } from "../../db/database";
 import { queryOne, execute } from "../../db/query";
@@ -68,7 +69,7 @@ export function createPlanMcpServer(planId: number, featureId: number, sessionDb
 
           updates.push("updated_at = datetime('now')");
           values.push(args.plan_id);
-          execute(`UPDATE plans SET ${updates.join(", ")} WHERE id = ?`, ...values);
+          Effect.runSync(execute(`UPDATE plans SET ${updates.join(", ")} WHERE id = ?`, ...values));
           notifyDbUpdated("plan", featureId);
           return textResult("Plan updated");
         },
@@ -88,7 +89,7 @@ export function createPlanMcpServer(planId: number, featureId: number, sessionDb
           try {
             const result = await onShowPlan(markdown);
             if (result.approved) {
-              execute("UPDATE plans SET status = 'approved', updated_at = datetime('now') WHERE id = ?", args.plan_id);
+              Effect.runSync(execute("UPDATE plans SET status = 'approved', updated_at = datetime('now') WHERE id = ?", args.plan_id));
               notifyDbUpdated("plan", featureId);
               return textResult("✅ Plan approved by the user. You may now call finalize_plan.");
             } else {
@@ -107,17 +108,18 @@ export function createPlanMcpServer(planId: number, featureId: number, sessionDb
           plan_id: z.number().describe("The plan ID"),
         },
         async (args) => {
-          const draftCount = queryOne<{ cnt: number }>(
+          const draftCountRow = Effect.runSync(queryOne<{ cnt: number }>(
             "SELECT COUNT(*) as cnt FROM phases WHERE plan_id = ? AND status = 'draft'",
             args.plan_id,
-          ).map((r) => r.cnt).getOr(0);
+          ));
+          const draftCount = draftCountRow?.cnt ?? 0;
 
           if (draftCount === 0) return errorResult("No draft phases to finalize");
 
-          const plan = queryOne<{ feature_id: number; plan_status: string }>(
+          const plan = Effect.runSync(queryOne<{ feature_id: number; plan_status: string }>(
             "SELECT feature_id, status AS plan_status FROM plans WHERE id = ?",
             args.plan_id,
-          ).toUndefined();
+          ));
 
           if (!plan) return errorResult("Plan not found");
 
@@ -126,10 +128,10 @@ export function createPlanMcpServer(planId: number, featureId: number, sessionDb
           }
 
           // Check current feature status — only transition to 'planned' if still in draft
-          const feature = queryOne<{ status: string }>(
+          const feature = Effect.runSync(queryOne<{ status: string }>(
             "SELECT status FROM features WHERE id = ?",
             plan.feature_id,
-          ).toUndefined();
+          ));
 
           const db = getDatabase();
           db.transaction(() => {

@@ -2,6 +2,7 @@
  * Common and workflow-session MCP servers.
  */
 
+import { Effect } from "effect";
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { queryOne } from "../../db/query";
 import { textResult } from "./helpers";
@@ -35,10 +36,10 @@ export type WorkflowSessionToolName = "read_plan" | "list_phases" | "read_phase"
 
 function createReadPrdTool(featureId: number) {
   return tool("read_prd", "Read the PRD for this feature.", {}, async () => {
-    const row = queryOne<{ prd: string | null }>(
+    const row = Effect.runSync(queryOne<{ prd: string | null }>(
       "SELECT prd FROM features WHERE id = ?",
       featureId,
-    ).toUndefined();
+    ));
     if (!row?.prd) return textResult("No PRD exists for this feature.");
     return textResult(row.prd);
   });

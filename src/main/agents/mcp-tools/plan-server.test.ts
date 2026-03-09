@@ -59,7 +59,7 @@ describe("createPlanMcpServer", () => {
 
   describe("update_plan tool", () => {
     it("updates specified plan fields", async () => {
-      const runFn = vi.fn();
+      const runFn = vi.fn().mockReturnValue({ changes: 1, lastInsertRowid: 0 });
       db.prepare.mockReturnValue({ run: runFn });
 
       const server = createPlanMcpServer(1, 10, 100);
@@ -100,7 +100,7 @@ describe("createPlanMcpServer", () => {
     it("calls onShowPlan callback and returns approved message", async () => {
       db.prepare.mockImplementation((sql: string) => {
         if (sql.includes("FROM plans")) return { get: vi.fn().mockReturnValue({ id: 1, title: "T", summary: null, context: null, clarifications: null, completion_conditions: null }) };
-        if (sql.includes("UPDATE plans")) return { run: vi.fn() };
+        if (sql.includes("UPDATE plans")) return { run: vi.fn().mockReturnValue({ changes: 1, lastInsertRowid: 0 }) };
         return { all: vi.fn().mockReturnValue([]) };
       });
 

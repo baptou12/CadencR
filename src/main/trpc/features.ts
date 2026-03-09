@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Option } from "@swan-io/boxed";
+import { Effect } from "effect";
 import { router, publicProcedure } from "./trpc";
 import { getDatabase } from "../db/database";
 import { queryOne, queryAll } from "../db/query";
@@ -25,15 +25,15 @@ export const featuresRouter = router({
     )
     .query(({ input }) => {
       if (input.status) {
-        return queryAll<FeatureRow>(
+        return Effect.runSync(queryAll<FeatureRow>(
           "SELECT id, project_id, title, status, type, created_at FROM features WHERE project_id = ? AND status = ? ORDER BY created_at DESC",
           input.project_id, input.status,
-        ).getOr([]);
+        ));
       }
-      return queryAll<FeatureRow>(
+      return Effect.runSync(queryAll<FeatureRow>(
         "SELECT id, project_id, title, status, type, created_at FROM features WHERE project_id = ? ORDER BY created_at DESC",
         input.project_id,
-      ).getOr([]);
+      ));
     }),
 
   create: publicProcedure
@@ -42,10 +42,11 @@ export const featuresRouter = router({
       const db = getDatabase();
       let title = input.title?.trim();
       if (!title) {
-        const maxNum = queryOne<{ max_num: number | null }>(
+        const maxRow = Effect.runSync(queryOne<{ max_num: number | null }>(
           "SELECT MAX(CAST(REPLACE(title, 'Session ', '') AS INTEGER)) as max_num FROM features WHERE project_id = ? AND title LIKE 'Session %'",
           input.project_id,
-        ).map((r) => r.max_num ?? 0).getOr(0);
+        ));
+        const maxNum = maxRow?.max_num ?? 0;
         title = `Session ${maxNum + 1}`;
       }
       const result = db
@@ -58,10 +59,11 @@ export const featuresRouter = router({
     .input(z.object({ project_id: z.number() }))
     .mutation(({ input }) => {
       const db = getDatabase();
-      const maxNum = queryOne<{ max_num: number | null }>(
+      const maxRow = Effect.runSync(queryOne<{ max_num: number | null }>(
         "SELECT MAX(CAST(REPLACE(title, 'Session ', '') AS INTEGER)) as max_num FROM features WHERE project_id = ? AND title LIKE 'Session %'",
         input.project_id,
-      ).map((r) => r.max_num ?? 0).getOr(0);
+      ));
+      const maxNum = maxRow?.max_num ?? 0;
       const title = `Session ${maxNum + 1}`;
       const result = db
         .prepare("INSERT INTO features (project_id, title, type) VALUES (?, ?, 'session')")
@@ -88,10 +90,10 @@ export const featuresRouter = router({
   delete: publicProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
     const db = getDatabase();
     // Stop any running subprocesses for this feature's agent sessions
-    const sessionIds = queryAll<{ id: number }>(
+    const sessionIds = Effect.runSync(queryAll<{ id: number }>(
       "SELECT id FROM agent_sessions WHERE feature_id = ? AND status IN ('running', 'paused')",
       input.id,
-    ).getOr([]);
+    ));
     if (sessionIds.length > 0) {
       const subprocessIds = getSubprocessIdsForSessionDbIds(sessionIds.map((s) => s.id));
       for (const spId of subprocessIds) {
@@ -99,7 +101,7 @@ export const featuresRouter = router({
       }
     }
     // Delete child records that reference this feature
-    const planIds = queryAll<{ id: number }>("SELECT id FROM plans WHERE feature_id = ?", input.id).getOr([]);
+    const planIds = Effect.runSync(queryAll<{ id: number }>("SELECT id FROM plans WHERE feature_id = ?", input.id));
     for (const plan of planIds) {
       db.prepare("DELETE FROM phases WHERE plan_id = ?").run(plan.id);
     }
@@ -116,116 +118,106 @@ export const featuresRouter = router({
   getPrd: publicProcedure
     .input(z.object({ feature_id: z.number() }))
     .query(({ input }) => {
-      const prd = queryOne<{ prd: string | null }>(
+      const row = Effect.runSync(queryOne<{ prd: string | null }>(
         "SELECT prd FROM features WHERE id = ?",
         input.feature_id,
-      ).flatMap((r) => Option.fromNullable(r.prd));
-      return { prd: prd.toNull() };
+      ));
+      return { prd: row?.prd ?? null };
     }),
 
   isEmpty: publicProcedure
     .input(z.object({ id: z.number() }))
     .query(({ input }) => {
-      return queryOne<{ type: string; prd: string | null }>(
+      const feature = Effect.runSync(queryOne<{ type: string; prd: string | null }>(
         "SELECT type, prd FROM features WHERE id = ?",
         input.id,
-      ).match({
-        None: () => ({ empty: true }),
-        Some: (feature) => {
-          // Never direct-delete if there are active (running/paused/waiting) sessions
-          const activeSession = queryOne<Record<string, unknown>>(
-            "SELECT 1 FROM agent_sessions WHERE feature_id = ? AND status IN ('running', 'paused', 'waiting') LIMIT 1",
-            input.id,
-          );
-          if (activeSession.isSome()) return { empty: false };
+      ));
 
-          if (feature.type === "session") {
-            const msg = queryOne<Record<string, unknown>>(
-              "SELECT 1 FROM agent_messages WHERE session_id IN (SELECT id FROM agent_sessions WHERE feature_id = ?) LIMIT 1",
-              input.id,
-            );
-            return { empty: msg.isNone() };
-          }
+      if (feature === null) return { empty: true };
 
-          const hasPrd = feature.prd != null && feature.prd.trim() !== "";
-          const hasPlan = queryOne<Record<string, unknown>>(
-            "SELECT 1 FROM plans WHERE feature_id = ? LIMIT 1",
-            input.id,
-          ).isSome();
-          return { empty: !hasPrd && !hasPlan };
-        },
-      });
+      // Never direct-delete if there are active (running/paused/waiting) sessions
+      const activeSession = Effect.runSync(queryOne<Record<string, unknown>>(
+        "SELECT 1 FROM agent_sessions WHERE feature_id = ? AND status IN ('running', 'paused', 'waiting') LIMIT 1",
+        input.id,
+      ));
+      if (activeSession !== null) return { empty: false };
+
+      if (feature.type === "session") {
+        const msg = Effect.runSync(queryOne<Record<string, unknown>>(
+          "SELECT 1 FROM agent_messages WHERE session_id IN (SELECT id FROM agent_sessions WHERE feature_id = ?) LIMIT 1",
+          input.id,
+        ));
+        return { empty: msg === null };
+      }
+
+      const hasPrd = feature.prd != null && feature.prd.trim() !== "";
+      const hasPlan = Effect.runSync(queryOne<Record<string, unknown>>(
+        "SELECT 1 FROM plans WHERE feature_id = ? LIMIT 1",
+        input.id,
+      )) !== null;
+      return { empty: !hasPrd && !hasPlan };
     }),
 
   getById: publicProcedure
     .input(z.object({ id: z.number() }))
     .query(({ input }) => {
-      return queryOne<FeatureRow>(
+      return Effect.runSync(queryOne<FeatureRow>(
         "SELECT id, project_id, title, status, type, created_at FROM features WHERE id = ?",
         input.id,
-      ).toNull();
+      ));
     }),
 
   getPlanProgress: publicProcedure
     .input(z.object({ feature_id: z.number() }))
     .query(({ input }) => {
-      return queryOne<Pick<PlanRow, "id">>(
+      const plan = Effect.runSync(queryOne<Pick<PlanRow, "id">>(
         "SELECT id FROM plans WHERE feature_id = ? LIMIT 1",
         input.feature_id,
-      ).match({
-        None: () => ({ total: 0, done: 0 }),
-        Some: (plan) => {
-          const total = queryOne<CountRow>(
-            "SELECT COUNT(*) as count FROM phases WHERE plan_id = ?",
-            plan.id,
-          ).map((r) => r.count).getOr(0);
-          const done = queryOne<CountRow>(
-            "SELECT COUNT(*) as count FROM phases WHERE plan_id = ? AND status = 'completed'",
-            plan.id,
-          ).map((r) => r.count).getOr(0);
-          return { total, done };
-        },
-      });
+      ));
+      if (plan === null) return { total: 0, done: 0 };
+      const totalRow = Effect.runSync(queryOne<CountRow>(
+        "SELECT COUNT(*) as count FROM phases WHERE plan_id = ?",
+        plan.id,
+      ));
+      const doneRow = Effect.runSync(queryOne<CountRow>(
+        "SELECT COUNT(*) as count FROM phases WHERE plan_id = ? AND status = 'completed'",
+        plan.id,
+      ));
+      return { total: totalRow?.count ?? 0, done: doneRow?.count ?? 0 };
     }),
 
   getProgress: publicProcedure
     .input(z.object({ feature_id: z.number() }))
     .query(({ input }) => {
-      return queryOne<Pick<PlanRow, "id">>(
+      const plan = Effect.runSync(queryOne<Pick<PlanRow, "id">>(
         "SELECT id FROM plans WHERE feature_id = ? ORDER BY created_at DESC LIMIT 1",
         input.feature_id,
-      ).match({
-        None: () => ({ total: 0, done: 0 }),
-        Some: (plan) => {
-          const total = queryOne<CountRow>(
-            "SELECT COUNT(*) as count FROM phases WHERE plan_id = ?",
-            plan.id,
-          ).map((r) => r.count).getOr(0);
-          const done = queryOne<CountRow>(
-            "SELECT COUNT(*) as count FROM phases WHERE plan_id = ? AND status = 'completed'",
-            plan.id,
-          ).map((r) => r.count).getOr(0);
-          return { total, done };
-        },
-      });
+      ));
+      if (plan === null) return { total: 0, done: 0 };
+      const totalRow = Effect.runSync(queryOne<CountRow>(
+        "SELECT COUNT(*) as count FROM phases WHERE plan_id = ?",
+        plan.id,
+      ));
+      const doneRow = Effect.runSync(queryOne<CountRow>(
+        "SELECT COUNT(*) as count FROM phases WHERE plan_id = ? AND status = 'completed'",
+        plan.id,
+      ));
+      return { total: totalRow?.count ?? 0, done: doneRow?.count ?? 0 };
     }),
 
   getPlanWithPhases: publicProcedure
     .input(z.object({ feature_id: z.number() }))
     .query(({ input }) => {
-      return queryOne<PlanRow>(
+      const plan = Effect.runSync(queryOne<PlanRow>(
         "SELECT id, feature_id, title, status, raw_markdown, created_at, updated_at FROM plans WHERE feature_id = ? ORDER BY created_at DESC LIMIT 1",
         input.feature_id,
-      ).match({
-        None: () => null,
-        Some: (plan) => {
-          const phases = queryAll<PhaseRow>(
-            "SELECT id, plan_id, step_number, title, status, complexity, commit_message, prompt, order_index, implementation_notes, deviations, phase_type FROM phases WHERE plan_id = ? ORDER BY step_number ASC, order_index ASC",
-            plan.id,
-          ).getOr([]);
-          return { ...plan, phases };
-        },
-      });
+      ));
+      if (plan === null) return null;
+      const phases = Effect.runSync(queryAll<PhaseRow>(
+        "SELECT id, plan_id, step_number, title, status, complexity, commit_message, prompt, order_index, implementation_notes, deviations, phase_type FROM phases WHERE plan_id = ? ORDER BY step_number ASC, order_index ASC",
+        plan.id,
+      ));
+      return { ...plan, phases };
     }),
 
   getSettings: publicProcedure
@@ -243,10 +235,10 @@ export const featuresRouter = router({
         }
       }
 
-      const rows = queryAll<SettingRow>(
+      const rows = Effect.runSync(queryAll<SettingRow>(
         "SELECT key, value FROM feature_settings WHERE feature_id = ?",
         input.feature_id,
-      ).getOr([]);
+      ));
       for (const r of rows) {
         result[r.key] = r.value;
       }
@@ -258,24 +250,22 @@ export const featuresRouter = router({
     .mutation(({ input }) => {
       const db = getDatabase();
 
-      const phase = queryOne<Pick<PhaseRow, "id" | "plan_id" | "step_number" | "status">>(
+      const phase = Effect.runSync(queryOne<Pick<PhaseRow, "id" | "plan_id" | "step_number" | "status">>(
         "SELECT id, plan_id, step_number, status FROM phases WHERE id = ?",
         input.phase_id,
-      ).toResult("Phase not found").match({
-        Error: (msg) => { throw new Error(msg); },
-        Ok: (v) => v,
-      });
+      ));
+      if (phase === null) throw new Error("Phase not found");
 
       if (phase.status !== "completed" && phase.status !== "error") {
         throw new Error("Can only reset phases in completed or error status");
       }
 
       // Check that the next phase (by step_number) is not completed
-      const nextPhase = queryOne<Pick<PhaseRow, "id" | "status">>(
+      const nextPhase = Effect.runSync(queryOne<Pick<PhaseRow, "id" | "status">>(
         "SELECT id, status FROM phases WHERE plan_id = ? AND step_number > ? ORDER BY step_number ASC, order_index ASC LIMIT 1",
         phase.plan_id, phase.step_number,
-      );
-      if (nextPhase.isSome() && nextPhase.get().status === "completed") {
+      ));
+      if (nextPhase !== null && nextPhase.status === "completed") {
         throw new Error("Cannot reset a phase when the next phase is already completed");
       }
 
@@ -303,20 +293,19 @@ export const featuresRouter = router({
     .mutation(({ input }) => {
       const db = getDatabase();
 
-      const phase = queryOne<Pick<PhaseRow, "id" | "plan_id">>(
+      const phase = Effect.runSync(queryOne<Pick<PhaseRow, "id" | "plan_id">>(
         "SELECT id, plan_id FROM phases WHERE id = ?",
         input.phase_id,
-      ).toResult("Phase not found").match({
-        Error: (msg) => { throw new Error(msg); },
-        Ok: (v) => v,
-      });
+      ));
+      if (phase === null) throw new Error("Phase not found");
 
       db.prepare("UPDATE phases SET status = ? WHERE id = ?").run(input.status, input.phase_id);
 
-      queryOne<Pick<PlanRow, "feature_id">>(
+      const plan = Effect.runSync(queryOne<Pick<PlanRow, "feature_id">>(
         "SELECT feature_id FROM plans WHERE id = ?",
         phase.plan_id,
-      ).tapSome((plan) => notifyDbUpdated("phase", plan.feature_id));
+      ));
+      if (plan !== null) notifyDbUpdated("phase", plan.feature_id);
 
       return { success: true };
     }),
@@ -341,10 +330,10 @@ export const featuresRouter = router({
 
       // When autonomy is raised to >= 2, resume execution if feature is in-progress
       if (input.key === "agent_autonomy" && Number(input.value) >= 2) {
-        const feat = queryOne<{ status: string; project_id: number }>(
+        const feat = Effect.runSync(queryOne<{ status: string; project_id: number }>(
           "SELECT status, project_id FROM features WHERE id = ?",
           input.feature_id,
-        ).toUndefined();
+        ));
         if (feat && feat.status === "in-progress") {
           resolveAgentCwd(input.feature_id, feat.project_id)
             .then(({ cwd, worktreePath }) => {
@@ -360,15 +349,15 @@ export const featuresRouter = router({
   getModelSettings: publicProcedure
     .input(z.object({ featureId: z.number() }))
     .query(({ input }) => {
-      const row = queryOne<Record<string, string | null>>(
+      const row = Effect.runSync(queryOne<Record<string, string | null>>(
         'SELECT model_plan, model_prd, model_execute, model_risk, model_review, "model_review-fixer", model_session, model_qa, model_retro FROM features WHERE id = ?',
         input.featureId,
-      );
+      ));
 
       const agentTypes = ["plan", "prd", "execute", "risk", "review", "review-fixer", "session", "qa", "retro"] as const;
       const result: Record<string, string> = {};
       for (const at of agentTypes) {
-        result[at] = row.map((r) => r[`model_${at}`] ?? "").getOr("");
+        result[at] = row?.[`model_${at}`] ?? "";
       }
       return result as Record<AgentType, string>;
     }),
@@ -392,25 +381,23 @@ export const featuresRouter = router({
   resolveWorkingDir: publicProcedure
     .input(z.object({ featureId: z.number(), projectId: z.number() }))
     .query(({ input }) => {
-      return queryOne<{ type: string }>(
+      const feature = Effect.runSync(queryOne<{ type: string }>(
         "SELECT type FROM features WHERE id = ?",
         input.featureId,
-      ).flatMap((feature) => {
-        if (feature.type !== "session") {
-          return queryOne<SettingRow>(
-            "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
-            input.featureId,
-          ).map((r) => r.value);
-        }
-        return Option.None();
-      }).match({
-        Some: (path) => path,
-        None: () => {
-          return queryOne<Pick<ProjectRow, "path">>(
-            "SELECT path FROM projects WHERE id = ?",
-            input.projectId,
-          ).map((p) => p.path).toNull();
-        },
-      });
+      ));
+
+      if (feature !== null && feature.type !== "session") {
+        const setting = Effect.runSync(queryOne<SettingRow>(
+          "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
+          input.featureId,
+        ));
+        if (setting !== null) return setting.value;
+      }
+
+      const project = Effect.runSync(queryOne<Pick<ProjectRow, "path">>(
+        "SELECT path FROM projects WHERE id = ?",
+        input.projectId,
+      ));
+      return project?.path ?? null;
     }),
 });

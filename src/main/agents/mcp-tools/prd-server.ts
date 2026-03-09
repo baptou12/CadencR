@@ -3,6 +3,7 @@
  */
 
 import { z } from "zod";
+import { Effect } from "effect";
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { queryOne, execute } from "../../db/query";
 import { notifyDbUpdated } from "../session-persistence";
@@ -26,7 +27,7 @@ export function createPrdMcpServer(featureId: number, sessionDbId: number, onSho
           prd: z.string().describe("The full PRD markdown content"),
         },
         async (args) => {
-          execute("UPDATE features SET prd = ? WHERE id = ?", args.prd, featureId);
+          Effect.runSync(execute("UPDATE features SET prd = ? WHERE id = ?", args.prd, featureId));
           notifyDbUpdated("feature", featureId);
           return textResult("PRD created successfully.");
         },
@@ -40,10 +41,10 @@ export function createPrdMcpServer(featureId: number, sessionDbId: number, onSho
           new_string: z.string().describe("The string to replace it with"),
         },
         async (args) => {
-          const row = queryOne<{ prd: string | null }>(
+          const row = Effect.runSync(queryOne<{ prd: string | null }>(
             "SELECT prd FROM features WHERE id = ?",
             featureId,
-          ).toUndefined();
+          ));
 
           if (!row?.prd) {
             return errorResult("No PRD exists yet. Use create_prd first.");
@@ -56,7 +57,7 @@ export function createPrdMcpServer(featureId: number, sessionDbId: number, onSho
             return errorResult(`old_string found ${occurrences} times in the PRD. Provide a larger/more unique string to match exactly once.`);
           }
           const updated = row.prd.replace(args.old_string, args.new_string);
-          execute("UPDATE features SET prd = ? WHERE id = ?", updated, featureId);
+          Effect.runSync(execute("UPDATE features SET prd = ? WHERE id = ?", updated, featureId));
           notifyDbUpdated("feature", featureId);
           return textResult("PRD updated successfully.");
         },
@@ -67,10 +68,10 @@ export function createPrdMcpServer(featureId: number, sessionDbId: number, onSho
         "Display the current PRD for user approval. This tool BLOCKS until the user approves or rejects. If approved, returns success. If rejected, returns the user's feedback so you can revise.",
         {},
         async () => {
-          const row = queryOne<{ prd: string | null }>(
+          const row = Effect.runSync(queryOne<{ prd: string | null }>(
             "SELECT prd FROM features WHERE id = ?",
             featureId,
-          ).toUndefined();
+          ));
           const prdMarkdown = row?.prd ?? "(No PRD content found)";
 
           if (!onShowPrd) {

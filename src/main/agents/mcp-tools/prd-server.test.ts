@@ -57,7 +57,7 @@ describe("createPrdMcpServer", () => {
 
   describe("create_prd tool", () => {
     it("stores full PRD content", async () => {
-      const runFn = vi.fn();
+      const runFn = vi.fn().mockReturnValue({ changes: 1, lastInsertRowid: 0 });
       db.prepare.mockReturnValue({ run: runFn });
 
       const server = createPrdMcpServer(10, 100);
@@ -72,7 +72,7 @@ describe("createPrdMcpServer", () => {
 
   describe("edit_prd tool", () => {
     it("successfully replaces a unique string", async () => {
-      const runFn = vi.fn();
+      const runFn = vi.fn().mockReturnValue({ changes: 1, lastInsertRowid: 0 });
       db.prepare.mockImplementation((sql: string) => {
         if (sql.includes("SELECT prd")) return { get: vi.fn().mockReturnValue({ prd: "Hello world, this is a PRD." }) };
         return { run: runFn };

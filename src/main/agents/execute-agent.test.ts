@@ -57,7 +57,7 @@ vi.mock("./session-persistence", () => ({
   notifyDbUpdated: vi.fn(),
 }));
 
-import { Option, Result } from "@swan-io/boxed";
+import { Effect } from "effect";
 import { processNextPhase, getAutonomyLevel } from "./execute-agent";
 import { transitionFeature } from "./state-transitions";
 import { startUnifiedAgent } from "./unified-agent";
@@ -96,33 +96,33 @@ function setupQueries(overrides: {
 
   mockQueryOne.mockImplementation((sql: string, ..._params: unknown[]) => {
     if (sql.includes("SELECT status FROM features")) {
-      return Option.Some({ status: featureStatus }) as any;
+      return Effect.succeed({ status: featureStatus }) as any;
     }
     if (sql.includes("SELECT id FROM plans")) {
-      return planId ? Option.Some({ id: planId }) as any : Option.None() as any;
+      return planId ? Effect.succeed({ id: planId }) as any : Effect.succeed(null) as any;
     }
     if (sql.includes("agent_type IN ('execute', 'qa') AND status = 'running'")) {
-      return hasRunningAgent ? Option.Some({ id: 999 }) as any : Option.None() as any;
+      return hasRunningAgent ? Effect.succeed({ id: 999 }) as any : Effect.succeed(null) as any;
     }
     if (sql.includes("agent_type = 'review' AND status = 'completed'")) {
-      return lastReviewId ? Option.Some({ id: lastReviewId, ended_at: null }) as any : Option.None() as any;
+      return lastReviewId ? Effect.succeed({ id: lastReviewId, ended_at: null }) as any : Effect.succeed(null) as any;
     }
     if (sql.includes("agent_type IN ('execute', 'qa') AND status = 'completed'")) {
-      if (lastExecId) return Option.Some({ id: lastExecId, ended_at: null }) as any;
-      if (lastCompletedExecId) return Option.Some({ id: lastCompletedExecId }) as any;
-      return Option.None() as any;
+      if (lastExecId) return Effect.succeed({ id: lastExecId, ended_at: null }) as any;
+      if (lastCompletedExecId) return Effect.succeed({ id: lastCompletedExecId }) as any;
+      return Effect.succeed(null) as any;
     }
     if (sql.includes("agent_type = 'review' AND status = 'running'")) {
-      return hasRunningReview ? Option.Some({ id: 888 }) as any : Option.None() as any;
+      return hasRunningReview ? Effect.succeed({ id: 888 }) as any : Effect.succeed(null) as any;
     }
-    return Option.None() as any;
+    return Effect.succeed(null) as any;
   });
 
   mockQueryAll.mockImplementation((sql: string, ..._params: unknown[]) => {
     if (sql.includes("SELECT id, plan_id, step_number")) {
-      return Result.Ok(pendingPhases) as any;
+      return Effect.succeed(pendingPhases) as any;
     }
-    return Result.Ok([]) as any;
+    return Effect.succeed([]) as any;
   });
 }
 

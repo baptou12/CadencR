@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { Option, Result } from "@swan-io/boxed";
+import { Effect } from "effect";
 
 vi.mock("../../db/query");
 
@@ -35,12 +35,12 @@ describe("renderPlanMarkdown", () => {
   });
 
   it("returns 'Plan not found.' when plan does not exist", () => {
-    mockQueryOne.mockReturnValue(Option.None());
+    mockQueryOne.mockReturnValue(Effect.succeed(null));
     expect(renderPlanMarkdown(999)).toBe("Plan not found.");
   });
 
   it("renders plan title and sections", () => {
-    mockQueryOne.mockReturnValue(Option.Some({
+    mockQueryOne.mockReturnValue(Effect.succeed({
       id: 1,
       title: "My Plan",
       summary: "A summary",
@@ -48,7 +48,7 @@ describe("renderPlanMarkdown", () => {
       clarifications: "Q&A",
       completion_conditions: "All tests pass",
     }));
-    mockQueryAll.mockReturnValue(Result.Ok([]));
+    mockQueryAll.mockReturnValue(Effect.succeed([]));
 
     const result = renderPlanMarkdown(1);
     expect(result).toContain("# Plan: My Plan");
@@ -59,7 +59,7 @@ describe("renderPlanMarkdown", () => {
   });
 
   it("includes phases in the output", () => {
-    mockQueryOne.mockReturnValue(Option.Some({
+    mockQueryOne.mockReturnValue(Effect.succeed({
       id: 1,
       title: "Plan",
       summary: null,
@@ -67,7 +67,7 @@ describe("renderPlanMarkdown", () => {
       clarifications: null,
       completion_conditions: null,
     }));
-    mockQueryAll.mockReturnValue(Result.Ok([
+    mockQueryAll.mockReturnValue(Effect.succeed([
       {
         id: 10,
         step_number: 1,
@@ -92,7 +92,7 @@ describe("renderPlanMarkdown", () => {
   });
 
   it("skips optional sections when null", () => {
-    mockQueryOne.mockReturnValue(Option.Some({
+    mockQueryOne.mockReturnValue(Effect.succeed({
       id: 1,
       title: "Lean Plan",
       summary: null,
@@ -100,7 +100,7 @@ describe("renderPlanMarkdown", () => {
       clarifications: null,
       completion_conditions: null,
     }));
-    mockQueryAll.mockReturnValue(Result.Ok([]));
+    mockQueryAll.mockReturnValue(Effect.succeed([]));
 
     const result = renderPlanMarkdown(1);
     expect(result).not.toContain("## Summary");

@@ -1,6 +1,7 @@
 import { Effect, Layer, ManagedRuntime } from "effect";
+import { DatabaseLive } from "./services/Database.js";
 
-export const AppLayer = Layer.empty;
+export const AppLayer = DatabaseLive;
 
 export const AppRuntime = ManagedRuntime.make(AppLayer);
 
