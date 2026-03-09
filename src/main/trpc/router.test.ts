@@ -268,7 +268,7 @@ describe("appRouter - agentsRouter & sessionsRouter", () => {
   });
 
   it("agents.getSessions returns sessions for feature", async () => {
-    const sessions = [{ id: 1, feature_id: 1, agent_type: "plan", status: "completed" }];
+    const sessions = [{ id: 1, feature_id: 1, agent_type: "plan", claude_session_id: null, status: "completed", started_at: null, ended_at: null, run_id: null, phase_id: null, subprocess_id: null, model: null, pending_questions: null, has_file_changes: 0, permission_mode: null, pending_plan_approval: null, pending_prd_approval: null, pending_permission: null, input_tokens: 0, output_tokens: 0, context_window: 200000, was_compacted: 0 }];
     mockDb.prepare.mockReturnValue({ all: vi.fn().mockReturnValue(sessions) });
     const result = await caller.sessions.getSessions({ featureId: 1 });
     expect(result).toEqual(sessions);

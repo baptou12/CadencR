@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { router, publicProcedure } from "./trpc";
-import { queryOne, queryAll, queryAllValidated, execute } from "../db/query";
-import type { FeatureRow, PlanRow, PhaseRow, CountRow, SettingRow, ProjectRow } from "../db/types";
-import { SettingRowSchema } from "../effect/schemas/db-schemas";
+import { queryOne, queryAll, queryOneValidated, queryAllValidated, execute } from "../db/query";
+import type { PlanRow, PhaseRow, SettingRow, ProjectRow } from "../db/types";
+import { SettingRowSchema, FeatureRowSchema, PlanRowSchema, PhaseRowSchema, CountRowSchema } from "../effect/schemas/db-schemas";
 import type { AgentType } from "../agents/types";
 import { getSubprocessIdsForSessionDbIds, notifyDbUpdated } from "../agents/effect-helpers";
 import { stopSubprocess } from "../agents/subprocess-manager";
@@ -25,13 +25,15 @@ export const featuresRouter = router({
     )
     .query(async ({ input }) => {
       if (input.status) {
-        return await AppRuntime.runPromise(queryAll<FeatureRow>(
-          "SELECT id, project_id, title, status, type, created_at FROM features WHERE project_id = ? AND status = ? ORDER BY created_at DESC",
+        return await AppRuntime.runPromise(queryAllValidated(
+          FeatureRowSchema,
+          "SELECT * FROM features WHERE project_id = ? AND status = ? ORDER BY created_at DESC",
           input.project_id, input.status,
         ));
       }
-      return await AppRuntime.runPromise(queryAll<FeatureRow>(
-        "SELECT id, project_id, title, status, type, created_at FROM features WHERE project_id = ? ORDER BY created_at DESC",
+      return await AppRuntime.runPromise(queryAllValidated(
+        FeatureRowSchema,
+        "SELECT * FROM features WHERE project_id = ? ORDER BY created_at DESC",
         input.project_id,
       ));
     }),
@@ -158,8 +160,9 @@ export const featuresRouter = router({
   getById: publicProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
-      return await AppRuntime.runPromise(queryOne<FeatureRow>(
-        "SELECT id, project_id, title, status, type, created_at FROM features WHERE id = ?",
+      return await AppRuntime.runPromise(queryOneValidated(
+        FeatureRowSchema,
+        "SELECT * FROM features WHERE id = ?",
         input.id,
       ));
     }),
@@ -172,11 +175,13 @@ export const featuresRouter = router({
         input.feature_id,
       ));
       if (plan === null) return { total: 0, done: 0 };
-      const totalRow = await AppRuntime.runPromise(queryOne<CountRow>(
+      const totalRow = await AppRuntime.runPromise(queryOneValidated(
+        CountRowSchema,
         "SELECT COUNT(*) as count FROM phases WHERE plan_id = ?",
         plan.id,
       ));
-      const doneRow = await AppRuntime.runPromise(queryOne<CountRow>(
+      const doneRow = await AppRuntime.runPromise(queryOneValidated(
+        CountRowSchema,
         "SELECT COUNT(*) as count FROM phases WHERE plan_id = ? AND status = 'completed'",
         plan.id,
       ));
@@ -191,11 +196,13 @@ export const featuresRouter = router({
         input.feature_id,
       ));
       if (plan === null) return { total: 0, done: 0 };
-      const totalRow = await AppRuntime.runPromise(queryOne<CountRow>(
+      const totalRow = await AppRuntime.runPromise(queryOneValidated(
+        CountRowSchema,
         "SELECT COUNT(*) as count FROM phases WHERE plan_id = ?",
         plan.id,
       ));
-      const doneRow = await AppRuntime.runPromise(queryOne<CountRow>(
+      const doneRow = await AppRuntime.runPromise(queryOneValidated(
+        CountRowSchema,
         "SELECT COUNT(*) as count FROM phases WHERE plan_id = ? AND status = 'completed'",
         plan.id,
       ));
@@ -205,12 +212,14 @@ export const featuresRouter = router({
   getPlanWithPhases: publicProcedure
     .input(z.object({ feature_id: z.number() }))
     .query(async ({ input }) => {
-      const plan = await AppRuntime.runPromise(queryOne<PlanRow>(
-        "SELECT id, feature_id, title, status, raw_markdown, created_at, updated_at FROM plans WHERE feature_id = ? ORDER BY created_at DESC LIMIT 1",
+      const plan = await AppRuntime.runPromise(queryOneValidated(
+        PlanRowSchema,
+        "SELECT * FROM plans WHERE feature_id = ? ORDER BY created_at DESC LIMIT 1",
         input.feature_id,
       ));
       if (plan === null) return null;
-      const phases = await AppRuntime.runPromise(queryAll<PhaseRow>(
+      const phases = await AppRuntime.runPromise(queryAllValidated(
+        PhaseRowSchema,
         "SELECT id, plan_id, step_number, title, status, complexity, commit_message, prompt, order_index, implementation_notes, deviations, phase_type FROM phases WHERE plan_id = ? ORDER BY step_number ASC, order_index ASC",
         plan.id,
       ));

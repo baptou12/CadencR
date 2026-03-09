@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { router, publicProcedure } from "./trpc";
 import type { AgentSessionRow, AgentMessageRow } from "../db/types";
-import { queryOne, queryAll, execute, transaction } from "../db/query";
+import { queryOne, queryAll, queryAllValidated, execute, transaction } from "../db/query";
+import { AgentSessionRowSchema, AgentMessageRowSchema } from "../effect/schemas/db-schemas";
 import { Effect } from "effect";
 import { AppRuntime } from "../effect/runtime";
 import {
@@ -27,11 +28,11 @@ export const sessionsRouter = router({
       }),
     )
     .query(async ({ input }) => {
-      const sql = `SELECT id, feature_id, agent_type, claude_session_id, status, started_at, ended_at, run_id, phase_id, model FROM agent_sessions WHERE feature_id = ?${input.status ? " AND status = ?" : ""} ORDER BY id DESC`;
+      const sql = `SELECT * FROM agent_sessions WHERE feature_id = ?${input.status ? " AND status = ?" : ""} ORDER BY id DESC`;
       const params: (number | string)[] = input.status
         ? [input.featureId, input.status]
         : [input.featureId];
-      return await AppRuntime.runPromise(queryAll<AgentSessionRow>(sql, ...params));
+      return await AppRuntime.runPromise(queryAllValidated(AgentSessionRowSchema, sql, ...params));
     }),
 
   /** Stop a running agent by its DB session ID (used when subprocess ID is unknown after refresh) */
@@ -160,7 +161,8 @@ export const sessionsRouter = router({
       const sessionIds = sessions.map((s) => s.id);
       const placeholders = sessionIds.map(() => "?").join(",");
       const allMessages = await AppRuntime.runPromise(
-        queryAll<AgentMessageRow>(
+        queryAllValidated(
+          AgentMessageRowSchema,
           `SELECT id, session_id, role, content, message_type, tool_name, tool_use_id, parent_tool_use_id, created_at, model FROM agent_messages WHERE session_id IN (${placeholders}) ORDER BY id ASC`,
           ...sessionIds,
         ),

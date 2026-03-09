@@ -50,7 +50,7 @@ describe("featuresRouter", () => {
   describe("listByProject", () => {
     it("returns features for a project", async () => {
       const rows = [
-        { id: 1, project_id: 1, title: "Feature A", status: "draft", type: "feature", created_at: "2024-01-01" },
+        { id: 1, project_id: 1, title: "Feature A", status: "draft", type: "feature", created_at: "2024-01-01", model_plan: null, model_execute: null, model_risk: null, model_review: null, model_session: null, model_qa: null, model_prd: null, agent_autonomy: null, parallel_execution: null, prd: null, workflow_step: null, workflow_config: null },
       ];
       mockDb.prepare.mockReturnValue({ all: vi.fn().mockReturnValue(rows) });
       const result = await caller.listByProject({ project_id: 1 });
@@ -171,7 +171,7 @@ describe("featuresRouter", () => {
 
   describe("getById", () => {
     it("returns a feature by id", async () => {
-      const row = { id: 1, project_id: 1, title: "Feat", status: "draft", type: "feature", created_at: "2024-01-01" };
+      const row = { id: 1, project_id: 1, title: "Feat", status: "draft", type: "feature", created_at: "2024-01-01", model_plan: null, model_execute: null, model_risk: null, model_review: null, model_session: null, model_qa: null, model_prd: null, agent_autonomy: null, parallel_execution: null, prd: null, workflow_step: null, workflow_config: null };
       mockDb.prepare.mockReturnValue({ get: vi.fn().mockReturnValue(row) });
       const result = await caller.getById({ id: 1 });
       expect(result).toEqual(row);
@@ -219,8 +219,8 @@ describe("featuresRouter", () => {
 
     it("returns plan with phases", async () => {
       let callCount = 0;
-      const plan = { id: 1, feature_id: 1, title: "Plan", status: "draft", raw_markdown: "", created_at: "2024-01-01", updated_at: "2024-01-01" };
-      const phases = [{ id: 1, plan_id: 1, step_number: 1, title: "Phase 1", status: "pending", complexity: null, commit_message: null, prompt: "", order_index: 0, implementation_notes: null, deviations: null, phase_type: "execute" }];
+      const plan = { id: 1, feature_id: 1, title: "Plan", status: "draft", raw_markdown: "", summary: null, context: null, clarifications: null, completion_conditions: null, created_at: "2024-01-01", updated_at: "2024-01-01" };
+      const phases = [{ id: 1, plan_id: 1, step_number: 1, title: "Phase 1", status: "pending", complexity: 1, commit_message: "", prompt: "", order_index: 0, implementation_notes: null, deviations: null, phase_type: "implementation" }];
       mockDb.prepare.mockImplementation(() => ({
         get: vi.fn().mockImplementation(() => {
           if (callCount++ === 0) return plan;
