@@ -8,6 +8,7 @@ import { SdkQueryRunnerLive } from "./services/SdkQueryRunner.js";
 import { SubprocessLifecycleLive } from "./services/SubprocessLifecycle.js";
 import { BackgroundTaskRegistryLive } from "./services/BackgroundTaskRegistry.js";
 import { DispatchLockLive } from "./services/DispatchLock.js";
+import { ToolPermissionsLive } from "./services/ToolPermissions.js";
 
 // SessionPersistenceLive depends on Database, so we provide DatabaseLive to it
 const SessionPersistenceWithDb = Layer.provide(SessionPersistenceLive, DatabaseLive);
@@ -54,6 +55,7 @@ export const AppLayer = Layer.mergeAll(
   SubprocessLifecycleWithDeps,
   BackgroundTaskRegistryLive,
   DispatchLockLive,
+  ToolPermissionsLive,
 );
 
 export const AppRuntime = ManagedRuntime.make(AppLayer);

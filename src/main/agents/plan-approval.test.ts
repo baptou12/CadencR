@@ -1,16 +1,15 @@
 /**
  * Tests for plan-approval.ts — waitForPlanApproval IPC wait logic.
+ *
+ * After the ToolPermissions Effect service migration, these tests mock
+ * getAppRuntime() instead of the questionEmitter.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Use vi.hoisted for variables needed inside vi.mock factories
-const { mockQuestionEmitter } = vi.hoisted(() => {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { EventEmitter } = require("node:events");
-  const mockQuestionEmitter = new EventEmitter();
-  return { mockQuestionEmitter };
-});
+// ---------------------------------------------------------------------------
+// Mocks
+// ---------------------------------------------------------------------------
 
 vi.mock("../db/database", () => ({
   getDatabase: vi.fn(() => ({
@@ -32,18 +31,34 @@ vi.mock("./effect-helpers", () => ({
   notifyDbUpdated: vi.fn(),
 }));
 
-vi.mock("./tool-permissions", () => ({
-  questionEmitter: mockQuestionEmitter,
+const mockRuntime = {
+  runSync: vi.fn(),
+  runPromise: vi.fn(),
+};
+
+vi.mock("../effect/app-runtime-ref", () => ({
+  getAppRuntime: vi.fn(() => mockRuntime),
 }));
+
+vi.mock("../effect/services/ToolPermissions", () => ({
+  ToolPermissions: { key: "ToolPermissions" },
+}));
+
+// ---------------------------------------------------------------------------
+// Imports after mocks
+// ---------------------------------------------------------------------------
 
 import { waitForPlanApproval } from "./plan-approval";
 import * as sessionPersistence from "./effect-helpers";
 import { getDatabase } from "../db/database";
 
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
 describe("waitForPlanApproval", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockQuestionEmitter.removeAllListeners();
 
     (sessionPersistence.getSessionDbId as any).mockReturnValue(10);
 
@@ -54,30 +69,27 @@ describe("waitForPlanApproval", () => {
         all: vi.fn().mockReturnValue([]),
       }),
     });
+
+    // Default: no stored approval result, wait resolves with approved
+    mockRuntime.runPromise.mockResolvedValue({ approved: true });
   });
 
-  it("resolves with approved=true when user approves", async () => {
-    const promise = waitForPlanApproval("proc-1", "## Plan\n\nStep 1");
+  it("resolves with approved=true when service resolves", async () => {
+    mockRuntime.runPromise.mockResolvedValue({ approved: true });
 
-    process.nextTick(() => {
-      mockQuestionEmitter.emit("plan-approval:proc-1", { approved: true });
-    });
+    const result = await waitForPlanApproval("proc-1", "## Plan\n\nStep 1");
 
-    const result = await promise;
     expect(result.approved).toBe(true);
   });
 
-  it("resolves with approved=false and feedback when user rejects", async () => {
-    const promise = waitForPlanApproval("proc-2", "## Plan\n\nStep 1");
-
-    process.nextTick(() => {
-      mockQuestionEmitter.emit("plan-approval:proc-2", {
-        approved: false,
-        feedback: "Needs more detail",
-      });
+  it("resolves with approved=false and feedback when service rejects plan", async () => {
+    mockRuntime.runPromise.mockResolvedValue({
+      approved: false,
+      feedback: "Needs more detail",
     });
 
-    const result = await promise;
+    const result = await waitForPlanApproval("proc-2", "## Plan\n\nStep 1");
+
     expect(result.approved).toBe(false);
     expect(result.feedback).toBe("Needs more detail");
   });
@@ -89,14 +101,9 @@ describe("waitForPlanApproval", () => {
       all: vi.fn().mockReturnValue([]),
     });
     (getDatabase as any).mockReturnValue({ prepare: mockPrepare });
+    mockRuntime.runPromise.mockResolvedValue({ approved: true });
 
-    const promise = waitForPlanApproval("proc-3", "## Plan");
-
-    process.nextTick(() => {
-      mockQuestionEmitter.emit("plan-approval:proc-3", { approved: true });
-    });
-
-    await promise;
+    await waitForPlanApproval("proc-3", "## Plan");
 
     const prepareCalls = mockPrepare.mock.calls.map((c: any) => c[0] as string);
     expect(prepareCalls.some((q: string) => q.includes("pending_plan_approval"))).toBe(true);
@@ -109,14 +116,9 @@ describe("waitForPlanApproval", () => {
       all: vi.fn().mockReturnValue([]),
     });
     (getDatabase as any).mockReturnValue({ prepare: mockPrepare });
+    mockRuntime.runPromise.mockResolvedValue({ approved: true });
 
-    const promise = waitForPlanApproval("proc-4", "## Plan");
-
-    process.nextTick(() => {
-      mockQuestionEmitter.emit("plan-approval:proc-4", { approved: true });
-    });
-
-    await promise;
+    await waitForPlanApproval("proc-4", "## Plan");
 
     const prepareCalls = mockPrepare.mock.calls.map((c: any) => c[0] as string);
     const clearCalls = prepareCalls.filter((q: string) =>
@@ -125,7 +127,7 @@ describe("waitForPlanApproval", () => {
     expect(clearCalls.length).toBeGreaterThan(0);
   });
 
-  it("returns stored approval result immediately without waiting for eventEmitter", async () => {
+  it("returns stored approval result immediately without waiting for service", async () => {
     const mockPrepare = vi.fn().mockImplementation((sql: string) => {
       if (sql.includes("plan_approval_result") && sql.includes("SELECT")) {
         return { get: () => ({ plan_approval_result: JSON.stringify({ approved: true, feedback: undefined }) }) };
@@ -142,32 +144,32 @@ describe("waitForPlanApproval", () => {
 
     const result = await waitForPlanApproval("proc-stored", "## Plan");
 
+    // Should return immediately without calling runPromise
     expect(result.approved).toBe(true);
+    expect(mockRuntime.runPromise).not.toHaveBeenCalled();
   });
 
   it("does not check stored result when no session exists", async () => {
     (sessionPersistence.getSessionDbId as any).mockReturnValue(undefined);
+    mockRuntime.runPromise.mockResolvedValue({ approved: true });
 
-    const promise = waitForPlanApproval("proc-no-stored", "## Plan");
+    const result = await waitForPlanApproval("proc-no-stored", "## Plan");
 
-    process.nextTick(() => {
-      mockQuestionEmitter.emit("plan-approval:proc-no-stored", { approved: true });
-    });
-
-    const result = await promise;
     expect(result.approved).toBe(true);
   });
 
   it("works when no session exists for subprocess", async () => {
     (sessionPersistence.getSessionDbId as any).mockReturnValue(undefined);
+    mockRuntime.runPromise.mockResolvedValue({ approved: true });
 
-    const promise = waitForPlanApproval("proc-no-session", "## Plan");
+    const result = await waitForPlanApproval("proc-no-session", "## Plan");
 
-    process.nextTick(() => {
-      mockQuestionEmitter.emit("plan-approval:proc-no-session", { approved: true });
-    });
-
-    const result = await promise;
     expect(result.approved).toBe(true);
+  });
+
+  it("propagates error when service rejects (e.g. timeout)", async () => {
+    mockRuntime.runPromise.mockRejectedValue(new Error("ApprovalTimeout"));
+
+    await expect(waitForPlanApproval("proc-timeout", "## Plan")).rejects.toThrow("ApprovalTimeout");
   });
 });

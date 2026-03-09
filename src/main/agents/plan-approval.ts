@@ -1,16 +1,22 @@
 /**
  * Plan and PRD approval helpers used by the MCP show_plan / show_prd tools.
  * Extracted from subprocess-manager.ts.
+ *
+ * The EventEmitter-based coordination (questionEmitter) has been replaced
+ * by the ToolPermissions Effect service, accessed via getAppRuntime().
  */
 
+import { Effect } from "effect";
 import { getDatabase } from "../db/database";
 import { getSessionDbId, notifyDbUpdated } from "./effect-helpers";
-import { questionEmitter } from "./tool-permissions";
+import { getAppRuntime } from "../effect/app-runtime-ref";
+import { ToolPermissions } from "../effect/services/ToolPermissions";
 
 /**
  * Block until the user approves or rejects a plan.
  * Sets `pending_plan_approval` in the DB to trigger the approval UI,
- * waits for the user response via questionEmitter, and cleans up.
+ * waits for the user response via the ToolPermissions Effect service,
+ * and cleans up.
  *
  * Returns `{ approved, feedback }`. Throws on timeout.
  */
@@ -69,7 +75,7 @@ export async function waitForPlanApproval(
     } catch (e) { console.warn("[plan-approval] best-effort op failed:", e); }
   }
 
-  // 3. Wait for user response
+  // 3. Wait for user response via ToolPermissions Effect service (5h timeout)
   const cleanup = () => {
     if (sDbId) {
       try {
@@ -81,21 +87,9 @@ export async function waitForPlanApproval(
   };
 
   try {
-    const result = await new Promise<{ approved: boolean; feedback?: string }>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        questionEmitter.removeAllListeners(`plan-approval:${subprocessId}`);
-        reject(new Error("Plan approval timeout (5h)"));
-      }, 5 * 60 * 60 * 1000);
-
-      questionEmitter.once(
-        `plan-approval:${subprocessId}`,
-        (response: { approved: boolean; feedback?: string }) => {
-          clearTimeout(timeout);
-          resolve(response);
-        },
-      );
-    });
-
+    const result = await getAppRuntime().runPromise(
+      Effect.flatMap(ToolPermissions, (tp) => tp.requestPlanApproval(subprocessId)),
+    );
     cleanup();
     return result;
   } catch (error) {
@@ -163,7 +157,7 @@ export async function waitForPrdApproval(
     } catch (e) { console.warn("[prd-approval] best-effort op failed:", e); }
   }
 
-  // 3. Wait for user response
+  // 3. Wait for user response via ToolPermissions Effect service (5h timeout)
   const cleanup = () => {
     if (sDbId) {
       try {
@@ -175,21 +169,9 @@ export async function waitForPrdApproval(
   };
 
   try {
-    const result = await new Promise<{ approved: boolean; feedback?: string }>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        questionEmitter.removeAllListeners(`prd-approval:${subprocessId}`);
-        reject(new Error("PRD approval timeout (5h)"));
-      }, 5 * 60 * 60 * 1000);
-
-      questionEmitter.once(
-        `prd-approval:${subprocessId}`,
-        (response: { approved: boolean; feedback?: string }) => {
-          clearTimeout(timeout);
-          resolve(response);
-        },
-      );
-    });
-
+    const result = await getAppRuntime().runPromise(
+      Effect.flatMap(ToolPermissions, (tp) => tp.requestPrdApproval(subprocessId)),
+    );
     cleanup();
     return result;
   } catch (error) {

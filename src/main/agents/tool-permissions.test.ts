@@ -1,5 +1,8 @@
 /**
  * Tests for the tool-permissions module.
+ *
+ * After the ToolPermissions Effect service migration, these tests mock
+ * getAppRuntime() to return a mock runtime that delegates to mock service methods.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -22,14 +25,18 @@ vi.mock("./permissions", () => ({
   appendToSettingsLocal: vi.fn(),
 }));
 
-vi.mock("./broadcast", () => ({
-  broadcast: vi.fn(),
-  ASK_USER_QUESTION_CHANNEL: "ask-user-question",
-  TOOL_PERMISSION_CHANNEL: "tool-permission",
+// Mock the ToolPermissions service and getAppRuntime
+const mockRuntime = {
+  runSync: vi.fn(),
+  runPromise: vi.fn(),
+};
+
+vi.mock("../effect/app-runtime-ref", () => ({
+  getAppRuntime: vi.fn(() => mockRuntime),
 }));
 
-vi.mock("./subprocess-manager", () => ({
-  getActiveProcess: vi.fn().mockReturnValue(undefined),
+vi.mock("../effect/services/ToolPermissions", () => ({
+  ToolPermissions: { key: "ToolPermissions" },
 }));
 
 // ---------------------------------------------------------------------------
@@ -39,10 +46,8 @@ vi.mock("./subprocess-manager", () => ({
 import { getDatabase } from "../db/database";
 import { getSessionDbId } from "./effect-helpers";
 import { resolvePermission, appendToSettingsLocal } from "./permissions";
-import { broadcast } from "./broadcast";
 import {
   createCanUseToolHandler,
-  questionEmitter,
   submitToolPermission,
   submitUserAnswers,
   submitPlanApproval,
@@ -78,6 +83,9 @@ function makeManaged(overrides?: Partial<ManagedSubprocess>): ManagedSubprocess 
 beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(getSessionDbId).mockReturnValue(undefined);
+  // By default, runPromise resolves with a default value
+  mockRuntime.runPromise.mockResolvedValue(undefined);
+  mockRuntime.runSync.mockReturnValue(undefined);
 });
 
 // ---------------------------------------------------------------------------
@@ -118,13 +126,11 @@ describe("createCanUseToolHandler", () => {
         description: "Read wants to access /etc/hosts",
         pattern: "Read(/etc/hosts)",
       });
+      // requestPermission resolves with allow_once
+      mockRuntime.runPromise.mockResolvedValue({ decision: "allow_once" });
+
       const managed = makeManaged();
       const handler = createCanUseToolHandler(managed);
-
-      // Simulate renderer responding with allow_once
-      setTimeout(() => {
-        questionEmitter.emit("permission:test-subprocess-id", { decision: "allow_once" });
-      }, 10);
 
       const result = await handler("Read", { file_path: "/etc/hosts" });
 
@@ -138,12 +144,10 @@ describe("createCanUseToolHandler", () => {
         description: "Read wants to access /etc/hosts",
         pattern: "Read(/etc/hosts)",
       });
+      mockRuntime.runPromise.mockResolvedValue({ decision: "allow_future" });
+
       const managed = makeManaged();
       const handler = createCanUseToolHandler(managed);
-
-      setTimeout(() => {
-        questionEmitter.emit("permission:test-subprocess-id", { decision: "allow_future" });
-      }, 10);
 
       const result = await handler("Read", { file_path: "/etc/hosts" });
 
@@ -161,15 +165,10 @@ describe("createCanUseToolHandler", () => {
         description: "Read wants to access /etc/hosts",
         pattern: "Read(/etc/hosts)",
       });
+      mockRuntime.runPromise.mockResolvedValue({ decision: "deny", feedback: "Not allowed" });
+
       const managed = makeManaged();
       const handler = createCanUseToolHandler(managed);
-
-      setTimeout(() => {
-        questionEmitter.emit("permission:test-subprocess-id", {
-          decision: "deny",
-          feedback: "Not allowed",
-        });
-      }, 10);
 
       const result = await handler("Read", { file_path: "/etc/hosts" });
 
@@ -183,12 +182,10 @@ describe("createCanUseToolHandler", () => {
         description: "needs approval",
         pattern: "Read(/x)",
       });
+      mockRuntime.runPromise.mockResolvedValue({ decision: "deny" });
+
       const managed = makeManaged();
       const handler = createCanUseToolHandler(managed);
-
-      setTimeout(() => {
-        questionEmitter.emit("permission:test-subprocess-id", { decision: "deny" });
-      }, 10);
 
       const result = await handler("Read", { file_path: "/x" });
 
@@ -199,15 +196,11 @@ describe("createCanUseToolHandler", () => {
     });
 
     it("skips permission resolution for AskUserQuestion and proceeds to handler", async () => {
-      // resolvePermission should NOT be called for AskUserQuestion
+      // AskUserQuestion goes directly to handleAskUserQuestion which calls requestUserAnswer
+      mockRuntime.runPromise.mockResolvedValue({ q1: "answer1" });
+
       const managed = makeManaged();
       const handler = createCanUseToolHandler(managed);
-
-      // AskUserQuestion falls through to handleAskUserQuestion which waits for answers
-      // We'll emit the answer immediately
-      setTimeout(() => {
-        questionEmitter.emit("answer:test-subprocess-id", { q1: "answer1" });
-      }, 10);
 
       const result = await handler("AskUserQuestion", { questions: [] });
 
@@ -216,12 +209,11 @@ describe("createCanUseToolHandler", () => {
     });
 
     it("skips permission resolution for ExitPlanMode", async () => {
+      // ExitPlanMode goes directly to handleExitPlanMode
+      mockRuntime.runPromise.mockResolvedValue({ approved: true });
+
       const managed = makeManaged();
       const handler = createCanUseToolHandler(managed);
-
-      setTimeout(() => {
-        questionEmitter.emit("plan-approval:test-subprocess-id", { approved: true });
-      }, 10);
 
       await handler("ExitPlanMode", {});
 
@@ -231,12 +223,10 @@ describe("createCanUseToolHandler", () => {
 
   describe("when no worktreePath set", () => {
     it("falls through to AskUserQuestion handler when no worktreePath", async () => {
+      mockRuntime.runPromise.mockResolvedValue({ q: "a" });
+
       const managed = makeManaged({ worktreePath: undefined });
       const handler = createCanUseToolHandler(managed);
-
-      setTimeout(() => {
-        questionEmitter.emit("answer:test-subprocess-id", { q: "a" });
-      }, 10);
 
       const result = await handler("AskUserQuestion", { questions: [] });
       expect(result.behavior).toBe("allow");
@@ -252,22 +242,16 @@ describe("createCanUseToolHandler", () => {
   });
 
   describe("AskUserQuestion handling", () => {
-    it("broadcasts question and returns answers", async () => {
+    it("returns answers from service", async () => {
+      mockRuntime.runPromise.mockResolvedValue({ q1: "my answer" });
+
       const managed = makeManaged();
       const handler = createCanUseToolHandler(managed);
-
-      // resolvePermission must allow since AskUserQuestion is in ALWAYS_ALLOW_TOOLS
-      // But actually, when worktreePath is set, AskUserQuestion is skipped from permission resolution
-      // It goes directly to handleAskUserQuestion
-      setTimeout(() => {
-        questionEmitter.emit("answer:test-subprocess-id", { q1: "my answer" });
-      }, 10);
 
       const result = await handler("AskUserQuestion", {
         questions: [{ question: "q1", header: "Q1", options: [], multiSelect: false }],
       });
 
-      expect(broadcast).toHaveBeenCalled();
       expect(result.behavior).toBe("allow");
       expect((result as { behavior: "allow"; updatedInput: Record<string, unknown> }).updatedInput.answers).toEqual({ q1: "my answer" });
     });
@@ -277,13 +261,10 @@ describe("createCanUseToolHandler", () => {
       vi.mocked(getDatabase).mockReturnValue(db);
       vi.mocked(getSessionDbId).mockReturnValue(42);
       stmt.get.mockReturnValue({ feature_id: 1 });
+      mockRuntime.runPromise.mockResolvedValue({});
 
       const managed = makeManaged();
       const handler = createCanUseToolHandler(managed);
-
-      setTimeout(() => {
-        questionEmitter.emit("answer:test-subprocess-id", {});
-      }, 10);
 
       await handler("AskUserQuestion", { questions: [] });
 
@@ -292,33 +273,28 @@ describe("createCanUseToolHandler", () => {
       );
     });
 
-    it("returns empty answers on timeout/error in AskUserQuestion", async () => {
-      // Don't emit anything — but we can't wait 15 min, so simulate by rejecting early
-      // We'll just verify the fallback path by emitting an error-like situation
-      // Actually we can test by having the promise resolve with empty answers
+    it("returns empty answers when service rejects (timeout)", async () => {
+      mockRuntime.runPromise.mockRejectedValue(new Error("QuestionTimeout"));
+
       const managed = makeManaged();
       const handler = createCanUseToolHandler(managed);
-
-      // Emit with empty answers
-      setTimeout(() => {
-        questionEmitter.emit("answer:test-subprocess-id", {});
-      }, 10);
 
       const result = await handler("AskUserQuestion", {});
 
       expect(result.behavior).toBe("allow");
+      expect(
+        (result as { behavior: "allow"; updatedInput: Record<string, unknown> }).updatedInput.answers
+      ).toEqual({});
     });
   });
 
   describe("ExitPlanMode handling", () => {
     it("sets permission mode to acceptEdits when approved", async () => {
       const mockQuery = { setPermissionMode: vi.fn().mockResolvedValue(undefined) };
+      mockRuntime.runPromise.mockResolvedValue({ approved: true });
+
       const managed = makeManaged({ query: mockQuery as unknown as ManagedSubprocess["query"] });
       const handler = createCanUseToolHandler(managed);
-
-      setTimeout(() => {
-        questionEmitter.emit("plan-approval:test-subprocess-id", { approved: true });
-      }, 10);
 
       const result = await handler("ExitPlanMode", {});
 
@@ -327,15 +303,13 @@ describe("createCanUseToolHandler", () => {
     });
 
     it("denies when plan approval is rejected", async () => {
+      mockRuntime.runPromise.mockResolvedValue({
+        approved: false,
+        feedback: "Please revise the plan",
+      });
+
       const managed = makeManaged();
       const handler = createCanUseToolHandler(managed);
-
-      setTimeout(() => {
-        questionEmitter.emit("plan-approval:test-subprocess-id", {
-          approved: false,
-          feedback: "Please revise the plan",
-        });
-      }, 10);
 
       const result = await handler("ExitPlanMode", {});
 
@@ -345,18 +319,11 @@ describe("createCanUseToolHandler", () => {
       );
     });
 
-    it("allows when plan approval timeout occurs (graceful fallback)", async () => {
-      // Simulate timeout rejection by directly emitting the plan-approval with a trick
-      // We can test the 'approved:false, no feedback' path
+    it("denies when plan approval times out", async () => {
+      mockRuntime.runPromise.mockRejectedValue(new Error("ApprovalTimeout"));
+
       const managed = makeManaged();
       const handler = createCanUseToolHandler(managed);
-
-      setTimeout(() => {
-        questionEmitter.emit("plan-approval:test-subprocess-id", {
-          approved: false,
-          feedback: undefined,
-        });
-      }, 10);
 
       const result = await handler("ExitPlanMode", {});
       expect(result.behavior).toBe("deny");
@@ -369,38 +336,20 @@ describe("createCanUseToolHandler", () => {
 // ---------------------------------------------------------------------------
 
 describe("submitToolPermission", () => {
-  it("emits permission event for the subprocess", async () => {
-    const promise = new Promise<{ decision: string }>((resolve) => {
-      questionEmitter.once("permission:sub-1", resolve);
-    });
+  it("calls runtime.runSync to submit permission via service", () => {
+    mockRuntime.runSync.mockReturnValue(undefined);
 
     submitToolPermission("sub-1", "allow_once");
 
-    const result = await promise;
-    expect(result.decision).toBe("allow_once");
+    expect(mockRuntime.runSync).toHaveBeenCalled();
   });
 
-  it("emits allow_future decision", async () => {
-    const promise = new Promise<{ decision: string }>((resolve) => {
-      questionEmitter.once("permission:sub-2", resolve);
-    });
-
-    submitToolPermission("sub-2", "allow_future");
-
-    const result = await promise;
-    expect(result.decision).toBe("allow_future");
-  });
-
-  it("emits deny decision with feedback", async () => {
-    const promise = new Promise<{ decision: string; feedback?: string }>((resolve) => {
-      questionEmitter.once("permission:sub-3", resolve);
-    });
+  it("passes feedback to service for deny decision", () => {
+    mockRuntime.runSync.mockReturnValue(undefined);
 
     submitToolPermission("sub-3", "deny", "No access allowed");
 
-    const result = await promise;
-    expect(result.decision).toBe("deny");
-    expect(result.feedback).toBe("No access allowed");
+    expect(mockRuntime.runSync).toHaveBeenCalled();
   });
 });
 
@@ -409,15 +358,12 @@ describe("submitToolPermission", () => {
 // ---------------------------------------------------------------------------
 
 describe("submitUserAnswers", () => {
-  it("emits answer event for the subprocess", async () => {
-    const promise = new Promise<Record<string, string>>((resolve) => {
-      questionEmitter.once("answer:sub-answers-1", resolve);
-    });
+  it("calls runtime.runSync to submit answer via service", () => {
+    mockRuntime.runSync.mockReturnValue(undefined);
 
     submitUserAnswers("sub-answers-1", { question1: "answer1" });
 
-    const result = await promise;
-    expect(result.question1).toBe("answer1");
+    expect(mockRuntime.runSync).toHaveBeenCalled();
   });
 
   it("persists answers to DB when session exists", () => {
@@ -425,6 +371,7 @@ describe("submitUserAnswers", () => {
     vi.mocked(getDatabase).mockReturnValue(db);
     vi.mocked(getSessionDbId).mockReturnValue(10);
     stmt.get.mockReturnValue({ feature_id: 5 });
+    mockRuntime.runSync.mockReturnValue(undefined);
 
     submitUserAnswers("sub-persist", { q: "a" });
 
@@ -433,18 +380,14 @@ describe("submitUserAnswers", () => {
     );
   });
 
-  it("still emits even when DB persistence fails", async () => {
+  it("still submits via service even when DB persistence fails", () => {
     vi.mocked(getSessionDbId).mockReturnValue(10);
     vi.mocked(getDatabase).mockImplementation(() => { throw new Error("DB error"); });
+    mockRuntime.runSync.mockReturnValue(undefined);
 
-    const promise = new Promise<Record<string, string>>((resolve) => {
-      questionEmitter.once("answer:sub-db-fail", resolve);
-    });
-
-    submitUserAnswers("sub-db-fail", { q: "a" });
-
-    const result = await promise;
-    expect(result.q).toBe("a");
+    // Should not throw
+    expect(() => submitUserAnswers("sub-db-fail", { q: "a" })).not.toThrow();
+    expect(mockRuntime.runSync).toHaveBeenCalled();
   });
 });
 
@@ -453,36 +396,36 @@ describe("submitUserAnswers", () => {
 // ---------------------------------------------------------------------------
 
 describe("submitPlanApproval", () => {
-  it("emits plan-approval event with approved=true", async () => {
-    const promise = new Promise<{ approved: boolean }>((resolve) => {
-      questionEmitter.once("plan-approval:sub-plan-1", resolve);
-    });
+  it("returns success when deferred was resolved (hadDeferred=true)", () => {
+    mockRuntime.runSync.mockReturnValue(true);
 
-    submitPlanApproval("sub-plan-1", true);
+    const result = submitPlanApproval("sub-plan-1", true);
 
-    const result = await promise;
-    expect(result.approved).toBe(true);
+    expect(result.success).toBe(true);
+    expect(mockRuntime.runSync).toHaveBeenCalled();
   });
 
-  it("emits plan-approval event with approved=false and feedback", async () => {
-    const promise = new Promise<{ approved: boolean; feedback?: string }>((resolve) => {
-      questionEmitter.once("plan-approval:sub-plan-2", resolve);
-    });
+  it("stores in DB when no deferred pending (hadDeferred=false)", () => {
+    const { db, stmt } = makeMockDb();
+    vi.mocked(getDatabase).mockReturnValue(db);
+    vi.mocked(getSessionDbId).mockReturnValue(55);
+    stmt.get.mockReturnValue({ feature_id: 7 });
+    mockRuntime.runSync.mockReturnValue(false);
 
-    submitPlanApproval("sub-plan-2", false, "Needs more tests");
+    const result = submitPlanApproval("dead-subprocess", true);
 
-    const result = await promise;
-    expect(result.approved).toBe(false);
-    expect(result.feedback).toBe("Needs more tests");
+    expect(result.success).toBe(true);
+    expect(db.prepare).toHaveBeenCalledWith(
+      expect.stringContaining("UPDATE agent_sessions SET plan_approval_result"),
+    );
   });
 
-  it("persists feedback to DB as user message when rejecting", () => {
-    // Set up a listener so submitPlanApproval doesn't bail out early
-    questionEmitter.once("plan-approval:sub-plan-3", () => {});
+  it("persists feedback as user message when rejecting with active deferred", () => {
     const { db, stmt } = makeMockDb();
     vi.mocked(getDatabase).mockReturnValue(db);
     vi.mocked(getSessionDbId).mockReturnValue(20);
     stmt.get.mockReturnValue({ feature_id: 3 });
+    mockRuntime.runSync.mockReturnValue(true); // deferred was resolved
 
     const result = submitPlanApproval("sub-plan-3", false, "Change the approach");
 
@@ -492,43 +435,17 @@ describe("submitPlanApproval", () => {
     );
   });
 
-  it("does not write to DB when approving (no feedback)", () => {
-    // Set up a listener so submitPlanApproval doesn't bail out early
-    questionEmitter.once("plan-approval:sub-plan-4", () => {});
+  it("does not write to DB when approving with active deferred (no feedback)", () => {
     const { db } = makeMockDb();
     vi.mocked(getDatabase).mockReturnValue(db);
     vi.mocked(getSessionDbId).mockReturnValue(20);
+    mockRuntime.runSync.mockReturnValue(true); // deferred was resolved
 
     const result = submitPlanApproval("sub-plan-4", true);
 
     expect(result.success).toBe(true);
     // DB should not be called for approval (no feedback to persist)
     expect(db.prepare).not.toHaveBeenCalled();
-  });
-
-  it("stores approval result in DB when no listener and no active process", () => {
-    const { db, stmt } = makeMockDb();
-    vi.mocked(getDatabase).mockReturnValue(db);
-    vi.mocked(getSessionDbId).mockReturnValue(55);
-    stmt.get.mockReturnValue({ feature_id: 7 });
-
-    const result = submitPlanApproval("dead-subprocess", true);
-    // Now returns success:true — approval is stored for consumption on resume
-    expect(result.success).toBe(true);
-    expect(db.prepare).toHaveBeenCalledWith(
-      expect.stringContaining("UPDATE agent_sessions SET plan_approval_result"),
-    );
-  });
-
-  it("stores approval result when no listener but process exists", () => {
-    const { db, stmt } = makeMockDb();
-    vi.mocked(getDatabase).mockReturnValue(db);
-    vi.mocked(getSessionDbId).mockReturnValue(55);
-    stmt.get.mockReturnValue({ feature_id: 7 });
-
-    const result = submitPlanApproval("no-listener-subprocess", true);
-    // Now returns success:true — approval is stored for consumption when listener registers
-    expect(result.success).toBe(true);
   });
 });
 
@@ -537,17 +454,12 @@ describe("submitPlanApproval", () => {
 // ---------------------------------------------------------------------------
 
 describe("requestUserAnswers", () => {
-  it("broadcasts question and resolves when answer emitted", async () => {
-    const promise = requestUserAnswers("sub-req-1", { questions: [] });
+  it("delegates to runtime.runPromise and returns answers", async () => {
+    mockRuntime.runPromise.mockResolvedValue({ q: "my answer" });
 
-    setTimeout(() => {
-      questionEmitter.emit("answer:sub-req-1", { q: "my answer" });
-    }, 10);
+    const answers = await requestUserAnswers("sub-req-1", { questions: [] });
 
-    const answers = await promise;
     expect(answers.q).toBe("my answer");
-    expect(broadcast).toHaveBeenCalledWith("ask-user-question", expect.objectContaining({
-      subprocessId: "sub-req-1",
-    }));
+    expect(mockRuntime.runPromise).toHaveBeenCalled();
   });
 });

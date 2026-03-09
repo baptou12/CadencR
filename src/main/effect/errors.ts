@@ -49,3 +49,19 @@ export class PhaseNotFoundError extends Data.TaggedError("PhaseNotFoundError")<{
 export class PlanNotFoundError extends Data.TaggedError("PlanNotFoundError")<{
   readonly planId: number;
 }> {}
+
+// ---------------------------------------------------------------------------
+// ToolPermissions errors
+// ---------------------------------------------------------------------------
+
+export class PermissionTimeoutError extends Data.TaggedError("PermissionTimeoutError")<{
+  readonly subprocessId: string;
+}> {}
+
+export class QuestionTimeoutError extends Data.TaggedError("QuestionTimeoutError")<{
+  readonly subprocessId: string;
+}> {}
+
+export class ApprovalTimeoutError extends Data.TaggedError("ApprovalTimeoutError")<{
+  readonly subprocessId: string;
+}> {}
