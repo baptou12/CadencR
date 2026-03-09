@@ -47,11 +47,11 @@ export async function setSubprocessPermissionMode(
   );
 }
 
-export function sendMessageToSubprocess(
+export async function sendMessageToSubprocess(
   id: string,
   message: MessageContent,
-): import("../effect/services/SubprocessLifecycle").SendMessageResult {
-  return AppRuntime.runSync(
+): Promise<import("../effect/services/SubprocessLifecycle").SendMessageResult> {
+  return AppRuntime.runPromise(
     Effect.flatMap(SubprocessLifecycle, (svc) => svc.sendMessage(id, message)),
   );
 }

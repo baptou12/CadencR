@@ -19,7 +19,7 @@ vi.mock("../agents/subprocess-manager", () => ({
   submitPlanApproval: vi.fn(),
   submitPrdApproval: vi.fn(),
   submitToolPermission: vi.fn(),
-  sendMessageToSubprocess: vi.fn(),
+  sendMessageToSubprocess: vi.fn().mockResolvedValue(undefined),
   setSubprocessPermissionMode: vi.fn(),
 }));
 

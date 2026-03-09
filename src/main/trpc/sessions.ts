@@ -316,11 +316,11 @@ export const sessionsRouter = router({
         kind: z.enum(["bash", "agent"]),
       }),
     )
-    .mutation(({ input }) => {
+    .mutation(async ({ input }) => {
       const message = input.kind === "bash"
         ? `Please stop the background bash task with shell ID "${input.taskId}" by running KillBash with shell_id="${input.taskId}".`
         : `Please stop the background task with task ID "${input.taskId}" by running TaskStop with task_id="${input.taskId}".`;
-      const result = sendMessageToSubprocess(input.subprocessId, message);
+      const result = await sendMessageToSubprocess(input.subprocessId, message);
       return result;
     }),
 });

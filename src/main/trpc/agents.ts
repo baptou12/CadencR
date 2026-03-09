@@ -318,7 +318,7 @@ export const agentsRouter = router({
       } else {
         content = input.message;
       }
-      return sendMessageToSubprocess(input.id, content);
+      return await sendMessageToSubprocess(input.id, content);
     }),
 
   /** Clear session context — inserts a divider, archives the session ID, and resets for fresh start */
