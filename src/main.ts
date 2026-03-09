@@ -3,7 +3,7 @@ import path from "node:path";
 import { Effect } from "effect";
 import { createIPCHandler } from "electron-trpc/main";
 import { appRouter } from "./main/trpc/router";
-import { initRuntime, disposeRuntime, AppRuntime } from "./main/effect/runtime";
+import { AppRuntime } from "./main/effect/runtime";
 import { hasRunningSubprocesses } from "./main/agents/subprocess-manager";
 import { restoreSessionMap } from "./main/agents/session-persistence";
 import { SessionPersistence } from "./main/effect/services/SessionPersistence";
@@ -62,7 +62,7 @@ const createWindow = () => {
             isQuitting = true;
             // Effect runtime disposal handles PTY cleanup, subprocess shutdown,
             // and DB close in reverse-dependency order via registered finalizers.
-            disposeRuntime().finally(() => {
+            AppRuntime.dispose().finally(() => {
               mainWindow.destroy();
             });
           }
@@ -77,7 +77,8 @@ let isQuitting = false;
 // initialization and is ready to create browser windows.
 app.on("ready", async () => {
   // Initialize the Effect ManagedRuntime — builds layers, wires services.
-  await initRuntime();
+  // Running a no-op effect forces lazy initialization so services are ready.
+  await AppRuntime.runPromise(Effect.void);
   fetchAvailableModels().catch(() => {}); // warm up cache
   // Restore in-memory session map from DB (for reconnection after restart).
   // Call both: old module (for legacy code paths) and Effect service (for Effect-based code paths).
@@ -116,7 +117,7 @@ app.on("before-quit", (e) => {
             isQuitting = true;
             // Effect runtime disposal handles PTY cleanup, subprocess shutdown,
             // and DB close in reverse-dependency order via registered finalizers.
-            disposeRuntime().finally(() => {
+            AppRuntime.dispose().finally(() => {
               app.quit();
             });
           }
@@ -127,7 +128,7 @@ app.on("before-quit", (e) => {
     e.preventDefault();
     // Effect runtime disposal handles PTY cleanup, subprocess shutdown,
     // and DB close in reverse-dependency order via registered finalizers.
-    disposeRuntime().finally(() => {
+    AppRuntime.dispose().finally(() => {
       app.quit();
     });
   }

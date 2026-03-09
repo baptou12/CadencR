@@ -52,7 +52,7 @@ describe("SettingRowSchema", () => {
 // ---------------------------------------------------------------------------
 
 describe("ProjectRowSchema", () => {
-  const validProject = {
+  const validProject: typeof ProjectRowSchema.Type = {
     id: 1,
     name: "My Project",
     path: "/home/user/project",
@@ -140,11 +140,11 @@ describe("FeatureTypeSchema", () => {
 // ---------------------------------------------------------------------------
 
 describe("FeatureRowSchema", () => {
-  const validFeature = {
+  const validFeature: typeof FeatureRowSchema.Type = {
     id: 10,
     project_id: 1,
     title: "My Feature",
-    type: "feature" as const,
+    type: "feature",
     status: "in-progress",
     created_at: "2024-06-01T00:00:00Z",
     model_plan: null,
@@ -207,7 +207,7 @@ describe("FeatureSettingRowSchema", () => {
 // ---------------------------------------------------------------------------
 
 describe("PlanRowSchema", () => {
-  const validPlan = {
+  const validPlan: typeof PlanRowSchema.Type = {
     id: 100,
     feature_id: 10,
     title: "Implementation Plan",
@@ -244,7 +244,7 @@ describe("PlanRowSchema", () => {
 // ---------------------------------------------------------------------------
 
 describe("PhaseRowSchema", () => {
-  const validPhase = {
+  const validPhase: typeof PhaseRowSchema.Type = {
     id: 200,
     plan_id: 100,
     step_number: 1,
@@ -289,7 +289,7 @@ describe("PhaseRowSchema", () => {
 // ---------------------------------------------------------------------------
 
 describe("AgentSessionRowSchema", () => {
-  const validSession = {
+  const validSession: typeof AgentSessionRowSchema.Type = {
     id: 1,
     feature_id: 10,
     agent_type: "execute",
@@ -341,7 +341,7 @@ describe("AgentSessionRowSchema", () => {
 // ---------------------------------------------------------------------------
 
 describe("AgentMessageRowSchema", () => {
-  const validMessage = {
+  const validMessage: typeof AgentMessageRowSchema.Type = {
     id: 1,
     session_id: 1,
     role: "assistant",

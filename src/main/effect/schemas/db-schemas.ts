@@ -52,13 +52,14 @@ export const ProjectSettingRowSchema = Schema.Struct({
 
 export const FeatureTypeSchema = Schema.Literal("feature", "session");
 
+export const FeatureStatusSchema = Schema.Literal("draft", "planned", "in-progress", "done", "archived");
+
 export const FeatureRowSchema = Schema.Struct({
   id: Schema.Number,
   project_id: Schema.Number,
   title: Schema.String,
   type: FeatureTypeSchema,
-  /** Possible values: "draft" | "planned" | "in-progress" | "done" | "archived" */
-  status: Schema.String,
+  status: FeatureStatusSchema,
   created_at: Schema.String,
   model_plan: Schema.NullOr(Schema.String),
   model_execute: Schema.NullOr(Schema.String),
@@ -85,11 +86,13 @@ export const FeatureSettingRowSchema = Schema.Struct({
 // Plans & Phases
 // ---------------------------------------------------------------------------
 
+export const PlanStatusSchema = Schema.Literal("draft", "active", "pending");
+
 export const PlanRowSchema = Schema.Struct({
   id: Schema.Number,
   feature_id: Schema.Number,
   title: Schema.String,
-  status: Schema.String,
+  status: PlanStatusSchema,
   raw_markdown: Schema.NullOr(Schema.String),
   summary: Schema.NullOr(Schema.String),
   context: Schema.NullOr(Schema.String),
@@ -99,31 +102,41 @@ export const PlanRowSchema = Schema.Struct({
   updated_at: Schema.String,
 });
 
+export const PhaseStatusSchema = Schema.Literal("draft", "pending", "running", "completed", "error", "done");
+
+export const PhaseTypeSchema = Schema.Literal("setup", "value", "qa", "implementation");
+
 export const PhaseRowSchema = Schema.Struct({
   id: Schema.Number,
   plan_id: Schema.Number,
   step_number: Schema.Number,
   title: Schema.String,
-  status: Schema.String,
+  status: PhaseStatusSchema,
   complexity: Schema.Number,
   commit_message: Schema.String,
   prompt: Schema.String,
   order_index: Schema.Number,
   implementation_notes: Schema.NullOr(Schema.String),
   deviations: Schema.NullOr(Schema.String),
-  phase_type: Schema.String,
+  phase_type: PhaseTypeSchema,
 });
 
 // ---------------------------------------------------------------------------
 // Agent Sessions & Messages
 // ---------------------------------------------------------------------------
 
+export const AgentTypeSchema = Schema.Literal(
+  "plan", "prd", "execute", "risk", "review", "session", "qa", "review-fixer", "retro",
+);
+
+export const AgentSessionStatusSchema = Schema.Literal("running", "waiting", "paused", "completed", "error");
+
 export const AgentSessionRowSchema = Schema.Struct({
   id: Schema.Number,
   feature_id: Schema.Number,
-  agent_type: Schema.String,
+  agent_type: AgentTypeSchema,
   claude_session_id: Schema.NullOr(Schema.String),
-  status: Schema.String,
+  status: AgentSessionStatusSchema,
   started_at: Schema.NullOr(Schema.String),
   ended_at: Schema.NullOr(Schema.String),
   run_id: Schema.NullOr(Schema.Number),
@@ -142,12 +155,22 @@ export const AgentSessionRowSchema = Schema.Struct({
   was_compacted: Schema.Number,
 });
 
+export const MessageRoleSchema = Schema.Literal("user", "assistant", "system");
+
+export const MessageTypeSchema = Schema.Literal(
+  "text", "text_delta", "thinking", "thinking_delta",
+  "tool_use", "tool_call", "tool_result", "tool_error",
+  "user_message", "error",
+  "clear_divider", "compact_divider",
+  "risk_report", "review_report", "qa_report", "retro_report",
+);
+
 export const AgentMessageRowSchema = Schema.Struct({
   id: Schema.Number,
   session_id: Schema.Number,
-  role: Schema.String,
+  role: MessageRoleSchema,
   content: Schema.String,
-  message_type: Schema.String,
+  message_type: MessageTypeSchema,
   tool_name: Schema.NullOr(Schema.String),
   tool_use_id: Schema.NullOr(Schema.String),
   parent_tool_use_id: Schema.NullOr(Schema.String),

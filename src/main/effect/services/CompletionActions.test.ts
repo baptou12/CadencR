@@ -4,63 +4,51 @@ import { CompletionActions, CompletionActionsLive } from "./CompletionActions.js
 import { SessionPersistence, type SessionPersistenceService } from "./SessionPersistence.js";
 import { EventBroadcaster, type EventBroadcasterService } from "./EventBroadcaster.js";
 import { Database } from "./Database.js";
+import { DatabaseError } from "../errors.js";
 import type { ManagedSubprocess } from "../../agents/types.js";
 
 // ---------------------------------------------------------------------------
 // Mock SessionPersistence service
 // ---------------------------------------------------------------------------
 
-const mockPersistSessionStatus = vi.fn(() => Effect.void);
-const mockPersistClaudeSessionId = vi.fn(() => Effect.void);
-const mockPersistStreamEvent = vi.fn(() => Effect.void);
-const mockGetSessionDbId = vi.fn(() => Effect.succeed<number | null>(null));
-const mockFlushNotifyEb = vi.fn(() => Effect.void);
-const mockBroadcastAgentEvent = vi.fn(() => Effect.void);
-const mockThrottledNotify = vi.fn(() => Effect.void);
-const mockNotifyDbUpdated = vi.fn(() => Effect.void);
-const mockDbExecute = vi.fn(() => Effect.succeed({ changes: 1, lastInsertRowid: 0 }));
-const mockDbQueryOne = vi.fn(() => Effect.succeed(null));
-const mockDbQueryAll = vi.fn(() => Effect.succeed([]));
+const mockPersistSessionStatus = vi.fn<SessionPersistenceService["persistSessionStatus"]>(() => Effect.void);
+const mockPersistClaudeSessionId = vi.fn<SessionPersistenceService["persistClaudeSessionId"]>(() => Effect.void);
+const mockPersistStreamEvent = vi.fn<SessionPersistenceService["persistStreamEvent"]>(() => Effect.void);
+const mockGetSessionDbId = vi.fn<SessionPersistenceService["getSessionDbId"]>(() => Effect.succeed(null));
+const mockFlushNotify = vi.fn<EventBroadcasterService["flushNotify"]>(() => Effect.void);
+const mockBroadcastAgentEvent = vi.fn<EventBroadcasterService["broadcastAgentEvent"]>(() => Effect.void);
+const mockThrottledNotify = vi.fn<EventBroadcasterService["throttledNotify"]>(() => Effect.void);
+const mockNotifyDbUpdated = vi.fn<EventBroadcasterService["notifyDbUpdated"]>(() => Effect.void);
+const mockDbExecute = vi.fn((..._args: unknown[]) => Effect.succeed({ changes: 1, lastInsertRowid: 0 }));
+const mockDbQueryOne = vi.fn((..._args: unknown[]) => Effect.succeed(null));
+const mockDbQueryAll = vi.fn((..._args: unknown[]) => Effect.succeed([]));
 
-// Use `as unknown as` casts so mock functions receive exactly the args passed by
-// the caller — without the wrapper adding extra `undefined` for omitted optional params.
 const mockSPService: SessionPersistenceService = {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  persistStreamEvent: mockPersistStreamEvent as any,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  persistSessionStatus: mockPersistSessionStatus as any,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  persistClaudeSessionId: mockPersistClaudeSessionId as any,
+  persistStreamEvent: mockPersistStreamEvent,
+  persistSessionStatus: mockPersistSessionStatus,
+  persistClaudeSessionId: mockPersistClaudeSessionId,
   setSessionModel: vi.fn(() => Effect.void),
   updateTokenUsage: vi.fn(() => Effect.void),
   saveAllSessionStates: vi.fn(() => Effect.void),
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  getSessionDbId: mockGetSessionDbId as any,
+  getSessionDbId: mockGetSessionDbId,
   restoreSessionMap: vi.fn(() => Effect.void),
   registerSession: vi.fn(() => Effect.void),
   removeSession: vi.fn(() => Effect.void),
 };
 
 const mockEBService: EventBroadcasterService = {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  broadcastAgentEvent: mockBroadcastAgentEvent as any,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  notifyDbUpdated: mockNotifyDbUpdated as any,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  throttledNotify: mockThrottledNotify as any,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  flushNotify: mockFlushNotifyEb as any,
+  broadcastAgentEvent: mockBroadcastAgentEvent,
+  notifyDbUpdated: mockNotifyDbUpdated,
+  throttledNotify: mockThrottledNotify,
+  flushNotify: mockFlushNotify,
 };
 
 const MockSessionPersistence = Layer.succeed(SessionPersistence, mockSPService);
 const MockEventBroadcaster = Layer.succeed(EventBroadcaster, mockEBService);
 const MockDatabase = Layer.succeed(Database, {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  execute: (sql: string, ...params: unknown[]) => (mockDbExecute as any)(sql, ...params),
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  queryOne: (sql: string, ...params: unknown[]) => (mockDbQueryOne as any)(sql, ...params),
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  queryAll: (sql: string, ...params: unknown[]) => (mockDbQueryAll as any)(sql, ...params),
+  execute: (sql, ...params) => mockDbExecute(sql, ...params),
+  queryOne: (sql, ...params) => mockDbQueryOne(sql, ...params),
+  queryAll: (sql, ...params) => mockDbQueryAll(sql, ...params),
   queryOneValidated: vi.fn(),
   queryAllValidated: vi.fn(),
 });
@@ -107,7 +95,7 @@ describe("CompletionActions service — CompletionActionsLive", () => {
     mockPersistClaudeSessionId.mockReturnValue(Effect.void);
     mockPersistStreamEvent.mockReturnValue(Effect.void);
     mockGetSessionDbId.mockReturnValue(Effect.succeed(null));
-    mockFlushNotifyEb.mockReturnValue(Effect.void);
+    mockFlushNotify.mockReturnValue(Effect.void);
     mockBroadcastAgentEvent.mockReturnValue(Effect.void);
     mockDbExecute.mockReturnValue(Effect.succeed({ changes: 1, lastInsertRowid: 0 }));
     mockDbQueryOne.mockReturnValue(Effect.succeed(null));
@@ -156,7 +144,7 @@ describe("CompletionActions service — CompletionActionsLive", () => {
         ),
       );
 
-      expect(mockFlushNotifyEb).toHaveBeenCalledWith(managed.id);
+      expect(mockFlushNotify).toHaveBeenCalledWith(managed.id);
     });
 
     it("calls all completion listeners with exit code 0", async () => {
@@ -194,8 +182,7 @@ describe("CompletionActions service — CompletionActionsLive", () => {
 
     it("continues even if DB persistence fails", async () => {
       mockPersistSessionStatus.mockReturnValue(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        Effect.fail({ _tag: "DatabaseError", operation: "execute", cause: new Error("DB fail") }) as any,
+        Effect.fail(new DatabaseError({ operation: "execute", cause: new Error("DB fail") })),
       );
       const managed = makeManagedSubprocess();
 
@@ -227,7 +214,7 @@ describe("CompletionActions service — CompletionActionsLive", () => {
         ),
       );
 
-      expect(mockFlushNotifyEb).toHaveBeenCalledWith(managed.id);
+      expect(mockFlushNotify).toHaveBeenCalledWith(managed.id);
     });
 
     it("calls all completion listeners with exit code 2 (paused)", async () => {
@@ -305,7 +292,7 @@ describe("CompletionActions service — CompletionActionsLive", () => {
         ),
       );
 
-      expect(mockFlushNotifyEb).toHaveBeenCalledWith(managed.id);
+      expect(mockFlushNotify).toHaveBeenCalledWith(managed.id);
     });
 
     it("calls all completion listeners with exit code 1", async () => {

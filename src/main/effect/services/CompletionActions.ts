@@ -55,8 +55,8 @@ export class CompletionActions extends Context.Tag("CompletionActions")<
 export const CompletionActionsLive = Layer.effect(
   CompletionActions,
   Effect.gen(function* () {
-    const sp = yield* SessionPersistence;
-    const eb = yield* EventBroadcaster;
+    const persistence = yield* SessionPersistence;
+    const broadcaster = yield* EventBroadcaster;
     const database = yield* Database;
 
     return {
@@ -66,16 +66,16 @@ export const CompletionActionsLive = Layer.effect(
       onCompleted: (managed: ManagedSubprocess, sdkSessionId?: string): Effect.Effect<void> =>
         Effect.gen(function* () {
           managed.status = "completed";
-          yield* sp
+          yield* persistence
             .persistSessionStatus(managed.id, "completed", sdkSessionId)
             .pipe(Effect.catchAll((e) => Effect.sync(() => {
               console.warn("[CompletionActions] failed to persist completed status:", e);
             })));
-          yield* eb.flushNotify(managed.id);
+          yield* broadcaster.flushNotify(managed.id);
           for (const listener of managed.completionListeners) {
             void listener(0);
           }
-          yield* eb.broadcastAgentEvent(
+          yield* broadcaster.broadcastAgentEvent(
             managed.id,
             managed.agentType as AgentType,
             { type: "agent_done", exitCode: 0 },
@@ -87,11 +87,11 @@ export const CompletionActionsLive = Layer.effect(
       // -----------------------------------------------------------------------
       onPaused: (managed: ManagedSubprocess): Effect.Effect<void> =>
         Effect.gen(function* () {
-          yield* eb.flushNotify(managed.id);
+          yield* broadcaster.flushNotify(managed.id);
           for (const listener of managed.completionListeners) {
             void listener(2);
           }
-          yield* eb.broadcastAgentEvent(
+          yield* broadcaster.broadcastAgentEvent(
             managed.id,
             managed.agentType as AgentType,
             { type: "agent_paused" },
@@ -103,16 +103,16 @@ export const CompletionActionsLive = Layer.effect(
       // -----------------------------------------------------------------------
       onStopped: (managed: ManagedSubprocess, sdkSessionId?: string): Effect.Effect<void> =>
         Effect.gen(function* () {
-          yield* sp
+          yield* persistence
             .persistSessionStatus(managed.id, "completed", sdkSessionId)
             .pipe(Effect.catchAll((e) => Effect.sync(() => {
               console.warn("[CompletionActions] failed to persist stopped→completed status:", e);
             })));
-          yield* eb.flushNotify(managed.id);
+          yield* broadcaster.flushNotify(managed.id);
           for (const listener of managed.completionListeners) {
             void listener(1);
           }
-          yield* eb.broadcastAgentEvent(
+          yield* broadcaster.broadcastAgentEvent(
             managed.id,
             managed.agentType as AgentType,
             { type: "agent_done", exitCode: 1 },
@@ -128,9 +128,9 @@ export const CompletionActionsLive = Layer.effect(
 
           // Resume failure recovery — restore original claude_session_id and keep paused
           if (managed.resumingFromSessionId) {
-            const sDbId = yield* sp.getSessionDbId(managed.id);
+            const sDbId = yield* persistence.getSessionDbId(managed.id);
             if (sDbId) {
-              yield* sp
+              yield* persistence
                 .persistClaudeSessionId(sDbId, managed.resumingFromSessionId)
                 .pipe(Effect.catchAll((e) => Effect.sync(() => {
                   console.warn("[CompletionActions] failed to restore claude_session_id:", e);
@@ -149,7 +149,7 @@ export const CompletionActionsLive = Layer.effect(
                 sDbId,
               ).pipe(Effect.catchAll(() => Effect.succeed(null)));
               if (featureRow?.feature_id) {
-                yield* eb.notifyDbUpdated("agent_session", featureRow.feature_id)
+                yield* broadcaster.notifyDbUpdated("agent_session", featureRow.feature_id)
                   .pipe(Effect.catchAll(() => Effect.void));
               }
               console.log(
@@ -160,11 +160,11 @@ export const CompletionActionsLive = Layer.effect(
           }
 
           managed.status = "error";
-          yield* eb.flushNotify(managed.id);
+          yield* broadcaster.flushNotify(managed.id);
 
           // Persist error status (unless it was a failed resume — we keep DB as paused)
           if (!managed.resumingFromSessionId) {
-            yield* sp
+            yield* persistence
               .persistSessionStatus(managed.id, "error")
               .pipe(Effect.catchAll((e) => Effect.sync(() => {
                 console.warn("[CompletionActions] failed to persist error status:", e);
@@ -177,9 +177,9 @@ export const CompletionActionsLive = Layer.effect(
             : rawMessage;
 
           // Persist error event to DB so it survives stream buffer clear
-          const errorSessionDbId = yield* sp.getSessionDbId(managed.id);
+          const errorSessionDbId = yield* persistence.getSessionDbId(managed.id);
           if (errorSessionDbId) {
-            yield* sp
+            yield* persistence
               .persistStreamEvent(
                 errorSessionDbId,
                 { type: "error", error: { type: "sdk_error", message: errorMessage } } as StreamEvent,
@@ -189,7 +189,7 @@ export const CompletionActionsLive = Layer.effect(
               })));
           }
 
-          yield* eb.broadcastAgentEvent(
+          yield* broadcaster.broadcastAgentEvent(
             managed.id,
             managed.agentType as AgentType,
             { type: "error", error: { type: "sdk_error", message: errorMessage } },
@@ -197,7 +197,7 @@ export const CompletionActionsLive = Layer.effect(
           for (const listener of managed.completionListeners) {
             void listener(1);
           }
-          yield* eb.broadcastAgentEvent(
+          yield* broadcaster.broadcastAgentEvent(
             managed.id,
             managed.agentType as AgentType,
             { type: "agent_done", exitCode: 1 },
