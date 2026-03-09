@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { router, publicProcedure } from "./trpc";
-import { getDatabase } from "../db/database";
 import type { AgentSessionRow, AgentMessageRow } from "../db/types";
+import { queryOne, queryAll, execute } from "../db/query";
+import { AppRuntime } from "../effect/runtime";
 import {
   stopSubprocess,
   interruptSubprocess,
@@ -10,9 +11,8 @@ import {
   sendMessageToSubprocess,
 } from "../agents/subprocess-manager";
 import { getBackgroundTasks } from "../agents/background-tasks";
-import { getSubprocessIdForSession } from "../agents/effect-helpers";
+import { getSubprocessIdForSession, notifyDbUpdated } from "../agents/effect-helpers";
 import type { AgentType } from "../agents/types";
-import { transitionAgentSession } from "../agents/state-transitions";
 import { resolveAgentCwd } from "../agents/resolve-cwd";
 import { buildBlocks } from "./shared";
 
@@ -25,28 +25,24 @@ export const sessionsRouter = router({
         status: z.string().optional(),
       }),
     )
-    .query(({ input }) => {
-      const db = getDatabase();
-      let query =
-        "SELECT id, feature_id, agent_type, claude_session_id, status, started_at, ended_at, run_id, phase_id, model FROM agent_sessions WHERE feature_id = ?";
-      const params: (number | string)[] = [input.featureId];
-      if (input.status) {
-        query += " AND status = ?";
-        params.push(input.status);
-      }
-      query += " ORDER BY id DESC";
-      const sessions = db.prepare(query).all(...params) as AgentSessionRow[];
-      return sessions;
+    .query(async ({ input }) => {
+      const sql = `SELECT id, feature_id, agent_type, claude_session_id, status, started_at, ended_at, run_id, phase_id, model FROM agent_sessions WHERE feature_id = ?${input.status ? " AND status = ?" : ""} ORDER BY id DESC`;
+      const params: (number | string)[] = input.status
+        ? [input.featureId, input.status]
+        : [input.featureId];
+      return await AppRuntime.runPromise(queryAll<AgentSessionRow>(sql, ...params));
     }),
 
   /** Stop a running agent by its DB session ID (used when subprocess ID is unknown after refresh) */
   stopBySessionId: publicProcedure
     .input(z.object({ sessionId: z.number() }))
     .mutation(async ({ input }) => {
-      const db = getDatabase();
-      const session = db
-        .prepare("SELECT subprocess_id, status FROM agent_sessions WHERE id = ?")
-        .get(input.sessionId) as Pick<AgentSessionRow, "subprocess_id" | "status"> | undefined;
+      const session = await AppRuntime.runPromise(
+        queryOne<Pick<AgentSessionRow, "subprocess_id" | "status"> & { feature_id: number }>(
+          "SELECT subprocess_id, status, feature_id FROM agent_sessions WHERE id = ?",
+          input.sessionId,
+        ),
+      );
       if (!session) return { success: false };
 
       // Try to stop the subprocess if it's still alive
@@ -55,11 +51,18 @@ export const sessionsRouter = router({
       }
 
       // Mark as completed if still running/paused
-      const current = db
-        .prepare("SELECT status FROM agent_sessions WHERE id = ?")
-        .get(input.sessionId) as Pick<AgentSessionRow, "status"> | undefined;
+      const current = await AppRuntime.runPromise(
+        queryOne<Pick<AgentSessionRow, "status">>(
+          "SELECT status FROM agent_sessions WHERE id = ?",
+          input.sessionId,
+        ),
+      );
       if (current && (current.status === "running" || current.status === "paused")) {
-        transitionAgentSession(db, input.sessionId, "completed", undefined, { ended_at: new Date().toISOString(), subprocess_id: null });
+        await AppRuntime.runPromise(execute(
+          "UPDATE agent_sessions SET status = 'completed', ended_at = ?, subprocess_id = NULL WHERE id = ?",
+          new Date().toISOString(), input.sessionId,
+        ));
+        if (session.feature_id) notifyDbUpdated("agent_session", session.feature_id);
       }
       return { success: true };
     }),
@@ -68,10 +71,12 @@ export const sessionsRouter = router({
   interruptBySessionId: publicProcedure
     .input(z.object({ sessionId: z.number() }))
     .mutation(async ({ input }) => {
-      const db = getDatabase();
-      const session = db
-        .prepare("SELECT subprocess_id FROM agent_sessions WHERE id = ?")
-        .get(input.sessionId) as Pick<AgentSessionRow, "subprocess_id"> | undefined;
+      const session = await AppRuntime.runPromise(
+        queryOne<Pick<AgentSessionRow, "subprocess_id">>(
+          "SELECT subprocess_id FROM agent_sessions WHERE id = ?",
+          input.sessionId,
+        ),
+      );
       if (!session?.subprocess_id) return { success: false };
       const interrupted = await interruptSubprocess(session.subprocess_id);
       return { success: interrupted };
@@ -80,30 +85,32 @@ export const sessionsRouter = router({
   /** Delete an agent session and its messages (only non-running, non-completed) */
   deleteSession: publicProcedure
     .input(z.object({ sessionId: z.number() }))
-    .mutation(({ input }) => {
-      const db = getDatabase();
-      const session = db
-        .prepare("SELECT id, status FROM agent_sessions WHERE id = ?")
-        .get(input.sessionId) as Pick<AgentSessionRow, "id" | "status"> | undefined;
+    .mutation(async ({ input }) => {
+      const session = await AppRuntime.runPromise(
+        queryOne<Pick<AgentSessionRow, "id" | "status">>(
+          "SELECT id, status FROM agent_sessions WHERE id = ?",
+          input.sessionId,
+        ),
+      );
       if (!session) throw new Error("Session not found");
       if (session.status === "completed" || session.status === "running") {
         throw new Error("Cannot delete a completed or running session");
       }
-      db.prepare("DELETE FROM agent_messages WHERE session_id = ?").run(input.sessionId);
-      db.prepare("DELETE FROM agent_sessions WHERE id = ?").run(input.sessionId);
+      await AppRuntime.runPromise(execute("DELETE FROM agent_messages WHERE session_id = ?", input.sessionId));
+      await AppRuntime.runPromise(execute("DELETE FROM agent_sessions WHERE id = ?", input.sessionId));
       return { success: true };
     }),
 
   /** Get the active subprocess ID for a feature's session (if still alive) */
   getActiveSessionProcess: publicProcedure
     .input(z.object({ featureId: z.number() }))
-    .query(({ input }) => {
-      const db = getDatabase();
-      const session = db
-        .prepare(
+    .query(async ({ input }) => {
+      const session = await AppRuntime.runPromise(
+        queryOne<{ id: number }>(
           "SELECT id FROM agent_sessions WHERE feature_id = ? AND agent_type = 'session' AND status = 'running' ORDER BY id DESC LIMIT 1",
-        )
-        .get(input.featureId) as { id: number } | undefined;
+          input.featureId,
+        ),
+      );
       if (!session) return null;
       const subprocessId = getSubprocessIdForSession(session.id);
       if (!subprocessId) return null;
@@ -115,13 +122,13 @@ export const sessionsRouter = router({
   /** Get all agent state for a feature in a single query */
   getFeatureAgentState: publicProcedure
     .input(z.object({ featureId: z.number() }))
-    .query(({ input }) => {
-      const db = getDatabase();
-      const sessions = db
-        .prepare(
+    .query(async ({ input }) => {
+      const sessions = await AppRuntime.runPromise(
+        queryAll<AgentSessionRow & { draft_prompt: string | null }>(
           "SELECT id, feature_id, agent_type, claude_session_id, status, started_at, ended_at, run_id, phase_id, subprocess_id, model, pending_questions, has_file_changes, permission_mode, pending_plan_approval, pending_prd_approval, pending_permission, input_tokens, output_tokens, context_window, was_compacted, draft_prompt FROM agent_sessions WHERE feature_id = ? ORDER BY id ASC",
-        )
-        .all(input.featureId) as (AgentSessionRow & { draft_prompt: string | null })[];
+          input.featureId,
+        ),
+      );
 
       if (sessions.length === 0) return { sessions: [] };
 
@@ -130,9 +137,12 @@ export const sessionsRouter = router({
       const phaseTitleMap = new Map<number, string>();
       if (phaseIds.length > 0) {
         const phPlaceholders = phaseIds.map(() => "?").join(",");
-        const phases = db
-          .prepare(`SELECT id, title FROM phases WHERE id IN (${phPlaceholders})`)
-          .all(...phaseIds) as Array<{ id: number; title: string }>;
+        const phases = await AppRuntime.runPromise(
+          queryAll<{ id: number; title: string }>(
+            `SELECT id, title FROM phases WHERE id IN (${phPlaceholders})`,
+            ...phaseIds,
+          ),
+        );
         for (const p of phases) {
           phaseTitleMap.set(p.id, p.title);
         }
@@ -141,11 +151,12 @@ export const sessionsRouter = router({
       // Batch-fetch all messages for these sessions
       const sessionIds = sessions.map((s) => s.id);
       const placeholders = sessionIds.map(() => "?").join(",");
-      const allMessages = db
-        .prepare(
+      const allMessages = await AppRuntime.runPromise(
+        queryAll<AgentMessageRow>(
           `SELECT id, session_id, role, content, message_type, tool_name, tool_use_id, parent_tool_use_id, created_at, model FROM agent_messages WHERE session_id IN (${placeholders}) ORDER BY id ASC`,
-        )
-        .all(...sessionIds) as AgentMessageRow[];
+          ...sessionIds,
+        ),
+      );
 
       // Group messages by session
       const messagesBySession = new Map<number, AgentMessageRow[]>();
@@ -213,28 +224,26 @@ export const sessionsRouter = router({
     }),
 
   /** Get feature IDs that have running agent sessions */
-  getActiveFeatureIds: publicProcedure.query(() => {
-    const db = getDatabase();
-    const rows = db
-      .prepare(
+  getActiveFeatureIds: publicProcedure.query(async () => {
+    const rows = await AppRuntime.runPromise(
+      queryAll<{ feature_id: number }>(
         "SELECT DISTINCT feature_id FROM agent_sessions WHERE status = 'running'",
-      )
-      .all() as Array<{ feature_id: number }>;
+      ),
+    );
     return rows.map((r) => r.feature_id);
   }),
 
   /** Get turn states for features with running sessions */
-  getFeatureTurnStates: publicProcedure.query(() => {
-    const db = getDatabase();
-    const rows = db
-      .prepare(
+  getFeatureTurnStates: publicProcedure.query(async () => {
+    const rows = await AppRuntime.runPromise(
+      queryAll<{ feature_id: number; needs_input: number }>(
         `SELECT feature_id,
           MAX(CASE WHEN pending_questions IS NOT NULL OR pending_permission IS NOT NULL OR pending_plan_approval IS NOT NULL OR pending_prd_approval IS NOT NULL THEN 1 ELSE 0 END) AS needs_input
          FROM agent_sessions
          WHERE status = 'running'
          GROUP BY feature_id`,
-      )
-      .all() as Array<{ feature_id: number; needs_input: number }>;
+      ),
+    );
     const result: Record<number, 'claude' | 'askUser'> = {};
     for (const row of rows) {
       result[row.feature_id] = row.needs_input === 1 ? 'askUser' : 'claude';
@@ -257,21 +266,24 @@ export const sessionsRouter = router({
   /** Save a draft prompt for a specific agent session */
   saveDraft: publicProcedure
     .input(z.object({ sessionId: z.number(), draft: z.string().nullable() }))
-    .mutation(({ input }) => {
-      const db = getDatabase();
-      db.prepare("UPDATE agent_sessions SET draft_prompt = ? WHERE id = ?")
-        .run(input.draft, input.sessionId);
+    .mutation(async ({ input }) => {
+      await AppRuntime.runPromise(execute(
+        "UPDATE agent_sessions SET draft_prompt = ? WHERE id = ?",
+        input.draft, input.sessionId,
+      ));
       return { success: true };
     }),
 
   /** Get the draft prompt for a specific agent session */
   getDraft: publicProcedure
     .input(z.object({ sessionId: z.number() }))
-    .query(({ input }) => {
-      const db = getDatabase();
-      const row = db
-        .prepare("SELECT draft_prompt FROM agent_sessions WHERE id = ?")
-        .get(input.sessionId) as { draft_prompt: string | null } | undefined;
+    .query(async ({ input }) => {
+      const row = await AppRuntime.runPromise(
+        queryOne<{ draft_prompt: string | null }>(
+          "SELECT draft_prompt FROM agent_sessions WHERE id = ?",
+          input.sessionId,
+        ),
+      );
       return { draftPrompt: row?.draft_prompt ?? null };
     }),
 

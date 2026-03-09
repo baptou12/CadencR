@@ -316,7 +316,7 @@ describe("appRouter - agentsRouter & sessionsRouter", () => {
     vi.mocked(stopSubprocess).mockResolvedValue(true);
     mockDb.prepare.mockReturnValue({
       get: vi.fn().mockReturnValue({ subprocess_id: "sp-1", status: "running" }),
-      run: vi.fn(),
+      run: vi.fn().mockReturnValue({ changes: 1, lastInsertRowid: 0 }),
       all: vi.fn().mockReturnValue([]),
     });
     const result = await caller.sessions.stopBySessionId({ sessionId: 1 });
@@ -333,7 +333,7 @@ describe("appRouter - agentsRouter & sessionsRouter", () => {
   it("agents.clearPlanApproval clears pending_plan_approval and notifies", async () => {
     const { notifyDbUpdated } = await import("../agents/effect-helpers");
     mockDb.prepare.mockImplementation((sql: string) => ({
-      run: vi.fn(),
+      run: vi.fn().mockReturnValue({ changes: 1, lastInsertRowid: 0 }),
       get: vi.fn().mockReturnValue(sql.includes("SELECT feature_id") ? { feature_id: 42 } : undefined),
       all: vi.fn().mockReturnValue([]),
     }));
