@@ -10,7 +10,7 @@
 import { Context, Effect, Layer } from "effect";
 import { BrowserWindow } from "electron";
 import type { AgentType, StreamEvent, AgentEvent } from "../../agents/types.js";
-import { getSessionDbId } from "../../agents/session-persistence.js";
+import { SessionPersistence } from "./SessionPersistence.js";
 
 // ---------------------------------------------------------------------------
 // Channel constants (re-exported so callers don't need to import from broadcast.ts)
@@ -74,83 +74,88 @@ export class EventBroadcaster extends Context.Tag("EventBroadcaster")<
 // Live implementation
 // ---------------------------------------------------------------------------
 
-export const EventBroadcasterLive = Layer.sync(EventBroadcaster, () => {
-  // ---------------------------------------------------------------------------
-  // Internal state — throttle timers
-  // ---------------------------------------------------------------------------
-  const pendingNotifyTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  const pendingNotifyFeatureIds = new Map<string, number>();
+export const EventBroadcasterLive = Layer.effect(
+  EventBroadcaster,
+  Effect.gen(function* () {
+    const sp = yield* SessionPersistence;
 
-  // ---------------------------------------------------------------------------
-  // Internal helpers
-  // ---------------------------------------------------------------------------
+    // ---------------------------------------------------------------------------
+    // Internal state — throttle timers
+    // ---------------------------------------------------------------------------
+    const pendingNotifyTimers = new Map<string, ReturnType<typeof setTimeout>>();
+    const pendingNotifyFeatureIds = new Map<string, number>();
 
-  function doNotifyDbUpdated(entity: string, featureId: number): void {
-    sendToAll(DB_UPDATED_CHANNEL, { entity, featureId });
-  }
+    // ---------------------------------------------------------------------------
+    // Internal helpers
+    // ---------------------------------------------------------------------------
 
-  // ---------------------------------------------------------------------------
-  // Service implementation
-  // ---------------------------------------------------------------------------
+    function doNotifyDbUpdated(entity: string, featureId: number): void {
+      sendToAll(DB_UPDATED_CHANNEL, { entity, featureId });
+    }
 
-  return {
-    broadcastAgentEvent: (
-      id: string,
-      agentType: AgentType,
-      event: StreamEvent,
-      parentToolUseId?: string | null,
-      messageDbId?: number | null,
-    ): Effect.Effect<void> =>
-      Effect.sync(() => {
-        const sessionDbId = getSessionDbId(id);
-        const agentEvent: AgentEvent = {
-          subprocessId: id,
-          agentType,
-          event,
-          timestamp: Date.now(),
-          parentToolUseId: parentToolUseId ?? undefined,
-          sessionDbId,
-          messageDbId: messageDbId ?? undefined,
-        };
-        sendToAll(AGENT_EVENT_CHANNEL, agentEvent);
-      }),
+    // ---------------------------------------------------------------------------
+    // Service implementation
+    // ---------------------------------------------------------------------------
 
-    notifyDbUpdated: (
-      entity: string,
-      featureId: number,
-    ): Effect.Effect<void> =>
-      Effect.sync(() => {
-        doNotifyDbUpdated(entity, featureId);
-      }),
+    return {
+      broadcastAgentEvent: (
+        id: string,
+        agentType: AgentType,
+        event: StreamEvent,
+        parentToolUseId?: string | null,
+        messageDbId?: number | null,
+      ): Effect.Effect<void> =>
+        Effect.gen(function* () {
+          const sessionDbId = yield* sp.getSessionDbId(id);
+          const agentEvent: AgentEvent = {
+            subprocessId: id,
+            agentType,
+            event,
+            timestamp: Date.now(),
+            parentToolUseId: parentToolUseId ?? undefined,
+            sessionDbId: sessionDbId ?? undefined,
+            messageDbId: messageDbId ?? undefined,
+          };
+          sendToAll(AGENT_EVENT_CHANNEL, agentEvent);
+        }),
 
-    throttledNotify: (
-      sessionKey: string,
-      featureId: number,
-    ): Effect.Effect<void> =>
-      Effect.sync(() => {
-        pendingNotifyFeatureIds.set(sessionKey, featureId);
-        if (pendingNotifyTimers.has(sessionKey)) return; // already scheduled
-        pendingNotifyTimers.set(
-          sessionKey,
-          setTimeout(() => {
+      notifyDbUpdated: (
+        entity: string,
+        featureId: number,
+      ): Effect.Effect<void> =>
+        Effect.sync(() => {
+          doNotifyDbUpdated(entity, featureId);
+        }),
+
+      throttledNotify: (
+        sessionKey: string,
+        featureId: number,
+      ): Effect.Effect<void> =>
+        Effect.sync(() => {
+          pendingNotifyFeatureIds.set(sessionKey, featureId);
+          if (pendingNotifyTimers.has(sessionKey)) return; // already scheduled
+          pendingNotifyTimers.set(
+            sessionKey,
+            setTimeout(() => {
+              pendingNotifyTimers.delete(sessionKey);
+              const fid = pendingNotifyFeatureIds.get(sessionKey);
+              pendingNotifyFeatureIds.delete(sessionKey);
+              if (fid != null) doNotifyDbUpdated("agent_session", fid);
+            }, 200),
+          );
+        }),
+
+      flushNotify: (sessionKey: string): Effect.Effect<void> =>
+        Effect.sync(() => {
+          const timer = pendingNotifyTimers.get(sessionKey);
+          if (timer) {
+            clearTimeout(timer);
             pendingNotifyTimers.delete(sessionKey);
-            const fid = pendingNotifyFeatureIds.get(sessionKey);
-            pendingNotifyFeatureIds.delete(sessionKey);
-            if (fid != null) doNotifyDbUpdated("agent_session", fid);
-          }, 200),
-        );
-      }),
-
-    flushNotify: (sessionKey: string): Effect.Effect<void> =>
-      Effect.sync(() => {
-        const timer = pendingNotifyTimers.get(sessionKey);
-        if (timer) {
-          clearTimeout(timer);
-          pendingNotifyTimers.delete(sessionKey);
-        }
-        const fid = pendingNotifyFeatureIds.get(sessionKey);
-        pendingNotifyFeatureIds.delete(sessionKey);
-        if (fid != null) doNotifyDbUpdated("agent_session", fid);
-      }),
-  };
-});
+          }
+          const fid = pendingNotifyFeatureIds.get(sessionKey);
+          pendingNotifyFeatureIds.delete(sessionKey);
+          if (fid != null) doNotifyDbUpdated("agent_session", fid);
+        }),
+    };
+  }),
+);

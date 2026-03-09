@@ -18,8 +18,7 @@
 import { Context, Effect, Layer } from "effect";
 import { SessionPersistence } from "./SessionPersistence.js";
 import { EventBroadcaster } from "./EventBroadcaster.js";
-import { getDatabase } from "../../db/database.js";
-import { transitionAgentSession } from "../../agents/state-transitions.js";
+import { Database } from "./Database.js";
 import type { ManagedSubprocess, AgentType, StreamEvent } from "../../agents/types.js";
 
 // ---------------------------------------------------------------------------
@@ -58,6 +57,7 @@ export const CompletionActionsLive = Layer.effect(
   Effect.gen(function* () {
     const sp = yield* SessionPersistence;
     const eb = yield* EventBroadcaster;
+    const database = yield* Database;
 
     return {
       // -----------------------------------------------------------------------
@@ -136,23 +136,26 @@ export const CompletionActionsLive = Layer.effect(
                   console.warn("[CompletionActions] failed to restore claude_session_id:", e);
                 })));
               // Transition DB session back to paused with no subprocess_id
-              yield* Effect.try({
-                try: () => {
-                  const db = getDatabase();
-                  transitionAgentSession(db, sDbId, "paused", undefined, {
-                    ended_at: new Date().toISOString(),
-                    subprocess_id: null,
-                  });
-                  console.log(
-                    `[CompletionActions] Restored session ${sDbId} to paused ` +
-                    `with original session ID ${managed.resumingFromSessionId}`,
-                  );
-                },
-                catch: (e) => {
-                  console.warn("[CompletionActions] best-effort transition failed:", e);
-                  return null;
-                },
-              }).pipe(Effect.catchAll(() => Effect.void));
+              yield* database.execute(
+                "UPDATE agent_sessions SET status = 'paused', ended_at = ?, subprocess_id = NULL WHERE id = ?",
+                new Date().toISOString(),
+                sDbId,
+              ).pipe(Effect.catchAll((e) => Effect.sync(() => {
+                console.warn("[CompletionActions] best-effort transition failed:", e);
+              })));
+              // Notify renderer about the state change
+              const featureRow = yield* database.queryOne<{ feature_id: number | null }>(
+                "SELECT feature_id FROM agent_sessions WHERE id = ?",
+                sDbId,
+              ).pipe(Effect.catchAll(() => Effect.succeed(null)));
+              if (featureRow?.feature_id) {
+                yield* eb.notifyDbUpdated("agent_session", featureRow.feature_id)
+                  .pipe(Effect.catchAll(() => Effect.void));
+              }
+              console.log(
+                `[CompletionActions] Restored session ${sDbId} to paused ` +
+                `with original session ID ${managed.resumingFromSessionId}`,
+              );
             }
           }
 

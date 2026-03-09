@@ -10,10 +10,13 @@ import { SubprocessLifecycleLive } from "./services/SubprocessLifecycle.js";
 // SessionPersistenceLive depends on Database, so we provide DatabaseLive to it
 const SessionPersistenceWithDb = Layer.provide(SessionPersistenceLive, DatabaseLive);
 
-// CompletionActionsLive depends on SessionPersistence and EventBroadcaster
+// EventBroadcasterLive now depends on SessionPersistence (to look up session DB IDs)
+const EventBroadcasterWithDeps = Layer.provide(EventBroadcasterLive, SessionPersistenceWithDb);
+
+// CompletionActionsLive depends on SessionPersistence, EventBroadcaster, and Database
 const CompletionActionsWithDeps = Layer.provide(
   CompletionActionsLive,
-  Layer.mergeAll(SessionPersistenceWithDb, EventBroadcasterLive),
+  Layer.mergeAll(SessionPersistenceWithDb, EventBroadcasterWithDeps, DatabaseLive),
 );
 
 // SdkQueryRunnerLive depends on SessionPersistence, EventBroadcaster, Database, CompletionActions
@@ -21,7 +24,7 @@ const SdkQueryRunnerWithDeps = Layer.provide(
   SdkQueryRunnerLive,
   Layer.mergeAll(
     SessionPersistenceWithDb,
-    EventBroadcasterLive,
+    EventBroadcasterWithDeps,
     DatabaseLive,
     CompletionActionsWithDeps,
   ),
@@ -33,7 +36,7 @@ const SubprocessLifecycleWithDeps = Layer.provide(
   Layer.mergeAll(
     SdkQueryRunnerWithDeps,
     SessionPersistenceWithDb,
-    EventBroadcasterLive,
+    EventBroadcasterWithDeps,
     DatabaseLive,
   ),
 );
@@ -42,7 +45,7 @@ export const AppLayer = Layer.mergeAll(
   DatabaseLive,
   PtyManagerLive,
   SessionPersistenceWithDb,
-  EventBroadcasterLive,
+  EventBroadcasterWithDeps,
   CompletionActionsWithDeps,
   SdkQueryRunnerWithDeps,
   SubprocessLifecycleWithDeps,

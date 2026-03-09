@@ -144,27 +144,24 @@ export const SubprocessLifecycleLive = Layer.scoped(
 
     // ---------------------------------------------------------------------------
     // Private: resolve featureId for a subprocess (for DB lookups)
+    // Returns an Effect so callers inside Effect.gen can yield* it properly.
     // ---------------------------------------------------------------------------
-    function getFeatureId(managedId: string): number | null {
+    function getFeatureId(managedId: string): Effect.Effect<number | null> {
       const cached = featureIdCache.get(managedId);
-      if (cached != null) return cached;
-      const sessionDbId = Effect.runSync(sp.getSessionDbId(managedId));
-      if (!sessionDbId) return null;
-      try {
-        const row = Effect.runSync(
-          db.queryOne<{ feature_id: number }>(
-            "SELECT feature_id FROM agent_sessions WHERE id = ?",
-            sessionDbId,
-          ),
-        );
+      if (cached != null) return Effect.succeed(cached);
+      return Effect.gen(function* () {
+        const sessionDbId = yield* sp.getSessionDbId(managedId);
+        if (!sessionDbId) return null;
+        const row = yield* db.queryOne<{ feature_id: number }>(
+          "SELECT feature_id FROM agent_sessions WHERE id = ?",
+          sessionDbId,
+        ).pipe(Effect.catchAll(() => Effect.succeed(null)));
         if (row) {
           featureIdCache.set(managedId, row.feature_id);
           return row.feature_id;
         }
         return null;
-      } catch {
-        return null;
-      }
+      });
     }
 
     /** Resolve the current model for a subprocess by looking up its feature and project. */
@@ -216,7 +213,7 @@ export const SubprocessLifecycleLive = Layer.scoped(
           managed.abortController?.abort();
         }
 
-        const sessionDbId = Effect.runSync(sp.getSessionDbId(id));
+        const sessionDbId = yield* sp.getSessionDbId(id);
         if (sessionDbId) {
           yield* db
             .execute(
@@ -311,28 +308,24 @@ export const SubprocessLifecycleLive = Layer.scoped(
           }
 
           // Persist the user message to the database
-          const sessionDbId = Effect.runSync(sp.getSessionDbId(id));
+          const sessionDbId = yield* sp.getSessionDbId(id);
           if (sessionDbId) {
-            try {
-              const persistedContent =
-                typeof message === "string" ? message : JSON.stringify(message);
-              yield* db
-                .execute(
-                  "INSERT INTO agent_messages (session_id, role, content, message_type, tool_name) VALUES (?, ?, ?, ?, ?)",
-                  sessionDbId,
-                  "user",
-                  persistedContent,
-                  "user_message",
-                  null,
-                )
-                .pipe(Effect.catchAll(() => Effect.void));
+            const persistedContent =
+              typeof message === "string" ? message : JSON.stringify(message);
+            yield* db
+              .execute(
+                "INSERT INTO agent_messages (session_id, role, content, message_type, tool_name) VALUES (?, ?, ?, ?, ?)",
+                sessionDbId,
+                "user",
+                persistedContent,
+                "user_message",
+                null,
+              )
+              .pipe(Effect.catchAll(() => Effect.void));
 
-              const fid = getFeatureId(id);
-              if (fid != null) {
-                yield* eb.notifyDbUpdated("agent_session", fid);
-              }
-            } catch {
-              // Best-effort persistence
+            const fidForNotify = yield* getFeatureId(id);
+            if (fidForNotify != null) {
+              yield* eb.notifyDbUpdated("agent_session", fidForNotify);
             }
           }
 
@@ -345,7 +338,7 @@ export const SubprocessLifecycleLive = Layer.scoped(
             managed.status = "running";
 
             // Update DB status back to running
-            const resumeDbId = Effect.runSync(sp.getSessionDbId(id));
+            const resumeDbId = yield* sp.getSessionDbId(id);
             if (resumeDbId) {
               yield* db
                 .execute(
@@ -361,10 +354,10 @@ export const SubprocessLifecycleLive = Layer.scoped(
 
             // Re-resolve model in case user changed settings
             let freshModel = managed.originalOptions.model;
-            const fid = getFeatureId(id);
-            if (fid) {
+            const fidForResume = yield* getFeatureId(id);
+            if (fidForResume) {
               freshModel =
-                resolveModelForSubprocess(managed.agentType as AgentType, fid) ??
+                resolveModelForSubprocess(managed.agentType as AgentType, fidForResume) ??
                 freshModel;
             }
 
@@ -400,16 +393,12 @@ export const SubprocessLifecycleLive = Layer.scoped(
 
           // Re-resolve the model in case the user changed it in settings
           if (managed.query) {
-            try {
-              const fid = getFeatureId(id);
-              const freshModel = fid
-                ? resolveModelForSubprocess(managed.agentType as AgentType, fid)
-                : undefined;
-              if (freshModel) {
-                void managed.query.setModel(freshModel);
-              }
-            } catch {
-              /* best-effort */
+            const fidForModel = yield* getFeatureId(id);
+            const freshModel = fidForModel
+              ? resolveModelForSubprocess(managed.agentType as AgentType, fidForModel)
+              : undefined;
+            if (freshModel) {
+              void managed.query.setModel(freshModel).catch(() => { /* best-effort */ });
             }
           }
 

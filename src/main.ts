@@ -1,10 +1,12 @@
 import { app, BrowserWindow, dialog } from "electron";
 import path from "node:path";
+import { Effect } from "effect";
 import { createIPCHandler } from "electron-trpc/main";
 import { appRouter } from "./main/trpc/router";
-import { initRuntime, disposeRuntime } from "./main/effect/runtime";
+import { initRuntime, disposeRuntime, AppRuntime } from "./main/effect/runtime";
 import { hasRunningSubprocesses } from "./main/agents/subprocess-manager";
 import { restoreSessionMap } from "./main/agents/session-persistence";
+import { SessionPersistence } from "./main/effect/services/SessionPersistence";
 import { resumeInProgressFeatures } from "./main/agents/resume-features";
 import { fetchAvailableModels } from "./main/agents/available-models";
 
@@ -77,8 +79,12 @@ app.on("ready", async () => {
   // Initialize the Effect ManagedRuntime — builds layers, wires services.
   await initRuntime();
   fetchAvailableModels().catch(() => {}); // warm up cache
-  // Restore in-memory session map from DB (for reconnection after restart)
+  // Restore in-memory session map from DB (for reconnection after restart).
+  // Call both: old module (for legacy code paths) and Effect service (for Effect-based code paths).
   restoreSessionMap();
+  await AppRuntime.runPromise(
+    Effect.flatMap(SessionPersistence, (sp) => sp.restoreSessionMap()),
+  );
   resumeInProgressFeatures();
   createWindow();
 });

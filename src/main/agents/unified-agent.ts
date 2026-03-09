@@ -16,12 +16,15 @@
  */
 
 import fs from "node:fs";
+import { Effect } from "effect";
 import { getDatabase } from "../db/database";
 import { startSubprocess, generateSubprocessId } from "./subprocess-manager";
 import { registerSessionPersistence } from "./session-persistence";
 import { transitionAgentSession } from "./state-transitions";
 import { resolveModel } from "./models";
 import { extractTextFromEvent } from "./utils";
+import { AppRuntime } from "../effect/runtime";
+import { SessionPersistence } from "../effect/services/SessionPersistence";
 import type {
   AgentType,
   StreamEvent,
@@ -120,6 +123,11 @@ export async function startUnifiedAgent(config: UnifiedAgentConfig): Promise<Uni
 
   // 4. Register session for persistence tracking
   registerSessionPersistence(managed.id, sessionDbId);
+  // Also register in the Effect SessionPersistence service so Effect services
+  // (SdkQueryRunner, SubprocessLifecycle, CompletionActions) can look up the session DB ID.
+  AppRuntime.runSync(
+    Effect.flatMap(SessionPersistence, (sp) => sp.registerSession(managed.id, sessionDbId)),
+  );
 
   // 5. Persist the initial user message
   if (config.prompt) {

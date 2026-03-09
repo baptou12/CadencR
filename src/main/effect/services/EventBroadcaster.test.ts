@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { Effect } from "effect";
+import { Effect, Layer } from "effect";
 
 // ---------------------------------------------------------------------------
 // Mocks — must be hoisted before imports that use them
@@ -14,19 +14,45 @@ vi.mock("electron", () => ({
   BrowserWindow: { getAllWindows: () => mockGetAllWindows() },
 }));
 
-vi.mock("../../agents/session-persistence", () => ({
-  getSessionDbId: vi.fn(() => 99),
-}));
-
-import { getSessionDbId } from "../../agents/session-persistence.js";
-const mockGetSessionDbId = vi.mocked(getSessionDbId);
-
 import {
   EventBroadcaster,
   EventBroadcasterLive,
   AGENT_EVENT_CHANNEL,
   DB_UPDATED_CHANNEL,
 } from "./EventBroadcaster.js";
+import { SessionPersistence } from "./SessionPersistence.js";
+import type { SessionPersistenceService } from "./SessionPersistence.js";
+
+// ---------------------------------------------------------------------------
+// Mock SessionPersistence service
+// ---------------------------------------------------------------------------
+
+const mockGetSessionDbIdFn = vi.fn((_id: string) => 99 as number | null);
+
+function makeMockSessionPersistence(): SessionPersistenceService {
+  return {
+    getSessionDbId: (id: string) => Effect.sync(() => mockGetSessionDbIdFn(id)),
+    persistStreamEvent: vi.fn(() => Effect.void),
+    persistSessionStatus: vi.fn(() => Effect.void),
+    persistClaudeSessionId: vi.fn(() => Effect.void),
+    setSessionModel: vi.fn(() => Effect.void),
+    updateTokenUsage: vi.fn(() => Effect.void),
+    saveAllSessionStates: vi.fn(() => Effect.void),
+    restoreSessionMap: vi.fn(() => Effect.void),
+    registerSession: vi.fn(() => Effect.void),
+    removeSession: vi.fn(() => Effect.void),
+  };
+}
+
+const MockSessionPersistenceLayer = Layer.succeed(
+  SessionPersistence,
+  makeMockSessionPersistence(),
+);
+
+const TestEventBroadcasterLayer = Layer.provide(
+  EventBroadcasterLive,
+  MockSessionPersistenceLayer,
+);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -35,7 +61,7 @@ import {
 function runEB<A>(
   eff: Effect.Effect<A, unknown, EventBroadcaster>,
 ): A {
-  return Effect.runSync(Effect.provide(eff, EventBroadcasterLive));
+  return Effect.runSync(Effect.provide(eff, TestEventBroadcasterLayer));
 }
 
 // ---------------------------------------------------------------------------
@@ -46,7 +72,8 @@ describe("EventBroadcaster service — EventBroadcasterLive", () => {
   beforeEach(() => {
     // Reset call history without losing implementations
     mockSend.mockClear();
-    mockGetSessionDbId.mockClear();
+    mockGetSessionDbIdFn.mockClear();
+    mockGetSessionDbIdFn.mockImplementation((_id: string) => 99);
     // Re-establish window mock so clearAllMocks in global setup can't break it
     mockGetAllWindows.mockImplementation(() => [
       { isDestroyed: () => false, webContents: { send: mockSend } },
@@ -81,8 +108,8 @@ describe("EventBroadcaster service — EventBroadcasterLive", () => {
       expect(payload.event.type).toBe("error");
     });
 
-    it("includes sessionDbId from getSessionDbId", () => {
-      mockGetSessionDbId.mockReturnValue(42);
+    it("includes sessionDbId from SessionPersistence service", () => {
+      mockGetSessionDbIdFn.mockImplementation((_id: string) => 42);
 
       runEB(
         Effect.flatMap(EventBroadcaster, (svc) =>
@@ -127,6 +154,22 @@ describe("EventBroadcaster service — EventBroadcasterLive", () => {
       );
 
       expect(mockSend).not.toHaveBeenCalled();
+    });
+
+    it("sets sessionDbId to undefined when SessionPersistence returns null", () => {
+      mockGetSessionDbIdFn.mockImplementation((_id: string) => null);
+
+      runEB(
+        Effect.flatMap(EventBroadcaster, (svc) =>
+          svc.broadcastAgentEvent("proc-5", "plan", {
+            type: "agent_done",
+            exitCode: 0,
+          }),
+        ),
+      );
+
+      const [, payload] = mockSend.mock.calls[0];
+      expect(payload.sessionDbId).toBeUndefined();
     });
   });
 

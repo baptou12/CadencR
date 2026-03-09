@@ -3,21 +3,8 @@ import { Effect, Layer } from "effect";
 import { CompletionActions, CompletionActionsLive } from "./CompletionActions.js";
 import { SessionPersistence, type SessionPersistenceService } from "./SessionPersistence.js";
 import { EventBroadcaster, type EventBroadcasterService } from "./EventBroadcaster.js";
+import { Database } from "./Database.js";
 import type { ManagedSubprocess } from "../../agents/types.js";
-
-// ---------------------------------------------------------------------------
-// Mock modules
-// ---------------------------------------------------------------------------
-
-vi.mock("../../db/database", () => ({
-  getDatabase: vi.fn(() => ({
-    prepare: vi.fn(() => ({ run: vi.fn() })),
-  })),
-}));
-
-vi.mock("../../agents/state-transitions", () => ({
-  transitionAgentSession: vi.fn(),
-}));
 
 // ---------------------------------------------------------------------------
 // Mock SessionPersistence service
@@ -31,6 +18,9 @@ const mockFlushNotifyEb = vi.fn(() => Effect.void);
 const mockBroadcastAgentEvent = vi.fn(() => Effect.void);
 const mockThrottledNotify = vi.fn(() => Effect.void);
 const mockNotifyDbUpdated = vi.fn(() => Effect.void);
+const mockDbExecute = vi.fn(() => Effect.succeed({ changes: 1, lastInsertRowid: 0 }));
+const mockDbQueryOne = vi.fn(() => Effect.succeed(null));
+const mockDbQueryAll = vi.fn(() => Effect.succeed([]));
 
 // Use `as unknown as` casts so mock functions receive exactly the args passed by
 // the caller — without the wrapper adding extra `undefined` for omitted optional params.
@@ -64,10 +54,20 @@ const mockEBService: EventBroadcasterService = {
 
 const MockSessionPersistence = Layer.succeed(SessionPersistence, mockSPService);
 const MockEventBroadcaster = Layer.succeed(EventBroadcaster, mockEBService);
+const MockDatabase = Layer.succeed(Database, {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  execute: (sql: string, ...params: unknown[]) => (mockDbExecute as any)(sql, ...params),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  queryOne: (sql: string, ...params: unknown[]) => (mockDbQueryOne as any)(sql, ...params),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  queryAll: (sql: string, ...params: unknown[]) => (mockDbQueryAll as any)(sql, ...params),
+  queryOneValidated: vi.fn(),
+  queryAllValidated: vi.fn(),
+});
 
 const TestLayer = Layer.provide(
   CompletionActionsLive,
-  Layer.mergeAll(MockSessionPersistence, MockEventBroadcaster),
+  Layer.mergeAll(MockSessionPersistence, MockEventBroadcaster, MockDatabase),
 );
 
 // ---------------------------------------------------------------------------
@@ -109,6 +109,9 @@ describe("CompletionActions service — CompletionActionsLive", () => {
     mockGetSessionDbId.mockReturnValue(Effect.succeed(null));
     mockFlushNotifyEb.mockReturnValue(Effect.void);
     mockBroadcastAgentEvent.mockReturnValue(Effect.void);
+    mockDbExecute.mockReturnValue(Effect.succeed({ changes: 1, lastInsertRowid: 0 }));
+    mockDbQueryOne.mockReturnValue(Effect.succeed(null));
+    mockDbQueryAll.mockReturnValue(Effect.succeed([]));
   });
 
   // -------------------------------------------------------------------------
