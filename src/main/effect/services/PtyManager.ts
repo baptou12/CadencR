@@ -1,20 +1,34 @@
 import { Context, Effect, Layer } from "effect";
 import * as pty from "node-pty";
-import { BrowserWindow } from "electron";
 import { PtyError, PtyNotFound } from "../errors.js";
 
-const TERMINAL_DATA_CHANNEL = "terminal:data";
-const TERMINAL_EXIT_CHANNEL = "terminal:exit";
+/** Max bytes of scrollback to keep per PTY for reconnection */
+const SCROLLBACK_BUFFER_SIZE = 100_000;
 
 /** Structure held in the internal map */
 interface ManagedPty {
   pty: pty.IPty;
   featureId: number;
+  /** Circular buffer of recent output for reconnection replay */
+  scrollback: string[];
+  scrollbackLen: number;
+  /** External data callbacks (e.g. tRPC broadcasting) */
+  dataCallbacks: Array<(data: string) => void>;
+  /** External exit callbacks */
+  exitCallbacks: Array<(info: { exitCode: number; signal?: number }) => void>;
 }
 
 /** Effect-based interface for PTY management */
 export interface PtyManagerService {
+  /** Generate a unique PTY ID (incrementing counter) */
+  generateId: () => Effect.Effect<string>;
   create: (id: string, featureId: number, cwd: string, shell?: string) => Effect.Effect<void, PtyError>;
+  /** Get the scrollback buffer for reconnection */
+  getScrollback: (id: string) => Effect.Effect<string[], PtyNotFound>;
+  /** Register a data callback for a PTY */
+  onData: (id: string, callback: (data: string) => void) => Effect.Effect<void, PtyNotFound>;
+  /** Register an exit callback for a PTY */
+  onExit: (id: string, callback: (info: { exitCode: number; signal?: number }) => void) => Effect.Effect<void, PtyNotFound>;
   write: (id: string, data: string) => Effect.Effect<void, PtyNotFound>;
   resize: (id: string, cols: number, rows: number) => Effect.Effect<void, PtyNotFound>;
   kill: (id: string) => Effect.Effect<void>;
@@ -25,15 +39,6 @@ export interface PtyManagerService {
 
 /** Context tag for the PtyManager service */
 export class PtyManager extends Context.Tag("PtyManager")<PtyManager, PtyManagerService>() {}
-
-/** Send an IPC event to all renderer windows. */
-function sendToAllWindows(channel: string, data: unknown): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (!win.isDestroyed()) {
-      win.webContents.send(channel, data);
-    }
-  }
-}
 
 /** Resolve the default shell for the current platform. */
 function getDefaultShell(): string {
@@ -53,6 +58,7 @@ export const PtyManagerLive = Layer.scoped(
   PtyManager,
   Effect.gen(function* () {
     const ptyInstances = new Map<string, ManagedPty>();
+    let nextPtyId = 1;
 
     // Register cleanup finalizer — kills all PTYs when scope/runtime exits
     yield* Effect.addFinalizer(() =>
@@ -69,6 +75,9 @@ export const PtyManagerLive = Layer.scoped(
     );
 
     return {
+      generateId: (): Effect.Effect<string> =>
+        Effect.sync(() => `pty-${nextPtyId++}`),
+
       create: (id: string, featureId: number, cwd: string, shell?: string): Effect.Effect<void, PtyError> =>
         Effect.try({
           try: () => {
@@ -98,21 +107,64 @@ export const PtyManagerLive = Layer.scoped(
               } as Record<string, string>,
             });
 
-            ptyInstances.set(id, { pty: ptyProcess, featureId });
+            const managed: ManagedPty = {
+              pty: ptyProcess,
+              featureId,
+              scrollback: [],
+              scrollbackLen: 0,
+              dataCallbacks: [],
+              exitCallbacks: [],
+            };
+            ptyInstances.set(id, managed);
 
-            // Forward PTY output to the renderer
+            // Buffer scrollback and forward to registered callbacks
             ptyProcess.onData((data: string) => {
-              sendToAllWindows(TERMINAL_DATA_CHANNEL, { id, data });
+              // Append to scrollback buffer
+              managed.scrollback.push(data);
+              managed.scrollbackLen += data.length;
+              // Trim from front if over budget
+              while (managed.scrollbackLen > SCROLLBACK_BUFFER_SIZE && managed.scrollback.length > 1) {
+                const removed = managed.scrollback.shift()!;
+                managed.scrollbackLen -= removed.length;
+              }
+              // Notify registered callbacks
+              for (const cb of managed.dataCallbacks) {
+                cb(data);
+              }
             });
 
-            // Handle PTY exit — remove from map
+            // Handle PTY exit — notify callbacks and remove from map
             ptyProcess.onExit(({ exitCode, signal }) => {
-              sendToAllWindows(TERMINAL_EXIT_CHANNEL, { id, exitCode, signal });
+              for (const cb of managed.exitCallbacks) {
+                cb({ exitCode, signal });
+              }
               ptyInstances.delete(id);
             });
           },
           catch: (e) => new PtyError({ message: "Failed to create PTY", cause: e }),
         }),
+
+      getScrollback: (id: string): Effect.Effect<string[], PtyNotFound> => {
+        const managed = ptyInstances.get(id);
+        if (!managed) return Effect.fail(new PtyNotFound({ id }));
+        return Effect.succeed([...managed.scrollback]);
+      },
+
+      onData: (id: string, callback: (data: string) => void): Effect.Effect<void, PtyNotFound> => {
+        const managed = ptyInstances.get(id);
+        if (!managed) return Effect.fail(new PtyNotFound({ id }));
+        return Effect.sync(() => {
+          managed.dataCallbacks.push(callback);
+        });
+      },
+
+      onExit: (id: string, callback: (info: { exitCode: number; signal?: number }) => void): Effect.Effect<void, PtyNotFound> => {
+        const managed = ptyInstances.get(id);
+        if (!managed) return Effect.fail(new PtyNotFound({ id }));
+        return Effect.sync(() => {
+          managed.exitCallbacks.push(callback);
+        });
+      },
 
       write: (id: string, data: string): Effect.Effect<void, PtyNotFound> => {
         const managed = ptyInstances.get(id);

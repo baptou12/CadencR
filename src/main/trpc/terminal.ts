@@ -1,28 +1,16 @@
 import { z } from "zod";
+import { Effect } from "effect";
 import { router, publicProcedure } from "./trpc";
 import { getDatabase } from "../db/database";
 import type { SettingRow, ProjectRow } from "../db/types";
 import { BrowserWindow } from "electron";
-import * as pty from "node-pty";
 import os from "node:os";
+import { AppRuntime } from "../effect/runtime";
+import { PtyManager } from "../effect/services/PtyManager";
 
 // ---------------------------------------------------------------------------
-// PTY instance management
+// Constants
 // ---------------------------------------------------------------------------
-
-/** Max bytes of scrollback to keep per PTY for reconnection */
-const SCROLLBACK_BUFFER_SIZE = 100_000;
-
-interface PtyInstance {
-  ptyProcess: pty.IPty;
-  featureId: number;
-  /** Circular buffer of recent output for reconnection replay */
-  scrollback: string[];
-  scrollbackLen: number;
-}
-
-const ptyInstances = new Map<string, PtyInstance>();
-let nextPtyId = 1;
 
 const TERMINAL_DATA_CHANNEL = "terminal:data";
 const TERMINAL_EXIT_CHANNEL = "terminal:exit";
@@ -69,20 +57,6 @@ function resolveTerminalCwd(featureId: number, projectId: number): string {
 // Terminal TRPC router
 // ---------------------------------------------------------------------------
 
-/**
- * Kill all PTY instances. Used during app shutdown for graceful cleanup.
- */
-export function killAllTerminalPtys(): void {
-  for (const [id, instance] of ptyInstances) {
-    try {
-      instance.ptyProcess.kill();
-    } catch {
-      // PTY may already be dead — ignore
-    }
-    ptyInstances.delete(id);
-  }
-}
-
 export const terminalRouter = router({
   /** Create a new PTY terminal for a feature/session */
   create: publicProcedure
@@ -92,46 +66,30 @@ export const terminalRouter = router({
         projectId: z.number(),
       }),
     )
-    .mutation(({ input }) => {
+    .mutation(async ({ input }) => {
       const cwd = resolveTerminalCwd(input.featureId, input.projectId);
       const shell = process.env.SHELL || (os.platform() === "win32" ? "powershell.exe" : "/bin/bash");
 
-      const ptyId = `pty-${nextPtyId++}`;
+      const ptyId = await AppRuntime.runPromise(
+        Effect.flatMap(PtyManager, (pm) =>
+          Effect.gen(function* () {
+            const id = yield* pm.generateId();
+            yield* pm.create(id, input.featureId, cwd, shell);
 
-      const ptyProcess = pty.spawn(shell, [], {
-        name: "xterm-256color",
-        cols: 80,
-        rows: 24,
-        cwd,
-        env: process.env as Record<string, string>,
-      });
+            // Register data callback — broadcast to renderer
+            yield* pm.onData(id, (data: string) => {
+              broadcast(TERMINAL_DATA_CHANNEL, { ptyId: id, data });
+            });
 
-      const instance: PtyInstance = {
-        ptyProcess,
-        featureId: input.featureId,
-        scrollback: [],
-        scrollbackLen: 0,
-      };
-      ptyInstances.set(ptyId, instance);
+            // Register exit callback — broadcast to renderer
+            yield* pm.onExit(id, ({ exitCode, signal }) => {
+              broadcast(TERMINAL_EXIT_CHANNEL, { ptyId: id, exitCode, signal });
+            });
 
-      // Forward PTY data to renderer and buffer for reconnection
-      ptyProcess.onData((data: string) => {
-        // Append to scrollback buffer
-        instance.scrollback.push(data);
-        instance.scrollbackLen += data.length;
-        // Trim from front if over budget
-        while (instance.scrollbackLen > SCROLLBACK_BUFFER_SIZE && instance.scrollback.length > 1) {
-          const removed = instance.scrollback.shift()!;
-          instance.scrollbackLen -= removed.length;
-        }
-        broadcast(TERMINAL_DATA_CHANNEL, { ptyId, data });
-      });
-
-      // Handle PTY exit
-      ptyProcess.onExit(({ exitCode, signal }) => {
-        broadcast(TERMINAL_EXIT_CHANNEL, { ptyId, exitCode, signal });
-        ptyInstances.delete(ptyId);
-      });
+            return id;
+          }),
+        ),
+      );
 
       return { ptyId, cwd };
     }),
@@ -139,10 +97,15 @@ export const terminalRouter = router({
   /** Reconnect to an existing PTY — returns buffered scrollback */
   reconnect: publicProcedure
     .input(z.object({ ptyId: z.string() }))
-    .query(({ input }) => {
-      const instance = ptyInstances.get(input.ptyId);
-      if (!instance) return { alive: false as const, scrollback: "" };
-      return { alive: true as const, scrollback: instance.scrollback.join("") };
+    .query(async ({ input }) => {
+      try {
+        const scrollback = await AppRuntime.runPromise(
+          Effect.flatMap(PtyManager, (pm) => pm.getScrollback(input.ptyId)),
+        );
+        return { alive: true as const, scrollback: scrollback.join("") };
+      } catch {
+        return { alive: false as const, scrollback: "" };
+      }
     }),
 
   /** Write data to a PTY */
@@ -153,10 +116,10 @@ export const terminalRouter = router({
         data: z.string(),
       }),
     )
-    .mutation(({ input }) => {
-      const instance = ptyInstances.get(input.ptyId);
-      if (!instance) throw new Error(`PTY not found: ${input.ptyId}`);
-      instance.ptyProcess.write(input.data);
+    .mutation(async ({ input }) => {
+      await AppRuntime.runPromise(
+        Effect.flatMap(PtyManager, (pm) => pm.write(input.ptyId, input.data)),
+      );
       return { success: true };
     }),
 
@@ -169,10 +132,10 @@ export const terminalRouter = router({
         rows: z.number(),
       }),
     )
-    .mutation(({ input }) => {
-      const instance = ptyInstances.get(input.ptyId);
-      if (!instance) throw new Error(`PTY not found: ${input.ptyId}`);
-      instance.ptyProcess.resize(input.cols, input.rows);
+    .mutation(async ({ input }) => {
+      await AppRuntime.runPromise(
+        Effect.flatMap(PtyManager, (pm) => pm.resize(input.ptyId, input.cols, input.rows)),
+      );
       return { success: true };
     }),
 
@@ -183,11 +146,10 @@ export const terminalRouter = router({
         ptyId: z.string(),
       }),
     )
-    .mutation(({ input }) => {
-      const instance = ptyInstances.get(input.ptyId);
-      if (!instance) return { success: false };
-      instance.ptyProcess.kill();
-      ptyInstances.delete(input.ptyId);
+    .mutation(async ({ input }) => {
+      await AppRuntime.runPromise(
+        Effect.flatMap(PtyManager, (pm) => pm.kill(input.ptyId)),
+      );
       return { success: true };
     }),
 
@@ -198,15 +160,10 @@ export const terminalRouter = router({
         featureId: z.number(),
       }),
     )
-    .mutation(({ input }) => {
-      let killed = 0;
-      for (const [id, instance] of ptyInstances) {
-        if (instance.featureId === input.featureId) {
-          instance.ptyProcess.kill();
-          ptyInstances.delete(id);
-          killed++;
-        }
-      }
-      return { killed };
+    .mutation(async ({ input }) => {
+      await AppRuntime.runPromise(
+        Effect.flatMap(PtyManager, (pm) => pm.killAllForFeature(input.featureId)),
+      );
+      return { success: true };
     }),
 });

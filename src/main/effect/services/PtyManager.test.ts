@@ -25,19 +25,24 @@ interface MockPty {
   write: ReturnType<typeof vi.fn>;
   resize: ReturnType<typeof vi.fn>;
   kill: ReturnType<typeof vi.fn>;
+  _triggerData: (data: string) => void;
   _triggerExit: (exitCode: number, signal?: number) => void;
 }
 
 function createMockPty(): MockPty {
+  const dataCallbacks: ((data: string) => void)[] = [];
   const exitCallbacks: ((ev: { exitCode: number; signal?: number }) => void)[] = [];
   return {
-    onData: vi.fn(),
+    onData: vi.fn().mockImplementation((cb: (data: string) => void) => {
+      dataCallbacks.push(cb);
+    }),
     onExit: vi.fn().mockImplementation((cb: (ev: { exitCode: number; signal?: number }) => void) => {
       exitCallbacks.push(cb);
     }),
     write: vi.fn(),
     resize: vi.fn(),
     kill: vi.fn(),
+    _triggerData: (data) => dataCallbacks.forEach((cb) => cb(data)),
     _triggerExit: (exitCode, signal) => exitCallbacks.forEach((cb) => cb({ exitCode, signal })),
   };
 }
@@ -57,6 +62,30 @@ function runWithPtyManager<A>(eff: Effect.Effect<A, unknown, PtyManager>): Promi
 describe("PtyManager service — PtyManagerLive", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  // -------------------------------------------------------------------------
+  // generateId
+  // -------------------------------------------------------------------------
+  describe("generateId", () => {
+    it("returns incrementing IDs", async () => {
+      const ids = await runWithPtyManager(
+        Effect.flatMap(PtyManager, (pm) =>
+          Effect.gen(function* () {
+            const id1 = yield* pm.generateId();
+            const id2 = yield* pm.generateId();
+            const id3 = yield* pm.generateId();
+            return [id1, id2, id3];
+          }),
+        ),
+      );
+
+      expect(ids[0]).toMatch(/^pty-\d+$/);
+      expect(ids[1]).toMatch(/^pty-\d+$/);
+      expect(ids[2]).toMatch(/^pty-\d+$/);
+      // They should be different
+      expect(new Set(ids).size).toBe(3);
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -106,6 +135,136 @@ describe("PtyManager service — PtyManagerLive", () => {
       );
 
       expect(mockSpawn).toHaveBeenCalledWith("/bin/fish", expect.any(Array), expect.any(Object));
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // getScrollback
+  // -------------------------------------------------------------------------
+  describe("getScrollback", () => {
+    it("returns buffered scrollback data", async () => {
+      const mockPty = createMockPty();
+      mockSpawn.mockReturnValue(mockPty as unknown as nodePty.IPty);
+
+      const scrollback = await runWithPtyManager(
+        Effect.flatMap(PtyManager, (pm) =>
+          Effect.gen(function* () {
+            yield* pm.create("t1", 1, "/tmp");
+            // Simulate PTY data
+            mockPty._triggerData("hello ");
+            mockPty._triggerData("world");
+            return yield* pm.getScrollback("t1");
+          }),
+        ),
+      );
+
+      expect(scrollback).toEqual(["hello ", "world"]);
+    });
+
+    it("fails with PtyNotFound when PTY does not exist", async () => {
+      const exit = await Effect.runPromise(
+        Effect.exit(
+          Effect.scoped(Effect.provide(Effect.flatMap(PtyManager, (pm) => pm.getScrollback("missing")), PtyManagerLive)),
+        ),
+      );
+      expect(Exit.isFailure(exit)).toBe(true);
+      if (Exit.isFailure(exit)) {
+        const errOpt = Cause.failureOption(exit.cause);
+        expect(Option.isSome(errOpt)).toBe(true);
+        expect((Option.getOrNull(errOpt) as PtyNotFound)?._tag).toBe("PtyNotFound");
+      }
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // onData
+  // -------------------------------------------------------------------------
+  describe("onData", () => {
+    it("registers a callback that receives PTY data", async () => {
+      const mockPty = createMockPty();
+      mockSpawn.mockReturnValue(mockPty as unknown as nodePty.IPty);
+      const received: string[] = [];
+
+      await runWithPtyManager(
+        Effect.flatMap(PtyManager, (pm) =>
+          Effect.gen(function* () {
+            yield* pm.create("t1", 1, "/tmp");
+            yield* pm.onData("t1", (data) => received.push(data));
+            mockPty._triggerData("chunk1");
+            mockPty._triggerData("chunk2");
+          }),
+        ),
+      );
+
+      expect(received).toEqual(["chunk1", "chunk2"]);
+    });
+
+    it("fails with PtyNotFound when PTY does not exist", async () => {
+      const exit = await Effect.runPromise(
+        Effect.exit(
+          Effect.scoped(Effect.provide(Effect.flatMap(PtyManager, (pm) => pm.onData("missing", () => {})), PtyManagerLive)),
+        ),
+      );
+      expect(Exit.isFailure(exit)).toBe(true);
+      if (Exit.isFailure(exit)) {
+        const errOpt = Cause.failureOption(exit.cause);
+        expect(Option.isSome(errOpt)).toBe(true);
+        expect((Option.getOrNull(errOpt) as PtyNotFound)?._tag).toBe("PtyNotFound");
+      }
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // onExit
+  // -------------------------------------------------------------------------
+  describe("onExit", () => {
+    it("registers a callback that fires on PTY exit", async () => {
+      const mockPty = createMockPty();
+      mockSpawn.mockReturnValue(mockPty as unknown as nodePty.IPty);
+      const exitEvents: Array<{ exitCode: number; signal?: number }> = [];
+
+      await runWithPtyManager(
+        Effect.flatMap(PtyManager, (pm) =>
+          Effect.gen(function* () {
+            yield* pm.create("t1", 1, "/tmp");
+            yield* pm.onExit("t1", (info) => exitEvents.push(info));
+            mockPty._triggerExit(0);
+          }),
+        ),
+      );
+
+      expect(exitEvents).toEqual([{ exitCode: 0, signal: undefined }]);
+    });
+
+    it("PTY is removed from map after exit", async () => {
+      const mockPty = createMockPty();
+      mockSpawn.mockReturnValue(mockPty as unknown as nodePty.IPty);
+
+      const hasRunning = await runWithPtyManager(
+        Effect.flatMap(PtyManager, (pm) =>
+          Effect.gen(function* () {
+            yield* pm.create("t1", 1, "/tmp");
+            mockPty._triggerExit(0);
+            return yield* pm.hasRunning();
+          }),
+        ),
+      );
+
+      expect(hasRunning).toBe(false);
+    });
+
+    it("fails with PtyNotFound when PTY does not exist", async () => {
+      const exit = await Effect.runPromise(
+        Effect.exit(
+          Effect.scoped(Effect.provide(Effect.flatMap(PtyManager, (pm) => pm.onExit("missing", () => {})), PtyManagerLive)),
+        ),
+      );
+      expect(Exit.isFailure(exit)).toBe(true);
+      if (Exit.isFailure(exit)) {
+        const errOpt = Cause.failureOption(exit.cause);
+        expect(Option.isSome(errOpt)).toBe(true);
+        expect((Option.getOrNull(errOpt) as PtyNotFound)?._tag).toBe("PtyNotFound");
+      }
     });
   });
 
