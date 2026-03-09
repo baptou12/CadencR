@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { router, publicProcedure } from "./trpc";
 import type { AgentSessionRow, AgentMessageRow } from "../db/types";
 import { queryOne, queryAll, queryAllValidated, execute, transaction } from "../db/query";
@@ -97,9 +98,9 @@ export const sessionsRouter = router({
           input.sessionId,
         ),
       );
-      if (!session) throw new Error("Session not found");
+      if (!session) throw new TRPCError({ code: "NOT_FOUND", message: `Session ${input.sessionId} not found` });
       if (session.status === "completed" || session.status === "running") {
-        throw new Error("Cannot delete a completed or running session");
+        throw new TRPCError({ code: "BAD_REQUEST", message: `Cannot delete a ${session.status} session` });
       }
       await AppRuntime.runPromise(
         transaction(() => {

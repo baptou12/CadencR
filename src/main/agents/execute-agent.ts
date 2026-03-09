@@ -52,8 +52,12 @@ export function processNextPhase(options: ExecuteAgentOptions): void {
   const { featureId, projectId } = options;
 
   // In-memory lock: prevent concurrent dispatch for the same feature
-  const acquired = AppRuntime.runSync(Effect.flatMap(DispatchLock, (dl) => dl.acquire(featureId)));
-  if (!acquired) return;
+  try {
+    AppRuntime.runSync(Effect.flatMap(DispatchLock, (dl) => dl.acquire(featureId)));
+  } catch {
+    // DispatchConflictError — another dispatch is already running for this feature
+    return;
+  }
 
   try {
     // 1. Ensure feature is in-progress

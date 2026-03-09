@@ -1,38 +1,38 @@
 import { describe, it, expect } from "vitest";
-import { Effect } from "effect";
+import { Effect, Exit } from "effect";
 import { DispatchLock, DispatchLockLive } from "./DispatchLock.js";
 
 describe("DispatchLock", () => {
-  it("acquire returns true on first call, false on second", () => {
+  it("acquire succeeds on first call, fails with DispatchConflictError on second", () => {
     const layer = DispatchLockLive;
-    const result = Effect.runSync(
+    const exit = Effect.runSyncExit(
       Effect.provide(
         Effect.gen(function* () {
           const dl = yield* DispatchLock;
-          const first = yield* dl.acquire(1);
-          const second = yield* dl.acquire(1);
-          return { first, second };
+          yield* dl.acquire(1);
+          // Second acquire should fail
+          yield* dl.acquire(1);
         }),
         layer,
       ),
     );
-    expect(result).toEqual({ first: true, second: false });
+    expect(Exit.isFailure(exit)).toBe(true);
   });
 
   it("release allows re-acquire", () => {
     const layer = DispatchLockLive;
-    const result = Effect.runSync(
+    // Should not throw — acquire after release should succeed
+    Effect.runSync(
       Effect.provide(
         Effect.gen(function* () {
           const dl = yield* DispatchLock;
           yield* dl.acquire(1);
           yield* dl.release(1);
-          return yield* dl.acquire(1);
+          yield* dl.acquire(1);
         }),
         layer,
       ),
     );
-    expect(result).toBe(true);
   });
 
   it("isHeld reflects lock state", () => {
@@ -56,18 +56,36 @@ describe("DispatchLock", () => {
 
   it("locks are independent per feature", () => {
     const layer = DispatchLockLive;
-    const result = Effect.runSync(
+    // Feature 1 locked, feature 2 should still be acquirable
+    Effect.runSync(
       Effect.provide(
         Effect.gen(function* () {
           const dl = yield* DispatchLock;
           yield* dl.acquire(1);
-          const canAcquire2 = yield* dl.acquire(2);
-          const canAcquire1Again = yield* dl.acquire(1);
-          return { canAcquire2, canAcquire1Again };
+          yield* dl.acquire(2); // Should succeed — different feature
         }),
         layer,
       ),
     );
-    expect(result).toEqual({ canAcquire2: true, canAcquire1Again: false });
+  });
+
+  it("acquire fails with correct tag for catchTag usage", () => {
+    const layer = DispatchLockLive;
+    const result = Effect.runSync(
+      Effect.provide(
+        Effect.gen(function* () {
+          const dl = yield* DispatchLock;
+          yield* dl.acquire(42);
+          return yield* dl.acquire(42).pipe(
+            Effect.map(() => "acquired" as const),
+            Effect.catchTag("DispatchConflictError", (e) =>
+              Effect.succeed(`conflict:${e.featureId}` as const),
+            ),
+          );
+        }),
+        layer,
+      ),
+    );
+    expect(result).toBe("conflict:42");
   });
 });

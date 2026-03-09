@@ -283,7 +283,7 @@ describe("appRouter - agentsRouter & sessionsRouter", () => {
 
   it("agents.deleteSession throws when session not found", async () => {
     mockDb.prepare.mockReturnValue({ get: vi.fn().mockReturnValue(undefined), run: vi.fn(), all: vi.fn().mockReturnValue([]) });
-    await expect(caller.sessions.deleteSession({ sessionId: 999 })).rejects.toThrow("Session not found");
+    await expect(caller.sessions.deleteSession({ sessionId: 999 })).rejects.toThrow("Session 999 not found");
   });
 
   it("agents.deleteSession throws for completed session", async () => {

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { router, publicProcedure } from "./trpc";
 import { queryOne, queryAll, queryOneValidated, queryAllValidated, execute } from "../db/query";
 import type { PlanRow, PhaseRow, SettingRow, ProjectRow } from "../db/types";
@@ -259,10 +260,10 @@ export const featuresRouter = router({
         "SELECT id, plan_id, step_number, status FROM phases WHERE id = ?",
         input.phase_id,
       ));
-      if (phase === null) throw new Error("Phase not found");
+      if (phase === null) throw new TRPCError({ code: "NOT_FOUND", message: `Phase ${input.phase_id} not found` });
 
       if (phase.status !== "completed" && phase.status !== "error") {
-        throw new Error("Can only reset phases in completed or error status");
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Can only reset phases in completed or error status" });
       }
 
       // Check that the next phase (by step_number) is not completed
@@ -271,7 +272,7 @@ export const featuresRouter = router({
         phase.plan_id, phase.step_number,
       ));
       if (nextPhase !== null && nextPhase.status === "completed") {
-        throw new Error("Cannot reset a phase when the next phase is already completed");
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot reset a phase when the next phase is already completed" });
       }
 
       // Delete agent messages for sessions tied to this phase
@@ -302,7 +303,7 @@ export const featuresRouter = router({
         "SELECT id, plan_id FROM phases WHERE id = ?",
         input.phase_id,
       ));
-      if (phase === null) throw new Error("Phase not found");
+      if (phase === null) throw new TRPCError({ code: "NOT_FOUND", message: `Phase ${input.phase_id} not found` });
 
       await AppRuntime.runPromise(execute("UPDATE phases SET status = ? WHERE id = ?", input.status, input.phase_id));
 

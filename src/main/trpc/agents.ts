@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { router, publicProcedure } from "./trpc";
 import type { ProjectRow, AgentSessionRow } from "../db/types";
 import { queryOne, execute, transaction } from "../db/query";
@@ -110,7 +111,7 @@ export const agentsRouter = router({
             "SELECT path FROM projects WHERE id = ?",
             input.projectId,
           ));
-          if (!project?.path) throw new Error("Project path not found");
+          if (!project?.path) throw new TRPCError({ code: "NOT_FOUND", message: "Project path not found" });
           cwd = project.path;
         }
       } else {

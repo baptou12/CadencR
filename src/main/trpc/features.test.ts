@@ -284,7 +284,7 @@ describe("featuresRouter", () => {
   describe("resetPhase", () => {
     it("throws when phase not found", async () => {
       mockDb.prepare.mockReturnValue({ get: vi.fn().mockReturnValue(undefined), run: vi.fn(), all: vi.fn().mockReturnValue([]) });
-      await expect(caller.resetPhase({ phase_id: 999 })).rejects.toThrow("Phase not found");
+      await expect(caller.resetPhase({ phase_id: 999 })).rejects.toThrow("Phase 999 not found");
     });
 
     it("throws when phase is not completed or error", async () => {

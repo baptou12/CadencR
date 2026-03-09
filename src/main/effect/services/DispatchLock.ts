@@ -7,14 +7,15 @@
  */
 
 import { Context, Effect, Layer } from "effect";
+import { DispatchConflictError } from "../errors.js";
 
 // ---------------------------------------------------------------------------
 // Service interface
 // ---------------------------------------------------------------------------
 
 export interface DispatchLockService {
-  /** Acquire the lock for a feature. Returns true if acquired, false if already held. */
-  acquire: (featureId: number) => Effect.Effect<boolean>;
+  /** Acquire the lock for a feature. Fails with DispatchConflictError if already held. */
+  acquire: (featureId: number) => Effect.Effect<void, DispatchConflictError>;
 
   /** Release the lock for a feature. */
   release: (featureId: number) => Effect.Effect<void>;
@@ -38,11 +39,9 @@ export const DispatchLockLive = Layer.sync(DispatchLock, () => {
 
   return {
     acquire: (featureId: number) =>
-      Effect.sync(() => {
-        if (held.has(featureId)) return false;
-        held.add(featureId);
-        return true;
-      }),
+      held.has(featureId)
+        ? Effect.fail(new DispatchConflictError({ featureId }))
+        : Effect.sync(() => { held.add(featureId); }),
 
     release: (featureId: number) =>
       Effect.sync(() => {
