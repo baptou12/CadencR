@@ -38,7 +38,7 @@ import {
   createMarkPhaseDoneTool,
   createFinalizePhasesTool,
 } from "./shared-tools";
-import { queryOne, queryAll, queryOneValidated, execute } from "../../db/query";
+import { queryOne, queryAll, queryOneValidated, queryAllValidated, execute } from "../../db/query";
 import { getDatabase } from "../../db/database";
 import { notifyDbUpdated } from "../effect-helpers";
 import { transitionPhase } from "../state-transitions";
@@ -46,6 +46,7 @@ import { transitionPhase } from "../state-transitions";
 const mockQueryOne = vi.mocked(queryOne);
 const mockQueryAll = vi.mocked(queryAll);
 const mockQueryOneValidated = vi.mocked(queryOneValidated);
+const mockQueryAllValidated = vi.mocked(queryAllValidated);
 const mockExecute = vi.mocked(execute);
 const mockGetDatabase = vi.mocked(getDatabase);
 const mockNotify = vi.mocked(notifyDbUpdated);
@@ -64,10 +65,10 @@ describe("readPlanTool", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("returns plan markdown", async () => {
-    mockQueryOne.mockReturnValue(Effect.succeed({
+    mockQueryOneValidated.mockReturnValue(Effect.succeed({
       id: 1, title: "T", summary: null, context: null, clarifications: null, completion_conditions: null,
     }));
-    mockQueryAll.mockReturnValue(Effect.succeed([]));
+    mockQueryAllValidated.mockReturnValue(Effect.succeed([]));
 
     const result = await getHandler(readPlanTool)({ plan_id: 1 }) as any;
     expect(result.content[0].text).toContain("# Plan: T");

@@ -86,7 +86,7 @@ export const FeatureSettingRowSchema = Schema.Struct({
 // Plans & Phases
 // ---------------------------------------------------------------------------
 
-export const PlanStatusSchema = Schema.Literal("draft", "active", "pending");
+export const PlanStatusSchema = Schema.Literal("draft", "active", "pending", "approved");
 
 export const PlanRowSchema = Schema.Struct({
   id: Schema.Number,
@@ -113,8 +113,8 @@ export const PhaseRowSchema = Schema.Struct({
   title: Schema.String,
   status: PhaseStatusSchema,
   complexity: Schema.Number,
-  commit_message: Schema.String,
-  prompt: Schema.String,
+  commit_message: Schema.NullOr(Schema.String),
+  prompt: Schema.NullOr(Schema.String),
   order_index: Schema.Number,
   implementation_notes: Schema.NullOr(Schema.String),
   deviations: Schema.NullOr(Schema.String),

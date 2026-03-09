@@ -9,10 +9,10 @@ vi.mock("../../effect/runtime", () => ({
 }));
 
 import { renderPlanMarkdown, textResult, errorResult } from "./helpers";
-import { queryOne, queryAll } from "../../db/query";
+import { queryOneValidated, queryAllValidated } from "../../db/query";
 
-const mockQueryOne = vi.mocked(queryOne);
-const mockQueryAll = vi.mocked(queryAll);
+const mockQueryOneValidated = vi.mocked(queryOneValidated);
+const mockQueryAllValidated = vi.mocked(queryAllValidated);
 
 // ---------------------------------------------------------------------------
 // textResult / errorResult
@@ -40,12 +40,12 @@ describe("renderPlanMarkdown", () => {
   });
 
   it("returns 'Plan not found.' when plan does not exist", async () => {
-    mockQueryOne.mockReturnValue(Effect.succeed(null));
+    mockQueryOneValidated.mockReturnValue(Effect.succeed(null));
     expect(await renderPlanMarkdown(999)).toBe("Plan not found.");
   });
 
   it("renders plan title and sections", async () => {
-    mockQueryOne.mockReturnValue(Effect.succeed({
+    mockQueryOneValidated.mockReturnValue(Effect.succeed({
       id: 1,
       title: "My Plan",
       summary: "A summary",
@@ -53,7 +53,7 @@ describe("renderPlanMarkdown", () => {
       clarifications: "Q&A",
       completion_conditions: "All tests pass",
     }));
-    mockQueryAll.mockReturnValue(Effect.succeed([]));
+    mockQueryAllValidated.mockReturnValue(Effect.succeed([]));
 
     const result = await renderPlanMarkdown(1);
     expect(result).toContain("# Plan: My Plan");
@@ -64,7 +64,7 @@ describe("renderPlanMarkdown", () => {
   });
 
   it("includes phases in the output", async () => {
-    mockQueryOne.mockReturnValue(Effect.succeed({
+    mockQueryOneValidated.mockReturnValue(Effect.succeed({
       id: 1,
       title: "Plan",
       summary: null,
@@ -72,7 +72,7 @@ describe("renderPlanMarkdown", () => {
       clarifications: null,
       completion_conditions: null,
     }));
-    mockQueryAll.mockReturnValue(Effect.succeed([
+    mockQueryAllValidated.mockReturnValue(Effect.succeed([
       {
         id: 10,
         step_number: 1,
@@ -97,7 +97,7 @@ describe("renderPlanMarkdown", () => {
   });
 
   it("skips optional sections when null", async () => {
-    mockQueryOne.mockReturnValue(Effect.succeed({
+    mockQueryOneValidated.mockReturnValue(Effect.succeed({
       id: 1,
       title: "Lean Plan",
       summary: null,
@@ -105,7 +105,7 @@ describe("renderPlanMarkdown", () => {
       clarifications: null,
       completion_conditions: null,
     }));
-    mockQueryAll.mockReturnValue(Effect.succeed([]));
+    mockQueryAllValidated.mockReturnValue(Effect.succeed([]));
 
     const result = await renderPlanMarkdown(1);
     expect(result).not.toContain("## Summary");

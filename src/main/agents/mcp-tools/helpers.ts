@@ -3,9 +3,9 @@
  */
 
 import type { Effect } from "effect";
-import { queryOne, queryAll } from "../../db/query";
+import { queryOneValidated, queryAllValidated } from "../../db/query";
 import { AppRuntime } from "../../effect/runtime";
-import type { PhaseRow, PlanRow } from "../../db/types";
+import { PlanRowSchema, PhaseRowSchema } from "../../effect/schemas/db-schemas";
 
 export function textResult(text: string) {
   return { content: [{ type: "text" as const, text }] };
@@ -40,10 +40,10 @@ export async function renderPlanMarkdown(planId: number): Promise<string> {
 }
 
 async function renderPlanMarkdownUnsafe(planId: number): Promise<string> {
-  const plan = await AppRuntime.runPromise(queryOne<PlanRow>("SELECT * FROM plans WHERE id = ?", planId));
+  const plan = await AppRuntime.runPromise(queryOneValidated(PlanRowSchema, "SELECT * FROM plans WHERE id = ?", planId));
   if (plan === null) return "Plan not found.";
 
-  const phases = await AppRuntime.runPromise(queryAll<PhaseRow>(
+  const phases = await AppRuntime.runPromise(queryAllValidated(PhaseRowSchema,
     "SELECT id, plan_id, step_number, title, status, complexity, commit_message, prompt, order_index, implementation_notes, deviations, phase_type FROM phases WHERE plan_id = ? ORDER BY step_number, order_index",
     planId,
   ));

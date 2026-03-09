@@ -227,6 +227,11 @@ describe("PlanRowSchema", () => {
     expect(result.status).toBe("active");
   });
 
+  it("accepts 'approved' status", () => {
+    const result = decode(PlanRowSchema, { ...validPlan, status: "approved" });
+    expect(result.status).toBe("approved");
+  });
+
   it("accepts all nullable fields as null", () => {
     const allNull = { ...validPlan, raw_markdown: null, summary: null };
     const result = decode(PlanRowSchema, allNull);
@@ -268,6 +273,12 @@ describe("PhaseRowSchema", () => {
   it("accepts implementation_notes as a string", () => {
     const result = decode(PhaseRowSchema, { ...validPhase, implementation_notes: "Implemented X" });
     expect(result.implementation_notes).toBe("Implemented X");
+  });
+
+  it("accepts null commit_message and prompt", () => {
+    const result = decode(PhaseRowSchema, { ...validPhase, commit_message: null, prompt: null });
+    expect(result.commit_message).toBeNull();
+    expect(result.prompt).toBeNull();
   });
 
   it("rejects missing commit_message", () => {
