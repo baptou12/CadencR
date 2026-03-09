@@ -505,7 +505,7 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
     <div
       className="relative -mt-6 flex items-center gap-1.5 px-3 py-3 backdrop-blur-sm"
       style={{
-        background: "linear-gradient(to bottom, transparent 0%, hsl(var(--background) / 0.7) 8%, hsl(var(--background) / 0.9) 20%, hsl(var(--background)) 40%)",
+        background: "linear-gradient(to bottom, transparent 0%, hsl(var(--background) / 0.05) 10%, hsl(var(--background) / 0.12) 20%, hsl(var(--background) / 0.25) 35%, hsl(var(--background) / 0.45) 50%, hsl(var(--background) / 0.65) 65%, hsl(var(--background) / 0.82) 80%, hsl(var(--background) / 0.93) 90%, hsl(var(--background)) 100%)",
       }}
     >
       {/* Mode chip */}
@@ -631,6 +631,7 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
       initialDraft={initialDraft}
       subprocessId={subprocessId}
       onToggleMaximize={onToggleMaximize}
+      noTopPadding={!!hasMeta}
     />
   ) : null;
 

@@ -88,6 +88,8 @@ export interface AgentPromptBarProps {
   subprocessId?: string;
   /** Called when CMD+Enter is pressed to toggle maximize */
   onToggleMaximize?: () => void;
+  /** When true, removes top padding (e.g. when a chip row is rendered directly above) */
+  noTopPadding?: boolean;
 }
 
 /** Handle exposed by AgentPromptBar via forwardRef */
@@ -124,6 +126,7 @@ export const AgentPromptBar = forwardRef<
     initialDraft,
     subprocessId,
     onToggleMaximize,
+    noTopPadding,
   },
   ref,
 ) {
@@ -420,7 +423,8 @@ export const AgentPromptBar = forwardRef<
   return (
     <div
       className={cn(
-        "flex flex-col px-3 pt-3 pb-4",
+        "flex flex-col px-3 pb-4",
+        noTopPadding ? "pt-0" : "pt-3",
         isDragging && "ring-2 ring-primary/50 ring-inset",
       )}
       {...dragHandlers}
