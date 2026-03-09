@@ -29,6 +29,7 @@ import type {
   SubprocessOptions,
   AgentType,
   StreamEvent,
+  MessageContent,
 } from "../../agents/types.js";
 
 export { SdkError } from "../errors.js";
@@ -56,7 +57,6 @@ export class SdkQueryRunner extends Context.Tag("SdkQueryRunner")<
 // Pure helper: message stream factory (no side effects)
 // ---------------------------------------------------------------------------
 
-type MessageContent = ManagedSubprocess["originalOptions"] extends { prompt: infer P } ? P : unknown;
 
 /**
  * Creates an async generator that yields user messages on demand.

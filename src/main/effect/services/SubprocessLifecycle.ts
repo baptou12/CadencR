@@ -100,17 +100,6 @@ export class SubprocessLifecycle extends Context.Tag("SubprocessLifecycle")<
 >() {}
 
 // ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
-
-let globalIdCounter = 0;
-
-function generateId(): string {
-  globalIdCounter += 1;
-  return `agent-${Date.now()}-${globalIdCounter}`;
-}
-
-// ---------------------------------------------------------------------------
 // Live implementation
 // ---------------------------------------------------------------------------
 
@@ -127,6 +116,12 @@ export const SubprocessLifecycleLive = Layer.scoped(
     // ---------------------------------------------------------------------------
     const activeProcesses = new Map<string, ManagedSubprocess>();
     const featureIdCache = new Map<string, number>();
+    let idCounter = 0;
+
+    function generateId(): string {
+      idCounter += 1;
+      return `agent-${Date.now()}-${idCounter}`;
+    }
 
     // ---------------------------------------------------------------------------
     // Register finalizer — kills all active subprocesses on scope exit
