@@ -15,9 +15,30 @@ export function errorResult(text: string) {
 }
 
 /**
+ * Safely run an Effect synchronously. Returns null on failure and logs a warning.
+ * Use this when the calling code can handle null gracefully.
+ */
+export function runSyncSafe<T>(effect: Effect.Effect<T, unknown>): T | null {
+  try {
+    return Effect.runSync(effect);
+  } catch (e) {
+    console.warn("[mcp-tools] runSyncSafe error:", e instanceof Error ? e.message : String(e));
+    return null;
+  }
+}
+
+/**
  * Render a plan and its phases as formatted markdown.
  */
 export function renderPlanMarkdown(planId: number): string {
+  try {
+    return renderPlanMarkdownUnsafe(planId);
+  } catch (e) {
+    return `Error loading plan: ${e instanceof Error ? e.message : String(e)}`;
+  }
+}
+
+function renderPlanMarkdownUnsafe(planId: number): string {
   const plan = Effect.runSync(queryOne<PlanRow>("SELECT * FROM plans WHERE id = ?", planId));
   if (plan === null) return "Plan not found.";
 
