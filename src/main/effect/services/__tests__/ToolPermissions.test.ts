@@ -8,7 +8,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { Effect, Fiber, Duration } from "effect";
 import { ToolPermissions, ToolPermissionsLive } from "../ToolPermissions";
-import { PermissionTimeoutError, QuestionTimeoutError, ApprovalTimeoutError } from "../../errors";
+import { PermissionTimeoutError, QuestionTimeoutError } from "../../errors";
 
 // Mock broadcast so it doesn't try to use Electron BrowserWindow
 vi.mock("../../../agents/broadcast", () => ({
@@ -192,84 +192,6 @@ describe("requestUserAnswer / submitUserAnswer", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// requestPlanApproval / submitPlanApproval
-// ---------------------------------------------------------------------------
-
-describe("requestPlanApproval / submitPlanApproval", () => {
-  it("resolves approved=true when submitPlanApproval is called", async () => {
-    const result = await runTest(
-      Effect.gen(function* () {
-        const tp = yield* ToolPermissions;
-        const fiber = yield* Effect.fork(tp.requestPlanApproval("sub-plan-1"));
-        yield* Effect.sleep(FIBER_START_DELAY);
-        const hadDeferred = yield* tp.submitPlanApproval("sub-plan-1", true);
-        expect(hadDeferred).toBe(true);
-        return yield* Fiber.join(fiber);
-      }),
-    );
-
-    expect(result.approved).toBe(true);
-  });
-
-  it("resolves approved=false with feedback", async () => {
-    const result = await runTest(
-      Effect.gen(function* () {
-        const tp = yield* ToolPermissions;
-        const fiber = yield* Effect.fork(tp.requestPlanApproval("sub-plan-2"));
-        yield* Effect.sleep(FIBER_START_DELAY);
-        yield* tp.submitPlanApproval("sub-plan-2", false, "Needs revisions");
-        return yield* Fiber.join(fiber);
-      }),
-    );
-
-    expect(result.approved).toBe(false);
-    expect(result.feedback).toBe("Needs revisions");
-  });
-
-  it("submitPlanApproval returns false when no deferred is pending", async () => {
-    const hadDeferred = await runTest(
-      Effect.gen(function* () {
-        const tp = yield* ToolPermissions;
-        return yield* tp.submitPlanApproval("no-pending-sub", true);
-      }),
-    );
-
-    expect(hadDeferred).toBe(false);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// requestPrdApproval / submitPrdApproval
-// ---------------------------------------------------------------------------
-
-describe("requestPrdApproval / submitPrdApproval", () => {
-  it("resolves approved=true when submitPrdApproval is called", async () => {
-    const result = await runTest(
-      Effect.gen(function* () {
-        const tp = yield* ToolPermissions;
-        const fiber = yield* Effect.fork(tp.requestPrdApproval("sub-prd-1"));
-        yield* Effect.sleep(FIBER_START_DELAY);
-        const hadDeferred = yield* tp.submitPrdApproval("sub-prd-1", true);
-        expect(hadDeferred).toBe(true);
-        return yield* Fiber.join(fiber);
-      }),
-    );
-
-    expect(result.approved).toBe(true);
-  });
-
-  it("submitPrdApproval returns false when no deferred is pending", async () => {
-    const hadDeferred = await runTest(
-      Effect.gen(function* () {
-        const tp = yield* ToolPermissions;
-        return yield* tp.submitPrdApproval("no-prd-pending", true);
-      }),
-    );
-
-    expect(hadDeferred).toBe(false);
-  });
-});
 
 // ---------------------------------------------------------------------------
 // Error type verification
@@ -288,9 +210,4 @@ describe("error types", () => {
     expect(err.subprocessId).toBe("test");
   });
 
-  it("ApprovalTimeoutError has correct _tag", () => {
-    const err = new ApprovalTimeoutError({ subprocessId: "test" });
-    expect(err._tag).toBe("ApprovalTimeoutError");
-    expect(err.subprocessId).toBe("test");
-  });
 });

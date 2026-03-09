@@ -50,7 +50,6 @@ import {
   createCanUseToolHandler,
   submitToolPermission,
   submitUserAnswers,
-  submitPlanApproval,
   requestUserAnswers,
 } from "./tool-permissions";
 import type { ManagedSubprocess } from "./subprocess-manager";
@@ -388,64 +387,6 @@ describe("submitUserAnswers", () => {
     // Should not throw
     expect(() => submitUserAnswers("sub-db-fail", { q: "a" })).not.toThrow();
     expect(mockRuntime.runSync).toHaveBeenCalled();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// submitPlanApproval
-// ---------------------------------------------------------------------------
-
-describe("submitPlanApproval", () => {
-  it("returns success when deferred was resolved (hadDeferred=true)", () => {
-    mockRuntime.runSync.mockReturnValue(true);
-
-    const result = submitPlanApproval("sub-plan-1", true);
-
-    expect(result.success).toBe(true);
-    expect(mockRuntime.runSync).toHaveBeenCalled();
-  });
-
-  it("stores in DB when no deferred pending (hadDeferred=false)", () => {
-    const { db, stmt } = makeMockDb();
-    vi.mocked(getDatabase).mockReturnValue(db);
-    vi.mocked(getSessionDbId).mockReturnValue(55);
-    stmt.get.mockReturnValue({ feature_id: 7 });
-    mockRuntime.runSync.mockReturnValue(false);
-
-    const result = submitPlanApproval("dead-subprocess", true);
-
-    expect(result.success).toBe(true);
-    expect(db.prepare).toHaveBeenCalledWith(
-      expect.stringContaining("UPDATE agent_sessions SET plan_approval_result"),
-    );
-  });
-
-  it("persists feedback as user message when rejecting with active deferred", () => {
-    const { db, stmt } = makeMockDb();
-    vi.mocked(getDatabase).mockReturnValue(db);
-    vi.mocked(getSessionDbId).mockReturnValue(20);
-    stmt.get.mockReturnValue({ feature_id: 3 });
-    mockRuntime.runSync.mockReturnValue(true); // deferred was resolved
-
-    const result = submitPlanApproval("sub-plan-3", false, "Change the approach");
-
-    expect(result.success).toBe(true);
-    expect(db.prepare).toHaveBeenCalledWith(
-      expect.stringContaining("INSERT INTO agent_messages")
-    );
-  });
-
-  it("does not write to DB when approving with active deferred (no feedback)", () => {
-    const { db } = makeMockDb();
-    vi.mocked(getDatabase).mockReturnValue(db);
-    vi.mocked(getSessionDbId).mockReturnValue(20);
-    mockRuntime.runSync.mockReturnValue(true); // deferred was resolved
-
-    const result = submitPlanApproval("sub-plan-4", true);
-
-    expect(result.success).toBe(true);
-    // DB should not be called for approval (no feedback to persist)
-    expect(db.prepare).not.toHaveBeenCalled();
   });
 });
 

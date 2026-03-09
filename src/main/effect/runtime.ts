@@ -9,9 +9,16 @@ import { SubprocessLifecycleLive } from "./services/SubprocessLifecycle.js";
 import { BackgroundTaskRegistryLive } from "./services/BackgroundTaskRegistry.js";
 import { DispatchLockLive } from "./services/DispatchLock.js";
 import { ToolPermissionsLive } from "./services/ToolPermissions.js";
+import { PlanApprovalLive } from "./services/PlanApproval.js";
 
 // SessionPersistenceLive depends on Database, so we provide DatabaseLive to it
 const SessionPersistenceWithDb = Layer.provide(SessionPersistenceLive, DatabaseLive);
+
+// PlanApprovalLive depends on Database, SessionPersistence, and EventBroadcaster
+const PlanApprovalWithDeps = Layer.provide(
+  PlanApprovalLive,
+  Layer.mergeAll(DatabaseLive, SessionPersistenceWithDb, Layer.provide(EventBroadcasterLive, SessionPersistenceWithDb)),
+);
 
 // EventBroadcasterLive now depends on SessionPersistence (to look up session DB IDs)
 const EventBroadcasterWithDeps = Layer.provide(EventBroadcasterLive, SessionPersistenceWithDb);
@@ -56,6 +63,7 @@ export const AppLayer = Layer.mergeAll(
   BackgroundTaskRegistryLive,
   DispatchLockLive,
   ToolPermissionsLive,
+  PlanApprovalWithDeps,
 );
 
 export const AppRuntime = ManagedRuntime.make(AppLayer);

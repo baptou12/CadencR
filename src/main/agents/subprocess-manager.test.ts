@@ -52,7 +52,6 @@ vi.mock("./tool-permissions", () => ({
   createCanUseToolHandler: vi.fn().mockReturnValue(async () => ({ behavior: "allow" })),
   submitToolPermission: vi.fn(),
   submitUserAnswers: vi.fn(),
-  submitPlanApproval: vi.fn(),
 }));
 
 vi.mock("./slash-commands", () => ({

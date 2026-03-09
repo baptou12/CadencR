@@ -14,6 +14,7 @@ import { getSessionDbId, notifyDbUpdated } from "./effect-helpers";
 import { resolvePermission, appendToSettingsLocal } from "./permissions";
 import { getAppRuntime } from "../effect/app-runtime-ref";
 import { ToolPermissions } from "../effect/services/ToolPermissions";
+import { PlanApproval } from "../effect/services/PlanApproval";
 import type { ManagedSubprocess } from "./types";
 
 type CanUseToolResult =
@@ -241,7 +242,7 @@ async function handleExitPlanMode(
 
   try {
     const result = await getAppRuntime().runPromise(
-      Effect.flatMap(ToolPermissions, (tp) => tp.requestPlanApproval(managed.id)),
+      Effect.flatMap(PlanApproval, (pa) => pa.requestPlanApproval(managed.id)),
     );
 
     if (result.approved) {
@@ -395,107 +396,6 @@ export function submitUserAnswers(
   );
 }
 
-/**
- * Submit a plan approval or rejection for a pending ExitPlanMode tool call.
- * Returns { success: true } if the Deferred was resolved or result was stored in DB.
- */
-export function submitPlanApproval(
-  subprocessId: string,
-  approved: boolean,
-  feedback?: string,
-  _getActiveProcess?: (id: string) => unknown | undefined,
-): { success: boolean; error?: string } {
-  // Try to resolve the pending Deferred via the Effect service
-  const hadDeferred = getAppRuntime().runSync(
-    Effect.flatMap(ToolPermissions, (tp) => tp.submitPlanApproval(subprocessId, approved, feedback)),
-  );
-
-  if (!hadDeferred) {
-    // No Deferred pending — agent is paused/dead. Store for consumption on resume.
-    const sessionDbId = getSessionDbId(subprocessId);
-    if (sessionDbId) {
-      try {
-        const db = getDatabase();
-        db.prepare("UPDATE agent_sessions SET plan_approval_result = ?, pending_plan_approval = NULL WHERE id = ?")
-          .run(JSON.stringify({ approved, feedback }), sessionDbId);
-        const fid = getFeatureIdForSubprocess(subprocessId);
-        if (fid != null) notifyDbUpdated("agent_session", fid);
-      } catch { /* best-effort */ }
-    }
-    return { success: true };
-  }
-
-  // Deferred was resolved — persist feedback as a user message if rejecting
-  if (!approved && feedback) {
-    const sessionDbId = getSessionDbId(subprocessId);
-    if (sessionDbId) {
-      try {
-        const content = `**Plan feedback:**\n${feedback}`;
-        const db = getDatabase();
-        db.prepare(
-          "INSERT INTO agent_messages (session_id, role, content, message_type, tool_name) VALUES (?, ?, ?, ?, ?)",
-        ).run(sessionDbId, "user", content, "user_message", null);
-        const fid = getFeatureIdForSubprocess(subprocessId);
-        if (fid != null) notifyDbUpdated("agent_session", fid);
-      } catch {
-        // Best-effort persistence
-      }
-    }
-  }
-
-  return { success: true };
-}
-
-/**
- * Submit a PRD approval or rejection. Mirrors submitPlanApproval for the PRD flow.
- */
-export function submitPrdApproval(
-  subprocessId: string,
-  approved: boolean,
-  feedback?: string,
-  _getActiveProcess?: (id: string) => unknown | undefined,
-): { success: boolean; error?: string } {
-  // Try to resolve the pending Deferred via the Effect service
-  const hadDeferred = getAppRuntime().runSync(
-    Effect.flatMap(ToolPermissions, (tp) => tp.submitPrdApproval(subprocessId, approved, feedback)),
-  );
-
-  if (!hadDeferred) {
-    // No Deferred pending — agent is paused/dead. Store for consumption on resume.
-    const sessionDbId = getSessionDbId(subprocessId);
-    if (sessionDbId) {
-      try {
-        const db = getDatabase();
-        db.prepare("UPDATE agent_sessions SET prd_approval_result = ?, pending_prd_approval = NULL WHERE id = ?")
-          .run(JSON.stringify({ approved, feedback }), sessionDbId);
-        const fid = getFeatureIdForSubprocess(subprocessId);
-        if (fid != null) notifyDbUpdated("agent_session", fid);
-      } catch { /* best-effort */ }
-    }
-    return { success: true };
-  }
-
-  // Deferred was resolved — persist feedback as a user message if rejecting
-  if (!approved && feedback) {
-    const sessionDbId = getSessionDbId(subprocessId);
-    if (sessionDbId) {
-      try {
-        const content = `**PRD feedback:**\n${feedback}`;
-        const db = getDatabase();
-        db.prepare(
-          "INSERT INTO agent_messages (session_id, role, content, message_type, tool_name) VALUES (?, ?, ?, ?, ?)",
-        ).run(sessionDbId, "user", content, "user_message", null);
-        const fid = getFeatureIdForSubprocess(subprocessId);
-        if (fid != null) notifyDbUpdated("agent_session", fid);
-      } catch {
-        // Best-effort persistence
-      }
-    }
-  }
-
-  return { success: true };
-}
-
 // Helper — resolve feature ID for a subprocess (for DB notifications)
 function getFeatureIdForSubprocess(subprocessId: string): number | null {
   const sessionDbId = getSessionDbId(subprocessId);
@@ -506,3 +406,4 @@ function getFeatureIdForSubprocess(subprocessId: string): number | null {
     return row?.feature_id ?? null;
   } catch { return null; }
 }
+

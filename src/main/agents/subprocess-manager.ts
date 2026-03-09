@@ -126,12 +126,19 @@ export function getActiveProcess(id: string): ManagedSubprocess | undefined {
 // ---------------------------------------------------------------------------
 
 export { submitToolPermission, submitUserAnswers } from "./tool-permissions";
-import { submitPlanApproval as _submitPlanApproval, submitPrdApproval as _submitPrdApproval } from "./tool-permissions";
-export function submitPlanApproval(subprocessId: string, approved: boolean, feedback?: string) {
-  return _submitPlanApproval(subprocessId, approved, feedback, getActiveProcess);
+import { getAppRuntime } from "../effect/app-runtime-ref";
+import { PlanApproval } from "../effect/services/PlanApproval";
+export function submitPlanApproval(subprocessId: string, approved: boolean, feedback?: string): { success: boolean; error?: string } {
+  getAppRuntime().runSync(
+    Effect.flatMap(PlanApproval, (pa) => pa.submitPlanApproval(subprocessId, approved, feedback)),
+  );
+  return { success: true };
 }
-export function submitPrdApproval(subprocessId: string, approved: boolean, feedback?: string) {
-  return _submitPrdApproval(subprocessId, approved, feedback, getActiveProcess);
+export function submitPrdApproval(subprocessId: string, approved: boolean, feedback?: string): { success: boolean; error?: string } {
+  getAppRuntime().runSync(
+    Effect.flatMap(PlanApproval, (pa) => pa.submitPrdApproval(subprocessId, approved, feedback)),
+  );
+  return { success: true };
 }
 import { getSupportedCommands as _getSupportedCommands } from "./slash-commands";
 export function getSupportedCommands(subprocessId: string | null, cwd: string) {

@@ -13,9 +13,10 @@ import type { ManagedRuntime } from "effect";
 import type { SessionPersistence } from "./services/SessionPersistence.js";
 import type { EventBroadcaster } from "./services/EventBroadcaster.js";
 import type { ToolPermissions } from "./services/ToolPermissions.js";
+import type { PlanApproval } from "./services/PlanApproval.js";
 
 /** Minimal requirement set used by the convenience wrappers in effect-helpers. */
-type AppRequirements = SessionPersistence | EventBroadcaster | ToolPermissions;
+type AppRequirements = SessionPersistence | EventBroadcaster | ToolPermissions | PlanApproval;
 
 type AppManagedRuntime = ManagedRuntime.ManagedRuntime<AppRequirements, never>;
 
