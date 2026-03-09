@@ -57,7 +57,7 @@ export const readPhaseTool = tool(
     phase_id: z.number().describe("The phase ID to read"),
   },
   async (args) => {
-    const phase = Effect.runSync(queryOneValidated(PhaseRowSchema, "SELECT * FROM phases WHERE id = ?", args.phase_id));
+    const phase = Effect.runSync(queryOneValidated(PhaseRowSchema, "SELECT id, plan_id, step_number, title, status, complexity, commit_message, prompt, order_index, implementation_notes, deviations, phase_type FROM phases WHERE id = ?", args.phase_id));
     if (phase === null) return errorResult(`Phase ${args.phase_id} not found`);
 
     const lines = [

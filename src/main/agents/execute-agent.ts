@@ -90,7 +90,7 @@ export function processNextPhase(options: ExecuteAgentOptions): void {
     //    that already have a running or paused agent session — those need manual resume)
     const pendingPhases = Effect.runSync(queryAllValidated(
       PhaseRowSchema,
-      `SELECT *
+      `SELECT id, plan_id, step_number, title, status, complexity, commit_message, prompt, order_index, implementation_notes, deviations, phase_type
        FROM phases
        WHERE plan_id = ? AND status IN ('pending', 'error')
          AND id NOT IN (

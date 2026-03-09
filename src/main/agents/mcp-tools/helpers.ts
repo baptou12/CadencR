@@ -22,7 +22,7 @@ export function renderPlanMarkdown(planId: number): string {
   if (plan === null) return "Plan not found.";
 
   const phases = Effect.runSync(queryAll<PhaseRow>(
-    "SELECT * FROM phases WHERE plan_id = ? ORDER BY step_number, order_index",
+    "SELECT id, plan_id, step_number, title, status, complexity, commit_message, prompt, order_index, implementation_notes, deviations, phase_type FROM phases WHERE plan_id = ? ORDER BY step_number, order_index",
     planId,
   ));
 
