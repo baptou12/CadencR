@@ -1,0 +1,267 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { Effect } from "effect";
+
+// ---------------------------------------------------------------------------
+// Mocks — must be hoisted before imports that use them
+// ---------------------------------------------------------------------------
+
+const mockSend = vi.fn();
+const mockGetAllWindows = vi.fn(() => [
+  { isDestroyed: () => false, webContents: { send: mockSend } },
+]);
+
+vi.mock("electron", () => ({
+  BrowserWindow: { getAllWindows: () => mockGetAllWindows() },
+}));
+
+vi.mock("../../agents/session-persistence", () => ({
+  getSessionDbId: vi.fn(() => 99),
+}));
+
+import { getSessionDbId } from "../../agents/session-persistence.js";
+const mockGetSessionDbId = vi.mocked(getSessionDbId);
+
+import {
+  EventBroadcaster,
+  EventBroadcasterLive,
+  AGENT_EVENT_CHANNEL,
+  DB_UPDATED_CHANNEL,
+} from "./EventBroadcaster.js";
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function runEB<A>(
+  eff: Effect.Effect<A, unknown, EventBroadcaster>,
+): A {
+  return Effect.runSync(Effect.provide(eff, EventBroadcasterLive));
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+describe("EventBroadcaster service — EventBroadcasterLive", () => {
+  beforeEach(() => {
+    // Reset call history without losing implementations
+    mockSend.mockClear();
+    mockGetSessionDbId.mockClear();
+    // Re-establish window mock so clearAllMocks in global setup can't break it
+    mockGetAllWindows.mockImplementation(() => [
+      { isDestroyed: () => false, webContents: { send: mockSend } },
+    ]);
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  // ---------------------------------------------------------------------------
+  // broadcastAgentEvent
+  // ---------------------------------------------------------------------------
+
+  describe("broadcastAgentEvent", () => {
+    it("sends an AgentEvent on AGENT_EVENT_CHANNEL to all windows", () => {
+      runEB(
+        Effect.flatMap(EventBroadcaster, (svc) =>
+          svc.broadcastAgentEvent("proc-1", "plan", {
+            type: "error",
+            error: { type: "sdk_error", message: "fail" },
+          }),
+        ),
+      );
+
+      expect(mockSend).toHaveBeenCalledOnce();
+      const [channel, payload] = mockSend.mock.calls[0];
+      expect(channel).toBe(AGENT_EVENT_CHANNEL);
+      expect(payload.subprocessId).toBe("proc-1");
+      expect(payload.agentType).toBe("plan");
+      expect(payload.event.type).toBe("error");
+    });
+
+    it("includes sessionDbId from getSessionDbId", () => {
+      mockGetSessionDbId.mockReturnValue(42);
+
+      runEB(
+        Effect.flatMap(EventBroadcaster, (svc) =>
+          svc.broadcastAgentEvent("proc-2", "execute", {
+            type: "agent_done",
+            exitCode: 0,
+          }),
+        ),
+      );
+
+      const [, payload] = mockSend.mock.calls[0];
+      expect(payload.sessionDbId).toBe(42);
+    });
+
+    it("includes parentToolUseId when provided", () => {
+      runEB(
+        Effect.flatMap(EventBroadcaster, (svc) =>
+          svc.broadcastAgentEvent(
+            "proc-3",
+            "plan",
+            { type: "agent_done", exitCode: 0 },
+            "parent-tool-id",
+          ),
+        ),
+      );
+
+      const [, payload] = mockSend.mock.calls[0];
+      expect(payload.parentToolUseId).toBe("parent-tool-id");
+    });
+
+    it("skips destroyed windows", () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      mockGetAllWindows.mockReturnValue([{ isDestroyed: () => true, webContents: { send: mockSend } }] as any);
+
+      runEB(
+        Effect.flatMap(EventBroadcaster, (svc) =>
+          svc.broadcastAgentEvent("proc-4", "session", {
+            type: "agent_done",
+            exitCode: 0,
+          }),
+        ),
+      );
+
+      expect(mockSend).not.toHaveBeenCalled();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // notifyDbUpdated
+  // ---------------------------------------------------------------------------
+
+  describe("notifyDbUpdated", () => {
+    it("sends a DB_UPDATED_CHANNEL message with entity and featureId", () => {
+      runEB(
+        Effect.flatMap(EventBroadcaster, (svc) =>
+          svc.notifyDbUpdated("feature", 7),
+        ),
+      );
+
+      expect(mockSend).toHaveBeenCalledOnce();
+      const [channel, payload] = mockSend.mock.calls[0];
+      expect(channel).toBe(DB_UPDATED_CHANNEL);
+      expect(payload).toEqual({ entity: "feature", featureId: 7 });
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // throttledNotify
+  // ---------------------------------------------------------------------------
+
+  describe("throttledNotify", () => {
+    it("does not notify immediately", () => {
+      runEB(
+        Effect.flatMap(EventBroadcaster, (svc) =>
+          svc.throttledNotify("session-key-1", 5),
+        ),
+      );
+      expect(mockSend).not.toHaveBeenCalled();
+    });
+
+    it("notifies after 200ms", () => {
+      runEB(
+        Effect.flatMap(EventBroadcaster, (svc) =>
+          svc.throttledNotify("session-key-2", 5),
+        ),
+      );
+      vi.advanceTimersByTime(200);
+      expect(mockSend).toHaveBeenCalledOnce();
+      const [channel, payload] = mockSend.mock.calls[0];
+      expect(channel).toBe(DB_UPDATED_CHANNEL);
+      expect(payload).toEqual({ entity: "agent_session", featureId: 5 });
+    });
+
+    it("coalesces multiple calls into a single notification", () => {
+      runEB(
+        Effect.flatMap(EventBroadcaster, (svc) =>
+          Effect.gen(function* () {
+            yield* svc.throttledNotify("session-key-3", 10);
+            yield* svc.throttledNotify("session-key-3", 10);
+            yield* svc.throttledNotify("session-key-3", 10);
+          }),
+        ),
+      );
+      vi.advanceTimersByTime(200);
+      // Should only send once despite 3 calls
+      expect(mockSend).toHaveBeenCalledOnce();
+    });
+
+    it("uses the latest featureId when coalescing", () => {
+      runEB(
+        Effect.flatMap(EventBroadcaster, (svc) =>
+          Effect.gen(function* () {
+            yield* svc.throttledNotify("session-key-4", 1);
+            yield* svc.throttledNotify("session-key-4", 99);
+          }),
+        ),
+      );
+      vi.advanceTimersByTime(200);
+      const [, payload] = mockSend.mock.calls[0];
+      expect(payload.featureId).toBe(99);
+    });
+
+    it("allows separate session keys to fire independently", () => {
+      runEB(
+        Effect.flatMap(EventBroadcaster, (svc) =>
+          Effect.gen(function* () {
+            yield* svc.throttledNotify("key-a", 1);
+            yield* svc.throttledNotify("key-b", 2);
+          }),
+        ),
+      );
+      vi.advanceTimersByTime(200);
+      expect(mockSend).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // flushNotify
+  // ---------------------------------------------------------------------------
+
+  describe("flushNotify", () => {
+    it("sends the pending notification immediately when flushed", () => {
+      runEB(
+        Effect.flatMap(EventBroadcaster, (svc) =>
+          Effect.gen(function* () {
+            yield* svc.throttledNotify("flush-key-1", 77);
+            yield* svc.flushNotify("flush-key-1");
+          }),
+        ),
+      );
+      // Notification should have been sent synchronously (flush cancels the timer)
+      expect(mockSend).toHaveBeenCalledOnce();
+      const [channel, payload] = mockSend.mock.calls[0];
+      expect(channel).toBe(DB_UPDATED_CHANNEL);
+      expect(payload.featureId).toBe(77);
+    });
+
+    it("does NOT fire again after timer would have elapsed", () => {
+      runEB(
+        Effect.flatMap(EventBroadcaster, (svc) =>
+          Effect.gen(function* () {
+            yield* svc.throttledNotify("flush-key-2", 88);
+            yield* svc.flushNotify("flush-key-2");
+          }),
+        ),
+      );
+      const countAfterFlush = mockSend.mock.calls.length;
+      vi.advanceTimersByTime(200);
+      // No additional calls after timer expires — timer was cancelled
+      expect(mockSend.mock.calls.length).toBe(countAfterFlush);
+    });
+
+    it("is a no-op when there is no pending notification", () => {
+      runEB(
+        Effect.flatMap(EventBroadcaster, (svc) =>
+          svc.flushNotify("nonexistent-key"),
+        ),
+      );
+      expect(mockSend).not.toHaveBeenCalled();
+    });
+  });
+});
