@@ -6,6 +6,8 @@ import { EventBroadcasterLive } from "./services/EventBroadcaster.js";
 import { CompletionActionsLive } from "./services/CompletionActions.js";
 import { SdkQueryRunnerLive } from "./services/SdkQueryRunner.js";
 import { SubprocessLifecycleLive } from "./services/SubprocessLifecycle.js";
+import { BackgroundTaskRegistryLive } from "./services/BackgroundTaskRegistry.js";
+import { DispatchLockLive } from "./services/DispatchLock.js";
 
 // SessionPersistenceLive depends on Database, so we provide DatabaseLive to it
 const SessionPersistenceWithDb = Layer.provide(SessionPersistenceLive, DatabaseLive);
@@ -19,7 +21,7 @@ const CompletionActionsWithDeps = Layer.provide(
   Layer.mergeAll(SessionPersistenceWithDb, EventBroadcasterWithDeps, DatabaseLive),
 );
 
-// SdkQueryRunnerLive depends on SessionPersistence, EventBroadcaster, Database, CompletionActions
+// SdkQueryRunnerLive depends on SessionPersistence, EventBroadcaster, Database, CompletionActions, BackgroundTaskRegistry
 const SdkQueryRunnerWithDeps = Layer.provide(
   SdkQueryRunnerLive,
   Layer.mergeAll(
@@ -27,6 +29,7 @@ const SdkQueryRunnerWithDeps = Layer.provide(
     EventBroadcasterWithDeps,
     DatabaseLive,
     CompletionActionsWithDeps,
+    BackgroundTaskRegistryLive,
   ),
 );
 
@@ -49,6 +52,8 @@ export const AppLayer = Layer.mergeAll(
   CompletionActionsWithDeps,
   SdkQueryRunnerWithDeps,
   SubprocessLifecycleWithDeps,
+  BackgroundTaskRegistryLive,
+  DispatchLockLive,
 );
 
 export const AppRuntime = ManagedRuntime.make(AppLayer);

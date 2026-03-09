@@ -20,6 +20,8 @@ import { buildExecuteSystemPrompt, createQaConfig } from "./agent-configs";
 import { buildMcpServerFactory } from "./mcp-factory";
 import { notifyDbUpdated } from "./effect-helpers";
 import { startReviewAgent } from "./agent-starters";
+import { DispatchLock } from "../effect/services/DispatchLock";
+import { AppRuntime } from "../effect/runtime";
 import type { OnAgentDoneCallback } from "./mcp-tools";
 import type { UnifiedAgentConfig, CompletionAction } from "./types";
 
@@ -40,9 +42,6 @@ export interface ExecuteAgentOptions {
   worktreePath?: string;
 }
 
-/** In-memory lock to prevent concurrent processNextPhase for the same feature */
-const dispatchingFeatures = new Set<number>();
-
 /**
  * Queue-based executor: pick next pending phase, run it, chain on completion.
  *
@@ -53,8 +52,8 @@ export function processNextPhase(options: ExecuteAgentOptions): void {
   const { featureId, projectId } = options;
 
   // In-memory lock: prevent concurrent dispatch for the same feature
-  if (dispatchingFeatures.has(featureId)) return;
-  dispatchingFeatures.add(featureId);
+  const acquired = AppRuntime.runSync(Effect.flatMap(DispatchLock, (dl) => dl.acquire(featureId)));
+  if (!acquired) return;
 
   try {
     // 1. Ensure feature is in-progress
@@ -141,7 +140,7 @@ export function processNextPhase(options: ExecuteAgentOptions): void {
     // 6. No pending phases — check if review is needed
     handleNoPendingPhases(options, planId);
   } finally {
-    dispatchingFeatures.delete(featureId);
+    AppRuntime.runSync(Effect.flatMap(DispatchLock, (dl) => dl.release(featureId)));
   }
 }
 

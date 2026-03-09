@@ -17,13 +17,13 @@ import { SessionPersistence } from "./SessionPersistence.js";
 import { EventBroadcaster } from "./EventBroadcaster.js";
 import { Database } from "./Database.js";
 import { CompletionActions } from "./CompletionActions.js";
+import { BackgroundTaskRegistry } from "./BackgroundTaskRegistry.js";
 import { SdkError } from "../errors.js";
 import { getSdkClient } from "../../agents/sdk-client.js";
 import { discoverClaudeCli } from "../../agents/cli-discovery.js";
 import { DEFAULT_MODEL, resolveModel } from "../../agents/models.js";
 import { resolveSetting } from "../../db/settings.js";
 import { createCanUseToolHandler } from "../../agents/tool-permissions.js";
-import { addBackgroundTask, updateBackgroundTask, clearBackgroundTasks } from "../../agents/background-tasks.js";
 import type {
   ManagedSubprocess,
   SubprocessOptions,
@@ -180,6 +180,7 @@ export const SdkQueryRunnerLive = Layer.effect(
     const eb = yield* EventBroadcaster;
     const database = yield* Database;
     const completion = yield* CompletionActions;
+    const bgTasks = yield* BackgroundTaskRegistry;
 
     // -------------------------------------------------------------------------
     // Private: resolve featureId for a managed subprocess (used for throttled
@@ -375,7 +376,7 @@ export const SdkQueryRunnerLive = Layer.effect(
         // Background Bash task detection
         if (toolName === "Bash" && toolInput.run_in_background === true) {
           const tempId = block.id as string;
-          addBackgroundTask(id, {
+          Effect.runSync(bgTasks.add({
             id: tempId,
             tempId,
             subprocessId: id,
@@ -383,20 +384,20 @@ export const SdkQueryRunnerLive = Layer.effect(
             status: "running",
             command: typeof toolInput.command === "string" ? toolInput.command : undefined,
             spawnedAt: Date.now(),
-          });
+          }));
         }
 
         // Background Task/Agent spawn detection
         if ((toolName === "Task" || toolName === "Agent") && toolInput.run_in_background === true) {
           const tempId = block.id as string;
-          addBackgroundTask(id, {
+          Effect.runSync(bgTasks.add({
             id: tempId,
             tempId,
             subprocessId: id,
             kind: "agent",
             status: "running",
             spawnedAt: Date.now(),
-          });
+          }));
         }
       }
     }
@@ -445,9 +446,9 @@ export const SdkQueryRunnerLive = Layer.effect(
           const shellIdMatch = resultContent.match(/"?shell_?[Ii][Dd]"?\s*[:=]\s*"?([^",}\s]+)"?/);
           const taskIdMatch = resultContent.match(/"?task_?[Ii][Dd]"?\s*[:=]\s*"?([^",}\s]+)"?/);
           if (shellIdMatch?.[1]) {
-            updateBackgroundTask(id, toolUseId, { id: shellIdMatch[1] });
+            Effect.runSync(bgTasks.update(id, toolUseId, { id: shellIdMatch[1] }));
           } else if (taskIdMatch?.[1]) {
-            updateBackgroundTask(id, toolUseId, { id: taskIdMatch[1] });
+            Effect.runSync(bgTasks.update(id, toolUseId, { id: taskIdMatch[1] }));
           }
         }
       }
@@ -551,7 +552,7 @@ export const SdkQueryRunnerLive = Layer.effect(
           };
           if (taskSummary) update.summary = taskSummary;
           if (outputFile) update.outputFile = outputFile;
-          updateBackgroundTask(id, taskId, update);
+          Effect.runSync(bgTasks.update(id, taskId, update));
         }
       }
 
@@ -698,7 +699,7 @@ export const SdkQueryRunnerLive = Layer.effect(
             } finally {
               if (managed.status !== "paused") {
                 messageStream.close();
-                clearBackgroundTasks(managed.id);
+                Effect.runSync(bgTasks.clear(managed.id));
               }
             }
           },

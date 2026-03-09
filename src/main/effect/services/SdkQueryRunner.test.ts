@@ -5,6 +5,7 @@ import { SessionPersistence } from "./SessionPersistence.js";
 import { EventBroadcaster } from "./EventBroadcaster.js";
 import { Database } from "./Database.js";
 import { CompletionActions } from "./CompletionActions.js";
+import { BackgroundTaskRegistry } from "./BackgroundTaskRegistry.js";
 import type { ManagedSubprocess, SubprocessOptions } from "../../agents/types.js";
 
 // ---------------------------------------------------------------------------
@@ -122,6 +123,25 @@ const MockCompletionActions = Layer.succeed(CompletionActions, {
   onError: mockCAOnError as any,
 });
 
+const mockBGAdd = vi.fn(() => Effect.void);
+const mockBGUpdate = vi.fn(() => Effect.void);
+const mockBGGetBySubprocess = vi.fn(() => Effect.succeed([]));
+const mockBGClear = vi.fn(() => Effect.void);
+const mockBGBroadcast = vi.fn(() => Effect.void);
+
+const MockBackgroundTaskRegistry = Layer.succeed(BackgroundTaskRegistry, {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  add: mockBGAdd as any,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  update: mockBGUpdate as any,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  getBySubprocess: mockBGGetBySubprocess as any,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  clear: mockBGClear as any,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  broadcast: mockBGBroadcast as any,
+});
+
 const TestLayer = Layer.provide(
   SdkQueryRunnerLive,
   Layer.mergeAll(
@@ -129,6 +149,7 @@ const TestLayer = Layer.provide(
     MockEventBroadcaster,
     MockDatabase,
     MockCompletionActions,
+    MockBackgroundTaskRegistry,
   ),
 );
 
@@ -366,7 +387,7 @@ describe("SdkQueryRunner service — SdkQueryRunnerLive", () => {
         Effect.flatMap(SdkQueryRunner, (svc) => svc.execute(managed, options)),
       );
 
-      expect(mockClearBackgroundTasks).toHaveBeenCalledWith(managed.id);
+      expect(mockBGClear).toHaveBeenCalledWith(managed.id);
     });
 
     it("does NOT clear background tasks when status is paused", async () => {
@@ -397,7 +418,7 @@ describe("SdkQueryRunner service — SdkQueryRunnerLive", () => {
         Effect.flatMap(SdkQueryRunner, (svc) => svc.execute(managed, options)),
       );
 
-      expect(mockClearBackgroundTasks).not.toHaveBeenCalled();
+      expect(mockBGClear).not.toHaveBeenCalled();
     });
 
     it("rejects with an error about CLI not found when CLI is missing", async () => {
@@ -693,10 +714,10 @@ describe("SdkQueryRunner service — SdkQueryRunnerLive", () => {
         Effect.flatMap(SdkQueryRunner, (svc) => svc.execute(managed, makeOptions())),
       );
 
-      expect(mockAddBackgroundTask).toHaveBeenCalledWith(
-        managed.id,
+      expect(mockBGAdd).toHaveBeenCalledWith(
         expect.objectContaining({
           id: "tool-123",
+          subprocessId: managed.id,
           kind: "bash",
           status: "running",
           command: "sleep 10",
@@ -728,9 +749,8 @@ describe("SdkQueryRunner service — SdkQueryRunnerLive", () => {
         Effect.flatMap(SdkQueryRunner, (svc) => svc.execute(managed, makeOptions())),
       );
 
-      expect(mockAddBackgroundTask).toHaveBeenCalledWith(
-        managed.id,
-        expect.objectContaining({ id: "task-456", kind: "agent" }),
+      expect(mockBGAdd).toHaveBeenCalledWith(
+        expect.objectContaining({ id: "task-456", subprocessId: managed.id, kind: "agent" }),
       );
     });
   });

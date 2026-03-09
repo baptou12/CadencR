@@ -11,7 +11,7 @@ import {
   getSupportedCommands,
   sendMessageToSubprocess,
 } from "../agents/subprocess-manager";
-import { getBackgroundTasks } from "../agents/background-tasks";
+import { BackgroundTaskRegistry } from "../effect/services/BackgroundTaskRegistry";
 import { getSubprocessIdForSession, notifyDbUpdated } from "../agents/effect-helpers";
 import type { AgentType } from "../agents/types";
 import { resolveAgentCwd } from "../agents/resolve-cwd";
@@ -298,8 +298,10 @@ export const sessionsRouter = router({
   /** Get in-memory background tasks for a subprocess */
   getBackgroundTasks: publicProcedure
     .input(z.object({ subprocessId: z.string() }))
-    .query(({ input }) => {
-      return getBackgroundTasks(input.subprocessId);
+    .query(async ({ input }) => {
+      return await AppRuntime.runPromise(
+        Effect.flatMap(BackgroundTaskRegistry, (reg) => reg.getBySubprocess(input.subprocessId)),
+      );
     }),
 
   /** Ask the agent subprocess to kill a background task */
