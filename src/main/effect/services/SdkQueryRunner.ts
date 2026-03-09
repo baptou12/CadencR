@@ -154,6 +154,25 @@ function createMessageStream(initialPrompt: MessageContent) {
 // Live implementation
 // ---------------------------------------------------------------------------
 
+/**
+ * ARCHITECTURAL CONSTRAINT:
+ * All service methods used inside the synchronous message-handler helpers
+ * (handleSdkMessage, handleStreamEvent, handleAssistant, handleUser,
+ * handleToolOrResult, handleSystem, getFeatureId) MUST remain synchronous
+ * (Effect.succeed-based) to be compatible with Effect.runSync.
+ *
+ * These helpers are called in a tight for-await stream loop where we do NOT
+ * want to introduce async scheduling between individual message events.
+ * If a method needs to become async (e.g. returns a Promise or uses
+ * Effect.tryPromise), the calling code here must be updated to:
+ *   1. Make all handler functions async
+ *   2. Change the for-await loop to `await handleSdkMessage(...)`
+ *   3. Use Effect.runPromise instead of Effect.runSync in those handlers
+ *
+ * The completion-handler calls (onCompleted / onPaused / onStopped / onError)
+ * and the initial sessionDbId lookup are exempt from this constraint — they
+ * already use Effect.runPromise and are called outside the tight loop.
+ */
 export const SdkQueryRunnerLive = Layer.effect(
   SdkQueryRunner,
   Effect.gen(function* () {
@@ -640,8 +659,10 @@ export const SdkQueryRunnerLive = Layer.effect(
             const isResume = !!options.resumeSessionId;
             let messageCount = 0;
 
-            // Cache the session DB ID for the duration of this query
-            const sessionDbId = Effect.runSync(sp.getSessionDbId(managed.id));
+            // Cache the session DB ID for the duration of this query.
+            // Uses runPromise here (async context) so that if getSessionDbId
+            // ever becomes async it will continue to work correctly.
+            const sessionDbId = await Effect.runPromise(sp.getSessionDbId(managed.id));
 
             try {
               for await (const message of queryObj) {
@@ -660,19 +681,19 @@ export const SdkQueryRunnerLive = Layer.effect(
               );
 
               if (managed.status === "running") {
-                Effect.runSync(completion.onCompleted(managed, managed.sdkSessionId));
+                await Effect.runPromise(completion.onCompleted(managed, managed.sdkSessionId));
               } else if (managed.status === "paused") {
-                Effect.runSync(completion.onPaused(managed));
+                await Effect.runPromise(completion.onPaused(managed));
               } else if (managed.status === "stopped") {
-                Effect.runSync(completion.onStopped(managed, managed.sdkSessionId));
+                await Effect.runPromise(completion.onStopped(managed, managed.sdkSessionId));
               }
             } catch (err) {
               if (managed.status === "paused") {
-                Effect.runSync(completion.onPaused(managed));
+                await Effect.runPromise(completion.onPaused(managed));
               } else if (managed.status === "stopped") {
-                Effect.runSync(completion.onStopped(managed));
+                await Effect.runPromise(completion.onStopped(managed));
               } else {
-                Effect.runSync(completion.onError(managed, err));
+                await Effect.runPromise(completion.onError(managed, err));
               }
             } finally {
               if (managed.status !== "paused") {
