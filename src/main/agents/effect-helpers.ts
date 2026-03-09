@@ -6,13 +6,16 @@
  * All heavy implementation lives in the Effect services; this module is just
  * a convenience façade for non-Effect callers.
  *
- * NOTE: AppRuntime is lazy-loaded to break circular module dependencies.
- * (effect-helpers → runtime → SdkQueryRunner → tool-permissions → effect-helpers)
+ * The AppRuntime singleton lives in `effect/app-runtime-ref.ts` and is set
+ * once during startup from src/main.ts, which breaks the circular
+ * module-dependency chain (effect-helpers → runtime → SdkQueryRunner →
+ * tool-permissions → effect-helpers).
  */
 
 import { Effect } from "effect";
 import { SessionPersistence } from "../effect/services/SessionPersistence";
 import { EventBroadcaster } from "../effect/services/EventBroadcaster";
+import { getAppRuntime } from "../effect/app-runtime-ref";
 
 // Re-export channel constant and types so importers don't need multiple sources
 export { DB_UPDATED_CHANNEL } from "../effect/services/EventBroadcaster";
@@ -25,35 +28,19 @@ export interface DbUpdateEvent {
 }
 
 // ---------------------------------------------------------------------------
-// Lazy AppRuntime loader — breaks the circular module-dependency chain
-// ---------------------------------------------------------------------------
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let _runtime: any;
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function getRuntime(): any {
-  if (!_runtime) {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    _runtime = require("../effect/runtime").AppRuntime;
-  }
-  return _runtime!;
-}
-
-// ---------------------------------------------------------------------------
 // Wrappers
 // ---------------------------------------------------------------------------
 
 /** Notify all renderer windows that data changed in the DB. */
 export function notifyDbUpdated(entity: DbEntity, featureId: number): void {
-  getRuntime().runSync(
+  getAppRuntime().runSync(
     Effect.flatMap(EventBroadcaster, (eb) => eb.notifyDbUpdated(entity, featureId)),
   );
 }
 
 /** Get the session DB ID for a subprocess (returns undefined if not registered). */
 export function getSessionDbId(subprocessId: string): number | undefined {
-  const result = getRuntime().runSync(
+  const result = getAppRuntime().runSync(
     Effect.flatMap(SessionPersistence, (sp) => sp.getSessionDbId(subprocessId)),
   );
   return result ?? undefined;
@@ -64,7 +51,7 @@ export function registerSessionPersistence(
   subprocessId: string,
   sessionDbId: number,
 ): void {
-  getRuntime().runSync(
+  getAppRuntime().runSync(
     Effect.flatMap(SessionPersistence, (sp) => sp.registerSession(subprocessId, sessionDbId)),
   );
 }
@@ -74,7 +61,7 @@ export function registerSessionPersistence(
  * Returns the subprocess ID if it's still in the session map, or undefined.
  */
 export function getSubprocessIdForSession(sessionDbId: number): string | undefined {
-  return getRuntime().runSync(
+  return getAppRuntime().runSync(
     Effect.flatMap(SessionPersistence, (sp) => sp.getSubprocessIdForSession(sessionDbId)),
   );
 }
@@ -84,7 +71,7 @@ export function getSubprocessIdForSession(sessionDbId: number): string | undefin
  * Used to stop running subprocesses when deleting a feature.
  */
 export function getSubprocessIdsForSessionDbIds(sessionDbIds: number[]): string[] {
-  return getRuntime().runSync(
+  return getAppRuntime().runSync(
     Effect.flatMap(SessionPersistence, (sp) => sp.getSubprocessIdsForSessionDbIds(sessionDbIds)),
   );
 }

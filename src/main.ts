@@ -4,10 +4,15 @@ import { Effect } from "effect";
 import { createIPCHandler } from "electron-trpc/main";
 import { appRouter } from "./main/trpc/router";
 import { AppRuntime } from "./main/effect/runtime";
+import { setAppRuntime } from "./main/effect/app-runtime-ref";
 import { hasRunningSubprocesses } from "./main/agents/subprocess-manager";
 import { SessionPersistence } from "./main/effect/services/SessionPersistence";
 import { resumeInProgressFeatures } from "./main/agents/resume-features";
 import { fetchAvailableModels } from "./main/agents/available-models";
+
+// Register the AppRuntime singleton so convenience wrappers (effect-helpers.ts)
+// can access it without creating circular module dependencies.
+setAppRuntime(AppRuntime);
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 import electronSquirrelStartup from "electron-squirrel-startup";
