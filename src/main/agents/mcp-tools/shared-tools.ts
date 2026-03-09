@@ -3,10 +3,10 @@
  */
 
 import { z } from "zod";
-import { Effect } from "effect";
 import { tool } from "@anthropic-ai/claude-agent-sdk";
 import { getDatabase } from "../../db/database";
 import { queryOne, queryAll, queryOneValidated, execute } from "../../db/query";
+import { AppRuntime } from "../../effect/runtime";
 import { notifyDbUpdated } from "../effect-helpers";
 import { transitionPhase } from "../state-transitions";
 import { resolveAgentCwd } from "../resolve-cwd";
@@ -26,7 +26,7 @@ export const readPlanTool = tool(
   {
     plan_id: z.number().describe("The plan ID to read"),
   },
-  async (args) => textResult(renderPlanMarkdown(args.plan_id)),
+  async (args) => textResult(await renderPlanMarkdown(args.plan_id)),
 );
 
 export const listPhasesTool = tool(
@@ -37,7 +37,7 @@ export const listPhasesTool = tool(
   },
   async (args) => {
     try {
-      const phases = Effect.runSync(queryAll<{ id: number; step_number: number; title: string; status: string; phase_type: string; complexity: number }>(
+      const phases = await AppRuntime.runPromise(queryAll<{ id: number; step_number: number; title: string; status: string; phase_type: string; complexity: number }>(
         "SELECT id, step_number, title, status, phase_type, complexity FROM phases WHERE plan_id = ? ORDER BY step_number, order_index",
         args.plan_id,
       ));
@@ -62,7 +62,7 @@ export const readPhaseTool = tool(
   },
   async (args) => {
     try {
-      const phase = Effect.runSync(queryOneValidated(PhaseRowSchema, "SELECT id, plan_id, step_number, title, status, complexity, commit_message, prompt, order_index, implementation_notes, deviations, phase_type FROM phases WHERE id = ?", args.phase_id));
+      const phase = await AppRuntime.runPromise(queryOneValidated(PhaseRowSchema, "SELECT id, plan_id, step_number, title, status, complexity, commit_message, prompt, order_index, implementation_notes, deviations, phase_type FROM phases WHERE id = ?", args.phase_id));
       if (phase === null) return errorResult(`Phase ${args.phase_id} not found`);
 
       const lines = [
@@ -105,13 +105,13 @@ export function createPhaseTool(featureId: number) {
     },
     async (args) => {
       try {
-        const maxOrderRow = Effect.runSync(queryOne<{ max_idx: number | null }>(
+        const maxOrderRow = await AppRuntime.runPromise(queryOne<{ max_idx: number | null }>(
           "SELECT MAX(order_index) as max_idx FROM phases WHERE plan_id = ?",
           args.plan_id,
         ));
         const orderIndex = (maxOrderRow?.max_idx ?? -1) + 1;
 
-        const r = Effect.runSync(execute(
+        const r = await AppRuntime.runPromise(execute(
           "INSERT INTO phases (plan_id, step_number, title, status, complexity, commit_message, prompt, order_index, phase_type) VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?)",
           args.plan_id,
           args.step_number,
@@ -146,7 +146,7 @@ export function updatePhaseTool(planId: number, featureId: number) {
     },
     async (args) => {
       try {
-        const phase = Effect.runSync(queryOne<{ status: string; plan_id: number }>(
+        const phase = await AppRuntime.runPromise(queryOne<{ status: string; plan_id: number }>(
           "SELECT status, plan_id FROM phases WHERE id = ?",
           args.phase_id,
         ));
@@ -167,7 +167,7 @@ export function updatePhaseTool(planId: number, featureId: number) {
         if (updates.length === 0) return errorResult("No fields to update");
 
         values.push(args.phase_id);
-        Effect.runSync(execute(`UPDATE phases SET ${updates.join(", ")} WHERE id = ?`, ...values));
+        await AppRuntime.runPromise(execute(`UPDATE phases SET ${updates.join(", ")} WHERE id = ?`, ...values));
         notifyDbUpdated("phase", featureId);
         return textResult(`Phase ${args.phase_id} updated`);
       } catch (e) {
@@ -186,7 +186,7 @@ export function removePhaseTool(planId: number, featureId: number) {
     },
     async (args) => {
       try {
-        const phase = Effect.runSync(queryOne<{ status: string; plan_id: number }>(
+        const phase = await AppRuntime.runPromise(queryOne<{ status: string; plan_id: number }>(
           "SELECT status, plan_id FROM phases WHERE id = ?",
           args.phase_id,
         ));
@@ -194,7 +194,7 @@ export function removePhaseTool(planId: number, featureId: number) {
         if (phase.plan_id !== planId) return errorResult(`Phase ${args.phase_id} does not belong to plan ${planId}`);
         if (phase.status !== "draft") return errorResult(`Phase ${args.phase_id} has status '${phase.status}', only 'draft' phases can be removed`);
 
-        Effect.runSync(execute("DELETE FROM phases WHERE id = ?", args.phase_id));
+        await AppRuntime.runPromise(execute("DELETE FROM phases WHERE id = ?", args.phase_id));
         notifyDbUpdated("phase", featureId);
         return textResult(`Phase ${args.phase_id} removed`);
       } catch (e) {
@@ -217,13 +217,13 @@ export function createAgentDoneTool(sessionDbId: number, featureId: number, onAg
     },
     async (_args) => {
       try {
-        const current = Effect.runSync(queryOne<{ status: string; agent_type: string; run_id: number | null }>(
+        const current = await AppRuntime.runPromise(queryOne<{ status: string; agent_type: string; run_id: number | null }>(
           "SELECT status, agent_type, run_id FROM agent_sessions WHERE id = ?",
           sessionDbId,
         ));
 
         console.log(`[session-trace] mark_agent_done: session ${sessionDbId} (${current?.agent_type}), ${current?.status} -> completed (feature ${featureId})`);
-        Effect.runSync(execute(
+        await AppRuntime.runPromise(execute(
           "UPDATE agent_sessions SET status = 'completed', ended_at = datetime('now') WHERE id = ?",
           sessionDbId,
         ));
@@ -232,7 +232,7 @@ export function createAgentDoneTool(sessionDbId: number, featureId: number, onAg
         // After any execute/qa/review agent completes, chain via callback
         if (onAgentDone && ["execute", "qa", "review"].includes(current?.agent_type ?? "")) {
           try {
-            const wfFeat = Effect.runSync(queryOne<{ project_id: number }>(
+            const wfFeat = await AppRuntime.runPromise(queryOne<{ project_id: number }>(
               "SELECT project_id FROM features WHERE id = ?",
               featureId,
             ));
@@ -266,7 +266,7 @@ export function createMarkPhaseDoneTool(featureId: number) {
     },
     async (args) => {
       try {
-        const phase = Effect.runSync(queryOne<{ status: string }>(
+        const phase = await AppRuntime.runPromise(queryOne<{ status: string }>(
           "SELECT status FROM phases WHERE id = ?",
           args.phase_id,
         ));
@@ -305,22 +305,22 @@ export function createFinalizePhasesTool(planId: number, featureId: number, labe
       }
 
       try {
-        const draftPhases = Effect.runSync(queryAll<{ id: number; title: string; step_number: number }>(
+        const draftPhases = await AppRuntime.runPromise(queryAll<{ id: number; title: string; step_number: number }>(
           "SELECT id, title, step_number FROM phases WHERE plan_id = ? AND status = 'draft' ORDER BY step_number, order_index",
           planId,
         ));
 
         if (draftPhases.length === 0) return errorResult("No draft phases to finalize");
 
-        Effect.runSync(execute(
+        await AppRuntime.runPromise(execute(
           "UPDATE phases SET status = 'pending' WHERE plan_id = ? AND status = 'draft'",
           planId,
         ));
-        Effect.runSync(execute(
+        await AppRuntime.runPromise(execute(
           "UPDATE features SET status = 'in-progress' WHERE id = ?",
           featureId,
         ));
-        Effect.runSync(execute(
+        await AppRuntime.runPromise(execute(
           "UPDATE plans SET status = 'active', updated_at = datetime('now') WHERE id = ?",
           planId,
         ));

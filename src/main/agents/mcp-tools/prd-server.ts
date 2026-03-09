@@ -3,9 +3,9 @@
  */
 
 import { z } from "zod";
-import { Effect } from "effect";
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { queryOne, execute } from "../../db/query";
+import { AppRuntime } from "../../effect/runtime";
 import { notifyDbUpdated } from "../effect-helpers";
 import { textResult, errorResult } from "./helpers";
 import { createAgentDoneTool } from "./shared-tools";
@@ -28,7 +28,7 @@ export function createPrdMcpServer(featureId: number, sessionDbId: number, onSho
         },
         async (args) => {
           try {
-            Effect.runSync(execute("UPDATE features SET prd = ? WHERE id = ?", args.prd, featureId));
+            await AppRuntime.runPromise(execute("UPDATE features SET prd = ? WHERE id = ?", args.prd, featureId));
             notifyDbUpdated("feature", featureId);
             return textResult("PRD created successfully.");
           } catch (e) {
@@ -46,7 +46,7 @@ export function createPrdMcpServer(featureId: number, sessionDbId: number, onSho
         },
         async (args) => {
           try {
-            const row = Effect.runSync(queryOne<{ prd: string | null }>(
+            const row = await AppRuntime.runPromise(queryOne<{ prd: string | null }>(
               "SELECT prd FROM features WHERE id = ?",
               featureId,
             ));
@@ -62,7 +62,7 @@ export function createPrdMcpServer(featureId: number, sessionDbId: number, onSho
               return errorResult(`old_string found ${occurrences} times in the PRD. Provide a larger/more unique string to match exactly once.`);
             }
             const updated = row.prd.replace(args.old_string, args.new_string);
-            Effect.runSync(execute("UPDATE features SET prd = ? WHERE id = ?", updated, featureId));
+            await AppRuntime.runPromise(execute("UPDATE features SET prd = ? WHERE id = ?", updated, featureId));
             notifyDbUpdated("feature", featureId);
             return textResult("PRD updated successfully.");
           } catch (e) {
@@ -77,7 +77,7 @@ export function createPrdMcpServer(featureId: number, sessionDbId: number, onSho
         {},
         async () => {
           try {
-            const row = Effect.runSync(queryOne<{ prd: string | null }>(
+            const row = await AppRuntime.runPromise(queryOne<{ prd: string | null }>(
               "SELECT prd FROM features WHERE id = ?",
               featureId,
             ));

@@ -2,8 +2,9 @@
  * Shared helper functions for MCP tool servers.
  */
 
-import { Effect } from "effect";
+import type { Effect } from "effect";
 import { queryOne, queryAll } from "../../db/query";
+import { AppRuntime } from "../../effect/runtime";
 import type { PhaseRow, PlanRow } from "../../db/types";
 
 export function textResult(text: string) {
@@ -15,14 +16,14 @@ export function errorResult(text: string) {
 }
 
 /**
- * Safely run an Effect synchronously. Returns null on failure and logs a warning.
+ * Safely run an Effect via AppRuntime. Returns null on failure and logs a warning.
  * Use this when the calling code can handle null gracefully.
  */
-export function runSyncSafe<T>(effect: Effect.Effect<T, unknown>): T | null {
+export async function runPromiseSafe<T>(effect: Effect.Effect<T, unknown>): Promise<T | null> {
   try {
-    return Effect.runSync(effect);
+    return await AppRuntime.runPromise(effect);
   } catch (e) {
-    console.warn("[mcp-tools] runSyncSafe error:", e instanceof Error ? e.message : String(e));
+    console.warn("[mcp-tools] runPromiseSafe error:", e instanceof Error ? e.message : String(e));
     return null;
   }
 }
@@ -30,19 +31,19 @@ export function runSyncSafe<T>(effect: Effect.Effect<T, unknown>): T | null {
 /**
  * Render a plan and its phases as formatted markdown.
  */
-export function renderPlanMarkdown(planId: number): string {
+export async function renderPlanMarkdown(planId: number): Promise<string> {
   try {
-    return renderPlanMarkdownUnsafe(planId);
+    return await renderPlanMarkdownUnsafe(planId);
   } catch (e) {
     return `Error loading plan: ${e instanceof Error ? e.message : String(e)}`;
   }
 }
 
-function renderPlanMarkdownUnsafe(planId: number): string {
-  const plan = Effect.runSync(queryOne<PlanRow>("SELECT * FROM plans WHERE id = ?", planId));
+async function renderPlanMarkdownUnsafe(planId: number): Promise<string> {
+  const plan = await AppRuntime.runPromise(queryOne<PlanRow>("SELECT * FROM plans WHERE id = ?", planId));
   if (plan === null) return "Plan not found.";
 
-  const phases = Effect.runSync(queryAll<PhaseRow>(
+  const phases = await AppRuntime.runPromise(queryAll<PhaseRow>(
     "SELECT id, plan_id, step_number, title, status, complexity, commit_message, prompt, order_index, implementation_notes, deviations, phase_type FROM phases WHERE plan_id = ? ORDER BY step_number, order_index",
     planId,
   ));

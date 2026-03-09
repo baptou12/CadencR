@@ -3,9 +3,9 @@
  */
 
 import { z } from "zod";
-import { Effect } from "effect";
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { queryOne, queryAll } from "../../db/query";
+import { AppRuntime } from "../../effect/runtime";
 import { textResult, errorResult } from "./helpers";
 import {
   readPlanTool,
@@ -30,7 +30,7 @@ export function createRetroMcpServer(featureId: number, sessionDbId: number, onA
         {},
         async () => {
           try {
-            const row = Effect.runSync(queryOne<{ prd: string | null }>(
+            const row = await AppRuntime.runPromise(queryOne<{ prd: string | null }>(
               "SELECT prd FROM features WHERE id = ?",
               featureId,
             ));
@@ -47,7 +47,7 @@ export function createRetroMcpServer(featureId: number, sessionDbId: number, onA
         {},
         async () => {
           try {
-            const sessions = Effect.runSync(queryAll<{
+            const sessions = await AppRuntime.runPromise(queryAll<{
               id: number;
               agent_type: string;
               status: string;
@@ -91,13 +91,13 @@ export function createRetroMcpServer(featureId: number, sessionDbId: number, onA
             const resolvedOffset = args.offset ?? 0;
             const resolvedLimit = args.limit ?? 50;
 
-            const totalRow = Effect.runSync(queryOne<{ cnt: number }>(
+            const totalRow = await AppRuntime.runPromise(queryOne<{ cnt: number }>(
               "SELECT COUNT(*) as cnt FROM agent_messages WHERE session_id = ?",
               args.session_id,
             ));
             const total = totalRow?.cnt ?? 0;
 
-            const messages = Effect.runSync(queryAll<{
+            const messages = await AppRuntime.runPromise(queryAll<{
               role: string;
               content: string;
               message_type: string;

@@ -2,9 +2,9 @@
  * Common and workflow-session MCP servers.
  */
 
-import { Effect } from "effect";
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { queryOne } from "../../db/query";
+import { AppRuntime } from "../../effect/runtime";
 import { textResult, errorResult } from "./helpers";
 import {
   readPlanTool,
@@ -37,7 +37,7 @@ export type WorkflowSessionToolName = "read_plan" | "list_phases" | "read_phase"
 function createReadPrdTool(featureId: number) {
   return tool("read_prd", "Read the PRD for this feature.", {}, async () => {
     try {
-      const row = Effect.runSync(queryOne<{ prd: string | null }>(
+      const row = await AppRuntime.runPromise(queryOne<{ prd: string | null }>(
         "SELECT prd FROM features WHERE id = ?",
         featureId,
       ));

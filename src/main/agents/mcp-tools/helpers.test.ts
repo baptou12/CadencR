@@ -2,6 +2,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { Effect } from "effect";
 
 vi.mock("../../db/query");
+vi.mock("../../effect/runtime", () => ({
+  AppRuntime: {
+    runPromise: (effect: Effect.Effect<unknown, unknown>) => Effect.runPromise(effect),
+  },
+}));
 
 import { renderPlanMarkdown, textResult, errorResult } from "./helpers";
 import { queryOne, queryAll } from "../../db/query";
@@ -34,12 +39,12 @@ describe("renderPlanMarkdown", () => {
     vi.clearAllMocks();
   });
 
-  it("returns 'Plan not found.' when plan does not exist", () => {
+  it("returns 'Plan not found.' when plan does not exist", async () => {
     mockQueryOne.mockReturnValue(Effect.succeed(null));
-    expect(renderPlanMarkdown(999)).toBe("Plan not found.");
+    expect(await renderPlanMarkdown(999)).toBe("Plan not found.");
   });
 
-  it("renders plan title and sections", () => {
+  it("renders plan title and sections", async () => {
     mockQueryOne.mockReturnValue(Effect.succeed({
       id: 1,
       title: "My Plan",
@@ -50,7 +55,7 @@ describe("renderPlanMarkdown", () => {
     }));
     mockQueryAll.mockReturnValue(Effect.succeed([]));
 
-    const result = renderPlanMarkdown(1);
+    const result = await renderPlanMarkdown(1);
     expect(result).toContain("# Plan: My Plan");
     expect(result).toContain("## Summary\n\nA summary");
     expect(result).toContain("## Context\n\nSome context");
@@ -58,7 +63,7 @@ describe("renderPlanMarkdown", () => {
     expect(result).toContain("## Completion Conditions\n\nAll tests pass");
   });
 
-  it("includes phases in the output", () => {
+  it("includes phases in the output", async () => {
     mockQueryOne.mockReturnValue(Effect.succeed({
       id: 1,
       title: "Plan",
@@ -84,14 +89,14 @@ describe("renderPlanMarkdown", () => {
       },
     ]));
 
-    const result = renderPlanMarkdown(1);
+    const result = await renderPlanMarkdown(1);
     expect(result).toContain("## Phases");
     expect(result).toContain("### Phase 1: Phase One");
     expect(result).toContain("**Status**: pending");
     expect(result).toContain("**Commit message**: feat: do things");
   });
 
-  it("skips optional sections when null", () => {
+  it("skips optional sections when null", async () => {
     mockQueryOne.mockReturnValue(Effect.succeed({
       id: 1,
       title: "Lean Plan",
@@ -102,7 +107,7 @@ describe("renderPlanMarkdown", () => {
     }));
     mockQueryAll.mockReturnValue(Effect.succeed([]));
 
-    const result = renderPlanMarkdown(1);
+    const result = await renderPlanMarkdown(1);
     expect(result).not.toContain("## Summary");
     expect(result).not.toContain("## Context");
   });
