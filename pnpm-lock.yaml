@@ -23,9 +23,6 @@ importers:
       '@git-diff-view/shiki':
         specifier: ^0.0.39
         version: 0.0.39
-      '@swan-io/boxed':
-        specifier: ^3.2.1
-        version: 3.2.1(typescript@5.9.3)
       '@tanstack/react-query':
         specifier: ^4.43.0
         version: 4.43.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
@@ -2276,14 +2273,6 @@ packages:
 
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
-
-  '@swan-io/boxed@3.2.1':
-    resolution: {integrity: sha512-MQqSpe09PdjDjTR4HCPpUxO9XsacNguCkce1C2wm1eIb6ycWXQoV+biYvLEuI/LiMqB31KySdgY2YFwrVucLCw==}
-    peerDependencies:
-      typescript: '>=5.0.0'
-    peerDependenciesMeta:
-      typescript:
-        optional: true
 
   '@szmarczak/http-timer@4.0.6':
     resolution: {integrity: sha512-4BAffykYOgO+5nzBWYwE3W90sBgLJoUPRWWcL8wlyiM8IB8ipJz3UMJ9KXQd1RKQXpKp8Tutn80HZtWsu2u76w==}
@@ -7860,10 +7849,6 @@ snapshots:
   '@sindresorhus/is@4.6.0': {}
 
   '@standard-schema/spec@1.1.0': {}
-
-  '@swan-io/boxed@3.2.1(typescript@5.9.3)':
-    optionalDependencies:
-      typescript: 5.9.3
 
   '@szmarczak/http-timer@4.0.6':
     dependencies:
