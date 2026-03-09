@@ -2,12 +2,11 @@ import { app, BrowserWindow, dialog } from "electron";
 import path from "node:path";
 import { createIPCHandler } from "electron-trpc/main";
 import { appRouter } from "./main/trpc/router";
-import { closeDatabase } from "./main/db/database";
-import { hasRunningSubprocesses, gracefulShutdown } from "./main/agents/subprocess-manager";
+import { initRuntime, disposeRuntime } from "./main/effect/runtime";
+import { hasRunningSubprocesses } from "./main/agents/subprocess-manager";
 import { restoreSessionMap } from "./main/agents/session-persistence";
 import { resumeInProgressFeatures } from "./main/agents/resume-features";
 import { fetchAvailableModels } from "./main/agents/available-models";
-import { killAllTerminalPtys } from "./main/trpc/terminal";
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 import electronSquirrelStartup from "electron-squirrel-startup";
@@ -58,9 +57,12 @@ const createWindow = () => {
         })
         .then(({ response }) => {
           if (response === 1) {
-            killAllTerminalPtys();
-            gracefulShutdown();
-            mainWindow.destroy();
+            isQuitting = true;
+            // Effect runtime disposal handles PTY cleanup, subprocess shutdown,
+            // and DB close in reverse-dependency order via registered finalizers.
+            disposeRuntime().finally(() => {
+              mainWindow.destroy();
+            });
           }
         });
     }
@@ -71,7 +73,9 @@ let isQuitting = false;
 
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
-app.on("ready", () => {
+app.on("ready", async () => {
+  // Initialize the Effect ManagedRuntime — builds layers, wires services.
+  await initRuntime();
   fetchAvailableModels().catch(() => {}); // warm up cache
   // Restore in-memory session map from DB (for reconnection after restart)
   restoreSessionMap();
@@ -104,17 +108,22 @@ app.on("before-quit", (e) => {
         .then(({ response }) => {
           if (response === 1) {
             isQuitting = true;
-            killAllTerminalPtys();
-            gracefulShutdown();
-            closeDatabase();
-            app.quit();
+            // Effect runtime disposal handles PTY cleanup, subprocess shutdown,
+            // and DB close in reverse-dependency order via registered finalizers.
+            disposeRuntime().finally(() => {
+              app.quit();
+            });
           }
         });
     }
-  } else {
-    killAllTerminalPtys();
-    gracefulShutdown();
-    closeDatabase();
+  } else if (!isQuitting) {
+    isQuitting = true;
+    e.preventDefault();
+    // Effect runtime disposal handles PTY cleanup, subprocess shutdown,
+    // and DB close in reverse-dependency order via registered finalizers.
+    disposeRuntime().finally(() => {
+      app.quit();
+    });
   }
 });
 
