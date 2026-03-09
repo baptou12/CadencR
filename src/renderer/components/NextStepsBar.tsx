@@ -309,7 +309,7 @@ export function NextStepsBar({
       )}
 
       {showRefinePrompt && canStartRefine && (
-        <div className="w-full rounded-lg border border-border/50 overflow-hidden">
+        <div className="w-full rounded-lg border border-border/50">
           <AgentPromptBar
             onSend={() => {}}
             onStop={() => {}}
@@ -321,7 +321,7 @@ export function NextStepsBar({
       )}
 
       {showSessionPrompt && canStartWorkflowSession && onStartWorkflowSession && (
-        <div className="w-full rounded-lg border border-border/50 overflow-hidden">
+        <div className="w-full rounded-lg border border-border/50">
           <AgentPromptBar
             ref={sessionPromptRef}
             onSend={() => {}}

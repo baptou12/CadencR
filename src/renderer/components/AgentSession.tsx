@@ -641,7 +641,7 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
     return (
       <div ref={containerRef} className={cn("flex h-full flex-col", className)}>
         {/* Scrollable agent output */}
-        <div ref={scrollContainerRef} className="flex-1 overflow-auto p-4" style={{ overflowAnchor: "none" }}>
+        <div ref={scrollContainerRef} className="flex-1 overflow-auto px-4 pt-4 pb-8" style={{ overflowAnchor: "none" }}>
           {streamContent}
         </div>
 
@@ -788,7 +788,7 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
       {/* Collapsible content */}
       {isOpen && (
         <>
-          <div ref={scrollContainerRef} className="flex-1 min-h-0 border-t border-border/30 overflow-y-auto" style={{ overflowAnchor: "none" }}>
+          <div ref={scrollContainerRef} className="flex-1 min-h-0 border-t border-border/30 overflow-y-auto pb-6" style={{ overflowAnchor: "none" }}>
             {/* Stream content */}
             {blocks.length === 0 && status === "idle" ? (
               <div className="flex flex-1 items-center justify-center p-6 text-sm text-muted-foreground">

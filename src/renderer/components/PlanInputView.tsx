@@ -65,7 +65,7 @@ export function PlanInputView({
           implementation plan.
         </p>
       </div>
-      <div className="w-full rounded-lg border border-border/50 overflow-hidden">
+      <div className="w-full rounded-lg border border-border/50">
         <AgentPromptBar
           onSend={() => {}}
           onStop={() => {}}

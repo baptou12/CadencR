@@ -420,7 +420,7 @@ export const AgentPromptBar = forwardRef<
   return (
     <div
       className={cn(
-        "flex flex-col px-3 pb-3",
+        "flex flex-col px-3 pt-3 pb-4",
         isDragging && "ring-2 ring-primary/50 ring-inset",
       )}
       {...dragHandlers}
