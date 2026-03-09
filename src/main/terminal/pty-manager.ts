@@ -1,37 +1,13 @@
-import { BrowserWindow } from "electron";
-import * as pty from "node-pty";
-
-const TERMINAL_DATA_CHANNEL = "terminal:data";
-const TERMINAL_EXIT_CHANNEL = "terminal:exit";
-
-interface ManagedPty {
-  pty: pty.IPty;
-  featureId: number;
-}
-
-/** Map of terminal ID → managed PTY instance */
-const ptyInstances = new Map<string, ManagedPty>();
-
 /**
- * Send an IPC event to all renderer windows.
+ * PTY manager — backward-compatible wrapper around the Effect PtyManager service.
+ *
+ * All state lives in the PtyManagerLive layer (managed by AppRuntime). These
+ * wrapper functions delegate to the Effect service so callers do not need to
+ * know about Effect.
  */
-function sendToAllWindows(channel: string, data: unknown): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (!win.isDestroyed()) {
-      win.webContents.send(channel, data);
-    }
-  }
-}
-
-/**
- * Resolve the default shell for the current platform.
- */
-function getDefaultShell(): string {
-  if (process.platform === "win32") {
-    return process.env.COMSPEC || "cmd.exe";
-  }
-  return process.env.SHELL || "/bin/zsh";
-}
+import { Effect } from "effect";
+import { PtyManager } from "../effect/services/PtyManager.js";
+import { AppRuntime } from "../effect/runtime.js";
 
 /**
  * Create a new PTY process and register it.
@@ -41,53 +17,18 @@ function getDefaultShell(): string {
  * @param cwd - Working directory to open the shell in
  * @param shell - Optional shell override (defaults to user's $SHELL)
  */
-export function createPty(
-  id: string,
-  featureId: number,
-  cwd: string,
-  shell?: string,
-): void {
-  // If a PTY with this ID already exists, kill it first
-  if (ptyInstances.has(id)) {
-    killPty(id);
-  }
-
-  const shellPath = shell || getDefaultShell();
-  const shellArgs = process.platform === "win32" ? [] : ["-l"];
-
-  const ptyProcess = pty.spawn(shellPath, shellArgs, {
-    name: "xterm-256color",
-    cols: 80,
-    rows: 24,
-    cwd,
-    env: {
-      ...process.env,
-      TERM: "xterm-256color",
-      COLORTERM: "truecolor",
-    } as Record<string, string>,
-  });
-
-  ptyInstances.set(id, { pty: ptyProcess, featureId });
-
-  // Forward PTY output to the renderer
-  ptyProcess.onData((data: string) => {
-    sendToAllWindows(TERMINAL_DATA_CHANNEL, { id, data });
-  });
-
-  // Handle PTY exit
-  ptyProcess.onExit(({ exitCode, signal }) => {
-    sendToAllWindows(TERMINAL_EXIT_CHANNEL, { id, exitCode, signal });
-    ptyInstances.delete(id);
-  });
+export function createPty(id: string, featureId: number, cwd: string, shell?: string): void {
+  AppRuntime.runSync(Effect.flatMap(PtyManager, (pm) => pm.create(id, featureId, cwd, shell)));
 }
 
 /**
  * Write data (user input) to a PTY.
  */
 export function writeToPty(id: string, data: string): void {
-  const managed = ptyInstances.get(id);
-  if (managed) {
-    managed.pty.write(data);
+  try {
+    AppRuntime.runSync(Effect.flatMap(PtyManager, (pm) => pm.write(id, data)));
+  } catch {
+    // Silently ignore PtyNotFound errors — PTY may have already exited
   }
 }
 
@@ -95,9 +36,10 @@ export function writeToPty(id: string, data: string): void {
  * Resize a PTY to new dimensions.
  */
 export function resizePty(id: string, cols: number, rows: number): void {
-  const managed = ptyInstances.get(id);
-  if (managed) {
-    managed.pty.resize(cols, rows);
+  try {
+    AppRuntime.runSync(Effect.flatMap(PtyManager, (pm) => pm.resize(id, cols, rows)));
+  } catch {
+    // Silently ignore PtyNotFound errors — PTY may have already exited
   }
 }
 
@@ -105,15 +47,7 @@ export function resizePty(id: string, cols: number, rows: number): void {
  * Kill a single PTY process and remove it from the map.
  */
 export function killPty(id: string): void {
-  const managed = ptyInstances.get(id);
-  if (managed) {
-    try {
-      managed.pty.kill();
-    } catch {
-      // PTY may already be dead — ignore
-    }
-    ptyInstances.delete(id);
-  }
+  AppRuntime.runSync(Effect.flatMap(PtyManager, (pm) => pm.kill(id)));
 }
 
 /**
@@ -121,37 +55,19 @@ export function killPty(id: string): void {
  * Used for cleanup when navigating away from a feature.
  */
 export function killAllPtysForFeature(featureId: number): void {
-  const entries = Array.from(ptyInstances.entries());
-  for (const [id, managed] of entries) {
-    if (managed.featureId === featureId) {
-      try {
-        managed.pty.kill();
-      } catch {
-        // PTY may already be dead — ignore
-      }
-      ptyInstances.delete(id);
-    }
-  }
+  AppRuntime.runSync(Effect.flatMap(PtyManager, (pm) => pm.killAllForFeature(featureId)));
 }
 
 /**
  * Kill all PTY processes. Used during app shutdown.
  */
 export function killAllPtys(): void {
-  const entries = Array.from(ptyInstances.entries());
-  for (const [, managed] of entries) {
-    try {
-      managed.pty.kill();
-    } catch {
-      // Ignore
-    }
-  }
-  ptyInstances.clear();
+  AppRuntime.runSync(Effect.flatMap(PtyManager, (pm) => pm.killAll()));
 }
 
 /**
  * Check if any PTY instances are running.
  */
 export function hasRunningPtys(): boolean {
-  return ptyInstances.size > 0;
+  return AppRuntime.runSync(Effect.flatMap(PtyManager, (pm) => pm.hasRunning()));
 }

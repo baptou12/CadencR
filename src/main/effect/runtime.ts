@@ -1,7 +1,8 @@
-import { Effect, ManagedRuntime } from "effect";
+import { Effect, Layer, ManagedRuntime } from "effect";
 import { DatabaseLive } from "./services/Database.js";
+import { PtyManagerLive } from "./services/PtyManager.js";
 
-export const AppLayer = DatabaseLive;
+export const AppLayer = Layer.merge(DatabaseLive, PtyManagerLive);
 
 export const AppRuntime = ManagedRuntime.make(AppLayer);
 
