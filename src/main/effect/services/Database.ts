@@ -1,4 +1,4 @@
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, Layer, Schema, ParseResult } from "effect";
 import { DatabaseError } from "../errors.js";
 import { getDatabase } from "../../db/database.js";
 
@@ -10,6 +10,18 @@ export interface DatabaseService {
     sql: string,
     ...params: unknown[]
   ) => Effect.Effect<{ changes: number; lastInsertRowid: number }, DatabaseError>;
+  /** Query a single row and validate it against an Effect Schema at runtime */
+  queryOneValidated: <T, I>(
+    schema: Schema.Schema<T, I>,
+    sql: string,
+    ...params: unknown[]
+  ) => Effect.Effect<T | null, DatabaseError | ParseResult.ParseError>;
+  /** Query multiple rows and validate each against an Effect Schema at runtime */
+  queryAllValidated: <T, I>(
+    schema: Schema.Schema<T, I>,
+    sql: string,
+    ...params: unknown[]
+  ) => Effect.Effect<T[], DatabaseError | ParseResult.ParseError>;
 }
 
 /** Context tag for the Database service */
@@ -43,4 +55,35 @@ export const DatabaseLive = Layer.sync(Database, () => ({
       },
       catch: (e) => new DatabaseError({ operation: "execute", cause: e }),
     }),
+
+  queryOneValidated: <T, I>(
+    schema: Schema.Schema<T, I>,
+    sql: string,
+    ...params: unknown[]
+  ): Effect.Effect<T | null, DatabaseError | ParseResult.ParseError> => {
+    const rawEffect = Effect.try({
+      try: () => {
+        const row = getDatabase().prepare(sql).get(...params) as unknown | undefined;
+        return row ?? null;
+      },
+      catch: (e) => new DatabaseError({ operation: "queryOneValidated", cause: e }),
+    });
+    return Effect.flatMap(rawEffect, (row) =>
+      row === null ? Effect.succeed(null) : Schema.decodeUnknown(schema)(row),
+    );
+  },
+
+  queryAllValidated: <T, I>(
+    schema: Schema.Schema<T, I>,
+    sql: string,
+    ...params: unknown[]
+  ): Effect.Effect<T[], DatabaseError | ParseResult.ParseError> => {
+    const rawEffect = Effect.try({
+      try: () => getDatabase().prepare(sql).all(...params) as unknown[],
+      catch: (e) => new DatabaseError({ operation: "queryAllValidated", cause: e }),
+    });
+    return Effect.flatMap(rawEffect, (rows) =>
+      Effect.all(rows.map((row) => Schema.decodeUnknown(schema)(row))),
+    );
+  },
 }));

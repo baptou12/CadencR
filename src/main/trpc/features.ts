@@ -2,8 +2,9 @@ import { z } from "zod";
 import { Effect } from "effect";
 import { router, publicProcedure } from "./trpc";
 import { getDatabase } from "../db/database";
-import { queryOne, queryAll } from "../db/query";
+import { queryOne, queryAll, queryOneValidated, queryAllValidated } from "../db/query";
 import type { FeatureRow, PlanRow, PhaseRow, CountRow, SettingRow, ProjectRow } from "../db/types";
+import { SettingRowSchema } from "../effect/schemas/db-schemas";
 import type { AgentType } from "../agents/types";
 import { getSubprocessIdsForSessionDbIds, notifyDbUpdated } from "../agents/session-persistence";
 import { stopSubprocess } from "../agents/subprocess-manager";
@@ -235,7 +236,8 @@ export const featuresRouter = router({
         }
       }
 
-      const rows = Effect.runSync(queryAll<SettingRow>(
+      const rows = Effect.runSync(queryAllValidated(
+        SettingRowSchema,
         "SELECT key, value FROM feature_settings WHERE feature_id = ?",
         input.feature_id,
       ));
@@ -387,7 +389,7 @@ export const featuresRouter = router({
       ));
 
       if (feature !== null && feature.type !== "session") {
-        const setting = Effect.runSync(queryOne<SettingRow>(
+        const setting = Effect.runSync(queryOne<Pick<SettingRow, "value">>(
           "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
           input.featureId,
         ));

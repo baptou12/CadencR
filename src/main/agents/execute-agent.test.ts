@@ -17,6 +17,7 @@ vi.mock("../db/database", () => ({
 vi.mock("../db/query", () => ({
   queryOne: vi.fn(),
   queryAll: vi.fn(),
+  queryAllValidated: vi.fn(),
   execute: vi.fn(),
 }));
 
@@ -61,11 +62,12 @@ import { Effect } from "effect";
 import { processNextPhase, getAutonomyLevel } from "./execute-agent";
 import { transitionFeature } from "./state-transitions";
 import { startUnifiedAgent } from "./unified-agent";
-import { queryOne, queryAll } from "../db/query";
+import { queryOne, queryAll, queryAllValidated } from "../db/query";
 import { notifyDbUpdated } from "./session-persistence";
 
 const mockQueryOne = vi.mocked(queryOne);
 const mockQueryAll = vi.mocked(queryAll);
+const mockQueryAllValidated = vi.mocked(queryAllValidated);
 
 const baseOptions = {
   featureId: 1,
@@ -118,8 +120,12 @@ function setupQueries(overrides: {
     return Effect.succeed(null) as any;
   });
 
-  mockQueryAll.mockImplementation((sql: string, ..._params: unknown[]) => {
-    if (sql.includes("SELECT id, plan_id, step_number")) {
+  mockQueryAll.mockImplementation((_sql: string, ..._params: unknown[]) => {
+    return Effect.succeed([]) as any;
+  });
+
+  mockQueryAllValidated.mockImplementation((_schema: unknown, sql: string, ..._params: unknown[]) => {
+    if (typeof sql === "string" && sql.includes("FROM phases")) {
       return Effect.succeed(pendingPhases) as any;
     }
     return Effect.succeed([]) as any;

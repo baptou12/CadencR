@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, Schema, ParseResult } from "effect";
 import { DatabaseError } from "../effect/errors.js";
 import { getDatabase } from "./database.js";
 
@@ -33,4 +33,45 @@ export function execute(
     },
     catch: (e) => new DatabaseError({ operation: "execute", cause: e }),
   });
+}
+
+/**
+ * Query a single row and validate it against an Effect Schema at runtime.
+ * Returns Effect<T | null, DatabaseError | ParseError> — callers can use
+ * Effect.runSync which will throw on validation failures rather than silently
+ * returning incorrectly typed data.
+ */
+export function queryOneValidated<T, I>(
+  schema: Schema.Schema<T, I>,
+  sql: string,
+  ...params: unknown[]
+): Effect.Effect<T | null, DatabaseError | ParseResult.ParseError> {
+  const rawEffect = Effect.try({
+    try: () => {
+      const row = getDatabase().prepare(sql).get(...params) as unknown | undefined;
+      return row ?? null;
+    },
+    catch: (e) => new DatabaseError({ operation: "queryOneValidated", cause: e }),
+  });
+  return Effect.flatMap(rawEffect, (row) =>
+    row === null ? Effect.succeed(null) : Schema.decodeUnknown(schema)(row),
+  );
+}
+
+/**
+ * Query multiple rows and validate each against an Effect Schema at runtime.
+ * Returns Effect<T[], DatabaseError | ParseError>.
+ */
+export function queryAllValidated<T, I>(
+  schema: Schema.Schema<T, I>,
+  sql: string,
+  ...params: unknown[]
+): Effect.Effect<T[], DatabaseError | ParseResult.ParseError> {
+  const rawEffect = Effect.try({
+    try: () => getDatabase().prepare(sql).all(...params) as unknown[],
+    catch: (e) => new DatabaseError({ operation: "queryAllValidated", cause: e }),
+  });
+  return Effect.flatMap(rawEffect, (rows) =>
+    Effect.all(rows.map((row) => Schema.decodeUnknown(schema)(row))),
+  );
 }

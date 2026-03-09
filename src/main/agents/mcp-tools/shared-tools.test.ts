@@ -38,13 +38,14 @@ import {
   createMarkPhaseDoneTool,
   createFinalizePhasesTool,
 } from "./shared-tools";
-import { queryOne, queryAll, execute } from "../../db/query";
+import { queryOne, queryAll, queryOneValidated, execute } from "../../db/query";
 import { getDatabase } from "../../db/database";
 import { notifyDbUpdated } from "../session-persistence";
 import { transitionPhase } from "../state-transitions";
 
 const mockQueryOne = vi.mocked(queryOne);
 const mockQueryAll = vi.mocked(queryAll);
+const mockQueryOneValidated = vi.mocked(queryOneValidated);
 const mockExecute = vi.mocked(execute);
 const mockGetDatabase = vi.mocked(getDatabase);
 const mockNotify = vi.mocked(notifyDbUpdated);
@@ -103,7 +104,7 @@ describe("readPhaseTool", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("returns phase details", async () => {
-    mockQueryOne.mockReturnValue(Effect.succeed({
+    mockQueryOneValidated.mockReturnValue(Effect.succeed({
       id: 5, title: "Implement auth", plan_id: 1, step_number: 2,
       status: "pending", phase_type: "value", complexity: 4,
       commit_message: "feat: auth", order_index: 0,
@@ -116,14 +117,14 @@ describe("readPhaseTool", () => {
   });
 
   it("returns error when phase not found", async () => {
-    mockQueryOne.mockReturnValue(Effect.succeed(null));
+    mockQueryOneValidated.mockReturnValue(Effect.succeed(null));
     const result = await getHandler(readPhaseTool)({ phase_id: 999 }) as any;
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain("not found");
   });
 
   it("includes optional fields when present", async () => {
-    mockQueryOne.mockReturnValue(Effect.succeed({
+    mockQueryOneValidated.mockReturnValue(Effect.succeed({
       id: 5, title: "Phase", plan_id: 1, step_number: 1,
       status: "completed", phase_type: "value", complexity: 2,
       commit_message: null, order_index: 0,

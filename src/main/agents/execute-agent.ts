@@ -9,10 +9,11 @@
 
 import { Effect } from "effect";
 import { getDatabase } from "../db/database";
-import { queryOne, queryAll } from "../db/query";
+import { queryOne, queryAll, queryAllValidated } from "../db/query";
 import { resolveSetting } from "../db/settings";
 import { getAutonomyLevel } from "./autonomy";
 import type { PhaseRow, PlanRow } from "../db/types";
+import { PhaseRowSchema } from "../effect/schemas/db-schemas";
 import { transitionFeature, transitionPhase, transitionPhaseIf } from "./state-transitions";
 import { startUnifiedAgent } from "./unified-agent";
 import { buildExecuteSystemPrompt, createQaConfig } from "./agent-configs";
@@ -87,8 +88,9 @@ export function processNextPhase(options: ExecuteAgentOptions): void {
 
     // 4. Find lowest step_number with pending/error phases (excluding phases
     //    that already have a running or paused agent session — those need manual resume)
-    const pendingPhases = Effect.runSync(queryAll<PhaseRow>(
-      `SELECT id, plan_id, step_number, title, status, complexity, commit_message, prompt, order_index, phase_type
+    const pendingPhases = Effect.runSync(queryAllValidated(
+      PhaseRowSchema,
+      `SELECT *
        FROM phases
        WHERE plan_id = ? AND status IN ('pending', 'error')
          AND id NOT IN (

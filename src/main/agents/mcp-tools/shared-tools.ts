@@ -6,12 +6,13 @@ import { z } from "zod";
 import { Effect } from "effect";
 import { tool } from "@anthropic-ai/claude-agent-sdk";
 import { getDatabase } from "../../db/database";
-import { queryOne, queryAll, execute } from "../../db/query";
+import { queryOne, queryAll, queryOneValidated, execute } from "../../db/query";
 import { notifyDbUpdated } from "../session-persistence";
 import { transitionPhase } from "../state-transitions";
 import { resolveAgentCwd } from "../resolve-cwd";
 import { textResult, errorResult, renderPlanMarkdown } from "./helpers";
 import type { PhaseRow } from "../../db/types";
+import { PhaseRowSchema } from "../../effect/schemas/db-schemas";
 
 /** Callback invoked when an execute/qa/review agent calls mark_agent_done */
 export type OnAgentDoneCallback = (options: { featureId: number; projectId: number; cwd: string; worktreePath: string | null }) => void;
@@ -57,7 +58,7 @@ export const readPhaseTool = tool(
     phase_id: z.number().describe("The phase ID to read"),
   },
   async (args) => {
-    const phase = Effect.runSync(queryOne<PhaseRow>("SELECT * FROM phases WHERE id = ?", args.phase_id));
+    const phase = Effect.runSync(queryOneValidated(PhaseRowSchema, "SELECT * FROM phases WHERE id = ?", args.phase_id));
     if (phase === null) return errorResult(`Phase ${args.phase_id} not found`);
 
     const lines = [
