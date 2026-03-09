@@ -40,7 +40,7 @@ vi.mock("./subprocess-manager", () => ({
   generateSubprocessId: vi.fn().mockReturnValue("pre-gen-id"),
 }));
 
-vi.mock("./session-persistence", () => ({
+vi.mock("./effect-helpers", () => ({
   registerSessionPersistence: vi.fn(),
 }));
 

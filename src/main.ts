@@ -5,7 +5,6 @@ import { createIPCHandler } from "electron-trpc/main";
 import { appRouter } from "./main/trpc/router";
 import { AppRuntime } from "./main/effect/runtime";
 import { hasRunningSubprocesses } from "./main/agents/subprocess-manager";
-import { restoreSessionMap } from "./main/agents/session-persistence";
 import { SessionPersistence } from "./main/effect/services/SessionPersistence";
 import { resumeInProgressFeatures } from "./main/agents/resume-features";
 import { fetchAvailableModels } from "./main/agents/available-models";
@@ -81,8 +80,6 @@ app.on("ready", async () => {
   await AppRuntime.runPromise(Effect.void);
   fetchAvailableModels().catch(() => {}); // warm up cache
   // Restore in-memory session map from DB (for reconnection after restart).
-  // Call both: old module (for legacy code paths) and Effect service (for Effect-based code paths).
-  restoreSessionMap();
   await AppRuntime.runPromise(
     Effect.flatMap(SessionPersistence, (sp) => sp.restoreSessionMap()),
   );

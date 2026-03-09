@@ -27,7 +27,7 @@ vi.mock("./broadcast", () => ({
   DB_UPDATED_CHANNEL: "db:updated",
 }));
 
-vi.mock("./session-persistence", () => ({
+vi.mock("./effect-helpers", () => ({
   getSessionDbId: vi.fn().mockReturnValue(10),
   notifyDbUpdated: vi.fn(),
 }));
@@ -37,7 +37,7 @@ vi.mock("./tool-permissions", () => ({
 }));
 
 import { waitForPlanApproval } from "./plan-approval";
-import * as sessionPersistence from "./session-persistence";
+import * as sessionPersistence from "./effect-helpers";
 import { getDatabase } from "../db/database";
 
 describe("waitForPlanApproval", () => {

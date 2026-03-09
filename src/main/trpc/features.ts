@@ -6,7 +6,7 @@ import { queryOne, queryAll, queryAllValidated } from "../db/query";
 import type { FeatureRow, PlanRow, PhaseRow, CountRow, SettingRow, ProjectRow } from "../db/types";
 import { SettingRowSchema } from "../effect/schemas/db-schemas";
 import type { AgentType } from "../agents/types";
-import { getSubprocessIdsForSessionDbIds, notifyDbUpdated } from "../agents/session-persistence";
+import { getSubprocessIdsForSessionDbIds, notifyDbUpdated } from "../agents/effect-helpers";
 import { stopSubprocess } from "../agents/subprocess-manager";
 import { processNextPhase } from "../agents/execute-agent";
 import { resolveAgentCwd } from "../agents/resolve-cwd";

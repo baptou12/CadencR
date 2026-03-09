@@ -25,7 +25,7 @@ vi.mock("../agents/subprocess-manager", () => ({
   getSupportedCommands: vi.fn().mockReturnValue([]),
 }));
 
-vi.mock("../agents/session-persistence", () => ({
+vi.mock("../agents/effect-helpers", () => ({
   getSubprocessIdForSession: vi.fn().mockReturnValue(null),
   getSubprocessIdsForSessionDbIds: vi.fn().mockReturnValue([]),
   notifyDbUpdated: vi.fn(),
@@ -331,7 +331,7 @@ describe("appRouter - agentsRouter & sessionsRouter", () => {
   });
 
   it("agents.clearPlanApproval clears pending_plan_approval and notifies", async () => {
-    const { notifyDbUpdated } = await import("../agents/session-persistence");
+    const { notifyDbUpdated } = await import("../agents/effect-helpers");
     mockDb.prepare.mockImplementation((sql: string) => ({
       run: vi.fn(),
       get: vi.fn().mockReturnValue(sql.includes("SELECT feature_id") ? { feature_id: 42 } : undefined),

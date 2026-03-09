@@ -7,7 +7,7 @@ import { Effect } from "effect";
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { getDatabase } from "../../db/database";
 import { queryOne, execute } from "../../db/query";
-import { notifyDbUpdated } from "../session-persistence";
+import { notifyDbUpdated } from "../effect-helpers";
 import { transitionFeature } from "../state-transitions";
 import { textResult, errorResult, renderPlanMarkdown } from "./helpers";
 import {

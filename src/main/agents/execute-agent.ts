@@ -18,7 +18,7 @@ import { transitionFeature, transitionPhase, transitionPhaseIf } from "./state-t
 import { startUnifiedAgent } from "./unified-agent";
 import { buildExecuteSystemPrompt, createQaConfig } from "./agent-configs";
 import { buildMcpServerFactory } from "./mcp-factory";
-import { notifyDbUpdated } from "./session-persistence";
+import { notifyDbUpdated } from "./effect-helpers";
 import { startReviewAgent } from "./agent-starters";
 import type { OnAgentDoneCallback } from "./mcp-tools";
 import type { UnifiedAgentConfig, CompletionAction } from "./types";

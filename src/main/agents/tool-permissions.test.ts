@@ -12,7 +12,7 @@ vi.mock("../db/database", () => ({
   getDatabase: vi.fn(),
 }));
 
-vi.mock("./session-persistence", () => ({
+vi.mock("./effect-helpers", () => ({
   getSessionDbId: vi.fn(),
   notifyDbUpdated: vi.fn(),
 }));
@@ -37,7 +37,7 @@ vi.mock("./subprocess-manager", () => ({
 // ---------------------------------------------------------------------------
 
 import { getDatabase } from "../db/database";
-import { getSessionDbId } from "./session-persistence";
+import { getSessionDbId } from "./effect-helpers";
 import { resolvePermission, appendToSettingsLocal } from "./permissions";
 import { broadcast } from "./broadcast";
 import {

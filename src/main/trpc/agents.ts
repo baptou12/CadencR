@@ -14,7 +14,7 @@ import {
   sendMessageToSubprocess,
   setSubprocessPermissionMode,
 } from "../agents/subprocess-manager";
-import { notifyDbUpdated } from "../agents/session-persistence";
+import { notifyDbUpdated } from "../agents/effect-helpers";
 import type { AgentType } from "../agents/types";
 import { startUnifiedAgent } from "../agents/unified-agent";
 import { buildPhaseCompletionAction, processNextPhase } from "../agents/execute-agent";

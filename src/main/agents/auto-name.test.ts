@@ -4,7 +4,7 @@ vi.mock("../db/database");
 vi.mock("./cli-discovery", () => ({
   discoverClaudeCli: vi.fn(),
 }));
-vi.mock("./session-persistence", () => ({
+vi.mock("./effect-helpers", () => ({
   notifyDbUpdated: vi.fn(),
 }));
 vi.mock("../git/worktree", () => ({
@@ -20,7 +20,7 @@ vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
 import { runAutoNameBlocking } from "./auto-name";
 import { discoverClaudeCli } from "./cli-discovery";
 import { getDatabase } from "../db/database";
-import { notifyDbUpdated } from "./session-persistence";
+import { notifyDbUpdated } from "./effect-helpers";
 import { createMockDb } from "../test-utils";
 
 const mockDiscoverCli = vi.mocked(discoverClaudeCli);

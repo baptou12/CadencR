@@ -18,7 +18,7 @@ vi.mock("@anthropic-ai/claude-agent-sdk", () => {
 });
 
 vi.mock("../../db/database");
-vi.mock("../session-persistence", () => ({
+vi.mock("../effect-helpers", () => ({
   notifyDbUpdated: vi.fn(),
 }));
 vi.mock("../state-transitions", () => ({
@@ -28,7 +28,7 @@ vi.mock("../state-transitions", () => ({
 
 import { createPlanMcpServer } from "./plan-server";
 import { getDatabase } from "../../db/database";
-import { notifyDbUpdated } from "../session-persistence";
+import { notifyDbUpdated } from "../effect-helpers";
 import { transitionFeature } from "../state-transitions";
 import { createMockDb } from "../../test-utils";
 

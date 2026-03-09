@@ -4,7 +4,7 @@
  */
 
 import { getDatabase } from "../db/database";
-import { getSessionDbId, notifyDbUpdated } from "./session-persistence";
+import { getSessionDbId, notifyDbUpdated } from "./effect-helpers";
 import { questionEmitter } from "./tool-permissions";
 
 /**

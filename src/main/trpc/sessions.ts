@@ -10,7 +10,7 @@ import {
   sendMessageToSubprocess,
 } from "../agents/subprocess-manager";
 import { getBackgroundTasks } from "../agents/background-tasks";
-import { getSubprocessIdForSession } from "../agents/session-persistence";
+import { getSubprocessIdForSession } from "../agents/effect-helpers";
 import type { AgentType } from "../agents/types";
 import { transitionAgentSession } from "../agents/state-transitions";
 import { resolveAgentCwd } from "../agents/resolve-cwd";

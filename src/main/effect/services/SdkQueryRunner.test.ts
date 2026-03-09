@@ -70,6 +70,8 @@ const MockSessionPersistence = Layer.succeed(SessionPersistence, {
   restoreSessionMap: vi.fn(() => Effect.void),
   registerSession: vi.fn(() => Effect.void),
   removeSession: vi.fn(() => Effect.void),
+  getSubprocessIdForSession: vi.fn(() => Effect.succeed(undefined)),
+  getSubprocessIdsForSessionDbIds: vi.fn(() => Effect.succeed([])),
 });
 
 const mockEBBroadcastAgentEvent = vi.fn();

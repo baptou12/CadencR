@@ -54,7 +54,7 @@ vi.mock("../db/settings", () => ({
   resolveSetting: vi.fn().mockReturnValue(null),
 }));
 
-vi.mock("./session-persistence", () => ({
+vi.mock("./effect-helpers", () => ({
   notifyDbUpdated: vi.fn(),
 }));
 
@@ -63,7 +63,7 @@ import { processNextPhase, getAutonomyLevel } from "./execute-agent";
 import { transitionFeature } from "./state-transitions";
 import { startUnifiedAgent } from "./unified-agent";
 import { queryOne, queryAll, queryAllValidated } from "../db/query";
-import { notifyDbUpdated } from "./session-persistence";
+import { notifyDbUpdated } from "./effect-helpers";
 
 const mockQueryOne = vi.mocked(queryOne);
 const mockQueryAll = vi.mocked(queryAll);

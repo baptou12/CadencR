@@ -6,7 +6,7 @@
 
 import * as fs from "node:fs";
 import { getDatabase } from "../db/database";
-import { getSessionDbId, notifyDbUpdated } from "./session-persistence";
+import { getSessionDbId, notifyDbUpdated } from "./effect-helpers";
 import { resolvePermission, appendToSettingsLocal } from "./permissions";
 import { broadcast, ASK_USER_QUESTION_CHANNEL, TOOL_PERMISSION_CHANNEL } from "./broadcast";
 import type { ManagedSubprocess } from "./types";

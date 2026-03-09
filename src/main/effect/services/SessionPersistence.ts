@@ -66,6 +66,12 @@ export interface SessionPersistenceService {
 
   /** Remove a managed subprocess from the session map. */
   removeSession: (managedId: string) => Effect.Effect<void>;
+
+  /** Find the active subprocess ID for a given DB session ID (reverse lookup). */
+  getSubprocessIdForSession: (sessionDbId: number) => Effect.Effect<string | undefined>;
+
+  /** Find subprocess IDs mapped to any of the given session DB IDs (batch reverse lookup). */
+  getSubprocessIdsForSessionDbIds: (sessionDbIds: number[]) => Effect.Effect<string[]>;
 }
 
 /** Context tag for the SessionPersistence service */
@@ -392,6 +398,30 @@ export const SessionPersistenceLive = Layer.effect(
       removeSession: (managedId: string): Effect.Effect<void> =>
         Effect.sync(() => {
           sessionMap.delete(managedId);
+        }),
+
+      getSubprocessIdForSession: (
+        sessionDbId: number,
+      ): Effect.Effect<string | undefined> =>
+        Effect.sync(() => {
+          for (const [subprocessId, dbId] of sessionMap) {
+            if (dbId === sessionDbId) return subprocessId;
+          }
+          return undefined;
+        }),
+
+      getSubprocessIdsForSessionDbIds: (
+        sessionDbIds: number[],
+      ): Effect.Effect<string[]> =>
+        Effect.sync(() => {
+          const result: string[] = [];
+          const idSet = new Set(sessionDbIds);
+          for (const [subprocessId, dbId] of sessionMap.entries()) {
+            if (idSet.has(dbId)) {
+              result.push(subprocessId);
+            }
+          }
+          return result;
         }),
     };
   }),

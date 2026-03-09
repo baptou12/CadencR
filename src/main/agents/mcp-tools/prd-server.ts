@@ -6,7 +6,7 @@ import { z } from "zod";
 import { Effect } from "effect";
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { queryOne, execute } from "../../db/query";
-import { notifyDbUpdated } from "../session-persistence";
+import { notifyDbUpdated } from "../effect-helpers";
 import { textResult, errorResult } from "./helpers";
 import { createAgentDoneTool } from "./shared-tools";
 import type { OnAgentDoneCallback } from "./shared-tools";

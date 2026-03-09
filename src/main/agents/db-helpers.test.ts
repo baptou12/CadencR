@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("../db/database");
-vi.mock("./session-persistence", () => ({
+vi.mock("./effect-helpers", () => ({
   notifyDbUpdated: vi.fn(),
 }));
 
 import { updateSession, insertMessage, getSessionFeatureId } from "./db-helpers";
 import { getDatabase } from "../db/database";
-import { notifyDbUpdated } from "./session-persistence";
+import { notifyDbUpdated } from "./effect-helpers";
 import { createMockDb } from "../test-utils";
 
 const mockGetDatabase = vi.mocked(getDatabase);

@@ -23,7 +23,7 @@ vi.mock("../agents/subprocess-manager", () => ({
   setSubprocessPermissionMode: vi.fn(),
 }));
 
-vi.mock("../agents/session-persistence", () => ({
+vi.mock("../agents/effect-helpers", () => ({
   notifyDbUpdated: (...args: unknown[]) => mockNotifyDbUpdated(...args),
 }));
 

@@ -7,7 +7,7 @@ vi.mock("../db/database", () => ({
   getDatabase: vi.fn(() => mockDb),
 }));
 
-vi.mock("../agents/session-persistence", () => ({
+vi.mock("../agents/effect-helpers", () => ({
   getSubprocessIdsForSessionDbIds: vi.fn().mockReturnValue([]),
   getSubprocessIdForSession: vi.fn().mockReturnValue(null),
 }));
@@ -153,7 +153,7 @@ describe("featuresRouter", () => {
     });
 
     it("stops running subprocesses before deleting", async () => {
-      const { getSubprocessIdsForSessionDbIds } = await import("../agents/session-persistence");
+      const { getSubprocessIdsForSessionDbIds } = await import("../agents/effect-helpers");
       const { stopSubprocess } = await import("../agents/subprocess-manager");
       vi.mocked(getSubprocessIdsForSessionDbIds).mockReturnValue(["proc-1"]);
       mockDb.prepare.mockImplementation(() => ({

@@ -19,7 +19,7 @@ vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
 
 vi.mock("../../db/database");
 vi.mock("../../db/query");
-vi.mock("../session-persistence", () => ({
+vi.mock("../effect-helpers", () => ({
   notifyDbUpdated: vi.fn(),
 }));
 vi.mock("../state-transitions", () => ({
@@ -40,7 +40,7 @@ import {
 } from "./shared-tools";
 import { queryOne, queryAll, queryOneValidated, execute } from "../../db/query";
 import { getDatabase } from "../../db/database";
-import { notifyDbUpdated } from "../session-persistence";
+import { notifyDbUpdated } from "../effect-helpers";
 import { transitionPhase } from "../state-transitions";
 
 const mockQueryOne = vi.mocked(queryOne);
