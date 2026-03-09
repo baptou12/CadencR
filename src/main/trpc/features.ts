@@ -2,7 +2,7 @@ import { z } from "zod";
 import { Effect } from "effect";
 import { router, publicProcedure } from "./trpc";
 import { getDatabase } from "../db/database";
-import { queryOne, queryAll, queryOneValidated, queryAllValidated } from "../db/query";
+import { queryOne, queryAll, queryAllValidated } from "../db/query";
 import type { FeatureRow, PlanRow, PhaseRow, CountRow, SettingRow, ProjectRow } from "../db/types";
 import { SettingRowSchema } from "../effect/schemas/db-schemas";
 import type { AgentType } from "../agents/types";

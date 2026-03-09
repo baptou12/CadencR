@@ -9,7 +9,7 @@
 
 import { Effect } from "effect";
 import { getDatabase } from "../db/database";
-import { queryOne, queryAll, queryAllValidated } from "../db/query";
+import { queryOne, queryAllValidated } from "../db/query";
 import { resolveSetting } from "../db/settings";
 import { getAutonomyLevel } from "./autonomy";
 import type { PhaseRow, PlanRow } from "../db/types";

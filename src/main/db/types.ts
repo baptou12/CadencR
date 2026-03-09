@@ -6,7 +6,6 @@
  * in sync. The manual interfaces have been replaced by schema-derived types.
  */
 
-import type { Schema } from "effect";
 import type {
   SettingRowSchema,
   ProjectRowSchema,

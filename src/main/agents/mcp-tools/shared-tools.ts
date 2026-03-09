@@ -11,7 +11,6 @@ import { notifyDbUpdated } from "../session-persistence";
 import { transitionPhase } from "../state-transitions";
 import { resolveAgentCwd } from "../resolve-cwd";
 import { textResult, errorResult, renderPlanMarkdown } from "./helpers";
-import type { PhaseRow } from "../../db/types";
 import { PhaseRowSchema } from "../../effect/schemas/db-schemas";
 
 /** Callback invoked when an execute/qa/review agent calls mark_agent_done */
