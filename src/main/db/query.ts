@@ -75,3 +75,20 @@ export function queryAllValidated<T, I>(
     Effect.all(rows.map((row) => Schema.decodeUnknown(schema)(row))),
   );
 }
+
+/**
+ * Run multiple synchronous DB operations inside a SQLite transaction for atomicity.
+ * The callback receives no arguments — use Effect.runSync(...) on queryOne/queryAll/execute
+ * calls inside it. Any thrown error (including DatabaseError from Effect.runSync) causes
+ * better-sqlite3 to roll back the entire transaction automatically.
+ * Returns Effect<T, DatabaseError>.
+ */
+export function transaction<T>(fn: () => T): Effect.Effect<T, DatabaseError> {
+  return Effect.try({
+    try: () => {
+      const txFn = getDatabase().transaction(fn);
+      return txFn();
+    },
+    catch: (e) => new DatabaseError({ operation: "transaction", cause: e }),
+  });
+}

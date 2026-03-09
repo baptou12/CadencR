@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { router, publicProcedure } from "./trpc";
 import type { AgentSessionRow, AgentMessageRow } from "../db/types";
-import { queryOne, queryAll, execute } from "../db/query";
+import { queryOne, queryAll, execute, transaction } from "../db/query";
+import { Effect } from "effect";
 import { AppRuntime } from "../effect/runtime";
 import {
   stopSubprocess,
@@ -96,8 +97,12 @@ export const sessionsRouter = router({
       if (session.status === "completed" || session.status === "running") {
         throw new Error("Cannot delete a completed or running session");
       }
-      await AppRuntime.runPromise(execute("DELETE FROM agent_messages WHERE session_id = ?", input.sessionId));
-      await AppRuntime.runPromise(execute("DELETE FROM agent_sessions WHERE id = ?", input.sessionId));
+      await AppRuntime.runPromise(
+        transaction(() => {
+          Effect.runSync(execute("DELETE FROM agent_messages WHERE session_id = ?", input.sessionId));
+          Effect.runSync(execute("DELETE FROM agent_sessions WHERE id = ?", input.sessionId));
+        }),
+      );
       return { success: true };
     }),
 
