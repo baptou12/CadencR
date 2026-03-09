@@ -40,36 +40,27 @@ export const UsageIndicator = memo(function UsageIndicator() {
   return (
     <div className="flex flex-col gap-0.5">
       {hasBuckets ? (
-        <div className="flex flex-row relative gap-1">
-          <div className="bg-(--drac-purple)/10 h-auto text-xs flex flex-row w-full justify-around relative p-1">
-            <div
-              className="bg-(--drac-purple)/40 absolute top-0 left-0 bottom-0"
-              style={{ width: `${fiveHour?.utilization || 0}%` }}
-            />
+        <div className="flex flex-row px-2 pb-2">
+          {/* 5-hour bucket — lightest */}
+          <div className="flex flex-1 items-center justify-center gap-1.5 rounded-l-full bg-(--drac-comment)/20 px-2.5 py-1 text-[11px] font-medium text-zinc-300">
             <span>{fiveHour?.utilization ?? 0}%</span>
-            <span>
+            <span className="opacity-60">
               {fiveHour?.resets_at &&
                 formatTimeUntilReset(fiveHour?.resets_at, false)}
             </span>
           </div>
-          <div className="bg-(--drac-cyan)/10 h-auto text-xs flex flex-row justify-around w-full relative p-1">
-            <div
-              className="bg-(--drac-cyan)/40 absolute top-0 left-0 bottom-0"
-              style={{ width: `${sevenDay?.utilization || 0}%` }}
-            />
+          {/* 7-day bucket — medium */}
+          <div className="flex flex-1 items-center justify-center gap-1.5 bg-(--drac-comment)/30 px-2.5 py-1 text-[11px] font-medium text-zinc-300">
             <span>{sevenDay?.utilization ?? 0}%</span>
-            <span>
+            <span className="opacity-60">
               {sevenDay?.resets_at &&
                 formatTimeUntilReset(sevenDay?.resets_at, true)}
             </span>
           </div>
-          <div className="bg-(--drac-comment)/10 h-auto text-xs flex flex-row justify-around w-full relative p-1">
-            <div
-              className="bg-(--drac-comment)/40 absolute top-0 left-0 bottom-0"
-              style={{ width: `${sevenDaySonnet?.utilization || 0}%` }}
-            />
+          {/* 7-day Sonnet bucket — darkest */}
+          <div className="flex flex-1 items-center justify-center gap-1.5 rounded-r-full bg-(--drac-comment)/15 px-2.5 py-1 text-[11px] font-medium text-zinc-300">
             <span>{sevenDaySonnet?.utilization ?? 0}%</span>
-            <span>
+            <span className="opacity-60">
               {sevenDaySonnet?.resets_at &&
                 formatTimeUntilReset(sevenDaySonnet?.resets_at, true)}
             </span>
