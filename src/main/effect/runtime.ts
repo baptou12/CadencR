@@ -5,6 +5,7 @@ import { SessionPersistenceLive } from "./services/SessionPersistence.js";
 import { EventBroadcasterLive } from "./services/EventBroadcaster.js";
 import { CompletionActionsLive } from "./services/CompletionActions.js";
 import { SdkQueryRunnerLive } from "./services/SdkQueryRunner.js";
+import { SubprocessLifecycleLive } from "./services/SubprocessLifecycle.js";
 
 // SessionPersistenceLive depends on Database, so we provide DatabaseLive to it
 const SessionPersistenceWithDb = Layer.provide(SessionPersistenceLive, DatabaseLive);
@@ -26,6 +27,17 @@ const SdkQueryRunnerWithDeps = Layer.provide(
   ),
 );
 
+// SubprocessLifecycleLive depends on SdkQueryRunner, SessionPersistence, EventBroadcaster, Database
+const SubprocessLifecycleWithDeps = Layer.provide(
+  SubprocessLifecycleLive,
+  Layer.mergeAll(
+    SdkQueryRunnerWithDeps,
+    SessionPersistenceWithDb,
+    EventBroadcasterLive,
+    DatabaseLive,
+  ),
+);
+
 export const AppLayer = Layer.mergeAll(
   DatabaseLive,
   PtyManagerLive,
@@ -33,6 +45,7 @@ export const AppLayer = Layer.mergeAll(
   EventBroadcasterLive,
   CompletionActionsWithDeps,
   SdkQueryRunnerWithDeps,
+  SubprocessLifecycleWithDeps,
 );
 
 export const AppRuntime = ManagedRuntime.make(AppLayer);
