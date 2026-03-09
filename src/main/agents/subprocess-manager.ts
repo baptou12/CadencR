@@ -21,20 +21,11 @@ export type { ManagedSubprocess, SubprocessOptions };
 
 export type { SendMessageResult } from "../effect/services/SubprocessLifecycle";
 
-// ---------------------------------------------------------------------------
-// ID generator — kept as a simple standalone function so unified-agent.ts can
-// pre-generate an ID before calling startSubprocess.
-// ---------------------------------------------------------------------------
-
-let idCounter = 0;
-function generateId(): string {
-  idCounter += 1;
-  return `agent-${Date.now()}-${idCounter}`;
-}
-
 /** Pre-generate a subprocess ID for use before startSubprocess is called. */
 export function generateSubprocessId(): string {
-  return generateId();
+  return AppRuntime.runSync(
+    Effect.flatMap(SubprocessLifecycle, (svc) => svc.generateSubprocessId()),
+  );
 }
 
 // ---------------------------------------------------------------------------

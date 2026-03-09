@@ -168,18 +168,14 @@ export const SubprocessLifecycleLive = Layer.scoped(
     function resolveModelForSubprocess(
       agentType: AgentType,
       featureId: number,
-    ): string | undefined {
-      try {
-        const row = Effect.runSync(
-          db.queryOne<{ project_id: number }>(
-            "SELECT project_id FROM features WHERE id = ?",
-            featureId,
-          ),
-        );
-        return resolveModel(agentType, featureId, row?.project_id);
-      } catch {
-        return undefined;
-      }
+    ): Effect.Effect<string | undefined> {
+      return db.queryOne<{ project_id: number }>(
+        "SELECT project_id FROM features WHERE id = ?",
+        featureId,
+      ).pipe(
+        Effect.map((row) => resolveModel(agentType, featureId, row?.project_id)),
+        Effect.catchAll(() => Effect.succeed(undefined)),
+      );
     }
 
     // ---------------------------------------------------------------------------
@@ -357,7 +353,7 @@ export const SubprocessLifecycleLive = Layer.scoped(
             const fidForResume = yield* getFeatureId(id);
             if (fidForResume) {
               freshModel =
-                resolveModelForSubprocess(managed.agentType as AgentType, fidForResume) ??
+                (yield* resolveModelForSubprocess(managed.agentType as AgentType, fidForResume)) ??
                 freshModel;
             }
 
@@ -395,7 +391,7 @@ export const SubprocessLifecycleLive = Layer.scoped(
           if (managed.query) {
             const fidForModel = yield* getFeatureId(id);
             const freshModel = fidForModel
-              ? resolveModelForSubprocess(managed.agentType as AgentType, fidForModel)
+              ? yield* resolveModelForSubprocess(managed.agentType as AgentType, fidForModel)
               : undefined;
             if (freshModel) {
               void managed.query.setModel(freshModel).catch(() => { /* best-effort */ });

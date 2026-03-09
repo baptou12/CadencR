@@ -144,43 +144,48 @@ export const PtyManagerLive = Layer.scoped(
           catch: (e) => new PtyError({ message: "Failed to create PTY", cause: e }),
         }),
 
-      getScrollback: (id: string): Effect.Effect<string[], PtyNotFound> => {
-        const managed = ptyInstances.get(id);
-        if (!managed) return Effect.fail(new PtyNotFound({ id }));
-        return Effect.succeed([...managed.scrollback]);
-      },
+      getScrollback: (id: string): Effect.Effect<string[], PtyNotFound> =>
+        Effect.sync(() => ptyInstances.get(id)).pipe(
+          Effect.flatMap((managed) =>
+            managed ? Effect.succeed([...managed.scrollback]) : Effect.fail(new PtyNotFound({ id })),
+          ),
+        ),
 
-      onData: (id: string, callback: (data: string) => void): Effect.Effect<void, PtyNotFound> => {
-        const managed = ptyInstances.get(id);
-        if (!managed) return Effect.fail(new PtyNotFound({ id }));
-        return Effect.sync(() => {
-          managed.dataCallbacks.push(callback);
-        });
-      },
+      onData: (id: string, callback: (data: string) => void): Effect.Effect<void, PtyNotFound> =>
+        Effect.sync(() => ptyInstances.get(id)).pipe(
+          Effect.flatMap((managed) =>
+            managed
+              ? Effect.sync(() => { managed.dataCallbacks.push(callback); })
+              : Effect.fail(new PtyNotFound({ id })),
+          ),
+        ),
 
-      onExit: (id: string, callback: (info: { exitCode: number; signal?: number }) => void): Effect.Effect<void, PtyNotFound> => {
-        const managed = ptyInstances.get(id);
-        if (!managed) return Effect.fail(new PtyNotFound({ id }));
-        return Effect.sync(() => {
-          managed.exitCallbacks.push(callback);
-        });
-      },
+      onExit: (id: string, callback: (info: { exitCode: number; signal?: number }) => void): Effect.Effect<void, PtyNotFound> =>
+        Effect.sync(() => ptyInstances.get(id)).pipe(
+          Effect.flatMap((managed) =>
+            managed
+              ? Effect.sync(() => { managed.exitCallbacks.push(callback); })
+              : Effect.fail(new PtyNotFound({ id })),
+          ),
+        ),
 
-      write: (id: string, data: string): Effect.Effect<void, PtyNotFound> => {
-        const managed = ptyInstances.get(id);
-        if (!managed) return Effect.fail(new PtyNotFound({ id }));
-        return Effect.sync(() => {
-          managed.pty.write(data);
-        });
-      },
+      write: (id: string, data: string): Effect.Effect<void, PtyNotFound> =>
+        Effect.sync(() => ptyInstances.get(id)).pipe(
+          Effect.flatMap((managed) =>
+            managed
+              ? Effect.sync(() => { managed.pty.write(data); })
+              : Effect.fail(new PtyNotFound({ id })),
+          ),
+        ),
 
-      resize: (id: string, cols: number, rows: number): Effect.Effect<void, PtyNotFound> => {
-        const managed = ptyInstances.get(id);
-        if (!managed) return Effect.fail(new PtyNotFound({ id }));
-        return Effect.sync(() => {
-          managed.pty.resize(cols, rows);
-        });
-      },
+      resize: (id: string, cols: number, rows: number): Effect.Effect<void, PtyNotFound> =>
+        Effect.sync(() => ptyInstances.get(id)).pipe(
+          Effect.flatMap((managed) =>
+            managed
+              ? Effect.sync(() => { managed.pty.resize(cols, rows); })
+              : Effect.fail(new PtyNotFound({ id })),
+          ),
+        ),
 
       kill: (id: string): Effect.Effect<void> =>
         Effect.sync(() => {

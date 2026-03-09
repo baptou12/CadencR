@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { Effect } from "effect";
 import { router, publicProcedure } from "./trpc";
-import { getDatabase } from "../db/database";
+import { queryOne } from "../db/query";
 import type { SettingRow, ProjectRow } from "../db/types";
 import { BrowserWindow } from "electron";
 import os from "node:os";
@@ -28,26 +28,25 @@ function broadcast(channel: string, data: unknown) {
  * Resolve the working directory for a terminal.
  * Session features use the project path; workflow features prefer worktree path.
  */
-function resolveTerminalCwd(featureId: number, projectId: number): string {
-  const db = getDatabase();
-
-  const feature = db
-    .prepare("SELECT type FROM features WHERE id = ?")
-    .get(featureId) as { type: string } | undefined;
+async function resolveTerminalCwd(featureId: number, projectId: number): Promise<string> {
+  const feature = await AppRuntime.runPromise(
+    queryOne<{ type: string }>("SELECT type FROM features WHERE id = ?", featureId),
+  );
 
   // For non-session features, try worktree path first
   if (feature && feature.type !== "session") {
-    const wtRow = db
-      .prepare(
+    const wtRow = await AppRuntime.runPromise(
+      queryOne<Pick<SettingRow, "value">>(
         "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
-      )
-      .get(featureId) as SettingRow | undefined;
+        featureId,
+      ),
+    );
     if (wtRow) return wtRow.value;
   }
 
-  const project = db
-    .prepare("SELECT path FROM projects WHERE id = ?")
-    .get(projectId) as Pick<ProjectRow, "path"> | undefined;
+  const project = await AppRuntime.runPromise(
+    queryOne<Pick<ProjectRow, "path">>("SELECT path FROM projects WHERE id = ?", projectId),
+  );
 
   if (!project?.path) return os.homedir();
   return project.path;
@@ -67,7 +66,7 @@ export const terminalRouter = router({
       }),
     )
     .mutation(async ({ input }) => {
-      const cwd = resolveTerminalCwd(input.featureId, input.projectId);
+      const cwd = await resolveTerminalCwd(input.featureId, input.projectId);
       const shell = process.env.SHELL || (os.platform() === "win32" ? "powershell.exe" : "/bin/bash");
 
       const ptyId = await AppRuntime.runPromise(
