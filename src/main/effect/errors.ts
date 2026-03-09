@@ -13,3 +13,9 @@ export class PtyError extends Data.TaggedError("PtyError")<{
 export class PtyNotFound extends Data.TaggedError("PtyNotFound")<{
   id: string;
 }> {}
+
+export class SdkError extends Data.TaggedError("SdkError")<{
+  message: string;
+  cause?: unknown;
+  isResumable?: boolean;
+}> {}
