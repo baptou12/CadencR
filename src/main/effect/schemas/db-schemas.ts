@@ -155,7 +155,7 @@ export const AgentSessionRowSchema = Schema.Struct({
   was_compacted: Schema.Number,
 });
 
-export const MessageRoleSchema = Schema.Literal("user", "assistant", "system");
+export const MessageRoleSchema = Schema.Literal("user", "assistant", "system", "tool");
 
 export const MessageTypeSchema = Schema.Literal(
   "text", "text_delta", "thinking", "thinking_delta",
