@@ -151,14 +151,7 @@ export const SlashCommandsLive = Layer.effect(
                 },
               }),
             ),
-            (q) =>
-              Effect.sync(() => {
-                try {
-                  q.close();
-                } catch {
-                  // Already closed — ignore
-                }
-              }),
+            (q) => Effect.try(() => q.close()).pipe(Effect.ignoreLogged),
           );
 
           const raw = yield* Effect.tryPromise({

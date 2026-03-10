@@ -62,14 +62,12 @@ export const PtyManagerLive = Layer.scoped(
 
     // Register cleanup finalizer — kills all PTYs when scope/runtime exits
     yield* Effect.addFinalizer(() =>
-      Effect.sync(() => {
-        for (const [, managed] of ptyInstances) {
-          try {
-            managed.pty.kill();
-          } catch {
-            // PTY may already be dead — ignore
-          }
-        }
+      Effect.gen(function* () {
+        yield* Effect.forEach(
+          ptyInstances.values(),
+          (managed) => Effect.try(() => managed.pty.kill()).pipe(Effect.ignoreLogged),
+          { concurrency: "unbounded" },
+        );
         ptyInstances.clear();
       }),
     );
@@ -79,69 +77,67 @@ export const PtyManagerLive = Layer.scoped(
         Effect.sync(() => `pty-${nextPtyId++}`),
 
       create: (id: string, featureId: number, cwd: string, shell?: string): Effect.Effect<void, PtyError> =>
-        Effect.try({
-          try: () => {
-            // Kill existing PTY with same ID if present
-            if (ptyInstances.has(id)) {
-              const existing = ptyInstances.get(id)!;
-              try {
-                existing.pty.kill();
-              } catch {
-                // ignore
-              }
-              ptyInstances.delete(id);
-            }
+        Effect.gen(function* () {
+          // Kill existing PTY with same ID if present
+          if (ptyInstances.has(id)) {
+            const existing = ptyInstances.get(id)!;
+            yield* Effect.try(() => existing.pty.kill()).pipe(Effect.ignoreLogged);
+            ptyInstances.delete(id);
+          }
 
-            const shellPath = shell || getDefaultShell();
-            const shellArgs = process.platform === "win32" ? [] : ["-l"];
+          yield* Effect.try({
+            try: () => {
+              const shellPath = shell || getDefaultShell();
+              const shellArgs = process.platform === "win32" ? [] : ["-l"];
 
-            const ptyProcess = pty.spawn(shellPath, shellArgs, {
-              name: "xterm-256color",
-              cols: 80,
-              rows: 24,
-              cwd,
-              env: {
-                ...process.env,
-                TERM: "xterm-256color",
-                COLORTERM: "truecolor",
-              } as Record<string, string>,
-            });
+              const ptyProcess = pty.spawn(shellPath, shellArgs, {
+                name: "xterm-256color",
+                cols: 80,
+                rows: 24,
+                cwd,
+                env: {
+                  ...process.env,
+                  TERM: "xterm-256color",
+                  COLORTERM: "truecolor",
+                } as Record<string, string>,
+              });
 
-            const managed: ManagedPty = {
-              pty: ptyProcess,
-              featureId,
-              scrollback: [],
-              scrollbackLen: 0,
-              dataCallbacks: [],
-              exitCallbacks: [],
-            };
-            ptyInstances.set(id, managed);
+              const managed: ManagedPty = {
+                pty: ptyProcess,
+                featureId,
+                scrollback: [],
+                scrollbackLen: 0,
+                dataCallbacks: [],
+                exitCallbacks: [],
+              };
+              ptyInstances.set(id, managed);
 
-            // Buffer scrollback and forward to registered callbacks
-            ptyProcess.onData((data: string) => {
-              // Append to scrollback buffer
-              managed.scrollback.push(data);
-              managed.scrollbackLen += data.length;
-              // Trim from front if over budget
-              while (managed.scrollbackLen > SCROLLBACK_BUFFER_SIZE && managed.scrollback.length > 1) {
-                const removed = managed.scrollback.shift()!;
-                managed.scrollbackLen -= removed.length;
-              }
-              // Notify registered callbacks
-              for (const cb of managed.dataCallbacks) {
-                cb(data);
-              }
-            });
+              // Buffer scrollback and forward to registered callbacks
+              ptyProcess.onData((data: string) => {
+                // Append to scrollback buffer
+                managed.scrollback.push(data);
+                managed.scrollbackLen += data.length;
+                // Trim from front if over budget
+                while (managed.scrollbackLen > SCROLLBACK_BUFFER_SIZE && managed.scrollback.length > 1) {
+                  const removed = managed.scrollback.shift()!;
+                  managed.scrollbackLen -= removed.length;
+                }
+                // Notify registered callbacks
+                for (const cb of managed.dataCallbacks) {
+                  cb(data);
+                }
+              });
 
-            // Handle PTY exit — notify callbacks and remove from map
-            ptyProcess.onExit(({ exitCode, signal }) => {
-              for (const cb of managed.exitCallbacks) {
-                cb({ exitCode, signal });
-              }
-              ptyInstances.delete(id);
-            });
-          },
-          catch: (e) => new PtyError({ message: "Failed to create PTY", cause: e }),
+              // Handle PTY exit — notify callbacks and remove from map
+              ptyProcess.onExit(({ exitCode, signal }) => {
+                for (const cb of managed.exitCallbacks) {
+                  cb({ exitCode, signal });
+                }
+                ptyInstances.delete(id);
+              });
+            },
+            catch: (e) => new PtyError({ message: "Failed to create PTY", cause: e }),
+          });
         }),
 
       getScrollback: (id: string): Effect.Effect<string[], PtyNotFound> =>
@@ -188,42 +184,37 @@ export const PtyManagerLive = Layer.scoped(
         ),
 
       kill: (id: string): Effect.Effect<void> =>
-        Effect.sync(() => {
+        Effect.gen(function* () {
           const managed = ptyInstances.get(id);
           if (managed) {
-            try {
-              managed.pty.kill();
-            } catch {
-              // PTY may already be dead — ignore
-            }
+            yield* Effect.try(() => managed.pty.kill()).pipe(Effect.ignoreLogged);
             ptyInstances.delete(id);
           }
         }),
 
       killAllForFeature: (featureId: number): Effect.Effect<void> =>
-        Effect.sync(() => {
-          const entries = Array.from(ptyInstances.entries());
-          for (const [id, managed] of entries) {
-            if (managed.featureId === featureId) {
-              try {
-                managed.pty.kill();
-              } catch {
-                // PTY may already be dead — ignore
-              }
-              ptyInstances.delete(id);
-            }
-          }
+        Effect.gen(function* () {
+          const entries = Array.from(ptyInstances.entries()).filter(
+            ([, managed]) => managed.featureId === featureId,
+          );
+          yield* Effect.forEach(
+            entries,
+            ([id, managed]) =>
+              Effect.try(() => managed.pty.kill()).pipe(
+                Effect.ignoreLogged,
+                Effect.tap(() => Effect.sync(() => ptyInstances.delete(id))),
+              ),
+            { concurrency: "unbounded" },
+          );
         }),
 
       killAll: (): Effect.Effect<void> =>
-        Effect.sync(() => {
-          for (const [, managed] of ptyInstances) {
-            try {
-              managed.pty.kill();
-            } catch {
-              // PTY may already be dead — ignore
-            }
-          }
+        Effect.gen(function* () {
+          yield* Effect.forEach(
+            ptyInstances.values(),
+            (managed) => Effect.try(() => managed.pty.kill()).pipe(Effect.ignoreLogged),
+            { concurrency: "unbounded" },
+          );
           ptyInstances.clear();
         }),
 
