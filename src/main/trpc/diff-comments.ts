@@ -1,17 +1,11 @@
 import { z } from "zod";
 import { router, publicProcedure } from "./trpc";
-import { getDatabase } from "../db/database";
+import { queryAll, execute } from "../db/query";
+import type { Schema } from "effect";
+import { DiffCommentRowSchema } from "../effect/schemas/db-schemas";
+import { AppRuntime } from "../effect/runtime";
 
-interface DiffCommentRow {
-  id: number;
-  feature_id: number;
-  file_path: string;
-  line_number: number;
-  side: "old" | "new";
-  content: string;
-  status: "pending" | "sent" | "resolved";
-  created_at: string;
-}
+type DiffCommentRow = Schema.Schema.Type<typeof DiffCommentRowSchema>;
 
 export const diffCommentsRouter = router({
   /** Create a new diff comment */
@@ -25,15 +19,13 @@ export const diffCommentsRouter = router({
         content: z.string(),
       }),
     )
-    .mutation(({ input }) => {
-      const db = getDatabase();
-      const result = db
-        .prepare(
-          "INSERT INTO diff_comments (feature_id, file_path, line_number, side, content, status) VALUES (?, ?, ?, ?, ?, 'pending')",
-        )
-        .run(input.featureId, input.filePath, input.lineNumber, input.side, input.content);
+    .mutation(async ({ input }) => {
+      const result = await AppRuntime.runPromise(execute(
+        "INSERT INTO diff_comments (feature_id, file_path, line_number, side, content, status) VALUES (?, ?, ?, ?, ?, 'pending')",
+        input.featureId, input.filePath, input.lineNumber, input.side, input.content,
+      ));
       return {
-        id: result.lastInsertRowid as number,
+        id: result.lastInsertRowid,
         featureId: input.featureId,
         filePath: input.filePath,
         lineNumber: input.lineNumber,
@@ -46,14 +38,11 @@ export const diffCommentsRouter = router({
   /** List all comments for a feature */
   list: publicProcedure
     .input(z.object({ featureId: z.number() }))
-    .query(({ input }) => {
-      const db = getDatabase();
-      const rows = db
-        .prepare(
-          "SELECT id, feature_id, file_path, line_number, side, content, status, created_at FROM diff_comments WHERE feature_id = ? ORDER BY file_path, line_number ASC",
-        )
-        .all(input.featureId) as DiffCommentRow[];
-      return rows;
+    .query(async ({ input }) => {
+      return await AppRuntime.runPromise(queryAll<DiffCommentRow>(
+        "SELECT id, feature_id, file_path, line_number, side, content, status, created_at FROM diff_comments WHERE feature_id = ? ORDER BY file_path, line_number ASC",
+        input.featureId,
+      ));
     }),
 
   /** Update a comment's content or status */
@@ -65,8 +54,7 @@ export const diffCommentsRouter = router({
         status: z.enum(["pending", "sent", "resolved"]).optional(),
       }),
     )
-    .mutation(({ input }) => {
-      const db = getDatabase();
+    .mutation(async ({ input }) => {
       const sets: string[] = [];
       const params: (string | number)[] = [];
 
@@ -84,42 +72,43 @@ export const diffCommentsRouter = router({
       }
 
       params.push(input.id);
-      db.prepare(`UPDATE diff_comments SET ${sets.join(", ")} WHERE id = ?`).run(...params);
+      await AppRuntime.runPromise(execute(
+        `UPDATE diff_comments SET ${sets.join(", ")} WHERE id = ?`,
+        ...params,
+      ));
       return { success: true };
     }),
 
   /** Delete a comment */
   delete: publicProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(({ input }) => {
-      const db = getDatabase();
-      db.prepare("DELETE FROM diff_comments WHERE id = ?").run(input.id);
+    .mutation(async ({ input }) => {
+      await AppRuntime.runPromise(execute(
+        "DELETE FROM diff_comments WHERE id = ?",
+        input.id,
+      ));
       return { success: true };
     }),
 
   /** Batch-update pending comments to "sent" status for a feature */
   markAsSent: publicProcedure
     .input(z.object({ featureId: z.number() }))
-    .mutation(({ input }) => {
-      const db = getDatabase();
-      const result = db
-        .prepare(
-          "UPDATE diff_comments SET status = 'sent' WHERE feature_id = ? AND status = 'pending'",
-        )
-        .run(input.featureId);
+    .mutation(async ({ input }) => {
+      const result = await AppRuntime.runPromise(execute(
+        "UPDATE diff_comments SET status = 'sent' WHERE feature_id = ? AND status = 'pending'",
+        input.featureId,
+      ));
       return { updated: result.changes };
     }),
 
   /** Delete all pending comments for a feature (used after delivering to an agent) */
   deletePending: publicProcedure
     .input(z.object({ featureId: z.number() }))
-    .mutation(({ input }) => {
-      const db = getDatabase();
-      const result = db
-        .prepare(
-          "DELETE FROM diff_comments WHERE feature_id = ? AND status = 'pending'",
-        )
-        .run(input.featureId);
+    .mutation(async ({ input }) => {
+      const result = await AppRuntime.runPromise(execute(
+        "DELETE FROM diff_comments WHERE feature_id = ? AND status = 'pending'",
+        input.featureId,
+      ));
       return { deleted: result.changes };
     }),
 });

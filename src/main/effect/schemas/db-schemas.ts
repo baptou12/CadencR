@@ -179,6 +179,33 @@ export const AgentMessageRowSchema = Schema.Struct({
 });
 
 // ---------------------------------------------------------------------------
+// Diff Comments
+// ---------------------------------------------------------------------------
+
+export const DiffCommentRowSchema = Schema.Struct({
+  id: Schema.Number,
+  feature_id: Schema.Number,
+  file_path: Schema.String,
+  line_number: Schema.Number,
+  side: Schema.Literal("old", "new"),
+  content: Schema.String,
+  status: Schema.Literal("pending", "sent", "resolved"),
+  created_at: Schema.String,
+});
+
+// ---------------------------------------------------------------------------
+// Diff Viewed Files
+// ---------------------------------------------------------------------------
+
+export const DiffViewedRowSchema = Schema.Struct({
+  id: Schema.Number,
+  feature_id: Schema.Number,
+  file_path: Schema.String,
+  blob_sha: Schema.String,
+  viewed_at: Schema.String,
+});
+
+// ---------------------------------------------------------------------------
 // Utility
 // ---------------------------------------------------------------------------
 
