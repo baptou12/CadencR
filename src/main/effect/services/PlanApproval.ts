@@ -21,7 +21,7 @@ import { Context, Effect, Layer, Deferred, Duration } from "effect";
 import { Database } from "./Database.js";
 import { SessionPersistence } from "./SessionPersistence.js";
 import { EventBroadcaster } from "./EventBroadcaster.js";
-import { ApprovalTimeoutError } from "../errors.js";
+import { ApprovalTimeoutError, DatabaseError } from "../errors.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -46,7 +46,7 @@ export interface PlanApprovalService {
   waitForPlanApproval(
     subprocessId: string,
     planMarkdown: string,
-  ): Effect.Effect<ApprovalResult, ApprovalTimeoutError>;
+  ): Effect.Effect<ApprovalResult, ApprovalTimeoutError | DatabaseError>;
 
   /**
    * Block until the user approves or rejects a PRD.
@@ -55,7 +55,7 @@ export interface PlanApprovalService {
   waitForPrdApproval(
     subprocessId: string,
     prdMarkdown: string,
-  ): Effect.Effect<ApprovalResult, ApprovalTimeoutError>;
+  ): Effect.Effect<ApprovalResult, ApprovalTimeoutError | DatabaseError>;
 
   /**
    * Thin Deferred-wait only — used by the ExitPlanMode SDK callback flow
@@ -165,7 +165,11 @@ export const PlanApprovalLive = Layer.effect(
               .pipe(Effect.orElseSucceed(() => null));
 
             if (stored?.plan_approval_result) {
-              const result = JSON.parse(stored.plan_approval_result) as ApprovalResult;
+              const result = yield* Effect.try({
+                try: () => JSON.parse(stored.plan_approval_result!) as ApprovalResult,
+                catch: () =>
+                  new DatabaseError({ operation: "parsePlanApprovalResult", cause: "malformed JSON" }),
+              });
               yield* database
                 .execute(
                   "UPDATE agent_sessions SET plan_approval_result = NULL, pending_plan_approval = NULL WHERE id = ?",
@@ -266,7 +270,11 @@ export const PlanApprovalLive = Layer.effect(
               .pipe(Effect.orElseSucceed(() => null));
 
             if (stored?.prd_approval_result) {
-              const result = JSON.parse(stored.prd_approval_result) as ApprovalResult;
+              const result = yield* Effect.try({
+                try: () => JSON.parse(stored.prd_approval_result!) as ApprovalResult,
+                catch: () =>
+                  new DatabaseError({ operation: "parsePrdApprovalResult", cause: "malformed JSON" }),
+              });
               yield* database
                 .execute(
                   "UPDATE agent_sessions SET prd_approval_result = NULL, pending_prd_approval = NULL WHERE id = ?",
