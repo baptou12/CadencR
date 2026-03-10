@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { Effect } from "effect";
+import { CliNotFoundError } from "../effect/errors";
 import { createMockDb } from "../test-utils";
 
 const mockDb = createMockDb();
@@ -31,9 +33,12 @@ vi.mock("../agents/effect-helpers", () => ({
   notifyDbUpdated: vi.fn(),
 }));
 
-vi.mock("../agents/cli-discovery", () => ({
-  discoverClaudeCli: vi.fn().mockResolvedValue({ path: "/usr/bin/claude", source: "path" }),
-}));
+vi.mock("../agents/cli-discovery", () => {
+  const { Effect } = require("effect");
+  return {
+    discoverClaudeCli: vi.fn().mockReturnValue(Effect.succeed({ path: "/usr/bin/claude", source: "path" })),
+  };
+});
 
 vi.mock("../agents/available-models", () => ({
   fetchAvailableModels: vi.fn().mockResolvedValue(["claude-opus-4-5", "claude-sonnet-4-5"]),
@@ -160,14 +165,14 @@ describe("appRouter - workspaceRouter", () => {
 
   it("settings.getClaudeCliPath returns path from discovery", async () => {
     const { discoverClaudeCli } = await import("../agents/cli-discovery");
-    vi.mocked(discoverClaudeCli).mockResolvedValue({ path: "/usr/bin/claude", source: "settings" });
+    vi.mocked(discoverClaudeCli).mockReturnValue(Effect.succeed({ path: "/usr/bin/claude", source: "settings" }));
     const result = await caller.workspace.getClaudeCliPath();
     expect(result).toEqual({ path: "/usr/bin/claude", source: "settings" });
   });
 
   it("settings.getClaudeCliPath returns null when not found", async () => {
     const { discoverClaudeCli } = await import("../agents/cli-discovery");
-    vi.mocked(discoverClaudeCli).mockResolvedValue(null);
+    vi.mocked(discoverClaudeCli).mockReturnValue(Effect.fail(new CliNotFoundError({ searchedPaths: [] })));
     const result = await caller.workspace.getClaudeCliPath();
     expect(result).toBeNull();
   });

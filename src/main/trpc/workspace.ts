@@ -1,5 +1,6 @@
 import { z } from "zod";
 import fs from "node:fs";
+import { Effect, Option } from "effect";
 import { router, publicProcedure } from "./trpc";
 
 import { getDatabase } from "../db/database";
@@ -36,8 +37,10 @@ export const workspaceRouter = router({
 
   /** Get the current Claude CLI path (from settings or auto-discovered) */
   getClaudeCliPath: publicProcedure.query(async () => {
-    const cliInfo = await discoverClaudeCli();
-    return cliInfo ? { path: cliInfo.path, source: cliInfo.source } : null;
+    const cliInfoOpt = await Effect.runPromise(discoverClaudeCli().pipe(Effect.option));
+    return Option.isSome(cliInfoOpt)
+      ? { path: cliInfoOpt.value.path, source: cliInfoOpt.value.source }
+      : null;
   }),
 
   /** Get model settings for all agent types from global settings */

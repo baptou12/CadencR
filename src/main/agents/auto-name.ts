@@ -1,3 +1,4 @@
+import { Effect, Option } from "effect";
 import { getDatabase } from "../db/database";
 import { setupWorktreeForFeature } from "../git/worktree";
 import { discoverClaudeCli } from "./cli-discovery";
@@ -32,8 +33,9 @@ async function runAutoName(
   cwd: string,
   projectId?: number,
 ): Promise<void> {
-  const cliInfo = await discoverClaudeCli();
-  if (!cliInfo) return;
+  const cliInfoOpt = await Effect.runPromise(discoverClaudeCli().pipe(Effect.option));
+  if (Option.isNone(cliInfoOpt)) return;
+  const cliInfo = cliInfoOpt.value;
 
   const sdk = await import("@anthropic-ai/claude-agent-sdk");
   const { query } = sdk as {
@@ -123,8 +125,9 @@ export async function runAutoNameBlocking(
   userInput: string,
   cwd: string,
 ): Promise<string | null> {
-  const cliInfo = await discoverClaudeCli();
-  if (!cliInfo) return null;
+  const cliInfoOpt = await Effect.runPromise(discoverClaudeCli().pipe(Effect.option));
+  if (Option.isNone(cliInfoOpt)) return null;
+  const cliInfo = cliInfoOpt.value;
 
   const sdk = await import("@anthropic-ai/claude-agent-sdk");
   const { query } = sdk as {

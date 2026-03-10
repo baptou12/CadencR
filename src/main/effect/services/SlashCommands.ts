@@ -11,7 +11,7 @@
  *   queryObj.close() is always called even on error
  */
 
-import { Context, Effect, Layer, Ref, Deferred } from "effect";
+import { Context, Effect, Layer, Option, Ref, Deferred } from "effect";
 import { SlashCommandError } from "../errors.js";
 import { getSdkClient } from "../../agents/sdk-client.js";
 import { discoverClaudeCli } from "../../agents/cli-discovery.js";
@@ -35,6 +35,13 @@ interface CacheEntry {
   commands: SlashCommandInfo[];
   fetchedAt: number;
 }
+
+type RawCommand = { name: string; description: string; argumentHint?: string };
+
+/** Result of the atomic inflight check-and-register operation */
+type InflightResult =
+  | { readonly isOwner: true; readonly deferred: Deferred.Deferred<SlashCommandInfo[]> }
+  | { readonly isOwner: false; readonly deferred: Deferred.Deferred<SlashCommandInfo[]> };
 
 /** Custom app-level commands (not from the SDK) */
 const CUSTOM_COMMANDS: SlashCommandInfo[] = [
@@ -78,9 +85,7 @@ export class SlashCommands extends Context.Tag("SlashCommands")<
 // Helpers
 // ---------------------------------------------------------------------------
 
-function mapCommands(
-  commands: Array<{ name: string; description: string; argumentHint?: string }>,
-): SlashCommandInfo[] {
+function mapCommands(commands: Array<RawCommand>): SlashCommandInfo[] {
   return commands.map((cmd) => ({
     name: cmd.name,
     description: cmd.description,
@@ -118,19 +123,12 @@ export const SlashCommandsLive = Layer.effect(
               }),
           });
 
-          const cliInfo = yield* Effect.tryPromise({
-            try: () => discoverClaudeCli(),
-            catch: (e) =>
-              new SlashCommandError({
-                message: "Failed to discover Claude CLI",
-                cause: e,
-              }),
-          });
-
           // CLI not found — graceful fallback
-          if (!cliInfo) {
+          const cliInfoOpt = yield* discoverClaudeCli().pipe(Effect.option);
+          if (Option.isNone(cliInfoOpt)) {
             return [] as SlashCommandInfo[];
           }
+          const cliInfo = cliInfoOpt.value;
 
           // Async iterable that never yields — keeps the subprocess alive
           // long enough to call supportedCommands(), then close() releases it
@@ -163,38 +161,25 @@ export const SlashCommandsLive = Layer.effect(
               }),
           );
 
-          return yield* Effect.tryPromise({
-            try: () =>
-              queryObj.supportedCommands() as Promise<
-                Array<{
-                  name: string;
-                  description: string;
-                  argumentHint?: string;
-                }>
-              >,
+          const raw = yield* Effect.tryPromise({
+            try: () => queryObj.supportedCommands() as Promise<RawCommand[]>,
             catch: (e) =>
               new SlashCommandError({
                 message: "supportedCommands() failed on temporary query",
                 cause: e,
               }),
-          }).pipe(Effect.map(mapCommands));
+          });
+          return mapCommands(raw);
         }),
       );
 
-    return {
+    const service: SlashCommandsService = {
       getCommands: (cwd, activeQuery) =>
         Effect.gen(function* () {
           // 1. Try active subprocess query directly
           if (activeQuery) {
-            const result = yield* Effect.tryPromise({
-              try: () =>
-                activeQuery.supportedCommands() as Promise<
-                  Array<{
-                    name: string;
-                    description: string;
-                    argumentHint?: string;
-                  }>
-                >,
+            const sdkCmds: SlashCommandInfo[] = yield* Effect.tryPromise({
+              try: () => activeQuery.supportedCommands() as Promise<RawCommand[]>,
               catch: (e) =>
                 new SlashCommandError({
                   message: "Active query supportedCommands() failed",
@@ -210,9 +195,11 @@ export const SlashCommandsLive = Layer.effect(
                 }),
               ),
               // Active query errors fall back to [] (matches original behavior)
-              Effect.catchAll(() => Effect.succeed([] as SlashCommandInfo[])),
+              Effect.catchAll(() =>
+                Effect.succeed([] as SlashCommandInfo[]),
+              ),
             );
-            return [...CUSTOM_COMMANDS, ...result];
+            return [...CUSTOM_COMMANDS, ...sdkCmds];
           }
 
           // 2. Check per-cwd cache (5-minute TTL)
@@ -224,28 +211,39 @@ export const SlashCommandsLive = Layer.effect(
 
           // 3. Deduplicate in-flight fetches — use Ref.modify for atomic check-and-set
           const newDeferred = yield* Deferred.make<SlashCommandInfo[]>();
-          const [isOwner, activeDeferred] = yield* Ref.modify(
+
+          const inflightResult: InflightResult = yield* Ref.modify(
             inflightRef,
-            (m) => {
+            (
+              m,
+            ): readonly [
+              InflightResult,
+              Map<string, Deferred.Deferred<SlashCommandInfo[]>>,
+            ] => {
               if (m.has(cwd)) {
-                // Another fiber is already fetching — join it
-                return [[false, m.get(cwd)!] as const, m];
+                return [
+                  { isOwner: false as const, deferred: m.get(cwd)! },
+                  m,
+                ];
               }
-              // We are the first — register our Deferred and become the owner
               const next = new Map(m);
               next.set(cwd, newDeferred);
-              return [[true, newDeferred] as const, next];
+              return [{ isOwner: true as const, deferred: newDeferred }, next];
             },
           );
 
-          if (!isOwner) {
+          if (!inflightResult.isOwner) {
             // Wait for the owning fiber to complete and return its result
-            const result = yield* Deferred.await(activeDeferred);
+            const result: SlashCommandInfo[] = yield* Deferred.await(
+              inflightResult.deferred,
+            );
             return [...CUSTOM_COMMANDS, ...result];
           }
 
           // 4. We are the owner — spawn a temporary query
-          const sdkCommands = yield* fetchViaTemporaryQuery(cwd).pipe(
+          const sdkCommands: SlashCommandInfo[] = yield* fetchViaTemporaryQuery(
+            cwd,
+          ).pipe(
             // Temporary query errors fall back to [] (resilient)
             Effect.catchAll(() => Effect.succeed([] as SlashCommandInfo[])),
           );
@@ -256,7 +254,7 @@ export const SlashCommandsLive = Layer.effect(
             next.set(cwd, { commands: sdkCommands, fetchedAt: Date.now() });
             return next;
           });
-          yield* Deferred.succeed(newDeferred, sdkCommands);
+          yield* Deferred.succeed(inflightResult.deferred, sdkCommands);
           yield* Ref.update(inflightRef, (m) => {
             const next = new Map(m);
             next.delete(cwd);
@@ -264,7 +262,9 @@ export const SlashCommandsLive = Layer.effect(
           });
 
           return [...CUSTOM_COMMANDS, ...sdkCommands];
-        }),
+        }) as Effect.Effect<SlashCommandInfo[], SlashCommandError>,
     };
+
+    return service;
   }),
 );

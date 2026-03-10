@@ -12,7 +12,7 @@
  * Extracted from runSdkQuery() and handleSdkMessage() in subprocess-manager.ts.
  */
 
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, Layer, Option } from "effect";
 import { SessionPersistence } from "./SessionPersistence.js";
 import { EventBroadcaster } from "./EventBroadcaster.js";
 import { Database } from "./Database.js";
@@ -601,12 +601,15 @@ export const SdkQueryRunnerLive = Layer.effect(
         Effect.tryPromise({
           try: async () => {
             const sdk = await getSdkClient();
-            const cliInfo = await discoverClaudeCli();
-            if (!cliInfo) {
+            const cliInfoOpt = await Effect.runPromise(
+              discoverClaudeCli().pipe(Effect.option),
+            );
+            if (Option.isNone(cliInfoOpt)) {
               throw new Error(
                 "Claude CLI not found. Please install it or configure the path in Settings.",
               );
             }
+            const cliInfo = cliInfoOpt.value;
 
             const language = resolveSetting("language", {}) ?? undefined;
 

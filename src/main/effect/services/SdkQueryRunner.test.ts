@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { Effect, Layer } from "effect";
+import { CliNotFoundError } from "../../effect/errors.js";
 import { SdkQueryRunner, SdkQueryRunnerLive } from "./SdkQueryRunner.js";
 import { SessionPersistence } from "./SessionPersistence.js";
 import { EventBroadcaster } from "./EventBroadcaster.js";
@@ -245,7 +246,7 @@ describe("SdkQueryRunner service — SdkQueryRunnerLive", () => {
     vi.clearAllMocks();
 
     // External module mock defaults
-    mockDiscoverClaudeCli.mockResolvedValue({ path: "/usr/local/bin/claude", version: "1.0.0" });
+    mockDiscoverClaudeCli.mockReturnValue(Effect.succeed({ path: "/usr/local/bin/claude", version: "1.0.0" }));
     mockGetSdkClient.mockResolvedValue(makeMockSdk([]));
 
     // SessionPersistence mock defaults
@@ -422,7 +423,7 @@ describe("SdkQueryRunner service — SdkQueryRunnerLive", () => {
     });
 
     it("rejects with an error about CLI not found when CLI is missing", async () => {
-      mockDiscoverClaudeCli.mockResolvedValue(null);
+      mockDiscoverClaudeCli.mockReturnValue(Effect.fail(new CliNotFoundError({ searchedPaths: [] })));
       const managed = makeManagedSubprocess();
       const options = makeOptions();
 

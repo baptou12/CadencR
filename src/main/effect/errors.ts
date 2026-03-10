@@ -93,3 +93,16 @@ export class SlashCommandError extends Data.TaggedError("SlashCommandError")<{
   readonly message: string;
   readonly cause?: unknown;
 }> {}
+
+// ---------------------------------------------------------------------------
+// CliDiscovery errors
+// ---------------------------------------------------------------------------
+
+export class CliNotFoundError extends Data.TaggedError("CliNotFoundError")<{
+  readonly searchedPaths: string[];
+}> {}
+
+export class CliDiscoveryError extends Data.TaggedError("CliDiscoveryError")<{
+  readonly message: string;
+  readonly cause?: unknown;
+}> {}

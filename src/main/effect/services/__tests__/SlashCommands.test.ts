@@ -7,6 +7,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { Effect, Fiber, Duration } from "effect";
+import { CliNotFoundError } from "../../../effect/errors";
 import { SlashCommands, SlashCommandsLive } from "../SlashCommands";
 
 // ---------------------------------------------------------------------------
@@ -142,7 +143,7 @@ describe("cache", () => {
       { name: "/continue", description: "Continue" },
     ]);
     mockGetSdkClient.mockResolvedValue({ query: vi.fn().mockReturnValue(queryObj) } as any);
-    mockDiscoverCli.mockResolvedValue({ path: "/usr/bin/claude", source: "settings" });
+    mockDiscoverCli.mockReturnValue(Effect.succeed({ path: "/usr/bin/claude", source: "settings" }));
 
     const [first, second] = await runTest(
       Effect.gen(function* () {
@@ -175,7 +176,7 @@ describe("cache", () => {
         return callCount === 1 ? qA : qB;
       }),
     } as any);
-    mockDiscoverCli.mockResolvedValue({ path: "/usr/bin/claude", source: "settings" });
+    mockDiscoverCli.mockReturnValue(Effect.succeed({ path: "/usr/bin/claude", source: "settings" }));
 
     const [rA, rB] = await runTest(
       Effect.gen(function* () {
@@ -207,7 +208,7 @@ describe("cache miss — temporary query", () => {
       { name: "/commit", description: "Commit changes" },
     ]);
     mockGetSdkClient.mockResolvedValue({ query: vi.fn().mockReturnValue(queryObj) } as any);
-    mockDiscoverCli.mockResolvedValue({ path: "/usr/bin/claude", source: "settings" });
+    mockDiscoverCli.mockReturnValue(Effect.succeed({ path: "/usr/bin/claude", source: "settings" }));
 
     const result = await runTest(
       Effect.gen(function* () {
@@ -239,7 +240,7 @@ describe("cache miss — temporary query", () => {
     mockGetSdkClient.mockResolvedValue({
       query: vi.fn().mockReturnValue(failingQuery),
     } as any);
-    mockDiscoverCli.mockResolvedValue({ path: "/usr/bin/claude", source: "settings" });
+    mockDiscoverCli.mockReturnValue(Effect.succeed({ path: "/usr/bin/claude", source: "settings" }));
 
     const result = await runTest(
       Effect.gen(function* () {
@@ -287,7 +288,7 @@ describe("concurrent deduplication", () => {
     mockGetSdkClient.mockResolvedValue({
       query: vi.fn().mockReturnValue(queryObj),
     } as any);
-    mockDiscoverCli.mockResolvedValue({ path: "/usr/bin/claude", source: "settings" });
+    mockDiscoverCli.mockReturnValue(Effect.succeed({ path: "/usr/bin/claude", source: "settings" }));
 
     const [r1, r2] = await runTest(
       Effect.gen(function* () {
@@ -333,7 +334,7 @@ describe("missing CLI fallback", () => {
   });
 
   it("returns only CUSTOM_COMMANDS when CLI is not found", async () => {
-    mockDiscoverCli.mockResolvedValue(null);
+    mockDiscoverCli.mockReturnValue(Effect.fail(new CliNotFoundError({ searchedPaths: [] })));
     mockGetSdkClient.mockResolvedValue({ query: vi.fn() } as any);
 
     const result = await runTest(
@@ -361,7 +362,7 @@ describe("CUSTOM_COMMANDS", () => {
   it("always includes 'clear' command regardless of SDK results", async () => {
     const { queryObj } = makeMockQuery([]);
     mockGetSdkClient.mockResolvedValue({ query: vi.fn().mockReturnValue(queryObj) } as any);
-    mockDiscoverCli.mockResolvedValue({ path: "/usr/bin/claude", source: "settings" });
+    mockDiscoverCli.mockReturnValue(Effect.succeed({ path: "/usr/bin/claude", source: "settings" }));
 
     const result = await runTest(
       Effect.gen(function* () {
@@ -380,7 +381,7 @@ describe("CUSTOM_COMMANDS", () => {
       { name: "/fix", description: "Fix issues" },
     ]);
     mockGetSdkClient.mockResolvedValue({ query: vi.fn().mockReturnValue(queryObj) } as any);
-    mockDiscoverCli.mockResolvedValue({ path: "/usr/bin/claude", source: "settings" });
+    mockDiscoverCli.mockReturnValue(Effect.succeed({ path: "/usr/bin/claude", source: "settings" }));
 
     const result = await runTest(
       Effect.gen(function* () {

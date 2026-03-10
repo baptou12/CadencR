@@ -28,9 +28,12 @@ vi.mock("./broadcast", () => ({
   TOOL_PERMISSION_CHANNEL: "tool:permission",
 }));
 
-vi.mock("./cli-discovery", () => ({
-  discoverClaudeCli: vi.fn().mockReturnValue("/usr/bin/claude"),
-}));
+vi.mock("./cli-discovery", () => {
+  const { Effect } = require("effect");
+  return {
+    discoverClaudeCli: vi.fn().mockReturnValue(Effect.succeed({ path: "/usr/bin/claude", source: "process-path" })),
+  };
+});
 
 vi.mock("./session-persistence", () => ({
   getSessionDbId: vi.fn().mockReturnValue(undefined),
