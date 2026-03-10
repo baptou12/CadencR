@@ -8,7 +8,6 @@
  */
 
 import * as fs from "node:fs";
-import { Effect } from "effect";
 import { getDatabase } from "../db/database";
 import { getSessionDbId, notifyDbUpdated } from "./effect-helpers";
 import { resolvePermission, appendToSettingsLocal } from "./permissions";
@@ -242,7 +241,7 @@ async function handleExitPlanMode(
 
   try {
     const result = await getAppRuntime().runPromise(
-      Effect.flatMap(PlanApproval, (pa) => pa.requestPlanApproval(managed.id)),
+      PlanApproval.requestPlanApproval(managed.id),
     );
 
     if (result.approved) {
@@ -297,7 +296,7 @@ export async function requestUserAnswers(
   questions: Record<string, unknown>,
 ): Promise<Record<string, string>> {
   return getAppRuntime().runPromise(
-    Effect.flatMap(ToolPermissions, (tp) => tp.requestUserAnswer(subprocessId, questions)),
+    ToolPermissions.requestUserAnswer(subprocessId, questions),
   );
 }
 
@@ -331,7 +330,7 @@ async function requestToolPermission(
 
   try {
     const result = await getAppRuntime().runPromise(
-      Effect.flatMap(ToolPermissions, (tp) => tp.requestPermission(subprocessId, permissionRequest)),
+      ToolPermissions.requestPermission(subprocessId, permissionRequest),
     );
 
     if (sDbId) {
@@ -364,7 +363,7 @@ export function submitToolPermission(
   feedback?: string,
 ): void {
   getAppRuntime().runSync(
-    Effect.flatMap(ToolPermissions, (tp) => tp.submitPermission(subprocessId, decision, feedback)),
+    ToolPermissions.submitPermission(subprocessId, decision, feedback),
   );
 }
 
@@ -392,7 +391,7 @@ export function submitUserAnswers(
   }
 
   getAppRuntime().runSync(
-    Effect.flatMap(ToolPermissions, (tp) => tp.submitUserAnswer(subprocessId, answers)),
+    ToolPermissions.submitUserAnswer(subprocessId, answers),
   );
 }
 

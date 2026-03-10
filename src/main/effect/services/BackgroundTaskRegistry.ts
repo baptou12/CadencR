@@ -6,7 +6,7 @@
  * background-tasks.ts.
  */
 
-import { Context, Effect, Layer } from "effect";
+import { Effect, Layer } from "effect";
 import { BrowserWindow } from "electron";
 import type { BackgroundTask } from "../../agents/background-tasks.js";
 
@@ -38,7 +38,7 @@ export interface BackgroundTaskRegistryService {
 }
 
 /** Context tag for the BackgroundTaskRegistry service */
-export class BackgroundTaskRegistry extends Context.Tag("BackgroundTaskRegistry")<
+export class BackgroundTaskRegistry extends Effect.Tag("BackgroundTaskRegistry")<
   BackgroundTaskRegistry,
   BackgroundTaskRegistryService
 >() {}

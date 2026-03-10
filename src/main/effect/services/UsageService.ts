@@ -12,7 +12,7 @@
  * - HTTP fetch wrapped in Effect.tryPromise with UsageApiError
  */
 
-import { Context, Effect, Layer, Ref, Option, Duration } from "effect";
+import { Effect, Layer, Ref, Option, Duration } from "effect";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import {
@@ -58,7 +58,7 @@ export interface UsageServiceI {
 }
 
 /** Context tag for the UsageService */
-export class UsageService extends Context.Tag("UsageService")<
+export class UsageService extends Effect.Tag("UsageService")<
   UsageService,
   UsageServiceI
 >() {}

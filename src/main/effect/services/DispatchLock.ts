@@ -6,7 +6,7 @@
  * in execute-agent.ts.
  */
 
-import { Context, Effect, Layer } from "effect";
+import { Effect, Layer } from "effect";
 import { DispatchConflictError } from "../errors.js";
 
 // ---------------------------------------------------------------------------
@@ -25,7 +25,7 @@ export interface DispatchLockService {
 }
 
 /** Context tag for the DispatchLock service */
-export class DispatchLock extends Context.Tag("DispatchLock")<
+export class DispatchLock extends Effect.Tag("DispatchLock")<
   DispatchLock,
   DispatchLockService
 >() {}

@@ -113,9 +113,7 @@ describe("CompletionActions service — CompletionActionsLive", () => {
       const managed = makeManagedSubprocess({ status: "running" });
 
       await runCA(
-        Effect.flatMap(CompletionActions, (svc) =>
-          svc.onCompleted(managed),
-        ),
+        CompletionActions.onCompleted(managed),
       );
 
       expect(managed.status).toBe("completed");
@@ -125,9 +123,7 @@ describe("CompletionActions service — CompletionActionsLive", () => {
       const managed = makeManagedSubprocess();
 
       await runCA(
-        Effect.flatMap(CompletionActions, (svc) =>
-          svc.onCompleted(managed, "sdk-session-id"),
-        ),
+        CompletionActions.onCompleted(managed, "sdk-session-id"),
       );
 
       expect(mockPersistSessionStatus).toHaveBeenCalledWith(
@@ -141,9 +137,7 @@ describe("CompletionActions service — CompletionActionsLive", () => {
       const managed = makeManagedSubprocess();
 
       await runCA(
-        Effect.flatMap(CompletionActions, (svc) =>
-          svc.onCompleted(managed),
-        ),
+        CompletionActions.onCompleted(managed),
       );
 
       expect(mockFlushNotify).toHaveBeenCalledWith(managed.id);
@@ -157,9 +151,7 @@ describe("CompletionActions service — CompletionActionsLive", () => {
       });
 
       await runCA(
-        Effect.flatMap(CompletionActions, (svc) =>
-          svc.onCompleted(managed),
-        ),
+        CompletionActions.onCompleted(managed),
       );
 
       expect(listener1).toHaveBeenCalledWith(0);
@@ -170,9 +162,7 @@ describe("CompletionActions service — CompletionActionsLive", () => {
       const managed = makeManagedSubprocess({ agentType: "execute" });
 
       await runCA(
-        Effect.flatMap(CompletionActions, (svc) =>
-          svc.onCompleted(managed),
-        ),
+        CompletionActions.onCompleted(managed),
       );
 
       expect(mockBroadcastAgentEvent).toHaveBeenCalledWith(
@@ -191,9 +181,7 @@ describe("CompletionActions service — CompletionActionsLive", () => {
       // Should not throw
       await expect(
         runCA(
-          Effect.flatMap(CompletionActions, (svc) =>
-            svc.onCompleted(managed),
-          ),
+          CompletionActions.onCompleted(managed),
         ),
       ).resolves.toBeUndefined();
 
@@ -211,9 +199,7 @@ describe("CompletionActions service — CompletionActionsLive", () => {
       const managed = makeManagedSubprocess({ status: "paused" });
 
       await runCA(
-        Effect.flatMap(CompletionActions, (svc) =>
-          svc.onPaused(managed),
-        ),
+        CompletionActions.onPaused(managed),
       );
 
       expect(mockFlushNotify).toHaveBeenCalledWith(managed.id);
@@ -227,9 +213,7 @@ describe("CompletionActions service — CompletionActionsLive", () => {
       });
 
       await runCA(
-        Effect.flatMap(CompletionActions, (svc) =>
-          svc.onPaused(managed),
-        ),
+        CompletionActions.onPaused(managed),
       );
 
       expect(listener).toHaveBeenCalledWith(2);
@@ -239,9 +223,7 @@ describe("CompletionActions service — CompletionActionsLive", () => {
       const managed = makeManagedSubprocess({ status: "paused", agentType: "session" });
 
       await runCA(
-        Effect.flatMap(CompletionActions, (svc) =>
-          svc.onPaused(managed),
-        ),
+        CompletionActions.onPaused(managed),
       );
 
       expect(mockBroadcastAgentEvent).toHaveBeenCalledWith(
@@ -255,9 +237,7 @@ describe("CompletionActions service — CompletionActionsLive", () => {
       const managed = makeManagedSubprocess({ status: "paused" });
 
       await runCA(
-        Effect.flatMap(CompletionActions, (svc) =>
-          svc.onPaused(managed),
-        ),
+        CompletionActions.onPaused(managed),
       );
 
       expect(mockPersistSessionStatus).not.toHaveBeenCalled();
@@ -273,9 +253,7 @@ describe("CompletionActions service — CompletionActionsLive", () => {
       const managed = makeManagedSubprocess({ status: "stopped" });
 
       await runCA(
-        Effect.flatMap(CompletionActions, (svc) =>
-          svc.onStopped(managed, "sdk-session-xyz"),
-        ),
+        CompletionActions.onStopped(managed, "sdk-session-xyz"),
       );
 
       expect(mockPersistSessionStatus).toHaveBeenCalledWith(
@@ -289,9 +267,7 @@ describe("CompletionActions service — CompletionActionsLive", () => {
       const managed = makeManagedSubprocess({ status: "stopped" });
 
       await runCA(
-        Effect.flatMap(CompletionActions, (svc) =>
-          svc.onStopped(managed),
-        ),
+        CompletionActions.onStopped(managed),
       );
 
       expect(mockFlushNotify).toHaveBeenCalledWith(managed.id);
@@ -305,9 +281,7 @@ describe("CompletionActions service — CompletionActionsLive", () => {
       });
 
       await runCA(
-        Effect.flatMap(CompletionActions, (svc) =>
-          svc.onStopped(managed),
-        ),
+        CompletionActions.onStopped(managed),
       );
 
       expect(listener).toHaveBeenCalledWith(1);
@@ -317,9 +291,7 @@ describe("CompletionActions service — CompletionActionsLive", () => {
       const managed = makeManagedSubprocess({ status: "stopped", agentType: "prd" });
 
       await runCA(
-        Effect.flatMap(CompletionActions, (svc) =>
-          svc.onStopped(managed),
-        ),
+        CompletionActions.onStopped(managed),
       );
 
       expect(mockBroadcastAgentEvent).toHaveBeenCalledWith(
@@ -339,9 +311,7 @@ describe("CompletionActions service — CompletionActionsLive", () => {
       const managed = makeManagedSubprocess({ status: "running" });
 
       await runCA(
-        Effect.flatMap(CompletionActions, (svc) =>
-          svc.onError(managed, new Error("SDK failed")),
-        ),
+        CompletionActions.onError(managed, new Error("SDK failed")),
       );
 
       expect(managed.status).toBe("error");
@@ -351,9 +321,7 @@ describe("CompletionActions service — CompletionActionsLive", () => {
       const managed = makeManagedSubprocess({ status: "running" });
 
       await runCA(
-        Effect.flatMap(CompletionActions, (svc) =>
-          svc.onError(managed, new Error("boom")),
-        ),
+        CompletionActions.onError(managed, new Error("boom")),
       );
 
       expect(mockPersistSessionStatus).toHaveBeenCalledWith(managed.id, "error");
@@ -364,9 +332,7 @@ describe("CompletionActions service — CompletionActionsLive", () => {
       const error = new Error("SDK query failed");
 
       await runCA(
-        Effect.flatMap(CompletionActions, (svc) =>
-          svc.onError(managed, error),
-        ),
+        CompletionActions.onError(managed, error),
       );
 
       expect(mockBroadcastAgentEvent).toHaveBeenCalledWith(
@@ -383,9 +349,7 @@ describe("CompletionActions service — CompletionActionsLive", () => {
       const managed = makeManagedSubprocess({ status: "running" });
 
       await runCA(
-        Effect.flatMap(CompletionActions, (svc) =>
-          svc.onError(managed, new Error("fail")),
-        ),
+        CompletionActions.onError(managed, new Error("fail")),
       );
 
       expect(mockBroadcastAgentEvent).toHaveBeenCalledWith(
@@ -402,9 +366,7 @@ describe("CompletionActions service — CompletionActionsLive", () => {
       });
 
       await runCA(
-        Effect.flatMap(CompletionActions, (svc) =>
-          svc.onError(managed, new Error("fail")),
-        ),
+        CompletionActions.onError(managed, new Error("fail")),
       );
 
       expect(listener).toHaveBeenCalledWith(1);
@@ -415,9 +377,7 @@ describe("CompletionActions service — CompletionActionsLive", () => {
       const managed = makeManagedSubprocess({ status: "running" });
 
       await runCA(
-        Effect.flatMap(CompletionActions, (svc) =>
-          svc.onError(managed, new Error("some error")),
-        ),
+        CompletionActions.onError(managed, new Error("some error")),
       );
 
       expect(mockPersistStreamEvent).toHaveBeenCalledWith(
@@ -437,9 +397,7 @@ describe("CompletionActions service — CompletionActionsLive", () => {
         });
 
         await runCA(
-          Effect.flatMap(CompletionActions, (svc) =>
-            svc.onError(managed, new Error("resume failed")),
-          ),
+          CompletionActions.onError(managed, new Error("resume failed")),
         );
 
         expect(mockPersistSessionStatus).not.toHaveBeenCalled();
@@ -452,9 +410,7 @@ describe("CompletionActions service — CompletionActionsLive", () => {
         });
 
         await runCA(
-          Effect.flatMap(CompletionActions, (svc) =>
-            svc.onError(managed, new Error("resume failed")),
-          ),
+          CompletionActions.onError(managed, new Error("resume failed")),
         );
 
         expect(mockPersistClaudeSessionId).toHaveBeenCalledWith(
@@ -470,9 +426,7 @@ describe("CompletionActions service — CompletionActionsLive", () => {
         const error = new Error("Connection refused");
 
         await runCA(
-          Effect.flatMap(CompletionActions, (svc) =>
-            svc.onError(managed, error),
-          ),
+          CompletionActions.onError(managed, error),
         );
 
         expect(mockBroadcastAgentEvent).toHaveBeenCalledWith(
@@ -493,9 +447,7 @@ describe("CompletionActions service — CompletionActionsLive", () => {
         });
 
         await runCA(
-          Effect.flatMap(CompletionActions, (svc) =>
-            svc.onError(managed, new Error("resume failed")),
-          ),
+          CompletionActions.onError(managed, new Error("resume failed")),
         );
 
         expect(managed.status).toBe("error");

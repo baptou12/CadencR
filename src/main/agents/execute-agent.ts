@@ -53,7 +53,7 @@ export function processNextPhase(options: ExecuteAgentOptions): void {
 
   // In-memory lock: prevent concurrent dispatch for the same feature
   try {
-    AppRuntime.runSync(Effect.flatMap(DispatchLock, (dl) => dl.acquire(featureId)));
+    AppRuntime.runSync(DispatchLock.acquire(featureId));
   } catch {
     // DispatchConflictError — another dispatch is already running for this feature
     return;
@@ -144,7 +144,7 @@ export function processNextPhase(options: ExecuteAgentOptions): void {
     // 6. No pending phases — check if review is needed
     handleNoPendingPhases(options, planId);
   } finally {
-    AppRuntime.runSync(Effect.flatMap(DispatchLock, (dl) => dl.release(featureId)));
+    AppRuntime.runSync(DispatchLock.release(featureId));
   }
 }
 

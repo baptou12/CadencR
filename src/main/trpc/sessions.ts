@@ -303,7 +303,7 @@ export const sessionsRouter = router({
     .input(z.object({ subprocessId: z.string() }))
     .query(async ({ input }) => {
       return await AppRuntime.runPromise(
-        Effect.flatMap(BackgroundTaskRegistry, (reg) => reg.getBySubprocess(input.subprocessId)),
+        BackgroundTaskRegistry.getBySubprocess(input.subprocessId),
       );
     }),
 

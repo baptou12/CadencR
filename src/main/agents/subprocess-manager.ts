@@ -12,7 +12,6 @@
  * Effect service method synchronously or asynchronously as needed.
  */
 
-import { Effect } from "effect";
 import { AppRuntime } from "../effect/runtime";
 import { SubprocessLifecycle } from "../effect/services/SubprocessLifecycle";
 import type { ManagedSubprocess, SubprocessOptions, MessageContent } from "./types";
@@ -104,13 +103,13 @@ import { getAppRuntime } from "../effect/app-runtime-ref";
 import { PlanApproval } from "../effect/services/PlanApproval";
 export function submitPlanApproval(subprocessId: string, approved: boolean, feedback?: string): { success: boolean; error?: string } {
   getAppRuntime().runSync(
-    Effect.flatMap(PlanApproval, (pa) => pa.submitPlanApproval(subprocessId, approved, feedback)),
+    PlanApproval.submitPlanApproval(subprocessId, approved, feedback),
   );
   return { success: true };
 }
 export function submitPrdApproval(subprocessId: string, approved: boolean, feedback?: string): { success: boolean; error?: string } {
   getAppRuntime().runSync(
-    Effect.flatMap(PlanApproval, (pa) => pa.submitPrdApproval(subprocessId, approved, feedback)),
+    PlanApproval.submitPrdApproval(subprocessId, approved, feedback),
   );
   return { success: true };
 }
@@ -124,7 +123,7 @@ export function getSupportedCommands(subprocessId: string | null, cwd: string) {
     }
   }
   return AppRuntime.runPromise(
-    Effect.flatMap(SlashCommands, (svc) => svc.getCommands(cwd, activeQuery)),
+    SlashCommands.getCommands(cwd, activeQuery),
   );
 }
 

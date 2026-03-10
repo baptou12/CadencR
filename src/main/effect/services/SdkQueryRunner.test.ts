@@ -289,7 +289,7 @@ describe("SdkQueryRunner service — SdkQueryRunnerLive", () => {
       const options = makeOptions();
 
       await runSDK(
-        Effect.flatMap(SdkQueryRunner, (svc) => svc.execute(managed, options)),
+        SdkQueryRunner.execute(managed, options),
       );
 
       expect(mockDiscoverClaudeCli).toHaveBeenCalled();
@@ -300,7 +300,7 @@ describe("SdkQueryRunner service — SdkQueryRunnerLive", () => {
       const options = makeOptions();
 
       await runSDK(
-        Effect.flatMap(SdkQueryRunner, (svc) => svc.execute(managed, options)),
+        SdkQueryRunner.execute(managed, options),
       );
 
       expect(mockGetSdkClient).toHaveBeenCalled();
@@ -311,7 +311,7 @@ describe("SdkQueryRunner service — SdkQueryRunnerLive", () => {
       const options = makeOptions();
 
       await runSDK(
-        Effect.flatMap(SdkQueryRunner, (svc) => svc.execute(managed, options)),
+        SdkQueryRunner.execute(managed, options),
       );
 
       expect(mockCAOnCompleted).toHaveBeenCalledWith(managed, undefined);
@@ -343,7 +343,7 @@ describe("SdkQueryRunner service — SdkQueryRunnerLive", () => {
       });
 
       await runSDK(
-        Effect.flatMap(SdkQueryRunner, (svc) => svc.execute(managed, options)),
+        SdkQueryRunner.execute(managed, options),
       );
 
       expect(mockCAOnPaused).toHaveBeenCalledWith(managed);
@@ -374,7 +374,7 @@ describe("SdkQueryRunner service — SdkQueryRunnerLive", () => {
       });
 
       await runSDK(
-        Effect.flatMap(SdkQueryRunner, (svc) => svc.execute(managed, options)),
+        SdkQueryRunner.execute(managed, options),
       );
 
       expect(mockCAOnStopped).toHaveBeenCalledWith(managed, undefined);
@@ -385,7 +385,7 @@ describe("SdkQueryRunner service — SdkQueryRunnerLive", () => {
       const options = makeOptions();
 
       await runSDK(
-        Effect.flatMap(SdkQueryRunner, (svc) => svc.execute(managed, options)),
+        SdkQueryRunner.execute(managed, options),
       );
 
       expect(mockBGClear).toHaveBeenCalledWith(managed.id);
@@ -416,7 +416,7 @@ describe("SdkQueryRunner service — SdkQueryRunnerLive", () => {
       });
 
       await runSDK(
-        Effect.flatMap(SdkQueryRunner, (svc) => svc.execute(managed, options)),
+        SdkQueryRunner.execute(managed, options),
       );
 
       expect(mockBGClear).not.toHaveBeenCalled();
@@ -430,7 +430,7 @@ describe("SdkQueryRunner service — SdkQueryRunnerLive", () => {
       // Effect.runPromise wraps typed errors in FiberFailure; verify via thrown message
       await expect(
         runSDK(
-          Effect.flatMap(SdkQueryRunner, (svc) => svc.execute(managed, options)),
+          SdkQueryRunner.execute(managed, options),
         ),
       ).rejects.toThrow(/Claude CLI not found/);
     });
@@ -440,7 +440,7 @@ describe("SdkQueryRunner service — SdkQueryRunnerLive", () => {
       const options = makeOptions({ resumeSessionId: "resume-abc" });
 
       await runSDK(
-        Effect.flatMap(SdkQueryRunner, (svc) => svc.execute(managed, options)),
+        SdkQueryRunner.execute(managed, options),
       );
 
       expect(managed.resumingFromSessionId).toBe("resume-abc");
@@ -460,7 +460,7 @@ describe("SdkQueryRunner service — SdkQueryRunnerLive", () => {
       const options = makeOptions();
 
       await runSDK(
-        Effect.flatMap(SdkQueryRunner, (svc) => svc.execute(managed, options)),
+        SdkQueryRunner.execute(managed, options),
       );
 
       expect(mockCAOnError).toHaveBeenCalledWith(managed, sdkError);
@@ -491,7 +491,7 @@ describe("SdkQueryRunner service — SdkQueryRunnerLive", () => {
       const options = makeOptions();
 
       await runSDK(
-        Effect.flatMap(SdkQueryRunner, (svc) => svc.execute(managed, options)),
+        SdkQueryRunner.execute(managed, options),
       );
 
       expect(mockCAOnPaused).toHaveBeenCalledWith(managed);
@@ -522,7 +522,7 @@ describe("SdkQueryRunner service — SdkQueryRunnerLive", () => {
       const options = makeOptions();
 
       await runSDK(
-        Effect.flatMap(SdkQueryRunner, (svc) => svc.execute(managed, options)),
+        SdkQueryRunner.execute(managed, options),
       );
 
       expect(mockCAOnStopped).toHaveBeenCalledWith(managed);
@@ -550,7 +550,7 @@ describe("SdkQueryRunner service — SdkQueryRunnerLive", () => {
 
       const managed = makeManagedSubprocess();
       await runSDK(
-        Effect.flatMap(SdkQueryRunner, (svc) => svc.execute(managed, makeOptions())),
+        SdkQueryRunner.execute(managed, makeOptions()),
       );
 
       expect(mockSPPersistStreamEvent).toHaveBeenCalledWith(
@@ -572,7 +572,7 @@ describe("SdkQueryRunner service — SdkQueryRunnerLive", () => {
 
       const managed = makeManagedSubprocess();
       await runSDK(
-        Effect.flatMap(SdkQueryRunner, (svc) => svc.execute(managed, makeOptions())),
+        SdkQueryRunner.execute(managed, makeOptions()),
       );
 
       expect(mockEBThrottledNotify).toHaveBeenCalledWith(managed.id, 99);
@@ -589,7 +589,7 @@ describe("SdkQueryRunner service — SdkQueryRunnerLive", () => {
       const managed = makeManagedSubprocess({ eventListeners: [listener] });
 
       await runSDK(
-        Effect.flatMap(SdkQueryRunner, (svc) => svc.execute(managed, makeOptions())),
+        SdkQueryRunner.execute(managed, makeOptions()),
       );
 
       expect(listener).toHaveBeenCalledWith(innerEvent);
@@ -610,7 +610,7 @@ describe("SdkQueryRunner service — SdkQueryRunnerLive", () => {
 
       const managed = makeManagedSubprocess();
       await runSDK(
-        Effect.flatMap(SdkQueryRunner, (svc) => svc.execute(managed, makeOptions())),
+        SdkQueryRunner.execute(managed, makeOptions()),
       );
 
       expect(managed.sdkSessionId).toBe("sdk-session-abc");
@@ -626,7 +626,7 @@ describe("SdkQueryRunner service — SdkQueryRunnerLive", () => {
 
       const managed = makeManagedSubprocess();
       await runSDK(
-        Effect.flatMap(SdkQueryRunner, (svc) => svc.execute(managed, makeOptions())),
+        SdkQueryRunner.execute(managed, makeOptions()),
       );
 
       expect(mockSPPersistClaudeSessionId).toHaveBeenCalledWith(20, "sdk-session-xyz");
@@ -642,7 +642,7 @@ describe("SdkQueryRunner service — SdkQueryRunnerLive", () => {
 
       const managed = makeManagedSubprocess();
       await runSDK(
-        Effect.flatMap(SdkQueryRunner, (svc) => svc.execute(managed, makeOptions())),
+        SdkQueryRunner.execute(managed, makeOptions()),
       );
 
       // Should update was_compacted in DB
@@ -685,7 +685,7 @@ describe("SdkQueryRunner service — SdkQueryRunnerLive", () => {
 
       const managed = makeManagedSubprocess();
       await runSDK(
-        Effect.flatMap(SdkQueryRunner, (svc) => svc.execute(managed, makeOptions())),
+        SdkQueryRunner.execute(managed, makeOptions()),
       );
 
       expect(mockSPUpdateTokenUsage).toHaveBeenCalledWith(15, 115, 50);
@@ -712,7 +712,7 @@ describe("SdkQueryRunner service — SdkQueryRunnerLive", () => {
 
       const managed = makeManagedSubprocess();
       await runSDK(
-        Effect.flatMap(SdkQueryRunner, (svc) => svc.execute(managed, makeOptions())),
+        SdkQueryRunner.execute(managed, makeOptions()),
       );
 
       expect(mockBGAdd).toHaveBeenCalledWith(
@@ -747,7 +747,7 @@ describe("SdkQueryRunner service — SdkQueryRunnerLive", () => {
 
       const managed = makeManagedSubprocess();
       await runSDK(
-        Effect.flatMap(SdkQueryRunner, (svc) => svc.execute(managed, makeOptions())),
+        SdkQueryRunner.execute(managed, makeOptions()),
       );
 
       expect(mockBGAdd).toHaveBeenCalledWith(
@@ -775,7 +775,7 @@ describe("SdkQueryRunner service — SdkQueryRunnerLive", () => {
 
       const managed = makeManagedSubprocess({ agentType: "plan" });
       await runSDK(
-        Effect.flatMap(SdkQueryRunner, (svc) => svc.execute(managed, makeOptions())),
+        SdkQueryRunner.execute(managed, makeOptions()),
       );
 
       expect(mockEBBroadcastAgentEvent).toHaveBeenCalledWith(
@@ -793,9 +793,7 @@ describe("SdkQueryRunner service — SdkQueryRunnerLive", () => {
 
       const managed = makeManagedSubprocess({ agentType: "session" });
       await runSDK(
-        Effect.flatMap(SdkQueryRunner, (svc) =>
-          svc.execute(managed, makeOptions({ agentType: "session" })),
-        ),
+        SdkQueryRunner.execute(managed, makeOptions({ agentType: "session" })),
       );
 
       expect(mockEBBroadcastAgentEvent).toHaveBeenCalledWith(
@@ -834,9 +832,7 @@ describe("SdkQueryRunner service — SdkQueryRunnerLive", () => {
 
       const managed = makeManagedSubprocess();
       await runSDK(
-        Effect.flatMap(SdkQueryRunner, (svc) =>
-          svc.execute(managed, makeOptions({ resumeSessionId: "old-session-id" })),
-        ),
+        SdkQueryRunner.execute(managed, makeOptions({ resumeSessionId: "old-session-id" })),
       );
 
       expect(capturedOptions?.resume).toBe("old-session-id");

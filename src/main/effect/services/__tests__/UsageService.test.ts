@@ -129,7 +129,7 @@ describe("successful fetch", () => {
     } as Response);
 
     const result = await runTest(
-      Effect.flatMap(UsageService, (s) => s.getUsage()),
+      UsageService.getUsage(),
     );
 
     expect(result.status).toBe("success");
@@ -155,7 +155,7 @@ describe("successful fetch", () => {
     } as Response);
 
     const result = await runTest(
-      Effect.flatMap(UsageService, (s) => s.getUsage()),
+      UsageService.getUsage(),
     );
 
     expect(result.five_hour?.resets_at).toBeNull();
@@ -181,11 +181,9 @@ describe("caching and deduplication", () => {
     });
 
     const [r1, r2, r3] = await runTest(
-      Effect.flatMap(UsageService, (s) =>
-        Effect.all([s.getUsage(), s.getUsage(), s.getUsage()], {
-          concurrency: "unbounded",
-        }),
-      ),
+      Effect.all([UsageService.getUsage(), UsageService.getUsage(), UsageService.getUsage()], {
+        concurrency: "unbounded",
+      }),
     );
 
     // All three should succeed
@@ -238,7 +236,7 @@ describe("rate-limit handling", () => {
     } as Response);
 
     const result = await runTest(
-      Effect.flatMap(UsageService, (s) => s.getUsage()),
+      UsageService.getUsage(),
     );
 
     expect(result.status).toBe("rate_limited");
@@ -282,7 +280,7 @@ describe("rate-limit handling", () => {
     } as Response);
 
     const result = await runTest(
-      Effect.flatMap(UsageService, (s) => s.getUsage()),
+      UsageService.getUsage(),
     );
 
     expect(result.status).toBe("rate_limited");
@@ -301,7 +299,7 @@ describe("keychain error handling", () => {
     mockKeychainFailure();
 
     const result = await runTest(
-      Effect.flatMap(UsageService, (s) => s.getUsage()),
+      UsageService.getUsage(),
     );
 
     expect(result.status).toBe("error");
@@ -313,7 +311,7 @@ describe("keychain error handling", () => {
     mockKeychainNoToken();
 
     const result = await runTest(
-      Effect.flatMap(UsageService, (s) => s.getUsage()),
+      UsageService.getUsage(),
     );
 
     expect(result.status).toBe("error");
@@ -335,7 +333,7 @@ describe("fetch error handling", () => {
     } as Response);
 
     const result = await runTest(
-      Effect.flatMap(UsageService, (s) => s.getUsage()),
+      UsageService.getUsage(),
     );
 
     expect(result.status).toBe("error");
@@ -350,7 +348,7 @@ describe("fetch error handling", () => {
     );
 
     const result = await runTest(
-      Effect.flatMap(UsageService, (s) => s.getUsage()),
+      UsageService.getUsage(),
     );
 
     expect(result.status).toBe("error");
@@ -372,14 +370,14 @@ describe("module-level state elimination", () => {
       json: () => Promise.resolve(makeApiResponse()),
     } as Response);
     const resultA = await runTest(
-      Effect.flatMap(UsageService, (s) => s.getUsage()),
+      UsageService.getUsage(),
     );
     expect(resultA.status).toBe("success");
 
     // Instance B: fails (separate Layer.provide, no shared state)
     mockKeychainFailure();
     const resultB = await runTest(
-      Effect.flatMap(UsageService, (s) => s.getUsage()),
+      UsageService.getUsage(),
     );
     expect(resultB.status).toBe("error");
 

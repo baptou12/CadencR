@@ -17,7 +17,7 @@
  * Depends on: Database, SessionPersistence, EventBroadcaster
  */
 
-import { Context, Effect, Layer, Deferred, Duration } from "effect";
+import { Effect, Layer, Deferred, Duration } from "effect";
 import { Database } from "./Database.js";
 import { SessionPersistence } from "./SessionPersistence.js";
 import { EventBroadcaster } from "./EventBroadcaster.js";
@@ -89,7 +89,7 @@ export interface PlanApprovalService {
 }
 
 /** Context tag for the PlanApproval service */
-export class PlanApproval extends Context.Tag("PlanApproval")<
+export class PlanApproval extends Effect.Tag("PlanApproval")<
   PlanApproval,
   PlanApprovalService
 >() {}

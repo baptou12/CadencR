@@ -11,7 +11,7 @@
  * Plan/PRD approval (show_plan / show_prd MCP flow) is owned by PlanApproval.
  */
 
-import { Context, Effect, Layer, Deferred, Duration } from "effect";
+import { Effect, Layer, Deferred, Duration } from "effect";
 import {
   PermissionTimeoutError,
   QuestionTimeoutError,
@@ -83,7 +83,7 @@ export interface ToolPermissionsService {
 }
 
 /** Context tag for the ToolPermissions service */
-export class ToolPermissions extends Context.Tag("ToolPermissions")<
+export class ToolPermissions extends Effect.Tag("ToolPermissions")<
   ToolPermissions,
   ToolPermissionsService
 >() {}

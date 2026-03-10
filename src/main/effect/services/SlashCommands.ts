@@ -11,7 +11,7 @@
  *   queryObj.close() is always called even on error
  */
 
-import { Context, Effect, Layer, Option, Ref, Deferred } from "effect";
+import { Effect, Layer, Option, Ref, Deferred } from "effect";
 import { SlashCommandError } from "../errors.js";
 import { getSdkClient } from "../../agents/sdk-client.js";
 import { discoverClaudeCli } from "../../agents/cli-discovery.js";
@@ -76,7 +76,7 @@ export interface SlashCommandsService {
 }
 
 /** Context tag for the SlashCommands service */
-export class SlashCommands extends Context.Tag("SlashCommands")<
+export class SlashCommands extends Effect.Tag("SlashCommands")<
   SlashCommands,
   SlashCommandsService
 >() {}

@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, Schema, ParseResult } from "effect";
+import { Effect, Layer, Schema, ParseResult } from "effect";
 import { DatabaseError } from "../errors.js";
 import { getDatabase, closeDatabase } from "../../db/database.js";
 
@@ -25,7 +25,7 @@ export interface DatabaseService {
 }
 
 /** Context tag for the Database service */
-export class Database extends Context.Tag("Database")<Database, DatabaseService>() {}
+export class Database extends Effect.Tag("Database")<Database, DatabaseService>() {}
 
 /** Build the DatabaseService implementation */
 function makeService(): DatabaseService {

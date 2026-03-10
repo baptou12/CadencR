@@ -12,7 +12,7 @@
  * Extracted from runSdkQuery() and handleSdkMessage() in subprocess-manager.ts.
  */
 
-import { Context, Effect, Layer, Option } from "effect";
+import { Effect, Layer, Option } from "effect";
 import { SessionPersistence } from "./SessionPersistence.js";
 import { EventBroadcaster } from "./EventBroadcaster.js";
 import { Database } from "./Database.js";
@@ -48,7 +48,7 @@ export interface SdkQueryRunnerService {
 }
 
 /** Context tag for the SdkQueryRunner service */
-export class SdkQueryRunner extends Context.Tag("SdkQueryRunner")<
+export class SdkQueryRunner extends Effect.Tag("SdkQueryRunner")<
   SdkQueryRunner,
   SdkQueryRunnerService
 >() {}

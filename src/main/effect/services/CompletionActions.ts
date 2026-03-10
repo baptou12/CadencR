@@ -15,7 +15,7 @@
  * are caught internally and logged as warnings (best-effort persistence).
  */
 
-import { Context, Effect, Layer } from "effect";
+import { Effect, Layer } from "effect";
 import { SessionPersistence } from "./SessionPersistence.js";
 import { EventBroadcaster } from "./EventBroadcaster.js";
 import { Database } from "./Database.js";
@@ -43,7 +43,7 @@ export interface CompletionActionsService {
 }
 
 /** Context tag for the CompletionActions service */
-export class CompletionActions extends Context.Tag("CompletionActions")<
+export class CompletionActions extends Effect.Tag("CompletionActions")<
   CompletionActions,
   CompletionActionsService
 >() {}

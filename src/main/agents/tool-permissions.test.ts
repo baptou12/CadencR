@@ -36,7 +36,13 @@ vi.mock("../effect/app-runtime-ref", () => ({
 }));
 
 vi.mock("../effect/services/ToolPermissions", () => ({
-  ToolPermissions: { key: "ToolPermissions" },
+  ToolPermissions: {
+    key: "ToolPermissions",
+    requestPermission: vi.fn().mockReturnValue(undefined),
+    submitPermission: vi.fn().mockReturnValue(undefined),
+    requestUserAnswer: vi.fn().mockReturnValue(undefined),
+    submitUserAnswer: vi.fn().mockReturnValue(undefined),
+  },
 }));
 
 // ---------------------------------------------------------------------------

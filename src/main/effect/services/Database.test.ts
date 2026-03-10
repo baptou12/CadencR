@@ -131,9 +131,7 @@ describe("Database service — DatabaseLive", () => {
       mockGetDatabase.mockReturnValue({ prepare: vi.fn().mockReturnValue(stmt) } as any);
 
       const result = runDb(
-        Effect.flatMap(Database, (db) =>
-          db.execute("INSERT INTO test (name) VALUES (?)", "hello"),
-        ),
+        Database.execute("INSERT INTO test (name) VALUES (?)", "hello"),
       );
 
       expect(result).toEqual({ changes: 1, lastInsertRowid: 42 });
@@ -146,9 +144,7 @@ describe("Database service — DatabaseLive", () => {
       mockGetDatabase.mockReturnValue({ prepare: vi.fn().mockReturnValue(stmt) } as any);
 
       const result = runDb(
-        Effect.flatMap(Database, (db) =>
-          db.execute("UPDATE test SET name = ? WHERE id = ?", "new", 9999),
-        ),
+        Database.execute("UPDATE test SET name = ? WHERE id = ?", "new", 9999),
       );
 
       expect(result).toEqual({ changes: 0, lastInsertRowid: 0 });
@@ -165,9 +161,7 @@ describe("Database service — DatabaseLive", () => {
       let thrown: unknown;
       try {
         runDb(
-          Effect.flatMap(Database, (db) =>
-            db.execute("INSERT INTO test (id) VALUES (?)", 1),
-          ),
+          Database.execute("INSERT INTO test (id) VALUES (?)", 1),
         );
       } catch (e) {
         thrown = e;

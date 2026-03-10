@@ -100,7 +100,7 @@ describe("BackgroundTaskRegistry", () => {
     const layer = BackgroundTaskRegistryLive;
     const result = Effect.runSync(
       Effect.provide(
-        Effect.flatMap(BackgroundTaskRegistry, (reg) => reg.getBySubprocess("unknown")),
+        BackgroundTaskRegistry.getBySubprocess("unknown"),
         layer,
       ),
     );
