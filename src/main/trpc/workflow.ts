@@ -17,7 +17,8 @@ import {
 import { processNextPhase } from "../agents/execute-agent";
 import { autoNameFeature, runAutoNameBlocking } from "../agents/auto-name";
 import { resolveAgentCwd } from "../agents/resolve-cwd";
-import { setupWorktreeForFeature } from "../git/worktree";
+import { setupWorktreeForFeatureEffect } from "../effect/services/GitWorktree";
+import { AppRuntime } from "../effect/runtime";
 import { hasDefaultTitle } from "./shared";
 
 export const workflowRouter = router({
@@ -322,16 +323,18 @@ export const workflowRouter = router({
       }
 
       // Step 2: Create worktree (blocking) — returns after worktree exists on disk
-      const worktreePath = await setupWorktreeForFeature(
-        input.projectId,
-        input.featureId,
-        { skipSetupCommands: true },
+      const worktreePath = await AppRuntime.runPromise(
+        setupWorktreeForFeatureEffect(input.projectId, input.featureId, {
+          skipSetupCommands: true,
+        }),
       );
 
       // Step 3: Fire off setup commands in background (non-blocking)
-      setupWorktreeForFeature(input.projectId, input.featureId, {
-        onlySetupCommands: true,
-      }).catch((err) => {
+      AppRuntime.runPromise(
+        setupWorktreeForFeatureEffect(input.projectId, input.featureId, {
+          onlySetupCommands: true,
+        }),
+      ).catch((err) => {
         console.error("[ensureWorktree] Setup commands failed:", err);
       });
 

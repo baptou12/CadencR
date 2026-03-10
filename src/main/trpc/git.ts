@@ -4,18 +4,12 @@ import { getDatabase } from "../db/database";
 import type { SettingRow, ProjectRow } from "../db/types";
 import {
   execAsync,
-  createWorktree,
-  removeWorktree,
-  listWorktrees,
-  getWorktreeInfo,
   openInTerminal,
   openInZed,
-  buildBranchName,
   getGitStats,
   getDiff,
   getChangedFiles,
   getCurrentBranch,
-  setupWorktreeForFeature,
   getOriginalBranch,
   checkMergeConflicts,
   mergeBranch,
@@ -26,6 +20,15 @@ import {
   getRecentCommits,
   getCommitDiff,
 } from "../git/worktree";
+import {
+  createWorktreeEffect,
+  removeWorktreeEffect,
+  listWorktreesEffect,
+  getWorktreeInfoEffect,
+  buildBranchName,
+  setupWorktreeForFeatureEffect,
+} from "../effect/services/GitWorktree";
+import { AppRuntime } from "../effect/runtime";
 import { resolveFeatureGitPath } from "./shared";
 
 export const gitRouter = router({
@@ -51,7 +54,9 @@ export const gitRouter = router({
       const prefix = prefixRow?.branch_prefix ?? "feature/";
 
       const branchName = buildBranchName(prefix, input.featureTitle);
-      const result = await createWorktree(project.path, branchName, project.name);
+      const result = await AppRuntime.runPromise(
+        createWorktreeEffect(project.path, branchName, project.name),
+      );
 
       db.prepare(
         "INSERT INTO feature_settings (feature_id, key, value) VALUES (?, ?, ?) ON CONFLICT(feature_id, key) DO UPDATE SET value = excluded.value",
@@ -85,7 +90,7 @@ export const gitRouter = router({
         .get(input.featureId) as SettingRow | undefined;
       if (!wtRow) throw new Error("No worktree found for this feature");
 
-      await removeWorktree(project.path, wtRow.value);
+      await AppRuntime.runPromise(removeWorktreeEffect(project.path, wtRow.value));
 
       db.prepare(
         "DELETE FROM feature_settings WHERE feature_id = ? AND key IN ('worktree_path', 'worktree_branch')",
@@ -116,7 +121,7 @@ export const gitRouter = router({
         .get(input.featureId) as SettingRow | undefined;
       if (!wtRow) return null;
 
-      return getWorktreeInfo(project.path, wtRow.value);
+      return AppRuntime.runPromise(getWorktreeInfoEffect(project.path, wtRow.value));
     }),
 
   /** Get git diff stats (LOC changed) for a feature's worktree or project path */
@@ -182,7 +187,9 @@ export const gitRouter = router({
   retryWorktreeSetup: publicProcedure
     .input(z.object({ projectId: z.number(), featureId: z.number() }))
     .mutation(({ input }) => {
-      setupWorktreeForFeature(input.projectId, input.featureId).catch((err) => {
+      AppRuntime.runPromise(
+        setupWorktreeForFeatureEffect(input.projectId, input.featureId),
+      ).catch((err) => {
         console.error("[retryWorktreeSetup] Failed:", err);
       });
       return { success: true };
@@ -409,7 +416,7 @@ export const gitRouter = router({
       }
 
       try {
-        await removeWorktree(project.path, wtRow.value);
+        await AppRuntime.runPromise(removeWorktreeEffect(project.path, wtRow.value));
         db.prepare(
           "DELETE FROM feature_settings WHERE feature_id = ? AND key IN ('worktree_path', 'worktree_branch')",
         ).run(input.featureId);
@@ -430,7 +437,7 @@ export const gitRouter = router({
 
       let worktrees;
       try {
-        worktrees = await listWorktrees(project.path);
+        worktrees = await AppRuntime.runPromise(listWorktreesEffect(project.path));
       } catch {
         return [];
       }
@@ -564,7 +571,7 @@ export const gitRouter = router({
       if (!project?.path) throw new Error("Project not found");
 
       try {
-        await removeWorktree(project.path, input.worktreePath);
+        await AppRuntime.runPromise(removeWorktreeEffect(project.path, input.worktreePath));
         return { success: true };
       } catch (err) {
         return { success: false, error: err instanceof Error ? err.message : String(err) };

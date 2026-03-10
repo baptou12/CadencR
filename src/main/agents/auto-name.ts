@@ -1,6 +1,7 @@
 import { Effect, Option } from "effect";
 import { getDatabase } from "../db/database";
-import { setupWorktreeForFeature } from "../git/worktree";
+import { setupWorktreeForFeatureEffect } from "../effect/services/GitWorktree";
+import { AppRuntime } from "../effect/runtime";
 import { discoverClaudeCli } from "./cli-discovery";
 import { notifyDbUpdated } from "./effect-helpers";
 
@@ -109,9 +110,11 @@ async function runAutoName(
   if (projectId != null) {
     const feature = db.prepare("SELECT type FROM features WHERE id = ?").get(featureId) as { type: string } | undefined;
     if (feature?.type !== "session") {
-      setupWorktreeForFeature(projectId, featureId).catch((err) => {
-        console.error("[auto-name] Worktree setup failed:", err);
-      });
+      AppRuntime.runPromise(setupWorktreeForFeatureEffect(projectId, featureId)).catch(
+        (err) => {
+          console.error("[auto-name] Worktree setup failed:", err);
+        },
+      );
     }
   }
 }

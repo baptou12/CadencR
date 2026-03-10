@@ -93,6 +93,29 @@ vi.mock("../git/worktree", () => ({
   hasUncommittedChanges: vi.fn().mockResolvedValue(false),
 }));
 
+vi.mock("../effect/services/GitWorktree", () => {
+  const { Effect } = require("effect");
+  return {
+    createWorktreeEffect: vi.fn().mockReturnValue(
+      Effect.succeed({ worktreePath: "/worktrees/my-feature", branch: "feature/my-feature" }),
+    ),
+    removeWorktreeEffect: vi.fn().mockReturnValue(Effect.succeed(undefined)),
+    listWorktreesEffect: vi.fn().mockReturnValue(Effect.succeed([])),
+    getWorktreeInfoEffect: vi.fn().mockReturnValue(Effect.succeed(null)),
+    buildBranchName: vi.fn().mockReturnValue("feat/branch"),
+    setupWorktreeForFeatureEffect: vi.fn().mockReturnValue(Effect.succeed("/worktree/path")),
+  };
+});
+
+vi.mock("../effect/runtime", () => ({
+  AppRuntime: {
+    runPromise: vi.fn().mockImplementation((effect: unknown) => {
+      const { Effect } = require("effect");
+      return Effect.runPromise(effect as Parameters<typeof Effect.runPromise>[0]);
+    }),
+  },
+}));
+
 vi.mock("node:child_process", () => ({
   execSync: vi.fn().mockReturnValue(""),
   exec: vi.fn((_cmd: string, _opts: unknown, cb: (err: Error | null, result: { stdout: string; stderr: string }) => void) => {
@@ -486,20 +509,24 @@ describe("appRouter - git procedures", () => {
     expect(result).toHaveLength(1);
   });
 
-  it("git.createWorktree calls createWorktree and saves path to DB", async () => {
-    const { createWorktree, buildBranchName } = await import("../git/worktree");
+  it("git.createWorktree calls createWorktreeEffect and saves path to DB", async () => {
+    const { createWorktreeEffect, buildBranchName } = await import("../effect/services/GitWorktree");
+    const { Effect } = await import("effect");
     vi.mocked(buildBranchName).mockReturnValue("feature/my-feature");
-    vi.mocked(createWorktree).mockResolvedValue({ worktreePath: "/worktrees/my-feature", branch: "feature/my-feature" });
+    vi.mocked(createWorktreeEffect).mockReturnValue(
+      Effect.succeed({ worktreePath: "/worktrees/my-feature", branch: "feature/my-feature" }),
+    );
     const result = await caller.git.createWorktree({ featureId: 1, projectId: 1, featureTitle: "My Feature" });
-    expect(createWorktree).toHaveBeenCalled();
+    expect(createWorktreeEffect).toHaveBeenCalled();
     expect(result).toMatchObject({ worktreePath: "/worktrees/my-feature" });
   });
 
-  it("git.removeWorktree calls removeWorktree", async () => {
-    const { removeWorktree } = await import("../git/worktree");
-    vi.mocked(removeWorktree).mockResolvedValue(undefined);
+  it("git.removeWorktree calls removeWorktreeEffect", async () => {
+    const { removeWorktreeEffect } = await import("../effect/services/GitWorktree");
+    const { Effect } = await import("effect");
+    vi.mocked(removeWorktreeEffect).mockReturnValue(Effect.succeed(undefined));
     const result = await caller.git.removeWorktree({ featureId: 1, projectId: 1 });
-    expect(removeWorktree).toHaveBeenCalled();
+    expect(removeWorktreeEffect).toHaveBeenCalled();
     expect(result).toMatchObject({ success: true });
   });
 

@@ -106,3 +106,25 @@ export class CliDiscoveryError extends Data.TaggedError("CliDiscoveryError")<{
   readonly message: string;
   readonly cause?: unknown;
 }> {}
+
+// ---------------------------------------------------------------------------
+// GitWorktree errors
+// ---------------------------------------------------------------------------
+
+export class GitCommandError extends Data.TaggedError("GitCommandError")<{
+  readonly command: string;
+  readonly stderr: string;
+  readonly exitCode?: number;
+  readonly cause?: unknown;
+}> {}
+
+export class WorktreeError extends Data.TaggedError("WorktreeError")<{
+  readonly message: string;
+  readonly cause?: unknown;
+}> {}
+
+export class FileSystemError extends Data.TaggedError("FileSystemError")<{
+  readonly path: string;
+  readonly operation: string;
+  readonly cause?: unknown;
+}> {}
