@@ -118,6 +118,14 @@ export class GitCommandError extends Data.TaggedError("GitCommandError")<{
   readonly cause?: unknown;
 }> {}
 
+/** Generic shell command error for non-git commands (e.g., setup commands like pnpm install). */
+export class CommandError extends Data.TaggedError("CommandError")<{
+  readonly command: string;
+  readonly stderr: string;
+  readonly exitCode?: number;
+  readonly cause?: unknown;
+}> {}
+
 export class WorktreeError extends Data.TaggedError("WorktreeError")<{
   readonly message: string;
   readonly cause?: unknown;

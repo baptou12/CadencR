@@ -21,6 +21,7 @@ import crypto from "node:crypto";
 import { Database } from "./Database.js";
 import { EventBroadcaster } from "./EventBroadcaster.js";
 import {
+  CommandError,
   GitCommandError,
   WorktreeError,
   FileSystemError,
@@ -55,6 +56,33 @@ export function execGit(
     catch: (e) => {
       const err = e as { stderr?: string; code?: number; stdout?: string; message?: string };
       return new GitCommandError({
+        command,
+        stderr: err.stderr ?? err.message ?? String(e),
+        exitCode: typeof err.code === "number" ? err.code : undefined,
+        cause: e,
+      });
+    },
+  });
+}
+
+/**
+ * Wrap execAsync in an Effect for non-git shell commands (e.g., setup commands like
+ * `pnpm install`). Errors are tagged as CommandError rather than GitCommandError to
+ * accurately reflect that these are general-purpose commands.
+ */
+export function execCommand(
+  command: string,
+  options?: ExecOptions,
+): Effect.Effect<{ stdout: string; stderr: string }, CommandError> {
+  return Effect.tryPromise({
+    try: () =>
+      execAsync(command, {
+        encoding: "utf-8",
+        ...options,
+      }) as Promise<{ stdout: string; stderr: string }>,
+    catch: (e) => {
+      const err = e as { stderr?: string; code?: number; stdout?: string; message?: string };
+      return new CommandError({
         command,
         stderr: err.stderr ?? err.message ?? String(e),
         exitCode: typeof err.code === "number" ? err.code : undefined,
@@ -335,7 +363,7 @@ function runSetupCommandsEffect(
       yield* setFeatureSettingEffect(featureId, "worktree_setup_log", accumulatedLog);
       yield* eb.notifyDbUpdated("feature", featureId);
 
-      const cmdResult = yield* execGit(cmd, {
+      const cmdResult = yield* execCommand(cmd, {
         cwd: worktreePath,
         timeout: 120_000,
       }).pipe(Effect.either);
