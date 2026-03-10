@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, publicProcedure } from "./trpc";
-import { queryOne, queryAll, queryOneValidated, queryAllValidated, execute } from "../db/query";
+import { queryOne, queryAll, queryOneValidated, queryAllValidated, execute, transaction } from "../db/query";
+import { Effect } from "effect";
 import type { PlanRow, PhaseRow, SettingRow, ProjectRow } from "../db/types";
 import { SettingRowSchema, FeatureRowSchema, PlanRowSchema, PhaseRowSchema, CountRowSchema } from "../effect/schemas/db-schemas";
 import type { AgentType } from "../agents/types";
@@ -100,18 +101,24 @@ export const featuresRouter = router({
         try { await stopSubprocess(spId); } catch { /* best effort */ }
       }
     }
-    // Delete child records that reference this feature
-    const planIds = await AppRuntime.runPromise(queryAll<{ id: number }>("SELECT id FROM plans WHERE feature_id = ?", input.id));
-    for (const plan of planIds) {
-      await AppRuntime.runPromise(execute("DELETE FROM phases WHERE plan_id = ?", plan.id));
-    }
-    await AppRuntime.runPromise(execute("DELETE FROM plans WHERE feature_id = ?", input.id));
-    await AppRuntime.runPromise(execute("DELETE FROM agent_messages WHERE session_id IN (SELECT id FROM agent_sessions WHERE feature_id = ?)", input.id));
-    await AppRuntime.runPromise(execute("DELETE FROM agent_sessions WHERE feature_id = ?", input.id));
-    await AppRuntime.runPromise(execute("DELETE FROM feature_settings WHERE feature_id = ?", input.id));
-    await AppRuntime.runPromise(execute("DELETE FROM diff_comments WHERE feature_id = ?", input.id));
-    await AppRuntime.runPromise(execute("DELETE FROM diff_viewed_files WHERE feature_id = ?", input.id));
-    await AppRuntime.runPromise(execute("DELETE FROM features WHERE id = ?", input.id));
+    // Delete child records that reference this feature.
+    // Effect.runSync is used inside the transaction callback because better-sqlite3
+    // transactions are synchronous — this is not a mistake or anti-pattern; it is
+    // the correct way to perform multi-step atomic deletes with our Effect-based DB
+    // helpers inside a synchronous better-sqlite3 transaction.
+    await AppRuntime.runPromise(transaction(() => {
+      const planIds = Effect.runSync(queryAll<{ id: number }>("SELECT id FROM plans WHERE feature_id = ?", input.id));
+      for (const plan of planIds) {
+        Effect.runSync(execute("DELETE FROM phases WHERE plan_id = ?", plan.id));
+      }
+      Effect.runSync(execute("DELETE FROM plans WHERE feature_id = ?", input.id));
+      Effect.runSync(execute("DELETE FROM agent_messages WHERE session_id IN (SELECT id FROM agent_sessions WHERE feature_id = ?)", input.id));
+      Effect.runSync(execute("DELETE FROM agent_sessions WHERE feature_id = ?", input.id));
+      Effect.runSync(execute("DELETE FROM feature_settings WHERE feature_id = ?", input.id));
+      Effect.runSync(execute("DELETE FROM diff_comments WHERE feature_id = ?", input.id));
+      Effect.runSync(execute("DELETE FROM diff_viewed_files WHERE feature_id = ?", input.id));
+      Effect.runSync(execute("DELETE FROM features WHERE id = ?", input.id));
+    }));
     return { success: true };
   }),
 
@@ -275,20 +282,25 @@ export const featuresRouter = router({
         throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot reset a phase when the next phase is already completed" });
       }
 
-      // Delete agent messages for sessions tied to this phase
-      await AppRuntime.runPromise(execute(
-        "DELETE FROM agent_messages WHERE session_id IN (SELECT id FROM agent_sessions WHERE phase_id = ?)",
-        input.phase_id,
-      ));
-
-      // Delete agent sessions tied to this phase
-      await AppRuntime.runPromise(execute("DELETE FROM agent_sessions WHERE phase_id = ?", input.phase_id));
-
-      // Reset phase status and clear implementation data
-      await AppRuntime.runPromise(execute(
-        "UPDATE phases SET status = 'pending', implementation_notes = NULL, deviations = NULL WHERE id = ?",
-        input.phase_id,
-      ));
+      // Atomically delete sessions/messages and reset the phase status.
+      // Effect.runSync is used inside the transaction callback because better-sqlite3
+      // transactions are synchronous — this is not a mistake or anti-pattern; it is
+      // the correct way to perform multi-step atomic mutations with our Effect-based
+      // DB helpers inside a synchronous better-sqlite3 transaction.
+      await AppRuntime.runPromise(transaction(() => {
+        // Delete agent messages for sessions tied to this phase
+        Effect.runSync(execute(
+          "DELETE FROM agent_messages WHERE session_id IN (SELECT id FROM agent_sessions WHERE phase_id = ?)",
+          input.phase_id,
+        ));
+        // Delete agent sessions tied to this phase
+        Effect.runSync(execute("DELETE FROM agent_sessions WHERE phase_id = ?", input.phase_id));
+        // Reset phase status and clear implementation data
+        Effect.runSync(execute(
+          "UPDATE phases SET status = 'pending', implementation_notes = NULL, deviations = NULL WHERE id = ?",
+          input.phase_id,
+        ));
+      }));
 
       return { success: true };
     }),
