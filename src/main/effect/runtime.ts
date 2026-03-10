@@ -13,61 +13,39 @@ import { PlanApprovalLive } from "./services/PlanApproval.js";
 import { UsageServiceLive } from "./services/UsageService.js";
 import { SlashCommandsLive } from "./services/SlashCommands.js";
 
-// SessionPersistenceLive depends on Database, so we provide DatabaseLive to it
-const SessionPersistenceWithDb = Layer.provide(SessionPersistenceLive, DatabaseLive);
+// Build up the app layer incrementally using Layer.provideMerge.
+// Pattern: Layer.provideMerge(newService, accumulatedLayer)
+// The accumulated layer (second arg) provides its services to the new service
+// (first arg), and the result exposes both — so each step adds one service
+// without repeating dependency lists.
 
-// PlanApprovalLive depends on Database, SessionPersistence, and EventBroadcaster
-const PlanApprovalWithDeps = Layer.provide(
-  PlanApprovalLive,
-  Layer.mergeAll(DatabaseLive, SessionPersistenceWithDb, Layer.provide(EventBroadcasterLive, SessionPersistenceWithDb)),
-);
-
-// EventBroadcasterLive now depends on SessionPersistence (to look up session DB IDs)
-const EventBroadcasterWithDeps = Layer.provide(EventBroadcasterLive, SessionPersistenceWithDb);
-
-// CompletionActionsLive depends on SessionPersistence, EventBroadcaster, and Database
-const CompletionActionsWithDeps = Layer.provide(
-  CompletionActionsLive,
-  Layer.mergeAll(SessionPersistenceWithDb, EventBroadcasterWithDeps, DatabaseLive),
-);
-
-// SdkQueryRunnerLive depends on SessionPersistence, EventBroadcaster, Database, CompletionActions, BackgroundTaskRegistry
-const SdkQueryRunnerWithDeps = Layer.provide(
-  SdkQueryRunnerLive,
-  Layer.mergeAll(
-    SessionPersistenceWithDb,
-    EventBroadcasterWithDeps,
-    DatabaseLive,
-    CompletionActionsWithDeps,
-    BackgroundTaskRegistryLive,
-  ),
-);
-
-// SubprocessLifecycleLive depends on SdkQueryRunner, SessionPersistence, EventBroadcaster, Database
-const SubprocessLifecycleWithDeps = Layer.provide(
-  SubprocessLifecycleLive,
-  Layer.mergeAll(
-    SdkQueryRunnerWithDeps,
-    SessionPersistenceWithDb,
-    EventBroadcasterWithDeps,
-    DatabaseLive,
-  ),
-);
-
-export const AppLayer = Layer.mergeAll(
+// Services with no cross-service dependencies
+const BaseLayer = Layer.mergeAll(
   DatabaseLive,
   PtyManagerLive,
-  SessionPersistenceWithDb,
-  EventBroadcasterWithDeps,
-  CompletionActionsWithDeps,
-  SdkQueryRunnerWithDeps,
-  SubprocessLifecycleWithDeps,
   BackgroundTaskRegistryLive,
   DispatchLockLive,
   ToolPermissionsLive,
-  PlanApprovalWithDeps,
   UsageServiceLive,
   SlashCommandsLive,
 );
+
+// SessionPersistence depends on Database (provided by BaseLayer)
+const WithSessionPersistence = Layer.provideMerge(SessionPersistenceLive, BaseLayer);
+
+// EventBroadcaster depends on SessionPersistence
+const WithEventBroadcaster = Layer.provideMerge(EventBroadcasterLive, WithSessionPersistence);
+
+// CompletionActions depends on Database, SessionPersistence, EventBroadcaster
+const WithCompletionActions = Layer.provideMerge(CompletionActionsLive, WithEventBroadcaster);
+
+// PlanApproval depends on Database, SessionPersistence, EventBroadcaster
+const WithPlanApproval = Layer.provideMerge(PlanApprovalLive, WithCompletionActions);
+
+// SdkQueryRunner depends on Database, SessionPersistence, EventBroadcaster, CompletionActions, BackgroundTaskRegistry
+const WithSdkQueryRunner = Layer.provideMerge(SdkQueryRunnerLive, WithPlanApproval);
+
+// SubprocessLifecycle depends on Database, SessionPersistence, EventBroadcaster, SdkQueryRunner
+export const AppLayer = Layer.provideMerge(SubprocessLifecycleLive, WithSdkQueryRunner);
 
 export const AppRuntime = ManagedRuntime.make(AppLayer);
