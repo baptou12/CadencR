@@ -1,10 +1,14 @@
 /**
- * Effect-based git worktree lifecycle functions.
+ * Effect-based git worktree lifecycle and query functions.
  *
  * This is a stateless module — no Context.Tag. All functions return Effects
  * that can be run via AppRuntime.runPromise(). Functions that track progress
  * (setupWorktreeForFeatureEffect) depend on the Database and EventBroadcaster
  * services already in AppLayer.
+ *
+ * Query functions (getCurrentBranchEffect, getDiffEffect, etc.) return
+ * Effect<T, never> swallowing errors at the boundary, or Effect<T, GitCommandError>
+ * when error propagation is desired.
  */
 
 import { Effect, Either } from "effect";
@@ -469,4 +473,557 @@ export function setupWorktreeForFeatureEffect(
     yield* setFeatureSettingEffect(featureId, "worktree_setup_step", "done");
     yield* eb.notifyDbUpdated("feature", featureId);
   });
+}
+
+// ---------------------------------------------------------------------------
+// Git query functions (no Context requirements)
+// ---------------------------------------------------------------------------
+
+/**
+ * Shared stat-line regex for git diff --stat output.
+ */
+const STAT_REGEX =
+  /(\d+)\s+files?\s+changed(?:,\s+(\d+)\s+insertions?\(\+\))?(?:,\s+(\d+)\s+deletions?\(-\))?/;
+
+function parseStatLine(
+  output: string,
+): { filesChanged: number; insertions: number; deletions: number } | null {
+  const m = output.match(STAT_REGEX);
+  if (!m) return null;
+  return {
+    filesChanged: parseInt(m[1], 10),
+    insertions: parseInt(m[2] ?? "0", 10),
+    deletions: parseInt(m[3] ?? "0", 10),
+  };
+}
+
+// Record separator for git log format (ASCII 0x1e)
+const LOG_RS = "\x1e";
+const GIT_LOG_FORMAT = `${LOG_RS}%H%n%h%n%s%n%an%n%ai%n%b`;
+
+export interface CommitInfo {
+  sha: string;
+  shortSha: string;
+  message: string;
+  body: string;
+  author: string;
+  date: string;
+  isPushed: boolean;
+}
+
+export interface ChangedFile {
+  file: string;
+  status: string;
+  oldFile?: string;
+  additions: number;
+  deletions: number;
+}
+
+function parseGitLog(output: string): CommitInfo[] {
+  if (!output.trim()) return [];
+  const entries = output.trim().split(LOG_RS).filter(Boolean);
+  const commits: CommitInfo[] = [];
+  for (const entry of entries) {
+    const lines = entry.trim().split("\n");
+    if (lines.length < 5) continue;
+    commits.push({
+      sha: lines[0],
+      shortSha: lines[1],
+      message: lines[2],
+      body: lines.slice(5).join("\n").trim(),
+      author: lines[3],
+      date: lines[4],
+      isPushed: true,
+    });
+  }
+  return commits;
+}
+
+/** Determine which SHAs have NOT been pushed to the remote. */
+function getUnpushedShasEffect(
+  repoPath: string,
+  branchName: string,
+): Effect.Effect<Set<string> | "all", never> {
+  return execGit(`git rev-list "origin/${branchName}..HEAD"`, {
+    cwd: repoPath,
+  }).pipe(
+    Effect.map(({ stdout }) => new Set(stdout.trim().split("\n").filter(Boolean))),
+    Effect.catchAll(() => Effect.succeed("all" as const)),
+  );
+}
+
+function applyPushedStatus(commits: CommitInfo[], unpushed: Set<string> | "all"): void {
+  for (const c of commits) {
+    c.isPushed = unpushed === "all" ? false : !unpushed.has(c.sha);
+  }
+}
+
+/**
+ * Get the current branch name for a repo path.
+ * Returns null on error (e.g. detached HEAD, not a git repo).
+ */
+export function getCurrentBranchEffect(
+  repoPath: string,
+): Effect.Effect<string | null, never> {
+  return execGit("git rev-parse --abbrev-ref HEAD", { cwd: repoPath }).pipe(
+    Effect.map(({ stdout }) => stdout.trim() || null),
+    Effect.catchAll(() => Effect.succeed(null)),
+  );
+}
+
+/**
+ * Get git diff stats (lines added/removed) for a worktree.
+ * Always succeeds — returns zeros on error.
+ */
+export function getGitStatsEffect(
+  worktreePath: string,
+  mode: "worktree" | "branch" = "worktree",
+  targetBranch?: string,
+): Effect.Effect<{ filesChanged: number; insertions: number; deletions: number }, never> {
+  return Effect.gen(function* () {
+    const opts = { cwd: worktreePath };
+
+    if (mode === "branch") {
+      const branch = targetBranch ?? "main";
+      const { stdout } = yield* execGit(`git diff ${branch}...HEAD --stat`, opts);
+      const result = parseStatLine(stdout);
+      return result ?? { filesChanged: 0, insertions: 0, deletions: 0 };
+    }
+
+    // Worktree mode: unstaged + staged + untracked
+    const [unstagedResult, stagedResult, untrackedResult] = yield* Effect.all(
+      [
+        execGit("git diff --stat", opts),
+        execGit("git diff --cached --stat", opts),
+        execGit("git ls-files --others --exclude-standard", opts),
+      ],
+      { concurrency: "unbounded" },
+    );
+
+    const unstaged = parseStatLine(unstagedResult.stdout);
+    const staged = parseStatLine(stagedResult.stdout);
+    let filesChanged = (unstaged?.filesChanged ?? 0) + (staged?.filesChanged ?? 0);
+    let insertions = (unstaged?.insertions ?? 0) + (staged?.insertions ?? 0);
+    let deletions = (unstaged?.deletions ?? 0) + (staged?.deletions ?? 0);
+
+    // Count untracked files — each line is an insertion
+    const untrackedFiles = untrackedResult.stdout.trim().split("\n").filter(Boolean);
+    for (const file of untrackedFiles) {
+      const fullPath = path.join(worktreePath, file);
+      const content = yield* Effect.tryPromise(() =>
+        fs.promises.readFile(fullPath, "utf-8"),
+      ).pipe(Effect.catchAll(() => Effect.succeed(null)));
+      if (content !== null) {
+        const lineCount = content
+          .split("\n")
+          .filter((_, i, arr) => i < arr.length - 1 || arr[arr.length - 1] !== "").length;
+        filesChanged++;
+        insertions += lineCount;
+      }
+    }
+
+    return { filesChanged, insertions, deletions };
+  }).pipe(
+    Effect.catchAll(() => Effect.succeed({ filesChanged: 0, insertions: 0, deletions: 0 })),
+  );
+}
+
+/**
+ * Get a unified diff string for a worktree.
+ * Always succeeds — returns "" on error.
+ */
+export function getDiffEffect(
+  worktreePath: string,
+  mode: "worktree" | "branch",
+  targetBranch?: string,
+): Effect.Effect<string, never> {
+  const branch = targetBranch ?? "main";
+
+  if (mode === "branch") {
+    return execGit(`git diff ${branch}...HEAD`, {
+      cwd: worktreePath,
+      maxBuffer: 50 * 1024 * 1024,
+    }).pipe(
+      Effect.map(({ stdout }) => stdout),
+      Effect.catchAll(() => Effect.succeed("")),
+    );
+  }
+
+  // Worktree mode
+  return Effect.gen(function* () {
+    const opts = { cwd: worktreePath, maxBuffer: 50 * 1024 * 1024 };
+    const [unstagedResult, stagedResult, untrackedResult] = yield* Effect.all(
+      [
+        execGit("git diff", opts),
+        execGit("git diff --cached", opts),
+        execGit("git ls-files --others --exclude-standard", {
+          cwd: worktreePath,
+          maxBuffer: 1024 * 1024,
+        }),
+      ],
+      { concurrency: "unbounded" },
+    );
+
+    const unstagedDiff = unstagedResult.stdout;
+    const stagedDiff = stagedResult.stdout;
+    const untrackedFiles = untrackedResult.stdout.trim().split("\n").filter(Boolean);
+
+    const untrackedDiffs: string[] = [];
+    for (const file of untrackedFiles) {
+      const fullPath = path.join(worktreePath, file);
+      const content = yield* Effect.tryPromise(() =>
+        fs.promises.readFile(fullPath, "utf-8"),
+      ).pipe(Effect.catchAll(() => Effect.succeed(null)));
+      if (content !== null) {
+        const lines = content.split("\n");
+        if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
+        const lineCount = lines.length;
+        const addedLines = lines.map((l) => `+${l}`).join("\n");
+        untrackedDiffs.push(
+          `diff --git a/${file} b/${file}\nnew file mode 100644\n--- /dev/null\n+++ b/${file}\n@@ -0,0 +1,${lineCount} @@\n${addedLines}\n`,
+        );
+      }
+    }
+
+    return unstagedDiff + stagedDiff + untrackedDiffs.join("");
+  }).pipe(Effect.catchAll(() => Effect.succeed("")));
+}
+
+/**
+ * Get list of changed files with per-file addition/deletion counts.
+ * Always succeeds — returns [] on error.
+ */
+export function getChangedFilesEffect(
+  worktreePath: string,
+  mode: "worktree" | "branch",
+  targetBranch?: string,
+): Effect.Effect<ChangedFile[], never> {
+  const branch = targetBranch ?? "main";
+  const diffArg = mode === "worktree" ? "" : `${branch}...HEAD`;
+
+  return Effect.gen(function* () {
+    const [nameStatusResult, numstatResult] = yield* Effect.all(
+      [
+        execGit(`git diff --name-status ${diffArg}`, { cwd: worktreePath }),
+        execGit(`git diff --numstat ${diffArg}`, { cwd: worktreePath }),
+      ],
+      { concurrency: "unbounded" },
+    );
+
+    const nameStatus = nameStatusResult.stdout.trim();
+    if (!nameStatus) return [];
+
+    const numstat = numstatResult.stdout.trim();
+    const statMap = new Map<string, { additions: number; deletions: number }>();
+    for (const line of numstat.split("\n")) {
+      if (!line) continue;
+      const parts = line.split("\t");
+      if (parts.length >= 3) {
+        const additions = parts[0] === "-" ? 0 : parseInt(parts[0], 10);
+        const deletions = parts[1] === "-" ? 0 : parseInt(parts[1], 10);
+        const file = parts.slice(2).join("\t");
+        statMap.set(file, { additions, deletions });
+      }
+    }
+
+    const files: ChangedFile[] = [];
+    for (const line of nameStatus.split("\n")) {
+      if (!line) continue;
+      const parts = line.split("\t");
+      const statusCode = parts[0];
+      let file: string;
+      let oldFile: string | undefined;
+
+      if (statusCode.startsWith("R") || statusCode.startsWith("C")) {
+        oldFile = parts[1];
+        file = parts[2];
+      } else {
+        file = parts[1];
+      }
+
+      const stats =
+        statMap.get(file) ??
+        (oldFile ? statMap.get(`${oldFile} => ${file}`) : undefined) ??
+        { additions: 0, deletions: 0 };
+
+      files.push({ file, status: statusCode, oldFile, additions: stats.additions, deletions: stats.deletions });
+    }
+
+    return files;
+  }).pipe(Effect.catchAll(() => Effect.succeed([])));
+}
+
+/**
+ * Detect the original branch from which a worktree branch was created.
+ * Uses tracking config → remote HEAD → common defaults fallback chain.
+ * Fails with GitCommandError if no branch can be determined.
+ */
+export function getOriginalBranchEffect(
+  repoPath: string,
+  worktreeBranch: string,
+): Effect.Effect<string, GitCommandError> {
+  const opts = { cwd: repoPath };
+  const noOriginal = new GitCommandError({
+    command: "getOriginalBranch",
+    stderr: `Cannot determine original branch for worktree branch: ${worktreeBranch}`,
+  });
+
+  return (
+    // 1. Try tracking config
+    execGit(`git config --get branch.${worktreeBranch}.merge`, opts).pipe(
+      Effect.flatMap(({ stdout }) => {
+        const merge = stdout.trim();
+        return merge
+          ? Effect.succeed(merge.replace(/^refs\/heads\//, ""))
+          : Effect.fail(noOriginal);
+      }),
+    )
+  ).pipe(
+    // 2. Try remote HEAD
+    Effect.orElse(() =>
+      execGit("git symbolic-ref refs/remotes/origin/HEAD", opts).pipe(
+        Effect.flatMap(({ stdout }) => {
+          const remoteHead = stdout.trim();
+          return remoteHead
+            ? Effect.succeed(remoteHead.replace(/^refs\/remotes\/origin\//, ""))
+            : Effect.fail(noOriginal);
+        }),
+      ),
+    ),
+    // 3. Try common default branch names
+    Effect.orElse(() =>
+      Effect.firstSuccessOf(
+        ["main", "master", "develop", "trunk"].map((candidate) =>
+          execGit(`git rev-parse --verify ${candidate}`, opts).pipe(
+            Effect.map(() => candidate),
+          ),
+        ),
+      ).pipe(Effect.mapError(() => noOriginal)),
+    ),
+  );
+}
+
+/**
+ * Check if merging sourceBranch into targetBranch would produce conflicts.
+ * Fails with GitCommandError if git commands fail unexpectedly.
+ */
+export function checkMergeConflictsEffect(
+  repoPath: string,
+  sourceBranch: string,
+  targetBranch: string,
+): Effect.Effect<{ hasConflicts: boolean; conflictFiles: string[] }, GitCommandError> {
+  const opts = { cwd: repoPath };
+
+  return Effect.gen(function* () {
+    const { stdout: mergeBaseRaw } = yield* execGit(
+      `git merge-base "${targetBranch}" "${sourceBranch}"`,
+      opts,
+    );
+    const mergeBase = mergeBaseRaw.trim();
+
+    // merge-tree may exit non-zero when it detects conflicts
+    const mergeTreeResult = yield* execGit(
+      `git merge-tree "${mergeBase}" "${targetBranch}" "${sourceBranch}"`,
+      { ...opts, maxBuffer: 50 * 1024 * 1024 },
+    ).pipe(Effect.either);
+
+    let mergeTreeOutput: string;
+    if (Either.isRight(mergeTreeResult)) {
+      mergeTreeOutput = mergeTreeResult.right.stdout;
+    } else {
+      // Extract stdout from the cause (node exec error includes stdout on non-zero exit)
+      const cause = mergeTreeResult.left.cause as { stdout?: string } | null | undefined;
+      mergeTreeOutput = cause?.stdout ?? mergeTreeResult.left.stderr;
+    }
+
+    const hasConflicts = /^<{7} /m.test(mergeTreeOutput);
+    if (!hasConflicts) {
+      return { hasConflicts: false, conflictFiles: [] };
+    }
+
+    // Identify conflicting files (changed in both branches)
+    const [sourceResult, targetResult] = yield* Effect.all(
+      [
+        execGit(`git diff --name-only "${mergeBase}" "${sourceBranch}"`, opts),
+        execGit(`git diff --name-only "${mergeBase}" "${targetBranch}"`, opts),
+      ],
+      { concurrency: "unbounded" },
+    );
+
+    const sourceFiles = new Set(sourceResult.stdout.trim().split("\n").filter(Boolean));
+    const conflictFiles: string[] = [];
+    for (const f of targetResult.stdout.trim().split("\n").filter(Boolean)) {
+      if (sourceFiles.has(f)) conflictFiles.push(f);
+    }
+
+    return { hasConflicts: true, conflictFiles };
+  });
+}
+
+/**
+ * Merge sourceBranch into targetBranch using --no-ff from the main repo.
+ * Always succeeds — returns { success, error? }.
+ */
+export function mergeBranchEffect(
+  repoPath: string,
+  sourceBranch: string,
+  targetBranch: string,
+): Effect.Effect<{ success: boolean; error?: string }, never> {
+  const opts = { cwd: repoPath };
+
+  return Effect.gen(function* () {
+    // Get current branch so we can restore it
+    const originalBranch = yield* execGit("git rev-parse --abbrev-ref HEAD", opts).pipe(
+      Effect.map(({ stdout }) => stdout.trim() as string | null),
+      Effect.catchAll(() => Effect.succeed(null)),
+    );
+
+    // Checkout target and merge
+    const mergeResult = yield* execGit(`git checkout "${targetBranch}"`, opts).pipe(
+      Effect.flatMap(() => execGit(`git merge --no-ff "${sourceBranch}"`, opts)),
+      Effect.map(() => ({ success: true as const })),
+      Effect.catchAll((err) =>
+        execGit("git merge --abort", opts).pipe(
+          Effect.catchAll(() => Effect.succeed(undefined)),
+          Effect.map(() => ({
+            success: false as const,
+            error:
+              err.stderr ||
+              (err.cause instanceof Error ? err.cause.message : String(err.cause ?? "")),
+          })),
+        ),
+      ),
+    );
+
+    // Restore original branch if needed
+    if (originalBranch && originalBranch !== targetBranch) {
+      yield* execGit(`git checkout "${originalBranch}"`, opts).pipe(
+        Effect.catchAll(() => Effect.succeed(undefined)),
+      );
+    }
+
+    return mergeResult;
+  });
+}
+
+/**
+ * Delete a local branch using -d (safe — only if fully merged).
+ * Always succeeds — returns { success, error? }.
+ */
+export function deleteLocalBranchEffect(
+  repoPath: string,
+  branchName: string,
+): Effect.Effect<{ success: boolean; error?: string }, never> {
+  return execGit(`git branch -d "${branchName}"`, { cwd: repoPath }).pipe(
+    Effect.map(() => ({ success: true as const })),
+    Effect.catchAll((err) =>
+      Effect.succeed({
+        success: false as const,
+        error:
+          err.stderr ||
+          (err.cause instanceof Error ? err.cause.message : String(err.cause ?? "")),
+      }),
+    ),
+  );
+}
+
+/**
+ * Check if a worktree has any uncommitted or untracked changes.
+ * Always succeeds — returns false on error.
+ */
+export function hasUncommittedChangesEffect(
+  worktreePath: string,
+): Effect.Effect<boolean, never> {
+  return execGit("git status --porcelain", { cwd: worktreePath }).pipe(
+    Effect.map(({ stdout }) => stdout.trim().length > 0),
+    Effect.catchAll(() => Effect.succeed(false)),
+  );
+}
+
+/**
+ * Get file content at a given ref, or from the working tree if no ref is provided.
+ * Always succeeds — returns "" on error.
+ */
+export function getFileContentEffect(
+  worktreePath: string,
+  filePath: string,
+  ref?: string,
+): Effect.Effect<string, never> {
+  if (!ref) {
+    return Effect.tryPromise(() =>
+      fs.promises.readFile(path.join(worktreePath, filePath), "utf-8"),
+    ).pipe(Effect.catchAll(() => Effect.succeed("")));
+  }
+
+  return execGit(`git show "${ref}:${filePath}"`, {
+    cwd: worktreePath,
+    maxBuffer: 50 * 1024 * 1024,
+  }).pipe(
+    Effect.map(({ stdout }) => stdout),
+    Effect.catchAll(() => Effect.succeed("")),
+  );
+}
+
+/**
+ * Get commit log for the current branch relative to a base branch.
+ * Always succeeds — returns [] on error.
+ */
+export function getCommitLogEffect(
+  worktreePath: string,
+  baseBranch: string,
+  branchName: string,
+): Effect.Effect<CommitInfo[], never> {
+  return Effect.gen(function* () {
+    const { stdout: logOutput } = yield* execGit(
+      `git log "${baseBranch}..HEAD" --format="${GIT_LOG_FORMAT}" --reverse`,
+      { cwd: worktreePath },
+    ).pipe(Effect.catchAll(() => Effect.succeed({ stdout: "", stderr: "" })));
+
+    const commits = parseGitLog(logOutput);
+    const unpushed = yield* getUnpushedShasEffect(worktreePath, branchName);
+    applyPushedStatus(commits, unpushed);
+    return commits;
+  });
+}
+
+/**
+ * Get recent commits on the current branch.
+ * Always succeeds — returns [] on error.
+ */
+export function getRecentCommitsEffect(
+  repoPath: string,
+  branchName: string,
+  limit: number,
+): Effect.Effect<CommitInfo[], never> {
+  return Effect.gen(function* () {
+    const { stdout: logOutput } = yield* execGit(
+      `git log --format="${GIT_LOG_FORMAT}" -${limit}`,
+      { cwd: repoPath },
+    ).pipe(Effect.catchAll(() => Effect.succeed({ stdout: "", stderr: "" })));
+
+    const commits = parseGitLog(logOutput);
+    const unpushed = yield* getUnpushedShasEffect(repoPath, branchName);
+    applyPushedStatus(commits, unpushed);
+    return commits;
+  });
+}
+
+/**
+ * Get diff for a specific commit.
+ * Always succeeds — returns "" on error.
+ */
+export function getCommitDiffEffect(
+  worktreePath: string,
+  commitSha: string,
+): Effect.Effect<string, never> {
+  const opts = { cwd: worktreePath, maxBuffer: 50 * 1024 * 1024 };
+  return execGit(`git diff "${commitSha}^..${commitSha}"`, opts).pipe(
+    Effect.map(({ stdout }) => stdout),
+    Effect.catchAll(() =>
+      execGit(`git diff-tree --root -p "${commitSha}"`, opts).pipe(
+        Effect.map(({ stdout }) => stdout),
+        Effect.catchAll(() => Effect.succeed("")),
+      ),
+    ),
+  );
 }

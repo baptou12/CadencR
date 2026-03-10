@@ -96,6 +96,7 @@ vi.mock("../git/worktree", () => ({
 vi.mock("../effect/services/GitWorktree", () => {
   const { Effect } = require("effect");
   return {
+    // Lifecycle
     createWorktreeEffect: vi.fn().mockReturnValue(
       Effect.succeed({ worktreePath: "/worktrees/my-feature", branch: "feature/my-feature" }),
     ),
@@ -104,6 +105,25 @@ vi.mock("../effect/services/GitWorktree", () => {
     getWorktreeInfoEffect: vi.fn().mockReturnValue(Effect.succeed(null)),
     buildBranchName: vi.fn().mockReturnValue("feat/branch"),
     setupWorktreeForFeatureEffect: vi.fn().mockReturnValue(Effect.succeed("/worktree/path")),
+    // Query functions
+    getCurrentBranchEffect: vi.fn().mockReturnValue(Effect.succeed("main")),
+    getGitStatsEffect: vi.fn().mockReturnValue(
+      Effect.succeed({ filesChanged: 0, insertions: 0, deletions: 0 }),
+    ),
+    getDiffEffect: vi.fn().mockReturnValue(Effect.succeed("")),
+    getChangedFilesEffect: vi.fn().mockReturnValue(Effect.succeed([])),
+    getOriginalBranchEffect: vi.fn().mockReturnValue(Effect.succeed("main")),
+    checkMergeConflictsEffect: vi.fn().mockReturnValue(
+      Effect.succeed({ hasConflicts: false, conflictFiles: [] }),
+    ),
+    mergeBranchEffect: vi.fn().mockReturnValue(Effect.succeed({ success: true })),
+    deleteLocalBranchEffect: vi.fn().mockReturnValue(Effect.succeed({ success: true })),
+    hasUncommittedChangesEffect: vi.fn().mockReturnValue(Effect.succeed(false)),
+    getFileContentEffect: vi.fn().mockReturnValue(Effect.succeed("")),
+    getCommitLogEffect: vi.fn().mockReturnValue(Effect.succeed([])),
+    getRecentCommitsEffect: vi.fn().mockReturnValue(Effect.succeed([])),
+    getCommitDiffEffect: vi.fn().mockReturnValue(Effect.succeed("")),
+    execGit: vi.fn().mockReturnValue(Effect.succeed({ stdout: "", stderr: "" })),
   };
 });
 
@@ -482,8 +502,11 @@ describe("appRouter - git procedures", () => {
   const caller = appRouter.createCaller({});
 
   it("git.getStats returns stats for feature", async () => {
-    const { getGitStats } = await import("../git/worktree");
-    vi.mocked(getGitStats).mockResolvedValue({ filesChanged: 2, insertions: 10, deletions: 3 });
+    const { Effect } = await import("effect");
+    const { getGitStatsEffect } = await import("../effect/services/GitWorktree");
+    vi.mocked(getGitStatsEffect).mockReturnValue(
+      Effect.succeed({ filesChanged: 2, insertions: 10, deletions: 3 }),
+    );
     const result = await caller.git.getStats({ featureId: 1 });
     expect(result).toMatchObject({ filesChanged: 2 });
   });
@@ -496,15 +519,19 @@ describe("appRouter - git procedures", () => {
   });
 
   it("git.getDiff returns diff string", async () => {
-    const { getDiff } = await import("../git/worktree");
-    vi.mocked(getDiff).mockResolvedValue("diff --git a/foo.ts...");
+    const { Effect } = await import("effect");
+    const { getDiffEffect } = await import("../effect/services/GitWorktree");
+    vi.mocked(getDiffEffect).mockReturnValue(Effect.succeed("diff --git a/foo.ts..."));
     const result = await caller.git.getDiff({ featureId: 1, mode: "worktree" });
     expect(result).toBe("diff --git a/foo.ts...");
   });
 
   it("git.getChangedFiles returns changed file list", async () => {
-    const { getChangedFiles } = await import("../git/worktree");
-    vi.mocked(getChangedFiles).mockResolvedValue([{ status: "M", path: "src/foo.ts" }] as any);
+    const { Effect } = await import("effect");
+    const { getChangedFilesEffect } = await import("../effect/services/GitWorktree");
+    vi.mocked(getChangedFilesEffect).mockReturnValue(
+      Effect.succeed([{ file: "src/foo.ts", status: "M", additions: 0, deletions: 0 }]),
+    );
     const result = await caller.git.getChangedFiles({ featureId: 1, mode: "worktree" });
     expect(result).toHaveLength(1);
   });
@@ -531,8 +558,9 @@ describe("appRouter - git procedures", () => {
   });
 
   it("git.getBranch returns current branch for project", async () => {
-    const { getCurrentBranch } = await import("../git/worktree");
-    vi.mocked(getCurrentBranch).mockResolvedValue("main");
+    const { Effect } = await import("effect");
+    const { getCurrentBranchEffect } = await import("../effect/services/GitWorktree");
+    vi.mocked(getCurrentBranchEffect).mockReturnValue(Effect.succeed("main"));
     const result = await caller.git.getBranch({ projectId: 1 });
     expect(result).toBe("main");
   });
