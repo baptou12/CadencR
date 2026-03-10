@@ -422,7 +422,7 @@ export { getAutonomyLevel } from "./autonomy";
  * Returns the concurrency limit (MAX_AGENTS_PER_FEATURE when enabled, 1 when disabled).
  */
 function getConcurrencyLimit(featureId: number, projectId: number): number {
-  const raw = resolveSetting("parallel_execution", { featureId, projectId, defaultValue: "true" });
+  const raw = Effect.runSync(resolveSetting("parallel_execution", { featureId, projectId, defaultValue: "true" }));
   return raw === "false" ? 1 : MAX_AGENTS_PER_FEATURE;
 }
 

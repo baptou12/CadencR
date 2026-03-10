@@ -42,9 +42,12 @@ vi.mock("../agents/mcp-factory", () => ({
   buildMcpServerFactoryForResume: vi.fn(),
 }));
 
-vi.mock("../agents/resolve-cwd", () => ({
-  resolveAgentCwd: vi.fn().mockResolvedValue({ cwd: "/test", worktreePath: undefined }),
-}));
+vi.mock("../agents/resolve-cwd", async () => {
+  const { Effect } = await import("effect");
+  return {
+    resolveAgentCwd: vi.fn().mockReturnValue(Effect.succeed({ cwd: "/test", worktreePath: undefined })),
+  };
+});
 
 const { agentsRouter } = await import("./agents");
 const caller = agentsRouter.createCaller({});

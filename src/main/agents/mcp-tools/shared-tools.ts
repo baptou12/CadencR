@@ -3,6 +3,7 @@
  */
 
 import { z } from "zod";
+import { Effect } from "effect";
 import { tool } from "@anthropic-ai/claude-agent-sdk";
 import { getDatabase } from "../../db/database";
 import { queryOne, queryAll, queryOneValidated, execute } from "../../db/query";
@@ -237,7 +238,7 @@ export function createAgentDoneTool(sessionDbId: number, featureId: number, onAg
               featureId,
             ));
             if (wfFeat) {
-              const { cwd, worktreePath } = await resolveAgentCwd(featureId, wfFeat.project_id);
+              const { cwd, worktreePath } = Effect.runSync(resolveAgentCwd(featureId, wfFeat.project_id));
               onAgentDone({ featureId, projectId: wfFeat.project_id, cwd, worktreePath: worktreePath ?? null });
             }
           } catch { /* */ }

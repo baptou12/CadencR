@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { Effect } from "effect";
 import { createMockDb } from "../test-utils";
 
 // We need to mock the database module before importing settings
@@ -21,13 +22,13 @@ describe("resolveSetting", () => {
 
   it("returns defaultValue when no value found anywhere", async () => {
     const { resolveSetting } = await import("./settings");
-    const result = resolveSetting("model_plan", { defaultValue: "claude-opus-4-5" });
+    const result = Effect.runSync(resolveSetting("model_plan", { defaultValue: "claude-opus-4-5" }));
     expect(result).toBe("claude-opus-4-5");
   });
 
   it("returns null when no value and no default", async () => {
     const { resolveSetting } = await import("./settings");
-    const result = resolveSetting("model_plan", {});
+    const result = Effect.runSync(resolveSetting("model_plan", {}));
     expect(result).toBeNull();
   });
 
@@ -39,7 +40,7 @@ describe("resolveSetting", () => {
     }));
 
     const { resolveSetting } = await import("./settings");
-    const result = resolveSetting("model_plan", { defaultValue: "default-model" });
+    const result = Effect.runSync(resolveSetting("model_plan", { defaultValue: "default-model" }));
     expect(result).toBe("claude-sonnet-4-5");
   });
 
@@ -56,7 +57,7 @@ describe("resolveSetting", () => {
     }));
 
     const { resolveSetting } = await import("./settings");
-    const result = resolveSetting("model_plan", { featureId: 1, projectId: 2, defaultValue: "default" });
+    const result = Effect.runSync(resolveSetting("model_plan", { featureId: 1, projectId: 2, defaultValue: "default" }));
     expect(result).toBe("feature-model");
   });
 
@@ -74,7 +75,7 @@ describe("resolveSetting", () => {
     }));
 
     const { resolveSetting } = await import("./settings");
-    const result = resolveSetting("model_plan", { featureId: 1, projectId: 2, defaultValue: "default" });
+    const result = Effect.runSync(resolveSetting("model_plan", { featureId: 1, projectId: 2, defaultValue: "default" }));
     expect(result).toBe("project-model");
   });
 
@@ -91,7 +92,7 @@ describe("resolveSetting", () => {
     }));
 
     const { resolveSetting } = await import("./settings");
-    const result = resolveSetting("branch_prefix", { featureId: 1, projectId: 2 });
+    const result = Effect.runSync(resolveSetting("branch_prefix", { featureId: 1, projectId: 2 }));
     // Should only do one lookup (project-level) and return the value
     expect(result).toBe("prefix-");
   });
@@ -104,7 +105,7 @@ describe("resolveSetting", () => {
     }));
 
     const { resolveSetting } = await import("./settings");
-    const result = resolveSetting("model_plan", { defaultValue: "default" });
+    const result = Effect.runSync(resolveSetting("model_plan", { defaultValue: "default" }));
     // Only global settings query should have been called
     expect(mockDb.prepare).toHaveBeenCalledTimes(1);
     expect(result).toBe("global-model");

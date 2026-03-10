@@ -355,11 +355,10 @@ export const featuresRouter = router({
           input.feature_id,
         ));
         if (feat && feat.status === "in-progress") {
-          resolveAgentCwd(input.feature_id, feat.project_id)
-            .then(({ cwd, worktreePath }) => {
-              processNextPhase({ featureId: input.feature_id, projectId: feat.project_id, cwd, worktreePath });
-            })
-            .catch(() => { /* */ });
+          try {
+            const { cwd, worktreePath } = Effect.runSync(resolveAgentCwd(input.feature_id, feat.project_id));
+            processNextPhase({ featureId: input.feature_id, projectId: feat.project_id, cwd, worktreePath });
+          } catch { /* */ }
         }
       }
 

@@ -270,7 +270,7 @@ export const sessionsRouter = router({
       projectId: z.number(),
     }))
     .query(async ({ input }) => {
-      const { cwd } = await resolveAgentCwd(input.featureId, input.projectId);
+      const { cwd } = Effect.runSync(resolveAgentCwd(input.featureId, input.projectId));
       return getSupportedCommands(input.subprocessId ?? null, cwd);
     }),
 

@@ -15,7 +15,7 @@ import type { ManagedSubprocess, SubprocessOptions } from "../../agents/types.js
 
 const mockGetSdkClient = vi.fn();
 const mockDiscoverClaudeCli = vi.fn();
-const mockResolveSetting = vi.fn(() => null);
+const mockResolveSetting = vi.fn(() => Effect.succeed(null));
 const mockCreateCanUseToolHandler = vi.fn(() => vi.fn());
 const mockAddBackgroundTask = vi.fn();
 const mockUpdateBackgroundTask = vi.fn();

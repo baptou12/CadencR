@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { Effect } from "effect";
 
 vi.mock("../db/database");
 vi.mock("../db/settings", () => ({
@@ -19,7 +20,7 @@ describe("resolveModel", () => {
   });
 
   it("returns the resolved model for a given agent type", () => {
-    mockResolveSetting.mockReturnValue("claude-haiku-4-5-20251001");
+    mockResolveSetting.mockReturnValue(Effect.succeed("claude-haiku-4-5-20251001"));
     const result = resolveModel("plan", 1, 2);
     expect(result).toBe("claude-haiku-4-5-20251001");
     expect(mockResolveSetting).toHaveBeenCalledWith("model_plan", {
@@ -30,7 +31,7 @@ describe("resolveModel", () => {
   });
 
   it("uses DEFAULT_MODEL as the default value", () => {
-    mockResolveSetting.mockReturnValue("claude-opus-4-5-20251001");
+    mockResolveSetting.mockReturnValue(Effect.succeed("claude-opus-4-5-20251001"));
     const result = resolveModel("execute");
     expect(result).toBe("claude-opus-4-5-20251001");
     expect(mockResolveSetting).toHaveBeenCalledWith("model_execute", {
@@ -41,7 +42,7 @@ describe("resolveModel", () => {
   });
 
   it("works without featureId and projectId", () => {
-    mockResolveSetting.mockReturnValue("claude-opus-4-5-20251001");
+    mockResolveSetting.mockReturnValue(Effect.succeed("claude-opus-4-5-20251001"));
     resolveModel("review");
     expect(mockResolveSetting).toHaveBeenCalledWith("model_review", {
       featureId: undefined,
@@ -51,7 +52,7 @@ describe("resolveModel", () => {
   });
 
   it("passes the correct key for each agent type", () => {
-    mockResolveSetting.mockReturnValue("claude-opus-4-5-20251001");
+    mockResolveSetting.mockReturnValue(Effect.succeed("claude-opus-4-5-20251001"));
     const agentTypes = ["plan", "prd", "execute", "risk", "review", "session", "qa"] as const;
     for (const type of agentTypes) {
       resolveModel(type);
@@ -60,13 +61,13 @@ describe("resolveModel", () => {
   });
 
   it('resolves literal "default" to DEFAULT_MODEL', () => {
-    mockResolveSetting.mockReturnValue("default");
+    mockResolveSetting.mockReturnValue(Effect.succeed("default"));
     const result = resolveModel("session");
     expect(result).toBe("claude-opus-4-5-20251001");
   });
 
   it('does not replace model names containing "default" as a substring', () => {
-    mockResolveSetting.mockReturnValue("my-default-model");
+    mockResolveSetting.mockReturnValue(Effect.succeed("my-default-model"));
     const result = resolveModel("session");
     expect(result).toBe("my-default-model");
   });

@@ -32,7 +32,7 @@ export const workflowRouter = router({
       images: z.array(z.object({ base64: z.string(), mimeType: z.string() })).optional(),
     }))
     .mutation(async ({ input }) => {
-      const { cwd, worktreePath } = await resolveAgentCwd(input.featureId, input.projectId);
+      const { cwd, worktreePath } = Effect.runSync(resolveAgentCwd(input.featureId, input.projectId));
       let description: import("../agents/types").MessageContent;
       if (input.images && input.images.length > 0) {
         description = [
@@ -57,7 +57,7 @@ export const workflowRouter = router({
       images: z.array(z.object({ base64: z.string(), mimeType: z.string() })).optional(),
     }))
     .mutation(async ({ input }) => {
-      const { cwd, worktreePath } = await resolveAgentCwd(input.featureId, input.projectId);
+      const { cwd, worktreePath } = Effect.runSync(resolveAgentCwd(input.featureId, input.projectId));
       let description: import("../agents/types").MessageContent;
       if (input.images && input.images.length > 0) {
         description = [
@@ -77,7 +77,7 @@ export const workflowRouter = router({
   continueWorkflow: publicProcedure
     .input(z.object({ featureId: z.number(), projectId: z.number() }))
     .mutation(async ({ input }) => {
-      const { cwd, worktreePath } = await resolveAgentCwd(input.featureId, input.projectId);
+      const { cwd, worktreePath } = Effect.runSync(resolveAgentCwd(input.featureId, input.projectId));
       processNextPhase({ featureId: input.featureId, projectId: input.projectId, cwd, worktreePath });
       return { success: true };
     }),
@@ -91,7 +91,7 @@ export const workflowRouter = router({
       images: z.array(z.object({ base64: z.string(), mimeType: z.string() })).optional(),
     }))
     .mutation(async ({ input }) => {
-      const { cwd, worktreePath } = await resolveAgentCwd(input.featureId, input.projectId);
+      const { cwd, worktreePath } = Effect.runSync(resolveAgentCwd(input.featureId, input.projectId));
       let description: import("../agents/types").MessageContent;
       if (input.images && input.images.length > 0) {
         description = [
@@ -111,7 +111,7 @@ export const workflowRouter = router({
   startExecute: publicProcedure
     .input(z.object({ featureId: z.number(), projectId: z.number() }))
     .mutation(async ({ input }) => {
-      const { cwd, worktreePath } = await resolveAgentCwd(input.featureId, input.projectId);
+      const { cwd, worktreePath } = Effect.runSync(resolveAgentCwd(input.featureId, input.projectId));
       processNextPhase({ featureId: input.featureId, projectId: input.projectId, cwd, worktreePath });
       return { success: true };
     }),
@@ -120,7 +120,7 @@ export const workflowRouter = router({
   continueExecute: publicProcedure
     .input(z.object({ featureId: z.number(), projectId: z.number() }))
     .mutation(async ({ input }) => {
-      const { cwd, worktreePath } = await resolveAgentCwd(input.featureId, input.projectId);
+      const { cwd, worktreePath } = Effect.runSync(resolveAgentCwd(input.featureId, input.projectId));
       processNextPhase({ featureId: input.featureId, projectId: input.projectId, cwd, worktreePath });
       return { success: true };
     }),
@@ -129,7 +129,7 @@ export const workflowRouter = router({
   startRisk: publicProcedure
     .input(z.object({ featureId: z.number(), projectId: z.number() }))
     .mutation(async ({ input }) => {
-      const { cwd, worktreePath } = await resolveAgentCwd(input.featureId, input.projectId);
+      const { cwd, worktreePath } = Effect.runSync(resolveAgentCwd(input.featureId, input.projectId));
       return startRiskAgent({ ...input, cwd, worktreePath });
     }),
 
@@ -137,7 +137,7 @@ export const workflowRouter = router({
   startReview: publicProcedure
     .input(z.object({ featureId: z.number(), projectId: z.number() }))
     .mutation(async ({ input }) => {
-      const { cwd, worktreePath } = await resolveAgentCwd(input.featureId, input.projectId);
+      const { cwd, worktreePath } = Effect.runSync(resolveAgentCwd(input.featureId, input.projectId));
       return startReviewAgent({ ...input, cwd, worktreePath });
     }),
 
@@ -145,7 +145,7 @@ export const workflowRouter = router({
   startRetro: publicProcedure
     .input(z.object({ featureId: z.number(), projectId: z.number() }))
     .mutation(async ({ input }) => {
-      const { cwd, worktreePath } = await resolveAgentCwd(input.featureId, input.projectId);
+      const { cwd, worktreePath } = Effect.runSync(resolveAgentCwd(input.featureId, input.projectId));
       return startRetroAgent({ ...input, cwd, worktreePath });
     }),
 
@@ -153,7 +153,7 @@ export const workflowRouter = router({
   startQa: publicProcedure
     .input(z.object({ featureId: z.number(), projectId: z.number() }))
     .mutation(async ({ input }) => {
-      const { cwd, worktreePath } = await resolveAgentCwd(input.featureId, input.projectId);
+      const { cwd, worktreePath } = Effect.runSync(resolveAgentCwd(input.featureId, input.projectId));
       return startQaAgent({ ...input, cwd, worktreePath });
     }),
 
@@ -161,7 +161,7 @@ export const workflowRouter = router({
   startReviewFixer: publicProcedure
     .input(z.object({ featureId: z.number(), projectId: z.number(), prompt: z.string() }))
     .mutation(async ({ input }) => {
-      const { cwd, worktreePath } = await resolveAgentCwd(input.featureId, input.projectId);
+      const { cwd, worktreePath } = Effect.runSync(resolveAgentCwd(input.featureId, input.projectId));
 
       // Build rich prompt with feature context (same as workflow session)
       const { feature, plan, phases } = await AppRuntime.runPromise(
@@ -220,7 +220,7 @@ export const workflowRouter = router({
       }),
     )
     .mutation(async ({ input }) => {
-      const { cwd, worktreePath } = await resolveAgentCwd(input.featureId, input.projectId);
+      const { cwd, worktreePath } = Effect.runSync(resolveAgentCwd(input.featureId, input.projectId));
 
       const { feature, plan } = await AppRuntime.runPromise(
         Effect.gen(function* () {

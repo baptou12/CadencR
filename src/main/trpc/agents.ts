@@ -115,7 +115,7 @@ export const agentsRouter = router({
           cwd = project.path;
         }
       } else {
-        ({ cwd, worktreePath } = await resolveAgentCwd(input.featureId, input.projectId));
+        ({ cwd, worktreePath } = Effect.runSync(resolveAgentCwd(input.featureId, input.projectId)));
       }
 
       const originalSession = await AppRuntime.runPromise(queryOne<Pick<AgentSessionRow, "run_id" | "phase_id">>(
