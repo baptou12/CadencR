@@ -65,3 +65,22 @@ export class QuestionTimeoutError extends Data.TaggedError("QuestionTimeoutError
 export class ApprovalTimeoutError extends Data.TaggedError("ApprovalTimeoutError")<{
   readonly subprocessId: string;
 }> {}
+
+// ---------------------------------------------------------------------------
+// UsageService errors
+// ---------------------------------------------------------------------------
+
+export class UsageApiError extends Data.TaggedError("UsageApiError")<{
+  readonly message: string;
+  readonly statusCode?: number;
+  readonly cause?: unknown;
+}> {}
+
+export class UsageRateLimitedError extends Data.TaggedError("UsageRateLimitedError")<{
+  readonly retryAfter: number;
+}> {}
+
+export class KeychainError extends Data.TaggedError("KeychainError")<{
+  readonly message: string;
+  readonly cause?: unknown;
+}> {}
