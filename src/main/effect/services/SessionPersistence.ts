@@ -84,7 +84,7 @@ export class SessionPersistence extends Effect.Tag("SessionPersistence")<
 // Live implementation
 // ---------------------------------------------------------------------------
 
-export const SessionPersistenceLive = Layer.effect(
+export const SessionPersistenceLive = Layer.scoped(
   SessionPersistence,
   Effect.gen(function* () {
     const db = yield* Database;
@@ -103,6 +103,17 @@ export const SessionPersistenceLive = Layer.effect(
     const pendingToolInputMap = new Map<string, { dbRowId: number; partialJson: string }>();
     /** Set of session IDs already marked has_file_changes — avoids redundant DB writes */
     const fileChangeMarked = new Set<number>();
+
+    // Clear all internal maps on scope exit to prevent memory leaks from
+    // orphaned entries (e.g., pendingToolInputMap entries left by interrupted streams).
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => {
+        pendingToolInputMap.clear();
+        sessionModelMap.clear();
+        fileChangeMarked.clear();
+        sessionMap.clear();
+      }),
+    );
 
     // ---------------------------------------------------------------------------
     // Internal helpers

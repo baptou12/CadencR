@@ -123,7 +123,10 @@ export const ToolPermissionsLive = Layer.sync(ToolPermissions, () => {
       Effect.gen(function* () {
         const deferred = permissionDeferreds.get(subprocessId);
         if (deferred) {
-          yield* Deferred.succeed(deferred, { decision, feedback });
+          const resolved = yield* Deferred.succeed(deferred, { decision, feedback });
+          if (!resolved) {
+            yield* Effect.logWarning("Permission submission arrived after timeout", { subprocessId });
+          }
         }
       }),
 
@@ -152,7 +155,10 @@ export const ToolPermissionsLive = Layer.sync(ToolPermissions, () => {
       Effect.gen(function* () {
         const deferred = answerDeferreds.get(subprocessId);
         if (deferred) {
-          yield* Deferred.succeed(deferred, answers);
+          const resolved = yield* Deferred.succeed(deferred, answers);
+          if (!resolved) {
+            yield* Effect.logWarning("User answer submission arrived after timeout", { subprocessId });
+          }
         }
       }),
   };

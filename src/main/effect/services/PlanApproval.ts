@@ -383,7 +383,10 @@ export const PlanApprovalLive = Layer.effect(
           const deferred = planDeferreds.get(subprocessId);
 
           if (deferred) {
-            yield* Deferred.succeed(deferred, { approved, feedback });
+            const resolved = yield* Deferred.succeed(deferred, { approved, feedback });
+            if (!resolved) {
+              yield* Effect.logWarning("Plan approval submission arrived after timeout", { subprocessId });
+            }
 
             // If rejecting with feedback, persist as a user message in DB
             if (!approved && feedback) {
@@ -421,7 +424,10 @@ export const PlanApprovalLive = Layer.effect(
           const deferred = prdDeferreds.get(subprocessId);
 
           if (deferred) {
-            yield* Deferred.succeed(deferred, { approved, feedback });
+            const resolved = yield* Deferred.succeed(deferred, { approved, feedback });
+            if (!resolved) {
+              yield* Effect.logWarning("PRD approval submission arrived after timeout", { subprocessId });
+            }
 
             // If rejecting with feedback, persist as a user message in DB
             if (!approved && feedback) {
