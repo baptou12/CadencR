@@ -325,6 +325,92 @@ describe("concurrent deduplication", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Interruption cleanup
+// ---------------------------------------------------------------------------
+
+describe("interruption cleanup", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("fails the Deferred and cleans up inflight when owner fiber is interrupted", async () => {
+    // Never-resolving supportedCommands keeps the owner blocked indefinitely
+    let resolveCommands!: (val: Array<{ name: string; description: string }>) => void;
+    const commandsPromise = new Promise<Array<{ name: string; description: string }>>(
+      (res) => { resolveCommands = res; },
+    );
+
+    const close = vi.fn();
+    const supportedCommands = vi.fn().mockReturnValue(commandsPromise);
+    const queryObj = {
+      [Symbol.asyncIterator]() {
+        return { next: () => new Promise<IteratorResult<unknown>>(() => {}) };
+      },
+      supportedCommands,
+      close,
+      interrupt: vi.fn(),
+      setPermissionMode: vi.fn(),
+    };
+    mockGetSdkClient.mockResolvedValue({
+      query: vi.fn().mockReturnValue(queryObj),
+    } as any);
+    mockDiscoverCli.mockReturnValue(Effect.succeed({ path: "/usr/bin/claude", source: "settings" }));
+
+    await runTest(
+      Effect.gen(function* () {
+        const svc = yield* SlashCommands;
+
+        // Fork the owner — it will block waiting for commandsPromise to resolve
+        const ownerFiber = yield* Effect.fork(svc.getCommands("/interrupt-test"));
+
+        // Give the owner time to register in the inflight map
+        yield* Effect.sleep(FIBER_START_DELAY);
+
+        // Fork a waiter — it will wait on the same Deferred
+        const waiterFiber = yield* Effect.fork(svc.getCommands("/interrupt-test"));
+
+        // Give the waiter time to register
+        yield* Effect.sleep(FIBER_START_DELAY);
+
+        // Interrupt the owner fiber — this should trigger onInterrupt which
+        // fails the Deferred and ensuring which removes the inflight entry
+        yield* Fiber.interrupt(ownerFiber);
+
+        // Waiter should unblock with [] (Deferred.fail → catchAll fallback)
+        // rather than hanging indefinitely
+        const waiterResult = yield* Fiber.join(waiterFiber);
+        expect(waiterResult).toEqual([
+          { name: "clear", description: "Clear conversation context and start fresh" },
+        ]);
+
+        // After interruption the inflight map entry is cleaned up — a fresh
+        // request should spawn a new fetch, not wait on the old dead Deferred.
+        // Swap in a mock that resolves immediately.
+        const { queryObj: freshQuery } = makeMockQuery([
+          { name: "/fresh", description: "Fresh command" },
+        ]);
+        mockGetSdkClient.mockResolvedValue({
+          query: vi.fn().mockReturnValue(freshQuery),
+        } as any);
+        // Resolve the old promise so no dangling Promises remain in the test
+        resolveCommands([]);
+
+        const freshResult = yield* svc.getCommands("/interrupt-test");
+        expect(freshResult).toContainEqual({
+          name: "clear",
+          description: "Clear conversation context and start fresh",
+        });
+        expect(freshResult).toContainEqual({
+          name: "/fresh",
+          description: "Fresh command",
+          argumentHint: undefined,
+        });
+      }),
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Missing CLI — graceful fallback
 // ---------------------------------------------------------------------------
 

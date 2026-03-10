@@ -40,8 +40,8 @@ type RawCommand = { name: string; description: string; argumentHint?: string };
 
 /** Result of the atomic inflight check-and-register operation */
 type InflightResult =
-  | { readonly isOwner: true; readonly deferred: Deferred.Deferred<SlashCommandInfo[]> }
-  | { readonly isOwner: false; readonly deferred: Deferred.Deferred<SlashCommandInfo[]> };
+  | { readonly isOwner: true; readonly deferred: Deferred.Deferred<SlashCommandInfo[], SlashCommandError> }
+  | { readonly isOwner: false; readonly deferred: Deferred.Deferred<SlashCommandInfo[], SlashCommandError> };
 
 /** Custom app-level commands (not from the SDK) */
 const CUSTOM_COMMANDS: SlashCommandInfo[] = [
@@ -102,7 +102,7 @@ export const SlashCommandsLive = Layer.effect(
   Effect.gen(function* () {
     const cacheRef = yield* Ref.make(new Map<string, CacheEntry>());
     const inflightRef = yield* Ref.make(
-      new Map<string, Deferred.Deferred<SlashCommandInfo[]>>(),
+      new Map<string, Deferred.Deferred<SlashCommandInfo[], SlashCommandError>>(),
     );
 
     /**
@@ -210,7 +210,7 @@ export const SlashCommandsLive = Layer.effect(
           }
 
           // 3. Deduplicate in-flight fetches — use Ref.modify for atomic check-and-set
-          const newDeferred = yield* Deferred.make<SlashCommandInfo[]>();
+          const newDeferred = yield* Deferred.make<SlashCommandInfo[], SlashCommandError>();
 
           const inflightResult: InflightResult = yield* Ref.modify(
             inflightRef,
@@ -218,7 +218,7 @@ export const SlashCommandsLive = Layer.effect(
               m,
             ): readonly [
               InflightResult,
-              Map<string, Deferred.Deferred<SlashCommandInfo[]>>,
+              Map<string, Deferred.Deferred<SlashCommandInfo[], SlashCommandError>>,
             ] => {
               if (m.has(cwd)) {
                 return [
@@ -233,33 +233,63 @@ export const SlashCommandsLive = Layer.effect(
           );
 
           if (!inflightResult.isOwner) {
-            // Wait for the owning fiber to complete and return its result
+            // Wait for the owning fiber to complete and return its result.
+            // If the owner is interrupted, the Deferred will fail with
+            // SlashCommandError — catch it and fall back to [] rather than
+            // propagating the error.
             const result: SlashCommandInfo[] = yield* Deferred.await(
               inflightResult.deferred,
-            );
+            ).pipe(Effect.catchAll(() => Effect.succeed([] as SlashCommandInfo[])));
             return [...CUSTOM_COMMANDS, ...result];
           }
 
-          // 4. We are the owner — spawn a temporary query
-          const sdkCommands: SlashCommandInfo[] = yield* fetchViaTemporaryQuery(
-            cwd,
-          ).pipe(
-            // Temporary query errors fall back to [] (resilient)
-            Effect.catchAll(() => Effect.succeed([] as SlashCommandInfo[])),
-          );
+          // 4. We are the owner — spawn a temporary query, then unblock waiting
+          // fibers. Two finalizers protect against premature interruption:
+          //
+          // - Effect.onInterrupt: when this fiber is interrupted (e.g. during app
+          //   shutdown) before Deferred.succeed fires, fail the Deferred so that
+          //   any waiting fibers get a clean SlashCommandError instead of hanging
+          //   indefinitely.
+          //
+          // - Effect.ensuring: always remove the inflight entry from the map,
+          //   regardless of success, error, or interruption, so subsequent
+          //   requests for the same cwd start a fresh fetch rather than waiting
+          //   on a completed (or dead) Deferred.
+          const fetchAndResolve: Effect.Effect<SlashCommandInfo[], SlashCommandError> =
+            Effect.gen(function* () {
+              const sdkCommands = yield* fetchViaTemporaryQuery(cwd).pipe(
+                // Temporary query errors fall back to [] (resilient)
+                Effect.catchAll(() => Effect.succeed([] as SlashCommandInfo[])),
+              );
+              // Update cache
+              yield* Ref.update(cacheRef, (m) => {
+                const next = new Map(m);
+                next.set(cwd, { commands: sdkCommands, fetchedAt: Date.now() });
+                return next;
+              });
+              // Unblock waiting fibers
+              yield* Deferred.succeed(inflightResult.deferred, sdkCommands);
+              return sdkCommands;
+            }).pipe(
+              // On interruption, fail the Deferred so waiting fibers unblock with
+              // a SlashCommandError (which they catch and convert to []).
+              Effect.onInterrupt(() =>
+                Deferred.fail(
+                  inflightResult.deferred,
+                  new SlashCommandError({ message: "Slash commands fetch was interrupted" }),
+                ),
+              ),
+            );
 
-          // Update cache and unblock waiting fibers
-          yield* Ref.update(cacheRef, (m) => {
-            const next = new Map(m);
-            next.set(cwd, { commands: sdkCommands, fetchedAt: Date.now() });
-            return next;
-          });
-          yield* Deferred.succeed(inflightResult.deferred, sdkCommands);
-          yield* Ref.update(inflightRef, (m) => {
-            const next = new Map(m);
-            next.delete(cwd);
-            return next;
-          });
+          const sdkCommands: SlashCommandInfo[] = yield* Effect.ensuring(
+            fetchAndResolve,
+            // Always clean up the inflight entry — runs on success, error, and interruption
+            Ref.update(inflightRef, (m) => {
+              const next = new Map(m);
+              next.delete(cwd);
+              return next;
+            }),
+          );
 
           return [...CUSTOM_COMMANDS, ...sdkCommands];
         }) as Effect.Effect<SlashCommandInfo[], SlashCommandError>,
