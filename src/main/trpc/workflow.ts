@@ -228,12 +228,12 @@ export const workflowRouter = router({
             "SELECT title FROM features WHERE id = ?",
             input.featureId,
           );
-          if (!feature) throw new Error("Feature not found");
+          if (!feature) return yield* Effect.fail(new Error("Feature not found"));
           const plan = yield* queryOne<{ id: number }>(
             "SELECT id FROM plans WHERE feature_id = ? ORDER BY id DESC LIMIT 1",
             input.featureId,
           );
-          if (!plan) throw new Error("No plan found for this feature — workflow sessions require a plan");
+          if (!plan) return yield* Effect.fail(new Error("No plan found for this feature — workflow sessions require a plan"));
           return { feature, plan };
         }),
       );
@@ -270,7 +270,7 @@ export const workflowRouter = router({
             "SELECT path FROM projects WHERE id = ?",
             input.projectId,
           );
-          if (!project?.path) throw new Error("Project path not found");
+          if (!project?.path) return yield* Effect.fail(new Error("Project path not found"));
 
           const featureRow = yield* queryOne<{ type: string }>(
             "SELECT type FROM features WHERE id = ?",
@@ -342,13 +342,13 @@ export const workflowRouter = router({
             "SELECT path FROM projects WHERE id = ?",
             input.projectId,
           );
-          if (!project?.path) throw new Error("Project path not found");
+          if (!project?.path) return yield* Effect.fail(new Error("Project path not found"));
 
           const feature = yield* queryOne<{ title: string; type: string }>(
             "SELECT title, type FROM features WHERE id = ?",
             input.featureId,
           );
-          if (!feature) throw new Error(`Feature not found: ${input.featureId}`);
+          if (!feature) return yield* Effect.fail(new Error(`Feature not found: ${input.featureId}`));
 
           return { project, feature };
         }),

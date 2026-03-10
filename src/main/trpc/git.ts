@@ -45,7 +45,7 @@ export const gitRouter = router({
             "SELECT id, name, path FROM projects WHERE id = ?",
             input.projectId,
           );
-          if (!project) throw new Error(`Project not found: ${input.projectId}`);
+          if (!project) return yield* Effect.fail(new Error(`Project not found: ${input.projectId}`));
 
           const prefixRow = yield* queryOne<{ branch_prefix: string | null }>(
             "SELECT branch_prefix FROM projects WHERE id = ?",
@@ -85,13 +85,13 @@ export const gitRouter = router({
             "SELECT path FROM projects WHERE id = ?",
             input.projectId,
           );
-          if (!project) throw new Error(`Project not found: ${input.projectId}`);
+          if (!project) return yield* Effect.fail(new Error(`Project not found: ${input.projectId}`));
 
           const wtRow = yield* queryOne<{ value: string }>(
             "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
             input.featureId,
           );
-          if (!wtRow) throw new Error("No worktree found for this feature");
+          if (!wtRow) return yield* Effect.fail(new Error("No worktree found for this feature"));
 
           yield* removeWorktreeEffect(project.path, wtRow.value);
 
@@ -256,13 +256,13 @@ export const gitRouter = router({
             "SELECT path FROM projects WHERE id = ?",
             input.projectId,
           );
-          if (!project?.path) throw new Error("Project not found");
+          if (!project?.path) return yield* Effect.fail(new Error("Project not found"));
 
           const branchRow = yield* queryOne<{ value: string }>(
             "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_branch'",
             input.featureId,
           );
-          if (!branchRow?.value) throw new Error("No worktree branch found for this feature");
+          if (!branchRow?.value) return yield* Effect.fail(new Error("No worktree branch found for this feature"));
 
           const originalBranch = yield* getOriginalBranchEffect(project.path, branchRow.value);
           return { originalBranch, worktreeBranch: branchRow.value };
@@ -280,13 +280,13 @@ export const gitRouter = router({
             "SELECT path FROM projects WHERE id = ?",
             input.projectId,
           );
-          if (!project?.path) throw new Error("Project not found");
+          if (!project?.path) return yield* Effect.fail(new Error("Project not found"));
 
           const branchRow = yield* queryOne<{ value: string }>(
             "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_branch'",
             input.featureId,
           );
-          if (!branchRow?.value) throw new Error("No worktree branch found for this feature");
+          if (!branchRow?.value) return yield* Effect.fail(new Error("No worktree branch found for this feature"));
 
           const targetBranch = yield* getOriginalBranchEffect(project.path, branchRow.value);
           return yield* checkMergeConflictsEffect(project.path, branchRow.value, targetBranch);
@@ -304,13 +304,13 @@ export const gitRouter = router({
             "SELECT path FROM projects WHERE id = ?",
             input.projectId,
           );
-          if (!project?.path) throw new Error("Project not found");
+          if (!project?.path) return yield* Effect.fail(new Error("Project not found"));
 
           const branchRow = yield* queryOne<{ value: string }>(
             "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_branch'",
             input.featureId,
           );
-          if (!branchRow?.value) throw new Error("No worktree branch found for this feature");
+          if (!branchRow?.value) return yield* Effect.fail(new Error("No worktree branch found for this feature"));
 
           const targetBranch = yield* getOriginalBranchEffect(project.path, branchRow.value);
           return yield* mergeBranchEffect(project.path, branchRow.value, targetBranch);
@@ -328,13 +328,13 @@ export const gitRouter = router({
             "SELECT path FROM projects WHERE id = ?",
             input.projectId,
           );
-          if (!project?.path) throw new Error("Project not found");
+          if (!project?.path) return yield* Effect.fail(new Error("Project not found"));
 
           const branchRow = yield* queryOne<{ value: string }>(
             "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_branch'",
             input.featureId,
           );
-          if (!branchRow?.value) throw new Error("No worktree branch found for this feature");
+          if (!branchRow?.value) return yield* Effect.fail(new Error("No worktree branch found for this feature"));
 
           return yield* deleteLocalBranchEffect(project.path, branchRow.value);
         }),
@@ -451,13 +451,13 @@ export const gitRouter = router({
             "SELECT path FROM projects WHERE id = ?",
             input.projectId,
           );
-          if (!project?.path) throw new Error("Project not found");
+          if (!project?.path) return yield* Effect.fail(new Error("Project not found"));
 
           const wtRow = yield* queryOne<{ value: string }>(
             "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
             input.featureId,
           );
-          if (!wtRow?.value) throw new Error("No worktree found for this feature");
+          if (!wtRow?.value) return yield* Effect.fail(new Error("No worktree found for this feature"));
 
           return { project, wtRow };
         }),
@@ -491,7 +491,7 @@ export const gitRouter = router({
             "SELECT path FROM projects WHERE id = ?",
             input.projectId,
           );
-          if (!project?.path) throw new Error("Project not found");
+          if (!project?.path) return yield* Effect.fail(new Error("Project not found"));
 
           let worktrees;
           try {
