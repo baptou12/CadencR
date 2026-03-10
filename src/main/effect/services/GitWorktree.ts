@@ -1,7 +1,7 @@
 /**
  * Effect-based git worktree lifecycle and query functions.
  *
- * This is a stateless module — no Context.Tag. All functions return Effects
+ * This is a stateless module — no Effect.Tag. All functions return Effects
  * that can be run via AppRuntime.runPromise(). Functions that track progress
  * (setupWorktreeForFeatureEffect) depend on the Database and EventBroadcaster
  * services already in AppLayer.
