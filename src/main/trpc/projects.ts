@@ -1,10 +1,12 @@
 import { z } from "zod";
 import path from "node:path";
+import { Effect } from "effect";
 import { dialog } from "electron";
 import { router, publicProcedure } from "./trpc";
-import { getDatabase } from "../db/database";
+import { queryOne, queryAll, execute, transaction } from "../db/query";
 import type { ProjectRow, SettingRow } from "../db/types";
 import type { AgentType } from "../agents/types";
+import { AppRuntime } from "../effect/runtime";
 
 export const projectsRouter = router({
   selectFolder: publicProcedure.mutation(async () => {
@@ -17,79 +19,75 @@ export const projectsRouter = router({
     return { name, path: folderPath };
   }),
 
-  list: publicProcedure.query(() => {
-    const db = getDatabase();
-    const rows = db
-      .prepare("SELECT id, name, path, created_at FROM projects ORDER BY created_at DESC")
-      .all() as ProjectRow[];
-    return rows;
+  list: publicProcedure.query(async () => {
+    return await AppRuntime.runPromise(queryAll<ProjectRow>(
+      "SELECT id, name, path, created_at FROM projects ORDER BY created_at DESC",
+    ));
   }),
 
   create: publicProcedure
     .input(z.object({ name: z.string(), path: z.string() }))
-    .mutation(({ input }) => {
-      const db = getDatabase();
-      const result = db
-        .prepare("INSERT INTO projects (name, path) VALUES (?, ?)")
-        .run(input.name, input.path);
-      return { id: Number(result.lastInsertRowid) };
+    .mutation(async ({ input }) => {
+      const result = await AppRuntime.runPromise(execute(
+        "INSERT INTO projects (name, path) VALUES (?, ?)",
+        input.name, input.path,
+      ));
+      return { id: result.lastInsertRowid };
     }),
 
-  delete: publicProcedure.input(z.object({ id: z.number() })).mutation(({ input }) => {
-    const db = getDatabase();
-
-    const features = db
-      .prepare("SELECT id FROM features WHERE project_id = ?")
-      .all(input.id) as { id: number }[];
+  delete: publicProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+    const features = await AppRuntime.runPromise(queryAll<{ id: number }>(
+      "SELECT id FROM features WHERE project_id = ?",
+      input.id,
+    ));
     const featureIds = features.map((f) => f.id);
 
-    const transaction = db.transaction(() => {
+    await AppRuntime.runPromise(transaction(() => {
       if (featureIds.length > 0) {
         const ph = featureIds.map(() => "?").join(",");
 
         // Get child IDs
-        const planIds = (
-          db.prepare(`SELECT id FROM plans WHERE feature_id IN (${ph})`).all(...featureIds) as { id: number }[]
-        ).map((p) => p.id);
-        const sessionIds = (
-          db.prepare(`SELECT id FROM agent_sessions WHERE feature_id IN (${ph})`).all(...featureIds) as { id: number }[]
-        ).map((s) => s.id);
+        const planIds = Effect.runSync(queryAll<{ id: number }>(
+          `SELECT id FROM plans WHERE feature_id IN (${ph})`, ...featureIds,
+        )).map((p) => p.id);
+        const sessionIds = Effect.runSync(queryAll<{ id: number }>(
+          `SELECT id FROM agent_sessions WHERE feature_id IN (${ph})`, ...featureIds,
+        )).map((s) => s.id);
 
         // Delete grandchildren
         if (sessionIds.length > 0) {
           const sp = sessionIds.map(() => "?").join(",");
-          db.prepare(`DELETE FROM agent_messages WHERE session_id IN (${sp})`).run(...sessionIds);
+          Effect.runSync(execute(`DELETE FROM agent_messages WHERE session_id IN (${sp})`, ...sessionIds));
         }
         if (planIds.length > 0) {
           const pp = planIds.map(() => "?").join(",");
-          db.prepare(`DELETE FROM phases WHERE plan_id IN (${pp})`).run(...planIds);
+          Effect.runSync(execute(`DELETE FROM phases WHERE plan_id IN (${pp})`, ...planIds));
         }
 
         // Delete feature children
-        db.prepare(`DELETE FROM agent_sessions WHERE feature_id IN (${ph})`).run(...featureIds);
-        db.prepare(`DELETE FROM plans WHERE feature_id IN (${ph})`).run(...featureIds);
-        db.prepare(`DELETE FROM feature_settings WHERE feature_id IN (${ph})`).run(...featureIds);
-        db.prepare(`DELETE FROM diff_viewed_files WHERE feature_id IN (${ph})`).run(...featureIds);
-        db.prepare(`DELETE FROM features WHERE project_id = ?`).run(input.id);
+        Effect.runSync(execute(`DELETE FROM agent_sessions WHERE feature_id IN (${ph})`, ...featureIds));
+        Effect.runSync(execute(`DELETE FROM plans WHERE feature_id IN (${ph})`, ...featureIds));
+        Effect.runSync(execute(`DELETE FROM feature_settings WHERE feature_id IN (${ph})`, ...featureIds));
+        Effect.runSync(execute(`DELETE FROM diff_viewed_files WHERE feature_id IN (${ph})`, ...featureIds));
+        Effect.runSync(execute(`DELETE FROM features WHERE project_id = ?`, input.id));
       }
 
       // Delete project children
-      db.prepare("DELETE FROM project_settings WHERE project_id = ?").run(input.id);
-      db.prepare("DELETE FROM projects WHERE id = ?").run(input.id);
-    });
+      Effect.runSync(execute("DELETE FROM project_settings WHERE project_id = ?", input.id));
+      Effect.runSync(execute("DELETE FROM projects WHERE id = ?", input.id));
+    }));
 
-    transaction();
     return { success: true };
   }),
 
   getSettings: publicProcedure
     .input(z.object({ project_id: z.number() }))
-    .query(({ input }) => {
-      const db = getDatabase();
+    .query(async ({ input }) => {
       // Combine real columns + remaining EAV rows
-      const project = db
-        .prepare("SELECT branch_prefix, qa_prompt, agent_autonomy, model_plan, model_prd, model_execute, model_risk, model_review, model_session, model_qa FROM projects WHERE id = ?")
-        .get(input.project_id) as Record<string, string | null> | undefined;
+      const project = await AppRuntime.runPromise(queryOne<Record<string, string | null>>(
+        "SELECT branch_prefix, qa_prompt, agent_autonomy, model_plan, model_prd, model_execute, model_risk, model_review, model_session, model_qa FROM projects WHERE id = ?",
+        input.project_id,
+      ));
 
       const result: Record<string, string> = {};
       if (project) {
@@ -99,9 +97,10 @@ export const projectsRouter = router({
       }
 
       // Also include any remaining EAV rows (e.g. future keys)
-      const rows = db
-        .prepare("SELECT key, value FROM project_settings WHERE project_id = ?")
-        .all(input.project_id) as SettingRow[];
+      const rows = await AppRuntime.runPromise(queryAll<SettingRow>(
+        "SELECT key, value FROM project_settings WHERE project_id = ?",
+        input.project_id,
+      ));
       for (const r of rows) {
         result[r.key] = r.value;
       }
@@ -111,20 +110,22 @@ export const projectsRouter = router({
 
   setSetting: publicProcedure
     .input(z.object({ project_id: z.number(), key: z.string(), value: z.string() }))
-    .mutation(({ input }) => {
-      const db = getDatabase();
+    .mutation(async ({ input }) => {
       const realColumns = new Set([
         "model_plan", "model_prd", "model_execute", "model_risk", "model_review",
         "model_session", "model_qa", "agent_autonomy", "branch_prefix", "qa_prompt",
       ]);
 
       if (realColumns.has(input.key)) {
-        db.prepare(`UPDATE projects SET "${input.key}" = ? WHERE id = ?`)
-          .run(input.value, input.project_id);
+        await AppRuntime.runPromise(execute(
+          `UPDATE projects SET "${input.key}" = ? WHERE id = ?`,
+          input.value, input.project_id,
+        ));
       } else {
-        db.prepare(
+        await AppRuntime.runPromise(execute(
           "INSERT INTO project_settings (project_id, key, value) VALUES (?, ?, ?) ON CONFLICT(project_id, key) DO UPDATE SET value = excluded.value",
-        ).run(input.project_id, input.key, input.value);
+          input.project_id, input.key, input.value,
+        ));
       }
       return { success: true };
     }),
@@ -132,11 +133,11 @@ export const projectsRouter = router({
   /** Get model settings for all agent types from project columns (empty string = inherit from parent) */
   getModelSettings: publicProcedure
     .input(z.object({ projectId: z.number() }))
-    .query(({ input }) => {
-      const db = getDatabase();
-      const row = db
-        .prepare('SELECT model_plan, model_prd, model_execute, model_risk, model_review, "model_review-fixer", model_session, model_qa, model_retro FROM projects WHERE id = ?')
-        .get(input.projectId) as Record<string, string | null> | undefined;
+    .query(async ({ input }) => {
+      const row = await AppRuntime.runPromise(queryOne<Record<string, string | null>>(
+        'SELECT model_plan, model_prd, model_execute, model_risk, model_review, "model_review-fixer", model_session, model_qa, model_retro FROM projects WHERE id = ?',
+        input.projectId,
+      ));
 
       const agentTypes = ["plan", "prd", "execute", "risk", "review", "review-fixer", "session", "qa", "retro"] as const;
       const result: Record<string, string> = {};
@@ -155,11 +156,12 @@ export const projectsRouter = router({
         modelId: z.string(),
       }),
     )
-    .mutation(({ input }) => {
-      const db = getDatabase();
+    .mutation(async ({ input }) => {
       const col = `model_${input.agentType}`;
-      db.prepare(`UPDATE projects SET "${col}" = ? WHERE id = ?`)
-        .run(input.modelId, input.projectId);
+      await AppRuntime.runPromise(execute(
+        `UPDATE projects SET "${col}" = ? WHERE id = ?`,
+        input.modelId, input.projectId,
+      ));
       return { success: true };
     }),
 });

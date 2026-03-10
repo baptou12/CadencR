@@ -129,7 +129,7 @@ export const gitRouter = router({
       targetBranch: z.string().optional(),
     }))
     .query(async ({ input }) => {
-      const gitPath = resolveFeatureGitPath(input.featureId);
+      const gitPath = await AppRuntime.runPromise(resolveFeatureGitPath(input.featureId));
       if (!gitPath) return { filesChanged: 0, insertions: 0, deletions: 0 };
       return AppRuntime.runPromise(
         getGitStatsEffect(gitPath, input.mode ?? "worktree", input.targetBranch),
@@ -159,7 +159,7 @@ export const gitRouter = router({
       }),
     )
     .query(async ({ input }) => {
-      const gitPath = resolveFeatureGitPath(input.featureId);
+      const gitPath = await AppRuntime.runPromise(resolveFeatureGitPath(input.featureId));
       if (!gitPath) return "";
       if (input.commitSha) {
         return AppRuntime.runPromise(getCommitDiffEffect(gitPath, input.commitSha));
@@ -177,7 +177,7 @@ export const gitRouter = router({
       }),
     )
     .query(async ({ input }) => {
-      const gitPath = resolveFeatureGitPath(input.featureId);
+      const gitPath = await AppRuntime.runPromise(resolveFeatureGitPath(input.featureId));
       if (!gitPath) return [];
       return AppRuntime.runPromise(
         getChangedFilesEffect(gitPath, input.mode, input.targetBranch),
@@ -200,7 +200,7 @@ export const gitRouter = router({
   openInTerminal: publicProcedure
     .input(z.object({ featureId: z.number() }))
     .mutation(async ({ input }) => {
-      const gitPath = resolveFeatureGitPath(input.featureId);
+      const gitPath = await AppRuntime.runPromise(resolveFeatureGitPath(input.featureId));
       if (!gitPath) throw new Error("No working directory found for this feature");
 
       await openInTerminal(gitPath);
@@ -211,7 +211,7 @@ export const gitRouter = router({
   openInZed: publicProcedure
     .input(z.object({ featureId: z.number() }))
     .mutation(async ({ input }) => {
-      const gitPath = resolveFeatureGitPath(input.featureId);
+      const gitPath = await AppRuntime.runPromise(resolveFeatureGitPath(input.featureId));
       if (!gitPath) throw new Error("No working directory found for this feature");
 
       await openInZed(gitPath);
@@ -222,7 +222,7 @@ export const gitRouter = router({
   listFiles: publicProcedure
     .input(z.object({ featureId: z.number() }))
     .query(async ({ input }) => {
-      const gitPath = resolveFeatureGitPath(input.featureId);
+      const gitPath = await AppRuntime.runPromise(resolveFeatureGitPath(input.featureId));
       if (!gitPath) return [];
       const { stdout } = await AppRuntime.runPromise(
         execGit("git ls-files", { cwd: gitPath, maxBuffer: 10 * 1024 * 1024 }),
@@ -501,7 +501,7 @@ export const gitRouter = router({
       }),
     )
     .query(async ({ input }) => {
-      const gitPath = resolveFeatureGitPath(input.featureId);
+      const gitPath = await AppRuntime.runPromise(resolveFeatureGitPath(input.featureId));
       if (!gitPath) return { oldContent: "", newContent: "" };
 
       if (input.commitSha) {
@@ -546,7 +546,7 @@ export const gitRouter = router({
     }))
     .query(async ({ input }) => {
       const db = getDatabase();
-      const gitPath = resolveFeatureGitPath(input.featureId);
+      const gitPath = await AppRuntime.runPromise(resolveFeatureGitPath(input.featureId));
       if (!gitPath) return { commits: [], isOnBaseBranch: true };
 
       // Determine current branch name

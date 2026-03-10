@@ -284,7 +284,7 @@ export const workflowRouter = router({
         permissionMode: input.permissionMode,
       });
 
-      if (hasDefaultTitle(input.featureId)) {
+      if (await AppRuntime.runPromise(hasDefaultTitle(input.featureId))) {
         autoNameFeature(input.featureId, input.prompt, project.path, input.projectId);
       }
 
