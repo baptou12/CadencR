@@ -28,28 +28,26 @@ function broadcast(channel: string, data: unknown) {
  * Resolve the working directory for a terminal.
  * Session features use the project path; workflow features prefer worktree path.
  */
-async function resolveTerminalCwd(featureId: number, projectId: number): Promise<string> {
-  const feature = await AppRuntime.runPromise(
-    queryOne<{ type: string }>("SELECT type FROM features WHERE id = ?", featureId),
+function resolveTerminalCwd(featureId: number, projectId: number): Promise<string> {
+  return AppRuntime.runPromise(
+    Effect.gen(function* () {
+      const feature = yield* queryOne<{ type: string }>("SELECT type FROM features WHERE id = ?", featureId);
+
+      // For non-session features, try worktree path first
+      if (feature && feature.type !== "session") {
+        const wtRow = yield* queryOne<Pick<SettingRow, "value">>(
+          "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
+          featureId,
+        );
+        if (wtRow) return wtRow.value;
+      }
+
+      const project = yield* queryOne<Pick<ProjectRow, "path">>("SELECT path FROM projects WHERE id = ?", projectId);
+
+      if (!project?.path) return os.homedir();
+      return project.path;
+    }),
   );
-
-  // For non-session features, try worktree path first
-  if (feature && feature.type !== "session") {
-    const wtRow = await AppRuntime.runPromise(
-      queryOne<Pick<SettingRow, "value">>(
-        "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
-        featureId,
-      ),
-    );
-    if (wtRow) return wtRow.value;
-  }
-
-  const project = await AppRuntime.runPromise(
-    queryOne<Pick<ProjectRow, "path">>("SELECT path FROM projects WHERE id = ?", projectId),
-  );
-
-  if (!project?.path) return os.homedir();
-  return project.path;
 }
 
 // ---------------------------------------------------------------------------

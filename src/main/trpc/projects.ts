@@ -36,12 +36,6 @@ export const projectsRouter = router({
     }),
 
   delete: publicProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
-    const features = await AppRuntime.runPromise(queryAll<{ id: number }>(
-      "SELECT id FROM features WHERE project_id = ?",
-      input.id,
-    ));
-    const featureIds = features.map((f) => f.id);
-
     // NOTE: Effect.runSync is intentionally used inside this transaction callback.
     // better-sqlite3 transactions require a synchronous callback — they cannot be
     // async or Promise-based. Because all our DB query/execute helpers are
@@ -55,40 +49,50 @@ export const projectsRouter = router({
     // This is not a mistake or an anti-pattern; it is the correct way to perform
     // multi-step atomic deletes with our Effect-based DB helpers inside a
     // synchronous better-sqlite3 transaction.
-    await AppRuntime.runPromise(transaction(() => {
-      if (featureIds.length > 0) {
-        const ph = featureIds.map(() => "?").join(",");
+    await AppRuntime.runPromise(
+      Effect.gen(function* () {
+        const features = yield* queryAll<{ id: number }>(
+          "SELECT id FROM features WHERE project_id = ?",
+          input.id,
+        );
+        const featureIds = features.map((f) => f.id);
 
-        // Get child IDs
-        const planIds = Effect.runSync(queryAll<{ id: number }>(
-          `SELECT id FROM plans WHERE feature_id IN (${ph})`, ...featureIds,
-        )).map((p) => p.id);
-        const sessionIds = Effect.runSync(queryAll<{ id: number }>(
-          `SELECT id FROM agent_sessions WHERE feature_id IN (${ph})`, ...featureIds,
-        )).map((s) => s.id);
+        yield* transaction(() => {
+          if (featureIds.length > 0) {
+            const ph = featureIds.map(() => "?").join(",");
 
-        // Delete grandchildren
-        if (sessionIds.length > 0) {
-          const sp = sessionIds.map(() => "?").join(",");
-          Effect.runSync(execute(`DELETE FROM agent_messages WHERE session_id IN (${sp})`, ...sessionIds));
-        }
-        if (planIds.length > 0) {
-          const pp = planIds.map(() => "?").join(",");
-          Effect.runSync(execute(`DELETE FROM phases WHERE plan_id IN (${pp})`, ...planIds));
-        }
+            // Get child IDs
+            const planIds = Effect.runSync(queryAll<{ id: number }>(
+              `SELECT id FROM plans WHERE feature_id IN (${ph})`, ...featureIds,
+            )).map((p) => p.id);
+            const sessionIds = Effect.runSync(queryAll<{ id: number }>(
+              `SELECT id FROM agent_sessions WHERE feature_id IN (${ph})`, ...featureIds,
+            )).map((s) => s.id);
 
-        // Delete feature children
-        Effect.runSync(execute(`DELETE FROM agent_sessions WHERE feature_id IN (${ph})`, ...featureIds));
-        Effect.runSync(execute(`DELETE FROM plans WHERE feature_id IN (${ph})`, ...featureIds));
-        Effect.runSync(execute(`DELETE FROM feature_settings WHERE feature_id IN (${ph})`, ...featureIds));
-        Effect.runSync(execute(`DELETE FROM diff_viewed_files WHERE feature_id IN (${ph})`, ...featureIds));
-        Effect.runSync(execute(`DELETE FROM features WHERE project_id = ?`, input.id));
-      }
+            // Delete grandchildren
+            if (sessionIds.length > 0) {
+              const sp = sessionIds.map(() => "?").join(",");
+              Effect.runSync(execute(`DELETE FROM agent_messages WHERE session_id IN (${sp})`, ...sessionIds));
+            }
+            if (planIds.length > 0) {
+              const pp = planIds.map(() => "?").join(",");
+              Effect.runSync(execute(`DELETE FROM phases WHERE plan_id IN (${pp})`, ...planIds));
+            }
 
-      // Delete project children
-      Effect.runSync(execute("DELETE FROM project_settings WHERE project_id = ?", input.id));
-      Effect.runSync(execute("DELETE FROM projects WHERE id = ?", input.id));
-    }));
+            // Delete feature children
+            Effect.runSync(execute(`DELETE FROM agent_sessions WHERE feature_id IN (${ph})`, ...featureIds));
+            Effect.runSync(execute(`DELETE FROM plans WHERE feature_id IN (${ph})`, ...featureIds));
+            Effect.runSync(execute(`DELETE FROM feature_settings WHERE feature_id IN (${ph})`, ...featureIds));
+            Effect.runSync(execute(`DELETE FROM diff_viewed_files WHERE feature_id IN (${ph})`, ...featureIds));
+            Effect.runSync(execute(`DELETE FROM features WHERE project_id = ?`, input.id));
+          }
+
+          // Delete project children
+          Effect.runSync(execute("DELETE FROM project_settings WHERE project_id = ?", input.id));
+          Effect.runSync(execute("DELETE FROM projects WHERE id = ?", input.id));
+        });
+      }),
+    );
 
     return { success: true };
   }),
