@@ -11,7 +11,7 @@
  *   queryObj.close() is always called even on error
  */
 
-import { Effect, Layer, Option, Ref, Deferred } from "effect";
+import { Effect, Layer, Option, Ref, Deferred, Duration } from "effect";
 import { SlashCommandError } from "../errors.js";
 import { getSdkClient } from "../../agents/sdk-client.js";
 import { discoverClaudeCli } from "../../agents/cli-discovery.js";
@@ -251,7 +251,11 @@ export const SlashCommandsLive = Layer.effect(
           const fetchAndResolve: Effect.Effect<SlashCommandInfo[], SlashCommandError> =
             Effect.gen(function* () {
               const sdkCommands = yield* fetchViaTemporaryQuery(cwd).pipe(
-                // Temporary query errors fall back to [] (resilient)
+                // Bound the fetch to 30 seconds so the inflight Deferred is
+                // always resolved in finite time, preventing waiting fibers
+                // from hanging indefinitely if the subprocess never responds.
+                Effect.timeout(Duration.seconds(30)),
+                // Temporary query errors AND timeouts fall back to [] (resilient)
                 Effect.catchAll(() => Effect.succeed([] as SlashCommandInfo[])),
               );
               // Update cache
