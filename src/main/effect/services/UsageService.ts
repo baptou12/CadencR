@@ -54,7 +54,7 @@ export interface UsageServiceI {
    * converted to fallback responses. The underlying fetch is cached for
    * 5 minutes with automatic deduplication of concurrent callers.
    */
-  getUsage(): Effect.Effect<UsageResponse, UsageApiError>;
+  getUsage(): Effect.Effect<UsageResponse, never>;
 }
 
 /** Context tag for the UsageService */
