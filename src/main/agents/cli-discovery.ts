@@ -152,6 +152,12 @@ function findClaudeInProcessPath(): Effect.Effect<string, CliDiscoveryError> {
  *
  * Returns Effect.Effect<ClaudeCliInfo, CliNotFoundError>.
  * Use Effect.option or Effect.catchTag("CliNotFoundError", ...) to handle not-found.
+ *
+ * Implementation note: probes run sequentially via Effect.firstSuccessOf rather than
+ * concurrently via Effect.raceAll. The concurrent approach would require priority-based
+ * delays (settings=0ms, shell=10ms, ...) to avoid ties, but would still spawn expensive
+ * shell processes (`shell -ilc 'which claude'`) even when the instant DB settings lookup
+ * succeeds. Sequential short-circuiting avoids this wasted work in the common case.
  */
 export function discoverClaudeCli(): Effect.Effect<ClaudeCliInfo, CliNotFoundError> {
   return Effect.firstSuccessOf([
