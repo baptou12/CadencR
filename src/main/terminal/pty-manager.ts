@@ -5,7 +5,6 @@
  * wrapper functions delegate to the Effect service so callers do not need to
  * know about Effect.
  */
-import { Effect } from "effect";
 import { PtyManager } from "../effect/services/PtyManager.js";
 import { AppRuntime } from "../effect/runtime.js";
 
@@ -18,7 +17,7 @@ import { AppRuntime } from "../effect/runtime.js";
  * @param shell - Optional shell override (defaults to user's $SHELL)
  */
 export function createPty(id: string, featureId: number, cwd: string, shell?: string): void {
-  AppRuntime.runSync(Effect.flatMap(PtyManager, (pm) => pm.create(id, featureId, cwd, shell)));
+  AppRuntime.runSync(PtyManager.create(id, featureId, cwd, shell));
 }
 
 /**
@@ -26,7 +25,7 @@ export function createPty(id: string, featureId: number, cwd: string, shell?: st
  */
 export function writeToPty(id: string, data: string): void {
   try {
-    AppRuntime.runSync(Effect.flatMap(PtyManager, (pm) => pm.write(id, data)));
+    AppRuntime.runSync(PtyManager.write(id, data));
   } catch {
     // Silently ignore PtyNotFound errors — PTY may have already exited
   }
@@ -37,7 +36,7 @@ export function writeToPty(id: string, data: string): void {
  */
 export function resizePty(id: string, cols: number, rows: number): void {
   try {
-    AppRuntime.runSync(Effect.flatMap(PtyManager, (pm) => pm.resize(id, cols, rows)));
+    AppRuntime.runSync(PtyManager.resize(id, cols, rows));
   } catch {
     // Silently ignore PtyNotFound errors — PTY may have already exited
   }
@@ -47,7 +46,7 @@ export function resizePty(id: string, cols: number, rows: number): void {
  * Kill a single PTY process and remove it from the map.
  */
 export function killPty(id: string): void {
-  AppRuntime.runSync(Effect.flatMap(PtyManager, (pm) => pm.kill(id)));
+  AppRuntime.runSync(PtyManager.kill(id));
 }
 
 /**
@@ -55,19 +54,19 @@ export function killPty(id: string): void {
  * Used for cleanup when navigating away from a feature.
  */
 export function killAllPtysForFeature(featureId: number): void {
-  AppRuntime.runSync(Effect.flatMap(PtyManager, (pm) => pm.killAllForFeature(featureId)));
+  AppRuntime.runSync(PtyManager.killAllForFeature(featureId));
 }
 
 /**
  * Kill all PTY processes. Used during app shutdown.
  */
 export function killAllPtys(): void {
-  AppRuntime.runSync(Effect.flatMap(PtyManager, (pm) => pm.killAll()));
+  AppRuntime.runSync(PtyManager.killAll());
 }
 
 /**
  * Check if any PTY instances are running.
  */
 export function hasRunningPtys(): boolean {
-  return AppRuntime.runSync(Effect.flatMap(PtyManager, (pm) => pm.hasRunning()));
+  return AppRuntime.runSync(PtyManager.hasRunning());
 }

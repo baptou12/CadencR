@@ -70,9 +70,7 @@ describe("SessionPersistence service — SessionPersistenceLive", () => {
 
     it("getSessionDbId returns null for unknown subprocess", () => {
       const result = runSPSync(
-        Effect.flatMap(SessionPersistence, (svc) =>
-          svc.getSessionDbId("unknown"),
-        ),
+        SessionPersistence.getSessionDbId("unknown"),
       );
       expect(result).toBeNull();
     });
@@ -97,9 +95,7 @@ describe("SessionPersistence service — SessionPersistenceLive", () => {
   describe("setSessionModel", () => {
     it("stores the model without DB access", () => {
       runSPSync(
-        Effect.flatMap(SessionPersistence, (svc) =>
-          svc.setSessionModel(10, "claude-3-7-sonnet-latest"),
-        ),
+        SessionPersistence.setSessionModel(10, "claude-3-7-sonnet-latest"),
       );
       expect(mockExecute).not.toHaveBeenCalled();
     });
@@ -112,9 +108,7 @@ describe("SessionPersistence service — SessionPersistenceLive", () => {
   describe("persistClaudeSessionId", () => {
     it("executes an UPDATE against agent_sessions", async () => {
       await runSP(
-        Effect.flatMap(SessionPersistence, (svc) =>
-          svc.persistClaudeSessionId(5, "sdk-session-abc"),
-        ),
+        SessionPersistence.persistClaudeSessionId(5, "sdk-session-abc"),
       );
       expect(mockExecute).toHaveBeenCalledWith(
         "UPDATE agent_sessions SET claude_session_id = ? WHERE id = ?",
@@ -131,9 +125,7 @@ describe("SessionPersistence service — SessionPersistenceLive", () => {
   describe("updateTokenUsage", () => {
     it("updates input_tokens and output_tokens", async () => {
       await runSP(
-        Effect.flatMap(SessionPersistence, (svc) =>
-          svc.updateTokenUsage(7, 1234, 56),
-        ),
+        SessionPersistence.updateTokenUsage(7, 1234, 56),
       );
       expect(mockExecute).toHaveBeenCalledWith(
         "UPDATE agent_sessions SET input_tokens = ?, output_tokens = ? WHERE id = ?",
@@ -151,17 +143,15 @@ describe("SessionPersistence service — SessionPersistenceLive", () => {
   describe("persistStreamEvent — message_start", () => {
     it("captures the model from message_start (no DB insert)", async () => {
       await runSP(
-        Effect.flatMap(SessionPersistence, (svc) =>
-          svc.persistStreamEvent(1, {
-            type: "message_start",
-            message: {
-              id: "msg_1",
-              type: "message",
-              role: "assistant",
-              model: "claude-3-5-sonnet",
-            },
-          }),
-        ),
+        SessionPersistence.persistStreamEvent(1, {
+          type: "message_start",
+          message: {
+            id: "msg_1",
+            type: "message",
+            role: "assistant",
+            model: "claude-3-5-sonnet",
+          },
+        }),
       );
       // No DB insert for message_start
       expect(mockExecute).not.toHaveBeenCalled();
@@ -179,16 +169,14 @@ describe("SessionPersistence service — SessionPersistenceLive", () => {
       );
 
       await runSP(
-        Effect.flatMap(SessionPersistence, (svc) =>
-          svc.persistStreamEvent(
-            1,
-            {
-              type: "content_block_start",
-              index: 0,
-              content_block: { type: "text", text: "Hello world" },
-            },
-            null,
-          ),
+        SessionPersistence.persistStreamEvent(
+          1,
+          {
+            type: "content_block_start",
+            index: 0,
+            content_block: { type: "text", text: "Hello world" },
+          },
+          null,
         ),
       );
 
@@ -211,18 +199,16 @@ describe("SessionPersistence service — SessionPersistenceLive", () => {
       );
 
       await runSP(
-        Effect.flatMap(SessionPersistence, (svc) =>
-          svc.persistStreamEvent(2, {
-            type: "content_block_start",
-            index: 0,
-            content_block: {
-              type: "tool_use",
-              id: "tool-1",
-              name: "Bash",
-              input: {},
-            },
-          }),
-        ),
+        SessionPersistence.persistStreamEvent(2, {
+          type: "content_block_start",
+          index: 0,
+          content_block: {
+            type: "tool_use",
+            id: "tool-1",
+            name: "Bash",
+            input: {},
+          },
+        }),
       );
 
       const [sql, ...params] = mockExecute.mock.calls[0];
@@ -237,18 +223,16 @@ describe("SessionPersistence service — SessionPersistenceLive", () => {
       );
 
       await runSP(
-        Effect.flatMap(SessionPersistence, (svc) =>
-          svc.persistStreamEvent(3, {
-            type: "content_block_start",
-            index: 0,
-            content_block: {
-              type: "tool_use",
-              id: "tool-2",
-              name: "Write",
-              input: {},
-            },
-          }),
-        ),
+        SessionPersistence.persistStreamEvent(3, {
+          type: "content_block_start",
+          index: 0,
+          content_block: {
+            type: "tool_use",
+            id: "tool-2",
+            name: "Write",
+            input: {},
+          },
+        }),
       );
 
       // Should have called execute for both insert and has_file_changes update
@@ -268,14 +252,12 @@ describe("SessionPersistence service — SessionPersistenceLive", () => {
   describe("persistStreamEvent — tool_result", () => {
     it("inserts a tool_result row with is_error=false", async () => {
       await runSP(
-        Effect.flatMap(SessionPersistence, (svc) =>
-          svc.persistStreamEvent(1, {
-            type: "tool_result",
-            tool_use_id: "tool-abc",
-            content: "result text",
-            is_error: false,
-          }),
-        ),
+        SessionPersistence.persistStreamEvent(1, {
+          type: "tool_result",
+          tool_use_id: "tool-abc",
+          content: "result text",
+          is_error: false,
+        }),
       );
 
       const [sql, ...params] = mockExecute.mock.calls[0];
@@ -285,14 +267,12 @@ describe("SessionPersistence service — SessionPersistenceLive", () => {
 
     it("inserts a tool_error row when is_error=true", async () => {
       await runSP(
-        Effect.flatMap(SessionPersistence, (svc) =>
-          svc.persistStreamEvent(1, {
-            type: "tool_result",
-            tool_use_id: "tool-xyz",
-            content: "error occurred",
-            is_error: true,
-          }),
-        ),
+        SessionPersistence.persistStreamEvent(1, {
+          type: "tool_result",
+          tool_use_id: "tool-xyz",
+          content: "error occurred",
+          is_error: true,
+        }),
       );
 
       const [sql, ...params] = mockExecute.mock.calls[0];
@@ -308,12 +288,10 @@ describe("SessionPersistence service — SessionPersistenceLive", () => {
   describe("persistStreamEvent — error", () => {
     it("inserts an error row", async () => {
       await runSP(
-        Effect.flatMap(SessionPersistence, (svc) =>
-          svc.persistStreamEvent(1, {
-            type: "error",
-            error: { type: "sdk_error", message: "something went wrong" },
-          }),
-        ),
+        SessionPersistence.persistStreamEvent(1, {
+          type: "error",
+          error: { type: "sdk_error", message: "something went wrong" },
+        }),
       );
 
       const [sql, ...params] = mockExecute.mock.calls[0];
@@ -330,9 +308,7 @@ describe("SessionPersistence service — SessionPersistenceLive", () => {
   describe("persistSessionStatus", () => {
     it("does nothing if managedId is not in session map", async () => {
       await runSP(
-        Effect.flatMap(SessionPersistence, (svc) =>
-          svc.persistSessionStatus("unknown-id", "completed"),
-        ),
+        SessionPersistence.persistSessionStatus("unknown-id", "completed"),
       );
       expect(mockExecute).not.toHaveBeenCalled();
     });
@@ -395,9 +371,7 @@ describe("SessionPersistence service — SessionPersistenceLive", () => {
   describe("saveAllSessionStates", () => {
     it("executes 3 UPDATE statements", async () => {
       await runSP(
-        Effect.flatMap(SessionPersistence, (svc) =>
-          svc.saveAllSessionStates(),
-        ),
+        SessionPersistence.saveAllSessionStates(),
       );
       expect(mockExecute).toHaveBeenCalledTimes(3);
 

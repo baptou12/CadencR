@@ -181,7 +181,7 @@ describe("SubprocessLifecycle service — SubprocessLifecycleLive", () => {
       const options = makeOptions({ id: "pre-generated-id" });
 
       const managed = await runSL(
-        Effect.flatMap(SubprocessLifecycle, (svc) => svc.start(options)),
+        SubprocessLifecycle.start(options),
       );
 
       expect(managed.id).toBe("pre-generated-id");
@@ -207,7 +207,7 @@ describe("SubprocessLifecycle service — SubprocessLifecycleLive", () => {
       const options = makeOptions();
 
       await runSL(
-        Effect.flatMap(SubprocessLifecycle, (svc) => svc.start(options)),
+        SubprocessLifecycle.start(options),
       );
 
       // Give the forked fiber a tick to run
@@ -253,7 +253,7 @@ describe("SubprocessLifecycle service — SubprocessLifecycleLive", () => {
 
     it("pause returns false for non-existent subprocess", async () => {
       const result = await runSL(
-        Effect.flatMap(SubprocessLifecycle, (svc) => svc.pause("does-not-exist")),
+        SubprocessLifecycle.pause("does-not-exist"),
       );
       expect(result).toBe(false);
     });
@@ -369,9 +369,7 @@ describe("SubprocessLifecycle service — SubprocessLifecycleLive", () => {
   describe("sendMessage", () => {
     it("returns no_process for unknown subprocess", async () => {
       const result = await runSL(
-        Effect.flatMap(SubprocessLifecycle, (svc) =>
-          svc.sendMessage("unknown-id", "hello"),
-        ),
+        SubprocessLifecycle.sendMessage("unknown-id", "hello"),
       );
       expect(result).toEqual({ success: false, reason: "no_process" });
     });
@@ -546,7 +544,7 @@ describe("SubprocessLifecycle service — SubprocessLifecycleLive", () => {
 
     it("hasRunning returns false when no subprocesses exist", async () => {
       const result = await runSL(
-        Effect.flatMap(SubprocessLifecycle, (svc) => svc.hasRunning()),
+        SubprocessLifecycle.hasRunning(),
       );
       expect(result).toBe(false);
     });
@@ -571,7 +569,7 @@ describe("SubprocessLifecycle service — SubprocessLifecycleLive", () => {
   describe("gracefulShutdown", () => {
     it("saves all session states via SessionPersistence", async () => {
       await runSL(
-        Effect.flatMap(SubprocessLifecycle, (svc) => svc.gracefulShutdown()),
+        SubprocessLifecycle.gracefulShutdown(),
       );
 
       expect(mockSPSaveAllSessionStates).toHaveBeenCalled();
@@ -612,7 +610,7 @@ describe("SubprocessLifecycle service — SubprocessLifecycleLive", () => {
       // Should not throw
       await expect(
         runSL(
-          Effect.flatMap(SubprocessLifecycle, (svc) => svc.gracefulShutdown()),
+          SubprocessLifecycle.gracefulShutdown(),
         ),
       ).resolves.toBeUndefined();
     });
@@ -685,9 +683,7 @@ describe("SubprocessLifecycle service — SubprocessLifecycleLive", () => {
   describe("setPermissionMode", () => {
     it("returns false when subprocess does not exist", async () => {
       const result = await runSL(
-        Effect.flatMap(SubprocessLifecycle, (svc) =>
-          svc.setPermissionMode("unknown", "plan"),
-        ),
+        SubprocessLifecycle.setPermissionMode("unknown", "plan"),
       );
       expect(result).toBe(false);
     });
@@ -745,7 +741,7 @@ describe("SubprocessLifecycle service — SubprocessLifecycleLive", () => {
   describe("generateSubprocessId", () => {
     it("returns a string matching the agent-timestamp-counter pattern", async () => {
       const id = await runSL(
-        Effect.flatMap(SubprocessLifecycle, (svc) => svc.generateSubprocessId()),
+        SubprocessLifecycle.generateSubprocessId(),
       );
       expect(id).toMatch(/^agent-\d+-\d+$/);
     });

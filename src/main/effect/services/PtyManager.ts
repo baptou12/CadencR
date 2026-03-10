@@ -1,4 +1,4 @@
-import { Context, Effect, Layer } from "effect";
+import { Effect, Layer } from "effect";
 import * as pty from "node-pty";
 import { PtyError, PtyNotFound } from "../errors.js";
 
@@ -38,7 +38,7 @@ export interface PtyManagerService {
 }
 
 /** Context tag for the PtyManager service */
-export class PtyManager extends Context.Tag("PtyManager")<PtyManager, PtyManagerService>() {}
+export class PtyManager extends Effect.Tag("PtyManager")<PtyManager, PtyManagerService>() {}
 
 /** Resolve the default shell for the current platform. */
 function getDefaultShell(): string {

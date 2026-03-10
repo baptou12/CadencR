@@ -14,7 +14,7 @@
  * disposes, replacing the manual gracefulShutdown() call.
  */
 
-import { Context, Effect, Layer } from "effect";
+import { Effect, Layer } from "effect";
 import { SdkQueryRunner } from "./SdkQueryRunner.js";
 import { SessionPersistence } from "./SessionPersistence.js";
 import { EventBroadcaster } from "./EventBroadcaster.js";
@@ -94,7 +94,7 @@ export interface SubprocessLifecycleService {
 }
 
 /** Context tag for the SubprocessLifecycle service */
-export class SubprocessLifecycle extends Context.Tag("SubprocessLifecycle")<
+export class SubprocessLifecycle extends Effect.Tag("SubprocessLifecycle")<
   SubprocessLifecycle,
   SubprocessLifecycleService
 >() {}

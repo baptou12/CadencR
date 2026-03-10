@@ -94,12 +94,10 @@ describe("EventBroadcaster service — EventBroadcasterLive", () => {
   describe("broadcastAgentEvent", () => {
     it("sends an AgentEvent on AGENT_EVENT_CHANNEL to all windows", () => {
       runEB(
-        Effect.flatMap(EventBroadcaster, (svc) =>
-          svc.broadcastAgentEvent("proc-1", "plan", {
-            type: "error",
-            error: { type: "sdk_error", message: "fail" },
-          }),
-        ),
+        EventBroadcaster.broadcastAgentEvent("proc-1", "plan", {
+          type: "error",
+          error: { type: "sdk_error", message: "fail" },
+        }),
       );
 
       expect(mockSend).toHaveBeenCalledOnce();
@@ -114,12 +112,10 @@ describe("EventBroadcaster service — EventBroadcasterLive", () => {
       mockGetSessionDbIdFn.mockImplementation((_id: string) => 42);
 
       runEB(
-        Effect.flatMap(EventBroadcaster, (svc) =>
-          svc.broadcastAgentEvent("proc-2", "execute", {
-            type: "agent_done",
-            exitCode: 0,
-          }),
-        ),
+        EventBroadcaster.broadcastAgentEvent("proc-2", "execute", {
+          type: "agent_done",
+          exitCode: 0,
+        }),
       );
 
       const [, payload] = mockSend.mock.calls[0];
@@ -128,13 +124,11 @@ describe("EventBroadcaster service — EventBroadcasterLive", () => {
 
     it("includes parentToolUseId when provided", () => {
       runEB(
-        Effect.flatMap(EventBroadcaster, (svc) =>
-          svc.broadcastAgentEvent(
-            "proc-3",
-            "plan",
-            { type: "agent_done", exitCode: 0 },
-            "parent-tool-id",
-          ),
+        EventBroadcaster.broadcastAgentEvent(
+          "proc-3",
+          "plan",
+          { type: "agent_done", exitCode: 0 },
+          "parent-tool-id",
         ),
       );
 
@@ -147,12 +141,10 @@ describe("EventBroadcaster service — EventBroadcasterLive", () => {
       mockGetAllWindows.mockReturnValue([{ isDestroyed: () => true, webContents: { send: mockSend } }] as any);
 
       runEB(
-        Effect.flatMap(EventBroadcaster, (svc) =>
-          svc.broadcastAgentEvent("proc-4", "session", {
-            type: "agent_done",
-            exitCode: 0,
-          }),
-        ),
+        EventBroadcaster.broadcastAgentEvent("proc-4", "session", {
+          type: "agent_done",
+          exitCode: 0,
+        }),
       );
 
       expect(mockSend).not.toHaveBeenCalled();
@@ -162,12 +154,10 @@ describe("EventBroadcaster service — EventBroadcasterLive", () => {
       mockGetSessionDbIdFn.mockImplementation((_id: string) => null);
 
       runEB(
-        Effect.flatMap(EventBroadcaster, (svc) =>
-          svc.broadcastAgentEvent("proc-5", "plan", {
-            type: "agent_done",
-            exitCode: 0,
-          }),
-        ),
+        EventBroadcaster.broadcastAgentEvent("proc-5", "plan", {
+          type: "agent_done",
+          exitCode: 0,
+        }),
       );
 
       const [, payload] = mockSend.mock.calls[0];
@@ -182,9 +172,7 @@ describe("EventBroadcaster service — EventBroadcasterLive", () => {
   describe("notifyDbUpdated", () => {
     it("sends a DB_UPDATED_CHANNEL message with entity and featureId", () => {
       runEB(
-        Effect.flatMap(EventBroadcaster, (svc) =>
-          svc.notifyDbUpdated("feature", 7),
-        ),
+        EventBroadcaster.notifyDbUpdated("feature", 7),
       );
 
       expect(mockSend).toHaveBeenCalledOnce();
@@ -201,18 +189,14 @@ describe("EventBroadcaster service — EventBroadcasterLive", () => {
   describe("throttledNotify", () => {
     it("does not notify immediately", () => {
       runEB(
-        Effect.flatMap(EventBroadcaster, (svc) =>
-          svc.throttledNotify("session-key-1", 5),
-        ),
+        EventBroadcaster.throttledNotify("session-key-1", 5),
       );
       expect(mockSend).not.toHaveBeenCalled();
     });
 
     it("notifies after 200ms", () => {
       runEB(
-        Effect.flatMap(EventBroadcaster, (svc) =>
-          svc.throttledNotify("session-key-2", 5),
-        ),
+        EventBroadcaster.throttledNotify("session-key-2", 5),
       );
       vi.advanceTimersByTime(200);
       expect(mockSend).toHaveBeenCalledOnce();
@@ -223,13 +207,11 @@ describe("EventBroadcaster service — EventBroadcasterLive", () => {
 
     it("coalesces multiple calls into a single notification", () => {
       runEB(
-        Effect.flatMap(EventBroadcaster, (svc) =>
-          Effect.gen(function* () {
-            yield* svc.throttledNotify("session-key-3", 10);
-            yield* svc.throttledNotify("session-key-3", 10);
-            yield* svc.throttledNotify("session-key-3", 10);
-          }),
-        ),
+        Effect.gen(function* () {
+          yield* EventBroadcaster.throttledNotify("session-key-3", 10);
+          yield* EventBroadcaster.throttledNotify("session-key-3", 10);
+          yield* EventBroadcaster.throttledNotify("session-key-3", 10);
+        }),
       );
       vi.advanceTimersByTime(200);
       // Should only send once despite 3 calls
@@ -238,12 +220,10 @@ describe("EventBroadcaster service — EventBroadcasterLive", () => {
 
     it("uses the latest featureId when coalescing", () => {
       runEB(
-        Effect.flatMap(EventBroadcaster, (svc) =>
-          Effect.gen(function* () {
-            yield* svc.throttledNotify("session-key-4", 1);
-            yield* svc.throttledNotify("session-key-4", 99);
-          }),
-        ),
+        Effect.gen(function* () {
+          yield* EventBroadcaster.throttledNotify("session-key-4", 1);
+          yield* EventBroadcaster.throttledNotify("session-key-4", 99);
+        }),
       );
       vi.advanceTimersByTime(200);
       const [, payload] = mockSend.mock.calls[0];
@@ -252,12 +232,10 @@ describe("EventBroadcaster service — EventBroadcasterLive", () => {
 
     it("allows separate session keys to fire independently", () => {
       runEB(
-        Effect.flatMap(EventBroadcaster, (svc) =>
-          Effect.gen(function* () {
-            yield* svc.throttledNotify("key-a", 1);
-            yield* svc.throttledNotify("key-b", 2);
-          }),
-        ),
+        Effect.gen(function* () {
+          yield* EventBroadcaster.throttledNotify("key-a", 1);
+          yield* EventBroadcaster.throttledNotify("key-b", 2);
+        }),
       );
       vi.advanceTimersByTime(200);
       expect(mockSend).toHaveBeenCalledTimes(2);
@@ -271,12 +249,10 @@ describe("EventBroadcaster service — EventBroadcasterLive", () => {
   describe("flushNotify", () => {
     it("sends the pending notification immediately when flushed", () => {
       runEB(
-        Effect.flatMap(EventBroadcaster, (svc) =>
-          Effect.gen(function* () {
-            yield* svc.throttledNotify("flush-key-1", 77);
-            yield* svc.flushNotify("flush-key-1");
-          }),
-        ),
+        Effect.gen(function* () {
+          yield* EventBroadcaster.throttledNotify("flush-key-1", 77);
+          yield* EventBroadcaster.flushNotify("flush-key-1");
+        }),
       );
       // Notification should have been sent synchronously (flush cancels the timer)
       expect(mockSend).toHaveBeenCalledOnce();
@@ -287,12 +263,10 @@ describe("EventBroadcaster service — EventBroadcasterLive", () => {
 
     it("does NOT fire again after timer would have elapsed", () => {
       runEB(
-        Effect.flatMap(EventBroadcaster, (svc) =>
-          Effect.gen(function* () {
-            yield* svc.throttledNotify("flush-key-2", 88);
-            yield* svc.flushNotify("flush-key-2");
-          }),
-        ),
+        Effect.gen(function* () {
+          yield* EventBroadcaster.throttledNotify("flush-key-2", 88);
+          yield* EventBroadcaster.flushNotify("flush-key-2");
+        }),
       );
       const countAfterFlush = mockSend.mock.calls.length;
       vi.advanceTimersByTime(200);
@@ -302,9 +276,7 @@ describe("EventBroadcaster service — EventBroadcasterLive", () => {
 
     it("is a no-op when there is no pending notification", () => {
       runEB(
-        Effect.flatMap(EventBroadcaster, (svc) =>
-          svc.flushNotify("nonexistent-key"),
-        ),
+        EventBroadcaster.flushNotify("nonexistent-key"),
       );
       expect(mockSend).not.toHaveBeenCalled();
     });

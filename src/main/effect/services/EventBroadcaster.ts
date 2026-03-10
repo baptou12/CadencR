@@ -7,7 +7,7 @@
  * - Throttled notifications (batches rapid stream events into one notify per 200ms)
  */
 
-import { Context, Effect, Layer } from "effect";
+import { Effect, Layer } from "effect";
 import { BrowserWindow } from "electron";
 import type { AgentType, StreamEvent, AgentEvent } from "../../agents/types.js";
 import { SessionPersistence } from "./SessionPersistence.js";
@@ -65,7 +65,7 @@ export interface EventBroadcasterService {
 }
 
 /** Context tag for the EventBroadcaster service */
-export class EventBroadcaster extends Context.Tag("EventBroadcaster")<
+export class EventBroadcaster extends Effect.Tag("EventBroadcaster")<
   EventBroadcaster,
   EventBroadcasterService
 >() {}

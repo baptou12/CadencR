@@ -12,7 +12,6 @@
  * tool-permissions → effect-helpers).
  */
 
-import { Effect } from "effect";
 import { SessionPersistence } from "../effect/services/SessionPersistence";
 import { EventBroadcaster } from "../effect/services/EventBroadcaster";
 import { getAppRuntime } from "../effect/app-runtime-ref";
@@ -33,16 +32,12 @@ export interface DbUpdateEvent {
 
 /** Notify all renderer windows that data changed in the DB. */
 export function notifyDbUpdated(entity: DbEntity, featureId: number): void {
-  getAppRuntime().runSync(
-    Effect.flatMap(EventBroadcaster, (eb) => eb.notifyDbUpdated(entity, featureId)),
-  );
+  getAppRuntime().runSync(EventBroadcaster.notifyDbUpdated(entity, featureId));
 }
 
 /** Get the session DB ID for a subprocess (returns undefined if not registered). */
 export function getSessionDbId(subprocessId: string): number | undefined {
-  const result = getAppRuntime().runSync(
-    Effect.flatMap(SessionPersistence, (sp) => sp.getSessionDbId(subprocessId)),
-  );
+  const result = getAppRuntime().runSync(SessionPersistence.getSessionDbId(subprocessId));
   return result ?? undefined;
 }
 
@@ -51,9 +46,7 @@ export function registerSessionPersistence(
   subprocessId: string,
   sessionDbId: number,
 ): void {
-  getAppRuntime().runSync(
-    Effect.flatMap(SessionPersistence, (sp) => sp.registerSession(subprocessId, sessionDbId)),
-  );
+  getAppRuntime().runSync(SessionPersistence.registerSession(subprocessId, sessionDbId));
 }
 
 /**
@@ -61,9 +54,7 @@ export function registerSessionPersistence(
  * Returns the subprocess ID if it's still in the session map, or undefined.
  */
 export function getSubprocessIdForSession(sessionDbId: number): string | undefined {
-  return getAppRuntime().runSync(
-    Effect.flatMap(SessionPersistence, (sp) => sp.getSubprocessIdForSession(sessionDbId)),
-  );
+  return getAppRuntime().runSync(SessionPersistence.getSubprocessIdForSession(sessionDbId));
 }
 
 /**
@@ -71,7 +62,5 @@ export function getSubprocessIdForSession(sessionDbId: number): string | undefin
  * Used to stop running subprocesses when deleting a feature.
  */
 export function getSubprocessIdsForSessionDbIds(sessionDbIds: number[]): string[] {
-  return getAppRuntime().runSync(
-    Effect.flatMap(SessionPersistence, (sp) => sp.getSubprocessIdsForSessionDbIds(sessionDbIds)),
-  );
+  return getAppRuntime().runSync(SessionPersistence.getSubprocessIdsForSessionDbIds(sessionDbIds));
 }

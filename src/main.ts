@@ -85,9 +85,7 @@ app.on("ready", async () => {
   await AppRuntime.runPromise(Effect.void);
   fetchAvailableModels().catch(() => {}); // warm up cache
   // Restore in-memory session map from DB (for reconnection after restart).
-  await AppRuntime.runPromise(
-    Effect.flatMap(SessionPersistence, (sp) => sp.restoreSessionMap()),
-  );
+  await AppRuntime.runPromise(SessionPersistence.restoreSessionMap());
   resumeInProgressFeatures();
   createWindow();
 });

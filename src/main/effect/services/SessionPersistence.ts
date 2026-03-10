@@ -9,7 +9,7 @@
  * - App startup/shutdown state management
  */
 
-import { Context, Effect, Layer } from "effect";
+import { Effect, Layer } from "effect";
 import { Database } from "./Database.js";
 import { DatabaseError } from "../errors.js";
 import type { StreamEvent, StreamSystemEvent } from "../../agents/types.js";
@@ -75,7 +75,7 @@ export interface SessionPersistenceService {
 }
 
 /** Context tag for the SessionPersistence service */
-export class SessionPersistence extends Context.Tag("SessionPersistence")<
+export class SessionPersistence extends Effect.Tag("SessionPersistence")<
   SessionPersistence,
   SessionPersistenceService
 >() {}

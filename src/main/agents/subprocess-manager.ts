@@ -23,9 +23,7 @@ export type { SendMessageResult } from "../effect/services/SubprocessLifecycle";
 
 /** Pre-generate a subprocess ID for use before startSubprocess is called. */
 export function generateSubprocessId(): string {
-  return AppRuntime.runSync(
-    Effect.flatMap(SubprocessLifecycle, (svc) => svc.generateSubprocessId()),
-  );
+  return AppRuntime.runSync(SubprocessLifecycle.generateSubprocessId());
 }
 
 // ---------------------------------------------------------------------------
@@ -33,48 +31,36 @@ export function generateSubprocessId(): string {
 // ---------------------------------------------------------------------------
 
 export function startSubprocess(options: SubprocessOptions): ManagedSubprocess {
-  return AppRuntime.runSync(
-    Effect.flatMap(SubprocessLifecycle, (svc) => svc.start(options)),
-  );
+  return AppRuntime.runSync(SubprocessLifecycle.start(options));
 }
 
 export async function setSubprocessPermissionMode(
   id: string,
   mode: "acceptEdits" | "plan",
 ): Promise<boolean> {
-  return AppRuntime.runPromise(
-    Effect.flatMap(SubprocessLifecycle, (svc) => svc.setPermissionMode(id, mode)),
-  );
+  return AppRuntime.runPromise(SubprocessLifecycle.setPermissionMode(id, mode));
 }
 
 export async function sendMessageToSubprocess(
   id: string,
   message: MessageContent,
 ): Promise<import("../effect/services/SubprocessLifecycle").SendMessageResult> {
-  return AppRuntime.runPromise(
-    Effect.flatMap(SubprocessLifecycle, (svc) => svc.sendMessage(id, message)),
-  );
+  return AppRuntime.runPromise(SubprocessLifecycle.sendMessage(id, message));
 }
 
 export async function pauseSubprocess(
   id: string,
   opts?: { allowPaused?: boolean },
 ): Promise<boolean> {
-  return AppRuntime.runPromise(
-    Effect.flatMap(SubprocessLifecycle, (svc) => svc.pause(id, opts)),
-  );
+  return AppRuntime.runPromise(SubprocessLifecycle.pause(id, opts));
 }
 
 export async function stopSubprocess(id: string): Promise<boolean> {
-  return AppRuntime.runPromise(
-    Effect.flatMap(SubprocessLifecycle, (svc) => svc.stop(id)),
-  );
+  return AppRuntime.runPromise(SubprocessLifecycle.stop(id));
 }
 
 export async function interruptSubprocess(id: string): Promise<boolean> {
-  return AppRuntime.runPromise(
-    Effect.flatMap(SubprocessLifecycle, (svc) => svc.interrupt(id)),
-  );
+  return AppRuntime.runPromise(SubprocessLifecycle.interrupt(id));
 }
 
 export function listSubprocesses(): Array<{
@@ -83,42 +69,30 @@ export function listSubprocesses(): Array<{
   startedAt: Date;
   status: string;
 }> {
-  return AppRuntime.runSync(
-    Effect.flatMap(SubprocessLifecycle, (svc) => svc.list()),
-  );
+  return AppRuntime.runSync(SubprocessLifecycle.list());
 }
 
 export function killAllSubprocesses(): void {
-  AppRuntime.runSync(
-    Effect.flatMap(SubprocessLifecycle, (svc) => svc.killAll()),
-  );
+  AppRuntime.runSync(SubprocessLifecycle.killAll());
 }
 
 export function hasRunningSubprocesses(): boolean {
-  return AppRuntime.runSync(
-    Effect.flatMap(SubprocessLifecycle, (svc) => svc.hasRunning()),
-  );
+  return AppRuntime.runSync(SubprocessLifecycle.hasRunning());
 }
 
 export function saveAllSessionStates(): void {
   // Delegates to SessionPersistence via SubprocessLifecycle.gracefulShutdown
   // but only the save-state portion. We replicate with gracefulShutdown minus kill.
   // For backward compat, just call gracefulShutdown (it saves + kills).
-  AppRuntime.runSync(
-    Effect.flatMap(SubprocessLifecycle, (svc) => svc.gracefulShutdown()),
-  );
+  AppRuntime.runSync(SubprocessLifecycle.gracefulShutdown());
 }
 
 export function gracefulShutdown(): void {
-  AppRuntime.runSync(
-    Effect.flatMap(SubprocessLifecycle, (svc) => svc.gracefulShutdown()),
-  );
+  AppRuntime.runSync(SubprocessLifecycle.gracefulShutdown());
 }
 
 export function getActiveProcess(id: string): ManagedSubprocess | undefined {
-  return AppRuntime.runSync(
-    Effect.flatMap(SubprocessLifecycle, (svc) => svc.getActive(id)),
-  );
+  return AppRuntime.runSync(SubprocessLifecycle.getActive(id));
 }
 
 // ---------------------------------------------------------------------------

@@ -70,24 +70,22 @@ export const terminalRouter = router({
       const shell = process.env.SHELL || (os.platform() === "win32" ? "powershell.exe" : "/bin/bash");
 
       const ptyId = await AppRuntime.runPromise(
-        Effect.flatMap(PtyManager, (pm) =>
-          Effect.gen(function* () {
-            const id = yield* pm.generateId();
-            yield* pm.create(id, input.featureId, cwd, shell);
+        Effect.gen(function* () {
+          const id = yield* PtyManager.generateId();
+          yield* PtyManager.create(id, input.featureId, cwd, shell);
 
-            // Register data callback — broadcast to renderer
-            yield* pm.onData(id, (data: string) => {
-              broadcast(TERMINAL_DATA_CHANNEL, { ptyId: id, data });
-            });
+          // Register data callback — broadcast to renderer
+          yield* PtyManager.onData(id, (data: string) => {
+            broadcast(TERMINAL_DATA_CHANNEL, { ptyId: id, data });
+          });
 
-            // Register exit callback — broadcast to renderer
-            yield* pm.onExit(id, ({ exitCode, signal }) => {
-              broadcast(TERMINAL_EXIT_CHANNEL, { ptyId: id, exitCode, signal });
-            });
+          // Register exit callback — broadcast to renderer
+          yield* PtyManager.onExit(id, ({ exitCode, signal }) => {
+            broadcast(TERMINAL_EXIT_CHANNEL, { ptyId: id, exitCode, signal });
+          });
 
-            return id;
-          }),
-        ),
+          return id;
+        }),
       );
 
       return { ptyId, cwd };
@@ -99,7 +97,7 @@ export const terminalRouter = router({
     .query(async ({ input }) => {
       try {
         const scrollback = await AppRuntime.runPromise(
-          Effect.flatMap(PtyManager, (pm) => pm.getScrollback(input.ptyId)),
+          PtyManager.getScrollback(input.ptyId),
         );
         return { alive: true as const, scrollback: scrollback.join("") };
       } catch {
@@ -116,9 +114,7 @@ export const terminalRouter = router({
       }),
     )
     .mutation(async ({ input }) => {
-      await AppRuntime.runPromise(
-        Effect.flatMap(PtyManager, (pm) => pm.write(input.ptyId, input.data)),
-      );
+      await AppRuntime.runPromise(PtyManager.write(input.ptyId, input.data));
       return { success: true };
     }),
 
@@ -132,9 +128,7 @@ export const terminalRouter = router({
       }),
     )
     .mutation(async ({ input }) => {
-      await AppRuntime.runPromise(
-        Effect.flatMap(PtyManager, (pm) => pm.resize(input.ptyId, input.cols, input.rows)),
-      );
+      await AppRuntime.runPromise(PtyManager.resize(input.ptyId, input.cols, input.rows));
       return { success: true };
     }),
 
@@ -146,9 +140,7 @@ export const terminalRouter = router({
       }),
     )
     .mutation(async ({ input }) => {
-      await AppRuntime.runPromise(
-        Effect.flatMap(PtyManager, (pm) => pm.kill(input.ptyId)),
-      );
+      await AppRuntime.runPromise(PtyManager.kill(input.ptyId));
       return { success: true };
     }),
 
@@ -160,9 +152,7 @@ export const terminalRouter = router({
       }),
     )
     .mutation(async ({ input }) => {
-      await AppRuntime.runPromise(
-        Effect.flatMap(PtyManager, (pm) => pm.killAllForFeature(input.featureId)),
-      );
+      await AppRuntime.runPromise(PtyManager.killAllForFeature(input.featureId));
       return { success: true };
     }),
 });
