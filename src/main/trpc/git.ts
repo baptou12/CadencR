@@ -204,6 +204,8 @@ export const gitRouter = router({
   retryWorktreeSetup: publicProcedure
     .input(z.object({ projectId: z.number(), featureId: z.number() }))
     .mutation(({ input }) => {
+      // Fire-and-forget: worktree setup runs in background so the UI stays responsive.
+      // The renderer polls worktree status separately to reflect completion.
       AppRuntime.runPromise(
         setupWorktreeForFeatureEffect(input.projectId, input.featureId),
       ).catch((err) => {
@@ -573,11 +575,14 @@ export const gitRouter = router({
           input.featureId,
         ),
       );
+      const fallbackBranch = input.targetBranch ?? "main";
       const baseBranch = branchRow?.value
-        ? await AppRuntime.runPromise(getOriginalBranchEffect(gitPath, branchRow.value)).catch(
-            () => input.targetBranch ?? "main",
+        ? await AppRuntime.runPromise(
+            getOriginalBranchEffect(gitPath, branchRow.value).pipe(
+              Effect.catchAll(() => Effect.succeed(fallbackBranch)),
+            ),
           )
-        : input.targetBranch ?? "main";
+        : fallbackBranch;
 
       const [oldContent, newContent] = await Promise.all([
         AppRuntime.runPromise(getFileContentEffect(gitPath, input.filePath, baseBranch)),
