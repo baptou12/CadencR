@@ -144,6 +144,7 @@ export const PlanApprovalLive = Layer.effect(
               ? broadcaster.notifyDbUpdated("agent_session", featureId)
               : Effect.void,
           ),
+          Effect.tapError((e) => Effect.logWarning("PlanApproval: Failed to persist user message", { error: e })),
           Effect.orElse(() => Effect.void),
         );
 
@@ -175,11 +176,17 @@ export const PlanApprovalLive = Layer.effect(
                   "UPDATE agent_sessions SET plan_approval_result = NULL, pending_plan_approval = NULL WHERE id = ?",
                   sessionDbId,
                 )
-                .pipe(Effect.orElse(() => Effect.void));
+                .pipe(
+                  Effect.tapError((e) => Effect.logWarning("PlanApproval: Failed to clear plan_approval_result on resume", { error: e })),
+                  Effect.orElse(() => Effect.void),
+                );
               if (featureId != null) {
                 yield* broadcaster
                   .notifyDbUpdated("agent_session", featureId)
-                  .pipe(Effect.orElse(() => Effect.void));
+                  .pipe(
+                    Effect.tapError((e) => Effect.logWarning("PlanApproval: Failed to notify DB update after clearing plan_approval_result", { error: e })),
+                    Effect.orElse(() => Effect.void),
+                  );
               }
               return result;
             }
@@ -199,11 +206,17 @@ export const PlanApprovalLive = Layer.effect(
                 "mcp__cadence-plan__show_plan",
                 syntheticToolUseId,
               )
-              .pipe(Effect.orElse(() => Effect.void));
+              .pipe(
+                Effect.tapError((e) => Effect.logWarning("PlanApproval: Failed to insert synthetic show_plan tool call", { error: e })),
+                Effect.orElse(() => Effect.void),
+              );
             if (featureId != null) {
               yield* broadcaster
                 .notifyDbUpdated("agent_session", featureId)
-                .pipe(Effect.orElse(() => Effect.void));
+                .pipe(
+                  Effect.tapError((e) => Effect.logWarning("PlanApproval: Failed to notify DB update after show_plan insert", { error: e })),
+                  Effect.orElse(() => Effect.void),
+                );
             }
           }
 
@@ -215,11 +228,17 @@ export const PlanApprovalLive = Layer.effect(
                 JSON.stringify({ plan: planMarkdown }),
                 sessionDbId,
               )
-              .pipe(Effect.orElse(() => Effect.void));
+              .pipe(
+                Effect.tapError((e) => Effect.logWarning("PlanApproval: Failed to set pending_plan_approval", { error: e })),
+                Effect.orElse(() => Effect.void),
+              );
             if (featureId != null) {
               yield* broadcaster
                 .notifyDbUpdated("agent_session", featureId)
-                .pipe(Effect.orElse(() => Effect.void));
+                .pipe(
+                  Effect.tapError((e) => Effect.logWarning("PlanApproval: Failed to notify DB update after setting pending_plan_approval", { error: e })),
+                  Effect.orElse(() => Effect.void),
+                );
             }
           }
 
@@ -235,11 +254,17 @@ export const PlanApprovalLive = Layer.effect(
                   "UPDATE agent_sessions SET pending_plan_approval = NULL WHERE id = ?",
                   sessionDbId,
                 )
-                .pipe(Effect.orElse(() => Effect.void));
+                .pipe(
+                  Effect.tapError((e) => Effect.logWarning("PlanApproval: Failed to clear pending_plan_approval in cleanup", { error: e })),
+                  Effect.orElse(() => Effect.void),
+                );
               if (featureId != null) {
                 yield* broadcaster
                   .notifyDbUpdated("agent_session", featureId)
-                  .pipe(Effect.orElse(() => Effect.void));
+                  .pipe(
+                    Effect.tapError((e) => Effect.logWarning("PlanApproval: Failed to notify DB update in plan approval cleanup", { error: e })),
+                    Effect.orElse(() => Effect.void),
+                  );
               }
             }
           });
@@ -280,11 +305,17 @@ export const PlanApprovalLive = Layer.effect(
                   "UPDATE agent_sessions SET prd_approval_result = NULL, pending_prd_approval = NULL WHERE id = ?",
                   sessionDbId,
                 )
-                .pipe(Effect.orElse(() => Effect.void));
+                .pipe(
+                  Effect.tapError((e) => Effect.logWarning("PlanApproval: Failed to clear prd_approval_result on resume", { error: e })),
+                  Effect.orElse(() => Effect.void),
+                );
               if (featureId != null) {
                 yield* broadcaster
                   .notifyDbUpdated("agent_session", featureId)
-                  .pipe(Effect.orElse(() => Effect.void));
+                  .pipe(
+                    Effect.tapError((e) => Effect.logWarning("PlanApproval: Failed to notify DB update after clearing prd_approval_result", { error: e })),
+                    Effect.orElse(() => Effect.void),
+                  );
               }
               return result;
             }
@@ -304,11 +335,17 @@ export const PlanApprovalLive = Layer.effect(
                 "mcp__cadence-prd__show_prd",
                 syntheticToolUseId,
               )
-              .pipe(Effect.orElse(() => Effect.void));
+              .pipe(
+                Effect.tapError((e) => Effect.logWarning("PlanApproval: Failed to insert synthetic show_prd tool call", { error: e })),
+                Effect.orElse(() => Effect.void),
+              );
             if (featureId != null) {
               yield* broadcaster
                 .notifyDbUpdated("agent_session", featureId)
-                .pipe(Effect.orElse(() => Effect.void));
+                .pipe(
+                  Effect.tapError((e) => Effect.logWarning("PlanApproval: Failed to notify DB update after show_prd insert", { error: e })),
+                  Effect.orElse(() => Effect.void),
+                );
             }
           }
 
@@ -320,11 +357,17 @@ export const PlanApprovalLive = Layer.effect(
                 JSON.stringify({ prd: prdMarkdown }),
                 sessionDbId,
               )
-              .pipe(Effect.orElse(() => Effect.void));
+              .pipe(
+                Effect.tapError((e) => Effect.logWarning("PlanApproval: Failed to set pending_prd_approval", { error: e })),
+                Effect.orElse(() => Effect.void),
+              );
             if (featureId != null) {
               yield* broadcaster
                 .notifyDbUpdated("agent_session", featureId)
-                .pipe(Effect.orElse(() => Effect.void));
+                .pipe(
+                  Effect.tapError((e) => Effect.logWarning("PlanApproval: Failed to notify DB update after setting pending_prd_approval", { error: e })),
+                  Effect.orElse(() => Effect.void),
+                );
             }
           }
 
@@ -340,11 +383,17 @@ export const PlanApprovalLive = Layer.effect(
                   "UPDATE agent_sessions SET pending_prd_approval = NULL WHERE id = ?",
                   sessionDbId,
                 )
-                .pipe(Effect.orElse(() => Effect.void));
+                .pipe(
+                  Effect.tapError((e) => Effect.logWarning("PlanApproval: Failed to clear pending_prd_approval in cleanup", { error: e })),
+                  Effect.orElse(() => Effect.void),
+                );
               if (featureId != null) {
                 yield* broadcaster
                   .notifyDbUpdated("agent_session", featureId)
-                  .pipe(Effect.orElse(() => Effect.void));
+                  .pipe(
+                    Effect.tapError((e) => Effect.logWarning("PlanApproval: Failed to notify DB update in PRD approval cleanup", { error: e })),
+                    Effect.orElse(() => Effect.void),
+                  );
               }
             }
           });
@@ -406,11 +455,17 @@ export const PlanApprovalLive = Layer.effect(
                   JSON.stringify({ approved, feedback }),
                   sessionDbId,
                 )
-                .pipe(Effect.orElse(() => Effect.void));
+                .pipe(
+                  Effect.tapError((e) => Effect.logWarning("PlanApproval: Failed to store plan_approval_result for paused agent", { error: e })),
+                  Effect.orElse(() => Effect.void),
+                );
               if (featureId != null) {
                 yield* broadcaster
                   .notifyDbUpdated("agent_session", featureId)
-                  .pipe(Effect.orElse(() => Effect.void));
+                  .pipe(
+                    Effect.tapError((e) => Effect.logWarning("PlanApproval: Failed to notify DB update after storing plan_approval_result", { error: e })),
+                    Effect.orElse(() => Effect.void),
+                  );
               }
             }
           }
@@ -447,11 +502,17 @@ export const PlanApprovalLive = Layer.effect(
                   JSON.stringify({ approved, feedback }),
                   sessionDbId,
                 )
-                .pipe(Effect.orElse(() => Effect.void));
+                .pipe(
+                  Effect.tapError((e) => Effect.logWarning("PlanApproval: Failed to store prd_approval_result for paused agent", { error: e })),
+                  Effect.orElse(() => Effect.void),
+                );
               if (featureId != null) {
                 yield* broadcaster
                   .notifyDbUpdated("agent_session", featureId)
-                  .pipe(Effect.orElse(() => Effect.void));
+                  .pipe(
+                    Effect.tapError((e) => Effect.logWarning("PlanApproval: Failed to notify DB update after storing prd_approval_result", { error: e })),
+                    Effect.orElse(() => Effect.void),
+                  );
               }
             }
           }
