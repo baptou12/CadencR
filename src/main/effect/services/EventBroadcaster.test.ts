@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { Effect, Layer } from "effect";
+import { Effect, Layer, ManagedRuntime } from "effect";
 
 // ---------------------------------------------------------------------------
 // Mocks — must be hoisted before imports that use them
@@ -194,19 +194,24 @@ describe("EventBroadcaster service — EventBroadcasterLive", () => {
       expect(mockSend).not.toHaveBeenCalled();
     });
 
-    it("notifies after 200ms", () => {
-      runEB(
-        EventBroadcaster.throttledNotify("session-key-2", 5),
-      );
+    // These four tests use ManagedRuntime (instead of runEB) so the Layer scope
+    // stays open across vi.advanceTimersByTime — Layer.scoped's finalizer would
+    // clear pending timers if the scope were closed before the assertion.
+
+    it("notifies after 200ms", async () => {
+      const runtime = ManagedRuntime.make(TestEventBroadcasterLayer);
+      runtime.runSync(EventBroadcaster.throttledNotify("session-key-2", 5));
       vi.advanceTimersByTime(200);
       expect(mockSend).toHaveBeenCalledOnce();
       const [channel, payload] = mockSend.mock.calls[0];
       expect(channel).toBe(DB_UPDATED_CHANNEL);
       expect(payload).toEqual({ entity: "agent_session", featureId: 5 });
+      await runtime.dispose();
     });
 
-    it("coalesces multiple calls into a single notification", () => {
-      runEB(
+    it("coalesces multiple calls into a single notification", async () => {
+      const runtime = ManagedRuntime.make(TestEventBroadcasterLayer);
+      runtime.runSync(
         Effect.gen(function* () {
           yield* EventBroadcaster.throttledNotify("session-key-3", 10);
           yield* EventBroadcaster.throttledNotify("session-key-3", 10);
@@ -216,10 +221,12 @@ describe("EventBroadcaster service — EventBroadcasterLive", () => {
       vi.advanceTimersByTime(200);
       // Should only send once despite 3 calls
       expect(mockSend).toHaveBeenCalledOnce();
+      await runtime.dispose();
     });
 
-    it("uses the latest featureId when coalescing", () => {
-      runEB(
+    it("uses the latest featureId when coalescing", async () => {
+      const runtime = ManagedRuntime.make(TestEventBroadcasterLayer);
+      runtime.runSync(
         Effect.gen(function* () {
           yield* EventBroadcaster.throttledNotify("session-key-4", 1);
           yield* EventBroadcaster.throttledNotify("session-key-4", 99);
@@ -228,10 +235,12 @@ describe("EventBroadcaster service — EventBroadcasterLive", () => {
       vi.advanceTimersByTime(200);
       const [, payload] = mockSend.mock.calls[0];
       expect(payload.featureId).toBe(99);
+      await runtime.dispose();
     });
 
-    it("allows separate session keys to fire independently", () => {
-      runEB(
+    it("allows separate session keys to fire independently", async () => {
+      const runtime = ManagedRuntime.make(TestEventBroadcasterLayer);
+      runtime.runSync(
         Effect.gen(function* () {
           yield* EventBroadcaster.throttledNotify("key-a", 1);
           yield* EventBroadcaster.throttledNotify("key-b", 2);
@@ -239,6 +248,7 @@ describe("EventBroadcaster service — EventBroadcasterLive", () => {
       );
       vi.advanceTimersByTime(200);
       expect(mockSend).toHaveBeenCalledTimes(2);
+      await runtime.dispose();
     });
   });
 

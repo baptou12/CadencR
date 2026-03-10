@@ -74,7 +74,7 @@ export class EventBroadcaster extends Effect.Tag("EventBroadcaster")<
 // Live implementation
 // ---------------------------------------------------------------------------
 
-export const EventBroadcasterLive = Layer.effect(
+export const EventBroadcasterLive = Layer.scoped(
   EventBroadcaster,
   Effect.gen(function* () {
     const sp = yield* SessionPersistence;
@@ -84,6 +84,17 @@ export const EventBroadcasterLive = Layer.effect(
     // ---------------------------------------------------------------------------
     const pendingNotifyTimers = new Map<string, ReturnType<typeof setTimeout>>();
     const pendingNotifyFeatureIds = new Map<string, number>();
+
+    // Finalizer: clear all pending throttle timers on runtime disposal
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => {
+        for (const timer of pendingNotifyTimers.values()) {
+          clearTimeout(timer);
+        }
+        pendingNotifyTimers.clear();
+        pendingNotifyFeatureIds.clear();
+      }),
+    );
 
     // ---------------------------------------------------------------------------
     // Internal helpers
