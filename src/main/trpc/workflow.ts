@@ -1,6 +1,7 @@
 import { z } from "zod";
+import { Effect } from "effect";
 import { router, publicProcedure } from "./trpc";
-import { getDatabase } from "../db/database";
+import { queryOne, queryAll } from "../db/query";
 import type { ProjectRow } from "../db/types";
 import {
   startPlanAgent,
@@ -160,15 +161,28 @@ export const workflowRouter = router({
   startReviewFixer: publicProcedure
     .input(z.object({ featureId: z.number(), projectId: z.number(), prompt: z.string() }))
     .mutation(async ({ input }) => {
-      const db = getDatabase();
       const { cwd, worktreePath } = await resolveAgentCwd(input.featureId, input.projectId);
 
       // Build rich prompt with feature context (same as workflow session)
-      const feature = db.prepare("SELECT title FROM features WHERE id = ?").get(input.featureId) as { title: string } | undefined;
-      const plan = db.prepare("SELECT id, summary, context FROM plans WHERE feature_id = ? ORDER BY id DESC LIMIT 1").get(input.featureId) as { id: number; summary: string | null; context: string | null } | undefined;
-      const phases = plan
-        ? (db.prepare("SELECT title, status, step_number FROM phases WHERE plan_id = ? ORDER BY step_number, order_index").all(plan.id) as { title: string; status: string; step_number: number }[])
-        : [];
+      const { feature, plan, phases } = await AppRuntime.runPromise(
+        Effect.gen(function* () {
+          const feature = yield* queryOne<{ title: string }>(
+            "SELECT title FROM features WHERE id = ?",
+            input.featureId,
+          );
+          const plan = yield* queryOne<{ id: number; summary: string | null; context: string | null }>(
+            "SELECT id, summary, context FROM plans WHERE feature_id = ? ORDER BY id DESC LIMIT 1",
+            input.featureId,
+          );
+          const phases = plan
+            ? yield* queryAll<{ title: string; status: string; step_number: number }>(
+                "SELECT title, status, step_number FROM phases WHERE plan_id = ? ORDER BY step_number, order_index",
+                plan.id,
+              )
+            : [];
+          return { feature, plan, phases };
+        }),
+      );
 
       const parts: string[] = [];
       if (feature) parts.push(`## Feature: ${feature.title}`);
@@ -207,12 +221,22 @@ export const workflowRouter = router({
     )
     .mutation(async ({ input }) => {
       const { cwd, worktreePath } = await resolveAgentCwd(input.featureId, input.projectId);
-      const db = getDatabase();
 
-      const feature = db.prepare("SELECT title FROM features WHERE id = ?").get(input.featureId) as { title: string } | undefined;
-      if (!feature) throw new Error("Feature not found");
-      const plan = db.prepare("SELECT id FROM plans WHERE feature_id = ? ORDER BY id DESC LIMIT 1").get(input.featureId) as { id: number } | undefined;
-      if (!plan) throw new Error("No plan found for this feature — workflow sessions require a plan");
+      const { feature, plan } = await AppRuntime.runPromise(
+        Effect.gen(function* () {
+          const feature = yield* queryOne<{ title: string }>(
+            "SELECT title FROM features WHERE id = ?",
+            input.featureId,
+          );
+          if (!feature) throw new Error("Feature not found");
+          const plan = yield* queryOne<{ id: number }>(
+            "SELECT id FROM plans WHERE feature_id = ? ORDER BY id DESC LIMIT 1",
+            input.featureId,
+          );
+          if (!plan) throw new Error("No plan found for this feature — workflow sessions require a plan");
+          return { feature, plan };
+        }),
+      );
 
       const prompt = `Context: you're building "${feature.title}" (plan ID: ${plan.id})\n\n${input.prompt}`;
 
@@ -240,11 +264,30 @@ export const workflowRouter = router({
       }),
     )
     .mutation(async ({ input }) => {
-      const db = getDatabase();
-      const project = db
-        .prepare("SELECT path FROM projects WHERE id = ?")
-        .get(input.projectId) as Pick<ProjectRow, "path"> | undefined;
-      if (!project?.path) throw new Error("Project path not found");
+      const { project, featureRow, wtRow } = await AppRuntime.runPromise(
+        Effect.gen(function* () {
+          const project = yield* queryOne<Pick<ProjectRow, "path">>(
+            "SELECT path FROM projects WHERE id = ?",
+            input.projectId,
+          );
+          if (!project?.path) throw new Error("Project path not found");
+
+          const featureRow = yield* queryOne<{ type: string }>(
+            "SELECT type FROM features WHERE id = ?",
+            input.featureId,
+          );
+
+          let wtRow: { value: string } | null = null;
+          if (featureRow?.type !== "session") {
+            wtRow = yield* queryOne<{ value: string }>(
+              "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
+              input.featureId,
+            );
+          }
+
+          return { project, featureRow, wtRow };
+        }),
+      );
 
       let prompt: import("../agents/types").MessageContent;
       if (input.images && input.images.length > 0) {
@@ -260,19 +303,11 @@ export const workflowRouter = router({
       }
 
       // Session-type features always use the project path directly (no worktree)
-      const featureRow = db
-        .prepare("SELECT type FROM features WHERE id = ?")
-        .get(input.featureId) as { type: string } | undefined;
       let cwd = project.path;
       let worktreePath: string | undefined;
-      if (featureRow?.type !== "session") {
-        const wtRow = db
-          .prepare("SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'")
-          .get(input.featureId) as { value: string } | undefined;
-        if (wtRow?.value) {
-          cwd = wtRow.value;
-          worktreePath = wtRow.value;
-        }
+      if (featureRow?.type !== "session" && wtRow?.value) {
+        cwd = wtRow.value;
+        worktreePath = wtRow.value;
       }
 
       const result = await startSessionAgent({
@@ -301,17 +336,23 @@ export const workflowRouter = router({
       }),
     )
     .mutation(async ({ input }) => {
-      const db = getDatabase();
-      const project = db
-        .prepare("SELECT path FROM projects WHERE id = ?")
-        .get(input.projectId) as Pick<ProjectRow, "path"> | undefined;
-      if (!project?.path) throw new Error("Project path not found");
+      const { project, feature } = await AppRuntime.runPromise(
+        Effect.gen(function* () {
+          const project = yield* queryOne<Pick<ProjectRow, "path">>(
+            "SELECT path FROM projects WHERE id = ?",
+            input.projectId,
+          );
+          if (!project?.path) throw new Error("Project path not found");
 
-      // Step 1: Auto-name if feature has a default title
-      const feature = db
-        .prepare("SELECT title, type FROM features WHERE id = ?")
-        .get(input.featureId) as { title: string; type: string } | undefined;
-      if (!feature) throw new Error(`Feature not found: ${input.featureId}`);
+          const feature = yield* queryOne<{ title: string; type: string }>(
+            "SELECT title, type FROM features WHERE id = ?",
+            input.featureId,
+          );
+          if (!feature) throw new Error(`Feature not found: ${input.featureId}`);
+
+          return { project, feature };
+        }),
+      );
 
       // Session-type features should never have worktrees
       if (feature.type === "session") {
