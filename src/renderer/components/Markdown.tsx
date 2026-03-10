@@ -1,10 +1,16 @@
 import { useMemo } from "react";
+import { Fragment, jsx, jsxs } from "react/jsx-runtime";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Components } from "react-markdown";
+import { createLowlight, all } from "lowlight";
+import { toJsxRuntime } from "hast-util-to-jsx-runtime";
 import { cn } from "@/lib/utils";
 import { CodeBlockHeader } from "@/components/CodeBlockHeader";
 import { useCodeBlockActions } from "@/components/CodeBlockActionsContext";
+import "./dracula-highlight.css";
+
+const lowlight = createLowlight(all);
 
 /** Extract plain text from React children (handles nested elements from react-markdown). */
 function extractText(children: React.ReactNode): string {
@@ -47,6 +53,13 @@ function buildComponents(sendToTerminal?: (cmd: string) => void): Components {
         const lang = match?.[1] ?? "text";
         const code = extractText(children).replace(/\n$/, "");
         const isShell = SHELL_LANGUAGES.has(lang);
+        let highlighted: React.ReactNode = children;
+        try {
+          const tree = lowlight.highlight(lang, code);
+          highlighted = toJsxRuntime(tree, { Fragment, jsx, jsxs });
+        } catch {
+          // Unknown language or parse error — fall back to plain text
+        }
         return (
           <div className="my-1 rounded-md border border-border bg-muted/50 overflow-hidden group/codeblock">
             <CodeBlockHeader
@@ -56,7 +69,7 @@ function buildComponents(sendToTerminal?: (cmd: string) => void): Components {
               onSendToTerminal={sendToTerminal}
             />
             <pre className="overflow-x-auto p-3 text-xs leading-relaxed">
-              <code>{children}</code>
+              <code className="hljs">{highlighted}</code>
             </pre>
           </div>
         );

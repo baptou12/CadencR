@@ -47,10 +47,13 @@ describe("Markdown", () => {
     expect(screen.getByText("console.log()")).toBeInTheDocument();
   });
 
-  it("renders fenced code block with language", () => {
+  it("renders fenced code block with language and syntax highlighting", () => {
     render(<Markdown content={"```typescript\nconst x = 1;\n```"} />);
     expect(screen.getByText("typescript")).toBeInTheDocument();
-    expect(screen.getByText("const x = 1;")).toBeInTheDocument();
+    // With syntax highlighting, "const x = 1;" is split across multiple spans
+    const codeEl = document.querySelector("code.hljs");
+    expect(codeEl).toBeInTheDocument();
+    expect(codeEl?.textContent).toContain("const x = 1;");
   });
 
   it("renders fenced code block without language as a block with 'text' label", () => {
