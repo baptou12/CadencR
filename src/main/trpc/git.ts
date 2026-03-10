@@ -24,6 +24,8 @@ import {
   getRecentCommitsEffect,
   getCommitDiffEffect,
   execGit,
+  type WorktreeInfo,
+  type CommitInfo,
 } from "../effect/services/GitWorktree";
 import { AppRuntime } from "../effect/runtime";
 import { resolveFeatureGitPath } from "./shared";
@@ -141,10 +143,12 @@ export const gitRouter = router({
       targetBranch: z.string().optional(),
     }))
     .query(async ({ input }) => {
-      const gitPath = await AppRuntime.runPromise(resolveFeatureGitPath(input.featureId));
-      if (!gitPath) return { filesChanged: 0, insertions: 0, deletions: 0 };
       return AppRuntime.runPromise(
-        getGitStatsEffect(gitPath, input.mode ?? "worktree", input.targetBranch),
+        Effect.gen(function* () {
+          const gitPath = yield* resolveFeatureGitPath(input.featureId);
+          if (!gitPath) return { filesChanged: 0, insertions: 0, deletions: 0 };
+          return yield* getGitStatsEffect(gitPath, input.mode ?? "worktree", input.targetBranch);
+        }),
       );
     }),
 
@@ -175,12 +179,16 @@ export const gitRouter = router({
       }),
     )
     .query(async ({ input }) => {
-      const gitPath = await AppRuntime.runPromise(resolveFeatureGitPath(input.featureId));
-      if (!gitPath) return "";
-      if (input.commitSha) {
-        return AppRuntime.runPromise(getCommitDiffEffect(gitPath, input.commitSha));
-      }
-      return AppRuntime.runPromise(getDiffEffect(gitPath, input.mode, input.targetBranch));
+      return AppRuntime.runPromise(
+        Effect.gen(function* () {
+          const gitPath = yield* resolveFeatureGitPath(input.featureId);
+          if (!gitPath) return "";
+          if (input.commitSha) {
+            return yield* getCommitDiffEffect(gitPath, input.commitSha);
+          }
+          return yield* getDiffEffect(gitPath, input.mode, input.targetBranch);
+        }),
+      );
     }),
 
   /** Get list of changed files with per-file line counts */
@@ -193,10 +201,12 @@ export const gitRouter = router({
       }),
     )
     .query(async ({ input }) => {
-      const gitPath = await AppRuntime.runPromise(resolveFeatureGitPath(input.featureId));
-      if (!gitPath) return [];
       return AppRuntime.runPromise(
-        getChangedFilesEffect(gitPath, input.mode, input.targetBranch),
+        Effect.gen(function* () {
+          const gitPath = yield* resolveFeatureGitPath(input.featureId);
+          if (!gitPath) return [];
+          return yield* getChangedFilesEffect(gitPath, input.mode, input.targetBranch);
+        }),
       );
     }),
 
@@ -207,10 +217,13 @@ export const gitRouter = router({
       // Fire-and-forget: worktree setup runs in background so the UI stays responsive.
       // The renderer polls worktree status separately to reflect completion.
       AppRuntime.runPromise(
-        setupWorktreeForFeatureEffect(input.projectId, input.featureId),
-      ).catch((err) => {
-        console.error("[retryWorktreeSetup] Failed:", err);
-      });
+        setupWorktreeForFeatureEffect(input.projectId, input.featureId).pipe(
+          Effect.catchAll((err) => {
+            console.error("[retryWorktreeSetup] Failed:", err);
+            return Effect.succeed(undefined);
+          }),
+        ),
+      );
       return { success: true };
     }),
 
@@ -240,12 +253,16 @@ export const gitRouter = router({
   listFiles: publicProcedure
     .input(z.object({ featureId: z.number() }))
     .query(async ({ input }) => {
-      const gitPath = await AppRuntime.runPromise(resolveFeatureGitPath(input.featureId));
-      if (!gitPath) return [];
-      const { stdout } = await AppRuntime.runPromise(
-        execGit("git ls-files", { cwd: gitPath, maxBuffer: 10 * 1024 * 1024 }),
-      ).catch(() => ({ stdout: "" }));
-      return stdout.split("\n").filter(Boolean);
+      return AppRuntime.runPromise(
+        Effect.gen(function* () {
+          const gitPath = yield* resolveFeatureGitPath(input.featureId);
+          if (!gitPath) return [] as string[];
+          const { stdout } = yield* execGit("git ls-files", { cwd: gitPath, maxBuffer: 10 * 1024 * 1024 }).pipe(
+            Effect.catchAll(() => Effect.succeed({ stdout: "" })),
+          );
+          return stdout.split("\n").filter(Boolean);
+        }),
+      );
     }),
 
   /** Get the original branch from which the feature's worktree branch was created */
@@ -347,83 +364,70 @@ export const gitRouter = router({
   getFileBlobShas: publicProcedure
     .input(z.object({ featureId: z.number() }))
     .query(async ({ input }) => {
-      const wtRow = await AppRuntime.runPromise(
-        queryOne<{ value: string }>(
-          "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
-          input.featureId,
-        ),
-      );
-      if (!wtRow?.value) return {};
-
-      const worktreePath = wtRow.value;
-      const result: Record<string, string> = {};
-
-      try {
-        const [changedResult, untrackedResult] = await Promise.all([
-          AppRuntime.runPromise(execGit("git diff HEAD --name-only", { cwd: worktreePath })),
-          AppRuntime.runPromise(execGit("git ls-files --others --exclude-standard", { cwd: worktreePath })),
-        ]);
-
-        const changedFiles = changedResult.stdout.trim().split("\n").filter(Boolean);
-        const untrackedFiles = untrackedResult.stdout.trim().split("\n").filter(Boolean);
-
-        let branchChangedFiles: string[] = [];
-        try {
-          const branchRow = await AppRuntime.runPromise(
-            queryOne<{ value: string }>(
-              "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_branch'",
-              input.featureId,
-            ),
+      return AppRuntime.runPromise(
+        Effect.gen(function* () {
+          const wtRow = yield* queryOne<{ value: string }>(
+            "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
+            input.featureId,
           );
-          if (branchRow?.value) {
-            const { stdout: mergeBaseOut } = await AppRuntime.runPromise(
-              execGit("git merge-base HEAD main || git merge-base HEAD master", {
-                cwd: worktreePath,
-                shell: "/bin/sh",
-              }),
+          if (!wtRow?.value) return {} as Record<string, string>;
+
+          const worktreePath = wtRow.value;
+
+          return yield* Effect.gen(function* () {
+            const [changedResult, untrackedResult] = yield* Effect.all(
+              [
+                execGit("git diff HEAD --name-only", { cwd: worktreePath }),
+                execGit("git ls-files --others --exclude-standard", { cwd: worktreePath }),
+              ],
+              { concurrency: "unbounded" },
             );
-            const mergeBase = mergeBaseOut.trim();
-            if (mergeBase) {
-              const { stdout: branchDiffOut } = await AppRuntime.runPromise(
-                execGit(`git diff ${mergeBase} HEAD --name-only`, { cwd: worktreePath }),
+
+            const changedFiles = changedResult.stdout.trim().split("\n").filter(Boolean);
+            const untrackedFiles = untrackedResult.stdout.trim().split("\n").filter(Boolean);
+
+            const branchChangedFiles = yield* Effect.gen(function* () {
+              const branchRow = yield* queryOne<{ value: string }>(
+                "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_branch'",
+                input.featureId,
               );
-              branchChangedFiles = branchDiffOut.trim().split("\n").filter(Boolean);
-            }
-          }
-        } catch {
-          // merge-base may fail, that's ok
-        }
-
-        const allFiles = [...new Set([...changedFiles, ...untrackedFiles, ...branchChangedFiles])];
-
-        await Promise.all(
-          allFiles.map(async (filePath) => {
-            try {
-              const { stdout: blobSha } = await AppRuntime.runPromise(
-                execGit(`git hash-object "${filePath}"`, { cwd: worktreePath }),
+              if (!branchRow?.value) return [] as string[];
+              const { stdout: mergeBaseOut } = yield* execGit(
+                "git merge-base HEAD main || git merge-base HEAD master",
+                { cwd: worktreePath, shell: "/bin/sh" },
               );
-              if (blobSha.trim()) {
-                result[filePath] = blobSha.trim();
-              }
-            } catch {
-              try {
-                const { stdout: blobSha } = await AppRuntime.runPromise(
-                  execGit(`git rev-parse HEAD:"${filePath}"`, { cwd: worktreePath }),
-                );
-                if (blobSha.trim()) {
-                  result[filePath] = blobSha.trim();
-                }
-              } catch {
-                // File might not exist, skip
-              }
-            }
-          }),
-        );
-      } catch {
-        // If git commands fail, return empty map
-      }
+              const mergeBase = mergeBaseOut.trim();
+              if (!mergeBase) return [] as string[];
+              const { stdout: branchDiffOut } = yield* execGit(
+                `git diff ${mergeBase} HEAD --name-only`,
+                { cwd: worktreePath },
+              );
+              return branchDiffOut.trim().split("\n").filter(Boolean);
+            }).pipe(Effect.catchAll(() => Effect.succeed([] as string[])));
 
-      return result;
+            const allFiles = [...new Set([...changedFiles, ...untrackedFiles, ...branchChangedFiles])];
+
+            const blobEntries = yield* Effect.forEach(
+              allFiles,
+              (filePath) =>
+                execGit(`git hash-object "${filePath}"`, { cwd: worktreePath }).pipe(
+                  Effect.map(({ stdout }) => ({ filePath, sha: stdout.trim() })),
+                  Effect.catchAll(() =>
+                    execGit(`git rev-parse HEAD:"${filePath}"`, { cwd: worktreePath }).pipe(
+                      Effect.map(({ stdout }) => ({ filePath, sha: stdout.trim() })),
+                      Effect.catchAll(() => Effect.succeed({ filePath, sha: "" })),
+                    ),
+                  ),
+                ),
+              { concurrency: "unbounded" },
+            );
+
+            return Object.fromEntries(
+              blobEntries.filter(({ sha }) => sha).map(({ filePath, sha }) => [filePath, sha]),
+            ) as Record<string, string>;
+          }).pipe(Effect.catchAll(() => Effect.succeed({} as Record<string, string>)));
+        }),
+      );
     }),
 
   /** Check if the feature's worktree has uncommitted/untracked changes */
@@ -447,7 +451,7 @@ export const gitRouter = router({
   deleteWorktree: publicProcedure
     .input(z.object({ projectId: z.number(), featureId: z.number() }))
     .mutation(async ({ input }) => {
-      const { project, wtRow } = await AppRuntime.runPromise(
+      return AppRuntime.runPromise(
         Effect.gen(function* () {
           const project = yield* queryOne<{ path: string }>(
             "SELECT path FROM projects WHERE id = ?",
@@ -461,27 +465,28 @@ export const gitRouter = router({
           );
           if (!wtRow?.value) return yield* Effect.fail(new Error("No worktree found for this feature"));
 
-          return { project, wtRow };
+          const hasChanges = yield* hasUncommittedChangesEffect(wtRow.value);
+          if (hasChanges) {
+            return { success: false as const, error: "Worktree has uncommitted or untracked changes" };
+          }
+
+          return yield* removeWorktreeEffect(project.path, wtRow.value).pipe(
+            Effect.andThen(() =>
+              execute(
+                "DELETE FROM feature_settings WHERE feature_id = ? AND key IN ('worktree_path', 'worktree_branch')",
+                input.featureId,
+              ),
+            ),
+            Effect.map(() => ({ success: true as const })),
+            Effect.catchAll((err) =>
+              Effect.succeed({
+                success: false as const,
+                error: err instanceof Error ? err.message : String(err),
+              }),
+            ),
+          );
         }),
       );
-
-      const hasChanges = await AppRuntime.runPromise(hasUncommittedChangesEffect(wtRow.value));
-      if (hasChanges) {
-        return { success: false, error: "Worktree has uncommitted or untracked changes" };
-      }
-
-      try {
-        await AppRuntime.runPromise(removeWorktreeEffect(project.path, wtRow.value));
-        await AppRuntime.runPromise(
-          execute(
-            "DELETE FROM feature_settings WHERE feature_id = ? AND key IN ('worktree_path', 'worktree_branch')",
-            input.featureId,
-          ),
-        );
-        return { success: true };
-      } catch (err) {
-        return { success: false, error: err instanceof Error ? err.message : String(err) };
-      }
     }),
 
   listProjectWorktrees: publicProcedure
@@ -495,12 +500,9 @@ export const gitRouter = router({
           );
           if (!project?.path) return yield* Effect.fail(new Error("Project not found"));
 
-          let worktrees;
-          try {
-            worktrees = yield* listWorktreesEffect(project.path);
-          } catch {
-            return [];
-          }
+          const worktrees = yield* listWorktreesEffect(project.path).pipe(
+            Effect.catchAll(() => Effect.succeed([] as WorktreeInfo[])),
+          );
 
           const repoRoot = project.path.replace(/\/+$/, "");
           const secondary = worktrees.filter(
@@ -549,46 +551,55 @@ export const gitRouter = router({
       }),
     )
     .query(async ({ input }) => {
-      const gitPath = await AppRuntime.runPromise(resolveFeatureGitPath(input.featureId));
-      if (!gitPath) return { oldContent: "", newContent: "" };
+      return AppRuntime.runPromise(
+        Effect.gen(function* () {
+          const gitPath = yield* resolveFeatureGitPath(input.featureId);
+          if (!gitPath) return { oldContent: "", newContent: "" };
 
-      if (input.commitSha) {
-        const [oldContent, newContent] = await Promise.all([
-          AppRuntime.runPromise(getFileContentEffect(gitPath, input.filePath, `${input.commitSha}^`)),
-          AppRuntime.runPromise(getFileContentEffect(gitPath, input.filePath, input.commitSha)),
-        ]);
-        return { oldContent, newContent };
-      }
+          if (input.commitSha) {
+            const [oldContent, newContent] = yield* Effect.all(
+              [
+                getFileContentEffect(gitPath, input.filePath, `${input.commitSha}^`),
+                getFileContentEffect(gitPath, input.filePath, input.commitSha),
+              ],
+              { concurrency: "unbounded" },
+            );
+            return { oldContent, newContent };
+          }
 
-      if (input.mode === "worktree") {
-        const [oldContent, newContent] = await Promise.all([
-          AppRuntime.runPromise(getFileContentEffect(gitPath, input.filePath, "HEAD")),
-          AppRuntime.runPromise(getFileContentEffect(gitPath, input.filePath)), // working tree
-        ]);
-        return { oldContent, newContent };
-      }
+          if (input.mode === "worktree") {
+            const [oldContent, newContent] = yield* Effect.all(
+              [
+                getFileContentEffect(gitPath, input.filePath, "HEAD"),
+                getFileContentEffect(gitPath, input.filePath), // working tree
+              ],
+              { concurrency: "unbounded" },
+            );
+            return { oldContent, newContent };
+          }
 
-      // Branch mode
-      const branchRow = await AppRuntime.runPromise(
-        queryOne<{ value: string }>(
-          "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_branch'",
-          input.featureId,
-        ),
+          // Branch mode
+          const branchRow = yield* queryOne<{ value: string }>(
+            "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_branch'",
+            input.featureId,
+          );
+          const fallbackBranch = input.targetBranch ?? "main";
+          const baseBranch = branchRow?.value
+            ? yield* getOriginalBranchEffect(gitPath, branchRow.value).pipe(
+                Effect.catchAll(() => Effect.succeed(fallbackBranch)),
+              )
+            : fallbackBranch;
+
+          const [oldContent, newContent] = yield* Effect.all(
+            [
+              getFileContentEffect(gitPath, input.filePath, baseBranch),
+              getFileContentEffect(gitPath, input.filePath, "HEAD"),
+            ],
+            { concurrency: "unbounded" },
+          );
+          return { oldContent, newContent };
+        }),
       );
-      const fallbackBranch = input.targetBranch ?? "main";
-      const baseBranch = branchRow?.value
-        ? await AppRuntime.runPromise(
-            getOriginalBranchEffect(gitPath, branchRow.value).pipe(
-              Effect.catchAll(() => Effect.succeed(fallbackBranch)),
-            ),
-          )
-        : fallbackBranch;
-
-      const [oldContent, newContent] = await Promise.all([
-        AppRuntime.runPromise(getFileContentEffect(gitPath, input.filePath, baseBranch)),
-        AppRuntime.runPromise(getFileContentEffect(gitPath, input.filePath, "HEAD")),
-      ]);
-      return { oldContent, newContent };
     }),
 
   /** Get commit log for a feature's branch */
@@ -598,62 +609,67 @@ export const gitRouter = router({
       limit: z.number().default(20),
     }))
     .query(async ({ input }) => {
-      const gitPath = await AppRuntime.runPromise(resolveFeatureGitPath(input.featureId));
-      if (!gitPath) return { commits: [], isOnBaseBranch: true };
+      return AppRuntime.runPromise(
+        Effect.gen(function* () {
+          const gitPath = yield* resolveFeatureGitPath(input.featureId);
+          if (!gitPath) return { commits: [], isOnBaseBranch: true };
 
-      // Determine current branch name
-      const branchRow = await AppRuntime.runPromise(
-        queryOne<{ value: string }>(
-          "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_branch'",
-          input.featureId,
-        ),
+          // Determine current branch name
+          const branchRow = yield* queryOne<{ value: string }>(
+            "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_branch'",
+            input.featureId,
+          );
+
+          const branchName = branchRow?.value ?? (yield* getCurrentBranchEffect(gitPath));
+          if (!branchName) return { commits: [] as CommitInfo[], isOnBaseBranch: true };
+
+          const baseBranchResult = yield* getOriginalBranchEffect(gitPath, branchName).pipe(
+            Effect.map((b) => ({ baseBranch: b, failed: false as const })),
+            Effect.catchAll(() => Effect.succeed({ baseBranch: null as string | null, failed: true as const })),
+          );
+
+          if (baseBranchResult.failed || !baseBranchResult.baseBranch) {
+            // Can't determine base branch — fall back to recent commits
+            const commits = yield* getRecentCommitsEffect(gitPath, branchName, input.limit);
+            return { commits, isOnBaseBranch: true };
+          }
+
+          const baseBranch = baseBranchResult.baseBranch;
+
+          // On the base branch — show recent commit history
+          if (branchName === baseBranch) {
+            const commits = yield* getRecentCommitsEffect(gitPath, branchName, input.limit);
+            return { commits, isOnBaseBranch: true };
+          }
+
+          // On a feature branch — show branch-specific commits
+          const commits = yield* getCommitLogEffect(gitPath, baseBranch, branchName);
+          return { commits, isOnBaseBranch: false };
+        }),
       );
-      const branchName =
-        branchRow?.value ?? (await AppRuntime.runPromise(getCurrentBranchEffect(gitPath)));
-      if (!branchName) return { commits: [], isOnBaseBranch: true };
-
-      let baseBranch: string;
-      try {
-        baseBranch = await AppRuntime.runPromise(getOriginalBranchEffect(gitPath, branchName));
-      } catch {
-        // Can't determine base branch — fall back to recent commits
-        const commits = await AppRuntime.runPromise(
-          getRecentCommitsEffect(gitPath, branchName, input.limit),
-        );
-        return { commits, isOnBaseBranch: true };
-      }
-
-      // On the base branch — show recent commit history
-      if (branchName === baseBranch) {
-        const commits = await AppRuntime.runPromise(
-          getRecentCommitsEffect(gitPath, branchName, input.limit),
-        );
-        return { commits, isOnBaseBranch: true };
-      }
-
-      // On a feature branch — show branch-specific commits
-      const commits = await AppRuntime.runPromise(
-        getCommitLogEffect(gitPath, baseBranch, branchName),
-      );
-      return { commits, isOnBaseBranch: false };
     }),
 
   removeOrphanWorktree: publicProcedure
     .input(z.object({ projectId: z.number(), worktreePath: z.string() }))
     .mutation(async ({ input }) => {
-      const project = await AppRuntime.runPromise(
-        queryOne<{ path: string }>(
-          "SELECT path FROM projects WHERE id = ?",
-          input.projectId,
-        ),
-      );
-      if (!project?.path) throw new Error("Project not found");
+      return AppRuntime.runPromise(
+        Effect.gen(function* () {
+          const project = yield* queryOne<{ path: string }>(
+            "SELECT path FROM projects WHERE id = ?",
+            input.projectId,
+          );
+          if (!project?.path) return yield* Effect.fail(new Error("Project not found"));
 
-      try {
-        await AppRuntime.runPromise(removeWorktreeEffect(project.path, input.worktreePath));
-        return { success: true };
-      } catch (err) {
-        return { success: false, error: err instanceof Error ? err.message : String(err) };
-      }
+          return yield* removeWorktreeEffect(project.path, input.worktreePath).pipe(
+            Effect.map(() => ({ success: true as const })),
+            Effect.catchAll((err) =>
+              Effect.succeed({
+                success: false as const,
+                error: err instanceof Error ? err.message : String(err),
+              }),
+            ),
+          );
+        }),
+      );
     }),
 });
