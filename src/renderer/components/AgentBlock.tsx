@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { cn } from "@/lib/utils";
-import { ChevronRightIcon, WrenchIcon, BrainIcon, LayersIcon, LoaderIcon, TerminalIcon } from "lucide-react";
+import { ChevronRightIcon, WrenchIcon, BrainIcon, LayersIcon, LoaderIcon, TerminalIcon, CopyIcon, CheckIcon } from "lucide-react";
 import { parseToolCall } from "@/lib/tool-call-parser";
 import { Markdown } from "@/components/Markdown";
 import { InlineDiffBlock } from "@/components/InlineDiffBlock";
@@ -132,7 +132,39 @@ export function AgentBlock({ block, isStreaming, basePath }: AgentBlockProps) {
 }
 
 function TextBlock({ content }: { content: string }) {
-  return <Markdown content={content} />;
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = useCallback(() => {
+    navigator.clipboard.writeText(content);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }, [content]);
+
+  return (
+    <div className="group/textblock">
+      <Markdown content={content} />
+      <div className="opacity-0 group-hover/textblock:opacity-100 transition-colors">
+        <button
+          type="button"
+          onClick={handleCopy}
+          className="flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-foreground/70 hover:bg-accent hover:text-foreground transition-colors"
+          title="Copy to clipboard"
+        >
+          {copied ? (
+            <>
+              <CheckIcon className="size-3 text-green-400" />
+              <span className="text-green-400">Copied</span>
+            </>
+          ) : (
+            <>
+              <CopyIcon className="size-3" />
+              <span>Copy</span>
+            </>
+          )}
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function PlanBlock({ args }: { args?: string }) {
