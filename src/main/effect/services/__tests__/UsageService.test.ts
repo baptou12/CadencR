@@ -384,8 +384,8 @@ describe("module-level state elimination", () => {
     // Instance A's successful result didn't bleed into B — state is not module-level
   });
 
-  it("UsageService is a proper Context.Tag (not module-level)", () => {
-    // Context.Tag.key is a string identifier in Effect v3
+  it("UsageService is a proper Effect.Tag (not module-level)", () => {
+    // Effect.Tag.key is a string identifier
     expect(UsageService.key).toBeDefined();
     expect(UsageService.key).toBe("UsageService");
   });

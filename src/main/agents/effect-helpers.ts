@@ -1,7 +1,7 @@
 /**
  * Thin synchronous wrappers around the Effect SessionPersistence and
  * EventBroadcaster services. Keeps call-sites simple — they don't need to
- * write out `AppRuntime.runSync(Effect.flatMap(SessionPersistence, sp => ...))`.
+ * write out `AppRuntime.runSync(SessionPersistence.getSessionDbId(id))`.
  *
  * All heavy implementation lives in the Effect services; this module is just
  * a convenience façade for non-Effect callers.
