@@ -140,9 +140,18 @@ export function submitPrdApproval(subprocessId: string, approved: boolean, feedb
   );
   return { success: true };
 }
-import { getSupportedCommands as _getSupportedCommands } from "./slash-commands";
+import { SlashCommands } from "../effect/services/SlashCommands";
 export function getSupportedCommands(subprocessId: string | null, cwd: string) {
-  return _getSupportedCommands(subprocessId, cwd, getActiveProcess);
+  let activeQuery: { supportedCommands(): Promise<unknown[]> } | undefined;
+  if (subprocessId) {
+    const managed = getActiveProcess(subprocessId);
+    if (managed?.query && managed.status !== "stopped" && managed.status !== "error") {
+      activeQuery = managed.query;
+    }
+  }
+  return AppRuntime.runPromise(
+    Effect.flatMap(SlashCommands, (svc) => svc.getCommands(cwd, activeQuery)),
+  );
 }
 
 // Re-export channel constants for use in preload and main

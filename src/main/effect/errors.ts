@@ -84,3 +84,12 @@ export class KeychainError extends Data.TaggedError("KeychainError")<{
   readonly message: string;
   readonly cause?: unknown;
 }> {}
+
+// ---------------------------------------------------------------------------
+// SlashCommands errors
+// ---------------------------------------------------------------------------
+
+export class SlashCommandError extends Data.TaggedError("SlashCommandError")<{
+  readonly message: string;
+  readonly cause?: unknown;
+}> {}

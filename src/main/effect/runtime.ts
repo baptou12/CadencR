@@ -11,6 +11,7 @@ import { DispatchLockLive } from "./services/DispatchLock.js";
 import { ToolPermissionsLive } from "./services/ToolPermissions.js";
 import { PlanApprovalLive } from "./services/PlanApproval.js";
 import { UsageServiceLive } from "./services/UsageService.js";
+import { SlashCommandsLive } from "./services/SlashCommands.js";
 
 // SessionPersistenceLive depends on Database, so we provide DatabaseLive to it
 const SessionPersistenceWithDb = Layer.provide(SessionPersistenceLive, DatabaseLive);
@@ -66,6 +67,7 @@ export const AppLayer = Layer.mergeAll(
   ToolPermissionsLive,
   PlanApprovalWithDeps,
   UsageServiceLive,
+  SlashCommandsLive,
 );
 
 export const AppRuntime = ManagedRuntime.make(AppLayer);
