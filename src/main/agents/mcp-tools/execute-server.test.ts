@@ -18,21 +18,17 @@ vi.mock("@anthropic-ai/claude-agent-sdk", () => {
 });
 
 vi.mock("../../db/database");
-vi.mock("../session-persistence", () => ({
+vi.mock("../effect-helpers", () => ({
   notifyDbUpdated: vi.fn(),
-}));
-vi.mock("../state-transitions", () => ({
-  transitionPhase: vi.fn(),
-  transitionFeature: vi.fn(),
 }));
 
 import { createExecuteMcpServer } from "./execute-server";
 import { getDatabase } from "../../db/database";
-import { transitionPhase } from "../state-transitions";
+import { notifyDbUpdated } from "../effect-helpers";
 import { createMockDb } from "../../test-utils";
 
 const mockGetDatabase = vi.mocked(getDatabase);
-const mockTransitionPhase = vi.mocked(transitionPhase);
+const mockNotify = vi.mocked(notifyDbUpdated);
 
 function getToolHandler(server: ReturnType<typeof createExecuteMcpServer>, toolName: string) {
   const tools = (server as any).tools as Array<{ name: string; handler: (args: unknown) => Promise<unknown> }>;
@@ -57,30 +53,31 @@ describe("createExecuteMcpServer", () => {
 
   describe("mark_phase_done tool", () => {
     it("transitions phase to completed", async () => {
-      db.prepare.mockReturnValue({ get: vi.fn().mockReturnValue({ status: "running" }) });
+      db.prepare.mockReturnValue({
+        get: vi.fn().mockReturnValue({ status: "running" }),
+        run: vi.fn().mockReturnValue({ changes: 1, lastInsertRowid: 0 }),
+      });
 
       const server = createExecuteMcpServer(10, 100);
       const handler = getToolHandler(server, "mark_phase_done");
       const result = await handler({ phase_id: 5, implementation_notes: "Done it", deviations: "None" }) as any;
 
       expect(result.content[0].text).toContain("completed");
-      expect(mockTransitionPhase).toHaveBeenCalledWith(db, 5, "completed", 10, {
-        implementation_notes: "Done it",
-        deviations: "None",
-      });
+      expect(mockNotify).toHaveBeenCalledWith("phase", 10);
     });
 
     it("uses null for optional fields when not provided", async () => {
-      db.prepare.mockReturnValue({ get: vi.fn().mockReturnValue({ status: "running" }) });
+      db.prepare.mockReturnValue({
+        get: vi.fn().mockReturnValue({ status: "running" }),
+        run: vi.fn().mockReturnValue({ changes: 1, lastInsertRowid: 0 }),
+      });
 
       const server = createExecuteMcpServer(10, 100);
       const handler = getToolHandler(server, "mark_phase_done");
-      await handler({ phase_id: 5 });
+      const result = await handler({ phase_id: 5 }) as any;
 
-      expect(mockTransitionPhase).toHaveBeenCalledWith(db, 5, "completed", 10, {
-        implementation_notes: null,
-        deviations: null,
-      });
+      expect(result.content[0].text).toContain("completed");
+      expect(mockNotify).toHaveBeenCalledWith("phase", 10);
     });
 
     it("returns error when phase not found", async () => {

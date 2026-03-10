@@ -5,11 +5,9 @@
 import { z } from "zod";
 import { Effect } from "effect";
 import { tool } from "@anthropic-ai/claude-agent-sdk";
-import { getDatabase } from "../../db/database";
 import { queryOne, queryAll, queryOneValidated, execute } from "../../db/query";
 import { AppRuntime } from "../../effect/runtime";
 import { notifyDbUpdated } from "../effect-helpers";
-import { transitionPhase } from "../state-transitions";
 import { resolveAgentCwd } from "../resolve-cwd";
 import { textResult, errorResult, renderPlanMarkdown } from "./helpers";
 import { PhaseRowSchema } from "../../effect/schemas/db-schemas";
@@ -276,11 +274,14 @@ export function createMarkPhaseDoneTool(featureId: number) {
           return errorResult(`Phase ${args.phase_id} has status '${phase.status}', expected 'running'`);
         }
 
-        const db = getDatabase();
-        transitionPhase(db, args.phase_id, "completed", featureId, {
-          implementation_notes: args.implementation_notes ?? null,
-          deviations: args.deviations ?? null,
-        });
+        console.log(`[phase-trace] phase ${args.phase_id}: running -> completed (feature ${featureId})`);
+        await AppRuntime.runPromise(execute(
+          "UPDATE phases SET status = 'completed', implementation_notes = ?, deviations = ? WHERE id = ?",
+          args.implementation_notes ?? null,
+          args.deviations ?? null,
+          args.phase_id,
+        ));
+        notifyDbUpdated("phase", featureId);
         return textResult(`Phase ${args.phase_id} marked as completed`);
       } catch (e) {
         return errorResult(`Failed to mark phase done: ${e instanceof Error ? e.message : String(e)}`);

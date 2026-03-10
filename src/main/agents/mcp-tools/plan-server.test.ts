@@ -21,20 +21,14 @@ vi.mock("../../db/database");
 vi.mock("../effect-helpers", () => ({
   notifyDbUpdated: vi.fn(),
 }));
-vi.mock("../state-transitions", () => ({
-  transitionPhase: vi.fn(),
-  transitionFeature: vi.fn(),
-}));
 
 import { createPlanMcpServer } from "./plan-server";
 import { getDatabase } from "../../db/database";
 import { notifyDbUpdated } from "../effect-helpers";
-import { transitionFeature } from "../state-transitions";
 import { createMockDb } from "../../test-utils";
 
 const mockGetDatabase = vi.mocked(getDatabase);
 const mockNotify = vi.mocked(notifyDbUpdated);
-const mockTransitionFeature = vi.mocked(transitionFeature);
 
 function getToolHandler(server: ReturnType<typeof createPlanMcpServer>, toolName: string) {
   const tools = (server as any).tools as Array<{ name: string; handler: (args: unknown) => Promise<unknown> }>;
@@ -187,10 +181,11 @@ describe("createPlanMcpServer", () => {
           })) };
         }
         if (sql.includes("UPDATE plans SET status = 'approved'")) {
-          return { run: vi.fn().mockImplementation(() => { planStatus = "approved"; }) };
+          return { run: vi.fn().mockImplementation(() => { planStatus = "approved"; return { changes: 1, lastInsertRowid: 0 }; }) };
         }
         if (sql.includes("COUNT(*)")) return { get: vi.fn().mockReturnValue({ cnt: 3 }) };
-        return { get: vi.fn(), all: vi.fn().mockReturnValue([]), run: vi.fn() };
+        // Default: return proper run result for UPDATE statements used in transaction
+        return { get: vi.fn().mockReturnValue(null), all: vi.fn().mockReturnValue([]), run: vi.fn().mockReturnValue({ changes: 1, lastInsertRowid: 0 }) };
       });
 
       db.transaction.mockImplementation((fn: () => void) => fn);
@@ -206,7 +201,7 @@ describe("createPlanMcpServer", () => {
 
       expect(result.isError).toBeUndefined();
       expect(result.content[0].text).toContain("finalized");
-      expect(mockTransitionFeature).toHaveBeenCalledWith(db, 10, "planned");
+      expect(mockNotify).toHaveBeenCalledWith("feature", 10);
       expect(mockNotify).toHaveBeenCalledWith("phase", 10);
     });
 
