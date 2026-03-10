@@ -42,6 +42,19 @@ export const projectsRouter = router({
     ));
     const featureIds = features.map((f) => f.id);
 
+    // NOTE: Effect.runSync is intentionally used inside this transaction callback.
+    // better-sqlite3 transactions require a synchronous callback — they cannot be
+    // async or Promise-based. Because all our DB query/execute helpers are
+    // synchronous under the hood (better-sqlite3 is fully synchronous), wrapping
+    // them with Effect.runSync is safe here.
+    //
+    // If any Effect.runSync call throws (e.g. a DatabaseError), the exception
+    // propagates out of the transaction callback and better-sqlite3 automatically
+    // rolls back the entire transaction — so partial writes are never committed.
+    //
+    // This is not a mistake or an anti-pattern; it is the correct way to perform
+    // multi-step atomic deletes with our Effect-based DB helpers inside a
+    // synchronous better-sqlite3 transaction.
     await AppRuntime.runPromise(transaction(() => {
       if (featureIds.length > 0) {
         const ph = featureIds.map(() => "?").join(",");
