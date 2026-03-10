@@ -2,18 +2,19 @@
  * Tool permission handling for the canUseTool SDK callback.
  * Extracted from subprocess-manager.ts — handles AskUserQuestion,
  * ExitPlanMode, and smart permission resolution.
+ *
+ * The EventEmitter-based coordination (questionEmitter) has been replaced
+ * by the ToolPermissions Effect service, accessed via getAppRuntime().
  */
 
 import * as fs from "node:fs";
 import { getDatabase } from "../db/database";
-import { getSessionDbId, notifyDbUpdated } from "./session-persistence";
+import { getSessionDbId, notifyDbUpdated } from "./effect-helpers";
 import { resolvePermission, appendToSettingsLocal } from "./permissions";
-import { broadcast, ASK_USER_QUESTION_CHANNEL, TOOL_PERMISSION_CHANNEL } from "./broadcast";
+import { getAppRuntime } from "../effect/app-runtime-ref";
+import { ToolPermissions } from "../effect/services/ToolPermissions";
+import { PlanApproval } from "../effect/services/PlanApproval";
 import type { ManagedSubprocess } from "./types";
-import EventEmitter from "node:events";
-
-// Global event emitter for question/answer coordination
-export const questionEmitter = new EventEmitter();
 
 type CanUseToolResult =
   | { behavior: "allow"; updatedInput: Record<string, unknown> }
@@ -239,23 +240,9 @@ async function handleExitPlanMode(
   }
 
   try {
-    const result = await new Promise<{ approved: boolean; feedback?: string }>((resolve, reject) => {
-      const timeout = setTimeout(
-        () => {
-          questionEmitter.removeAllListeners(`plan-approval:${managed.id}`);
-          reject(new Error("Plan approval timeout (5h)"));
-        },
-        5 * 60 * 60 * 1000,
-      );
-
-      questionEmitter.once(
-        `plan-approval:${managed.id}`,
-        (response: { approved: boolean; feedback?: string }) => {
-          clearTimeout(timeout);
-          resolve(response);
-        },
-      );
-    });
+    const result = await getAppRuntime().runPromise(
+      PlanApproval.requestPlanApproval(managed.id),
+    );
 
     if (result.approved) {
       if (managed.query) {
@@ -302,34 +289,20 @@ async function handleExitPlanMode(
 
 /**
  * Request user answers to AskUserQuestion from the renderer.
+ * Delegates to the ToolPermissions Effect service (which broadcasts internally).
  */
 export async function requestUserAnswers(
   subprocessId: string,
   questions: Record<string, unknown>,
 ): Promise<Record<string, string>> {
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(
-      () => {
-        questionEmitter.removeAllListeners(`answer:${subprocessId}`);
-        reject(new Error("User answer timeout (15m)"));
-      },
-      15 * 60 * 1000,
-    );
-
-    questionEmitter.once(
-      `answer:${subprocessId}`,
-      (answers: Record<string, string>) => {
-        clearTimeout(timeout);
-        resolve(answers);
-      },
-    );
-
-    broadcast(ASK_USER_QUESTION_CHANNEL, { subprocessId, questions });
-  });
+  return getAppRuntime().runPromise(
+    ToolPermissions.requestUserAnswer(subprocessId, questions),
+  );
 }
 
 /**
  * Request permission from the user for a tool call.
+ * Delegates to the ToolPermissions Effect service.
  */
 async function requestToolPermission(
   subprocessId: string,
@@ -356,25 +329,9 @@ async function requestToolPermission(
   }
 
   try {
-    const result = await new Promise<{ decision: "allow_once" | "allow_future" | "deny"; feedback?: string }>((resolve, reject) => {
-      const timeout = setTimeout(
-        () => {
-          questionEmitter.removeAllListeners(`permission:${subprocessId}`);
-          reject(new Error("Tool permission timeout (15m)"));
-        },
-        15 * 60 * 1000,
-      );
-
-      questionEmitter.once(
-        `permission:${subprocessId}`,
-        (response: { decision: "allow_once" | "allow_future" | "deny"; feedback?: string }) => {
-          clearTimeout(timeout);
-          resolve(response);
-        },
-      );
-
-      broadcast(TOOL_PERMISSION_CHANNEL, { subprocessId, ...permissionRequest });
-    });
+    const result = await getAppRuntime().runPromise(
+      ToolPermissions.requestPermission(subprocessId, permissionRequest),
+    );
 
     if (sDbId) {
       try {
@@ -405,7 +362,9 @@ export function submitToolPermission(
   decision: "allow_once" | "allow_future" | "deny",
   feedback?: string,
 ): void {
-  questionEmitter.emit(`permission:${subprocessId}`, { decision, feedback });
+  getAppRuntime().runSync(
+    ToolPermissions.submitPermission(subprocessId, decision, feedback),
+  );
 }
 
 /**
@@ -431,133 +390,9 @@ export function submitUserAnswers(
     }
   }
 
-  questionEmitter.emit(`answer:${subprocessId}`, answers);
-}
-
-/**
- * Submit a plan approval or rejection for a pending ExitPlanMode tool call.
- * Returns { success: true } if a listener was waiting, or { success: false, error } if not.
- */
-export function submitPlanApproval(
-  subprocessId: string,
-  approved: boolean,
-  feedback?: string,
-  getActiveProcess?: (id: string) => unknown | undefined,
-): { success: boolean; error?: string } {
-  // Check if anyone is actually listening for this approval
-  const eventName = `plan-approval:${subprocessId}`;
-  const hasListener = questionEmitter.listenerCount(eventName) > 0;
-
-  if (!hasListener) {
-    const proc = getActiveProcess?.(subprocessId);
-    if (!proc) {
-      // Agent is paused/dead — store the approval result so it can be consumed on resume
-      const sessionDbId = getSessionDbId(subprocessId);
-      if (sessionDbId) {
-        try {
-          const db = getDatabase();
-          db.prepare("UPDATE agent_sessions SET plan_approval_result = ?, pending_plan_approval = NULL WHERE id = ?")
-            .run(JSON.stringify({ approved, feedback }), sessionDbId);
-          const fid = getFeatureIdForSubprocess(subprocessId);
-          if (fid != null) notifyDbUpdated("agent_session", fid);
-        } catch { /* best-effort */ }
-      }
-      return { success: true };
-    }
-    // Process exists but no listener — also store for when the listener registers
-    const sessionDbId2 = getSessionDbId(subprocessId);
-    if (sessionDbId2) {
-      try {
-        const db = getDatabase();
-        db.prepare("UPDATE agent_sessions SET plan_approval_result = ?, pending_plan_approval = NULL WHERE id = ?")
-          .run(JSON.stringify({ approved, feedback }), sessionDbId2);
-        const fid = getFeatureIdForSubprocess(subprocessId);
-        if (fid != null) notifyDbUpdated("agent_session", fid);
-      } catch { /* best-effort */ }
-    }
-    return { success: true };
-  }
-
-  if (!approved && feedback) {
-    const sessionDbId = getSessionDbId(subprocessId);
-    if (sessionDbId) {
-      try {
-        const content = `**Plan feedback:**\n${feedback}`;
-        const db = getDatabase();
-        db.prepare(
-          "INSERT INTO agent_messages (session_id, role, content, message_type, tool_name) VALUES (?, ?, ?, ?, ?)",
-        ).run(sessionDbId, "user", content, "user_message", null);
-        const fid = getFeatureIdForSubprocess(subprocessId);
-        if (fid != null) notifyDbUpdated("agent_session", fid);
-      } catch {
-        // Best-effort persistence
-      }
-    }
-  }
-
-  questionEmitter.emit(eventName, { approved, feedback });
-  return { success: true };
-}
-
-/**
- * Submit a PRD approval or rejection. Mirrors submitPlanApproval for the PRD flow.
- */
-export function submitPrdApproval(
-  subprocessId: string,
-  approved: boolean,
-  feedback?: string,
-  getActiveProcess?: (id: string) => unknown | undefined,
-): { success: boolean; error?: string } {
-  const eventName = `prd-approval:${subprocessId}`;
-  const hasListener = questionEmitter.listenerCount(eventName) > 0;
-
-  if (!hasListener) {
-    const proc = getActiveProcess?.(subprocessId);
-    if (!proc) {
-      const sessionDbId = getSessionDbId(subprocessId);
-      if (sessionDbId) {
-        try {
-          const db = getDatabase();
-          db.prepare("UPDATE agent_sessions SET prd_approval_result = ?, pending_prd_approval = NULL WHERE id = ?")
-            .run(JSON.stringify({ approved, feedback }), sessionDbId);
-          const fid = getFeatureIdForSubprocess(subprocessId);
-          if (fid != null) notifyDbUpdated("agent_session", fid);
-        } catch { /* best-effort */ }
-      }
-      return { success: true };
-    }
-    const sessionDbId2 = getSessionDbId(subprocessId);
-    if (sessionDbId2) {
-      try {
-        const db = getDatabase();
-        db.prepare("UPDATE agent_sessions SET prd_approval_result = ?, pending_prd_approval = NULL WHERE id = ?")
-          .run(JSON.stringify({ approved, feedback }), sessionDbId2);
-        const fid = getFeatureIdForSubprocess(subprocessId);
-        if (fid != null) notifyDbUpdated("agent_session", fid);
-      } catch { /* best-effort */ }
-    }
-    return { success: true };
-  }
-
-  if (!approved && feedback) {
-    const sessionDbId = getSessionDbId(subprocessId);
-    if (sessionDbId) {
-      try {
-        const content = `**PRD feedback:**\n${feedback}`;
-        const db = getDatabase();
-        db.prepare(
-          "INSERT INTO agent_messages (session_id, role, content, message_type, tool_name) VALUES (?, ?, ?, ?, ?)",
-        ).run(sessionDbId, "user", content, "user_message", null);
-        const fid = getFeatureIdForSubprocess(subprocessId);
-        if (fid != null) notifyDbUpdated("agent_session", fid);
-      } catch {
-        // Best-effort persistence
-      }
-    }
-  }
-
-  questionEmitter.emit(eventName, { approved, feedback });
-  return { success: true };
+  getAppRuntime().runSync(
+    ToolPermissions.submitUserAnswer(subprocessId, answers),
+  );
 }
 
 // Helper — resolve feature ID for a subprocess (for DB notifications)
@@ -570,3 +405,4 @@ function getFeatureIdForSubprocess(subprocessId: string): number | null {
     return row?.feature_id ?? null;
   } catch { return null; }
 }
+

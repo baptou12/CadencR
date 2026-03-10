@@ -1,8 +1,11 @@
 import { router, publicProcedure } from "./trpc";
-import { getUsage } from "../usage/usage-service";
+import { AppRuntime } from "../effect/runtime";
+import { UsageService } from "../effect/services/UsageService";
 
 export const usageRouter = router({
   getUsage: publicProcedure.query(async () => {
-    return await getUsage();
+    return await AppRuntime.runPromise(
+      UsageService.getUsage(),
+    );
   }),
 });

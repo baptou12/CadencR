@@ -18,7 +18,7 @@ vi.mock("@anthropic-ai/claude-agent-sdk", () => {
 });
 
 vi.mock("../../db/database");
-vi.mock("../session-persistence", () => ({
+vi.mock("../effect-helpers", () => ({
   notifyDbUpdated: vi.fn(),
 }));
 vi.mock("../state-transitions", () => ({
@@ -28,7 +28,7 @@ vi.mock("../state-transitions", () => ({
 
 import { createQaMcpServer } from "./qa-server";
 import { getDatabase } from "../../db/database";
-import { notifyDbUpdated } from "../session-persistence";
+import { notifyDbUpdated } from "../effect-helpers";
 import { transitionPhase } from "../state-transitions";
 import { createMockDb } from "../../test-utils";
 
@@ -97,7 +97,7 @@ describe("createQaMcpServer", () => {
 
   describe("finalize_phases tool", () => {
     it("finalizes draft phases", async () => {
-      const runFn = vi.fn();
+      const runFn = vi.fn().mockReturnValue({ changes: 1, lastInsertRowid: 0 });
       db.prepare.mockImplementation((sql: string) => {
         if (sql.includes("SELECT id")) return { all: vi.fn().mockReturnValue([
           { id: 5, title: "Phase A", step_number: 1 },

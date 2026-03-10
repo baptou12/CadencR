@@ -18,7 +18,7 @@ vi.mock("@anthropic-ai/claude-agent-sdk", () => {
 });
 
 vi.mock("../../db/database");
-vi.mock("../session-persistence", () => ({
+vi.mock("../effect-helpers", () => ({
   notifyDbUpdated: vi.fn(),
 }));
 vi.mock("../state-transitions", () => ({
@@ -28,7 +28,7 @@ vi.mock("../state-transitions", () => ({
 
 import { createPlanMcpServer } from "./plan-server";
 import { getDatabase } from "../../db/database";
-import { notifyDbUpdated } from "../session-persistence";
+import { notifyDbUpdated } from "../effect-helpers";
 import { transitionFeature } from "../state-transitions";
 import { createMockDb } from "../../test-utils";
 
@@ -59,7 +59,7 @@ describe("createPlanMcpServer", () => {
 
   describe("update_plan tool", () => {
     it("updates specified plan fields", async () => {
-      const runFn = vi.fn();
+      const runFn = vi.fn().mockReturnValue({ changes: 1, lastInsertRowid: 0 });
       db.prepare.mockReturnValue({ run: runFn });
 
       const server = createPlanMcpServer(1, 10, 100);
@@ -84,9 +84,11 @@ describe("createPlanMcpServer", () => {
   });
 
   describe("show_plan tool", () => {
+    const fullPlanRow = { id: 1, feature_id: 10, title: "T", status: "active", raw_markdown: null, summary: null, context: null, clarifications: null, completion_conditions: null, created_at: "2024-01-01", updated_at: "2024-01-01" };
+
     it("returns plan markdown when no callback provided", async () => {
       db.prepare.mockImplementation((sql: string) => {
-        if (sql.includes("FROM plans")) return { get: vi.fn().mockReturnValue({ id: 1, title: "T", summary: null, context: null, clarifications: null, completion_conditions: null }) };
+        if (sql.includes("FROM plans")) return { get: vi.fn().mockReturnValue(fullPlanRow) };
         return { all: vi.fn().mockReturnValue([]) };
       });
 
@@ -99,8 +101,8 @@ describe("createPlanMcpServer", () => {
 
     it("calls onShowPlan callback and returns approved message", async () => {
       db.prepare.mockImplementation((sql: string) => {
-        if (sql.includes("FROM plans")) return { get: vi.fn().mockReturnValue({ id: 1, title: "T", summary: null, context: null, clarifications: null, completion_conditions: null }) };
-        if (sql.includes("UPDATE plans")) return { run: vi.fn() };
+        if (sql.includes("FROM plans")) return { get: vi.fn().mockReturnValue(fullPlanRow) };
+        if (sql.includes("UPDATE plans")) return { run: vi.fn().mockReturnValue({ changes: 1, lastInsertRowid: 0 }) };
         return { all: vi.fn().mockReturnValue([]) };
       });
 
@@ -115,7 +117,7 @@ describe("createPlanMcpServer", () => {
 
     it("returns error with feedback when rejected", async () => {
       db.prepare.mockImplementation((sql: string) => {
-        if (sql.includes("FROM plans")) return { get: vi.fn().mockReturnValue({ id: 1, title: "T", summary: null, context: null, clarifications: null, completion_conditions: null }) };
+        if (sql.includes("FROM plans")) return { get: vi.fn().mockReturnValue(fullPlanRow) };
         return { all: vi.fn().mockReturnValue([]) };
       });
 
@@ -130,7 +132,7 @@ describe("createPlanMcpServer", () => {
 
     it("returns error when callback throws", async () => {
       db.prepare.mockImplementation((sql: string) => {
-        if (sql.includes("FROM plans")) return { get: vi.fn().mockReturnValue({ id: 1, title: "T", summary: null, context: null, clarifications: null, completion_conditions: null }) };
+        if (sql.includes("FROM plans")) return { get: vi.fn().mockReturnValue(fullPlanRow) };
         return { all: vi.fn().mockReturnValue([]) };
       });
 
@@ -172,10 +174,16 @@ describe("createPlanMcpServer", () => {
       let planStatus = "draft";
 
       db.prepare.mockImplementation((sql: string) => {
+        if (sql.includes("SELECT *") && sql.includes("FROM plans")) {
+          return { get: vi.fn().mockImplementation(() => ({
+            id: planId, feature_id: 10, title: "T", status: planStatus, raw_markdown: null,
+            summary: null, context: null, clarifications: null,
+            completion_conditions: null, created_at: "2024-01-01", updated_at: "2024-01-01",
+          })) };
+        }
         if (sql.includes("FROM plans WHERE id")) {
           return { get: vi.fn().mockImplementation(() => ({
-            id: planId, title: "T", summary: null, context: null, clarifications: null,
-            completion_conditions: null, feature_id: 10, plan_status: planStatus,
+            id: planId, feature_id: 10, plan_status: planStatus,
           })) };
         }
         if (sql.includes("UPDATE plans SET status = 'approved'")) {

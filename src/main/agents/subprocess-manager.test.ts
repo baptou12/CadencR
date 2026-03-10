@@ -28,9 +28,12 @@ vi.mock("./broadcast", () => ({
   TOOL_PERMISSION_CHANNEL: "tool:permission",
 }));
 
-vi.mock("./cli-discovery", () => ({
-  discoverClaudeCli: vi.fn().mockReturnValue("/usr/bin/claude"),
-}));
+vi.mock("./cli-discovery", () => {
+  const { Effect } = require("effect");
+  return {
+    discoverClaudeCli: vi.fn().mockReturnValue(Effect.succeed({ path: "/usr/bin/claude", source: "process-path" })),
+  };
+});
 
 vi.mock("./session-persistence", () => ({
   getSessionDbId: vi.fn().mockReturnValue(undefined),
@@ -52,7 +55,6 @@ vi.mock("./tool-permissions", () => ({
   createCanUseToolHandler: vi.fn().mockReturnValue(async () => ({ behavior: "allow" })),
   submitToolPermission: vi.fn(),
   submitUserAnswers: vi.fn(),
-  submitPlanApproval: vi.fn(),
 }));
 
 vi.mock("./slash-commands", () => ({
@@ -64,7 +66,6 @@ vi.mock("./models", () => ({
 }));
 
 import { setSdkClient } from "./sdk-client";
-import * as sessionPersistence from "./session-persistence";
 
 import {
   startSubprocess,
@@ -213,10 +214,13 @@ describe("subprocess-manager", () => {
   });
 
   describe("compact_boundary system event", () => {
-    it("persists compact_divider message and broadcasts event", async () => {
-      (sessionPersistence.getSessionDbId as any).mockReturnValue(42);
+    it("processes compact_boundary system event without error", async () => {
+      // NOTE: compact_boundary persistence and broadcasting is now handled
+      // by SdkQueryRunner (Effect service). This test verifies the subprocess
+      // lifecycle still works correctly when a compact_boundary event is received.
+      // Detailed assertions are in SdkQueryRunner.test.ts.
 
-      startSubprocess({
+      const managed = startSubprocess({
         cwd: "/project",
         agentType: "session",
         prompt: "Do something",
@@ -234,63 +238,17 @@ describe("subprocess-manager", () => {
       mockSdk.complete();
       await wait(100);
 
-      // Should persist the compact_divider message row
-      expect(sessionPersistence.persistStreamEvent).toHaveBeenCalledWith(
-        42,
-        expect.objectContaining({ type: "system", subtype: "compact_boundary" }),
-        null,
-      );
-
-      // Should broadcast the event so the renderer can update live
-      const { broadcast } = await import("./broadcast");
-      expect(broadcast).toHaveBeenCalledWith(
-        "agent:event",
-        expect.objectContaining({
-          subprocessId: "test-compact",
-          event: expect.objectContaining({ type: "system", subtype: "compact_boundary" }),
-        }),
-      );
-    });
-
-    it("sets was_compacted flag on the session row", async () => {
-      const { getDatabase } = await import("../db/database");
-      const mockRun = vi.fn().mockReturnValue({ changes: 1 });
-      (getDatabase as any).mockReturnValue({
-        prepare: vi.fn().mockReturnValue({
-          get: vi.fn(),
-          all: vi.fn().mockReturnValue([]),
-          run: mockRun,
-        }),
-        exec: vi.fn(),
-        pragma: vi.fn().mockReturnValue([]),
-      });
-      (sessionPersistence.getSessionDbId as any).mockReturnValue(99);
-
-      startSubprocess({
-        cwd: "/project",
-        agentType: "session",
-        prompt: "Do something",
-        id: "test-compact-flag",
-      });
-
-      await wait(10);
-
-      mockSdk.emitMessage({
-        type: "system",
-        subtype: "compact_boundary",
-      });
-
-      mockSdk.complete();
-      await wait(100);
-
-      // Should have called UPDATE agent_sessions SET was_compacted = 1
-      expect(mockRun).toHaveBeenCalledWith(99);
+      // Subprocess should have completed normally
+      expect(managed.status).toBe("completed");
     });
   });
 
   describe("SDK message handling", () => {
-    it("persists events and handles assistant messages", async () => {
-      (sessionPersistence.getSessionDbId as any).mockReturnValue(42);
+    it("fires event listeners for stream_event messages", async () => {
+      // NOTE: stream event persistence is now handled by SdkQueryRunner (Effect service).
+      // This test verifies that managed.eventListeners are called, which is still
+      // subprocess-manager's responsibility (via SdkQueryRunner calling them).
+      // Detailed persistence assertions are in SdkQueryRunner.test.ts.
 
       const managed = startSubprocess({
         cwd: "/project",
@@ -304,7 +262,7 @@ describe("subprocess-manager", () => {
 
       await wait(10);
 
-      // Test stream_event persistence
+      // Test stream_event — event listener should be called
       mockSdk.emitMessage({
         type: "stream_event",
         event: {
@@ -325,12 +283,7 @@ describe("subprocess-manager", () => {
       mockSdk.complete();
       await wait(100);
 
-      expect(sessionPersistence.persistStreamEvent).toHaveBeenCalledWith(
-        42,
-        expect.objectContaining({ type: "content_block_start" }),
-        null, // parentToolUseId
-      );
-      // eventListener should be called for both messages
+      // eventListener should be called for stream_event messages
       expect(eventListener).toHaveBeenCalled();
     });
   });

@@ -3,6 +3,7 @@
  * Extracted from subprocess-manager.ts.
  */
 
+import { Effect, Option } from "effect";
 import { discoverClaudeCli } from "./cli-discovery";
 import { getSdkClient, type SdkQuery } from "./sdk-client";
 import type { ManagedSubprocess } from "./types";
@@ -94,8 +95,9 @@ async function getSdkCommands(
 async function fetchCommandsViaTemporaryQuery(cwd: string): Promise<SlashCommandInfo[]> {
   const sdk = await getSdkClient();
 
-  const cliInfo = await discoverClaudeCli();
-  if (!cliInfo) return [];
+  const cliInfoOpt = await Effect.runPromise(discoverClaudeCli().pipe(Effect.option));
+  if (Option.isNone(cliInfoOpt)) return [];
+  const cliInfo = cliInfoOpt.value;
 
   // Async iterable that never yields — keeps the subprocess alive until close()
   const neverYield: AsyncIterable<unknown> = {

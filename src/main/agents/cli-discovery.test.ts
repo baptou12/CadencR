@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { Effect, Option } from "effect";
 
 // Mock node modules — exec needs callback signature for promisify(exec) = execAsync
 vi.mock("node:child_process", () => ({
@@ -26,6 +27,7 @@ import { exec } from "node:child_process";
 import { discoverClaudeCli, getResolvedPath } from "./cli-discovery";
 import { getDatabase } from "../db/database";
 import { createMockDb } from "../test-utils";
+import { CliNotFoundError } from "../effect/errors";
 
 const mockExec = vi.mocked(exec);
 const mockGetDatabase = vi.mocked(getDatabase);
@@ -58,11 +60,27 @@ describe("discoverClaudeCli", () => {
     mockExecError();
   });
 
-  it("returns null if claude is not found anywhere", async () => {
+  it("fails with CliNotFoundError if claude is not found anywhere", async () => {
     db.prepare.mockReturnValue({ get: vi.fn().mockReturnValue(undefined) });
 
-    const result = await discoverClaudeCli();
-    expect(result).toBeNull();
+    const result = await Effect.runPromise(discoverClaudeCli().pipe(Effect.option));
+    expect(Option.isNone(result)).toBe(true);
+  });
+
+  it("includes COMMON_LOCATIONS in CliNotFoundError.searchedPaths", async () => {
+    db.prepare.mockReturnValue({ get: vi.fn().mockReturnValue(undefined) });
+
+    let caughtError: CliNotFoundError | null = null;
+    await Effect.runPromise(
+      discoverClaudeCli().pipe(
+        Effect.catchTag("CliNotFoundError", (e) => {
+          caughtError = e;
+          return Effect.succeed(null);
+        }),
+      ),
+    );
+    expect(caughtError).toBeInstanceOf(CliNotFoundError);
+    expect(Array.isArray(caughtError!.searchedPaths)).toBe(true);
   });
 
   it("returns configured path from settings first", async () => {
@@ -72,7 +90,7 @@ describe("discoverClaudeCli", () => {
       p === configuredPath ? Promise.resolve() : Promise.reject(new Error("ENOENT")),
     );
 
-    const result = await discoverClaudeCli();
+    const result = await Effect.runPromise(discoverClaudeCli());
 
     expect(result).toEqual({ path: configuredPath, source: "settings" });
   });
@@ -96,7 +114,7 @@ describe("discoverClaudeCli", () => {
       p === shellPath ? Promise.resolve() : Promise.reject(new Error("ENOENT")),
     );
 
-    const result = await discoverClaudeCli();
+    const result = await Effect.runPromise(discoverClaudeCli());
 
     expect(result).toEqual({ path: shellPath, source: "shell-path" });
   });
@@ -112,7 +130,7 @@ describe("discoverClaudeCli", () => {
       p === processPath ? Promise.resolve() : Promise.reject(new Error("ENOENT")),
     );
 
-    const result = await discoverClaudeCli();
+    const result = await Effect.runPromise(discoverClaudeCli());
     process.env.PATH = origPath;
 
     expect(result).toEqual({ path: processPath, source: "process-path" });
@@ -129,11 +147,11 @@ describe("discoverClaudeCli", () => {
       p === commonPath ? Promise.resolve() : Promise.reject(new Error("ENOENT")),
     );
 
-    const result = await discoverClaudeCli();
+    const result = await Effect.runPromise(discoverClaudeCli());
     process.env.PATH = origPath;
 
-    expect(result?.source).toBe("common-location");
-    expect(result?.path).toBe(commonPath);
+    expect(result.source).toBe("common-location");
+    expect(result.path).toBe(commonPath);
   });
 
   it("skips configured path if file does not exist", async () => {
@@ -141,10 +159,10 @@ describe("discoverClaudeCli", () => {
     // All access calls reject
     mockAccess.mockRejectedValue(new Error("ENOENT"));
 
-    const result = await discoverClaudeCli();
+    const result = await Effect.runPromise(discoverClaudeCli().pipe(Effect.option));
 
-    // Since shell/process/common also fail, should be null
-    expect(result).toBeNull();
+    // Since shell/process/common also fail, should be None
+    expect(Option.isNone(result)).toBe(true);
   });
 });
 
@@ -160,7 +178,7 @@ describe("getResolvedPath", () => {
       return {} as any;
     });
 
-    const result = await getResolvedPath();
+    const result = await Effect.runPromise(getResolvedPath());
     expect(result).toBe("/usr/local/bin:/usr/bin:/bin");
   });
 
@@ -173,7 +191,7 @@ describe("getResolvedPath", () => {
     const origPath = process.env.PATH;
     process.env.PATH = "/fallback/path";
 
-    const result = await getResolvedPath();
+    const result = await Effect.runPromise(getResolvedPath());
     process.env.PATH = origPath;
 
     expect(result).toBe("/fallback/path");

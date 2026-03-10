@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { Effect } from "effect";
+import { CliNotFoundError } from "../effect/errors";
 import { createMockDb } from "../test-utils";
 
 const mockDb = createMockDb();
@@ -25,15 +27,18 @@ vi.mock("../agents/subprocess-manager", () => ({
   getSupportedCommands: vi.fn().mockReturnValue([]),
 }));
 
-vi.mock("../agents/session-persistence", () => ({
+vi.mock("../agents/effect-helpers", () => ({
   getSubprocessIdForSession: vi.fn().mockReturnValue(null),
   getSubprocessIdsForSessionDbIds: vi.fn().mockReturnValue([]),
   notifyDbUpdated: vi.fn(),
 }));
 
-vi.mock("../agents/cli-discovery", () => ({
-  discoverClaudeCli: vi.fn().mockResolvedValue({ path: "/usr/bin/claude", source: "path" }),
-}));
+vi.mock("../agents/cli-discovery", () => {
+  const { Effect } = require("effect");
+  return {
+    discoverClaudeCli: vi.fn().mockReturnValue(Effect.succeed({ path: "/usr/bin/claude", source: "path" })),
+  };
+});
 
 vi.mock("../agents/available-models", () => ({
   fetchAvailableModels: vi.fn().mockResolvedValue(["claude-opus-4-5", "claude-sonnet-4-5"]),
@@ -86,6 +91,49 @@ vi.mock("../git/worktree", () => ({
   mergeBranch: vi.fn().mockResolvedValue(undefined),
   deleteLocalBranch: vi.fn().mockResolvedValue(undefined),
   hasUncommittedChanges: vi.fn().mockResolvedValue(false),
+}));
+
+vi.mock("../effect/services/GitWorktree", () => {
+  const { Effect } = require("effect");
+  return {
+    // Lifecycle
+    createWorktreeEffect: vi.fn().mockReturnValue(
+      Effect.succeed({ worktreePath: "/worktrees/my-feature", branch: "feature/my-feature" }),
+    ),
+    removeWorktreeEffect: vi.fn().mockReturnValue(Effect.succeed(undefined)),
+    listWorktreesEffect: vi.fn().mockReturnValue(Effect.succeed([])),
+    getWorktreeInfoEffect: vi.fn().mockReturnValue(Effect.succeed(null)),
+    buildBranchName: vi.fn().mockReturnValue("feat/branch"),
+    setupWorktreeForFeatureEffect: vi.fn().mockReturnValue(Effect.succeed("/worktree/path")),
+    // Query functions
+    getCurrentBranchEffect: vi.fn().mockReturnValue(Effect.succeed("main")),
+    getGitStatsEffect: vi.fn().mockReturnValue(
+      Effect.succeed({ filesChanged: 0, insertions: 0, deletions: 0 }),
+    ),
+    getDiffEffect: vi.fn().mockReturnValue(Effect.succeed("")),
+    getChangedFilesEffect: vi.fn().mockReturnValue(Effect.succeed([])),
+    getOriginalBranchEffect: vi.fn().mockReturnValue(Effect.succeed("main")),
+    checkMergeConflictsEffect: vi.fn().mockReturnValue(
+      Effect.succeed({ hasConflicts: false, conflictFiles: [] }),
+    ),
+    mergeBranchEffect: vi.fn().mockReturnValue(Effect.succeed({ success: true })),
+    deleteLocalBranchEffect: vi.fn().mockReturnValue(Effect.succeed({ success: true })),
+    hasUncommittedChangesEffect: vi.fn().mockReturnValue(Effect.succeed(false)),
+    getFileContentEffect: vi.fn().mockReturnValue(Effect.succeed("")),
+    getCommitLogEffect: vi.fn().mockReturnValue(Effect.succeed([])),
+    getRecentCommitsEffect: vi.fn().mockReturnValue(Effect.succeed([])),
+    getCommitDiffEffect: vi.fn().mockReturnValue(Effect.succeed("")),
+    execGit: vi.fn().mockReturnValue(Effect.succeed({ stdout: "", stderr: "" })),
+  };
+});
+
+vi.mock("../effect/runtime", () => ({
+  AppRuntime: {
+    runPromise: vi.fn().mockImplementation((effect: unknown) => {
+      const { Effect } = require("effect");
+      return Effect.runPromise(effect as Parameters<typeof Effect.runPromise>[0]);
+    }),
+  },
 }));
 
 vi.mock("node:child_process", () => ({
@@ -160,14 +208,14 @@ describe("appRouter - workspaceRouter", () => {
 
   it("settings.getClaudeCliPath returns path from discovery", async () => {
     const { discoverClaudeCli } = await import("../agents/cli-discovery");
-    vi.mocked(discoverClaudeCli).mockResolvedValue({ path: "/usr/bin/claude", source: "settings" });
+    vi.mocked(discoverClaudeCli).mockReturnValue(Effect.succeed({ path: "/usr/bin/claude", source: "settings" }));
     const result = await caller.workspace.getClaudeCliPath();
     expect(result).toEqual({ path: "/usr/bin/claude", source: "settings" });
   });
 
   it("settings.getClaudeCliPath returns null when not found", async () => {
     const { discoverClaudeCli } = await import("../agents/cli-discovery");
-    vi.mocked(discoverClaudeCli).mockResolvedValue(null);
+    vi.mocked(discoverClaudeCli).mockReturnValue(Effect.fail(new CliNotFoundError({ searchedPaths: [] })));
     const result = await caller.workspace.getClaudeCliPath();
     expect(result).toBeNull();
   });
@@ -268,7 +316,7 @@ describe("appRouter - agentsRouter & sessionsRouter", () => {
   });
 
   it("agents.getSessions returns sessions for feature", async () => {
-    const sessions = [{ id: 1, feature_id: 1, agent_type: "plan", status: "completed" }];
+    const sessions = [{ id: 1, feature_id: 1, agent_type: "plan", claude_session_id: null, status: "completed", started_at: null, ended_at: null, run_id: null, phase_id: null, subprocess_id: null, model: null, pending_questions: null, has_file_changes: 0, permission_mode: null, pending_plan_approval: null, pending_prd_approval: null, pending_permission: null, input_tokens: 0, output_tokens: 0, context_window: 200000, was_compacted: 0 }];
     mockDb.prepare.mockReturnValue({ all: vi.fn().mockReturnValue(sessions) });
     const result = await caller.sessions.getSessions({ featureId: 1 });
     expect(result).toEqual(sessions);
@@ -283,7 +331,7 @@ describe("appRouter - agentsRouter & sessionsRouter", () => {
 
   it("agents.deleteSession throws when session not found", async () => {
     mockDb.prepare.mockReturnValue({ get: vi.fn().mockReturnValue(undefined), run: vi.fn(), all: vi.fn().mockReturnValue([]) });
-    await expect(caller.sessions.deleteSession({ sessionId: 999 })).rejects.toThrow("Session not found");
+    await expect(caller.sessions.deleteSession({ sessionId: 999 })).rejects.toThrow("Session 999 not found");
   });
 
   it("agents.deleteSession throws for completed session", async () => {
@@ -316,7 +364,7 @@ describe("appRouter - agentsRouter & sessionsRouter", () => {
     vi.mocked(stopSubprocess).mockResolvedValue(true);
     mockDb.prepare.mockReturnValue({
       get: vi.fn().mockReturnValue({ subprocess_id: "sp-1", status: "running" }),
-      run: vi.fn(),
+      run: vi.fn().mockReturnValue({ changes: 1, lastInsertRowid: 0 }),
       all: vi.fn().mockReturnValue([]),
     });
     const result = await caller.sessions.stopBySessionId({ sessionId: 1 });
@@ -331,9 +379,9 @@ describe("appRouter - agentsRouter & sessionsRouter", () => {
   });
 
   it("agents.clearPlanApproval clears pending_plan_approval and notifies", async () => {
-    const { notifyDbUpdated } = await import("../agents/session-persistence");
+    const { notifyDbUpdated } = await import("../agents/effect-helpers");
     mockDb.prepare.mockImplementation((sql: string) => ({
-      run: vi.fn(),
+      run: vi.fn().mockReturnValue({ changes: 1, lastInsertRowid: 0 }),
       get: vi.fn().mockReturnValue(sql.includes("SELECT feature_id") ? { feature_id: 42 } : undefined),
       all: vi.fn().mockReturnValue([]),
     }));
@@ -454,8 +502,11 @@ describe("appRouter - git procedures", () => {
   const caller = appRouter.createCaller({});
 
   it("git.getStats returns stats for feature", async () => {
-    const { getGitStats } = await import("../git/worktree");
-    vi.mocked(getGitStats).mockResolvedValue({ filesChanged: 2, insertions: 10, deletions: 3 });
+    const { Effect } = await import("effect");
+    const { getGitStatsEffect } = await import("../effect/services/GitWorktree");
+    vi.mocked(getGitStatsEffect).mockReturnValue(
+      Effect.succeed({ filesChanged: 2, insertions: 10, deletions: 3 }),
+    );
     const result = await caller.git.getStats({ featureId: 1 });
     expect(result).toMatchObject({ filesChanged: 2 });
   });
@@ -468,39 +519,48 @@ describe("appRouter - git procedures", () => {
   });
 
   it("git.getDiff returns diff string", async () => {
-    const { getDiff } = await import("../git/worktree");
-    vi.mocked(getDiff).mockResolvedValue("diff --git a/foo.ts...");
+    const { Effect } = await import("effect");
+    const { getDiffEffect } = await import("../effect/services/GitWorktree");
+    vi.mocked(getDiffEffect).mockReturnValue(Effect.succeed("diff --git a/foo.ts..."));
     const result = await caller.git.getDiff({ featureId: 1, mode: "worktree" });
     expect(result).toBe("diff --git a/foo.ts...");
   });
 
   it("git.getChangedFiles returns changed file list", async () => {
-    const { getChangedFiles } = await import("../git/worktree");
-    vi.mocked(getChangedFiles).mockResolvedValue([{ status: "M", path: "src/foo.ts" }] as any);
+    const { Effect } = await import("effect");
+    const { getChangedFilesEffect } = await import("../effect/services/GitWorktree");
+    vi.mocked(getChangedFilesEffect).mockReturnValue(
+      Effect.succeed([{ file: "src/foo.ts", status: "M", additions: 0, deletions: 0 }]),
+    );
     const result = await caller.git.getChangedFiles({ featureId: 1, mode: "worktree" });
     expect(result).toHaveLength(1);
   });
 
-  it("git.createWorktree calls createWorktree and saves path to DB", async () => {
-    const { createWorktree, buildBranchName } = await import("../git/worktree");
+  it("git.createWorktree calls createWorktreeEffect and saves path to DB", async () => {
+    const { createWorktreeEffect, buildBranchName } = await import("../effect/services/GitWorktree");
+    const { Effect } = await import("effect");
     vi.mocked(buildBranchName).mockReturnValue("feature/my-feature");
-    vi.mocked(createWorktree).mockResolvedValue({ worktreePath: "/worktrees/my-feature", branch: "feature/my-feature" });
+    vi.mocked(createWorktreeEffect).mockReturnValue(
+      Effect.succeed({ worktreePath: "/worktrees/my-feature", branch: "feature/my-feature" }),
+    );
     const result = await caller.git.createWorktree({ featureId: 1, projectId: 1, featureTitle: "My Feature" });
-    expect(createWorktree).toHaveBeenCalled();
+    expect(createWorktreeEffect).toHaveBeenCalled();
     expect(result).toMatchObject({ worktreePath: "/worktrees/my-feature" });
   });
 
-  it("git.removeWorktree calls removeWorktree", async () => {
-    const { removeWorktree } = await import("../git/worktree");
-    vi.mocked(removeWorktree).mockResolvedValue(undefined);
+  it("git.removeWorktree calls removeWorktreeEffect", async () => {
+    const { removeWorktreeEffect } = await import("../effect/services/GitWorktree");
+    const { Effect } = await import("effect");
+    vi.mocked(removeWorktreeEffect).mockReturnValue(Effect.succeed(undefined));
     const result = await caller.git.removeWorktree({ featureId: 1, projectId: 1 });
-    expect(removeWorktree).toHaveBeenCalled();
+    expect(removeWorktreeEffect).toHaveBeenCalled();
     expect(result).toMatchObject({ success: true });
   });
 
   it("git.getBranch returns current branch for project", async () => {
-    const { getCurrentBranch } = await import("../git/worktree");
-    vi.mocked(getCurrentBranch).mockResolvedValue("main");
+    const { Effect } = await import("effect");
+    const { getCurrentBranchEffect } = await import("../effect/services/GitWorktree");
+    vi.mocked(getCurrentBranchEffect).mockReturnValue(Effect.succeed("main"));
     const result = await caller.git.getBranch({ projectId: 1 });
     expect(result).toBe("main");
   });

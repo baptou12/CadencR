@@ -19,11 +19,11 @@ vi.mock("../agents/subprocess-manager", () => ({
   submitPlanApproval: vi.fn(),
   submitPrdApproval: vi.fn(),
   submitToolPermission: vi.fn(),
-  sendMessageToSubprocess: vi.fn(),
+  sendMessageToSubprocess: vi.fn().mockResolvedValue(undefined),
   setSubprocessPermissionMode: vi.fn(),
 }));
 
-vi.mock("../agents/session-persistence", () => ({
+vi.mock("../agents/effect-helpers", () => ({
   notifyDbUpdated: (...args: unknown[]) => mockNotifyDbUpdated(...args),
 }));
 

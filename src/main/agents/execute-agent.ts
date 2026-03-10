@@ -7,17 +7,21 @@
  * phases exist, marks the feature done.
  */
 
+import { Effect } from "effect";
 import { getDatabase } from "../db/database";
-import { queryOne, queryAll } from "../db/query";
+import { queryOne, queryAllValidated } from "../db/query";
 import { resolveSetting } from "../db/settings";
 import { getAutonomyLevel } from "./autonomy";
 import type { PhaseRow, PlanRow } from "../db/types";
+import { PhaseRowSchema } from "../effect/schemas/db-schemas";
 import { transitionFeature, transitionPhase, transitionPhaseIf } from "./state-transitions";
 import { startUnifiedAgent } from "./unified-agent";
 import { buildExecuteSystemPrompt, createQaConfig } from "./agent-configs";
 import { buildMcpServerFactory } from "./mcp-factory";
-import { notifyDbUpdated } from "./session-persistence";
+import { notifyDbUpdated } from "./effect-helpers";
 import { startReviewAgent } from "./agent-starters";
+import { DispatchLock } from "../effect/services/DispatchLock";
+import { AppRuntime } from "../effect/runtime";
 import type { OnAgentDoneCallback } from "./mcp-tools";
 import type { UnifiedAgentConfig, CompletionAction } from "./types";
 
@@ -38,9 +42,6 @@ export interface ExecuteAgentOptions {
   worktreePath?: string;
 }
 
-/** In-memory lock to prevent concurrent processNextPhase for the same feature */
-const dispatchingFeatures = new Set<number>();
-
 /**
  * Queue-based executor: pick next pending phase, run it, chain on completion.
  *
@@ -51,15 +52,20 @@ export function processNextPhase(options: ExecuteAgentOptions): void {
   const { featureId, projectId } = options;
 
   // In-memory lock: prevent concurrent dispatch for the same feature
-  if (dispatchingFeatures.has(featureId)) return;
-  dispatchingFeatures.add(featureId);
+  try {
+    AppRuntime.runSync(DispatchLock.acquire(featureId));
+  } catch {
+    // DispatchConflictError — another dispatch is already running for this feature
+    return;
+  }
 
   try {
     // 1. Ensure feature is in-progress
-    const featureStatus = queryOne<{ status: string }>(
+    const featureRow = Effect.runSync(queryOne<{ status: string }>(
       "SELECT status FROM features WHERE id = ?",
       featureId,
-    ).map((r) => r.status).getOr("draft");
+    ));
+    const featureStatus = featureRow?.status ?? "draft";
 
     if (featureStatus !== "in-progress" && featureStatus !== "planned") return;
 
@@ -69,24 +75,25 @@ export function processNextPhase(options: ExecuteAgentOptions): void {
     }
 
     // 2. Get active plan
-    const plan = queryOne<Pick<PlanRow, "id">>(
+    const plan = Effect.runSync(queryOne<Pick<PlanRow, "id">>(
       "SELECT id FROM plans WHERE feature_id = ? AND status = 'active' ORDER BY id DESC LIMIT 1",
       featureId,
-    );
-    if (plan.isNone()) return;
-    const planId = plan.get().id;
+    ));
+    if (plan === null) return;
+    const planId = plan.id;
 
     // 3. Idempotent guard: don't start if execute/qa agents are already running
-    const hasRunningAgent = queryOne<{ id: number }>(
+    const hasRunningAgent = Effect.runSync(queryOne<{ id: number }>(
       "SELECT id FROM agent_sessions WHERE feature_id = ? AND agent_type IN ('execute', 'qa') AND status = 'running' LIMIT 1",
       featureId,
-    ).isSome();
+    )) !== null;
     if (hasRunningAgent) return;
 
     // 4. Find lowest step_number with pending/error phases (excluding phases
     //    that already have a running or paused agent session — those need manual resume)
-    const pendingPhases = queryAll<PhaseRow>(
-      `SELECT id, plan_id, step_number, title, status, complexity, commit_message, prompt, order_index, phase_type
+    const pendingPhases = Effect.runSync(queryAllValidated(
+      PhaseRowSchema,
+      `SELECT id, plan_id, step_number, title, status, complexity, commit_message, prompt, order_index, implementation_notes, deviations, phase_type
        FROM phases
        WHERE plan_id = ? AND status IN ('pending', 'error')
          AND id NOT IN (
@@ -95,7 +102,7 @@ export function processNextPhase(options: ExecuteAgentOptions): void {
          )
        ORDER BY step_number, order_index`,
       planId, featureId,
-    ).getOr([]);
+    ));
 
     if (pendingPhases.length > 0) {
       // 5. Get all phases from the lowest step_number
@@ -107,11 +114,11 @@ export function processNextPhase(options: ExecuteAgentOptions): void {
 
       // Level 2 autonomy: check if we should pause (a step already completed since last user action)
       if (autonomyLevel === 2) {
-        const lastCompleted = queryOne<{ id: number }>(
+        const lastCompleted = Effect.runSync(queryOne<{ id: number }>(
           "SELECT id FROM agent_sessions WHERE feature_id = ? AND agent_type IN ('execute', 'qa') AND status = 'completed' ORDER BY id DESC LIMIT 1",
           featureId,
-        );
-        if (lastCompleted.isSome()) {
+        ));
+        if (lastCompleted !== null) {
           console.log(`[processNextPhase] Level 2 autonomy: pausing for feature ${featureId}, waiting for user`);
           return;
         }
@@ -137,7 +144,7 @@ export function processNextPhase(options: ExecuteAgentOptions): void {
     // 6. No pending phases — check if review is needed
     handleNoPendingPhases(options, planId);
   } finally {
-    dispatchingFeatures.delete(featureId);
+    AppRuntime.runSync(DispatchLock.release(featureId));
   }
 }
 
@@ -148,23 +155,24 @@ async function handleNoPendingPhases(options: ExecuteAgentOptions, _planId: numb
   const { featureId, projectId } = options;
 
   // Check: did a review session complete more recently than the last execute/qa session?
-  const lastReview = queryOne<{ id: number; ended_at: string | null }>(
+  const lastReview = Effect.runSync(queryOne<{ id: number; ended_at: string | null }>(
     "SELECT id, ended_at FROM agent_sessions WHERE feature_id = ? AND agent_type = 'review' AND status = 'completed' ORDER BY id DESC LIMIT 1",
     featureId,
-  );
+  ));
 
-  const lastExecuteOrQa = queryOne<{ id: number; ended_at: string | null }>(
+  const lastExecuteOrQa = Effect.runSync(queryOne<{ id: number; ended_at: string | null }>(
     "SELECT id, ended_at FROM agent_sessions WHERE feature_id = ? AND agent_type IN ('execute', 'qa') AND status = 'completed' ORDER BY id DESC LIMIT 1",
     featureId,
-  );
+  ));
 
-  const reviewRanAfterExecute = lastReview.match({
-    None: () => false,
-    Some: (review) => lastExecuteOrQa.match({
-      None: () => true, // review exists but no execute — review ran
-      Some: (exec) => review.id > exec.id,
-    }),
-  });
+  let reviewRanAfterExecute: boolean;
+  if (lastReview === null) {
+    reviewRanAfterExecute = false;
+  } else if (lastExecuteOrQa === null) {
+    reviewRanAfterExecute = true; // review exists but no execute — review ran
+  } else {
+    reviewRanAfterExecute = lastReview.id > lastExecuteOrQa.id;
+  }
 
   if (reviewRanAfterExecute) {
     // Review already ran and created no fix phases → done
@@ -175,10 +183,10 @@ async function handleNoPendingPhases(options: ExecuteAgentOptions, _planId: numb
   }
 
   // Check if a review is already running
-  const hasRunningReview = queryOne<{ id: number }>(
+  const hasRunningReview = Effect.runSync(queryOne<{ id: number }>(
     "SELECT id FROM agent_sessions WHERE feature_id = ? AND agent_type = 'review' AND status = 'running' LIMIT 1",
     featureId,
-  ).isSome();
+  )) !== null;
   if (hasRunningReview) return;
 
   // Start review agent

@@ -18,7 +18,7 @@ vi.mock("@anthropic-ai/claude-agent-sdk", () => {
 });
 
 vi.mock("../../db/database");
-vi.mock("../session-persistence", () => ({
+vi.mock("../effect-helpers", () => ({
   notifyDbUpdated: vi.fn(),
 }));
 vi.mock("../state-transitions", () => ({
@@ -28,7 +28,7 @@ vi.mock("../state-transitions", () => ({
 
 import { createPrdMcpServer } from "./prd-server";
 import { getDatabase } from "../../db/database";
-import { notifyDbUpdated } from "../session-persistence";
+import { notifyDbUpdated } from "../effect-helpers";
 import { createMockDb } from "../../test-utils";
 
 const mockGetDatabase = vi.mocked(getDatabase);
@@ -57,7 +57,7 @@ describe("createPrdMcpServer", () => {
 
   describe("create_prd tool", () => {
     it("stores full PRD content", async () => {
-      const runFn = vi.fn();
+      const runFn = vi.fn().mockReturnValue({ changes: 1, lastInsertRowid: 0 });
       db.prepare.mockReturnValue({ run: runFn });
 
       const server = createPrdMcpServer(10, 100);
@@ -72,7 +72,7 @@ describe("createPrdMcpServer", () => {
 
   describe("edit_prd tool", () => {
     it("successfully replaces a unique string", async () => {
-      const runFn = vi.fn();
+      const runFn = vi.fn().mockReturnValue({ changes: 1, lastInsertRowid: 0 });
       db.prepare.mockImplementation((sql: string) => {
         if (sql.includes("SELECT prd")) return { get: vi.fn().mockReturnValue({ prd: "Hello world, this is a PRD." }) };
         return { run: runFn };

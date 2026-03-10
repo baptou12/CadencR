@@ -6,7 +6,8 @@ import { z } from "zod";
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { getDatabase } from "../../db/database";
 import { queryOne, execute } from "../../db/query";
-import { notifyDbUpdated } from "../session-persistence";
+import { AppRuntime } from "../../effect/runtime";
+import { notifyDbUpdated } from "../effect-helpers";
 import { transitionFeature } from "../state-transitions";
 import { textResult, errorResult, renderPlanMarkdown } from "./helpers";
 import {
@@ -55,22 +56,26 @@ export function createPlanMcpServer(planId: number, featureId: number, sessionDb
           completion_conditions: z.string().optional().describe("Conditions that should be true when the plan is complete"),
         },
         async (args) => {
-          const updates: string[] = [];
-          const values: unknown[] = [];
+          try {
+            const updates: string[] = [];
+            const values: unknown[] = [];
 
-          if (args.title !== undefined) { updates.push("title = ?"); values.push(args.title); }
-          if (args.summary !== undefined) { updates.push("summary = ?"); values.push(args.summary); }
-          if (args.context !== undefined) { updates.push("context = ?"); values.push(args.context); }
-          if (args.clarifications !== undefined) { updates.push("clarifications = ?"); values.push(args.clarifications); }
-          if (args.completion_conditions !== undefined) { updates.push("completion_conditions = ?"); values.push(args.completion_conditions); }
+            if (args.title !== undefined) { updates.push("title = ?"); values.push(args.title); }
+            if (args.summary !== undefined) { updates.push("summary = ?"); values.push(args.summary); }
+            if (args.context !== undefined) { updates.push("context = ?"); values.push(args.context); }
+            if (args.clarifications !== undefined) { updates.push("clarifications = ?"); values.push(args.clarifications); }
+            if (args.completion_conditions !== undefined) { updates.push("completion_conditions = ?"); values.push(args.completion_conditions); }
 
-          if (updates.length === 0) return errorResult("No fields to update");
+            if (updates.length === 0) return errorResult("No fields to update");
 
-          updates.push("updated_at = datetime('now')");
-          values.push(args.plan_id);
-          execute(`UPDATE plans SET ${updates.join(", ")} WHERE id = ?`, ...values);
-          notifyDbUpdated("plan", featureId);
-          return textResult("Plan updated");
+            updates.push("updated_at = datetime('now')");
+            values.push(args.plan_id);
+            await AppRuntime.runPromise(execute(`UPDATE plans SET ${updates.join(", ")} WHERE id = ?`, ...values));
+            notifyDbUpdated("plan", featureId);
+            return textResult("Plan updated");
+          } catch (e) {
+            return errorResult(`Failed to update plan: ${e instanceof Error ? e.message : String(e)}`);
+          }
         },
       ),
 
@@ -81,14 +86,14 @@ export function createPlanMcpServer(planId: number, featureId: number, sessionDb
           plan_id: z.number().describe("The plan ID"),
         },
         async (args) => {
-          const markdown = renderPlanMarkdown(args.plan_id);
+          const markdown = await renderPlanMarkdown(args.plan_id);
           if (!onShowPlan) {
             return textResult(markdown);
           }
           try {
             const result = await onShowPlan(markdown);
             if (result.approved) {
-              execute("UPDATE plans SET status = 'approved', updated_at = datetime('now') WHERE id = ?", args.plan_id);
+              await AppRuntime.runPromise(execute("UPDATE plans SET status = 'approved', updated_at = datetime('now') WHERE id = ?", args.plan_id));
               notifyDbUpdated("plan", featureId);
               return textResult("✅ Plan approved by the user. You may now call finalize_plan.");
             } else {
@@ -107,43 +112,48 @@ export function createPlanMcpServer(planId: number, featureId: number, sessionDb
           plan_id: z.number().describe("The plan ID"),
         },
         async (args) => {
-          const draftCount = queryOne<{ cnt: number }>(
-            "SELECT COUNT(*) as cnt FROM phases WHERE plan_id = ? AND status = 'draft'",
-            args.plan_id,
-          ).map((r) => r.cnt).getOr(0);
+          try {
+            const draftCountRow = await AppRuntime.runPromise(queryOne<{ cnt: number }>(
+              "SELECT COUNT(*) as cnt FROM phases WHERE plan_id = ? AND status = 'draft'",
+              args.plan_id,
+            ));
+            const draftCount = draftCountRow?.cnt ?? 0;
 
-          if (draftCount === 0) return errorResult("No draft phases to finalize");
+            if (draftCount === 0) return errorResult("No draft phases to finalize");
 
-          const plan = queryOne<{ feature_id: number; plan_status: string }>(
-            "SELECT feature_id, status AS plan_status FROM plans WHERE id = ?",
-            args.plan_id,
-          ).toUndefined();
+            const plan = await AppRuntime.runPromise(queryOne<{ feature_id: number; plan_status: string }>(
+              "SELECT feature_id, status AS plan_status FROM plans WHERE id = ?",
+              args.plan_id,
+            ));
 
-          if (!plan) return errorResult("Plan not found");
+            if (!plan) return errorResult("Plan not found");
 
-          if (plan.plan_status !== "approved") {
-            return errorResult("Plan has not been approved via show_plan. Call show_plan first and get user approval before finalizing.");
-          }
-
-          // Check current feature status — only transition to 'planned' if still in draft
-          const feature = queryOne<{ status: string }>(
-            "SELECT status FROM features WHERE id = ?",
-            plan.feature_id,
-          ).toUndefined();
-
-          const db = getDatabase();
-          db.transaction(() => {
-            db.prepare("UPDATE phases SET status = 'pending' WHERE plan_id = ? AND status = 'draft'").run(args.plan_id);
-            db.prepare("UPDATE plans SET status = 'active', updated_at = datetime('now') WHERE id = ?").run(args.plan_id);
-            // Transition feature to 'planned' if it's a draft or done (refinement resets done features)
-            if (!feature || feature.status === "draft" || feature.status === "done") {
-              transitionFeature(db, plan.feature_id, "planned");
+            if (plan.plan_status !== "approved") {
+              return errorResult("Plan has not been approved via show_plan. Call show_plan first and get user approval before finalizing.");
             }
-          })();
-          notifyDbUpdated("phase", plan.feature_id);
 
-          const markdown = renderPlanMarkdown(args.plan_id);
-          return textResult(`Plan finalized successfully. ${draftCount} phases are now pending.\n\n${markdown}`);
+            // Check current feature status — only transition to 'planned' if still in draft
+            const feature = await AppRuntime.runPromise(queryOne<{ status: string }>(
+              "SELECT status FROM features WHERE id = ?",
+              plan.feature_id,
+            ));
+
+            const db = getDatabase();
+            db.transaction(() => {
+              db.prepare("UPDATE phases SET status = 'pending' WHERE plan_id = ? AND status = 'draft'").run(args.plan_id);
+              db.prepare("UPDATE plans SET status = 'active', updated_at = datetime('now') WHERE id = ?").run(args.plan_id);
+              // Transition feature to 'planned' if it's a draft or done (refinement resets done features)
+              if (!feature || feature.status === "draft" || feature.status === "done") {
+                transitionFeature(db, plan.feature_id, "planned");
+              }
+            })();
+            notifyDbUpdated("phase", plan.feature_id);
+
+            const markdown = await renderPlanMarkdown(args.plan_id);
+            return textResult(`Plan finalized successfully. ${draftCount} phases are now pending.\n\n${markdown}`);
+          } catch (e) {
+            return errorResult(`Failed to finalize plan: ${e instanceof Error ? e.message : String(e)}`);
+          }
         },
       ),
     ],

@@ -39,7 +39,7 @@ vi.mock("../db/database", () => ({
   })),
 }));
 
-vi.mock("../agents/session-persistence", () => ({
+vi.mock("../agents/effect-helpers", () => ({
   notifyDbUpdated: vi.fn(),
 }));
 

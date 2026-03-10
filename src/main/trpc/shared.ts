@@ -1,40 +1,48 @@
 import { z } from "zod";
-import { getDatabase } from "../db/database";
-import type { SettingRow, ProjectRow, AgentMessageRow } from "../db/types";
+import { Effect } from "effect";
+import { queryOne } from "../db/query";
+import type { AgentMessageRow } from "../db/types";
+import type { DatabaseError } from "../effect/errors";
 
 /**
  * Resolve the git directory for a feature.
  * Session features always use the project path (they work on main).
  * Workflow features use their worktree path if available.
  */
-export function resolveFeatureGitPath(featureId: number): string | null {
-  const db = getDatabase();
-  const feature = db
-    .prepare("SELECT project_id, type FROM features WHERE id = ?")
-    .get(featureId) as { project_id: number; type: string } | undefined;
-  if (!feature) return null;
+export function resolveFeatureGitPath(featureId: number): Effect.Effect<string | null, DatabaseError> {
+  return Effect.gen(function* () {
+    const feature = yield* queryOne<{ project_id: number; type: string }>(
+      "SELECT project_id, type FROM features WHERE id = ?",
+      featureId,
+    );
+    if (!feature) return null;
 
-  // Session features always use the project path directly
-  if (feature.type !== "session") {
-    const wtRow = db
-      .prepare(
+    // Session features always use the project path directly
+    if (feature.type !== "session") {
+      const wtRow = yield* queryOne<{ value: string }>(
         "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
-      )
-      .get(featureId) as SettingRow | undefined;
-    if (wtRow) return wtRow.value;
-  }
+        featureId,
+      );
+      if (wtRow) return wtRow.value;
+    }
 
-  const project = db
-    .prepare("SELECT path FROM projects WHERE id = ?")
-    .get(feature.project_id) as Pick<ProjectRow, "path"> | undefined;
-  return project?.path ?? null;
+    const project = yield* queryOne<{ path: string }>(
+      "SELECT path FROM projects WHERE id = ?",
+      feature.project_id,
+    );
+    return project?.path ?? null;
+  });
 }
 
 /** Check if a feature still has its default auto-generated title (e.g. "Session 3") */
-export function hasDefaultTitle(featureId: number): boolean {
-  const db = getDatabase();
-  const row = db.prepare("SELECT title FROM features WHERE id = ?").get(featureId) as { title: string } | undefined;
-  return row != null && /^Session \d+$/i.test(row.title);
+export function hasDefaultTitle(featureId: number): Effect.Effect<boolean, DatabaseError> {
+  return Effect.gen(function* () {
+    const row = yield* queryOne<{ title: string }>(
+      "SELECT title FROM features WHERE id = ?",
+      featureId,
+    );
+    return row != null && /^Session \d+$/i.test(row.title);
+  });
 }
 
 export const agentTypeSchema = z.enum(["plan", "prd", "execute", "risk", "review", "session", "qa", "review-fixer", "retro"]);

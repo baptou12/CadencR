@@ -1,7 +1,9 @@
+import { Effect, Option } from "effect";
 import { getDatabase } from "../db/database";
-import { setupWorktreeForFeature } from "../git/worktree";
+import { setupWorktreeForFeatureEffect } from "../effect/services/GitWorktree";
+import { AppRuntime } from "../effect/runtime";
 import { discoverClaudeCli } from "./cli-discovery";
-import { notifyDbUpdated } from "./session-persistence";
+import { notifyDbUpdated } from "./effect-helpers";
 
 const AUTO_NAME_SYSTEM_PROMPT =
   "You are a feature naming assistant. Your ONLY job is to output a short name (3-7 words) for a coding session. ALWAYS output a name, even if the input is vague — just pick a reasonable generic name. Examples: 'hi' → 'General Coding Session', 'fix the login bug' → 'Fix Login Bug', 'I want to add dark mode' → 'Add Dark Mode Support'.";
@@ -32,8 +34,9 @@ async function runAutoName(
   cwd: string,
   projectId?: number,
 ): Promise<void> {
-  const cliInfo = await discoverClaudeCli();
-  if (!cliInfo) return;
+  const cliInfoOpt = await Effect.runPromise(discoverClaudeCli().pipe(Effect.option));
+  if (Option.isNone(cliInfoOpt)) return;
+  const cliInfo = cliInfoOpt.value;
 
   const sdk = await import("@anthropic-ai/claude-agent-sdk");
   const { query } = sdk as {
@@ -107,9 +110,11 @@ async function runAutoName(
   if (projectId != null) {
     const feature = db.prepare("SELECT type FROM features WHERE id = ?").get(featureId) as { type: string } | undefined;
     if (feature?.type !== "session") {
-      setupWorktreeForFeature(projectId, featureId).catch((err) => {
-        console.error("[auto-name] Worktree setup failed:", err);
-      });
+      AppRuntime.runPromise(setupWorktreeForFeatureEffect(projectId, featureId)).catch(
+        (err) => {
+          console.error("[auto-name] Worktree setup failed:", err);
+        },
+      );
     }
   }
 }
@@ -123,8 +128,9 @@ export async function runAutoNameBlocking(
   userInput: string,
   cwd: string,
 ): Promise<string | null> {
-  const cliInfo = await discoverClaudeCli();
-  if (!cliInfo) return null;
+  const cliInfoOpt = await Effect.runPromise(discoverClaudeCli().pipe(Effect.option));
+  if (Option.isNone(cliInfoOpt)) return null;
+  const cliInfo = cliInfoOpt.value;
 
   const sdk = await import("@anthropic-ai/claude-agent-sdk");
   const { query } = sdk as {

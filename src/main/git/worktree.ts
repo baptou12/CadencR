@@ -5,7 +5,7 @@ import os from "node:os";
 import fs from "node:fs";
 import crypto from "node:crypto";
 import { getDatabase } from "../db/database";
-import { notifyDbUpdated } from "../agents/session-persistence";
+import { notifyDbUpdated } from "../agents/effect-helpers";
 
 export const execAsync = promisify(exec);
 export interface WorktreeInfo {

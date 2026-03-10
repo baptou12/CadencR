@@ -6,11 +6,11 @@ import {
   transitionAgentSession,
 } from "./state-transitions";
 
-vi.mock("./session-persistence", () => ({
+vi.mock("./effect-helpers", () => ({
   notifyDbUpdated: vi.fn(),
 }));
 
-import { notifyDbUpdated } from "./session-persistence";
+import { notifyDbUpdated } from "./effect-helpers";
 import { createMockDb } from "../test-utils";
 
 const mockNotify = vi.mocked(notifyDbUpdated);

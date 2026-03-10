@@ -3,7 +3,7 @@
  * try { db.prepare().run() } catch {} + notifyDbUpdated() pattern.
  */
 import { getDatabase } from "../db/database";
-import { notifyDbUpdated } from "./session-persistence";
+import { notifyDbUpdated } from "./effect-helpers";
 
 /**
  * Update an agent session's fields. Automatically calls notifyDbUpdated.

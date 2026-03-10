@@ -1,31 +1,31 @@
 import { z } from "zod";
+import { Effect } from "effect";
 import { router, publicProcedure } from "./trpc";
-import { getDatabase } from "../db/database";
-import type { SettingRow, ProjectRow } from "../db/types";
+import { queryOne, queryAll, execute } from "../db/query";
+import { openInTerminal, openInZed } from "../git/worktree";
 import {
-  execAsync,
-  createWorktree,
-  removeWorktree,
-  listWorktrees,
-  getWorktreeInfo,
-  openInTerminal,
-  openInZed,
+  createWorktreeEffect,
+  removeWorktreeEffect,
+  listWorktreesEffect,
+  getWorktreeInfoEffect,
   buildBranchName,
-  getGitStats,
-  getDiff,
-  getChangedFiles,
-  getCurrentBranch,
-  setupWorktreeForFeature,
-  getOriginalBranch,
-  checkMergeConflicts,
-  mergeBranch,
-  deleteLocalBranch,
-  hasUncommittedChanges,
-  getFileContent,
-  getCommitLog,
-  getRecentCommits,
-  getCommitDiff,
-} from "../git/worktree";
+  setupWorktreeForFeatureEffect,
+  getCurrentBranchEffect,
+  getGitStatsEffect,
+  getDiffEffect,
+  getChangedFilesEffect,
+  getOriginalBranchEffect,
+  checkMergeConflictsEffect,
+  mergeBranchEffect,
+  deleteLocalBranchEffect,
+  hasUncommittedChangesEffect,
+  getFileContentEffect,
+  getCommitLogEffect,
+  getRecentCommitsEffect,
+  getCommitDiffEffect,
+  execGit,
+} from "../effect/services/GitWorktree";
+import { AppRuntime } from "../effect/runtime";
 import { resolveFeatureGitPath } from "./shared";
 
 export const gitRouter = router({
@@ -39,28 +39,35 @@ export const gitRouter = router({
       }),
     )
     .mutation(async ({ input }) => {
-      const db = getDatabase();
-      const project = db
-        .prepare("SELECT id, name, path FROM projects WHERE id = ?")
-        .get(input.projectId) as ProjectRow | undefined;
-      if (!project) throw new Error(`Project not found: ${input.projectId}`);
+      return AppRuntime.runPromise(
+        Effect.gen(function* () {
+          const project = yield* queryOne<{ id: number; name: string; path: string }>(
+            "SELECT id, name, path FROM projects WHERE id = ?",
+            input.projectId,
+          );
+          if (!project) return yield* Effect.fail(new Error(`Project not found: ${input.projectId}`));
 
-      const prefixRow = db
-        .prepare("SELECT branch_prefix FROM projects WHERE id = ?")
-        .get(input.projectId) as { branch_prefix: string | null } | undefined;
-      const prefix = prefixRow?.branch_prefix ?? "feature/";
+          const prefixRow = yield* queryOne<{ branch_prefix: string | null }>(
+            "SELECT branch_prefix FROM projects WHERE id = ?",
+            input.projectId,
+          );
+          const prefix = prefixRow?.branch_prefix ?? "feature/";
+          const branchName = buildBranchName(prefix, input.featureTitle);
 
-      const branchName = buildBranchName(prefix, input.featureTitle);
-      const result = await createWorktree(project.path, branchName, project.name);
+          const result = yield* createWorktreeEffect(project.path, branchName, project.name);
 
-      db.prepare(
-        "INSERT INTO feature_settings (feature_id, key, value) VALUES (?, ?, ?) ON CONFLICT(feature_id, key) DO UPDATE SET value = excluded.value",
-      ).run(input.featureId, "worktree_path", result.worktreePath);
-      db.prepare(
-        "INSERT INTO feature_settings (feature_id, key, value) VALUES (?, ?, ?) ON CONFLICT(feature_id, key) DO UPDATE SET value = excluded.value",
-      ).run(input.featureId, "worktree_branch", result.branch);
+          yield* execute(
+            "INSERT INTO feature_settings (feature_id, key, value) VALUES (?, ?, ?) ON CONFLICT(feature_id, key) DO UPDATE SET value = excluded.value",
+            input.featureId, "worktree_path", result.worktreePath,
+          );
+          yield* execute(
+            "INSERT INTO feature_settings (feature_id, key, value) VALUES (?, ?, ?) ON CONFLICT(feature_id, key) DO UPDATE SET value = excluded.value",
+            input.featureId, "worktree_branch", result.branch,
+          );
 
-      return result;
+          return result;
+        }),
+      );
     }),
 
   /** Remove a git worktree */
@@ -72,26 +79,30 @@ export const gitRouter = router({
       }),
     )
     .mutation(async ({ input }) => {
-      const db = getDatabase();
-      const project = db
-        .prepare("SELECT path FROM projects WHERE id = ?")
-        .get(input.projectId) as Pick<ProjectRow, "path"> | undefined;
-      if (!project) throw new Error(`Project not found: ${input.projectId}`);
+      return AppRuntime.runPromise(
+        Effect.gen(function* () {
+          const project = yield* queryOne<{ path: string }>(
+            "SELECT path FROM projects WHERE id = ?",
+            input.projectId,
+          );
+          if (!project) return yield* Effect.fail(new Error(`Project not found: ${input.projectId}`));
 
-      const wtRow = db
-        .prepare(
-          "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
-        )
-        .get(input.featureId) as SettingRow | undefined;
-      if (!wtRow) throw new Error("No worktree found for this feature");
+          const wtRow = yield* queryOne<{ value: string }>(
+            "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
+            input.featureId,
+          );
+          if (!wtRow) return yield* Effect.fail(new Error("No worktree found for this feature"));
 
-      await removeWorktree(project.path, wtRow.value);
+          yield* removeWorktreeEffect(project.path, wtRow.value);
 
-      db.prepare(
-        "DELETE FROM feature_settings WHERE feature_id = ? AND key IN ('worktree_path', 'worktree_branch')",
-      ).run(input.featureId);
+          yield* execute(
+            "DELETE FROM feature_settings WHERE feature_id = ? AND key IN ('worktree_path', 'worktree_branch')",
+            input.featureId,
+          );
 
-      return { success: true };
+          return { success: true };
+        }),
+      );
     }),
 
   /** Get worktree info for a feature */
@@ -103,20 +114,23 @@ export const gitRouter = router({
       }),
     )
     .query(async ({ input }) => {
-      const db = getDatabase();
-      const project = db
-        .prepare("SELECT path FROM projects WHERE id = ?")
-        .get(input.projectId) as Pick<ProjectRow, "path"> | undefined;
-      if (!project) return null;
+      return AppRuntime.runPromise(
+        Effect.gen(function* () {
+          const project = yield* queryOne<{ path: string }>(
+            "SELECT path FROM projects WHERE id = ?",
+            input.projectId,
+          );
+          if (!project) return null;
 
-      const wtRow = db
-        .prepare(
-          "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
-        )
-        .get(input.featureId) as SettingRow | undefined;
-      if (!wtRow) return null;
+          const wtRow = yield* queryOne<{ value: string }>(
+            "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
+            input.featureId,
+          );
+          if (!wtRow) return null;
 
-      return getWorktreeInfo(project.path, wtRow.value);
+          return yield* getWorktreeInfoEffect(project.path, wtRow.value);
+        }),
+      );
     }),
 
   /** Get git diff stats (LOC changed) for a feature's worktree or project path */
@@ -127,21 +141,27 @@ export const gitRouter = router({
       targetBranch: z.string().optional(),
     }))
     .query(async ({ input }) => {
-      const gitPath = resolveFeatureGitPath(input.featureId);
+      const gitPath = await AppRuntime.runPromise(resolveFeatureGitPath(input.featureId));
       if (!gitPath) return { filesChanged: 0, insertions: 0, deletions: 0 };
-      return getGitStats(gitPath, input.mode ?? "worktree", input.targetBranch);
+      return AppRuntime.runPromise(
+        getGitStatsEffect(gitPath, input.mode ?? "worktree", input.targetBranch),
+      );
     }),
 
   /** Get the current branch for a project */
   getBranch: publicProcedure
     .input(z.object({ projectId: z.number() }))
     .query(async ({ input }) => {
-      const db = getDatabase();
-      const project = db
-        .prepare("SELECT path FROM projects WHERE id = ?")
-        .get(input.projectId) as Pick<ProjectRow, "path"> | undefined;
-      if (!project?.path) return null;
-      return getCurrentBranch(project.path);
+      return AppRuntime.runPromise(
+        Effect.gen(function* () {
+          const project = yield* queryOne<{ path: string }>(
+            "SELECT path FROM projects WHERE id = ?",
+            input.projectId,
+          );
+          if (!project?.path) return null;
+          return yield* getCurrentBranchEffect(project.path);
+        }),
+      );
     }),
 
   /** Get raw unified diff for a feature (or a specific commit) */
@@ -155,12 +175,12 @@ export const gitRouter = router({
       }),
     )
     .query(async ({ input }) => {
-      const gitPath = resolveFeatureGitPath(input.featureId);
+      const gitPath = await AppRuntime.runPromise(resolveFeatureGitPath(input.featureId));
       if (!gitPath) return "";
       if (input.commitSha) {
-        return getCommitDiff(gitPath, input.commitSha);
+        return AppRuntime.runPromise(getCommitDiffEffect(gitPath, input.commitSha));
       }
-      return getDiff(gitPath, input.mode, input.targetBranch);
+      return AppRuntime.runPromise(getDiffEffect(gitPath, input.mode, input.targetBranch));
     }),
 
   /** Get list of changed files with per-file line counts */
@@ -173,16 +193,22 @@ export const gitRouter = router({
       }),
     )
     .query(async ({ input }) => {
-      const gitPath = resolveFeatureGitPath(input.featureId);
+      const gitPath = await AppRuntime.runPromise(resolveFeatureGitPath(input.featureId));
       if (!gitPath) return [];
-      return getChangedFiles(gitPath, input.mode, input.targetBranch);
+      return AppRuntime.runPromise(
+        getChangedFilesEffect(gitPath, input.mode, input.targetBranch),
+      );
     }),
 
   /** Retry worktree setup for a feature */
   retryWorktreeSetup: publicProcedure
     .input(z.object({ projectId: z.number(), featureId: z.number() }))
     .mutation(({ input }) => {
-      setupWorktreeForFeature(input.projectId, input.featureId).catch((err) => {
+      // Fire-and-forget: worktree setup runs in background so the UI stays responsive.
+      // The renderer polls worktree status separately to reflect completion.
+      AppRuntime.runPromise(
+        setupWorktreeForFeatureEffect(input.projectId, input.featureId),
+      ).catch((err) => {
         console.error("[retryWorktreeSetup] Failed:", err);
       });
       return { success: true };
@@ -192,7 +218,7 @@ export const gitRouter = router({
   openInTerminal: publicProcedure
     .input(z.object({ featureId: z.number() }))
     .mutation(async ({ input }) => {
-      const gitPath = resolveFeatureGitPath(input.featureId);
+      const gitPath = await AppRuntime.runPromise(resolveFeatureGitPath(input.featureId));
       if (!gitPath) throw new Error("No working directory found for this feature");
 
       await openInTerminal(gitPath);
@@ -203,7 +229,7 @@ export const gitRouter = router({
   openInZed: publicProcedure
     .input(z.object({ featureId: z.number() }))
     .mutation(async ({ input }) => {
-      const gitPath = resolveFeatureGitPath(input.featureId);
+      const gitPath = await AppRuntime.runPromise(resolveFeatureGitPath(input.featureId));
       if (!gitPath) throw new Error("No working directory found for this feature");
 
       await openInZed(gitPath);
@@ -214,9 +240,11 @@ export const gitRouter = router({
   listFiles: publicProcedure
     .input(z.object({ featureId: z.number() }))
     .query(async ({ input }) => {
-      const gitPath = resolveFeatureGitPath(input.featureId);
+      const gitPath = await AppRuntime.runPromise(resolveFeatureGitPath(input.featureId));
       if (!gitPath) return [];
-      const { stdout } = await execAsync("git ls-files", { cwd: gitPath, encoding: "utf-8", maxBuffer: 10 * 1024 * 1024 });
+      const { stdout } = await AppRuntime.runPromise(
+        execGit("git ls-files", { cwd: gitPath, maxBuffer: 10 * 1024 * 1024 }),
+      ).catch(() => ({ stdout: "" }));
       return stdout.split("\n").filter(Boolean);
     }),
 
@@ -224,85 +252,107 @@ export const gitRouter = router({
   getOriginalBranch: publicProcedure
     .input(z.object({ projectId: z.number(), featureId: z.number() }))
     .query(async ({ input }) => {
-      const db = getDatabase();
-      const project = db
-        .prepare("SELECT path FROM projects WHERE id = ?")
-        .get(input.projectId) as Pick<ProjectRow, "path"> | undefined;
-      if (!project?.path) throw new Error("Project not found");
+      return AppRuntime.runPromise(
+        Effect.gen(function* () {
+          const project = yield* queryOne<{ path: string }>(
+            "SELECT path FROM projects WHERE id = ?",
+            input.projectId,
+          );
+          if (!project?.path) return yield* Effect.fail(new Error("Project not found"));
 
-      const branchRow = db
-        .prepare("SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_branch'")
-        .get(input.featureId) as SettingRow | undefined;
-      if (!branchRow?.value) throw new Error("No worktree branch found for this feature");
+          const branchRow = yield* queryOne<{ value: string }>(
+            "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_branch'",
+            input.featureId,
+          );
+          if (!branchRow?.value) return yield* Effect.fail(new Error("No worktree branch found for this feature"));
 
-      const originalBranch = await getOriginalBranch(project.path, branchRow.value);
-      return { originalBranch, worktreeBranch: branchRow.value };
+          const originalBranch = yield* getOriginalBranchEffect(project.path, branchRow.value);
+          return { originalBranch, worktreeBranch: branchRow.value };
+        }),
+      );
     }),
 
   /** Check if merging the feature branch into its original branch would conflict */
   checkMergeConflicts: publicProcedure
     .input(z.object({ projectId: z.number(), featureId: z.number() }))
     .query(async ({ input }) => {
-      const db = getDatabase();
-      const project = db
-        .prepare("SELECT path FROM projects WHERE id = ?")
-        .get(input.projectId) as Pick<ProjectRow, "path"> | undefined;
-      if (!project?.path) throw new Error("Project not found");
+      return AppRuntime.runPromise(
+        Effect.gen(function* () {
+          const project = yield* queryOne<{ path: string }>(
+            "SELECT path FROM projects WHERE id = ?",
+            input.projectId,
+          );
+          if (!project?.path) return yield* Effect.fail(new Error("Project not found"));
 
-      const branchRow = db
-        .prepare("SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_branch'")
-        .get(input.featureId) as SettingRow | undefined;
-      if (!branchRow?.value) throw new Error("No worktree branch found for this feature");
+          const branchRow = yield* queryOne<{ value: string }>(
+            "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_branch'",
+            input.featureId,
+          );
+          if (!branchRow?.value) return yield* Effect.fail(new Error("No worktree branch found for this feature"));
 
-      const targetBranch = await getOriginalBranch(project.path, branchRow.value);
-      return checkMergeConflicts(project.path, branchRow.value, targetBranch);
+          const targetBranch = yield* getOriginalBranchEffect(project.path, branchRow.value);
+          return yield* checkMergeConflictsEffect(project.path, branchRow.value, targetBranch);
+        }),
+      );
     }),
 
   /** Merge the feature branch into its original branch using --no-ff */
   mergeFeatureBranch: publicProcedure
     .input(z.object({ projectId: z.number(), featureId: z.number() }))
     .mutation(async ({ input }) => {
-      const db = getDatabase();
-      const project = db
-        .prepare("SELECT path FROM projects WHERE id = ?")
-        .get(input.projectId) as Pick<ProjectRow, "path"> | undefined;
-      if (!project?.path) throw new Error("Project not found");
+      return AppRuntime.runPromise(
+        Effect.gen(function* () {
+          const project = yield* queryOne<{ path: string }>(
+            "SELECT path FROM projects WHERE id = ?",
+            input.projectId,
+          );
+          if (!project?.path) return yield* Effect.fail(new Error("Project not found"));
 
-      const branchRow = db
-        .prepare("SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_branch'")
-        .get(input.featureId) as SettingRow | undefined;
-      if (!branchRow?.value) throw new Error("No worktree branch found for this feature");
+          const branchRow = yield* queryOne<{ value: string }>(
+            "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_branch'",
+            input.featureId,
+          );
+          if (!branchRow?.value) return yield* Effect.fail(new Error("No worktree branch found for this feature"));
 
-      const targetBranch = await getOriginalBranch(project.path, branchRow.value);
-      return mergeBranch(project.path, branchRow.value, targetBranch);
+          const targetBranch = yield* getOriginalBranchEffect(project.path, branchRow.value);
+          return yield* mergeBranchEffect(project.path, branchRow.value, targetBranch);
+        }),
+      );
     }),
 
   /** Delete the feature's local branch (-d, safe — only if fully merged) */
   deleteFeatureBranch: publicProcedure
     .input(z.object({ projectId: z.number(), featureId: z.number() }))
     .mutation(async ({ input }) => {
-      const db = getDatabase();
-      const project = db
-        .prepare("SELECT path FROM projects WHERE id = ?")
-        .get(input.projectId) as Pick<ProjectRow, "path"> | undefined;
-      if (!project?.path) throw new Error("Project not found");
+      return AppRuntime.runPromise(
+        Effect.gen(function* () {
+          const project = yield* queryOne<{ path: string }>(
+            "SELECT path FROM projects WHERE id = ?",
+            input.projectId,
+          );
+          if (!project?.path) return yield* Effect.fail(new Error("Project not found"));
 
-      const branchRow = db
-        .prepare("SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_branch'")
-        .get(input.featureId) as SettingRow | undefined;
-      if (!branchRow?.value) throw new Error("No worktree branch found for this feature");
+          const branchRow = yield* queryOne<{ value: string }>(
+            "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_branch'",
+            input.featureId,
+          );
+          if (!branchRow?.value) return yield* Effect.fail(new Error("No worktree branch found for this feature"));
 
-      return deleteLocalBranch(project.path, branchRow.value);
+          return yield* deleteLocalBranchEffect(project.path, branchRow.value);
+        }),
+      );
     }),
 
   /** Get blob SHAs for all changed files in a feature's worktree */
   getFileBlobShas: publicProcedure
     .input(z.object({ featureId: z.number() }))
     .query(async ({ input }) => {
-      const db = getDatabase();
-      const wtRow = db
-        .prepare("SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'")
-        .get(input.featureId) as SettingRow | undefined;
+      const wtRow = await AppRuntime.runPromise(
+        queryOne<{ value: string }>(
+          "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
+          input.featureId,
+        ),
+      );
       if (!wtRow?.value) return {};
 
       const worktreePath = wtRow.value;
@@ -310,8 +360,8 @@ export const gitRouter = router({
 
       try {
         const [changedResult, untrackedResult] = await Promise.all([
-          execAsync("git diff HEAD --name-only", { cwd: worktreePath, encoding: "utf-8" }),
-          execAsync("git ls-files --others --exclude-standard", { cwd: worktreePath, encoding: "utf-8" }),
+          AppRuntime.runPromise(execGit("git diff HEAD --name-only", { cwd: worktreePath })),
+          AppRuntime.runPromise(execGit("git ls-files --others --exclude-standard", { cwd: worktreePath })),
         ]);
 
         const changedFiles = changedResult.stdout.trim().split("\n").filter(Boolean);
@@ -319,21 +369,24 @@ export const gitRouter = router({
 
         let branchChangedFiles: string[] = [];
         try {
-          const branchRow = db
-            .prepare("SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_branch'")
-            .get(input.featureId) as SettingRow | undefined;
+          const branchRow = await AppRuntime.runPromise(
+            queryOne<{ value: string }>(
+              "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_branch'",
+              input.featureId,
+            ),
+          );
           if (branchRow?.value) {
-            const { stdout: mergeBaseOut } = await execAsync(`git merge-base HEAD main || git merge-base HEAD master`, {
-              cwd: worktreePath,
-              encoding: "utf-8",
-              shell: "/bin/sh",
-            });
+            const { stdout: mergeBaseOut } = await AppRuntime.runPromise(
+              execGit("git merge-base HEAD main || git merge-base HEAD master", {
+                cwd: worktreePath,
+                shell: "/bin/sh",
+              }),
+            );
             const mergeBase = mergeBaseOut.trim();
             if (mergeBase) {
-              const { stdout: branchDiffOut } = await execAsync(`git diff ${mergeBase} HEAD --name-only`, {
-                cwd: worktreePath,
-                encoding: "utf-8",
-              });
+              const { stdout: branchDiffOut } = await AppRuntime.runPromise(
+                execGit(`git diff ${mergeBase} HEAD --name-only`, { cwd: worktreePath }),
+              );
               branchChangedFiles = branchDiffOut.trim().split("\n").filter(Boolean);
             }
           }
@@ -346,19 +399,17 @@ export const gitRouter = router({
         await Promise.all(
           allFiles.map(async (filePath) => {
             try {
-              const { stdout: blobSha } = await execAsync(`git hash-object "${filePath}"`, {
-                cwd: worktreePath,
-                encoding: "utf-8",
-              });
+              const { stdout: blobSha } = await AppRuntime.runPromise(
+                execGit(`git hash-object "${filePath}"`, { cwd: worktreePath }),
+              );
               if (blobSha.trim()) {
                 result[filePath] = blobSha.trim();
               }
             } catch {
               try {
-                const { stdout: blobSha } = await execAsync(`git rev-parse HEAD:"${filePath}"`, {
-                  cwd: worktreePath,
-                  encoding: "utf-8",
-                });
+                const { stdout: blobSha } = await AppRuntime.runPromise(
+                  execGit(`git rev-parse HEAD:"${filePath}"`, { cwd: worktreePath }),
+                );
                 if (blobSha.trim()) {
                   result[filePath] = blobSha.trim();
                 }
@@ -379,40 +430,54 @@ export const gitRouter = router({
   hasUncommittedChanges: publicProcedure
     .input(z.object({ projectId: z.number(), featureId: z.number() }))
     .query(async ({ input }) => {
-      const db = getDatabase();
-      const wtRow = db
-        .prepare("SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'")
-        .get(input.featureId) as SettingRow | undefined;
-      if (!wtRow?.value) return { hasChanges: false };
-      const hasChanges = await hasUncommittedChanges(wtRow.value);
-      return { hasChanges };
+      return AppRuntime.runPromise(
+        Effect.gen(function* () {
+          const wtRow = yield* queryOne<{ value: string }>(
+            "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
+            input.featureId,
+          );
+          if (!wtRow?.value) return { hasChanges: false };
+          const hasChanges = yield* hasUncommittedChangesEffect(wtRow.value);
+          return { hasChanges };
+        }),
+      );
     }),
 
   /** Delete the feature's worktree (only if no uncommitted changes) */
   deleteWorktree: publicProcedure
     .input(z.object({ projectId: z.number(), featureId: z.number() }))
     .mutation(async ({ input }) => {
-      const db = getDatabase();
-      const project = db
-        .prepare("SELECT path FROM projects WHERE id = ?")
-        .get(input.projectId) as Pick<ProjectRow, "path"> | undefined;
-      if (!project?.path) throw new Error("Project not found");
+      const { project, wtRow } = await AppRuntime.runPromise(
+        Effect.gen(function* () {
+          const project = yield* queryOne<{ path: string }>(
+            "SELECT path FROM projects WHERE id = ?",
+            input.projectId,
+          );
+          if (!project?.path) return yield* Effect.fail(new Error("Project not found"));
 
-      const wtRow = db
-        .prepare("SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'")
-        .get(input.featureId) as SettingRow | undefined;
-      if (!wtRow?.value) throw new Error("No worktree found for this feature");
+          const wtRow = yield* queryOne<{ value: string }>(
+            "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
+            input.featureId,
+          );
+          if (!wtRow?.value) return yield* Effect.fail(new Error("No worktree found for this feature"));
 
-      const hasChanges = await hasUncommittedChanges(wtRow.value);
+          return { project, wtRow };
+        }),
+      );
+
+      const hasChanges = await AppRuntime.runPromise(hasUncommittedChangesEffect(wtRow.value));
       if (hasChanges) {
         return { success: false, error: "Worktree has uncommitted or untracked changes" };
       }
 
       try {
-        await removeWorktree(project.path, wtRow.value);
-        db.prepare(
-          "DELETE FROM feature_settings WHERE feature_id = ? AND key IN ('worktree_path', 'worktree_branch')",
-        ).run(input.featureId);
+        await AppRuntime.runPromise(removeWorktreeEffect(project.path, wtRow.value));
+        await AppRuntime.runPromise(
+          execute(
+            "DELETE FROM feature_settings WHERE feature_id = ? AND key IN ('worktree_path', 'worktree_branch')",
+            input.featureId,
+          ),
+        );
         return { success: true };
       } catch (err) {
         return { success: false, error: err instanceof Error ? err.message : String(err) };
@@ -422,51 +487,54 @@ export const gitRouter = router({
   listProjectWorktrees: publicProcedure
     .input(z.object({ projectId: z.number() }))
     .query(async ({ input }) => {
-      const db = getDatabase();
-      const project = db
-        .prepare("SELECT path FROM projects WHERE id = ?")
-        .get(input.projectId) as Pick<ProjectRow, "path"> | undefined;
-      if (!project?.path) throw new Error("Project not found");
+      return AppRuntime.runPromise(
+        Effect.gen(function* () {
+          const project = yield* queryOne<{ path: string }>(
+            "SELECT path FROM projects WHERE id = ?",
+            input.projectId,
+          );
+          if (!project?.path) return yield* Effect.fail(new Error("Project not found"));
 
-      let worktrees;
-      try {
-        worktrees = await listWorktrees(project.path);
-      } catch {
-        return [];
-      }
+          let worktrees;
+          try {
+            worktrees = yield* listWorktreesEffect(project.path);
+          } catch {
+            return [];
+          }
 
-      const repoRoot = project.path.replace(/\/+$/, "");
-      const secondary = worktrees.filter(
-        (w) => w.path.replace(/\/+$/, "") !== repoRoot && !w.isBare,
+          const repoRoot = project.path.replace(/\/+$/, "");
+          const secondary = worktrees.filter(
+            (w) => w.path.replace(/\/+$/, "") !== repoRoot && !w.isBare,
+          );
+
+          const featureLookup = yield* queryAll<{
+            worktree_path: string;
+            feature_id: number;
+            feature_title: string;
+            feature_status: string;
+          }>(
+            `SELECT fs.value AS worktree_path, f.id AS feature_id, f.title AS feature_title, f.status AS feature_status
+             FROM feature_settings fs
+             JOIN features f ON f.id = fs.feature_id
+             WHERE fs.key = 'worktree_path' AND f.project_id = ?`,
+            input.projectId,
+          );
+
+          const byPath = new Map(featureLookup.map((r) => [r.worktree_path, r]));
+
+          return secondary.map((w) => {
+            const feat = byPath.get(w.path);
+            return {
+              path: w.path,
+              branch: w.branch,
+              head: w.head,
+              featureId: feat?.feature_id ?? null,
+              featureTitle: feat?.feature_title ?? null,
+              featureStatus: feat?.feature_status ?? null,
+            };
+          });
+        }),
       );
-
-      const featureLookup = db
-        .prepare(
-          `SELECT fs.value AS worktree_path, f.id AS feature_id, f.title AS feature_title, f.status AS feature_status
-           FROM feature_settings fs
-           JOIN features f ON f.id = fs.feature_id
-           WHERE fs.key = 'worktree_path' AND f.project_id = ?`,
-        )
-        .all(input.projectId) as Array<{
-        worktree_path: string;
-        feature_id: number;
-        feature_title: string;
-        feature_status: string;
-      }>;
-
-      const byPath = new Map(featureLookup.map((r) => [r.worktree_path, r]));
-
-      return secondary.map((w) => {
-        const feat = byPath.get(w.path);
-        return {
-          path: w.path,
-          branch: w.branch,
-          head: w.head,
-          featureId: feat?.feature_id ?? null,
-          featureTitle: feat?.feature_title ?? null,
-          featureStatus: feat?.feature_status ?? null,
-        };
-      });
     }),
 
   /** Get file content for expand-in-diff (old + new versions) */
@@ -481,37 +549,44 @@ export const gitRouter = router({
       }),
     )
     .query(async ({ input }) => {
-      const gitPath = resolveFeatureGitPath(input.featureId);
+      const gitPath = await AppRuntime.runPromise(resolveFeatureGitPath(input.featureId));
       if (!gitPath) return { oldContent: "", newContent: "" };
 
       if (input.commitSha) {
         const [oldContent, newContent] = await Promise.all([
-          getFileContent(gitPath, input.filePath, `${input.commitSha}^`),
-          getFileContent(gitPath, input.filePath, input.commitSha),
+          AppRuntime.runPromise(getFileContentEffect(gitPath, input.filePath, `${input.commitSha}^`)),
+          AppRuntime.runPromise(getFileContentEffect(gitPath, input.filePath, input.commitSha)),
         ]);
         return { oldContent, newContent };
       }
 
       if (input.mode === "worktree") {
         const [oldContent, newContent] = await Promise.all([
-          getFileContent(gitPath, input.filePath, "HEAD"),
-          getFileContent(gitPath, input.filePath), // working tree
+          AppRuntime.runPromise(getFileContentEffect(gitPath, input.filePath, "HEAD")),
+          AppRuntime.runPromise(getFileContentEffect(gitPath, input.filePath)), // working tree
         ]);
         return { oldContent, newContent };
       }
 
       // Branch mode
-      const db = getDatabase();
-      const branchRow = db
-        .prepare("SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_branch'")
-        .get(input.featureId) as SettingRow | undefined;
+      const branchRow = await AppRuntime.runPromise(
+        queryOne<{ value: string }>(
+          "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_branch'",
+          input.featureId,
+        ),
+      );
+      const fallbackBranch = input.targetBranch ?? "main";
       const baseBranch = branchRow?.value
-        ? await getOriginalBranch(gitPath, branchRow.value)
-        : input.targetBranch ?? "main";
+        ? await AppRuntime.runPromise(
+            getOriginalBranchEffect(gitPath, branchRow.value).pipe(
+              Effect.catchAll(() => Effect.succeed(fallbackBranch)),
+            ),
+          )
+        : fallbackBranch;
 
       const [oldContent, newContent] = await Promise.all([
-        getFileContent(gitPath, input.filePath, baseBranch),
-        getFileContent(gitPath, input.filePath, "HEAD"),
+        AppRuntime.runPromise(getFileContentEffect(gitPath, input.filePath, baseBranch)),
+        AppRuntime.runPromise(getFileContentEffect(gitPath, input.filePath, "HEAD")),
       ]);
       return { oldContent, newContent };
     }),
@@ -523,48 +598,59 @@ export const gitRouter = router({
       limit: z.number().default(20),
     }))
     .query(async ({ input }) => {
-      const db = getDatabase();
-      const gitPath = resolveFeatureGitPath(input.featureId);
+      const gitPath = await AppRuntime.runPromise(resolveFeatureGitPath(input.featureId));
       if (!gitPath) return { commits: [], isOnBaseBranch: true };
 
       // Determine current branch name
-      const branchRow = db
-        .prepare("SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_branch'")
-        .get(input.featureId) as SettingRow | undefined;
-      const branchName = branchRow?.value ?? await getCurrentBranch(gitPath);
+      const branchRow = await AppRuntime.runPromise(
+        queryOne<{ value: string }>(
+          "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_branch'",
+          input.featureId,
+        ),
+      );
+      const branchName =
+        branchRow?.value ?? (await AppRuntime.runPromise(getCurrentBranchEffect(gitPath)));
       if (!branchName) return { commits: [], isOnBaseBranch: true };
 
       let baseBranch: string;
       try {
-        baseBranch = await getOriginalBranch(gitPath, branchName);
+        baseBranch = await AppRuntime.runPromise(getOriginalBranchEffect(gitPath, branchName));
       } catch {
         // Can't determine base branch — fall back to recent commits
-        const commits = await getRecentCommits(gitPath, branchName, input.limit);
+        const commits = await AppRuntime.runPromise(
+          getRecentCommitsEffect(gitPath, branchName, input.limit),
+        );
         return { commits, isOnBaseBranch: true };
       }
 
       // On the base branch — show recent commit history
       if (branchName === baseBranch) {
-        const commits = await getRecentCommits(gitPath, branchName, input.limit);
+        const commits = await AppRuntime.runPromise(
+          getRecentCommitsEffect(gitPath, branchName, input.limit),
+        );
         return { commits, isOnBaseBranch: true };
       }
 
       // On a feature branch — show branch-specific commits
-      const commits = await getCommitLog(gitPath, baseBranch, branchName);
+      const commits = await AppRuntime.runPromise(
+        getCommitLogEffect(gitPath, baseBranch, branchName),
+      );
       return { commits, isOnBaseBranch: false };
     }),
 
   removeOrphanWorktree: publicProcedure
     .input(z.object({ projectId: z.number(), worktreePath: z.string() }))
     .mutation(async ({ input }) => {
-      const db = getDatabase();
-      const project = db
-        .prepare("SELECT path FROM projects WHERE id = ?")
-        .get(input.projectId) as Pick<ProjectRow, "path"> | undefined;
+      const project = await AppRuntime.runPromise(
+        queryOne<{ path: string }>(
+          "SELECT path FROM projects WHERE id = ?",
+          input.projectId,
+        ),
+      );
       if (!project?.path) throw new Error("Project not found");
 
       try {
-        await removeWorktree(project.path, input.worktreePath);
+        await AppRuntime.runPromise(removeWorktreeEffect(project.path, input.worktreePath));
         return { success: true };
       } catch (err) {
         return { success: false, error: err instanceof Error ? err.message : String(err) };

@@ -48,6 +48,15 @@ describe("diffCommentsRouter", () => {
         caller.create({ featureId: 1, filePath: "f", lineNumber: 1, side: "invalid" as any, content: "x" }),
       ).rejects.toThrow();
     });
+
+    it("propagates database errors", async () => {
+      mockDb.prepare.mockImplementation(() => ({
+        run: vi.fn().mockImplementation(() => { throw new Error("DB error"); }),
+      }));
+      await expect(
+        caller.create({ featureId: 1, filePath: "f", lineNumber: 1, side: "new", content: "x" }),
+      ).rejects.toThrow();
+    });
   });
 
   describe("list", () => {
@@ -65,6 +74,13 @@ describe("diffCommentsRouter", () => {
       mockDb.prepare.mockReturnValue({ all: vi.fn().mockReturnValue([]) });
       const result = await caller.list({ featureId: 99 });
       expect(result).toEqual([]);
+    });
+
+    it("propagates database errors", async () => {
+      mockDb.prepare.mockImplementation(() => ({
+        all: vi.fn().mockImplementation(() => { throw new Error("DB error"); }),
+      }));
+      await expect(caller.list({ featureId: 1 })).rejects.toThrow();
     });
   });
 
@@ -100,6 +116,13 @@ describe("diffCommentsRouter", () => {
       expect(mockDb.prepare).toHaveBeenCalledWith(expect.stringContaining("DELETE FROM diff_comments WHERE id"));
       expect(result).toEqual({ success: true });
     });
+
+    it("propagates database errors", async () => {
+      mockDb.prepare.mockImplementation(() => ({
+        run: vi.fn().mockImplementation(() => { throw new Error("DB error"); }),
+      }));
+      await expect(caller.delete({ id: 5 })).rejects.toThrow();
+    });
   });
 
   describe("markAsSent", () => {
@@ -109,6 +132,12 @@ describe("diffCommentsRouter", () => {
       expect(result).toEqual({ updated: 3 });
       expect(mockDb.prepare).toHaveBeenCalledWith(expect.stringContaining("UPDATE diff_comments SET status = 'sent'"));
     });
+
+    it("returns updated=0 when no pending comments", async () => {
+      mockDb.prepare.mockReturnValue({ run: vi.fn().mockReturnValue({ changes: 0 }) });
+      const result = await caller.markAsSent({ featureId: 99 });
+      expect(result).toEqual({ updated: 0 });
+    });
   });
 
   describe("deletePending", () => {
@@ -117,6 +146,12 @@ describe("diffCommentsRouter", () => {
       const result = await caller.deletePending({ featureId: 1 });
       expect(result).toEqual({ deleted: 2 });
       expect(mockDb.prepare).toHaveBeenCalledWith(expect.stringContaining("DELETE FROM diff_comments WHERE feature_id"));
+    });
+
+    it("returns deleted=0 when no pending comments", async () => {
+      mockDb.prepare.mockReturnValue({ run: vi.fn().mockReturnValue({ changes: 0 }) });
+      const result = await caller.deletePending({ featureId: 99 });
+      expect(result).toEqual({ deleted: 0 });
     });
   });
 });

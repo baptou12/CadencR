@@ -18,7 +18,7 @@ vi.mock("@anthropic-ai/claude-agent-sdk", () => {
 });
 
 vi.mock("../../db/database");
-vi.mock("../session-persistence", () => ({
+vi.mock("../effect-helpers", () => ({
   notifyDbUpdated: vi.fn(),
 }));
 vi.mock("../state-transitions", () => ({
@@ -28,7 +28,7 @@ vi.mock("../state-transitions", () => ({
 
 import { createReviewMcpServer } from "./review-server";
 import { getDatabase } from "../../db/database";
-import { notifyDbUpdated } from "../session-persistence";
+import { notifyDbUpdated } from "../effect-helpers";
 import { createMockDb } from "../../test-utils";
 
 const mockGetDatabase = vi.mocked(getDatabase);
@@ -57,7 +57,7 @@ describe("createReviewMcpServer", () => {
 
   describe("finalize_phases tool (review)", () => {
     it("finalizes draft fix phases", async () => {
-      const runFn = vi.fn();
+      const runFn = vi.fn().mockReturnValue({ changes: 1, lastInsertRowid: 0 });
       db.prepare.mockImplementation((sql: string) => {
         if (sql.includes("SELECT id")) return { all: vi.fn().mockReturnValue([
           { id: 7, title: "Fix X", step_number: 1 },

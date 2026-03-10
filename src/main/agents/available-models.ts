@@ -1,4 +1,5 @@
 import * as os from "os";
+import { Effect, Option } from "effect";
 import { discoverClaudeCli } from "./cli-discovery";
 import { CLAUDE_MODELS, type ClaudeModel } from "../../shared/models";
 
@@ -14,8 +15,9 @@ export function fetchAvailableModels(): Promise<ClaudeModel[]> {
 
 async function doFetch(): Promise<ClaudeModel[]> {
   try {
-    const cliInfo = await discoverClaudeCli();
-    if (!cliInfo) return CLAUDE_MODELS;
+    const cliInfoOpt = await Effect.runPromise(discoverClaudeCli().pipe(Effect.option));
+    if (Option.isNone(cliInfoOpt)) return CLAUDE_MODELS;
+    const cliInfo = cliInfoOpt.value;
 
     const { query } = await import("@anthropic-ai/claude-agent-sdk");
     const abortController = new AbortController();

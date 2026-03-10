@@ -6,7 +6,7 @@
  */
 
 import type Database from "better-sqlite3";
-import { notifyDbUpdated } from "./session-persistence";
+import { notifyDbUpdated } from "./effect-helpers";
 
 // ---------------------------------------------------------------------------
 // Status types

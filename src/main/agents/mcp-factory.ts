@@ -18,7 +18,8 @@ import {
   createRetroMcpServer,
   type OnAgentDoneCallback,
 } from "./mcp-tools";
-import { waitForPlanApproval } from "./plan-approval";
+import { getAppRuntime } from "../effect/app-runtime-ref";
+import { PlanApproval } from "../effect/services/PlanApproval";
 import { getDatabase } from "../db/database";
 import type { AgentType, UnifiedAgentConfig } from "./types";
 
@@ -43,7 +44,9 @@ export function buildMcpServerFactory(
       if (!planId) return undefined;
       return (subprocessId: string, sessionDbId: number) => ({
         "cadence-plan": createPlanMcpServer(planId, featureId, sessionDbId, async (planMarkdown) => {
-          return waitForPlanApproval(subprocessId, planMarkdown);
+          return getAppRuntime().runPromise(
+            PlanApproval.waitForPlanApproval(subprocessId, planMarkdown),
+          );
         }, onAgentDone),
       });
     }
@@ -51,7 +54,9 @@ export function buildMcpServerFactory(
     case "prd": {
       return (subprocessId: string, sessionDbId: number) => ({
         "cadence-prd": createPrdMcpServer(featureId, sessionDbId, async (prdMarkdown) => {
-          return waitForPlanApproval(subprocessId, prdMarkdown);
+          return getAppRuntime().runPromise(
+            PlanApproval.waitForPrdApproval(subprocessId, prdMarkdown),
+          );
         }, onAgentDone),
       });
     }

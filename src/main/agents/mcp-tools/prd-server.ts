@@ -5,7 +5,8 @@
 import { z } from "zod";
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { queryOne, execute } from "../../db/query";
-import { notifyDbUpdated } from "../session-persistence";
+import { AppRuntime } from "../../effect/runtime";
+import { notifyDbUpdated } from "../effect-helpers";
 import { textResult, errorResult } from "./helpers";
 import { createAgentDoneTool } from "./shared-tools";
 import type { OnAgentDoneCallback } from "./shared-tools";
@@ -26,9 +27,13 @@ export function createPrdMcpServer(featureId: number, sessionDbId: number, onSho
           prd: z.string().describe("The full PRD markdown content"),
         },
         async (args) => {
-          execute("UPDATE features SET prd = ? WHERE id = ?", args.prd, featureId);
-          notifyDbUpdated("feature", featureId);
-          return textResult("PRD created successfully.");
+          try {
+            await AppRuntime.runPromise(execute("UPDATE features SET prd = ? WHERE id = ?", args.prd, featureId));
+            notifyDbUpdated("feature", featureId);
+            return textResult("PRD created successfully.");
+          } catch (e) {
+            return errorResult(`Failed to create PRD: ${e instanceof Error ? e.message : String(e)}`);
+          }
         },
       ),
 
@@ -40,25 +45,29 @@ export function createPrdMcpServer(featureId: number, sessionDbId: number, onSho
           new_string: z.string().describe("The string to replace it with"),
         },
         async (args) => {
-          const row = queryOne<{ prd: string | null }>(
-            "SELECT prd FROM features WHERE id = ?",
-            featureId,
-          ).toUndefined();
+          try {
+            const row = await AppRuntime.runPromise(queryOne<{ prd: string | null }>(
+              "SELECT prd FROM features WHERE id = ?",
+              featureId,
+            ));
 
-          if (!row?.prd) {
-            return errorResult("No PRD exists yet. Use create_prd first.");
+            if (!row?.prd) {
+              return errorResult("No PRD exists yet. Use create_prd first.");
+            }
+            if (!row.prd.includes(args.old_string)) {
+              return errorResult("old_string not found in the current PRD. Make sure it matches exactly.");
+            }
+            const occurrences = row.prd.split(args.old_string).length - 1;
+            if (occurrences > 1) {
+              return errorResult(`old_string found ${occurrences} times in the PRD. Provide a larger/more unique string to match exactly once.`);
+            }
+            const updated = row.prd.replace(args.old_string, args.new_string);
+            await AppRuntime.runPromise(execute("UPDATE features SET prd = ? WHERE id = ?", updated, featureId));
+            notifyDbUpdated("feature", featureId);
+            return textResult("PRD updated successfully.");
+          } catch (e) {
+            return errorResult(`Failed to edit PRD: ${e instanceof Error ? e.message : String(e)}`);
           }
-          if (!row.prd.includes(args.old_string)) {
-            return errorResult("old_string not found in the current PRD. Make sure it matches exactly.");
-          }
-          const occurrences = row.prd.split(args.old_string).length - 1;
-          if (occurrences > 1) {
-            return errorResult(`old_string found ${occurrences} times in the PRD. Provide a larger/more unique string to match exactly once.`);
-          }
-          const updated = row.prd.replace(args.old_string, args.new_string);
-          execute("UPDATE features SET prd = ? WHERE id = ?", updated, featureId);
-          notifyDbUpdated("feature", featureId);
-          return textResult("PRD updated successfully.");
         },
       ),
 
@@ -67,16 +76,16 @@ export function createPrdMcpServer(featureId: number, sessionDbId: number, onSho
         "Display the current PRD for user approval. This tool BLOCKS until the user approves or rejects. If approved, returns success. If rejected, returns the user's feedback so you can revise.",
         {},
         async () => {
-          const row = queryOne<{ prd: string | null }>(
-            "SELECT prd FROM features WHERE id = ?",
-            featureId,
-          ).toUndefined();
-          const prdMarkdown = row?.prd ?? "(No PRD content found)";
-
-          if (!onShowPrd) {
-            return textResult(prdMarkdown);
-          }
           try {
+            const row = await AppRuntime.runPromise(queryOne<{ prd: string | null }>(
+              "SELECT prd FROM features WHERE id = ?",
+              featureId,
+            ));
+            const prdMarkdown = row?.prd ?? "(No PRD content found)";
+
+            if (!onShowPrd) {
+              return textResult(prdMarkdown);
+            }
             const result = await onShowPrd(prdMarkdown);
             if (result.approved) {
               return textResult("✅ PRD approved by the user. You may now call mark_agent_done.");

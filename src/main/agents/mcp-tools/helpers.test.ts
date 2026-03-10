@@ -1,13 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { Option, Result } from "@swan-io/boxed";
+import { Effect } from "effect";
 
 vi.mock("../../db/query");
+vi.mock("../../effect/runtime", () => ({
+  AppRuntime: {
+    runPromise: (effect: Effect.Effect<unknown, unknown>) => Effect.runPromise(effect),
+  },
+}));
 
 import { renderPlanMarkdown, textResult, errorResult } from "./helpers";
-import { queryOne, queryAll } from "../../db/query";
+import { queryOneValidated, queryAllValidated } from "../../db/query";
 
-const mockQueryOne = vi.mocked(queryOne);
-const mockQueryAll = vi.mocked(queryAll);
+const mockQueryOneValidated = vi.mocked(queryOneValidated);
+const mockQueryAllValidated = vi.mocked(queryAllValidated);
 
 // ---------------------------------------------------------------------------
 // textResult / errorResult
@@ -34,13 +39,13 @@ describe("renderPlanMarkdown", () => {
     vi.clearAllMocks();
   });
 
-  it("returns 'Plan not found.' when plan does not exist", () => {
-    mockQueryOne.mockReturnValue(Option.None());
-    expect(renderPlanMarkdown(999)).toBe("Plan not found.");
+  it("returns 'Plan not found.' when plan does not exist", async () => {
+    mockQueryOneValidated.mockReturnValue(Effect.succeed(null));
+    expect(await renderPlanMarkdown(999)).toBe("Plan not found.");
   });
 
-  it("renders plan title and sections", () => {
-    mockQueryOne.mockReturnValue(Option.Some({
+  it("renders plan title and sections", async () => {
+    mockQueryOneValidated.mockReturnValue(Effect.succeed({
       id: 1,
       title: "My Plan",
       summary: "A summary",
@@ -48,9 +53,9 @@ describe("renderPlanMarkdown", () => {
       clarifications: "Q&A",
       completion_conditions: "All tests pass",
     }));
-    mockQueryAll.mockReturnValue(Result.Ok([]));
+    mockQueryAllValidated.mockReturnValue(Effect.succeed([]));
 
-    const result = renderPlanMarkdown(1);
+    const result = await renderPlanMarkdown(1);
     expect(result).toContain("# Plan: My Plan");
     expect(result).toContain("## Summary\n\nA summary");
     expect(result).toContain("## Context\n\nSome context");
@@ -58,8 +63,8 @@ describe("renderPlanMarkdown", () => {
     expect(result).toContain("## Completion Conditions\n\nAll tests pass");
   });
 
-  it("includes phases in the output", () => {
-    mockQueryOne.mockReturnValue(Option.Some({
+  it("includes phases in the output", async () => {
+    mockQueryOneValidated.mockReturnValue(Effect.succeed({
       id: 1,
       title: "Plan",
       summary: null,
@@ -67,7 +72,7 @@ describe("renderPlanMarkdown", () => {
       clarifications: null,
       completion_conditions: null,
     }));
-    mockQueryAll.mockReturnValue(Result.Ok([
+    mockQueryAllValidated.mockReturnValue(Effect.succeed([
       {
         id: 10,
         step_number: 1,
@@ -84,15 +89,15 @@ describe("renderPlanMarkdown", () => {
       },
     ]));
 
-    const result = renderPlanMarkdown(1);
+    const result = await renderPlanMarkdown(1);
     expect(result).toContain("## Phases");
     expect(result).toContain("### Phase 1: Phase One");
     expect(result).toContain("**Status**: pending");
     expect(result).toContain("**Commit message**: feat: do things");
   });
 
-  it("skips optional sections when null", () => {
-    mockQueryOne.mockReturnValue(Option.Some({
+  it("skips optional sections when null", async () => {
+    mockQueryOneValidated.mockReturnValue(Effect.succeed({
       id: 1,
       title: "Lean Plan",
       summary: null,
@@ -100,9 +105,9 @@ describe("renderPlanMarkdown", () => {
       clarifications: null,
       completion_conditions: null,
     }));
-    mockQueryAll.mockReturnValue(Result.Ok([]));
+    mockQueryAllValidated.mockReturnValue(Effect.succeed([]));
 
-    const result = renderPlanMarkdown(1);
+    const result = await renderPlanMarkdown(1);
     expect(result).not.toContain("## Summary");
     expect(result).not.toContain("## Context");
   });

@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { Effect } from "effect";
+import { CliNotFoundError } from "../effect/errors";
 
 vi.mock("./cli-discovery", () => ({
   discoverClaudeCli: vi.fn(),
@@ -40,7 +42,7 @@ describe("getSupportedCommands", () => {
 
   it("spawns temporary query when no active subprocess", async () => {
     mockGetActiveProcess.mockReturnValue(undefined);
-    mockDiscoverCli.mockResolvedValue({ path: "/usr/bin/claude", source: "settings" });
+    mockDiscoverCli.mockReturnValue(Effect.succeed({ path: "/usr/bin/claude", source: "settings" }));
 
     const mockClose = vi.fn();
     const mockSupportedCommands = vi.fn().mockResolvedValue([
@@ -72,7 +74,7 @@ describe("getSupportedCommands", () => {
 
   it("returns empty array when CLI not found", async () => {
     mockGetActiveProcess.mockReturnValue(undefined);
-    mockDiscoverCli.mockResolvedValue(null);
+    mockDiscoverCli.mockReturnValue(Effect.fail(new CliNotFoundError({ searchedPaths: [] })));
     mockGetSdkClient.mockResolvedValue({ query: vi.fn() } as any);
 
     const { getSupportedCommands: fn } = await import("./slash-commands");
@@ -88,7 +90,7 @@ describe("getSupportedCommands", () => {
       query: { supportedCommands: vi.fn() },
       status: "stopped",
     } as any);
-    mockDiscoverCli.mockResolvedValue(null);
+    mockDiscoverCli.mockReturnValue(Effect.fail(new CliNotFoundError({ searchedPaths: [] })));
     mockGetSdkClient.mockResolvedValue({ query: vi.fn() } as any);
 
     const { getSupportedCommands: fn } = await import("./slash-commands");
