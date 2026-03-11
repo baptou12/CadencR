@@ -1076,11 +1076,22 @@ function parseTarBuffer(buffer: Buffer): Map<string, string> {
       files.set(normalizedName, content);
     }
 
-    // Advance past content, padded to 512-byte block boundary
+    // Advance past content, padded to 512-byte block boundary.
+    // For empty files (size === 0), Math.ceil(0/512)*512 === 0, so we stay
+    // at the current offset — correct because there are no content bytes to skip.
     offset += Math.ceil(size / 512) * 512;
   }
 
   return files;
+}
+
+/**
+ * Wrap a string in single quotes and escape any internal single quotes so it
+ * is safe to embed in a POSIX shell command string.
+ * e.g. shellEscape(`a'b`) → `'a'\''b'`
+ */
+function shellEscape(s: string): string {
+  return `'${s.replace(/'/g, `'\\''`)}'`;
 }
 
 /**
@@ -1093,8 +1104,8 @@ function fetchArchiveContents(
   ref: string,
   filePaths: string[],
 ): Effect.Effect<Map<string, string>, never> {
-  const fileArgs = filePaths.map((f) => `"${f}"`).join(" ");
-  const command = `git archive "${ref}" -- ${fileArgs}`;
+  const fileArgs = filePaths.map(shellEscape).join(" ");
+  const command = `git archive ${shellEscape(ref)} -- ${fileArgs}`;
 
   return execGitBinary(command, { cwd: gitPath }).pipe(
     Effect.map((tarBuffer) => {

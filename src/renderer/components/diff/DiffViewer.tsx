@@ -118,6 +118,9 @@ function DiffFileBlock({
 
   // Not yet near the viewport — render a sentinel placeholder so the
   // IntersectionObserver can detect when the file scrolls into range.
+  // 200px is a rough estimate of a collapsed file header + a small diff.
+  // The 500px rootMargin on the observer fires early enough that any layout
+  // shift from this estimate being off is not visible to the user.
   if (!isNearViewport) {
     return <div ref={sentinelRef} style={{ minHeight: "200px" }} />;
   }
