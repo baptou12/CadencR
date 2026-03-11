@@ -22,10 +22,6 @@ vi.mock("../../db/query");
 vi.mock("../effect-helpers", () => ({
   notifyDbUpdated: vi.fn(),
 }));
-vi.mock("../state-transitions", () => ({
-  transitionPhase: vi.fn(),
-  transitionFeature: vi.fn(),
-}));
 
 import {
   readPlanTool,
@@ -39,18 +35,14 @@ import {
   createFinalizePhasesTool,
 } from "./shared-tools";
 import { queryOne, queryAll, queryOneValidated, queryAllValidated, execute } from "../../db/query";
-import { getDatabase } from "../../db/database";
 import { notifyDbUpdated } from "../effect-helpers";
-import { transitionPhase } from "../state-transitions";
 
 const mockQueryOne = vi.mocked(queryOne);
 const mockQueryAll = vi.mocked(queryAll);
 const mockQueryOneValidated = vi.mocked(queryOneValidated);
 const mockQueryAllValidated = vi.mocked(queryAllValidated);
 const mockExecute = vi.mocked(execute);
-const mockGetDatabase = vi.mocked(getDatabase);
 const mockNotify = vi.mocked(notifyDbUpdated);
-const mockTransitionPhase = vi.mocked(transitionPhase);
 
 type ToolDef = { name: string; handler: (args: any) => Promise<any> };
 
@@ -276,29 +268,37 @@ describe("createMarkPhaseDoneTool", () => {
 
   it("transitions phase to completed", async () => {
     mockQueryOne.mockReturnValue(Effect.succeed({ status: "running" }));
-    mockGetDatabase.mockReturnValue({} as any);
+    mockExecute.mockReturnValue(Effect.succeed({ changes: 1, lastInsertRowid: 0 }));
 
     const t = createMarkPhaseDoneTool(10);
     const result = await getHandler(t)({ phase_id: 5, implementation_notes: "Done it", deviations: "None" }) as any;
 
     expect(result.content[0].text).toContain("completed");
-    expect(mockTransitionPhase).toHaveBeenCalledWith({}, 5, "completed", 10, {
-      implementation_notes: "Done it",
-      deviations: "None",
-    });
+    expect(mockExecute).toHaveBeenCalledWith(
+      "UPDATE phases SET status = ?, implementation_notes = ?, deviations = ? WHERE id = ?",
+      "completed",
+      "Done it",
+      "None",
+      5,
+    );
+    expect(mockNotify).toHaveBeenCalledWith("phase", 10);
   });
 
   it("uses null for optional fields when not provided", async () => {
     mockQueryOne.mockReturnValue(Effect.succeed({ status: "running" }));
-    mockGetDatabase.mockReturnValue({} as any);
+    mockExecute.mockReturnValue(Effect.succeed({ changes: 1, lastInsertRowid: 0 }));
 
     const t = createMarkPhaseDoneTool(10);
     await getHandler(t)({ phase_id: 5 });
 
-    expect(mockTransitionPhase).toHaveBeenCalledWith({}, 5, "completed", 10, {
-      implementation_notes: null,
-      deviations: null,
-    });
+    expect(mockExecute).toHaveBeenCalledWith(
+      "UPDATE phases SET status = ?, implementation_notes = ?, deviations = ? WHERE id = ?",
+      "completed",
+      null,
+      null,
+      5,
+    );
+    expect(mockNotify).toHaveBeenCalledWith("phase", 10);
   });
 
   it("returns error when phase not found", async () => {

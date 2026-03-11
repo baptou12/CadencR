@@ -3,8 +3,8 @@
  */
 
 import { z } from "zod";
+import { Effect } from "effect";
 import { tool } from "@anthropic-ai/claude-agent-sdk";
-import { getDatabase } from "../../db/database";
 import { queryOne, queryAll, queryOneValidated, execute } from "../../db/query";
 import { AppRuntime } from "../../effect/runtime";
 import { notifyDbUpdated } from "../effect-helpers";
@@ -237,7 +237,7 @@ export function createAgentDoneTool(sessionDbId: number, featureId: number, onAg
               featureId,
             ));
             if (wfFeat) {
-              const { cwd, worktreePath } = await resolveAgentCwd(featureId, wfFeat.project_id);
+              const { cwd, worktreePath } = Effect.runSync(resolveAgentCwd(featureId, wfFeat.project_id));
               onAgentDone({ featureId, projectId: wfFeat.project_id, cwd, worktreePath: worktreePath ?? null });
             }
           } catch { /* */ }
@@ -275,8 +275,7 @@ export function createMarkPhaseDoneTool(featureId: number) {
           return errorResult(`Phase ${args.phase_id} has status '${phase.status}', expected 'running'`);
         }
 
-        const db = getDatabase();
-        transitionPhase(db, args.phase_id, "completed", featureId, {
+        transitionPhase(args.phase_id, "completed", featureId, {
           implementation_notes: args.implementation_notes ?? null,
           deviations: args.deviations ?? null,
         });

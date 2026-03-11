@@ -611,7 +611,7 @@ export const SdkQueryRunnerLive = Layer.effect(
             }
             const cliInfo = cliInfoOpt.value;
 
-            const language = resolveSetting("language", {}) ?? undefined;
+            const language = Effect.runSync(resolveSetting("language", {})) ?? undefined;
 
             const queryOptions: Record<string, unknown> = {
               cwd: options.cwd,

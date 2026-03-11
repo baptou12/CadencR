@@ -50,9 +50,12 @@ vi.mock("./mcp-factory", () => ({
   buildMcpServerFactory: vi.fn().mockReturnValue(undefined),
 }));
 
-vi.mock("../db/settings", () => ({
-  resolveSetting: vi.fn().mockReturnValue(null),
-}));
+vi.mock("../db/settings", async () => {
+  const { Effect } = await import("effect");
+  return {
+    resolveSetting: vi.fn().mockReturnValue(Effect.succeed(null)),
+  };
+});
 
 vi.mock("./effect-helpers", () => ({
   notifyDbUpdated: vi.fn(),
@@ -170,7 +173,7 @@ describe("processNextPhase", () => {
 
     processNextPhase(baseOptions);
 
-    expect(transitionFeature).toHaveBeenCalledWith(expect.anything(), 1, "in-progress");
+    expect(transitionFeature).toHaveBeenCalledWith(1, "in-progress");
   });
 
   it("dispatches pending phases", () => {
@@ -239,7 +242,7 @@ describe("processNextPhase", () => {
 
     processNextPhase(baseOptions);
 
-    expect(transitionFeature).toHaveBeenCalledWith(expect.anything(), 1, "done");
+    expect(transitionFeature).toHaveBeenCalledWith(1, "done");
     expect(notifyDbUpdated).toHaveBeenCalledWith("feature", 1);
   });
 });
@@ -251,19 +254,19 @@ describe("getAutonomyLevel", () => {
 
   it("returns 1 (default) when no setting found", async () => {
     const { resolveSetting } = await import("../db/settings");
-    (resolveSetting as any).mockReturnValue(null);
+    (resolveSetting as any).mockReturnValue(Effect.succeed(null));
     expect(getAutonomyLevel(1, 1)).toBe(1);
   });
 
   it("returns parsed integer from setting", async () => {
     const { resolveSetting } = await import("../db/settings");
-    (resolveSetting as any).mockReturnValue("2");
+    (resolveSetting as any).mockReturnValue(Effect.succeed("2"));
     expect(getAutonomyLevel(1, 1)).toBe(2);
   });
 
   it("returns 1 for level 1 setting", async () => {
     const { resolveSetting } = await import("../db/settings");
-    (resolveSetting as any).mockReturnValue("1");
+    (resolveSetting as any).mockReturnValue(Effect.succeed("1"));
     expect(getAutonomyLevel(1, 1)).toBe(1);
   });
 });

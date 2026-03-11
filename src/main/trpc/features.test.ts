@@ -17,9 +17,12 @@ vi.mock("../agents/execute-agent", () => ({
   getAutonomyLevel: vi.fn().mockReturnValue(1),
 }));
 
-vi.mock("../agents/resolve-cwd", () => ({
-  resolveAgentCwd: vi.fn().mockReturnValue({ cwd: "/tmp", worktreePath: undefined }),
-}));
+vi.mock("../agents/resolve-cwd", async () => {
+  const { Effect } = await import("effect");
+  return {
+    resolveAgentCwd: vi.fn().mockReturnValue(Effect.succeed({ cwd: "/tmp", worktreePath: undefined })),
+  };
+});
 
 vi.mock("../agents/subprocess-manager", () => ({
   stopSubprocess: vi.fn().mockResolvedValue(true),

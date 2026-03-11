@@ -3,9 +3,9 @@
  */
 
 import { z } from "zod";
+import { Effect } from "effect";
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
-import { getDatabase } from "../../db/database";
-import { queryOne, execute } from "../../db/query";
+import { queryOne, execute, transaction } from "../../db/query";
 import { AppRuntime } from "../../effect/runtime";
 import { notifyDbUpdated } from "../effect-helpers";
 import { transitionFeature } from "../state-transitions";
@@ -138,15 +138,14 @@ export function createPlanMcpServer(planId: number, featureId: number, sessionDb
               plan.feature_id,
             ));
 
-            const db = getDatabase();
-            db.transaction(() => {
-              db.prepare("UPDATE phases SET status = 'pending' WHERE plan_id = ? AND status = 'draft'").run(args.plan_id);
-              db.prepare("UPDATE plans SET status = 'active', updated_at = datetime('now') WHERE id = ?").run(args.plan_id);
+            await AppRuntime.runPromise(transaction(() => {
+              Effect.runSync(execute("UPDATE phases SET status = 'pending' WHERE plan_id = ? AND status = 'draft'", args.plan_id));
+              Effect.runSync(execute("UPDATE plans SET status = 'active', updated_at = datetime('now') WHERE id = ?", args.plan_id));
               // Transition feature to 'planned' if it's a draft or done (refinement resets done features)
               if (!feature || feature.status === "draft" || feature.status === "done") {
-                transitionFeature(db, plan.feature_id, "planned");
+                transitionFeature(plan.feature_id, "planned");
               }
-            })();
+            }));
             notifyDbUpdated("phase", plan.feature_id);
 
             const markdown = await renderPlanMarkdown(args.plan_id);

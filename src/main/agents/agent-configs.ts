@@ -14,8 +14,9 @@
  * - System prompts are extracted verbatim from the individual agent files.
  */
 
+import { Effect } from "effect";
 import { loadPrompt } from "./prompts/load-prompt";
-import { getDatabase } from "../db/database";
+import { queryOne, execute } from "../db/query";
 import { buildMcpServerFactory } from "./mcp-factory";
 import type { OnAgentDoneCallback } from "./mcp-tools";
 import type { ImageBlock, MessageContent, UnifiedAgentConfig, CompletionAction } from "./types";
@@ -241,15 +242,14 @@ Start by exploring the codebase to understand the project structure and existing
     {
       event: "plan_fallback",
       handler: (output: string) => {
-        const db = getDatabase();
-        const plan = db
-          .prepare("SELECT status FROM plans WHERE id = ?")
-          .get(opts.planId) as { status: string } | undefined;
+        // sync: completion handler callback cannot use async/await
+        const plan = Effect.runSync(queryOne<{ status: string }>("SELECT status FROM plans WHERE id = ?", opts.planId));
 
         if (plan && plan.status === "draft") {
           // Agent exited without finalizing — store raw output for reference
           if (output) {
-            db.prepare("UPDATE plans SET raw_markdown = ? WHERE id = ?").run(output, opts.planId);
+            // sync: completion handler callback cannot use async/await
+            Effect.runSync(execute("UPDATE plans SET raw_markdown = ? WHERE id = ?", output, opts.planId));
           }
           console.warn(`[agent-configs] Plan agent exited without finalizing plan ${opts.planId}`);
         }
@@ -321,10 +321,11 @@ export function createRiskConfig(opts: RiskConfigOptions): UnifiedAgentConfig {
       event: "store_risk_report",
       handler: (output: string, context) => {
         if (!output) return;
-        const db = getDatabase();
-        db.prepare(
+        // sync: completion handler callback cannot use async/await
+        Effect.runSync(execute(
           "INSERT INTO agent_messages (session_id, role, content, message_type) VALUES (?, ?, ?, ?)",
-        ).run(context.sessionDbId, "assistant", output, "risk_report");
+          context.sessionDbId, "assistant", output, "risk_report",
+        ));
       },
     },
   ];
@@ -383,12 +384,11 @@ export function createReviewConfig(opts: ReviewConfigOptions): UnifiedAgentConfi
       event: "store_review_report",
       handler: (output: string, context) => {
         if (!output) return;
-        const db = getDatabase();
-
-        // Store the review report as an agent message
-        db.prepare(
+        // Store the review report as an agent message; sync: completion handler callback
+        Effect.runSync(execute(
           "INSERT INTO agent_messages (session_id, role, content, message_type) VALUES (?, ?, ?, ?)",
-        ).run(context.sessionDbId, "assistant", output, "review_report");
+          context.sessionDbId, "assistant", output, "review_report",
+        ));
       },
     },
   ];
@@ -463,10 +463,11 @@ Based on what was implemented above, design specific test cases and execute them
       event: "store_qa_report",
       handler: (output: string, context) => {
         if (!output) return;
-        const db = getDatabase();
-        db.prepare(
+        // sync: completion handler callback cannot use async/await
+        Effect.runSync(execute(
           "INSERT INTO agent_messages (session_id, role, content, message_type) VALUES (?, ?, ?, ?)",
-        ).run(context.sessionDbId, "assistant", output, "qa_report");
+          context.sessionDbId, "assistant", output, "qa_report",
+        ));
       },
     },
   ];
@@ -491,11 +492,8 @@ Based on what was implemented above, design specific test cases and execute them
  * report stored as a `retro_report` message in agent_messages.
  */
 export function createRetroConfig(opts: RetroConfigOptions): UnifiedAgentConfig {
-  // Look up the plan ID so the agent knows which plan to read
-  const db = getDatabase();
-  const planRow = db
-    .prepare("SELECT id FROM plans WHERE feature_id = ? ORDER BY id DESC LIMIT 1")
-    .get(opts.featureId) as { id: number } | undefined;
+  // Look up the plan ID so the agent knows which plan to read; sync: factory function (not async)
+  const planRow = Effect.runSync(queryOne<{ id: number }>("SELECT id FROM plans WHERE feature_id = ? ORDER BY id DESC LIMIT 1", opts.featureId));
 
   const planHint = planRow
     ? `The plan ID for this feature is **${planRow.id}**. Use this when calling \`read_plan\` and \`list_phases\`.`
@@ -512,10 +510,11 @@ Use the available MCP tools to read the PRD, plan, phases, and agent conversatio
       event: "store_retro_report",
       handler: (output: string, context) => {
         if (!output) return;
-        const db = getDatabase();
-        db.prepare(
+        // sync: completion handler callback cannot use async/await
+        Effect.runSync(execute(
           "INSERT INTO agent_messages (session_id, role, content, message_type) VALUES (?, ?, ?, ?)",
-        ).run(context.sessionDbId, "assistant", output, "retro_report");
+          context.sessionDbId, "assistant", output, "retro_report",
+        ));
       },
     },
   ];
@@ -546,10 +545,11 @@ export function createReviewFixerConfig(opts: ReviewFixerConfigOptions): Unified
       event: "resolve_diff_comments",
       handler: (_output: string, context) => {
         if (!context.featureId) return;
-        const db = getDatabase();
-        db.prepare(
+        // sync: completion handler callback cannot use async/await
+        Effect.runSync(execute(
           "UPDATE diff_comments SET status = 'resolved' WHERE feature_id = ? AND status = 'sent'",
-        ).run(context.featureId);
+          context.featureId,
+        ));
       },
     },
   ];

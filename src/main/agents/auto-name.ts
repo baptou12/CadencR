@@ -1,5 +1,5 @@
 import { Effect, Option } from "effect";
-import { getDatabase } from "../db/database";
+import { queryOne, execute } from "../db/query";
 import { setupWorktreeForFeatureEffect } from "../effect/services/GitWorktree";
 import { AppRuntime } from "../effect/runtime";
 import { discoverClaudeCli } from "./cli-discovery";
@@ -99,16 +99,12 @@ async function runAutoName(
     .replace(/^["']|["']$/g, "");
   if (!name) return;
 
-  const db = getDatabase();
-  db.prepare("UPDATE features SET title = ? WHERE id = ?").run(
-    name,
-    featureId,
-  );
+  Effect.runSync(execute("UPDATE features SET title = ? WHERE id = ?", name, featureId));
   notifyDbUpdated("feature", featureId);
 
   // Chain worktree setup after naming (only for non-session features)
   if (projectId != null) {
-    const feature = db.prepare("SELECT type FROM features WHERE id = ?").get(featureId) as { type: string } | undefined;
+    const feature = Effect.runSync(queryOne<{ type: string }>("SELECT type FROM features WHERE id = ?", featureId));
     if (feature?.type !== "session") {
       AppRuntime.runPromise(setupWorktreeForFeatureEffect(projectId, featureId)).catch(
         (err) => {
@@ -193,8 +189,7 @@ export async function runAutoNameBlocking(
     .replace(/^["']|["']$/g, "");
   if (!name) return null;
 
-  const db = getDatabase();
-  db.prepare("UPDATE features SET title = ? WHERE id = ?").run(name, featureId);
+  Effect.runSync(execute("UPDATE features SET title = ? WHERE id = ?", name, featureId));
   notifyDbUpdated("feature", featureId);
 
   return name;

@@ -3,7 +3,8 @@
  * Extracted from database.ts to break circular dependency.
  */
 
-import { getDatabase } from "../db/database";
+import { Effect } from "effect";
+import { queryAll } from "../db/query";
 import { processNextPhase } from "./execute-agent";
 import { resolveAgentCwd } from "./resolve-cwd";
 
@@ -14,11 +15,12 @@ import { resolveAgentCwd } from "./resolve-cwd";
 export function resumeInProgressFeatures(): void {
   void (async () => {
     try {
-      const db = getDatabase();
-      const inProgress = db.prepare("SELECT id, project_id FROM features WHERE status = 'in-progress'").all() as { id: number; project_id: number }[];
+      const inProgress = Effect.runSync(queryAll<{ id: number; project_id: number }>(
+        "SELECT id, project_id FROM features WHERE status = 'in-progress'",
+      ));
       for (const feat of inProgress) {
         try {
-          const { cwd, worktreePath } = await resolveAgentCwd(feat.id, feat.project_id);
+          const { cwd, worktreePath } = Effect.runSync(resolveAgentCwd(feat.id, feat.project_id));
           processNextPhase({ featureId: feat.id, projectId: feat.project_id, cwd, worktreePath });
         } catch { /* individual feature recovery failure is ok */ }
       }

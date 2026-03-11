@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { resolveSetting } from "../db/settings";
 import type { AgentType } from "./types";
 
@@ -14,6 +15,6 @@ export function resolveModel(
   featureId?: number,
   projectId?: number,
 ): string {
-  const resolved = resolveSetting(`model_${agentType}`, { featureId, projectId, defaultValue: DEFAULT_MODEL })!;
+  const resolved = Effect.runSync(resolveSetting(`model_${agentType}`, { featureId, projectId, defaultValue: DEFAULT_MODEL }))!;
   return resolved === "default" ? DEFAULT_MODEL : resolved;
 }

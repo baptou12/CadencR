@@ -43,19 +43,23 @@ export const featuresRouter = router({
   create: publicProcedure
     .input(z.object({ project_id: z.number(), title: z.string().optional() }))
     .mutation(async ({ input }) => {
-      let title = input.title?.trim();
-      if (!title) {
-        const maxRow = await AppRuntime.runPromise(queryOne<{ max_num: number | null }>(
-          "SELECT MAX(CAST(REPLACE(title, 'Session ', '') AS INTEGER)) as max_num FROM features WHERE project_id = ? AND title LIKE 'Session %'",
-          input.project_id,
-        ));
-        const maxNum = maxRow?.max_num ?? 0;
-        title = `Session ${maxNum + 1}`;
-      }
-      const result = await AppRuntime.runPromise(execute(
-        "INSERT INTO features (project_id, title) VALUES (?, ?)",
-        input.project_id, title,
-      ));
+      const result = await AppRuntime.runPromise(
+        Effect.gen(function* () {
+          let title = input.title?.trim();
+          if (!title) {
+            const maxRow = yield* queryOne<{ max_num: number | null }>(
+              "SELECT MAX(CAST(REPLACE(title, 'Session ', '') AS INTEGER)) as max_num FROM features WHERE project_id = ? AND title LIKE 'Session %'",
+              input.project_id,
+            );
+            const maxNum = maxRow?.max_num ?? 0;
+            title = `Session ${maxNum + 1}`;
+          }
+          return yield* execute(
+            "INSERT INTO features (project_id, title) VALUES (?, ?)",
+            input.project_id, title,
+          );
+        }),
+      );
       return { id: result.lastInsertRowid };
     }),
 
@@ -90,35 +94,40 @@ export const featuresRouter = router({
     }),
 
   delete: publicProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
-    // Stop any running subprocesses for this feature's agent sessions
-    const sessionIds = await AppRuntime.runPromise(queryAll<{ id: number }>(
-      "SELECT id FROM agent_sessions WHERE feature_id = ? AND status IN ('running', 'paused')",
-      input.id,
-    ));
-    if (sessionIds.length > 0) {
-      const subprocessIds = getSubprocessIdsForSessionDbIds(sessionIds.map((s) => s.id));
-      for (const spId of subprocessIds) {
-        try { await stopSubprocess(spId); } catch { /* best effort */ }
-      }
-    }
-    // Delete child records that reference this feature.
+    // Stop any running subprocesses and delete child records atomically.
     // Effect.runSync is used inside the transaction callback because better-sqlite3
     // transactions are synchronous — this is not a mistake or anti-pattern; it is
     // the correct way to perform multi-step atomic deletes with our Effect-based DB
     // helpers inside a synchronous better-sqlite3 transaction.
-    await AppRuntime.runPromise(transaction(() => {
-      const planIds = Effect.runSync(queryAll<{ id: number }>("SELECT id FROM plans WHERE feature_id = ?", input.id));
-      for (const plan of planIds) {
-        Effect.runSync(execute("DELETE FROM phases WHERE plan_id = ?", plan.id));
-      }
-      Effect.runSync(execute("DELETE FROM plans WHERE feature_id = ?", input.id));
-      Effect.runSync(execute("DELETE FROM agent_messages WHERE session_id IN (SELECT id FROM agent_sessions WHERE feature_id = ?)", input.id));
-      Effect.runSync(execute("DELETE FROM agent_sessions WHERE feature_id = ?", input.id));
-      Effect.runSync(execute("DELETE FROM feature_settings WHERE feature_id = ?", input.id));
-      Effect.runSync(execute("DELETE FROM diff_comments WHERE feature_id = ?", input.id));
-      Effect.runSync(execute("DELETE FROM diff_viewed_files WHERE feature_id = ?", input.id));
-      Effect.runSync(execute("DELETE FROM features WHERE id = ?", input.id));
-    }));
+    await AppRuntime.runPromise(
+      Effect.gen(function* () {
+        const sessionIds = yield* queryAll<{ id: number }>(
+          "SELECT id FROM agent_sessions WHERE feature_id = ? AND status IN ('running', 'paused')",
+          input.id,
+        );
+        if (sessionIds.length > 0) {
+          const subprocessIds = getSubprocessIdsForSessionDbIds(sessionIds.map((s) => s.id));
+          yield* Effect.promise(async () => {
+            for (const spId of subprocessIds) {
+              try { await stopSubprocess(spId); } catch { /* best effort */ }
+            }
+          });
+        }
+        yield* transaction(() => {
+          const planIds = Effect.runSync(queryAll<{ id: number }>("SELECT id FROM plans WHERE feature_id = ?", input.id));
+          for (const plan of planIds) {
+            Effect.runSync(execute("DELETE FROM phases WHERE plan_id = ?", plan.id));
+          }
+          Effect.runSync(execute("DELETE FROM plans WHERE feature_id = ?", input.id));
+          Effect.runSync(execute("DELETE FROM agent_messages WHERE session_id IN (SELECT id FROM agent_sessions WHERE feature_id = ?)", input.id));
+          Effect.runSync(execute("DELETE FROM agent_sessions WHERE feature_id = ?", input.id));
+          Effect.runSync(execute("DELETE FROM feature_settings WHERE feature_id = ?", input.id));
+          Effect.runSync(execute("DELETE FROM diff_comments WHERE feature_id = ?", input.id));
+          Effect.runSync(execute("DELETE FROM diff_viewed_files WHERE feature_id = ?", input.id));
+          Effect.runSync(execute("DELETE FROM features WHERE id = ?", input.id));
+        });
+      }),
+    );
     return { success: true };
   }),
 
@@ -333,35 +342,41 @@ export const featuresRouter = router({
     .mutation(async ({ input }) => {
       const realColumns = new Set([
         "model_plan", "model_prd", "model_execute", "model_risk", "model_review",
-        "model_session", "model_qa", "agent_autonomy", "parallel_execution",
+        "model_review-fixer", "model_session", "model_qa", "model_retro",
+        "agent_autonomy", "parallel_execution",
       ]);
 
-      if (realColumns.has(input.key)) {
-        await AppRuntime.runPromise(execute(
-          `UPDATE features SET "${input.key}" = ? WHERE id = ?`,
-          input.value, input.feature_id,
-        ));
-      } else {
-        await AppRuntime.runPromise(execute(
-          "INSERT INTO feature_settings (feature_id, key, value) VALUES (?, ?, ?) ON CONFLICT(feature_id, key) DO UPDATE SET value = excluded.value",
-          input.feature_id, input.key, input.value,
-        ));
-      }
+      await AppRuntime.runPromise(
+        Effect.gen(function* () {
+          if (realColumns.has(input.key)) {
+            yield* execute(
+              `UPDATE features SET "${input.key}" = ? WHERE id = ?`,
+              input.value, input.feature_id,
+            );
+          } else {
+            yield* execute(
+              "INSERT INTO feature_settings (feature_id, key, value) VALUES (?, ?, ?) ON CONFLICT(feature_id, key) DO UPDATE SET value = excluded.value",
+              input.feature_id, input.key, input.value,
+            );
+          }
 
-      // When autonomy is raised to >= 2, resume execution if feature is in-progress
-      if (input.key === "agent_autonomy" && Number(input.value) >= 2) {
-        const feat = await AppRuntime.runPromise(queryOne<{ status: string; project_id: number }>(
-          "SELECT status, project_id FROM features WHERE id = ?",
-          input.feature_id,
-        ));
-        if (feat && feat.status === "in-progress") {
-          resolveAgentCwd(input.feature_id, feat.project_id)
-            .then(({ cwd, worktreePath }) => {
-              processNextPhase({ featureId: input.feature_id, projectId: feat.project_id, cwd, worktreePath });
-            })
-            .catch(() => { /* */ });
-        }
-      }
+          // When autonomy is raised to >= 2, resume execution if feature is in-progress
+          if (input.key === "agent_autonomy" && Number(input.value) >= 2) {
+            const feat = yield* queryOne<{ status: string; project_id: number }>(
+              "SELECT status, project_id FROM features WHERE id = ?",
+              input.feature_id,
+            );
+            if (feat && feat.status === "in-progress") {
+              yield* resolveAgentCwd(input.feature_id, feat.project_id).pipe(
+                Effect.map(({ cwd, worktreePath }) => {
+                  processNextPhase({ featureId: input.feature_id, projectId: feat.project_id, cwd, worktreePath });
+                }),
+                Effect.ignore,
+              );
+            }
+          }
+        }),
+      );
 
       return { success: true };
     }),

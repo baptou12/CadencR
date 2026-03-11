@@ -21,20 +21,14 @@ vi.mock("../../db/database");
 vi.mock("../effect-helpers", () => ({
   notifyDbUpdated: vi.fn(),
 }));
-vi.mock("../state-transitions", () => ({
-  transitionPhase: vi.fn(),
-  transitionFeature: vi.fn(),
-}));
 
 import { createQaMcpServer } from "./qa-server";
 import { getDatabase } from "../../db/database";
 import { notifyDbUpdated } from "../effect-helpers";
-import { transitionPhase } from "../state-transitions";
 import { createMockDb } from "../../test-utils";
 
 const mockGetDatabase = vi.mocked(getDatabase);
 const mockNotify = vi.mocked(notifyDbUpdated);
-const mockTransitionPhase = vi.mocked(transitionPhase);
 
 function getToolHandler(server: ReturnType<typeof createQaMcpServer>, toolName: string) {
   const tools = (server as any).tools as Array<{ name: string; handler: (args: unknown) => Promise<unknown> }>;
@@ -59,17 +53,17 @@ describe("createQaMcpServer", () => {
 
   describe("mark_phase_done tool (QA)", () => {
     it("transitions phase to completed with implementation_notes", async () => {
-      db.prepare.mockReturnValue({ get: vi.fn().mockReturnValue({ status: "running" }) });
+      db.prepare.mockReturnValue({
+        get: vi.fn().mockReturnValue({ status: "running" }),
+        run: vi.fn().mockReturnValue({ changes: 1, lastInsertRowid: 0 }),
+      });
 
       const server = createQaMcpServer(1, 10, 100);
       const handler = getToolHandler(server, "mark_phase_done");
       const result = await handler({ phase_id: 5, implementation_notes: "All tests passed", deviations: "None" }) as any;
 
       expect(result.content[0].text).toContain("completed");
-      expect(mockTransitionPhase).toHaveBeenCalledWith(db, 5, "completed", 10, {
-        implementation_notes: "All tests passed",
-        deviations: "None",
-      });
+      expect(mockNotify).toHaveBeenCalledWith("phase", 10);
     });
 
     it("returns error when phase is not running", async () => {

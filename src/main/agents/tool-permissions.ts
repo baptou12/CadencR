@@ -8,7 +8,8 @@
  */
 
 import * as fs from "node:fs";
-import { getDatabase } from "../db/database";
+import { Effect } from "effect";
+import { queryOne, execute } from "../db/query";
 import { getSessionDbId, notifyDbUpdated } from "./effect-helpers";
 import { resolvePermission, appendToSettingsLocal } from "./permissions";
 import { getAppRuntime } from "../effect/app-runtime-ref";
@@ -110,10 +111,14 @@ async function handleAskUserQuestion(
   let featureIdForNotify: number | null = null;
   if (sDbId) {
     try {
-      const db2 = getDatabase();
-      db2.prepare("UPDATE agent_sessions SET pending_questions = ? WHERE id = ?")
-        .run(JSON.stringify(input), sDbId);
-      const row = db2.prepare("SELECT feature_id FROM agent_sessions WHERE id = ?").get(sDbId) as { feature_id: number } | undefined;
+      Effect.runSync(execute(
+        "UPDATE agent_sessions SET pending_questions = ? WHERE id = ?",
+        JSON.stringify(input), sDbId,
+      ));
+      const row = Effect.runSync(queryOne<{ feature_id: number }>(
+        "SELECT feature_id FROM agent_sessions WHERE id = ?",
+        sDbId,
+      ));
       if (row) {
         featureIdForNotify = row.feature_id;
         notifyDbUpdated("agent_session", row.feature_id);
@@ -126,8 +131,10 @@ async function handleAskUserQuestion(
 
     if (sDbId) {
       try {
-        const db2 = getDatabase();
-        db2.prepare("UPDATE agent_sessions SET pending_questions = NULL WHERE id = ?").run(sDbId);
+        Effect.runSync(execute(
+          "UPDATE agent_sessions SET pending_questions = NULL WHERE id = ?",
+          sDbId,
+        ));
         if (featureIdForNotify) notifyDbUpdated("agent_session", featureIdForNotify);
       } catch (e) { console.warn("[tool-permissions] best-effort op failed:", e); }
     }
@@ -140,8 +147,10 @@ async function handleAskUserQuestion(
     console.error("[tool-permissions] Failed to get user answers:", error);
     if (sDbId) {
       try {
-        const db2 = getDatabase();
-        db2.prepare("UPDATE agent_sessions SET pending_questions = NULL WHERE id = ?").run(sDbId);
+        Effect.runSync(execute(
+          "UPDATE agent_sessions SET pending_questions = NULL WHERE id = ?",
+          sDbId,
+        ));
         if (featureIdForNotify) notifyDbUpdated("agent_session", featureIdForNotify);
       } catch (e) { console.warn("[tool-permissions] best-effort op failed:", e); }
     }
@@ -166,20 +175,30 @@ async function handleExitPlanMode(
   // Check for a stored approval result (set when user approved while agent was paused/completed)
   if (sDbId) {
     try {
-      const db2 = getDatabase();
-      const stored = db2.prepare("SELECT plan_approval_result FROM agent_sessions WHERE id = ?").get(sDbId) as { plan_approval_result: string | null } | undefined;
+      const stored = Effect.runSync(queryOne<{ plan_approval_result: string | null }>(
+        "SELECT plan_approval_result FROM agent_sessions WHERE id = ?",
+        sDbId,
+      ));
       if (stored?.plan_approval_result) {
         const result = JSON.parse(stored.plan_approval_result) as { approved: boolean; feedback?: string };
-        db2.prepare("UPDATE agent_sessions SET plan_approval_result = NULL, pending_plan_approval = NULL WHERE id = ?").run(sDbId);
-        const row = db2.prepare("SELECT feature_id FROM agent_sessions WHERE id = ?").get(sDbId) as { feature_id: number } | undefined;
+        Effect.runSync(execute(
+          "UPDATE agent_sessions SET plan_approval_result = NULL, pending_plan_approval = NULL WHERE id = ?",
+          sDbId,
+        ));
+        const row = Effect.runSync(queryOne<{ feature_id: number }>(
+          "SELECT feature_id FROM agent_sessions WHERE id = ?",
+          sDbId,
+        ));
         if (row) notifyDbUpdated("agent_session", row.feature_id);
 
         if (result.approved) {
           if (managed.query) await managed.query.setPermissionMode("acceptEdits");
           if (sDbId) {
             try {
-              const db3 = getDatabase();
-              db3.prepare("UPDATE agent_sessions SET permission_mode = 'acceptEdits' WHERE id = ?").run(sDbId);
+              Effect.runSync(execute(
+                "UPDATE agent_sessions SET permission_mode = 'acceptEdits' WHERE id = ?",
+                sDbId,
+              ));
             } catch { /* best-effort */ }
           }
           return { behavior: "allow" as const, updatedInput: input };
@@ -194,10 +213,10 @@ async function handleExitPlanMode(
   let planMarkdown: string | undefined;
   if (sDbId) {
     try {
-      const db2 = getDatabase();
-      const planMsg = db2.prepare(
+      const planMsg = Effect.runSync(queryOne<{ content: string }>(
         "SELECT content FROM agent_messages WHERE session_id = ? AND message_type = 'tool_call' AND tool_name = 'Write' AND content LIKE '%/.claude/plans/%' ORDER BY id DESC LIMIT 1",
-      ).get(sDbId) as { content: string } | undefined;
+        sDbId,
+      ));
       if (planMsg) {
         const parsed = JSON.parse(planMsg.content) as { file_path?: string };
         if (parsed.file_path) {
@@ -210,13 +229,16 @@ async function handleExitPlanMode(
   // Insert a synthetic show_plan block so the plan renders in the message list
   if (sDbId && planMarkdown) {
     try {
-      const db2 = getDatabase();
       const syntheticToolUseId = `show_plan_${Date.now()}`;
       const toolArgs = JSON.stringify({ plan: planMarkdown });
-      db2.prepare(
+      Effect.runSync(execute(
         "INSERT INTO agent_messages (session_id, role, content, message_type, tool_name, tool_use_id) VALUES (?, ?, ?, ?, ?, ?)",
-      ).run(sDbId, "assistant", toolArgs, "tool_call", "mcp__cadence-plan__show_plan", syntheticToolUseId);
-      const row2 = db2.prepare("SELECT feature_id FROM agent_sessions WHERE id = ?").get(sDbId) as { feature_id: number } | undefined;
+        sDbId, "assistant", toolArgs, "tool_call", "mcp__cadence-plan__show_plan", syntheticToolUseId,
+      ));
+      const row2 = Effect.runSync(queryOne<{ feature_id: number }>(
+        "SELECT feature_id FROM agent_sessions WHERE id = ?",
+        sDbId,
+      ));
       if (row2) notifyDbUpdated("agent_session", row2.feature_id);
     } catch (err) {
       console.error("[tool-permissions] Failed to emit synthetic show_plan block:", err);
@@ -225,13 +247,17 @@ async function handleExitPlanMode(
 
   if (sDbId) {
     try {
-      const db2 = getDatabase();
       const approvalPayload = planMarkdown
         ? JSON.stringify({ ...input, plan: planMarkdown })
         : JSON.stringify(input);
-      db2.prepare("UPDATE agent_sessions SET pending_plan_approval = ? WHERE id = ?")
-        .run(approvalPayload, sDbId);
-      const row = db2.prepare("SELECT feature_id FROM agent_sessions WHERE id = ?").get(sDbId) as { feature_id: number } | undefined;
+      Effect.runSync(execute(
+        "UPDATE agent_sessions SET pending_plan_approval = ? WHERE id = ?",
+        approvalPayload, sDbId,
+      ));
+      const row = Effect.runSync(queryOne<{ feature_id: number }>(
+        "SELECT feature_id FROM agent_sessions WHERE id = ?",
+        sDbId,
+      ));
       if (row) {
         featureIdForNotify = row.feature_id;
         notifyDbUpdated("agent_session", row.feature_id);
@@ -250,9 +276,10 @@ async function handleExitPlanMode(
       }
       if (sDbId) {
         try {
-          const db2 = getDatabase();
-          db2.prepare("UPDATE agent_sessions SET permission_mode = 'acceptEdits', pending_plan_approval = NULL WHERE id = ?")
-            .run(sDbId);
+          Effect.runSync(execute(
+            "UPDATE agent_sessions SET permission_mode = 'acceptEdits', pending_plan_approval = NULL WHERE id = ?",
+            sDbId,
+          ));
           if (featureIdForNotify) notifyDbUpdated("agent_session", featureIdForNotify);
         } catch (e) { console.warn("[tool-permissions] best-effort op failed:", e); }
       }
@@ -260,8 +287,10 @@ async function handleExitPlanMode(
     } else {
       if (sDbId) {
         try {
-          const db2 = getDatabase();
-          db2.prepare("UPDATE agent_sessions SET pending_plan_approval = NULL WHERE id = ?").run(sDbId);
+          Effect.runSync(execute(
+            "UPDATE agent_sessions SET pending_plan_approval = NULL WHERE id = ?",
+            sDbId,
+          ));
           if (featureIdForNotify) notifyDbUpdated("agent_session", featureIdForNotify);
         } catch (e) { console.warn("[tool-permissions] best-effort op failed:", e); }
       }
@@ -273,8 +302,10 @@ async function handleExitPlanMode(
   } catch (error) {
     if (sDbId) {
       try {
-        const db2 = getDatabase();
-        db2.prepare("UPDATE agent_sessions SET pending_plan_approval = NULL WHERE id = ?").run(sDbId);
+        Effect.runSync(execute(
+          "UPDATE agent_sessions SET pending_plan_approval = NULL WHERE id = ?",
+          sDbId,
+        ));
         if (featureIdForNotify) notifyDbUpdated("agent_session", featureIdForNotify);
       } catch (e) { console.warn("[tool-permissions] best-effort op failed:", e); }
     }
@@ -317,10 +348,14 @@ async function requestToolPermission(
   let featureIdForNotify: number | null = null;
   if (sDbId) {
     try {
-      const db2 = getDatabase();
-      db2.prepare("UPDATE agent_sessions SET pending_permission = ? WHERE id = ?")
-        .run(JSON.stringify(permissionRequest), sDbId);
-      const row = db2.prepare("SELECT feature_id FROM agent_sessions WHERE id = ?").get(sDbId) as { feature_id: number } | undefined;
+      Effect.runSync(execute(
+        "UPDATE agent_sessions SET pending_permission = ? WHERE id = ?",
+        JSON.stringify(permissionRequest), sDbId,
+      ));
+      const row = Effect.runSync(queryOne<{ feature_id: number }>(
+        "SELECT feature_id FROM agent_sessions WHERE id = ?",
+        sDbId,
+      ));
       if (row) {
         featureIdForNotify = row.feature_id;
         notifyDbUpdated("agent_session", row.feature_id);
@@ -335,8 +370,10 @@ async function requestToolPermission(
 
     if (sDbId) {
       try {
-        const db2 = getDatabase();
-        db2.prepare("UPDATE agent_sessions SET pending_permission = NULL WHERE id = ?").run(sDbId);
+        Effect.runSync(execute(
+          "UPDATE agent_sessions SET pending_permission = NULL WHERE id = ?",
+          sDbId,
+        ));
         if (featureIdForNotify) notifyDbUpdated("agent_session", featureIdForNotify);
       } catch (e) { console.warn("[tool-permissions] best-effort op failed:", e); }
     }
@@ -345,8 +382,10 @@ async function requestToolPermission(
   } catch (error) {
     if (sDbId) {
       try {
-        const db2 = getDatabase();
-        db2.prepare("UPDATE agent_sessions SET pending_permission = NULL WHERE id = ?").run(sDbId);
+        Effect.runSync(execute(
+          "UPDATE agent_sessions SET pending_permission = NULL WHERE id = ?",
+          sDbId,
+        ));
         if (featureIdForNotify) notifyDbUpdated("agent_session", featureIdForNotify);
       } catch (e) { console.warn("[tool-permissions] best-effort op failed:", e); }
     }
@@ -379,10 +418,10 @@ export function submitUserAnswers(
     try {
       const lines = Object.entries(answers).map(([q, a]) => `**${q}**\n${a}`);
       const content = lines.join("\n\n");
-      const db = getDatabase();
-      db.prepare(
+      Effect.runSync(execute(
         "INSERT INTO agent_messages (session_id, role, content, message_type, tool_name) VALUES (?, ?, ?, ?, ?)",
-      ).run(sessionDbId, "user", content, "user_message", null);
+        sessionDbId, "user", content, "user_message", null,
+      ));
       const fid = getFeatureIdForSubprocess(subprocessId);
       if (fid != null) notifyDbUpdated("agent_session", fid);
     } catch {
@@ -400,9 +439,10 @@ function getFeatureIdForSubprocess(subprocessId: string): number | null {
   const sessionDbId = getSessionDbId(subprocessId);
   if (!sessionDbId) return null;
   try {
-    const db = getDatabase();
-    const row = db.prepare("SELECT feature_id FROM agent_sessions WHERE id = ?").get(sessionDbId) as { feature_id: number } | undefined;
+    const row = Effect.runSync(queryOne<{ feature_id: number }>(
+      "SELECT feature_id FROM agent_sessions WHERE id = ?",
+      sessionDbId,
+    ));
     return row?.feature_id ?? null;
   } catch { return null; }
 }
-

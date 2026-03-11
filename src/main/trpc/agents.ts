@@ -95,39 +95,39 @@ export const agentsRouter = router({
       }),
     )
     .mutation(async ({ input }) => {
-      // Resolve CWD to match the original session start path.
-      let cwd: string;
-      let worktreePath: string | undefined;
-      if (input.agentType === "session") {
-        const wtRow = await AppRuntime.runPromise(queryOne<{ value: string }>(
-          "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
-          input.featureId,
-        ));
-        if (wtRow?.value) {
-          cwd = wtRow.value;
-          worktreePath = wtRow.value;
-        } else {
-          const project = await AppRuntime.runPromise(queryOne<Pick<ProjectRow, "path">>(
-            "SELECT path FROM projects WHERE id = ?",
-            input.projectId,
-          ));
-          if (!project?.path) throw new TRPCError({ code: "NOT_FOUND", message: "Project path not found" });
-          cwd = project.path;
-        }
-      } else {
-        ({ cwd, worktreePath } = await resolveAgentCwd(input.featureId, input.projectId));
-      }
+      // Build an Effect to resolve cwd depending on agent type
+      const cwdEffect = input.agentType === "session"
+        ? Effect.gen(function* () {
+            const wtRow = yield* queryOne<{ value: string }>(
+              "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
+              input.featureId,
+            );
+            if (wtRow?.value) return { cwd: wtRow.value, worktreePath: wtRow.value as string | undefined };
+            const project = yield* queryOne<Pick<ProjectRow, "path">>(
+              "SELECT path FROM projects WHERE id = ?",
+              input.projectId,
+            );
+            if (!project?.path) throw new TRPCError({ code: "NOT_FOUND", message: "Project path not found" });
+            return { cwd: project.path, worktreePath: undefined as string | undefined };
+          })
+        : resolveAgentCwd(input.featureId, input.projectId);
 
-      const originalSession = await AppRuntime.runPromise(queryOne<Pick<AgentSessionRow, "run_id" | "phase_id">>(
-        "SELECT run_id, phase_id FROM agent_sessions WHERE id = ?",
-        input.originalSessionDbId,
-      ));
-
-      // Clear any pending questions — the user's answer is now the resume prompt
-      await AppRuntime.runPromise(execute(
-        "UPDATE agent_sessions SET pending_questions = NULL WHERE id = ?",
-        input.originalSessionDbId,
-      ));
+      // Compose cwd resolution + session query + pending_questions clear into one Effect
+      const { cwd, worktreePath, originalSession } = await AppRuntime.runPromise(
+        Effect.gen(function* () {
+          const { cwd, worktreePath } = yield* cwdEffect;
+          const originalSession = yield* queryOne<Pick<AgentSessionRow, "run_id" | "phase_id">>(
+            "SELECT run_id, phase_id FROM agent_sessions WHERE id = ?",
+            input.originalSessionDbId,
+          );
+          // Clear any pending questions — the user's answer is now the resume prompt
+          yield* execute(
+            "UPDATE agent_sessions SET pending_questions = NULL WHERE id = ?",
+            input.originalSessionDbId,
+          );
+          return { cwd, worktreePath, originalSession };
+        }),
+      );
 
       const completionActions = originalSession?.phase_id
         ? [buildPhaseCompletionAction(originalSession.phase_id, input.featureId)]
@@ -204,51 +204,53 @@ export const agentsRouter = router({
   /** Clear a stale pending_plan_approval (e.g. when subprocess is gone after restart) */
   clearPlanApproval: publicProcedure
     .input(z.object({ sessionDbId: z.number() }))
-    .mutation(async ({ input }) => {
-      try {
-        await AppRuntime.runPromise(execute(
-          "UPDATE agent_sessions SET pending_plan_approval = NULL WHERE id = ?",
-          input.sessionDbId,
-        ));
-        const row = await AppRuntime.runPromise(queryOne<{ feature_id: number }>(
-          "SELECT feature_id FROM agent_sessions WHERE id = ?",
-          input.sessionDbId,
-        ));
-        if (row) notifyDbUpdated("agent_session", row.feature_id);
-        return { success: true };
-      } catch {
-        return { success: false };
-      }
+    .mutation(({ input }) => {
+      return AppRuntime.runPromise(
+        Effect.gen(function* () {
+          yield* execute(
+            "UPDATE agent_sessions SET pending_plan_approval = NULL WHERE id = ?",
+            input.sessionDbId,
+          );
+          const row = yield* queryOne<{ feature_id: number }>(
+            "SELECT feature_id FROM agent_sessions WHERE id = ?",
+            input.sessionDbId,
+          );
+          if (row) notifyDbUpdated("agent_session", row.feature_id);
+          return { success: true as const };
+        }).pipe(
+          Effect.catchAll(() => Effect.succeed({ success: false as const })),
+        ),
+      );
     }),
 
   /** Store plan approval/rejection in DB when subprocess is gone (paused/dead) — consumed on resume */
   storePlanApproval: publicProcedure
     .input(z.object({ sessionDbId: z.number(), approved: z.boolean(), feedback: z.string().optional() }))
-    .mutation(async ({ input }) => {
-      try {
-        const row = await AppRuntime.runPromise(
-          transaction(() => {
+    .mutation(({ input }) => {
+      return AppRuntime.runPromise(
+        transaction(() => {
+          Effect.runSync(execute(
+            "UPDATE agent_sessions SET plan_approval_result = ?, pending_plan_approval = NULL WHERE id = ?",
+            JSON.stringify({ approved: input.approved, feedback: input.feedback }), input.sessionDbId,
+          ));
+          if (input.approved) {
             Effect.runSync(execute(
-              "UPDATE agent_sessions SET plan_approval_result = ?, pending_plan_approval = NULL WHERE id = ?",
-              JSON.stringify({ approved: input.approved, feedback: input.feedback }), input.sessionDbId,
-            ));
-            if (input.approved) {
-              Effect.runSync(execute(
-                "UPDATE agent_sessions SET permission_mode = 'acceptEdits' WHERE id = ?",
-                input.sessionDbId,
-              ));
-            }
-            return Effect.runSync(queryOne<{ feature_id: number }>(
-              "SELECT feature_id FROM agent_sessions WHERE id = ?",
+              "UPDATE agent_sessions SET permission_mode = 'acceptEdits' WHERE id = ?",
               input.sessionDbId,
             ));
+          }
+          return Effect.runSync(queryOne<{ feature_id: number }>(
+            "SELECT feature_id FROM agent_sessions WHERE id = ?",
+            input.sessionDbId,
+          ));
+        }).pipe(
+          Effect.map((row) => {
+            if (row) notifyDbUpdated("agent_session", row.feature_id);
+            return { success: true as const };
           }),
-        );
-        if (row) notifyDbUpdated("agent_session", row.feature_id);
-        return { success: true };
-      } catch {
-        return { success: false };
-      }
+          Effect.catchAll(() => Effect.succeed({ success: false as const })),
+        ),
+      );
     }),
 
   /** Submit PRD approval or rejection for a pending show_prd tool call */
@@ -267,21 +269,23 @@ export const agentsRouter = router({
   /** Clear a stale pending_prd_approval (e.g. when subprocess is gone after restart) */
   clearPrdApproval: publicProcedure
     .input(z.object({ sessionDbId: z.number() }))
-    .mutation(async ({ input }) => {
-      try {
-        await AppRuntime.runPromise(execute(
-          "UPDATE agent_sessions SET pending_prd_approval = NULL WHERE id = ?",
-          input.sessionDbId,
-        ));
-        const row = await AppRuntime.runPromise(queryOne<{ feature_id: number }>(
-          "SELECT feature_id FROM agent_sessions WHERE id = ?",
-          input.sessionDbId,
-        ));
-        if (row) notifyDbUpdated("agent_session", row.feature_id);
-        return { success: true };
-      } catch {
-        return { success: false };
-      }
+    .mutation(({ input }) => {
+      return AppRuntime.runPromise(
+        Effect.gen(function* () {
+          yield* execute(
+            "UPDATE agent_sessions SET pending_prd_approval = NULL WHERE id = ?",
+            input.sessionDbId,
+          );
+          const row = yield* queryOne<{ feature_id: number }>(
+            "SELECT feature_id FROM agent_sessions WHERE id = ?",
+            input.sessionDbId,
+          );
+          if (row) notifyDbUpdated("agent_session", row.feature_id);
+          return { success: true as const };
+        }).pipe(
+          Effect.catchAll(() => Effect.succeed({ success: false as const })),
+        ),
+      );
     }),
 
   /** Submit a tool permission decision from the renderer */
@@ -331,26 +335,30 @@ export const agentsRouter = router({
       // 1. Archive current claude_session_id and insert clear_divider atomically.
       //    These two must be committed before stopSubprocess runs so the archive
       //    is durable regardless of what pauseSubprocess writes to DB afterwards.
-      const session = await AppRuntime.runPromise(queryOne<{ claude_session_id: string | null; feature_id: number }>(
-        "SELECT claude_session_id, feature_id FROM agent_sessions WHERE id = ?",
-        input.sessionDbId,
-      ));
-      if (!session) return { success: false, reason: "session_not_found" };
-
-      await AppRuntime.runPromise(
-        transaction(() => {
-          if (session.claude_session_id) {
-            Effect.runSync(execute(
-              "INSERT INTO session_claude_ids (session_id, claude_session_id) VALUES (?, ?)",
-              input.sessionDbId, session.claude_session_id,
-            ));
-          }
-          Effect.runSync(execute(
-            "INSERT INTO agent_messages (session_id, role, content, message_type) VALUES (?, 'system', 'clear_boundary', 'clear_divider')",
+      const session = await AppRuntime.runPromise(
+        Effect.gen(function* () {
+          const s = yield* queryOne<{ claude_session_id: string | null; feature_id: number }>(
+            "SELECT claude_session_id, feature_id FROM agent_sessions WHERE id = ?",
             input.sessionDbId,
-          ));
+          );
+          if (!s) return null;
+          yield* transaction(() => {
+            if (s.claude_session_id) {
+              Effect.runSync(execute(
+                "INSERT INTO session_claude_ids (session_id, claude_session_id) VALUES (?, ?)",
+                input.sessionDbId, s.claude_session_id,
+              ));
+            }
+            Effect.runSync(execute(
+              "INSERT INTO agent_messages (session_id, role, content, message_type) VALUES (?, 'system', 'clear_boundary', 'clear_divider')",
+              input.sessionDbId,
+            ));
+          });
+          return s;
         }),
       );
+
+      if (!session) return { success: false, reason: "session_not_found" };
 
       // 2. Stop the subprocess — this clears subprocess_id from DB and pauses it.
       //    IMPORTANT: pauseSubprocess re-persists managed.sdkSessionId to DB,
@@ -379,14 +387,18 @@ export const agentsRouter = router({
       }),
     )
     .mutation(async ({ input }) => {
-      await AppRuntime.runPromise(execute(
-        "UPDATE agent_sessions SET permission_mode = ? WHERE id = ?",
-        input.mode, input.sessionId,
-      ));
-      const session = await AppRuntime.runPromise(queryOne<Pick<AgentSessionRow, "subprocess_id">>(
-        "SELECT subprocess_id FROM agent_sessions WHERE id = ?",
-        input.sessionId,
-      ));
+      const session = await AppRuntime.runPromise(
+        Effect.gen(function* () {
+          yield* execute(
+            "UPDATE agent_sessions SET permission_mode = ? WHERE id = ?",
+            input.mode, input.sessionId,
+          );
+          return yield* queryOne<Pick<AgentSessionRow, "subprocess_id">>(
+            "SELECT subprocess_id FROM agent_sessions WHERE id = ?",
+            input.sessionId,
+          );
+        }),
+      );
       if (session?.subprocess_id) {
         await setSubprocessPermissionMode(session.subprocess_id, input.mode);
       }

@@ -18,9 +18,10 @@ import {
   createRetroMcpServer,
   type OnAgentDoneCallback,
 } from "./mcp-tools";
+import { Effect } from "effect";
 import { getAppRuntime } from "../effect/app-runtime-ref";
 import { PlanApproval } from "../effect/services/PlanApproval";
-import { getDatabase } from "../db/database";
+import { queryOne } from "../db/query";
 import type { AgentType, UnifiedAgentConfig } from "./types";
 
 type McpServerFactory = NonNullable<UnifiedAgentConfig["mcpServerFactory"]>;
@@ -126,18 +127,18 @@ export function buildMcpServerFactory(
 // ---------------------------------------------------------------------------
 
 function getActivePlanId(featureId: number): number | undefined {
-  const db = getDatabase();
-  const row = db
-    .prepare("SELECT id FROM plans WHERE feature_id = ? AND status IN ('active', 'draft') ORDER BY id DESC LIMIT 1")
-    .get(featureId) as { id: number } | undefined;
+  const row = Effect.runSync(queryOne<{ id: number }>(
+    "SELECT id FROM plans WHERE feature_id = ? AND status IN ('active', 'draft') ORDER BY id DESC LIMIT 1",
+    featureId,
+  ));
   return row?.id;
 }
 
 function getPlanIdFromPhase(phaseId: number): number | undefined {
-  const db = getDatabase();
-  const row = db
-    .prepare("SELECT plan_id FROM phases WHERE id = ?")
-    .get(phaseId) as { plan_id: number } | undefined;
+  const row = Effect.runSync(queryOne<{ plan_id: number }>(
+    "SELECT plan_id FROM phases WHERE id = ?",
+    phaseId,
+  ));
   return row?.plan_id;
 }
 

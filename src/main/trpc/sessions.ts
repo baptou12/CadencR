@@ -55,21 +55,23 @@ export const sessionsRouter = router({
 
       // Mark as completed if still in a state that can transition to completed.
       // Valid source states per SESSION_TRANSITIONS: running, waiting, paused.
-      const current = await AppRuntime.runPromise(
-        queryOne<Pick<AgentSessionRow, "status">>(
-          "SELECT status FROM agent_sessions WHERE id = ?",
-          input.sessionId,
-        ),
-      );
       const completableStatuses = ["running", "waiting", "paused"];
-      if (current && completableStatuses.includes(current.status)) {
-        console.log(`[session-trace] session ${input.sessionId}: ${current.status} -> completed (stopBySessionId, feature ${session.feature_id})`);
-        await AppRuntime.runPromise(execute(
-          "UPDATE agent_sessions SET status = 'completed', ended_at = ?, subprocess_id = NULL WHERE id = ?",
-          new Date().toISOString(), input.sessionId,
-        ));
-        if (session.feature_id) notifyDbUpdated("agent_session", session.feature_id);
-      }
+      await AppRuntime.runPromise(
+        Effect.gen(function* () {
+          const current = yield* queryOne<Pick<AgentSessionRow, "status">>(
+            "SELECT status FROM agent_sessions WHERE id = ?",
+            input.sessionId,
+          );
+          if (current && completableStatuses.includes(current.status)) {
+            console.log(`[session-trace] session ${input.sessionId}: ${current.status} -> completed (stopBySessionId, feature ${session.feature_id})`);
+            yield* execute(
+              "UPDATE agent_sessions SET status = 'completed', ended_at = ?, subprocess_id = NULL WHERE id = ?",
+              new Date().toISOString(), input.sessionId,
+            );
+            if (session.feature_id) notifyDbUpdated("agent_session", session.feature_id);
+          }
+        }),
+      );
       return { success: true };
     }),
 
@@ -270,7 +272,7 @@ export const sessionsRouter = router({
       projectId: z.number(),
     }))
     .query(async ({ input }) => {
-      const { cwd } = await resolveAgentCwd(input.featureId, input.projectId);
+      const { cwd } = Effect.runSync(resolveAgentCwd(input.featureId, input.projectId));
       return getSupportedCommands(input.subprocessId ?? null, cwd);
     }),
 

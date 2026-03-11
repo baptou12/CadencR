@@ -86,13 +86,13 @@ describe("agent-starters", () => {
 
   describe("startPlanAgent", () => {
     it("creates a plan record before starting", async () => {
-      const planRun = vi.fn().mockReturnValue({ lastInsertRowid: 5 });
-      const settingsRun = vi.fn();
+      const planRun = vi.fn().mockReturnValue({ lastInsertRowid: 5, changes: 1 });
+      const settingsRun = vi.fn().mockReturnValue({ lastInsertRowid: 0, changes: 1 });
       (getDatabase as any).mockReturnValue({
         prepare: vi.fn().mockImplementation((sql: string) => {
           if (sql.includes("INSERT INTO plans")) return { run: planRun };
           if (sql.includes("INSERT INTO feature_settings")) return { run: settingsRun };
-          return { run: vi.fn(), get: vi.fn(), all: vi.fn().mockReturnValue([]) };
+          return { run: vi.fn().mockReturnValue({ lastInsertRowid: 0, changes: 1 }), get: vi.fn(), all: vi.fn().mockReturnValue([]) };
         }),
       });
 
@@ -171,7 +171,7 @@ describe("agent-starters", () => {
 
       await startReviewAgent({ featureId: 1, projectId: 2, cwd: "/project" });
 
-      expect(transitionFeature).toHaveBeenCalledWith(expect.anything(), 1, "in-progress");
+      expect(transitionFeature).toHaveBeenCalledWith(1, "in-progress");
     });
 
     it("throws if no plan found", async () => {

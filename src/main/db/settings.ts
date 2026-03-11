@@ -1,4 +1,6 @@
-import { getDatabase } from "./database";
+import { Effect } from "effect";
+import { DatabaseError } from "../effect/errors";
+import { queryOne } from "./query";
 import type { SettingRow } from "./types";
 
 /** Column names that exist on both projects and features tables. */
@@ -27,31 +29,32 @@ const PROJECT_ONLY_COLUMNS = new Set(["branch_prefix", "qa_prompt"]);
 export function resolveSetting(
   column: string,
   opts: { featureId?: number; projectId?: number; defaultValue?: string },
-): string | null {
-  const db = getDatabase();
-  const defaultValue = opts.defaultValue ?? null;
+): Effect.Effect<string | null, DatabaseError> {
+  return Effect.gen(function* () {
+    const defaultValue = opts.defaultValue ?? null;
 
-  // 1. Feature-level (real column)
-  if (opts.featureId != null && SHARED_COLUMNS.has(column)) {
-    const row = db
-      .prepare(`SELECT "${column}" as v FROM features WHERE id = ?`)
-      .get(opts.featureId) as { v: string | null } | undefined;
-    if (row?.v != null) return row.v;
-  }
+    // 1. Feature-level (real column)
+    if (opts.featureId != null && SHARED_COLUMNS.has(column)) {
+      const row = yield* queryOne<{ v: string | null }>(
+        `SELECT "${column}" as v FROM features WHERE id = ?`,
+        opts.featureId,
+      );
+      if (row?.v != null) return row.v;
+    }
 
-  // 2. Project-level (real column)
-  if (opts.projectId != null && (SHARED_COLUMNS.has(column) || PROJECT_ONLY_COLUMNS.has(column))) {
-    const row = db
-      .prepare(`SELECT "${column}" as v FROM projects WHERE id = ?`)
-      .get(opts.projectId) as { v: string | null } | undefined;
-    if (row?.v != null) return row.v;
-  }
+    // 2. Project-level (real column)
+    if (opts.projectId != null && (SHARED_COLUMNS.has(column) || PROJECT_ONLY_COLUMNS.has(column))) {
+      const row = yield* queryOne<{ v: string | null }>(
+        `SELECT "${column}" as v FROM projects WHERE id = ?`,
+        opts.projectId,
+      );
+      if (row?.v != null) return row.v;
+    }
 
-  // 3. Global settings EAV table
-  const row = db
-    .prepare("SELECT value FROM settings WHERE key = ?")
-    .get(column) as SettingRow | undefined;
-  if (row?.value != null) return row.value;
+    // 3. Global settings EAV table
+    const row = yield* queryOne<SettingRow>("SELECT value FROM settings WHERE key = ?", column);
+    if (row?.value != null) return row.value;
 
-  return defaultValue;
+    return defaultValue;
+  });
 }
