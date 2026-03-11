@@ -15,6 +15,12 @@ import {
 } from "./DiffCommentWidget";
 import { parseUnifiedDiff, langFromPath, countHunkStats } from "@/lib/parse-unified-diff";
 
+// Pre-warm the shiki highlighter at module load time so it's ready (or nearly
+// ready) by the time the user opens the diff viewer for the first time.
+// getDiffViewHighlighter caches internally — subsequent calls return the same
+// singleton, so this is safe to call at import time.
+const shikiPromise = getDiffViewHighlighter();
+
 function useNearViewport(ref: RefObject<HTMLElement | null>): boolean {
   const [isNearViewport, setIsNearViewport] = useState(false);
 
@@ -92,6 +98,9 @@ function DiffFileBlock({
     { enabled: shouldRender },
   );
 
+  // Build the DiffFile without syntax highlighting so the diff paints
+  // immediately. Only build lines for the active diff mode (split or unified)
+  // — building both doubles the construction cost for no benefit.
   const diffFile = useMemo(() => {
     if (!shouldRender) return null;
     const lang = langFromPath(filePath);
@@ -105,16 +114,25 @@ function DiffFileBlock({
       });
       file.initTheme("dark");
       file.initRaw();
-      if (shikiHighlighter) {
-        file.initSyntax({ registerHighlighter: shikiHighlighter });
+      if (diffMode === DiffModeEnum.Unified) {
+        file.buildUnifiedDiffLines();
+      } else {
+        file.buildSplitDiffLines();
       }
-      file.buildSplitDiffLines();
-      file.buildUnifiedDiffLines();
       return file;
     } catch {
       return null;
     }
-  }, [shouldRender, section, filePath, fileContent, shikiHighlighter]);
+  }, [shouldRender, section, filePath, fileContent, diffMode]);
+
+  // Apply syntax highlighting after the initial unstyled paint so the diff is
+  // interactive immediately. DiffView subscribes to the DiffFile via
+  // useSyncExternalStore, so notifyAll() triggers a re-render with tokens.
+  useEffect(() => {
+    if (!diffFile || !shikiHighlighter) return;
+    diffFile.initSyntax({ registerHighlighter: shikiHighlighter });
+    diffFile.notifyAll();
+  }, [diffFile, shikiHighlighter]);
 
   // Not yet near the viewport — render a sentinel placeholder so the
   // IntersectionObserver can detect when the file scrolls into range.
@@ -212,7 +230,7 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
   const [selectedCommit, setSelectedCommit] = useState<string | null>(null);
 
   useEffect(() => {
-    getDiffViewHighlighter().then((h) => setShikiHighlighter(h));
+    shikiPromise.then((h) => setShikiHighlighter(h));
   }, []);
 
   const { data: viewedList = [] } = trpc.diffViewed.list.useQuery({ featureId });
