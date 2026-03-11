@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { execAsync } from "../effect/services/GitWorktree";
-import { getDatabase } from "../db/database";
+import { queryOne } from "../db/query";
 import { CliNotFoundError, CliDiscoveryError } from "../effect/errors";
 
 const COMMON_LOCATIONS = [
@@ -80,33 +80,30 @@ function findClaudeInShellPath(): Effect.Effect<string, CliDiscoveryError> {
  * Check if the configured path in settings is valid.
  */
 function getConfiguredPath(): Effect.Effect<string, CliDiscoveryError> {
-  return Effect.try({
-    try: () => {
-      const db = getDatabase();
-      const row = db
-        .prepare("SELECT value FROM settings WHERE key = ?")
-        .get("claude_cli_path") as { value: string } | undefined;
-      return row?.value ?? null;
-    },
-    catch: (e) =>
-      new CliDiscoveryError({ message: "DB lookup failed", cause: e }),
-  }).pipe(
-    Effect.flatMap((value) => {
-      if (!value) {
-        return Effect.fail(
-          new CliDiscoveryError({ message: "No claude_cli_path configured in settings" }),
-        );
-      }
-      return Effect.tryPromise({
-        try: () => fs.promises.access(value).then(() => value),
-        catch: (e) =>
-          new CliDiscoveryError({
-            message: `Cannot access configured path: ${value}`,
-            cause: e,
-          }),
-      });
-    }),
-  );
+  return Effect.gen(function* () {
+    const row = yield* queryOne<{ value: string }>(
+      "SELECT value FROM settings WHERE key = ? LIMIT 1",
+      "claude_cli_path",
+    ).pipe(
+      Effect.catchAll((e) =>
+        Effect.fail(new CliDiscoveryError({ message: "DB lookup failed", cause: e })),
+      ),
+    );
+    if (!row?.value) {
+      return yield* Effect.fail(
+        new CliDiscoveryError({ message: "No claude_cli_path configured in settings" }),
+      );
+    }
+    yield* Effect.tryPromise({
+      try: () => fs.promises.access(row.value),
+      catch: (e) =>
+        new CliDiscoveryError({
+          message: `Cannot access configured path: ${row.value}`,
+          cause: e,
+        }),
+    });
+    return row.value;
+  });
 }
 
 /**
