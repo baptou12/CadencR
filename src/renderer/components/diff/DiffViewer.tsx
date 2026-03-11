@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect, type RefObject } from "react";
 import { DiffView, DiffFile, DiffModeEnum, SplitSide } from "@git-diff-view/react";
 import { getDiffViewHighlighter, type DiffHighlighter } from "@git-diff-view/shiki";
 import "@git-diff-view/react/styles/diff-view.css";
@@ -14,6 +14,32 @@ import {
   type DiffComment,
 } from "./DiffCommentWidget";
 import { parseUnifiedDiff, langFromPath, countHunkStats } from "@/lib/parse-unified-diff";
+
+function useNearViewport(ref: RefObject<HTMLElement | null>): boolean {
+  const [isNearViewport, setIsNearViewport] = useState(false);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          setIsNearViewport(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "500px" },
+    );
+
+    observer.observe(el);
+    return () => observer.disconnect();
+    // ref is stable — intentionally run once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return isNearViewport;
+}
 
 interface DiffFileBlockProps {
   section: import("@/lib/parse-unified-diff").FileDiffSection;
@@ -54,12 +80,20 @@ function DiffFileBlock({
 }: DiffFileBlockProps) {
   const filePath = section.newFileName !== "/dev/null" ? section.newFileName : section.oldFileName;
 
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const isNearViewport = useNearViewport(sentinelRef);
+
+  // Only fire the tRPC query and build the DiffFile when the block is both
+  // near the viewport and not collapsed — avoids work for off-screen files.
+  const shouldRender = isNearViewport && !isCollapsed;
+
   const { data: fileContent } = trpc.git.getFileContent.useQuery(
     { featureId, filePath, mode, targetBranch, commitSha },
-    { enabled: !isCollapsed },
+    { enabled: shouldRender },
   );
 
   const diffFile = useMemo(() => {
+    if (!shouldRender) return null;
     const lang = langFromPath(filePath);
     const oldContent = fileContent?.oldContent ?? "";
     const newContent = fileContent?.newContent ?? "";
@@ -80,7 +114,13 @@ function DiffFileBlock({
     } catch {
       return null;
     }
-  }, [section, filePath, fileContent, shikiHighlighter]);
+  }, [shouldRender, section, filePath, fileContent, shikiHighlighter]);
+
+  // Not yet near the viewport — render a sentinel placeholder so the
+  // IntersectionObserver can detect when the file scrolls into range.
+  if (!isNearViewport) {
+    return <div ref={sentinelRef} style={{ minHeight: "200px" }} />;
+  }
 
   if (isCollapsed || !diffFile) return null;
 
