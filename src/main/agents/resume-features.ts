@@ -4,7 +4,7 @@
  */
 
 import { Effect } from "effect";
-import { getDatabase } from "../db/database";
+import { queryAll } from "../db/query";
 import { processNextPhase } from "./execute-agent";
 import { resolveAgentCwd } from "./resolve-cwd";
 
@@ -15,8 +15,9 @@ import { resolveAgentCwd } from "./resolve-cwd";
 export function resumeInProgressFeatures(): void {
   void (async () => {
     try {
-      const db = getDatabase();
-      const inProgress = db.prepare("SELECT id, project_id FROM features WHERE status = 'in-progress'").all() as { id: number; project_id: number }[];
+      const inProgress = Effect.runSync(queryAll<{ id: number; project_id: number }>(
+        "SELECT id, project_id FROM features WHERE status = 'in-progress'",
+      ));
       for (const feat of inProgress) {
         try {
           const { cwd, worktreePath } = Effect.runSync(resolveAgentCwd(feat.id, feat.project_id));

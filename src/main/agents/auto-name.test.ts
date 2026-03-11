@@ -62,7 +62,7 @@ describe("runAutoNameBlocking", () => {
 
   it("extracts name from __FEATURE_NAME_START__...__FEATURE_NAME_END__ markers", async () => {
     mockDiscoverCli.mockReturnValue(Effect.succeed({ path: "/usr/bin/claude", source: "settings" }));
-    const runFn = vi.fn();
+    const runFn = vi.fn().mockReturnValue({ changes: 1, lastInsertRowid: 1 });
     db.prepare.mockReturnValue({ run: runFn });
 
     mockQuery.mockReturnValue(makeAsyncIterable([
@@ -84,7 +84,7 @@ describe("runAutoNameBlocking", () => {
 
   it("uses content_block_start text as accumulated text", async () => {
     mockDiscoverCli.mockReturnValue(Effect.succeed({ path: "/usr/bin/claude", source: "shell-path" }));
-    const runFn = vi.fn();
+    const runFn = vi.fn().mockReturnValue({ changes: 1, lastInsertRowid: 1 });
     db.prepare.mockReturnValue({ run: runFn });
 
     mockQuery.mockReturnValue(makeAsyncIterable([
@@ -104,7 +104,7 @@ describe("runAutoNameBlocking", () => {
 
   it("handles assistant message type", async () => {
     mockDiscoverCli.mockReturnValue(Effect.succeed({ path: "/usr/bin/claude", source: "process-path" }));
-    const runFn = vi.fn();
+    const runFn = vi.fn().mockReturnValue({ changes: 1, lastInsertRowid: 1 });
     db.prepare.mockReturnValue({ run: runFn });
 
     mockQuery.mockReturnValue(makeAsyncIterable([
@@ -123,7 +123,7 @@ describe("runAutoNameBlocking", () => {
 
   it("strips quotes from extracted name", async () => {
     mockDiscoverCli.mockReturnValue(Effect.succeed({ path: "/usr/bin/claude", source: "common-location" }));
-    const runFn = vi.fn();
+    const runFn = vi.fn().mockReturnValue({ changes: 1, lastInsertRowid: 1 });
     db.prepare.mockReturnValue({ run: runFn });
 
     mockQuery.mockReturnValue(makeAsyncIterable([
@@ -152,7 +152,7 @@ describe("runAutoNameBlocking", () => {
 
   it("passes correct options to query", async () => {
     mockDiscoverCli.mockReturnValue(Effect.succeed({ path: "/opt/homebrew/bin/claude", source: "common-location" }));
-    db.prepare.mockReturnValue({ run: vi.fn() });
+    db.prepare.mockReturnValue({ run: vi.fn().mockReturnValue({ changes: 1, lastInsertRowid: 1 }) });
 
     mockQuery.mockReturnValue(makeAsyncIterable([
       {

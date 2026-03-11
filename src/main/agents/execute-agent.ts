@@ -9,7 +9,7 @@
 
 import { Effect } from "effect";
 import { getDatabase } from "../db/database";
-import { queryOne, queryAllValidated } from "../db/query";
+import { queryOne, queryAll, queryAllValidated } from "../db/query";
 import { resolveSetting } from "../db/settings";
 import { getAutonomyLevel } from "./autonomy";
 import type { PhaseRow, PlanRow } from "../db/types";
@@ -71,7 +71,7 @@ export function processNextPhase(options: ExecuteAgentOptions): void {
 
     // Transition to in-progress if planned
     if (featureStatus === "planned") {
-      transitionFeature(getDatabase(), featureId, "in-progress");
+      transitionFeature(getDatabase(), featureId, "in-progress");  // sync, uses db directly
     }
 
     // 2. Get active plan
@@ -228,9 +228,7 @@ function executePhase(
   autonomyLevel: 1 | 2 | 3,
 ): Promise<void> {
   return new Promise<void>((resolve) => {
-    const db = getDatabase();
-
-    transitionPhase(db, phase.id, "running", options.featureId);
+    transitionPhase(getDatabase(), phase.id, "running", options.featureId);
 
     const prompt = buildEnrichedPrompt(phase, autonomyLevel);
     const phaseAction = buildPhaseCompletionAction(phase.id, options.featureId);
@@ -260,7 +258,7 @@ function executePhase(
     };
 
     startUnifiedAgent(config).catch(() => {
-      transitionPhase(db, phase.id, "error", options.featureId);
+      transitionPhase(getDatabase(), phase.id, "error", options.featureId);
       resolve();
     });
   });
@@ -276,20 +274,18 @@ function executeQaPhase(
   autonomyLevel: 1 | 2 | 3,
 ): Promise<void> {
   return new Promise<void>((resolve) => {
-    const db = getDatabase();
+    transitionPhase(getDatabase(), phase.id, "running", options.featureId);
 
-    transitionPhase(db, phase.id, "running", options.featureId);
-
-    const qaRow = db
-      .prepare("SELECT qa_prompt FROM projects WHERE id = ?")
-      .get(options.projectId) as { qa_prompt: string | null } | undefined;
+    const qaRow = Effect.runSync(queryOne<{ qa_prompt: string | null }>(
+      "SELECT qa_prompt FROM projects WHERE id = ?",
+      options.projectId,
+    ));
     const qaPrompt = qaRow?.qa_prompt || "Run any available tests and verify the implementation works correctly.";
 
-    const completedPhases = db
-      .prepare(
-        "SELECT step_number, title, implementation_notes FROM phases WHERE plan_id = ? AND status = 'completed' ORDER BY step_number, order_index",
-      )
-      .all(phase.plan_id) as { step_number: number; title: string; implementation_notes: string | null }[];
+    const completedPhases = Effect.runSync(queryAll<{ step_number: number; title: string; implementation_notes: string | null }>(
+      "SELECT step_number, title, implementation_notes FROM phases WHERE plan_id = ? AND status = 'completed' ORDER BY step_number, order_index",
+      phase.plan_id,
+    ));
 
     const completedPhasesSummary = completedPhases.length > 0
       ? "The following phases have been completed:\n\n" +
@@ -322,16 +318,21 @@ function executeQaPhase(
       {
         event: "qa_phase_status",
         handler: (_output: string, context) => {
-          const db2 = getDatabase();
-          const session = db2.prepare("SELECT status FROM agent_sessions WHERE id = ?").get(context.sessionDbId) as { status: string } | undefined;
-          const phaseRow = db2.prepare("SELECT status FROM phases WHERE id = ?").get(phase.id) as { status: string } | undefined;
+          const session = Effect.runSync(queryOne<{ status: string }>(
+            "SELECT status FROM agent_sessions WHERE id = ?",
+            context.sessionDbId,
+          ));
+          const phaseRow = Effect.runSync(queryOne<{ status: string }>(
+            "SELECT status FROM phases WHERE id = ?",
+            phase.id,
+          ));
           const wasInterrupted = session?.status === "paused";
 
           if (wasInterrupted) {
-            transitionPhaseIf(db2, phase.id, "running", "pending", options.featureId);
+            transitionPhaseIf(getDatabase(), phase.id, "running", "pending", options.featureId);
           } else if (phaseRow?.status === "running") {
             if (context.exitCode !== 0) {
-              transitionPhaseIf(db2, phase.id, "running", "error", options.featureId);
+              transitionPhaseIf(getDatabase(), phase.id, "running", "error", options.featureId);
             }
           }
           resolve();
@@ -343,7 +344,7 @@ function executeQaPhase(
     qaConfig.phaseId = phase.id;
 
     startUnifiedAgent(qaConfig).catch(() => {
-      transitionPhase(db, phase.id, "error", options.featureId);
+      transitionPhase(getDatabase(), phase.id, "error", options.featureId);
       resolve();
     });
   });
@@ -353,25 +354,15 @@ function executeQaPhase(
  * Build an enriched prompt for a phase, including plan-level context and previously completed phases.
  */
 function buildEnrichedPrompt(phase: PhaseRow, autonomyLevel: 1 | 2 | 3 = 3): string {
-  const db = getDatabase();
+  const plan = Effect.runSync(queryOne<Pick<PlanRow, "summary" | "context" | "clarifications" | "completion_conditions">>(
+    "SELECT summary, context, clarifications, completion_conditions FROM plans WHERE id = ?",
+    phase.plan_id,
+  ));
 
-  const plan = db
-    .prepare(
-      "SELECT summary, context, clarifications, completion_conditions FROM plans WHERE id = ?",
-    )
-    .get(phase.plan_id) as Pick<
-    PlanRow,
-    "summary" | "context" | "clarifications" | "completion_conditions"
-  > | undefined;
-
-  const completedPhases = db
-    .prepare(
-      "SELECT step_number, title FROM phases WHERE plan_id = ? AND status = 'completed' AND step_number < ? ORDER BY step_number, order_index",
-    )
-    .all(phase.plan_id, phase.step_number) as Pick<
-    PhaseRow,
-    "step_number" | "title"
-  >[];
+  const completedPhases = Effect.runSync(queryAll<Pick<PhaseRow, "step_number" | "title">>(
+    "SELECT step_number, title FROM phases WHERE plan_id = ? AND status = 'completed' AND step_number < ? ORDER BY step_number, order_index",
+    phase.plan_id, phase.step_number,
+  ));
 
   const sections: string[] = [];
 
@@ -433,18 +424,22 @@ export function buildPhaseCompletionAction(phaseId: number, featureId: number): 
   return {
     event: "phase_complete",
     handler: async (_output: string, context) => {
-      const db2 = getDatabase();
-
-      const session = db2.prepare("SELECT status FROM agent_sessions WHERE id = ?").get(context.sessionDbId) as { status: string } | undefined;
-      const phaseRow = db2.prepare("SELECT status FROM phases WHERE id = ?").get(phaseId) as { status: string } | undefined;
+      const session = Effect.runSync(queryOne<{ status: string }>(
+        "SELECT status FROM agent_sessions WHERE id = ?",
+        context.sessionDbId,
+      ));
+      const phaseRow = Effect.runSync(queryOne<{ status: string }>(
+        "SELECT status FROM phases WHERE id = ?",
+        phaseId,
+      ));
       const wasInterrupted = session?.status === "paused";
 
       console.log(`[exec-phase-trace] phase_complete handler: phase ${phaseId}, sessionDbId=${context.sessionDbId}, sessionStatus=${session?.status}, phaseStatus=${phaseRow?.status}, exitCode=${context.exitCode}, wasInterrupted=${wasInterrupted}`);
 
       if (wasInterrupted) {
-        transitionPhaseIf(db2, phaseId, "running", "pending", featureId);
+        transitionPhaseIf(getDatabase(), phaseId, "running", "pending", featureId);
       } else if (context.exitCode !== 0) {
-        transitionPhaseIf(db2, phaseId, "running", "error", featureId);
+        transitionPhaseIf(getDatabase(), phaseId, "running", "error", featureId);
       }
     },
   };

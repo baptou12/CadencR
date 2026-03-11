@@ -8,7 +8,7 @@ import fs from "node:fs";
 vi.mock("../db/database", () => ({
   getDatabase: vi.fn(() => ({
     prepare: vi.fn().mockImplementation(() => ({
-      run: vi.fn().mockReturnValue({ lastInsertRowid: 42 }),
+      run: vi.fn().mockReturnValue({ lastInsertRowid: 42, changes: 1 }),
       get: vi.fn().mockReturnValue({ status: "running" }),
       all: vi.fn().mockReturnValue([]),
     })),
@@ -72,7 +72,7 @@ describe("startUnifiedAgent", () => {
 
     (getDatabase as any).mockReturnValue({
       prepare: vi.fn().mockImplementation((_sql: string) => ({
-        run: vi.fn().mockReturnValue({ lastInsertRowid: 42 }),
+        run: vi.fn().mockReturnValue({ lastInsertRowid: 42, changes: 1 }),
         get: vi.fn().mockReturnValue({ status: "running" }),
         all: vi.fn().mockReturnValue([]),
       })),
@@ -113,12 +113,12 @@ describe("startUnifiedAgent", () => {
   });
 
   it("creates a new DB session on start", async () => {
-    const insertRun = vi.fn().mockReturnValue({ lastInsertRowid: 55 });
+    const insertRun = vi.fn().mockReturnValue({ lastInsertRowid: 55, changes: 1 });
     (getDatabase as any).mockReturnValue({
       prepare: vi.fn().mockImplementation((sql: string) => {
         if (sql.includes("INSERT INTO agent_sessions")) return { run: insertRun };
         return {
-          run: vi.fn(),
+          run: vi.fn().mockReturnValue({ lastInsertRowid: 0, changes: 1 }),
           get: vi.fn().mockReturnValue({ status: "running" }),
           all: vi.fn().mockReturnValue([]),
         };
@@ -151,14 +151,14 @@ describe("startUnifiedAgent", () => {
   });
 
   it("reuses existing session when existingSessionDbId is provided", async () => {
-    const updateRun = vi.fn();
-    const insertRun = vi.fn().mockReturnValue({ lastInsertRowid: 42 });
+    const updateRun = vi.fn().mockReturnValue({ lastInsertRowid: 0, changes: 1 });
+    const insertRun = vi.fn().mockReturnValue({ lastInsertRowid: 42, changes: 1 });
     (getDatabase as any).mockReturnValue({
       prepare: vi.fn().mockImplementation((sql: string) => {
         if (sql.includes("UPDATE agent_sessions SET status = 'running'")) return { run: updateRun };
         if (sql.includes("INSERT INTO agent_sessions")) return { run: insertRun };
         return {
-          run: vi.fn(),
+          run: vi.fn().mockReturnValue({ lastInsertRowid: 0, changes: 1 }),
           get: vi.fn().mockReturnValue({ status: "running" }),
           all: vi.fn().mockReturnValue([]),
         };
@@ -179,12 +179,12 @@ describe("startUnifiedAgent", () => {
   });
 
   it("persists initial user message to DB", async () => {
-    const msgRun = vi.fn();
+    const msgRun = vi.fn().mockReturnValue({ lastInsertRowid: 0, changes: 1 });
     (getDatabase as any).mockReturnValue({
       prepare: vi.fn().mockImplementation((sql: string) => {
         if (sql.includes("INSERT INTO agent_messages")) return { run: msgRun };
         return {
-          run: vi.fn().mockReturnValue({ lastInsertRowid: 42 }),
+          run: vi.fn().mockReturnValue({ lastInsertRowid: 42, changes: 1 }),
           get: vi.fn().mockReturnValue({ status: "running" }),
           all: vi.fn().mockReturnValue([]),
         };
@@ -232,12 +232,12 @@ describe("startUnifiedAgent", () => {
   });
 
   it("stores subprocess_id in DB after spawning", async () => {
-    const subprocRun = vi.fn();
+    const subprocRun = vi.fn().mockReturnValue({ lastInsertRowid: 0, changes: 1 });
     (getDatabase as any).mockReturnValue({
       prepare: vi.fn().mockImplementation((sql: string) => {
         if (sql.includes("subprocess_id")) return { run: subprocRun };
         return {
-          run: vi.fn().mockReturnValue({ lastInsertRowid: 42 }),
+          run: vi.fn().mockReturnValue({ lastInsertRowid: 42, changes: 1 }),
           get: vi.fn().mockReturnValue({ status: "running" }),
           all: vi.fn().mockReturnValue([]),
         };
@@ -279,7 +279,7 @@ describe("startUnifiedAgent", () => {
       prepare: vi.fn().mockImplementation((sql: string) => {
         if (sql.includes("SELECT status FROM agent_sessions")) return { get: sessionGet };
         return {
-          run: vi.fn().mockReturnValue({ lastInsertRowid: 42 }),
+          run: vi.fn().mockReturnValue({ lastInsertRowid: 42, changes: 1 }),
           get: vi.fn(),
           all: vi.fn().mockReturnValue([]),
         };

@@ -16,7 +16,9 @@
  */
 
 import fs from "node:fs";
+import { Effect } from "effect";
 import { getDatabase } from "../db/database";
+import { execute, queryOne } from "../db/query";
 import { startSubprocess, generateSubprocessId } from "./subprocess-manager";
 import { registerSessionPersistence } from "./effect-helpers";
 import { transitionAgentSession } from "./state-transitions";
@@ -62,8 +64,6 @@ export async function startUnifiedAgent(config: UnifiedAgentConfig): Promise<Uni
     );
   }
 
-  const db = getDatabase();
-
   // 0b. If running in a worktree, prepend a working-directory hint to the system
   //     prompt so the agent doesn't get confused by Claude Code's internal project
   //     detection (which can resolve back to the main worktree via .git).
@@ -80,16 +80,16 @@ export async function startUnifiedAgent(config: UnifiedAgentConfig): Promise<Uni
   if (config.existingSessionDbId) {
     // Resume: reuse existing session row
     sessionDbId = config.existingSessionDbId;
-    db.prepare(
+    Effect.runSync(execute(
       "UPDATE agent_sessions SET status = 'running', started_at = datetime('now'), ended_at = NULL, model = ?, pending_questions = NULL WHERE id = ?",
-    ).run(model, sessionDbId);
+      model, sessionDbId,
+    ));
   } else {
-    const sessionResult = db
-      .prepare(
-        "INSERT INTO agent_sessions (feature_id, agent_type, status, started_at, run_id, phase_id, model, permission_mode) VALUES (?, ?, ?, datetime('now'), ?, ?, ?, ?)",
-      )
-      .run(config.featureId ?? null, config.agentType, "running", config.runId ?? null, config.phaseId ?? null, model, config.permissionMode ?? "acceptEdits");
-    sessionDbId = Number(sessionResult.lastInsertRowid);
+    const sessionResult = Effect.runSync(execute(
+      "INSERT INTO agent_sessions (feature_id, agent_type, status, started_at, run_id, phase_id, model, permission_mode) VALUES (?, ?, ?, datetime('now'), ?, ?, ?, ?)",
+      config.featureId ?? null, config.agentType, "running", config.runId ?? null, config.phaseId ?? null, model, config.permissionMode ?? "acceptEdits",
+    ));
+    sessionDbId = sessionResult.lastInsertRowid;
   }
 
   // 3. Resolve MCP servers — use factory if provided (needs subprocess ID).
@@ -116,7 +116,10 @@ export async function startUnifiedAgent(config: UnifiedAgentConfig): Promise<Uni
   });
 
   // 3b. Persist subprocess ID to DB for reconnection after refresh
-  db.prepare("UPDATE agent_sessions SET subprocess_id = ? WHERE id = ?").run(managed.id, sessionDbId);
+  Effect.runSync(execute(
+    "UPDATE agent_sessions SET subprocess_id = ? WHERE id = ?",
+    managed.id, sessionDbId,
+  ));
 
   // 4. Register session for persistence tracking (delegates to Effect SessionPersistence service)
   registerSessionPersistence(managed.id, sessionDbId);
@@ -124,9 +127,10 @@ export async function startUnifiedAgent(config: UnifiedAgentConfig): Promise<Uni
   // 5. Persist the initial user message
   if (config.prompt) {
     const persistedPrompt = typeof config.prompt === "string" ? config.prompt : JSON.stringify(config.prompt);
-    db.prepare(
+    Effect.runSync(execute(
       "INSERT INTO agent_messages (session_id, role, content, message_type, tool_name) VALUES (?, ?, ?, ?, ?)",
-    ).run(sessionDbId, "user", persistedPrompt, "user_message", null);
+      sessionDbId, "user", persistedPrompt, "user_message", null,
+    ));
   }
 
   // 6. Accumulate output for completion actions
@@ -141,10 +145,11 @@ export async function startUnifiedAgent(config: UnifiedAgentConfig): Promise<Uni
 
   // 7. Completion handling
   managed.completionListeners.push(async (exitCode: number) => {
-    const db2 = getDatabase();
-
     // Don't overwrite 'paused' status — it was already set by stop/interrupt
-    const current = db2.prepare("SELECT status FROM agent_sessions WHERE id = ?").get(sessionDbId) as { status: string } | undefined;
+    const current = Effect.runSync(queryOne<{ status: string }>(
+      "SELECT status FROM agent_sessions WHERE id = ?",
+      sessionDbId,
+    ));
     const wasInterrupted = current?.status === "paused";
     const alreadyCompleted = current?.status === "completed";
 
@@ -152,13 +157,15 @@ export async function startUnifiedAgent(config: UnifiedAgentConfig): Promise<Uni
 
     if (!wasInterrupted && !alreadyCompleted) {
       // Update session status
-      transitionAgentSession(db2, sessionDbId, exitCode === 0 ? "completed" : "error", config.featureId, { ended_at: new Date().toISOString() });
+      transitionAgentSession(getDatabase(), sessionDbId, exitCode === 0 ? "completed" : "error", config.featureId, { ended_at: new Date().toISOString() });
     }
 
     // Safety-net: persist session ID if not yet saved
     if (managed.sdkSessionId) {
-      db2.prepare("UPDATE agent_sessions SET claude_session_id = ? WHERE id = ? AND claude_session_id IS NULL")
-        .run(managed.sdkSessionId, sessionDbId);
+      Effect.runSync(execute(
+        "UPDATE agent_sessions SET claude_session_id = ? WHERE id = ? AND claude_session_id IS NULL",
+        managed.sdkSessionId, sessionDbId,
+      ));
     }
 
     // Always run completion actions — even on interrupt — so that callers
@@ -191,4 +198,3 @@ export async function startUnifiedAgent(config: UnifiedAgentConfig): Promise<Uni
     sessionDbId,
   };
 }
-

@@ -6,7 +6,9 @@
  * to startUnifiedAgent. The addFixPhase helper (review-specific) also lives here.
  */
 
+import { Effect } from "effect";
 import { getDatabase } from "../db/database";
+import { queryOne, queryAll, execute } from "../db/query";
 import { transitionFeature } from "./state-transitions";
 import { startUnifiedAgent } from "./unified-agent";
 import {
@@ -62,25 +64,28 @@ export async function startPlanAgent(options: {
   cwd: string;
   worktreePath?: string;
 }): Promise<AgentResult> {
-  const db = getDatabase();
-
   // If a PRD exists on the feature, use it as the description
-  const feature = db.prepare("SELECT prd FROM features WHERE id = ?").get(options.featureId) as { prd: string | null } | undefined;
+  const feature = Effect.runSync(queryOne<{ prd: string | null }>(
+    "SELECT prd FROM features WHERE id = ?",
+    options.featureId,
+  ));
   const hasPrd = !!feature?.prd;
   if (feature?.prd) {
     options.description = feature.prd;
   }
 
   // Create plan record (draft) — must exist before the completion action runs
-  const planResult = db
-    .prepare("INSERT INTO plans (feature_id, title, status) VALUES (?, ?, 'draft')")
-    .run(options.featureId, `Plan for feature #${options.featureId}`);
-  const planId = Number(planResult.lastInsertRowid);
+  const planResult = Effect.runSync(execute(
+    "INSERT INTO plans (feature_id, title, status) VALUES (?, ?, 'draft')",
+    options.featureId, `Plan for feature #${options.featureId}`,
+  ));
+  const planId = planResult.lastInsertRowid;
 
   // Store plan ID in feature settings for later reference
-  db.prepare(
+  Effect.runSync(execute(
     "INSERT INTO feature_settings (feature_id, key, value) VALUES (?, ?, ?) ON CONFLICT(feature_id, key) DO UPDATE SET value = excluded.value",
-  ).run(options.featureId, "current_plan_id", String(planId));
+    options.featureId, "current_plan_id", String(planId),
+  ));
 
   return startUnifiedAgent(
     createPlanConfig({ ...options, planId, hasPrd }),
@@ -106,18 +111,18 @@ export async function startPrdAgent(options: {
 // Refine Plan (append new phases to existing plan)
 // ---------------------------------------------------------------------------
 
-function buildRefineContext(db: ReturnType<typeof getDatabase>, featureId: number): { planId: number; context: string } {
-  const plan = db
-    .prepare("SELECT id, title, summary, context FROM plans WHERE feature_id = ? ORDER BY id DESC LIMIT 1")
-    .get(featureId) as { id: number; title: string | null; summary: string | null; context: string | null } | undefined;
+function buildRefineContext(featureId: number): { planId: number; context: string } {
+  const plan = Effect.runSync(queryOne<{ id: number; title: string | null; summary: string | null; context: string | null }>(
+    "SELECT id, title, summary, context FROM plans WHERE feature_id = ? ORDER BY id DESC LIMIT 1",
+    featureId,
+  ));
 
   if (!plan) throw new Error("No plan found for this feature — cannot refine without an existing plan.");
 
-  const phases = db
-    .prepare(
-      "SELECT step_number, title, status, implementation_notes, phase_type FROM phases WHERE plan_id = ? ORDER BY step_number, order_index",
-    )
-    .all(plan.id) as { step_number: number; title: string; status: string; implementation_notes: string | null; phase_type: string | null }[];
+  const phases = Effect.runSync(queryAll<{ step_number: number; title: string; status: string; implementation_notes: string | null; phase_type: string | null }>(
+    "SELECT step_number, title, status, implementation_notes, phase_type FROM phases WHERE plan_id = ? ORDER BY step_number, order_index",
+    plan.id,
+  ));
 
   const maxStep = phases.length > 0 ? Math.max(...phases.map((p) => p.step_number)) : 0;
 
@@ -154,8 +159,7 @@ export async function startRefinePlanAgent(options: {
   cwd: string;
   worktreePath?: string;
 }): Promise<AgentResult> {
-  const db = getDatabase();
-  const { planId, context } = buildRefineContext(db, options.featureId);
+  const { planId, context } = buildRefineContext(options.featureId);
 
   // Augment description with existing plan context
   const augmented: MessageContent = typeof options.description === "string"
@@ -177,23 +181,24 @@ export async function startRiskAgent(options: {
   cwd: string;
   worktreePath?: string;
 }): Promise<AgentResult> {
-  const db = getDatabase();
-
   // 1. Query the feature
-  const feature = db
-    .prepare("SELECT title FROM features WHERE id = ?")
-    .get(options.featureId) as { title: string } | undefined;
+  const feature = Effect.runSync(queryOne<{ title: string }>(
+    "SELECT title FROM features WHERE id = ?",
+    options.featureId,
+  ));
 
   // 2. Query the plan (rich fields)
-  const plan = db
-    .prepare("SELECT id, summary, context, raw_markdown FROM plans WHERE feature_id = ? ORDER BY id DESC LIMIT 1")
-    .get(options.featureId) as { id: number; summary: string | null; context: string | null; raw_markdown: string | null } | undefined;
+  const plan = Effect.runSync(queryOne<{ id: number; summary: string | null; context: string | null; raw_markdown: string | null }>(
+    "SELECT id, summary, context, raw_markdown FROM plans WHERE feature_id = ? ORDER BY id DESC LIMIT 1",
+    options.featureId,
+  ));
 
   // 3. Query phases
   const phases = plan
-    ? (db
-        .prepare("SELECT title, status, step_number FROM phases WHERE plan_id = ? ORDER BY step_number, order_index")
-        .all(plan.id) as { title: string; status: string; step_number: number }[])
+    ? Effect.runSync(queryAll<{ title: string; status: string; step_number: number }>(
+        "SELECT title, status, step_number FROM phases WHERE plan_id = ? ORDER BY step_number, order_index",
+        plan.id,
+      ))
     : [];
 
   // 4. Build rich context string
@@ -239,29 +244,28 @@ export async function startReviewAgent(options: {
   worktreePath?: string;
   onAgentDone?: import("./mcp-tools").OnAgentDoneCallback;
 }): Promise<AgentResult> {
-  const db = getDatabase();
-
   // Keep feature in-progress during review
-  transitionFeature(db, options.featureId, "in-progress");
+  transitionFeature(getDatabase(), options.featureId, "in-progress");
 
   // Look up plan with context for the review prompt
-  const plan = db
-    .prepare("SELECT id, summary, context, clarifications FROM plans WHERE feature_id = ? ORDER BY id DESC LIMIT 1")
-    .get(options.featureId) as { id: number; summary: string | null; context: string | null; clarifications: string | null } | undefined;
+  const plan = Effect.runSync(queryOne<{ id: number; summary: string | null; context: string | null; clarifications: string | null }>(
+    "SELECT id, summary, context, clarifications FROM plans WHERE feature_id = ? ORDER BY id DESC LIMIT 1",
+    options.featureId,
+  ));
 
   if (!plan) throw new Error("No plan found for this feature");
 
   // Fetch PRD if available
-  const feature = db
-    .prepare("SELECT prd FROM features WHERE id = ?")
-    .get(options.featureId) as { prd: string | null } | undefined;
+  const feature = Effect.runSync(queryOne<{ prd: string | null }>(
+    "SELECT prd FROM features WHERE id = ?",
+    options.featureId,
+  ));
 
   // Fetch completed phase titles
-  const completedPhases = db
-    .prepare(
-      "SELECT step_number, title FROM phases WHERE plan_id = ? AND status = 'completed' ORDER BY step_number, order_index",
-    )
-    .all(plan.id) as { step_number: number; title: string }[];
+  const completedPhases = Effect.runSync(queryAll<{ step_number: number; title: string }>(
+    "SELECT step_number, title FROM phases WHERE plan_id = ? AND status = 'completed' ORDER BY step_number, order_index",
+    plan.id,
+  ));
 
   const autonomyLevel = getAutonomyLevel(options.featureId, options.projectId);
 
@@ -284,27 +288,26 @@ export async function startReviewAgent(options: {
  * Add a fix phase to the existing plan for later execution.
  */
 export function addFixPhase(featureId: number, fixDescription: string): { phaseId: number } {
-  const db = getDatabase();
-
-  const plan = db
-    .prepare("SELECT id FROM plans WHERE feature_id = ? ORDER BY id DESC LIMIT 1")
-    .get(featureId) as Pick<PlanRow, "id"> | undefined;
+  const plan = Effect.runSync(queryOne<Pick<PlanRow, "id">>(
+    "SELECT id FROM plans WHERE feature_id = ? ORDER BY id DESC LIMIT 1",
+    featureId,
+  ));
 
   if (!plan) throw new Error("No plan found for this feature");
 
-  const lastPhase = db
-    .prepare("SELECT step_number, order_index FROM phases WHERE plan_id = ? ORDER BY step_number DESC, order_index DESC LIMIT 1")
-    .get(plan.id) as Pick<PhaseRow, "step_number" | "order_index"> | undefined;
+  const lastPhase = Effect.runSync(queryOne<Pick<PhaseRow, "step_number" | "order_index">>(
+    "SELECT step_number, order_index FROM phases WHERE plan_id = ? ORDER BY step_number DESC, order_index DESC LIMIT 1",
+    plan.id,
+  ));
 
   const stepNumber = (lastPhase?.step_number ?? 0) + 1;
 
-  const result = db
-    .prepare(
-      "INSERT INTO phases (plan_id, step_number, title, status, complexity, commit_message, prompt, order_index) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-    )
-    .run(plan.id, stepNumber, "Review fixes", "pending", 2, "fix: address review findings", fixDescription, 0);
+  const result = Effect.runSync(execute(
+    "INSERT INTO phases (plan_id, step_number, title, status, complexity, commit_message, prompt, order_index) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    plan.id, stepNumber, "Review fixes", "pending", 2, "fix: address review findings", fixDescription, 0,
+  ));
 
-  return { phaseId: Number(result.lastInsertRowid) };
+  return { phaseId: result.lastInsertRowid };
 }
 
 // ---------------------------------------------------------------------------
@@ -345,25 +348,24 @@ export async function startQaAgent(options: {
   cwd: string;
   worktreePath?: string;
 }): Promise<AgentResult> {
-  const db = getDatabase();
-
-  const qaRow = db
-    .prepare("SELECT qa_prompt FROM projects WHERE id = ?")
-    .get(options.projectId) as { qa_prompt: string | null } | undefined;
+  const qaRow = Effect.runSync(queryOne<{ qa_prompt: string | null }>(
+    "SELECT qa_prompt FROM projects WHERE id = ?",
+    options.projectId,
+  ));
 
   const qaPrompt = qaRow?.qa_prompt || "Run any available tests and verify the implementation works correctly.";
 
-  const plan = db
-    .prepare("SELECT id FROM plans WHERE feature_id = ? AND status = 'active' ORDER BY id DESC LIMIT 1")
-    .get(options.featureId) as { id: number } | undefined;
+  const plan = Effect.runSync(queryOne<{ id: number }>(
+    "SELECT id FROM plans WHERE feature_id = ? AND status = 'active' ORDER BY id DESC LIMIT 1",
+    options.featureId,
+  ));
 
   if (!plan) throw new Error("No active plan found for QA.");
 
-  const completedPhases = db
-    .prepare(
-      "SELECT step_number, title, implementation_notes FROM phases WHERE plan_id = ? AND status = 'completed' ORDER BY step_number, order_index",
-    )
-    .all(plan.id) as { step_number: number; title: string; implementation_notes: string | null }[];
+  const completedPhases = Effect.runSync(queryAll<{ step_number: number; title: string; implementation_notes: string | null }>(
+    "SELECT step_number, title, implementation_notes FROM phases WHERE plan_id = ? AND status = 'completed' ORDER BY step_number, order_index",
+    plan.id,
+  ));
 
   const completedPhasesSummary = completedPhases.length > 0
     ? "The following phases have been completed:\n\n" +
@@ -376,31 +378,33 @@ export async function startQaAgent(options: {
         .join("\n")
     : "No phases have been completed yet.";
 
-  const maxStepRow = db
-    .prepare("SELECT MAX(step_number) as max_step FROM phases WHERE plan_id = ?")
-    .get(plan.id) as { max_step: number | null };
+  const maxStepRow = Effect.runSync(queryOne<{ max_step: number | null }>(
+    "SELECT MAX(step_number) as max_step FROM phases WHERE plan_id = ?",
+    plan.id,
+  ));
   const qaPhaseStepNumber = (maxStepRow?.max_step ?? 0) + 1;
 
   // Create a QA phase so the agent can mark it running → completed
-  const insertResult = db
-    .prepare(
-      "INSERT INTO phases (plan_id, step_number, title, status, phase_type, order_index) VALUES (?, ?, ?, 'running', 'qa', 0)",
-    )
-    .run(plan.id, qaPhaseStepNumber, "Manual QA");
-  const phaseId = Number(insertResult.lastInsertRowid);
+  const insertResult = Effect.runSync(execute(
+    "INSERT INTO phases (plan_id, step_number, title, status, phase_type, order_index) VALUES (?, ?, ?, 'running', 'qa', 0)",
+    plan.id, qaPhaseStepNumber, "Manual QA",
+  ));
+  const phaseId = insertResult.lastInsertRowid;
 
   const autonomyLevel = getAutonomyLevel(options.featureId, options.projectId);
 
   // Check if this is the final QA phase (all non-QA phases are completed)
-  const pendingNonQa = db
-    .prepare(
-      "SELECT COUNT(*) as cnt FROM phases WHERE plan_id = ? AND phase_type IS NOT 'qa' AND status != 'completed'",
-    )
-    .get(plan.id) as { cnt: number };
+  const pendingNonQa = Effect.runSync(queryOne<{ cnt: number }>(
+    "SELECT COUNT(*) as cnt FROM phases WHERE plan_id = ? AND phase_type IS NOT 'qa' AND status != 'completed'",
+    plan.id,
+  ));
 
   let prd: string | undefined;
-  if (pendingNonQa.cnt === 0) {
-    const feature = db.prepare("SELECT prd FROM features WHERE id = ?").get(options.featureId) as { prd: string | null } | undefined;
+  if (pendingNonQa !== null && pendingNonQa.cnt === 0) {
+    const feature = Effect.runSync(queryOne<{ prd: string | null }>(
+      "SELECT prd FROM features WHERE id = ?",
+      options.featureId,
+    ));
     if (feature?.prd) {
       prd = feature.prd;
     }
