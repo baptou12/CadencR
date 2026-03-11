@@ -2,7 +2,6 @@ import { z } from "zod";
 import { Effect } from "effect";
 import { router, publicProcedure } from "./trpc";
 import { queryOne, queryAll, execute } from "../db/query";
-import { openInTerminal, openInZed } from "../git/worktree";
 import {
   createWorktreeEffect,
   removeWorktreeEffect,
@@ -23,6 +22,8 @@ import {
   getCommitLogEffect,
   getRecentCommitsEffect,
   getCommitDiffEffect,
+  openInTerminalEffect,
+  openInZedEffect,
   execGit,
   type WorktreeInfo,
   type CommitInfo,
@@ -231,22 +232,28 @@ export const gitRouter = router({
   openInTerminal: publicProcedure
     .input(z.object({ featureId: z.number() }))
     .mutation(async ({ input }) => {
-      const gitPath = await AppRuntime.runPromise(resolveFeatureGitPath(input.featureId));
-      if (!gitPath) throw new Error("No working directory found for this feature");
-
-      await openInTerminal(gitPath);
-      return { success: true };
+      return AppRuntime.runPromise(
+        Effect.gen(function* () {
+          const gitPath = yield* resolveFeatureGitPath(input.featureId);
+          if (!gitPath) return yield* Effect.fail(new Error("No working directory found for this feature"));
+          yield* openInTerminalEffect(gitPath);
+          return { success: true };
+        }),
+      );
     }),
 
   /** Open a worktree/project path in Zed editor */
   openInZed: publicProcedure
     .input(z.object({ featureId: z.number() }))
     .mutation(async ({ input }) => {
-      const gitPath = await AppRuntime.runPromise(resolveFeatureGitPath(input.featureId));
-      if (!gitPath) throw new Error("No working directory found for this feature");
-
-      await openInZed(gitPath);
-      return { success: true };
+      return AppRuntime.runPromise(
+        Effect.gen(function* () {
+          const gitPath = yield* resolveFeatureGitPath(input.featureId);
+          if (!gitPath) return yield* Effect.fail(new Error("No working directory found for this feature"));
+          yield* openInZedEffect(gitPath);
+          return { success: true };
+        }),
+      );
     }),
 
   /** List all git-tracked files for a feature's worktree/project */

@@ -2,7 +2,7 @@ import { Effect } from "effect";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { execAsync } from "../git/worktree";
+import { execAsync } from "../effect/services/GitWorktree";
 import { getDatabase } from "../db/database";
 import { CliNotFoundError, CliDiscoveryError } from "../effect/errors";
 
