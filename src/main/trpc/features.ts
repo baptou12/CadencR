@@ -342,7 +342,8 @@ export const featuresRouter = router({
     .mutation(async ({ input }) => {
       const realColumns = new Set([
         "model_plan", "model_prd", "model_execute", "model_risk", "model_review",
-        "model_session", "model_qa", "agent_autonomy", "parallel_execution",
+        "model_review-fixer", "model_session", "model_qa", "model_retro",
+        "agent_autonomy", "parallel_execution",
       ]);
 
       await AppRuntime.runPromise(
