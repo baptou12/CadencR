@@ -13,7 +13,7 @@ import {
   CommentExtendLine,
   type DiffComment,
 } from "./DiffCommentWidget";
-import { parseUnifiedDiff, langFromPath } from "@/lib/parse-unified-diff";
+import { parseUnifiedDiff, langFromPath, countHunkStats } from "@/lib/parse-unified-diff";
 
 interface DiffFileBlockProps {
   section: import("@/lib/parse-unified-diff").FileDiffSection;
@@ -280,44 +280,17 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
 
   const fileSections = useMemo(() => parseUnifiedDiff(rawDiff ?? ""), [rawDiff]);
 
-  const diffFiles = useMemo(() => {
-    return fileSections.flatMap((section) => {
-      const lang = langFromPath(section.newFileName !== "/dev/null" ? section.newFileName : section.oldFileName);
-      try {
-        const file = DiffFile.createInstance({
-          oldFile: {
-            fileName: section.oldFileName,
-            fileLang: lang,
-            content: "",
-          },
-          newFile: {
-            fileName: section.newFileName,
-            fileLang: lang,
-            content: "",
-          },
-          hunks: section.hunks,
-        });
-        file.initTheme("dark");
-        file.initRaw();
-        if (shikiHighlighter) {
-          file.initSyntax({ registerHighlighter: shikiHighlighter });
-        }
-        file.buildSplitDiffLines();
-        file.buildUnifiedDiffLines();
-        return [{ section, file }];
-      } catch {
-        // Skip files with unparseable diffs (e.g. binary, malformed hunks)
-        return [];
-      }
+  const fileMeta = useMemo(() => {
+    return fileSections.map((section) => {
+      const displayName = section.newFileName !== "/dev/null" ? section.newFileName : section.oldFileName;
+      const { additions, deletions } = countHunkStats(section.hunks);
+      return { section, displayName, additions, deletions };
     });
-  }, [fileSections, shikiHighlighter]);
+  }, [fileSections]);
 
   const fileNames = useMemo(
-    () =>
-      diffFiles.map(({ section }) =>
-        section.newFileName !== "/dev/null" ? section.newFileName : section.oldFileName,
-      ),
-    [diffFiles],
+    () => fileMeta.map(({ displayName }) => displayName),
+    [fileMeta],
   );
 
   const scrollToFileIndex = useCallback(
@@ -404,25 +377,21 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
     return () => window.removeEventListener("keydown", handler, true);
   }, [fileNames, blobShas, viewedFilesSet, featureId, scrollToFileIndex, toggleFile, markViewed, unmarkViewed]);
 
-  const totalAdditions = diffFiles.reduce((sum, { file }) => sum + file.additionLength, 0);
-  const totalDeletions = diffFiles.reduce((sum, { file }) => sum + file.deletionLength, 0);
+  const totalAdditions = fileMeta.reduce((sum, { additions }) => sum + additions, 0);
+  const totalDeletions = fileMeta.reduce((sum, { deletions }) => sum + deletions, 0);
 
   const changedFileEntries: ChangedFileEntry[] = useMemo(
     () =>
-      diffFiles.map(({ section, file }) => {
-        const name =
-          section.newFileName !== "/dev/null"
-            ? section.newFileName
-            : section.oldFileName;
+      fileMeta.map(({ section, displayName, additions, deletions }) => {
         const status = section.oldFileName === "/dev/null" ? "A" : section.newFileName === "/dev/null" ? "D" : "M";
         return {
-          file: name,
+          file: displayName,
           status,
-          additions: file.additionLength,
-          deletions: file.deletionLength,
+          additions,
+          deletions,
         };
       }),
-    [diffFiles],
+    [fileMeta],
   );
 
   const expandedFiles = useMemo(() => {
@@ -479,7 +448,7 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
               <span className="min-w-0 flex-1 text-[#f8f8f2]">{commit?.message}</span>
               <span className="shrink-0 text-xs text-[#50fa7b]">+{totalAdditions}</span>
               <span className="shrink-0 text-xs text-[#ff5555]">-{totalDeletions}</span>
-              <span className="shrink-0 text-xs text-[#6272a4]">{diffFiles.length} file{diffFiles.length !== 1 ? "s" : ""}</span>
+              <span className="shrink-0 text-xs text-[#6272a4]">{fileMeta.length} file{fileMeta.length !== 1 ? "s" : ""}</span>
               <button
                 className="shrink-0 rounded bg-[#44475a] px-2 py-0.5 text-xs text-[#f8f8f2] hover:bg-[#6272a4]"
                 onClick={() => setSelectedCommit(null)}
@@ -508,10 +477,10 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
         );
       })() : (
         <div className="flex items-center gap-4 border-b border-[#6272a4] px-4 py-2 text-sm text-[#f8f8f2]">
-          <span>{diffFiles.length} file{diffFiles.length !== 1 ? "s" : ""} changed</span>
+          <span>{fileMeta.length} file{fileMeta.length !== 1 ? "s" : ""} changed</span>
           <span className="text-[#50fa7b]">+{totalAdditions}</span>
           <span className="text-[#ff5555]">-{totalDeletions}</span>
-          <span className="text-[#6272a4]">{viewedFilesSet.size}/{diffFiles.length} viewed</span>
+          <span className="text-[#6272a4]">{viewedFilesSet.size}/{fileMeta.length} viewed</span>
           <div className="ml-auto flex items-center gap-3">
             <div className="flex items-center gap-2 text-[10px] text-[#6272a4]">
               <span><kbd className="rounded bg-[#44475a] px-1 py-0.5 text-[#f8f8f2]">⌃J</kbd> next</span>
@@ -556,8 +525,7 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
           />
         </div>
         <div ref={diffAreaRef} className="flex-1 overflow-y-auto">
-        {diffFiles.map(({ section, file }, fileIndex) => {
-          const displayName = section.newFileName !== "/dev/null" ? section.newFileName : section.oldFileName;
+        {fileMeta.map(({ section, displayName, additions, deletions }, fileIndex) => {
           const isCollapsed = collapsedFiles.has(displayName);
           const isFileViewed = viewedFilesSet.has(displayName);
           const currentBlobSha = (blobShas as Record<string, string>)[displayName] ?? "";
@@ -579,8 +547,8 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
                   <span className="font-mono text-xs truncate">{displayName}</span>
                   <CopyButton text={displayName} hoverClass="opacity-0 group-hover/header:opacity-100" sizeClass="h-3.5 w-3.5" />
                 </button>
-                <span className="text-xs text-[#50fa7b] shrink-0">+{file.additionLength}</span>
-                <span className="text-xs text-[#ff5555] shrink-0">-{file.deletionLength}</span>
+                <span className="text-xs text-[#50fa7b] shrink-0">+{additions}</span>
+                <span className="text-xs text-[#ff5555] shrink-0">-{deletions}</span>
                 {/* Viewed checkbox (hidden when viewing a commit) */}
                 {!selectedCommit && (
                   <div

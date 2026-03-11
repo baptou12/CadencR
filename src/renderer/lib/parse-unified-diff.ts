@@ -65,6 +65,23 @@ export function parseUnifiedDiff(rawDiff: string): FileDiffSection[] {
 }
 
 /**
+ * Count addition and deletion lines in raw hunk text.
+ * Lines starting with '+' (but not '+++') are additions.
+ * Lines starting with '-' (but not '---') are deletions.
+ */
+export function countHunkStats(hunks: string[]): { additions: number; deletions: number } {
+  let additions = 0;
+  let deletions = 0;
+  for (const hunk of hunks) {
+    for (const line of hunk.split("\n")) {
+      if (line.startsWith("+") && !line.startsWith("+++")) additions++;
+      else if (line.startsWith("-") && !line.startsWith("---")) deletions++;
+    }
+  }
+  return { additions, deletions };
+}
+
+/**
  * Infer a language identifier from a file path extension.
  * Used for syntax highlighting in diff views.
  */
