@@ -19,6 +19,7 @@ import {
   deleteLocalBranchEffect,
   hasUncommittedChangesEffect,
   getFileContentEffect,
+  getFileContentBatchEffect,
   getCommitLogEffect,
   getRecentCommitsEffect,
   getCommitDiffEffect,
@@ -605,6 +606,54 @@ export const gitRouter = router({
             { concurrency: "unbounded" },
           );
           return { oldContent, newContent };
+        }),
+      );
+    }),
+
+  /** Get file content for multiple files in a single batch — used for prefetching */
+  getFileContentBatch: publicProcedure
+    .input(
+      z.object({
+        featureId: z.number(),
+        filePaths: z.array(z.string()).max(500),
+        mode: z.enum(["worktree", "branch"]),
+        targetBranch: z.string().optional(),
+        commitSha: z.string().optional(),
+      }),
+    )
+    .query(async ({ input }) => {
+      return AppRuntime.runPromise(
+        Effect.gen(function* () {
+          const gitPath = yield* resolveFeatureGitPath(input.featureId);
+          if (!gitPath || input.filePaths.length === 0) {
+            return {} as Record<string, { oldContent: string; newContent: string }>;
+          }
+
+          let oldRef: string;
+          let newRef: string | null;
+
+          if (input.commitSha) {
+            oldRef = `${input.commitSha}^`;
+            newRef = input.commitSha;
+          } else if (input.mode === "worktree") {
+            oldRef = "HEAD";
+            newRef = null; // working tree
+          } else {
+            // Branch mode: resolve base branch
+            const branchRow = yield* queryOne<{ value: string }>(
+              "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_branch'",
+              input.featureId,
+            );
+            const fallbackBranch = input.targetBranch ?? "main";
+            oldRef = branchRow?.value
+              ? yield* getOriginalBranchEffect(gitPath, branchRow.value).pipe(
+                  Effect.catchAll(() => Effect.succeed(fallbackBranch)),
+                )
+              : fallbackBranch;
+            newRef = "HEAD";
+          }
+
+          return yield* getFileContentBatchEffect(gitPath, input.filePaths, oldRef, newRef);
         }),
       );
     }),

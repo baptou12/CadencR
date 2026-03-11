@@ -46,7 +46,21 @@ class MockIntersectionObserver {
   root = null;
   rootMargin = "";
   thresholds = [];
-  observe = vi.fn();
+  private callback: IntersectionObserverCallback;
+
+  constructor(callback: IntersectionObserverCallback) {
+    this.callback = callback;
+  }
+
+  observe = vi.fn((el: Element) => {
+    // Immediately fire the callback with isIntersecting: true so that
+    // useNearViewport resolves to true in tests, causing all DiffFileBlocks
+    // to render their full content as before.
+    this.callback(
+      [{ isIntersecting: true, target: el } as IntersectionObserverEntry],
+      this as unknown as IntersectionObserver,
+    );
+  });
   unobserve = vi.fn();
   disconnect = vi.fn();
   takeRecords = vi.fn(() => []);
