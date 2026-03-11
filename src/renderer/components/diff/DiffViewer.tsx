@@ -349,8 +349,7 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
         content,
       );
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [batchFileContent]);
+  }, [batchFileContent, featureId, mode, targetBranch, selectedCommit, utils]);
 
   const fileMeta = useMemo(() => {
     return fileSections.map((section) => {
