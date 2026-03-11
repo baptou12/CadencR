@@ -362,14 +362,28 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
     { enabled: fileNames.length > 0 },
   );
 
+  // Seed the per-file cache one file per animation frame so the browser stays
+  // responsive.  Seeding all files at once causes every visible DiffFileBlock
+  // to rebuild its DiffFile synchronously in a single React render, blocking
+  // interaction for hundreds of milliseconds.
   useEffect(() => {
     if (!batchFileContent) return;
-    for (const [filePath, content] of Object.entries(batchFileContent)) {
+    const entries = Object.entries(batchFileContent);
+    let i = 0;
+    let rafId: number;
+
+    function seedNext() {
+      if (i >= entries.length) return;
+      const [filePath, content] = entries[i++];
       utils.git.getFileContent.setData(
         { featureId, filePath, mode, targetBranch, commitSha: selectedCommit ?? undefined },
         content,
       );
+      rafId = requestAnimationFrame(seedNext);
     }
+
+    rafId = requestAnimationFrame(seedNext);
+    return () => cancelAnimationFrame(rafId);
   }, [batchFileContent, featureId, mode, targetBranch, selectedCommit, utils]);
 
   const fileMeta = useMemo(() => {
