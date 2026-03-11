@@ -275,7 +275,8 @@ describe("createMarkPhaseDoneTool", () => {
 
     expect(result.content[0].text).toContain("completed");
     expect(mockExecute).toHaveBeenCalledWith(
-      "UPDATE phases SET status = 'completed', implementation_notes = ?, deviations = ? WHERE id = ?",
+      "UPDATE phases SET status = ?, implementation_notes = ?, deviations = ? WHERE id = ?",
+      "completed",
       "Done it",
       "None",
       5,
@@ -291,7 +292,8 @@ describe("createMarkPhaseDoneTool", () => {
     await getHandler(t)({ phase_id: 5 });
 
     expect(mockExecute).toHaveBeenCalledWith(
-      "UPDATE phases SET status = 'completed', implementation_notes = ?, deviations = ? WHERE id = ?",
+      "UPDATE phases SET status = ?, implementation_notes = ?, deviations = ? WHERE id = ?",
+      "completed",
       null,
       null,
       5,

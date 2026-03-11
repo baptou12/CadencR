@@ -183,6 +183,9 @@ describe("createPlanMcpServer", () => {
         if (sql.includes("UPDATE plans SET status = 'approved'")) {
           return { run: vi.fn().mockImplementation(() => { planStatus = "approved"; return { changes: 1, lastInsertRowid: 0 }; }) };
         }
+        if (sql.includes("FROM features WHERE id")) {
+          return { get: vi.fn().mockReturnValue({ status: "draft" }) };
+        }
         if (sql.includes("COUNT(*)")) return { get: vi.fn().mockReturnValue({ cnt: 3 }) };
         // Default: return proper run result for UPDATE statements used in transaction
         return { get: vi.fn().mockReturnValue(null), all: vi.fn().mockReturnValue([]), run: vi.fn().mockReturnValue({ changes: 1, lastInsertRowid: 0 }) };

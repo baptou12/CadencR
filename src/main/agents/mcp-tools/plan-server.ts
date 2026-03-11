@@ -8,6 +8,7 @@ import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { queryOne, execute, transaction } from "../../db/query";
 import { AppRuntime } from "../../effect/runtime";
 import { notifyDbUpdated } from "../effect-helpers";
+import { transitionFeature } from "../state-transitions";
 import { textResult, errorResult, renderPlanMarkdown } from "./helpers";
 import {
   readPlanTool,
@@ -142,8 +143,7 @@ export function createPlanMcpServer(planId: number, featureId: number, sessionDb
               Effect.runSync(execute("UPDATE plans SET status = 'active', updated_at = datetime('now') WHERE id = ?", args.plan_id));
               // Transition feature to 'planned' if it's a draft or done (refinement resets done features)
               if (!feature || feature.status === "draft" || feature.status === "done") {
-                Effect.runSync(execute("UPDATE features SET status = 'planned' WHERE id = ?", plan.feature_id));
-                notifyDbUpdated("feature", plan.feature_id);
+                transitionFeature(plan.feature_id, "planned");
               }
             }));
             notifyDbUpdated("phase", plan.feature_id);
