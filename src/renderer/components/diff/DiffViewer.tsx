@@ -21,11 +21,10 @@ import { parseUnifiedDiff, langFromPath, countHunkStats } from "@/lib/parse-unif
 // singleton, so this is safe to call at import time.
 const shikiPromise = getDiffViewHighlighter();
 
-function useNearViewport(ref: RefObject<HTMLElement | null>, eager = false): boolean {
-  const [isNearViewport, setIsNearViewport] = useState(eager);
+function useNearViewport(ref: RefObject<HTMLElement | null>): boolean {
+  const [isNearViewport, setIsNearViewport] = useState(false);
 
   useEffect(() => {
-    if (eager) return;           // already visible — skip observer
     const el = ref.current;
     if (!el) return;
 
@@ -43,14 +42,10 @@ function useNearViewport(ref: RefObject<HTMLElement | null>, eager = false): boo
     return () => observer.disconnect();
     // ref is stable — intentionally run once on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [eager]);
+  }, []);
 
   return isNearViewport;
 }
-
-/** Number of files to render immediately without waiting for IntersectionObserver.
- *  These are the files visible at the top of the diff list when the modal opens. */
-const EAGER_FILE_COUNT = 5;
 
 interface DiffFileBlockProps {
   section: import("@/lib/parse-unified-diff").FileDiffSection;
@@ -62,8 +57,6 @@ interface DiffFileBlockProps {
   shikiHighlighter: DiffHighlighter | null;
   displayName: string;
   isCollapsed: boolean;
-  /** When true, skip the IntersectionObserver and render immediately. */
-  eager?: boolean;
   buildExtendData: (filePath: string) => { oldFile: Record<string, { data: DiffComment[] }>; newFile: Record<string, { data: DiffComment[] }> };
   activeWidget: { filePath: string; lineNumber: number; side: SplitSide } | null;
   setActiveWidget: (w: { filePath: string; lineNumber: number; side: SplitSide } | null) => void;
@@ -83,7 +76,6 @@ function DiffFileBlock({
   shikiHighlighter,
   displayName,
   isCollapsed,
-  eager = false,
   buildExtendData,
   activeWidget,
   setActiveWidget,
@@ -95,7 +87,7 @@ function DiffFileBlock({
   const filePath = section.newFileName !== "/dev/null" ? section.newFileName : section.oldFileName;
 
   const sentinelRef = useRef<HTMLDivElement>(null);
-  const isNearViewport = useNearViewport(sentinelRef, eager);
+  const isNearViewport = useNearViewport(sentinelRef);
 
   // Only fire the tRPC query and build the DiffFile when the block is both
   // near the viewport and not collapsed — avoids work for off-screen files.
@@ -681,7 +673,6 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
                 mode={mode}
                 targetBranch={targetBranch}
                 commitSha={selectedCommit ?? undefined}
-                eager={fileIndex < EAGER_FILE_COUNT}
                 diffMode={diffMode}
                 shikiHighlighter={shikiHighlighter}
                 displayName={displayName}

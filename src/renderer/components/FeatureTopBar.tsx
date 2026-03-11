@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { useHotkeys } from "react-hotkeys-hook";
 import { Badge } from "@/components/ui/badge";
@@ -107,17 +107,6 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", executeS
     },
   });
   const worktreeBranch = featureSettings?.worktree_branch;
-
-  // Prefetch the diff and commit log as soon as the feature page loads so that
-  // opening the diff viewer feels instant.  The git commands (~400ms) run in
-  // the background while the user reads the feature page.
-  const prefetchDiffMode = isSession ? "worktree" : "branch";
-  useEffect(() => {
-    if (isSession || worktreeBranch) {
-      utils.git.getDiff.prefetch({ featureId, mode: prefetchDiffMode });
-      utils.git.getCommitLog.prefetch({ featureId, limit: 20 });
-    }
-  }, [featureId, prefetchDiffMode, isSession, worktreeBranch, utils]);
 
   if (!feature) return null;
 
