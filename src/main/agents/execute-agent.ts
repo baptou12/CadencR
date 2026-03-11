@@ -8,7 +8,6 @@
  */
 
 import { Effect } from "effect";
-import { getDatabase } from "../db/database";
 import { queryOne, queryAll, queryAllValidated } from "../db/query";
 import { resolveSetting } from "../db/settings";
 import { getAutonomyLevel } from "./autonomy";
@@ -71,7 +70,7 @@ export function processNextPhase(options: ExecuteAgentOptions): void {
 
     // Transition to in-progress if planned
     if (featureStatus === "planned") {
-      transitionFeature(getDatabase(), featureId, "in-progress");  // sync, uses db directly
+      transitionFeature(featureId, "in-progress");
     }
 
     // 2. Get active plan
@@ -176,7 +175,7 @@ async function handleNoPendingPhases(options: ExecuteAgentOptions, _planId: numb
 
   if (reviewRanAfterExecute) {
     // Review already ran and created no fix phases → done
-    transitionFeature(getDatabase(), featureId, "done");
+    transitionFeature(featureId, "done");
     notifyDbUpdated("feature", featureId);
     console.log(`[processNextPhase] Feature ${featureId} marked done — review clean`);
     return;
@@ -228,7 +227,7 @@ function executePhase(
   autonomyLevel: 1 | 2 | 3,
 ): Promise<void> {
   return new Promise<void>((resolve) => {
-    transitionPhase(getDatabase(), phase.id, "running", options.featureId);
+    transitionPhase(phase.id, "running", options.featureId);
 
     const prompt = buildEnrichedPrompt(phase, autonomyLevel);
     const phaseAction = buildPhaseCompletionAction(phase.id, options.featureId);
@@ -258,7 +257,7 @@ function executePhase(
     };
 
     startUnifiedAgent(config).catch(() => {
-      transitionPhase(getDatabase(), phase.id, "error", options.featureId);
+      transitionPhase(phase.id, "error", options.featureId);
       resolve();
     });
   });
@@ -274,7 +273,7 @@ function executeQaPhase(
   autonomyLevel: 1 | 2 | 3,
 ): Promise<void> {
   return new Promise<void>((resolve) => {
-    transitionPhase(getDatabase(), phase.id, "running", options.featureId);
+    transitionPhase(phase.id, "running", options.featureId);
 
     const qaRow = Effect.runSync(queryOne<{ qa_prompt: string | null }>(
       "SELECT qa_prompt FROM projects WHERE id = ?",
@@ -329,10 +328,10 @@ function executeQaPhase(
           const wasInterrupted = session?.status === "paused";
 
           if (wasInterrupted) {
-            transitionPhaseIf(getDatabase(), phase.id, "running", "pending", options.featureId);
+            transitionPhaseIf(phase.id, "running", "pending", options.featureId);
           } else if (phaseRow?.status === "running") {
             if (context.exitCode !== 0) {
-              transitionPhaseIf(getDatabase(), phase.id, "running", "error", options.featureId);
+              transitionPhaseIf(phase.id, "running", "error", options.featureId);
             }
           }
           resolve();
@@ -344,7 +343,7 @@ function executeQaPhase(
     qaConfig.phaseId = phase.id;
 
     startUnifiedAgent(qaConfig).catch(() => {
-      transitionPhase(getDatabase(), phase.id, "error", options.featureId);
+      transitionPhase(phase.id, "error", options.featureId);
       resolve();
     });
   });
@@ -437,9 +436,9 @@ export function buildPhaseCompletionAction(phaseId: number, featureId: number): 
       console.log(`[exec-phase-trace] phase_complete handler: phase ${phaseId}, sessionDbId=${context.sessionDbId}, sessionStatus=${session?.status}, phaseStatus=${phaseRow?.status}, exitCode=${context.exitCode}, wasInterrupted=${wasInterrupted}`);
 
       if (wasInterrupted) {
-        transitionPhaseIf(getDatabase(), phaseId, "running", "pending", featureId);
+        transitionPhaseIf(phaseId, "running", "pending", featureId);
       } else if (context.exitCode !== 0) {
-        transitionPhaseIf(getDatabase(), phaseId, "running", "error", featureId);
+        transitionPhaseIf(phaseId, "running", "error", featureId);
       }
     },
   };

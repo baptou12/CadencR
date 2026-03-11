@@ -242,11 +242,13 @@ Start by exploring the codebase to understand the project structure and existing
     {
       event: "plan_fallback",
       handler: (output: string) => {
+        // sync: completion handler callback cannot use async/await
         const plan = Effect.runSync(queryOne<{ status: string }>("SELECT status FROM plans WHERE id = ?", opts.planId));
 
         if (plan && plan.status === "draft") {
           // Agent exited without finalizing — store raw output for reference
           if (output) {
+            // sync: completion handler callback cannot use async/await
             Effect.runSync(execute("UPDATE plans SET raw_markdown = ? WHERE id = ?", output, opts.planId));
           }
           console.warn(`[agent-configs] Plan agent exited without finalizing plan ${opts.planId}`);
@@ -319,6 +321,7 @@ export function createRiskConfig(opts: RiskConfigOptions): UnifiedAgentConfig {
       event: "store_risk_report",
       handler: (output: string, context) => {
         if (!output) return;
+        // sync: completion handler callback cannot use async/await
         Effect.runSync(execute(
           "INSERT INTO agent_messages (session_id, role, content, message_type) VALUES (?, ?, ?, ?)",
           context.sessionDbId, "assistant", output, "risk_report",
@@ -381,7 +384,7 @@ export function createReviewConfig(opts: ReviewConfigOptions): UnifiedAgentConfi
       event: "store_review_report",
       handler: (output: string, context) => {
         if (!output) return;
-        // Store the review report as an agent message
+        // Store the review report as an agent message; sync: completion handler callback
         Effect.runSync(execute(
           "INSERT INTO agent_messages (session_id, role, content, message_type) VALUES (?, ?, ?, ?)",
           context.sessionDbId, "assistant", output, "review_report",
@@ -460,6 +463,7 @@ Based on what was implemented above, design specific test cases and execute them
       event: "store_qa_report",
       handler: (output: string, context) => {
         if (!output) return;
+        // sync: completion handler callback cannot use async/await
         Effect.runSync(execute(
           "INSERT INTO agent_messages (session_id, role, content, message_type) VALUES (?, ?, ?, ?)",
           context.sessionDbId, "assistant", output, "qa_report",
@@ -488,7 +492,7 @@ Based on what was implemented above, design specific test cases and execute them
  * report stored as a `retro_report` message in agent_messages.
  */
 export function createRetroConfig(opts: RetroConfigOptions): UnifiedAgentConfig {
-  // Look up the plan ID so the agent knows which plan to read
+  // Look up the plan ID so the agent knows which plan to read; sync: factory function (not async)
   const planRow = Effect.runSync(queryOne<{ id: number }>("SELECT id FROM plans WHERE feature_id = ? ORDER BY id DESC LIMIT 1", opts.featureId));
 
   const planHint = planRow
@@ -506,6 +510,7 @@ Use the available MCP tools to read the PRD, plan, phases, and agent conversatio
       event: "store_retro_report",
       handler: (output: string, context) => {
         if (!output) return;
+        // sync: completion handler callback cannot use async/await
         Effect.runSync(execute(
           "INSERT INTO agent_messages (session_id, role, content, message_type) VALUES (?, ?, ?, ?)",
           context.sessionDbId, "assistant", output, "retro_report",
@@ -540,6 +545,7 @@ export function createReviewFixerConfig(opts: ReviewFixerConfigOptions): Unified
       event: "resolve_diff_comments",
       handler: (_output: string, context) => {
         if (!context.featureId) return;
+        // sync: completion handler callback cannot use async/await
         Effect.runSync(execute(
           "UPDATE diff_comments SET status = 'resolved' WHERE feature_id = ? AND status = 'sent'",
           context.featureId,

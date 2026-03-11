@@ -173,7 +173,7 @@ describe("processNextPhase", () => {
 
     processNextPhase(baseOptions);
 
-    expect(transitionFeature).toHaveBeenCalledWith(expect.anything(), 1, "in-progress");
+    expect(transitionFeature).toHaveBeenCalledWith(1, "in-progress");
   });
 
   it("dispatches pending phases", () => {
@@ -242,7 +242,7 @@ describe("processNextPhase", () => {
 
     processNextPhase(baseOptions);
 
-    expect(transitionFeature).toHaveBeenCalledWith(expect.anything(), 1, "done");
+    expect(transitionFeature).toHaveBeenCalledWith(1, "done");
     expect(notifyDbUpdated).toHaveBeenCalledWith("feature", 1);
   });
 });

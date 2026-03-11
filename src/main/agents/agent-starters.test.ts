@@ -171,7 +171,7 @@ describe("agent-starters", () => {
 
       await startReviewAgent({ featureId: 1, projectId: 2, cwd: "/project" });
 
-      expect(transitionFeature).toHaveBeenCalledWith(expect.anything(), 1, "in-progress");
+      expect(transitionFeature).toHaveBeenCalledWith(1, "in-progress");
     });
 
     it("throws if no plan found", async () => {

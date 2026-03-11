@@ -17,7 +17,6 @@
 
 import fs from "node:fs";
 import { Effect } from "effect";
-import { getDatabase } from "../db/database";
 import { execute, queryOne } from "../db/query";
 import { startSubprocess, generateSubprocessId } from "./subprocess-manager";
 import { registerSessionPersistence } from "./effect-helpers";
@@ -157,7 +156,7 @@ export async function startUnifiedAgent(config: UnifiedAgentConfig): Promise<Uni
 
     if (!wasInterrupted && !alreadyCompleted) {
       // Update session status
-      transitionAgentSession(getDatabase(), sessionDbId, exitCode === 0 ? "completed" : "error", config.featureId, { ended_at: new Date().toISOString() });
+      transitionAgentSession(sessionDbId, exitCode === 0 ? "completed" : "error", config.featureId, { ended_at: new Date().toISOString() });
     }
 
     // Safety-net: persist session ID if not yet saved

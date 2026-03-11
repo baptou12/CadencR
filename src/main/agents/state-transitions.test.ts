@@ -10,10 +10,16 @@ vi.mock("./effect-helpers", () => ({
   notifyDbUpdated: vi.fn(),
 }));
 
+vi.mock("../db/database", () => ({
+  getDatabase: vi.fn(),
+}));
+
 import { notifyDbUpdated } from "./effect-helpers";
+import { getDatabase } from "../db/database";
 import { createMockDb } from "../test-utils";
 
 const mockNotify = vi.mocked(notifyDbUpdated);
+const mockGetDatabase = vi.mocked(getDatabase);
 
 describe("transitionFeature", () => {
   let db: ReturnType<typeof createMockDb>;
@@ -21,15 +27,16 @@ describe("transitionFeature", () => {
   beforeEach(() => {
     db = createMockDb();
     vi.clearAllMocks();
+    mockGetDatabase.mockReturnValue(db as any);
   });
 
   it("updates feature status and notifies renderer", () => {
     db.prepare.mockImplementation((sql: string) => {
       if (sql.includes("SELECT")) return { get: () => ({ status: "draft" }) };
-      return { run: vi.fn() };
+      return { run: vi.fn().mockReturnValue({ changes: 1, lastInsertRowid: 0 }) };
     });
 
-    transitionFeature(db as any, 1, "planned");
+    transitionFeature(1, "planned");
 
     expect(mockNotify).toHaveBeenCalledWith("feature", 1);
   });
@@ -38,10 +45,10 @@ describe("transitionFeature", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     db.prepare.mockImplementation((sql: string) => {
       if (sql.includes("SELECT")) return { get: () => ({ status: "draft" }) };
-      return { run: vi.fn() };
+      return { run: vi.fn().mockReturnValue({ changes: 1, lastInsertRowid: 0 }) };
     });
 
-    transitionFeature(db as any, 1, "done");
+    transitionFeature(1, "done");
 
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Invalid feature transition"));
     expect(mockNotify).toHaveBeenCalled();
@@ -52,7 +59,7 @@ describe("transitionFeature", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     db.prepare.mockImplementation(() => ({ get: () => undefined }));
 
-    transitionFeature(db as any, 99, "planned");
+    transitionFeature(99, "planned");
 
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("not found"));
     expect(mockNotify).not.toHaveBeenCalled();
@@ -66,6 +73,7 @@ describe("transitionPhase", () => {
   beforeEach(() => {
     db = createMockDb();
     vi.clearAllMocks();
+    mockGetDatabase.mockReturnValue(db as any);
     vi.spyOn(console, "log").mockImplementation(() => {});
   });
 
@@ -74,26 +82,26 @@ describe("transitionPhase", () => {
   });
 
   it("updates phase status and notifies renderer", () => {
-    const runFn = vi.fn();
+    const runFn = vi.fn().mockReturnValue({ changes: 1, lastInsertRowid: 0 });
     db.prepare.mockImplementation((sql: string) => {
       if (sql.includes("SELECT")) return { get: () => ({ status: "pending" }) };
       return { run: runFn };
     });
 
-    transitionPhase(db as any, 10, "running", 5);
+    transitionPhase(10, "running", 5);
 
     expect(runFn).toHaveBeenCalled();
     expect(mockNotify).toHaveBeenCalledWith("phase", 5);
   });
 
   it("includes extra columns in the update", () => {
-    const runFn = vi.fn();
+    const runFn = vi.fn().mockReturnValue({ changes: 1, lastInsertRowid: 0 });
     db.prepare.mockImplementation((sql: string) => {
       if (sql.includes("SELECT")) return { get: () => ({ status: "running" }) };
       return { run: runFn };
     });
 
-    transitionPhase(db as any, 10, "completed", 5, { implementation_notes: "done" });
+    transitionPhase(10, "completed", 5, { implementation_notes: "done" });
 
     const prepareCalls = db.prepare.mock.calls.map((c: string[]) => c[0]);
     const updateCall = prepareCalls.find((s: string) => s.includes("implementation_notes"));
@@ -104,10 +112,10 @@ describe("transitionPhase", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     db.prepare.mockImplementation((sql: string) => {
       if (sql.includes("SELECT")) return { get: () => ({ status: "completed" }) };
-      return { run: vi.fn() };
+      return { run: vi.fn().mockReturnValue({ changes: 1, lastInsertRowid: 0 }) };
     });
 
-    transitionPhase(db as any, 10, "running", 5);
+    transitionPhase(10, "running", 5);
 
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Invalid phase transition"));
     expect(mockNotify).toHaveBeenCalled();
@@ -118,7 +126,7 @@ describe("transitionPhase", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     db.prepare.mockImplementation(() => ({ get: () => undefined }));
 
-    transitionPhase(db as any, 99, "running", 5);
+    transitionPhase(99, "running", 5);
 
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("not found"));
     expect(mockNotify).not.toHaveBeenCalled();
@@ -132,6 +140,7 @@ describe("transitionPhaseIf", () => {
   beforeEach(() => {
     db = createMockDb();
     vi.clearAllMocks();
+    mockGetDatabase.mockReturnValue(db as any);
     vi.spyOn(console, "log").mockImplementation(() => {});
   });
 
@@ -142,7 +151,7 @@ describe("transitionPhaseIf", () => {
   it("notifies when the conditional update changes a row", () => {
     db.prepare.mockImplementation(() => ({ run: vi.fn().mockReturnValue({ changes: 1 }) }));
 
-    transitionPhaseIf(db as any, 10, "running", "pending", 5);
+    transitionPhaseIf(10, "running", "pending", 5);
 
     expect(mockNotify).toHaveBeenCalledWith("phase", 5);
   });
@@ -150,7 +159,7 @@ describe("transitionPhaseIf", () => {
   it("does NOT notify when the condition doesn't match (no changes)", () => {
     db.prepare.mockImplementation(() => ({ run: vi.fn().mockReturnValue({ changes: 0 }) }));
 
-    transitionPhaseIf(db as any, 10, "running", "pending", 5);
+    transitionPhaseIf(10, "running", "pending", 5);
 
     expect(mockNotify).not.toHaveBeenCalled();
   });
@@ -162,6 +171,7 @@ describe("transitionAgentSession", () => {
   beforeEach(() => {
     db = createMockDb();
     vi.clearAllMocks();
+    mockGetDatabase.mockReturnValue(db as any);
     vi.spyOn(console, "log").mockImplementation(() => {});
   });
 
@@ -170,13 +180,13 @@ describe("transitionAgentSession", () => {
   });
 
   it("updates session status and notifies renderer", () => {
-    const runFn = vi.fn();
+    const runFn = vi.fn().mockReturnValue({ changes: 1, lastInsertRowid: 0 });
     db.prepare.mockImplementation((sql: string) => {
       if (sql.includes("SELECT")) return { get: () => ({ status: "running", feature_id: 5 }) };
       return { run: runFn };
     });
 
-    transitionAgentSession(db as any, 20, "completed");
+    transitionAgentSession(20, "completed");
 
     expect(runFn).toHaveBeenCalled();
     expect(mockNotify).toHaveBeenCalledWith("agent_session", 5);
@@ -185,10 +195,10 @@ describe("transitionAgentSession", () => {
   it("uses provided featureId over row feature_id", () => {
     db.prepare.mockImplementation((sql: string) => {
       if (sql.includes("SELECT")) return { get: () => ({ status: "running", feature_id: 5 }) };
-      return { run: vi.fn() };
+      return { run: vi.fn().mockReturnValue({ changes: 1, lastInsertRowid: 0 }) };
     });
 
-    transitionAgentSession(db as any, 20, "completed", 99);
+    transitionAgentSession(20, "completed", 99);
 
     expect(mockNotify).toHaveBeenCalledWith("agent_session", 99);
   });
@@ -196,10 +206,10 @@ describe("transitionAgentSession", () => {
   it("skips notification if no featureId available", () => {
     db.prepare.mockImplementation((sql: string) => {
       if (sql.includes("SELECT")) return { get: () => ({ status: "running", feature_id: null }) };
-      return { run: vi.fn() };
+      return { run: vi.fn().mockReturnValue({ changes: 1, lastInsertRowid: 0 }) };
     });
 
-    transitionAgentSession(db as any, 20, "completed");
+    transitionAgentSession(20, "completed");
 
     expect(mockNotify).not.toHaveBeenCalled();
   });
@@ -207,10 +217,10 @@ describe("transitionAgentSession", () => {
   it("includes extra columns in the update", () => {
     db.prepare.mockImplementation((sql: string) => {
       if (sql.includes("SELECT")) return { get: () => ({ status: "waiting", feature_id: 5 }) };
-      return { run: vi.fn() };
+      return { run: vi.fn().mockReturnValue({ changes: 1, lastInsertRowid: 0 }) };
     });
 
-    transitionAgentSession(db as any, 20, "running", 5, { ended_at: "now" });
+    transitionAgentSession(20, "running", 5, { ended_at: "now" });
 
     const prepareCalls = db.prepare.mock.calls.map((c: string[]) => c[0]);
     const updateCall = prepareCalls.find((s: string) => s.includes("ended_at"));
@@ -221,10 +231,10 @@ describe("transitionAgentSession", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     db.prepare.mockImplementation((sql: string) => {
       if (sql.includes("SELECT")) return { get: () => ({ status: "completed", feature_id: 5 }) };
-      return { run: vi.fn() };
+      return { run: vi.fn().mockReturnValue({ changes: 1, lastInsertRowid: 0 }) };
     });
 
-    transitionAgentSession(db as any, 20, "waiting");
+    transitionAgentSession(20, "waiting");
 
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Invalid session transition"));
     warnSpy.mockRestore();
@@ -234,7 +244,7 @@ describe("transitionAgentSession", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     db.prepare.mockImplementation(() => ({ get: () => undefined }));
 
-    transitionAgentSession(db as any, 99, "completed");
+    transitionAgentSession(99, "completed");
 
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("not found"));
     expect(mockNotify).not.toHaveBeenCalled();

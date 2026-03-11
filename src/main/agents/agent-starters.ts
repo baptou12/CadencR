@@ -7,7 +7,6 @@
  */
 
 import { Effect } from "effect";
-import { getDatabase } from "../db/database";
 import { queryOne, queryAll, execute } from "../db/query";
 import { transitionFeature } from "./state-transitions";
 import { startUnifiedAgent } from "./unified-agent";
@@ -245,7 +244,7 @@ export async function startReviewAgent(options: {
   onAgentDone?: import("./mcp-tools").OnAgentDoneCallback;
 }): Promise<AgentResult> {
   // Keep feature in-progress during review
-  transitionFeature(getDatabase(), options.featureId, "in-progress");
+  transitionFeature(options.featureId, "in-progress");
 
   // Look up plan with context for the review prompt
   const plan = Effect.runSync(queryOne<{ id: number; summary: string | null; context: string | null; clarifications: string | null }>(
