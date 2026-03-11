@@ -320,6 +320,38 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
 
   const fileSections = useMemo(() => parseUnifiedDiff(rawDiff ?? ""), [rawDiff]);
 
+  const fileNames = useMemo(
+    () =>
+      fileSections.map((section) =>
+        section.newFileName !== "/dev/null" ? section.newFileName : section.oldFileName,
+      ),
+    [fileSections],
+  );
+
+  // Batch prefetch all file contents in a single tRPC call, then seed
+  // individual per-file cache keys so DiffFileBlock queries resolve instantly.
+  const { data: batchFileContent } = trpc.git.getFileContentBatch.useQuery(
+    {
+      featureId,
+      filePaths: fileNames,
+      mode,
+      targetBranch,
+      commitSha: selectedCommit ?? undefined,
+    },
+    { enabled: fileNames.length > 0 },
+  );
+
+  useEffect(() => {
+    if (!batchFileContent) return;
+    for (const [filePath, content] of Object.entries(batchFileContent)) {
+      utils.git.getFileContent.setData(
+        { featureId, filePath, mode, targetBranch, commitSha: selectedCommit ?? undefined },
+        content,
+      );
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [batchFileContent]);
+
   const fileMeta = useMemo(() => {
     return fileSections.map((section) => {
       const displayName = section.newFileName !== "/dev/null" ? section.newFileName : section.oldFileName;
@@ -327,11 +359,6 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
       return { section, displayName, additions, deletions };
     });
   }, [fileSections]);
-
-  const fileNames = useMemo(
-    () => fileMeta.map(({ displayName }) => displayName),
-    [fileMeta],
-  );
 
   const scrollToFileIndex = useCallback(
     (index: number) => {

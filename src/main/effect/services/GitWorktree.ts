@@ -993,6 +993,51 @@ export function getFileContentEffect(
 }
 
 /**
+ * Get file content for multiple files in a single batched operation.
+ * Uses concurrent git show calls (concurrency: 10) for both old and new refs.
+ * Always succeeds — returns {} on error, empty strings for missing files.
+ *
+ * @param gitPath - Path to the git worktree or repo
+ * @param filePaths - List of file paths to fetch
+ * @param oldRef - Git ref for the "old" version (branch name, commit SHA, etc.)
+ * @param newRef - Git ref for the "new" version, or null for working tree
+ */
+export function getFileContentBatchEffect(
+  gitPath: string,
+  filePaths: string[],
+  oldRef: string,
+  newRef: string | null,
+): Effect.Effect<Record<string, { oldContent: string; newContent: string }>, never> {
+  if (filePaths.length === 0) {
+    return Effect.succeed({});
+  }
+
+  return Effect.forEach(
+    filePaths,
+    (filePath) =>
+      Effect.all(
+        [
+          getFileContentEffect(gitPath, filePath, oldRef),
+          newRef !== null
+            ? getFileContentEffect(gitPath, filePath, newRef)
+            : getFileContentEffect(gitPath, filePath), // working tree
+        ],
+        { concurrency: "unbounded" },
+      ).pipe(
+        Effect.map(([oldContent, newContent]) => ({ filePath, oldContent, newContent })),
+      ),
+    { concurrency: 10 },
+  ).pipe(
+    Effect.map((entries) =>
+      Object.fromEntries(
+        entries.map(({ filePath, oldContent, newContent }) => [filePath, { oldContent, newContent }]),
+      ),
+    ),
+    Effect.catchAll(() => Effect.succeed({} as Record<string, { oldContent: string; newContent: string }>)),
+  );
+}
+
+/**
  * Get commit log for the current branch relative to a base branch.
  * Always succeeds — returns [] on error.
  */

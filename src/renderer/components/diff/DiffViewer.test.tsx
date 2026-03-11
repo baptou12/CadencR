@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => {
   const useUtilsMock = vi.fn(() => ({
     diffComments: { list: { invalidate: vi.fn() } },
     diffViewed: { list: { invalidate: vi.fn() } },
+    git: { getFileContent: { setData: vi.fn() } },
   }));
   return { useQueryMock, useMutationMock, useUtilsMock };
 });
@@ -24,6 +25,7 @@ vi.mock("@/trpc", () => {
         getFileBlobShas: { useQuery: vi.fn(() => ({ data: {} })) },
         getCommitLog: { useQuery: vi.fn(() => ({ data: { commits: [], isOnBaseBranch: true } })) },
         getFileContent: { useQuery: vi.fn(() => ({ data: undefined })) },
+        getFileContentBatch: { useQuery: vi.fn(() => ({ data: undefined })) },
       },
       diffViewed: {
         list: { useQuery: vi.fn(() => ({ data: [] })) },
