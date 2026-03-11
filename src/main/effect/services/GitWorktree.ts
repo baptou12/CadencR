@@ -993,8 +993,171 @@ export function getFileContentEffect(
 }
 
 /**
+ * Run a git command and return raw binary output as a Buffer.
+ * Uses `encoding: "binary"` (latin1) to preserve all bytes, then converts to Buffer.
+ * Used for `git archive` which outputs binary tar data.
+ */
+function execGitBinary(
+  command: string,
+  options?: ExecOptions,
+): Effect.Effect<Buffer, GitCommandError> {
+  return Effect.tryPromise({
+    try: () =>
+      (execAsync(command, {
+        ...options,
+        encoding: "binary",
+        maxBuffer: options?.maxBuffer ?? 200 * 1024 * 1024,
+      }) as Promise<{ stdout: string; stderr: string }>).then(
+        ({ stdout }) => Buffer.from(stdout, "binary"),
+      ),
+    catch: (e) => {
+      const err = e as { stderr?: string; code?: number; message?: string };
+      return new GitCommandError({
+        command,
+        stderr: err.stderr ?? err.message ?? String(e),
+        exitCode: typeof err.code === "number" ? err.code : undefined,
+        cause: e,
+      });
+    },
+  });
+}
+
+/** Read a null-terminated string from a tar header field. */
+function tarReadString(buffer: Buffer, offset: number, maxLen: number): string {
+  const end = Math.min(offset + maxLen, buffer.length);
+  let nullIdx = -1;
+  for (let i = offset; i < end; i++) {
+    if (buffer[i] === 0) {
+      nullIdx = i;
+      break;
+    }
+  }
+  return buffer.subarray(offset, nullIdx === -1 ? end : nullIdx).toString("utf8");
+}
+
+/**
+ * Parse a POSIX/ustar tar buffer and return a map of filename → content string.
+ * Only regular files are included; directories and other entry types are skipped.
+ * Handles both basic POSIX tar and ustar (extended filename prefix) format.
+ */
+function parseTarBuffer(buffer: Buffer): Map<string, string> {
+  const files = new Map<string, string>();
+  let offset = 0;
+
+  while (offset + 512 <= buffer.length) {
+    // Check for end-of-archive marker (512 zero bytes)
+    let allZero = true;
+    for (let i = 0; i < 512; i++) {
+      if (buffer[offset + i] !== 0) {
+        allZero = false;
+        break;
+      }
+    }
+    if (allZero) break;
+
+    // Read name and ustar prefix (ustar format splits long paths: prefix + '/' + name)
+    const name = tarReadString(buffer, offset, 100);
+    const prefix = tarReadString(buffer, offset + 345, 155);
+    const fullName = prefix ? `${prefix}/${name}` : name;
+    const normalizedName = fullName.replace(/^\.\//, "");
+
+    // File size stored as null-terminated octal ASCII at offset 124
+    const sizeStr = tarReadString(buffer, offset + 124, 12);
+    const size = sizeStr ? parseInt(sizeStr, 8) : 0;
+    if (Number.isNaN(size)) break; // Malformed archive, stop parsing
+
+    // Type flag at offset 156: 0x00 or '0' (0x30) = regular file
+    const typeFlag = buffer[offset + 156];
+
+    offset += 512; // Advance past the 512-byte header
+
+    if ((typeFlag === 0 || typeFlag === 48) && normalizedName) {
+      const content = buffer.subarray(offset, offset + size).toString("utf8");
+      files.set(normalizedName, content);
+    }
+
+    // Advance past content, padded to 512-byte block boundary
+    offset += Math.ceil(size / 512) * 512;
+  }
+
+  return files;
+}
+
+/**
+ * Fetch file contents from a git ref using a single `git archive` call.
+ * Returns a Map<filePath, content>. Falls back to concurrent `git show` calls
+ * if git archive fails (e.g. when files don't exist at the given ref).
+ */
+function fetchArchiveContents(
+  gitPath: string,
+  ref: string,
+  filePaths: string[],
+): Effect.Effect<Map<string, string>, never> {
+  const fileArgs = filePaths.map((f) => `"${f}"`).join(" ");
+  const command = `git archive "${ref}" -- ${fileArgs}`;
+
+  return execGitBinary(command, { cwd: gitPath }).pipe(
+    Effect.map((tarBuffer) => {
+      const parsed = parseTarBuffer(tarBuffer);
+      const result = new Map<string, string>();
+      for (const filePath of filePaths) {
+        // git archive may strip or keep './' prefix depending on git version
+        const content =
+          parsed.get(filePath) ?? parsed.get(`./${filePath}`) ?? "";
+        result.set(filePath, content);
+      }
+      return result;
+    }),
+    // Fallback: concurrent git show calls (handles missing files at ref, renamed files, etc.)
+    Effect.catchAll(() =>
+      Effect.forEach(
+        filePaths,
+        (filePath) =>
+          getFileContentEffect(gitPath, filePath, ref).pipe(
+            Effect.map((content) => [filePath, content] as const),
+          ),
+        { concurrency: 10 },
+      ).pipe(
+        Effect.map((entries) => new Map(entries)),
+        Effect.catchAll(() => Effect.succeed(new Map<string, string>())),
+      ),
+    ),
+  );
+}
+
+/**
+ * Read files from the working tree directly from disk (for newRef === null case).
+ * Returns a Map<filePath, content>.
+ */
+function fetchWorkingTreeContents(
+  gitPath: string,
+  filePaths: string[],
+): Effect.Effect<Map<string, string>, never> {
+  return Effect.forEach(
+    filePaths,
+    (filePath) =>
+      Effect.tryPromise(() =>
+        fs.promises.readFile(path.join(gitPath, filePath), "utf-8"),
+      ).pipe(
+        Effect.map((content) => [filePath, content] as const),
+        Effect.catchAll(() => Effect.succeed([filePath, ""] as const)),
+      ),
+    { concurrency: "unbounded" },
+  ).pipe(
+    Effect.map((entries) => new Map(entries)),
+    Effect.catchAll(() => Effect.succeed(new Map<string, string>())),
+  );
+}
+
+/**
  * Get file content for multiple files in a single batched operation.
- * Uses concurrent git show calls (concurrency: 10) for both old and new refs.
+ * Uses `git archive` to fetch all files from a ref in one subprocess call per ref,
+ * reducing 2×N subprocess calls to just 2. For the working tree case (newRef === null),
+ * files are read directly from disk without spawning any subprocess.
+ *
+ * Falls back to concurrent `git show` calls per-file if `git archive` fails (e.g. when
+ * some files have been deleted or renamed at the given ref).
+ *
  * Always succeeds — returns {} on error, empty strings for missing files.
  *
  * @param gitPath - Path to the git worktree or repo
@@ -1012,28 +1175,30 @@ export function getFileContentBatchEffect(
     return Effect.succeed({});
   }
 
-  return Effect.forEach(
-    filePaths,
-    (filePath) =>
-      Effect.all(
-        [
-          getFileContentEffect(gitPath, filePath, oldRef),
-          newRef !== null
-            ? getFileContentEffect(gitPath, filePath, newRef)
-            : getFileContentEffect(gitPath, filePath), // working tree
-        ],
-        { concurrency: "unbounded" },
-      ).pipe(
-        Effect.map(([oldContent, newContent]) => ({ filePath, oldContent, newContent })),
-      ),
-    { concurrency: 10 },
-  ).pipe(
-    Effect.map((entries) =>
-      Object.fromEntries(
-        entries.map(({ filePath, oldContent, newContent }) => [filePath, { oldContent, newContent }]),
-      ),
+  return Effect.gen(function* () {
+    // Fetch old and new content concurrently
+    const [oldContentMap, newContentMap] = yield* Effect.all(
+      [
+        fetchArchiveContents(gitPath, oldRef, filePaths),
+        newRef !== null
+          ? fetchArchiveContents(gitPath, newRef, filePaths)
+          : fetchWorkingTreeContents(gitPath, filePaths),
+      ],
+      { concurrency: "unbounded" },
+    );
+
+    const result: Record<string, { oldContent: string; newContent: string }> = {};
+    for (const filePath of filePaths) {
+      result[filePath] = {
+        oldContent: oldContentMap.get(filePath) ?? "",
+        newContent: newContentMap.get(filePath) ?? "",
+      };
+    }
+    return result;
+  }).pipe(
+    Effect.catchAll(() =>
+      Effect.succeed({} as Record<string, { oldContent: string; newContent: string }>),
     ),
-    Effect.catchAll(() => Effect.succeed({} as Record<string, { oldContent: string; newContent: string }>)),
   );
 }
 
