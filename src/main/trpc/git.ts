@@ -615,7 +615,7 @@ export const gitRouter = router({
     .input(
       z.object({
         featureId: z.number(),
-        filePaths: z.array(z.string()),
+        filePaths: z.array(z.string()).max(500),
         mode: z.enum(["worktree", "branch"]),
         targetBranch: z.string().optional(),
         commitSha: z.string().optional(),
