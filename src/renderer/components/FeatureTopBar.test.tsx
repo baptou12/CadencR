@@ -75,6 +75,10 @@ vi.mock("@/trpc", () => {
         sessions: {
           getFeatureAgentState: { invalidate: vi.fn() },
         },
+        git: {
+          getDiff: { prefetch: vi.fn() },
+          getCommitLog: { prefetch: vi.fn() },
+        },
       })),
     },
   };
