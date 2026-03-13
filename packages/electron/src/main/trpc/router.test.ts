@@ -181,31 +181,6 @@ describe("appRouter - workspaceRouter", () => {
 
   const caller = appRouter.createCaller({});
 
-  it("settings.get returns null when key not found", async () => {
-    mockDb.prepare.mockReturnValue({ get: vi.fn().mockReturnValue(undefined) });
-    const result = await caller.workspace.get({ key: "model_plan" });
-    expect(result).toBeNull();
-  });
-
-  it("settings.get returns value when key found", async () => {
-    mockDb.prepare.mockReturnValue({ get: vi.fn().mockReturnValue({ value: "claude-opus" }) });
-    const result = await caller.workspace.get({ key: "model_plan" });
-    expect(result).toBe("claude-opus");
-  });
-
-  it("settings.set stores a value", async () => {
-    const result = await caller.workspace.set({ key: "model_plan", value: "claude-sonnet" });
-    expect(mockDb.prepare).toHaveBeenCalledWith(expect.stringContaining("INSERT INTO settings"));
-    expect(result).toEqual({ success: true });
-  });
-
-  it("settings.list returns all settings", async () => {
-    const rows = [{ key: "model_plan", value: "claude-opus" }];
-    mockDb.prepare.mockReturnValue({ all: vi.fn().mockReturnValue(rows) });
-    const result = await caller.workspace.list();
-    expect(result).toEqual(rows);
-  });
-
   it("settings.getClaudeCliPath returns path from discovery", async () => {
     const { discoverClaudeCli } = await import("../agents/cli-discovery");
     vi.mocked(discoverClaudeCli).mockReturnValue(Effect.succeed({ path: "/usr/bin/claude", source: "settings" }));
@@ -218,26 +193,6 @@ describe("appRouter - workspaceRouter", () => {
     vi.mocked(discoverClaudeCli).mockReturnValue(Effect.fail(new CliNotFoundError({ searchedPaths: [] })));
     const result = await caller.workspace.getClaudeCliPath();
     expect(result).toBeNull();
-  });
-
-  it("settings.getModelSettings returns models for all agent types", async () => {
-    mockDb.prepare.mockReturnValue({ get: vi.fn().mockReturnValue({ value: "claude-opus" }) });
-    const result = await caller.workspace.getModelSettings();
-    expect(result).toHaveProperty("plan");
-    expect(result).toHaveProperty("execute");
-    expect(result["plan"]).toBe("claude-opus");
-  });
-
-  it("settings.setModelSetting stores model for agent type", async () => {
-    const result = await caller.workspace.setModelSetting({ agentType: "plan", modelId: "claude-3" });
-    expect(mockDb.prepare).toHaveBeenCalledWith(expect.stringContaining("INSERT INTO settings"));
-    expect(result).toEqual({ success: true });
-  });
-
-  it("settings.setModelSetting rejects invalid agent type", async () => {
-    await expect(
-      caller.workspace.setModelSetting({ agentType: "invalid" as any, modelId: "x" }),
-    ).rejects.toThrow();
   });
 
   it("settings.getAvailableModels returns model list", async () => {

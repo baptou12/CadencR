@@ -1,23 +1,28 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ModelSelector } from "../components/ModelSelector";
-import { trpc } from "../trpc";
+import {
+  useGetWorkspaceSetting,
+  useSetWorkspaceSetting,
+  getGetWorkspaceSettingQueryKey,
+} from "../api/generated";
 
 export const Route = createFileRoute("/settings")({
   component: SettingsPage,
 });
 
 function ParallelExecutionCheckbox() {
-  const parallel = trpc.workspace.get.useQuery({ key: "parallel_execution" });
-  const utils = trpc.useContext();
-  const setParallel = trpc.workspace.set.useMutation({
+  const parallel = useGetWorkspaceSetting("parallel_execution");
+  const queryClient = useQueryClient();
+  const setParallel = useSetWorkspaceSetting({
     onSuccess: () => {
-      utils.workspace.get.invalidate({ key: "parallel_execution" });
+      void queryClient.invalidateQueries({ queryKey: getGetWorkspaceSettingQueryKey("parallel_execution") });
     },
   });
 
-  const isChecked = (parallel.data ?? "true") === "true";
+  const isChecked = (parallel.data?.value ?? "true") === "true";
 
   return (
     <div className="flex items-center gap-2">
@@ -36,15 +41,15 @@ function ParallelExecutionCheckbox() {
 }
 
 function AgentAutonomySelect() {
-  const autonomy = trpc.workspace.get.useQuery({ key: "agent_autonomy" });
-  const utils = trpc.useContext();
-  const setAutonomy = trpc.workspace.set.useMutation({
+  const autonomy = useGetWorkspaceSetting("agent_autonomy");
+  const queryClient = useQueryClient();
+  const setAutonomy = useSetWorkspaceSetting({
     onSuccess: () => {
-      utils.workspace.get.invalidate({ key: "agent_autonomy" });
+      void queryClient.invalidateQueries({ queryKey: getGetWorkspaceSettingQueryKey("agent_autonomy") });
     },
   });
 
-  const currentValue = autonomy.data ?? "1";
+  const currentValue = autonomy.data?.value ?? "1";
 
   return (
     <select
@@ -62,16 +67,16 @@ function AgentAutonomySelect() {
 }
 
 function LanguageInput() {
-  const language = trpc.workspace.get.useQuery({ key: "language" });
-  const utils = trpc.useContext();
-  const setLanguage = trpc.workspace.set.useMutation({
+  const language = useGetWorkspaceSetting("language");
+  const queryClient = useQueryClient();
+  const setLanguage = useSetWorkspaceSetting({
     onSuccess: () => {
-      utils.workspace.get.invalidate({ key: "language" });
+      void queryClient.invalidateQueries({ queryKey: getGetWorkspaceSettingQueryKey("language") });
     },
   });
 
-  const [draft, setDraft] = useState(language.data ?? "");
-  const committed = language.data ?? "";
+  const [draft, setDraft] = useState(language.data?.value ?? "");
+  const committed = language.data?.value ?? "";
 
   // Sync draft when server data loads
   if (language.isSuccess && draft === "" && committed !== "") {

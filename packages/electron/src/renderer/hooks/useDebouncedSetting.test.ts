@@ -3,26 +3,29 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { useDebouncedSetting } from "./useDebouncedSetting";
 
 const mockMutate = vi.fn();
-const mockUseQuery = vi.fn(() => ({ data: "stored-value", isLoading: false }));
+const mockInvalidateQueries = vi.fn();
+const mockUseQuery = vi.fn(() => ({ data: { value: "stored-value" }, isLoading: false }));
 
-vi.mock("@/trpc", () => ({
-  trpc: {
-    workspace: {
-      get: {
-        useQuery: () => mockUseQuery(),
-      },
-      set: {
-        useMutation: vi.fn(() => ({ mutate: mockMutate })),
-      },
-    },
-  },
+vi.mock("../api/generated", () => ({
+  useGetWorkspaceSetting: () => mockUseQuery(),
+  useSetWorkspaceSetting: vi.fn(() => ({ mutate: mockMutate })),
+  getGetWorkspaceSettingQueryKey: vi.fn((key: string) => ["workspace", "settings", key]),
 }));
+
+vi.mock("@tanstack/react-query", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@tanstack/react-query")>();
+  return {
+    ...actual,
+    useQueryClient: vi.fn(() => ({ invalidateQueries: mockInvalidateQueries })),
+  };
+});
 
 describe("useDebouncedSetting", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     mockMutate.mockClear();
-    mockUseQuery.mockReturnValue({ data: "stored-value", isLoading: false });
+    mockInvalidateQueries.mockClear();
+    mockUseQuery.mockReturnValue({ data: { value: "stored-value" }, isLoading: false });
   });
 
   afterEach(() => {
@@ -50,7 +53,10 @@ describe("useDebouncedSetting", () => {
     act(() => {
       vi.advanceTimersByTime(300);
     });
-    expect(mockMutate).toHaveBeenCalledWith({ key: "my-key", value: "new-value" });
+    expect(mockMutate).toHaveBeenCalledWith(
+      { key: "my-key", value: "new-value" },
+      expect.any(Object),
+    );
   });
 
   it("debounces multiple rapid calls — only calls mutate once", () => {
@@ -64,7 +70,10 @@ describe("useDebouncedSetting", () => {
       vi.advanceTimersByTime(300);
     });
     expect(mockMutate).toHaveBeenCalledTimes(1);
-    expect(mockMutate).toHaveBeenCalledWith({ key: "my-key", value: "val3" });
+    expect(mockMutate).toHaveBeenCalledWith(
+      { key: "my-key", value: "val3" },
+      expect.any(Object),
+    );
   });
 
   it("uses custom debounce interval", () => {

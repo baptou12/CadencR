@@ -19,14 +19,11 @@ vi.mock("@/trpc", () => ({
     Provider: ({ children }: { children: React.ReactNode }) =>
       React.createElement(React.Fragment, null, children),
     useUtils: vi.fn(() => ({
-      workspace: { getModelSettings: { invalidate: vi.fn() } },
       projects: { getModelSettings: { invalidate: vi.fn() } },
       features: { getModelSettings: { invalidate: vi.fn() } },
     })),
     workspace: {
       getAvailableModels: { useQuery: mockGetAvailableModels },
-      getModelSettings: { useQuery: mockGetGlobalSettings },
-      setModelSetting: { useMutation: vi.fn(() => ({ mutate: vi.fn() })) },
     },
     projects: {
       getModelSettings: { useQuery: mockGetProjectSettings },
@@ -38,6 +35,20 @@ vi.mock("@/trpc", () => ({
     },
   },
 }));
+
+vi.mock("../api/generated", () => ({
+  useGetWorkspaceModelSettings: () => mockGetGlobalSettings(),
+  useSetWorkspaceModelSetting: vi.fn(() => ({ mutate: vi.fn() })),
+  getGetWorkspaceModelSettingsQueryKey: vi.fn(() => ["workspace", "model-settings"]),
+}));
+
+vi.mock("@tanstack/react-query", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@tanstack/react-query")>();
+  return {
+    ...actual,
+    useQueryClient: vi.fn(() => ({ invalidateQueries: vi.fn() })),
+  };
+});
 
 describe("ModelSelector", () => {
   it("renders agent type labels", () => {

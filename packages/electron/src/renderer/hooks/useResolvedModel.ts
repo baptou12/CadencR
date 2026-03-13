@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import { trpc } from "@/trpc";
 import { DEFAULT_MODEL } from "../../shared/models";
 import type { AgentType } from "../../main/agents/types";
+import { useGetWorkspaceModelSettings } from "../api/generated";
 
 /**
  * Hook that resolves the effective model for an agent type through the
@@ -14,7 +15,7 @@ export function useResolvedModel(featureId: number, projectId: number) {
 
   const featureSettings = trpc.features.getModelSettings.useQuery({ featureId });
   const projectSettings = trpc.projects.getModelSettings.useQuery({ projectId });
-  const globalSettings = trpc.workspace.getModelSettings.useQuery();
+  const globalSettings = useGetWorkspaceModelSettings();
 
   const setModelMutation = trpc.features.setModelSetting.useMutation({
     onSuccess: () => utils.features.getModelSettings.invalidate(),

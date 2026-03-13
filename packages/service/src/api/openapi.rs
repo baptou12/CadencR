@@ -6,6 +6,8 @@ use utoipa::OpenApi;
 use crate::app_state::AppState;
 use crate::domain::git::models;
 use crate::domain::git::routes;
+use crate::domain::workspace::models as workspace_models;
+use crate::domain::workspace::routes as workspace_routes;
 
 #[derive(OpenApi)]
 #[openapi(
@@ -33,6 +35,13 @@ use crate::domain::git::routes;
         routes::check_merge_conflicts_handler,
         routes::merge_feature_branch_handler,
         routes::delete_feature_branch_handler,
+        workspace_routes::list_settings_handler,
+        workspace_routes::get_setting_handler,
+        workspace_routes::set_setting_handler,
+        workspace_routes::get_model_settings_handler,
+        workspace_routes::set_model_setting_handler,
+        workspace_routes::get_prompt_history_handler,
+        workspace_routes::add_prompt_entry_handler,
     ),
     components(schemas(
         HealthResponse,
@@ -72,6 +81,14 @@ use crate::domain::git::routes;
         models::CheckMergeConflictsParams,
         models::MergeFeatureBranchBody,
         models::DeleteFeatureBranchParams,
+        workspace_models::Setting,
+        workspace_models::ModelSettings,
+        workspace_models::SetSettingRequest,
+        workspace_models::SetModelSettingRequest,
+        workspace_models::AddPromptEntryRequest,
+        workspace_models::GetPromptHistoryParams,
+        workspace_routes::SettingValueResponse,
+        workspace_routes::AddPromptEntryResponse,
     )),
 )]
 struct ApiDoc;

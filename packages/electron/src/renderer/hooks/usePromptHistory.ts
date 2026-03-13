@@ -4,12 +4,17 @@
  */
 
 import { useState, useCallback, useRef } from "react";
-import { trpc } from "@/trpc";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  useGetWorkspacePromptHistory,
+  useAddWorkspacePromptEntry,
+  getGetWorkspacePromptHistoryQueryKey,
+} from "../api/generated";
 
 export function usePromptHistory(projectId: number) {
-  const utils = trpc.useContext();
-  const historyQuery = trpc.workspace.getPromptHistory.useQuery({ projectId });
-  const addEntryMutation = trpc.workspace.addPromptEntry.useMutation();
+  const queryClient = useQueryClient();
+  const historyQuery = useGetWorkspacePromptHistory(projectId);
+  const addEntryMutation = useAddWorkspacePromptEntry();
 
   // Use a ref so callbacks don't recreate when data changes
   const historyRef = useRef<string[]>([]);
@@ -78,14 +83,16 @@ export function usePromptHistory(projectId: number) {
         { projectId, content },
         {
           onSuccess: () => {
-            void utils.workspace.getPromptHistory.invalidate({ projectId });
+            void queryClient.invalidateQueries({
+              queryKey: getGetWorkspacePromptHistoryQueryKey(projectId),
+            });
           },
         },
       );
       setHistoryIndex(-1);
       setTempDraft("");
     },
-    [projectId, addEntryMutation, utils.workspace.getPromptHistory],
+    [projectId, addEntryMutation, queryClient],
   );
 
   /**

@@ -599,3 +599,146 @@ export function useDeleteFeatureBranch(
     ...options,
   });
 }
+
+// ---------------------------------------------------------------------------
+// Workspace types
+// ---------------------------------------------------------------------------
+
+export interface WorkspaceSetting {
+  key: string;
+  value: string | null;
+}
+
+export interface WorkspaceSettingValueResponse {
+  value: string | null;
+}
+
+export interface WorkspaceModelSettings {
+  plan: string;
+  prd: string;
+  execute: string;
+  risk: string;
+  review: string;
+  "review-fixer": string;
+  session: string;
+  qa: string;
+  retro: string;
+}
+
+export interface WorkspaceAddPromptEntryResponse {
+  success: boolean;
+  skipped: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Workspace query key factories
+// ---------------------------------------------------------------------------
+
+export function getListWorkspaceSettingsQueryKey() {
+  return ["workspace", "settings"] as const;
+}
+
+export function getGetWorkspaceSettingQueryKey(key: string) {
+  return ["workspace", "settings", key] as const;
+}
+
+export function getGetWorkspaceModelSettingsQueryKey() {
+  return ["workspace", "model-settings"] as const;
+}
+
+export function getGetWorkspacePromptHistoryQueryKey(projectId: number) {
+  return ["workspace", "prompt-history", projectId] as const;
+}
+
+// ---------------------------------------------------------------------------
+// Workspace query hooks
+// ---------------------------------------------------------------------------
+
+export function useListWorkspaceSettings(
+  options?: Omit<UseQueryOptions<WorkspaceSetting[], ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<WorkspaceSetting[], ErrorType<unknown>>({
+    queryKey: getListWorkspaceSettingsQueryKey(),
+    queryFn: () => customInstance({ method: "GET", url: "/api/workspace/settings" }),
+    ...options,
+  });
+}
+
+export function useGetWorkspaceSetting(
+  key: string,
+  options?: Omit<UseQueryOptions<WorkspaceSettingValueResponse, ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<WorkspaceSettingValueResponse, ErrorType<unknown>>({
+    queryKey: getGetWorkspaceSettingQueryKey(key),
+    queryFn: () => customInstance({ method: "GET", url: `/api/workspace/settings/${encodeURIComponent(key)}` }),
+    ...options,
+  });
+}
+
+export function useGetWorkspaceModelSettings(
+  options?: Omit<UseQueryOptions<WorkspaceModelSettings, ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<WorkspaceModelSettings, ErrorType<unknown>>({
+    queryKey: getGetWorkspaceModelSettingsQueryKey(),
+    queryFn: () => customInstance({ method: "GET", url: "/api/workspace/model-settings" }),
+    ...options,
+  });
+}
+
+export function useGetWorkspacePromptHistory(
+  projectId: number,
+  options?: Omit<UseQueryOptions<string[], ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<string[], ErrorType<unknown>>({
+    queryKey: getGetWorkspacePromptHistoryQueryKey(projectId),
+    queryFn: () =>
+      customInstance({ method: "GET", url: `/api/workspace/prompt-history?project_id=${projectId}` }),
+    ...options,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Workspace mutation hooks
+// ---------------------------------------------------------------------------
+
+export function useSetWorkspaceSetting(
+  options?: UseMutationOptions<WorkspaceSettingValueResponse, ErrorType<unknown>, { key: string; value: string }>,
+) {
+  return useMutation<WorkspaceSettingValueResponse, ErrorType<unknown>, { key: string; value: string }>({
+    mutationFn: ({ key, value }) =>
+      customInstance({
+        method: "PUT",
+        url: `/api/workspace/settings/${encodeURIComponent(key)}`,
+        data: { value },
+      }),
+    ...options,
+  });
+}
+
+export function useSetWorkspaceModelSetting(
+  options?: UseMutationOptions<WorkspaceSettingValueResponse, ErrorType<unknown>, { agentType: string; modelId: string }>,
+) {
+  return useMutation<WorkspaceSettingValueResponse, ErrorType<unknown>, { agentType: string; modelId: string }>({
+    mutationFn: ({ agentType, modelId }) =>
+      customInstance({
+        method: "PUT",
+        url: "/api/workspace/model-settings",
+        data: { agent_type: agentType, model_id: modelId },
+      }),
+    ...options,
+  });
+}
+
+export function useAddWorkspacePromptEntry(
+  options?: UseMutationOptions<WorkspaceAddPromptEntryResponse, ErrorType<unknown>, { projectId: number; content: string }>,
+) {
+  return useMutation<WorkspaceAddPromptEntryResponse, ErrorType<unknown>, { projectId: number; content: string }>({
+    mutationFn: ({ projectId, content }) =>
+      customInstance({
+        method: "POST",
+        url: "/api/workspace/prompt-history",
+        data: { project_id: projectId, content },
+      }),
+    ...options,
+  });
+}

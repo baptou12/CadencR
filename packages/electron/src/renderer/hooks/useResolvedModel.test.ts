@@ -36,12 +36,11 @@ vi.mock("@/trpc", () => ({
         useQuery: () => mockProjectSettings(),
       },
     },
-    workspace: {
-      getModelSettings: {
-        useQuery: () => mockGlobalSettings(),
-      },
-    },
   },
+}));
+
+vi.mock("../api/generated", () => ({
+  useGetWorkspaceModelSettings: () => mockGlobalSettings(),
 }));
 
 describe("useResolvedModel", () => {
