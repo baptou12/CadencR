@@ -252,24 +252,6 @@ pub struct CreateWorktreeResponse {
 }
 
 // ---------------------------------------------------------------------------
-// DB row types
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, sqlx::FromRow)]
-pub struct FeatureRow {
-    pub id: i64,
-    pub project_id: i64,
-    pub status: String,
-}
-
-#[derive(Debug)]
-pub struct WorktreePaths {
-    pub worktree_path: Option<String>,
-    pub worktree_branch: Option<String>,
-    pub worktree_original_branch: Option<String>,
-}
-
-// ---------------------------------------------------------------------------
 // Defaults
 // ---------------------------------------------------------------------------
 

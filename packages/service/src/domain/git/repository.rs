@@ -1,6 +1,5 @@
 use sqlx::SqlitePool;
 
-use crate::domain::git::models::{FeatureRow, WorktreePaths};
 use crate::error::AppError;
 
 /// Get the filesystem path for a project by ID.
@@ -38,17 +37,6 @@ pub async fn get_branch_prefix(pool: &SqlitePool, project_id: i64) -> Result<Str
     Ok(row
         .and_then(|r| r.0)
         .unwrap_or_else(|| "feature/".to_string()))
-}
-
-/// Get a feature row by ID.
-pub async fn get_feature(pool: &SqlitePool, feature_id: i64) -> Result<FeatureRow, AppError> {
-    let row: Option<FeatureRow> =
-        sqlx::query_as("SELECT id, project_id, status FROM features WHERE id = ?")
-            .bind(feature_id)
-            .fetch_optional(pool)
-            .await?;
-
-    row.ok_or_else(|| AppError::NotFound(format!("Feature not found: {feature_id}")))
 }
 
 /// Get a single feature_settings value.
@@ -112,23 +100,6 @@ pub async fn delete_feature_settings(
         delete_feature_setting(pool, feature_id, key).await?;
     }
     Ok(())
-}
-
-/// Fetch all worktree-related settings for a feature.
-pub async fn get_worktree_paths(
-    pool: &SqlitePool,
-    feature_id: i64,
-) -> Result<WorktreePaths, AppError> {
-    let worktree_path = get_feature_setting(pool, feature_id, "worktree_path").await?;
-    let worktree_branch = get_feature_setting(pool, feature_id, "worktree_branch").await?;
-    let worktree_original_branch =
-        get_feature_setting(pool, feature_id, "worktree_original_branch").await?;
-
-    Ok(WorktreePaths {
-        worktree_path,
-        worktree_branch,
-        worktree_original_branch,
-    })
 }
 
 /// Get feature type and project_id by feature ID.
@@ -258,21 +229,4 @@ mod tests {
         assert_eq!(val, None);
     }
 
-    #[tokio::test]
-    async fn test_get_worktree_paths() {
-        let pool = setup_test_db().await;
-        sqlx::query("INSERT INTO projects (id, name, path) VALUES (1, 'test', '/tmp')")
-            .execute(&pool).await.unwrap();
-        sqlx::query("INSERT INTO features (id, project_id, title) VALUES (1, 1, 'feat')")
-            .execute(&pool).await.unwrap();
-
-        set_feature_setting(&pool, 1, "worktree_path", "/tmp/wt").await.unwrap();
-        set_feature_setting(&pool, 1, "worktree_branch", "feature/test").await.unwrap();
-        set_feature_setting(&pool, 1, "worktree_original_branch", "main").await.unwrap();
-
-        let paths = get_worktree_paths(&pool, 1).await.unwrap();
-        assert_eq!(paths.worktree_path, Some("/tmp/wt".into()));
-        assert_eq!(paths.worktree_branch, Some("feature/test".into()));
-        assert_eq!(paths.worktree_original_branch, Some("main".into()));
-    }
 }
