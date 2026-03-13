@@ -3,9 +3,9 @@ paths:
   - "packages/electron/src/main/**"
 ---
 
-The database layer now uses Effect (`src/main/effect`) instead of `@swan-io/boxed`. When touching any backend file:
+The database layer now uses Effect (`packages/electron/src/main/effect`) instead of `@swan-io/boxed`. When touching any backend file:
 
-- Use `queryOne<T>()` from `src/main/db/query.ts` — returns `Effect.Effect<T | null, DatabaseError>`. Unwrap with `Effect.runSync(queryOne(...))`.
+- Use `queryOne<T>()` from `packages/electron/src/main/db/query.ts` — returns `Effect.Effect<T | null, DatabaseError>`. Unwrap with `Effect.runSync(queryOne(...))`.
 - Use `queryAll<T>()` — returns `Effect.Effect<T[], DatabaseError>`. Unwrap with `Effect.runSync(queryAll(...))`.
 - Use `execute()` for mutations — returns `Effect.Effect<{ changes; lastInsertRowid }, DatabaseError>`. Unwrap with `Effect.runSync(execute(...))`.
 - Replace `queryOne().toNull()` with `Effect.runSync(queryOne(...))` (returns `T | null`).
@@ -14,4 +14,4 @@ The database layer now uses Effect (`src/main/effect`) instead of `@swan-io/boxe
 - Replace `queryAll().getOr([])` with `Effect.runSync(queryAll(...))`.
 - Replace `execute().match({ Ok: ..., Error: ... })` with try/catch around `Effect.runSync(execute(...))`.
 - Never use `@swan-io/boxed` for new code — the Boxed dependency is being phased out.
-- See `src/main/trpc/features.ts` as the reference migration.
+- See `packages/electron/src/main/trpc/features.ts` as the reference migration.
