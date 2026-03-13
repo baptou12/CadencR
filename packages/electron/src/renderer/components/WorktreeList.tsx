@@ -1,8 +1,14 @@
 import { useState } from "react";
-import { trpc } from "@/trpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Trash2, GitBranch, Loader2 } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  useListProjectWorktrees,
+  useDeleteWorktree,
+  useRemoveOrphanWorktree,
+  getListProjectWorktreesQueryKey,
+} from "@/api/generated";
 
 const statusColors: Record<string, string> = {
   planning: "bg-blue-500/15 text-blue-600",
@@ -13,19 +19,19 @@ const statusColors: Record<string, string> = {
 };
 
 export function WorktreeList({ projectId }: { projectId: number }) {
-  const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
   const { data: worktrees, isLoading } =
-    trpc.git.listProjectWorktrees.useQuery({ projectId });
+    useListProjectWorktrees({ projectId });
 
-  const deleteWorktree = trpc.git.deleteWorktree.useMutation({
+  const deleteWorktree = useDeleteWorktree({
     onSuccess: () => {
-      void utils.git.listProjectWorktrees.invalidate({ projectId });
+      void queryClient.invalidateQueries(getListProjectWorktreesQueryKey({ projectId }));
     },
   });
 
-  const removeOrphan = trpc.git.removeOrphanWorktree.useMutation({
+  const removeOrphan = useRemoveOrphanWorktree({
     onSuccess: () => {
-      void utils.git.listProjectWorktrees.invalidate({ projectId });
+      void queryClient.invalidateQueries(getListProjectWorktreesQueryKey({ projectId }));
     },
   });
 
@@ -62,8 +68,8 @@ export function WorktreeList({ projectId }: { projectId: number }) {
         next.delete(wt.path);
         return next;
       });
-    if (wt.featureId) {
-      deleteWorktree.mutate({ projectId, featureId: wt.featureId }, { onSettled });
+    if (wt.feature_id) {
+      deleteWorktree.mutate({ projectId, featureId: wt.feature_id }, { onSettled });
     } else {
       removeOrphan.mutate({ projectId, worktreePath: wt.path }, { onSettled });
     }
@@ -83,15 +89,15 @@ export function WorktreeList({ projectId }: { projectId: number }) {
               {wt.path}
             </div>
             <div className="truncate text-xs text-muted-foreground">
-              {wt.featureTitle ? (
+              {wt.feature_title ? (
                 <span className="flex items-center gap-1.5">
-                  {wt.featureTitle}
-                  {wt.featureStatus && (
+                  {wt.feature_title}
+                  {wt.feature_status && (
                     <Badge
                       variant="outline"
-                      className={`px-1 py-0 text-[10px] leading-tight ${statusColors[wt.featureStatus] ?? ""}`}
+                      className={`px-1 py-0 text-[10px] leading-tight ${statusColors[wt.feature_status] ?? ""}`}
                     >
-                      {wt.featureStatus}
+                      {wt.feature_status}
                     </Badge>
                   )}
                 </span>

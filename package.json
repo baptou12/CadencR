@@ -14,7 +14,10 @@
     "start": "turbo run dev --filter=@cadence/electron",
     "package": "turbo run package",
     "make": "turbo run make",
-    "prepare": "husky"
+    "prepare": "husky",
+    "rust:build": "cargo build --manifest-path packages/service/Cargo.toml",
+    "rust:dev": "cargo run --manifest-path packages/service/Cargo.toml",
+    "rust:test": "cargo test --manifest-path packages/service/Cargo.toml"
   },
   "devDependencies": {
     "husky": "^9.1.7",

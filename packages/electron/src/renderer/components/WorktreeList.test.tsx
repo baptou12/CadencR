@@ -9,32 +9,30 @@ const worktreeData = [
     path: "/wt/feature-a",
     branch: "feature/a",
     head: "abc123",
-    featureId: 1,
-    featureTitle: "Feature A",
-    featureStatus: "in-progress",
+    feature_id: 1,
+    feature_title: "Feature A",
+    feature_status: "in-progress",
   },
   {
     path: "/wt/feature-b",
     branch: "feature/b",
     head: "def456",
-    featureId: 2,
-    featureTitle: "Feature B",
-    featureStatus: "done",
+    feature_id: 2,
+    feature_title: "Feature B",
+    feature_status: "done",
   },
   {
     path: "/wt/orphan",
     branch: "orphan-branch",
     head: "ghi789",
-    featureId: null,
-    featureTitle: null,
-    featureStatus: null,
+    feature_id: null,
+    feature_title: null,
+    feature_status: null,
   },
 ];
 
 let mockDeleteMutate: Mock;
 let mockRemoveOrphanMutate: Mock;
-let mockDeleteIsLoading: boolean;
-let mockRemoveOrphanIsLoading: boolean;
 
 const { mockListQuery, mockDeleteWorktree, mockRemoveOrphan } = vi.hoisted(() => ({
   mockListQuery: vi.fn(),
@@ -42,29 +40,23 @@ const { mockListQuery, mockDeleteWorktree, mockRemoveOrphan } = vi.hoisted(() =>
   mockRemoveOrphan: vi.fn(),
 }));
 
-vi.mock("@/trpc", () => {
-  const React = require("react");
+vi.mock("@/api/generated", () => ({
+  useListProjectWorktrees: mockListQuery,
+  useDeleteWorktree: mockDeleteWorktree,
+  useRemoveOrphanWorktree: mockRemoveOrphan,
+  getListProjectWorktreesQueryKey: vi.fn(() => ["git", "worktrees"]),
+}));
+
+vi.mock("@tanstack/react-query", async () => {
+  const actual = await vi.importActual("@tanstack/react-query");
   return {
-    trpc: {
-      createClient: vi.fn(() => ({})),
-      Provider: ({ children }: { children: React.ReactNode }) =>
-        React.createElement(React.Fragment, null, children),
-      useUtils: vi.fn(() => ({
-        git: { listProjectWorktrees: { invalidate: vi.fn() } },
-      })),
-      git: {
-        listProjectWorktrees: { useQuery: mockListQuery },
-        deleteWorktree: { useMutation: mockDeleteWorktree },
-        removeOrphanWorktree: { useMutation: mockRemoveOrphan },
-      },
-    },
+    ...actual,
+    useQueryClient: vi.fn(() => ({ invalidateQueries: vi.fn() })),
   };
 });
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockDeleteIsLoading = false;
-  mockRemoveOrphanIsLoading = false;
   mockDeleteMutate = vi.fn();
   mockRemoveOrphanMutate = vi.fn();
 
@@ -75,10 +67,9 @@ beforeEach(() => {
 
   mockDeleteWorktree.mockImplementation((opts: { onSuccess?: () => void }) => ({
     mutate: (...args: unknown[]) => {
-      // Store onSuccess to call later if needed
       mockDeleteMutate(...args);
     },
-    isLoading: mockDeleteIsLoading,
+    isLoading: false,
     ...opts,
   }));
 
@@ -86,7 +77,7 @@ beforeEach(() => {
     mutate: (...args: unknown[]) => {
       mockRemoveOrphanMutate(...args);
     },
-    isLoading: mockRemoveOrphanIsLoading,
+    isLoading: false,
     ...opts,
   }));
 });
@@ -125,11 +116,9 @@ describe("WorktreeList", () => {
   });
 
   it("shows spinner on the specific worktree being deleted", async () => {
-    // Make mutate capture the onSettled callback but not call it (simulating in-flight)
     mockDeleteWorktree.mockImplementation((hookOpts: { onSuccess?: () => void }) => ({
       mutate: (input: unknown, opts: { onSettled?: OnSettledFn }) => {
         mockDeleteMutate(input, opts);
-        // Don't call onSettled — mutation stays in flight
       },
       isLoading: false,
       ...hookOpts,
@@ -138,13 +127,10 @@ describe("WorktreeList", () => {
     const { user } = render(<WorktreeList projectId={1} />);
     const buttons = screen.getAllByRole("button");
 
-    // Double-click first worktree to trigger delete
     await user.click(buttons[0]);
     await user.click(buttons[0]);
 
-    // The first button should be disabled (deleting)
     expect(buttons[0]).toBeDisabled();
-    // The second button should NOT be disabled (can delete concurrently)
     expect(buttons[1]).not.toBeDisabled();
   });
 
@@ -160,18 +146,13 @@ describe("WorktreeList", () => {
     const { user } = render(<WorktreeList projectId={1} />);
     const buttons = screen.getAllByRole("button");
 
-    // Delete first worktree (double-click)
     await user.click(buttons[0]);
     await user.click(buttons[0]);
 
-    // Delete second worktree (double-click)
     await user.click(buttons[1]);
     await user.click(buttons[1]);
 
-    // Both should have triggered mutations
     expect(mockDeleteMutate).toHaveBeenCalledTimes(2);
-
-    // Both buttons should be disabled (both in-flight)
     expect(buttons[0]).toBeDisabled();
     expect(buttons[1]).toBeDisabled();
   });
@@ -190,15 +171,12 @@ describe("WorktreeList", () => {
     const { user } = render(<WorktreeList projectId={1} />);
     const buttons = screen.getAllByRole("button");
 
-    // Trigger delete
     await user.click(buttons[0]);
     await user.click(buttons[0]);
     expect(buttons[0]).toBeDisabled();
 
-    // Simulate mutation completing
     capturedOnSettled!();
 
-    // Re-render to pick up state change
     await waitFor(() => {
       expect(buttons[0]).not.toBeDisabled();
     });
@@ -216,7 +194,6 @@ describe("WorktreeList", () => {
     const { user } = render(<WorktreeList projectId={1} />);
     const buttons = screen.getAllByRole("button");
 
-    // The orphan is the 3rd item (index 2)
     await user.click(buttons[2]);
     await user.click(buttons[2]);
 

@@ -8,6 +8,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TerminalIcon, SettingsIcon, GitCompareArrowsIcon, BrainCircuitIcon, CpuIcon } from "lucide-react";
 import { trpc } from "@/trpc";
+import { useGetStats, useGetBranch } from "@/api/generated";
 import { DiffViewerModal, type ExecuteAgentState } from "./diff/DiffViewerModal";
 import { ModelSelector } from "./ModelSelector";
 import zedLogo from "../../../assets/zed-logo.png";
@@ -41,14 +42,15 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", executeS
   const { data: featureSettings } = trpc.features.getSettings.useQuery({
     feature_id: featureId,
   });
-  const { data: gitStats, refetch: refetchStats } = trpc.git.getStats.useQuery(
+  const { data: gitStats, refetch: refetchStats } = useGetStats(
     { featureId, mode: isSession ? "worktree" : "branch" },
     { refetchInterval: 5 * 60 * 1000 },
   );
-  const { data: currentBranch } = trpc.git.getBranch.useQuery(
+  const { data: currentBranchData } = useGetBranch(
     { projectId },
     { enabled: isSession, refetchInterval: 10000 },
   );
+  const currentBranch = currentBranchData?.branch ?? null;
 
   // OPT+P -> toggle feature settings popover (secondary shortcut)
   useHotkeys(

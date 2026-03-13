@@ -9,6 +9,7 @@ import { hasRunningSubprocesses } from "./main/agents/subprocess-manager";
 import { SessionPersistence } from "./main/effect/services/SessionPersistence";
 import { resumeInProgressFeatures } from "./main/agents/resume-features";
 import { fetchAvailableModels } from "./main/agents/available-models";
+import { startRustBackend, stopRustBackend, getRustBackendPort } from "./main/rust-backend";
 
 // Register the AppRuntime singleton so convenience wrappers (effect-helpers.ts)
 // can access it without creating circular module dependencies.
@@ -87,6 +88,18 @@ app.on("ready", async () => {
   // Restore in-memory session map from DB (for reconnection after restart).
   await AppRuntime.runPromise(SessionPersistence.restoreSessionMap());
   resumeInProgressFeatures();
+
+  // Start Rust backend for git operations
+  const dbPath = path.join(app.getPath("userData"), "cadence.db");
+  try {
+    await startRustBackend(dbPath);
+  } catch (err) {
+    console.error("[rust-backend] Failed to start:", err);
+  }
+
+  // Expose the Rust backend port to preload via env var (preload runs synchronously)
+  process.env.CADENCE_RUST_PORT = String(getRustBackendPort());
+
   createWindow();
 });
 
@@ -126,11 +139,13 @@ app.on("before-quit", (e) => {
   } else if (!isQuitting) {
     isQuitting = true;
     e.preventDefault();
-    // Effect runtime disposal handles PTY cleanup, subprocess shutdown,
-    // and DB close in reverse-dependency order via registered finalizers.
-    AppRuntime.dispose().finally(() => {
-      app.quit();
-    });
+    // Stop Rust backend, then dispose Effect runtime.
+    stopRustBackend()
+      .catch((err) => console.error("[rust-backend] Error stopping:", err))
+      .then(() => AppRuntime.dispose())
+      .finally(() => {
+        app.quit();
+      });
   }
 });
 

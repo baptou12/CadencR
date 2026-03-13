@@ -8,6 +8,7 @@ import {
   RefreshCwIcon,
 } from "lucide-react";
 import { trpc } from "@/trpc";
+import { useRetryWorktreeSetup } from "@/api/generated";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -79,7 +80,7 @@ export function WorktreeSetupSection({
     feature_id: featureId,
   });
 
-  const retryMutation = trpc.git.retryWorktreeSetup.useMutation();
+  const retryMutation = useRetryWorktreeSetup();
 
   const step = (settings?.worktree_setup_step as SetupStep) ?? null;
   const log = settings?.worktree_setup_log ?? "";

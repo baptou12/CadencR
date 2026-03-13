@@ -4,6 +4,16 @@ import { getDiffViewHighlighter, type DiffHighlighter } from "@git-diff-view/shi
 import "@git-diff-view/react/styles/diff-view.css";
 import "./dracula-diff.css";
 import { trpc } from "@/trpc";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  useGetFileContent,
+  useGetFileBlobShas,
+  useGetCommitLog,
+  useGetDiff,
+  useGetFileContentBatch,
+  getGetFileContentQueryKey,
+  type FileContent,
+} from "@/api/generated";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { CopyButton } from "./CopyButton";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -93,7 +103,7 @@ function DiffFileBlock({
   // near the viewport and not collapsed — avoids work for off-screen files.
   const shouldRender = isNearViewport && !isCollapsed;
 
-  const { data: fileContent } = trpc.git.getFileContent.useQuery(
+  const { data: fileContent } = useGetFileContent(
     { featureId, filePath, mode, targetBranch, commitSha },
     { enabled: shouldRender },
   );
@@ -104,8 +114,8 @@ function DiffFileBlock({
   const diffFile = useMemo(() => {
     if (!shouldRender) return null;
     const lang = langFromPath(filePath);
-    const oldContent = fileContent?.oldContent ?? "";
-    const newContent = fileContent?.newContent ?? "";
+    const oldContent = fileContent?.old_content ?? "";
+    const newContent = fileContent?.new_content ?? "";
     try {
       const file = DiffFile.createInstance({
         oldFile: { fileName: section.oldFileName, fileLang: lang, content: oldContent },
@@ -234,14 +244,32 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
   }, []);
 
   const { data: viewedList = [] } = trpc.diffViewed.list.useQuery({ featureId });
-  const { data: blobShas = {} } = trpc.git.getFileBlobShas.useQuery({ featureId });
+  const { data: blobShasList = [] } = useGetFileBlobShas({ featureId });
+  const blobShas: Record<string, string> = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const item of blobShasList) {
+      if (item.sha) map[item.file_path] = item.sha;
+    }
+    return map;
+  }, [blobShasList]);
   const [commitLimit, setCommitLimit] = useState(20);
-  const { data: commitData } = trpc.git.getCommitLog.useQuery(
+  const { data: commitData } = useGetCommitLog(
     { featureId, limit: commitLimit },
     { keepPreviousData: true },
   );
-  const commits = (commitData?.commits ?? []) as CommitEntry[];
-  const isOnBaseBranch = commitData?.isOnBaseBranch ?? true;
+  const commits = useMemo(() =>
+    (commitData?.commits ?? []).map((c) => ({
+      sha: c.sha,
+      shortSha: c.short_sha,
+      message: c.message,
+      body: c.body,
+      author: c.author,
+      date: c.date,
+      isPushed: c.is_pushed,
+    })) as CommitEntry[],
+    [commitData],
+  );
+  const isOnBaseBranch = commitData?.is_on_base_branch ?? true;
 
   const viewedFilesSet = useMemo(() => {
     const set = new Set<string>();
@@ -275,14 +303,16 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
   } | null>(null);
   const diffAreaRef = useRef<HTMLDivElement>(null);
 
-  const { data: rawDiff, isLoading } = trpc.git.getDiff.useQuery({
+  const { data: diffResponse, isLoading } = useGetDiff({
     featureId,
     mode,
     targetBranch,
     commitSha: selectedCommit ?? undefined,
   });
+  const rawDiff = diffResponse?.diff;
 
   const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
 
   const markViewed = trpc.diffViewed.markViewed.useMutation({
     onSuccess: () => utils.diffViewed.list.invalidate({ featureId }),
@@ -349,9 +379,9 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
     [fileSections],
   );
 
-  // Batch prefetch all file contents in a single tRPC call, then seed
+  // Batch prefetch all file contents in a single call, then seed
   // individual per-file cache keys so DiffFileBlock queries resolve instantly.
-  const { data: batchFileContent } = trpc.git.getFileContentBatch.useQuery(
+  const { data: batchFileContentList } = useGetFileContentBatch(
     {
       featureId,
       filePaths: fileNames,
@@ -367,24 +397,31 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
   // to rebuild its DiffFile synchronously in a single React render, blocking
   // interaction for hundreds of milliseconds.
   useEffect(() => {
-    if (!batchFileContent) return;
-    const entries = Object.entries(batchFileContent);
+    if (!batchFileContentList) return;
+    const items = batchFileContentList;
     let i = 0;
     let rafId: number;
 
     function seedNext() {
-      if (i >= entries.length) return;
-      const [filePath, content] = entries[i++];
-      utils.git.getFileContent.setData(
-        { featureId, filePath, mode, targetBranch, commitSha: selectedCommit ?? undefined },
-        content,
-      );
+      if (i >= items.length) return;
+      const item = items[i++];
+      const key = getGetFileContentQueryKey({
+        featureId,
+        filePath: item.file_path,
+        mode,
+        targetBranch,
+        commitSha: selectedCommit ?? undefined,
+      });
+      queryClient.setQueryData(key, {
+        old_content: item.old_content,
+        new_content: item.new_content,
+      } as FileContent);
       rafId = requestAnimationFrame(seedNext);
     }
 
     rafId = requestAnimationFrame(seedNext);
     return () => cancelAnimationFrame(rafId);
-  }, [batchFileContent, featureId, mode, targetBranch, selectedCommit, utils]);
+  }, [batchFileContentList, featureId, mode, targetBranch, selectedCommit, queryClient]);
 
   const fileMeta = useMemo(() => {
     return fileSections.map((section) => {
