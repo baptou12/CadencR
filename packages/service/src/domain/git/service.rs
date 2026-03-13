@@ -115,7 +115,7 @@ pub async fn get_file_content(
     let git_path = resolve_feature_git_path(state, params.feature_id).await?;
     let git_path = match git_path {
         Some(p) => p,
-        None => return Ok(FileContent { old_content: String::new(), new_content: String::new() }),
+        None => return Ok(FileContent { old_content: None, new_content: None }),
     };
     let path = Path::new(&git_path);
 
@@ -125,7 +125,7 @@ pub async fn get_file_content(
             commands::get_file_content(path, &params.file_path, Some(&parent)),
             commands::get_file_content(path, &params.file_path, Some(commit_sha)),
         );
-        return Ok(FileContent { old_content: old_content?, new_content: new_content? });
+        return Ok(FileContent { old_content: Some(old_content?), new_content: Some(new_content?) });
     }
 
     if params.mode == "worktree" {
@@ -133,7 +133,7 @@ pub async fn get_file_content(
             commands::get_file_content(path, &params.file_path, Some("HEAD")),
             commands::get_file_content(path, &params.file_path, None),
         );
-        return Ok(FileContent { old_content: old_content?, new_content: new_content? });
+        return Ok(FileContent { old_content: Some(old_content?), new_content: Some(new_content?) });
     }
 
     // Branch mode
@@ -148,7 +148,7 @@ pub async fn get_file_content(
         commands::get_file_content(path, &params.file_path, Some(&base_branch)),
         commands::get_file_content(path, &params.file_path, Some("HEAD")),
     );
-    Ok(FileContent { old_content: old_content?, new_content: new_content? })
+    Ok(FileContent { old_content: Some(old_content?), new_content: Some(new_content?) })
 }
 
 pub async fn get_file_content_batch(
@@ -189,7 +189,7 @@ pub async fn get_file_content_batch(
 
     Ok(body.file_paths.iter().map(|fp| {
         let (old, new) = batch.get(fp).cloned().unwrap_or_default();
-        FileContentBatchItem { old_content: old, new_content: new }
+        FileContentBatchItem { file_path: fp.clone(), old_content: Some(old), new_content: Some(new) }
     }).collect())
 }
 
@@ -359,17 +359,30 @@ pub async fn list_project_worktrees(
     let project_path = repository::get_project_path(&state.read_pool, params.project_id).await?;
     let worktrees = commands::list_worktrees(Path::new(&project_path)).await.unwrap_or_default();
 
-    let repo_root = project_path.trim_end_matches('/');
+    let repo_root_canonical = std::fs::canonicalize(&project_path)
+        .unwrap_or_else(|_| std::path::PathBuf::from(&project_path));
+    let repo_root_str = repo_root_canonical.to_string_lossy().trim_end_matches('/').to_string();
     let secondary: Vec<_> = worktrees
         .into_iter()
-        .filter(|w| w.path.trim_end_matches('/') != repo_root && !w.is_bare)
+        .filter(|w| {
+            let w_canonical = std::fs::canonicalize(&w.path)
+                .unwrap_or_else(|_| std::path::PathBuf::from(&w.path));
+            w_canonical.to_string_lossy().trim_end_matches('/') != repo_root_str && !w.is_bare
+        })
         .collect();
 
     let feature_lookup = repository::get_worktree_feature_lookup(&state.read_pool, params.project_id).await?;
-    let by_path: std::collections::HashMap<_, _> = feature_lookup.iter().map(|r| (r.worktree_path.as_str(), r)).collect();
+    // Build lookup by canonicalized path for symlink-safe matching
+    let by_path: std::collections::HashMap<String, _> = feature_lookup.iter().map(|r| {
+        let canonical = std::fs::canonicalize(&r.worktree_path)
+            .unwrap_or_else(|_| std::path::PathBuf::from(&r.worktree_path));
+        (canonical.to_string_lossy().to_string(), r)
+    }).collect();
 
     Ok(secondary.into_iter().map(|w| {
-        let feat = by_path.get(w.path.as_str());
+        let w_canonical = std::fs::canonicalize(&w.path)
+            .unwrap_or_else(|_| std::path::PathBuf::from(&w.path));
+        let feat = by_path.get(&*w_canonical.to_string_lossy());
         ProjectWorktreeInfo {
             path: w.path,
             branch: w.branch,

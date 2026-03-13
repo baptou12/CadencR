@@ -173,14 +173,15 @@ pub struct ChangedFile {
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct FileContent {
-    pub old_content: String,
-    pub new_content: String,
+    pub old_content: Option<String>,
+    pub new_content: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct FileContentBatchItem {
-    pub old_content: String,
-    pub new_content: String,
+    pub file_path: String,
+    pub old_content: Option<String>,
+    pub new_content: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]

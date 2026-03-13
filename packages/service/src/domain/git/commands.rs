@@ -565,8 +565,15 @@ pub async fn get_worktree_info(
     worktree_path: &Path,
 ) -> Result<Option<WorktreeInfo>, AppError> {
     let all = list_worktrees(repo_path).await?;
-    let wt_str = worktree_path.to_string_lossy();
-    Ok(all.into_iter().find(|w| w.path == wt_str.as_ref()))
+    // Canonicalize to handle macOS symlinks (/var -> /private/var)
+    let canonical = std::fs::canonicalize(worktree_path)
+        .unwrap_or_else(|_| worktree_path.to_path_buf());
+    let wt_str = canonical.to_string_lossy();
+    Ok(all.into_iter().find(|w| {
+        let w_canonical = std::fs::canonicalize(&w.path)
+            .unwrap_or_else(|_| std::path::PathBuf::from(&w.path));
+        w_canonical.to_string_lossy() == wt_str.as_ref()
+    }))
 }
 
 /// Create a git worktree with a new branch.
