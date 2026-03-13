@@ -31,8 +31,16 @@ const config: ForgeConfig = {
           stdio: "inherit",
         });
         // Rebuild native modules against Electron's Node.js headers
+        const electronRebuild = path.join(
+          __dirname,
+          "..",
+          "..",
+          "node_modules",
+          ".bin",
+          "electron-rebuild",
+        );
         execSync(
-          `npx electron-rebuild --version "${electronVersion}" --arch "${arch}" --module-dir "${buildPath}" --only better-sqlite3,node-pty`,
+          `"${electronRebuild}" --version "${electronVersion}" --arch "${arch}" --module-dir "${buildPath}" --only better-sqlite3,node-pty`,
           {
             cwd: buildPath,
             stdio: "inherit",
