@@ -440,3 +440,15 @@ pub async fn delete_feature_branch(
     let result = commands::delete_branch(Path::new(&project_path), &branch).await?;
     Ok(SuccessResponse { success: result.success, error: result.error })
 }
+
+pub async fn has_uncommitted_changes(
+    state: &AppState,
+    params: HasUncommittedChangesParams,
+) -> Result<HasUncommittedChangesResponse, AppError> {
+    let wt_path = repository::get_feature_setting(&state.read_pool, params.feature_id, SETTING_WORKTREE_PATH)
+        .await?
+        .ok_or_else(|| AppError::NotFound("No worktree found for this feature".into()))?;
+
+    let has_changes = commands::has_uncommitted_changes(Path::new(&wt_path)).await?;
+    Ok(HasUncommittedChangesResponse { has_changes })
+}

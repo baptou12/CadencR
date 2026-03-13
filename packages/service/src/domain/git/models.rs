@@ -134,6 +134,12 @@ pub struct DeleteFeatureBranchParams {
     pub feature_id: i64,
 }
 
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct HasUncommittedChangesParams {
+    pub project_id: i64,
+    pub feature_id: i64,
+}
+
 // ---------------------------------------------------------------------------
 // Response types
 // ---------------------------------------------------------------------------
@@ -236,6 +242,11 @@ pub struct MergeResult {
 pub struct OriginalBranchResponse {
     pub original_branch: String,
     pub worktree_branch: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct HasUncommittedChangesResponse {
+    pub has_changes: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]

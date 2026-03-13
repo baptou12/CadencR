@@ -111,6 +111,11 @@ pub async fn delete_feature_branch_handler(State(state): State<AppState>, Query(
     Ok(Json(service::delete_feature_branch(&state, params).await?))
 }
 
+#[utoipa::path(get, path = "/api/git/has-uncommitted-changes", params(("project_id" = i64, Query,), ("feature_id" = i64, Query,)), responses((status = 200, body = HasUncommittedChangesResponse)))]
+pub async fn has_uncommitted_changes_handler(State(state): State<AppState>, Query(params): Query<HasUncommittedChangesParams>) -> Result<Json<HasUncommittedChangesResponse>, AppError> {
+    Ok(Json(service::has_uncommitted_changes(&state, params).await?))
+}
+
 // ---------------------------------------------------------------------------
 // Router
 // ---------------------------------------------------------------------------
@@ -135,4 +140,5 @@ pub fn git_router() -> Router<AppState> {
         .route("/api/git/original-branch", get(get_original_branch_handler))
         .route("/api/git/merge-conflicts", get(check_merge_conflicts_handler))
         .route("/api/git/merge", post(merge_feature_branch_handler))
+        .route("/api/git/has-uncommitted-changes", get(has_uncommitted_changes_handler))
 }
