@@ -16,7 +16,7 @@ process.once("loaded", () => {
   exposeElectronTRPC();
 
   contextBridge.exposeInMainWorld("api", {
-    rustBackendUrl: `http://localhost:${process.env.CADENCE_RUST_PORT || "45678"}`,
+    rustBackendUrl: `http://localhost:${process.env.CADENCE_RUST_PORT || "5005"}`,
     onAgentEvent: (callback: (event: unknown) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, data: unknown) => {
         callback(data);

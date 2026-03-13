@@ -3,7 +3,7 @@ import path from "node:path";
 import { app } from "electron";
 import http from "node:http";
 
-const DEFAULT_PORT = 45678;
+const DEFAULT_PORT = 5005;
 
 let rustProcess: ChildProcess | null = null;
 let currentPort: number = DEFAULT_PORT;
@@ -23,6 +23,7 @@ function getBinaryPath(): string {
     "..",
     "..",
     "..",
+    "packages",
     "service",
     "target",
     "debug",

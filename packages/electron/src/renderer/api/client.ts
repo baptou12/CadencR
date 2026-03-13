@@ -3,8 +3,8 @@ import Axios, { type AxiosRequestConfig, type AxiosError } from "axios";
 const baseURL = (() => {
   const url = window.api?.rustBackendUrl;
   if (!url) {
-    console.warn("[api-client] window.api.rustBackendUrl is undefined, falling back to http://localhost:45678");
-    return "http://localhost:45678";
+    console.warn("[api-client] window.api.rustBackendUrl is undefined, falling back to http://localhost:5005");
+    return "http://localhost:5005";
   }
   return url;
 })();
