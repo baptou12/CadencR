@@ -8,6 +8,8 @@ use crate::domain::git::models;
 use crate::domain::git::routes;
 use crate::domain::workspace::models as workspace_models;
 use crate::domain::workspace::routes as workspace_routes;
+use crate::domain::projects::models as projects_models;
+use crate::domain::projects::routes as projects_routes;
 
 #[derive(OpenApi)]
 #[openapi(
@@ -42,6 +44,13 @@ use crate::domain::workspace::routes as workspace_routes;
         workspace_routes::set_model_setting_handler,
         workspace_routes::get_prompt_history_handler,
         workspace_routes::add_prompt_entry_handler,
+        projects_routes::list_projects_handler,
+        projects_routes::create_project_handler,
+        projects_routes::delete_project_handler,
+        projects_routes::get_project_settings_handler,
+        projects_routes::set_project_setting_handler,
+        projects_routes::get_project_model_settings_handler,
+        projects_routes::set_project_model_setting_handler,
     ),
     components(schemas(
         HealthResponse,
@@ -89,6 +98,13 @@ use crate::domain::workspace::routes as workspace_routes;
         workspace_models::GetPromptHistoryParams,
         workspace_routes::SettingValueResponse,
         workspace_routes::AddPromptEntryResponse,
+        projects_models::Project,
+        projects_models::CreateProjectRequest,
+        projects_models::ProjectSetting,
+        projects_models::SetProjectSettingRequest,
+        projects_models::ProjectModelSettings,
+        projects_models::SetProjectModelSettingRequest,
+        projects_routes::SuccessResponse,
     )),
 )]
 struct ApiDoc;

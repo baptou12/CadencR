@@ -31,16 +31,12 @@ vi.mock("@/trpc", () => ({
         })),
       },
     },
-    projects: {
-      getModelSettings: {
-        useQuery: () => mockProjectSettings(),
-      },
-    },
   },
 }));
 
 vi.mock("../api/generated", () => ({
   useGetWorkspaceModelSettings: () => mockGlobalSettings(),
+  useGetProjectModelSettings: () => mockProjectSettings(),
 }));
 
 describe("useResolvedModel", () => {

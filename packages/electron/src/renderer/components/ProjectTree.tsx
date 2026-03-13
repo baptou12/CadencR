@@ -8,6 +8,13 @@ import {
   PlusIcon,
 } from "lucide-react";
 import { trpc } from "@/trpc";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  useListProjects,
+  useCreateProject,
+  useDeleteProject,
+  getListProjectsQueryKey,
+} from "../api/generated";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -33,7 +40,8 @@ export function ProjectTree({
 }: ProjectTreeProps) {
   const navigate = useNavigate();
   const utils = trpc.useUtils();
-  const projectsQuery = trpc.projects.list.useQuery();
+  const queryClient = useQueryClient();
+  const projectsQuery = useListProjects();
   const projects = projectsQuery.data ?? [];
 
   const { data: featureTurnStates = {} } = trpc.sessions.getFeatureTurnStates.useQuery(
@@ -42,14 +50,14 @@ export function ProjectTree({
   );
 
   const selectFolderMutation = trpc.projects.selectFolder.useMutation();
-  const createProjectMutation = trpc.projects.create.useMutation({
+  const createProjectMutation = useCreateProject({
     onSuccess: () => {
-      void utils.projects.list.invalidate();
+      void queryClient.invalidateQueries({ queryKey: getListProjectsQueryKey() });
     },
   });
-  const deleteProjectMutation = trpc.projects.delete.useMutation({
+  const deleteProjectMutation = useDeleteProject({
     onSuccess: () => {
-      void utils.projects.list.invalidate();
+      void queryClient.invalidateQueries({ queryKey: getListProjectsQueryKey() });
     },
   });
 

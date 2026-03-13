@@ -1,5 +1,10 @@
 import { useState, useEffect } from "react";
-import { trpc } from "@/trpc";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  useGetProjectSettings,
+  useSetProjectSetting,
+  getGetProjectSettingsQueryKey,
+} from "../api/generated";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -30,14 +35,18 @@ export function ProjectSettingsDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const utils = trpc.useUtils();
-  const { data: settings } = trpc.projects.getSettings.useQuery(
-    { project_id: projectId },
-    { enabled: open },
-  );
-  const setSettingMutation = trpc.projects.setSetting.useMutation({
+  const queryClient = useQueryClient();
+  const { data: settingsArray } = useGetProjectSettings(projectId, { enabled: open });
+  // Convert array to record for easy key access
+  const settings: Record<string, string> = {};
+  if (settingsArray) {
+    for (const s of settingsArray) {
+      if (s.value != null) settings[s.key] = s.value;
+    }
+  }
+  const setSettingMutation = useSetProjectSetting({
     onSuccess: () => {
-      void utils.projects.getSettings.invalidate({ project_id: projectId });
+      void queryClient.invalidateQueries({ queryKey: getGetProjectSettingsQueryKey(projectId) });
     },
   });
 
@@ -83,7 +92,7 @@ export function ProjectSettingsDialog({
                 value={branchPrefix}
                 onChange={(e) =>
                   setSettingMutation.mutate({
-                    project_id: projectId,
+                    projectId: projectId,
                     key: "branch_prefix",
                     value: e.target.value,
                   })
@@ -104,7 +113,7 @@ export function ProjectSettingsDialog({
                 onChange={(e) => setSetupWorktree(e.target.value)}
                 onBlur={() =>
                   setSettingMutation.mutate({
-                    project_id: projectId,
+                    projectId: projectId,
                     key: "setup_worktree",
                     value: setupWorktree,
                   })
@@ -122,7 +131,7 @@ export function ProjectSettingsDialog({
                 value={agentAutonomy}
                 onValueChange={(value) =>
                   setSettingMutation.mutate({
-                    project_id: projectId,
+                    projectId: projectId,
                     key: "agent_autonomy",
                     value,
                   })
@@ -149,7 +158,7 @@ export function ProjectSettingsDialog({
                   checked={(settings?.parallel_execution ?? "true") === "true"}
                   onCheckedChange={(checked) =>
                     setSettingMutation.mutate({
-                      project_id: projectId,
+                      projectId: projectId,
                       key: "parallel_execution",
                       value: checked ? "true" : "false",
                     })
@@ -177,7 +186,7 @@ export function ProjectSettingsDialog({
                 onChange={(e) => setQaPrompt(e.target.value)}
                 onBlur={() =>
                   setSettingMutation.mutate({
-                    project_id: projectId,
+                    projectId: projectId,
                     key: "qa_prompt",
                     value: qaPrompt,
                   })

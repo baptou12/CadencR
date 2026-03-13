@@ -22,6 +22,12 @@ import {
 } from "@/components/ui/command";
 import { KbdShortcut } from "@/components/KbdShortcut";
 import { trpc } from "@/trpc";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  useListProjects,
+  useCreateProject,
+  getListProjectsQueryKey,
+} from "../api/generated";
 
 interface CommandPaletteProps {
   open: boolean;
@@ -79,13 +85,14 @@ export function CommandPalette({
   const [search, setSearch] = useState("");
   const navigate = useNavigate();
   const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
 
-  const projectsQuery = trpc.projects.list.useQuery();
+  const projectsQuery = useListProjects();
 
   const selectFolderMutation = trpc.projects.selectFolder.useMutation();
-  const createProjectMutation = trpc.projects.create.useMutation({
+  const createProjectMutation = useCreateProject({
     onSuccess: () => {
-      void utils.projects.list.invalidate();
+      void queryClient.invalidateQueries({ queryKey: getListProjectsQueryKey() });
     },
   });
 

@@ -16,6 +16,29 @@ vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => mockNavigate,
 }));
 
+vi.mock("../api/generated", () => ({
+  useListProjects: vi.fn(() => ({
+    data: [
+      { id: 1, name: "Alpha Project", path: "/alpha" },
+      { id: 2, name: "Beta Project", path: "/beta" },
+    ],
+  })),
+  useCreateProject: vi.fn((opts?: { onSuccess?: () => void }) => ({
+    mutate: (data: unknown) => {
+      mockCreateProject(data);
+      opts?.onSuccess?.();
+    },
+    isLoading: false,
+  })),
+  useDeleteProject: vi.fn((opts?: { onSuccess?: () => void }) => ({
+    mutate: (data: unknown) => {
+      mockDeleteProject(data);
+      opts?.onSuccess?.();
+    },
+  })),
+  getListProjectsQueryKey: vi.fn(() => ["projects"]),
+}));
+
 vi.mock("@/trpc", () => {
   const React = require("react");
   return {
@@ -24,28 +47,11 @@ vi.mock("@/trpc", () => {
       Provider: ({ children }: { children: unknown }) =>
         React.createElement(React.Fragment, null, children),
       projects: {
-        list: {
-          useQuery: vi.fn(() => ({
-            data: [
-              { id: 1, name: "Alpha Project", path: "/alpha" },
-              { id: 2, name: "Beta Project", path: "/beta" },
-            ],
-          })),
-        },
         selectFolder: {
           useMutation: vi.fn(() => ({
             mutateAsync: mockSelectFolder,
             isLoading: false,
           })),
-        },
-        create: {
-          useMutation: vi.fn(() => ({
-            mutate: mockCreateProject,
-            isLoading: false,
-          })),
-        },
-        delete: {
-          useMutation: vi.fn(() => ({ mutate: mockDeleteProject })),
         },
       },
       features: {
@@ -76,7 +82,6 @@ vi.mock("@/trpc", () => {
         },
       },
       useUtils: vi.fn(() => ({
-        projects: { list: { invalidate: mockInvalidate } },
         features: { listByProject: { invalidate: mockInvalidate } },
       })),
     },

@@ -11,6 +11,9 @@ import {
   useGetWorkspaceModelSettings,
   useSetWorkspaceModelSetting,
   getGetWorkspaceModelSettingsQueryKey,
+  useGetProjectModelSettings,
+  useSetProjectModelSetting,
+  getGetProjectModelSettingsQueryKey,
 } from "../api/generated";
 
 const AGENT_TYPES = ["plan", "prd", "execute", "risk", "review", "review-fixer", "session", "qa", "retro"] as const;
@@ -45,10 +48,9 @@ export function ModelSelector({ level, projectId, featureId }: ModelSelectorProp
   const globalSettings = useGetWorkspaceModelSettings({
     enabled: level === "global",
   });
-  const projectSettings = trpc.projects.getModelSettings.useQuery(
-    { projectId: projectId! },
-    { enabled: level === "project" && projectId != null },
-  );
+  const projectSettings = useGetProjectModelSettings(projectId ?? 0, {
+    enabled: level === "project" && projectId != null,
+  });
   const featureSettings = trpc.features.getModelSettings.useQuery(
     { featureId: featureId! },
     { enabled: level === "feature" && featureId != null },
@@ -57,16 +59,15 @@ export function ModelSelector({ level, projectId, featureId }: ModelSelectorProp
   const parentGlobalSettings = useGetWorkspaceModelSettings({
     enabled: level !== "global",
   });
-  const parentProjectSettings = trpc.projects.getModelSettings.useQuery(
-    { projectId: projectId! },
-    { enabled: level === "feature" && projectId != null },
-  );
+  const parentProjectSettings = useGetProjectModelSettings(projectId ?? 0, {
+    enabled: level === "feature" && projectId != null,
+  });
 
   const globalMutation = useSetWorkspaceModelSetting({
     onSuccess: () => queryClient.invalidateQueries({ queryKey: getGetWorkspaceModelSettingsQueryKey() }),
   });
-  const projectMutation = trpc.projects.setModelSetting.useMutation({
-    onSuccess: () => utils.projects.getModelSettings.invalidate(),
+  const projectMutation = useSetProjectModelSetting({
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: getGetProjectModelSettingsQueryKey(projectId ?? 0) }),
   });
   const featureMutation = trpc.features.setModelSetting.useMutation({
     onSuccess: () => utils.features.getModelSettings.invalidate(),
@@ -104,7 +105,7 @@ export function ModelSelector({ level, projectId, featureId }: ModelSelectorProp
     if (level === "global") {
       globalMutation.mutate({ agentType, modelId: modelId || "claude-opus-4-6" });
     } else if (level === "project" && projectId != null) {
-      projectMutation.mutate({ projectId, agentType, modelId });
+      projectMutation.mutate({ projectId, modelType: agentType, model: modelId });
     } else if (level === "feature" && featureId != null) {
       featureMutation.mutate({ featureId, agentType, modelId });
     }

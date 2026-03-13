@@ -19,15 +19,10 @@ vi.mock("@/trpc", () => ({
     Provider: ({ children }: { children: React.ReactNode }) =>
       React.createElement(React.Fragment, null, children),
     useUtils: vi.fn(() => ({
-      projects: { getModelSettings: { invalidate: vi.fn() } },
       features: { getModelSettings: { invalidate: vi.fn() } },
     })),
     workspace: {
       getAvailableModels: { useQuery: mockGetAvailableModels },
-    },
-    projects: {
-      getModelSettings: { useQuery: mockGetProjectSettings },
-      setModelSetting: { useMutation: vi.fn(() => ({ mutate: vi.fn() })) },
     },
     features: {
       getModelSettings: { useQuery: mockGetFeatureSettings },
@@ -40,6 +35,9 @@ vi.mock("../api/generated", () => ({
   useGetWorkspaceModelSettings: () => mockGetGlobalSettings(),
   useSetWorkspaceModelSetting: vi.fn(() => ({ mutate: vi.fn() })),
   getGetWorkspaceModelSettingsQueryKey: vi.fn(() => ["workspace", "model-settings"]),
+  useGetProjectModelSettings: () => mockGetProjectSettings(),
+  useSetProjectModelSetting: vi.fn(() => ({ mutate: vi.fn() })),
+  getGetProjectModelSettingsQueryKey: vi.fn(() => ["project", "model-settings"]),
 }));
 
 vi.mock("@tanstack/react-query", async (importOriginal) => {

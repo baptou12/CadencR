@@ -742,3 +742,139 @@ export function useAddWorkspacePromptEntry(
     ...options,
   });
 }
+
+// ---------------------------------------------------------------------------
+// Projects types
+// ---------------------------------------------------------------------------
+
+export interface Project {
+  id: number;
+  name: string;
+  path: string;
+  branch_prefix: string | null;
+  qa_prompt: string | null;
+  agent_autonomy: string | null;
+  parallel_execution: number | null;
+  created_at: string;
+}
+
+export interface ProjectSetting {
+  key: string;
+  value: string | null;
+}
+
+export interface ProjectModelSettings {
+  plan: string;
+  prd: string;
+  execute: string;
+  risk: string;
+  review: string;
+  "review-fixer": string;
+  session: string;
+  qa: string;
+  retro: string;
+}
+
+// ---------------------------------------------------------------------------
+// Projects query key factories
+// ---------------------------------------------------------------------------
+
+export function getListProjectsQueryKey() {
+  return ["projects", "list"] as const;
+}
+
+export function getGetProjectSettingsQueryKey(projectId: number) {
+  return ["projects", "settings", projectId] as const;
+}
+
+export function getGetProjectModelSettingsQueryKey(projectId: number) {
+  return ["projects", "model-settings", projectId] as const;
+}
+
+// ---------------------------------------------------------------------------
+// Projects query hooks
+// ---------------------------------------------------------------------------
+
+export function useListProjects(
+  options?: Omit<UseQueryOptions<Project[], ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<Project[], ErrorType<unknown>>({
+    queryKey: getListProjectsQueryKey(),
+    queryFn: () => customInstance({ method: "GET", url: "/api/projects" }),
+    ...options,
+  });
+}
+
+export function useGetProjectSettings(
+  projectId: number,
+  options?: Omit<UseQueryOptions<ProjectSetting[], ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<ProjectSetting[], ErrorType<unknown>>({
+    queryKey: getGetProjectSettingsQueryKey(projectId),
+    queryFn: () => customInstance({ method: "GET", url: `/api/projects/${projectId}/settings` }),
+    ...options,
+  });
+}
+
+export function useGetProjectModelSettings(
+  projectId: number,
+  options?: Omit<UseQueryOptions<ProjectModelSettings, ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<ProjectModelSettings, ErrorType<unknown>>({
+    queryKey: getGetProjectModelSettingsQueryKey(projectId),
+    queryFn: () => customInstance({ method: "GET", url: `/api/projects/${projectId}/model-settings` }),
+    ...options,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Projects mutation hooks
+// ---------------------------------------------------------------------------
+
+export function useCreateProject(
+  options?: UseMutationOptions<Project, ErrorType<unknown>, { name: string; path: string }>,
+) {
+  return useMutation<Project, ErrorType<unknown>, { name: string; path: string }>({
+    mutationFn: (body) =>
+      customInstance({ method: "POST", url: "/api/projects", data: body }),
+    ...options,
+  });
+}
+
+export function useDeleteProject(
+  options?: UseMutationOptions<{ success: boolean }, ErrorType<unknown>, { id: number }>,
+) {
+  return useMutation<{ success: boolean }, ErrorType<unknown>, { id: number }>({
+    mutationFn: ({ id }) =>
+      customInstance({ method: "DELETE", url: `/api/projects/${id}` }),
+    ...options,
+  });
+}
+
+export function useSetProjectSetting(
+  options?: UseMutationOptions<{ success: boolean }, ErrorType<unknown>, { projectId: number; key: string; value: string }>,
+) {
+  return useMutation<{ success: boolean }, ErrorType<unknown>, { projectId: number; key: string; value: string }>({
+    mutationFn: ({ projectId, key, value }) =>
+      customInstance({
+        method: "PUT",
+        url: `/api/projects/${projectId}/settings`,
+        data: { key, value },
+      }),
+    ...options,
+  });
+}
+
+export function useSetProjectModelSetting(
+  options?: UseMutationOptions<{ success: boolean }, ErrorType<unknown>, { projectId: number; modelType: string; model: string }>,
+) {
+  return useMutation<{ success: boolean }, ErrorType<unknown>, { projectId: number; modelType: string; model: string }>({
+    mutationFn: ({ projectId, modelType, model }) =>
+      customInstance({
+        method: "PUT",
+        url: `/api/projects/${projectId}/model-settings`,
+        data: { model_type: modelType, model },
+      }),
+    ...options,
+  });
+}
