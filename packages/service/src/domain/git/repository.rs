@@ -156,3 +156,97 @@ pub async fn get_worktree_feature_lookup(
 
     Ok(rows)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqlx::sqlite::SqlitePoolOptions;
+
+    async fn setup_test_db() -> SqlitePool {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        sqlx::query(
+            "CREATE TABLE projects (id INTEGER PRIMARY KEY, name TEXT, path TEXT, branch_prefix TEXT DEFAULT 'feature/')"
+        ).execute(&pool).await.unwrap();
+        sqlx::query(
+            "CREATE TABLE features (id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL, title TEXT, status TEXT DEFAULT 'draft', type TEXT NOT NULL DEFAULT 'feature')"
+        ).execute(&pool).await.unwrap();
+        sqlx::query(
+            "CREATE TABLE feature_settings (feature_id INTEGER, key TEXT, value TEXT, PRIMARY KEY(feature_id, key))"
+        ).execute(&pool).await.unwrap();
+        pool
+    }
+
+    #[tokio::test]
+    async fn test_get_project_path_found() {
+        let pool = setup_test_db().await;
+        sqlx::query("INSERT INTO projects (id, name, path) VALUES (1, 'test', '/tmp/repo')")
+            .execute(&pool).await.unwrap();
+
+        let path = get_project_path(&pool, 1).await.unwrap();
+        assert_eq!(path, "/tmp/repo");
+    }
+
+    #[tokio::test]
+    async fn test_get_project_path_not_found() {
+        let pool = setup_test_db().await;
+        let result = get_project_path(&pool, 9999).await;
+        assert!(matches!(result, Err(AppError::NotFound(_))));
+    }
+
+    #[tokio::test]
+    async fn test_get_set_delete_feature_setting() {
+        let pool = setup_test_db().await;
+        sqlx::query("INSERT INTO projects (id, name, path) VALUES (1, 'test', '/tmp')")
+            .execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO features (id, project_id, title) VALUES (1, 1, 'feat')")
+            .execute(&pool).await.unwrap();
+
+        // Initially missing
+        let val = get_feature_setting(&pool, 1, "worktree_path").await.unwrap();
+        assert!(val.is_none());
+
+        // Set
+        set_feature_setting(&pool, 1, "worktree_path", "/tmp/wt").await.unwrap();
+        let val = get_feature_setting(&pool, 1, "worktree_path").await.unwrap();
+        assert_eq!(val, Some("/tmp/wt".into()));
+
+        // Update
+        set_feature_setting(&pool, 1, "worktree_path", "/tmp/wt2").await.unwrap();
+        let val = get_feature_setting(&pool, 1, "worktree_path").await.unwrap();
+        assert_eq!(val, Some("/tmp/wt2".into()));
+
+        // Delete
+        delete_feature_setting(&pool, 1, "worktree_path").await.unwrap();
+        let val = get_feature_setting(&pool, 1, "worktree_path").await.unwrap();
+        assert!(val.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_get_feature_setting_missing() {
+        let pool = setup_test_db().await;
+        let val = get_feature_setting(&pool, 999, "nonexistent").await.unwrap();
+        assert_eq!(val, None);
+    }
+
+    #[tokio::test]
+    async fn test_get_worktree_paths() {
+        let pool = setup_test_db().await;
+        sqlx::query("INSERT INTO projects (id, name, path) VALUES (1, 'test', '/tmp')")
+            .execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO features (id, project_id, title) VALUES (1, 1, 'feat')")
+            .execute(&pool).await.unwrap();
+
+        set_feature_setting(&pool, 1, "worktree_path", "/tmp/wt").await.unwrap();
+        set_feature_setting(&pool, 1, "worktree_branch", "feature/test").await.unwrap();
+        set_feature_setting(&pool, 1, "worktree_original_branch", "main").await.unwrap();
+
+        let paths = get_worktree_paths(&pool, 1).await.unwrap();
+        assert_eq!(paths.worktree_path, Some("/tmp/wt".into()));
+        assert_eq!(paths.worktree_branch, Some("feature/test".into()));
+        assert_eq!(paths.worktree_original_branch, Some("main".into()));
+    }
+}

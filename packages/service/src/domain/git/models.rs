@@ -291,3 +291,127 @@ fn default_worktree_mode() -> String {
 fn default_commit_limit() -> i64 {
     20
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_branch_response_serde_roundtrip() {
+        let resp = BranchResponse { branch: Some("main".into()) };
+        let json = serde_json::to_string(&resp).unwrap();
+        let back: BranchResponse = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.branch, Some("main".into()));
+
+        let resp_none = BranchResponse { branch: None };
+        let json = serde_json::to_string(&resp_none).unwrap();
+        let back: BranchResponse = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.branch, None);
+        assert!(json.contains("null"));
+    }
+
+    #[test]
+    fn test_git_stats_serde_roundtrip() {
+        let stats = GitStats { files_changed: 3, insertions: 10, deletions: 5 };
+        let json = serde_json::to_string(&stats).unwrap();
+        let back: GitStats = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.files_changed, 3);
+        assert_eq!(back.insertions, 10);
+        assert_eq!(back.deletions, 5);
+    }
+
+    #[test]
+    fn test_changed_file_serde_with_optional_old_file() {
+        let cf = ChangedFile {
+            file: "src/main.rs".into(),
+            status: "M".into(),
+            old_file: None,
+            additions: 5,
+            deletions: 3,
+        };
+        let json = serde_json::to_string(&cf).unwrap();
+        assert!(!json.contains("old_file"), "None should be skipped");
+
+        let cf_rename = ChangedFile {
+            file: "new.rs".into(),
+            status: "R".into(),
+            old_file: Some("old.rs".into()),
+            additions: 0,
+            deletions: 0,
+        };
+        let json = serde_json::to_string(&cf_rename).unwrap();
+        assert!(json.contains("old_file"));
+        let back: ChangedFile = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.old_file, Some("old.rs".into()));
+    }
+
+    #[test]
+    fn test_commit_log_entry_serde_roundtrip() {
+        let entry = CommitLogEntry {
+            sha: "abc123".into(),
+            short_sha: "abc".into(),
+            message: "fix bug".into(),
+            body: "details".into(),
+            author: "dev".into(),
+            date: "2024-01-01".into(),
+            is_pushed: true,
+        };
+        let json = serde_json::to_string(&entry).unwrap();
+        let back: CommitLogEntry = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.sha, "abc123");
+        assert!(back.is_pushed);
+    }
+
+    #[test]
+    fn test_worktree_info_serde_roundtrip() {
+        let wt = WorktreeInfo {
+            path: "/tmp/wt".into(),
+            branch: "feature/test".into(),
+            head: "deadbeef".into(),
+            is_bare: false,
+        };
+        let json = serde_json::to_string(&wt).unwrap();
+        let back: WorktreeInfo = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.path, "/tmp/wt");
+        assert!(!back.is_bare);
+    }
+
+    #[test]
+    fn test_merge_conflict_result_serde_roundtrip() {
+        let mc = MergeConflictResult {
+            has_conflicts: true,
+            conflict_files: vec!["a.rs".into(), "b.rs".into()],
+        };
+        let json = serde_json::to_string(&mc).unwrap();
+        let back: MergeConflictResult = serde_json::from_str(&json).unwrap();
+        assert!(back.has_conflicts);
+        assert_eq!(back.conflict_files.len(), 2);
+    }
+
+    #[test]
+    fn test_file_content_batch_item_has_file_path() {
+        let item = FileContentBatchItem {
+            file_path: "src/lib.rs".into(),
+            old_content: Some("old".into()),
+            new_content: None,
+        };
+        let json = serde_json::to_string(&item).unwrap();
+        assert!(json.contains("file_path"));
+        assert!(json.contains("src/lib.rs"));
+        let back: FileContentBatchItem = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.file_path, "src/lib.rs");
+        assert_eq!(back.old_content, Some("old".into()));
+        assert_eq!(back.new_content, None);
+    }
+
+    #[test]
+    fn test_success_response_skips_none_error() {
+        let resp = SuccessResponse { success: true, error: None };
+        let json = serde_json::to_string(&resp).unwrap();
+        assert!(!json.contains("error"));
+
+        let resp = SuccessResponse { success: false, error: Some("oops".into()) };
+        let json = serde_json::to_string(&resp).unwrap();
+        assert!(json.contains("oops"));
+    }
+}

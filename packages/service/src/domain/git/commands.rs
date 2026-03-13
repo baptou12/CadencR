@@ -838,3 +838,105 @@ pub fn build_branch_name(prefix: &str, title: &str) -> String {
 
     format!("{prefix}{slug}-{suffix}")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_build_branch_name_basic() {
+        let name = build_branch_name("feature/", "My Feature");
+        assert!(name.starts_with("feature/"), "should start with prefix, got: {name}");
+        assert!(name.contains("my-feature"), "should contain slug, got: {name}");
+        // 4-char hex suffix after last dash
+        let suffix = &name[name.rfind('-').unwrap() + 1..];
+        assert_eq!(suffix.len(), 4, "suffix should be 4 hex chars, got: {suffix}");
+        assert!(suffix.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn test_build_branch_name_special_chars() {
+        let name = build_branch_name("feature/", "Hello, World! @#$%");
+        assert!(name.starts_with("feature/"));
+        // Special chars should become hyphens (collapsed)
+        assert!(!name.contains(','));
+        assert!(!name.contains('!'));
+        assert!(!name.contains('@'));
+    }
+
+    #[test]
+    fn test_build_branch_name_long_title() {
+        let long_title = "a".repeat(100);
+        let name = build_branch_name("feature/", &long_title);
+        // prefix (8) + slug (<=50) + dash (1) + suffix (4) = max 63
+        assert!(name.len() <= 63, "name too long: {} chars", name.len());
+    }
+
+    #[test]
+    fn test_parse_changed_files_numstat() {
+        // Test parse_stat_line since that's the numstat parser
+        let output = "3 files changed, 5 insertions(+), 3 deletions(-)";
+        let stats = parse_stat_line(output);
+        assert_eq!(stats.files_changed, 3);
+        assert_eq!(stats.insertions, 5);
+        assert_eq!(stats.deletions, 3);
+    }
+
+    #[test]
+    fn test_parse_stat_line_insertions_only() {
+        let output = "1 file changed, 10 insertions(+)";
+        let stats = parse_stat_line(output);
+        assert_eq!(stats.files_changed, 1);
+        assert_eq!(stats.insertions, 10);
+        assert_eq!(stats.deletions, 0);
+    }
+
+    #[test]
+    fn test_parse_commit_log() {
+        let output = "\x1eabc123full\nabc123\nfix bug\nJohn Doe\n2024-01-01 12:00:00 +0000\nsome body text\n";
+        let commits = parse_git_log(output);
+        assert_eq!(commits.len(), 1);
+        assert_eq!(commits[0].sha, "abc123full");
+        assert_eq!(commits[0].short_sha, "abc123");
+        assert_eq!(commits[0].message, "fix bug");
+        assert_eq!(commits[0].author, "John Doe");
+        assert_eq!(commits[0].date, "2024-01-01 12:00:00 +0000");
+        assert_eq!(commits[0].body, "some body text");
+    }
+
+    #[test]
+    fn test_parse_commit_log_empty() {
+        assert!(parse_git_log("").is_empty());
+        assert!(parse_git_log("  \n  ").is_empty());
+    }
+
+    #[test]
+    fn test_parse_worktree_list_porcelain() {
+        let output = "worktree /home/user/repo\nHEAD abc123\nbranch refs/heads/main\n\nworktree /home/user/wt1\nHEAD def456\nbranch refs/heads/feature/test\n\n";
+        let worktrees = parse_worktree_list(output);
+        assert_eq!(worktrees.len(), 2);
+        assert_eq!(worktrees[0].path, "/home/user/repo");
+        assert_eq!(worktrees[0].branch, "main");
+        assert_eq!(worktrees[0].head, "abc123");
+        assert!(!worktrees[0].is_bare);
+        assert_eq!(worktrees[1].path, "/home/user/wt1");
+        assert_eq!(worktrees[1].branch, "feature/test");
+        assert_eq!(worktrees[1].head, "def456");
+    }
+
+    #[test]
+    fn test_parse_worktree_list_bare() {
+        let output = "worktree /home/user/repo.git\nHEAD abc123\nbare\n\n";
+        let worktrees = parse_worktree_list(output);
+        assert_eq!(worktrees.len(), 1);
+        assert!(worktrees[0].is_bare);
+    }
+
+    #[test]
+    fn test_parse_worktree_list_detached() {
+        let output = "worktree /home/user/wt\nHEAD abc123\ndetached\n\n";
+        let worktrees = parse_worktree_list(output);
+        assert_eq!(worktrees.len(), 1);
+        assert_eq!(worktrees[0].branch, "(detached)");
+    }
+}

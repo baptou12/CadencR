@@ -53,3 +53,30 @@ impl From<sqlx::Error> for AppError {
         AppError::DatabaseError(err.to_string())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::response::IntoResponse;
+
+    #[test]
+    fn test_not_found_returns_404() {
+        let err = AppError::NotFound("missing".into());
+        let response = err.into_response();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[test]
+    fn test_bad_request_returns_400() {
+        let err = AppError::BadRequest("invalid".into());
+        let response = err.into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[test]
+    fn test_internal_returns_500() {
+        let err = AppError::Internal("boom".into());
+        let response = err.into_response();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+}
