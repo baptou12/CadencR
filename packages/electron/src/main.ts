@@ -9,7 +9,7 @@ import { hasRunningSubprocesses } from "./main/agents/subprocess-manager";
 import { SessionPersistence } from "./main/effect/services/SessionPersistence";
 import { resumeInProgressFeatures } from "./main/agents/resume-features";
 import { fetchAvailableModels } from "./main/agents/available-models";
-import { startRustBackend, stopRustBackend } from "./main/rust-backend";
+import { startRustBackend, stopRustBackend, getRustBackendPort } from "./main/rust-backend";
 
 // Register the AppRuntime singleton so convenience wrappers (effect-helpers.ts)
 // can access it without creating circular module dependencies.
@@ -96,6 +96,9 @@ app.on("ready", async () => {
   } catch (err) {
     console.error("[rust-backend] Failed to start:", err);
   }
+
+  // Expose the Rust backend port to preload via env var (preload runs synchronously)
+  process.env.CADENCE_RUST_PORT = String(getRustBackendPort());
 
   createWindow();
 });

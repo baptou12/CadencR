@@ -16,26 +16,6 @@ async fn run_git_quiet(args: &[&str], cwd: &Path) -> String {
     run_git(args, cwd).await.unwrap_or_default()
 }
 
-/// Run a raw shell command in the given directory (for commands with pipes/||).
-async fn run_shell(command: &str, cwd: &Path) -> Result<String, AppError> {
-    let output = tokio::process::Command::new("sh")
-        .arg("-c")
-        .arg(command)
-        .current_dir(cwd)
-        .output()
-        .await
-        .map_err(|e| AppError::GitCommandError(format!("Failed to spawn shell: {e}")))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(AppError::GitCommandError(format!(
-            "shell command failed: {stderr}"
-        )));
-    }
-
-    Ok(String::from_utf8_lossy(&output.stdout).to_string())
-}
-
 /// Parse git diff --stat summary line.
 fn parse_stat_line(output: &str) -> GitStats {
     let re = regex_lite::Regex::new(
@@ -424,12 +404,12 @@ pub async fn get_file_blob_shas(
         .collect();
 
     // Also get branch-changed files via merge-base
-    let branch_changed: HashSet<String> = match run_shell(
-        "git merge-base HEAD main || git merge-base HEAD master",
-        worktree_path,
-    )
-    .await
-    {
+    let merge_base_result = match run_git(&["merge-base", "HEAD", "main"], worktree_path).await {
+        Ok(v) => Ok(v),
+        Err(_) => run_git(&["merge-base", "HEAD", "master"], worktree_path).await,
+    };
+
+    let branch_changed: HashSet<String> = match merge_base_result {
         Ok(merge_base_out) => {
             let merge_base = merge_base_out.trim();
             if merge_base.is_empty() {
