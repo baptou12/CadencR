@@ -500,6 +500,13 @@ const migrations: Migration[] = [
       db.exec("ALTER TABLE features ADD COLUMN model_retro TEXT");
     },
   },
+  {
+    version: 40,
+    description: "Add index on agent_messages(session_id) for incremental message fetching",
+    up: (db) => {
+      db.exec("CREATE INDEX IF NOT EXISTS idx_agent_messages_session ON agent_messages(session_id)");
+    },
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

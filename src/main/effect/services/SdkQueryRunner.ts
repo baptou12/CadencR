@@ -653,6 +653,13 @@ export const SdkQueryRunnerLive = Layer.effect(
             managed.pushMessage = messageStream.push as (msg: import("../../agents/types.js").MessageContent) => void;
             managed.closeMessageStream = messageStream.close;
 
+            // Prevent nested-session detection: the SDK inherits process.env
+            // and passes it to the spawned CLI. If CLAUDECODE is set (e.g. when
+            // the app was launched from within a Claude Code session), the CLI
+            // refuses to start. Clearing it here is safe — the SDK sets its own
+            // CLAUDE_CODE_ENTRYPOINT=sdk-ts on the child process env.
+            delete process.env.CLAUDECODE;
+
             const queryObj = sdk.query({
               prompt: messageStream.generator,
               options: queryOptions,
