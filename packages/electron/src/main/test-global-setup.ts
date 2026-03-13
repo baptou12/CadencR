@@ -7,10 +7,26 @@
  * `pnpm start` keeps working after running tests.
  */
 import { execSync } from "child_process";
+import path from "path";
+import { createRequire } from "module";
 
 let needsRestore = false;
 
-export async function setup() {
+/** Find the root of the repository (contains node_modules with hoisted deps). */
+function findRepoRoot(): string {
+  const require = createRequire(import.meta.url);
+  const resolved = require.resolve("better-sqlite3");
+  // The resolved path will be inside node_modules/better-sqlite3/...
+  // Walk up to the directory that *contains* node_modules
+  const nmIndex = resolved.indexOf(`${path.sep}node_modules${path.sep}`);
+  if (nmIndex !== -1) {
+    return resolved.substring(0, nmIndex);
+  }
+  // Fallback: use process.cwd()
+  return process.cwd();
+}
+
+export async function setup(): Promise<void> {
   try {
     // Smoke test: actually load the native binding under this Node
     const Database = (await import("better-sqlite3")).default;
@@ -18,20 +34,22 @@ export async function setup() {
     db.close();
   } catch {
     console.log("[test-global-setup] Rebuilding better-sqlite3 for system Node...");
+    const repoRoot = findRepoRoot();
     execSync("npm rebuild better-sqlite3", {
       stdio: "inherit",
-      cwd: process.cwd(),
+      cwd: repoRoot,
     });
     needsRestore = true;
   }
 }
 
-export async function teardown() {
+export async function teardown(): Promise<void> {
   if (needsRestore) {
     console.log("[test-global-setup] Restoring better-sqlite3 for Electron...");
+    const repoRoot = findRepoRoot();
     execSync("npx electron-rebuild -f -w better-sqlite3", {
       stdio: "inherit",
-      cwd: process.cwd(),
+      cwd: repoRoot,
     });
   }
 }

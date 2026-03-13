@@ -1,6 +1,6 @@
 ---
 paths:
-  - "src/main/**"
+  - "packages/electron/src/main/**"
 ---
 
 The database layer now uses Effect (`src/main/effect`) instead of `@swan-io/boxed`. When touching any backend file:
