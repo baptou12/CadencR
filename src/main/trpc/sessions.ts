@@ -219,9 +219,18 @@ export const sessionsRouter = router({
           incrementalMessagesBySession.set(sessionId, msgs);
         }
 
-        // Re-fetch in-flight tool_call rows (id <= cursor) whose content may
-        // have been updated via input_json_delta. These are tool_calls without
-        // a matching tool_result yet. Uses idx_agent_messages_session index.
+        // Re-fetch tool_call rows (id <= cursor) whose content may have been
+        // updated via input_json_delta after the client originally fetched them.
+        // Due to a race condition, the client may have fetched a tool_call with
+        // content "{}" before input_json_delta events populated the real args.
+        //
+        // Previously this query only checked in-flight tool_calls (no tool_result),
+        // but fast-completing tools can have their tool_result inserted before the
+        // next incremental fetch, leaving the client stuck with empty toolArgs.
+        //
+        // Now we return ALL previously-fetched tool_calls whose content has been
+        // populated (content != '{}'), regardless of whether they have a result.
+        // The client-side applyToolCallUpdates() skips no-op updates efficiently.
         const staleResults = await Promise.all(
           incrementalFetches.map(({ sessionId, afterId }) =>
             AppRuntime.runPromise(
@@ -229,12 +238,9 @@ export const sessionsRouter = router({
                 `SELECT id, session_id, role, content, message_type, tool_name, tool_use_id, parent_tool_use_id, created_at, model
                  FROM agent_messages
                  WHERE session_id = ? AND id <= ? AND message_type = 'tool_call'
-                   AND tool_use_id NOT IN (
-                     SELECT tool_use_id FROM agent_messages
-                     WHERE session_id = ? AND message_type IN ('tool_result', 'tool_error')
-                   )
+                   AND content != '{}'
                  ORDER BY id ASC`,
-                sessionId, afterId, sessionId,
+                sessionId, afterId,
               ),
             ).then((rows) => ({ sessionId, rows })),
           ),
