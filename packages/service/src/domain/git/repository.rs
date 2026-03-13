@@ -131,6 +131,32 @@ pub async fn get_worktree_paths(
     })
 }
 
+/// Get feature type and project_id by feature ID.
+pub async fn get_feature_type_and_project(
+    pool: &SqlitePool,
+    feature_id: i64,
+) -> Result<Option<(i64, String)>, AppError> {
+    let row: Option<(i64, String)> =
+        sqlx::query_as("SELECT project_id, type FROM features WHERE id = ?")
+            .bind(feature_id)
+            .fetch_optional(pool)
+            .await?;
+    Ok(row)
+}
+
+/// Get feature title by feature ID.
+pub async fn get_feature_title(
+    pool: &SqlitePool,
+    feature_id: i64,
+) -> Result<Option<String>, AppError> {
+    let row: Option<(String,)> =
+        sqlx::query_as("SELECT title FROM features WHERE id = ?")
+            .bind(feature_id)
+            .fetch_optional(pool)
+            .await?;
+    Ok(row.map(|r| r.0))
+}
+
 /// Lookup feature info for worktrees belonging to a project.
 #[derive(Debug, sqlx::FromRow)]
 pub struct WorktreeFeatureLookup {

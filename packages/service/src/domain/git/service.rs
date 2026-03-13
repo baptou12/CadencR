@@ -16,11 +16,7 @@ async fn resolve_feature_git_path(
     state: &AppState,
     feature_id: i64,
 ) -> Result<Option<String>, AppError> {
-    let row: Option<(i64, String)> =
-        sqlx::query_as("SELECT project_id, type FROM features WHERE id = ?")
-            .bind(feature_id)
-            .fetch_optional(&state.read_pool)
-            .await?;
+    let row = repository::get_feature_type_and_project(&state.read_pool, feature_id).await?;
 
     let (project_id, feature_type) = match row {
         Some(r) => r,
@@ -335,12 +331,9 @@ pub async fn retry_worktree_setup(
     let project_name = repository::get_project_name(&state.read_pool, body.project_id).await?;
     let prefix = repository::get_branch_prefix(&state.read_pool, body.project_id).await?;
 
-    let row: Option<(String,)> =
-        sqlx::query_as("SELECT title FROM features WHERE id = ?")
-            .bind(body.feature_id)
-            .fetch_optional(&state.read_pool)
-            .await?;
-    let title = row.map(|r| r.0).unwrap_or_else(|| "feature".to_string());
+    let title = repository::get_feature_title(&state.read_pool, body.feature_id)
+        .await?
+        .unwrap_or_else(|| "feature".to_string());
 
     let branch_name = commands::build_branch_name(&prefix, &title);
     let (worktree_path, branch) =

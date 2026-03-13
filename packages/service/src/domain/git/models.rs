@@ -134,12 +134,6 @@ pub struct DeleteFeatureBranchParams {
     pub feature_id: i64,
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
-pub struct HasUncommittedChangesParams {
-    pub project_id: i64,
-    pub feature_id: i64,
-}
-
 // ---------------------------------------------------------------------------
 // Response types
 // ---------------------------------------------------------------------------
@@ -249,11 +243,6 @@ pub struct SuccessResponse {
     pub success: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-pub struct HasUncommittedChangesResponse {
-    pub has_changes: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]

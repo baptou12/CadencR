@@ -18,11 +18,13 @@ async fn run_git_quiet(args: &[&str], cwd: &Path) -> String {
 
 /// Parse git diff --stat summary line.
 fn parse_stat_line(output: &str) -> GitStats {
-    let re = regex_lite::Regex::new(
-        r"(\d+)\s+files?\s+changed(?:,\s+(\d+)\s+insertions?\(\+\))?(?:,\s+(\d+)\s+deletions?\(-\))?"
-    ).unwrap();
+    static STAT_RE: std::sync::LazyLock<regex_lite::Regex> = std::sync::LazyLock::new(|| {
+        regex_lite::Regex::new(
+            r"(\d+)\s+files?\s+changed(?:,\s+(\d+)\s+insertions?\(\+\))?(?:,\s+(\d+)\s+deletions?\(-\))?"
+        ).unwrap()
+    });
 
-    if let Some(caps) = re.captures(output) {
+    if let Some(caps) = STAT_RE.captures(output) {
         GitStats {
             files_changed: caps.get(1).map_or(0, |m| m.as_str().parse().unwrap_or(0)),
             insertions: caps.get(2).map_or(0, |m| m.as_str().parse().unwrap_or(0)),
@@ -326,16 +328,28 @@ pub async fn get_file_content_batch(
         return Ok(HashMap::new());
     }
 
-    let mut result = HashMap::new();
-    // For simplicity, use concurrent git show calls (matching the fallback path in TS).
-    // The git archive optimization can be added later if needed.
-    for file_path in file_paths {
-        let old_content = get_file_content(git_path, file_path, Some(old_ref)).await?;
-        let new_content = get_file_content(git_path, file_path, new_ref).await?;
-        result.insert(file_path.clone(), (old_content, new_content));
-    }
+    use futures::stream::{self, StreamExt};
 
-    Ok(result)
+    let git_path = git_path.to_path_buf();
+    let old_ref = old_ref.to_string();
+    let new_ref = new_ref.map(|s| s.to_string());
+
+    let results: Vec<_> = stream::iter(file_paths.to_vec())
+        .map(|file_path| {
+            let git_path = git_path.clone();
+            let old_ref = old_ref.clone();
+            let new_ref = new_ref.clone();
+            async move {
+                let old_content = get_file_content(&git_path, &file_path, Some(&old_ref)).await.unwrap_or_default();
+                let new_content = get_file_content(&git_path, &file_path, new_ref.as_deref()).await.unwrap_or_default();
+                (file_path, (old_content, new_content))
+            }
+        })
+        .buffer_unordered(20)
+        .collect()
+        .await;
+
+    Ok(results.into_iter().collect())
 }
 
 /// Get commit log for a feature branch relative to a base branch.
