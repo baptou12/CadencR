@@ -306,9 +306,18 @@ pub async fn get_file_content(
 ) -> Result<String, AppError> {
     match ref_spec {
         None => {
-            // Read from working tree
+            // Read from working tree — validate against path traversal
             let full_path = worktree_path.join(file_path);
-            Ok(tokio::fs::read_to_string(&full_path).await.unwrap_or_default())
+            let canonical_wt = worktree_path.canonicalize().map_err(|e| {
+                AppError::BadRequest(format!("Invalid worktree path: {e}"))
+            })?;
+            let canonical_file = full_path.canonicalize().map_err(|_| {
+                AppError::BadRequest("File not found".into())
+            })?;
+            if !canonical_file.starts_with(&canonical_wt) {
+                return Err(AppError::BadRequest("Path traversal not allowed".into()));
+            }
+            Ok(tokio::fs::read_to_string(&canonical_file).await.unwrap_or_default())
         }
         Some(r) => {
             let show_arg = format!("{r}:{file_path}");
