@@ -17,6 +17,13 @@ import {
   ArchiveIcon,
 } from "lucide-react";
 import { trpc } from "@/trpc";
+import {
+  useCheckMergeConflicts,
+  useHasUncommittedChanges,
+  useMergeFeatureBranch,
+  useDeleteFeatureBranch,
+  useDeleteWorktree,
+} from "@/api/generated";
 
 interface MergeArchiveDialogProps {
   open: boolean;
@@ -57,19 +64,19 @@ export function MergeArchiveDialog({
   };
 
   // Conflict check query
-  const conflictsQuery = trpc.git.checkMergeConflicts.useQuery(
+  const conflictsQuery = useCheckMergeConflicts(
     { projectId, featureId },
     { enabled: open, retry: false },
   );
 
   // Uncommitted changes check
-  const uncommittedQuery = trpc.git.hasUncommittedChanges.useQuery(
+  const uncommittedQuery = useHasUncommittedChanges(
     { projectId, featureId },
     { enabled: open, retry: false },
   );
 
   // Mutations
-  const mergeMutation = trpc.git.mergeFeatureBranch.useMutation({
+  const mergeMutation = useMergeFeatureBranch({
     onSuccess: (result) => {
       if (result.success) {
         setMerged(true);
@@ -83,7 +90,7 @@ export function MergeArchiveDialog({
     },
   });
 
-  const deleteBranchMutation = trpc.git.deleteFeatureBranch.useMutation({
+  const deleteBranchMutation = useDeleteFeatureBranch({
     onSuccess: (result) => {
       if (result.success) {
         setBranchDeleted(true);
@@ -97,15 +104,14 @@ export function MergeArchiveDialog({
     },
   });
 
-  const deleteWorktreeMutation = trpc.git.deleteWorktree.useMutation({
+  const deleteWorktreeMutation = useDeleteWorktree({
     onSuccess: (result) => {
       if (result.success) {
         setWorktreeDeleted(true);
         setWorktreeError(null);
-        // Refresh uncommitted changes query (now irrelevant but keeps state clean)
         void uncommittedQuery.refetch();
       } else {
-        setWorktreeError(("error" in result ? result.error : undefined) ?? "Failed to delete worktree");
+        setWorktreeError(result.error ?? "Failed to delete worktree");
       }
     },
     onError: (err) => {
@@ -122,9 +128,9 @@ export function MergeArchiveDialog({
   });
 
   const conflicts = conflictsQuery.data;
-  const hasConflicts = conflicts?.hasConflicts ?? false;
-  const conflictFiles = conflicts?.conflictFiles ?? [];
-  const hasUncommitted = uncommittedQuery.data?.hasChanges ?? false;
+  const hasConflicts = conflicts?.has_conflicts ?? false;
+  const conflictFiles = conflicts?.conflict_files ?? [];
+  const hasUncommitted = uncommittedQuery.data?.has_changes ?? false;
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>

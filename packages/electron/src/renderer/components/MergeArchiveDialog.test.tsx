@@ -4,12 +4,23 @@ import { MergeArchiveDialog } from "./MergeArchiveDialog";
 
 const { mockCheckMergeConflicts } = vi.hoisted(() => ({
   mockCheckMergeConflicts: vi.fn(() => ({
-    data: { hasConflicts: false, conflictFiles: [] as string[] },
+    data: { has_conflicts: false, conflict_files: [] as string[] },
     isLoading: false,
     isError: false,
     isSuccess: true,
     error: null,
   })),
+}));
+
+vi.mock("@/api/generated", () => ({
+  useCheckMergeConflicts: mockCheckMergeConflicts,
+  useHasUncommittedChanges: vi.fn(() => ({
+    data: { has_changes: false },
+    refetch: vi.fn(),
+  })),
+  useMergeFeatureBranch: vi.fn(() => ({ mutate: vi.fn(), isLoading: false })),
+  useDeleteFeatureBranch: vi.fn(() => ({ mutate: vi.fn(), isLoading: false })),
+  useDeleteWorktree: vi.fn(() => ({ mutate: vi.fn(), isLoading: false })),
 }));
 
 vi.mock("@/trpc", () => {
@@ -24,26 +35,6 @@ vi.mock("@/trpc", () => {
           getById: { invalidate: vi.fn() },
         },
       })),
-      git: {
-        checkMergeConflicts: {
-          useQuery: mockCheckMergeConflicts,
-        },
-        hasUncommittedChanges: {
-          useQuery: vi.fn(() => ({
-            data: { hasChanges: false },
-            refetch: vi.fn(),
-          })),
-        },
-        mergeFeatureBranch: {
-          useMutation: vi.fn(() => ({ mutate: vi.fn(), isLoading: false })),
-        },
-        deleteFeatureBranch: {
-          useMutation: vi.fn(() => ({ mutate: vi.fn(), isLoading: false })),
-        },
-        deleteWorktree: {
-          useMutation: vi.fn(() => ({ mutate: vi.fn(), isLoading: false })),
-        },
-      },
       features: {
         updateStatus: {
           useMutation: vi.fn(() => ({ mutate: vi.fn(), isLoading: false })),
@@ -116,7 +107,7 @@ describe("MergeArchiveDialog", () => {
 
   it("disables merge when conflicts detected", () => {
     mockCheckMergeConflicts.mockReturnValueOnce({
-      data: { hasConflicts: true as boolean, conflictFiles: [] as string[] },
+      data: { has_conflicts: true as boolean, conflict_files: [] as string[] },
       isLoading: false,
       isError: false,
       isSuccess: true,

@@ -484,87 +484,8 @@ describe("appRouter - workflowRouter - agent starters", () => {
   });
 });
 
-describe("appRouter - git procedures", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockDb.prepare.mockImplementation((sql: string) => ({
-      get: vi.fn().mockImplementation(() => {
-        if (sql.includes("worktree_path")) return { value: "/worktree/path" };
-        if (sql.includes("FROM projects")) return { id: 1, name: "MyProject", path: "/project/path", branch_prefix: null };
-        if (sql.includes("FROM features")) return { project_id: 1, type: "feature" };
-        return undefined;
-      }),
-      all: vi.fn().mockReturnValue([]),
-      run: vi.fn().mockReturnValue({ changes: 1, lastInsertRowid: 1 }),
-    }));
-  });
-
-  const caller = appRouter.createCaller({});
-
-  it("git.getStats returns stats for feature", async () => {
-    const { Effect } = await import("effect");
-    const { getGitStatsEffect } = await import("../effect/services/GitWorktree");
-    vi.mocked(getGitStatsEffect).mockReturnValue(
-      Effect.succeed({ filesChanged: 2, insertions: 10, deletions: 3 }),
-    );
-    const result = await caller.git.getStats({ featureId: 1 });
-    expect(result).toMatchObject({ filesChanged: 2 });
-  });
-
-  it("git.getStats returns zeros when no git path", async () => {
-    // Return nothing from features (no feature found)
-    mockDb.prepare.mockReturnValue({ get: vi.fn().mockReturnValue(undefined), all: vi.fn().mockReturnValue([]), run: vi.fn() });
-    const result = await caller.git.getStats({ featureId: 999 });
-    expect(result).toEqual({ filesChanged: 0, insertions: 0, deletions: 0 });
-  });
-
-  it("git.getDiff returns diff string", async () => {
-    const { Effect } = await import("effect");
-    const { getDiffEffect } = await import("../effect/services/GitWorktree");
-    vi.mocked(getDiffEffect).mockReturnValue(Effect.succeed("diff --git a/foo.ts..."));
-    const result = await caller.git.getDiff({ featureId: 1, mode: "worktree" });
-    expect(result).toBe("diff --git a/foo.ts...");
-  });
-
-  it("git.getChangedFiles returns changed file list", async () => {
-    const { Effect } = await import("effect");
-    const { getChangedFilesEffect } = await import("../effect/services/GitWorktree");
-    vi.mocked(getChangedFilesEffect).mockReturnValue(
-      Effect.succeed([{ file: "src/foo.ts", status: "M", additions: 0, deletions: 0 }]),
-    );
-    const result = await caller.git.getChangedFiles({ featureId: 1, mode: "worktree" });
-    expect(result).toHaveLength(1);
-  });
-
-  it("git.createWorktree calls createWorktreeEffect and saves path to DB", async () => {
-    const { createWorktreeEffect, buildBranchName } = await import("../effect/services/GitWorktree");
-    const { Effect } = await import("effect");
-    vi.mocked(buildBranchName).mockReturnValue("feature/my-feature");
-    vi.mocked(createWorktreeEffect).mockReturnValue(
-      Effect.succeed({ worktreePath: "/worktrees/my-feature", branch: "feature/my-feature" }),
-    );
-    const result = await caller.git.createWorktree({ featureId: 1, projectId: 1, featureTitle: "My Feature" });
-    expect(createWorktreeEffect).toHaveBeenCalled();
-    expect(result).toMatchObject({ worktreePath: "/worktrees/my-feature" });
-  });
-
-  it("git.removeWorktree calls removeWorktreeEffect", async () => {
-    const { removeWorktreeEffect } = await import("../effect/services/GitWorktree");
-    const { Effect } = await import("effect");
-    vi.mocked(removeWorktreeEffect).mockReturnValue(Effect.succeed(undefined));
-    const result = await caller.git.removeWorktree({ featureId: 1, projectId: 1 });
-    expect(removeWorktreeEffect).toHaveBeenCalled();
-    expect(result).toMatchObject({ success: true });
-  });
-
-  it("git.getBranch returns current branch for project", async () => {
-    const { Effect } = await import("effect");
-    const { getCurrentBranchEffect } = await import("../effect/services/GitWorktree");
-    vi.mocked(getCurrentBranchEffect).mockReturnValue(Effect.succeed("main"));
-    const result = await caller.git.getBranch({ projectId: 1 });
-    expect(result).toBe("main");
-  });
-});
+// git procedures (getStats, getDiff, etc.) have been migrated to the Rust backend.
+// The tRPC git router now only contains openInTerminal and openInZed.
 
 describe("appRouter - diffComments sub-router", () => {
   const caller = appRouter.createCaller({});

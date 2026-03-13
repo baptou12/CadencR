@@ -2,15 +2,23 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@/test-utils";
 
 const mocks = vi.hoisted(() => {
-  const useQueryMock = vi.fn(() => ({ data: undefined as unknown, isLoading: false }));
+  const useGetDiffMock = vi.fn(() => ({ data: undefined as unknown, isLoading: false }));
   const useMutationMock = vi.fn(() => ({ mutate: vi.fn(), mutateAsync: vi.fn() }));
   const useUtilsMock = vi.fn(() => ({
     diffComments: { list: { invalidate: vi.fn() } },
     diffViewed: { list: { invalidate: vi.fn() } },
-    git: { getFileContent: { setData: vi.fn() } },
   }));
-  return { useQueryMock, useMutationMock, useUtilsMock };
+  return { useGetDiffMock, useMutationMock, useUtilsMock };
 });
+
+vi.mock("@/api/generated", () => ({
+  useGetDiff: mocks.useGetDiffMock,
+  useGetFileBlobShas: vi.fn(() => ({ data: [] })),
+  useGetCommitLog: vi.fn(() => ({ data: { commits: [], is_on_base_branch: true } })),
+  useGetFileContent: vi.fn(() => ({ data: undefined })),
+  useGetFileContentBatch: vi.fn(() => ({ data: undefined })),
+  getGetFileContentQueryKey: vi.fn(() => ["git", "file-content"]),
+}));
 
 vi.mock("@/trpc", () => {
   const React = require("react");
@@ -20,13 +28,6 @@ vi.mock("@/trpc", () => {
       Provider: ({ children }: { children: unknown }) =>
         React.createElement(React.Fragment, null, children),
       useUtils: mocks.useUtilsMock,
-      git: {
-        getDiff: { useQuery: mocks.useQueryMock },
-        getFileBlobShas: { useQuery: vi.fn(() => ({ data: {} })) },
-        getCommitLog: { useQuery: vi.fn(() => ({ data: { commits: [], isOnBaseBranch: true } })) },
-        getFileContent: { useQuery: vi.fn(() => ({ data: undefined })) },
-        getFileContentBatch: { useQuery: vi.fn(() => ({ data: undefined })) },
-      },
       diffViewed: {
         list: { useQuery: vi.fn(() => ({ data: [] })) },
         markViewed: { useMutation: mocks.useMutationMock },
@@ -39,6 +40,14 @@ vi.mock("@/trpc", () => {
         delete: { useMutation: mocks.useMutationMock },
       },
     },
+  };
+});
+
+vi.mock("@tanstack/react-query", async () => {
+  const actual = await vi.importActual("@tanstack/react-query");
+  return {
+    ...actual,
+    useQueryClient: vi.fn(() => ({ setQueryData: vi.fn(), invalidateQueries: vi.fn() })),
   };
 });
 
@@ -68,13 +77,13 @@ import { DiffViewer } from "./DiffViewer";
 
 describe("DiffViewer", () => {
   it("shows loading state", () => {
-    mocks.useQueryMock.mockReturnValue({ data: undefined as unknown, isLoading: true });
+    mocks.useGetDiffMock.mockReturnValue({ data: undefined as unknown, isLoading: true });
     render(<DiffViewer featureId={1} mode="worktree" />);
     expect(screen.getByText("Loading diff...")).toBeInTheDocument();
   });
 
   it("shows 'No changes detected' when diff is empty", () => {
-    mocks.useQueryMock.mockReturnValue({ data: "" as unknown, isLoading: false });
+    mocks.useGetDiffMock.mockReturnValue({ data: { diff: "" } as unknown, isLoading: false });
     render(<DiffViewer featureId={1} mode="worktree" />);
     expect(screen.getByText("No changes detected")).toBeInTheDocument();
   });
@@ -90,7 +99,7 @@ index abc..def 100644
  line2
  line3
 `;
-    mocks.useQueryMock.mockReturnValue({ data: mockDiff as unknown, isLoading: false });
+    mocks.useGetDiffMock.mockReturnValue({ data: { diff: mockDiff } as unknown, isLoading: false });
     render(<DiffViewer featureId={1} mode="worktree" />);
     expect(screen.getByText("src/foo.ts")).toBeInTheDocument();
   });
@@ -104,7 +113,7 @@ index abc..def 100644
  line1
 +line2
 `;
-    mocks.useQueryMock.mockReturnValue({ data: mockDiff as unknown, isLoading: false });
+    mocks.useGetDiffMock.mockReturnValue({ data: { diff: mockDiff } as unknown, isLoading: false });
     render(<DiffViewer featureId={1} mode="worktree" />);
     expect(screen.getByRole("button", { name: "Split" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Unified" })).toBeInTheDocument();
