@@ -1,4 +1,4 @@
-pnpm tsc --noEmit
-pnpm run lint
-pnpm run circular
-pnpm test
+pnpm --filter @cadence/electron tsc --noEmit
+pnpm turbo run lint
+pnpm --filter @cadence/electron circular
+pnpm turbo run test

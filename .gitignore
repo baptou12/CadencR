@@ -1,7 +1,10 @@
 node_modules/
 out/
 .vite/
+.turbo/
 dist/
 *.log
 .DS_Store
 coverage/
+packages/*/out/
+packages/*/.vite/
