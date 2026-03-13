@@ -22,8 +22,7 @@ pub async fn create_write_pool(db_path: &str) -> Result<SqlitePool, sqlx::Error>
     let options = SqliteConnectOptions::from_str(&format!("sqlite:{db_path}"))?
         .journal_mode(SqliteJournalMode::Wal)
         .busy_timeout(std::time::Duration::from_millis(5000))
-        .pragma("journal_size_limit", "67108864")
-        .create_if_missing(true);
+        .pragma("journal_size_limit", "67108864");
 
     SqlitePoolOptions::new()
         .max_connections(1)
