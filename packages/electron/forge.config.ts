@@ -8,6 +8,11 @@ import fs from "node:fs";
 const config: ForgeConfig = {
   packagerConfig: {
     icon: path.join(__dirname, "assets", "icon"),
+    extraResource: [
+      process.platform === "win32"
+        ? path.join(__dirname, "..", "service", "target", "release", "cadence-service.exe")
+        : path.join(__dirname, "..", "service", "target", "release", "cadence-service"),
+    ],
     asar: {
       unpack: "**/{better-sqlite3,node-pty,bindings,file-uri-to-path}/**",
     },
