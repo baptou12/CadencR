@@ -5,12 +5,7 @@
       "cache": false,
       "persistent": true
     },
-    "build": {
-      "dependsOn": ["^build"],
-      "outputs": [".vite/**", "out/**"]
-    },
     "test": {
-      "dependsOn": ["^build"],
       "outputs": []
     },
     "lint": {
@@ -20,12 +15,10 @@
       "outputs": []
     },
     "package": {
-      "dependsOn": ["build"],
       "outputs": ["out/**"],
       "cache": false
     },
     "make": {
-      "dependsOn": ["build"],
       "outputs": ["out/**"],
       "cache": false
     }
