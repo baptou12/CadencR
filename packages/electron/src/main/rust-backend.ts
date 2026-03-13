@@ -88,8 +88,24 @@ export async function startRustBackend(
     await new Promise((resolve) => setTimeout(resolve, retryInterval));
   }
 
-  // Timeout — kill the process
-  rustProcess.kill("SIGKILL");
+  // Timeout — gracefully stop then force kill
+  console.log("[rust-backend] Health check timeout, sending SIGTERM...");
+  rustProcess.kill("SIGTERM");
+  const exitedGracefully = await new Promise<boolean>((resolve) => {
+    const timeout = setTimeout(() => resolve(false), 2000);
+    rustProcess!.on("exit", () => {
+      clearTimeout(timeout);
+      resolve(true);
+    });
+    if (rustProcess!.exitCode !== null) {
+      clearTimeout(timeout);
+      resolve(true);
+    }
+  });
+  if (!exitedGracefully) {
+    console.log("[rust-backend] Force killing after SIGTERM timeout...");
+    rustProcess.kill("SIGKILL");
+  }
   rustProcess = null;
   throw new Error("Rust backend failed to start: health check timeout after 6 seconds");
 }

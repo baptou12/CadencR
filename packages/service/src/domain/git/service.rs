@@ -7,6 +7,13 @@ use crate::domain::git::repository;
 use crate::error::AppError;
 
 // ---------------------------------------------------------------------------
+// Feature-setting key constants
+// ---------------------------------------------------------------------------
+
+const SETTING_WORKTREE_PATH: &str = "worktree_path";
+const SETTING_WORKTREE_BRANCH: &str = "worktree_branch";
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -24,7 +31,7 @@ async fn resolve_feature_git_path(
     };
 
     if feature_type != "session" {
-        let wt = repository::get_feature_setting(&state.read_pool, feature_id, "worktree_path").await?;
+        let wt = repository::get_feature_setting(&state.read_pool, feature_id, SETTING_WORKTREE_PATH).await?;
         if let Some(path) = wt {
             return Ok(Some(path));
         }
@@ -43,7 +50,7 @@ async fn get_project_and_branch(
     feature_id: i64,
 ) -> Result<(String, String), AppError> {
     let project_path = repository::get_project_path(&state.read_pool, project_id).await?;
-    let branch = repository::get_feature_setting(&state.read_pool, feature_id, "worktree_branch")
+    let branch = repository::get_feature_setting(&state.read_pool, feature_id, SETTING_WORKTREE_BRANCH)
         .await?
         .ok_or_else(|| AppError::NotFound("No worktree branch found for this feature".into()))?;
     Ok((project_path, branch))
@@ -133,7 +140,7 @@ pub async fn get_file_content(
     }
 
     // Branch mode
-    let branch = repository::get_feature_setting(&state.read_pool, params.feature_id, "worktree_branch").await?;
+    let branch = repository::get_feature_setting(&state.read_pool, params.feature_id, SETTING_WORKTREE_BRANCH).await?;
     let fallback = params.target_branch.as_deref().unwrap_or("main");
     let base_branch = match branch {
         Some(ref b) => commands::get_original_branch(path, b).await.unwrap_or_else(|_| fallback.to_string()),
@@ -167,7 +174,7 @@ pub async fn get_file_content_batch(
         ("HEAD".to_string(), None)
     } else {
         // Branch mode
-        let branch = repository::get_feature_setting(&state.read_pool, body.feature_id, "worktree_branch").await?;
+        let branch = repository::get_feature_setting(&state.read_pool, body.feature_id, SETTING_WORKTREE_BRANCH).await?;
         let fallback = body.target_branch.as_deref().unwrap_or("main");
         let base = match branch {
             Some(ref b) => commands::get_original_branch(path, b).await.unwrap_or_else(|_| fallback.to_string()),
@@ -200,7 +207,7 @@ pub async fn get_commit_log(
     };
     let path = Path::new(&git_path);
 
-    let branch_setting = repository::get_feature_setting(&state.read_pool, params.feature_id, "worktree_branch").await?;
+    let branch_setting = repository::get_feature_setting(&state.read_pool, params.feature_id, SETTING_WORKTREE_BRANCH).await?;
     let branch_name = match branch_setting {
         Some(b) => b,
         None => match commands::get_current_branch(path).await? {
@@ -230,7 +237,7 @@ pub async fn get_file_blob_shas(
     state: &AppState,
     params: GetFileBlobShasParams,
 ) -> Result<Vec<FileBlobSha>, AppError> {
-    let wt_path = repository::get_feature_setting(&state.read_pool, params.feature_id, "worktree_path").await?;
+    let wt_path = repository::get_feature_setting(&state.read_pool, params.feature_id, SETTING_WORKTREE_PATH).await?;
     let wt_path = match wt_path {
         Some(p) => p,
         None => return Ok(vec![]),
@@ -257,7 +264,7 @@ pub async fn get_worktree_info(
     params: WorktreeInfoParams,
 ) -> Result<Option<WorktreeInfo>, AppError> {
     let project_path = repository::get_project_path(&state.read_pool, params.project_id).await?;
-    let wt_path = repository::get_feature_setting(&state.read_pool, params.feature_id, "worktree_path").await?;
+    let wt_path = repository::get_feature_setting(&state.read_pool, params.feature_id, SETTING_WORKTREE_PATH).await?;
     let wt_path = match wt_path {
         Some(p) => p,
         None => return Ok(None),
@@ -277,8 +284,8 @@ pub async fn create_worktree(
     let (worktree_path, branch) =
         commands::create_worktree(Path::new(&project_path), &branch_name, &project_name).await?;
 
-    repository::set_feature_setting(&state.write_pool, body.feature_id, "worktree_path", &worktree_path).await?;
-    repository::set_feature_setting(&state.write_pool, body.feature_id, "worktree_branch", &branch).await?;
+    repository::set_feature_setting(&state.write_pool, body.feature_id, SETTING_WORKTREE_PATH, &worktree_path).await?;
+    repository::set_feature_setting(&state.write_pool, body.feature_id, SETTING_WORKTREE_BRANCH, &branch).await?;
 
     Ok(CreateWorktreeResponse { worktree_path, branch })
 }
@@ -288,12 +295,12 @@ pub async fn remove_worktree(
     params: RemoveWorktreeParams,
 ) -> Result<SuccessResponse, AppError> {
     let project_path = repository::get_project_path(&state.read_pool, params.project_id).await?;
-    let wt_path = repository::get_feature_setting(&state.read_pool, params.feature_id, "worktree_path")
+    let wt_path = repository::get_feature_setting(&state.read_pool, params.feature_id, SETTING_WORKTREE_PATH)
         .await?
         .ok_or_else(|| AppError::NotFound("No worktree found for this feature".into()))?;
 
     commands::remove_worktree(Path::new(&project_path), Path::new(&wt_path)).await?;
-    repository::delete_feature_settings(&state.write_pool, params.feature_id, &["worktree_path", "worktree_branch"]).await?;
+    repository::delete_feature_settings(&state.write_pool, params.feature_id, &[SETTING_WORKTREE_PATH, SETTING_WORKTREE_BRANCH]).await?;
 
     Ok(SuccessResponse { success: true, error: None })
 }
@@ -303,7 +310,7 @@ pub async fn delete_worktree(
     params: DeleteWorktreeParams,
 ) -> Result<SuccessResponse, AppError> {
     let project_path = repository::get_project_path(&state.read_pool, params.project_id).await?;
-    let wt_path = repository::get_feature_setting(&state.read_pool, params.feature_id, "worktree_path")
+    let wt_path = repository::get_feature_setting(&state.read_pool, params.feature_id, SETTING_WORKTREE_PATH)
         .await?
         .ok_or_else(|| AppError::NotFound("No worktree found for this feature".into()))?;
 
@@ -316,7 +323,7 @@ pub async fn delete_worktree(
 
     match commands::remove_worktree(Path::new(&project_path), Path::new(&wt_path)).await {
         Ok(_) => {
-            repository::delete_feature_settings(&state.write_pool, params.feature_id, &["worktree_path", "worktree_branch"]).await?;
+            repository::delete_feature_settings(&state.write_pool, params.feature_id, &[SETTING_WORKTREE_PATH, SETTING_WORKTREE_BRANCH]).await?;
             Ok(SuccessResponse { success: true, error: None })
         }
         Err(e) => Ok(SuccessResponse { success: false, error: Some(e.to_string()) }),
@@ -339,8 +346,8 @@ pub async fn retry_worktree_setup(
     let (worktree_path, branch) =
         commands::create_worktree(Path::new(&project_path), &branch_name, &project_name).await?;
 
-    repository::set_feature_setting(&state.write_pool, body.feature_id, "worktree_path", &worktree_path).await?;
-    repository::set_feature_setting(&state.write_pool, body.feature_id, "worktree_branch", &branch).await?;
+    repository::set_feature_setting(&state.write_pool, body.feature_id, SETTING_WORKTREE_PATH, &worktree_path).await?;
+    repository::set_feature_setting(&state.write_pool, body.feature_id, SETTING_WORKTREE_BRANCH, &branch).await?;
 
     Ok(SuccessResponse { success: true, error: None })
 }
