@@ -1,4 +1,4 @@
-import { renderHook } from "@testing-library/react";
+import { renderHook, act } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { useFeatureAgentState } from "./useFeatureAgentState";
 
@@ -16,6 +16,36 @@ vi.mock("@/trpc", () => ({
 }));
 
 type AgentEventListener = (data: unknown) => void;
+
+/** Helper to build a minimal session payload for tests. */
+function makeSession(overrides: Record<string, unknown> = {}) {
+  return {
+    sessionDbId: 1,
+    agentType: "plan",
+    status: "completed",
+    subprocessId: null,
+    model: "claude-opus-4-5",
+    blocks: [],
+    maxMessageId: 0,
+    isIncremental: false,
+    pendingQuestions: null,
+    hasFileChanges: false,
+    resumable: false,
+    claudeSessionId: null,
+    runId: null,
+    phaseId: null,
+    phaseTitle: null,
+    todos: null,
+    permissionMode: "acceptEdits",
+    pendingPlanApproval: null,
+    pendingPermission: null,
+    inputTokens: 0,
+    outputTokens: 0,
+    contextWindow: 200000,
+    wasCompacted: false,
+    ...overrides,
+  };
+}
 
 describe("useFeatureAgentState", () => {
   let onAgentEventListener: AgentEventListener | null = null;
@@ -52,29 +82,7 @@ describe("useFeatureAgentState", () => {
     mockUseQuery.mockReturnValue({
       data: {
         sessions: [
-          {
-            sessionDbId: 1,
-            agentType: "plan",
-            status: "completed",
-            subprocessId: null,
-            model: "claude-opus-4-5",
-            blocks: [],
-            pendingQuestions: null,
-            hasFileChanges: false,
-            resumable: false,
-            claudeSessionId: null,
-            runId: null,
-            phaseId: null,
-            phaseTitle: null,
-            todos: null,
-            permissionMode: "acceptEdits",
-            pendingPlanApproval: null,
-            pendingPermission: null,
-            inputTokens: 100,
-            outputTokens: 50,
-            contextWindow: 200000,
-            wasCompacted: false,
-          },
+          makeSession({ inputTokens: 100, outputTokens: 50 }),
         ],
       },
       isLoading: false,
@@ -95,29 +103,7 @@ describe("useFeatureAgentState", () => {
     mockUseQuery.mockReturnValue({
       data: {
         sessions: [
-          {
-            sessionDbId: 1,
-            agentType: "execute",
-            status: "waiting",
-            subprocessId: null,
-            model: null,
-            blocks: [],
-            pendingQuestions: null,
-            hasFileChanges: false,
-            resumable: false,
-            claudeSessionId: null,
-            runId: null,
-            phaseId: null,
-            phaseTitle: null,
-            todos: null,
-            permissionMode: "acceptEdits",
-            pendingPlanApproval: null,
-            pendingPermission: null,
-            inputTokens: 0,
-            outputTokens: 0,
-            contextWindow: 200000,
-            wasCompacted: false,
-          },
+          makeSession({ agentType: "execute", status: "waiting" }),
         ],
       },
       isLoading: false,
@@ -165,29 +151,7 @@ describe("useFeatureAgentState", () => {
     mockUseQuery.mockReturnValue({
       data: {
         sessions: [
-          {
-            sessionDbId: 1,
-            agentType: "plan",
-            status: "paused",
-            subprocessId: "sub-1",
-            model: null,
-            blocks: [],
-            pendingQuestions,
-            hasFileChanges: false,
-            resumable: false,
-            claudeSessionId: null,
-            runId: null,
-            phaseId: null,
-            phaseTitle: null,
-            todos: null,
-            permissionMode: "acceptEdits",
-            pendingPlanApproval: null,
-            pendingPermission: null,
-            inputTokens: 0,
-            outputTokens: 0,
-            contextWindow: 200000,
-            wasCompacted: false,
-          },
+          makeSession({ status: "paused", subprocessId: "sub-1", pendingQuestions }),
         ],
       },
       isLoading: false,
@@ -209,29 +173,7 @@ describe("useFeatureAgentState", () => {
     mockUseQuery.mockReturnValue({
       data: {
         sessions: [
-          {
-            sessionDbId: 1,
-            agentType: "plan",
-            status: "paused",
-            subprocessId: "sub-1",
-            model: null,
-            blocks: [],
-            pendingQuestions,
-            hasFileChanges: false,
-            resumable: false,
-            claudeSessionId: null,
-            runId: null,
-            phaseId: null,
-            phaseTitle: null,
-            todos: null,
-            permissionMode: "acceptEdits",
-            pendingPlanApproval: null,
-            pendingPermission: null,
-            inputTokens: 0,
-            outputTokens: 0,
-            contextWindow: 200000,
-            wasCompacted: false,
-          },
+          makeSession({ status: "paused", subprocessId: "sub-1", pendingQuestions }),
         ],
       },
       isLoading: false,
@@ -242,5 +184,207 @@ describe("useFeatureAgentState", () => {
     const session = result.current.sessions[0];
     expect(session.pendingQuestions).toHaveLength(1);
     expect(session.pendingQuestions![0].question).toBe("Are you sure?");
+  });
+
+  // -----------------------------------------------------------------------
+  // Incremental merge tests
+  // -----------------------------------------------------------------------
+
+  it("passes afterMessageIds to query after processing data", () => {
+    // Initial full fetch
+    mockUseQuery.mockReturnValue({
+      data: {
+        sessions: [
+          makeSession({ maxMessageId: 100, isIncremental: false, blocks: [{ id: "msg-1", type: "text", content: "hello" }] }),
+        ],
+      },
+      isLoading: false,
+      refetch: mockRefetch,
+    });
+
+    const { rerender } = renderHook(() => useFeatureAgentState(1));
+
+    // After first render + useEffect (dataVersion bump), the query should
+    // be called with afterMessageIds derived from accumulated state
+    act(() => { rerender(); });
+
+    // The second call to useQuery should include afterMessageIds
+    const lastCall = mockUseQuery.mock.calls[mockUseQuery.mock.calls.length - 1];
+    expect(lastCall[0]).toEqual({
+      featureId: 1,
+      afterMessageIds: { "1": 100 },
+    });
+  });
+
+  it("appends incremental blocks without boundary merge", () => {
+    // Start with full data
+    mockUseQuery.mockReturnValue({
+      data: {
+        sessions: [
+          makeSession({
+            maxMessageId: 100,
+            isIncremental: false,
+            blocks: [{ id: "msg-1", type: "text", content: "hello " }],
+          }),
+        ],
+      },
+      isLoading: false,
+      refetch: mockRefetch,
+    });
+
+    const { result, rerender } = renderHook(() => useFeatureAgentState(1));
+    expect(result.current.sessions[0].blocks).toHaveLength(1);
+    expect(result.current.sessions[0].blocks[0].content).toBe("hello ");
+
+    // Now simulate incremental response with a tool_call (no merge needed)
+    mockUseQuery.mockReturnValue({
+      data: {
+        sessions: [
+          makeSession({
+            maxMessageId: 105,
+            isIncremental: true,
+            blocks: [{ id: "msg-101", type: "tool_call", content: "{}", toolName: "Read", toolUseId: "tu-1" }],
+          }),
+        ],
+      },
+      isLoading: false,
+      refetch: mockRefetch,
+    });
+
+    rerender();
+
+    expect(result.current.sessions[0].blocks).toHaveLength(2);
+    expect(result.current.sessions[0].blocks[0].content).toBe("hello ");
+    expect(result.current.sessions[0].blocks[1].type).toBe("tool_call");
+  });
+
+  it("merges text blocks at boundary during incremental update", () => {
+    // Start with full data ending in a text block
+    mockUseQuery.mockReturnValue({
+      data: {
+        sessions: [
+          makeSession({
+            maxMessageId: 100,
+            isIncremental: false,
+            blocks: [{ id: "msg-1", type: "text", content: "hello " }],
+          }),
+        ],
+      },
+      isLoading: false,
+      refetch: mockRefetch,
+    });
+
+    const { result, rerender } = renderHook(() => useFeatureAgentState(1));
+
+    // Incremental response with a text block that should merge
+    mockUseQuery.mockReturnValue({
+      data: {
+        sessions: [
+          makeSession({
+            maxMessageId: 105,
+            isIncremental: true,
+            blocks: [{ id: "msg-101", type: "text", content: "world" }],
+          }),
+        ],
+      },
+      isLoading: false,
+      refetch: mockRefetch,
+    });
+
+    rerender();
+
+    expect(result.current.sessions[0].blocks).toHaveLength(1);
+    expect(result.current.sessions[0].blocks[0].content).toBe("hello world");
+  });
+
+  it("preserves existing blocks when incremental response has 0 new blocks", () => {
+    mockUseQuery.mockReturnValue({
+      data: {
+        sessions: [
+          makeSession({
+            maxMessageId: 100,
+            isIncremental: false,
+            blocks: [
+              { id: "msg-1", type: "text", content: "existing text" },
+              { id: "msg-50", type: "tool_call", content: "{}", toolName: "Write" },
+            ],
+          }),
+        ],
+      },
+      isLoading: false,
+      refetch: mockRefetch,
+    });
+
+    const { result, rerender } = renderHook(() => useFeatureAgentState(1));
+    expect(result.current.sessions[0].blocks).toHaveLength(2);
+
+    // Empty incremental response
+    mockUseQuery.mockReturnValue({
+      data: {
+        sessions: [
+          makeSession({
+            maxMessageId: 100,
+            isIncremental: true,
+            blocks: [],
+          }),
+        ],
+      },
+      isLoading: false,
+      refetch: mockRefetch,
+    });
+
+    rerender();
+
+    expect(result.current.sessions[0].blocks).toHaveLength(2);
+    expect(result.current.sessions[0].blocks[0].content).toBe("existing text");
+  });
+
+  it("clears accumulated state on feature ID change", () => {
+    mockUseQuery.mockReturnValue({
+      data: {
+        sessions: [
+          makeSession({
+            maxMessageId: 100,
+            isIncremental: false,
+            blocks: [{ id: "msg-1", type: "text", content: "feature 1 text" }],
+          }),
+        ],
+      },
+      isLoading: false,
+      refetch: mockRefetch,
+    });
+
+    const { result, rerender } = renderHook(
+      ({ featureId }) => useFeatureAgentState(featureId),
+      { initialProps: { featureId: 1 } },
+    );
+    expect(result.current.sessions[0].blocks[0].content).toBe("feature 1 text");
+
+    // Switch feature — accumulated state should be cleared, so the first query
+    // call for the new featureId should use afterMessageIds=undefined (full fetch)
+    const callCountBefore = mockUseQuery.mock.calls.length;
+
+    mockUseQuery.mockReturnValue({
+      data: {
+        sessions: [
+          makeSession({
+            sessionDbId: 2,
+            maxMessageId: 50,
+            isIncremental: false,
+            blocks: [{ id: "msg-20", type: "text", content: "feature 2 text" }],
+          }),
+        ],
+      },
+      isLoading: false,
+      refetch: mockRefetch,
+    });
+
+    rerender({ featureId: 2 });
+
+    // The first query call after the feature change should be a full fetch
+    const callAfterChange = mockUseQuery.mock.calls[callCountBefore];
+    expect(callAfterChange[0].featureId).toBe(2);
+    expect(callAfterChange[0].afterMessageIds).toBeUndefined();
+    expect(result.current.sessions[0].blocks[0].content).toBe("feature 2 text");
   });
 });

@@ -133,7 +133,10 @@ export const sessionsRouter = router({
 
   /** Get all agent state for a feature in a single query */
   getFeatureAgentState: publicProcedure
-    .input(z.object({ featureId: z.number() }))
+    .input(z.object({
+      featureId: z.number(),
+      afterMessageIds: z.record(z.coerce.number(), z.number()).optional(),
+    }))
     .query(async ({ input }) => {
       const sessions = await AppRuntime.runPromise(
         queryAll<AgentSessionRow & { draft_prompt: string | null }>(
@@ -160,26 +163,115 @@ export const sessionsRouter = router({
         }
       }
 
-      // Batch-fetch all messages for these sessions
-      const sessionIds = sessions.map((s) => s.id);
-      const placeholders = sessionIds.map(() => "?").join(",");
-      const allMessages = await AppRuntime.runPromise(
-        queryAllValidated(
-          AgentMessageRowSchema,
-          `SELECT id, session_id, role, content, message_type, tool_name, tool_use_id, parent_tool_use_id, created_at, model FROM agent_messages WHERE session_id IN (${placeholders}) ORDER BY id ASC`,
-          ...sessionIds,
-        ),
-      );
-
-      // Group messages by session
-      const messagesBySession = new Map<number, AgentMessageRow[]>();
-      for (const msg of allMessages) {
-        let arr = messagesBySession.get(msg.session_id);
-        if (!arr) {
-          arr = [];
-          messagesBySession.set(msg.session_id, arr);
+      // Split sessions into full-fetch vs incremental groups
+      const afterMap = input.afterMessageIds ?? {};
+      const fullFetchIds: number[] = [];
+      const incrementalFetches: { sessionId: number; afterId: number }[] = [];
+      for (const s of sessions) {
+        const after = afterMap[s.id];
+        if (after != null && after > 0) {
+          incrementalFetches.push({ sessionId: s.id, afterId: after });
+        } else {
+          fullFetchIds.push(s.id);
         }
-        arr.push(msg);
+      }
+
+      // Batch-fetch all messages for full-fetch sessions
+      const fullMessagesBySession = new Map<number, AgentMessageRow[]>();
+      if (fullFetchIds.length > 0) {
+        const placeholders = fullFetchIds.map(() => "?").join(",");
+        const allMessages = await AppRuntime.runPromise(
+          queryAllValidated(
+            AgentMessageRowSchema,
+            `SELECT id, session_id, role, content, message_type, tool_name, tool_use_id, parent_tool_use_id, created_at, model FROM agent_messages WHERE session_id IN (${placeholders}) ORDER BY id ASC`,
+            ...fullFetchIds,
+          ),
+        );
+        for (const msg of allMessages) {
+          let arr = fullMessagesBySession.get(msg.session_id);
+          if (!arr) {
+            arr = [];
+            fullMessagesBySession.set(msg.session_id, arr);
+          }
+          arr.push(msg);
+        }
+      }
+
+      // Per-session incremental fetches
+      const incrementalMessagesBySession = new Map<number, AgentMessageRow[]>();
+      // Tool_call rows whose content was updated in-place (input_json_delta).
+      // Keyed by message ID so the client can patch existing blocks.
+      const updatedToolCalls = new Map<number, Map<number, AgentMessageRow>>();
+      if (incrementalFetches.length > 0) {
+        const results = await Promise.all(
+          incrementalFetches.map(({ sessionId, afterId }) =>
+            AppRuntime.runPromise(
+              queryAllValidated(
+                AgentMessageRowSchema,
+                "SELECT id, session_id, role, content, message_type, tool_name, tool_use_id, parent_tool_use_id, created_at, model FROM agent_messages WHERE session_id = ? AND id > ? ORDER BY id ASC",
+                sessionId,
+                afterId,
+              ),
+            ).then((msgs) => ({ sessionId, msgs })),
+          ),
+        );
+        for (const { sessionId, msgs } of results) {
+          incrementalMessagesBySession.set(sessionId, msgs);
+        }
+
+        // Re-fetch in-flight tool_call rows (id <= cursor) whose content may
+        // have been updated via input_json_delta. These are tool_calls without
+        // a matching tool_result yet. Uses idx_agent_messages_session index.
+        const staleResults = await Promise.all(
+          incrementalFetches.map(({ sessionId, afterId }) =>
+            AppRuntime.runPromise(
+              queryAll<AgentMessageRow>(
+                `SELECT id, session_id, role, content, message_type, tool_name, tool_use_id, parent_tool_use_id, created_at, model
+                 FROM agent_messages
+                 WHERE session_id = ? AND id <= ? AND message_type = 'tool_call'
+                   AND tool_use_id NOT IN (
+                     SELECT tool_use_id FROM agent_messages
+                     WHERE session_id = ? AND message_type IN ('tool_result', 'tool_error')
+                   )
+                 ORDER BY id ASC`,
+                sessionId, afterId, sessionId,
+              ),
+            ).then((rows) => ({ sessionId, rows })),
+          ),
+        );
+        for (const { sessionId, rows } of staleResults) {
+          if (rows.length > 0) {
+            const map = new Map<number, AgentMessageRow>();
+            for (const row of rows) map.set(row.id, row);
+            updatedToolCalls.set(sessionId, map);
+          }
+        }
+      }
+
+      // Extract todos: for full-fetch sessions, scan in-memory messages.
+      // For incremental sessions, query the DB directly for the latest TodoWrite
+      // because the row may have been updated in-place (via input_json_delta)
+      // after the cursor advanced past it.
+      const todosBySession = new Map<number, Array<{ content: string; status: string; activeForm: string }>>();
+      const incrementalSessionIds = incrementalFetches.map((f) => f.sessionId);
+      if (incrementalSessionIds.length > 0) {
+        // Uses idx_agent_messages_session index for fast per-session lookup
+        for (const sid of incrementalSessionIds) {
+          const row = await AppRuntime.runPromise(
+            queryOne<{ content: string }>(
+              "SELECT content FROM agent_messages WHERE session_id = ? AND message_type = 'tool_call' AND tool_name = 'TodoWrite' ORDER BY id DESC LIMIT 1",
+              sid,
+            ),
+          );
+          if (row) {
+            try {
+              const parsed = JSON.parse(row.content);
+              if (parsed.todos && Array.isArray(parsed.todos)) {
+                todosBySession.set(sid, parsed.todos);
+              }
+            } catch { /* ignore parse errors */ }
+          }
+        }
       }
 
       return {
@@ -188,23 +280,40 @@ export const sessionsRouter = router({
           if (s.pending_questions) {
             try { pendingQuestions = JSON.parse(s.pending_questions); } catch { /* ignore */ }
           }
-          const msgs = messagesBySession.get(s.id) ?? [];
-          const maxMessageId = msgs.length > 0 ? msgs[msgs.length - 1].id : 0;
 
-          // Extract the last TodoWrite tool call to get current todo list
-          let todos: Array<{ content: string; status: string; activeForm: string }> | null = null;
-          for (let i = msgs.length - 1; i >= 0; i--) {
-            const msg = msgs[i];
-            if (msg.message_type === "tool_call" && msg.tool_name === "TodoWrite") {
-              try {
-                const parsed = JSON.parse(msg.content);
-                if (parsed.todos && Array.isArray(parsed.todos)) {
-                  todos = parsed.todos;
-                }
-              } catch { /* ignore parse errors */ }
-              break;
+          const isIncremental = incrementalMessagesBySession.has(s.id);
+          const msgs = isIncremental
+            ? incrementalMessagesBySession.get(s.id)!
+            : fullMessagesBySession.get(s.id) ?? [];
+          const maxMessageId = msgs.length > 0
+            ? msgs[msgs.length - 1].id
+            : (isIncremental ? afterMap[s.id] : 0);
+
+          // For full-fetch sessions, extract todos from in-memory messages
+          if (!isIncremental) {
+            for (let i = msgs.length - 1; i >= 0; i--) {
+              const msg = msgs[i];
+              if (msg.message_type === "tool_call" && msg.tool_name === "TodoWrite") {
+                try {
+                  const parsed = JSON.parse(msg.content);
+                  if (parsed.todos && Array.isArray(parsed.todos)) {
+                    todosBySession.set(s.id, parsed.todos);
+                    break;
+                  }
+                } catch { /* ignore parse errors */ }
+              }
             }
           }
+
+          // Build updated tool call content map for this session (incremental only)
+          const toolCallUpdates: Record<string, string> | null =
+            isIncremental && updatedToolCalls.has(s.id)
+              ? Object.fromEntries(
+                  [...updatedToolCalls.get(s.id)!.entries()].map(
+                    ([id, row]) => [`msg-${id}`, row.content],
+                  ),
+                )
+              : null;
 
           return {
             sessionDbId: s.id,
@@ -214,6 +323,8 @@ export const sessionsRouter = router({
             model: s.model,
             blocks: buildBlocks(msgs),
             maxMessageId,
+            isIncremental,
+            toolCallUpdates,
             pendingQuestions,
             hasFileChanges: s.has_file_changes === 1,
             resumable: (s.status === "paused" || s.status === "completed" || s.status === "error") && s.claude_session_id != null,
@@ -221,7 +332,7 @@ export const sessionsRouter = router({
             runId: s.run_id,
             phaseId: s.phase_id,
             phaseTitle: s.phase_id != null ? phaseTitleMap.get(s.phase_id) ?? null : null,
-            todos,
+            todos: todosBySession.get(s.id) ?? null,
             permissionMode: s.permission_mode ?? "acceptEdits",
             pendingPlanApproval: s.pending_plan_approval ? (() => { try { return JSON.parse(s.pending_plan_approval); } catch { return null; } })() : null,
             pendingPrdApproval: s.pending_prd_approval ? (() => { try { return JSON.parse(s.pending_prd_approval); } catch { return null; } })() : null,
