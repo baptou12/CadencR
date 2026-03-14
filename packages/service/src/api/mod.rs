@@ -7,6 +7,7 @@ use crate::domain::workspace::routes::workspace_router;
 use crate::domain::projects::routes::projects_router;
 use crate::domain::features::routes::features_router;
 use crate::domain::diff_comments::routes::diff_comments_router;
+use crate::domain::sessions::routes::sessions_router;
 
 pub fn build_router(state: AppState) -> Router {
     Router::new()
@@ -16,5 +17,6 @@ pub fn build_router(state: AppState) -> Router {
         .merge(projects_router())
         .merge(features_router())
         .merge(diff_comments_router())
+        .merge(sessions_router())
         .with_state(state)
 }

@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
+import { useQueryClient } from "@tanstack/react-query";
 import { trpc } from "@/trpc";
 import { useGetFeaturePrd, useGetFeaturePlan } from "@/api/generated";
 import { FeatureTopBar } from "@/components/FeatureTopBar";
@@ -71,6 +72,7 @@ export function FeatureWorkflowView({
   });
   const contextUsageMap = useContextUsage(featureId, wf.sessionEntries);
   const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
 
   // --- Model settings for inline model switcher ---
   const { resolveModel, handleModelChange } = useResolvedModel(
@@ -81,12 +83,12 @@ export function FeatureWorkflowView({
   const chat = useAgentChat({
     featureId,
     projectId,
-    refetch: () => utils.sessions.getFeatureAgentState.invalidate({ featureId }),
+    refetch: () => queryClient.invalidateQueries({ queryKey: ["sessions", "agentState", featureId] }),
   });
 
   const deleteSession = trpc.sessions.deleteSession.useMutation({
     onSuccess: () => {
-      utils.sessions.getFeatureAgentState.invalidate({ featureId });
+      void queryClient.invalidateQueries({ queryKey: ["sessions", "agentState", featureId] });
     },
   });
 
@@ -121,7 +123,7 @@ export function FeatureWorkflowView({
   // --- Review fixer agent ---
   const startReviewFixer = trpc.workflow.startReviewFixer.useMutation({
     onSuccess: () => {
-      utils.sessions.getFeatureAgentState.invalidate({ featureId });
+      void queryClient.invalidateQueries({ queryKey: ["sessions", "agentState", featureId] });
     },
   });
 

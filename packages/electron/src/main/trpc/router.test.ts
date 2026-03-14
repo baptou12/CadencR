@@ -270,19 +270,7 @@ describe("appRouter - agentsRouter & sessionsRouter", () => {
     expect(result).toEqual({ success: true });
   });
 
-  it("agents.getSessions returns sessions for feature", async () => {
-    const sessions = [{ id: 1, feature_id: 1, agent_type: "plan", claude_session_id: null, status: "completed", started_at: null, ended_at: null, run_id: null, phase_id: null, subprocess_id: null, model: null, pending_questions: null, has_file_changes: 0, permission_mode: null, pending_plan_approval: null, pending_prd_approval: null, pending_permission: null, input_tokens: 0, output_tokens: 0, context_window: 200000, was_compacted: 0 }];
-    mockDb.prepare.mockReturnValue({ all: vi.fn().mockReturnValue(sessions) });
-    const result = await caller.sessions.getSessions({ featureId: 1 });
-    expect(result).toEqual(sessions);
-  });
-
-  it("agents.getSessions filters by status when provided", async () => {
-    mockDb.prepare.mockReturnValue({ all: vi.fn().mockReturnValue([]) });
-    await caller.sessions.getSessions({ featureId: 1, status: "running" });
-    const sql = mockDb.prepare.mock.calls[0][0] as string;
-    expect(sql).toContain("AND status = ?");
-  });
+  // Note: getSessions migrated to Rust backend (GET /api/features/:id/sessions)
 
   it("agents.deleteSession throws when session not found", async () => {
     mockDb.prepare.mockReturnValue({ get: vi.fn().mockReturnValue(undefined), run: vi.fn(), all: vi.fn().mockReturnValue([]) });

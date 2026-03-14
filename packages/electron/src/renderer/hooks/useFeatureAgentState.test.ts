@@ -5,14 +5,8 @@ import { useFeatureAgentState } from "./useFeatureAgentState";
 const mockRefetch = vi.fn();
 const mockUseQuery = vi.fn();
 
-vi.mock("@/trpc", () => ({
-  trpc: {
-    sessions: {
-      getFeatureAgentState: {
-        useQuery: (...args: unknown[]) => mockUseQuery(...args),
-      },
-    },
-  },
+vi.mock("../api/generated", () => ({
+  useGetFeatureAgentState: (...args: unknown[]) => mockUseQuery(...args),
 }));
 
 type AgentEventListener = (data: unknown) => void;
@@ -208,12 +202,10 @@ describe("useFeatureAgentState", () => {
     // be called with afterMessageIds derived from accumulated state
     act(() => { rerender(); });
 
-    // The second call to useQuery should include afterMessageIds
+    // The second call to useQuery should include featureId and after param (JSON-encoded afterMessageIds)
     const lastCall = mockUseQuery.mock.calls[mockUseQuery.mock.calls.length - 1];
-    expect(lastCall[0]).toEqual({
-      featureId: 1,
-      afterMessageIds: { "1": 100 },
-    });
+    expect(lastCall[0]).toBe(1); // featureId
+    expect(lastCall[1]).toBe(JSON.stringify({ "1": 100 })); // after param
   });
 
   it("appends incremental blocks without boundary merge", () => {
@@ -383,8 +375,8 @@ describe("useFeatureAgentState", () => {
 
     // The first query call after the feature change should be a full fetch
     const callAfterChange = mockUseQuery.mock.calls[callCountBefore];
-    expect(callAfterChange[0].featureId).toBe(2);
-    expect(callAfterChange[0].afterMessageIds).toBeUndefined();
+    expect(callAfterChange[0]).toBe(2); // featureId
+    expect(callAfterChange[1]).toBeUndefined(); // no after param (full fetch)
     expect(result.current.sessions[0].blocks[0].content).toBe("feature 2 text");
   });
 });

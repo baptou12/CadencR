@@ -40,13 +40,13 @@ export function PlanSidebar({ featureId }: PlanSidebarProps) {
   const resetPhase = useResetPhase({
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: getGetFeaturePlanQueryKey(featureId) });
-      utils.sessions.getFeatureAgentState.invalidate({ featureId });
+      void queryClient.invalidateQueries({ queryKey: ["sessions", "agentState", featureId] });
     },
   });
   const overridePhaseStatus = useOverridePhaseStatus({
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: getGetFeaturePlanQueryKey(featureId) });
-      utils.sessions.getFeatureAgentState.invalidate({ featureId });
+      void queryClient.invalidateQueries({ queryKey: ["sessions", "agentState", featureId] });
     },
   });
 

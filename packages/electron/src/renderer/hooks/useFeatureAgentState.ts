@@ -12,7 +12,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { trpc } from "@/trpc";
+import { useGetFeatureAgentState } from "../api/generated";
 import type { AgentBlockData } from "@/components/AgentBlock";
 import type { AgentEvent, AgentType } from "../../main/agents/types";
 import type { AgentStatus, TodoItem } from "@/types/agent";
@@ -227,10 +227,8 @@ export function useFeatureAgentState(featureId: number) {
     }
   }
 
-  const query = trpc.sessions.getFeatureAgentState.useQuery(
-    { featureId, afterMessageIds },
-    { keepPreviousData: true },
-  );
+  const afterParam = afterMessageIds ? JSON.stringify(afterMessageIds) : undefined;
+  const query = useGetFeatureAgentState(featureId, afterParam, { keepPreviousData: true });
 
   // Stable ref to query.refetch so the IPC effect doesn't re-register every render
   const refetchRef = useRef(query.refetch);
@@ -400,7 +398,7 @@ export function useFeatureAgentState(featureId: number) {
         todos: (s.todos as TodoItem[] | null) ?? acc?.todos ?? null,
         permissionMode: s.permissionMode ?? "acceptEdits",
         pendingPlanApproval: s.pendingPlanApproval ?? null,
-        pendingPermission: s.pendingPermission ?? null,
+        pendingPermission: (s.pendingPermission as PendingPermission | null) ?? null,
         inputTokens: s.inputTokens ?? 0,
         outputTokens: s.outputTokens ?? 0,
         contextWindow: s.contextWindow ?? 200000,

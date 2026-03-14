@@ -16,6 +16,7 @@ import {
   getListProjectsQueryKey,
   useCreateFeature,
   getListFeaturesQueryKey,
+  useGetFeatureTurnStates,
 } from "../api/generated";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -45,10 +46,8 @@ export function ProjectTree({
   const projectsQuery = useListProjects();
   const projects = projectsQuery.data ?? [];
 
-  const { data: featureTurnStates = {} } = trpc.sessions.getFeatureTurnStates.useQuery(
-    undefined,
-    { refetchInterval: 3000 },
-  );
+  const { data: turnStatesData } = useGetFeatureTurnStates({ refetchInterval: 3000 });
+  const featureTurnStates = (turnStatesData?.states ?? {}) as Record<number, 'claude' | 'askUser'>;
 
   const selectFolderMutation = trpc.projects.selectFolder.useMutation();
   const createProjectMutation = useCreateProject({

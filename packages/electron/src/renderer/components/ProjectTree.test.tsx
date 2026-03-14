@@ -50,6 +50,7 @@ vi.mock("../api/generated", () => ({
   useUpdateFeatureStatus: vi.fn(() => ({ mutate: vi.fn() })),
   getListFeaturesQueryKey: vi.fn((id: number) => ["features", "list", id]),
   useGetFeatureEmpty: vi.fn(() => ({ data: { empty: false } })),
+  useGetFeatureTurnStates: vi.fn(() => ({ data: { states: {} } })),
 }));
 
 vi.mock("@/trpc", () => {
@@ -65,11 +66,6 @@ vi.mock("@/trpc", () => {
             mutateAsync: mockSelectFolder,
             isLoading: false,
           })),
-        },
-      },
-      sessions: {
-        getFeatureTurnStates: {
-          useQuery: vi.fn(() => ({ data: {} })),
         },
       },
       useUtils: vi.fn(() => ({})),

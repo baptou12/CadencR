@@ -1339,3 +1339,131 @@ export function useClearAllDiffViewed(
     ...options,
   });
 }
+
+// ---------------------------------------------------------------------------
+// Sessions — types
+// ---------------------------------------------------------------------------
+
+export interface AgentBlock {
+  id: string;
+  type: string;
+  content: string;
+  toolName?: string;
+  toolArgs?: string;
+  isError?: boolean;
+  toolUseId?: string;
+  parentToolUseId?: string | null;
+  childBlocks?: AgentBlock[];
+  sourceToolName?: string;
+  createdAt?: string;
+  model?: string;
+}
+
+export interface SessionState {
+  sessionDbId: number;
+  agentType: string;
+  status: string;
+  subprocessId: string | null;
+  model: string | null;
+  blocks: AgentBlock[];
+  maxMessageId: number;
+  isIncremental: boolean;
+  toolCallUpdates?: Record<string, string> | null;
+  pendingQuestions: unknown | null;
+  hasFileChanges: boolean;
+  resumable: boolean;
+  claudeSessionId: string | null;
+  runId: number | null;
+  phaseId: number | null;
+  phaseTitle: string | null;
+  todos: Array<{ content: string; status: string; activeForm: string }> | null;
+  permissionMode: string;
+  pendingPlanApproval: unknown | null;
+  pendingPrdApproval: unknown | null;
+  pendingPermission: unknown | null;
+  inputTokens: number;
+  outputTokens: number;
+  contextWindow: number;
+  wasCompacted: boolean;
+  draftPrompt: string | null;
+}
+
+export interface FeatureAgentStateResponse {
+  sessions: SessionState[];
+}
+
+export interface TurnStatesResponse {
+  states: Record<string, string>;
+}
+
+export interface DraftResponse {
+  draftPrompt: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Sessions — query key factories
+// ---------------------------------------------------------------------------
+
+export function getGetFeatureAgentStateQueryKey(featureId: number, after?: string) {
+  return ["sessions", "agentState", featureId, after] as const;
+}
+
+export function getGetFeatureTurnStatesQueryKey() {
+  return ["sessions", "turnStates"] as const;
+}
+
+export function getGetSessionDraftQueryKey(sessionId: number) {
+  return ["sessions", "draft", sessionId] as const;
+}
+
+// ---------------------------------------------------------------------------
+// Sessions — hooks
+// ---------------------------------------------------------------------------
+
+export function useGetFeatureAgentState(
+  featureId: number,
+  after?: string,
+  options?: Omit<UseQueryOptions<FeatureAgentStateResponse, ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<FeatureAgentStateResponse, ErrorType<unknown>>({
+    queryKey: getGetFeatureAgentStateQueryKey(featureId, after),
+    queryFn: () =>
+      customInstance({
+        method: "GET",
+        url: `/api/features/${featureId}/agent-state`,
+        params: after ? { after } : undefined,
+      }),
+    ...options,
+  });
+}
+
+export function useGetFeatureTurnStates(
+  options?: Omit<UseQueryOptions<TurnStatesResponse, ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<TurnStatesResponse, ErrorType<unknown>>({
+    queryKey: getGetFeatureTurnStatesQueryKey(),
+    queryFn: () => customInstance({ method: "GET", url: "/api/sessions/turn-states" }),
+    ...options,
+  });
+}
+
+export function useGetSessionDraft(
+  sessionId: number,
+  options?: Omit<UseQueryOptions<DraftResponse, ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<DraftResponse, ErrorType<unknown>>({
+    queryKey: getGetSessionDraftQueryKey(sessionId),
+    queryFn: () => customInstance({ method: "GET", url: `/api/sessions/${sessionId}/draft` }),
+    ...options,
+  });
+}
+
+export function useSaveSessionDraft(
+  options?: UseMutationOptions<{ success: boolean }, ErrorType<unknown>, { sessionId: number; draft: string | null }>,
+) {
+  return useMutation<{ success: boolean }, ErrorType<unknown>, { sessionId: number; draft: string | null }>({
+    mutationFn: ({ sessionId, draft }) =>
+      customInstance({ method: "PUT", url: `/api/sessions/${sessionId}/draft`, data: { draft } }),
+    ...options,
+  });
+}

@@ -4,14 +4,8 @@ import { usePromptDraft } from "./usePromptDraft";
 
 const mockSaveDraftMutate = vi.fn();
 
-vi.mock("@/trpc", () => ({
-  trpc: {
-    sessions: {
-      saveDraft: {
-        useMutation: vi.fn(() => ({ mutate: mockSaveDraftMutate })),
-      },
-    },
-  },
+vi.mock("../api/generated", () => ({
+  useSaveSessionDraft: vi.fn(() => ({ mutate: mockSaveDraftMutate })),
 }));
 
 describe("usePromptDraft", () => {

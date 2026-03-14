@@ -14,6 +14,8 @@ use crate::domain::features::models as features_models;
 use crate::domain::features::routes as features_routes;
 use crate::domain::diff_comments::models as diff_comments_models;
 use crate::domain::diff_comments::routes as diff_comments_routes;
+use crate::domain::sessions::models as sessions_models;
+use crate::domain::sessions::routes as sessions_routes;
 
 #[derive(OpenApi)]
 #[openapi(
@@ -82,6 +84,11 @@ use crate::domain::diff_comments::routes as diff_comments_routes;
         diff_comments_routes::mark_diff_viewed_handler,
         diff_comments_routes::unmark_diff_viewed_handler,
         diff_comments_routes::clear_all_diff_viewed_handler,
+        sessions_routes::get_sessions_handler,
+        sessions_routes::get_feature_agent_state_handler,
+        sessions_routes::get_feature_turn_states_handler,
+        sessions_routes::get_draft_handler,
+        sessions_routes::save_draft_handler,
     ),
     components(schemas(
         HealthResponse,
@@ -162,6 +169,14 @@ use crate::domain::diff_comments::routes as diff_comments_routes;
         diff_comments_models::DiffViewedFile,
         diff_comments_models::MarkViewedRequest,
         diff_comments_routes::SuccessResponse,
+        sessions_models::AgentSessionRow,
+        sessions_models::AgentBlock,
+        sessions_models::SessionState,
+        sessions_models::FeatureAgentStateResponse,
+        sessions_models::TurnStatesResponse,
+        sessions_models::DraftResponse,
+        sessions_models::SaveDraftRequest,
+        sessions_models::SaveDraftResponse,
     )),
 )]
 struct ApiDoc;
