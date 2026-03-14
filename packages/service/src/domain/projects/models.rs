@@ -9,7 +9,7 @@ pub struct Project {
     pub branch_prefix: Option<String>,
     pub qa_prompt: Option<String>,
     pub agent_autonomy: Option<String>,
-    pub parallel_execution: Option<i64>,
+    pub parallel_execution: Option<String>,
     pub created_at: String,
 }
 

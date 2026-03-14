@@ -3,7 +3,7 @@ use crate::error::AppError;
 use super::models::{Project, ProjectSetting, ProjectModelSettings};
 
 pub async fn list_projects(pool: &SqlitePool) -> Result<Vec<Project>, AppError> {
-    let rows = sqlx::query_as::<_, (i64, String, String, Option<String>, Option<String>, Option<String>, Option<i64>, String)>(
+    let rows = sqlx::query_as::<_, (i64, String, String, Option<String>, Option<String>, Option<String>, Option<String>, String)>(
         "SELECT id, name, path, branch_prefix, qa_prompt, agent_autonomy, parallel_execution, created_at FROM projects ORDER BY created_at DESC",
     )
     .fetch_all(pool)
@@ -32,7 +32,7 @@ pub async fn create_project(pool: &SqlitePool, name: &str, path: &str) -> Result
         .await?
         .last_insert_rowid();
 
-    let row = sqlx::query_as::<_, (i64, String, String, Option<String>, Option<String>, Option<String>, Option<i64>, String)>(
+    let row = sqlx::query_as::<_, (i64, String, String, Option<String>, Option<String>, Option<String>, Option<String>, String)>(
         "SELECT id, name, path, branch_prefix, qa_prompt, agent_autonomy, parallel_execution, created_at FROM projects WHERE id = ?",
     )
     .bind(id)

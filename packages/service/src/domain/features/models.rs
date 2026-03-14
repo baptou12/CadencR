@@ -23,7 +23,7 @@ pub struct Feature {
     pub model_qa: Option<String>,
     pub model_retro: Option<String>,
     pub agent_autonomy: Option<String>,
-    pub parallel_execution: Option<i64>,
+    pub parallel_execution: Option<String>,
     pub created_at: String,
 }
 
@@ -65,7 +65,7 @@ pub struct Phase {
     pub step_number: i64,
     pub title: String,
     pub status: String,
-    pub complexity: Option<String>,
+    pub complexity: Option<i64>,
     pub commit_message: Option<String>,
     pub prompt: Option<String>,
     pub phase_type: Option<String>,

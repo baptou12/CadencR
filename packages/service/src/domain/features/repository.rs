@@ -278,7 +278,7 @@ pub async fn get_feature_settings(pool: &SqlitePool, feature_id: i64) -> Result<
     )> = sqlx::query_as(
         r#"SELECT model_plan, model_prd, model_execute, model_risk, model_review,
            "model_review-fixer", model_session, model_qa, model_retro,
-           agent_autonomy, CAST(parallel_execution AS TEXT)
+           agent_autonomy, parallel_execution
            FROM features WHERE id = ?"#,
     )
     .bind(feature_id)
