@@ -122,3 +122,152 @@ pub async fn add_prompt_entry(pool: &SqlitePool, project_id: i64, content: &str)
 
     Ok(true) // inserted
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqlx::sqlite::SqlitePoolOptions;
+
+    async fn setup_test_db() -> SqlitePool {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        sqlx::query(
+            "CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "CREATE TABLE prompt_history (\
+                id INTEGER PRIMARY KEY AUTOINCREMENT, \
+                project_id INTEGER NOT NULL, \
+                content TEXT NOT NULL, \
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP\
+            )",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        pool
+    }
+
+    #[tokio::test]
+    async fn test_get_setting_found() {
+        let pool = setup_test_db().await;
+        sqlx::query("INSERT INTO settings (key, value) VALUES ('theme', 'dark')")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let result = get_setting(&pool, "theme").await.unwrap();
+        assert_eq!(result, Some("dark".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_get_setting_not_found() {
+        let pool = setup_test_db().await;
+        let result = get_setting(&pool, "nonexistent").await.unwrap();
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_set_setting_insert_and_update() {
+        let pool = setup_test_db().await;
+
+        set_setting(&pool, "theme", "light").await.unwrap();
+        let result = get_setting(&pool, "theme").await.unwrap();
+        assert_eq!(result, Some("light".to_string()));
+
+        set_setting(&pool, "theme", "dark").await.unwrap();
+        let result = get_setting(&pool, "theme").await.unwrap();
+        assert_eq!(result, Some("dark".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_list_settings() {
+        let pool = setup_test_db().await;
+        sqlx::query("INSERT INTO settings (key, value) VALUES ('a', '1'), ('b', '2'), ('c', '3')")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let settings = list_settings(&pool).await.unwrap();
+        assert_eq!(settings.len(), 3);
+        let keys: Vec<&str> = settings.iter().map(|s| s.key.as_str()).collect();
+        assert!(keys.contains(&"a"));
+        assert!(keys.contains(&"b"));
+        assert!(keys.contains(&"c"));
+    }
+
+    #[tokio::test]
+    async fn test_get_model_settings_defaults() {
+        let pool = setup_test_db().await;
+        let settings = get_model_settings(&pool).await.unwrap();
+
+        assert_eq!(settings.plan, DEFAULT_MODEL);
+        assert_eq!(settings.prd, DEFAULT_MODEL);
+        assert_eq!(settings.execute, DEFAULT_MODEL);
+        assert_eq!(settings.risk, DEFAULT_MODEL);
+        assert_eq!(settings.review, DEFAULT_MODEL);
+        assert_eq!(settings.review_fixer, DEFAULT_MODEL);
+        assert_eq!(settings.session, DEFAULT_MODEL);
+        assert_eq!(settings.qa, DEFAULT_MODEL);
+        assert_eq!(settings.retro, DEFAULT_MODEL);
+    }
+
+    #[tokio::test]
+    async fn test_set_and_get_model_setting() {
+        let pool = setup_test_db().await;
+
+        set_model_setting(&pool, "plan", "claude-sonnet-3-5").await.unwrap();
+        let settings = get_model_settings(&pool).await.unwrap();
+
+        assert_eq!(settings.plan, "claude-sonnet-3-5");
+        // Others remain default
+        assert_eq!(settings.prd, DEFAULT_MODEL);
+        assert_eq!(settings.execute, DEFAULT_MODEL);
+    }
+
+    #[tokio::test]
+    async fn test_add_prompt_entry_basic() {
+        let pool = setup_test_db().await;
+
+        let inserted = add_prompt_entry(&pool, 1, "hello world").await.unwrap();
+        assert!(inserted);
+
+        let history = get_prompt_history(&pool, 1).await.unwrap();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0], "hello world");
+    }
+
+    #[tokio::test]
+    async fn test_add_prompt_entry_deduplication() {
+        let pool = setup_test_db().await;
+
+        let first = add_prompt_entry(&pool, 1, "duplicate prompt").await.unwrap();
+        assert!(first);
+
+        let second = add_prompt_entry(&pool, 1, "duplicate prompt").await.unwrap();
+        assert!(!second); // skipped
+
+        let history = get_prompt_history(&pool, 1).await.unwrap();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0], "duplicate prompt");
+    }
+
+    #[tokio::test]
+    async fn test_add_prompt_entry_trim_to_100() {
+        let pool = setup_test_db().await;
+
+        for i in 0..101 {
+            let content = format!("prompt {}", i);
+            add_prompt_entry(&pool, 1, &content).await.unwrap();
+        }
+
+        let history = get_prompt_history(&pool, 1).await.unwrap();
+        assert_eq!(history.len(), 100);
+    }
+}
