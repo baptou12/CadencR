@@ -164,19 +164,47 @@ pub async fn delete_project(pool: &SqlitePool, id: i64) -> Result<(), AppError> 
 }
 
 pub async fn get_project_settings(pool: &SqlitePool, project_id: i64) -> Result<Vec<ProjectSetting>, AppError> {
+    // Read known columns from the projects table
+    let column_row: Option<(Option<String>, Option<String>, Option<String>, Option<String>)> =
+        sqlx::query_as(
+            "SELECT agent_autonomy, branch_prefix, qa_prompt, parallel_execution FROM projects WHERE id = ?"
+        )
+        .bind(project_id)
+        .fetch_optional(pool)
+        .await?;
+
+    let mut settings: Vec<ProjectSetting> = Vec::new();
+
+    if let Some((agent_autonomy, branch_prefix, qa_prompt, parallel_execution)) = column_row {
+        let column_settings = [
+            ("agent_autonomy", agent_autonomy),
+            ("branch_prefix", branch_prefix),
+            ("qa_prompt", qa_prompt),
+            ("parallel_execution", parallel_execution),
+        ];
+        for (key, value) in column_settings {
+            if value.is_some() {
+                settings.push(ProjectSetting { key: key.to_string(), value });
+            }
+        }
+    }
+
+    // Read additional settings from the key-value table
     let rows: Vec<(String, Option<String>)> =
         sqlx::query_as("SELECT key, value FROM project_settings WHERE project_id = ?")
             .bind(project_id)
             .fetch_all(pool)
             .await?;
-    Ok(rows.into_iter().map(|(key, value)| ProjectSetting { key, value }).collect())
+    settings.extend(rows.into_iter().map(|(key, value)| ProjectSetting { key, value }));
+
+    Ok(settings)
 }
 
 pub async fn set_project_setting(pool: &SqlitePool, project_id: i64, key: &str, value: &str) -> Result<(), AppError> {
     let real_columns = [
         "model_plan", "model_prd", "model_execute", "model_risk", "model_review",
         "model_session", "model_qa", "agent_autonomy", "branch_prefix", "qa_prompt",
-        "parallel_execution", "setup_worktree",
+        "parallel_execution",
     ];
 
     if real_columns.contains(&key) {
