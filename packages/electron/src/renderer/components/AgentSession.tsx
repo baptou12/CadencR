@@ -55,6 +55,7 @@ import type { PendingPermission } from "./ToolPermissionPrompt";
 import { ToolPermissionPrompt } from "./ToolPermissionPrompt";
 import { AGENT_ICONS } from "./agent-icons";
 import { trpc } from "../trpc";
+import { useGetFeatureWorkingDir } from "../api/generated";
 
 // ---------------------------------------------------------------------------
 // Shared types & constants (previously in AgentPanel, now canonical here)
@@ -353,11 +354,12 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
   const killBackgroundTask = trpc.sessions.killBackgroundTask.useMutation();
   const availableModels = trpc.workspace.getAvailableModels.useQuery();
   const models = useMemo(() => availableModels.data ?? [], [availableModels.data]);
-  const cwdQuery = trpc.features.resolveWorkingDir.useQuery(
-    { featureId: featureId!, projectId: projectId! },
+  const cwdQuery = useGetFeatureWorkingDir(
+    featureId ?? 0,
+    projectId ?? 0,
     { enabled: featureId != null && projectId != null },
   );
-  const projectPath = cwdQuery.data ?? undefined;
+  const projectPath = cwdQuery.data?.path ?? undefined;
 
   // ---- Collapsible state ----
   const [internalOpen, setInternalOpen] = useState(true);

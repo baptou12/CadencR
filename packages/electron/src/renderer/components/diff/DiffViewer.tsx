@@ -3,7 +3,6 @@ import { DiffView, DiffFile, DiffModeEnum, SplitSide } from "@git-diff-view/reac
 import { getDiffViewHighlighter, type DiffHighlighter } from "@git-diff-view/shiki";
 import "@git-diff-view/react/styles/diff-view.css";
 import "./dracula-diff.css";
-import { trpc } from "@/trpc";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useGetFileContent,
@@ -12,6 +11,13 @@ import {
   useGetDiff,
   useGetFileContentBatch,
   getGetFileContentQueryKey,
+  useListDiffViewed,
+  useMarkDiffViewed,
+  useUnmarkDiffViewed,
+  useListDiffComments,
+  useCreateDiffComment,
+  useUpdateDiffComment,
+  useDeleteDiffComment,
   type FileContent,
 } from "@/api/generated";
 import { ChevronDown, ChevronRight } from "lucide-react";
@@ -243,7 +249,7 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
     shikiPromise.then((h) => setShikiHighlighter(h));
   }, []);
 
-  const { data: viewedList = [] } = trpc.diffViewed.list.useQuery({ featureId });
+  const { data: viewedList = [] } = useListDiffViewed(featureId);
   const { data: blobShasList = [] } = useGetFileBlobShas({ featureId });
   const blobShas: Record<string, string> = useMemo(() => {
     const map: Record<string, string> = {};
@@ -311,26 +317,25 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
   });
   const rawDiff = diffResponse?.diff;
 
-  const utils = trpc.useUtils();
   const queryClient = useQueryClient();
 
-  const markViewed = trpc.diffViewed.markViewed.useMutation({
-    onSuccess: () => utils.diffViewed.list.invalidate({ featureId }),
+  const markViewed = useMarkDiffViewed({
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["diff-viewed", featureId] }),
   });
-  const unmarkViewed = trpc.diffViewed.unmarkViewed.useMutation({
-    onSuccess: () => utils.diffViewed.list.invalidate({ featureId }),
+  const unmarkViewed = useUnmarkDiffViewed({
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["diff-viewed", featureId] }),
   });
 
-  const { data: comments = [] } = trpc.diffComments.list.useQuery({ featureId });
+  const { data: comments = [] } = useListDiffComments(featureId);
 
-  const createComment = trpc.diffComments.create.useMutation({
-    onSuccess: () => utils.diffComments.list.invalidate({ featureId }),
+  const createComment = useCreateDiffComment({
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["diff-comments", featureId] }),
   });
-  const updateComment = trpc.diffComments.update.useMutation({
-    onSuccess: () => utils.diffComments.list.invalidate({ featureId }),
+  const updateComment = useUpdateDiffComment({
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["diff-comments", featureId] }),
   });
-  const deleteComment = trpc.diffComments.delete.useMutation({
-    onSuccess: () => utils.diffComments.list.invalidate({ featureId }),
+  const deleteComment = useDeleteDiffComment({
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["diff-comments", featureId] }),
   });
 
   const commentsByFileAndLine = useMemo(() => {

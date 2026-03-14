@@ -21,6 +21,7 @@ vi.mock("@/api/generated", () => ({
   useMergeFeatureBranch: vi.fn(() => ({ mutate: vi.fn(), isLoading: false })),
   useDeleteFeatureBranch: vi.fn(() => ({ mutate: vi.fn(), isLoading: false })),
   useDeleteWorktree: vi.fn(() => ({ mutate: vi.fn(), isLoading: false })),
+  useUpdateFeatureStatus: vi.fn(() => ({ mutate: vi.fn(), isLoading: false })),
 }));
 
 vi.mock("@/trpc", () => {
@@ -29,17 +30,6 @@ vi.mock("@/trpc", () => {
     trpc: {
       createClient: vi.fn(() => ({})),
       Provider: ({ children }: { children: React.ReactNode }) => React.createElement(React.Fragment, null, children),
-      useUtils: vi.fn(() => ({
-        features: {
-          listByProject: { invalidate: vi.fn() },
-          getById: { invalidate: vi.fn() },
-        },
-      })),
-      features: {
-        updateStatus: {
-          useMutation: vi.fn(() => ({ mutate: vi.fn(), isLoading: false })),
-        },
-      },
     },
   };
 });

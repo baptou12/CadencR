@@ -1,14 +1,11 @@
 import { z } from "zod";
 import { router, publicProcedure } from "./trpc";
 import { projectsRouter } from "./projects";
-import { featuresRouter } from "./features";
 import { workspaceRouter } from "./workspace";
 import { agentsRouter } from "./agents";
 import { workflowRouter } from "./workflow";
 import { sessionsRouter } from "./sessions";
 import { gitRouter } from "./git";
-import { diffCommentsRouter } from "./diff-comments";
-import { diffViewedRouter } from "./diff-viewed";
 import { usageRouter } from "./usage";
 import { terminalRouter } from "./terminal";
 
@@ -18,13 +15,10 @@ export const appRouter = router({
   }),
   workspace: workspaceRouter,
   projects: projectsRouter,
-  features: featuresRouter,
   agents: agentsRouter,
   workflow: workflowRouter,
   sessions: sessionsRouter,
   git: gitRouter,
-  diffComments: diffCommentsRouter,
-  diffViewed: diffViewedRouter,
   usage: usageRouter,
   terminal: terminalRouter,
 });

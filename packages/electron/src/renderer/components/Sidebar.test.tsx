@@ -21,6 +21,21 @@ vi.mock("react-hotkeys-hook", () => ({
 
 vi.mock("@/logo.svg", () => ({ default: "logo.svg" }));
 
+vi.mock("../api/generated", () => ({
+  useListProjects: vi.fn(() => ({
+    data: [{ id: 1, name: "My Project", path: "/my-project" }],
+  })),
+  useCreateProject: vi.fn(() => ({ mutate: vi.fn(), isLoading: false })),
+  useDeleteProject: vi.fn(() => ({ mutate: vi.fn() })),
+  getListProjectsQueryKey: vi.fn(() => ["projects"]),
+  useListFeatures: vi.fn(() => ({ data: [] })),
+  useCreateFeature: vi.fn(() => ({ mutate: vi.fn() })),
+  useDeleteFeature: vi.fn(() => ({ mutate: vi.fn() })),
+  useUpdateFeatureStatus: vi.fn(() => ({ mutate: vi.fn() })),
+  getListFeaturesQueryKey: vi.fn((id: number) => ["features", "list", id]),
+  useGetFeatureTurnStates: vi.fn(() => ({ data: { states: {} } })),
+}));
+
 vi.mock("@/trpc", () => {
   const React = require("react");
   return {
@@ -29,41 +44,11 @@ vi.mock("@/trpc", () => {
       Provider: ({ children }: { children: unknown }) =>
         React.createElement(React.Fragment, null, children),
       projects: {
-        list: {
-          useQuery: vi.fn(() => ({
-            data: [{ id: 1, name: "My Project", path: "/my-project" }],
-          })),
-        },
         selectFolder: {
           useMutation: vi.fn(() => ({ mutateAsync: vi.fn(), isLoading: false })),
         },
-        create: {
-          useMutation: vi.fn(() => ({ mutate: vi.fn(), isLoading: false })),
-        },
-        delete: {
-          useMutation: vi.fn(() => ({ mutate: vi.fn() })),
-        },
       },
-      features: {
-        create: {
-          useMutation: vi.fn(() => ({ mutate: vi.fn() })),
-        },
-        createSession: {
-          useMutation: vi.fn(() => ({ mutate: vi.fn() })),
-        },
-        listByProject: {
-          useQuery: vi.fn(() => ({ data: [] })),
-        },
-      },
-      sessions: {
-        getFeatureTurnStates: {
-          useQuery: vi.fn(() => ({ data: {} })),
-        },
-      },
-      useUtils: vi.fn(() => ({
-        projects: { list: { invalidate: vi.fn() } },
-        features: { listByProject: { invalidate: vi.fn() } },
-      })),
+      useUtils: vi.fn(() => ({})),
     },
   };
 });

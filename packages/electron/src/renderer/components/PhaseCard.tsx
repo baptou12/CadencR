@@ -12,13 +12,13 @@ export interface PhaseData {
   step_number: number;
   title: string;
   status: string;
-  complexity: number | null;
+  complexity: number | string | null;
   commit_message: string | null;
   prompt: string | null;
-  order_index: number;
+  order_index: number | null;
   implementation_notes: string | null;
   deviations: string | null;
-  phase_type: string;
+  phase_type: string | null;
 }
 
 interface PhaseCardProps {

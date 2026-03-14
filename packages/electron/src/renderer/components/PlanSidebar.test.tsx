@@ -25,24 +25,22 @@ const { mockGetPlan, mockResetPhase } = vi.hoisted(() => ({
   mockResetPhase: vi.fn(),
 }));
 
+vi.mock("@/api/generated", () => ({
+  useGetFeaturePlan: mockGetPlan,
+  useGetFeaturePrd: vi.fn(() => ({ data: null })),
+  useResetPhase: vi.fn(() => ({ mutate: mockResetPhase, isLoading: false })),
+  useOverridePhaseStatus: vi.fn(() => ({ mutate: vi.fn(), isLoading: false })),
+  getGetFeaturePlanQueryKey: vi.fn((id: number) => ["features", "plan", id]),
+}));
+
 vi.mock("@/trpc", () => ({
   trpc: {
     createClient: vi.fn(() => ({})),
     Provider: ({ children }: { children: React.ReactNode }) =>
       React.createElement(React.Fragment, null, children),
     useUtils: vi.fn(() => ({
-      features: {
-        getPlanWithPhases: { invalidate: vi.fn() },
-        getSettings: { invalidate: vi.fn() },
-      },
       agents: { getFeatureAgentState: { invalidate: vi.fn() } },
     })),
-    features: {
-      getPlanWithPhases: { useQuery: mockGetPlan },
-      getPrd: { useQuery: vi.fn(() => ({ data: null })) },
-      resetPhase: { useMutation: vi.fn(() => ({ mutate: mockResetPhase, isLoading: false })) },
-      overridePhaseStatus: { useMutation: vi.fn(() => ({ mutate: vi.fn(), isLoading: false })) },
-    },
   },
 }));
 

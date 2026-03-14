@@ -1,1 +1,3 @@
-// Future: diff_comments bounded context
+pub mod models;
+pub mod repository;
+pub mod routes;

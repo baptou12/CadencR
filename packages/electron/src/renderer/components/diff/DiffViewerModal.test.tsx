@@ -19,6 +19,12 @@ const mocks = vi.hoisted(() => {
   };
 });
 
+vi.mock("@/api/generated", () => ({
+  useListDiffComments: mocks.mockListQuery,
+  useMarkDiffCommentsSent: mocks.mockMarkAsSent,
+  useDeletePendingDiffComments: mocks.mockDeletePending,
+}));
+
 // Mock child DiffViewer (complex, tested separately)
 vi.mock("./DiffViewer", () => ({
   DiffViewer: ({ featureId }: { featureId: number }) => (
@@ -33,14 +39,6 @@ vi.mock("@/trpc", () => {
       createClient: vi.fn(() => ({})),
       Provider: ({ children }: { children: unknown }) =>
         React.createElement(React.Fragment, null, children),
-      useUtils: vi.fn(() => ({
-        diffComments: { list: { invalidate: mocks.mockInvalidate } },
-      })),
-      diffComments: {
-        list: { useQuery: mocks.mockListQuery },
-        markAsSent: { useMutation: mocks.mockMarkAsSent },
-        deletePending: { useMutation: mocks.mockDeletePending },
-      },
       agents: {
         sendMessage: { useMutation: mocks.mockSendMessage },
         submitAnswers: { useMutation: mocks.mockSubmitAnswers },

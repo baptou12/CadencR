@@ -4,7 +4,7 @@
  */
 
 import { useEffect, useRef, useCallback } from "react";
-import { trpc } from "@/trpc";
+import { useSaveSessionDraft } from "../api/generated";
 
 interface UsePromptDraftOptions {
   sessionId: number | undefined;
@@ -12,7 +12,7 @@ interface UsePromptDraftOptions {
 }
 
 export function usePromptDraft({ sessionId, initialDraft }: UsePromptDraftOptions) {
-  const saveDraftMutation = trpc.sessions.saveDraft.useMutation();
+  const saveDraftMutation = useSaveSessionDraft();
 
   // Pending debounced save value
   const pendingRef = useRef<string | null | undefined>(undefined); // undefined = no pending save

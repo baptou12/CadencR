@@ -100,6 +100,10 @@ vi.mock("@/hooks/useAgentChat", () => ({
   })),
 }));
 
+vi.mock("@/api/generated", () => ({
+  useGetFeature: mocks.mockGetByIdQuery,
+}));
+
 vi.mock("@/trpc", () => {
   const React = require("react");
   return {
@@ -107,16 +111,7 @@ vi.mock("@/trpc", () => {
       createClient: vi.fn(() => ({})),
       Provider: ({ children }: { children: unknown }) =>
         React.createElement(React.Fragment, null, children),
-      useUtils: vi.fn(() => ({
-        features: {
-          listByProject: { invalidate: vi.fn() },
-          getById: { invalidate: vi.fn() },
-          getProgress: { invalidate: vi.fn() },
-        },
-      })),
-      features: {
-        getById: { useQuery: mocks.mockGetByIdQuery },
-      },
+      useUtils: vi.fn(() => ({})),
       workflow: {
         startSession: { useMutation: vi.fn(() => ({ mutateAsync: vi.fn(), isLoading: false })) },
       },

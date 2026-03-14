@@ -1,0 +1,360 @@
+use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
+
+#[derive(Debug, Serialize, sqlx::FromRow, ToSchema)]
+pub struct Feature {
+    pub id: i64,
+    pub project_id: i64,
+    pub title: String,
+    #[serde(rename = "type")]
+    pub type_: String,
+    pub status: String,
+    pub prd: Option<String>,
+    pub workflow_step: Option<String>,
+    pub workflow_config: Option<String>,
+    pub model_plan: Option<String>,
+    pub model_prd: Option<String>,
+    pub model_execute: Option<String>,
+    pub model_risk: Option<String>,
+    pub model_review: Option<String>,
+    #[serde(rename = "model_review-fixer")]
+    pub model_review_fixer: Option<String>,
+    pub model_session: Option<String>,
+    pub model_qa: Option<String>,
+    pub model_retro: Option<String>,
+    pub agent_autonomy: Option<String>,
+    pub parallel_execution: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct CreateFeatureRequest {
+    pub project_id: i64,
+    pub title: Option<String>,
+    #[serde(rename = "type")]
+    pub type_: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct UpdateStatusRequest {
+    pub status: String,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct UpdateTitleRequest {
+    pub title: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow, ToSchema)]
+pub struct Plan {
+    pub id: i64,
+    pub feature_id: i64,
+    pub title: Option<String>,
+    pub status: Option<String>,
+    pub summary: Option<String>,
+    pub context: Option<String>,
+    pub clarifications: Option<String>,
+    pub completion_conditions: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow, ToSchema)]
+pub struct Phase {
+    pub id: i64,
+    pub plan_id: i64,
+    pub step_number: i64,
+    pub title: String,
+    pub status: String,
+    pub complexity: Option<i64>,
+    pub commit_message: Option<String>,
+    pub prompt: Option<String>,
+    pub phase_type: Option<String>,
+    pub implementation_notes: Option<String>,
+    pub deviations: Option<String>,
+    pub order_index: Option<i64>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct PlanWithPhases {
+    #[serde(flatten)]
+    pub plan: Plan,
+    pub phases: Vec<Phase>,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct PlanProgress {
+    pub total: i64,
+    pub done: i64,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct PrdResponse {
+    pub prd: Option<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct IsEmptyResponse {
+    pub empty: bool,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct WorkingDirResponse {
+    pub path: Option<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct CreateFeatureResponse {
+    pub id: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct FeatureSetting {
+    pub key: String,
+    pub value: String,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct SetFeatureSettingRequest {
+    pub key: String,
+    pub value: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct FeatureModelSettings {
+    pub plan: String,
+    pub prd: String,
+    pub execute: String,
+    pub risk: String,
+    pub review: String,
+    #[serde(rename = "review-fixer")]
+    pub review_fixer: String,
+    pub session: String,
+    pub qa: String,
+    pub retro: String,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct SetFeatureModelSettingRequest {
+    pub model_type: String,
+    pub model: String,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct ResetPhaseRequest {}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct OverridePhaseStatusRequest {
+    pub status: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_feature_serde_roundtrip() {
+        let feature = Feature {
+            id: 1,
+            project_id: 2,
+            title: "Test Feature".to_string(),
+            type_: "feature".to_string(),
+            status: "active".to_string(),
+            prd: Some("prd content".to_string()),
+            workflow_step: Some("step1".to_string()),
+            workflow_config: Some("{}".to_string()),
+            model_plan: Some("claude-3".to_string()),
+            model_prd: Some("claude-prd".to_string()),
+            model_execute: Some("claude-exec".to_string()),
+            model_risk: Some("claude-risk".to_string()),
+            model_review: Some("claude-review".to_string()),
+            model_review_fixer: Some("claude-fixer".to_string()),
+            model_session: Some("claude-session".to_string()),
+            model_qa: Some("claude-qa".to_string()),
+            model_retro: Some("claude-retro".to_string()),
+            agent_autonomy: Some("full".to_string()),
+            parallel_execution: Some("true".to_string()),
+            created_at: "2024-01-01T00:00:00".to_string(),
+        };
+
+        let json = serde_json::to_string(&feature).unwrap();
+        // Verify renamed fields
+        assert!(json.contains(r#""type""#));
+        assert!(json.contains(r#""model_review-fixer""#));
+
+        let deserialized: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized["type"], "feature");
+        assert_eq!(deserialized["model_review-fixer"], "claude-fixer");
+        assert_eq!(deserialized["title"], "Test Feature");
+    }
+
+    #[test]
+    fn test_plan_serde_roundtrip() {
+        let plan = Plan {
+            id: 1,
+            feature_id: 2,
+            title: Some("My Plan".to_string()),
+            status: Some("active".to_string()),
+            summary: Some("summary text".to_string()),
+            context: Some("context text".to_string()),
+            clarifications: Some("[]".to_string()),
+            completion_conditions: Some("done when done".to_string()),
+            created_at: "2024-01-01T00:00:00".to_string(),
+        };
+
+        let json = serde_json::to_string(&plan).unwrap();
+        let back: Plan = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.id, plan.id);
+        assert_eq!(back.title, plan.title);
+        assert_eq!(back.status, plan.status);
+    }
+
+    #[test]
+    fn test_phase_serde_roundtrip() {
+        let phase = Phase {
+            id: 10,
+            plan_id: 1,
+            step_number: 2,
+            title: "Phase Title".to_string(),
+            status: "pending".to_string(),
+            complexity: Some(3),
+            commit_message: Some("fix: something".to_string()),
+            prompt: Some("do this".to_string()),
+            phase_type: Some("implementation".to_string()),
+            implementation_notes: None,
+            deviations: None,
+            order_index: Some(0),
+        };
+
+        let json = serde_json::to_string(&phase).unwrap();
+        let back: Phase = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.id, phase.id);
+        assert_eq!(back.title, phase.title);
+        assert_eq!(back.complexity, phase.complexity);
+    }
+
+    #[test]
+    fn test_plan_with_phases_serde_roundtrip() {
+        let plan = Plan {
+            id: 1,
+            feature_id: 2,
+            title: Some("Plan".to_string()),
+            status: Some("active".to_string()),
+            summary: None,
+            context: None,
+            clarifications: None,
+            completion_conditions: None,
+            created_at: "2024-01-01T00:00:00".to_string(),
+        };
+        let phases = vec![
+            Phase {
+                id: 1,
+                plan_id: 1,
+                step_number: 1,
+                title: "Phase 1".to_string(),
+                status: "pending".to_string(),
+                complexity: None,
+                commit_message: None,
+                prompt: None,
+                phase_type: None,
+                implementation_notes: None,
+                deviations: None,
+                order_index: Some(0),
+            },
+        ];
+        let pwp = PlanWithPhases { plan, phases };
+
+        let json = serde_json::to_string(&pwp).unwrap();
+        let val: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(val["id"], 1);
+        assert_eq!(val["phases"][0]["title"], "Phase 1");
+    }
+
+    #[test]
+    fn test_plan_progress_serde_roundtrip() {
+        let progress = PlanProgress { total: 5, done: 3 };
+        let json = serde_json::to_string(&progress).unwrap();
+        let back: PlanProgress = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.total, 5);
+        assert_eq!(back.done, 3);
+    }
+
+    #[test]
+    fn test_feature_setting_serde_roundtrip() {
+        let setting = FeatureSetting {
+            key: "instructions".to_string(),
+            value: "do this".to_string(),
+        };
+        let json = serde_json::to_string(&setting).unwrap();
+        let back: FeatureSetting = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.key, "instructions");
+        assert_eq!(back.value, "do this");
+    }
+
+    #[test]
+    fn test_feature_model_settings_serde_roundtrip() {
+        let settings = FeatureModelSettings {
+            plan: "claude-plan".to_string(),
+            prd: "claude-prd".to_string(),
+            execute: "claude-exec".to_string(),
+            risk: "claude-risk".to_string(),
+            review: "claude-review".to_string(),
+            review_fixer: "claude-fixer".to_string(),
+            session: "claude-session".to_string(),
+            qa: "claude-qa".to_string(),
+            retro: "claude-retro".to_string(),
+        };
+
+        let json = serde_json::to_string(&settings).unwrap();
+        assert!(json.contains(r#""review-fixer""#));
+
+        let val: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(val["review-fixer"], "claude-fixer");
+        assert_eq!(val["plan"], "claude-plan");
+    }
+
+    #[test]
+    fn test_create_feature_request_serde() {
+        let json = r#"{"project_id": 1, "title": "My Feature", "type": "feature"}"#;
+        let req: CreateFeatureRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.project_id, 1);
+        assert_eq!(req.title.as_deref(), Some("My Feature"));
+        assert_eq!(req.type_.as_deref(), Some("feature"));
+    }
+
+    #[test]
+    fn test_update_status_request_serde() {
+        let json = r#"{"status": "archived"}"#;
+        let req: UpdateStatusRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.status, "archived");
+    }
+
+    #[test]
+    fn test_update_title_request_serde() {
+        let json = r#"{"title": "New Title"}"#;
+        let req: UpdateTitleRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.title, "New Title");
+    }
+
+    #[test]
+    fn test_set_feature_setting_request_serde() {
+        let json = r#"{"key": "instructions", "value": "do this"}"#;
+        let req: SetFeatureSettingRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.key, "instructions");
+        assert_eq!(req.value, "do this");
+    }
+
+    #[test]
+    fn test_set_feature_model_setting_request_serde() {
+        let json = r#"{"model_type": "plan", "model": "claude-3"}"#;
+        let req: SetFeatureModelSettingRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.model_type, "plan");
+        assert_eq!(req.model, "claude-3");
+    }
+
+    #[test]
+    fn test_override_phase_status_request_serde() {
+        let json = r#"{"status": "completed"}"#;
+        let req: OverridePhaseStatusRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.status, "completed");
+    }
+}

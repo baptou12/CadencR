@@ -2,7 +2,6 @@ import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { TrashIcon, ArchiveIcon, BotIcon, MessageCircleQuestionIcon, ChevronRightIcon, ChevronDownIcon } from "lucide-react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { trpc } from "@/trpc";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -11,6 +10,11 @@ import {
   SelectItem,
   SelectTrigger,
 } from "@/components/ui/select";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  useListFeatures, getListFeaturesQueryKey,
+  useUpdateFeatureStatus, useDeleteFeature, useGetFeatureEmpty,
+} from "@/api/generated";
 
 const STATUSES = ["draft", "planned", "in-progress", "done", "archived"] as const;
 type FeatureStatus = (typeof STATUSES)[number];
@@ -35,27 +39,25 @@ export function ProjectFeatures({
   onSelectFeature: (featureId: number) => void;
 }) {
   const navigate = useNavigate();
-  const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
   const [showArchived, setShowArchived] = useState(false);
   const [confirmFeatureId, setConfirmFeatureId] = useState<number | null>(null);
-  const { data: features = [] } = trpc.features.listByProject.useQuery({
-    project_id: projectId,
-  });
+  const { data: features = [] } = useListFeatures(projectId);
 
   const activeFeatures = features.filter((f) => f.status !== "archived");
   const archivedFeatures = features.filter((f) => f.status === "archived");
 
   const invalidateFeatures = () => {
-    void utils.features.listByProject.invalidate();
-    void utils.features.getById.invalidate();
-    void utils.features.getProgress.invalidate();
+    void queryClient.invalidateQueries({ queryKey: getListFeaturesQueryKey(projectId) });
+    void queryClient.invalidateQueries({ queryKey: ['features', 'detail'] });
+    void queryClient.invalidateQueries({ queryKey: ['features', 'planProgress'] });
   };
 
-  const updateStatusMutation = trpc.features.updateStatus.useMutation({
+  const updateStatusMutation = useUpdateFeatureStatus({
     onSuccess: invalidateFeatures,
   });
 
-  const deleteMutation = trpc.features.delete.useMutation({
+  const deleteMutation = useDeleteFeature({
     onSuccess: (_data, variables) => {
       const deletedId = variables.id;
       if (deletedId === activeFeatureId) {
@@ -187,10 +189,9 @@ export function ProjectFeatures({
 
   const confirmFeature = features.find((f) => f.id === confirmFeatureId);
   const isConfirmDelete = confirmFeature?.status === "archived";
-  const isEmptyQuery = trpc.features.isEmpty.useQuery(
-    { id: confirmFeatureId! },
-    { enabled: confirmFeatureId != null && !isConfirmDelete },
-  );
+  const isEmptyQuery = useGetFeatureEmpty(confirmFeatureId ?? 0, {
+    enabled: confirmFeatureId != null && !isConfirmDelete,
+  });
   const shouldDirectDelete = !isConfirmDelete && (isEmptyQuery.data?.empty ?? false);
 
   return (

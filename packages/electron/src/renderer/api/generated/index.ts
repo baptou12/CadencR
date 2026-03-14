@@ -599,3 +599,871 @@ export function useDeleteFeatureBranch(
     ...options,
   });
 }
+
+// ---------------------------------------------------------------------------
+// Workspace types
+// ---------------------------------------------------------------------------
+
+export interface WorkspaceSetting {
+  key: string;
+  value: string | null;
+}
+
+export interface WorkspaceSettingValueResponse {
+  value: string | null;
+}
+
+export interface WorkspaceModelSettings {
+  plan: string;
+  prd: string;
+  execute: string;
+  risk: string;
+  review: string;
+  "review-fixer": string;
+  session: string;
+  qa: string;
+  retro: string;
+}
+
+export interface WorkspaceAddPromptEntryResponse {
+  success: boolean;
+  skipped: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Workspace query key factories
+// ---------------------------------------------------------------------------
+
+export function getListWorkspaceSettingsQueryKey() {
+  return ["workspace", "settings"] as const;
+}
+
+export function getGetWorkspaceSettingQueryKey(key: string) {
+  return ["workspace", "settings", key] as const;
+}
+
+export function getGetWorkspaceModelSettingsQueryKey() {
+  return ["workspace", "model-settings"] as const;
+}
+
+export function getGetWorkspacePromptHistoryQueryKey(projectId: number) {
+  return ["workspace", "prompt-history", projectId] as const;
+}
+
+// ---------------------------------------------------------------------------
+// Workspace query hooks
+// ---------------------------------------------------------------------------
+
+export function useListWorkspaceSettings(
+  options?: Omit<UseQueryOptions<WorkspaceSetting[], ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<WorkspaceSetting[], ErrorType<unknown>>({
+    queryKey: getListWorkspaceSettingsQueryKey(),
+    queryFn: () => customInstance({ method: "GET", url: "/api/workspace/settings" }),
+    ...options,
+  });
+}
+
+export function useGetWorkspaceSetting(
+  key: string,
+  options?: Omit<UseQueryOptions<WorkspaceSettingValueResponse, ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<WorkspaceSettingValueResponse, ErrorType<unknown>>({
+    queryKey: getGetWorkspaceSettingQueryKey(key),
+    queryFn: () => customInstance({ method: "GET", url: `/api/workspace/settings/${encodeURIComponent(key)}` }),
+    ...options,
+  });
+}
+
+export function useGetWorkspaceModelSettings(
+  options?: Omit<UseQueryOptions<WorkspaceModelSettings, ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<WorkspaceModelSettings, ErrorType<unknown>>({
+    queryKey: getGetWorkspaceModelSettingsQueryKey(),
+    queryFn: () => customInstance({ method: "GET", url: "/api/workspace/model-settings" }),
+    ...options,
+  });
+}
+
+export function useGetWorkspacePromptHistory(
+  projectId: number,
+  options?: Omit<UseQueryOptions<string[], ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<string[], ErrorType<unknown>>({
+    queryKey: getGetWorkspacePromptHistoryQueryKey(projectId),
+    queryFn: () =>
+      customInstance({ method: "GET", url: `/api/workspace/prompt-history?project_id=${projectId}` }),
+    ...options,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Workspace mutation hooks
+// ---------------------------------------------------------------------------
+
+export function useSetWorkspaceSetting(
+  options?: UseMutationOptions<WorkspaceSettingValueResponse, ErrorType<unknown>, { key: string; value: string }>,
+) {
+  return useMutation<WorkspaceSettingValueResponse, ErrorType<unknown>, { key: string; value: string }>({
+    mutationFn: ({ key, value }) =>
+      customInstance({
+        method: "PUT",
+        url: `/api/workspace/settings/${encodeURIComponent(key)}`,
+        data: { value },
+      }),
+    ...options,
+  });
+}
+
+export function useSetWorkspaceModelSetting(
+  options?: UseMutationOptions<WorkspaceSettingValueResponse, ErrorType<unknown>, { agentType: string; modelId: string }>,
+) {
+  return useMutation<WorkspaceSettingValueResponse, ErrorType<unknown>, { agentType: string; modelId: string }>({
+    mutationFn: ({ agentType, modelId }) =>
+      customInstance({
+        method: "PUT",
+        url: "/api/workspace/model-settings",
+        data: { agent_type: agentType, model_id: modelId },
+      }),
+    ...options,
+  });
+}
+
+export function useAddWorkspacePromptEntry(
+  options?: UseMutationOptions<WorkspaceAddPromptEntryResponse, ErrorType<unknown>, { projectId: number; content: string }>,
+) {
+  return useMutation<WorkspaceAddPromptEntryResponse, ErrorType<unknown>, { projectId: number; content: string }>({
+    mutationFn: ({ projectId, content }) =>
+      customInstance({
+        method: "POST",
+        url: "/api/workspace/prompt-history",
+        data: { project_id: projectId, content },
+      }),
+    ...options,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Projects types
+// ---------------------------------------------------------------------------
+
+export interface Project {
+  id: number;
+  name: string;
+  path: string;
+  branch_prefix: string | null;
+  qa_prompt: string | null;
+  agent_autonomy: string | null;
+  parallel_execution: number | null;
+  created_at: string;
+}
+
+export interface ProjectSetting {
+  key: string;
+  value: string | null;
+}
+
+export interface ProjectModelSettings {
+  plan: string;
+  prd: string;
+  execute: string;
+  risk: string;
+  review: string;
+  "review-fixer": string;
+  session: string;
+  qa: string;
+  retro: string;
+}
+
+// ---------------------------------------------------------------------------
+// Projects query key factories
+// ---------------------------------------------------------------------------
+
+export function getListProjectsQueryKey() {
+  return ["projects", "list"] as const;
+}
+
+export function getGetProjectSettingsQueryKey(projectId: number) {
+  return ["projects", "settings", projectId] as const;
+}
+
+export function getGetProjectModelSettingsQueryKey(projectId: number) {
+  return ["projects", "model-settings", projectId] as const;
+}
+
+// ---------------------------------------------------------------------------
+// Projects query hooks
+// ---------------------------------------------------------------------------
+
+export function useListProjects(
+  options?: Omit<UseQueryOptions<Project[], ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<Project[], ErrorType<unknown>>({
+    queryKey: getListProjectsQueryKey(),
+    queryFn: () => customInstance({ method: "GET", url: "/api/projects" }),
+    ...options,
+  });
+}
+
+export function useGetProjectSettings(
+  projectId: number,
+  options?: Omit<UseQueryOptions<ProjectSetting[], ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<ProjectSetting[], ErrorType<unknown>>({
+    queryKey: getGetProjectSettingsQueryKey(projectId),
+    queryFn: () => customInstance({ method: "GET", url: `/api/projects/${projectId}/settings` }),
+    ...options,
+  });
+}
+
+export function useGetProjectModelSettings(
+  projectId: number,
+  options?: Omit<UseQueryOptions<ProjectModelSettings, ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<ProjectModelSettings, ErrorType<unknown>>({
+    queryKey: getGetProjectModelSettingsQueryKey(projectId),
+    queryFn: () => customInstance({ method: "GET", url: `/api/projects/${projectId}/model-settings` }),
+    ...options,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Projects mutation hooks
+// ---------------------------------------------------------------------------
+
+export function useCreateProject(
+  options?: UseMutationOptions<Project, ErrorType<unknown>, { name: string; path: string }>,
+) {
+  return useMutation<Project, ErrorType<unknown>, { name: string; path: string }>({
+    mutationFn: (body) =>
+      customInstance({ method: "POST", url: "/api/projects", data: body }),
+    ...options,
+  });
+}
+
+export function useDeleteProject(
+  options?: UseMutationOptions<{ success: boolean }, ErrorType<unknown>, { id: number }>,
+) {
+  return useMutation<{ success: boolean }, ErrorType<unknown>, { id: number }>({
+    mutationFn: ({ id }) =>
+      customInstance({ method: "DELETE", url: `/api/projects/${id}` }),
+    ...options,
+  });
+}
+
+export function useSetProjectSetting(
+  options?: UseMutationOptions<{ success: boolean }, ErrorType<unknown>, { projectId: number; key: string; value: string }>,
+) {
+  return useMutation<{ success: boolean }, ErrorType<unknown>, { projectId: number; key: string; value: string }>({
+    mutationFn: ({ projectId, key, value }) =>
+      customInstance({
+        method: "PUT",
+        url: `/api/projects/${projectId}/settings`,
+        data: { key, value },
+      }),
+    ...options,
+  });
+}
+
+export function useSetProjectModelSetting(
+  options?: UseMutationOptions<{ success: boolean }, ErrorType<unknown>, { projectId: number; modelType: string; model: string }>,
+) {
+  return useMutation<{ success: boolean }, ErrorType<unknown>, { projectId: number; modelType: string; model: string }>({
+    mutationFn: ({ projectId, modelType, model }) =>
+      customInstance({
+        method: "PUT",
+        url: `/api/projects/${projectId}/model-settings`,
+        data: { model_type: modelType, model },
+      }),
+    ...options,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Features types
+// ---------------------------------------------------------------------------
+
+export interface Feature {
+  id: number;
+  project_id: number;
+  title: string;
+  type: string;
+  status: string;
+  prd: string | null;
+  workflow_step: string | null;
+  workflow_config: string | null;
+  model_plan: string | null;
+  model_prd: string | null;
+  model_execute: string | null;
+  model_risk: string | null;
+  model_review: string | null;
+  "model_review-fixer": string | null;
+  model_session: string | null;
+  model_qa: string | null;
+  model_retro: string | null;
+  agent_autonomy: string | null;
+  parallel_execution: number | null;
+  created_at: string;
+}
+
+export interface Phase {
+  id: number;
+  plan_id: number;
+  step_number: number;
+  title: string;
+  status: string;
+  complexity: number | string | null;
+  commit_message: string | null;
+  prompt: string | null;
+  phase_type: string | null;
+  implementation_notes: string | null;
+  deviations: string | null;
+  order_index: number | null;
+}
+
+export interface Plan {
+  id: number;
+  feature_id: number;
+  title: string | null;
+  status: string | null;
+  summary: string | null;
+  context: string | null;
+  clarifications: string | null;
+  completion_conditions: string | null;
+  created_at: string;
+}
+
+export interface PlanWithPhases extends Plan {
+  phases: Phase[];
+}
+
+export interface PlanProgress {
+  total: number;
+  done: number;
+}
+
+export interface FeatureSetting {
+  key: string;
+  value: string;
+}
+
+export interface FeatureModelSettings {
+  plan: string;
+  prd: string;
+  execute: string;
+  risk: string;
+  review: string;
+  "review-fixer": string;
+  session: string;
+  qa: string;
+  retro: string;
+}
+
+// ---------------------------------------------------------------------------
+// Features query key helpers
+// ---------------------------------------------------------------------------
+
+export function getListFeaturesQueryKey(projectId: number) {
+  return ["features", "list", projectId] as const;
+}
+
+export function getGetFeatureQueryKey(id: number) {
+  return ["features", "detail", id] as const;
+}
+
+export function getGetFeaturePrdQueryKey(id: number) {
+  return ["features", "prd", id] as const;
+}
+
+export function getGetFeatureEmptyQueryKey(id: number) {
+  return ["features", "empty", id] as const;
+}
+
+export function getGetFeaturePlanQueryKey(id: number) {
+  return ["features", "plan", id] as const;
+}
+
+export function getGetFeaturePlanProgressQueryKey(id: number) {
+  return ["features", "planProgress", id] as const;
+}
+
+export function getGetFeatureSettingsQueryKey(id: number) {
+  return ["features", "settings", id] as const;
+}
+
+export function getGetFeatureModelSettingsQueryKey(id: number) {
+  return ["features", "modelSettings", id] as const;
+}
+
+export function getGetFeatureWorkingDirQueryKey(id: number, projectId: number) {
+  return ["features", "workingDir", id, projectId] as const;
+}
+
+// ---------------------------------------------------------------------------
+// Features query hooks
+// ---------------------------------------------------------------------------
+
+export function useListFeatures(
+  projectId: number,
+  options?: Omit<UseQueryOptions<Feature[], ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<Feature[], ErrorType<unknown>>({
+    queryKey: getListFeaturesQueryKey(projectId),
+    queryFn: () => customInstance({ method: "GET", url: `/api/features?project_id=${projectId}` }),
+    ...options,
+  });
+}
+
+export function useGetFeature(
+  id: number,
+  options?: Omit<UseQueryOptions<Feature | null, ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<Feature | null, ErrorType<unknown>>({
+    queryKey: getGetFeatureQueryKey(id),
+    queryFn: () => customInstance({ method: "GET", url: `/api/features/${id}` }),
+    ...options,
+  });
+}
+
+export function useGetFeaturePrd(
+  id: number,
+  options?: Omit<UseQueryOptions<{ prd: string | null }, ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<{ prd: string | null }, ErrorType<unknown>>({
+    queryKey: getGetFeaturePrdQueryKey(id),
+    queryFn: () => customInstance({ method: "GET", url: `/api/features/${id}/prd` }),
+    ...options,
+  });
+}
+
+export function useGetFeatureEmpty(
+  id: number,
+  options?: Omit<UseQueryOptions<{ empty: boolean }, ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<{ empty: boolean }, ErrorType<unknown>>({
+    queryKey: getGetFeatureEmptyQueryKey(id),
+    queryFn: () => customInstance({ method: "GET", url: `/api/features/${id}/empty` }),
+    ...options,
+  });
+}
+
+export function useGetFeaturePlan(
+  id: number,
+  options?: Omit<UseQueryOptions<PlanWithPhases | null, ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<PlanWithPhases | null, ErrorType<unknown>>({
+    queryKey: getGetFeaturePlanQueryKey(id),
+    queryFn: () => customInstance({ method: "GET", url: `/api/features/${id}/plan` }),
+    ...options,
+  });
+}
+
+export function useGetFeaturePlanProgress(
+  id: number,
+  options?: Omit<UseQueryOptions<PlanProgress, ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<PlanProgress, ErrorType<unknown>>({
+    queryKey: getGetFeaturePlanProgressQueryKey(id),
+    queryFn: () => customInstance({ method: "GET", url: `/api/features/${id}/plan/progress` }),
+    ...options,
+  });
+}
+
+export function useGetFeatureSettings(
+  id: number,
+  options?: Omit<UseQueryOptions<FeatureSetting[], ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<FeatureSetting[], ErrorType<unknown>>({
+    queryKey: getGetFeatureSettingsQueryKey(id),
+    queryFn: () => customInstance({ method: "GET", url: `/api/features/${id}/settings` }),
+    ...options,
+  });
+}
+
+export function useGetFeatureModelSettings(
+  id: number,
+  options?: Omit<UseQueryOptions<FeatureModelSettings, ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<FeatureModelSettings, ErrorType<unknown>>({
+    queryKey: getGetFeatureModelSettingsQueryKey(id),
+    queryFn: () => customInstance({ method: "GET", url: `/api/features/${id}/model-settings` }),
+    ...options,
+  });
+}
+
+export function useGetFeatureWorkingDir(
+  id: number,
+  projectId: number,
+  options?: Omit<UseQueryOptions<{ path: string | null }, ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<{ path: string | null }, ErrorType<unknown>>({
+    queryKey: getGetFeatureWorkingDirQueryKey(id, projectId),
+    queryFn: () => customInstance({ method: "GET", url: `/api/features/${id}/working-dir?project_id=${projectId}` }),
+    ...options,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Features mutation hooks
+// ---------------------------------------------------------------------------
+
+export function useCreateFeature(
+  options?: UseMutationOptions<{ id: number }, ErrorType<unknown>, { project_id: number; title?: string; type?: string }>,
+) {
+  return useMutation<{ id: number }, ErrorType<unknown>, { project_id: number; title?: string; type?: string }>({
+    mutationFn: (body) => customInstance({ method: "POST", url: "/api/features", data: body }),
+    ...options,
+  });
+}
+
+export function useDeleteFeature(
+  options?: UseMutationOptions<{ success: boolean }, ErrorType<unknown>, { id: number }>,
+) {
+  return useMutation<{ success: boolean }, ErrorType<unknown>, { id: number }>({
+    mutationFn: ({ id }) => customInstance({ method: "DELETE", url: `/api/features/${id}` }),
+    ...options,
+  });
+}
+
+export function useUpdateFeatureStatus(
+  options?: UseMutationOptions<{ success: boolean }, ErrorType<unknown>, { id: number; status: string }>,
+) {
+  return useMutation<{ success: boolean }, ErrorType<unknown>, { id: number; status: string }>({
+    mutationFn: ({ id, status }) =>
+      customInstance({ method: "PUT", url: `/api/features/${id}/status`, data: { status } }),
+    ...options,
+  });
+}
+
+export function useUpdateFeatureTitle(
+  options?: UseMutationOptions<{ success: boolean }, ErrorType<unknown>, { id: number; title: string }>,
+) {
+  return useMutation<{ success: boolean }, ErrorType<unknown>, { id: number; title: string }>({
+    mutationFn: ({ id, title }) =>
+      customInstance({ method: "PUT", url: `/api/features/${id}/title`, data: { title } }),
+    ...options,
+  });
+}
+
+export function useResetPhase(
+  options?: UseMutationOptions<{ success: boolean }, ErrorType<unknown>, { phaseId: number }>,
+) {
+  return useMutation<{ success: boolean }, ErrorType<unknown>, { phaseId: number }>({
+    mutationFn: ({ phaseId }) =>
+      customInstance({ method: "PUT", url: `/api/phases/${phaseId}/reset`, data: {} }),
+    ...options,
+  });
+}
+
+export function useOverridePhaseStatus(
+  options?: UseMutationOptions<{ success: boolean }, ErrorType<unknown>, { phaseId: number; status: string }>,
+) {
+  return useMutation<{ success: boolean }, ErrorType<unknown>, { phaseId: number; status: string }>({
+    mutationFn: ({ phaseId, status }) =>
+      customInstance({ method: "PUT", url: `/api/phases/${phaseId}/status`, data: { status } }),
+    ...options,
+  });
+}
+
+export function useSetFeatureSetting(
+  options?: UseMutationOptions<{ success: boolean }, ErrorType<unknown>, { featureId: number; key: string; value: string }>,
+) {
+  return useMutation<{ success: boolean }, ErrorType<unknown>, { featureId: number; key: string; value: string }>({
+    mutationFn: ({ featureId, key, value }) =>
+      customInstance({ method: "PUT", url: `/api/features/${featureId}/settings`, data: { key, value } }),
+    ...options,
+  });
+}
+
+export function useSetFeatureModelSetting(
+  options?: UseMutationOptions<{ success: boolean }, ErrorType<unknown>, { featureId: number; modelType: string; model: string }>,
+) {
+  return useMutation<{ success: boolean }, ErrorType<unknown>, { featureId: number; modelType: string; model: string }>({
+    mutationFn: ({ featureId, modelType, model }) =>
+      customInstance({
+        method: "PUT",
+        url: `/api/features/${featureId}/model-settings`,
+        data: { model_type: modelType, model },
+      }),
+    ...options,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Diff Comments
+// ---------------------------------------------------------------------------
+
+export interface DiffComment {
+  id: number;
+  feature_id: number;
+  file_path: string;
+  line_number: number;
+  side: string;
+  content: string;
+  status: string;
+  created_at: string;
+}
+
+export interface CreateDiffCommentRequest {
+  feature_id: number;
+  file_path: string;
+  line_number: number;
+  side: string;
+  content: string;
+}
+
+export interface UpdateDiffCommentRequest {
+  content: string;
+}
+
+export interface DiffViewedFile {
+  id: number;
+  feature_id: number;
+  file_path: string;
+  blob_sha: string;
+  viewed_at: string;
+}
+
+export interface MarkViewedRequest {
+  feature_id: number;
+  file_path: string;
+  blob_sha: string;
+}
+
+export function useListDiffComments(
+  featureId: number,
+  options?: UseQueryOptions<DiffComment[], ErrorType<unknown>>,
+) {
+  return useQuery<DiffComment[], ErrorType<unknown>>({
+    queryKey: ["diff-comments", featureId],
+    queryFn: () => customInstance({ method: "GET", url: `/api/features/${featureId}/diff-comments` }),
+    ...options,
+  });
+}
+
+export function useCreateDiffComment(
+  options?: UseMutationOptions<DiffComment, ErrorType<unknown>, { featureId: number; filePath: string; lineNumber: number; side: string; content: string }>,
+) {
+  return useMutation<DiffComment, ErrorType<unknown>, { featureId: number; filePath: string; lineNumber: number; side: string; content: string }>({
+    mutationFn: ({ featureId, filePath, lineNumber, side, content }) =>
+      customInstance({ method: "POST", url: `/api/features/${featureId}/diff-comments`, data: { feature_id: featureId, file_path: filePath, line_number: lineNumber, side, content } }),
+    ...options,
+  });
+}
+
+export function useUpdateDiffComment(
+  options?: UseMutationOptions<{ success: boolean }, ErrorType<unknown>, { id: number; content: string }>,
+) {
+  return useMutation<{ success: boolean }, ErrorType<unknown>, { id: number; content: string }>({
+    mutationFn: ({ id, content }) =>
+      customInstance({ method: "PUT", url: `/api/diff-comments/${id}`, data: { content } }),
+    ...options,
+  });
+}
+
+export function useDeleteDiffComment(
+  options?: UseMutationOptions<{ success: boolean }, ErrorType<unknown>, { id: number }>,
+) {
+  return useMutation<{ success: boolean }, ErrorType<unknown>, { id: number }>({
+    mutationFn: ({ id }) =>
+      customInstance({ method: "DELETE", url: `/api/diff-comments/${id}` }),
+    ...options,
+  });
+}
+
+export function useMarkDiffCommentsSent(
+  options?: UseMutationOptions<{ updated: number }, ErrorType<unknown>, { featureId: number }>,
+) {
+  return useMutation<{ updated: number }, ErrorType<unknown>, { featureId: number }>({
+    mutationFn: ({ featureId }) =>
+      customInstance({ method: "PUT", url: `/api/features/${featureId}/diff-comments/sent` }),
+    ...options,
+  });
+}
+
+export function useDeletePendingDiffComments(
+  options?: UseMutationOptions<{ deleted: number }, ErrorType<unknown>, { featureId: number }>,
+) {
+  return useMutation<{ deleted: number }, ErrorType<unknown>, { featureId: number }>({
+    mutationFn: ({ featureId }) =>
+      customInstance({ method: "DELETE", url: `/api/features/${featureId}/diff-comments/pending` }),
+    ...options,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Diff Viewed
+// ---------------------------------------------------------------------------
+
+export function useListDiffViewed(
+  featureId: number,
+  options?: UseQueryOptions<DiffViewedFile[], ErrorType<unknown>>,
+) {
+  return useQuery<DiffViewedFile[], ErrorType<unknown>>({
+    queryKey: ["diff-viewed", featureId],
+    queryFn: () => customInstance({ method: "GET", url: `/api/features/${featureId}/diff-viewed` }),
+    ...options,
+  });
+}
+
+export function useMarkDiffViewed(
+  options?: UseMutationOptions<{ success: boolean }, ErrorType<unknown>, { featureId: number; filePath: string; blobSha: string }>,
+) {
+  return useMutation<{ success: boolean }, ErrorType<unknown>, { featureId: number; filePath: string; blobSha: string }>({
+    mutationFn: ({ featureId, filePath, blobSha }) =>
+      customInstance({ method: "POST", url: `/api/features/${featureId}/diff-viewed`, data: { feature_id: featureId, file_path: filePath, blob_sha: blobSha } }),
+    ...options,
+  });
+}
+
+export function useUnmarkDiffViewed(
+  options?: UseMutationOptions<{ success: boolean }, ErrorType<unknown>, { featureId: number; filePath: string }>,
+) {
+  return useMutation<{ success: boolean }, ErrorType<unknown>, { featureId: number; filePath: string }>({
+    mutationFn: ({ featureId, filePath }) =>
+      customInstance({
+        method: "DELETE",
+        url: `/api/features/${featureId}/diff-viewed/file`,
+        params: { file_path: filePath },
+      }),
+    ...options,
+  });
+}
+
+export function useClearAllDiffViewed(
+  options?: UseMutationOptions<{ deleted: number }, ErrorType<unknown>, { featureId: number }>,
+) {
+  return useMutation<{ deleted: number }, ErrorType<unknown>, { featureId: number }>({
+    mutationFn: ({ featureId }) =>
+      customInstance({ method: "DELETE", url: `/api/features/${featureId}/diff-viewed/files` }),
+    ...options,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Sessions — types
+// ---------------------------------------------------------------------------
+
+export interface AgentBlock {
+  id: string;
+  type: string;
+  content: string;
+  toolName?: string;
+  toolArgs?: string;
+  isError?: boolean;
+  toolUseId?: string;
+  parentToolUseId?: string | null;
+  childBlocks?: AgentBlock[];
+  sourceToolName?: string;
+  createdAt?: string;
+  model?: string;
+}
+
+export interface SessionState {
+  sessionDbId: number;
+  agentType: string;
+  status: string;
+  subprocessId: string | null;
+  model: string | null;
+  blocks: AgentBlock[];
+  maxMessageId: number;
+  isIncremental: boolean;
+  toolCallUpdates?: Record<string, string> | null;
+  pendingQuestions: unknown | null;
+  hasFileChanges: boolean;
+  resumable: boolean;
+  claudeSessionId: string | null;
+  runId: number | null;
+  phaseId: number | null;
+  phaseTitle: string | null;
+  todos: Array<{ content: string; status: string; activeForm: string }> | null;
+  permissionMode: string;
+  pendingPlanApproval: unknown | null;
+  pendingPrdApproval: unknown | null;
+  pendingPermission: unknown | null;
+  inputTokens: number;
+  outputTokens: number;
+  contextWindow: number;
+  wasCompacted: boolean;
+  draftPrompt: string | null;
+}
+
+export interface FeatureAgentStateResponse {
+  sessions: SessionState[];
+}
+
+export interface TurnStatesResponse {
+  states: Record<string, string>;
+}
+
+export interface DraftResponse {
+  draftPrompt: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Sessions — query key factories
+// ---------------------------------------------------------------------------
+
+export function getGetFeatureAgentStateQueryKey(featureId: number, after?: string) {
+  return ["sessions", "agentState", featureId, after] as const;
+}
+
+export function getGetFeatureTurnStatesQueryKey() {
+  return ["sessions", "turnStates"] as const;
+}
+
+export function getGetSessionDraftQueryKey(sessionId: number) {
+  return ["sessions", "draft", sessionId] as const;
+}
+
+// ---------------------------------------------------------------------------
+// Sessions — hooks
+// ---------------------------------------------------------------------------
+
+export function useGetFeatureAgentState(
+  featureId: number,
+  after?: string,
+  options?: Omit<UseQueryOptions<FeatureAgentStateResponse, ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<FeatureAgentStateResponse, ErrorType<unknown>>({
+    queryKey: getGetFeatureAgentStateQueryKey(featureId, after),
+    queryFn: () =>
+      customInstance({
+        method: "GET",
+        url: `/api/features/${featureId}/agent-state`,
+        params: after ? { after } : undefined,
+      }),
+    ...options,
+  });
+}
+
+export function useGetFeatureTurnStates(
+  options?: Omit<UseQueryOptions<TurnStatesResponse, ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<TurnStatesResponse, ErrorType<unknown>>({
+    queryKey: getGetFeatureTurnStatesQueryKey(),
+    queryFn: () => customInstance({ method: "GET", url: "/api/sessions/turn-states" }),
+    ...options,
+  });
+}
+
+export function useGetSessionDraft(
+  sessionId: number,
+  options?: Omit<UseQueryOptions<DraftResponse, ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<DraftResponse, ErrorType<unknown>>({
+    queryKey: getGetSessionDraftQueryKey(sessionId),
+    queryFn: () => customInstance({ method: "GET", url: `/api/sessions/${sessionId}/draft` }),
+    ...options,
+  });
+}
+
+export function useSaveSessionDraft(
+  options?: UseMutationOptions<{ success: boolean }, ErrorType<unknown>, { sessionId: number; draft: string | null }>,
+) {
+  return useMutation<{ success: boolean }, ErrorType<unknown>, { sessionId: number; draft: string | null }>({
+    mutationFn: ({ sessionId, draft }) =>
+      customInstance({ method: "PUT", url: `/api/sessions/${sessionId}/draft`, data: { draft } }),
+    ...options,
+  });
+}

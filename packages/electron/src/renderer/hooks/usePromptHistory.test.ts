@@ -3,36 +3,32 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { usePromptHistory } from "./usePromptHistory";
 
 const mockAddEntryMutate = vi.fn();
-const mockInvalidate = vi.fn();
+const mockInvalidateQueries = vi.fn();
 const mockHistoryQuery = vi.fn((): { data: string[] } => ({ data: [] }));
 
-vi.mock("@/trpc", () => ({
-  trpc: {
-    useContext: vi.fn(() => ({
-      workspace: {
-        getPromptHistory: { invalidate: mockInvalidate },
-      },
-    })),
-    workspace: {
-      getPromptHistory: {
-        useQuery: () => mockHistoryQuery(),
-      },
-      addPromptEntry: {
-        useMutation: vi.fn(() => ({
-          mutate: (data: unknown, opts?: { onSuccess?: () => void }) => {
-            mockAddEntryMutate(data);
-            opts?.onSuccess?.();
-          },
-        })),
-      },
+vi.mock("../api/generated", () => ({
+  useGetWorkspacePromptHistory: () => mockHistoryQuery(),
+  useAddWorkspacePromptEntry: vi.fn(() => ({
+    mutate: (data: unknown, opts?: { onSuccess?: () => void }) => {
+      mockAddEntryMutate(data);
+      opts?.onSuccess?.();
     },
-  },
+  })),
+  getGetWorkspacePromptHistoryQueryKey: vi.fn((projectId: number) => ["workspace", "prompt-history", projectId]),
 }));
+
+vi.mock("@tanstack/react-query", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@tanstack/react-query")>();
+  return {
+    ...actual,
+    useQueryClient: vi.fn(() => ({ invalidateQueries: mockInvalidateQueries })),
+  };
+});
 
 describe("usePromptHistory", () => {
   beforeEach(() => {
     mockAddEntryMutate.mockClear();
-    mockInvalidate.mockClear();
+    mockInvalidateQueries.mockClear();
     mockHistoryQuery.mockReturnValue({ data: [] });
   });
 
@@ -152,7 +148,9 @@ describe("usePromptHistory", () => {
     act(() => {
       result.current.addEntry("my command");
     });
-    expect(mockInvalidate).toHaveBeenCalledWith({ projectId: 1 });
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({
+      queryKey: ["workspace", "prompt-history", 1],
+    });
   });
 
   it("resetNavigation resets historyIndex to -1", () => {

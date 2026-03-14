@@ -8,22 +8,23 @@ const { mockGetSettings, mockRetryMutate } = vi.hoisted(() => ({
   mockRetryMutate: vi.fn(),
 }));
 
+vi.mock("@/api/generated", () => ({
+  useGetFeatureSettings: mockGetSettings,
+  useRetryWorktreeSetup: vi.fn(() => ({ mutate: mockRetryMutate, isLoading: false })),
+}));
+
 vi.mock("@/trpc", () => ({
   trpc: {
     createClient: vi.fn(() => ({})),
     Provider: ({ children }: { children: React.ReactNode }) =>
       React.createElement(React.Fragment, null, children),
     useUtils: vi.fn(() => ({})),
-    features: {
-      getSettings: { useQuery: mockGetSettings },
-    },
-    git: {
-      retryWorktreeSetup: {
-        useMutation: vi.fn(() => ({ mutate: mockRetryMutate, isLoading: false })),
-      },
-    },
   },
 }));
+
+function settingsArray(obj: Record<string, string>) {
+  return Object.entries(obj).map(([key, value]) => ({ key, value }));
+}
 
 describe("WorktreeSetupSection", () => {
   it("renders nothing when no step is set", () => {
@@ -36,12 +37,12 @@ describe("WorktreeSetupSection", () => {
 
   it("renders worktree setup section when step is present", () => {
     mockGetSettings.mockReturnValue({
-      data: {
+      data: settingsArray({
         worktree_setup_step: "done",
         worktree_setup_log: "",
         worktree_setup_error: "",
         worktree_branch: "feature/my-branch",
-      },
+      }),
     });
     render(<WorktreeSetupSection featureId={1} projectId={1} />);
     expect(screen.getByText("Worktree Setup")).toBeInTheDocument();
@@ -49,12 +50,12 @@ describe("WorktreeSetupSection", () => {
 
   it("shows done badge when step is done", () => {
     mockGetSettings.mockReturnValue({
-      data: {
+      data: settingsArray({
         worktree_setup_step: "done",
         worktree_setup_log: "",
         worktree_setup_error: "",
         worktree_branch: "feature/test",
-      },
+      }),
     });
     render(<WorktreeSetupSection featureId={1} projectId={1} />);
     expect(screen.getByText("done")).toBeInTheDocument();
@@ -62,12 +63,12 @@ describe("WorktreeSetupSection", () => {
 
   it("shows error badge when step is error", () => {
     mockGetSettings.mockReturnValue({
-      data: {
+      data: settingsArray({
         worktree_setup_step: "error",
         worktree_setup_log: "",
         worktree_setup_error: "Setup failed",
         worktree_branch: "",
-      },
+      }),
     });
     render(<WorktreeSetupSection featureId={1} projectId={1} />);
     expect(screen.getByText("error")).toBeInTheDocument();
@@ -75,12 +76,12 @@ describe("WorktreeSetupSection", () => {
 
   it("expands on header click to show steps", async () => {
     mockGetSettings.mockReturnValue({
-      data: {
+      data: settingsArray({
         worktree_setup_step: "done",
         worktree_setup_log: "",
         worktree_setup_error: "",
         worktree_branch: "feature/test",
-      },
+      }),
     });
     const { user } = render(<WorktreeSetupSection featureId={1} projectId={1} />);
     await user.click(screen.getByText("Worktree Setup"));

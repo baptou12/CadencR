@@ -1,6 +1,10 @@
 import { useRef, useState, useCallback } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
-import { trpc } from "@/trpc";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  useGetFeaturePlan, getGetFeaturePlanQueryKey,
+  useGetFeaturePrd, useResetPhase, useOverridePhaseStatus,
+} from "@/api/generated";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Dialog,
@@ -28,19 +32,19 @@ export function PlanSidebar({ featureId }: PlanSidebarProps) {
   const [showPrd, setShowPrd] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const utils = trpc.useUtils();
-  const { data: plan } = trpc.features.getPlanWithPhases.useQuery({ feature_id: featureId });
-  const { data: prdData } = trpc.features.getPrd.useQuery({ feature_id: featureId });
-  const resetPhase = trpc.features.resetPhase.useMutation({
+  const queryClient = useQueryClient();
+  const { data: plan } = useGetFeaturePlan(featureId);
+  const { data: prdData } = useGetFeaturePrd(featureId);
+  const resetPhase = useResetPhase({
     onSuccess: () => {
-      utils.features.getPlanWithPhases.invalidate({ feature_id: featureId });
-      utils.sessions.getFeatureAgentState.invalidate({ featureId });
+      void queryClient.invalidateQueries({ queryKey: getGetFeaturePlanQueryKey(featureId) });
+      void queryClient.invalidateQueries({ queryKey: ["sessions", "agentState", featureId] });
     },
   });
-  const overridePhaseStatus = trpc.features.overridePhaseStatus.useMutation({
+  const overridePhaseStatus = useOverridePhaseStatus({
     onSuccess: () => {
-      utils.features.getPlanWithPhases.invalidate({ feature_id: featureId });
-      utils.sessions.getFeatureAgentState.invalidate({ featureId });
+      void queryClient.invalidateQueries({ queryKey: getGetFeaturePlanQueryKey(featureId) });
+      void queryClient.invalidateQueries({ queryKey: ["sessions", "agentState", featureId] });
     },
   });
 
@@ -54,7 +58,7 @@ export function PlanSidebar({ featureId }: PlanSidebarProps) {
 
   const handleResetPhase = useCallback((phase: PhaseData) => {
     if (confirm(`Reset "${phase.title}" to pending? This will delete its agent sessions and messages.`)) {
-      resetPhase.mutate({ phase_id: phase.id });
+      resetPhase.mutate({ phaseId: phase.id });
       setExpandedPhase(null);
     }
   }, [resetPhase]);
@@ -190,7 +194,7 @@ export function PlanSidebar({ featureId }: PlanSidebarProps) {
                         canReset={canResetPhase(phase, index)}
                         onReset={handleResetPhase}
                         onOverrideStatus={(phase, status) =>
-                          overridePhaseStatus.mutate({ phase_id: phase.id, status: status as "pending" | "running" | "completed" | "error" })
+                          overridePhaseStatus.mutate({ phaseId: phase.id, status: status as "pending" | "running" | "completed" | "error" })
                         }
                       />
                     </div>

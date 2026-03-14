@@ -1,0 +1,986 @@
+use std::collections::HashMap;
+use sqlx::SqlitePool;
+
+use crate::error::AppError;
+use super::models::*;
+
+// ---- Block builder (port of shared.ts buildBlocks) ----
+
+struct MutableBlock {
+    id: String,
+    type_: String,
+    content: String,
+    tool_name: Option<String>,
+    tool_use_id: Option<String>,
+    parent_tool_use_id: Option<String>,
+    is_error: Option<bool>,
+    source_tool_name: Option<String>,
+    created_at: Option<String>,
+    model: Option<String>,
+    has_child_slots: bool, // Task/Agent get child slots
+    child_indices: Vec<usize>,
+}
+
+fn convert_block(idx: usize, all: &[MutableBlock]) -> AgentBlock {
+    let b = &all[idx];
+    let child_blocks = if b.has_child_slots || !b.child_indices.is_empty() {
+        Some(b.child_indices.iter().map(|&ci| convert_block(ci, all)).collect())
+    } else {
+        None
+    };
+    AgentBlock {
+        id: b.id.clone(),
+        type_: b.type_.clone(),
+        content: b.content.clone(),
+        tool_name: b.tool_name.clone(),
+        tool_args: if b.type_ == "tool_call" { Some(b.content.clone()) } else { None },
+        is_error: b.is_error,
+        tool_use_id: b.tool_use_id.clone(),
+        parent_tool_use_id: b.parent_tool_use_id.clone(),
+        child_blocks,
+        source_tool_name: b.source_tool_name.clone(),
+        created_at: b.created_at.clone(),
+        model: b.model.clone(),
+    }
+}
+
+pub fn build_blocks(messages: &[AgentMessageRow]) -> Vec<AgentBlock> {
+    let mut all: Vec<MutableBlock> = Vec::new();
+    let mut tool_use_id_map: HashMap<String, usize> = HashMap::new();
+    let mut root_indices: Vec<usize> = Vec::new();
+
+    for msg in messages {
+        let id = format!("msg-{}", msg.id);
+        let parent_id = msg.parent_tool_use_id.as_deref();
+        let parent_idx = parent_id.and_then(|pid| tool_use_id_map.get(pid).copied());
+
+        match msg.message_type.as_str() {
+            "text" | "text_delta" => {
+                // Check if we should merge with last text block
+                let last_idx_opt = if let Some(pidx) = parent_idx {
+                    all[pidx].child_indices.last().copied()
+                } else {
+                    root_indices.last().copied()
+                };
+                let should_merge = last_idx_opt.map_or(false, |li| {
+                    all[li].type_ == "text" && all[li].parent_tool_use_id.as_deref() == parent_id
+                });
+
+                if should_merge {
+                    let last_idx = last_idx_opt.unwrap();
+                    all[last_idx].content.push_str(&msg.content);
+                } else {
+                    let new_idx = all.len();
+                    all.push(MutableBlock {
+                        id,
+                        type_: "text".to_string(),
+                        content: msg.content.clone(),
+                        tool_name: None,
+                        tool_use_id: None,
+                        parent_tool_use_id: msg.parent_tool_use_id.clone(),
+                        is_error: None,
+                        source_tool_name: None,
+                        created_at: msg.created_at.clone(),
+                        model: msg.model.clone(),
+                        has_child_slots: false,
+                        child_indices: Vec::new(),
+                    });
+                    if let Some(pidx) = parent_idx {
+                        all[pidx].child_indices.push(new_idx);
+                    } else {
+                        root_indices.push(new_idx);
+                    }
+                }
+            }
+            "thinking" | "thinking_delta" => {
+                let last_idx_opt = if let Some(pidx) = parent_idx {
+                    all[pidx].child_indices.last().copied()
+                } else {
+                    root_indices.last().copied()
+                };
+                let should_merge = last_idx_opt.map_or(false, |li| {
+                    all[li].type_ == "thinking" && all[li].parent_tool_use_id.as_deref() == parent_id
+                });
+
+                if should_merge {
+                    let last_idx = last_idx_opt.unwrap();
+                    all[last_idx].content.push_str(&msg.content);
+                } else {
+                    let new_idx = all.len();
+                    all.push(MutableBlock {
+                        id,
+                        type_: "thinking".to_string(),
+                        content: msg.content.clone(),
+                        tool_name: None,
+                        tool_use_id: None,
+                        parent_tool_use_id: msg.parent_tool_use_id.clone(),
+                        is_error: None,
+                        source_tool_name: None,
+                        created_at: msg.created_at.clone(),
+                        model: None,
+                        has_child_slots: false,
+                        child_indices: Vec::new(),
+                    });
+                    if let Some(pidx) = parent_idx {
+                        all[pidx].child_indices.push(new_idx);
+                    } else {
+                        root_indices.push(new_idx);
+                    }
+                }
+            }
+            "tool_call" => {
+                // Deduplicate: if tool_use_id already seen, update content if longer
+                if let Some(tuid) = &msg.tool_use_id {
+                    if let Some(&existing_idx) = tool_use_id_map.get(tuid.as_str()) {
+                        if !msg.content.is_empty() && msg.content.len() > all[existing_idx].content.len() {
+                            all[existing_idx].content = msg.content.clone();
+                        }
+                        continue;
+                    }
+                }
+
+                let is_task = msg.tool_name.as_deref() == Some("Task") || msg.tool_name.as_deref() == Some("Agent");
+                let new_idx = all.len();
+                all.push(MutableBlock {
+                    id,
+                    type_: "tool_call".to_string(),
+                    content: msg.content.clone(),
+                    tool_name: msg.tool_name.clone().or(Some("tool".to_string())),
+                    tool_use_id: msg.tool_use_id.clone(),
+                    parent_tool_use_id: msg.parent_tool_use_id.clone(),
+                    is_error: None,
+                    source_tool_name: None,
+                    created_at: msg.created_at.clone(),
+                    model: None,
+                    has_child_slots: is_task,
+                    child_indices: Vec::new(),
+                });
+                if let Some(tuid) = &msg.tool_use_id {
+                    tool_use_id_map.insert(tuid.clone(), new_idx);
+                }
+                if let Some(pidx) = parent_idx {
+                    all[pidx].child_indices.push(new_idx);
+                } else {
+                    root_indices.push(new_idx);
+                }
+            }
+            "tool_result" | "tool_error" => {
+                let is_error = msg.message_type == "tool_error";
+                // Resolve source tool name
+                let source_tool_name = msg.tool_use_id.as_deref()
+                    .and_then(|tuid| tool_use_id_map.get(tuid))
+                    .and_then(|&idx| all[idx].tool_name.clone())
+                    .or_else(|| {
+                        // Fallback: scan backwards for last tool_call in list
+                        let list = if let Some(pidx) = parent_idx {
+                            &all[pidx].child_indices as &[usize]
+                        } else {
+                            &root_indices
+                        };
+                        list.iter().rev()
+                            .find(|&&li| all[li].type_ == "tool_call")
+                            .and_then(|&li| all[li].tool_name.clone())
+                    });
+
+                let new_idx = all.len();
+                all.push(MutableBlock {
+                    id,
+                    type_: "tool_result".to_string(),
+                    content: msg.content.clone(),
+                    tool_name: None,
+                    tool_use_id: msg.tool_use_id.clone(),
+                    parent_tool_use_id: msg.parent_tool_use_id.clone(),
+                    is_error: Some(is_error),
+                    source_tool_name,
+                    created_at: msg.created_at.clone(),
+                    model: None,
+                    has_child_slots: false,
+                    child_indices: Vec::new(),
+                });
+                if let Some(pidx) = parent_idx {
+                    all[pidx].child_indices.push(new_idx);
+                } else {
+                    root_indices.push(new_idx);
+                }
+            }
+            "user_message" => {
+                let new_idx = all.len();
+                all.push(MutableBlock {
+                    id,
+                    type_: "user_message".to_string(),
+                    content: msg.content.clone(),
+                    tool_name: None,
+                    tool_use_id: None,
+                    parent_tool_use_id: msg.parent_tool_use_id.clone(),
+                    is_error: None,
+                    source_tool_name: None,
+                    created_at: msg.created_at.clone(),
+                    model: None,
+                    has_child_slots: false,
+                    child_indices: Vec::new(),
+                });
+                if let Some(pidx) = parent_idx {
+                    all[pidx].child_indices.push(new_idx);
+                } else {
+                    root_indices.push(new_idx);
+                }
+            }
+            "error" => {
+                let new_idx = all.len();
+                all.push(MutableBlock {
+                    id,
+                    type_: "text".to_string(),
+                    content: format!("Error: {}", msg.content),
+                    tool_name: None,
+                    tool_use_id: None,
+                    parent_tool_use_id: msg.parent_tool_use_id.clone(),
+                    is_error: None,
+                    source_tool_name: None,
+                    created_at: None,
+                    model: None,
+                    has_child_slots: false,
+                    child_indices: Vec::new(),
+                });
+                if let Some(pidx) = parent_idx {
+                    all[pidx].child_indices.push(new_idx);
+                } else {
+                    root_indices.push(new_idx);
+                }
+            }
+            "compact_divider" => {
+                let new_idx = all.len();
+                all.push(MutableBlock {
+                    id,
+                    type_: "compact_divider".to_string(),
+                    content: String::new(),
+                    tool_name: None,
+                    tool_use_id: None,
+                    parent_tool_use_id: msg.parent_tool_use_id.clone(),
+                    is_error: None,
+                    source_tool_name: None,
+                    created_at: None,
+                    model: None,
+                    has_child_slots: false,
+                    child_indices: Vec::new(),
+                });
+                if let Some(pidx) = parent_idx {
+                    all[pidx].child_indices.push(new_idx);
+                } else {
+                    root_indices.push(new_idx);
+                }
+            }
+            "clear_divider" => {
+                let new_idx = all.len();
+                all.push(MutableBlock {
+                    id,
+                    type_: "clear_divider".to_string(),
+                    content: String::new(),
+                    tool_name: None,
+                    tool_use_id: None,
+                    parent_tool_use_id: msg.parent_tool_use_id.clone(),
+                    is_error: None,
+                    source_tool_name: None,
+                    created_at: None,
+                    model: None,
+                    has_child_slots: false,
+                    child_indices: Vec::new(),
+                });
+                if let Some(pidx) = parent_idx {
+                    all[pidx].child_indices.push(new_idx);
+                } else {
+                    root_indices.push(new_idx);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    root_indices.iter().map(|&idx| convert_block(idx, &all)).collect()
+}
+
+// ---- Repository functions ----
+
+pub async fn get_sessions(pool: &SqlitePool, feature_id: i64) -> Result<Vec<AgentSessionRow>, AppError> {
+    let rows = sqlx::query_as::<_, AgentSessionRow>(
+        r#"SELECT id, feature_id, agent_type, claude_session_id, status, started_at, ended_at,
+           run_id, phase_id, subprocess_id, model, pending_questions, has_file_changes,
+           permission_mode, pending_plan_approval, pending_prd_approval, pending_permission,
+           input_tokens, output_tokens, context_window, was_compacted, draft_prompt
+           FROM agent_sessions WHERE feature_id = ? ORDER BY id DESC"#,
+    )
+    .bind(feature_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
+pub async fn get_feature_agent_state(
+    pool: &SqlitePool,
+    feature_id: i64,
+    after_message_ids: Option<HashMap<i64, i64>>,
+) -> Result<FeatureAgentStateResponse, AppError> {
+    let sessions = sqlx::query_as::<_, AgentSessionRow>(
+        r#"SELECT id, feature_id, agent_type, claude_session_id, status, started_at, ended_at,
+           run_id, phase_id, subprocess_id, model, pending_questions, has_file_changes,
+           permission_mode, pending_plan_approval, pending_prd_approval, pending_permission,
+           input_tokens, output_tokens, context_window, was_compacted, draft_prompt
+           FROM agent_sessions WHERE feature_id = ? ORDER BY id ASC"#,
+    )
+    .bind(feature_id)
+    .fetch_all(pool)
+    .await?;
+
+    if sessions.is_empty() {
+        return Ok(FeatureAgentStateResponse { sessions: vec![] });
+    }
+
+    // Batch-fetch phase titles for sessions that have a phase_id
+    let phase_ids: Vec<i64> = sessions.iter()
+        .filter_map(|s| s.phase_id)
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
+
+    let mut phase_title_map: HashMap<i64, String> = HashMap::new();
+    if !phase_ids.is_empty() {
+        // Build dynamic IN clause
+        let placeholders = phase_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let sql = format!("SELECT id, title FROM phases WHERE id IN ({})", placeholders);
+        let mut q = sqlx::query_as::<_, PhaseTitle>(&sql);
+        for pid in &phase_ids {
+            q = q.bind(pid);
+        }
+        let phase_rows = q.fetch_all(pool).await?;
+        for p in phase_rows {
+            phase_title_map.insert(p.id, p.title);
+        }
+    }
+
+    let after_map = after_message_ids.unwrap_or_default();
+
+    // Split sessions into full-fetch vs incremental
+    let mut full_fetch_ids: Vec<i64> = Vec::new();
+    let mut incremental_fetches: Vec<(i64, i64)> = Vec::new(); // (session_id, after_id)
+
+    for s in &sessions {
+        if let Some(&after_id) = after_map.get(&s.id) {
+            if after_id > 0 {
+                incremental_fetches.push((s.id, after_id));
+            } else {
+                full_fetch_ids.push(s.id);
+            }
+        } else {
+            full_fetch_ids.push(s.id);
+        }
+    }
+
+    // Batch-fetch messages for full-fetch sessions
+    let mut full_messages: HashMap<i64, Vec<AgentMessageRow>> = HashMap::new();
+    if !full_fetch_ids.is_empty() {
+        let placeholders = full_fetch_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let sql = format!(
+            "SELECT id, session_id, content, message_type, tool_name, tool_use_id, parent_tool_use_id, created_at, model FROM agent_messages WHERE session_id IN ({}) ORDER BY id ASC",
+            placeholders
+        );
+        let mut q = sqlx::query_as::<_, AgentMessageRow>(&sql);
+        for sid in &full_fetch_ids {
+            q = q.bind(sid);
+        }
+        let msgs = q.fetch_all(pool).await?;
+        for msg in msgs {
+            full_messages.entry(msg.session_id).or_default().push(msg);
+        }
+    }
+
+    // Incremental fetches
+    let mut incremental_messages: HashMap<i64, Vec<AgentMessageRow>> = HashMap::new();
+    let mut updated_tool_calls: HashMap<i64, HashMap<i64, String>> = HashMap::new();
+
+    for (sid, after_id) in &incremental_fetches {
+        let msgs = sqlx::query_as::<_, AgentMessageRow>(
+            "SELECT id, session_id, content, message_type, tool_name, tool_use_id, parent_tool_use_id, created_at, model FROM agent_messages WHERE session_id = ? AND id > ? ORDER BY id ASC",
+        )
+        .bind(sid)
+        .bind(after_id)
+        .fetch_all(pool)
+        .await?;
+        incremental_messages.insert(*sid, msgs);
+
+        // Re-fetch stale tool_call rows
+        let stale = sqlx::query_as::<_, AgentMessageRow>(
+            "SELECT id, session_id, content, message_type, tool_name, tool_use_id, parent_tool_use_id, created_at, model FROM agent_messages WHERE session_id = ? AND id <= ? AND message_type = 'tool_call' AND content != '{}' ORDER BY id ASC",
+        )
+        .bind(sid)
+        .bind(after_id)
+        .fetch_all(pool)
+        .await?;
+        if !stale.is_empty() {
+            let map: HashMap<i64, String> = stale.into_iter().map(|r| (r.id, r.content)).collect();
+            updated_tool_calls.insert(*sid, map);
+        }
+    }
+
+    // Extract todos for incremental sessions
+    let mut todos_by_session: HashMap<i64, Vec<serde_json::Value>> = HashMap::new();
+    for (sid, _) in &incremental_fetches {
+        let row = sqlx::query_as::<_, AgentMessageRow>(
+            "SELECT id, session_id, content, message_type, tool_name, tool_use_id, parent_tool_use_id, created_at, model FROM agent_messages WHERE session_id = ? AND message_type = 'tool_call' AND tool_name = 'TodoWrite' ORDER BY id DESC LIMIT 1",
+        )
+        .bind(sid)
+        .fetch_optional(pool)
+        .await?;
+        if let Some(row) = row {
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&row.content) {
+                if let Some(todos) = parsed.get("todos").and_then(|t| t.as_array()) {
+                    todos_by_session.insert(*sid, todos.clone());
+                }
+            }
+        }
+    }
+
+    // Build session states
+    let session_states: Vec<SessionState> = sessions.into_iter().map(|s| {
+        let is_incremental = incremental_messages.contains_key(&s.id);
+        let msgs = if is_incremental {
+            incremental_messages.get(&s.id).cloned().unwrap_or_default()
+        } else {
+            full_messages.get(&s.id).cloned().unwrap_or_default()
+        };
+
+        // Extract todos for full-fetch sessions
+        if !is_incremental {
+            for msg in msgs.iter().rev() {
+                if msg.message_type == "tool_call" && msg.tool_name.as_deref() == Some("TodoWrite") {
+                    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&msg.content) {
+                        if let Some(todos) = parsed.get("todos").and_then(|t| t.as_array()) {
+                            todos_by_session.insert(s.id, todos.clone());
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+
+        let max_message_id = if is_incremental {
+            let new_max = msgs.iter().map(|m| m.id).max().unwrap_or(0);
+            if new_max > 0 { new_max } else { after_map.get(&s.id).copied().unwrap_or(0) }
+        } else {
+            msgs.iter().map(|m| m.id).max().unwrap_or(0)
+        };
+
+        let blocks = build_blocks(&msgs);
+
+        let tool_call_updates: Option<HashMap<String, String>> = if is_incremental {
+            updated_tool_calls.get(&s.id).map(|m| {
+                m.iter().map(|(id, content)| (format!("msg-{}", id), content.clone())).collect()
+            })
+        } else {
+            None
+        };
+
+        let pending_questions = s.pending_questions.as_deref()
+            .and_then(|pq| serde_json::from_str(pq).ok());
+        let pending_plan_approval = s.pending_plan_approval.as_deref()
+            .and_then(|p| serde_json::from_str(p).ok());
+        let pending_prd_approval = s.pending_prd_approval.as_deref()
+            .and_then(|p| serde_json::from_str(p).ok());
+        let pending_permission = s.pending_permission.as_deref()
+            .and_then(|p| serde_json::from_str(p).ok());
+
+        let resumable = (s.status == "paused" || s.status == "completed" || s.status == "error")
+            && s.claude_session_id.is_some();
+
+        SessionState {
+            session_db_id: s.id,
+            agent_type: s.agent_type,
+            status: s.status,
+            subprocess_id: s.subprocess_id,
+            model: s.model,
+            blocks,
+            max_message_id,
+            is_incremental,
+            tool_call_updates,
+            pending_questions,
+            has_file_changes: s.has_file_changes != 0,
+            resumable,
+            claude_session_id: s.claude_session_id,
+            run_id: s.run_id,
+            phase_id: s.phase_id,
+            phase_title: s.phase_id.and_then(|pid| phase_title_map.get(&pid).cloned()),
+            todos: todos_by_session.get(&s.id).cloned(),
+            permission_mode: s.permission_mode.unwrap_or_else(|| "acceptEdits".to_string()),
+            pending_plan_approval,
+            pending_prd_approval,
+            pending_permission,
+            input_tokens: s.input_tokens.unwrap_or(0),
+            output_tokens: s.output_tokens.unwrap_or(0),
+            context_window: s.context_window.unwrap_or(200000),
+            was_compacted: s.was_compacted != 0,
+            draft_prompt: s.draft_prompt,
+        }
+    }).collect();
+
+    Ok(FeatureAgentStateResponse { sessions: session_states })
+}
+
+pub async fn get_feature_turn_states(pool: &SqlitePool) -> Result<HashMap<String, String>, AppError> {
+    let rows = sqlx::query_as::<_, TurnStateRow>(
+        r#"SELECT feature_id,
+           MAX(CASE WHEN pending_questions IS NOT NULL OR pending_permission IS NOT NULL OR pending_plan_approval IS NOT NULL OR pending_prd_approval IS NOT NULL THEN 1 ELSE 0 END) AS needs_input
+           FROM agent_sessions
+           WHERE status = 'running'
+           GROUP BY feature_id"#,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    let mut result = HashMap::new();
+    for row in rows {
+        let turn = if row.needs_input == 1 { "askUser" } else { "claude" };
+        result.insert(row.feature_id.to_string(), turn.to_string());
+    }
+    Ok(result)
+}
+
+pub async fn get_draft(pool: &SqlitePool, session_id: i64) -> Result<Option<String>, AppError> {
+    let row: Option<(Option<String>,)> = sqlx::query_as(
+        "SELECT draft_prompt FROM agent_sessions WHERE id = ?",
+    )
+    .bind(session_id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.and_then(|(v,)| v))
+}
+
+pub async fn save_draft(pool: &SqlitePool, session_id: i64, draft: Option<&str>) -> Result<(), AppError> {
+    sqlx::query("UPDATE agent_sessions SET draft_prompt = ? WHERE id = ?")
+        .bind(draft)
+        .bind(session_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqlx::sqlite::SqlitePoolOptions;
+
+    async fn setup_test_db() -> SqlitePool {
+        let pool = SqlitePoolOptions::new()
+            .connect("sqlite::memory:")
+            .await
+            .expect("Failed to create in-memory SQLite pool");
+
+        sqlx::query(
+            r#"CREATE TABLE IF NOT EXISTS projects (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                path TEXT NOT NULL DEFAULT ''
+            )"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            r#"CREATE TABLE IF NOT EXISTS features (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id INTEGER NOT NULL DEFAULT 1,
+                title TEXT NOT NULL DEFAULT 'test feature'
+            )"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            r#"CREATE TABLE IF NOT EXISTS plans (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                feature_id INTEGER NOT NULL
+            )"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            r#"CREATE TABLE IF NOT EXISTS phases (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                plan_id INTEGER NOT NULL DEFAULT 1,
+                title TEXT NOT NULL DEFAULT ''
+            )"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            r#"CREATE TABLE IF NOT EXISTS agent_sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                feature_id INTEGER NOT NULL,
+                agent_type TEXT NOT NULL DEFAULT 'main',
+                claude_session_id TEXT,
+                status TEXT NOT NULL DEFAULT 'running',
+                started_at TEXT,
+                ended_at TEXT,
+                run_id INTEGER,
+                phase_id INTEGER,
+                subprocess_id TEXT,
+                model TEXT,
+                pending_questions TEXT,
+                has_file_changes INTEGER NOT NULL DEFAULT 0,
+                permission_mode TEXT,
+                pending_plan_approval TEXT,
+                pending_prd_approval TEXT,
+                pending_permission TEXT,
+                input_tokens INTEGER,
+                output_tokens INTEGER,
+                context_window INTEGER,
+                was_compacted INTEGER NOT NULL DEFAULT 0,
+                draft_prompt TEXT
+            )"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            r#"CREATE TABLE IF NOT EXISTS agent_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id INTEGER NOT NULL,
+                content TEXT NOT NULL DEFAULT '',
+                message_type TEXT NOT NULL DEFAULT 'text',
+                tool_name TEXT,
+                tool_use_id TEXT,
+                parent_tool_use_id TEXT,
+                created_at TEXT,
+                model TEXT
+            )"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        pool
+    }
+
+    async fn insert_session(pool: &SqlitePool, feature_id: i64, status: &str) -> i64 {
+        let row: (i64,) = sqlx::query_as(
+            "INSERT INTO agent_sessions (feature_id, agent_type, status) VALUES (?, 'main', ?) RETURNING id",
+        )
+        .bind(feature_id)
+        .bind(status)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        row.0
+    }
+
+    async fn insert_message(
+        pool: &SqlitePool,
+        session_id: i64,
+        message_type: &str,
+        content: &str,
+        tool_name: Option<&str>,
+        tool_use_id: Option<&str>,
+        parent_tool_use_id: Option<&str>,
+    ) -> i64 {
+        let row: (i64,) = sqlx::query_as(
+            "INSERT INTO agent_messages (session_id, message_type, content, tool_name, tool_use_id, parent_tool_use_id) VALUES (?, ?, ?, ?, ?, ?) RETURNING id",
+        )
+        .bind(session_id)
+        .bind(message_type)
+        .bind(content)
+        .bind(tool_name)
+        .bind(tool_use_id)
+        .bind(parent_tool_use_id)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        row.0
+    }
+
+    fn make_message(id: i64, session_id: i64, message_type: &str, content: &str) -> AgentMessageRow {
+        AgentMessageRow {
+            id,
+            session_id,
+            message_type: message_type.to_string(),
+            content: content.to_string(),
+            tool_name: None,
+            tool_use_id: None,
+            parent_tool_use_id: None,
+            created_at: None,
+            model: None,
+        }
+    }
+
+    fn make_message_full(
+        id: i64,
+        session_id: i64,
+        message_type: &str,
+        content: &str,
+        tool_name: Option<&str>,
+        tool_use_id: Option<&str>,
+        parent_tool_use_id: Option<&str>,
+    ) -> AgentMessageRow {
+        AgentMessageRow {
+            id,
+            session_id,
+            message_type: message_type.to_string(),
+            content: content.to_string(),
+            tool_name: tool_name.map(|s| s.to_string()),
+            tool_use_id: tool_use_id.map(|s| s.to_string()),
+            parent_tool_use_id: parent_tool_use_id.map(|s| s.to_string()),
+            created_at: None,
+            model: None,
+        }
+    }
+
+    // ---- build_blocks() tests ----
+
+    #[test]
+    fn test_build_blocks_empty() {
+        let blocks = build_blocks(&[]);
+        assert!(blocks.is_empty());
+    }
+
+    #[test]
+    fn test_build_blocks_single_text() {
+        let msgs = vec![make_message(1, 1, "text", "hello world")];
+        let blocks = build_blocks(&msgs);
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].type_, "text");
+        assert_eq!(blocks[0].content, "hello world");
+    }
+
+    #[test]
+    fn test_build_blocks_text_merging() {
+        let msgs = vec![
+            make_message(1, 1, "text", "hello"),
+            make_message(2, 1, "text", " world"),
+        ];
+        let blocks = build_blocks(&msgs);
+        assert_eq!(blocks.len(), 1, "consecutive text blocks should merge");
+        assert_eq!(blocks[0].content, "hello world");
+    }
+
+    #[test]
+    fn test_build_blocks_thinking_merging() {
+        let msgs = vec![
+            make_message(1, 1, "thinking", "first thought"),
+            make_message(2, 1, "thinking", " second thought"),
+        ];
+        let blocks = build_blocks(&msgs);
+        assert_eq!(blocks.len(), 1, "consecutive thinking blocks should merge");
+        assert_eq!(blocks[0].type_, "thinking");
+        assert_eq!(blocks[0].content, "first thought second thought");
+    }
+
+    #[test]
+    fn test_build_blocks_tool_call_with_result() {
+        let msgs = vec![
+            make_message_full(1, 1, "tool_call", "{}", Some("Bash"), Some("tu-1"), None),
+            make_message_full(2, 1, "tool_result", "output", None, Some("tu-1"), None),
+        ];
+        let blocks = build_blocks(&msgs);
+        // tool_result should be a root block (not nested under tool_call unless parent_tool_use_id set)
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks[0].type_, "tool_call");
+        assert_eq!(blocks[1].type_, "tool_result");
+        assert_eq!(blocks[1].source_tool_name.as_deref(), Some("Bash"));
+    }
+
+    #[test]
+    fn test_build_blocks_tool_call_deduplication() {
+        let msgs = vec![
+            make_message_full(1, 1, "tool_call", "{}", Some("Bash"), Some("tu-dup"), None),
+            make_message_full(2, 1, "tool_call", "{\"cmd\":\"ls\"}", Some("Bash"), Some("tu-dup"), None),
+        ];
+        let blocks = build_blocks(&msgs);
+        assert_eq!(blocks.len(), 1, "duplicate tool_use_id should deduplicate");
+        assert_eq!(blocks[0].type_, "tool_call");
+        // content updated to longer version
+        assert_eq!(blocks[0].content, "{\"cmd\":\"ls\"}");
+    }
+
+    #[test]
+    fn test_build_blocks_nested_agent_tool() {
+        let msgs = vec![
+            make_message_full(1, 1, "tool_call", "{}", Some("Task"), Some("tu-task"), None),
+        ];
+        let blocks = build_blocks(&msgs);
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].type_, "tool_call");
+        // Task tool should have child_blocks slot (empty vec)
+        assert!(blocks[0].child_blocks.is_some(), "Task tool should have child_blocks");
+    }
+
+    #[test]
+    fn test_build_blocks_mixed_sequence() {
+        let msgs = vec![
+            make_message(1, 1, "text", "Starting"),
+            make_message_full(2, 1, "tool_call", "{}", Some("Bash"), Some("tu-1"), None),
+            make_message_full(3, 1, "tool_result", "done", None, Some("tu-1"), None),
+            make_message(4, 1, "text", "Done"),
+        ];
+        let blocks = build_blocks(&msgs);
+        assert_eq!(blocks.len(), 4);
+        assert_eq!(blocks[0].type_, "text");
+        assert_eq!(blocks[1].type_, "tool_call");
+        assert_eq!(blocks[2].type_, "tool_result");
+        assert_eq!(blocks[3].type_, "text");
+    }
+
+    // ---- Repository query tests ----
+
+    #[tokio::test]
+    async fn test_get_sessions() {
+        let pool = setup_test_db().await;
+        let fid: (i64,) = sqlx::query_as("INSERT INTO features (title) VALUES ('f') RETURNING id")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let feature_id = fid.0;
+
+        insert_session(&pool, feature_id, "running").await;
+        insert_session(&pool, feature_id, "completed").await;
+
+        let sessions = get_sessions(&pool, feature_id).await.unwrap();
+        assert_eq!(sessions.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_get_sessions_empty() {
+        let pool = setup_test_db().await;
+        let sessions = get_sessions(&pool, 9999).await.unwrap();
+        assert!(sessions.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_get_feature_agent_state_basic() {
+        let pool = setup_test_db().await;
+        let fid: (i64,) = sqlx::query_as("INSERT INTO features (title) VALUES ('f') RETURNING id")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let feature_id = fid.0;
+
+        let session_id = insert_session(&pool, feature_id, "completed").await;
+        insert_message(&pool, session_id, "text", "hello", None, None, None).await;
+
+        let state = get_feature_agent_state(&pool, feature_id, None).await.unwrap();
+        assert_eq!(state.sessions.len(), 1);
+        let s = &state.sessions[0];
+        assert_eq!(s.session_db_id, session_id);
+        assert_eq!(s.blocks.len(), 1);
+        assert_eq!(s.blocks[0].content, "hello");
+        assert!(s.phase_title.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_get_feature_agent_state_incremental() {
+        let pool = setup_test_db().await;
+        let fid: (i64,) = sqlx::query_as("INSERT INTO features (title) VALUES ('f') RETURNING id")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let feature_id = fid.0;
+
+        let session_id = insert_session(&pool, feature_id, "running").await;
+        let msg1 = insert_message(&pool, session_id, "text", "old message", None, None, None).await;
+        let msg2 = insert_message(&pool, session_id, "text", " new message", None, None, None).await;
+
+        // Fetch with after_message_ids = {session_id: msg1}
+        let mut after = HashMap::new();
+        after.insert(session_id, msg1);
+        let state = get_feature_agent_state(&pool, feature_id, Some(after)).await.unwrap();
+        assert_eq!(state.sessions.len(), 1);
+        let s = &state.sessions[0];
+        assert!(s.is_incremental);
+        // Only the new message (msg2) should be in blocks
+        assert_eq!(s.blocks.len(), 1);
+        assert_eq!(s.blocks[0].content, " new message");
+        assert_eq!(s.max_message_id, msg2);
+    }
+
+    #[tokio::test]
+    async fn test_get_feature_agent_state_no_sessions() {
+        let pool = setup_test_db().await;
+        let state = get_feature_agent_state(&pool, 9999, None).await.unwrap();
+        assert!(state.sessions.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_get_feature_turn_states() {
+        let pool = setup_test_db().await;
+
+        let fid1: (i64,) = sqlx::query_as("INSERT INTO features (title) VALUES ('f1') RETURNING id")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let fid2: (i64,) = sqlx::query_as("INSERT INTO features (title) VALUES ('f2') RETURNING id")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+        // Feature 1: running session with pending_questions → needs_input
+        sqlx::query(
+            "INSERT INTO agent_sessions (feature_id, agent_type, status, pending_questions) VALUES (?, 'main', 'running', '[\"q\"]')"
+        )
+        .bind(fid1.0)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Feature 2: running session without pending_questions → claude turn
+        insert_session(&pool, fid2.0, "running").await;
+
+        let states = get_feature_turn_states(&pool).await.unwrap();
+        assert_eq!(states.get(&fid1.0.to_string()).map(|s| s.as_str()), Some("askUser"));
+        assert_eq!(states.get(&fid2.0.to_string()).map(|s| s.as_str()), Some("claude"));
+    }
+
+    #[tokio::test]
+    async fn test_get_draft() {
+        let pool = setup_test_db().await;
+        let fid: (i64,) = sqlx::query_as("INSERT INTO features (title) VALUES ('f') RETURNING id")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let session_id = insert_session(&pool, fid.0, "paused").await;
+
+        save_draft(&pool, session_id, Some("my draft")).await.unwrap();
+        let draft = get_draft(&pool, session_id).await.unwrap();
+        assert_eq!(draft.as_deref(), Some("my draft"));
+    }
+
+    #[tokio::test]
+    async fn test_get_draft_empty() {
+        let pool = setup_test_db().await;
+        let fid: (i64,) = sqlx::query_as("INSERT INTO features (title) VALUES ('f') RETURNING id")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let session_id = insert_session(&pool, fid.0, "paused").await;
+
+        let draft = get_draft(&pool, session_id).await.unwrap();
+        assert!(draft.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_save_draft_upsert() {
+        let pool = setup_test_db().await;
+        let fid: (i64,) = sqlx::query_as("INSERT INTO features (title) VALUES ('f') RETURNING id")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let session_id = insert_session(&pool, fid.0, "paused").await;
+
+        save_draft(&pool, session_id, Some("first draft")).await.unwrap();
+        save_draft(&pool, session_id, Some("updated draft")).await.unwrap();
+
+        let draft = get_draft(&pool, session_id).await.unwrap();
+        assert_eq!(draft.as_deref(), Some("updated draft"));
+    }
+}

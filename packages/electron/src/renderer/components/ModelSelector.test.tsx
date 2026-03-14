@@ -18,26 +18,31 @@ vi.mock("@/trpc", () => ({
     createClient: vi.fn(() => ({})),
     Provider: ({ children }: { children: React.ReactNode }) =>
       React.createElement(React.Fragment, null, children),
-    useUtils: vi.fn(() => ({
-      workspace: { getModelSettings: { invalidate: vi.fn() } },
-      projects: { getModelSettings: { invalidate: vi.fn() } },
-      features: { getModelSettings: { invalidate: vi.fn() } },
-    })),
     workspace: {
       getAvailableModels: { useQuery: mockGetAvailableModels },
-      getModelSettings: { useQuery: mockGetGlobalSettings },
-      setModelSetting: { useMutation: vi.fn(() => ({ mutate: vi.fn() })) },
-    },
-    projects: {
-      getModelSettings: { useQuery: mockGetProjectSettings },
-      setModelSetting: { useMutation: vi.fn(() => ({ mutate: vi.fn() })) },
-    },
-    features: {
-      getModelSettings: { useQuery: mockGetFeatureSettings },
-      setModelSetting: { useMutation: vi.fn(() => ({ mutate: vi.fn() })) },
     },
   },
 }));
+
+vi.mock("../api/generated", () => ({
+  useGetWorkspaceModelSettings: () => mockGetGlobalSettings(),
+  useSetWorkspaceModelSetting: vi.fn(() => ({ mutate: vi.fn() })),
+  getGetWorkspaceModelSettingsQueryKey: vi.fn(() => ["workspace", "model-settings"]),
+  useGetProjectModelSettings: () => mockGetProjectSettings(),
+  useSetProjectModelSetting: vi.fn(() => ({ mutate: vi.fn() })),
+  getGetProjectModelSettingsQueryKey: vi.fn(() => ["project", "model-settings"]),
+  useGetFeatureModelSettings: () => mockGetFeatureSettings(),
+  useSetFeatureModelSetting: vi.fn(() => ({ mutate: vi.fn() })),
+  getGetFeatureModelSettingsQueryKey: vi.fn((id: number) => ["features", "model-settings", id]),
+}));
+
+vi.mock("@tanstack/react-query", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@tanstack/react-query")>();
+  return {
+    ...actual,
+    useQueryClient: vi.fn(() => ({ invalidateQueries: vi.fn() })),
+  };
+});
 
 describe("ModelSelector", () => {
   it("renders agent type labels", () => {

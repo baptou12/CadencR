@@ -20,6 +20,18 @@ const mockFeatures = [
   { id: 4, title: "Archived Feature", type: "feature", status: "archived", project_id: 1 },
 ];
 
+vi.mock("@/api/generated", () => ({
+  useListFeatures: vi.fn(() => ({ data: mockFeatures })),
+  useUpdateFeatureStatus: vi.fn((opts?: { onSuccess?: () => void }) => ({
+    mutate: (data: unknown) => { mockUpdateStatus(data); opts?.onSuccess?.(); },
+  })),
+  useDeleteFeature: vi.fn((opts?: { onSuccess?: () => void }) => ({
+    mutate: (data: unknown) => { mockDelete(data); opts?.onSuccess?.(); },
+  })),
+  useGetFeatureEmpty: vi.fn(() => ({ data: { empty: false } })),
+  getListFeaturesQueryKey: vi.fn((id: number) => ["features", "list", id]),
+}));
+
 vi.mock("@/trpc", () => {
   const React = require("react");
   return {
@@ -27,27 +39,7 @@ vi.mock("@/trpc", () => {
       createClient: vi.fn(() => ({})),
       Provider: ({ children }: { children: unknown }) =>
         React.createElement(React.Fragment, null, children),
-      features: {
-      listByProject: {
-        useQuery: vi.fn(() => ({ data: mockFeatures })),
-      },
-      updateStatus: {
-        useMutation: vi.fn(() => ({ mutate: mockUpdateStatus })),
-      },
-      delete: {
-        useMutation: vi.fn(() => ({ mutate: mockDelete })),
-      },
-      isEmpty: {
-        useQuery: vi.fn(() => ({ data: { empty: false } })),
-      },
-    },
-      useUtils: vi.fn(() => ({
-        features: {
-          listByProject: { invalidate: mockInvalidate },
-          getById: { invalidate: mockInvalidate },
-          getProgress: { invalidate: mockInvalidate },
-        },
-      })),
+      useUtils: vi.fn(() => ({})),
     },
   };
 });

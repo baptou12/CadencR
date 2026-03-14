@@ -1,25 +1,13 @@
+import React from "react";
 import { renderHook } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useDbUpdated } from "./useDbUpdated";
 
-// Mock trpc
-vi.mock("@/trpc", () => ({
-  trpc: {
-    useUtils: vi.fn(() => ({
-      features: {
-        getById: { invalidate: vi.fn() },
-        listByProject: { invalidate: vi.fn() },
-        getProgress: { invalidate: vi.fn() },
-        getPlanWithPhases: { invalidate: vi.fn() },
-      },
-      agents: {
-        getActiveFeatureIds: { invalidate: vi.fn() },
-        getSessions: { invalidate: vi.fn() },
-        getFeatureAgentState: { invalidate: vi.fn() },
-      },
-    })),
-  },
-}));
+function wrapper({ children }: { children: React.ReactNode }) {
+  const queryClient = new QueryClient();
+  return React.createElement(QueryClientProvider, { client: queryClient }, children);
+}
 
 type DbUpdateListener = (data: { entity: string; featureId: number }) => void;
 
@@ -47,12 +35,12 @@ describe("useDbUpdated", () => {
   });
 
   it("registers onDbUpdated listener on mount", () => {
-    renderHook(() => useDbUpdated());
+    renderHook(() => useDbUpdated(), { wrapper });
     expect(mockOnDbUpdated).toHaveBeenCalledTimes(1);
   });
 
   it("unregisters listener on unmount", () => {
-    const { unmount } = renderHook(() => useDbUpdated());
+    const { unmount } = renderHook(() => useDbUpdated(), { wrapper });
     unmount();
     expect(mockOffDbUpdated).toHaveBeenCalledTimes(1);
   });
@@ -64,7 +52,7 @@ describe("useDbUpdated", () => {
       configurable: true,
     });
     // Should not throw
-    expect(() => renderHook(() => useDbUpdated())).not.toThrow();
+    expect(() => renderHook(() => useDbUpdated(), { wrapper })).not.toThrow();
   });
 
   it("handles missing window.api gracefully", () => {
@@ -73,6 +61,6 @@ describe("useDbUpdated", () => {
       writable: true,
       configurable: true,
     });
-    expect(() => renderHook(() => useDbUpdated())).not.toThrow();
+    expect(() => renderHook(() => useDbUpdated(), { wrapper })).not.toThrow();
   });
 });

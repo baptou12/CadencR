@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useHotkeys } from "react-hotkeys-hook";
 import { trpc } from "@/trpc";
+import { useGetFeature } from "@/api/generated";
 import { FeatureTopBar } from "@/components/FeatureTopBar";
 import { AgentSession, type AgentSessionHandle } from "@/components/AgentSession";
 import { FeatureWorkflowView } from "@/components/FeatureWorkflowView";
@@ -27,9 +28,7 @@ function FeaturePage() {
   const numericFeatureId = Number(featureId);
   const numericProjectId = Number(projectId);
 
-  const featureQuery = trpc.features.getById.useQuery({
-    id: numericFeatureId,
-  });
+  const featureQuery = useGetFeature(numericFeatureId);
   const feature = featureQuery.data ?? undefined;
 
   if (feature?.type === "session") {
