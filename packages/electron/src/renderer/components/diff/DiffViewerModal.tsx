@@ -11,6 +11,8 @@ import { SendIcon, Loader2Icon } from "lucide-react";
 import { KbdShortcut } from "@/components/KbdShortcut";
 import { DiffViewer } from "./DiffViewer";
 import { trpc } from "@/trpc";
+import { useListDiffComments, useMarkDiffCommentsSent, useDeletePendingDiffComments } from "@/api/generated";
+import { useQueryClient } from "@tanstack/react-query";
 import type { AgentQuestion } from "@/components/AgentQuestionDrawer";
 
 export interface ExecuteAgentState {
@@ -58,16 +60,13 @@ export function DiffViewerModal({
   onStartReviewFixer,
 }: DiffViewerModalProps) {
   const [sending, setSending] = useState(false);
+  const queryClient = useQueryClient();
 
-  const { data: comments = [] } = trpc.diffComments.list.useQuery(
-    { featureId },
-    { enabled: open },
-  );
-  const markAsSent = trpc.diffComments.markAsSent.useMutation();
-  const deletePending = trpc.diffComments.deletePending.useMutation();
+  const { data: comments = [] } = useListDiffComments(featureId, { enabled: open });
+  const markAsSent = useMarkDiffCommentsSent();
+  const deletePending = useDeletePendingDiffComments();
   const sendMessage = trpc.agents.sendMessage.useMutation();
   const submitAnswers = trpc.agents.submitAnswers.useMutation();
-  const utils = trpc.useUtils();
 
   const pendingComments = comments.filter((c) => c.status === "pending");
 
@@ -100,7 +99,7 @@ export function DiffViewerModal({
       } else {
         await markAsSent.mutateAsync({ featureId });
       }
-      await utils.diffComments.list.invalidate({ featureId });
+      await queryClient.invalidateQueries({ queryKey: ["diff-comments", featureId] });
 
       if (isAgentRunning && executeState?.subprocessId) {
         await sendMessage.mutateAsync({
@@ -124,7 +123,7 @@ export function DiffViewerModal({
     } finally {
       setSending(false);
     }
-  }, [pendingComments, sending, featureId, isAgentRunning, hasPendingQuestions, executeState, deletePending, markAsSent, utils.diffComments.list, sendMessage, submitAnswers, onOpenChange, onStartReviewFixer]);
+  }, [pendingComments, sending, featureId, isAgentRunning, hasPendingQuestions, executeState, deletePending, markAsSent, queryClient, sendMessage, submitAnswers, onOpenChange, onStartReviewFixer]);
 
   useEffect(() => {
     if (!open) return;

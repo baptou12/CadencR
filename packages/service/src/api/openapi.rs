@@ -12,6 +12,8 @@ use crate::domain::projects::models as projects_models;
 use crate::domain::projects::routes as projects_routes;
 use crate::domain::features::models as features_models;
 use crate::domain::features::routes as features_routes;
+use crate::domain::diff_comments::models as diff_comments_models;
+use crate::domain::diff_comments::routes as diff_comments_routes;
 
 #[derive(OpenApi)]
 #[openapi(
@@ -70,6 +72,16 @@ use crate::domain::features::routes as features_routes;
         features_routes::get_feature_model_settings_handler,
         features_routes::set_feature_model_setting_handler,
         features_routes::get_working_dir_handler,
+        diff_comments_routes::list_diff_comments_handler,
+        diff_comments_routes::create_diff_comment_handler,
+        diff_comments_routes::update_diff_comment_handler,
+        diff_comments_routes::delete_diff_comment_handler,
+        diff_comments_routes::mark_diff_comments_sent_handler,
+        diff_comments_routes::delete_pending_diff_comments_handler,
+        diff_comments_routes::list_diff_viewed_handler,
+        diff_comments_routes::mark_diff_viewed_handler,
+        diff_comments_routes::unmark_diff_viewed_handler,
+        diff_comments_routes::clear_all_diff_viewed_handler,
     ),
     components(schemas(
         HealthResponse,
@@ -142,6 +154,14 @@ use crate::domain::features::routes as features_routes;
         features_models::SetFeatureModelSettingRequest,
         features_models::OverridePhaseStatusRequest,
         features_routes::SuccessResponse,
+        diff_comments_models::DiffComment,
+        diff_comments_models::CreateDiffCommentRequest,
+        diff_comments_models::UpdateDiffCommentRequest,
+        diff_comments_models::UpdatedResponse,
+        diff_comments_models::DeletedResponse,
+        diff_comments_models::DiffViewedFile,
+        diff_comments_models::MarkViewedRequest,
+        diff_comments_routes::SuccessResponse,
     )),
 )]
 struct ApiDoc;

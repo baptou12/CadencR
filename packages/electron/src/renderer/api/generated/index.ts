@@ -1188,3 +1188,154 @@ export function useSetFeatureModelSetting(
     ...options,
   });
 }
+
+// ---------------------------------------------------------------------------
+// Diff Comments
+// ---------------------------------------------------------------------------
+
+export interface DiffComment {
+  id: number;
+  feature_id: number;
+  file_path: string;
+  line_number: number;
+  side: string;
+  content: string;
+  status: string;
+  created_at: string;
+}
+
+export interface CreateDiffCommentRequest {
+  feature_id: number;
+  file_path: string;
+  line_number: number;
+  side: string;
+  content: string;
+}
+
+export interface UpdateDiffCommentRequest {
+  content: string;
+}
+
+export interface DiffViewedFile {
+  id: number;
+  feature_id: number;
+  file_path: string;
+  blob_sha: string;
+  viewed_at: string;
+}
+
+export interface MarkViewedRequest {
+  feature_id: number;
+  file_path: string;
+  blob_sha: string;
+}
+
+export function useListDiffComments(
+  featureId: number,
+  options?: UseQueryOptions<DiffComment[], ErrorType<unknown>>,
+) {
+  return useQuery<DiffComment[], ErrorType<unknown>>({
+    queryKey: ["diff-comments", featureId],
+    queryFn: () => customInstance({ method: "GET", url: `/api/features/${featureId}/diff-comments` }),
+    ...options,
+  });
+}
+
+export function useCreateDiffComment(
+  options?: UseMutationOptions<DiffComment, ErrorType<unknown>, { featureId: number; filePath: string; lineNumber: number; side: string; content: string }>,
+) {
+  return useMutation<DiffComment, ErrorType<unknown>, { featureId: number; filePath: string; lineNumber: number; side: string; content: string }>({
+    mutationFn: ({ featureId, filePath, lineNumber, side, content }) =>
+      customInstance({ method: "POST", url: `/api/features/${featureId}/diff-comments`, data: { feature_id: featureId, file_path: filePath, line_number: lineNumber, side, content } }),
+    ...options,
+  });
+}
+
+export function useUpdateDiffComment(
+  options?: UseMutationOptions<{ success: boolean }, ErrorType<unknown>, { id: number; content: string }>,
+) {
+  return useMutation<{ success: boolean }, ErrorType<unknown>, { id: number; content: string }>({
+    mutationFn: ({ id, content }) =>
+      customInstance({ method: "PUT", url: `/api/diff-comments/${id}`, data: { content } }),
+    ...options,
+  });
+}
+
+export function useDeleteDiffComment(
+  options?: UseMutationOptions<{ success: boolean }, ErrorType<unknown>, { id: number }>,
+) {
+  return useMutation<{ success: boolean }, ErrorType<unknown>, { id: number }>({
+    mutationFn: ({ id }) =>
+      customInstance({ method: "DELETE", url: `/api/diff-comments/${id}` }),
+    ...options,
+  });
+}
+
+export function useMarkDiffCommentsSent(
+  options?: UseMutationOptions<{ updated: number }, ErrorType<unknown>, { featureId: number }>,
+) {
+  return useMutation<{ updated: number }, ErrorType<unknown>, { featureId: number }>({
+    mutationFn: ({ featureId }) =>
+      customInstance({ method: "PUT", url: `/api/features/${featureId}/diff-comments/sent` }),
+    ...options,
+  });
+}
+
+export function useDeletePendingDiffComments(
+  options?: UseMutationOptions<{ deleted: number }, ErrorType<unknown>, { featureId: number }>,
+) {
+  return useMutation<{ deleted: number }, ErrorType<unknown>, { featureId: number }>({
+    mutationFn: ({ featureId }) =>
+      customInstance({ method: "DELETE", url: `/api/features/${featureId}/diff-comments/pending` }),
+    ...options,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Diff Viewed
+// ---------------------------------------------------------------------------
+
+export function useListDiffViewed(
+  featureId: number,
+  options?: UseQueryOptions<DiffViewedFile[], ErrorType<unknown>>,
+) {
+  return useQuery<DiffViewedFile[], ErrorType<unknown>>({
+    queryKey: ["diff-viewed", featureId],
+    queryFn: () => customInstance({ method: "GET", url: `/api/features/${featureId}/diff-viewed` }),
+    ...options,
+  });
+}
+
+export function useMarkDiffViewed(
+  options?: UseMutationOptions<{ success: boolean }, ErrorType<unknown>, { featureId: number; filePath: string; blobSha: string }>,
+) {
+  return useMutation<{ success: boolean }, ErrorType<unknown>, { featureId: number; filePath: string; blobSha: string }>({
+    mutationFn: ({ featureId, filePath, blobSha }) =>
+      customInstance({ method: "POST", url: `/api/features/${featureId}/diff-viewed`, data: { feature_id: featureId, file_path: filePath, blob_sha: blobSha } }),
+    ...options,
+  });
+}
+
+export function useUnmarkDiffViewed(
+  options?: UseMutationOptions<{ success: boolean }, ErrorType<unknown>, { featureId: number; filePath: string }>,
+) {
+  return useMutation<{ success: boolean }, ErrorType<unknown>, { featureId: number; filePath: string }>({
+    mutationFn: ({ featureId, filePath }) =>
+      customInstance({
+        method: "DELETE",
+        url: `/api/features/${featureId}/diff-viewed/file`,
+        params: { file_path: filePath },
+      }),
+    ...options,
+  });
+}
+
+export function useClearAllDiffViewed(
+  options?: UseMutationOptions<{ deleted: number }, ErrorType<unknown>, { featureId: number }>,
+) {
+  return useMutation<{ deleted: number }, ErrorType<unknown>, { featureId: number }>({
+    mutationFn: ({ featureId }) =>
+      customInstance({ method: "DELETE", url: `/api/features/${featureId}/diff-viewed/files` }),
+    ...options,
+  });
+}

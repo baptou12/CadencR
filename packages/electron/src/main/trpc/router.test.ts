@@ -441,29 +441,4 @@ describe("appRouter - workflowRouter - agent starters", () => {
 
 // git procedures (getStats, getDiff, etc.) have been migrated to the Rust backend.
 // The tRPC git router now only contains openInTerminal and openInZed.
-
-describe("appRouter - diffComments sub-router", () => {
-  const caller = appRouter.createCaller({});
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockDb.prepare.mockImplementation(() => ({
-      get: vi.fn().mockReturnValue(undefined),
-      all: vi.fn().mockReturnValue([]),
-      run: vi.fn().mockReturnValue({ changes: 1, lastInsertRowid: 42 }),
-    }));
-  });
-
-  it("diffComments.create creates a comment", async () => {
-    const result = await caller.diffComments.create({
-      featureId: 1, filePath: "src/a.ts", lineNumber: 5, side: "new", content: "comment",
-    });
-    expect(result).toMatchObject({ featureId: 1, status: "pending" });
-  });
-
-  it("diffComments.list returns empty when no comments", async () => {
-    mockDb.prepare.mockReturnValue({ all: vi.fn().mockReturnValue([]) });
-    const result = await caller.diffComments.list({ featureId: 1 });
-    expect(result).toEqual([]);
-  });
-});
+// diffComments and diffViewed have been migrated to the Rust backend.

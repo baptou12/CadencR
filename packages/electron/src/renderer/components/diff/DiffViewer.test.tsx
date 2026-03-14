@@ -4,11 +4,7 @@ import { render, screen } from "@/test-utils";
 const mocks = vi.hoisted(() => {
   const useGetDiffMock = vi.fn(() => ({ data: undefined as unknown, isLoading: false }));
   const useMutationMock = vi.fn(() => ({ mutate: vi.fn(), mutateAsync: vi.fn() }));
-  const useUtilsMock = vi.fn(() => ({
-    diffComments: { list: { invalidate: vi.fn() } },
-    diffViewed: { list: { invalidate: vi.fn() } },
-  }));
-  return { useGetDiffMock, useMutationMock, useUtilsMock };
+  return { useGetDiffMock, useMutationMock };
 });
 
 vi.mock("@/api/generated", () => ({
@@ -18,30 +14,14 @@ vi.mock("@/api/generated", () => ({
   useGetFileContent: vi.fn(() => ({ data: undefined })),
   useGetFileContentBatch: vi.fn(() => ({ data: undefined })),
   getGetFileContentQueryKey: vi.fn(() => ["git", "file-content"]),
+  useListDiffViewed: vi.fn(() => ({ data: [] })),
+  useMarkDiffViewed: mocks.useMutationMock,
+  useUnmarkDiffViewed: mocks.useMutationMock,
+  useListDiffComments: vi.fn(() => ({ data: [] })),
+  useCreateDiffComment: mocks.useMutationMock,
+  useUpdateDiffComment: mocks.useMutationMock,
+  useDeleteDiffComment: mocks.useMutationMock,
 }));
-
-vi.mock("@/trpc", () => {
-  const React = require("react");
-  return {
-    trpc: {
-      createClient: vi.fn(() => ({})),
-      Provider: ({ children }: { children: unknown }) =>
-        React.createElement(React.Fragment, null, children),
-      useUtils: mocks.useUtilsMock,
-      diffViewed: {
-        list: { useQuery: vi.fn(() => ({ data: [] })) },
-        markViewed: { useMutation: mocks.useMutationMock },
-        unmarkViewed: { useMutation: mocks.useMutationMock },
-      },
-      diffComments: {
-        list: { useQuery: vi.fn(() => ({ data: [] })) },
-        create: { useMutation: mocks.useMutationMock },
-        update: { useMutation: mocks.useMutationMock },
-        delete: { useMutation: mocks.useMutationMock },
-      },
-    },
-  };
-});
 
 vi.mock("@tanstack/react-query", async () => {
   const actual = await vi.importActual("@tanstack/react-query");
