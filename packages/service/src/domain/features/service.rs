@@ -108,6 +108,9 @@ pub async fn delete_feature(
     electron_port: u16,
 ) -> Result<(), AppError> {
     // Try to stop running agents via Electron IPC
+    if electron_port == 0 {
+        tracing::warn!("electron_port is 0 — skipping stop-agents callback for feature {}", id);
+    } else {
     let stop_url = format!("http://localhost:{}/stop-agents/{}", electron_port, id);
     match reqwest::Client::new()
         .post(&stop_url)
@@ -128,6 +131,7 @@ pub async fn delete_feature(
         Err(e) => {
             tracing::warn!("Could not reach Electron stop-agents for feature {}: {}", id, e);
         }
+    }
     }
 
     repository::delete_feature(write_pool, id).await
