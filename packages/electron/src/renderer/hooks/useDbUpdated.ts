@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { trpc } from "@/trpc";
+import { useQueryClient } from "@tanstack/react-query";
 
 interface DbUpdateEvent {
   entity: string;
@@ -12,6 +13,7 @@ interface DbUpdateEvent {
  */
 export function useDbUpdated() {
   const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     const api = (
@@ -27,16 +29,16 @@ export function useDbUpdated() {
     const listener = api.onDbUpdated(({ entity, featureId }) => {
       switch (entity) {
         case "feature":
-          void utils.features.getById.invalidate({ id: featureId });
-          void utils.features.listByProject.invalidate();
+          void queryClient.invalidateQueries({ queryKey: ["features", "detail", featureId] });
+          void queryClient.invalidateQueries({ queryKey: ["features", "list"] });
           break;
         case "phase":
-          void utils.features.getProgress.invalidate({ feature_id: featureId });
-          void utils.features.getPlanWithPhases.invalidate({ feature_id: featureId });
+          void queryClient.invalidateQueries({ queryKey: ["features", "planProgress", featureId] });
+          void queryClient.invalidateQueries({ queryKey: ["features", "plan", featureId] });
           break;
         case "plan":
-          void utils.features.getProgress.invalidate({ feature_id: featureId });
-          void utils.features.getPlanWithPhases.invalidate({ feature_id: featureId });
+          void queryClient.invalidateQueries({ queryKey: ["features", "planProgress", featureId] });
+          void queryClient.invalidateQueries({ queryKey: ["features", "plan", featureId] });
           break;
         case "agent_session":
           void utils.sessions.getActiveFeatureIds.invalidate();
@@ -49,5 +51,5 @@ export function useDbUpdated() {
     return () => {
       api.offDbUpdated(listener as undefined);
     };
-  }, [utils]);
+  }, [utils, queryClient]);
 }

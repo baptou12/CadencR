@@ -14,6 +14,8 @@ import {
   useCreateProject,
   useDeleteProject,
   getListProjectsQueryKey,
+  useCreateFeature,
+  getListFeaturesQueryKey,
 } from "../api/generated";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -39,7 +41,6 @@ export function ProjectTree({
   onSelectFeature,
 }: ProjectTreeProps) {
   const navigate = useNavigate();
-  const utils = trpc.useUtils();
   const queryClient = useQueryClient();
   const projectsQuery = useListProjects();
   const projects = projectsQuery.data ?? [];
@@ -64,9 +65,9 @@ export function ProjectTree({
   // Track which project the create mutation was triggered for
   const pendingProjectIdRef = useRef(0);
 
-  const createFeatureMutation = trpc.features.create.useMutation({
+  const createFeatureMutation = useCreateFeature({
     onSuccess: (feature) => {
-      void utils.features.listByProject.invalidate();
+      void queryClient.invalidateQueries({ queryKey: getListFeaturesQueryKey(pendingProjectIdRef.current) });
       void navigate({
         to: "/projects/$projectId/features/$featureId",
         params: {
@@ -77,9 +78,9 @@ export function ProjectTree({
     },
   });
 
-  const createSessionMutation = trpc.features.createSession.useMutation({
+  const createSessionMutation = useCreateFeature({
     onSuccess: (session) => {
-      void utils.features.listByProject.invalidate();
+      void queryClient.invalidateQueries({ queryKey: getListFeaturesQueryKey(pendingProjectIdRef.current) });
       void navigate({
         to: "/projects/$projectId/features/$featureId",
         params: {
@@ -190,7 +191,7 @@ export function ProjectTree({
                             e.stopPropagation();
                             setExpanded((prev) => ({ ...prev, [project.id]: true }));
                             pendingProjectIdRef.current = project.id;
-                            createSessionMutation.mutate({ project_id: project.id });
+                            createSessionMutation.mutate({ project_id: project.id, type: "session" });
                           }}
                         >
                           New Session

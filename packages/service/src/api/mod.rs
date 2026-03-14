@@ -5,6 +5,7 @@ use crate::app_state::AppState;
 use crate::domain::git::routes::git_router;
 use crate::domain::workspace::routes::workspace_router;
 use crate::domain::projects::routes::projects_router;
+use crate::domain::features::routes::features_router;
 
 pub fn build_router(state: AppState) -> Router {
     Router::new()
@@ -12,5 +13,6 @@ pub fn build_router(state: AppState) -> Router {
         .merge(git_router())
         .merge(workspace_router())
         .merge(projects_router())
+        .merge(features_router())
         .with_state(state)
 }

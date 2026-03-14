@@ -85,6 +85,7 @@ async fn start_test_server() -> TestServer {
     let state = AppState {
         read_pool: pool.clone(),
         write_pool: pool,
+        electron_port: 45679,
     };
 
     let app = api::build_router(state)

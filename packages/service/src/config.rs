@@ -10,4 +10,8 @@ pub struct Config {
     /// Port to listen on (overridable via CADENCE_RUST_PORT env var)
     #[arg(long, default_value = "45678", env = "CADENCE_RUST_PORT")]
     pub port: u16,
+
+    /// Port of the Electron IPC HTTP server (for callbacks like stop-agents)
+    #[arg(long, default_value = "45679", env = "CADENCE_ELECTRON_PORT")]
+    pub electron_port: u16,
 }

@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { trpc } from "@/trpc";
+import { useGetFeaturePrd, useGetFeaturePlan } from "@/api/generated";
 import { FeatureTopBar } from "@/components/FeatureTopBar";
 import {
   AgentSession,
@@ -60,7 +61,7 @@ export function FeatureWorkflowView({
   descriptionRef.current = description;
   const [openAgent, setOpenAgent] = useState<string | null>(null);
 
-  const { data: prdData } = trpc.features.getPrd.useQuery({ feature_id: featureId });
+  const { data: prdData } = useGetFeaturePrd(featureId);
 
   const wf = useWorkflowAgents({
     featureId,
@@ -339,8 +340,8 @@ export function FeatureWorkflowView({
   );
 
   // Query plan phases to determine if all phases are done (for Merge & Archive button)
-  const planWithPhasesQuery = trpc.features.getPlanWithPhases.useQuery(
-    { feature_id: featureId },
+  const planWithPhasesQuery = useGetFeaturePlan(
+    featureId,
     { enabled: feature?.type === "feature" },
   );
   const allPhasesDone = useMemo(() => {

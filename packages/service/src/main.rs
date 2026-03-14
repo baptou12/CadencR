@@ -30,6 +30,7 @@ async fn main() -> anyhow::Result<()> {
     let state = AppState {
         read_pool,
         write_pool,
+        electron_port: config.electron_port,
     };
 
     let app = api::build_router(state).layer(CorsLayer::permissive());

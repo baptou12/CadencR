@@ -8,7 +8,35 @@ vi.mock("react-hotkeys-hook", () => ({
 
 const mockOpenTerminal = vi.fn();
 const mockSetFeatureSetting = vi.fn();
-const mockInvalidate = vi.fn();
+
+vi.mock("@/api/generated", () => ({
+  useGetFeature: vi.fn(() => ({
+    data: {
+      id: 1,
+      title: "My Test Feature",
+      status: "in-progress",
+      type: "feature",
+      project_id: 1,
+      created_at: "2024-01-01",
+    },
+  })),
+  useGetFeaturePlanProgress: vi.fn(() => ({
+    data: { done: 2, total: 5 },
+  })),
+  useGetFeatureSettings: vi.fn(() => ({
+    data: [{ key: "worktree_branch", value: "feature/my-branch" }],
+  })),
+  getGetFeatureSettingsQueryKey: vi.fn((id: number) => ["features", "settings", id]),
+  useSetFeatureSetting: vi.fn(() => ({ mutate: mockSetFeatureSetting })),
+  useGetStats: vi.fn(() => ({
+    data: { commits: 3, insertions: 10, deletions: 2 },
+    refetch: vi.fn(),
+  })),
+  useGetBranch: vi.fn(() => ({ data: { branch: "main" } })),
+  useGetFileBlobShas: vi.fn(() => ({ data: [] })),
+  useGitOpenInTerminal: vi.fn(() => ({ mutate: mockOpenTerminal })),
+  useGitOpenInZed: vi.fn(() => ({ mutate: vi.fn() })),
+}));
 
 vi.mock("@/trpc", () => {
   const React = require("react");
@@ -17,50 +45,12 @@ vi.mock("@/trpc", () => {
       createClient: vi.fn(() => ({})),
       Provider: ({ children }: { children: unknown }) =>
         React.createElement(React.Fragment, null, children),
-      features: {
-        getById: {
-          useQuery: vi.fn(() => ({
-            data: {
-              id: 1,
-              title: "My Test Feature",
-              status: "in-progress",
-              type: "feature",
-              project_id: 1,
-              created_at: "2024-01-01",
-            },
-          })),
-        },
-        getProgress: {
-          useQuery: vi.fn(() => ({
-            data: { done: 2, total: 5 },
-          })),
-        },
-        getSettings: {
-          useQuery: vi.fn(() => ({
-            data: { worktree_branch: "feature/my-branch" },
-          })),
-        },
-        setSetting: {
-          useMutation: vi.fn(() => ({ mutate: mockSetFeatureSetting })),
-        },
-      },
       workflow: {
         startReviewFixer: {
           useMutation: vi.fn(() => ({ mutate: vi.fn() })),
         },
       },
-      sessions: {
-        getFeatureAgentState: { invalidate: vi.fn() },
-      },
       git: {
-        getStats: {
-          useQuery: vi.fn(() => ({
-            data: { commits: 3, insertions: 10, deletions: 2 },
-          })),
-        },
-        getBranch: {
-          useQuery: vi.fn(() => ({ data: "main" })),
-        },
         openInTerminal: {
           useMutation: vi.fn(() => ({ mutate: mockOpenTerminal })),
         },
@@ -69,9 +59,6 @@ vi.mock("@/trpc", () => {
         },
       },
       useContext: vi.fn(() => ({
-        features: {
-          getSettings: { invalidate: mockInvalidate },
-        },
         sessions: {
           getFeatureAgentState: { invalidate: vi.fn() },
         },

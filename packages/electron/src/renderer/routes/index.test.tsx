@@ -29,6 +29,12 @@ vi.mock("@tanstack/react-router", () => ({
 
 vi.mock("react-hotkeys-hook", () => ({ useHotkeys: vi.fn() }));
 
+vi.mock("../api/generated", () => ({
+  useListProjects: () => mocks.mockProjectsListQuery(),
+  getListProjectsQueryKey: vi.fn(() => ["projects"]),
+  useListFeatures: () => mocks.mockFeaturesListQuery(),
+}));
+
 vi.mock("../trpc", () => {
   const React = require("react");
   return {
@@ -37,12 +43,6 @@ vi.mock("../trpc", () => {
       Provider: ({ children }: { children: unknown }) =>
         React.createElement(React.Fragment, null, children),
       useUtils: vi.fn(() => ({})),
-      projects: {
-        list: { useQuery: mocks.mockProjectsListQuery },
-      },
-      features: {
-        listByProject: { useQuery: mocks.mockFeaturesListQuery },
-      },
     },
   };
 });

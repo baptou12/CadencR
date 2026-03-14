@@ -27,6 +27,9 @@ import {
   useListProjects,
   useCreateProject,
   getListProjectsQueryKey,
+  useListFeatures,
+  getListFeaturesQueryKey,
+  useCreateFeature,
 } from "../api/generated";
 
 interface CommandPaletteProps {
@@ -47,9 +50,7 @@ function ProjectFeatureGroup({
   projectName: string;
   onSelect: (projectId: number, featureId: number) => void;
 }) {
-  const featuresQuery = trpc.features.listByProject.useQuery({
-    project_id: projectId,
-  });
+  const featuresQuery = useListFeatures(projectId);
 
   if (!featuresQuery.data?.length) return null;
 
@@ -84,7 +85,6 @@ export function CommandPalette({
   const [mode, setMode] = useState<Mode>("commands");
   const [search, setSearch] = useState("");
   const navigate = useNavigate();
-  const utils = trpc.useUtils();
   const queryClient = useQueryClient();
 
   const projectsQuery = useListProjects();
@@ -96,9 +96,9 @@ export function CommandPalette({
     },
   });
 
-  const createFeatureMutation = trpc.features.create.useMutation({
+  const createFeatureMutation = useCreateFeature({
     onSuccess: (result, variables) => {
-      void utils.features.listByProject.invalidate();
+      void queryClient.invalidateQueries({ queryKey: getListFeaturesQueryKey(variables.project_id) });
       void navigate({
         to: "/projects/$projectId/features/$featureId",
         params: {
@@ -109,9 +109,9 @@ export function CommandPalette({
     },
   });
 
-  const createSessionMutation = trpc.features.createSession.useMutation({
+  const createSessionMutation = useCreateFeature({
     onSuccess: (session, variables) => {
-      void utils.features.listByProject.invalidate();
+      void queryClient.invalidateQueries({ queryKey: getListFeaturesQueryKey(variables.project_id) });
       void navigate({
         to: "/projects/$projectId/features/$featureId",
         params: {
@@ -166,7 +166,7 @@ export function CommandPalette({
           title: "Untitled Feature",
         });
       } else if (mode === "pick-project-session") {
-        createSessionMutation.mutate({ project_id: projectId });
+        createSessionMutation.mutate({ project_id: projectId, type: "session" });
       }
       close();
     },
@@ -295,6 +295,7 @@ export function CommandPalette({
               if (activeProjectId != null) {
                 createSessionMutation.mutate({
                   project_id: activeProjectId,
+                  type: "session",
                 });
                 close();
               } else {

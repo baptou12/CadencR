@@ -37,6 +37,19 @@ vi.mock("../api/generated", () => ({
     },
   })),
   getListProjectsQueryKey: vi.fn(() => ["projects"]),
+  useListFeatures: vi.fn(() => ({
+    data: [{ id: 10, title: "Feature One", type: "feature", status: "draft", project_id: 1 }],
+  })),
+  useCreateFeature: vi.fn((opts?: { onSuccess?: (r: unknown) => void }) => ({
+    mutate: (data: unknown) => {
+      mockCreateFeature(data);
+      opts?.onSuccess?.({ id: 99 });
+    },
+  })),
+  useDeleteFeature: vi.fn(() => ({ mutate: vi.fn() })),
+  useUpdateFeatureStatus: vi.fn(() => ({ mutate: vi.fn() })),
+  getListFeaturesQueryKey: vi.fn((id: number) => ["features", "list", id]),
+  useGetFeatureEmpty: vi.fn(() => ({ data: { empty: false } })),
 }));
 
 vi.mock("@/trpc", () => {
@@ -54,36 +67,12 @@ vi.mock("@/trpc", () => {
           })),
         },
       },
-      features: {
-        create: {
-          useMutation: vi.fn(() => ({ mutate: mockCreateFeature })),
-        },
-        createSession: {
-          useMutation: vi.fn(() => ({ mutate: mockCreateSession })),
-        },
-        listByProject: {
-          useQuery: vi.fn(() => ({
-            data: [{ id: 10, title: "Feature One", type: "feature", status: "draft", project_id: 1 }],
-          })),
-        },
-        updateStatus: {
-          useMutation: vi.fn(() => ({ mutate: vi.fn() })),
-        },
-        delete: {
-          useMutation: vi.fn(() => ({ mutate: vi.fn() })),
-        },
-        isEmpty: {
-          useQuery: vi.fn(() => ({ data: { empty: false } })),
-        },
-      },
       sessions: {
         getFeatureTurnStates: {
           useQuery: vi.fn(() => ({ data: {} })),
         },
       },
-      useUtils: vi.fn(() => ({
-        features: { listByProject: { invalidate: mockInvalidate } },
-      })),
+      useUtils: vi.fn(() => ({})),
     },
   };
 });

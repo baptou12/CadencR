@@ -8,7 +8,12 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TerminalIcon, SettingsIcon, GitCompareArrowsIcon, BrainCircuitIcon, CpuIcon } from "lucide-react";
 import { trpc } from "@/trpc";
-import { useGetStats, useGetBranch } from "@/api/generated";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  useGetStats, useGetBranch,
+  useGetFeature, useGetFeaturePlanProgress,
+  useGetFeatureSettings, getGetFeatureSettingsQueryKey, useSetFeatureSetting,
+} from "@/api/generated";
 import { DiffViewerModal, type ExecuteAgentState } from "./diff/DiffViewerModal";
 import { ModelSelector } from "./ModelSelector";
 import zedLogo from "../../../assets/zed-logo.png";
@@ -33,15 +38,14 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", executeS
   const isSession = mode === "session";
   const [diffOpen, setDiffOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const queryClient = useQueryClient();
 
-  const { data: feature } = trpc.features.getById.useQuery({ id: featureId });
-  const { data: progress } = trpc.features.getProgress.useQuery(
-    { feature_id: featureId },
-    { enabled: !isSession },
-  );
-  const { data: featureSettings } = trpc.features.getSettings.useQuery({
-    feature_id: featureId,
-  });
+  const { data: feature } = useGetFeature(featureId);
+  const { data: progress } = useGetFeaturePlanProgress(featureId, { enabled: !isSession });
+  const { data: featureSettingsData } = useGetFeatureSettings(featureId);
+  const featureSettingsMap = featureSettingsData ? Object.fromEntries(featureSettingsData.map(s => [s.key, s.value])) : {};
+  const featureSettings = { ...featureSettingsMap };
+
   const { data: gitStats, refetch: refetchStats } = useGetStats(
     { featureId, mode: isSession ? "worktree" : "branch" },
     { refetchInterval: 5 * 60 * 1000 },
@@ -103,9 +107,9 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", executeS
     [featureId, projectId, startReviewFixer],
   );
 
-  const setFeatureSetting = trpc.features.setSetting.useMutation({
+  const setFeatureSetting = useSetFeatureSetting({
     onSuccess: () => {
-      utils.features.getSettings.invalidate({ feature_id: featureId });
+      queryClient.invalidateQueries({ queryKey: getGetFeatureSettingsQueryKey(featureId) });
     },
   });
   const worktreeBranch = featureSettings?.worktree_branch;
@@ -208,7 +212,7 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", executeS
                     value={featureSettings?.agent_autonomy ?? ""}
                     onValueChange={(value) =>
                       setFeatureSetting.mutate({
-                        feature_id: featureId,
+                        featureId,
                         key: "agent_autonomy",
                         value,
                       })
@@ -244,7 +248,7 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", executeS
                     checked={(featureSettings?.parallel_execution ?? "") === "true" || featureSettings?.parallel_execution == null}
                     onCheckedChange={(checked) =>
                       setFeatureSetting.mutate({
-                        feature_id: featureId,
+                        featureId,
                         key: "parallel_execution",
                         value: checked ? "true" : "false",
                       })

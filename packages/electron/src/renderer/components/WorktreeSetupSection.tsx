@@ -7,8 +7,7 @@ import {
   GitBranchIcon,
   RefreshCwIcon,
 } from "lucide-react";
-import { trpc } from "@/trpc";
-import { useRetryWorktreeSetup } from "@/api/generated";
+import { useRetryWorktreeSetup, useGetFeatureSettings } from "@/api/generated";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -76,9 +75,10 @@ export function WorktreeSetupSection({
   featureId: number;
   projectId: number;
 }) {
-  const { data: settings } = trpc.features.getSettings.useQuery({
-    feature_id: featureId,
-  });
+  const { data: settingsArray } = useGetFeatureSettings(featureId);
+  const settings = settingsArray
+    ? Object.fromEntries(settingsArray.map((s) => [s.key, s.value]))
+    : undefined;
 
   const retryMutation = useRetryWorktreeSetup();
 

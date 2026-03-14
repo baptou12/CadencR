@@ -878,3 +878,313 @@ export function useSetProjectModelSetting(
     ...options,
   });
 }
+
+// ---------------------------------------------------------------------------
+// Features types
+// ---------------------------------------------------------------------------
+
+export interface Feature {
+  id: number;
+  project_id: number;
+  title: string;
+  type: string;
+  status: string;
+  prd: string | null;
+  workflow_step: string | null;
+  workflow_config: string | null;
+  model_plan: string | null;
+  model_prd: string | null;
+  model_execute: string | null;
+  model_risk: string | null;
+  model_review: string | null;
+  "model_review-fixer": string | null;
+  model_session: string | null;
+  model_qa: string | null;
+  model_retro: string | null;
+  agent_autonomy: string | null;
+  parallel_execution: number | null;
+  created_at: string;
+}
+
+export interface Phase {
+  id: number;
+  plan_id: number;
+  step_number: number;
+  title: string;
+  status: string;
+  complexity: number | string | null;
+  commit_message: string | null;
+  prompt: string | null;
+  phase_type: string | null;
+  implementation_notes: string | null;
+  deviations: string | null;
+  order_index: number | null;
+}
+
+export interface Plan {
+  id: number;
+  feature_id: number;
+  title: string | null;
+  status: string | null;
+  summary: string | null;
+  context: string | null;
+  clarifications: string | null;
+  completion_conditions: string | null;
+  created_at: string;
+}
+
+export interface PlanWithPhases extends Plan {
+  phases: Phase[];
+}
+
+export interface PlanProgress {
+  total: number;
+  done: number;
+}
+
+export interface FeatureSetting {
+  key: string;
+  value: string;
+}
+
+export interface FeatureModelSettings {
+  plan: string;
+  prd: string;
+  execute: string;
+  risk: string;
+  review: string;
+  "review-fixer": string;
+  session: string;
+  qa: string;
+  retro: string;
+}
+
+// ---------------------------------------------------------------------------
+// Features query key helpers
+// ---------------------------------------------------------------------------
+
+export function getListFeaturesQueryKey(projectId: number) {
+  return ["features", "list", projectId] as const;
+}
+
+export function getGetFeatureQueryKey(id: number) {
+  return ["features", "detail", id] as const;
+}
+
+export function getGetFeaturePrdQueryKey(id: number) {
+  return ["features", "prd", id] as const;
+}
+
+export function getGetFeatureEmptyQueryKey(id: number) {
+  return ["features", "empty", id] as const;
+}
+
+export function getGetFeaturePlanQueryKey(id: number) {
+  return ["features", "plan", id] as const;
+}
+
+export function getGetFeaturePlanProgressQueryKey(id: number) {
+  return ["features", "planProgress", id] as const;
+}
+
+export function getGetFeatureSettingsQueryKey(id: number) {
+  return ["features", "settings", id] as const;
+}
+
+export function getGetFeatureModelSettingsQueryKey(id: number) {
+  return ["features", "modelSettings", id] as const;
+}
+
+export function getGetFeatureWorkingDirQueryKey(id: number, projectId: number) {
+  return ["features", "workingDir", id, projectId] as const;
+}
+
+// ---------------------------------------------------------------------------
+// Features query hooks
+// ---------------------------------------------------------------------------
+
+export function useListFeatures(
+  projectId: number,
+  options?: Omit<UseQueryOptions<Feature[], ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<Feature[], ErrorType<unknown>>({
+    queryKey: getListFeaturesQueryKey(projectId),
+    queryFn: () => customInstance({ method: "GET", url: `/api/features?project_id=${projectId}` }),
+    ...options,
+  });
+}
+
+export function useGetFeature(
+  id: number,
+  options?: Omit<UseQueryOptions<Feature | null, ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<Feature | null, ErrorType<unknown>>({
+    queryKey: getGetFeatureQueryKey(id),
+    queryFn: () => customInstance({ method: "GET", url: `/api/features/${id}` }),
+    ...options,
+  });
+}
+
+export function useGetFeaturePrd(
+  id: number,
+  options?: Omit<UseQueryOptions<{ prd: string | null }, ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<{ prd: string | null }, ErrorType<unknown>>({
+    queryKey: getGetFeaturePrdQueryKey(id),
+    queryFn: () => customInstance({ method: "GET", url: `/api/features/${id}/prd` }),
+    ...options,
+  });
+}
+
+export function useGetFeatureEmpty(
+  id: number,
+  options?: Omit<UseQueryOptions<{ empty: boolean }, ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<{ empty: boolean }, ErrorType<unknown>>({
+    queryKey: getGetFeatureEmptyQueryKey(id),
+    queryFn: () => customInstance({ method: "GET", url: `/api/features/${id}/empty` }),
+    ...options,
+  });
+}
+
+export function useGetFeaturePlan(
+  id: number,
+  options?: Omit<UseQueryOptions<PlanWithPhases | null, ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<PlanWithPhases | null, ErrorType<unknown>>({
+    queryKey: getGetFeaturePlanQueryKey(id),
+    queryFn: () => customInstance({ method: "GET", url: `/api/features/${id}/plan` }),
+    ...options,
+  });
+}
+
+export function useGetFeaturePlanProgress(
+  id: number,
+  options?: Omit<UseQueryOptions<PlanProgress, ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<PlanProgress, ErrorType<unknown>>({
+    queryKey: getGetFeaturePlanProgressQueryKey(id),
+    queryFn: () => customInstance({ method: "GET", url: `/api/features/${id}/plan/progress` }),
+    ...options,
+  });
+}
+
+export function useGetFeatureSettings(
+  id: number,
+  options?: Omit<UseQueryOptions<FeatureSetting[], ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<FeatureSetting[], ErrorType<unknown>>({
+    queryKey: getGetFeatureSettingsQueryKey(id),
+    queryFn: () => customInstance({ method: "GET", url: `/api/features/${id}/settings` }),
+    ...options,
+  });
+}
+
+export function useGetFeatureModelSettings(
+  id: number,
+  options?: Omit<UseQueryOptions<FeatureModelSettings, ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<FeatureModelSettings, ErrorType<unknown>>({
+    queryKey: getGetFeatureModelSettingsQueryKey(id),
+    queryFn: () => customInstance({ method: "GET", url: `/api/features/${id}/model-settings` }),
+    ...options,
+  });
+}
+
+export function useGetFeatureWorkingDir(
+  id: number,
+  projectId: number,
+  options?: Omit<UseQueryOptions<{ path: string | null }, ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<{ path: string | null }, ErrorType<unknown>>({
+    queryKey: getGetFeatureWorkingDirQueryKey(id, projectId),
+    queryFn: () => customInstance({ method: "GET", url: `/api/features/${id}/working-dir?project_id=${projectId}` }),
+    ...options,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Features mutation hooks
+// ---------------------------------------------------------------------------
+
+export function useCreateFeature(
+  options?: UseMutationOptions<{ id: number }, ErrorType<unknown>, { project_id: number; title?: string; type?: string }>,
+) {
+  return useMutation<{ id: number }, ErrorType<unknown>, { project_id: number; title?: string; type?: string }>({
+    mutationFn: (body) => customInstance({ method: "POST", url: "/api/features", data: body }),
+    ...options,
+  });
+}
+
+export function useDeleteFeature(
+  options?: UseMutationOptions<{ success: boolean }, ErrorType<unknown>, { id: number }>,
+) {
+  return useMutation<{ success: boolean }, ErrorType<unknown>, { id: number }>({
+    mutationFn: ({ id }) => customInstance({ method: "DELETE", url: `/api/features/${id}` }),
+    ...options,
+  });
+}
+
+export function useUpdateFeatureStatus(
+  options?: UseMutationOptions<{ success: boolean }, ErrorType<unknown>, { id: number; status: string }>,
+) {
+  return useMutation<{ success: boolean }, ErrorType<unknown>, { id: number; status: string }>({
+    mutationFn: ({ id, status }) =>
+      customInstance({ method: "PUT", url: `/api/features/${id}/status`, data: { status } }),
+    ...options,
+  });
+}
+
+export function useUpdateFeatureTitle(
+  options?: UseMutationOptions<{ success: boolean }, ErrorType<unknown>, { id: number; title: string }>,
+) {
+  return useMutation<{ success: boolean }, ErrorType<unknown>, { id: number; title: string }>({
+    mutationFn: ({ id, title }) =>
+      customInstance({ method: "PUT", url: `/api/features/${id}/title`, data: { title } }),
+    ...options,
+  });
+}
+
+export function useResetPhase(
+  options?: UseMutationOptions<{ success: boolean }, ErrorType<unknown>, { phaseId: number }>,
+) {
+  return useMutation<{ success: boolean }, ErrorType<unknown>, { phaseId: number }>({
+    mutationFn: ({ phaseId }) =>
+      customInstance({ method: "PUT", url: `/api/phases/${phaseId}/reset`, data: {} }),
+    ...options,
+  });
+}
+
+export function useOverridePhaseStatus(
+  options?: UseMutationOptions<{ success: boolean }, ErrorType<unknown>, { phaseId: number; status: string }>,
+) {
+  return useMutation<{ success: boolean }, ErrorType<unknown>, { phaseId: number; status: string }>({
+    mutationFn: ({ phaseId, status }) =>
+      customInstance({ method: "PUT", url: `/api/phases/${phaseId}/status`, data: { status } }),
+    ...options,
+  });
+}
+
+export function useSetFeatureSetting(
+  options?: UseMutationOptions<{ success: boolean }, ErrorType<unknown>, { featureId: number; key: string; value: string }>,
+) {
+  return useMutation<{ success: boolean }, ErrorType<unknown>, { featureId: number; key: string; value: string }>({
+    mutationFn: ({ featureId, key, value }) =>
+      customInstance({ method: "PUT", url: `/api/features/${featureId}/settings`, data: { key, value } }),
+    ...options,
+  });
+}
+
+export function useSetFeatureModelSetting(
+  options?: UseMutationOptions<{ success: boolean }, ErrorType<unknown>, { featureId: number; modelType: string; model: string }>,
+) {
+  return useMutation<{ success: boolean }, ErrorType<unknown>, { featureId: number; modelType: string; model: string }>({
+    mutationFn: ({ featureId, modelType, model }) =>
+      customInstance({
+        method: "PUT",
+        url: `/api/features/${featureId}/model-settings`,
+        data: { model_type: modelType, model },
+      }),
+    ...options,
+  });
+}

@@ -16,14 +16,17 @@ import {
   FolderIcon,
   ArchiveIcon,
 } from "lucide-react";
-import { trpc } from "@/trpc";
 import {
   useCheckMergeConflicts,
   useHasUncommittedChanges,
   useMergeFeatureBranch,
   useDeleteFeatureBranch,
   useDeleteWorktree,
+  useUpdateFeatureStatus,
+  getListFeaturesQueryKey,
+  getGetFeatureQueryKey,
 } from "@/api/generated";
+import { useQueryClient } from "@tanstack/react-query";
 
 interface MergeArchiveDialogProps {
   open: boolean;
@@ -38,7 +41,7 @@ export function MergeArchiveDialog({
   projectId,
   featureId,
 }: MergeArchiveDialogProps) {
-  const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
 
   // Post-merge state
   const [merged, setMerged] = useState(false);
@@ -119,11 +122,11 @@ export function MergeArchiveDialog({
     },
   });
 
-  const archiveMutation = trpc.features.updateStatus.useMutation({
-    onSuccess: () => {
+  const archiveMutation = useUpdateFeatureStatus({
+    onSuccess: (_data, variables) => {
       setArchived(true);
-      void utils.features.listByProject.invalidate();
-      void utils.features.getById.invalidate();
+      void queryClient.invalidateQueries({ queryKey: getListFeaturesQueryKey(projectId) });
+      void queryClient.invalidateQueries({ queryKey: getGetFeatureQueryKey(variables.id) });
     },
   });
 

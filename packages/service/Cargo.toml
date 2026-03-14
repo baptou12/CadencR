@@ -20,8 +20,8 @@ regex-lite = "0.1"
 dirs = "6"
 rand = "0.8"
 futures = "0.3"
+reqwest = { version = "0.12", features = ["json"] }
 
 [dev-dependencies]
-reqwest = { version = "0.12", features = ["json"] }
 tempfile = "3"
 assert-json-diff = "2"

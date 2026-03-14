@@ -14,6 +14,9 @@ import {
   useGetProjectModelSettings,
   useSetProjectModelSetting,
   getGetProjectModelSettingsQueryKey,
+  useGetFeatureModelSettings,
+  getGetFeatureModelSettingsQueryKey,
+  useSetFeatureModelSetting,
 } from "../api/generated";
 
 const AGENT_TYPES = ["plan", "prd", "execute", "risk", "review", "review-fixer", "session", "qa", "retro"] as const;
@@ -40,7 +43,6 @@ interface ModelSelectorProps {
 }
 
 export function ModelSelector({ level, projectId, featureId }: ModelSelectorProps) {
-  const utils = trpc.useUtils();
   const queryClient = useQueryClient();
   const availableModels = trpc.workspace.getAvailableModels.useQuery();
   const models = availableModels.data ?? [];
@@ -51,10 +53,9 @@ export function ModelSelector({ level, projectId, featureId }: ModelSelectorProp
   const projectSettings = useGetProjectModelSettings(projectId ?? 0, {
     enabled: level === "project" && projectId != null,
   });
-  const featureSettings = trpc.features.getModelSettings.useQuery(
-    { featureId: featureId! },
-    { enabled: level === "feature" && featureId != null },
-  );
+  const featureSettings = useGetFeatureModelSettings(featureId ?? 0, {
+    enabled: level === "feature" && featureId != null,
+  });
 
   const parentGlobalSettings = useGetWorkspaceModelSettings({
     enabled: level !== "global",
@@ -69,8 +70,8 @@ export function ModelSelector({ level, projectId, featureId }: ModelSelectorProp
   const projectMutation = useSetProjectModelSetting({
     onSuccess: () => queryClient.invalidateQueries({ queryKey: getGetProjectModelSettingsQueryKey(projectId ?? 0) }),
   });
-  const featureMutation = trpc.features.setModelSetting.useMutation({
-    onSuccess: () => utils.features.getModelSettings.invalidate(),
+  const featureMutation = useSetFeatureModelSetting({
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: getGetFeatureModelSettingsQueryKey(featureId ?? 0) }),
   });
 
   const settings =
@@ -107,7 +108,7 @@ export function ModelSelector({ level, projectId, featureId }: ModelSelectorProp
     } else if (level === "project" && projectId != null) {
       projectMutation.mutate({ projectId, modelType: agentType, model: modelId });
     } else if (level === "feature" && featureId != null) {
-      featureMutation.mutate({ featureId, agentType, modelId });
+      featureMutation.mutate({ featureId: featureId!, modelType: agentType, model: modelId });
     }
     setOpenFor(null);
   }

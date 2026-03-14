@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { router, publicProcedure } from "./trpc";
 import { projectsRouter } from "./projects";
-import { featuresRouter } from "./features";
 import { workspaceRouter } from "./workspace";
 import { agentsRouter } from "./agents";
 import { workflowRouter } from "./workflow";
@@ -18,7 +17,6 @@ export const appRouter = router({
   }),
   workspace: workspaceRouter,
   projects: projectsRouter,
-  features: featuresRouter,
   agents: agentsRouter,
   workflow: workflowRouter,
   sessions: sessionsRouter,

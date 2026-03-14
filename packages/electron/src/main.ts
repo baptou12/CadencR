@@ -10,6 +10,9 @@ import { SessionPersistence } from "./main/effect/services/SessionPersistence";
 import { resumeInProgressFeatures } from "./main/agents/resume-features";
 import { fetchAvailableModels } from "./main/agents/available-models";
 import { startRustBackend, stopRustBackend, getRustBackendPort } from "./main/rust-backend";
+import { startElectronIpcServer, stopElectronIpcServer } from "./main/electron-ipc-server";
+
+const ELECTRON_IPC_PORT = 45679;
 
 // Register the AppRuntime singleton so convenience wrappers (effect-helpers.ts)
 // can access it without creating circular module dependencies.
@@ -89,10 +92,17 @@ app.on("ready", async () => {
   await AppRuntime.runPromise(SessionPersistence.restoreSessionMap());
   resumeInProgressFeatures();
 
-  // Start Rust backend for git operations
+  // Start Electron IPC server (for Rust → Electron callbacks)
+  try {
+    await startElectronIpcServer(ELECTRON_IPC_PORT);
+  } catch (err) {
+    console.error("[electron-ipc-server] Failed to start:", err);
+  }
+
+  // Start Rust backend for git/features operations
   const dbPath = path.join(app.getPath("userData"), "cadence.db");
   try {
-    await startRustBackend(dbPath);
+    await startRustBackend(dbPath, undefined, ELECTRON_IPC_PORT);
   } catch (err) {
     console.error("[rust-backend] Failed to start:", err);
   }
@@ -139,9 +149,11 @@ app.on("before-quit", (e) => {
   } else if (!isQuitting) {
     isQuitting = true;
     e.preventDefault();
-    // Stop Rust backend, then dispose Effect runtime.
-    stopRustBackend()
-      .catch((err) => console.error("[rust-backend] Error stopping:", err))
+    // Stop Rust backend and IPC server, then dispose Effect runtime.
+    Promise.all([
+      stopRustBackend().catch((err) => console.error("[rust-backend] Error stopping:", err)),
+      stopElectronIpcServer().catch((err) => console.error("[electron-ipc-server] Error stopping:", err)),
+    ])
       .then(() => AppRuntime.dispose())
       .finally(() => {
         app.quit();

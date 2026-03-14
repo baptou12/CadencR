@@ -18,6 +18,14 @@ import {
 } from "@/components/ui/resizable";
 import type { PanelSize } from "react-resizable-panels";
 import { trpc } from "@/trpc";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  useCreateFeature,
+  useDeleteFeature,
+  useUpdateFeatureStatus,
+  type Feature,
+} from "@/api/generated";
+import { customInstance } from "@/api/client";
 import { getActiveFocusZone } from "@/lib/focus-zones";
 import { CommandPalette } from "@/components/CommandPalette";
 import { FocusRing } from "@/components/FocusRing";
@@ -74,15 +82,15 @@ function RootLayout() {
   // Extract active feature ID from the current route
   const activeFeatureId = routeParams[2] ? Number(routeParams[2]) : null;
 
-  const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
 
   const invalidateFeatures = useCallback(() => {
-    void utils.features.listByProject.invalidate();
-    void utils.features.getById.invalidate();
-    void utils.features.getProgress.invalidate();
-  }, [utils]);
+    void queryClient.invalidateQueries({ queryKey: ["features", "list"] });
+    void queryClient.invalidateQueries({ queryKey: ["features", "detail"] });
+    void queryClient.invalidateQueries({ queryKey: ["features", "planProgress"] });
+  }, [queryClient]);
 
-  const createFeatureMutation = trpc.features.create.useMutation({
+  const createFeatureMutation = useCreateFeature({
     onSuccess: (result) => {
       invalidateFeatures();
       if (activeProjectId != null) {
@@ -97,7 +105,7 @@ function RootLayout() {
     },
   });
 
-  const createSessionMutation = trpc.features.createSession.useMutation({
+  const createSessionMutation = useCreateFeature({
     onSuccess: (session) => {
       invalidateFeatures();
       if (activeProjectId != null) {
@@ -114,7 +122,7 @@ function RootLayout() {
 
   // Track which feature to navigate to after deletion
   const deleteNavTargetRef = useRef<number | null>(null);
-  const deleteFeatureMutation = trpc.features.delete.useMutation({
+  const deleteFeatureMutation = useDeleteFeature({
     onSuccess: () => {
       invalidateFeatures();
       if (activeProjectId == null) return;
@@ -135,7 +143,7 @@ function RootLayout() {
   });
 
   const archiveNavTargetRef = useRef<number | null>(null);
-  const archiveFeatureMutation = trpc.features.updateStatus.useMutation({
+  const archiveFeatureMutation = useUpdateFeatureStatus({
     onSuccess: () => {
       invalidateFeatures();
       if (activeProjectId == null) return;
@@ -243,7 +251,7 @@ function RootLayout() {
     (e) => {
       e.preventDefault();
       if (activeProjectId == null) return;
-      createSessionMutation.mutate({ project_id: activeProjectId });
+      createSessionMutation.mutate({ project_id: activeProjectId, type: "session" });
     },
     { enableOnFormTags: true },
   );
@@ -255,19 +263,19 @@ function RootLayout() {
       e.preventDefault();
       if (activeProjectId == null || activeFeatureId == null) return;
       try {
-        const features = await utils.features.listByProject.fetch({ project_id: activeProjectId });
-        const feature = features.find((f: { id: number }) => f.id === activeFeatureId);
+        const features = await customInstance<Feature[]>({ method: "GET", url: `/api/features?project_id=${activeProjectId}` });
+        const feature = features.find((f) => f.id === activeFeatureId);
         if (!feature) return;
         // Pre-compute navigation target
-        const idx = features.findIndex((f: { id: number }) => f.id === activeFeatureId);
-        const remaining = features.filter((f: { id: number }) => f.id !== activeFeatureId);
+        const idx = features.findIndex((f) => f.id === activeFeatureId);
+        const remaining = features.filter((f) => f.id !== activeFeatureId);
         const target = idx > 0 ? features[idx - 1] : remaining[0] ?? null;
         if (feature.status === "archived") {
           deleteNavTargetRef.current = target?.id ?? null;
           setConfirmAction("delete");
         } else {
           // Check if feature is empty — if so, skip archive and go straight to delete
-          const { empty } = await utils.features.isEmpty.fetch({ id: activeFeatureId });
+          const { empty } = await customInstance<{ empty: boolean }>({ method: "GET", url: `/api/features/${activeFeatureId}/empty` });
           if (empty) {
             deleteNavTargetRef.current = target?.id ?? null;
             setConfirmAction("delete");

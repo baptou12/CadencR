@@ -10,6 +10,8 @@ use crate::domain::workspace::models as workspace_models;
 use crate::domain::workspace::routes as workspace_routes;
 use crate::domain::projects::models as projects_models;
 use crate::domain::projects::routes as projects_routes;
+use crate::domain::features::models as features_models;
+use crate::domain::features::routes as features_routes;
 
 #[derive(OpenApi)]
 #[openapi(
@@ -51,6 +53,23 @@ use crate::domain::projects::routes as projects_routes;
         projects_routes::set_project_setting_handler,
         projects_routes::get_project_model_settings_handler,
         projects_routes::set_project_model_setting_handler,
+        features_routes::list_features_handler,
+        features_routes::create_feature_handler,
+        features_routes::get_feature_handler,
+        features_routes::delete_feature_handler,
+        features_routes::update_feature_status_handler,
+        features_routes::update_feature_title_handler,
+        features_routes::get_prd_handler,
+        features_routes::is_empty_handler,
+        features_routes::get_plan_with_phases_handler,
+        features_routes::get_plan_progress_handler,
+        features_routes::reset_phase_handler,
+        features_routes::override_phase_status_handler,
+        features_routes::get_feature_settings_handler,
+        features_routes::set_feature_setting_handler,
+        features_routes::get_feature_model_settings_handler,
+        features_routes::set_feature_model_setting_handler,
+        features_routes::get_working_dir_handler,
     ),
     components(schemas(
         HealthResponse,
@@ -105,6 +124,24 @@ use crate::domain::projects::routes as projects_routes;
         projects_models::ProjectModelSettings,
         projects_models::SetProjectModelSettingRequest,
         projects_routes::SuccessResponse,
+        features_models::Feature,
+        features_models::CreateFeatureRequest,
+        features_models::CreateFeatureResponse,
+        features_models::UpdateStatusRequest,
+        features_models::UpdateTitleRequest,
+        features_models::Plan,
+        features_models::Phase,
+        features_models::PlanWithPhases,
+        features_models::PlanProgress,
+        features_models::PrdResponse,
+        features_models::IsEmptyResponse,
+        features_models::WorkingDirResponse,
+        features_models::FeatureSetting,
+        features_models::SetFeatureSettingRequest,
+        features_models::FeatureModelSettings,
+        features_models::SetFeatureModelSettingRequest,
+        features_models::OverridePhaseStatusRequest,
+        features_routes::SuccessResponse,
     )),
 )]
 struct ApiDoc;
