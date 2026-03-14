@@ -71,7 +71,6 @@ export function FeatureWorkflowView({
     getDescription: () => descriptionRef.current || prdData?.prd || "",
   });
   const contextUsageMap = useContextUsage(featureId, wf.sessionEntries);
-  const utils = trpc.useUtils();
   const queryClient = useQueryClient();
 
   // --- Model settings for inline model switcher ---

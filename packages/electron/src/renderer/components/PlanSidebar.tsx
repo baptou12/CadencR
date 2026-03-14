@@ -1,6 +1,5 @@
 import { useRef, useState, useCallback } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
-import { trpc } from "@/trpc";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useGetFeaturePlan, getGetFeaturePlanQueryKey,
@@ -33,7 +32,6 @@ export function PlanSidebar({ featureId }: PlanSidebarProps) {
   const [showPrd, setShowPrd] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const utils = trpc.useUtils();
   const queryClient = useQueryClient();
   const { data: plan } = useGetFeaturePlan(featureId);
   const { data: prdData } = useGetFeaturePrd(featureId);
