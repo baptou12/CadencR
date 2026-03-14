@@ -560,3 +560,427 @@ pub async fn save_draft(pool: &SqlitePool, session_id: i64, draft: Option<&str>)
         .await?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqlx::sqlite::SqlitePoolOptions;
+
+    async fn setup_test_db() -> SqlitePool {
+        let pool = SqlitePoolOptions::new()
+            .connect("sqlite::memory:")
+            .await
+            .expect("Failed to create in-memory SQLite pool");
+
+        sqlx::query(
+            r#"CREATE TABLE IF NOT EXISTS projects (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                path TEXT NOT NULL DEFAULT ''
+            )"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            r#"CREATE TABLE IF NOT EXISTS features (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id INTEGER NOT NULL DEFAULT 1,
+                title TEXT NOT NULL DEFAULT 'test feature'
+            )"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            r#"CREATE TABLE IF NOT EXISTS plans (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                feature_id INTEGER NOT NULL
+            )"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            r#"CREATE TABLE IF NOT EXISTS phases (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                plan_id INTEGER NOT NULL DEFAULT 1,
+                title TEXT NOT NULL DEFAULT ''
+            )"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            r#"CREATE TABLE IF NOT EXISTS agent_sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                feature_id INTEGER NOT NULL,
+                agent_type TEXT NOT NULL DEFAULT 'main',
+                claude_session_id TEXT,
+                status TEXT NOT NULL DEFAULT 'running',
+                started_at TEXT,
+                ended_at TEXT,
+                run_id INTEGER,
+                phase_id INTEGER,
+                subprocess_id TEXT,
+                model TEXT,
+                pending_questions TEXT,
+                has_file_changes INTEGER NOT NULL DEFAULT 0,
+                permission_mode TEXT,
+                pending_plan_approval TEXT,
+                pending_prd_approval TEXT,
+                pending_permission TEXT,
+                input_tokens INTEGER,
+                output_tokens INTEGER,
+                context_window INTEGER,
+                was_compacted INTEGER NOT NULL DEFAULT 0,
+                draft_prompt TEXT
+            )"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            r#"CREATE TABLE IF NOT EXISTS agent_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id INTEGER NOT NULL,
+                content TEXT NOT NULL DEFAULT '',
+                message_type TEXT NOT NULL DEFAULT 'text',
+                tool_name TEXT,
+                tool_use_id TEXT,
+                parent_tool_use_id TEXT,
+                created_at TEXT,
+                model TEXT
+            )"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        pool
+    }
+
+    async fn insert_session(pool: &SqlitePool, feature_id: i64, status: &str) -> i64 {
+        let row: (i64,) = sqlx::query_as(
+            "INSERT INTO agent_sessions (feature_id, agent_type, status) VALUES (?, 'main', ?) RETURNING id",
+        )
+        .bind(feature_id)
+        .bind(status)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        row.0
+    }
+
+    async fn insert_message(
+        pool: &SqlitePool,
+        session_id: i64,
+        message_type: &str,
+        content: &str,
+        tool_name: Option<&str>,
+        tool_use_id: Option<&str>,
+        parent_tool_use_id: Option<&str>,
+    ) -> i64 {
+        let row: (i64,) = sqlx::query_as(
+            "INSERT INTO agent_messages (session_id, message_type, content, tool_name, tool_use_id, parent_tool_use_id) VALUES (?, ?, ?, ?, ?, ?) RETURNING id",
+        )
+        .bind(session_id)
+        .bind(message_type)
+        .bind(content)
+        .bind(tool_name)
+        .bind(tool_use_id)
+        .bind(parent_tool_use_id)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        row.0
+    }
+
+    fn make_message(id: i64, session_id: i64, message_type: &str, content: &str) -> AgentMessageRow {
+        AgentMessageRow {
+            id,
+            session_id,
+            message_type: message_type.to_string(),
+            content: content.to_string(),
+            tool_name: None,
+            tool_use_id: None,
+            parent_tool_use_id: None,
+            created_at: None,
+            model: None,
+        }
+    }
+
+    fn make_message_full(
+        id: i64,
+        session_id: i64,
+        message_type: &str,
+        content: &str,
+        tool_name: Option<&str>,
+        tool_use_id: Option<&str>,
+        parent_tool_use_id: Option<&str>,
+    ) -> AgentMessageRow {
+        AgentMessageRow {
+            id,
+            session_id,
+            message_type: message_type.to_string(),
+            content: content.to_string(),
+            tool_name: tool_name.map(|s| s.to_string()),
+            tool_use_id: tool_use_id.map(|s| s.to_string()),
+            parent_tool_use_id: parent_tool_use_id.map(|s| s.to_string()),
+            created_at: None,
+            model: None,
+        }
+    }
+
+    // ---- build_blocks() tests ----
+
+    #[test]
+    fn test_build_blocks_empty() {
+        let blocks = build_blocks(&[]);
+        assert!(blocks.is_empty());
+    }
+
+    #[test]
+    fn test_build_blocks_single_text() {
+        let msgs = vec![make_message(1, 1, "text", "hello world")];
+        let blocks = build_blocks(&msgs);
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].type_, "text");
+        assert_eq!(blocks[0].content, "hello world");
+    }
+
+    #[test]
+    fn test_build_blocks_text_merging() {
+        let msgs = vec![
+            make_message(1, 1, "text", "hello"),
+            make_message(2, 1, "text", " world"),
+        ];
+        let blocks = build_blocks(&msgs);
+        assert_eq!(blocks.len(), 1, "consecutive text blocks should merge");
+        assert_eq!(blocks[0].content, "hello world");
+    }
+
+    #[test]
+    fn test_build_blocks_thinking_merging() {
+        let msgs = vec![
+            make_message(1, 1, "thinking", "first thought"),
+            make_message(2, 1, "thinking", " second thought"),
+        ];
+        let blocks = build_blocks(&msgs);
+        assert_eq!(blocks.len(), 1, "consecutive thinking blocks should merge");
+        assert_eq!(blocks[0].type_, "thinking");
+        assert_eq!(blocks[0].content, "first thought second thought");
+    }
+
+    #[test]
+    fn test_build_blocks_tool_call_with_result() {
+        let msgs = vec![
+            make_message_full(1, 1, "tool_call", "{}", Some("Bash"), Some("tu-1"), None),
+            make_message_full(2, 1, "tool_result", "output", None, Some("tu-1"), None),
+        ];
+        let blocks = build_blocks(&msgs);
+        // tool_result should be a root block (not nested under tool_call unless parent_tool_use_id set)
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks[0].type_, "tool_call");
+        assert_eq!(blocks[1].type_, "tool_result");
+        assert_eq!(blocks[1].source_tool_name.as_deref(), Some("Bash"));
+    }
+
+    #[test]
+    fn test_build_blocks_tool_call_deduplication() {
+        let msgs = vec![
+            make_message_full(1, 1, "tool_call", "{}", Some("Bash"), Some("tu-dup"), None),
+            make_message_full(2, 1, "tool_call", "{\"cmd\":\"ls\"}", Some("Bash"), Some("tu-dup"), None),
+        ];
+        let blocks = build_blocks(&msgs);
+        assert_eq!(blocks.len(), 1, "duplicate tool_use_id should deduplicate");
+        assert_eq!(blocks[0].type_, "tool_call");
+        // content updated to longer version
+        assert_eq!(blocks[0].content, "{\"cmd\":\"ls\"}");
+    }
+
+    #[test]
+    fn test_build_blocks_nested_agent_tool() {
+        let msgs = vec![
+            make_message_full(1, 1, "tool_call", "{}", Some("Task"), Some("tu-task"), None),
+        ];
+        let blocks = build_blocks(&msgs);
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].type_, "tool_call");
+        // Task tool should have child_blocks slot (empty vec)
+        assert!(blocks[0].child_blocks.is_some(), "Task tool should have child_blocks");
+    }
+
+    #[test]
+    fn test_build_blocks_mixed_sequence() {
+        let msgs = vec![
+            make_message(1, 1, "text", "Starting"),
+            make_message_full(2, 1, "tool_call", "{}", Some("Bash"), Some("tu-1"), None),
+            make_message_full(3, 1, "tool_result", "done", None, Some("tu-1"), None),
+            make_message(4, 1, "text", "Done"),
+        ];
+        let blocks = build_blocks(&msgs);
+        assert_eq!(blocks.len(), 4);
+        assert_eq!(blocks[0].type_, "text");
+        assert_eq!(blocks[1].type_, "tool_call");
+        assert_eq!(blocks[2].type_, "tool_result");
+        assert_eq!(blocks[3].type_, "text");
+    }
+
+    // ---- Repository query tests ----
+
+    #[tokio::test]
+    async fn test_get_sessions() {
+        let pool = setup_test_db().await;
+        let fid: (i64,) = sqlx::query_as("INSERT INTO features (title) VALUES ('f') RETURNING id")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let feature_id = fid.0;
+
+        insert_session(&pool, feature_id, "running").await;
+        insert_session(&pool, feature_id, "completed").await;
+
+        let sessions = get_sessions(&pool, feature_id).await.unwrap();
+        assert_eq!(sessions.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_get_sessions_empty() {
+        let pool = setup_test_db().await;
+        let sessions = get_sessions(&pool, 9999).await.unwrap();
+        assert!(sessions.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_get_feature_agent_state_basic() {
+        let pool = setup_test_db().await;
+        let fid: (i64,) = sqlx::query_as("INSERT INTO features (title) VALUES ('f') RETURNING id")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let feature_id = fid.0;
+
+        let session_id = insert_session(&pool, feature_id, "completed").await;
+        insert_message(&pool, session_id, "text", "hello", None, None, None).await;
+
+        let state = get_feature_agent_state(&pool, feature_id, None).await.unwrap();
+        assert_eq!(state.sessions.len(), 1);
+        let s = &state.sessions[0];
+        assert_eq!(s.session_db_id, session_id);
+        assert_eq!(s.blocks.len(), 1);
+        assert_eq!(s.blocks[0].content, "hello");
+        assert!(s.phase_title.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_get_feature_agent_state_incremental() {
+        let pool = setup_test_db().await;
+        let fid: (i64,) = sqlx::query_as("INSERT INTO features (title) VALUES ('f') RETURNING id")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let feature_id = fid.0;
+
+        let session_id = insert_session(&pool, feature_id, "running").await;
+        let msg1 = insert_message(&pool, session_id, "text", "old message", None, None, None).await;
+        let msg2 = insert_message(&pool, session_id, "text", " new message", None, None, None).await;
+
+        // Fetch with after_message_ids = {session_id: msg1}
+        let mut after = HashMap::new();
+        after.insert(session_id, msg1);
+        let state = get_feature_agent_state(&pool, feature_id, Some(after)).await.unwrap();
+        assert_eq!(state.sessions.len(), 1);
+        let s = &state.sessions[0];
+        assert!(s.is_incremental);
+        // Only the new message (msg2) should be in blocks
+        assert_eq!(s.blocks.len(), 1);
+        assert_eq!(s.blocks[0].content, " new message");
+        assert_eq!(s.max_message_id, msg2);
+    }
+
+    #[tokio::test]
+    async fn test_get_feature_agent_state_no_sessions() {
+        let pool = setup_test_db().await;
+        let state = get_feature_agent_state(&pool, 9999, None).await.unwrap();
+        assert!(state.sessions.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_get_feature_turn_states() {
+        let pool = setup_test_db().await;
+
+        let fid1: (i64,) = sqlx::query_as("INSERT INTO features (title) VALUES ('f1') RETURNING id")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let fid2: (i64,) = sqlx::query_as("INSERT INTO features (title) VALUES ('f2') RETURNING id")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+        // Feature 1: running session with pending_questions → needs_input
+        sqlx::query(
+            "INSERT INTO agent_sessions (feature_id, agent_type, status, pending_questions) VALUES (?, 'main', 'running', '[\"q\"]')"
+        )
+        .bind(fid1.0)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Feature 2: running session without pending_questions → claude turn
+        insert_session(&pool, fid2.0, "running").await;
+
+        let states = get_feature_turn_states(&pool).await.unwrap();
+        assert_eq!(states.get(&fid1.0.to_string()).map(|s| s.as_str()), Some("askUser"));
+        assert_eq!(states.get(&fid2.0.to_string()).map(|s| s.as_str()), Some("claude"));
+    }
+
+    #[tokio::test]
+    async fn test_get_draft() {
+        let pool = setup_test_db().await;
+        let fid: (i64,) = sqlx::query_as("INSERT INTO features (title) VALUES ('f') RETURNING id")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let session_id = insert_session(&pool, fid.0, "paused").await;
+
+        save_draft(&pool, session_id, Some("my draft")).await.unwrap();
+        let draft = get_draft(&pool, session_id).await.unwrap();
+        assert_eq!(draft.as_deref(), Some("my draft"));
+    }
+
+    #[tokio::test]
+    async fn test_get_draft_empty() {
+        let pool = setup_test_db().await;
+        let fid: (i64,) = sqlx::query_as("INSERT INTO features (title) VALUES ('f') RETURNING id")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let session_id = insert_session(&pool, fid.0, "paused").await;
+
+        let draft = get_draft(&pool, session_id).await.unwrap();
+        assert!(draft.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_save_draft_upsert() {
+        let pool = setup_test_db().await;
+        let fid: (i64,) = sqlx::query_as("INSERT INTO features (title) VALUES ('f') RETURNING id")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let session_id = insert_session(&pool, fid.0, "paused").await;
+
+        save_draft(&pool, session_id, Some("first draft")).await.unwrap();
+        save_draft(&pool, session_id, Some("updated draft")).await.unwrap();
+
+        let draft = get_draft(&pool, session_id).await.unwrap();
+        assert_eq!(draft.as_deref(), Some("updated draft"));
+    }
+}

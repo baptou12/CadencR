@@ -163,3 +163,124 @@ pub struct TurnStateRow {
     pub feature_id: i64,
     pub needs_input: i64,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_agent_block_serde_roundtrip() {
+        let block = AgentBlock {
+            id: "msg-1".to_string(),
+            type_: "text".to_string(),
+            content: "hello".to_string(),
+            tool_name: None,
+            tool_args: None,
+            is_error: None,
+            tool_use_id: None,
+            parent_tool_use_id: None,
+            child_blocks: None,
+            source_tool_name: None,
+            created_at: Some("2024-01-01".to_string()),
+            model: None,
+        };
+        let json = serde_json::to_string(&block).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed["id"], "msg-1");
+        assert_eq!(parsed["type"], "text");
+        assert_eq!(parsed["content"], "hello");
+        assert_eq!(parsed["createdAt"], "2024-01-01");
+        // None fields skipped
+        assert!(parsed.get("toolName").is_none());
+    }
+
+    #[test]
+    fn test_agent_block_tool_call_serde() {
+        let block = AgentBlock {
+            id: "msg-2".to_string(),
+            type_: "tool_call".to_string(),
+            content: "{\"cmd\":\"ls\"}".to_string(),
+            tool_name: Some("Bash".to_string()),
+            tool_args: Some("{\"cmd\":\"ls\"}".to_string()),
+            is_error: None,
+            tool_use_id: Some("tu-1".to_string()),
+            parent_tool_use_id: None,
+            child_blocks: None,
+            source_tool_name: None,
+            created_at: None,
+            model: None,
+        };
+        let json = serde_json::to_string(&block).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed["toolName"], "Bash");
+        assert_eq!(parsed["toolUseId"], "tu-1");
+        assert_eq!(parsed["toolArgs"], "{\"cmd\":\"ls\"}");
+    }
+
+    #[test]
+    fn test_agent_block_nested_children() {
+        let child = AgentBlock {
+            id: "msg-child".to_string(),
+            type_: "text".to_string(),
+            content: "child content".to_string(),
+            tool_name: None,
+            tool_args: None,
+            is_error: None,
+            tool_use_id: None,
+            parent_tool_use_id: Some("tu-task".to_string()),
+            child_blocks: None,
+            source_tool_name: None,
+            created_at: None,
+            model: None,
+        };
+        let parent = AgentBlock {
+            id: "msg-task".to_string(),
+            type_: "tool_call".to_string(),
+            content: "{}".to_string(),
+            tool_name: Some("Task".to_string()),
+            tool_args: Some("{}".to_string()),
+            is_error: None,
+            tool_use_id: Some("tu-task".to_string()),
+            parent_tool_use_id: None,
+            child_blocks: Some(vec![child]),
+            source_tool_name: None,
+            created_at: None,
+            model: None,
+        };
+        let json = serde_json::to_string(&parent).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let children = parsed["childBlocks"].as_array().unwrap();
+        assert_eq!(children.len(), 1);
+        assert_eq!(children[0]["id"], "msg-child");
+        assert_eq!(children[0]["parentToolUseId"], "tu-task");
+    }
+
+    #[test]
+    fn test_draft_response_serde() {
+        let resp = DraftResponse { draft_prompt: Some("draft".to_string()) };
+        let json = serde_json::to_string(&resp).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed["draftPrompt"], "draft");
+    }
+
+    #[test]
+    fn test_save_draft_request_deserialization() {
+        let json = r#"{"draft": "my draft text"}"#;
+        let req: SaveDraftRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.draft.as_deref(), Some("my draft text"));
+
+        let json_null = r#"{"draft": null}"#;
+        let req_null: SaveDraftRequest = serde_json::from_str(json_null).unwrap();
+        assert!(req_null.draft.is_none());
+    }
+
+    #[test]
+    fn test_turn_states_response_serde() {
+        let mut states = HashMap::new();
+        states.insert("42".to_string(), "claude".to_string());
+        let resp = TurnStatesResponse { states };
+        let json = serde_json::to_string(&resp).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed["states"]["42"], "claude");
+    }
+}
