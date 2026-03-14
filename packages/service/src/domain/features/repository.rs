@@ -230,25 +230,28 @@ pub async fn reset_phase(pool: &SqlitePool, phase_id: i64) -> Result<(), AppErro
     }
 
     // Delete sessions and messages for this phase, then reset
+    let mut tx = pool.begin().await?;
+
     sqlx::query(
         "DELETE FROM agent_messages WHERE session_id IN (SELECT id FROM agent_sessions WHERE phase_id = ?)",
     )
     .bind(phase_id)
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
 
     sqlx::query("DELETE FROM agent_sessions WHERE phase_id = ?")
         .bind(phase_id)
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
 
     sqlx::query(
         "UPDATE phases SET status = 'pending', implementation_notes = NULL, deviations = NULL WHERE id = ?",
     )
     .bind(phase_id)
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
 
+    tx.commit().await?;
     Ok(())
 }
 
@@ -426,57 +429,60 @@ pub async fn resolve_working_dir(pool: &SqlitePool, feature_id: i64, project_id:
 }
 
 pub async fn delete_feature(pool: &SqlitePool, id: i64) -> Result<(), AppError> {
+    let mut tx = pool.begin().await?;
+
     // Get all plan IDs for cascade delete
     let plan_ids: Vec<(i64,)> =
         sqlx::query_as("SELECT id FROM plans WHERE feature_id = ?")
             .bind(id)
-            .fetch_all(pool)
+            .fetch_all(&mut *tx)
             .await?;
 
     for (plan_id,) in plan_ids {
         sqlx::query("DELETE FROM phases WHERE plan_id = ?")
             .bind(plan_id)
-            .execute(pool)
+            .execute(&mut *tx)
             .await?;
     }
 
     sqlx::query("DELETE FROM plans WHERE feature_id = ?")
         .bind(id)
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
 
     sqlx::query(
         "DELETE FROM agent_messages WHERE session_id IN (SELECT id FROM agent_sessions WHERE feature_id = ?)",
     )
     .bind(id)
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
 
     sqlx::query("DELETE FROM agent_sessions WHERE feature_id = ?")
         .bind(id)
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
 
     sqlx::query("DELETE FROM feature_settings WHERE feature_id = ?")
         .bind(id)
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
 
     sqlx::query("DELETE FROM diff_comments WHERE feature_id = ?")
         .bind(id)
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
 
     sqlx::query("DELETE FROM diff_viewed_files WHERE feature_id = ?")
         .bind(id)
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
 
     sqlx::query("DELETE FROM features WHERE id = ?")
         .bind(id)
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
 
+    tx.commit().await?;
     Ok(())
 }
 
