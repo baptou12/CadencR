@@ -252,6 +252,10 @@ pub async fn get_project_model_settings(pool: &SqlitePool, project_id: i64) -> R
 }
 
 pub async fn set_project_model_setting(pool: &SqlitePool, project_id: i64, model_type: &str, model: &str) -> Result<(), AppError> {
+    const VALID_MODEL_TYPES: &[&str] = &["plan", "prd", "execute", "risk", "review", "review-fixer", "session", "qa", "retro"];
+    if !VALID_MODEL_TYPES.contains(&model_type) {
+        return Err(AppError::BadRequest(format!("Invalid model type: {}", model_type)));
+    }
     let col = format!("model_{}", model_type);
     let query = format!("UPDATE projects SET \"{}\" = ? WHERE id = ?", col);
     sqlx::query(&query)

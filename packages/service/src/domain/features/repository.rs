@@ -382,6 +382,10 @@ pub async fn set_feature_model_setting(
     model_type: &str,
     model: &str,
 ) -> Result<(), AppError> {
+    const VALID_MODEL_TYPES: &[&str] = &["plan", "prd", "execute", "risk", "review", "review-fixer", "session", "qa", "retro"];
+    if !VALID_MODEL_TYPES.contains(&model_type) {
+        return Err(AppError::BadRequest(format!("Invalid model type: {}", model_type)));
+    }
     let col = format!("model_{}", model_type);
     let sql = format!(r#"UPDATE features SET "{}" = ? WHERE id = ?"#, col);
     sqlx::query(&sql)

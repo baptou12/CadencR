@@ -75,6 +75,10 @@ pub async fn get_model_settings(pool: &SqlitePool) -> Result<ModelSettings, AppE
 }
 
 pub async fn set_model_setting(pool: &SqlitePool, agent_type: &str, model_id: &str) -> Result<(), AppError> {
+    const VALID_MODEL_TYPES: &[&str] = &["plan", "prd", "execute", "risk", "review", "review-fixer", "session", "qa", "retro"];
+    if !VALID_MODEL_TYPES.contains(&agent_type) {
+        return Err(AppError::BadRequest(format!("Invalid model type: {}", agent_type)));
+    }
     let db_key = format!("model_{}", agent_type);
     set_setting(pool, &db_key, model_id).await
 }
