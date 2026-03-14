@@ -31,9 +31,12 @@ pub async fn list_diff_comments_handler(
     responses((status = 200, body = DiffComment)))]
 pub async fn create_diff_comment_handler(
     State(state): State<AppState>,
-    Path(_feature_id): Path<i64>,
+    Path(feature_id): Path<i64>,
     Json(body): Json<CreateDiffCommentRequest>,
 ) -> Result<Json<DiffComment>, AppError> {
+    if feature_id != body.feature_id {
+        return Err(AppError::BadRequest("URL feature_id does not match body feature_id".to_string()));
+    }
     Ok(Json(repository::create(&state.write_pool, &body).await?))
 }
 
@@ -101,9 +104,12 @@ pub async fn list_diff_viewed_handler(
     responses((status = 200, body = SuccessResponse)))]
 pub async fn mark_diff_viewed_handler(
     State(state): State<AppState>,
-    Path(_feature_id): Path<i64>,
+    Path(feature_id): Path<i64>,
     Json(body): Json<MarkViewedRequest>,
 ) -> Result<Json<SuccessResponse>, AppError> {
+    if feature_id != body.feature_id {
+        return Err(AppError::BadRequest("URL feature_id does not match body feature_id".to_string()));
+    }
     repository::mark_viewed(&state.write_pool, body.feature_id, &body.file_path, &body.blob_sha).await?;
     Ok(Json(SuccessResponse { success: true }))
 }
