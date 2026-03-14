@@ -24,7 +24,11 @@
       "outputs": ["out/**"],
       "cache": false
     },
+    "build:release": {
+      "outputs": []
+    },
     "make": {
+      "dependsOn": ["@cadence/service#build:release"],
       "outputs": ["out/**"],
       "cache": false
     }

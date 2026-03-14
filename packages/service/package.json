@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "scripts": {
     "build": "cargo build",
+    "build:release": "cargo build --release",
     "dev": "cargo build",
     "test": "cargo test"
   }
