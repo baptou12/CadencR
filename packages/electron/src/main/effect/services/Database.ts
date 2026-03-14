@@ -36,13 +36,13 @@ function makeService(): DatabaseService {
           const row = getDatabase().prepare(sql).get(...params) as T | undefined;
           return row ?? null;
         },
-        catch: (e) => { console.error("[db] queryOne failed:", sql, e); return new DatabaseError({ operation: "queryOne", cause: e }); },
+        catch: (e) => new DatabaseError({ operation: "queryOne", cause: e }),
       }),
 
     queryAll: <T>(sql: string, ...params: unknown[]): Effect.Effect<T[], DatabaseError> =>
       Effect.try({
         try: () => getDatabase().prepare(sql).all(...params) as T[],
-        catch: (e) => { console.error("[db] queryAll failed:", sql, e); return new DatabaseError({ operation: "queryAll", cause: e }); },
+        catch: (e) => new DatabaseError({ operation: "queryAll", cause: e }),
       }),
 
     execute: (
@@ -54,7 +54,7 @@ function makeService(): DatabaseService {
           const r = getDatabase().prepare(sql).run(...params);
           return { changes: r.changes as number, lastInsertRowid: Number(r.lastInsertRowid) };
         },
-        catch: (e) => { console.error("[db] execute failed:", sql, e); return new DatabaseError({ operation: "execute", cause: e }); },
+        catch: (e) => new DatabaseError({ operation: "execute", cause: e }),
       }),
 
     queryOneValidated: <T, I>(

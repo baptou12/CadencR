@@ -9,7 +9,7 @@ export function queryOne<T>(sql: string, ...params: unknown[]): Effect.Effect<T 
       const row = getDatabase().prepare(sql).get(...params) as T | undefined;
       return row ?? null;
     },
-    catch: (e) => { console.error("[db-query] queryOne failed:", sql, e); return new DatabaseError({ operation: "queryOne", cause: e }); },
+    catch: (e) => new DatabaseError({ operation: "queryOne", cause: e }),
   });
 }
 
@@ -17,7 +17,7 @@ export function queryOne<T>(sql: string, ...params: unknown[]): Effect.Effect<T 
 export function queryAll<T>(sql: string, ...params: unknown[]): Effect.Effect<T[], DatabaseError> {
   return Effect.try({
     try: () => getDatabase().prepare(sql).all(...params) as T[],
-    catch: (e) => { console.error("[db-query] queryAll failed:", sql, e); return new DatabaseError({ operation: "queryAll", cause: e }); },
+    catch: (e) => new DatabaseError({ operation: "queryAll", cause: e }),
   });
 }
 
@@ -31,7 +31,7 @@ export function execute(
       const r = getDatabase().prepare(sql).run(...params);
       return { changes: r.changes as number, lastInsertRowid: Number(r.lastInsertRowid) };
     },
-    catch: (e) => { console.error("[db-query] execute failed:", sql, e); return new DatabaseError({ operation: "execute", cause: e }); },
+    catch: (e) => new DatabaseError({ operation: "execute", cause: e }),
   });
 }
 

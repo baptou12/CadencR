@@ -86,16 +86,11 @@ let isQuitting = false;
 app.on("ready", async () => {
   // Initialize the Effect ManagedRuntime — builds layers, wires services.
   // Running a no-op effect forces lazy initialization so services are ready.
-  console.log("[startup] Initializing Effect runtime...");
   await AppRuntime.runPromise(Effect.void);
-  console.log("[startup] Effect runtime ready");
   fetchAvailableModels().catch(() => {}); // warm up cache
   // Restore in-memory session map from DB (for reconnection after restart).
-  console.log("[startup] Restoring session map...");
   await AppRuntime.runPromise(SessionPersistence.restoreSessionMap());
-  console.log("[startup] Session map restored");
   resumeInProgressFeatures();
-  console.log("[startup] Resume in-progress features dispatched");
 
   // Start Electron IPC server (for Rust → Electron callbacks)
   try {
