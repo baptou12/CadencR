@@ -475,3 +475,631 @@ pub async fn delete_feature(pool: &SqlitePool, id: i64) -> Result<(), AppError> 
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqlx::sqlite::SqlitePoolOptions;
+
+    async fn setup_test_db() -> SqlitePool {
+        let pool = SqlitePoolOptions::new()
+            .connect("sqlite::memory:")
+            .await
+            .expect("Failed to create in-memory SQLite pool");
+
+        sqlx::query(
+            r#"CREATE TABLE projects (
+                id INTEGER PRIMARY KEY,
+                name TEXT,
+                path TEXT
+            )"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            r#"CREATE TABLE features (
+                id INTEGER PRIMARY KEY,
+                project_id INTEGER,
+                title TEXT,
+                status TEXT DEFAULT 'active',
+                type TEXT DEFAULT 'feature',
+                prd TEXT,
+                workflow_step TEXT,
+                workflow_config TEXT,
+                model_plan TEXT,
+                model_prd TEXT,
+                model_execute TEXT,
+                model_risk TEXT,
+                model_review TEXT,
+                "model_review-fixer" TEXT,
+                model_session TEXT,
+                model_qa TEXT,
+                model_retro TEXT,
+                agent_autonomy TEXT,
+                parallel_execution TEXT,
+                created_at TEXT DEFAULT (datetime('now'))
+            )"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            r#"CREATE TABLE plans (
+                id INTEGER PRIMARY KEY,
+                feature_id INTEGER,
+                title TEXT,
+                status TEXT,
+                summary TEXT,
+                context TEXT,
+                clarifications TEXT,
+                completion_conditions TEXT,
+                created_at TEXT DEFAULT (datetime('now'))
+            )"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            r#"CREATE TABLE phases (
+                id INTEGER PRIMARY KEY,
+                plan_id INTEGER,
+                step_number INTEGER DEFAULT 1,
+                title TEXT,
+                status TEXT DEFAULT 'pending',
+                complexity INTEGER,
+                commit_message TEXT,
+                prompt TEXT,
+                phase_type TEXT,
+                implementation_notes TEXT,
+                deviations TEXT,
+                order_index INTEGER DEFAULT 0
+            )"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            r#"CREATE TABLE agent_sessions (
+                id INTEGER PRIMARY KEY,
+                feature_id INTEGER,
+                phase_id INTEGER,
+                title TEXT,
+                status TEXT DEFAULT 'idle',
+                worktree TEXT
+            )"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            r#"CREATE TABLE agent_messages (
+                id INTEGER PRIMARY KEY,
+                session_id INTEGER,
+                content TEXT
+            )"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            r#"CREATE TABLE feature_settings (
+                feature_id INTEGER,
+                key TEXT,
+                value TEXT,
+                PRIMARY KEY(feature_id, key)
+            )"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            r#"CREATE TABLE diff_comments (
+                id INTEGER PRIMARY KEY,
+                feature_id INTEGER,
+                content TEXT
+            )"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            r#"CREATE TABLE diff_viewed_files (
+                id INTEGER PRIMARY KEY,
+                feature_id INTEGER,
+                path TEXT
+            )"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        pool
+    }
+
+    async fn create_test_project(pool: &SqlitePool) -> i64 {
+        let result = sqlx::query("INSERT INTO projects (name, path) VALUES ('Test Project', '/tmp/test')")
+            .execute(pool)
+            .await
+            .unwrap();
+        result.last_insert_rowid()
+    }
+
+    #[tokio::test]
+    async fn test_list_by_project() {
+        let pool = setup_test_db().await;
+        let proj1 = create_test_project(&pool).await;
+        let proj2 = create_test_project(&pool).await;
+
+        create_feature(&pool, proj1, "Feature A", "feature").await.unwrap();
+        create_feature(&pool, proj1, "Feature B", "feature").await.unwrap();
+        create_feature(&pool, proj2, "Feature C", "feature").await.unwrap();
+
+        let features = list_by_project(&pool, proj1).await.unwrap();
+        assert_eq!(features.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_get_by_id() {
+        let pool = setup_test_db().await;
+        let proj = create_test_project(&pool).await;
+        let id = create_feature(&pool, proj, "My Feature", "feature").await.unwrap();
+
+        let feature = get_by_id(&pool, id).await.unwrap().unwrap();
+        assert_eq!(feature.title, "My Feature");
+        assert_eq!(feature.status, "active");
+    }
+
+    #[tokio::test]
+    async fn test_get_by_id_not_found() {
+        let pool = setup_test_db().await;
+        let result = get_by_id(&pool, 9999).await.unwrap();
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_create_feature() {
+        let pool = setup_test_db().await;
+        let proj = create_test_project(&pool).await;
+        let id = create_feature(&pool, proj, "New Feature", "session").await.unwrap();
+
+        let feature = get_by_id(&pool, id).await.unwrap().unwrap();
+        assert_eq!(feature.title, "New Feature");
+        assert_eq!(feature.type_, "session");
+    }
+
+    #[tokio::test]
+    async fn test_get_max_session_num() {
+        let pool = setup_test_db().await;
+        let proj = create_test_project(&pool).await;
+
+        create_feature(&pool, proj, "Session 1", "session").await.unwrap();
+        create_feature(&pool, proj, "Session 3", "session").await.unwrap();
+        create_feature(&pool, proj, "Not a session", "feature").await.unwrap();
+
+        let max = get_max_session_num(&pool, proj).await.unwrap();
+        assert_eq!(max, 3);
+    }
+
+    #[tokio::test]
+    async fn test_get_max_session_num_no_sessions() {
+        let pool = setup_test_db().await;
+        let proj = create_test_project(&pool).await;
+        create_feature(&pool, proj, "Not a session", "feature").await.unwrap();
+
+        let max = get_max_session_num(&pool, proj).await.unwrap();
+        assert_eq!(max, 0);
+    }
+
+    #[tokio::test]
+    async fn test_update_status() {
+        let pool = setup_test_db().await;
+        let proj = create_test_project(&pool).await;
+        let id = create_feature(&pool, proj, "My Feature", "feature").await.unwrap();
+
+        update_status(&pool, id, "archived").await.unwrap();
+        let feature = get_by_id(&pool, id).await.unwrap().unwrap();
+        assert_eq!(feature.status, "archived");
+    }
+
+    #[tokio::test]
+    async fn test_update_title() {
+        let pool = setup_test_db().await;
+        let proj = create_test_project(&pool).await;
+        let id = create_feature(&pool, proj, "Old Title", "feature").await.unwrap();
+
+        update_title(&pool, id, "New Title").await.unwrap();
+        let feature = get_by_id(&pool, id).await.unwrap().unwrap();
+        assert_eq!(feature.title, "New Title");
+    }
+
+    #[tokio::test]
+    async fn test_is_empty_true() {
+        let pool = setup_test_db().await;
+        let proj = create_test_project(&pool).await;
+        let id = create_feature(&pool, proj, "Empty Feature", "feature").await.unwrap();
+
+        let empty = is_empty(&pool, id).await.unwrap();
+        assert!(empty);
+    }
+
+    #[tokio::test]
+    async fn test_is_empty_false_has_messages() {
+        let pool = setup_test_db().await;
+        let proj = create_test_project(&pool).await;
+        let id = create_feature(&pool, proj, "Session Feature", "session").await.unwrap();
+
+        // Insert an agent_session and agent_message
+        let sess_result = sqlx::query(
+            "INSERT INTO agent_sessions (feature_id, title, status) VALUES (?, 'sess', 'idle')"
+        )
+        .bind(id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let sess_id = sess_result.last_insert_rowid();
+
+        sqlx::query("INSERT INTO agent_messages (session_id, content) VALUES (?, 'hello')")
+            .bind(sess_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let empty = is_empty(&pool, id).await.unwrap();
+        assert!(!empty);
+    }
+
+    #[tokio::test]
+    async fn test_is_empty_false_has_prd() {
+        let pool = setup_test_db().await;
+        let proj = create_test_project(&pool).await;
+        let id = create_feature(&pool, proj, "Feature With PRD", "feature").await.unwrap();
+
+        sqlx::query("UPDATE features SET prd = 'some content' WHERE id = ?")
+            .bind(id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let empty = is_empty(&pool, id).await.unwrap();
+        assert!(!empty);
+    }
+
+    #[tokio::test]
+    async fn test_get_plan_with_phases() {
+        let pool = setup_test_db().await;
+        let proj = create_test_project(&pool).await;
+        let fid = create_feature(&pool, proj, "Feature", "feature").await.unwrap();
+
+        let plan_res = sqlx::query("INSERT INTO plans (feature_id, title, status) VALUES (?, 'Plan', 'active')")
+            .bind(fid)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let plan_id = plan_res.last_insert_rowid();
+
+        for i in 1..=3i64 {
+            sqlx::query(
+                "INSERT INTO phases (plan_id, step_number, title, status) VALUES (?, ?, ?, 'pending')"
+            )
+            .bind(plan_id)
+            .bind(i)
+            .bind(format!("Phase {}", i))
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+
+        let result = get_plan_with_phases(&pool, fid).await.unwrap();
+        assert!(result.is_some());
+        let (_, phases) = result.unwrap();
+        assert_eq!(phases.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_get_plan_with_phases_no_plan() {
+        let pool = setup_test_db().await;
+        let proj = create_test_project(&pool).await;
+        let fid = create_feature(&pool, proj, "Feature", "feature").await.unwrap();
+
+        let result = get_plan_with_phases(&pool, fid).await.unwrap();
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_get_plan_progress() {
+        let pool = setup_test_db().await;
+        let proj = create_test_project(&pool).await;
+        let fid = create_feature(&pool, proj, "Feature", "feature").await.unwrap();
+
+        let plan_res = sqlx::query("INSERT INTO plans (feature_id, title, status) VALUES (?, 'Plan', 'active')")
+            .bind(fid)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let plan_id = plan_res.last_insert_rowid();
+
+        sqlx::query("INSERT INTO phases (plan_id, step_number, title, status) VALUES (?, 1, 'P1', 'completed')")
+            .bind(plan_id).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO phases (plan_id, step_number, title, status) VALUES (?, 2, 'P2', 'completed')")
+            .bind(plan_id).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO phases (plan_id, step_number, title, status) VALUES (?, 3, 'P3', 'pending')")
+            .bind(plan_id).execute(&pool).await.unwrap();
+
+        let progress = get_plan_progress(&pool, fid).await.unwrap();
+        assert_eq!(progress.total, 3);
+        assert_eq!(progress.done, 2);
+    }
+
+    #[tokio::test]
+    async fn test_reset_phase() {
+        let pool = setup_test_db().await;
+        let proj = create_test_project(&pool).await;
+        let fid = create_feature(&pool, proj, "Feature", "feature").await.unwrap();
+
+        let plan_res = sqlx::query("INSERT INTO plans (feature_id, title, status) VALUES (?, 'Plan', 'active')")
+            .bind(fid).execute(&pool).await.unwrap();
+        let plan_id = plan_res.last_insert_rowid();
+
+        let phase_res = sqlx::query(
+            "INSERT INTO phases (plan_id, step_number, title, status) VALUES (?, 1, 'Phase 1', 'completed')"
+        )
+        .bind(plan_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let phase_id = phase_res.last_insert_rowid();
+
+        // Insert agent_session and message for this phase
+        let sess_res = sqlx::query(
+            "INSERT INTO agent_sessions (feature_id, phase_id, title, status) VALUES (?, ?, 'sess', 'idle')"
+        )
+        .bind(fid)
+        .bind(phase_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let sess_id = sess_res.last_insert_rowid();
+
+        sqlx::query("INSERT INTO agent_messages (session_id, content) VALUES (?, 'msg')")
+            .bind(sess_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        reset_phase(&pool, phase_id).await.unwrap();
+
+        // Verify sessions and messages deleted
+        let sess_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM agent_sessions WHERE phase_id = ?")
+            .bind(phase_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(sess_count.0, 0);
+
+        let msg_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM agent_messages WHERE session_id = ?")
+            .bind(sess_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(msg_count.0, 0);
+
+        // Verify phase status is pending
+        let status: (String,) = sqlx::query_as("SELECT status FROM phases WHERE id = ?")
+            .bind(phase_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(status.0, "pending");
+    }
+
+    #[tokio::test]
+    async fn test_reset_phase_invalid_status() {
+        let pool = setup_test_db().await;
+        let proj = create_test_project(&pool).await;
+        let fid = create_feature(&pool, proj, "Feature", "feature").await.unwrap();
+
+        let plan_res = sqlx::query("INSERT INTO plans (feature_id, title, status) VALUES (?, 'Plan', 'active')")
+            .bind(fid).execute(&pool).await.unwrap();
+        let plan_id = plan_res.last_insert_rowid();
+
+        let phase_res = sqlx::query(
+            "INSERT INTO phases (plan_id, step_number, title, status) VALUES (?, 1, 'Phase 1', 'pending')"
+        )
+        .bind(plan_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let phase_id = phase_res.last_insert_rowid();
+
+        let result = reset_phase(&pool, phase_id).await;
+        assert!(matches!(result, Err(AppError::BadRequest(_))));
+    }
+
+    #[tokio::test]
+    async fn test_override_phase_status() {
+        let pool = setup_test_db().await;
+        let proj = create_test_project(&pool).await;
+        let fid = create_feature(&pool, proj, "Feature", "feature").await.unwrap();
+
+        let plan_res = sqlx::query("INSERT INTO plans (feature_id, title, status) VALUES (?, 'Plan', 'active')")
+            .bind(fid).execute(&pool).await.unwrap();
+        let plan_id = plan_res.last_insert_rowid();
+
+        let phase_res = sqlx::query(
+            "INSERT INTO phases (plan_id, step_number, title, status) VALUES (?, 1, 'Phase 1', 'pending')"
+        )
+        .bind(plan_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let phase_id = phase_res.last_insert_rowid();
+
+        override_phase_status(&pool, phase_id, "completed").await.unwrap();
+
+        let status: (String,) = sqlx::query_as("SELECT status FROM phases WHERE id = ?")
+            .bind(phase_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(status.0, "completed");
+    }
+
+    #[tokio::test]
+    async fn test_get_set_feature_settings() {
+        let pool = setup_test_db().await;
+        let proj = create_test_project(&pool).await;
+        let fid = create_feature(&pool, proj, "Feature", "feature").await.unwrap();
+
+        // Set a key-value setting (non-column)
+        set_feature_setting(&pool, fid, "instructions", "do this").await.unwrap();
+
+        // Set a column-based setting
+        set_feature_setting(&pool, fid, "model_plan", "claude-3").await.unwrap();
+
+        let settings = get_feature_settings(&pool, fid).await.unwrap();
+        let instructions = settings.iter().find(|s| s.key == "instructions");
+        assert!(instructions.is_some());
+        assert_eq!(instructions.unwrap().value, "do this");
+
+        let model_plan = settings.iter().find(|s| s.key == "model_plan");
+        assert!(model_plan.is_some());
+        assert_eq!(model_plan.unwrap().value, "claude-3");
+    }
+
+    #[tokio::test]
+    async fn test_get_set_feature_model_settings() {
+        let pool = setup_test_db().await;
+        let proj = create_test_project(&pool).await;
+        let fid = create_feature(&pool, proj, "Feature", "feature").await.unwrap();
+
+        set_feature_model_setting(&pool, fid, "plan", "claude-3-opus").await.unwrap();
+        set_feature_model_setting(&pool, fid, "session", "claude-3-haiku").await.unwrap();
+
+        let settings = get_feature_model_settings(&pool, fid).await.unwrap();
+        assert_eq!(settings.plan, "claude-3-opus");
+        assert_eq!(settings.session, "claude-3-haiku");
+    }
+
+    #[tokio::test]
+    async fn test_resolve_working_dir_with_worktree() {
+        let pool = setup_test_db().await;
+        let proj = create_test_project(&pool).await;
+        let fid = create_feature(&pool, proj, "Feature", "feature").await.unwrap();
+
+        sqlx::query(
+            "INSERT INTO feature_settings (feature_id, key, value) VALUES (?, 'worktree_path', '/tmp/wt')"
+        )
+        .bind(fid)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let dir = resolve_working_dir(&pool, fid, proj).await.unwrap();
+        assert_eq!(dir, Some("/tmp/wt".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_resolve_working_dir_fallback_to_project() {
+        let pool = setup_test_db().await;
+
+        // Create project with specific path
+        let proj_res = sqlx::query("INSERT INTO projects (name, path) VALUES ('Proj', '/tmp/proj')")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let proj = proj_res.last_insert_rowid();
+
+        let fid = create_feature(&pool, proj, "Feature", "feature").await.unwrap();
+
+        let dir = resolve_working_dir(&pool, fid, proj).await.unwrap();
+        assert_eq!(dir, Some("/tmp/proj".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_delete_feature_cascade() {
+        let pool = setup_test_db().await;
+        let proj = create_test_project(&pool).await;
+        let fid = create_feature(&pool, proj, "Feature", "feature").await.unwrap();
+
+        // Create plan and phase
+        let plan_res = sqlx::query("INSERT INTO plans (feature_id, title, status) VALUES (?, 'Plan', 'active')")
+            .bind(fid).execute(&pool).await.unwrap();
+        let plan_id = plan_res.last_insert_rowid();
+
+        let phase_res = sqlx::query(
+            "INSERT INTO phases (plan_id, step_number, title, status) VALUES (?, 1, 'Phase', 'pending')"
+        )
+        .bind(plan_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let phase_id = phase_res.last_insert_rowid();
+
+        // Create agent_session and message
+        let sess_res = sqlx::query(
+            "INSERT INTO agent_sessions (feature_id, phase_id, title, status) VALUES (?, ?, 'sess', 'idle')"
+        )
+        .bind(fid)
+        .bind(phase_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let sess_id = sess_res.last_insert_rowid();
+
+        sqlx::query("INSERT INTO agent_messages (session_id, content) VALUES (?, 'msg')")
+            .bind(sess_id).execute(&pool).await.unwrap();
+
+        // Create feature_setting
+        sqlx::query("INSERT INTO feature_settings (feature_id, key, value) VALUES (?, 'k', 'v')")
+            .bind(fid).execute(&pool).await.unwrap();
+
+        // Create diff_comment and diff_viewed_file
+        sqlx::query("INSERT INTO diff_comments (feature_id, content) VALUES (?, 'comment')")
+            .bind(fid).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO diff_viewed_files (feature_id, path) VALUES (?, '/some/file')")
+            .bind(fid).execute(&pool).await.unwrap();
+
+        delete_feature(&pool, fid).await.unwrap();
+
+        let f_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM features WHERE id = ?")
+            .bind(fid).fetch_one(&pool).await.unwrap();
+        assert_eq!(f_count.0, 0);
+
+        let pl_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM plans WHERE feature_id = ?")
+            .bind(fid).fetch_one(&pool).await.unwrap();
+        assert_eq!(pl_count.0, 0);
+
+        let ph_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM phases WHERE plan_id = ?")
+            .bind(plan_id).fetch_one(&pool).await.unwrap();
+        assert_eq!(ph_count.0, 0);
+
+        let s_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM agent_sessions WHERE feature_id = ?")
+            .bind(fid).fetch_one(&pool).await.unwrap();
+        assert_eq!(s_count.0, 0);
+
+        let m_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM agent_messages WHERE session_id = ?")
+            .bind(sess_id).fetch_one(&pool).await.unwrap();
+        assert_eq!(m_count.0, 0);
+
+        let fs_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM feature_settings WHERE feature_id = ?")
+            .bind(fid).fetch_one(&pool).await.unwrap();
+        assert_eq!(fs_count.0, 0);
+
+        let dc_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM diff_comments WHERE feature_id = ?")
+            .bind(fid).fetch_one(&pool).await.unwrap();
+        assert_eq!(dc_count.0, 0);
+
+        let dvf_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM diff_viewed_files WHERE feature_id = ?")
+            .bind(fid).fetch_one(&pool).await.unwrap();
+        assert_eq!(dvf_count.0, 0);
+    }
+}
