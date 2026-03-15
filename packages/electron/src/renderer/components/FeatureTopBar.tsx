@@ -31,10 +31,11 @@ interface FeatureTopBarProps {
   projectId: number;
   mode?: "feature" | "session";
   executeState?: ExecuteAgentState;
+  isWebSocket?: boolean;
   className?: string;
 }
 
-export function FeatureTopBar({ featureId, projectId, mode = "feature", executeState, className }: FeatureTopBarProps) {
+export function FeatureTopBar({ featureId, projectId, mode = "feature", executeState, isWebSocket, className }: FeatureTopBarProps) {
   const isSession = mode === "session";
   const [diffOpen, setDiffOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -126,6 +127,12 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", executeS
       )}
 
       <h1 className="text-lg font-semibold">{feature.title}</h1>
+
+      {isWebSocket && (
+        <Badge variant="secondary" className="bg-teal-500/15 text-teal-300 text-[10px] px-1.5 py-0">
+          WS
+        </Badge>
+      )}
 
       {!isSession && progress && progress.total > 0 && (
         <span className="text-muted-foreground text-sm">

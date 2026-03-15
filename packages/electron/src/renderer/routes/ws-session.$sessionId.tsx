@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 import { AgentSession } from "@/components/AgentSession";
+import { FeatureTopBar } from "@/components/FeatureTopBar";
 import { useWebSocketSession } from "@/hooks/useWebSocketSession";
 
 interface WsSessionSearch {
@@ -29,7 +30,7 @@ export const Route = createFileRoute("/ws-session/$sessionId")({
 
 function WebSocketSessionPage() {
   const { sessionId } = Route.useParams();
-  const { cwd } = Route.useSearch();
+  const { cwd, featureId, projectId } = Route.useSearch();
   const ws = useWebSocketSession(sessionId);
   const initializedRef = useRef(false);
 
@@ -43,28 +44,34 @@ function WebSocketSessionPage() {
   }, [isConnected, initSession, cwd]);
 
   return (
-    <AgentSession
-      agentType="session"
-      blocks={ws.blocks}
-      status={ws.status}
-      onSend={ws.sendPrompt}
-      onStop={ws.interrupt}
-      pendingPermission={ws.pendingPermission}
-      onPermissionDecision={(decision) => {
-        ws.respondToPermission(ws.pendingRequestId, decision !== "deny");
-      }}
-      pendingQuestions={ws.pendingQuestions.length > 0 ? ws.pendingQuestions : undefined}
-      onAnswerSubmit={ws.respondToQuestion}
-      permissionMode={ws.permissionMode}
-      onPermissionModeToggle={() => {
-        const next = ws.permissionMode === "plan" ? "acceptEdits" : "plan";
-        ws.setPermissionMode(next);
-      }}
-      pendingPlanApproval={ws.pendingPlanApproval}
-      onPlanApprove={ws.approvePlan}
-      onPlanRequestChanges={ws.requestPlanChanges}
-      currentModelId={ws.currentModelId}
-      onModelChange={ws.setModel}
-    />
+    <div className="flex h-full flex-col">
+      <FeatureTopBar featureId={featureId} projectId={projectId} mode="session" isWebSocket className="shrink-0" />
+      <div className="relative min-h-0 flex-1 overflow-hidden">
+        <AgentSession
+          agentType="session"
+          blocks={ws.blocks}
+          status={ws.status}
+          onSend={ws.sendPrompt}
+          onStop={ws.interrupt}
+          pendingPermission={ws.pendingPermission}
+          onPermissionDecision={(decision) => {
+            ws.respondToPermission(ws.pendingRequestId, decision !== "deny");
+          }}
+          pendingQuestions={ws.pendingQuestions.length > 0 ? ws.pendingQuestions : undefined}
+          onAnswerSubmit={ws.respondToQuestion}
+          permissionMode={ws.permissionMode}
+          onPermissionModeToggle={() => {
+            const next = ws.permissionMode === "plan" ? "acceptEdits" : "plan";
+            ws.setPermissionMode(next);
+          }}
+          pendingPlanApproval={ws.pendingPlanApproval}
+          onPlanApprove={ws.approvePlan}
+          onPlanRequestChanges={ws.requestPlanChanges}
+          currentModelId={ws.currentModelId}
+          onModelChange={ws.setModel}
+          className="h-full"
+        />
+      </div>
+    </div>
   );
 }
