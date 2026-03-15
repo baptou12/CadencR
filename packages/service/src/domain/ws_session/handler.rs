@@ -41,6 +41,11 @@ struct WsBridgeCanUseTool {
 #[async_trait]
 impl CanUseTool for WsBridgeCanUseTool {
     async fn can_use_tool(&self, request: PermissionRequest) -> PermissionResult {
+        debug!(
+            tool_name = %request.tool_name,
+            tool_use_id = %request.tool_use_id,
+            "WsBridgeCanUseTool::can_use_tool called"
+        );
         // Send permission request to WebSocket client
         let payload = PermissionRequestPayload {
             request_id: request.tool_use_id.clone(),
@@ -517,7 +522,7 @@ async fn handle_permission_respond(
 
     let result = if payload.granted {
         PermissionResult::Allow {
-            updated_input: None,
+            updated_input: payload.updated_input,
             updated_permissions: None,
             tool_use_id: Some(payload.request_id),
         }
@@ -760,7 +765,7 @@ fn spawn_stream_reader(
 
             match msg {
                 Some(Ok(sdk_msg)) => {
-                    debug!(session_id, msg_type = ?std::mem::discriminant(&sdk_msg), "received SDK message");
+                    debug!(session_id, msg_type = ?std::mem::discriminant(&sdk_msg), "SDK MSG → WS");
                     let envelope = match &sdk_msg {
                         SdkMessage::Result { .. } => WsEnvelope::new(
                             "session",

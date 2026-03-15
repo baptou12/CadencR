@@ -72,7 +72,7 @@ fn permission_result_deny_serializes_with_message_and_interrupt() {
     assert_eq!(json["behavior"], "deny");
     assert_eq!(json["message"], "not allowed");
     assert_eq!(json["interrupt"], true);
-    assert_eq!(json["tool_use_id"], "tid-1");
+    assert_eq!(json["toolUseId"], "tid-1");
 }
 
 #[test]
@@ -83,8 +83,24 @@ fn permission_result_allow_skips_none_fields() {
         tool_use_id: None,
     };
     let json: serde_json::Value = serde_json::to_value(&result).unwrap();
+    assert!(json.get("updatedInput").is_none());
+    assert!(json.get("updatedPermissions").is_none());
+    assert!(json.get("toolUseId").is_none());
+}
+
+#[test]
+fn permission_result_allow_serializes_camel_case_fields() {
+    let result = PermissionResult::Allow {
+        updated_input: Some(serde_json::json!({"answer": "yes"})),
+        updated_permissions: None,
+        tool_use_id: Some("tu-99".to_string()),
+    };
+    let json: serde_json::Value = serde_json::to_value(&result).unwrap();
+    // Fields must be camelCase for the CLI to recognize them
+    assert_eq!(json["updatedInput"]["answer"], "yes");
+    assert_eq!(json["toolUseId"], "tu-99");
+    // snake_case variants must NOT be present
     assert!(json.get("updated_input").is_none());
-    assert!(json.get("updated_permissions").is_none());
     assert!(json.get("tool_use_id").is_none());
 }
 
@@ -162,6 +178,26 @@ fn to_cli_args_omits_permission_mode_when_unset() {
     let opts = Options::default();
     let args = opts.to_cli_args();
     assert!(!args.iter().any(|a| a == "--permission-mode"));
+}
+
+#[test]
+fn to_cli_args_includes_permission_prompt_tool_when_can_use_tool_set() {
+    let opts = Options {
+        can_use_tool: Some(Box::new(AllowAllTools)),
+        ..Options::default()
+    };
+    let args = opts.to_cli_args();
+    let pos = args
+        .windows(2)
+        .position(|w| w[0] == "--permission-prompt-tool" && w[1] == "stdio");
+    assert!(pos.is_some(), "Expected --permission-prompt-tool stdio in args");
+}
+
+#[test]
+fn to_cli_args_omits_permission_prompt_tool_when_no_can_use_tool() {
+    let opts = Options::default();
+    let args = opts.to_cli_args();
+    assert!(!args.iter().any(|a| a == "--permission-prompt-tool"));
 }
 
 // ---------------------------------------------------------------------------

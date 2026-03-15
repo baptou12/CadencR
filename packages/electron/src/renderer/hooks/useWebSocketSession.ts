@@ -9,6 +9,8 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import type { AgentBlockData } from "@/components/AgentBlock";
 import type { AgentStatus } from "@/types/agent";
 import type { PendingPermission } from "@/components/ToolPermissionPrompt";
+import type { AgentQuestion } from "@/components/AgentQuestionDrawer";
+import { parseAskUserQuestions } from "@/components/AgentQuestionDrawer";
 import {
   parseEnvelope,
   createSessionInit,
@@ -34,6 +36,8 @@ export interface UseWebSocketSessionReturn {
   sessionId: string;
   pendingPermission: PendingPermission | null;
   pendingRequestId: string;
+  pendingQuestions: AgentQuestion[];
+  respondToQuestion: (response: string) => void;
 
   permissionMode: PermissionMode;
   setPermissionMode: (mode: PermissionMode) => void;
@@ -306,6 +310,8 @@ export function useWebSocketSession(sessionId: string): UseWebSocketSessionRetur
   const [isConnected, setIsConnected] = useState(false);
   const [pendingPermission, setPendingPermission] = useState<PendingPermission | null>(null);
   const pendingRequestIdRef = useRef<string>("");
+  const [pendingQuestions, setPendingQuestions] = useState<AgentQuestion[]>([]);
+  const pendingQuestionToolInputRef = useRef<Record<string, unknown>>({});
   const [permissionMode, setPermissionModeState] = useState<PermissionMode>("acceptEdits");
   const [pendingPlanApproval, setPendingPlanApproval] = useState<PendingPlanApproval | null>(null);
   const [currentModelId, setCurrentModelId] = useState<string>("claude-sonnet-4-6");
@@ -471,12 +477,20 @@ export function useWebSocketSession(sessionId: string): UseWebSocketSessionRetur
             description?: string;
           };
           pendingRequestIdRef.current = p.request_id;
-          setPendingPermission({
-            toolName: p.tool_name,
-            input: p.tool_input ?? {},
-            description: p.description ?? "",
-            pattern: "",
-          });
+
+          if (p.tool_name === "AskUserQuestion") {
+            const toolInput = (p.tool_input ?? {}) as Record<string, unknown>;
+            pendingQuestionToolInputRef.current = toolInput;
+            const questions = parseAskUserQuestions(toolInput);
+            setPendingQuestions(questions);
+          } else {
+            setPendingPermission({
+              toolName: p.tool_name,
+              input: p.tool_input ?? {},
+              description: p.description ?? "",
+              pattern: "",
+            });
+          }
           setStatus("paused");
           break;
         }
@@ -574,6 +588,56 @@ export function useWebSocketSession(sessionId: string): UseWebSocketSessionRetur
     [send],
   );
 
+  const respondToQuestion = useCallback(
+    (response: string) => {
+      const updatedInput = {
+        ...pendingQuestionToolInputRef.current,
+        answers: { "0": response },
+      };
+      send(createPermissionRespond(
+        serverSessionIdRef.current,
+        pendingRequestIdRef.current,
+        true,
+        updatedInput,
+      ));
+
+      // Show the user's answer as a formatted message in the chat.
+      // The response string from AgentQuestionDrawer is:
+      //   "Question\nAnswer: answer\n\nQuestion2\nAnswer: answer2"
+      // Format with italic questions and bold answers.
+      const formatted = response
+        .split("\n\n")
+        .map((qa) => {
+          const lines = qa.split("\n");
+          const question = lines[0] ?? "";
+          const answer = lines
+            .slice(1)
+            .map((l) => l.replace(/^Answer:\s*/, ""))
+            .join("\n");
+          return `*${question}*\n**${answer}**`;
+        })
+        .join("\n\n");
+
+      streamingStateRef.current.counter += 1;
+      setBlocks((prev) => [
+        ...prev,
+        {
+          id: `ws-user-${streamingStateRef.current.counter}`,
+          type: "user_message" as const,
+          content: formatted,
+          isError: false,
+          createdAt: new Date().toISOString(),
+        },
+      ]);
+
+      setPendingQuestions([]);
+      pendingQuestionToolInputRef.current = {};
+      pendingRequestIdRef.current = "";
+      setStatus("running");
+    },
+    [send],
+  );
+
   const interrupt = useCallback(() => {
     send(createInterrupt(serverSessionIdRef.current));
   }, [send]);
@@ -638,6 +702,8 @@ export function useWebSocketSession(sessionId: string): UseWebSocketSessionRetur
     sessionId,
     pendingPermission,
     pendingRequestId: pendingRequestIdRef.current,
+    pendingQuestions,
+    respondToQuestion,
     permissionMode,
     setPermissionMode,
     pendingPlanApproval,

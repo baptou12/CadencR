@@ -89,12 +89,14 @@ pub enum TurnState {
 /// A full control protocol implementation would handle all subtypes,
 /// including the initialization handshake (`initialize` sent by the SDK
 /// on startup via stdin).
-fn is_permission_request(value: &serde_json::Value) -> bool {
-    value.get("type").and_then(|t| t.as_str()) == Some("control_request")
-        && value
-            .pointer("/request/subtype")
-            .and_then(|s| s.as_str())
-            == Some("can_use_tool")
+
+/// Extract the `request.subtype` from a `control_request` message,
+/// or `None` if this isn't a control_request.
+fn control_request_subtype(value: &serde_json::Value) -> Option<&str> {
+    if value.get("type").and_then(|t| t.as_str()) != Some("control_request") {
+        return None;
+    }
+    value.pointer("/request/subtype").and_then(|s| s.as_str())
 }
 
 /// Parse a raw JSON permission request (control_request) into a typed
@@ -427,8 +429,39 @@ async fn reader_loop(
             }
         };
 
+        // Skip control_response messages (e.g. the CLI's reply to our
+        // initialize control_request). These are not SDK messages.
+        if raw.get("type").and_then(|t| t.as_str()) == Some("control_response") {
+            debug!("received control_response, skipping");
+            continue;
+        }
+
+        // Handle `initialize` control_request from the CLI (if it sends one).
+        // Respond so the CLI knows we support the control protocol.
+        if control_request_subtype(&raw) == Some("initialize") {
+            let request_id = raw
+                .get("request_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            debug!("received initialize control request, responding");
+            let response_json = serde_json::json!({
+                "type": "control_response",
+                "response": {
+                    "subtype": "success",
+                    "request_id": request_id,
+                    "response": {}
+                }
+            });
+            if let Err(e) = write_to_stdin(&process_stdin, &response_json).await {
+                let _ = tx.send(Err(e)).await;
+                break;
+            }
+            continue;
+        }
+
         // Check if this is a permission request (canUseTool protocol)
-        if is_permission_request(&raw) {
+        if control_request_subtype(&raw) == Some("can_use_tool") {
             let request = parse_permission_request(&raw);
             debug!(tool = %request.tool_name, "received permission request");
 
@@ -570,6 +603,23 @@ pub async fn query(prompt: impl Into<String>, mut options: Options) -> Result<Qu
     let stdin = process.take_stdin();
     let process_stdin = Arc::new(Mutex::new(stdin));
 
+    // Send the initialize control request so the CLI knows we support
+    // the bidirectional control protocol (canUseTool, AskUserQuestion, etc.).
+    let init_request_id = format!("init_{}", std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos());
+    let init_msg = serde_json::json!({
+        "type": "control_request",
+        "request_id": init_request_id,
+        "request": {
+            "subtype": "initialize",
+            "systemPrompt": options.system_prompt.as_deref(),
+        }
+    });
+    debug!("sending initialize control_request to CLI stdin");
+    write_to_stdin(&process_stdin, &init_msg).await?;
+
     // Write initial prompt to stdin
     let prompt_msg = serde_json::json!({
         "type": "user",
@@ -642,7 +692,7 @@ mod tests {
     }
 
     #[test]
-    fn is_permission_request_works() {
+    fn control_request_subtype_extracts_correctly() {
         let pr = serde_json::json!({
             "type": "control_request",
             "request_id": "req_1_abc123",
@@ -652,18 +702,24 @@ mod tests {
                 "input": { "path": "/tmp/foo" }
             }
         });
-        assert!(is_permission_request(&pr));
+        assert_eq!(control_request_subtype(&pr), Some("can_use_tool"));
 
         let not_pr = serde_json::json!({ "type": "stream_event" });
-        assert!(!is_permission_request(&not_pr));
+        assert_eq!(control_request_subtype(&not_pr), None);
 
-        // Other control_request subtypes should not match
         let hook_req = serde_json::json!({
             "type": "control_request",
             "request_id": "req_2",
             "request": { "subtype": "hook_callback" }
         });
-        assert!(!is_permission_request(&hook_req));
+        assert_eq!(control_request_subtype(&hook_req), Some("hook_callback"));
+
+        let init_req = serde_json::json!({
+            "type": "control_request",
+            "request_id": "req_3",
+            "request": { "subtype": "initialize" }
+        });
+        assert_eq!(control_request_subtype(&init_req), Some("initialize"));
     }
 
     #[test]
@@ -863,6 +919,97 @@ echo '{"type":"result","subtype":"success","uuid":"u3","session_id":"sess_456","
         assert!(messages.len() >= 2, "got {} messages", messages.len());
         assert!(messages
             .iter()
-            .all(|m| !matches!(m, SdkMessage::Unknown(v) if is_permission_request(v))));
+            .all(|m| !matches!(m, SdkMessage::Unknown(v) if control_request_subtype(v) == Some("can_use_tool"))));
+    }
+
+    #[tokio::test]
+    async fn query_sends_initialize_and_skips_control_response() {
+        use std::os::unix::fs::PermissionsExt;
+        use tempfile::TempDir;
+
+        let dir = TempDir::new().unwrap();
+        let script_path = dir.path().join("claude");
+
+        // Mock CLI: read the initialize request, respond with control_response,
+        // then read the user prompt, emit system init + result.
+        // The control_response should NOT appear as an SDK message.
+        let script = r#"#!/bin/sh
+read -r INIT_REQ
+echo '{"type":"control_response","response":{"subtype":"success","request_id":"init_test","response":{"pid":1234}}}'
+read -r USER_PROMPT
+echo '{"type":"system","subtype":"init","uuid":"u1","session_id":"sess_init","claude_code_version":"1.0","cwd":"/tmp","tools":[],"mcp_servers":[],"model":"claude-sonnet-4-20250514","permission_mode":"default","slash_commands":[],"output_style":"stream","skills":[],"plugins":[]}'
+echo '{"type":"result","subtype":"success","uuid":"u2","session_id":"sess_init","duration_ms":10,"duration_api_ms":5,"is_error":false,"num_turns":1,"result":"ok","errors":null,"stop_reason":"end_turn","total_cost_usd":0.0,"usage":{"input_tokens":1,"output_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":0},"permission_denials":[],"structured_output":null}'
+"#;
+
+        std::fs::write(&script_path, script).unwrap();
+        let mut perms = std::fs::metadata(&script_path).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&script_path, perms).unwrap();
+
+        let options = Options {
+            path_to_cli: Some(script_path),
+            ..Options::default()
+        };
+
+        let mut q = query("test", options).await.unwrap();
+
+        let mut messages = Vec::new();
+        while let Some(msg) = q.next().await {
+            messages.push(msg.unwrap());
+        }
+
+        // control_response should be filtered out — only System(Init) + Result
+        assert_eq!(messages.len(), 2, "expected 2 messages, got {}", messages.len());
+        assert!(messages
+            .iter()
+            .all(|m| !matches!(m, SdkMessage::Unknown(v) if v.get("type").and_then(|t| t.as_str()) == Some("control_response"))));
+
+        let sid = q.session_id().await;
+        assert_eq!(sid, Some("sess_init".to_string()));
+    }
+
+    #[tokio::test]
+    async fn query_responds_to_initialize_control_request_from_cli() {
+        use std::os::unix::fs::PermissionsExt;
+        use tempfile::TempDir;
+
+        let dir = TempDir::new().unwrap();
+        let script_path = dir.path().join("claude");
+
+        // Mock CLI: read init + prompt from SDK, then send its OWN initialize
+        // control_request (the CLI sometimes sends this). The SDK must respond
+        // so the CLI continues. Then emit system init + result.
+        let script = r#"#!/bin/sh
+read -r SDK_INIT
+read -r USER_PROMPT
+echo '{"type":"control_request","request_id":"cli_init_1","request":{"subtype":"initialize"}}'
+read -r SDK_RESPONSE
+echo '{"type":"system","subtype":"init","uuid":"u1","session_id":"sess_clinit","claude_code_version":"1.0","cwd":"/tmp","tools":[],"mcp_servers":[],"model":"claude-sonnet-4-20250514","permission_mode":"default","slash_commands":[],"output_style":"stream","skills":[],"plugins":[]}'
+echo '{"type":"result","subtype":"success","uuid":"u2","session_id":"sess_clinit","duration_ms":10,"duration_api_ms":5,"is_error":false,"num_turns":1,"result":"ok","errors":null,"stop_reason":"end_turn","total_cost_usd":0.0,"usage":{"input_tokens":1,"output_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":0},"permission_denials":[],"structured_output":null}'
+"#;
+
+        std::fs::write(&script_path, script).unwrap();
+        let mut perms = std::fs::metadata(&script_path).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&script_path, perms).unwrap();
+
+        let options = Options {
+            path_to_cli: Some(script_path),
+            ..Options::default()
+        };
+
+        let mut q = query("test", options).await.unwrap();
+
+        let mut messages = Vec::new();
+        while let Some(msg) = q.next().await {
+            messages.push(msg.unwrap());
+        }
+
+        // The CLI's initialize request should be handled (responded to) and not
+        // forwarded as a message. We should only see System(Init) + Result.
+        assert_eq!(messages.len(), 2, "expected 2 messages, got {}", messages.len());
+
+        let sid = q.session_id().await;
+        assert_eq!(sid, Some("sess_clinit".to_string()));
     }
 }

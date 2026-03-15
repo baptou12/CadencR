@@ -87,6 +87,14 @@ impl Options {
         // Include partial streaming events (content_block_delta) for real-time UI.
         args.push("--include-partial-messages".to_string());
 
+        // When canUseTool is provided, tell the CLI to delegate permission
+        // prompts (including AskUserQuestion) over the stdin/stdout control
+        // protocol instead of handling them in the terminal.
+        if self.can_use_tool.is_some() {
+            args.push("--permission-prompt-tool".to_string());
+            args.push("stdio".to_string());
+        }
+
         if let Some(mode) = &self.permission_mode {
             args.push("--permission-mode".to_string());
             args.push(mode.as_cli_flag().to_string());

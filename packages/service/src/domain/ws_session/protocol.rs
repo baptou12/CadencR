@@ -87,6 +87,7 @@ pub struct PermissionRespondPayload {
     pub request_id: String,
     pub granted: bool,
     pub feedback: Option<String>,
+    pub updated_input: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -211,7 +212,7 @@ mod tests {
         let _: PromptSendPayload = serde_json::from_value(v).unwrap();
 
         // PermissionRespondPayload
-        let p = PermissionRespondPayload { session_id: "s1".into(), request_id: "r1".into(), granted: true, feedback: None };
+        let p = PermissionRespondPayload { session_id: "s1".into(), request_id: "r1".into(), granted: true, feedback: None, updated_input: None };
         let v = serde_json::to_value(&p).unwrap();
         let _: PermissionRespondPayload = serde_json::from_value(v).unwrap();
 

@@ -32,6 +32,8 @@ function WebSocketSessionPage() {
       onPermissionDecision={(decision) => {
         ws.respondToPermission(ws.pendingRequestId, decision !== "deny");
       }}
+      pendingQuestions={ws.pendingQuestions.length > 0 ? ws.pendingQuestions : undefined}
+      onAnswerSubmit={ws.respondToQuestion}
       permissionMode={ws.permissionMode}
       onPermissionModeToggle={() => {
         const next = ws.permissionMode === "plan" ? "acceptEdits" : "plan";

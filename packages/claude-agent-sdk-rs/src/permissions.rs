@@ -56,11 +56,11 @@ pub struct PermissionRequest {
 pub enum PermissionResult {
     #[serde(rename = "allow")]
     Allow {
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(rename = "updatedInput", skip_serializing_if = "Option::is_none")]
         updated_input: Option<serde_json::Value>,
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(rename = "updatedPermissions", skip_serializing_if = "Option::is_none")]
         updated_permissions: Option<Vec<PermissionUpdate>>,
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(rename = "toolUseId", skip_serializing_if = "Option::is_none")]
         tool_use_id: Option<String>,
     },
     #[serde(rename = "deny")]
@@ -68,7 +68,7 @@ pub enum PermissionResult {
         message: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         interrupt: Option<bool>,
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(rename = "toolUseId", skip_serializing_if = "Option::is_none")]
         tool_use_id: Option<String>,
     },
 }

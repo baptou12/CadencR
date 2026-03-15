@@ -49,11 +49,17 @@ export function createPromptSend(sessionId: string, text: string): WsEnvelope {
   return createEnvelope("session", "prompt.send", { session_id: sessionId, text });
 }
 
-export function createPermissionRespond(sessionId: string, requestId: string, granted: boolean): WsEnvelope {
+export function createPermissionRespond(
+  sessionId: string,
+  requestId: string,
+  granted: boolean,
+  updatedInput?: Record<string, unknown>,
+): WsEnvelope {
   return createEnvelope("session", "permission.respond", {
     session_id: sessionId,
     request_id: requestId,
     granted,
+    ...(updatedInput ? { updated_input: updatedInput } : {}),
   });
 }
 
