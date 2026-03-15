@@ -1,8 +1,8 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { useHotkeys } from "react-hotkeys-hook";
 import { trpc } from "@/trpc";
-import { useGetFeature } from "@/api/generated";
+import { useGetFeature, useListProjects } from "@/api/generated";
 import { FeatureTopBar } from "@/components/FeatureTopBar";
 import { AgentSession, type AgentSessionHandle } from "@/components/AgentSession";
 import { FeatureWorkflowView } from "@/components/FeatureWorkflowView";
@@ -31,6 +31,15 @@ function FeaturePage() {
   const featureQuery = useGetFeature(numericFeatureId);
   const feature = featureQuery.data ?? undefined;
 
+  if (feature?.type === "ws-session") {
+    return (
+      <WsSessionRedirect
+        featureId={numericFeatureId}
+        projectId={numericProjectId}
+      />
+    );
+  }
+
   if (feature?.type === "session") {
     return (
       <SessionFeatureView
@@ -46,6 +55,35 @@ function FeaturePage() {
       projectId={numericProjectId}
       feature={feature}
       featureQuery={featureQuery}
+    />
+  );
+}
+
+// ---------------------------------------------------------------------------
+// WS session redirect — navigates to the WS session route
+// ---------------------------------------------------------------------------
+
+function WsSessionRedirect({
+  featureId,
+  projectId,
+}: {
+  featureId: number;
+  projectId: number;
+}) {
+  const projectsQuery = useListProjects();
+  const project = projectsQuery.data?.find((p) => p.id === projectId);
+
+  if (!project) {
+    return null; // Loading
+  }
+
+  const wsSessionId = crypto.randomUUID();
+  return (
+    <Navigate
+      to="/ws-session/$sessionId"
+      params={{ sessionId: wsSessionId }}
+      search={{ cwd: project.path, featureId, projectId }}
+      replace
     />
   );
 }

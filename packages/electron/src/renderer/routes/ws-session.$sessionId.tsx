@@ -31,7 +31,7 @@ export const Route = createFileRoute("/ws-session/$sessionId")({
 function WebSocketSessionPage() {
   const { sessionId } = Route.useParams();
   const { cwd, featureId, projectId } = Route.useSearch();
-  const ws = useWebSocketSession(sessionId);
+  const ws = useWebSocketSession(sessionId, featureId);
   const initializedRef = useRef(false);
 
   // Auto-init session on mount once connected

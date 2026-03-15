@@ -22,6 +22,7 @@ import {
   createModeSet,
   type SessionConfig,
 } from "@/lib/ws-envelope";
+import { useGetFeatureAgentState, type AgentBlock } from "@/api/generated";
 
 export type PermissionMode = "acceptEdits" | "plan";
 
@@ -343,10 +344,32 @@ function processSdkMessage(
   }
 }
 
-export function useWebSocketSession(sessionId: string): UseWebSocketSessionReturn {
+// ---------------------------------------------------------------------------
+// Convert server AgentBlock[] to AgentBlockData[]
+// ---------------------------------------------------------------------------
+
+function serverBlocksToAgentBlocks(blocks: AgentBlock[]): AgentBlockData[] {
+  return blocks.map((b) => ({
+    id: b.id,
+    type: b.type as AgentBlockData["type"],
+    content: b.content,
+    toolName: b.toolName,
+    toolArgs: b.toolArgs,
+    isError: b.isError,
+    toolUseId: b.toolUseId,
+    parentToolUseId: b.parentToolUseId,
+    childBlocks: b.childBlocks ? serverBlocksToAgentBlocks(b.childBlocks) : undefined,
+    sourceToolName: b.sourceToolName,
+    createdAt: b.createdAt,
+    model: b.model,
+  }));
+}
+
+export function useWebSocketSession(sessionId: string, featureId?: number): UseWebSocketSessionReturn {
   const [blocks, setBlocks] = useState<AgentBlockData[]>([]);
   const [status, setStatus] = useState<AgentStatus>("idle");
   const [isConnected, setIsConnected] = useState(false);
+  const persistedLoadedRef = useRef(false);
   const [pendingPermission, setPendingPermission] = useState<PendingPermission | null>(null);
   const pendingRequestIdRef = useRef<string>("");
   const [pendingQuestions, setPendingQuestions] = useState<AgentQuestion[]>([]);
@@ -354,6 +377,34 @@ export function useWebSocketSession(sessionId: string): UseWebSocketSessionRetur
   const [permissionMode, setPermissionModeState] = useState<PermissionMode>("acceptEdits");
   const [pendingPlanApproval, setPendingPlanApproval] = useState<PendingPlanApproval | null>(null);
   const [currentModelId, setCurrentModelId] = useState<string>("claude-sonnet-4-6");
+
+  // Load persisted state from DB when featureId is provided
+  const agentStateQuery = useGetFeatureAgentState(featureId ?? 0, undefined, {
+    enabled: !!featureId && !persistedLoadedRef.current,
+  });
+
+  useEffect(() => {
+    if (persistedLoadedRef.current || !featureId || !agentStateQuery.data) return;
+    const sessions = agentStateQuery.data.sessions;
+    if (sessions.length === 0) return;
+
+    // Use the last session (most recent)
+    const session = sessions[sessions.length - 1];
+    persistedLoadedRef.current = true;
+
+    const restoredBlocks = serverBlocksToAgentBlocks(session.blocks);
+    if (restoredBlocks.length > 0) {
+      setBlocks(restoredBlocks);
+    }
+
+    // Restore status
+    const s = session.status;
+    if (s === "running" || s === "paused" || s === "completed" || s === "error") {
+      setStatus(s);
+    } else {
+      setStatus("idle");
+    }
+  }, [featureId, agentStateQuery.data]);
 
   const wsRef = useRef<WebSocket | null>(null);
   const serverSessionIdRef = useRef<string>("");
