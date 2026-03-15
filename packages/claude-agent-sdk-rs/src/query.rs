@@ -252,19 +252,7 @@ impl Query {
 
     /// Write a JSON value to the CLI's stdin as newline-terminated NDJSON.
     async fn write_stdin_json(&self, value: &serde_json::Value) -> Result<(), SdkError> {
-        let mut guard = self.process_stdin.lock().await;
-        let stdin = guard.as_mut().ok_or(SdkError::InputClosed)?;
-        let json = serde_json::to_string(value).map_err(SdkError::SerializationError)?;
-        stdin
-            .write_all(json.as_bytes())
-            .await
-            .map_err(SdkError::IoError)?;
-        stdin
-            .write_all(b"\n")
-            .await
-            .map_err(SdkError::IoError)?;
-        stdin.flush().await.map_err(SdkError::IoError)?;
-        Ok(())
+        write_to_stdin(&self.process_stdin, value).await
     }
 }
 
@@ -274,6 +262,31 @@ impl Drop for Query {
             task.abort();
         }
     }
+}
+
+// ── Shared stdin write helper ────────────────────────────────────────────────
+
+/// Write a JSON value to the CLI's stdin as newline-terminated NDJSON.
+///
+/// Used by both `Query` methods and the background `reader_loop` to avoid
+/// duplicating the lock-serialize-write-flush sequence.
+async fn write_to_stdin(
+    process_stdin: &Mutex<Option<BufWriter<ChildStdin>>>,
+    value: &serde_json::Value,
+) -> Result<(), SdkError> {
+    let mut guard = process_stdin.lock().await;
+    let stdin = guard.as_mut().ok_or(SdkError::InputClosed)?;
+    let json = serde_json::to_string(value).map_err(SdkError::SerializationError)?;
+    stdin
+        .write_all(json.as_bytes())
+        .await
+        .map_err(SdkError::IoError)?;
+    stdin
+        .write_all(b"\n")
+        .await
+        .map_err(SdkError::IoError)?;
+    stdin.flush().await.map_err(SdkError::IoError)?;
+    Ok(())
 }
 
 // ── Background reader task ───────────────────────────────────────────────────
@@ -360,21 +373,7 @@ async fn reader_loop(
                     }
                 };
 
-                let write_result = {
-                    let mut guard = process_stdin.lock().await;
-                    if let Some(stdin) = guard.as_mut() {
-                        let json =
-                            serde_json::to_string(&response_json).expect("already serialized");
-                        let r1 = stdin.write_all(json.as_bytes()).await;
-                        let r2 = stdin.write_all(b"\n").await;
-                        let r3 = stdin.flush().await;
-                        r1.and(r2).and(r3).map_err(SdkError::IoError)
-                    } else {
-                        Err(SdkError::InputClosed)
-                    }
-                };
-
-                if let Err(e) = write_result {
+                if let Err(e) = write_to_stdin(&process_stdin, &response_json).await {
                     let _ = tx.send(Err(e)).await;
                     break;
                 }
@@ -385,20 +384,7 @@ async fn reader_loop(
                 // No handler — auto-allow
                 warn!("no canUseTool handler, auto-allowing tool use");
                 let auto_allow = serde_json::json!({ "behavior": "allow" });
-                let write_result = {
-                    let mut guard = process_stdin.lock().await;
-                    if let Some(stdin) = guard.as_mut() {
-                        let json = serde_json::to_string(&auto_allow).expect("static json");
-                        let r1 = stdin.write_all(json.as_bytes()).await;
-                        let r2 = stdin.write_all(b"\n").await;
-                        let r3 = stdin.flush().await;
-                        r1.and(r2).and(r3).map_err(SdkError::IoError)
-                    } else {
-                        Err(SdkError::InputClosed)
-                    }
-                };
-
-                if let Err(e) = write_result {
+                if let Err(e) = write_to_stdin(&process_stdin, &auto_allow).await {
                     let _ = tx.send(Err(e)).await;
                     break;
                 }
@@ -493,24 +479,7 @@ pub async fn query(prompt: impl Into<String>, mut options: Options) -> Result<Qu
         "parent_tool_use_id": null,
         "session_id": ""
     });
-    {
-        let mut guard = process_stdin.lock().await;
-        if let Some(ref mut stdin) = *guard {
-            let json =
-                serde_json::to_string(&prompt_msg).map_err(SdkError::SerializationError)?;
-            stdin
-                .write_all(json.as_bytes())
-                .await
-                .map_err(SdkError::IoError)?;
-            stdin
-                .write_all(b"\n")
-                .await
-                .map_err(SdkError::IoError)?;
-            stdin.flush().await.map_err(SdkError::IoError)?;
-        } else {
-            return Err(SdkError::InputClosed);
-        }
-    }
+    write_to_stdin(&process_stdin, &prompt_msg).await?;
 
     // Extract runtime-only fields from options
     let can_use_tool = options.can_use_tool.take();
