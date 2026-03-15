@@ -50,44 +50,92 @@ pub enum TurnState {
 
 /// Check if a raw JSON message from the CLI is a permission request.
 ///
-/// The Claude Code CLI emits permission requests as JSON objects with
-/// `type: "permission_request"` on stdout when it needs tool approval.
+/// The Claude Code CLI uses a bidirectional **control protocol** over
+/// stdin/stdout for permission requests. When the CLI needs tool approval,
+/// it emits a `control_request` message on stdout:
 ///
-/// TODO: Verify exact wire format against the Claude Code CLI source.
-/// The TS SDK uses a callback-based approach; the CLI subprocess protocol
-/// may use a different message envelope. This implementation handles the
-/// known format from the stream-json protocol.
+/// ```json
+/// {
+///   "type": "control_request",
+///   "request_id": "req_1_abcd1234",
+///   "request": {
+///     "subtype": "can_use_tool",
+///     "tool_name": "Write",
+///     "input": { "file_path": "/tmp/test.txt", "content": "..." },
+///     "permission_suggestions": []
+///   }
+/// }
+/// ```
+///
+/// The SDK responds on stdin with a `control_response`:
+///
+/// ```json
+/// {
+///   "type": "control_response",
+///   "response": {
+///     "subtype": "success",
+///     "request_id": "req_1_abcd1234",
+///     "response": { "behavior": "allow", "updatedInput": { ... } }
+///   }
+/// }
+/// ```
+///
+/// **Current simplification**: This implementation detects permission
+/// requests by checking `type == "control_request"` and
+/// `request.subtype == "can_use_tool"`. The `request_id` is echoed back
+/// in the response. Other control request subtypes (e.g. `hook_callback`,
+/// `mcp_message`) are ignored and passed through as `Unknown` messages.
+///
+/// A full control protocol implementation would handle all subtypes,
+/// including the initialization handshake (`initialize` sent by the SDK
+/// on startup via stdin).
 fn is_permission_request(value: &serde_json::Value) -> bool {
-    value.get("type").and_then(|t| t.as_str()) == Some("permission_request")
+    value.get("type").and_then(|t| t.as_str()) == Some("control_request")
+        && value
+            .pointer("/request/subtype")
+            .and_then(|s| s.as_str())
+            == Some("can_use_tool")
 }
 
-/// Parse a raw JSON permission request into a typed `PermissionRequest`.
+/// Parse a raw JSON permission request (control_request) into a typed
+/// `PermissionRequest`.
+///
+/// Extracts fields from the nested `request` object within the
+/// `control_request` envelope. The `request_id` is stored in
+/// `tool_use_id` so it can be echoed back in the response.
 fn parse_permission_request(value: &serde_json::Value) -> PermissionRequest {
+    let request = value
+        .get("request")
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
+    let request_id = value
+        .get("request_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
+
     PermissionRequest {
-        tool_name: value
+        tool_name: request
             .get("tool_name")
             .and_then(|v| v.as_str())
             .unwrap_or_default()
             .to_string(),
-        input: value
+        input: request
             .get("input")
             .cloned()
             .unwrap_or(serde_json::Value::Null),
-        tool_use_id: value
-            .get("tool_use_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_string(),
-        agent_id: value
+        tool_use_id: request_id.to_string(),
+        agent_id: request
             .get("agent_id")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string()),
-        suggestions: None, // Parsed from nested field if present
-        blocked_path: value
+        suggestions: request
+            .get("permission_suggestions")
+            .and_then(|v| serde_json::from_value(v.clone()).ok()),
+        blocked_path: request
             .get("blocked_path")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string()),
-        decision_reason: value
+        decision_reason: request
             .get("decision_reason")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string()),
@@ -373,19 +421,22 @@ async fn reader_loop(
             let request = parse_permission_request(&raw);
             debug!(tool = %request.tool_name, "received permission request");
 
+            // Save request_id before request is moved into the callback
+            let request_id = request.tool_use_id.clone();
+
             if let Some(ref can_use_tool) = can_use_tool {
                 // Update turn state — we're now waiting for user
                 *turn_state.lock().await = TurnState::WaitingForPermission {
                     tool_name: request.tool_name.clone(),
-                    tool_use_id: request.tool_use_id.clone(),
+                    tool_use_id: request_id.clone(),
                 };
 
                 // BLOCK here until the CanUseTool callback resolves.
                 // This is the mechanism for AskUserQuestion, ExitPlanMode, etc.
                 let result = can_use_tool.can_use_tool(request).await;
 
-                // Write permission response back to CLI stdin
-                let response_json = match serde_json::to_value(&result) {
+                // Write permission response back to CLI stdin as a control_response
+                let inner_response = match serde_json::to_value(&result) {
                     Ok(v) => v,
                     Err(e) => {
                         error!("failed to serialize permission response: {e}");
@@ -393,6 +444,14 @@ async fn reader_loop(
                         break;
                     }
                 };
+                let response_json = serde_json::json!({
+                    "type": "control_response",
+                    "response": {
+                        "subtype": "success",
+                        "request_id": request_id,
+                        "response": inner_response
+                    }
+                });
 
                 if let Err(e) = write_to_stdin(&process_stdin, &response_json).await {
                     let _ = tx.send(Err(e)).await;
@@ -404,7 +463,14 @@ async fn reader_loop(
             } else {
                 // No handler — auto-allow
                 warn!("no canUseTool handler, auto-allowing tool use");
-                let auto_allow = serde_json::json!({ "behavior": "allow" });
+                let auto_allow = serde_json::json!({
+                    "type": "control_response",
+                    "response": {
+                        "subtype": "success",
+                        "request_id": request.tool_use_id,
+                        "response": { "behavior": "allow" }
+                    }
+                });
                 if let Err(e) = write_to_stdin(&process_stdin, &auto_allow).await {
                     let _ = tx.send(Err(e)).await;
                     break;
@@ -567,31 +633,46 @@ mod tests {
     #[test]
     fn is_permission_request_works() {
         let pr = serde_json::json!({
-            "type": "permission_request",
-            "tool_name": "Write",
-            "tool_use_id": "abc123",
-            "input": { "path": "/tmp/foo" }
+            "type": "control_request",
+            "request_id": "req_1_abc123",
+            "request": {
+                "subtype": "can_use_tool",
+                "tool_name": "Write",
+                "input": { "path": "/tmp/foo" }
+            }
         });
         assert!(is_permission_request(&pr));
 
         let not_pr = serde_json::json!({ "type": "stream_event" });
         assert!(!is_permission_request(&not_pr));
+
+        // Other control_request subtypes should not match
+        let hook_req = serde_json::json!({
+            "type": "control_request",
+            "request_id": "req_2",
+            "request": { "subtype": "hook_callback" }
+        });
+        assert!(!is_permission_request(&hook_req));
     }
 
     #[test]
     fn parse_permission_request_extracts_fields() {
         let pr = serde_json::json!({
-            "type": "permission_request",
-            "tool_name": "Edit",
-            "tool_use_id": "tu_123",
-            "input": { "file": "main.rs" },
-            "agent_id": "agent_1",
-            "blocked_path": "/src/main.rs",
-            "decision_reason": "file write"
+            "type": "control_request",
+            "request_id": "req_1_abc",
+            "request": {
+                "subtype": "can_use_tool",
+                "tool_name": "Edit",
+                "input": { "file": "main.rs" },
+                "agent_id": "agent_1",
+                "blocked_path": "/src/main.rs",
+                "decision_reason": "file write",
+                "permission_suggestions": []
+            }
         });
         let req = parse_permission_request(&pr);
         assert_eq!(req.tool_name, "Edit");
-        assert_eq!(req.tool_use_id, "tu_123");
+        assert_eq!(req.tool_use_id, "req_1_abc"); // request_id becomes tool_use_id
         assert_eq!(req.agent_id, Some("agent_1".to_string()));
         assert_eq!(req.blocked_path, Some("/src/main.rs".to_string()));
         assert_eq!(req.decision_reason, Some("file write".to_string()));
@@ -699,7 +780,7 @@ sleep 300
         let script = r#"#!/bin/sh
 read -r INPUT
 echo '{"type":"system","subtype":"init","uuid":"u1","session_id":"sess_456","claude_code_version":"1.0","cwd":"/tmp","tools":[],"mcp_servers":[],"model":"claude-sonnet-4-20250514","permission_mode":"default","slash_commands":[],"output_style":"stream","skills":[],"plugins":[]}'
-echo '{"type":"permission_request","tool_name":"Write","tool_use_id":"tu_1","input":{"path":"/tmp/test.txt"}}'
+echo '{"type":"control_request","request_id":"req_1_perm","request":{"subtype":"can_use_tool","tool_name":"Write","input":{"path":"/tmp/test.txt"}}}'
 read -r RESPONSE
 echo '{"type":"result","subtype":"success","uuid":"u3","session_id":"sess_456","duration_ms":50,"duration_api_ms":40,"is_error":false,"num_turns":1,"result":"done","errors":null,"stop_reason":"end_turn","total_cost_usd":0.0,"usage":{"input_tokens":5,"output_tokens":3,"cache_creation_input_tokens":0,"cache_read_input_tokens":0},"permission_denials":[],"structured_output":null}'
 "#;
