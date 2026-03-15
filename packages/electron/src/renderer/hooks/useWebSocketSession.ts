@@ -475,6 +475,7 @@ export function useWebSocketSession(sessionId: string): UseWebSocketSessionRetur
             tool_name: string;
             tool_input: Record<string, unknown>;
             description?: string;
+            pattern?: string;
           };
           pendingRequestIdRef.current = p.request_id;
 
@@ -488,7 +489,7 @@ export function useWebSocketSession(sessionId: string): UseWebSocketSessionRetur
               toolName: p.tool_name,
               input: p.tool_input ?? {},
               description: p.description ?? "",
-              pattern: "",
+              pattern: p.pattern ?? "",
             });
           }
           setStatus("paused");
@@ -580,7 +581,8 @@ export function useWebSocketSession(sessionId: string): UseWebSocketSessionRetur
 
   const respondToPermission = useCallback(
     (requestId: string, granted: boolean) => {
-      send(createPermissionRespond(serverSessionIdRef.current, requestId, granted));
+      const decision = granted ? "allow_once" : "deny";
+      send(createPermissionRespond(serverSessionIdRef.current, requestId, decision));
       setPendingPermission(null);
       pendingRequestIdRef.current = "";
       setStatus("running");
@@ -597,7 +599,7 @@ export function useWebSocketSession(sessionId: string): UseWebSocketSessionRetur
       send(createPermissionRespond(
         serverSessionIdRef.current,
         pendingRequestIdRef.current,
-        true,
+        "allow_once",
         updatedInput,
       ));
 

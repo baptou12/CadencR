@@ -199,7 +199,11 @@ export function ProjectTree({
                           onClick={(e) => {
                             e.stopPropagation();
                             const wsSessionId = crypto.randomUUID();
-                            void navigate({ to: "/ws-session/$sessionId", params: { sessionId: wsSessionId } });
+                            void navigate({
+                              to: "/ws-session/$sessionId",
+                              params: { sessionId: wsSessionId },
+                              search: { cwd: project.path },
+                            });
                           }}
                         >
                           New Session (WebSocket)

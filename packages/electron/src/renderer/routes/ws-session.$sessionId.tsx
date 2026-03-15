@@ -3,12 +3,23 @@ import { useEffect, useRef } from "react";
 import { AgentSession } from "@/components/AgentSession";
 import { useWebSocketSession } from "@/hooks/useWebSocketSession";
 
+interface WsSessionSearch {
+  cwd: string;
+}
+
 export const Route = createFileRoute("/ws-session/$sessionId")({
   component: WebSocketSessionPage,
+  validateSearch: (search: Record<string, unknown>): WsSessionSearch => {
+    if (typeof search.cwd !== "string" || !search.cwd) {
+      throw new Error("cwd search param is required for WebSocket sessions");
+    }
+    return { cwd: search.cwd };
+  },
 });
 
 function WebSocketSessionPage() {
   const { sessionId } = Route.useParams();
+  const { cwd } = Route.useSearch();
   const ws = useWebSocketSession(sessionId);
   const initializedRef = useRef(false);
 
@@ -17,9 +28,9 @@ function WebSocketSessionPage() {
   useEffect(() => {
     if (isConnected && !initializedRef.current) {
       initializedRef.current = true;
-      initSession({});
+      initSession({ cwd });
     }
-  }, [isConnected, initSession]);
+  }, [isConnected, initSession, cwd]);
 
   return (
     <AgentSession

@@ -1,6 +1,15 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+/// Permission decision from the client.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PermissionDecision {
+    AllowOnce,
+    AllowFuture,
+    Deny,
+}
+
 /// Envelope — every message in both directions uses this shape.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsEnvelope {
@@ -85,7 +94,7 @@ pub struct PromptSendPayload {
 pub struct PermissionRespondPayload {
     pub session_id: String,
     pub request_id: String,
-    pub granted: bool,
+    pub decision: PermissionDecision,
     pub feedback: Option<String>,
     pub updated_input: Option<serde_json::Value>,
 }
@@ -125,6 +134,8 @@ pub struct PermissionRequestPayload {
     pub tool_name: String,
     pub tool_input: serde_json::Value,
     pub description: Option<String>,
+    /// Permission pattern for "allow future" persistence (e.g. "Read(/path)" or "Bash(git push:*)").
+    pub pattern: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -212,7 +223,7 @@ mod tests {
         let _: PromptSendPayload = serde_json::from_value(v).unwrap();
 
         // PermissionRespondPayload
-        let p = PermissionRespondPayload { session_id: "s1".into(), request_id: "r1".into(), granted: true, feedback: None, updated_input: None };
+        let p = PermissionRespondPayload { session_id: "s1".into(), request_id: "r1".into(), decision: PermissionDecision::AllowOnce, feedback: None, updated_input: None };
         let v = serde_json::to_value(&p).unwrap();
         let _: PermissionRespondPayload = serde_json::from_value(v).unwrap();
 
@@ -227,7 +238,7 @@ mod tests {
         let _: SessionMessagePayload = serde_json::from_value(v).unwrap();
 
         // PermissionRequestPayload
-        let p = PermissionRequestPayload { request_id: "r1".into(), tool_name: "bash".into(), tool_input: serde_json::json!({}), description: Some("run cmd".into()) };
+        let p = PermissionRequestPayload { request_id: "r1".into(), tool_name: "bash".into(), tool_input: serde_json::json!({}), description: Some("run cmd".into()), pattern: None };
         let v = serde_json::to_value(&p).unwrap();
         let _: PermissionRequestPayload = serde_json::from_value(v).unwrap();
 

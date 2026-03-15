@@ -213,7 +213,7 @@ describe("useWebSocketSession", () => {
     expect(sent.domain).toBe("session");
     expect(sent.action).toBe("permission.respond");
     expect(sent.payload.request_id).toBe("r1");
-    expect(sent.payload.granted).toBe(true);
+    expect(sent.payload.decision).toBe("allow_once");
   });
 
   it("session.error sets error status", async () => {

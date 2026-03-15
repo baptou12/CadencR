@@ -65,10 +65,10 @@ describe("ws-envelope", () => {
     });
 
     it("createPermissionRespond", () => {
-      const env = createPermissionRespond("s1", "r1", true);
+      const env = createPermissionRespond("s1", "r1", "allow_once");
       expect(env.domain).toBe("session");
       expect(env.action).toBe("permission.respond");
-      expect(env.payload).toEqual({ session_id: "s1", request_id: "r1", granted: true });
+      expect(env.payload).toEqual({ session_id: "s1", request_id: "r1", decision: "allow_once" });
     });
 
     it("createInterrupt", () => {

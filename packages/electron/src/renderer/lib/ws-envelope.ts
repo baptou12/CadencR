@@ -52,14 +52,16 @@ export function createPromptSend(sessionId: string, text: string): WsEnvelope {
 export function createPermissionRespond(
   sessionId: string,
   requestId: string,
-  granted: boolean,
+  decision: "allow_once" | "allow_future" | "deny",
   updatedInput?: Record<string, unknown>,
+  feedback?: string,
 ): WsEnvelope {
   return createEnvelope("session", "permission.respond", {
     session_id: sessionId,
     request_id: requestId,
-    granted,
+    decision,
     ...(updatedInput ? { updated_input: updatedInput } : {}),
+    ...(feedback ? { feedback } : {}),
   });
 }
 

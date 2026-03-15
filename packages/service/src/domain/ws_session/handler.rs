@@ -1,4 +1,5 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -15,6 +16,7 @@ use claude_agent_sdk_rs::{
 };
 
 use crate::app_state::AppState;
+use super::permissions::{self, ResolvedPermission};
 use super::protocol::*;
 use super::store::{SessionStore, WsSessionStatus};
 
@@ -29,13 +31,21 @@ fn parse_permission_mode(mode: &str) -> PermissionMode {
     }
 }
 
-/// CanUseTool implementation that bridges permission requests to the WebSocket client.
-///
-/// When the SDK needs tool permission, this sends a `session/permission.request`
-/// envelope over the WebSocket and waits for the user's response on `response_rx`.
+/// Response sent through the permission channel from the WebSocket handler.
+struct PermissionResponse {
+    decision: PermissionDecision,
+    feedback: Option<String>,
+    updated_input: Option<serde_json::Value>,
+}
+
+/// CanUseTool implementation that resolves permissions server-side when possible,
+/// and bridges to the WebSocket client only when user approval is needed.
 struct WsBridgeCanUseTool {
     sender: WsSender,
-    response_rx: Arc<Mutex<mpsc::Receiver<PermissionResult>>>,
+    response_rx: Arc<Mutex<mpsc::Receiver<PermissionResponse>>>,
+    worktree_path: PathBuf,
+    session_cache: Arc<Mutex<HashSet<String>>>,
+    allowed_patterns: Arc<HashSet<String>>,
 }
 
 #[async_trait]
@@ -46,30 +56,111 @@ impl CanUseTool for WsBridgeCanUseTool {
             tool_use_id = %request.tool_use_id,
             "WsBridgeCanUseTool::can_use_tool called"
         );
-        // Send permission request to WebSocket client
-        let payload = PermissionRequestPayload {
-            request_id: request.tool_use_id.clone(),
-            tool_name: request.tool_name.clone(),
-            tool_input: request.input.clone(),
-            description: request.decision_reason.clone(),
-        };
-        let envelope = WsEnvelope::new(
-            "session",
-            "permission.request",
-            serde_json::to_value(payload).unwrap(),
-        );
-        let _ = self.sender.send(Message::Text(String::from(envelope).into()));
 
-        // Wait for user response
-        let mut rx = self.response_rx.lock().await;
-        match rx.recv().await {
-            Some(result) => result,
-            None => {
-                // Channel closed — deny by default
-                PermissionResult::Deny {
-                    message: "Permission channel closed".to_string(),
+        // Resolve permission server-side
+        let cache = self.session_cache.lock().await;
+        let resolved = permissions::resolve_permission(
+            &request.tool_name,
+            &request.input,
+            &self.worktree_path,
+            &cache,
+        );
+        drop(cache);
+
+        match resolved {
+            ResolvedPermission::Allow => {
+                debug!(tool_name = %request.tool_name, "auto-allowed");
+                return PermissionResult::Allow {
+                    updated_input: None,
+                    updated_permissions: None,
+                    tool_use_id: Some(request.tool_use_id),
+                };
+            }
+            ResolvedPermission::Deny { reason } => {
+                debug!(tool_name = %request.tool_name, reason = %reason, "auto-denied");
+                return PermissionResult::Deny {
+                    message: reason,
                     interrupt: Some(false),
                     tool_use_id: Some(request.tool_use_id),
+                };
+            }
+            ResolvedPermission::NeedsPrompt {
+                description,
+                pattern,
+            } => {
+                // Check if pattern is in pre-loaded allowed patterns from settings files
+                if self.allowed_patterns.contains(&pattern) {
+                    debug!(tool_name = %request.tool_name, pattern = %pattern, "allowed by settings pattern");
+                    self.session_cache.lock().await.insert(pattern);
+                    return PermissionResult::Allow {
+                        updated_input: None,
+                        updated_permissions: None,
+                        tool_use_id: Some(request.tool_use_id),
+                    };
+                }
+
+                // Must prompt the user via WebSocket
+                debug!(tool_name = %request.tool_name, pattern = %pattern, "prompting user");
+                let payload = PermissionRequestPayload {
+                    request_id: request.tool_use_id.clone(),
+                    tool_name: request.tool_name.clone(),
+                    tool_input: request.input.clone(),
+                    description: Some(description),
+                    pattern: Some(pattern.clone()),
+                };
+                let envelope = WsEnvelope::new(
+                    "session",
+                    "permission.request",
+                    serde_json::to_value(payload).unwrap(),
+                );
+                let _ = self.sender.send(Message::Text(String::from(envelope).into()));
+
+                // Wait for user response
+                let mut rx = self.response_rx.lock().await;
+                match rx.recv().await {
+                    Some(response) => {
+                        match response.decision {
+                            PermissionDecision::AllowOnce => {
+                                self.session_cache.lock().await.insert(pattern);
+                                PermissionResult::Allow {
+                                    updated_input: response.updated_input,
+                                    updated_permissions: None,
+                                    tool_use_id: Some(request.tool_use_id),
+                                }
+                            }
+                            PermissionDecision::AllowFuture => {
+                                self.session_cache.lock().await.insert(pattern.clone());
+                                if let Err(e) = permissions::append_to_settings_local(
+                                    &self.worktree_path,
+                                    &pattern,
+                                ) {
+                                    error!(error = %e, "failed to persist permission to settings.local.json");
+                                }
+                                PermissionResult::Allow {
+                                    updated_input: response.updated_input,
+                                    updated_permissions: None,
+                                    tool_use_id: Some(request.tool_use_id),
+                                }
+                            }
+                            PermissionDecision::Deny => {
+                                let message = response
+                                    .feedback
+                                    .unwrap_or_else(|| "User denied permission".to_string());
+                                PermissionResult::Deny {
+                                    message,
+                                    interrupt: Some(false),
+                                    tool_use_id: Some(request.tool_use_id),
+                                }
+                            }
+                        }
+                    }
+                    None => {
+                        PermissionResult::Deny {
+                            message: "Permission channel closed".to_string(),
+                            interrupt: Some(false),
+                            tool_use_id: Some(request.tool_use_id),
+                        }
+                    }
                 }
             }
         }
@@ -83,14 +174,16 @@ enum QueryState {
     /// Query is active (CLI subprocess running).
     Active {
         query: Arc<Mutex<Query>>,
-        permission_tx: mpsc::Sender<PermissionResult>,
+        permission_tx: mpsc::Sender<PermissionResponse>,
     },
 }
 
 /// Serializable session config for respawning with --resume after model change.
 #[derive(Clone)]
 struct SessionConfig {
-    cwd: std::path::PathBuf,
+    cwd: PathBuf,
+    /// Pre-canonicalized worktree path for permission checks (avoids repeated syscalls).
+    canonical_cwd: PathBuf,
     permission_mode: Option<PermissionMode>,
     system_prompt: Option<String>,
 }
@@ -108,6 +201,10 @@ struct SdkHandle {
     spawned_permission_mode: Option<PermissionMode>,
     /// Config for respawning with --resume after model/mode change.
     config: SessionConfig,
+    /// Session-level cache of approved permission patterns.
+    session_cache: Arc<Mutex<HashSet<String>>>,
+    /// Pre-loaded allowed patterns from settings files.
+    allowed_patterns: Arc<HashSet<String>>,
 }
 
 type SdkSessions = Arc<Mutex<HashMap<String, SdkHandle>>>;
@@ -269,8 +366,17 @@ async fn handle_init(
         return;
     }
 
-    // Build SDK options
+    // Build SDK options — cwd is required
+    let cwd = match payload.cwd {
+        Some(ref cwd) if !cwd.is_empty() => cwd.clone(),
+        _ => {
+            send_error(sender, &envelope.id, "MISSING_CWD", "cwd is required for session init");
+            return;
+        }
+    };
+
     let mut options = Options::default();
+    options.cwd = std::path::PathBuf::from(&cwd);
     if let Some(ref model) = payload.model {
         options.model = Some(model.clone());
     }
@@ -279,9 +385,6 @@ async fn handle_init(
     }
     if let Some(ref sp) = payload.system_prompt {
         options.system_prompt = Some(sp.clone());
-    }
-    if let Some(ref cwd) = payload.cwd {
-        options.cwd = std::path::PathBuf::from(cwd);
     }
 
     // Spawn the CLI query - use an empty initial prompt; the client will send prompt.send
@@ -298,11 +401,16 @@ async fn handle_init(
 
     let desired_model = options.model.clone();
     let desired_permission_mode = options.permission_mode.clone();
+    // Canonicalize worktree path once and load allowed patterns from settings files
+    let canonical_cwd = permissions::canonicalize_worktree(&options.cwd);
     let config = SessionConfig {
         cwd: options.cwd.clone(),
+        canonical_cwd: canonical_cwd.clone(),
         permission_mode: options.permission_mode.clone(),
         system_prompt: options.system_prompt.clone(),
     };
+    let allowed_patterns = Arc::new(permissions::load_allowed_patterns(&options.cwd));
+    let session_cache = Arc::new(Mutex::new(HashSet::new()));
 
     let handle = SdkHandle {
         state: QueryState::Pending(options),
@@ -311,6 +419,8 @@ async fn handle_init(
         desired_permission_mode,
         spawned_permission_mode: None,
         config,
+        session_cache,
+        allowed_patterns,
     };
 
     sdk_sessions
@@ -417,6 +527,9 @@ async fn handle_prompt_send(
             // First prompt (or respawn after model change) — take the stored options and spawn.
             let spawned_model = handle.desired_model.clone();
             let config = handle.config.clone();
+            let session_cache = handle.session_cache.clone();
+            let allowed_patterns = handle.allowed_patterns.clone();
+            let worktree_path = handle.config.canonical_cwd.clone();
             let options = match std::mem::replace(
                 &mut handle.state,
                 QueryState::Pending(Options::default()),
@@ -429,10 +542,13 @@ async fn handle_prompt_send(
             drop(sessions);
 
             // Set up permission bridge
-            let (permission_tx, permission_rx) = mpsc::channel::<PermissionResult>(16);
+            let (permission_tx, permission_rx) = mpsc::channel::<PermissionResponse>(16);
             let bridge = WsBridgeCanUseTool {
                 sender: sender.clone(),
                 response_rx: Arc::new(Mutex::new(permission_rx)),
+                worktree_path,
+                session_cache: session_cache.clone(),
+                allowed_patterns: allowed_patterns.clone(),
             };
             let mut options = options;
             options.can_use_tool = Some(Box::new(bridge));
@@ -464,6 +580,8 @@ async fn handle_prompt_send(
                             desired_permission_mode: spawned_pm.clone(),
                             spawned_permission_mode: spawned_pm,
                             config,
+                            session_cache,
+                            allowed_patterns,
                         },
                     );
                 }
@@ -520,24 +638,13 @@ async fn handle_permission_respond(
         }
     };
 
-    let result = if payload.granted {
-        PermissionResult::Allow {
-            updated_input: payload.updated_input,
-            updated_permissions: None,
-            tool_use_id: Some(payload.request_id),
-        }
-    } else {
-        let message = payload
-            .feedback
-            .unwrap_or_else(|| "User denied permission".to_string());
-        PermissionResult::Deny {
-            message,
-            interrupt: Some(false),
-            tool_use_id: Some(payload.request_id),
-        }
+    let response = PermissionResponse {
+        decision: payload.decision,
+        feedback: payload.feedback,
+        updated_input: payload.updated_input,
     };
 
-    if permission_tx.send(result).await.is_err() {
+    if permission_tx.send(response).await.is_err() {
         send_error(
             sender,
             &envelope.id,
@@ -938,7 +1045,7 @@ mod tests {
             serde_json::json!({
                 "session_id": "nonexistent",
                 "request_id": "r1",
-                "granted": true
+                "decision": "allow_once"
             }),
         );
 
@@ -958,21 +1065,25 @@ mod tests {
 
     #[tokio::test]
     async fn test_permission_tx_sends_to_bridge() {
-        // Verify that permission_tx.send delivers to a WsBridgeCanUseTool receiver
+        // Verify that permission_tx.send delivers to a WsBridgeCanUseTool receiver.
+        // Use a path outside the worktree to trigger NeedsPrompt.
         let (ws_tx, mut ws_rx) = mpsc::unbounded_channel::<Message>();
-        let (perm_tx, perm_rx) = mpsc::channel::<PermissionResult>(16);
+        let (perm_tx, perm_rx) = mpsc::channel::<PermissionResponse>(16);
 
         let bridge = WsBridgeCanUseTool {
             sender: ws_tx,
             response_rx: Arc::new(Mutex::new(perm_rx)),
+            worktree_path: PathBuf::from("/project"),
+            session_cache: Arc::new(Mutex::new(HashSet::new())),
+            allowed_patterns: Arc::new(HashSet::new()),
         };
 
-        // Spawn bridge call in background
+        // Spawn bridge call in background — use a file outside the worktree so it prompts
         let bridge_handle = tokio::spawn(async move {
             bridge
                 .can_use_tool(PermissionRequest {
                     tool_name: "Write".to_string(),
-                    input: serde_json::json!({"file": "test.txt"}),
+                    input: serde_json::json!({"file_path": "/outside/test.txt"}),
                     tool_use_id: "req_123".to_string(),
                     agent_id: None,
                     suggestions: None,
@@ -991,17 +1102,17 @@ mod tests {
                 serde_json::from_value(env.payload).unwrap();
             assert_eq!(payload.request_id, "req_123");
             assert_eq!(payload.tool_name, "Write");
-            assert_eq!(payload.description, Some("writing file".to_string()));
+            assert!(payload.pattern.is_some());
         } else {
             panic!("expected text message");
         }
 
         // Simulate user granting permission via the channel
         perm_tx
-            .send(PermissionResult::Allow {
+            .send(PermissionResponse {
+                decision: PermissionDecision::AllowOnce,
+                feedback: None,
                 updated_input: None,
-                updated_permissions: None,
-                tool_use_id: Some("req_123".to_string()),
             })
             .await
             .unwrap();
@@ -1018,7 +1129,7 @@ mod tests {
         store: &Arc<dyn SessionStore>,
         sdk_sessions: &SdkSessions,
     ) -> String {
-        let envelope = make_envelope("session", "init", serde_json::json!({}));
+        let envelope = make_envelope("session", "init", serde_json::json!({"cwd": "/tmp/test-project"}));
         dispatch_envelope(envelope, tx, store, sdk_sessions).await;
 
         let msg = rx.recv().await.unwrap();
@@ -1250,7 +1361,7 @@ mod tests {
         let envelope = make_envelope(
             "session",
             "init",
-            serde_json::json!({"permission_mode": "plan"}),
+            serde_json::json!({"permission_mode": "plan", "cwd": "/tmp/test-project"}),
         );
         dispatch_envelope(envelope, &tx, &store, &sdk_sessions).await;
 
@@ -1279,6 +1390,28 @@ mod tests {
         assert_eq!(parse_permission_mode("dontAsk"), PermissionMode::DontAsk);
         assert_eq!(parse_permission_mode("unknown"), PermissionMode::Default);
         assert_eq!(parse_permission_mode(""), PermissionMode::Default);
+    }
+
+    #[tokio::test]
+    async fn test_init_without_cwd_returns_error() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let store: Arc<dyn SessionStore> =
+            Arc::new(super::super::store::InMemorySessionStore::new());
+        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+
+        let envelope = make_envelope("session", "init", serde_json::json!({}));
+        dispatch_envelope(envelope, &tx, &store, &sdk_sessions).await;
+
+        let msg = rx.recv().await.unwrap();
+        if let Message::Text(text) = msg {
+            let env: WsEnvelope = serde_json::from_str(&text).unwrap();
+            assert_eq!(env.action, "error");
+            let payload: SessionErrorPayload =
+                serde_json::from_value(env.payload).unwrap();
+            assert_eq!(payload.code, "MISSING_CWD");
+        } else {
+            panic!("expected text message");
+        }
     }
 
     #[tokio::test]
