@@ -7,3 +7,4 @@ pub mod workspace;
 pub mod diff_comments;
 pub mod terminal;
 pub mod usage;
+pub mod ws_session;

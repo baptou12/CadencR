@@ -4,7 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-axum = "0.8"
+axum = { version = "0.8", features = ["ws"] }
+claude-agent-sdk-rs = { path = "../claude-agent-sdk-rs" }
 tokio = { version = "1", features = ["full"] }
 sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio"] }
 serde = { version = "1", features = ["derive"] }
@@ -20,6 +21,9 @@ regex-lite = "0.1"
 dirs = "6"
 rand = "0.8"
 futures = "0.3"
+uuid = { version = "1", features = ["v4"] }
+async-trait = "0.1"
+chrono = { version = "0.4", features = ["serde"] }
 reqwest = { version = "0.12", features = ["json"] }
 
 [dev-dependencies]

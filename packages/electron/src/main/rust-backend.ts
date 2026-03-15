@@ -23,8 +23,6 @@ function getBinaryPath(): string {
     "..",
     "..",
     "..",
-    "packages",
-    "service",
     "target",
     "debug",
     binaryName,
@@ -63,6 +61,10 @@ export async function startRustBackend(
 
   rustProcess = spawn(binaryPath, args, {
     stdio: ["ignore", "pipe", "pipe"],
+    env: {
+      ...process.env,
+      RUST_LOG: process.env.RUST_LOG ?? "cadence_service=debug,claude_agent_sdk_rs=debug",
+    },
   });
 
   rustProcess.stdout?.on("data", (data: Buffer) => {

@@ -195,6 +195,19 @@ export function ProjectTree({
                         >
                           New Session
                         </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const wsSessionId = crypto.randomUUID();
+                            void navigate({
+                              to: "/ws-session/$sessionId",
+                              params: { sessionId: wsSessionId },
+                              search: { cwd: project.path },
+                            });
+                          }}
+                        >
+                          New Session (WebSocket)
+                        </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
 
