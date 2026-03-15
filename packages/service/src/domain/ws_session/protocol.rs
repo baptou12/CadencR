@@ -86,6 +86,7 @@ pub struct PermissionRespondPayload {
     pub session_id: String,
     pub request_id: String,
     pub granted: bool,
+    pub feedback: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -97,6 +98,12 @@ pub struct SessionActionPayload {
 pub struct ModelSetPayload {
     pub session_id: String,
     pub model: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModeSetPayload {
+    pub session_id: String,
+    pub mode: String,
 }
 
 // --- Server → Client payloads ---
@@ -204,7 +211,7 @@ mod tests {
         let _: PromptSendPayload = serde_json::from_value(v).unwrap();
 
         // PermissionRespondPayload
-        let p = PermissionRespondPayload { session_id: "s1".into(), request_id: "r1".into(), granted: true };
+        let p = PermissionRespondPayload { session_id: "s1".into(), request_id: "r1".into(), granted: true, feedback: None };
         let v = serde_json::to_value(&p).unwrap();
         let _: PermissionRespondPayload = serde_json::from_value(v).unwrap();
 
@@ -222,6 +229,11 @@ mod tests {
         let p = PermissionRequestPayload { request_id: "r1".into(), tool_name: "bash".into(), tool_input: serde_json::json!({}), description: Some("run cmd".into()) };
         let v = serde_json::to_value(&p).unwrap();
         let _: PermissionRequestPayload = serde_json::from_value(v).unwrap();
+
+        // ModeSetPayload
+        let p = ModeSetPayload { session_id: "s1".into(), mode: "plan".into() };
+        let v = serde_json::to_value(&p).unwrap();
+        let _: ModeSetPayload = serde_json::from_value(v).unwrap();
 
         // SessionErrorPayload
         let p = SessionErrorPayload { code: "ERR".into(), message: "bad".into() };

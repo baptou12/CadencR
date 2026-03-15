@@ -394,6 +394,347 @@ describe("useWebSocketSession", () => {
     expect(result.current.blocks[3].content).toBe("You're welcome");
   });
 
+  // ---------------------------------------------------------------------------
+  // Plan approval flow
+  // ---------------------------------------------------------------------------
+
+  it("ExitPlanMode in stream triggers plan approval on turn_complete", async () => {
+    const { result } = renderHook(() => useWebSocketSession("test-id"));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    const ws = getWs();
+
+    // Stream an ExitPlanMode tool_use
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [
+            {
+              type: "stream_event",
+              uuid: "se1",
+              session_id: "s1",
+              parent_tool_use_id: null,
+              event: { type: "message_start", message: { model: "claude-opus-4-6" } },
+            },
+            {
+              type: "stream_event",
+              uuid: "se2",
+              session_id: "s1",
+              parent_tool_use_id: null,
+              event: {
+                type: "content_block_start",
+                index: 0,
+                content_block: { type: "tool_use", id: "toolu_1", name: "ExitPlanMode", input: {} },
+              },
+            },
+          ],
+        },
+      });
+    });
+
+    // Status should be running (approval bar not shown yet)
+    expect(result.current.status).toBe("running");
+    expect(result.current.pendingPlanApproval).toBeNull();
+
+    // turn_complete triggers the approval bar
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "turn_complete",
+        payload: {},
+      });
+    });
+
+    expect(result.current.pendingPlanApproval).toEqual({});
+    expect(result.current.status).toBe("paused");
+  });
+
+  it("turn_complete without ExitPlanMode goes idle normally", async () => {
+    const { result } = renderHook(() => useWebSocketSession("test-id"));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    const ws = getWs();
+
+    // Stream a normal text block (no ExitPlanMode)
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [
+            {
+              type: "stream_event",
+              uuid: "se1",
+              session_id: "s1",
+              parent_tool_use_id: null,
+              event: { type: "message_start", message: { model: "claude-opus-4-6" } },
+            },
+            {
+              type: "stream_event",
+              uuid: "se2",
+              session_id: "s1",
+              parent_tool_use_id: null,
+              event: { type: "content_block_start", index: 0, content_block: { type: "text" } },
+            },
+          ],
+        },
+      });
+    });
+
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "turn_complete",
+        payload: {},
+      });
+    });
+
+    expect(result.current.pendingPlanApproval).toBeNull();
+    expect(result.current.status).toBe("idle");
+  });
+
+  it("approvePlan clears approval, sends mode.set + prompt, sets running", async () => {
+    const { result } = renderHook(() => useWebSocketSession("test-id"));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    const ws = getWs();
+
+    // Initialize session
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "initialized",
+        payload: { session_id: "srv-1" },
+      });
+    });
+
+    // Trigger plan approval
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [{
+            type: "stream_event",
+            uuid: "se1",
+            session_id: "s1",
+            parent_tool_use_id: null,
+            event: {
+              type: "content_block_start",
+              index: 0,
+              content_block: { type: "tool_use", id: "toolu_1", name: "ExitPlanMode", input: {} },
+            },
+          }],
+        },
+      });
+    });
+    act(() => {
+      ws.simulateMessage({ domain: "session", action: "turn_complete", payload: {} });
+    });
+    expect(result.current.pendingPlanApproval).toEqual({});
+
+    // Approve
+    act(() => {
+      result.current.approvePlan();
+    });
+
+    expect(result.current.pendingPlanApproval).toBeNull();
+    expect(result.current.permissionMode).toBe("acceptEdits");
+    expect(result.current.status).toBe("running");
+
+    // Should have sent mode.set and prompt.send
+    const sentMessages = ws.sent.map((s) => JSON.parse(s));
+    const modeSet = sentMessages.find((m) => m.action === "mode.set");
+    expect(modeSet).toBeDefined();
+    expect(modeSet.payload.mode).toBe("acceptEdits");
+
+    const promptSend = sentMessages.find((m) => m.action === "prompt.send");
+    expect(promptSend).toBeDefined();
+    expect(promptSend.payload.text).toContain("Plan approved");
+  });
+
+  it("requestPlanChanges clears approval, echoes feedback, sends prompt", async () => {
+    const { result } = renderHook(() => useWebSocketSession("test-id"));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    const ws = getWs();
+
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "initialized",
+        payload: { session_id: "srv-1" },
+      });
+    });
+
+    // Trigger plan approval
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [{
+            type: "stream_event",
+            uuid: "se1",
+            session_id: "s1",
+            parent_tool_use_id: null,
+            event: {
+              type: "content_block_start",
+              index: 0,
+              content_block: { type: "tool_use", id: "toolu_1", name: "ExitPlanMode", input: {} },
+            },
+          }],
+        },
+      });
+    });
+    act(() => {
+      ws.simulateMessage({ domain: "session", action: "turn_complete", payload: {} });
+    });
+
+    // Request changes
+    act(() => {
+      result.current.requestPlanChanges("Use a different approach");
+    });
+
+    expect(result.current.pendingPlanApproval).toBeNull();
+    expect(result.current.status).toBe("running");
+
+    // Feedback should appear as user message in blocks
+    const userMessages = result.current.blocks.filter((b) => b.type === "user_message");
+    expect(userMessages).toHaveLength(1);
+    expect(userMessages[0].content).toBe("Use a different approach");
+
+    // Should have sent prompt.send with feedback
+    const sentMessages = ws.sent.map((s) => JSON.parse(s));
+    const promptSend = sentMessages.find((m) => m.action === "prompt.send");
+    expect(promptSend).toBeDefined();
+    expect(promptSend.payload.text).toBe("Use a different approach");
+  });
+
+  it("setPermissionMode sends mode.set envelope and updates state", async () => {
+    const { result } = renderHook(() => useWebSocketSession("test-id"));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    const ws = getWs();
+
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "initialized",
+        payload: { session_id: "srv-1" },
+      });
+    });
+
+    act(() => {
+      result.current.setPermissionMode("plan");
+    });
+
+    expect(result.current.permissionMode).toBe("plan");
+    const sent = JSON.parse(ws.sent[0]);
+    expect(sent.action).toBe("mode.set");
+    expect(sent.payload.mode).toBe("plan");
+  });
+
+  it("mode.changed envelope updates permissionMode state", async () => {
+    const { result } = renderHook(() => useWebSocketSession("test-id"));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+
+    act(() => {
+      getWs().simulateMessage({
+        domain: "session",
+        action: "mode.changed",
+        payload: { mode: "plan" },
+      });
+    });
+
+    expect(result.current.permissionMode).toBe("plan");
+  });
+
+  it("assistant message backfills ExitPlanMode tool args", async () => {
+    const { result } = renderHook(() => useWebSocketSession("test-id"));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    const ws = getWs();
+
+    // Stream ExitPlanMode with empty delta, then full assistant message
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [
+            {
+              type: "stream_event",
+              uuid: "se1",
+              session_id: "s1",
+              parent_tool_use_id: null,
+              event: { type: "message_start", message: { model: "claude-opus-4-6" } },
+            },
+            {
+              type: "stream_event",
+              uuid: "se2",
+              session_id: "s1",
+              parent_tool_use_id: null,
+              event: {
+                type: "content_block_start",
+                index: 0,
+                content_block: { type: "tool_use", id: "toolu_1", name: "ExitPlanMode", input: {} },
+              },
+            },
+            {
+              type: "stream_event",
+              uuid: "se3",
+              session_id: "s1",
+              parent_tool_use_id: null,
+              event: {
+                type: "content_block_delta",
+                index: 0,
+                delta: { type: "input_json_delta", partial_json: "" },
+              },
+            },
+            // Full assistant message with complete input
+            {
+              type: "assistant",
+              uuid: "a1",
+              session_id: "s1",
+              parent_tool_use_id: null,
+              error: null,
+              message: {
+                id: "msg1",
+                model: "claude-opus-4-6",
+                content: [{
+                  type: "tool_use",
+                  id: "toolu_1",
+                  name: "ExitPlanMode",
+                  input: { plan: "# My Plan\nDo stuff", planFilePath: "/tmp/plan.md" },
+                }],
+                stop_reason: null,
+              },
+            },
+          ],
+        },
+      });
+    });
+
+    // The tool_call block should have the full args from the assistant message
+    const toolBlock = result.current.blocks.find((b) => b.type === "tool_call");
+    expect(toolBlock).toBeDefined();
+    expect(toolBlock!.toolName).toBe("ExitPlanMode");
+    const args = JSON.parse(toolBlock!.toolArgs!);
+    expect(args.plan).toBe("# My Plan\nDo stuff");
+    expect(args.planFilePath).toBe("/tmp/plan.md");
+  });
+
   it("unmount sends destroy and closes WebSocket", async () => {
     const { unmount } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {

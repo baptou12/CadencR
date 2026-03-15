@@ -18,6 +18,17 @@ use crate::app_state::AppState;
 use super::protocol::*;
 use super::store::{SessionStore, WsSessionStatus};
 
+/// Parse a permission mode string from the client into a PermissionMode enum value.
+fn parse_permission_mode(mode: &str) -> PermissionMode {
+    match mode {
+        "acceptEdits" => PermissionMode::AcceptEdits,
+        "bypassPermissions" => PermissionMode::BypassPermissions,
+        "plan" => PermissionMode::Plan,
+        "dontAsk" => PermissionMode::DontAsk,
+        _ => PermissionMode::Default,
+    }
+}
+
 /// CanUseTool implementation that bridges permission requests to the WebSocket client.
 ///
 /// When the SDK needs tool permission, this sends a `session/permission.request`
@@ -86,7 +97,11 @@ struct SdkHandle {
     desired_model: Option<String>,
     /// The model the CLI was actually spawned with.
     spawned_model: Option<String>,
-    /// Config for respawning with --resume after model change.
+    /// The permission mode the user wants. Updated by mode.set.
+    desired_permission_mode: Option<PermissionMode>,
+    /// The permission mode the CLI was actually spawned with.
+    spawned_permission_mode: Option<PermissionMode>,
+    /// Config for respawning with --resume after model/mode change.
     config: SessionConfig,
 }
 
@@ -208,6 +223,7 @@ async fn handle_session_action(
             handle_permission_respond(envelope, sender, store, sdk_sessions).await
         }
         "model.set" => handle_model_set(envelope, sender, sdk_sessions).await,
+        "mode.set" => handle_mode_set(envelope, sender, store, sdk_sessions).await,
         "interrupt" => handle_interrupt(envelope, sender, store, sdk_sessions).await,
         "destroy" => handle_destroy(envelope, sender, store, sdk_sessions).await,
         unknown => {
@@ -254,13 +270,7 @@ async fn handle_init(
         options.model = Some(model.clone());
     }
     if let Some(ref pm) = payload.permission_mode {
-        options.permission_mode = match pm.as_str() {
-            "acceptEdits" => Some(PermissionMode::AcceptEdits),
-            "bypassPermissions" => Some(PermissionMode::BypassPermissions),
-            "plan" => Some(PermissionMode::Plan),
-            "dontAsk" => Some(PermissionMode::DontAsk),
-            _ => Some(PermissionMode::Default),
-        };
+        options.permission_mode = Some(parse_permission_mode(pm));
     }
     if let Some(ref sp) = payload.system_prompt {
         options.system_prompt = Some(sp.clone());
@@ -282,6 +292,7 @@ async fn handle_init(
     info!(session_id, "session initialized (pending first prompt)");
 
     let desired_model = options.model.clone();
+    let desired_permission_mode = options.permission_mode.clone();
     let config = SessionConfig {
         cwd: options.cwd.clone(),
         permission_mode: options.permission_mode.clone(),
@@ -292,6 +303,8 @@ async fn handle_init(
         state: QueryState::Pending(options),
         desired_model,
         spawned_model: None,
+        desired_permission_mode,
+        spawned_permission_mode: None,
         config,
     };
 
@@ -347,17 +360,20 @@ async fn handle_prompt_send(
         }
     };
 
-    // Check if we need to respawn due to model change
+    // Check if we need to respawn due to model or permission mode change
+    let model_changed = handle.desired_model != handle.spawned_model;
+    let mode_changed = handle.desired_permission_mode != handle.spawned_permission_mode;
     let needs_respawn = matches!(&handle.state, QueryState::Active { .. })
-        && handle.desired_model != handle.spawned_model;
+        && (model_changed || mode_changed);
 
     if needs_respawn {
-        // Model changed — close old query and respawn with --resume
         info!(
             session_id,
             old_model = ?handle.spawned_model,
             new_model = ?handle.desired_model,
-            "model changed, respawning CLI with --resume"
+            old_mode = ?handle.spawned_permission_mode,
+            new_mode = ?handle.desired_permission_mode,
+            "model/mode changed, respawning CLI with --resume"
         );
 
         // Get claude session ID from old query before closing
@@ -374,10 +390,10 @@ async fn handle_prompt_send(
             q.close().await;
         }
 
-        // Build fresh options with new model + resume
+        // Build fresh options with new model/mode + resume
         let options = Options {
             cwd: handle.config.cwd.clone(),
-            permission_mode: handle.config.permission_mode.clone(),
+            permission_mode: handle.desired_permission_mode.clone(),
             model: handle.desired_model.clone(),
             system_prompt: handle.config.system_prompt.clone(),
             resume: claude_session_id,
@@ -386,6 +402,8 @@ async fn handle_prompt_send(
 
         // Reset to pending so the spawn logic below handles it
         handle.spawned_model = handle.desired_model.clone();
+        handle.spawned_permission_mode = handle.desired_permission_mode.clone();
+        handle.config.permission_mode = handle.desired_permission_mode.clone();
         handle.state = QueryState::Pending(options);
     }
 
@@ -427,6 +445,7 @@ async fn handle_prompt_send(
                         sender.clone(),
                     );
 
+                    let spawned_pm = config.permission_mode.clone();
                     let mut sessions = sdk_sessions.lock().await;
                     sessions.insert(
                         session_id,
@@ -437,6 +456,8 @@ async fn handle_prompt_send(
                             },
                             desired_model: spawned_model.clone(),
                             spawned_model,
+                            desired_permission_mode: spawned_pm.clone(),
+                            spawned_permission_mode: spawned_pm,
                             config,
                         },
                     );
@@ -450,20 +471,11 @@ async fn handle_prompt_send(
         QueryState::Active { query, .. } => {
             let q = query.lock().await;
             let turn_state = q.turn_state().await;
-            info!(session_id, turn_state = ?turn_state, "follow-up prompt (same model)");
-            if matches!(turn_state, claude_agent_sdk_rs::TurnState::TurnComplete { .. }) {
-                let content = serde_json::json!(payload.text);
-                if let Err(e) = q.stream_input(content).await {
-                    error!(session_id, error = %e, "stream_input failed");
-                    send_error(sender, &envelope.id, "SDK_ERROR", &e.to_string());
-                }
-            } else {
-                send_error(
-                    sender,
-                    &envelope.id,
-                    "INVALID_STATE",
-                    "Agent is currently working. Wait for turn completion.",
-                );
+            info!(session_id, turn_state = ?turn_state, "follow-up prompt");
+            let content = serde_json::json!(payload.text);
+            if let Err(e) = q.stream_input(content).await {
+                error!(session_id, error = %e, "stream_input failed");
+                send_error(sender, &envelope.id, "SDK_ERROR", &e.to_string());
             }
         }
     }
@@ -510,8 +522,11 @@ async fn handle_permission_respond(
             tool_use_id: Some(payload.request_id),
         }
     } else {
+        let message = payload
+            .feedback
+            .unwrap_or_else(|| "User denied permission".to_string());
         PermissionResult::Deny {
-            message: "User denied permission".to_string(),
+            message,
             interrupt: Some(false),
             tool_use_id: Some(payload.request_id),
         }
@@ -560,9 +575,20 @@ async fn handle_model_set(
     info!(session_id, model = %payload.model, "updating desired model");
     handle.desired_model = Some(payload.model.clone());
 
-    // If pending, also update the stored options so the first spawn uses this model
-    if let QueryState::Pending(options) = &mut handle.state {
-        options.model = Some(payload.model.clone());
+    match &mut handle.state {
+        QueryState::Pending(options) => {
+            options.model = Some(payload.model.clone());
+        }
+        QueryState::Active { query, .. } => {
+            // Send control command — don't update spawned_model, the respawn
+            // fallback in prompt.send will catch it if the CLI ignores this.
+            let q = query.lock().await;
+            if let Err(e) = q.set_model(&payload.model).await {
+                error!(session_id, error = %e, "failed to set model on active query");
+                send_error(sender, &envelope.id, "SDK_ERROR", &e.to_string());
+                return;
+            }
+        }
     }
 
     let reply = WsEnvelope::reply(
@@ -570,6 +596,68 @@ async fn handle_model_set(
         "session",
         "model.set.ok",
         serde_json::to_value(serde_json::json!({ "model": payload.model })).unwrap(),
+    );
+    let _ = sender.send(Message::Text(String::from(reply).into()));
+}
+
+/// Handle session.mode.set: change the permission mode mid-session.
+async fn handle_mode_set(
+    envelope: WsEnvelope,
+    sender: &WsSender,
+    store: &Arc<dyn SessionStore>,
+    sdk_sessions: &SdkSessions,
+) {
+    let payload: ModeSetPayload = match serde_json::from_value(envelope.payload.clone()) {
+        Ok(p) => p,
+        Err(e) => {
+            send_error(sender, &envelope.id, "INVALID_PAYLOAD", &e.to_string());
+            return;
+        }
+    };
+
+    let session_id = payload.session_id;
+    let new_mode = parse_permission_mode(&payload.mode);
+
+    let mut sessions = sdk_sessions.lock().await;
+    let handle = match sessions.get_mut(&session_id) {
+        Some(h) => h,
+        None => {
+            send_error(sender, &envelope.id, "SESSION_NOT_FOUND", "Session not found");
+            return;
+        }
+    };
+
+    info!(session_id, mode = %payload.mode, "updating permission mode");
+    handle.desired_permission_mode = Some(new_mode.clone());
+    handle.config.permission_mode = Some(new_mode.clone());
+
+    match &mut handle.state {
+        QueryState::Pending(options) => {
+            // Update stored options so the first spawn uses this mode
+            options.permission_mode = Some(new_mode);
+        }
+        QueryState::Active { query, .. } => {
+            // Send control command to the CLI via stdin.
+            // Don't update spawned_permission_mode here — the CLI may silently
+            // ignore the command. The respawn fallback in prompt.send will
+            // detect the mismatch and respawn if needed.
+            let q = query.lock().await;
+            if let Err(e) = q.set_permission_mode(new_mode).await {
+                error!(session_id, error = %e, "failed to set permission mode on active query");
+                send_error(sender, &envelope.id, "SDK_ERROR", &e.to_string());
+                return;
+            }
+        }
+    }
+
+    // Update store
+    let _ = store.update_permission_mode(&session_id, &payload.mode).await;
+
+    let reply = WsEnvelope::reply(
+        &envelope.id,
+        "session",
+        "mode.changed",
+        serde_json::to_value(serde_json::json!({ "mode": payload.mode })).unwrap(),
     );
     let _ = sender.send(Message::Text(String::from(reply).into()));
 }
@@ -1033,6 +1121,159 @@ mod tests {
         let sessions = sdk_sessions.lock().await;
         let handle = sessions.get(&session_id).unwrap();
         assert_eq!(handle.desired_model, Some("claude-opus-4-20250514".to_string()));
+    }
+
+    // -----------------------------------------------------------------------
+    // mode.set tests
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_mode_set_on_pending_session() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let store: Arc<dyn SessionStore> =
+            Arc::new(super::super::store::InMemorySessionStore::new());
+        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+
+        let session_id = init_session(&tx, &mut rx, &store, &sdk_sessions).await;
+
+        let envelope = make_envelope(
+            "session",
+            "mode.set",
+            serde_json::json!({"session_id": session_id, "mode": "plan"}),
+        );
+        dispatch_envelope(envelope, &tx, &store, &sdk_sessions).await;
+
+        let msg = rx.recv().await.unwrap();
+        if let Message::Text(text) = msg {
+            let env: WsEnvelope = serde_json::from_str(&text).unwrap();
+            assert_eq!(env.action, "mode.changed");
+            let payload: serde_json::Value = env.payload;
+            assert_eq!(payload["mode"], "plan");
+        } else {
+            panic!("expected text message");
+        }
+
+        // Verify internal state
+        let sessions = sdk_sessions.lock().await;
+        let handle = sessions.get(&session_id).unwrap();
+        assert_eq!(handle.desired_permission_mode, Some(PermissionMode::Plan));
+        // spawned_permission_mode is still None (pending, not yet spawned)
+        assert_eq!(handle.spawned_permission_mode, None);
+    }
+
+    #[tokio::test]
+    async fn test_mode_set_updates_pending_options() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let store: Arc<dyn SessionStore> =
+            Arc::new(super::super::store::InMemorySessionStore::new());
+        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+
+        let session_id = init_session(&tx, &mut rx, &store, &sdk_sessions).await;
+
+        let envelope = make_envelope(
+            "session",
+            "mode.set",
+            serde_json::json!({"session_id": session_id, "mode": "plan"}),
+        );
+        dispatch_envelope(envelope, &tx, &store, &sdk_sessions).await;
+        let _ = rx.recv().await.unwrap(); // consume mode.changed
+
+        // Verify the pending options were updated
+        let sessions = sdk_sessions.lock().await;
+        let handle = sessions.get(&session_id).unwrap();
+        if let QueryState::Pending(options) = &handle.state {
+            assert_eq!(options.permission_mode, Some(PermissionMode::Plan));
+        } else {
+            panic!("expected Pending state");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_mode_set_on_nonexistent_session() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let store: Arc<dyn SessionStore> =
+            Arc::new(super::super::store::InMemorySessionStore::new());
+        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+
+        let envelope = make_envelope(
+            "session",
+            "mode.set",
+            serde_json::json!({"session_id": "does-not-exist", "mode": "plan"}),
+        );
+        dispatch_envelope(envelope, &tx, &store, &sdk_sessions).await;
+
+        let msg = rx.recv().await.unwrap();
+        if let Message::Text(text) = msg {
+            let env: WsEnvelope = serde_json::from_str(&text).unwrap();
+            assert_eq!(env.action, "error");
+            let payload: SessionErrorPayload =
+                serde_json::from_value(env.payload).unwrap();
+            assert_eq!(payload.code, "SESSION_NOT_FOUND");
+        } else {
+            panic!("expected text message");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_mode_set_updates_store() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let store: Arc<dyn SessionStore> =
+            Arc::new(super::super::store::InMemorySessionStore::new());
+        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+
+        let session_id = init_session(&tx, &mut rx, &store, &sdk_sessions).await;
+
+        let envelope = make_envelope(
+            "session",
+            "mode.set",
+            serde_json::json!({"session_id": session_id, "mode": "plan"}),
+        );
+        dispatch_envelope(envelope, &tx, &store, &sdk_sessions).await;
+        let _ = rx.recv().await.unwrap(); // consume mode.changed
+
+        let session = store.get_session(&session_id).await.unwrap().unwrap();
+        assert_eq!(session.permission_mode, Some("plan".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_init_with_permission_mode_sets_desired() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let store: Arc<dyn SessionStore> =
+            Arc::new(super::super::store::InMemorySessionStore::new());
+        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+
+        let envelope = make_envelope(
+            "session",
+            "init",
+            serde_json::json!({"permission_mode": "plan"}),
+        );
+        dispatch_envelope(envelope, &tx, &store, &sdk_sessions).await;
+
+        let msg = rx.recv().await.unwrap();
+        let session_id = if let Message::Text(text) = msg {
+            let env: WsEnvelope = serde_json::from_str(&text).unwrap();
+            assert_eq!(env.action, "initialized");
+            let payload: SessionInitializedPayload =
+                serde_json::from_value(env.payload).unwrap();
+            payload.session_id
+        } else {
+            panic!("expected text message");
+        };
+
+        let sessions = sdk_sessions.lock().await;
+        let handle = sessions.get(&session_id).unwrap();
+        assert_eq!(handle.desired_permission_mode, Some(PermissionMode::Plan));
+        assert_eq!(handle.config.permission_mode, Some(PermissionMode::Plan));
+    }
+
+    #[tokio::test]
+    async fn test_parse_permission_mode_values() {
+        assert_eq!(parse_permission_mode("acceptEdits"), PermissionMode::AcceptEdits);
+        assert_eq!(parse_permission_mode("plan"), PermissionMode::Plan);
+        assert_eq!(parse_permission_mode("bypassPermissions"), PermissionMode::BypassPermissions);
+        assert_eq!(parse_permission_mode("dontAsk"), PermissionMode::DontAsk);
+        assert_eq!(parse_permission_mode("unknown"), PermissionMode::Default);
+        assert_eq!(parse_permission_mode(""), PermissionMode::Default);
     }
 
     #[tokio::test]

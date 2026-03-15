@@ -32,6 +32,7 @@ pub trait SessionStore: Send + Sync {
     async fn get_session(&self, session_id: &str) -> anyhow::Result<Option<WsSessionState>>;
     async fn update_status(&self, session_id: &str, status: WsSessionStatus) -> anyhow::Result<()>;
     async fn append_message(&self, session_id: &str, block: serde_json::Value) -> anyhow::Result<()>;
+    async fn update_permission_mode(&self, session_id: &str, mode: &str) -> anyhow::Result<()>;
     async fn destroy_session(&self, session_id: &str) -> anyhow::Result<()>;
     async fn list_sessions(&self) -> anyhow::Result<Vec<String>>;
 }
@@ -86,6 +87,14 @@ impl SessionStore for InMemorySessionStore {
         let mut sessions = self.sessions.write().await;
         match sessions.get_mut(session_id) {
             Some(s) => { s.messages.push(block); Ok(()) }
+            None => anyhow::bail!("session not found: {session_id}"),
+        }
+    }
+
+    async fn update_permission_mode(&self, session_id: &str, mode: &str) -> anyhow::Result<()> {
+        let mut sessions = self.sessions.write().await;
+        match sessions.get_mut(session_id) {
+            Some(s) => { s.permission_mode = Some(mode.to_string()); Ok(()) }
             None => anyhow::bail!("session not found: {session_id}"),
         }
     }

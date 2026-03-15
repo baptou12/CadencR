@@ -348,6 +348,7 @@ async fn write_to_stdin(
     let mut guard = process_stdin.lock().await;
     let stdin = guard.as_mut().ok_or(SdkError::InputClosed)?;
     let json = serde_json::to_string(value).map_err(SdkError::SerializationError)?;
+    debug!(stdin_json = %json, "writing to CLI stdin");
     stdin
         .write_all(json.as_bytes())
         .await

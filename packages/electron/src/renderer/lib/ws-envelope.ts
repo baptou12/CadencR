@@ -65,6 +65,10 @@ export function createModelSet(sessionId: string, model: string): WsEnvelope {
   return createEnvelope("session", "model.set", { session_id: sessionId, model });
 }
 
+export function createModeSet(sessionId: string, mode: string): WsEnvelope {
+  return createEnvelope("session", "mode.set", { session_id: sessionId, mode });
+}
+
 export function createDestroy(sessionId: string): WsEnvelope {
   return createEnvelope("session", "destroy", { session_id: sessionId });
 }

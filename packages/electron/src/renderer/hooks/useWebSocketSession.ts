@@ -17,8 +17,15 @@ import {
   createInterrupt,
   createDestroy,
   createModelSet,
+  createModeSet,
   type SessionConfig,
 } from "@/lib/ws-envelope";
+
+export type PermissionMode = "acceptEdits" | "plan";
+
+export interface PendingPlanApproval {
+  allowedPrompts?: Array<{ tool: string; prompt: string }>;
+}
 
 export interface UseWebSocketSessionReturn {
   blocks: AgentBlockData[];
@@ -27,6 +34,12 @@ export interface UseWebSocketSessionReturn {
   sessionId: string;
   pendingPermission: PendingPermission | null;
   pendingRequestId: string;
+
+  permissionMode: PermissionMode;
+  setPermissionMode: (mode: PermissionMode) => void;
+  pendingPlanApproval: PendingPlanApproval | null;
+  approvePlan: () => void;
+  requestPlanChanges: (feedback: string) => void;
 
   currentModelId: string;
   setModel: (modelId: string) => void;
@@ -56,10 +69,14 @@ interface StreamingState {
   contentBlockIds: Map<number, string>;
   /** Map of content block index → tool_use_id (for input_json_delta) */
   toolUseIds: Map<number, string>;
+  /** Reverse map: tool_use_id → content block index (for O(1) backfill lookup) */
+  toolUseIdToIndex: Map<string, number>;
   /** Counter for generating unique block IDs */
   counter: number;
   /** parent_tool_use_id from the current stream_event */
   parentToolUseId: string | null;
+  /** Set to true when an ExitPlanMode tool_use is detected in the current turn */
+  exitPlanModeDetected: boolean;
 }
 
 function createStreamingState(): StreamingState {
@@ -67,12 +84,14 @@ function createStreamingState(): StreamingState {
     model: null,
     contentBlockIds: new Map(),
     toolUseIds: new Map(),
+    toolUseIdToIndex: new Map(),
     counter: 0,
     parentToolUseId: null,
+    exitPlanModeDetected: false,
   };
 }
 
-type BlockMutation = { action: "append" | "update"; block: AgentBlockData };
+type BlockMutation = { action: "append" | "update" | "replace"; block: AgentBlockData };
 
 /**
  * Process a raw SDK message and return block mutations to apply.
@@ -105,6 +124,7 @@ function processSdkMessage(
           // Reset content block tracking for new message
           state.contentBlockIds.clear();
           state.toolUseIds.clear();
+          state.toolUseIdToIndex.clear();
           return [];
         }
 
@@ -120,12 +140,20 @@ function processSdkMessage(
 
           if (blockType === "tool_use") {
             const toolUseId = contentBlock.id as string;
+            const toolName = contentBlock.name as string;
             state.toolUseIds.set(index, toolUseId);
+            state.toolUseIdToIndex.set(toolUseId, index);
+
+            // Detect ExitPlanMode tool call (unless suppressed after approval)
+            if (toolName === "ExitPlanMode") {
+              state.exitPlanModeDetected = true;
+            }
+
             return [{
               action: "append",
               block: {
                 id: blockId, type: "tool_call", content: "",
-                toolName: contentBlock.name as string, toolArgs: "",
+                toolName, toolArgs: "",
                 toolUseId, parentToolUseId: parentToolUseId,
                 createdAt: new Date().toISOString(),
               },
@@ -179,8 +207,33 @@ function processSdkMessage(
 
     case "assistant": {
       // Full assistant message. If we already have content from stream events
-      // (contentBlockIds is populated), skip to avoid duplication.
-      if (state.contentBlockIds.size > 0) return [];
+      // (contentBlockIds is populated), backfill any tool_call blocks whose
+      // args were not fully streamed (e.g. ExitPlanMode sends empty deltas).
+      if (state.contentBlockIds.size > 0) {
+        const assistantMsg = msg.message as Record<string, unknown> | undefined;
+        const contentArr = assistantMsg?.content as Array<Record<string, unknown>> | undefined;
+        if (contentArr && Array.isArray(contentArr)) {
+          const results: BlockMutation[] = [];
+          for (const cb of contentArr) {
+            if (cb.type === "tool_use" && cb.id && cb.input) {
+              const idx = state.toolUseIdToIndex.get(cb.id as string);
+              if (idx === undefined) continue;
+              const blockId = state.contentBlockIds.get(idx);
+              if (!blockId) continue;
+              results.push({
+                action: "replace",
+                block: {
+                  id: blockId,
+                  type: "tool_call",
+                  content: JSON.stringify(cb.input),
+                },
+              });
+            }
+          }
+          return results;
+        }
+        return [];
+      }
 
       // No stream events — extract content blocks directly as fallback.
       const assistantMsg = msg.message as Record<string, unknown> | undefined;
@@ -203,12 +256,16 @@ function processSdkMessage(
         } else if (cbType === "thinking") {
           results.push({ action: "append", block: { id: blockId, type: "thinking", content: cb.thinking as string, parentToolUseId: parentId, createdAt: now } });
         } else if (cbType === "tool_use") {
+          const toolName = cb.name as string;
+          if (toolName === "ExitPlanMode") {
+            state.exitPlanModeDetected = true;
+          }
           results.push({
             action: "append",
             block: {
               id: blockId, type: "tool_call",
               content: JSON.stringify(cb.input ?? {}),
-              toolName: cb.name as string, toolArgs: JSON.stringify(cb.input ?? {}),
+              toolName, toolArgs: JSON.stringify(cb.input ?? {}),
               toolUseId: cb.id as string, parentToolUseId: parentId, createdAt: now,
             },
           });
@@ -232,6 +289,8 @@ export function useWebSocketSession(sessionId: string): UseWebSocketSessionRetur
   const [isConnected, setIsConnected] = useState(false);
   const [pendingPermission, setPendingPermission] = useState<PendingPermission | null>(null);
   const pendingRequestIdRef = useRef<string>("");
+  const [permissionMode, setPermissionModeState] = useState<PermissionMode>("acceptEdits");
+  const [pendingPlanApproval, setPendingPlanApproval] = useState<PendingPlanApproval | null>(null);
   const [currentModelId, setCurrentModelId] = useState<string>("claude-sonnet-4-6");
 
   const wsRef = useRef<WebSocket | null>(null);
@@ -293,29 +352,35 @@ export function useWebSocketSession(sessionId: string): UseWebSocketSessionRetur
 
           const state = streamingStateRef.current;
 
+          // Collect all mutations, then apply in a single state update
+          const allMutations: BlockMutation[] = [];
           for (const rawBlock of payload.blocks) {
             if (!rawBlock || typeof rawBlock !== "object") continue;
             const mutations = processSdkMessage(rawBlock as Record<string, unknown>, state);
+            allMutations.push(...mutations);
+          }
 
-            for (const mut of mutations) {
-              if (mut.action === "append") {
-                setBlocks((prev) => [...prev, mut.block]);
-              } else if (mut.action === "update") {
-                // Append delta content to existing block by ID
-                setBlocks((prev) => {
-                  const idx = prev.findIndex((b) => b.id === mut.block.id);
-                  if (idx === -1) return prev;
-                  const updated = [...prev];
-                  const existing = { ...updated[idx] };
-                  existing.content += mut.block.content;
+          if (allMutations.length > 0) {
+            setBlocks((prev) => {
+              const result = [...prev];
+              for (const mut of allMutations) {
+                if (mut.action === "append") {
+                  result.push(mut.block);
+                } else if (mut.action === "update" || mut.action === "replace") {
+                  const idx = result.findIndex((b) => b.id === mut.block.id);
+                  if (idx === -1) continue;
+                  const existing = { ...result[idx] };
+                  existing.content = mut.action === "replace"
+                    ? mut.block.content
+                    : existing.content + mut.block.content;
                   if (existing.type === "tool_call") {
                     existing.toolArgs = existing.content;
                   }
-                  updated[idx] = existing;
-                  return updated;
-                });
+                  result[idx] = existing;
+                }
               }
-            }
+              return result;
+            });
           }
 
           setStatus("running");
@@ -340,6 +405,14 @@ export function useWebSocketSession(sessionId: string): UseWebSocketSessionRetur
           break;
         }
 
+        case "mode.changed": {
+          const p = envelope.payload as { mode?: string };
+          if (p.mode === "acceptEdits" || p.mode === "plan") {
+            setPermissionModeState(p.mode);
+          }
+          break;
+        }
+
         case "error": {
           setStatus("error");
           const p = envelope.payload as { message?: string };
@@ -359,12 +432,17 @@ export function useWebSocketSession(sessionId: string): UseWebSocketSessionRetur
         }
 
         case "ended":
-          setStatus("idle");
+        case "turn_complete": {
+          const state = streamingStateRef.current;
+          if (state.exitPlanModeDetected) {
+            state.exitPlanModeDetected = false;
+            setPendingPlanApproval({});
+            setStatus("paused");
+          } else {
+            setStatus("idle");
+          }
           break;
-
-        case "turn_complete":
-          setStatus("idle");
-          break;
+        }
       }
     }
 
@@ -426,6 +504,46 @@ export function useWebSocketSession(sessionId: string): UseWebSocketSessionRetur
     [send],
   );
 
+  const setPermissionMode = useCallback(
+    (mode: PermissionMode) => {
+      send(createModeSet(serverSessionIdRef.current, mode));
+      setPermissionModeState(mode);
+    },
+    [send],
+  );
+
+  const approvePlan = useCallback(() => {
+    // Switch to acceptEdits and tell the agent the plan is approved
+    send(createModeSet(serverSessionIdRef.current, "acceptEdits"));
+    setPermissionModeState("acceptEdits");
+    setPendingPlanApproval(null);
+    // Send a follow-up prompt so the agent knows to proceed
+    send(createPromptSend(serverSessionIdRef.current, "Plan approved. Exit plan mode and proceed with execution."));
+    setStatus("running");
+  }, [send]);
+
+  const requestPlanChanges = useCallback(
+    (feedback: string) => {
+      setPendingPlanApproval(null);
+      // Echo feedback as user message in the conversation
+      streamingStateRef.current.counter += 1;
+      setBlocks((prev) => [
+        ...prev,
+        {
+          id: `ws-user-${streamingStateRef.current.counter}`,
+          type: "user_message" as const,
+          content: feedback,
+          isError: false,
+          createdAt: new Date().toISOString(),
+        },
+      ]);
+      // Send feedback as a follow-up prompt so the agent revises the plan
+      send(createPromptSend(serverSessionIdRef.current, feedback));
+      setStatus("running");
+    },
+    [send],
+  );
+
   const destroySession = useCallback(() => {
     send(createDestroy(serverSessionIdRef.current));
     setStatus("completed");
@@ -438,6 +556,11 @@ export function useWebSocketSession(sessionId: string): UseWebSocketSessionRetur
     sessionId,
     pendingPermission,
     pendingRequestId: pendingRequestIdRef.current,
+    permissionMode,
+    setPermissionMode,
+    pendingPlanApproval,
+    approvePlan,
+    requestPlanChanges,
     currentModelId,
     setModel,
     sendPrompt,
