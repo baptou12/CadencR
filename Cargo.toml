@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "packages/service",
+    "packages/claude-agent-sdk-rs",
+]
+resolver = "2"
