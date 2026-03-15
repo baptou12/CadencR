@@ -74,9 +74,18 @@ impl Options {
     pub fn to_cli_args(&self) -> Vec<String> {
         let mut args = Vec::new();
 
-        // Streaming JSON output is always required.
+        // Print mode is required for non-interactive (SDK) usage.
+        args.push("--print".to_string());
+
+        // Streaming JSON I/O is always required for the bidirectional protocol.
         args.push("--output-format".to_string());
         args.push("stream-json".to_string());
+        args.push("--input-format".to_string());
+        args.push("stream-json".to_string());
+        // --verbose is required by the CLI when using stream-json output.
+        args.push("--verbose".to_string());
+        // Include partial streaming events (content_block_delta) for real-time UI.
+        args.push("--include-partial-messages".to_string());
 
         if let Some(mode) = &self.permission_mode {
             args.push("--permission-mode".to_string());

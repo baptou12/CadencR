@@ -116,11 +116,26 @@ describe("useWebSocketSession", () => {
     await act(async () => {
       await new Promise((r) => setTimeout(r, 10));
     });
+    // Send a full assistant message (fallback path when no stream events)
     act(() => {
       getWs().simulateMessage({
         domain: "session",
         action: "message",
-        payload: { blocks: [{ id: "b1", type: "text", content: "hi" }] },
+        payload: {
+          blocks: [{
+            type: "assistant",
+            uuid: "u1",
+            session_id: "s1",
+            parent_tool_use_id: null,
+            error: null,
+            message: {
+              id: "msg1",
+              model: "claude-opus-4-6",
+              content: [{ type: "text", text: "hi" }],
+              stop_reason: null,
+            },
+          }],
+        },
       });
     });
     expect(result.current.blocks).toHaveLength(1);
@@ -228,7 +243,7 @@ describe("useWebSocketSession", () => {
         payload: { reason: "done" },
       });
     });
-    expect(result.current.status).toBe("completed");
+    expect(result.current.status).toBe("idle");
   });
 
   it("unmount sends destroy and closes WebSocket", async () => {
