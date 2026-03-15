@@ -71,9 +71,23 @@ enum QueryState {
     },
 }
 
+/// Serializable session config for respawning with --resume after model change.
+#[derive(Clone)]
+struct SessionConfig {
+    cwd: std::path::PathBuf,
+    permission_mode: Option<PermissionMode>,
+    system_prompt: Option<String>,
+}
+
 /// Handle for a running SDK session, stored per-connection.
 struct SdkHandle {
     state: QueryState,
+    /// The model the user wants for the next turn. Updated by model.set.
+    desired_model: Option<String>,
+    /// The model the CLI was actually spawned with.
+    spawned_model: Option<String>,
+    /// Config for respawning with --resume after model change.
+    config: SessionConfig,
 }
 
 type SdkSessions = Arc<Mutex<HashMap<String, SdkHandle>>>;
@@ -193,6 +207,7 @@ async fn handle_session_action(
         "permission.respond" => {
             handle_permission_respond(envelope, sender, store, sdk_sessions).await
         }
+        "model.set" => handle_model_set(envelope, sender, sdk_sessions).await,
         "interrupt" => handle_interrupt(envelope, sender, store, sdk_sessions).await,
         "destroy" => handle_destroy(envelope, sender, store, sdk_sessions).await,
         unknown => {
@@ -266,8 +281,18 @@ async fn handle_init(
 
     info!(session_id, "session initialized (pending first prompt)");
 
+    let desired_model = options.model.clone();
+    let config = SessionConfig {
+        cwd: options.cwd.clone(),
+        permission_mode: options.permission_mode.clone(),
+        system_prompt: options.system_prompt.clone(),
+    };
+
     let handle = SdkHandle {
         state: QueryState::Pending(options),
+        desired_model,
+        spawned_model: None,
+        config,
     };
 
     sdk_sessions
@@ -322,12 +347,55 @@ async fn handle_prompt_send(
         }
     };
 
+    // Check if we need to respawn due to model change
+    let needs_respawn = matches!(&handle.state, QueryState::Active { .. })
+        && handle.desired_model != handle.spawned_model;
+
+    if needs_respawn {
+        // Model changed — close old query and respawn with --resume
+        info!(
+            session_id,
+            old_model = ?handle.spawned_model,
+            new_model = ?handle.desired_model,
+            "model changed, respawning CLI with --resume"
+        );
+
+        // Get claude session ID from old query before closing
+        let claude_session_id = if let QueryState::Active { query, .. } = &handle.state {
+            let q = query.lock().await;
+            q.session_id().await
+        } else {
+            None
+        };
+
+        // Close old query
+        if let QueryState::Active { query, .. } = &mut handle.state {
+            let mut q = query.lock().await;
+            q.close().await;
+        }
+
+        // Build fresh options with new model + resume
+        let options = Options {
+            cwd: handle.config.cwd.clone(),
+            permission_mode: handle.config.permission_mode.clone(),
+            model: handle.desired_model.clone(),
+            system_prompt: handle.config.system_prompt.clone(),
+            resume: claude_session_id,
+            ..Options::default()
+        };
+
+        // Reset to pending so the spawn logic below handles it
+        handle.spawned_model = handle.desired_model.clone();
+        handle.state = QueryState::Pending(options);
+    }
+
     match &handle.state {
         QueryState::Pending(_) => {
-            // First prompt — take the stored options and spawn the real query.
+            // First prompt (or respawn after model change) — take the stored options and spawn.
+            let spawned_model = handle.desired_model.clone();
+            let config = handle.config.clone();
             let options = match std::mem::replace(
                 &mut handle.state,
-                // Temporary placeholder; will be replaced below on success or restored on failure.
                 QueryState::Pending(Options::default()),
             ) {
                 QueryState::Pending(opts) => opts,
@@ -337,7 +405,7 @@ async fn handle_prompt_send(
             // Drop lock before spawning (async).
             drop(sessions);
 
-            // Set up permission bridge: SDK calls can_use_tool → sends to WS client → waits for response
+            // Set up permission bridge
             let (permission_tx, permission_rx) = mpsc::channel::<PermissionResult>(16);
             let bridge = WsBridgeCanUseTool {
                 sender: sender.clone(),
@@ -346,12 +414,10 @@ async fn handle_prompt_send(
             let mut options = options;
             options.can_use_tool = Some(Box::new(bridge));
 
-            info!(session_id, prompt = %payload.text, "spawning SDK query for first prompt");
+            info!(session_id, prompt = %payload.text, model = ?options.model, "spawning SDK query");
             match claude_agent_sdk_rs::query(&payload.text, options).await {
                 Ok(mut real_query) => {
                     info!(session_id, "SDK query spawned successfully, starting stream reader");
-                    // Extract the message receiver so the stream reader can consume
-                    // messages without holding a mutex (avoids deadlock with stream_input).
                     let message_rx = real_query.take_message_rx();
                     let query_arc = Arc::new(Mutex::new(real_query));
 
@@ -369,6 +435,9 @@ async fn handle_prompt_send(
                                 query: query_arc,
                                 permission_tx,
                             },
+                            desired_model: spawned_model.clone(),
+                            spawned_model,
+                            config,
                         },
                     );
                 }
@@ -381,9 +450,8 @@ async fn handle_prompt_send(
         QueryState::Active { query, .. } => {
             let q = query.lock().await;
             let turn_state = q.turn_state().await;
-            info!(session_id, turn_state = ?turn_state, "follow-up prompt received");
+            info!(session_id, turn_state = ?turn_state, "follow-up prompt (same model)");
             if matches!(turn_state, claude_agent_sdk_rs::TurnState::TurnComplete { .. }) {
-                // Follow-up prompt
                 let content = serde_json::json!(payload.text);
                 if let Err(e) = q.stream_input(content).await {
                     error!(session_id, error = %e, "stream_input failed");
@@ -462,6 +530,48 @@ async fn handle_permission_respond(
     let _ = store
         .update_status(&session_id, WsSessionStatus::Running)
         .await;
+}
+
+/// Handle session.model.set: change the model on an active query.
+async fn handle_model_set(
+    envelope: WsEnvelope,
+    sender: &WsSender,
+    sdk_sessions: &SdkSessions,
+) {
+    let payload: ModelSetPayload = match serde_json::from_value(envelope.payload.clone()) {
+        Ok(p) => p,
+        Err(e) => {
+            send_error(sender, &envelope.id, "INVALID_PAYLOAD", &e.to_string());
+            return;
+        }
+    };
+
+    let session_id = payload.session_id;
+
+    let mut sessions = sdk_sessions.lock().await;
+    let handle = match sessions.get_mut(&session_id) {
+        Some(h) => h,
+        None => {
+            send_error(sender, &envelope.id, "SESSION_NOT_FOUND", "Session not found");
+            return;
+        }
+    };
+
+    info!(session_id, model = %payload.model, "updating desired model");
+    handle.desired_model = Some(payload.model.clone());
+
+    // If pending, also update the stored options so the first spawn uses this model
+    if let QueryState::Pending(options) = &mut handle.state {
+        options.model = Some(payload.model.clone());
+    }
+
+    let reply = WsEnvelope::reply(
+        &envelope.id,
+        "session",
+        "model.set.ok",
+        serde_json::to_value(serde_json::json!({ "model": payload.model })).unwrap(),
+    );
+    let _ = sender.send(Message::Text(String::from(reply).into()));
 }
 
 /// Handle session.interrupt
@@ -806,6 +916,123 @@ mod tests {
         // Bridge should return the Allow result
         let result = bridge_handle.await.unwrap();
         assert!(matches!(result, PermissionResult::Allow { .. }));
+    }
+
+    /// Helper: send session.init and return the session_id from the response.
+    async fn init_session(
+        tx: &WsSender,
+        rx: &mut mpsc::UnboundedReceiver<Message>,
+        store: &Arc<dyn SessionStore>,
+        sdk_sessions: &SdkSessions,
+    ) -> String {
+        let envelope = make_envelope("session", "init", serde_json::json!({}));
+        dispatch_envelope(envelope, tx, store, sdk_sessions).await;
+
+        let msg = rx.recv().await.unwrap();
+        if let Message::Text(text) = msg {
+            let env: WsEnvelope = serde_json::from_str(&text).unwrap();
+            assert_eq!(env.action, "initialized");
+            let payload: SessionInitializedPayload =
+                serde_json::from_value(env.payload).unwrap();
+            payload.session_id
+        } else {
+            panic!("expected text message");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_model_set_on_pending_session() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let store: Arc<dyn SessionStore> =
+            Arc::new(super::super::store::InMemorySessionStore::new());
+        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+
+        let session_id = init_session(&tx, &mut rx, &store, &sdk_sessions).await;
+
+        let envelope = make_envelope(
+            "session",
+            "model.set",
+            serde_json::json!({"session_id": session_id, "model": "claude-sonnet-4-20250514"}),
+        );
+        dispatch_envelope(envelope, &tx, &store, &sdk_sessions).await;
+
+        let msg = rx.recv().await.unwrap();
+        if let Message::Text(text) = msg {
+            let env: WsEnvelope = serde_json::from_str(&text).unwrap();
+            assert_eq!(env.action, "model.set.ok");
+            let payload: serde_json::Value = env.payload;
+            assert_eq!(payload["model"], "claude-sonnet-4-20250514");
+        } else {
+            panic!("expected text message");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_model_set_on_nonexistent_session() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let store: Arc<dyn SessionStore> =
+            Arc::new(super::super::store::InMemorySessionStore::new());
+        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+
+        let envelope = make_envelope(
+            "session",
+            "model.set",
+            serde_json::json!({"session_id": "does-not-exist", "model": "claude-sonnet-4-20250514"}),
+        );
+        dispatch_envelope(envelope, &tx, &store, &sdk_sessions).await;
+
+        let msg = rx.recv().await.unwrap();
+        if let Message::Text(text) = msg {
+            let env: WsEnvelope = serde_json::from_str(&text).unwrap();
+            assert_eq!(env.action, "error");
+            let payload: SessionErrorPayload =
+                serde_json::from_value(env.payload).unwrap();
+            assert_eq!(payload.code, "SESSION_NOT_FOUND");
+        } else {
+            panic!("expected text message");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_model_set_updates_desired_model() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let store: Arc<dyn SessionStore> =
+            Arc::new(super::super::store::InMemorySessionStore::new());
+        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+
+        let session_id = init_session(&tx, &mut rx, &store, &sdk_sessions).await;
+
+        // Set model to sonnet
+        let envelope = make_envelope(
+            "session",
+            "model.set",
+            serde_json::json!({"session_id": session_id, "model": "claude-sonnet-4-20250514"}),
+        );
+        dispatch_envelope(envelope, &tx, &store, &sdk_sessions).await;
+        let _ = rx.recv().await.unwrap(); // consume model.set.ok
+
+        // Set model to opus
+        let envelope = make_envelope(
+            "session",
+            "model.set",
+            serde_json::json!({"session_id": session_id, "model": "claude-opus-4-20250514"}),
+        );
+        dispatch_envelope(envelope, &tx, &store, &sdk_sessions).await;
+
+        let msg = rx.recv().await.unwrap();
+        if let Message::Text(text) = msg {
+            let env: WsEnvelope = serde_json::from_str(&text).unwrap();
+            assert_eq!(env.action, "model.set.ok");
+            let payload: serde_json::Value = env.payload;
+            assert_eq!(payload["model"], "claude-opus-4-20250514");
+        } else {
+            panic!("expected text message");
+        }
+
+        // Verify the internal state reflects the latest model
+        let sessions = sdk_sessions.lock().await;
+        let handle = sessions.get(&session_id).unwrap();
+        assert_eq!(handle.desired_model, Some("claude-opus-4-20250514".to_string()));
     }
 
     #[tokio::test]

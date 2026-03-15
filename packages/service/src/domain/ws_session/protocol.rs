@@ -93,6 +93,12 @@ pub struct SessionActionPayload {
     pub session_id: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelSetPayload {
+    pub session_id: String,
+    pub model: String,
+}
+
 // --- Server → Client payloads ---
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

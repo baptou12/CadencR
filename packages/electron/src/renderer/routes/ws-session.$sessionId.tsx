@@ -32,6 +32,8 @@ function WebSocketSessionPage() {
       onPermissionDecision={(decision) => {
         ws.respondToPermission(ws.pendingRequestId, decision !== "deny");
       }}
+      currentModelId={ws.currentModelId}
+      onModelChange={ws.setModel}
     />
   );
 }

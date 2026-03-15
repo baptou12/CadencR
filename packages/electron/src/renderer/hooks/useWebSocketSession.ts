@@ -16,6 +16,7 @@ import {
   createPermissionRespond,
   createInterrupt,
   createDestroy,
+  createModelSet,
   type SessionConfig,
 } from "@/lib/ws-envelope";
 
@@ -27,6 +28,8 @@ export interface UseWebSocketSessionReturn {
   pendingPermission: PendingPermission | null;
   pendingRequestId: string;
 
+  currentModelId: string;
+  setModel: (modelId: string) => void;
   sendPrompt: (text: string) => void;
   respondToPermission: (requestId: string, granted: boolean) => void;
   interrupt: () => void;
@@ -229,6 +232,7 @@ export function useWebSocketSession(sessionId: string): UseWebSocketSessionRetur
   const [isConnected, setIsConnected] = useState(false);
   const [pendingPermission, setPendingPermission] = useState<PendingPermission | null>(null);
   const pendingRequestIdRef = useRef<string>("");
+  const [currentModelId, setCurrentModelId] = useState<string>("claude-sonnet-4-6");
 
   const wsRef = useRef<WebSocket | null>(null);
   const serverSessionIdRef = useRef<string>("");
@@ -414,6 +418,14 @@ export function useWebSocketSession(sessionId: string): UseWebSocketSessionRetur
     send(createInterrupt(serverSessionIdRef.current));
   }, [send]);
 
+  const setModel = useCallback(
+    (modelId: string) => {
+      send(createModelSet(serverSessionIdRef.current, modelId));
+      setCurrentModelId(modelId);
+    },
+    [send],
+  );
+
   const destroySession = useCallback(() => {
     send(createDestroy(serverSessionIdRef.current));
     setStatus("completed");
@@ -426,6 +438,8 @@ export function useWebSocketSession(sessionId: string): UseWebSocketSessionRetur
     sessionId,
     pendingPermission,
     pendingRequestId: pendingRequestIdRef.current,
+    currentModelId,
+    setModel,
     sendPrompt,
     respondToPermission,
     interrupt,

@@ -61,6 +61,10 @@ export function createInterrupt(sessionId: string): WsEnvelope {
   return createEnvelope("session", "interrupt", { session_id: sessionId });
 }
 
+export function createModelSet(sessionId: string, model: string): WsEnvelope {
+  return createEnvelope("session", "model.set", { session_id: sessionId, model });
+}
+
 export function createDestroy(sessionId: string): WsEnvelope {
   return createEnvelope("session", "destroy", { session_id: sessionId });
 }
