@@ -188,6 +188,18 @@ export function useWebSocketSession(sessionId: string): UseWebSocketSessionRetur
   const sendPrompt = useCallback(
     (text: string) => {
       send(createPromptSend(serverSessionIdRef.current, text));
+      // Echo user message locally so it appears immediately
+      blockCountRef.current += 1;
+      setBlocks((prev) => [
+        ...prev,
+        {
+          id: `ws-user-${blockCountRef.current}`,
+          type: "user_message" as const,
+          content: text,
+          isError: false,
+          createdAt: new Date().toISOString(),
+        },
+      ]);
       setStatus("running");
     },
     [send],

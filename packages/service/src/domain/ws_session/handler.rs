@@ -7,7 +7,7 @@ use axum::extract::{State, WebSocketUpgrade};
 use axum::response::IntoResponse;
 use futures::StreamExt;
 use tokio::sync::{mpsc, Mutex};
-use tracing::debug;
+use tracing::{debug, error, info};
 
 use claude_agent_sdk_rs::{
     CanUseTool, Options, PermissionMode, PermissionRequest, PermissionResult, Query, SdkMessage,
@@ -158,6 +158,7 @@ async fn dispatch_envelope(
     store: &Arc<dyn SessionStore>,
     sdk_sessions: &SdkSessions,
 ) {
+    info!(domain = %envelope.domain, action = %envelope.action, id = %envelope.id, "received envelope");
     match envelope.domain.as_str() {
         "session" => {
             handle_session_action(envelope, sender, store, sdk_sessions).await;
@@ -262,6 +263,8 @@ async fn handle_init(
     // Let's create the Query immediately with a no-op prompt that just initializes.
     // The best approach: don't spawn query yet. Store options, spawn on first prompt.send.
 
+    info!(session_id, "session initialized (pending first prompt)");
+
     let handle = SdkHandle {
         state: QueryState::Pending(options),
     };
@@ -342,8 +345,10 @@ async fn handle_prompt_send(
             let mut options = options;
             options.can_use_tool = Some(Box::new(bridge));
 
+            info!(session_id, prompt = %payload.text, "spawning SDK query for first prompt");
             match claude_agent_sdk_rs::query(&payload.text, options).await {
                 Ok(real_query) => {
+                    info!(session_id, "SDK query spawned successfully, starting stream reader");
                     let query_arc = Arc::new(Mutex::new(real_query));
 
                     spawn_stream_reader(
@@ -364,6 +369,7 @@ async fn handle_prompt_send(
                     );
                 }
                 Err(e) => {
+                    error!(session_id, error = %e, "SDK query spawn failed");
                     send_error(sender, &envelope.id, "SDK_SPAWN_ERROR", &e.to_string());
                 }
             }
@@ -371,10 +377,12 @@ async fn handle_prompt_send(
         QueryState::Active { query, .. } => {
             let q = query.lock().await;
             let turn_state = q.turn_state().await;
+            info!(session_id, turn_state = ?turn_state, "follow-up prompt received");
             if matches!(turn_state, claude_agent_sdk_rs::TurnState::TurnComplete { .. }) {
                 // Follow-up prompt
                 let content = serde_json::json!(payload.text);
                 if let Err(e) = q.stream_input(content).await {
+                    error!(session_id, error = %e, "stream_input failed");
                     send_error(sender, &envelope.id, "SDK_ERROR", &e.to_string());
                 }
             } else {
@@ -544,6 +552,7 @@ fn spawn_stream_reader(
     sender: WsSender,
 ) {
     tokio::spawn(async move {
+        info!(session_id, "stream reader started");
         loop {
             let mut q = query.lock().await;
             let msg = q.next().await;
@@ -551,6 +560,7 @@ fn spawn_stream_reader(
 
             match msg {
                 Some(Ok(sdk_msg)) => {
+                    debug!(session_id, msg_type = ?std::mem::discriminant(&sdk_msg), "received SDK message");
                     let envelope = match &sdk_msg {
                         SdkMessage::Result { .. } => WsEnvelope::new(
                             "session",
@@ -583,6 +593,7 @@ fn spawn_stream_reader(
                     }
                 }
                 Some(Err(e)) => {
+                    error!(session_id, error = %e, "SDK stream error");
                     let err_env = WsEnvelope::new(
                         "session",
                         "error",
@@ -597,6 +608,7 @@ fn spawn_stream_reader(
                 }
                 None => {
                     // Stream ended
+                    info!(session_id, "SDK stream closed");
                     let end_env = WsEnvelope::new(
                         "session",
                         "ended",
