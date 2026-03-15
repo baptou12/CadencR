@@ -13,3 +13,4 @@ pub use types::{
     AccountInfo, AgentInfo, CompactMetadata, ContentBlock, ContentDelta, McpServerStatus,
     ModelInfo, PermissionDenial, PluginInfo, SlashCommand, Usage,
 };
+pub use messages::SdkMessage;
