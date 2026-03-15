@@ -291,18 +291,9 @@ async fn reader_loop(
     mut interrupt_rx: mpsc::Receiver<()>,
 ) {
     loop {
-        // Check cancellation
-        if let Some(ref token) = cancel_token {
-            if token.is_cancelled() {
-                let _ = tx.send(Err(SdkError::Cancelled)).await;
-                break;
-            }
-        }
-
-        // Select between reading the next message and receiving an interrupt signal.
-        // The interrupt channel is drained with a non-blocking try_recv first,
-        // then we use tokio::select! to race the next message read against an
-        // interrupt arriving while we're waiting.
+        // Select between reading the next message, receiving an interrupt signal,
+        // and cancellation. The cancellation branch ensures we break out even if
+        // the reader is blocked waiting for CLI output.
         let raw = tokio::select! {
             result = process.read_message() => {
                 match result {
@@ -330,6 +321,16 @@ async fn reader_loop(
                     warn!("failed to interrupt CLI process: {e}");
                 }
                 continue;
+            }
+            _ = async {
+                if let Some(ref token) = cancel_token {
+                    token.cancelled().await
+                } else {
+                    std::future::pending().await
+                }
+            } => {
+                let _ = tx.send(Err(SdkError::Cancelled)).await;
+                break;
             }
         };
 
