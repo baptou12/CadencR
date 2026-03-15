@@ -209,6 +209,14 @@ impl CliProcess {
     pub fn pid(&self) -> Option<u32> {
         self.child.id()
     }
+
+    /// Take ownership of the stdin writer, leaving `None` in its place.
+    ///
+    /// Used by `Query` to hold stdin separately from the reader loop.
+    pub(crate) fn take_stdin(&mut self) -> Option<BufWriter<ChildStdin>> {
+        self.stdin.take()
+    }
+
 }
 
 // ---------------------------------------------------------------------------

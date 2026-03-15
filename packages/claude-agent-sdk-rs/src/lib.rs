@@ -13,10 +13,11 @@ pub use types::{
     AccountInfo, AgentInfo, CompactMetadata, ContentBlock, ContentDelta, McpServerStatus,
     ModelInfo, PermissionDenial, PluginInfo, SlashCommand, Usage,
 };
-pub use messages::SdkMessage;
+pub use messages::{SdkMessage, StreamEventData, SystemMessage, AssistantMessageBody};
 pub use permissions::{
     AllowAllTools, CanUseTool, PermissionMode, PermissionRequest, PermissionResult,
     PermissionUpdate,
 };
 pub use options::{Options, OptionsBuilder};
 pub use mcp::McpServerConfig;
+pub use query::{query, Query, TurnState};
