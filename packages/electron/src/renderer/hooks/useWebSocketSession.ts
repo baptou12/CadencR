@@ -71,6 +71,8 @@ interface StreamingState {
   toolUseIds: Map<number, string>;
   /** Reverse map: tool_use_id → content block index (for O(1) backfill lookup) */
   toolUseIdToIndex: Map<string, number>;
+  /** Map of tool_use_id → block reference (for nesting child blocks under Task/Agent) */
+  toolUseIdToBlock: Map<string, AgentBlockData>;
   /** Counter for generating unique block IDs */
   counter: number;
   /** parent_tool_use_id from the current stream_event */
@@ -85,6 +87,7 @@ function createStreamingState(): StreamingState {
     contentBlockIds: new Map(),
     toolUseIds: new Map(),
     toolUseIdToIndex: new Map(),
+    toolUseIdToBlock: new Map(),
     counter: 0,
     parentToolUseId: null,
     exitPlanModeDetected: false,
@@ -111,6 +114,13 @@ function processSdkMessage(
       if (!event) return [];
 
       const parentToolUseId = (msg.parent_tool_use_id as string) ?? null;
+      // Mark previous parent subagent as complete when context changes
+      if (state.parentToolUseId && state.parentToolUseId !== parentToolUseId) {
+        const prevParent = state.toolUseIdToBlock.get(state.parentToolUseId);
+        if (prevParent?.childBlocks) {
+          prevParent.taskComplete = true;
+        }
+      }
       state.parentToolUseId = parentToolUseId;
 
       const eventType = event.type as string;
@@ -149,15 +159,17 @@ function processSdkMessage(
               state.exitPlanModeDetected = true;
             }
 
-            return [{
-              action: "append",
-              block: {
-                id: blockId, type: "tool_call", content: "",
-                toolName, toolArgs: "",
-                toolUseId, parentToolUseId: parentToolUseId,
-                createdAt: new Date().toISOString(),
-              },
-            }];
+            const isSubagent = toolName === "Task" || toolName === "Agent";
+            const block: AgentBlockData = {
+              id: blockId, type: "tool_call", content: "",
+              toolName, toolArgs: "",
+              toolUseId, parentToolUseId: parentToolUseId,
+              createdAt: new Date().toISOString(),
+              ...(isSubagent ? { childBlocks: [] } : {}),
+            };
+            state.toolUseIdToBlock.set(toolUseId, block);
+
+            return [{ action: "append", block }];
           }
 
           if (blockType === "thinking") {
@@ -206,10 +218,14 @@ function processSdkMessage(
     }
 
     case "assistant": {
+      const assistantParentId = (msg.parent_tool_use_id as string) ?? null;
+
       // Full assistant message. If we already have content from stream events
-      // (contentBlockIds is populated), backfill any tool_call blocks whose
-      // args were not fully streamed (e.g. ExitPlanMode sends empty deltas).
-      if (state.contentBlockIds.size > 0) {
+      // (contentBlockIds is populated) AND this message is from the same context
+      // (not a subagent), backfill any tool_call blocks whose args were not
+      // fully streamed (e.g. ExitPlanMode sends empty deltas).
+      // Subagent messages (different parentToolUseId) skip backfill and create new blocks.
+      if (state.contentBlockIds.size > 0 && assistantParentId === state.parentToolUseId) {
         const assistantMsg = msg.message as Record<string, unknown> | undefined;
         const contentArr = assistantMsg?.content as Array<Record<string, unknown>> | undefined;
         if (contentArr && Array.isArray(contentArr)) {
@@ -235,7 +251,7 @@ function processSdkMessage(
         return [];
       }
 
-      // No stream events — extract content blocks directly as fallback.
+      // No stream events (or subagent context) — extract content blocks directly.
       const assistantMsg = msg.message as Record<string, unknown> | undefined;
       if (!assistantMsg) return [];
       const contentArr = assistantMsg.content as Array<Record<string, unknown>> | undefined;
@@ -243,7 +259,7 @@ function processSdkMessage(
 
       const results: BlockMutation[] = [];
       const model = (assistantMsg.model as string) ?? state.model ?? undefined;
-      const parentId = (msg.parent_tool_use_id as string) ?? null;
+      const parentId = assistantParentId;
       const now = new Date().toISOString();
 
       for (const cb of contentArr) {
@@ -260,15 +276,16 @@ function processSdkMessage(
           if (toolName === "ExitPlanMode") {
             state.exitPlanModeDetected = true;
           }
-          results.push({
-            action: "append",
-            block: {
-              id: blockId, type: "tool_call",
-              content: JSON.stringify(cb.input ?? {}),
-              toolName, toolArgs: JSON.stringify(cb.input ?? {}),
-              toolUseId: cb.id as string, parentToolUseId: parentId, createdAt: now,
-            },
-          });
+          const isSubagent = toolName === "Task" || toolName === "Agent";
+          const toolBlock: AgentBlockData = {
+            id: blockId, type: "tool_call",
+            content: JSON.stringify(cb.input ?? {}),
+            toolName, toolArgs: JSON.stringify(cb.input ?? {}),
+            toolUseId: cb.id as string, parentToolUseId: parentId, createdAt: now,
+            ...(isSubagent ? { childBlocks: [] } : {}),
+          };
+          state.toolUseIdToBlock.set(cb.id as string, toolBlock);
+          results.push({ action: "append", block: toolBlock });
         }
       }
       return results;
@@ -361,14 +378,56 @@ export function useWebSocketSession(sessionId: string): UseWebSocketSessionRetur
           }
 
           if (allMutations.length > 0) {
+            // Apply nesting and ref mutations OUTSIDE the state updater
+            // to avoid double-execution in React Strict Mode.
+            const dirtyParents = new Set<string>();
+            const rootAppends: AgentBlockData[] = [];
+            const rootUpdates: BlockMutation[] = [];
+
+            for (const mut of allMutations) {
+              if (mut.action === "append") {
+                const parentId = mut.block.parentToolUseId;
+                if (parentId) {
+                  const parentBlock = state.toolUseIdToBlock.get(parentId);
+                  if (parentBlock?.childBlocks) {
+                    parentBlock.childBlocks = [...parentBlock.childBlocks, mut.block];
+                    dirtyParents.add(parentId);
+                    if (mut.block.toolUseId) {
+                      state.toolUseIdToBlock.set(mut.block.toolUseId, mut.block);
+                    }
+                    continue;
+                  }
+                }
+                rootAppends.push(mut.block);
+              } else {
+                rootUpdates.push(mut);
+              }
+            }
+
+            // Replace dirty parent blocks with new object references
+            for (const parentToolUseId of dirtyParents) {
+              const parentBlock = state.toolUseIdToBlock.get(parentToolUseId);
+              if (parentBlock) {
+                const newParent = { ...parentBlock };
+                state.toolUseIdToBlock.set(parentToolUseId, newParent);
+                // Mark for replacement in root array
+                rootUpdates.push({ action: "replace_parent" as "replace", block: newParent });
+              }
+            }
+
             setBlocks((prev) => {
-              const result = [...prev];
-              for (const mut of allMutations) {
-                if (mut.action === "append") {
-                  result.push(mut.block);
-                } else if (mut.action === "update" || mut.action === "replace") {
-                  const idx = result.findIndex((b) => b.id === mut.block.id);
-                  if (idx === -1) continue;
+              // Append root-level blocks first so updates can find them
+              const result = [...prev, ...rootAppends];
+
+              // Apply updates (content deltas, parent replacements)
+              for (const mut of rootUpdates) {
+                if ((mut.action as string) === "replace_parent") {
+                  const idx = result.findIndex((b) => b.toolUseId === mut.block.toolUseId);
+                  if (idx !== -1) result[idx] = mut.block;
+                  continue;
+                }
+                const idx = result.findIndex((b) => b.id === mut.block.id);
+                if (idx !== -1) {
                   const existing = { ...result[idx] };
                   existing.content = mut.action === "replace"
                     ? mut.block.content
@@ -377,8 +436,25 @@ export function useWebSocketSession(sessionId: string): UseWebSocketSessionRetur
                     existing.toolArgs = existing.content;
                   }
                   result[idx] = existing;
+                } else {
+                  // Search in nested childBlocks
+                  for (const parentBlock of state.toolUseIdToBlock.values()) {
+                    if (!parentBlock.childBlocks) continue;
+                    const childIdx = parentBlock.childBlocks.findIndex((b) => b.id === mut.block.id);
+                    if (childIdx === -1) continue;
+                    const child = { ...parentBlock.childBlocks[childIdx] };
+                    child.content = mut.action === "replace"
+                      ? mut.block.content
+                      : child.content + mut.block.content;
+                    if (child.type === "tool_call") {
+                      child.toolArgs = child.content;
+                    }
+                    parentBlock.childBlocks[childIdx] = child;
+                    break;
+                  }
                 }
               }
+
               return result;
             });
           }
@@ -434,6 +510,12 @@ export function useWebSocketSession(sessionId: string): UseWebSocketSessionRetur
         case "ended":
         case "turn_complete": {
           const state = streamingStateRef.current;
+          // Mark any in-flight subagent as complete
+          if (state.parentToolUseId) {
+            const parent = state.toolUseIdToBlock.get(state.parentToolUseId);
+            if (parent?.childBlocks) parent.taskComplete = true;
+            state.parentToolUseId = null;
+          }
           if (state.exitPlanModeDetected) {
             state.exitPlanModeDetected = false;
             setPendingPlanApproval({});

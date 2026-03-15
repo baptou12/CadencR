@@ -735,6 +735,397 @@ describe("useWebSocketSession", () => {
     expect(args.planFilePath).toBe("/tmp/plan.md");
   });
 
+  // ---------------------------------------------------------------------------
+  // Subagent / nested block nesting
+  // ---------------------------------------------------------------------------
+
+  it("subagent tool calls are nested into parent Agent block's childBlocks", async () => {
+    const { result } = renderHook(() => useWebSocketSession("test-id"));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    const ws = getWs();
+
+    // 1. Stream the parent Agent tool_call
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [
+            {
+              type: "stream_event", uuid: "se1", session_id: "s1", parent_tool_use_id: null,
+              event: { type: "message_start", message: { model: "claude-opus-4-6" } },
+            },
+            {
+              type: "stream_event", uuid: "se2", session_id: "s1", parent_tool_use_id: null,
+              event: {
+                type: "content_block_start", index: 0,
+                content_block: { type: "tool_use", id: "toolu_agent", name: "Agent" },
+              },
+            },
+          ],
+        },
+      });
+    });
+
+    // Parent block should exist at root with empty childBlocks
+    expect(result.current.blocks).toHaveLength(1);
+    expect(result.current.blocks[0].toolName).toBe("Agent");
+    expect(result.current.blocks[0].childBlocks).toEqual([]);
+
+    // 2. Subagent sends tool calls as assistant messages with parent_tool_use_id
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [{
+            type: "assistant", uuid: "a1", session_id: "s1",
+            parent_tool_use_id: "toolu_agent", error: null,
+            message: {
+              id: "msg2", model: "claude-haiku-4-5-20251001", stop_reason: null,
+              content: [{ type: "tool_use", id: "toolu_bash1", name: "Bash", input: { command: "ls" } }],
+            },
+          }],
+        },
+      });
+    });
+
+    // Root should still have 1 block (Agent), child nested inside
+    expect(result.current.blocks).toHaveLength(1);
+    const agentBlock = result.current.blocks[0];
+    expect(agentBlock.childBlocks).toHaveLength(1);
+    expect(agentBlock.childBlocks![0].toolName).toBe("Bash");
+    expect(agentBlock.childBlocks![0].parentToolUseId).toBe("toolu_agent");
+  });
+
+  it("subagent childBlocks only shows tool_call types (text/thinking filtered by UI)", async () => {
+    const { result } = renderHook(() => useWebSocketSession("test-id"));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    const ws = getWs();
+
+    // Create parent Agent block
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [{
+            type: "stream_event", uuid: "se1", session_id: "s1", parent_tool_use_id: null,
+            event: {
+              type: "content_block_start", index: 0,
+              content_block: { type: "tool_use", id: "toolu_agent", name: "Agent" },
+            },
+          }],
+        },
+      });
+    });
+
+    // Send assistant message with text + tool_use from subagent
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [{
+            type: "assistant", uuid: "a1", session_id: "s1",
+            parent_tool_use_id: "toolu_agent", error: null,
+            message: {
+              id: "msg2", model: "claude-haiku-4-5-20251001", stop_reason: null,
+              content: [
+                { type: "text", text: "Let me search" },
+                { type: "tool_use", id: "toolu_grep", name: "Grep", input: { pattern: "foo" } },
+              ],
+            },
+          }],
+        },
+      });
+    });
+
+    const agentBlock = result.current.blocks[0];
+    // Both text and tool_call are in childBlocks
+    expect(agentBlock.childBlocks).toHaveLength(2);
+    expect(agentBlock.childBlocks![0].type).toBe("text");
+    expect(agentBlock.childBlocks![1].type).toBe("tool_call");
+    expect(agentBlock.childBlocks![1].toolName).toBe("Grep");
+  });
+
+  it("multiple subagent tool calls accumulate in childBlocks without duplicates", async () => {
+    const { result } = renderHook(() => useWebSocketSession("test-id"));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    const ws = getWs();
+
+    // Create parent Agent block
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [{
+            type: "stream_event", uuid: "se1", session_id: "s1", parent_tool_use_id: null,
+            event: {
+              type: "content_block_start", index: 0,
+              content_block: { type: "tool_use", id: "toolu_agent", name: "Agent" },
+            },
+          }],
+        },
+      });
+    });
+
+    // Send 7 tool calls one at a time
+    for (let i = 1; i <= 7; i++) {
+      act(() => {
+        ws.simulateMessage({
+          domain: "session",
+          action: "message",
+          payload: {
+            blocks: [{
+              type: "assistant", uuid: `a${i}`, session_id: "s1",
+              parent_tool_use_id: "toolu_agent", error: null,
+              message: {
+                id: `msg${i}`, model: "claude-haiku-4-5-20251001", stop_reason: null,
+                content: [{ type: "tool_use", id: `toolu_${i}`, name: "Bash", input: { command: `cmd${i}` } }],
+              },
+            }],
+          },
+        });
+      });
+    }
+
+    // All 7 should be nested, no duplicates
+    expect(result.current.blocks).toHaveLength(1);
+    const agentBlock = result.current.blocks[0];
+    expect(agentBlock.childBlocks).toHaveLength(7);
+
+    // Verify unique IDs (no duplicates)
+    const ids = agentBlock.childBlocks!.map((b) => b.id);
+    expect(new Set(ids).size).toBe(7);
+
+    // Verify unique toolUseIds
+    const toolUseIds = agentBlock.childBlocks!.map((b) => b.toolUseId);
+    expect(new Set(toolUseIds).size).toBe(7);
+  });
+
+  it("subagent assistant messages skip backfill path (different parentToolUseId)", async () => {
+    const { result } = renderHook(() => useWebSocketSession("test-id"));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    const ws = getWs();
+
+    // Stream parent Agent via stream events (populates contentBlockIds)
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [
+            {
+              type: "stream_event", uuid: "se1", session_id: "s1", parent_tool_use_id: null,
+              event: { type: "message_start", message: { model: "claude-opus-4-6" } },
+            },
+            {
+              type: "stream_event", uuid: "se2", session_id: "s1", parent_tool_use_id: null,
+              event: {
+                type: "content_block_start", index: 0,
+                content_block: { type: "tool_use", id: "toolu_agent", name: "Agent" },
+              },
+            },
+            {
+              type: "stream_event", uuid: "se3", session_id: "s1", parent_tool_use_id: null,
+              event: { type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: '{"desc' } },
+            },
+            // Backfill from parent's assistant message (same parent context)
+            {
+              type: "assistant", uuid: "a0", session_id: "s1",
+              parent_tool_use_id: null, error: null,
+              message: {
+                id: "msg0", model: "claude-opus-4-6", stop_reason: null,
+                content: [{ type: "tool_use", id: "toolu_agent", name: "Agent", input: { description: "explore" } }],
+              },
+            },
+          ],
+        },
+      });
+    });
+
+    // Now subagent sends assistant message with different parent_tool_use_id
+    // This should NOT hit the backfill path — it should create a new block
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [{
+            type: "assistant", uuid: "a1", session_id: "s1",
+            parent_tool_use_id: "toolu_agent", error: null,
+            message: {
+              id: "msg1", model: "claude-haiku-4-5-20251001", stop_reason: null,
+              content: [{ type: "tool_use", id: "toolu_read", name: "Read", input: { file_path: "/tmp/a" } }],
+            },
+          }],
+        },
+      });
+    });
+
+    expect(result.current.blocks).toHaveLength(1);
+    const agentBlock = result.current.blocks[0];
+    expect(agentBlock.childBlocks).toHaveLength(1);
+    expect(agentBlock.childBlocks![0].toolName).toBe("Read");
+  });
+
+  it("taskComplete is set when parentToolUseId changes", async () => {
+    const { result } = renderHook(() => useWebSocketSession("test-id"));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    const ws = getWs();
+
+    // Create parent Agent block via stream event
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [
+            {
+              type: "stream_event", uuid: "se1", session_id: "s1", parent_tool_use_id: null,
+              event: { type: "message_start", message: { model: "claude-opus-4-6" } },
+            },
+            {
+              type: "stream_event", uuid: "se2", session_id: "s1", parent_tool_use_id: null,
+              event: {
+                type: "content_block_start", index: 0,
+                content_block: { type: "tool_use", id: "toolu_agent", name: "Agent" },
+              },
+            },
+          ],
+        },
+      });
+    });
+
+    // Subagent sends a tool call (sets parentToolUseId on streaming state)
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [{
+            type: "stream_event", uuid: "se3", session_id: "s1",
+            parent_tool_use_id: "toolu_agent",
+            event: { type: "message_start", message: { model: "claude-haiku-4-5-20251001" } },
+          }],
+        },
+      });
+    });
+
+    // Now a stream event comes back with parent_tool_use_id: null (subagent done)
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [{
+            type: "stream_event", uuid: "se4", session_id: "s1",
+            parent_tool_use_id: null,
+            event: { type: "message_start", message: { model: "claude-opus-4-6" } },
+          }],
+        },
+      });
+    });
+
+    const agentBlock = result.current.blocks[0];
+    expect(agentBlock.taskComplete).toBe(true);
+  });
+
+  it("taskComplete is set on turn end if subagent was active", async () => {
+    const { result } = renderHook(() => useWebSocketSession("test-id"));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    const ws = getWs();
+
+    // Create parent Agent block
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [{
+            type: "stream_event", uuid: "se1", session_id: "s1", parent_tool_use_id: null,
+            event: {
+              type: "content_block_start", index: 0,
+              content_block: { type: "tool_use", id: "toolu_agent", name: "Agent" },
+            },
+          }],
+        },
+      });
+    });
+
+    // Subagent starts
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [{
+            type: "stream_event", uuid: "se2", session_id: "s1",
+            parent_tool_use_id: "toolu_agent",
+            event: { type: "message_start", message: { model: "claude-haiku-4-5-20251001" } },
+          }],
+        },
+      });
+    });
+
+    // Turn ends while subagent is active
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "turn_complete",
+        payload: {},
+      });
+    });
+
+    // The Agent block should be marked complete via the dirty parent replacement
+    // Find the Agent block (may have been replaced with new reference)
+    const agentBlock = result.current.blocks.find((b) => b.toolName === "Agent");
+    expect(agentBlock?.taskComplete).toBe(true);
+  });
+
+  it("Task tool_call blocks also get childBlocks initialized", async () => {
+    const { result } = renderHook(() => useWebSocketSession("test-id"));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    const ws = getWs();
+
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [{
+            type: "assistant", uuid: "a1", session_id: "s1",
+            parent_tool_use_id: null, error: null,
+            message: {
+              id: "msg1", model: "claude-opus-4-6", stop_reason: null,
+              content: [{ type: "tool_use", id: "toolu_task", name: "Task", input: { description: "do thing" } }],
+            },
+          }],
+        },
+      });
+    });
+
+    expect(result.current.blocks).toHaveLength(1);
+    expect(result.current.blocks[0].toolName).toBe("Task");
+    expect(result.current.blocks[0].childBlocks).toEqual([]);
+  });
+
   it("unmount sends destroy and closes WebSocket", async () => {
     const { unmount } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
