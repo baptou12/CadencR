@@ -131,8 +131,8 @@ pub struct Query {
     /// Background reader task handle (for cleanup).
     reader_task: Option<tokio::task::JoinHandle<()>>,
 
-    /// Child process PID (for interrupt via SIGINT).
-    child_pid: Arc<Mutex<Option<u32>>>,
+    /// Channel to signal the reader task to send SIGINT to the CLI process.
+    interrupt_tx: mpsc::Sender<()>,
 
     /// Cancellation token.
     _cancel_token: Option<CancellationToken>,
@@ -159,17 +159,16 @@ impl Query {
 
     /// Interrupt the agent (SIGINT). The CLI will finish its current turn
     /// and emit a `Result` message. The session can be resumed later.
+    ///
+    /// The signal is routed through a channel to the background reader task,
+    /// which owns the `CliProcess` and calls its `interrupt()` method.
+    /// This avoids caching a stale PID (the process could have exited and
+    /// the PID could have been reused by the OS).
     pub async fn interrupt(&self) -> Result<(), SdkError> {
-        #[cfg(unix)]
-        {
-            let pid = self.child_pid.lock().await;
-            if let Some(pid) = *pid {
-                unsafe {
-                    libc::kill(pid as libc::pid_t, libc::SIGINT);
-                }
-                debug!(pid, "sent SIGINT to CLI process");
-            }
-        }
+        self.interrupt_tx
+            .send(())
+            .await
+            .map_err(|_| SdkError::InputClosed)?;
         Ok(())
     }
 
@@ -289,6 +288,7 @@ async fn reader_loop(
     session_id: Arc<Mutex<Option<String>>>,
     turn_state: Arc<Mutex<TurnState>>,
     cancel_token: Option<CancellationToken>,
+    mut interrupt_rx: mpsc::Receiver<()>,
 ) {
     loop {
         // Check cancellation
@@ -299,23 +299,37 @@ async fn reader_loop(
             }
         }
 
-        // Read next raw JSON value from stdout
-        let raw = match process.read_message().await {
-            Ok(Some(value)) => value,
-            Ok(None) => {
-                // EOF — process exited, check exit code
-                let (code, stderr) = process.wait_with_stderr().await;
-                if code.unwrap_or(0) != 0 {
-                    let _ = tx
-                        .send(Err(SdkError::ProcessExit { code, stderr }))
-                        .await;
+        // Select between reading the next message and receiving an interrupt signal.
+        // The interrupt channel is drained with a non-blocking try_recv first,
+        // then we use tokio::select! to race the next message read against an
+        // interrupt arriving while we're waiting.
+        let raw = tokio::select! {
+            result = process.read_message() => {
+                match result {
+                    Ok(Some(value)) => value,
+                    Ok(None) => {
+                        // EOF — process exited, check exit code
+                        let (code, stderr) = process.wait_with_stderr().await;
+                        if code.unwrap_or(0) != 0 {
+                            let _ = tx
+                                .send(Err(SdkError::ProcessExit { code, stderr }))
+                                .await;
+                        }
+                        debug!("CLI process exited (code={code:?})");
+                        break;
+                    }
+                    Err(e) => {
+                        let _ = tx.send(Err(e)).await;
+                        break;
+                    }
                 }
-                debug!("CLI process exited (code={code:?})");
-                break;
             }
-            Err(e) => {
-                let _ = tx.send(Err(e)).await;
-                break;
+            _ = interrupt_rx.recv() => {
+                debug!("interrupt signal received, sending SIGINT to CLI process");
+                if let Err(e) = process.interrupt().await {
+                    warn!("failed to interrupt CLI process: {e}");
+                }
+                continue;
             }
         };
 
@@ -465,9 +479,6 @@ pub async fn query(prompt: impl Into<String>, mut options: Options) -> Result<Qu
     let cli_path = find_cli(options.path_to_cli.as_deref())?;
     let mut process = CliProcess::spawn(&cli_path, &options).await?;
 
-    // Capture PID before we move anything
-    let pid = process.pid();
-
     // Take stdin out of the process — Query and the reader loop share it
     // via Arc<Mutex<..>> so the reader loop can write permission responses
     // and Query can write user messages / control commands.
@@ -506,6 +517,7 @@ pub async fn query(prompt: impl Into<String>, mut options: Options) -> Result<Qu
 
     // Set up channel and shared state
     let (tx, rx) = mpsc::channel(256);
+    let (interrupt_tx, interrupt_rx) = mpsc::channel(4);
     let session_id = Arc::new(Mutex::new(None));
     let turn_state = Arc::new(Mutex::new(TurnState::AgentWorking));
 
@@ -518,6 +530,7 @@ pub async fn query(prompt: impl Into<String>, mut options: Options) -> Result<Qu
         Arc::clone(&session_id),
         Arc::clone(&turn_state),
         cancel_token.clone(),
+        interrupt_rx,
     ));
 
     Ok(Query {
@@ -526,7 +539,7 @@ pub async fn query(prompt: impl Into<String>, mut options: Options) -> Result<Qu
         session_id,
         turn_state,
         reader_task: Some(reader_task),
-        child_pid: Arc::new(Mutex::new(pid)),
+        interrupt_tx,
         _cancel_token: cancel_token,
     })
 }
