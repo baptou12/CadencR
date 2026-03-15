@@ -89,7 +89,11 @@ app.on("ready", async () => {
   await AppRuntime.runPromise(Effect.void);
   fetchAvailableModels().catch(() => {}); // warm up cache
   // Restore in-memory session map from DB (for reconnection after restart).
-  await AppRuntime.runPromise(SessionPersistence.restoreSessionMap());
+  try {
+    await AppRuntime.runPromise(SessionPersistence.restoreSessionMap());
+  } catch (err) {
+    console.error("[startup] Failed to restore session map:", err);
+  }
   resumeInProgressFeatures();
 
   // Start Electron IPC server (for Rust → Electron callbacks)
