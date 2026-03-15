@@ -23,6 +23,11 @@ pub fn find_cli(path_override: Option<&Path>) -> Result<PathBuf, SdkError> {
     }
 
     let path_var = std::env::var("PATH").unwrap_or_default();
+    find_cli_in_path_dirs(&path_var)
+}
+
+/// Search for `claude` executable in the given PATH-style string.
+fn find_cli_in_path_dirs(path_var: &str) -> Result<PathBuf, SdkError> {
     let separator = if cfg!(windows) { ';' } else { ':' };
 
     for dir in path_var.split(separator) {
@@ -270,26 +275,15 @@ mod tests {
         let dir = TempDir::new().unwrap();
         make_executable(dir.path(), "claude");
 
-        let old_path = std::env::var("PATH").unwrap_or_default();
-        let new_path = format!("{}:{}", dir.path().display(), old_path);
-        std::env::set_var("PATH", &new_path);
-
-        let result = find_cli(None);
-
-        std::env::set_var("PATH", old_path);
+        let path_var = format!("/nonexistent:{}", dir.path().display());
+        let result = find_cli_in_path_dirs(&path_var);
 
         assert!(result.is_ok());
     }
 
     #[test]
     fn find_cli_not_in_path() {
-        let old_path = std::env::var("PATH").unwrap_or_default();
-        std::env::set_var("PATH", "/tmp/definitely_empty_dir_xyz");
-
-        let result = find_cli(None);
-
-        std::env::set_var("PATH", old_path);
-
+        let result = find_cli_in_path_dirs("/tmp/definitely_empty_dir_xyz");
         assert!(matches!(result, Err(SdkError::CliNotFound)));
     }
 
