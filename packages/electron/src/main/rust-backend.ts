@@ -23,8 +23,6 @@ function getBinaryPath(): string {
     "..",
     "..",
     "..",
-    "packages",
-    "service",
     "target",
     "debug",
     binaryName,

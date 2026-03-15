@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as WsSessionSessionIdRouteImport } from './routes/ws-session.$sessionId'
 import { Route as ProjectsProjectIdFeaturesFeatureIdRouteImport } from './routes/projects/$projectId/features/$featureId'
 
 const SettingsRoute = SettingsRouteImport.update({
@@ -23,6 +24,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const WsSessionSessionIdRoute = WsSessionSessionIdRouteImport.update({
+  id: '/ws-session/$sessionId',
+  path: '/ws-session/$sessionId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ProjectsProjectIdFeaturesFeatureIdRoute =
   ProjectsProjectIdFeaturesFeatureIdRouteImport.update({
     id: '/projects/$projectId/features/$featureId',
@@ -33,34 +39,47 @@ const ProjectsProjectIdFeaturesFeatureIdRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/settings': typeof SettingsRoute
+  '/ws-session/$sessionId': typeof WsSessionSessionIdRoute
   '/projects/$projectId/features/$featureId': typeof ProjectsProjectIdFeaturesFeatureIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/settings': typeof SettingsRoute
+  '/ws-session/$sessionId': typeof WsSessionSessionIdRoute
   '/projects/$projectId/features/$featureId': typeof ProjectsProjectIdFeaturesFeatureIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/settings': typeof SettingsRoute
+  '/ws-session/$sessionId': typeof WsSessionSessionIdRoute
   '/projects/$projectId/features/$featureId': typeof ProjectsProjectIdFeaturesFeatureIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/settings' | '/projects/$projectId/features/$featureId'
+  fullPaths:
+    | '/'
+    | '/settings'
+    | '/ws-session/$sessionId'
+    | '/projects/$projectId/features/$featureId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/settings' | '/projects/$projectId/features/$featureId'
+  to:
+    | '/'
+    | '/settings'
+    | '/ws-session/$sessionId'
+    | '/projects/$projectId/features/$featureId'
   id:
     | '__root__'
     | '/'
     | '/settings'
+    | '/ws-session/$sessionId'
     | '/projects/$projectId/features/$featureId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   SettingsRoute: typeof SettingsRoute
+  WsSessionSessionIdRoute: typeof WsSessionSessionIdRoute
   ProjectsProjectIdFeaturesFeatureIdRoute: typeof ProjectsProjectIdFeaturesFeatureIdRoute
 }
 
@@ -80,6 +99,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/ws-session/$sessionId': {
+      id: '/ws-session/$sessionId'
+      path: '/ws-session/$sessionId'
+      fullPath: '/ws-session/$sessionId'
+      preLoaderRoute: typeof WsSessionSessionIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/projects/$projectId/features/$featureId': {
       id: '/projects/$projectId/features/$featureId'
       path: '/projects/$projectId/features/$featureId'
@@ -93,6 +119,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   SettingsRoute: SettingsRoute,
+  WsSessionSessionIdRoute: WsSessionSessionIdRoute,
   ProjectsProjectIdFeaturesFeatureIdRoute:
     ProjectsProjectIdFeaturesFeatureIdRoute,
 }
