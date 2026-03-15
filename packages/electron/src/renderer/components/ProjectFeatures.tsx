@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { wsSessionIdFromFeature } from "@/lib/ws-session-id";
 import { useNavigate } from "@tanstack/react-router";
 import { TrashIcon, ArchiveIcon, BotIcon, MessageCircleQuestionIcon, ChevronRightIcon, ChevronDownIcon, PlugIcon } from "lucide-react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -84,7 +85,7 @@ export function ProjectFeatures({
   const handleNavigate = (feature: (typeof features)[number]) => {
     onSelectFeature(feature.id);
     if (feature.type === "ws-session") {
-      const wsSessionId = crypto.randomUUID();
+      const wsSessionId = wsSessionIdFromFeature(feature.id);
       void navigate({
         to: "/ws-session/$sessionId",
         params: { sessionId: wsSessionId },

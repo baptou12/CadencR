@@ -26,6 +26,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { wsSessionIdFromFeature } from "@/lib/ws-session-id";
 import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
 import { ProjectFeatures } from "./ProjectFeatures";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -108,7 +109,7 @@ export function ProjectTree({
       void queryClient.invalidateQueries({
         queryKey: getListFeaturesQueryKey(pendingProjectIdRef.current),
       });
-      const wsSessionId = crypto.randomUUID();
+      const wsSessionId = wsSessionIdFromFeature(wsSession.id);
       const projectId = pendingProjectIdRef.current;
       const project = projects.find((p) => p.id === projectId);
       void navigate({

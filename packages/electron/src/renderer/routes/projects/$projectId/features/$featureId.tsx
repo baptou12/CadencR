@@ -12,6 +12,7 @@ import { useFeatureAgentState } from "@/hooks/useFeatureAgentState";
 import { useContextUsage } from "@/hooks/useContextUsage";
 import { useResolvedModel } from "@/hooks/useResolvedModel";
 import { getActiveFocusZone } from "@/lib/focus-zones";
+import { wsSessionIdFromFeature } from "@/lib/ws-session-id";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import { useTerminalState, useTerminalStore } from "@/hooks/useTerminalState";
 import { useAgentChat, usePermissionMode } from "@/hooks/useAgentChat";
@@ -73,7 +74,7 @@ function WsSessionRedirect({
   const projectsQuery = useListProjects();
   const project = projectsQuery.data?.find((p) => p.id === projectId);
 
-  const wsSessionId = useMemo(() => crypto.randomUUID(), []);
+  const wsSessionId = wsSessionIdFromFeature(featureId);
 
   if (!project) {
     return null; // Loading
