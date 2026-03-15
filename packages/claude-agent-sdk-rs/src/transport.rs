@@ -139,6 +139,10 @@ impl CliProcess {
     // -----------------------------------------------------------------------
 
     /// Write a JSON value to stdin as a newline-terminated NDJSON message.
+    ///
+    /// Currently unused — `Query` manages stdin directly — but kept as part of
+    /// the public transport API for future use.
+    #[allow(dead_code)]
     pub async fn write_json(&mut self, value: &serde_json::Value) -> Result<(), SdkError> {
         let stdin = self.stdin.as_mut().ok_or(SdkError::InputClosed)?;
         let json = serde_json::to_string(value).map_err(SdkError::SerializationError)?;
@@ -149,6 +153,10 @@ impl CliProcess {
     }
 
     /// Close stdin, signalling no more input to the CLI.
+    ///
+    /// Currently unused — `Query` manages stdin directly — but kept as part of
+    /// the public transport API for future use.
+    #[allow(dead_code)]
     pub async fn close_stdin(&mut self) -> Result<(), SdkError> {
         self.stdin.take(); // Dropping the BufWriter closes the pipe.
         Ok(())
@@ -171,6 +179,10 @@ impl CliProcess {
     }
 
     /// Graceful shutdown: SIGTERM, wait 5 s, then SIGKILL.
+    ///
+    /// Currently unused — `Query` manages lifecycle directly — but kept as part
+    /// of the public transport API for future use.
+    #[allow(dead_code)]
     pub async fn kill(&mut self) -> Result<(), SdkError> {
         #[cfg(unix)]
         if let Some(pid) = self.child.id() {
@@ -206,6 +218,9 @@ impl CliProcess {
     }
 
     /// Return the OS process ID, if the process is still running.
+    ///
+    /// Currently unused — kept as part of the public transport API for future use.
+    #[allow(dead_code)]
     pub fn pid(&self) -> Option<u32> {
         self.child.id()
     }

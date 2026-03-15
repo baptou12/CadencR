@@ -113,9 +113,14 @@ impl Options {
         // MCP servers are serialised as JSON and passed via --mcp-config.
         if let Some(servers) = &self.mcp_servers {
             if !servers.is_empty() {
-                if let Ok(json) = serde_json::to_string(servers) {
-                    args.push("--mcp-config".to_string());
-                    args.push(json);
+                match serde_json::to_string(servers) {
+                    Ok(json) => {
+                        args.push("--mcp-config".to_string());
+                        args.push(json);
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to serialize MCP server config: {e}");
+                    }
                 }
             }
         }
