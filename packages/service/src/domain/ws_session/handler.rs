@@ -6,7 +6,7 @@ use axum::extract::{State, WebSocketUpgrade};
 use axum::response::IntoResponse;
 use futures::StreamExt;
 use tokio::sync::{mpsc, Mutex};
-use tracing::{debug, error, warn};
+use tracing::debug;
 
 use claude_agent_sdk_rs::{
     Options, PermissionMode, PermissionResult, Query, SdkMessage,
