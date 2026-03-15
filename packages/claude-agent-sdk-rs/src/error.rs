@@ -9,7 +9,7 @@ pub enum SdkError {
 
     /// Failed to spawn the child process.
     #[error("failed to spawn child process: {0}")]
-    SpawnFailed(#[from] std::io::Error),
+    SpawnFailed(std::io::Error),
 
     /// Received a malformed JSON line from the CLI's stdout.
     /// The raw line is included for debugging.

@@ -73,7 +73,7 @@ impl CliProcess {
         // Prevent nested-session detection errors (matches TS SDK behavior).
         cmd.env_remove("CLAUDECODE");
 
-        let mut child = cmd.spawn()?;
+        let mut child = cmd.spawn().map_err(SdkError::SpawnFailed)?;
 
         let stdin = child
             .stdin
