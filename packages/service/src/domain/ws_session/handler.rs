@@ -559,7 +559,7 @@ async fn handle_prompt_send(
             if let Some(ref p) = persistence {
                 let mut p_lock = p.lock().await;
                 let model_str = spawned_model.as_deref();
-                let pm_str = config.permission_mode.as_ref().map(|m| format!("{:?}", m));
+                let pm_str = config.permission_mode.as_ref().map(|m| m.as_cli_flag().to_string());
                 p_lock.create_session(model_str, pm_str.as_deref()).await;
                 p_lock.persist_user_message(&payload.text).await;
             }
@@ -912,8 +912,6 @@ fn spawn_stream_reader(
                         p_lock.persist_sdk_message(&sdk_msg).await;
                     }
 
-                    let is_result = matches!(&sdk_msg, SdkMessage::Result { .. });
-
                     let envelope = match &sdk_msg {
                         SdkMessage::Result { .. } => {
                             // Mark session completed
@@ -952,9 +950,7 @@ fn spawn_stream_reader(
                         break;
                     }
 
-                    if is_result {
-                        // Don't break — let the channel close naturally
-                    }
+
                 }
                 Some(Err(e)) => {
                     error!(session_id, error = %e, "SDK stream error");
