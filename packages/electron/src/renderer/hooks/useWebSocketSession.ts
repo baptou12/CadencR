@@ -295,6 +295,45 @@ function processSdkMessage(
       return results;
     }
 
+    case "user": {
+      const message = msg.message as Record<string, unknown> | undefined;
+      const contentArr = message?.content as Array<Record<string, unknown>> | undefined;
+      if (!contentArr || !Array.isArray(contentArr)) return [];
+
+      const parentToolUseId = (msg.parent_tool_use_id as string) ?? null;
+      const results: BlockMutation[] = [];
+
+      for (const item of contentArr) {
+        if (item.type !== "tool_result") continue;
+
+        const toolUseId = item.tool_use_id as string;
+        const content = typeof item.content === "string"
+          ? item.content
+          : JSON.stringify(item.content ?? "");
+        const isError = item.is_error === true;
+
+        const matchingBlock = state.toolUseIdToBlock.get(toolUseId);
+        const sourceToolName = matchingBlock?.toolName ?? "unknown";
+        const parentId = matchingBlock?.parentToolUseId ?? parentToolUseId;
+
+        state.counter += 1;
+        results.push({
+          action: "append",
+          block: {
+            id: `ws-${state.counter}`,
+            type: "tool_result",
+            content,
+            isError,
+            sourceToolName,
+            toolUseId,
+            parentToolUseId: parentId,
+            createdAt: new Date().toISOString(),
+          },
+        });
+      }
+      return results;
+    }
+
     case "system":
     case "result":
       return [];

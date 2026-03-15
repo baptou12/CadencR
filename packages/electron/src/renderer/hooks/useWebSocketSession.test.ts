@@ -1126,6 +1126,323 @@ describe("useWebSocketSession", () => {
     expect(result.current.blocks[0].childBlocks).toEqual([]);
   });
 
+  // ---------------------------------------------------------------------------
+  // User message (tool_result) handling
+  // ---------------------------------------------------------------------------
+
+  it("user message with tool_result creates tool_result block", async () => {
+    const { result } = renderHook(() => useWebSocketSession("test-id"));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    const ws = getWs();
+
+    // First create a Bash tool_call so toolUseIdToBlock has an entry
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [{
+            type: "stream_event", uuid: "se1", session_id: "s1", parent_tool_use_id: null,
+            event: {
+              type: "content_block_start", index: 0,
+              content_block: { type: "tool_use", id: "toolu_bash1", name: "Bash" },
+            },
+          }],
+        },
+      });
+    });
+
+    // Now send the user message with tool_result
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [{
+            type: "user",
+            uuid: "u1",
+            session_id: "s1",
+            parent_tool_use_id: null,
+            message: {
+              role: "user",
+              content: [
+                { tool_use_id: "toolu_bash1", type: "tool_result", content: "hello world", is_error: false },
+              ],
+            },
+          }],
+        },
+      });
+    });
+
+    // Should have tool_call + tool_result
+    expect(result.current.blocks).toHaveLength(2);
+    const resultBlock = result.current.blocks[1];
+    expect(resultBlock.type).toBe("tool_result");
+    expect(resultBlock.content).toBe("hello world");
+    expect(resultBlock.isError).toBe(false);
+    expect(resultBlock.sourceToolName).toBe("Bash");
+    expect(resultBlock.toolUseId).toBe("toolu_bash1");
+  });
+
+  it("user message with is_error=true sets isError on result block", async () => {
+    const { result } = renderHook(() => useWebSocketSession("test-id"));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    const ws = getWs();
+
+    // Create tool_call
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [{
+            type: "stream_event", uuid: "se1", session_id: "s1", parent_tool_use_id: null,
+            event: {
+              type: "content_block_start", index: 0,
+              content_block: { type: "tool_use", id: "toolu_bash2", name: "Bash" },
+            },
+          }],
+        },
+      });
+    });
+
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [{
+            type: "user", uuid: "u1", session_id: "s1", parent_tool_use_id: null,
+            message: {
+              role: "user",
+              content: [
+                { tool_use_id: "toolu_bash2", type: "tool_result", content: "command failed", is_error: true },
+              ],
+            },
+          }],
+        },
+      });
+    });
+
+    const resultBlock = result.current.blocks[1];
+    expect(resultBlock.isError).toBe(true);
+    expect(resultBlock.content).toBe("command failed");
+  });
+
+  it("user message without matching tool_call uses 'unknown' sourceToolName", async () => {
+    const { result } = renderHook(() => useWebSocketSession("test-id"));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    const ws = getWs();
+
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [{
+            type: "user", uuid: "u1", session_id: "s1", parent_tool_use_id: null,
+            message: {
+              role: "user",
+              content: [
+                { tool_use_id: "toolu_unknown", type: "tool_result", content: "output", is_error: false },
+              ],
+            },
+          }],
+        },
+      });
+    });
+
+    expect(result.current.blocks).toHaveLength(1);
+    expect(result.current.blocks[0].sourceToolName).toBe("unknown");
+  });
+
+  it("user message with non-string content JSON-stringifies it", async () => {
+    const { result } = renderHook(() => useWebSocketSession("test-id"));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    const ws = getWs();
+
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [{
+            type: "user", uuid: "u1", session_id: "s1", parent_tool_use_id: null,
+            message: {
+              role: "user",
+              content: [
+                { tool_use_id: "toolu_x", type: "tool_result", content: [{ type: "text", text: "hi" }], is_error: false },
+              ],
+            },
+          }],
+        },
+      });
+    });
+
+    expect(result.current.blocks[0].content).toBe(JSON.stringify([{ type: "text", text: "hi" }]));
+  });
+
+  it("user message with no content array is ignored", async () => {
+    const { result } = renderHook(() => useWebSocketSession("test-id"));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    const ws = getWs();
+
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [{
+            type: "user", uuid: "u1", session_id: "s1", parent_tool_use_id: null,
+            message: { role: "user" },
+          }],
+        },
+      });
+    });
+
+    expect(result.current.blocks).toHaveLength(0);
+  });
+
+  it("user message tool_result nests under parent Agent block", async () => {
+    const { result } = renderHook(() => useWebSocketSession("test-id"));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    const ws = getWs();
+
+    // Create parent Agent block
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [{
+            type: "stream_event", uuid: "se1", session_id: "s1", parent_tool_use_id: null,
+            event: {
+              type: "content_block_start", index: 0,
+              content_block: { type: "tool_use", id: "toolu_agent", name: "Agent" },
+            },
+          }],
+        },
+      });
+    });
+
+    // Subagent Bash tool_call
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [{
+            type: "assistant", uuid: "a1", session_id: "s1",
+            parent_tool_use_id: "toolu_agent", error: null,
+            message: {
+              id: "msg1", model: "claude-haiku-4-5-20251001", stop_reason: null,
+              content: [{ type: "tool_use", id: "toolu_bash_sub", name: "Bash", input: { command: "ls" } }],
+            },
+          }],
+        },
+      });
+    });
+
+    // Tool result for subagent Bash
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [{
+            type: "user", uuid: "u1", session_id: "s1",
+            parent_tool_use_id: "toolu_agent",
+            message: {
+              role: "user",
+              content: [
+                { tool_use_id: "toolu_bash_sub", type: "tool_result", content: "file1.txt\nfile2.txt", is_error: false },
+              ],
+            },
+          }],
+        },
+      });
+    });
+
+    // Root should only have Agent block
+    expect(result.current.blocks).toHaveLength(1);
+    const agentBlock = result.current.blocks[0];
+    // Bash tool_call + tool_result nested
+    expect(agentBlock.childBlocks).toHaveLength(2);
+    expect(agentBlock.childBlocks![0].type).toBe("tool_call");
+    expect(agentBlock.childBlocks![0].toolName).toBe("Bash");
+    expect(agentBlock.childBlocks![1].type).toBe("tool_result");
+    expect(agentBlock.childBlocks![1].content).toBe("file1.txt\nfile2.txt");
+    expect(agentBlock.childBlocks![1].sourceToolName).toBe("Bash");
+  });
+
+  it("user message with multiple tool_results creates multiple blocks", async () => {
+    const { result } = renderHook(() => useWebSocketSession("test-id"));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    const ws = getWs();
+
+    // Create two tool_calls
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [{
+            type: "assistant", uuid: "a1", session_id: "s1",
+            parent_tool_use_id: null, error: null,
+            message: {
+              id: "msg1", model: "claude-opus-4-6", stop_reason: null,
+              content: [
+                { type: "tool_use", id: "toolu_1", name: "Bash", input: { command: "echo a" } },
+                { type: "tool_use", id: "toolu_2", name: "Bash", input: { command: "echo b" } },
+              ],
+            },
+          }],
+        },
+      });
+    });
+
+    // Single user message with two tool_results
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [{
+            type: "user", uuid: "u1", session_id: "s1", parent_tool_use_id: null,
+            message: {
+              role: "user",
+              content: [
+                { tool_use_id: "toolu_1", type: "tool_result", content: "a", is_error: false },
+                { tool_use_id: "toolu_2", type: "tool_result", content: "b", is_error: false },
+              ],
+            },
+          }],
+        },
+      });
+    });
+
+    // 2 tool_calls + 2 tool_results = 4
+    expect(result.current.blocks).toHaveLength(4);
+    expect(result.current.blocks[2].type).toBe("tool_result");
+    expect(result.current.blocks[2].content).toBe("a");
+    expect(result.current.blocks[3].type).toBe("tool_result");
+    expect(result.current.blocks[3].content).toBe("b");
+  });
+
   it("unmount sends destroy and closes WebSocket", async () => {
     const { unmount } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
