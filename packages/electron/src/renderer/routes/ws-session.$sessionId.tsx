@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 import { AgentSession } from "@/components/AgentSession";
 import { FeatureTopBar } from "@/components/FeatureTopBar";
 import { useWebSocketSession } from "@/hooks/useWebSocketSession";
+import { useWsSessionStore } from "@/stores/ws-session-store";
 
 interface WsSessionSearch {
   cwd: string;
@@ -31,24 +32,18 @@ export const Route = createFileRoute("/ws-session/$sessionId")({
 function WebSocketSessionPage() {
   const { sessionId } = Route.useParams();
   const { cwd, featureId, projectId } = Route.useSearch();
-
-  // Key on sessionId to force full remount when navigating between sessions,
-  // ensuring all hook state (blocks, refs, WS connection) resets cleanly.
-  return <WebSocketSessionInner key={sessionId} sessionId={sessionId} cwd={cwd} featureId={featureId} projectId={projectId} />;
-}
-
-function WebSocketSessionInner({ sessionId, cwd, featureId, projectId }: { sessionId: string; cwd: string; featureId: number; projectId: number }) {
   const ws = useWebSocketSession(sessionId, featureId);
-  const initializedRef = useRef(false);
+  const session = useWsSessionStore((s) => s.sessions[sessionId]);
+  const initializedRef = useRef<string | null>(null);
 
-  // Auto-init session on mount once connected
+  // Auto-init session once connected — only once per sessionId
   const { isConnected, initSession } = ws;
   useEffect(() => {
-    if (isConnected && !initializedRef.current) {
-      initializedRef.current = true;
+    if (isConnected && initializedRef.current !== sessionId && session?.serverSessionId === "") {
+      initializedRef.current = sessionId;
       initSession({ cwd, featureId });
     }
-  }, [isConnected, initSession, cwd, featureId]);
+  }, [isConnected, initSession, cwd, featureId, sessionId, session?.serverSessionId]);
 
   return (
     <div className="flex h-full flex-col">

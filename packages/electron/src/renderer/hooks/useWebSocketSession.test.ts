@@ -6,6 +6,7 @@ vi.mock("@/api/generated", () => ({
 }));
 
 import { useWebSocketSession } from "./useWebSocketSession";
+import { useWsSessionStore } from "@/stores/ws-session-store";
 
 // --- Mock WebSocket ---
 
@@ -61,6 +62,8 @@ Object.assign(MockWebSocket, { OPEN: 1, CONNECTING: 0, CLOSED: 3 });
 
 beforeEach(() => {
   MockWebSocket.reset();
+  // Reset Zustand store between tests
+  useWsSessionStore.setState({ sessions: {} });
   vi.stubGlobal("WebSocket", MockWebSocket);
   vi.stubGlobal("window", {
     ...globalThis.window,
@@ -1506,13 +1509,12 @@ describe("useWebSocketSession", () => {
     });
   });
 
-  it("unmount sends destroy and closes WebSocket", async () => {
+  it("unmount does NOT close WebSocket (connection is cached)", async () => {
     const { unmount } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
       await new Promise((r) => setTimeout(r, 10));
     });
     const ws = getWs();
-    // Simulate server assigning a session_id via initialized message
     act(() => {
       ws.simulateMessage({
         domain: "session",
@@ -1521,10 +1523,101 @@ describe("useWebSocketSession", () => {
       });
     });
     unmount();
+    // Connection should still be open — cached in the store
+    expect(ws.readyState).toBe(MockWebSocket.OPEN);
+  });
+
+  it("explicit destroy sends destroy and closes WebSocket", async () => {
+    const { result } = renderHook(() => useWebSocketSession("test-id"));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    const ws = getWs();
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "initialized",
+        payload: { session_id: "srv-session-1" },
+      });
+    });
+    act(() => {
+      result.current.destroy();
+    });
     expect(ws.sent.length).toBeGreaterThan(0);
     const destroyMsg = JSON.parse(ws.sent[ws.sent.length - 1]);
     expect(destroyMsg.action).toBe("destroy");
     expect(destroyMsg.payload.session_id).toBe("srv-session-1");
     expect(ws.readyState).toBe(MockWebSocket.CLOSED);
+  });
+
+  it("reuses existing WebSocket connection across unmount/remount", async () => {
+    const { unmount } = renderHook(() => useWebSocketSession("reuse-id"));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    expect(MockWebSocket.instances.length).toBe(1);
+
+    // Unmount and remount — should NOT create a new connection
+    unmount();
+    const { result } = renderHook(() => useWebSocketSession("reuse-id"));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    expect(MockWebSocket.instances.length).toBe(1);
+    expect(result.current.isConnected).toBe(true);
+  });
+
+  it("creates separate connections for different sessionIds", async () => {
+    const { result: r1 } = renderHook(() => useWebSocketSession("session-a"));
+    const { result: r2 } = renderHook(() => useWebSocketSession("session-b"));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    expect(MockWebSocket.instances.length).toBe(2);
+    expect(r1.current.isConnected).toBe(true);
+    expect(r2.current.isConnected).toBe(true);
+  });
+
+  it("preserves blocks across unmount/remount", async () => {
+    const { result, unmount } = renderHook(() => useWebSocketSession("persist-id"));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+
+    // Simulate a message that adds a block
+    const ws = getWs();
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [
+            {
+              type: "stream_event",
+              event: {
+                type: "content_block_start",
+                index: 0,
+                content_block: { type: "text" },
+              },
+            },
+            {
+              type: "stream_event",
+              event: {
+                type: "content_block_delta",
+                index: 0,
+                delta: { type: "text_delta", text: "hello" },
+              },
+            },
+          ],
+        },
+      });
+    });
+    expect(result.current.blocks.length).toBe(1);
+
+    // Unmount and remount — blocks should still be there
+    unmount();
+    const { result: r2 } = renderHook(() => useWebSocketSession("persist-id"));
+    expect(r2.current.blocks.length).toBe(1);
+    expect(r2.current.blocks[0].content).toBe("hello");
   });
 });
