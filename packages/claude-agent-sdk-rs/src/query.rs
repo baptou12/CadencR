@@ -198,6 +198,28 @@ impl Stream for Query {
 }
 
 impl Query {
+    /// Create a placeholder Query that is not connected to any CLI process.
+    /// Used by the WebSocket handler to reserve a session slot before the first prompt.
+    /// Detectable via `session_id() == None` and `turn_state() == TurnComplete`.
+    pub fn placeholder() -> Self {
+        let (_tx, rx) = mpsc::channel(1);
+        let (interrupt_tx, _interrupt_rx) = mpsc::channel(1);
+        let (kill_tx, _kill_rx) = mpsc::channel(1);
+        Self {
+            message_rx: rx,
+            process_stdin: Arc::new(Mutex::new(None)),
+            session_id: Arc::new(Mutex::new(None)),
+            turn_state: Arc::new(Mutex::new(TurnState::TurnComplete {
+                result_subtype: "placeholder".to_string(),
+                is_error: false,
+            })),
+            reader_task: None,
+            interrupt_tx,
+            kill_tx,
+            _cancel_token: None,
+        }
+    }
+
     /// Get the session ID (captured from System init message).
     pub async fn session_id(&self) -> Option<String> {
         self.session_id.lock().await.clone()

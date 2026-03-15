@@ -27,10 +27,15 @@ async fn main() -> anyhow::Result<()> {
     let write_pool = db::create_write_pool(&config.db_path).await?;
     let read_pool = db::create_read_pool(&config.db_path).await?;
 
+    let ws_session_store = std::sync::Arc::new(
+        domain::ws_session::store::InMemorySessionStore::new(),
+    );
+
     let state = AppState {
         read_pool,
         write_pool,
         electron_port: config.electron_port,
+        ws_session_store,
     };
 
     let app = api::build_router(state).layer(CorsLayer::permissive());
