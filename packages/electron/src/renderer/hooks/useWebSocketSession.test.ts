@@ -154,10 +154,33 @@ describe("useWebSocketSession", () => {
     expect(result.current.status).toBe("paused");
   });
 
-  it("respondToPermission sends envelope and clears state", async () => {
+  it("permission.request stores request_id in pendingRequestId", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
       await new Promise((r) => setTimeout(r, 10));
+    });
+    act(() => {
+      getWs().simulateMessage({
+        domain: "session",
+        action: "permission.request",
+        payload: { request_id: "req_42", tool_name: "Write", tool_input: {}, description: "" },
+      });
+    });
+    expect(result.current.pendingRequestId).toBe("req_42");
+  });
+
+  it("respondToPermission sends request_id in envelope and clears state", async () => {
+    const { result } = renderHook(() => useWebSocketSession("test-id"));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    // Simulate server assigning session
+    act(() => {
+      getWs().simulateMessage({
+        domain: "session",
+        action: "initialized",
+        payload: { session_id: "srv-1" },
+      });
     });
     act(() => {
       getWs().simulateMessage({
@@ -170,9 +193,12 @@ describe("useWebSocketSession", () => {
       result.current.respondToPermission("r1", true);
     });
     expect(result.current.pendingPermission).toBeNull();
+    expect(result.current.pendingRequestId).toBe("");
     const sent = JSON.parse(getWs().sent[0]);
     expect(sent.domain).toBe("session");
     expect(sent.action).toBe("permission.respond");
+    expect(sent.payload.request_id).toBe("r1");
+    expect(sent.payload.granted).toBe(true);
   });
 
   it("session.error sets error status", async () => {

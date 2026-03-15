@@ -25,6 +25,7 @@ export interface UseWebSocketSessionReturn {
   isConnected: boolean;
   sessionId: string;
   pendingPermission: PendingPermission | null;
+  pendingRequestId: string;
 
   sendPrompt: (text: string) => void;
   respondToPermission: (requestId: string, granted: boolean) => void;
@@ -46,6 +47,7 @@ export function useWebSocketSession(sessionId: string): UseWebSocketSessionRetur
   const [status, setStatus] = useState<AgentStatus>("idle");
   const [isConnected, setIsConnected] = useState(false);
   const [pendingPermission, setPendingPermission] = useState<PendingPermission | null>(null);
+  const pendingRequestIdRef = useRef<string>("");
 
   const wsRef = useRef<WebSocket | null>(null);
   const serverSessionIdRef = useRef<string>("");
@@ -128,6 +130,7 @@ export function useWebSocketSession(sessionId: string): UseWebSocketSessionRetur
             tool_input: Record<string, unknown>;
             description?: string;
           };
+          pendingRequestIdRef.current = p.request_id;
           setPendingPermission({
             toolName: p.tool_name,
             input: p.tool_input ?? {},
@@ -194,6 +197,7 @@ export function useWebSocketSession(sessionId: string): UseWebSocketSessionRetur
     (requestId: string, granted: boolean) => {
       send(createPermissionRespond(serverSessionIdRef.current, requestId, granted));
       setPendingPermission(null);
+      pendingRequestIdRef.current = "";
       setStatus("running");
     },
     [send],
@@ -214,6 +218,7 @@ export function useWebSocketSession(sessionId: string): UseWebSocketSessionRetur
     isConnected,
     sessionId,
     pendingPermission,
+    pendingRequestId: pendingRequestIdRef.current,
     sendPrompt,
     respondToPermission,
     interrupt,

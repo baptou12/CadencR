@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use axum::extract::ws::{Message, WebSocket};
 use axum::extract::{State, WebSocketUpgrade};
 use axum::response::IntoResponse;
@@ -9,12 +10,54 @@ use tokio::sync::{mpsc, Mutex};
 use tracing::debug;
 
 use claude_agent_sdk_rs::{
-    Options, PermissionMode, PermissionResult, Query, SdkMessage,
+    CanUseTool, Options, PermissionMode, PermissionRequest, PermissionResult, Query, SdkMessage,
 };
 
 use crate::app_state::AppState;
 use super::protocol::*;
 use super::store::{SessionStore, WsSessionStatus};
+
+/// CanUseTool implementation that bridges permission requests to the WebSocket client.
+///
+/// When the SDK needs tool permission, this sends a `session/permission.request`
+/// envelope over the WebSocket and waits for the user's response on `response_rx`.
+struct WsBridgeCanUseTool {
+    sender: WsSender,
+    response_rx: Arc<Mutex<mpsc::Receiver<PermissionResult>>>,
+}
+
+#[async_trait]
+impl CanUseTool for WsBridgeCanUseTool {
+    async fn can_use_tool(&self, request: PermissionRequest) -> PermissionResult {
+        // Send permission request to WebSocket client
+        let payload = PermissionRequestPayload {
+            request_id: request.tool_use_id.clone(),
+            tool_name: request.tool_name.clone(),
+            tool_input: request.input.clone(),
+            description: request.decision_reason.clone(),
+        };
+        let envelope = WsEnvelope::new(
+            "session",
+            "permission.request",
+            serde_json::to_value(payload).unwrap(),
+        );
+        let _ = self.sender.send(Message::Text(String::from(envelope).into()));
+
+        // Wait for user response
+        let mut rx = self.response_rx.lock().await;
+        match rx.recv().await {
+            Some(result) => result,
+            None => {
+                // Channel closed — deny by default
+                PermissionResult::Deny {
+                    message: "Permission channel closed".to_string(),
+                    interrupt: Some(false),
+                    tool_use_id: Some(request.tool_use_id),
+                }
+            }
+        }
+    }
+}
 
 /// State of the SDK query for a session.
 enum QueryState {
@@ -290,16 +333,23 @@ async fn handle_prompt_send(
             // Drop lock before spawning (async).
             drop(sessions);
 
+            // Set up permission bridge: SDK calls can_use_tool → sends to WS client → waits for response
+            let (permission_tx, permission_rx) = mpsc::channel::<PermissionResult>(16);
+            let bridge = WsBridgeCanUseTool {
+                sender: sender.clone(),
+                response_rx: Arc::new(Mutex::new(permission_rx)),
+            };
+            let mut options = options;
+            options.can_use_tool = Some(Box::new(bridge));
+
             match claude_agent_sdk_rs::query(&payload.text, options).await {
                 Ok(real_query) => {
-                    let (permission_tx, permission_rx) = mpsc::channel::<PermissionResult>(16);
                     let query_arc = Arc::new(Mutex::new(real_query));
 
                     spawn_stream_reader(
                         session_id.clone(),
                         Arc::clone(&query_arc),
                         sender.clone(),
-                        permission_rx,
                     );
 
                     let mut sessions = sdk_sessions.lock().await;
@@ -492,7 +542,6 @@ fn spawn_stream_reader(
     session_id: String,
     query: Arc<Mutex<Query>>,
     sender: WsSender,
-    mut permission_rx: mpsc::Receiver<PermissionResult>,
 ) {
     tokio::spawn(async move {
         loop {
@@ -562,8 +611,6 @@ fn spawn_stream_reader(
             }
         }
 
-        // Drain permission_rx to clean up
-        permission_rx.close();
     });
 }
 
@@ -659,6 +706,92 @@ mod tests {
         } else {
             panic!("expected text message");
         }
+    }
+
+    #[tokio::test]
+    async fn test_permission_respond_without_active_session_returns_error() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let store: Arc<dyn SessionStore> =
+            Arc::new(super::super::store::InMemorySessionStore::new());
+        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+
+        let envelope = make_envelope(
+            "session",
+            "permission.respond",
+            serde_json::json!({
+                "session_id": "nonexistent",
+                "request_id": "r1",
+                "granted": true
+            }),
+        );
+
+        dispatch_envelope(envelope, &tx, &store, &sdk_sessions).await;
+
+        let msg = rx.recv().await.unwrap();
+        if let Message::Text(text) = msg {
+            let env: WsEnvelope = serde_json::from_str(&text).unwrap();
+            assert_eq!(env.action, "error");
+            let payload: SessionErrorPayload =
+                serde_json::from_value(env.payload).unwrap();
+            assert_eq!(payload.code, "SESSION_NOT_FOUND");
+        } else {
+            panic!("expected text message");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_permission_tx_sends_to_bridge() {
+        // Verify that permission_tx.send delivers to a WsBridgeCanUseTool receiver
+        let (ws_tx, mut ws_rx) = mpsc::unbounded_channel::<Message>();
+        let (perm_tx, perm_rx) = mpsc::channel::<PermissionResult>(16);
+
+        let bridge = WsBridgeCanUseTool {
+            sender: ws_tx,
+            response_rx: Arc::new(Mutex::new(perm_rx)),
+        };
+
+        // Spawn bridge call in background
+        let bridge_handle = tokio::spawn(async move {
+            bridge
+                .can_use_tool(PermissionRequest {
+                    tool_name: "Write".to_string(),
+                    input: serde_json::json!({"file": "test.txt"}),
+                    tool_use_id: "req_123".to_string(),
+                    agent_id: None,
+                    suggestions: None,
+                    blocked_path: None,
+                    decision_reason: Some("writing file".to_string()),
+                })
+                .await
+        });
+
+        // Bridge should send permission.request to WS
+        let msg = ws_rx.recv().await.unwrap();
+        if let Message::Text(text) = msg {
+            let env: WsEnvelope = serde_json::from_str(&text).unwrap();
+            assert_eq!(env.action, "permission.request");
+            let payload: PermissionRequestPayload =
+                serde_json::from_value(env.payload).unwrap();
+            assert_eq!(payload.request_id, "req_123");
+            assert_eq!(payload.tool_name, "Write");
+            assert_eq!(payload.description, Some("writing file".to_string()));
+        } else {
+            panic!("expected text message");
+        }
+
+        // Simulate user granting permission via the channel
+        perm_tx
+            .send(PermissionResult::Allow {
+                updated_input: None,
+                updated_permissions: None,
+                tool_use_id: Some("req_123".to_string()),
+            })
+            .await
+            .unwrap();
+
+        // Bridge should return the Allow result
+        let result = bridge_handle.await.unwrap();
+        assert!(matches!(result, PermissionResult::Allow { .. }));
     }
 
     #[tokio::test]

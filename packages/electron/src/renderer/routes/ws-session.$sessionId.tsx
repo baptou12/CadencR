@@ -30,8 +30,7 @@ function WebSocketSessionPage() {
       onStop={ws.interrupt}
       pendingPermission={ws.pendingPermission}
       onPermissionDecision={(decision) => {
-        // Map the decision to granted boolean
-        ws.respondToPermission("", decision !== "deny");
+        ws.respondToPermission(ws.pendingRequestId, decision !== "deny");
       }}
     />
   );
