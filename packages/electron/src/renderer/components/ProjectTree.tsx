@@ -46,18 +46,27 @@ export function ProjectTree({
   const projectsQuery = useListProjects();
   const projects = projectsQuery.data ?? [];
 
-  const { data: turnStatesData } = useGetFeatureTurnStates({ refetchInterval: 3000 });
-  const featureTurnStates = (turnStatesData?.states ?? {}) as Record<number, 'claude' | 'askUser'>;
+  const { data: turnStatesData } = useGetFeatureTurnStates({
+    refetchInterval: 3000,
+  });
+  const featureTurnStates = (turnStatesData?.states ?? {}) as Record<
+    number,
+    "claude" | "askUser"
+  >;
 
   const selectFolderMutation = trpc.projects.selectFolder.useMutation();
   const createProjectMutation = useCreateProject({
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: getListProjectsQueryKey() });
+      void queryClient.invalidateQueries({
+        queryKey: getListProjectsQueryKey(),
+      });
     },
   });
   const deleteProjectMutation = useDeleteProject({
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: getListProjectsQueryKey() });
+      void queryClient.invalidateQueries({
+        queryKey: getListProjectsQueryKey(),
+      });
     },
   });
 
@@ -66,7 +75,9 @@ export function ProjectTree({
 
   const createFeatureMutation = useCreateFeature({
     onSuccess: (feature) => {
-      void queryClient.invalidateQueries({ queryKey: getListFeaturesQueryKey(pendingProjectIdRef.current) });
+      void queryClient.invalidateQueries({
+        queryKey: getListFeaturesQueryKey(pendingProjectIdRef.current),
+      });
       void navigate({
         to: "/projects/$projectId/features/$featureId",
         params: {
@@ -79,12 +90,34 @@ export function ProjectTree({
 
   const createSessionMutation = useCreateFeature({
     onSuccess: (session) => {
-      void queryClient.invalidateQueries({ queryKey: getListFeaturesQueryKey(pendingProjectIdRef.current) });
+      void queryClient.invalidateQueries({
+        queryKey: getListFeaturesQueryKey(pendingProjectIdRef.current),
+      });
       void navigate({
         to: "/projects/$projectId/features/$featureId",
         params: {
           projectId: String(pendingProjectIdRef.current),
           featureId: String(session.id),
+        },
+      });
+    },
+  });
+
+  const createWsSessionMutation = useCreateFeature({
+    onSuccess: (wsSession) => {
+      void queryClient.invalidateQueries({
+        queryKey: getListFeaturesQueryKey(pendingProjectIdRef.current),
+      });
+      const wsSessionId = crypto.randomUUID();
+      const projectId = pendingProjectIdRef.current;
+      const project = projects.find((p) => p.id === projectId);
+      void navigate({
+        to: "/ws-session/$sessionId",
+        params: { sessionId: wsSessionId },
+        search: {
+          cwd: project?.path ?? "",
+          featureId: wsSession.id,
+          projectId,
         },
       });
     },
@@ -127,7 +160,9 @@ export function ProjectTree({
           variant="ghost"
           size="icon-xs"
           onClick={handleAddProject}
-          disabled={selectFolderMutation.isLoading || createProjectMutation.isLoading}
+          disabled={
+            selectFolderMutation.isLoading || createProjectMutation.isLoading
+          }
         >
           <Plus />
         </Button>
@@ -178,9 +213,14 @@ export function ProjectTree({
                         <DropdownMenuItem
                           onClick={(e) => {
                             e.stopPropagation();
-                            setExpanded((prev) => ({ ...prev, [project.id]: true }));
+                            setExpanded((prev) => ({
+                              ...prev,
+                              [project.id]: true,
+                            }));
                             pendingProjectIdRef.current = project.id;
-                            createFeatureMutation.mutate({ project_id: project.id });
+                            createFeatureMutation.mutate({
+                              project_id: project.id,
+                            });
                           }}
                         >
                           New Feature
@@ -188,9 +228,15 @@ export function ProjectTree({
                         <DropdownMenuItem
                           onClick={(e) => {
                             e.stopPropagation();
-                            setExpanded((prev) => ({ ...prev, [project.id]: true }));
+                            setExpanded((prev) => ({
+                              ...prev,
+                              [project.id]: true,
+                            }));
                             pendingProjectIdRef.current = project.id;
-                            createSessionMutation.mutate({ project_id: project.id, type: "session" });
+                            createSessionMutation.mutate({
+                              project_id: project.id,
+                              type: "session",
+                            });
                           }}
                         >
                           New Session
@@ -198,11 +244,14 @@ export function ProjectTree({
                         <DropdownMenuItem
                           onClick={(e) => {
                             e.stopPropagation();
-                            const wsSessionId = crypto.randomUUID();
-                            void navigate({
-                              to: "/ws-session/$sessionId",
-                              params: { sessionId: wsSessionId },
-                              search: { cwd: project.path },
+                            setExpanded((prev) => ({
+                              ...prev,
+                              [project.id]: true,
+                            }));
+                            pendingProjectIdRef.current = project.id;
+                            createWsSessionMutation.mutate({
+                              project_id: project.id,
+                              type: "ws-session",
                             });
                           }}
                         >
@@ -239,7 +288,10 @@ export function ProjectTree({
                           className="text-destructive focus:text-destructive"
                           onClick={(e) => {
                             e.stopPropagation();
-                            setDeleteProject({ id: project.id, name: project.name });
+                            setDeleteProject({
+                              id: project.id,
+                              name: project.name,
+                            });
                           }}
                         >
                           Delete Project
@@ -253,6 +305,7 @@ export function ProjectTree({
                 {isExpanded && (
                   <ProjectFeatures
                     projectId={project.id}
+                    projectPath={project.path}
                     activeFeatureId={isActive ? activeFeatureId : null}
                     featureTurnStates={featureTurnStates}
                     onSelectFeature={onSelectFeature}

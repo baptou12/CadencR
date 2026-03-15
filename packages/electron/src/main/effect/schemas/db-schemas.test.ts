@@ -126,6 +126,10 @@ describe("FeatureTypeSchema", () => {
     expect(decode(FeatureTypeSchema, "session")).toBe("session");
   });
 
+  it("accepts 'ws-session'", () => {
+    expect(decode(FeatureTypeSchema, "ws-session")).toBe("ws-session");
+  });
+
   it("rejects unknown literal", () => {
     expectParseError(FeatureTypeSchema, "unknown");
   });

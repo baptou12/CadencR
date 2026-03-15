@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { TrashIcon, ArchiveIcon, BotIcon, MessageCircleQuestionIcon, ChevronRightIcon, ChevronDownIcon } from "lucide-react";
+import { TrashIcon, ArchiveIcon, BotIcon, MessageCircleQuestionIcon, ChevronRightIcon, ChevronDownIcon, PlugIcon } from "lucide-react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -29,11 +29,13 @@ const STATUS_COLORS: Record<FeatureStatus, string> = {
 
 export function ProjectFeatures({
   projectId,
+  projectPath,
   activeFeatureId,
   featureTurnStates,
   onSelectFeature,
 }: {
   projectId: number;
+  projectPath: string;
   activeFeatureId: number | null;
   featureTurnStates: Record<number, 'claude' | 'askUser'>;
   onSelectFeature: (featureId: number) => void;
@@ -95,18 +97,14 @@ export function ProjectFeatures({
         } ${feature.status === "archived" ? "opacity-50" : ""}`}
         onClick={() => {
           onSelectFeature(feature.id);
-          void navigate({
-            to: "/projects/$projectId/features/$featureId",
-            params: {
-              projectId: String(projectId),
-              featureId: String(feature.id),
-            },
-          });
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            onSelectFeature(feature.id);
+          if (feature.type === "ws-session") {
+            const wsSessionId = crypto.randomUUID();
+            void navigate({
+              to: "/ws-session/$sessionId",
+              params: { sessionId: wsSessionId },
+              search: { cwd: projectPath, featureId: feature.id, projectId },
+            });
+          } else {
             void navigate({
               to: "/projects/$projectId/features/$featureId",
               params: {
@@ -114,6 +112,28 @@ export function ProjectFeatures({
                 featureId: String(feature.id),
               },
             });
+          }
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onSelectFeature(feature.id);
+            if (feature.type === "ws-session") {
+              const wsSessionId = crypto.randomUUID();
+              void navigate({
+                to: "/ws-session/$sessionId",
+                params: { sessionId: wsSessionId },
+                search: { cwd: projectPath, featureId: feature.id, projectId },
+              });
+            } else {
+              void navigate({
+                to: "/projects/$projectId/features/$featureId",
+                params: {
+                  projectId: String(projectId),
+                  featureId: String(feature.id),
+                },
+              });
+            }
           }
         }}
       >
@@ -127,6 +147,11 @@ export function ProjectFeatures({
           )}
         </div>
 
+        {/* WS indicator */}
+        {feature.type === "ws-session" && (
+          <PlugIcon className="size-3 shrink-0 text-emerald-400" />
+        )}
+
         {/* Feature name */}
         <span className={`min-w-0 truncate flex-1 ${feature.status === "archived" ? "text-muted-foreground" : ""}`}>
           {feature.title}
@@ -134,7 +159,7 @@ export function ProjectFeatures({
 
         {/* Right-pinned actions */}
         <div className="absolute inset-y-0 right-0 flex items-center gap-1 rounded-r-md pr-1.5 pl-6 bg-gradient-to-l from-sidebar from-60% to-transparent group-hover/feature:from-accent group-[.bg-accent]/feature:from-accent">
-          {feature.type !== "session" && (
+          {feature.type !== "session" && feature.type !== "ws-session" && (
             <Select
               value={feature.status}
               onValueChange={(v) =>
