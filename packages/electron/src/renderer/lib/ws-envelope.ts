@@ -17,6 +17,7 @@ export interface SessionConfig {
   permissionMode?: string;
   systemPrompt?: string;
   cwd?: string;
+  featureId?: number;
 }
 
 export function createEnvelope(domain: string, action: string, payload: unknown): WsEnvelope {
@@ -42,6 +43,7 @@ export function createSessionInit(config: SessionConfig): WsEnvelope {
     permission_mode: config.permissionMode ?? null,
     system_prompt: config.systemPrompt ?? null,
     cwd: config.cwd ?? null,
+    feature_id: config.featureId ?? null,
   });
 }
 

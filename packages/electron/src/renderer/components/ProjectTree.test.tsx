@@ -5,12 +5,12 @@ import { ProjectTree } from "./ProjectTree";
 import { resetMockIds } from "@/test-fixtures";
 
 const mockNavigate = vi.fn();
-const mockInvalidate = vi.fn();
+const _mockInvalidate = vi.fn();
 const mockSelectFolder = vi.fn();
 const mockCreateProject = vi.fn();
 const mockDeleteProject = vi.fn();
 const mockCreateFeature = vi.fn();
-const mockCreateSession = vi.fn();
+const _mockCreateSession = vi.fn();
 
 vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => mockNavigate,

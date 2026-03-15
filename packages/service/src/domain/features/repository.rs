@@ -112,7 +112,7 @@ pub async fn is_empty(pool: &SqlitePool, id: i64) -> Result<bool, AppError> {
         return Ok(false);
     }
 
-    if ftype == "session" {
+    if ftype == "session" || ftype == "ws-session" {
         let msg: Option<(i64,)> = sqlx::query_as(
             "SELECT 1 FROM agent_messages WHERE session_id IN (SELECT id FROM agent_sessions WHERE feature_id = ?) LIMIT 1",
         )

@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
+
+vi.mock("@/api/generated", () => ({
+  useGetFeatureAgentState: vi.fn(() => ({ data: undefined, isLoading: false })),
+}));
+
 import { useWebSocketSession } from "./useWebSocketSession";
 
 // --- Mock WebSocket ---
