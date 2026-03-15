@@ -14,3 +14,9 @@ pub use types::{
     ModelInfo, PermissionDenial, PluginInfo, SlashCommand, Usage,
 };
 pub use messages::SdkMessage;
+pub use permissions::{
+    AllowAllTools, CanUseTool, PermissionMode, PermissionRequest, PermissionResult,
+    PermissionUpdate,
+};
+pub use options::{Options, OptionsBuilder};
+pub use mcp::McpServerConfig;
