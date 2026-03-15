@@ -246,6 +246,154 @@ describe("useWebSocketSession", () => {
     expect(result.current.status).toBe("idle");
   });
 
+  it("multi-turn conversation accumulates blocks across turns", async () => {
+    const { result } = renderHook(() => useWebSocketSession("test-id"));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    const ws = getWs();
+
+    // 1. init
+    act(() => {
+      result.current.initSession({ model: "opus" });
+    });
+
+    // 2. initialized
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "initialized",
+        payload: { session_id: "srv-multi" },
+      });
+    });
+    expect(result.current.status).toBe("idle");
+
+    // 3. First prompt
+    act(() => {
+      result.current.sendPrompt("hello");
+    });
+    expect(result.current.status).toBe("running");
+    // User message block added locally
+    expect(result.current.blocks).toHaveLength(1);
+    expect(result.current.blocks[0].type).toBe("user_message");
+
+    // 4. Stream events for first turn: message_start, content_block_start, content_block_delta
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [
+            {
+              type: "stream_event",
+              uuid: "se1",
+              session_id: "srv-multi",
+              parent_tool_use_id: null,
+              event: { type: "message_start", message: { model: "claude-opus-4-6" } },
+            },
+            {
+              type: "stream_event",
+              uuid: "se2",
+              session_id: "srv-multi",
+              parent_tool_use_id: null,
+              event: { type: "content_block_start", index: 0, content_block: { type: "text" } },
+            },
+            {
+              type: "stream_event",
+              uuid: "se3",
+              session_id: "srv-multi",
+              parent_tool_use_id: null,
+              event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "Hi there" } },
+            },
+          ],
+        },
+      });
+    });
+    // user_message + text block = 2
+    expect(result.current.blocks).toHaveLength(2);
+    expect(result.current.blocks[1].type).toBe("text");
+    expect(result.current.blocks[1].content).toBe("Hi there");
+
+    // 5. First turn ends
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "ended",
+        payload: { reason: "done" },
+      });
+    });
+    expect(result.current.status).toBe("idle");
+
+    // 6. Second prompt
+    act(() => {
+      result.current.sendPrompt("thanks");
+    });
+    expect(result.current.status).toBe("running");
+    // Now: user_message + text + user_message = 3
+    expect(result.current.blocks).toHaveLength(3);
+    expect(result.current.blocks[2].type).toBe("user_message");
+    expect(result.current.blocks[2].content).toBe("thanks");
+
+    // 7. Stream events for second turn
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [
+            {
+              type: "stream_event",
+              uuid: "se4",
+              session_id: "srv-multi",
+              parent_tool_use_id: null,
+              event: { type: "message_start", message: { model: "claude-opus-4-6" } },
+            },
+            {
+              type: "stream_event",
+              uuid: "se5",
+              session_id: "srv-multi",
+              parent_tool_use_id: null,
+              event: { type: "content_block_start", index: 0, content_block: { type: "text" } },
+            },
+            {
+              type: "stream_event",
+              uuid: "se6",
+              session_id: "srv-multi",
+              parent_tool_use_id: null,
+              event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "You're welcome" } },
+            },
+          ],
+        },
+      });
+    });
+    // user_message + text + user_message + text = 4
+    expect(result.current.blocks).toHaveLength(4);
+    expect(result.current.blocks[3].type).toBe("text");
+    expect(result.current.blocks[3].content).toBe("You're welcome");
+
+    // 8. Second turn ends
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "ended",
+        payload: { reason: "done" },
+      });
+    });
+    expect(result.current.status).toBe("idle");
+
+    // Verify all blocks accumulated correctly
+    expect(result.current.blocks.map((b) => b.type)).toEqual([
+      "user_message",
+      "text",
+      "user_message",
+      "text",
+    ]);
+    expect(result.current.blocks[0].content).toBe("hello");
+    expect(result.current.blocks[1].content).toBe("Hi there");
+    expect(result.current.blocks[2].content).toBe("thanks");
+    expect(result.current.blocks[3].content).toBe("You're welcome");
+  });
+
   it("unmount sends destroy and closes WebSocket", async () => {
     const { unmount } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {

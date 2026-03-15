@@ -10,7 +10,8 @@ use tokio::sync::{mpsc, Mutex};
 use tracing::{debug, error, info};
 
 use claude_agent_sdk_rs::{
-    CanUseTool, Options, PermissionMode, PermissionRequest, PermissionResult, Query, SdkMessage,
+    CanUseTool, Options, PermissionMode, PermissionRequest, PermissionResult, Query, SdkError,
+    SdkMessage,
 };
 
 use crate::app_state::AppState;
@@ -347,13 +348,16 @@ async fn handle_prompt_send(
 
             info!(session_id, prompt = %payload.text, "spawning SDK query for first prompt");
             match claude_agent_sdk_rs::query(&payload.text, options).await {
-                Ok(real_query) => {
+                Ok(mut real_query) => {
                     info!(session_id, "SDK query spawned successfully, starting stream reader");
+                    // Extract the message receiver so the stream reader can consume
+                    // messages without holding a mutex (avoids deadlock with stream_input).
+                    let message_rx = real_query.take_message_rx();
                     let query_arc = Arc::new(Mutex::new(real_query));
 
                     spawn_stream_reader(
                         session_id.clone(),
-                        Arc::clone(&query_arc),
+                        message_rx,
                         sender.clone(),
                     );
 
@@ -544,19 +548,17 @@ async fn handle_destroy(
     let _ = sender.send(Message::Text(String::from(reply).into()));
 }
 
-/// Spawn a background task that reads from the SDK Query stream and forwards
+/// Spawn a background task that reads from the SDK message receiver and forwards
 /// messages to the WebSocket client.
 fn spawn_stream_reader(
     session_id: String,
-    query: Arc<Mutex<Query>>,
+    mut message_rx: mpsc::Receiver<Result<SdkMessage, SdkError>>,
     sender: WsSender,
 ) {
     tokio::spawn(async move {
         info!(session_id, "stream reader started");
         loop {
-            let mut q = query.lock().await;
-            let msg = q.next().await;
-            drop(q); // Release lock while processing
+            let msg = message_rx.recv().await;
 
             match msg {
                 Some(Ok(sdk_msg)) => {
@@ -607,7 +609,7 @@ fn spawn_stream_reader(
                     break;
                 }
                 None => {
-                    // Stream ended
+                    // Channel closed — stream ended
                     info!(session_id, "SDK stream closed");
                     let end_env = WsEnvelope::new(
                         "session",

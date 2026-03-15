@@ -198,6 +198,16 @@ impl Stream for Query {
 }
 
 impl Query {
+    /// Take the message receiver out of the query.
+    ///
+    /// This is useful when you need to read messages independently of other
+    /// Query operations (e.g. to avoid holding a mutex while awaiting messages).
+    /// After calling this, the `Stream` impl will always return `None`.
+    pub fn take_message_rx(&mut self) -> mpsc::Receiver<Result<SdkMessage, SdkError>> {
+        let (_, dummy_rx) = mpsc::channel(1);
+        std::mem::replace(&mut self.message_rx, dummy_rx)
+    }
+
     /// Get the session ID (captured from System init message).
     pub async fn session_id(&self) -> Option<String> {
         self.session_id.lock().await.clone()
@@ -766,6 +776,49 @@ sleep 300
         // After close, the stream should be done (no more messages)
         let remaining = q.next().await;
         assert!(remaining.is_none(), "stream should end after close()");
+    }
+
+    #[tokio::test]
+    async fn take_message_rx_drains_stream_and_receiver_works() {
+        use std::os::unix::fs::PermissionsExt;
+        use tempfile::TempDir;
+
+        let dir = TempDir::new().unwrap();
+        let script_path = dir.path().join("claude");
+
+        // Mock CLI: emit system init and a result
+        let script = r#"#!/bin/sh
+read -r INPUT
+echo '{"type":"system","subtype":"init","uuid":"u1","session_id":"sess_take","claude_code_version":"1.0","cwd":"/tmp","tools":[],"mcp_servers":[],"model":"claude-sonnet-4-20250514","permission_mode":"default","slash_commands":[],"output_style":"stream","skills":[],"plugins":[]}'
+echo '{"type":"result","subtype":"success","uuid":"u2","session_id":"sess_take","duration_ms":10,"duration_api_ms":5,"is_error":false,"num_turns":1,"result":"ok","errors":null,"stop_reason":"end_turn","total_cost_usd":0.0,"usage":{"input_tokens":1,"output_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":0},"permission_denials":[],"structured_output":null}'
+"#;
+
+        std::fs::write(&script_path, script).unwrap();
+        let mut perms = std::fs::metadata(&script_path).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&script_path, perms).unwrap();
+
+        let options = Options {
+            path_to_cli: Some(script_path),
+            ..Options::default()
+        };
+
+        let mut q = query("test", options).await.unwrap();
+
+        // Take the receiver out
+        let mut rx = q.take_message_rx();
+
+        // After take, Stream impl should return None
+        let stream_result = q.next().await;
+        assert!(stream_result.is_none(), "stream should return None after take_message_rx");
+
+        // The taken receiver should still get messages
+        let mut messages = Vec::new();
+        while let Some(msg) = rx.recv().await {
+            messages.push(msg.unwrap());
+        }
+
+        assert!(messages.len() >= 2, "receiver should get messages, got {}", messages.len());
     }
 
     #[tokio::test]
