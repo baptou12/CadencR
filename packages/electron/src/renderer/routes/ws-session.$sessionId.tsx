@@ -41,7 +41,7 @@ function WebSocketSessionPage() {
       initializedRef.current = true;
       initSession({ cwd, featureId });
     }
-  }, [isConnected, initSession, cwd]);
+  }, [isConnected, initSession, cwd, featureId]);
 
   return (
     <div className="flex h-full flex-col">

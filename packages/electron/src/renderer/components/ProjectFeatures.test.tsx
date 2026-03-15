@@ -5,7 +5,7 @@ import { ProjectFeatures } from "./ProjectFeatures";
 import { resetMockIds } from "@/test-fixtures";
 
 const mockNavigate = vi.fn();
-const mockInvalidate = vi.fn();
+const _mockInvalidate = vi.fn();
 const mockUpdateStatus = vi.fn();
 const mockDelete = vi.fn();
 
