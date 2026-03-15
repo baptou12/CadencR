@@ -73,11 +73,12 @@ function WsSessionRedirect({
   const projectsQuery = useListProjects();
   const project = projectsQuery.data?.find((p) => p.id === projectId);
 
+  const wsSessionId = useMemo(() => crypto.randomUUID(), []);
+
   if (!project) {
     return null; // Loading
   }
 
-  const wsSessionId = crypto.randomUUID();
   return (
     <Navigate
       to="/ws-session/$sessionId"

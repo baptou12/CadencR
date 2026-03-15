@@ -24,10 +24,6 @@ pub async fn create_feature(
     let type_str = type_.as_deref().unwrap_or("feature");
     let title = match title {
         Some(t) if !t.trim().is_empty() => t,
-        _ if type_str == "session" || type_str == "ws-session" => {
-            let max_num = repository::get_max_session_num(pool, project_id).await?;
-            format!("Session {}", max_num + 1)
-        }
         _ => {
             let max_num = repository::get_max_session_num(pool, project_id).await?;
             format!("Session {}", max_num + 1)
