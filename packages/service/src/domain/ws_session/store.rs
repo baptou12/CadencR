@@ -116,7 +116,7 @@ mod tests {
     #[tokio::test]
     async fn test_create_and_get_session() {
         let store = InMemorySessionStore::new();
-        let config = SessionInitPayload { model: Some("opus".into()), permission_mode: None, system_prompt: None, cwd: None };
+        let config = SessionInitPayload { model: Some("opus".into()), permission_mode: None, system_prompt: None, cwd: None, feature_id: None };
         store.create_session("s1", config).await.unwrap();
         let session = store.get_session("s1").await.unwrap().unwrap();
         assert_eq!(session.session_id, "s1");
@@ -127,7 +127,7 @@ mod tests {
     #[tokio::test]
     async fn test_append_message() {
         let store = InMemorySessionStore::new();
-        let config = SessionInitPayload { model: None, permission_mode: None, system_prompt: None, cwd: None };
+        let config = SessionInitPayload { model: None, permission_mode: None, system_prompt: None, cwd: None, feature_id: None };
         store.create_session("s1", config).await.unwrap();
         store.append_message("s1", serde_json::json!({"type": "text"})).await.unwrap();
         store.append_message("s1", serde_json::json!({"type": "tool"})).await.unwrap();
@@ -138,7 +138,7 @@ mod tests {
     #[tokio::test]
     async fn test_destroy_session() {
         let store = InMemorySessionStore::new();
-        let config = SessionInitPayload { model: None, permission_mode: None, system_prompt: None, cwd: None };
+        let config = SessionInitPayload { model: None, permission_mode: None, system_prompt: None, cwd: None, feature_id: None };
         store.create_session("s1", config).await.unwrap();
         store.destroy_session("s1").await.unwrap();
         assert!(store.get_session("s1").await.unwrap().is_none());
@@ -153,7 +153,7 @@ mod tests {
     #[tokio::test]
     async fn test_list_sessions() {
         let store = InMemorySessionStore::new();
-        let config = SessionInitPayload { model: None, permission_mode: None, system_prompt: None, cwd: None };
+        let config = SessionInitPayload { model: None, permission_mode: None, system_prompt: None, cwd: None, feature_id: None };
         store.create_session("s1", config.clone()).await.unwrap();
         store.create_session("s2", config).await.unwrap();
         let mut ids = store.list_sessions().await.unwrap();

@@ -39,7 +39,7 @@ function WebSocketSessionPage() {
   useEffect(() => {
     if (isConnected && !initializedRef.current) {
       initializedRef.current = true;
-      initSession({ cwd });
+      initSession({ cwd, featureId });
     }
   }, [isConnected, initSession, cwd]);
 

@@ -17,6 +17,7 @@ use claude_agent_sdk_rs::{
 
 use crate::app_state::AppState;
 use super::permissions::{self, ResolvedPermission};
+use super::persistence::WsSessionPersistence;
 use super::protocol::*;
 use super::store::{SessionStore, WsSessionStatus};
 
@@ -195,6 +196,8 @@ struct SdkHandle {
     desired_model: Option<String>,
     /// The model the CLI was actually spawned with.
     spawned_model: Option<String>,
+    /// Database persistence for this session (None if no feature_id was provided).
+    persistence: Option<Arc<Mutex<WsSessionPersistence>>>,
     /// The permission mode the user wants. Updated by mode.set.
     desired_permission_mode: Option<PermissionMode>,
     /// The permission mode the CLI was actually spawned with.
@@ -246,6 +249,7 @@ async fn handle_connection(socket: WebSocket, state: AppState) {
                             &outbound_tx,
                             &state.ws_session_store,
                             &sdk_sessions,
+                            &state,
                         )
                         .await;
                     }
@@ -289,11 +293,12 @@ async fn dispatch_envelope(
     sender: &WsSender,
     store: &Arc<dyn SessionStore>,
     sdk_sessions: &SdkSessions,
+    app_state: &AppState,
 ) {
     info!(domain = %envelope.domain, action = %envelope.action, id = %envelope.id, "received envelope");
     match envelope.domain.as_str() {
         "session" => {
-            handle_session_action(envelope, sender, store, sdk_sessions).await;
+            handle_session_action(envelope, sender, store, sdk_sessions, app_state).await;
         }
         unknown => {
             let err = WsEnvelope::reply(
@@ -317,9 +322,10 @@ async fn handle_session_action(
     sender: &WsSender,
     store: &Arc<dyn SessionStore>,
     sdk_sessions: &SdkSessions,
+    app_state: &AppState,
 ) {
     match envelope.action.as_str() {
-        "init" => handle_init(envelope, sender, store, sdk_sessions).await,
+        "init" => handle_init(envelope, sender, store, sdk_sessions, app_state).await,
         "prompt.send" => handle_prompt_send(envelope, sender, sdk_sessions).await,
         "permission.respond" => {
             handle_permission_respond(envelope, sender, store, sdk_sessions).await
@@ -350,6 +356,7 @@ async fn handle_init(
     sender: &WsSender,
     store: &Arc<dyn SessionStore>,
     sdk_sessions: &SdkSessions,
+    app_state: &AppState,
 ) {
     let payload: SessionInitPayload = match serde_json::from_value(envelope.payload.clone()) {
         Ok(p) => p,
@@ -412,6 +419,11 @@ async fn handle_init(
     let allowed_patterns = Arc::new(permissions::load_allowed_patterns(&options.cwd));
     let session_cache = Arc::new(Mutex::new(HashSet::new()));
 
+    // Create persistence if feature_id was provided
+    let persistence = payload.feature_id.map(|fid| {
+        Arc::new(Mutex::new(WsSessionPersistence::new(app_state.write_pool.clone(), fid)))
+    });
+
     let handle = SdkHandle {
         state: QueryState::Pending(options),
         desired_model,
@@ -421,6 +433,7 @@ async fn handle_init(
         config,
         session_cache,
         allowed_patterns,
+        persistence,
     };
 
     sdk_sessions
@@ -530,6 +543,7 @@ async fn handle_prompt_send(
             let session_cache = handle.session_cache.clone();
             let allowed_patterns = handle.allowed_patterns.clone();
             let worktree_path = handle.config.canonical_cwd.clone();
+            let persistence = handle.persistence.clone();
             let options = match std::mem::replace(
                 &mut handle.state,
                 QueryState::Pending(Options::default()),
@@ -540,6 +554,15 @@ async fn handle_prompt_send(
 
             // Drop lock before spawning (async).
             drop(sessions);
+
+            // Create agent_sessions row on first prompt (best-effort)
+            if let Some(ref p) = persistence {
+                let mut p_lock = p.lock().await;
+                let model_str = spawned_model.as_deref();
+                let pm_str = config.permission_mode.as_ref().map(|m| format!("{:?}", m));
+                p_lock.create_session(model_str, pm_str.as_deref()).await;
+                p_lock.persist_user_message(&payload.text).await;
+            }
 
             // Set up permission bridge
             let (permission_tx, permission_rx) = mpsc::channel::<PermissionResponse>(16);
@@ -564,6 +587,7 @@ async fn handle_prompt_send(
                         session_id.clone(),
                         message_rx,
                         sender.clone(),
+                        persistence.clone(),
                     );
 
                     let spawned_pm = config.permission_mode.clone();
@@ -582,6 +606,7 @@ async fn handle_prompt_send(
                             config,
                             session_cache,
                             allowed_patterns,
+                            persistence,
                         },
                     );
                 }
@@ -592,6 +617,12 @@ async fn handle_prompt_send(
             }
         }
         QueryState::Active { query, .. } => {
+            // Persist follow-up user message
+            if let Some(ref p) = handle.persistence {
+                let p_lock = p.lock().await;
+                p_lock.persist_user_message(&payload.text).await;
+            }
+
             let q = query.lock().await;
             let turn_state = q.turn_state().await;
             info!(session_id, turn_state = ?turn_state, "follow-up prompt");
@@ -864,6 +895,7 @@ fn spawn_stream_reader(
     session_id: String,
     mut message_rx: mpsc::Receiver<Result<SdkMessage, SdkError>>,
     sender: WsSender,
+    persistence: Option<Arc<Mutex<WsSessionPersistence>>>,
 ) {
     tokio::spawn(async move {
         info!(session_id, "stream reader started");
@@ -873,15 +905,31 @@ fn spawn_stream_reader(
             match msg {
                 Some(Ok(sdk_msg)) => {
                     debug!(session_id, msg_type = ?std::mem::discriminant(&sdk_msg), "SDK MSG → WS");
+
+                    // Persist before forwarding (best-effort)
+                    if let Some(ref p) = persistence {
+                        let mut p_lock = p.lock().await;
+                        p_lock.persist_sdk_message(&sdk_msg).await;
+                    }
+
+                    let is_result = matches!(&sdk_msg, SdkMessage::Result { .. });
+
                     let envelope = match &sdk_msg {
-                        SdkMessage::Result { .. } => WsEnvelope::new(
-                            "session",
-                            "ended",
-                            serde_json::to_value(SessionEndedPayload {
-                                reason: "turn_complete".into(),
-                            })
-                            .unwrap(),
-                        ),
+                        SdkMessage::Result { .. } => {
+                            // Mark session completed
+                            if let Some(ref p) = persistence {
+                                let p_lock = p.lock().await;
+                                p_lock.mark_completed().await;
+                            }
+                            WsEnvelope::new(
+                                "session",
+                                "ended",
+                                serde_json::to_value(SessionEndedPayload {
+                                    reason: "turn_complete".into(),
+                                })
+                                .unwrap(),
+                            )
+                        }
                         _ => {
                             // Forward as session.message with raw JSON
                             let block = serde_json::to_value(&sdk_msg).unwrap_or_default();
@@ -903,9 +951,17 @@ fn spawn_stream_reader(
                         debug!(session_id, "WebSocket sender closed, stopping stream reader");
                         break;
                     }
+
+                    if is_result {
+                        // Don't break — let the channel close naturally
+                    }
                 }
                 Some(Err(e)) => {
                     error!(session_id, error = %e, "SDK stream error");
+                    if let Some(ref p) = persistence {
+                        let p_lock = p.lock().await;
+                        p_lock.mark_error().await;
+                    }
                     let err_env = WsEnvelope::new(
                         "session",
                         "error",
@@ -961,6 +1017,16 @@ mod tests {
         WsEnvelope::new(domain, action, payload)
     }
 
+    async fn make_test_app_state(store: Arc<dyn SessionStore>) -> AppState {
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        AppState {
+            read_pool: pool.clone(),
+            write_pool: pool,
+            electron_port: 0,
+            ws_session_store: store,
+        }
+    }
+
     #[tokio::test]
     async fn test_unknown_domain_returns_error() {
         let (tx, mut rx) = mpsc::unbounded_channel();
@@ -969,7 +1035,8 @@ mod tests {
         let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
 
         let envelope = make_envelope("unknown_domain", "init", serde_json::json!({}));
-        dispatch_envelope(envelope, &tx, &store, &sdk_sessions).await;
+        let app_state = make_test_app_state(store.clone()).await;
+        dispatch_envelope(envelope, &tx, &store, &sdk_sessions, &app_state).await;
 
         let msg = rx.recv().await.unwrap();
         if let Message::Text(text) = msg {
@@ -991,7 +1058,8 @@ mod tests {
         let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
 
         let envelope = make_envelope("session", "nonexistent_action", serde_json::json!({}));
-        dispatch_envelope(envelope, &tx, &store, &sdk_sessions).await;
+        let app_state = make_test_app_state(store.clone()).await;
+        dispatch_envelope(envelope, &tx, &store, &sdk_sessions, &app_state).await;
 
         let msg = rx.recv().await.unwrap();
         if let Message::Text(text) = msg {
@@ -1018,7 +1086,8 @@ mod tests {
             serde_json::json!({"text": "hello", "session_id": "nonexistent"}),
         );
 
-        dispatch_envelope(envelope, &tx, &store, &sdk_sessions).await;
+        let app_state = make_test_app_state(store.clone()).await;
+        dispatch_envelope(envelope, &tx, &store, &sdk_sessions, &app_state).await;
 
         let msg = rx.recv().await.unwrap();
         if let Message::Text(text) = msg {
@@ -1049,7 +1118,8 @@ mod tests {
             }),
         );
 
-        dispatch_envelope(envelope, &tx, &store, &sdk_sessions).await;
+        let app_state = make_test_app_state(store.clone()).await;
+        dispatch_envelope(envelope, &tx, &store, &sdk_sessions, &app_state).await;
 
         let msg = rx.recv().await.unwrap();
         if let Message::Text(text) = msg {
@@ -1130,7 +1200,8 @@ mod tests {
         sdk_sessions: &SdkSessions,
     ) -> String {
         let envelope = make_envelope("session", "init", serde_json::json!({"cwd": "/tmp/test-project"}));
-        dispatch_envelope(envelope, tx, store, sdk_sessions).await;
+        let app_state = make_test_app_state(store.clone()).await;
+        dispatch_envelope(envelope, tx, store, sdk_sessions, &app_state).await;
 
         let msg = rx.recv().await.unwrap();
         if let Message::Text(text) = msg {
@@ -1158,7 +1229,8 @@ mod tests {
             "model.set",
             serde_json::json!({"session_id": session_id, "model": "claude-sonnet-4-20250514"}),
         );
-        dispatch_envelope(envelope, &tx, &store, &sdk_sessions).await;
+        let app_state = make_test_app_state(store.clone()).await;
+        dispatch_envelope(envelope, &tx, &store, &sdk_sessions, &app_state).await;
 
         let msg = rx.recv().await.unwrap();
         if let Message::Text(text) = msg {
@@ -1183,7 +1255,8 @@ mod tests {
             "model.set",
             serde_json::json!({"session_id": "does-not-exist", "model": "claude-sonnet-4-20250514"}),
         );
-        dispatch_envelope(envelope, &tx, &store, &sdk_sessions).await;
+        let app_state = make_test_app_state(store.clone()).await;
+        dispatch_envelope(envelope, &tx, &store, &sdk_sessions, &app_state).await;
 
         let msg = rx.recv().await.unwrap();
         if let Message::Text(text) = msg {
@@ -1212,7 +1285,8 @@ mod tests {
             "model.set",
             serde_json::json!({"session_id": session_id, "model": "claude-sonnet-4-20250514"}),
         );
-        dispatch_envelope(envelope, &tx, &store, &sdk_sessions).await;
+        let app_state = make_test_app_state(store.clone()).await;
+        dispatch_envelope(envelope, &tx, &store, &sdk_sessions, &app_state).await;
         let _ = rx.recv().await.unwrap(); // consume model.set.ok
 
         // Set model to opus
@@ -1221,7 +1295,8 @@ mod tests {
             "model.set",
             serde_json::json!({"session_id": session_id, "model": "claude-opus-4-20250514"}),
         );
-        dispatch_envelope(envelope, &tx, &store, &sdk_sessions).await;
+        let app_state = make_test_app_state(store.clone()).await;
+        dispatch_envelope(envelope, &tx, &store, &sdk_sessions, &app_state).await;
 
         let msg = rx.recv().await.unwrap();
         if let Message::Text(text) = msg {
@@ -1257,7 +1332,8 @@ mod tests {
             "mode.set",
             serde_json::json!({"session_id": session_id, "mode": "plan"}),
         );
-        dispatch_envelope(envelope, &tx, &store, &sdk_sessions).await;
+        let app_state = make_test_app_state(store.clone()).await;
+        dispatch_envelope(envelope, &tx, &store, &sdk_sessions, &app_state).await;
 
         let msg = rx.recv().await.unwrap();
         if let Message::Text(text) = msg {
@@ -1291,7 +1367,8 @@ mod tests {
             "mode.set",
             serde_json::json!({"session_id": session_id, "mode": "plan"}),
         );
-        dispatch_envelope(envelope, &tx, &store, &sdk_sessions).await;
+        let app_state = make_test_app_state(store.clone()).await;
+        dispatch_envelope(envelope, &tx, &store, &sdk_sessions, &app_state).await;
         let _ = rx.recv().await.unwrap(); // consume mode.changed
 
         // Verify the pending options were updated
@@ -1316,7 +1393,8 @@ mod tests {
             "mode.set",
             serde_json::json!({"session_id": "does-not-exist", "mode": "plan"}),
         );
-        dispatch_envelope(envelope, &tx, &store, &sdk_sessions).await;
+        let app_state = make_test_app_state(store.clone()).await;
+        dispatch_envelope(envelope, &tx, &store, &sdk_sessions, &app_state).await;
 
         let msg = rx.recv().await.unwrap();
         if let Message::Text(text) = msg {
@@ -1344,7 +1422,8 @@ mod tests {
             "mode.set",
             serde_json::json!({"session_id": session_id, "mode": "plan"}),
         );
-        dispatch_envelope(envelope, &tx, &store, &sdk_sessions).await;
+        let app_state = make_test_app_state(store.clone()).await;
+        dispatch_envelope(envelope, &tx, &store, &sdk_sessions, &app_state).await;
         let _ = rx.recv().await.unwrap(); // consume mode.changed
 
         let session = store.get_session(&session_id).await.unwrap().unwrap();
@@ -1363,7 +1442,8 @@ mod tests {
             "init",
             serde_json::json!({"permission_mode": "plan", "cwd": "/tmp/test-project"}),
         );
-        dispatch_envelope(envelope, &tx, &store, &sdk_sessions).await;
+        let app_state = make_test_app_state(store.clone()).await;
+        dispatch_envelope(envelope, &tx, &store, &sdk_sessions, &app_state).await;
 
         let msg = rx.recv().await.unwrap();
         let session_id = if let Message::Text(text) = msg {
@@ -1400,7 +1480,8 @@ mod tests {
         let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
 
         let envelope = make_envelope("session", "init", serde_json::json!({}));
-        dispatch_envelope(envelope, &tx, &store, &sdk_sessions).await;
+        let app_state = make_test_app_state(store.clone()).await;
+        dispatch_envelope(envelope, &tx, &store, &sdk_sessions, &app_state).await;
 
         let msg = rx.recv().await.unwrap();
         if let Message::Text(text) = msg {
@@ -1423,7 +1504,8 @@ mod tests {
 
         // init expects an object, send a string
         let envelope = make_envelope("session", "init", serde_json::json!("not an object"));
-        dispatch_envelope(envelope, &tx, &store, &sdk_sessions).await;
+        let app_state = make_test_app_state(store.clone()).await;
+        dispatch_envelope(envelope, &tx, &store, &sdk_sessions, &app_state).await;
 
         let msg = rx.recv().await.unwrap();
         if let Message::Text(text) = msg {

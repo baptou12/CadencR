@@ -82,6 +82,7 @@ pub struct SessionInitPayload {
     pub permission_mode: Option<String>,
     pub system_prompt: Option<String>,
     pub cwd: Option<String>,
+    pub feature_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -213,7 +214,7 @@ mod tests {
     #[test]
     fn test_payload_types_roundtrip() {
         // SessionInitPayload
-        let p = SessionInitPayload { model: Some("opus".into()), permission_mode: None, system_prompt: None, cwd: Some("/tmp".into()) };
+        let p = SessionInitPayload { model: Some("opus".into()), permission_mode: None, system_prompt: None, cwd: Some("/tmp".into()), feature_id: None };
         let v = serde_json::to_value(&p).unwrap();
         let _: SessionInitPayload = serde_json::from_value(v).unwrap();
 
