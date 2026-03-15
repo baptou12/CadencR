@@ -9,3 +9,4 @@ coverage/
 packages/*/out/
 packages/*/.vite/
 packages/service/target/
+target/
