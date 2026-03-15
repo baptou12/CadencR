@@ -58,29 +58,31 @@ describe("ws-envelope", () => {
     });
 
     it("createPromptSend", () => {
-      const env = createPromptSend("hello");
+      const env = createPromptSend("s1", "hello");
       expect(env.domain).toBe("session");
       expect(env.action).toBe("prompt.send");
-      expect(env.payload).toEqual({ text: "hello" });
+      expect(env.payload).toEqual({ session_id: "s1", text: "hello" });
     });
 
     it("createPermissionRespond", () => {
-      const env = createPermissionRespond("r1", true);
+      const env = createPermissionRespond("s1", "r1", true);
       expect(env.domain).toBe("session");
       expect(env.action).toBe("permission.respond");
-      expect(env.payload).toEqual({ request_id: "r1", granted: true });
+      expect(env.payload).toEqual({ session_id: "s1", request_id: "r1", granted: true });
     });
 
     it("createInterrupt", () => {
-      const env = createInterrupt();
+      const env = createInterrupt("s1");
       expect(env.domain).toBe("session");
       expect(env.action).toBe("interrupt");
+      expect(env.payload).toEqual({ session_id: "s1" });
     });
 
     it("createDestroy", () => {
-      const env = createDestroy();
+      const env = createDestroy("s1");
       expect(env.domain).toBe("session");
       expect(env.action).toBe("destroy");
+      expect(env.payload).toEqual({ session_id: "s1" });
     });
   });
 });

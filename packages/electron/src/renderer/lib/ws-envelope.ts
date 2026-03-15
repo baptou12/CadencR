@@ -45,21 +45,22 @@ export function createSessionInit(config: SessionConfig): WsEnvelope {
   });
 }
 
-export function createPromptSend(text: string): WsEnvelope {
-  return createEnvelope("session", "prompt.send", { text });
+export function createPromptSend(sessionId: string, text: string): WsEnvelope {
+  return createEnvelope("session", "prompt.send", { session_id: sessionId, text });
 }
 
-export function createPermissionRespond(requestId: string, granted: boolean): WsEnvelope {
+export function createPermissionRespond(sessionId: string, requestId: string, granted: boolean): WsEnvelope {
   return createEnvelope("session", "permission.respond", {
+    session_id: sessionId,
     request_id: requestId,
     granted,
   });
 }
 
-export function createInterrupt(): WsEnvelope {
-  return createEnvelope("session", "interrupt", {});
+export function createInterrupt(sessionId: string): WsEnvelope {
+  return createEnvelope("session", "interrupt", { session_id: sessionId });
 }
 
-export function createDestroy(): WsEnvelope {
-  return createEnvelope("session", "destroy", {});
+export function createDestroy(sessionId: string): WsEnvelope {
+  return createEnvelope("session", "destroy", { session_id: sessionId });
 }

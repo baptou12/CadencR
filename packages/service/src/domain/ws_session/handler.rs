@@ -16,12 +16,20 @@ use crate::app_state::AppState;
 use super::protocol::*;
 use super::store::{SessionStore, WsSessionStatus};
 
+/// State of the SDK query for a session.
+enum QueryState {
+    /// Session initialized but no prompt sent yet. Stores the Options to use when spawning.
+    Pending(Options),
+    /// Query is active (CLI subprocess running).
+    Active {
+        query: Arc<Mutex<Query>>,
+        permission_tx: mpsc::Sender<PermissionResult>,
+    },
+}
+
 /// Handle for a running SDK session, stored per-connection.
 struct SdkHandle {
-    /// The Query stream (kept to allow interrupt/close).
-    query: Arc<Mutex<Query>>,
-    /// Channel to forward permission responses to the stream reader task.
-    permission_tx: mpsc::Sender<PermissionResult>,
+    state: QueryState,
 }
 
 type SdkSessions = Arc<Mutex<HashMap<String, SdkHandle>>>;
@@ -86,12 +94,14 @@ async fn handle_connection(socket: WebSocket, state: AppState) {
     }
 
     // Cleanup: kill all SDK sessions for this connection
-    let sessions = sdk_sessions.lock().await;
-    for (session_id, handle) in sessions.iter() {
+    let mut sessions = sdk_sessions.lock().await;
+    for (session_id, handle) in sessions.drain() {
         debug!(session_id, "cleaning up session on WS close");
-        let mut q = handle.query.lock().await;
-        q.close().await;
-        let _ = state.ws_session_store.destroy_session(session_id).await;
+        if let QueryState::Active { query, .. } = handle.state {
+            let mut q = query.lock().await;
+            q.close().await;
+        }
+        let _ = state.ws_session_store.destroy_session(&session_id).await;
     }
     drop(sessions);
 
@@ -209,14 +219,10 @@ async fn handle_init(
     // Let's create the Query immediately with a no-op prompt that just initializes.
     // The best approach: don't spawn query yet. Store options, spawn on first prompt.send.
 
-    let (permission_tx, _permission_rx) = mpsc::channel::<PermissionResult>(16);
-
     let handle = SdkHandle {
-        query: Arc::new(Mutex::new(create_placeholder_query())),
-        permission_tx,
+        state: QueryState::Pending(options),
     };
 
-    // Store a "pending" handle - we'll replace the query on first prompt.send
     sdk_sessions
         .lock()
         .await
@@ -253,28 +259,10 @@ async fn handle_prompt_send(
         }
     };
 
-    // Extract session_id from the envelope ref or look for it
-    // The client should include session_id. Let's check payload for it or use ref.
-    let session_id = match envelope.r#ref.as_deref() {
-        Some(id) => id.to_string(),
-        None => {
-            // Try to find it in payload
-            if let Some(sid) = envelope.payload.get("session_id").and_then(|v| v.as_str()) {
-                sid.to_string()
-            } else {
-                send_error(
-                    sender,
-                    &envelope.id,
-                    "MISSING_SESSION",
-                    "No session_id provided (use ref field or session_id in payload)",
-                );
-                return;
-            }
-        }
-    };
+    let session_id = payload.session_id.clone();
 
-    let sessions = sdk_sessions.lock().await;
-    let handle = match sessions.get(&session_id) {
+    let mut sessions = sdk_sessions.lock().await;
+    let handle = match sessions.get_mut(&session_id) {
         Some(h) => h,
         None => {
             send_error(
@@ -287,69 +275,67 @@ async fn handle_prompt_send(
         }
     };
 
-    let query = handle.query.lock().await;
+    match &handle.state {
+        QueryState::Pending(_) => {
+            // First prompt — take the stored options and spawn the real query.
+            let options = match std::mem::replace(
+                &mut handle.state,
+                // Temporary placeholder; will be replaced below on success or restored on failure.
+                QueryState::Pending(Options::default()),
+            ) {
+                QueryState::Pending(opts) => opts,
+                _ => unreachable!(),
+            };
 
-    // Check if this is a placeholder (not yet started). If so, we need to spawn the real query.
-    // We detect this by checking turn_state - placeholder starts as TurnComplete.
-    let turn_state = query.turn_state().await;
-    if matches!(
-        turn_state,
-        claude_agent_sdk_rs::TurnState::TurnComplete { .. }
-    ) {
-        // This might be the first prompt or a follow-up after turn complete.
-        // For follow-up, use stream_input.
-        // For now, try stream_input first. If it fails (placeholder), we need to spawn.
-        if query.session_id().await.is_some() {
-            // Real query in TurnComplete state - send follow-up
-            let content = serde_json::json!(payload.text);
-            if let Err(e) = query.stream_input(content).await {
-                send_error(sender, &envelope.id, "SDK_ERROR", &e.to_string());
-            }
-            return;
-        }
+            // Drop lock before spawning (async).
+            drop(sessions);
 
-        // Placeholder - need to spawn real query. Drop the lock first.
-        drop(query);
-        drop(sessions);
+            match claude_agent_sdk_rs::query(&payload.text, options).await {
+                Ok(real_query) => {
+                    let (permission_tx, permission_rx) = mpsc::channel::<PermissionResult>(16);
+                    let query_arc = Arc::new(Mutex::new(real_query));
 
-        // We need to get options from the store... but we didn't store them.
-        // Let's spawn the query with default options + the prompt.
-        let options = Options::default();
+                    spawn_stream_reader(
+                        session_id.clone(),
+                        Arc::clone(&query_arc),
+                        sender.clone(),
+                        permission_rx,
+                    );
 
-        match claude_agent_sdk_rs::query(&payload.text, options).await {
-            Ok(real_query) => {
-                let (permission_tx, permission_rx) = mpsc::channel::<PermissionResult>(16);
-                let query_arc = Arc::new(Mutex::new(real_query));
-
-                // Spawn stream reader
-                spawn_stream_reader(
-                    session_id.clone(),
-                    Arc::clone(&query_arc),
-                    sender.clone(),
-                    permission_rx,
-                );
-
-                let mut sessions = sdk_sessions.lock().await;
-                sessions.insert(
-                    session_id,
-                    SdkHandle {
-                        query: query_arc,
-                        permission_tx,
-                    },
-                );
-            }
-            Err(e) => {
-                send_error(sender, &envelope.id, "SDK_SPAWN_ERROR", &e.to_string());
+                    let mut sessions = sdk_sessions.lock().await;
+                    sessions.insert(
+                        session_id,
+                        SdkHandle {
+                            state: QueryState::Active {
+                                query: query_arc,
+                                permission_tx,
+                            },
+                        },
+                    );
+                }
+                Err(e) => {
+                    send_error(sender, &envelope.id, "SDK_SPAWN_ERROR", &e.to_string());
+                }
             }
         }
-    } else {
-        // AgentWorking or WaitingForPermission - can't send prompt now
-        send_error(
-            sender,
-            &envelope.id,
-            "INVALID_STATE",
-            "Agent is currently working. Wait for turn completion.",
-        );
+        QueryState::Active { query, .. } => {
+            let q = query.lock().await;
+            let turn_state = q.turn_state().await;
+            if matches!(turn_state, claude_agent_sdk_rs::TurnState::TurnComplete { .. }) {
+                // Follow-up prompt
+                let content = serde_json::json!(payload.text);
+                if let Err(e) = q.stream_input(content).await {
+                    send_error(sender, &envelope.id, "SDK_ERROR", &e.to_string());
+                }
+            } else {
+                send_error(
+                    sender,
+                    &envelope.id,
+                    "INVALID_STATE",
+                    "Agent is currently working. Wait for turn completion.",
+                );
+            }
+        }
     }
 }
 
@@ -368,24 +354,21 @@ async fn handle_permission_respond(
         }
     };
 
-    let session_id = match envelope.r#ref.as_deref().or(
-        envelope
-            .payload
-            .get("session_id")
-            .and_then(|v| v.as_str()),
-    ) {
-        Some(id) => id.to_string(),
-        None => {
-            send_error(sender, &envelope.id, "MISSING_SESSION", "No session_id");
-            return;
-        }
-    };
+    let session_id = payload.session_id.clone();
 
     let sessions = sdk_sessions.lock().await;
     let handle = match sessions.get(&session_id) {
         Some(h) => h,
         None => {
             send_error(sender, &envelope.id, "SESSION_NOT_FOUND", "Session not found");
+            return;
+        }
+    };
+
+    let permission_tx = match &handle.state {
+        QueryState::Active { permission_tx, .. } => permission_tx,
+        QueryState::Pending(_) => {
+            send_error(sender, &envelope.id, "INVALID_STATE", "Session not yet active");
             return;
         }
     };
@@ -404,7 +387,7 @@ async fn handle_permission_respond(
         }
     };
 
-    if handle.permission_tx.send(result).await.is_err() {
+    if permission_tx.send(result).await.is_err() {
         send_error(
             sender,
             &envelope.id,
@@ -426,18 +409,15 @@ async fn handle_interrupt(
     store: &Arc<dyn SessionStore>,
     sdk_sessions: &SdkSessions,
 ) {
-    let session_id = match envelope.r#ref.as_deref().or(
-        envelope
-            .payload
-            .get("session_id")
-            .and_then(|v| v.as_str()),
-    ) {
-        Some(id) => id.to_string(),
-        None => {
-            send_error(sender, &envelope.id, "MISSING_SESSION", "No session_id");
+    let payload: SessionActionPayload = match serde_json::from_value(envelope.payload.clone()) {
+        Ok(p) => p,
+        Err(e) => {
+            send_error(sender, &envelope.id, "INVALID_PAYLOAD", &e.to_string());
             return;
         }
     };
+
+    let session_id = payload.session_id;
 
     let sessions = sdk_sessions.lock().await;
     let handle = match sessions.get(&session_id) {
@@ -448,8 +428,16 @@ async fn handle_interrupt(
         }
     };
 
-    let query = handle.query.lock().await;
-    if let Err(e) = query.interrupt().await {
+    let query = match &handle.state {
+        QueryState::Active { query, .. } => query,
+        QueryState::Pending(_) => {
+            send_error(sender, &envelope.id, "INVALID_STATE", "Session not yet active");
+            return;
+        }
+    };
+
+    let q = query.lock().await;
+    if let Err(e) = q.interrupt().await {
         send_error(sender, &envelope.id, "SDK_ERROR", &e.to_string());
         return;
     }
@@ -466,23 +454,22 @@ async fn handle_destroy(
     store: &Arc<dyn SessionStore>,
     sdk_sessions: &SdkSessions,
 ) {
-    let session_id = match envelope.r#ref.as_deref().or(
-        envelope
-            .payload
-            .get("session_id")
-            .and_then(|v| v.as_str()),
-    ) {
-        Some(id) => id.to_string(),
-        None => {
-            send_error(sender, &envelope.id, "MISSING_SESSION", "No session_id");
+    let payload: SessionActionPayload = match serde_json::from_value(envelope.payload.clone()) {
+        Ok(p) => p,
+        Err(e) => {
+            send_error(sender, &envelope.id, "INVALID_PAYLOAD", &e.to_string());
             return;
         }
     };
 
+    let session_id = payload.session_id;
+
     let mut sessions = sdk_sessions.lock().await;
     if let Some(handle) = sessions.remove(&session_id) {
-        let mut query = handle.query.lock().await;
-        query.close().await;
+        if let QueryState::Active { query, .. } = handle.state {
+            let mut q = query.lock().await;
+            q.close().await;
+        }
     }
 
     let _ = store.destroy_session(&session_id).await;
@@ -580,15 +567,6 @@ fn spawn_stream_reader(
     });
 }
 
-/// Create a placeholder Query that is immediately in TurnComplete state.
-/// This is used before the first prompt.send arrives.
-fn create_placeholder_query() -> Query {
-    // We can't create a real Query without spawning a CLI process.
-    // Instead, we'll use a sentinel approach: create a Query with a dead channel.
-    // The caller checks session_id() == None to detect this is a placeholder.
-    Query::placeholder()
-}
-
 /// Send an error envelope back to the client.
 fn send_error(sender: &WsSender, ref_id: &str, code: &str, message: &str) {
     let err = WsEnvelope::reply(
@@ -663,12 +641,11 @@ mod tests {
             Arc::new(super::super::store::InMemorySessionStore::new());
         let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
 
-        let mut envelope = make_envelope(
+        let envelope = make_envelope(
             "session",
             "prompt.send",
             serde_json::json!({"text": "hello", "session_id": "nonexistent"}),
         );
-        envelope.r#ref = None;
 
         dispatch_envelope(envelope, &tx, &store, &sdk_sessions).await;
 

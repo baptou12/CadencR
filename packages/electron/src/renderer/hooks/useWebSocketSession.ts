@@ -48,6 +48,7 @@ export function useWebSocketSession(sessionId: string): UseWebSocketSessionRetur
   const [pendingPermission, setPendingPermission] = useState<PendingPermission | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
+  const serverSessionIdRef = useRef<string>("");
   const blockCountRef = useRef(0);
 
   const send = useCallback((data: unknown) => {
@@ -89,9 +90,14 @@ export function useWebSocketSession(sessionId: string): UseWebSocketSessionRetur
       if (envelope.domain !== "session") return;
 
       switch (envelope.action) {
-        case "initialized":
+        case "initialized": {
+          const initPayload = envelope.payload as { session_id?: string };
+          if (initPayload.session_id) {
+            serverSessionIdRef.current = initPayload.session_id;
+          }
           setStatus("idle");
           break;
+        }
 
         case "message": {
           const payload = envelope.payload as { blocks?: unknown[] };
@@ -162,8 +168,8 @@ export function useWebSocketSession(sessionId: string): UseWebSocketSessionRetur
 
     return () => {
       // Send destroy before closing
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify(createDestroy()));
+      if (ws.readyState === WebSocket.OPEN && serverSessionIdRef.current) {
+        ws.send(JSON.stringify(createDestroy(serverSessionIdRef.current)));
       }
       ws.close();
     };
@@ -178,7 +184,7 @@ export function useWebSocketSession(sessionId: string): UseWebSocketSessionRetur
 
   const sendPrompt = useCallback(
     (text: string) => {
-      send(createPromptSend(text));
+      send(createPromptSend(serverSessionIdRef.current, text));
       setStatus("running");
     },
     [send],
@@ -186,7 +192,7 @@ export function useWebSocketSession(sessionId: string): UseWebSocketSessionRetur
 
   const respondToPermission = useCallback(
     (requestId: string, granted: boolean) => {
-      send(createPermissionRespond(requestId, granted));
+      send(createPermissionRespond(serverSessionIdRef.current, requestId, granted));
       setPendingPermission(null);
       setStatus("running");
     },
@@ -194,11 +200,11 @@ export function useWebSocketSession(sessionId: string): UseWebSocketSessionRetur
   );
 
   const interrupt = useCallback(() => {
-    send(createInterrupt());
+    send(createInterrupt(serverSessionIdRef.current));
   }, [send]);
 
   const destroySession = useCallback(() => {
-    send(createDestroy());
+    send(createDestroy(serverSessionIdRef.current));
     setStatus("completed");
   }, [send]);
 

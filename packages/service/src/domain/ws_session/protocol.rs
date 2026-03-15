@@ -77,13 +77,20 @@ pub struct SessionInitPayload {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PromptSendPayload {
+    pub session_id: String,
     pub text: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PermissionRespondPayload {
+    pub session_id: String,
     pub request_id: String,
     pub granted: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionActionPayload {
+    pub session_id: String,
 }
 
 // --- Server → Client payloads ---
@@ -186,12 +193,12 @@ mod tests {
         let _: SessionInitPayload = serde_json::from_value(v).unwrap();
 
         // PromptSendPayload
-        let p = PromptSendPayload { text: "hello".into() };
+        let p = PromptSendPayload { session_id: "s1".into(), text: "hello".into() };
         let v = serde_json::to_value(&p).unwrap();
         let _: PromptSendPayload = serde_json::from_value(v).unwrap();
 
         // PermissionRespondPayload
-        let p = PermissionRespondPayload { request_id: "r1".into(), granted: true };
+        let p = PermissionRespondPayload { session_id: "s1".into(), request_id: "r1".into(), granted: true };
         let v = serde_json::to_value(&p).unwrap();
         let _: PermissionRespondPayload = serde_json::from_value(v).unwrap();
 

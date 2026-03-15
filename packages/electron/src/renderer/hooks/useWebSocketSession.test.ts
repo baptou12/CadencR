@@ -211,10 +211,19 @@ describe("useWebSocketSession", () => {
       await new Promise((r) => setTimeout(r, 10));
     });
     const ws = getWs();
+    // Simulate server assigning a session_id via initialized message
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "initialized",
+        payload: { session_id: "srv-session-1" },
+      });
+    });
     unmount();
     expect(ws.sent.length).toBeGreaterThan(0);
     const destroyMsg = JSON.parse(ws.sent[ws.sent.length - 1]);
     expect(destroyMsg.action).toBe("destroy");
+    expect(destroyMsg.payload.session_id).toBe("srv-session-1");
     expect(ws.readyState).toBe(MockWebSocket.CLOSED);
   });
 });
