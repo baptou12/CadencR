@@ -134,6 +134,9 @@ pub struct Query {
     /// Channel to signal the reader task to send SIGINT to the CLI process.
     interrupt_tx: mpsc::Sender<()>,
 
+    /// Channel to signal the reader task to gracefully kill the CLI process.
+    kill_tx: mpsc::Sender<()>,
+
     /// Cancellation token.
     _cancel_token: Option<CancellationToken>,
 }
@@ -172,14 +175,24 @@ impl Query {
         Ok(())
     }
 
-    /// Kill the process and abort the background reader task.
+    /// Gracefully kill the child process (SIGTERM → wait 5s → SIGKILL) and
+    /// stop the background reader task.
     ///
     /// After this call the stream will end.
     pub async fn close(&mut self) {
+        // Signal the reader loop to kill the child process.
+        let _ = self.kill_tx.send(()).await;
+
+        // Wait for the reader task to finish (it will break after killing).
         if let Some(task) = self.reader_task.take() {
-            task.abort();
+            let _ = tokio::time::timeout(
+                std::time::Duration::from_secs(10),
+                task,
+            )
+            .await;
         }
-        // Dropping stdin will signal EOF to the child
+
+        // Drop stdin for good measure.
         self.process_stdin.lock().await.take();
     }
 
@@ -302,6 +315,7 @@ async fn reader_loop(
     turn_state: Arc<Mutex<TurnState>>,
     cancel_token: Option<CancellationToken>,
     mut interrupt_rx: mpsc::Receiver<()>,
+    mut kill_rx: mpsc::Receiver<()>,
 ) {
     loop {
         // Select between reading the next message, receiving an interrupt signal,
@@ -334,6 +348,13 @@ async fn reader_loop(
                     warn!("failed to interrupt CLI process: {e}");
                 }
                 continue;
+            }
+            _ = kill_rx.recv() => {
+                debug!("kill signal received, terminating CLI process");
+                if let Err(e) = process.kill().await {
+                    warn!("failed to kill CLI process: {e}");
+                }
+                break;
             }
             _ = async {
                 if let Some(ref token) = cancel_token {
@@ -488,6 +509,7 @@ pub async fn query(prompt: impl Into<String>, mut options: Options) -> Result<Qu
     // Set up channel and shared state
     let (tx, rx) = mpsc::channel(256);
     let (interrupt_tx, interrupt_rx) = mpsc::channel(4);
+    let (kill_tx, kill_rx) = mpsc::channel(1);
     let session_id = Arc::new(Mutex::new(None));
     let turn_state = Arc::new(Mutex::new(TurnState::AgentWorking));
 
@@ -501,6 +523,7 @@ pub async fn query(prompt: impl Into<String>, mut options: Options) -> Result<Qu
         Arc::clone(&turn_state),
         cancel_token.clone(),
         interrupt_rx,
+        kill_rx,
     ));
 
     Ok(Query {
@@ -510,6 +533,7 @@ pub async fn query(prompt: impl Into<String>, mut options: Options) -> Result<Qu
         turn_state,
         reader_task: Some(reader_task),
         interrupt_tx,
+        kill_tx,
         _cancel_token: cancel_token,
     })
 }
@@ -622,6 +646,45 @@ echo '{"type":"result","subtype":"success","uuid":"u3","session_id":"sess_123","
                 is_error: false,
             } if result_subtype == "success"
         ));
+    }
+
+    #[tokio::test]
+    async fn close_kills_child_process() {
+        use std::os::unix::fs::PermissionsExt;
+        use tempfile::TempDir;
+
+        let dir = TempDir::new().unwrap();
+        let script_path = dir.path().join("claude");
+
+        // Mock CLI: emit system init then sleep forever (simulates a long-running process)
+        let script = r#"#!/bin/sh
+read -r INPUT
+echo '{"type":"system","subtype":"init","uuid":"u1","session_id":"sess_close","claude_code_version":"1.0","cwd":"/tmp","tools":[],"mcp_servers":[],"model":"claude-sonnet-4-20250514","permission_mode":"default","slash_commands":[],"output_style":"stream","skills":[],"plugins":[]}'
+sleep 300
+"#;
+
+        std::fs::write(&script_path, script).unwrap();
+        let mut perms = std::fs::metadata(&script_path).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&script_path, perms).unwrap();
+
+        let options = Options {
+            path_to_cli: Some(script_path),
+            ..Options::default()
+        };
+
+        let mut q = query("test", options).await.unwrap();
+
+        // Read the system init message
+        let msg = q.next().await;
+        assert!(msg.is_some());
+
+        // Close should kill the process and the stream should end
+        q.close().await;
+
+        // After close, the stream should be done (no more messages)
+        let remaining = q.next().await;
+        assert!(remaining.is_none(), "stream should end after close()");
     }
 
     #[tokio::test]

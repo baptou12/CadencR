@@ -180,9 +180,6 @@ impl CliProcess {
 
     /// Graceful shutdown: SIGTERM, wait 5 s, then SIGKILL.
     ///
-    /// Currently unused — `Query` manages lifecycle directly — but kept as part
-    /// of the public transport API for future use.
-    #[allow(dead_code)]
     pub async fn kill(&mut self) -> Result<(), SdkError> {
         #[cfg(unix)]
         if let Some(pid) = self.child.id() {
