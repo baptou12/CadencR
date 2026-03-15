@@ -832,6 +832,35 @@ mod tests {
         assert_eq!(blocks[3].type_, "text");
     }
 
+    #[test]
+    fn test_build_blocks_user_message() {
+        let msgs = vec![
+            make_message(1, 1, "user_message", "Hello from user"),
+            make_message(2, 1, "text", "Hello from assistant"),
+        ];
+        let blocks = build_blocks(&msgs);
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks[0].type_, "user_message");
+        assert_eq!(blocks[0].content, "Hello from user");
+        assert_eq!(blocks[1].type_, "text");
+        assert_eq!(blocks[1].content, "Hello from assistant");
+    }
+
+    #[test]
+    fn test_build_blocks_user_message_not_merged_with_text() {
+        // User messages should never merge with adjacent text blocks
+        let msgs = vec![
+            make_message(1, 1, "text", "Assistant text"),
+            make_message(2, 1, "user_message", "User prompt"),
+            make_message(3, 1, "text", "More assistant text"),
+        ];
+        let blocks = build_blocks(&msgs);
+        assert_eq!(blocks.len(), 3);
+        assert_eq!(blocks[0].type_, "text");
+        assert_eq!(blocks[1].type_, "user_message");
+        assert_eq!(blocks[2].type_, "text");
+    }
+
     // ---- Repository query tests ----
 
     #[tokio::test]

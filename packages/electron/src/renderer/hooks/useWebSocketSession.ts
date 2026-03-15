@@ -378,9 +378,12 @@ export function useWebSocketSession(sessionId: string, featureId?: number): UseW
   const [pendingPlanApproval, setPendingPlanApproval] = useState<PendingPlanApproval | null>(null);
   const [currentModelId, setCurrentModelId] = useState<string>("claude-sonnet-4-6");
 
-  // Load persisted state from DB when featureId is provided
+  // Load persisted state from DB when featureId is provided.
+  // cacheTime: 0 ensures we always fetch fresh data when the component remounts
+  // (e.g. navigating away and back), so new messages from the previous visit appear.
   const agentStateQuery = useGetFeatureAgentState(featureId ?? 0, undefined, {
     enabled: !!featureId && !persistedLoadedRef.current,
+    cacheTime: 0,
   });
 
   useEffect(() => {
@@ -397,9 +400,10 @@ export function useWebSocketSession(sessionId: string, featureId?: number): UseW
       setBlocks(restoredBlocks);
     }
 
-    // Restore status
+    // Restore status — after app restart the SDK process is gone,
+    // so "running" is stale; reset to "idle" so the user can send a new prompt.
     const s = session.status;
-    if (s === "running" || s === "paused" || s === "completed" || s === "error") {
+    if (s === "paused" || s === "completed" || s === "error") {
       setStatus(s);
     } else {
       setStatus("idle");

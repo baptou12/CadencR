@@ -31,6 +31,13 @@ export const Route = createFileRoute("/ws-session/$sessionId")({
 function WebSocketSessionPage() {
   const { sessionId } = Route.useParams();
   const { cwd, featureId, projectId } = Route.useSearch();
+
+  // Key on sessionId to force full remount when navigating between sessions,
+  // ensuring all hook state (blocks, refs, WS connection) resets cleanly.
+  return <WebSocketSessionInner key={sessionId} sessionId={sessionId} cwd={cwd} featureId={featureId} projectId={projectId} />;
+}
+
+function WebSocketSessionInner({ sessionId, cwd, featureId, projectId }: { sessionId: string; cwd: string; featureId: number; projectId: number }) {
   const ws = useWebSocketSession(sessionId, featureId);
   const initializedRef = useRef(false);
 

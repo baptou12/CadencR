@@ -38,8 +38,39 @@ impl WsSessionPersistence {
         }
     }
 
-    /// Create the agent_sessions row on first prompt. Returns the DB id.
-    pub async fn create_session(&mut self, model: Option<&str>, permission_mode: Option<&str>) -> Option<i64> {
+    /// Ensure an agent_sessions row exists for this feature.
+    /// Reuses an existing row if one is found, otherwise creates a new one.
+    /// This keeps all messages for a feature in a single session across app restarts.
+    pub async fn find_or_create_session(&mut self, model: Option<&str>, permission_mode: Option<&str>) -> Option<i64> {
+        // Try to reuse the most recent session for this feature
+        let existing: Option<(i64,)> = sqlx::query_as(
+            "SELECT id FROM agent_sessions WHERE feature_id = ? AND agent_type = 'session' ORDER BY id DESC LIMIT 1"
+        )
+        .bind(self.feature_id)
+        .fetch_optional(&self.write_pool)
+        .await
+        .ok()?;
+
+        if let Some((id,)) = existing {
+            // Reuse existing session — update status back to running
+            if let Err(e) = sqlx::query(
+                "UPDATE agent_sessions SET status = 'running', model = COALESCE(?, model), permission_mode = COALESCE(?, permission_mode) WHERE id = ?"
+            )
+            .bind(model)
+            .bind(permission_mode)
+            .bind(id)
+            .execute(&self.write_pool)
+            .await
+            {
+                error!(error = %e, session_db_id = id, "failed to update existing agent_sessions row");
+            }
+
+            self.session_db_id = Some(id);
+            debug!(session_db_id = id, feature_id = self.feature_id, "reusing existing agent_sessions row");
+            return Some(id);
+        }
+
+        // No existing session — create a new one
         let now = chrono::Utc::now().to_rfc3339();
         let result = sqlx::query(
             "INSERT INTO agent_sessions (feature_id, agent_type, status, model, permission_mode, started_at) VALUES (?, 'session', 'running', ?, ?, ?)"
@@ -72,7 +103,7 @@ impl WsSessionPersistence {
             .bind(session_id)
             .bind("user")
             .bind(text)
-            .bind("text")
+            .bind("user_message")
             .bind(None::<String>)
             .bind(None::<String>)
             .bind(None::<String>)
@@ -272,11 +303,235 @@ impl WsSessionPersistence {
             .await;
     }
 
+    /// Store the Claude CLI session ID so future app restarts can --resume.
+    pub async fn persist_claude_session_id(&self, claude_session_id: &str) {
+        let Some(session_id) = self.session_db_id else { return };
+        if let Err(e) = sqlx::query("UPDATE agent_sessions SET claude_session_id = ? WHERE id = ?")
+            .bind(claude_session_id)
+            .bind(session_id)
+            .execute(&self.write_pool)
+            .await
+        {
+            error!(error = %e, "failed to persist claude_session_id");
+        }
+    }
+
+    /// Look up the most recent claude_session_id for a feature across both
+    /// `agent_sessions` and the `session_claude_ids` archive table.
+    /// (The Electron stop-session flow NULLs claude_session_id and archives it
+    /// to session_claude_ids, so we check both sources in a single query.)
+    pub async fn get_latest_claude_session_id(pool: &SqlitePool, feature_id: i64) -> Option<String> {
+        let row: Option<(String,)> = sqlx::query_as(
+            r#"SELECT claude_session_id FROM (
+                SELECT claude_session_id, id AS sort_key FROM agent_sessions
+                    WHERE feature_id = ? AND claude_session_id IS NOT NULL
+                UNION ALL
+                SELECT sci.claude_session_id, sci.id AS sort_key FROM session_claude_ids sci
+                    JOIN agent_sessions s ON sci.session_id = s.id
+                    WHERE s.feature_id = ?
+            ) ORDER BY sort_key DESC LIMIT 1"#
+        )
+        .bind(feature_id)
+        .bind(feature_id)
+        .fetch_optional(pool)
+        .await
+        .ok()?;
+        row.map(|(sid,)| sid)
+    }
+
     pub async fn mark_completed(&self) {
         self.update_status("completed").await;
     }
 
     pub async fn mark_error(&self) {
         self.update_status("error").await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqlx::sqlite::SqlitePoolOptions;
+
+    async fn setup_test_db() -> SqlitePool {
+        let pool = SqlitePoolOptions::new()
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+
+        sqlx::query(
+            r#"CREATE TABLE agent_sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                feature_id INTEGER NOT NULL,
+                agent_type TEXT NOT NULL DEFAULT 'session',
+                status TEXT NOT NULL DEFAULT 'idle',
+                claude_session_id TEXT,
+                model TEXT,
+                permission_mode TEXT,
+                has_file_changes INTEGER NOT NULL DEFAULT 0,
+                started_at TEXT,
+                ended_at TEXT
+            )"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            r#"CREATE TABLE agent_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id INTEGER NOT NULL,
+                role TEXT,
+                content TEXT NOT NULL DEFAULT '',
+                message_type TEXT NOT NULL DEFAULT 'text',
+                tool_name TEXT,
+                tool_use_id TEXT,
+                parent_tool_use_id TEXT,
+                model TEXT
+            )"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            r#"CREATE TABLE session_claude_ids (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id INTEGER NOT NULL,
+                claude_session_id TEXT NOT NULL,
+                created_at TEXT
+            )"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        pool
+    }
+
+    #[tokio::test]
+    async fn test_find_or_create_session_creates_new() {
+        let pool = setup_test_db().await;
+        let mut p = WsSessionPersistence::new(pool.clone(), 1);
+
+        let id = p.find_or_create_session(Some("opus"), Some("plan")).await;
+        assert!(id.is_some());
+        assert_eq!(p.session_db_id, id);
+
+        // Verify row exists
+        let row: (String, String, String) = sqlx::query_as(
+            "SELECT status, model, permission_mode FROM agent_sessions WHERE id = ?",
+        )
+        .bind(id.unwrap())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(row.0, "running");
+        assert_eq!(row.1, "opus");
+        assert_eq!(row.2, "plan");
+    }
+
+    #[tokio::test]
+    async fn test_find_or_create_session_reuses_existing() {
+        let pool = setup_test_db().await;
+
+        // Create initial session
+        let mut p1 = WsSessionPersistence::new(pool.clone(), 1);
+        let id1 = p1.find_or_create_session(Some("sonnet"), None).await.unwrap();
+
+        // Second call with same feature_id should reuse
+        let mut p2 = WsSessionPersistence::new(pool.clone(), 1);
+        let id2 = p2.find_or_create_session(Some("opus"), Some("plan")).await.unwrap();
+
+        assert_eq!(id1, id2);
+
+        // Verify model was updated
+        let row: (String, String) = sqlx::query_as(
+            "SELECT model, permission_mode FROM agent_sessions WHERE id = ?",
+        )
+        .bind(id2)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(row.0, "opus");
+        assert_eq!(row.1, "plan");
+    }
+
+    #[tokio::test]
+    async fn test_find_or_create_session_different_features_get_separate_rows() {
+        let pool = setup_test_db().await;
+
+        let mut p1 = WsSessionPersistence::new(pool.clone(), 1);
+        let id1 = p1.find_or_create_session(None, None).await.unwrap();
+
+        let mut p2 = WsSessionPersistence::new(pool.clone(), 2);
+        let id2 = p2.find_or_create_session(None, None).await.unwrap();
+
+        assert_ne!(id1, id2);
+    }
+
+    #[tokio::test]
+    async fn test_persist_and_get_claude_session_id() {
+        let pool = setup_test_db().await;
+        let mut p = WsSessionPersistence::new(pool.clone(), 1);
+        p.find_or_create_session(None, None).await;
+
+        p.persist_claude_session_id("cli-sess-abc").await;
+
+        let found = WsSessionPersistence::get_latest_claude_session_id(&pool, 1).await;
+        assert_eq!(found, Some("cli-sess-abc".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_get_latest_claude_session_id_returns_none_when_missing() {
+        let pool = setup_test_db().await;
+        let found = WsSessionPersistence::get_latest_claude_session_id(&pool, 999).await;
+        assert_eq!(found, None);
+    }
+
+    #[tokio::test]
+    async fn test_get_latest_claude_session_id_falls_back_to_archive() {
+        let pool = setup_test_db().await;
+
+        // Create a session with NULL claude_session_id (simulating post-stop state)
+        let session_id: (i64,) = sqlx::query_as(
+            "INSERT INTO agent_sessions (feature_id, agent_type, status) VALUES (1, 'session', 'completed') RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        // Archive the session ID (as the Electron stop flow does)
+        sqlx::query(
+            "INSERT INTO session_claude_ids (session_id, claude_session_id) VALUES (?, ?)",
+        )
+        .bind(session_id.0)
+        .bind("archived-cli-sess")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let found = WsSessionPersistence::get_latest_claude_session_id(&pool, 1).await;
+        assert_eq!(found, Some("archived-cli-sess".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_persist_user_message_uses_user_message_type() {
+        let pool = setup_test_db().await;
+        let mut p = WsSessionPersistence::new(pool.clone(), 1);
+        p.find_or_create_session(None, None).await;
+
+        p.persist_user_message("Hello world").await;
+
+        let row: (String, String, String) = sqlx::query_as(
+            "SELECT role, content, message_type FROM agent_messages WHERE session_id = ?",
+        )
+        .bind(p.session_db_id.unwrap())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(row.0, "user");
+        assert_eq!(row.1, "Hello world");
+        assert_eq!(row.2, "user_message");
     }
 }

@@ -12,7 +12,7 @@ use tracing::{debug, error, info};
 
 use claude_agent_sdk_rs::{
     CanUseTool, Options, PermissionMode, PermissionRequest, PermissionResult, Query, SdkError,
-    SdkMessage,
+    SdkMessage, SystemMessage,
 };
 
 use crate::app_state::AppState;
@@ -208,6 +208,8 @@ struct SdkHandle {
     session_cache: Arc<Mutex<HashSet<String>>>,
     /// Pre-loaded allowed patterns from settings files.
     allowed_patterns: Arc<HashSet<String>>,
+    /// Claude CLI session ID from a previous app run, used for --resume on cold start.
+    resume_session_id: Option<String>,
 }
 
 type SdkSessions = Arc<Mutex<HashMap<String, SdkHandle>>>;
@@ -424,6 +426,16 @@ async fn handle_init(
         Arc::new(Mutex::new(WsSessionPersistence::new(app_state.write_pool.clone(), fid)))
     });
 
+    // Look up the most recent Claude CLI session ID for --resume on cold start
+    let resume_session_id = if let Some(fid) = payload.feature_id {
+        WsSessionPersistence::get_latest_claude_session_id(&app_state.read_pool, fid).await
+    } else {
+        None
+    };
+    if resume_session_id.is_some() {
+        info!(session_id, claude_session_id = ?resume_session_id, "found previous CLI session for resume");
+    }
+
     let handle = SdkHandle {
         state: QueryState::Pending(options),
         desired_model,
@@ -434,6 +446,7 @@ async fn handle_init(
         session_cache,
         allowed_patterns,
         persistence,
+        resume_session_id,
     };
 
     sdk_sessions
@@ -544,13 +557,21 @@ async fn handle_prompt_send(
             let allowed_patterns = handle.allowed_patterns.clone();
             let worktree_path = handle.config.canonical_cwd.clone();
             let persistence = handle.persistence.clone();
-            let options = match std::mem::replace(
+            let resume_session_id = handle.resume_session_id.take();
+            let mut options = match std::mem::replace(
                 &mut handle.state,
                 QueryState::Pending(Options::default()),
             ) {
                 QueryState::Pending(opts) => opts,
                 _ => unreachable!(),
             };
+
+            // If we have a previous CLI session ID, set --resume so the
+            // conversation continues from where it left off.
+            if let Some(ref sid) = resume_session_id {
+                info!(session_id, claude_session_id = %sid, "resuming previous CLI session");
+                options.resume = Some(sid.clone());
+            }
 
             // Drop lock before spawning (async).
             drop(sessions);
@@ -560,7 +581,7 @@ async fn handle_prompt_send(
                 let mut p_lock = p.lock().await;
                 let model_str = spawned_model.as_deref();
                 let pm_str = config.permission_mode.as_ref().map(|m| m.as_cli_flag().to_string());
-                p_lock.create_session(model_str, pm_str.as_deref()).await;
+                p_lock.find_or_create_session(model_str, pm_str.as_deref()).await;
                 p_lock.persist_user_message(&payload.text).await;
             }
 
@@ -607,6 +628,7 @@ async fn handle_prompt_send(
                             session_cache,
                             allowed_patterns,
                             persistence,
+                            resume_session_id: None,
                         },
                     );
                 }
@@ -899,12 +921,23 @@ fn spawn_stream_reader(
 ) {
     tokio::spawn(async move {
         info!(session_id, "stream reader started");
+        // One-shot: persist the CLI session ID from the first System(Init) message
+        // so future app restarts can --resume this conversation.
+        let mut needs_session_id_capture = persistence.is_some();
         loop {
             let msg = message_rx.recv().await;
 
             match msg {
                 Some(Ok(sdk_msg)) => {
                     debug!(session_id, msg_type = ?std::mem::discriminant(&sdk_msg), "SDK MSG → WS");
+
+                    if needs_session_id_capture {
+                        if let SdkMessage::System(SystemMessage::Init { session_id: ref cli_sid, .. }) = sdk_msg {
+                            needs_session_id_capture = false;
+                            let p_lock = persistence.as_ref().unwrap().lock().await;
+                            p_lock.persist_claude_session_id(cli_sid).await;
+                        }
+                    }
 
                     // Persist before forwarding (best-effort)
                     if let Some(ref p) = persistence {

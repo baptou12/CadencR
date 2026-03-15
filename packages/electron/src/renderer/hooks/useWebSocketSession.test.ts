@@ -1448,6 +1448,64 @@ describe("useWebSocketSession", () => {
     expect(result.current.blocks[3].content).toBe("b");
   });
 
+  it("restores persisted 'running' status as 'idle' after app restart", async () => {
+    // Simulate persisted state with status "running" (stale from previous app run)
+    const { useGetFeatureAgentState } = await import("@/api/generated");
+    (useGetFeatureAgentState as ReturnType<typeof vi.fn>).mockReturnValue({
+      data: {
+        sessions: [
+          {
+            status: "running",
+            blocks: [
+              { id: "b1", type: "user_message", content: "old prompt" },
+              { id: "b2", type: "text", content: "old response" },
+            ],
+          },
+        ],
+      },
+      isLoading: false,
+    });
+
+    const { result } = renderHook(() => useWebSocketSession("test-id", 42));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+
+    // Status should be reset to idle, not stuck on running
+    expect(result.current.status).toBe("idle");
+    // History should still be restored
+    expect(result.current.blocks).toHaveLength(2);
+    expect(result.current.blocks[0].type).toBe("user_message");
+
+    // Restore default mock
+    (useGetFeatureAgentState as ReturnType<typeof vi.fn>).mockReturnValue({
+      data: undefined,
+      isLoading: false,
+    });
+  });
+
+  it("restores persisted 'completed' status as-is", async () => {
+    const { useGetFeatureAgentState } = await import("@/api/generated");
+    (useGetFeatureAgentState as ReturnType<typeof vi.fn>).mockReturnValue({
+      data: {
+        sessions: [{ status: "completed", blocks: [] }],
+      },
+      isLoading: false,
+    });
+
+    const { result } = renderHook(() => useWebSocketSession("test-id", 43));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+
+    expect(result.current.status).toBe("completed");
+
+    (useGetFeatureAgentState as ReturnType<typeof vi.fn>).mockReturnValue({
+      data: undefined,
+      isLoading: false,
+    });
+  });
+
   it("unmount sends destroy and closes WebSocket", async () => {
     const { unmount } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
