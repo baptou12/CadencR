@@ -103,9 +103,15 @@ pub async fn auto_name_feature(
                     }
                 }
             }
+            SdkMessage::Result { .. } => {
+                debug!(feature_id, "auto-name: received Result, breaking out of stream loop");
+                break;
+            }
             _ => {}
         }
     }
+
+    debug!(feature_id, accumulated_text = %accumulated_text, "auto-name: stream loop finished");
 
     // Extract name from markers, fall back to full text
     let re = Regex::new(r"__FEATURE_NAME_START__(.+?)__FEATURE_NAME_END__").unwrap();
