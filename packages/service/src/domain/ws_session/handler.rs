@@ -12,14 +12,13 @@ use tracing::{debug, error, info};
 
 use claude_agent_sdk_rs::{
     CanUseTool, Options, PermissionMode, PermissionRequest, PermissionResult, Query, SdkError,
-    SdkMessage, SystemMessage,
+    SdkMessage,
 };
 
 use crate::app_state::AppState;
 use super::permissions::{self, ResolvedPermission};
 use super::persistence::WsSessionPersistence;
 use super::protocol::*;
-use super::store::{SessionStore, WsSessionStatus};
 
 /// Parse a permission mode string from the client into a PermissionMode enum value.
 fn parse_permission_mode(mode: &str) -> PermissionMode {
@@ -190,29 +189,29 @@ struct SessionConfig {
 }
 
 /// Handle for a running SDK session, stored per-connection.
+/// Keyed by `i64` (agent_sessions.id). DB is the source of truth for session
+/// config; memory holds only live process state and ephemeral tracking.
 struct SdkHandle {
     state: QueryState,
+    /// feature_id for persistence lookups.
+    feature_id: i64,
     /// The model the user wants for the next turn. Updated by model.set.
     desired_model: Option<String>,
     /// The model the CLI was actually spawned with.
     spawned_model: Option<String>,
-    /// Database persistence for this session (None if no feature_id was provided).
-    persistence: Option<Arc<Mutex<WsSessionPersistence>>>,
     /// The permission mode the user wants. Updated by mode.set.
     desired_permission_mode: Option<PermissionMode>,
     /// The permission mode the CLI was actually spawned with.
     spawned_permission_mode: Option<PermissionMode>,
-    /// Config for respawning with --resume after model/mode change.
-    config: SessionConfig,
     /// Session-level cache of approved permission patterns.
     session_cache: Arc<Mutex<HashSet<String>>>,
     /// Pre-loaded allowed patterns from settings files.
     allowed_patterns: Arc<HashSet<String>>,
-    /// Claude CLI session ID from a previous app run, used for --resume on cold start.
-    resume_session_id: Option<String>,
+    /// Config for respawning with --resume after model/mode change.
+    config: SessionConfig,
 }
 
-type SdkSessions = Arc<Mutex<HashMap<String, SdkHandle>>>;
+type SdkSessions = Arc<Mutex<HashMap<i64, SdkHandle>>>;
 type WsSender = mpsc::UnboundedSender<Message>;
 
 /// Top-level Axum WebSocket handler.
@@ -249,7 +248,6 @@ async fn handle_connection(socket: WebSocket, state: AppState) {
                         dispatch_envelope(
                             envelope,
                             &outbound_tx,
-                            &state.ws_session_store,
                             &sdk_sessions,
                             &state,
                         )
@@ -274,15 +272,14 @@ async fn handle_connection(socket: WebSocket, state: AppState) {
         }
     }
 
-    // Cleanup: kill all SDK sessions for this connection
+    // Cleanup: mark sessions paused and persist claude_session_id before dropping
     let mut sessions = sdk_sessions.lock().await;
-    for (session_id, handle) in sessions.drain() {
-        debug!(session_id, "cleaning up session on WS close");
+    debug!(count = sessions.len(), "WS cleanup: draining sessions");
+    for (db_session_id, handle) in sessions.drain() {
         if let QueryState::Active { query, .. } = handle.state {
-            let mut q = query.lock().await;
-            q.close().await;
+            persist_and_close_query(&query, &state.write_pool, db_session_id).await;
         }
-        let _ = state.ws_session_store.destroy_session(&session_id).await;
+        WsSessionPersistence::mark_paused_static(&state.write_pool, db_session_id).await;
     }
     drop(sessions);
 
@@ -293,14 +290,13 @@ async fn handle_connection(socket: WebSocket, state: AppState) {
 async fn dispatch_envelope(
     envelope: WsEnvelope,
     sender: &WsSender,
-    store: &Arc<dyn SessionStore>,
     sdk_sessions: &SdkSessions,
     app_state: &AppState,
 ) {
     info!(domain = %envelope.domain, action = %envelope.action, id = %envelope.id, "received envelope");
     match envelope.domain.as_str() {
         "session" => {
-            handle_session_action(envelope, sender, store, sdk_sessions, app_state).await;
+            handle_session_action(envelope, sender, sdk_sessions, app_state).await;
         }
         unknown => {
             let err = WsEnvelope::reply(
@@ -322,20 +318,20 @@ async fn dispatch_envelope(
 async fn handle_session_action(
     envelope: WsEnvelope,
     sender: &WsSender,
-    store: &Arc<dyn SessionStore>,
     sdk_sessions: &SdkSessions,
     app_state: &AppState,
 ) {
     match envelope.action.as_str() {
-        "init" => handle_init(envelope, sender, store, sdk_sessions, app_state).await,
-        "prompt.send" => handle_prompt_send(envelope, sender, sdk_sessions).await,
+        "init" => handle_init(envelope, sender, sdk_sessions, app_state).await,
+        "prompt.send" => handle_prompt_send(envelope, sender, sdk_sessions, app_state).await,
         "permission.respond" => {
-            handle_permission_respond(envelope, sender, store, sdk_sessions).await
+            handle_permission_respond(envelope, sender, sdk_sessions).await
         }
-        "model.set" => handle_model_set(envelope, sender, sdk_sessions).await,
-        "mode.set" => handle_mode_set(envelope, sender, store, sdk_sessions).await,
-        "interrupt" => handle_interrupt(envelope, sender, store, sdk_sessions).await,
-        "destroy" => handle_destroy(envelope, sender, store, sdk_sessions).await,
+        "model.set" => handle_model_set(envelope, sender, sdk_sessions, app_state).await,
+        "mode.set" => handle_mode_set(envelope, sender, sdk_sessions, app_state).await,
+        "interrupt" => handle_interrupt(envelope, sender, sdk_sessions).await,
+        "destroy" => handle_destroy(envelope, sender, sdk_sessions, app_state).await,
+        "clear" => handle_clear(envelope, sender, sdk_sessions, app_state).await,
         unknown => {
             let err = WsEnvelope::reply(
                 &envelope.id,
@@ -352,11 +348,10 @@ async fn handle_session_action(
     }
 }
 
-/// Handle session.init: spawn CLI subprocess, start stream reader.
+/// Handle session.init: DB-driven session creation.
 async fn handle_init(
     envelope: WsEnvelope,
     sender: &WsSender,
-    store: &Arc<dyn SessionStore>,
     sdk_sessions: &SdkSessions,
     app_state: &AppState,
 ) {
@@ -368,14 +363,16 @@ async fn handle_init(
         }
     };
 
-    let session_id = uuid::Uuid::new_v4().to_string();
+    // feature_id is required for DB-first sessions
+    let feature_id = match payload.feature_id {
+        Some(fid) => fid,
+        None => {
+            send_error(sender, &envelope.id, "MISSING_FEATURE_ID", "feature_id is required for session init");
+            return;
+        }
+    };
 
-    if let Err(e) = store.create_session(&session_id, payload.clone()).await {
-        send_error(sender, &envelope.id, "STORE_ERROR", &e.to_string());
-        return;
-    }
-
-    // Build SDK options — cwd is required
+    // cwd is required
     let cwd = match payload.cwd {
         Some(ref cwd) if !cwd.is_empty() => cwd.clone(),
         _ => {
@@ -384,6 +381,33 @@ async fn handle_init(
         }
     };
 
+    // Find or create DB session row
+    info!(feature_id, "handle_init: looking up session in DB for feature_id");
+    let mut persistence = WsSessionPersistence::new(app_state.write_pool.clone(), feature_id);
+    let pm_str = payload.permission_mode.as_deref();
+    let db_session_id = match persistence.find_or_create_session(payload.model.as_deref(), pm_str).await {
+        Some(id) => {
+            info!(feature_id, db_session_id = id, "handle_init: found/created session row");
+            id
+        }
+        None => {
+            send_error(sender, &envelope.id, "DB_ERROR", "Failed to create/find session in database");
+            return;
+        }
+    };
+
+    // Check what claude_session_id is currently in the DB for this session
+    if let Some(row) = WsSessionPersistence::get_session_row(&app_state.read_pool, db_session_id).await {
+        debug!(
+            db_session_id,
+            feature_id,
+            claude_session_id = ?row.claude_session_id,
+            status = %row.status,
+            "handle_init: DB row state at init time"
+        );
+    }
+
+    // Build SDK options
     let mut options = Options::default();
     options.cwd = std::path::PathBuf::from(&cwd);
     if let Some(ref model) = payload.model {
@@ -396,21 +420,10 @@ async fn handle_init(
         options.system_prompt = Some(sp.clone());
     }
 
-    // Spawn the CLI query - use an empty initial prompt; the client will send prompt.send
-    // Actually, the SDK's query() requires an initial prompt. We send a placeholder
-    // that will be overridden by the first prompt.send.
-    // For session mode, we need to start with a prompt. We'll wait for the first prompt.send.
-    // Instead, let's store the query creation for when prompt.send arrives.
-    // Actually, looking at the SDK, query() takes a prompt and immediately sends it.
-    // For a session init without a prompt, we can't really do this.
-    // Let's create the Query immediately with a no-op prompt that just initializes.
-    // The best approach: don't spawn query yet. Store options, spawn on first prompt.send.
-
-    info!(session_id, "session initialized (pending first prompt)");
+    info!(db_session_id, feature_id, "session initialized (pending first prompt)");
 
     let desired_model = options.model.clone();
     let desired_permission_mode = options.permission_mode.clone();
-    // Canonicalize worktree path once and load allowed patterns from settings files
     let canonical_cwd = permissions::canonicalize_worktree(&options.cwd);
     let config = SessionConfig {
         cwd: options.cwd.clone(),
@@ -421,23 +434,9 @@ async fn handle_init(
     let allowed_patterns = Arc::new(permissions::load_allowed_patterns(&options.cwd));
     let session_cache = Arc::new(Mutex::new(HashSet::new()));
 
-    // Create persistence if feature_id was provided
-    let persistence = payload.feature_id.map(|fid| {
-        Arc::new(Mutex::new(WsSessionPersistence::new(app_state.write_pool.clone(), fid)))
-    });
-
-    // Look up the most recent Claude CLI session ID for --resume on cold start
-    let resume_session_id = if let Some(fid) = payload.feature_id {
-        WsSessionPersistence::get_latest_claude_session_id(&app_state.read_pool, fid).await
-    } else {
-        None
-    };
-    if resume_session_id.is_some() {
-        info!(session_id, claude_session_id = ?resume_session_id, "found previous CLI session for resume");
-    }
-
     let handle = SdkHandle {
         state: QueryState::Pending(options),
+        feature_id,
         desired_model,
         spawned_model: None,
         desired_permission_mode,
@@ -445,30 +444,41 @@ async fn handle_init(
         config,
         session_cache,
         allowed_patterns,
-        persistence,
-        resume_session_id,
     };
 
     sdk_sessions
         .lock()
         .await
-        .insert(session_id.clone(), handle);
+        .insert(db_session_id, handle);
 
-    let _ = store
-        .update_status(&session_id, WsSessionStatus::Ready)
-        .await;
-
-    // Send initialized response
+    // Send initialized response — session_id is now the DB id as a string
     let reply = WsEnvelope::reply(
         &envelope.id,
         "session",
         "initialized",
         serde_json::to_value(SessionInitializedPayload {
-            session_id: session_id.clone(),
+            session_id: db_session_id.to_string(),
         })
         .unwrap(),
     );
     let _ = sender.send(Message::Text(String::from(reply).into()));
+}
+
+/// Parse a session_id string from client payload into i64 DB key.
+fn parse_session_id(s: &str) -> Option<i64> {
+    s.parse::<i64>().ok()
+}
+
+/// Persist the Claude CLI session ID from a Query, close it, and return the ID.
+async fn persist_and_close_query(query: &Mutex<Query>, pool: &sqlx::SqlitePool, db_session_id: i64) -> Option<String> {
+    let mut q = query.lock().await;
+    let cli_sid = q.session_id().await.map(|s| s.to_string());
+    if let Some(ref sid) = cli_sid {
+        debug!(db_session_id, claude_session_id = %sid, "persist_and_close: saving session_id");
+        WsSessionPersistence::persist_claude_session_id_static(pool, db_session_id, sid).await;
+    }
+    q.close().await;
+    cli_sid
 }
 
 /// Handle session.prompt.send: send prompt to CLI or spawn new query.
@@ -476,6 +486,7 @@ async fn handle_prompt_send(
     envelope: WsEnvelope,
     sender: &WsSender,
     sdk_sessions: &SdkSessions,
+    app_state: &AppState,
 ) {
     let payload: PromptSendPayload = match serde_json::from_value(envelope.payload.clone()) {
         Ok(p) => p,
@@ -485,17 +496,23 @@ async fn handle_prompt_send(
         }
     };
 
-    let session_id = payload.session_id.clone();
+    let db_session_id = match parse_session_id(&payload.session_id) {
+        Some(id) => id,
+        None => {
+            send_error(sender, &envelope.id, "INVALID_SESSION_ID", "session_id must be a numeric DB id");
+            return;
+        }
+    };
 
     let mut sessions = sdk_sessions.lock().await;
-    let handle = match sessions.get_mut(&session_id) {
+    let handle = match sessions.get_mut(&db_session_id) {
         Some(h) => h,
         None => {
             send_error(
                 sender,
                 &envelope.id,
                 "SESSION_NOT_FOUND",
-                &format!("Session {session_id} not found. Send session.init first."),
+                &format!("Session {db_session_id} not found. Send session.init first."),
             );
             return;
         }
@@ -509,7 +526,7 @@ async fn handle_prompt_send(
 
     if needs_respawn {
         info!(
-            session_id,
+            db_session_id,
             old_model = ?handle.spawned_model,
             new_model = ?handle.desired_model,
             old_mode = ?handle.spawned_permission_mode,
@@ -517,19 +534,20 @@ async fn handle_prompt_send(
             "model/mode changed, respawning CLI with --resume"
         );
 
-        // Get claude session ID from old query before closing
+        // Get claude session ID, persist it, and close the old query
         let claude_session_id = if let QueryState::Active { query, .. } = &handle.state {
-            let q = query.lock().await;
-            q.session_id().await
+            let mut q = query.lock().await;
+            let sid = q.session_id().await;
+            if let Some(ref cli_sid) = sid {
+                WsSessionPersistence::persist_claude_session_id_static(
+                    &app_state.write_pool, db_session_id, cli_sid,
+                ).await;
+            }
+            q.close().await;
+            sid
         } else {
             None
         };
-
-        // Close old query
-        if let QueryState::Active { query, .. } = &mut handle.state {
-            let mut q = query.lock().await;
-            q.close().await;
-        }
 
         // Build fresh options with new model/mode + resume
         let options = Options {
@@ -556,8 +574,7 @@ async fn handle_prompt_send(
             let session_cache = handle.session_cache.clone();
             let allowed_patterns = handle.allowed_patterns.clone();
             let worktree_path = handle.config.canonical_cwd.clone();
-            let persistence = handle.persistence.clone();
-            let resume_session_id = handle.resume_session_id.take();
+            let feature_id = handle.feature_id;
             let mut options = match std::mem::replace(
                 &mut handle.state,
                 QueryState::Pending(Options::default()),
@@ -566,23 +583,26 @@ async fn handle_prompt_send(
                 _ => unreachable!(),
             };
 
-            // If we have a previous CLI session ID, set --resume so the
-            // conversation continues from where it left off.
-            if let Some(ref sid) = resume_session_id {
-                info!(session_id, claude_session_id = %sid, "resuming previous CLI session");
-                options.resume = Some(sid.clone());
+            // Read claude_session_id from DB for --resume on cold start
+            if options.resume.is_none() {
+                if let Some(cli_sid) = WsSessionPersistence::get_latest_claude_session_id(
+                    &app_state.read_pool, feature_id,
+                ).await {
+                    info!(db_session_id, claude_session_id = %cli_sid, "resuming previous CLI session");
+                    options.resume = Some(cli_sid);
+                } else {
+                    debug!(db_session_id, feature_id, "no claude_session_id found, spawning fresh");
+                }
             }
 
             // Drop lock before spawning (async).
             drop(sessions);
 
-            // Create agent_sessions row on first prompt (best-effort)
-            if let Some(ref p) = persistence {
-                let mut p_lock = p.lock().await;
-                let model_str = spawned_model.as_deref();
-                let pm_str = config.permission_mode.as_ref().map(|m| m.as_cli_flag().to_string());
-                p_lock.find_or_create_session(model_str, pm_str.as_deref()).await;
-                p_lock.persist_user_message(&payload.text).await;
+            // Persist user message (session row already exists from handle_init)
+            let write_pool = app_state.write_pool.clone();
+            {
+                let p = WsSessionPersistence::with_session_id(write_pool.clone(), feature_id, Some(db_session_id));
+                p.persist_user_message(&payload.text).await;
             }
 
             // Set up permission bridge
@@ -594,32 +614,33 @@ async fn handle_prompt_send(
                 session_cache: session_cache.clone(),
                 allowed_patterns: allowed_patterns.clone(),
             };
-            let mut options = options;
             options.can_use_tool = Some(Box::new(bridge));
 
-            info!(session_id, prompt = %payload.text, model = ?options.model, "spawning SDK query");
+            info!(db_session_id, prompt = %payload.text, model = ?options.model, "spawning SDK query");
             match claude_agent_sdk_rs::query(&payload.text, options).await {
                 Ok(mut real_query) => {
-                    info!(session_id, "SDK query spawned successfully, starting stream reader");
+                    info!(db_session_id, "SDK query spawned successfully, starting stream reader");
                     let message_rx = real_query.take_message_rx();
                     let query_arc = Arc::new(Mutex::new(real_query));
 
                     spawn_stream_reader(
-                        session_id.clone(),
+                        db_session_id,
+                        feature_id,
                         message_rx,
                         sender.clone(),
-                        persistence.clone(),
+                        app_state.write_pool.clone(),
                     );
 
                     let spawned_pm = config.permission_mode.clone();
                     let mut sessions = sdk_sessions.lock().await;
                     sessions.insert(
-                        session_id,
+                        db_session_id,
                         SdkHandle {
                             state: QueryState::Active {
                                 query: query_arc,
                                 permission_tx,
                             },
+                            feature_id,
                             desired_model: spawned_model.clone(),
                             spawned_model,
                             desired_permission_mode: spawned_pm.clone(),
@@ -627,30 +648,28 @@ async fn handle_prompt_send(
                             config,
                             session_cache,
                             allowed_patterns,
-                            persistence,
-                            resume_session_id: None,
                         },
                     );
                 }
                 Err(e) => {
-                    error!(session_id, error = %e, "SDK query spawn failed");
+                    error!(db_session_id, error = %e, "SDK query spawn failed");
                     send_error(sender, &envelope.id, "SDK_SPAWN_ERROR", &e.to_string());
                 }
             }
         }
         QueryState::Active { query, .. } => {
             // Persist follow-up user message
-            if let Some(ref p) = handle.persistence {
-                let p_lock = p.lock().await;
-                p_lock.persist_user_message(&payload.text).await;
-            }
+            let p = WsSessionPersistence::with_session_id(
+                app_state.write_pool.clone(), handle.feature_id, Some(db_session_id),
+            );
+            p.persist_user_message(&payload.text).await;
 
             let q = query.lock().await;
             let turn_state = q.turn_state().await;
-            info!(session_id, turn_state = ?turn_state, "follow-up prompt");
+            info!(db_session_id, turn_state = ?turn_state, "follow-up prompt");
             let content = serde_json::json!(payload.text);
             if let Err(e) = q.stream_input(content).await {
-                error!(session_id, error = %e, "stream_input failed");
+                error!(db_session_id, error = %e, "stream_input failed");
                 send_error(sender, &envelope.id, "SDK_ERROR", &e.to_string());
             }
         }
@@ -661,7 +680,6 @@ async fn handle_prompt_send(
 async fn handle_permission_respond(
     envelope: WsEnvelope,
     sender: &WsSender,
-    store: &Arc<dyn SessionStore>,
     sdk_sessions: &SdkSessions,
 ) {
     let payload: PermissionRespondPayload = match serde_json::from_value(envelope.payload.clone()) {
@@ -672,10 +690,16 @@ async fn handle_permission_respond(
         }
     };
 
-    let session_id = payload.session_id.clone();
+    let db_session_id = match parse_session_id(&payload.session_id) {
+        Some(id) => id,
+        None => {
+            send_error(sender, &envelope.id, "INVALID_SESSION_ID", "Invalid session_id");
+            return;
+        }
+    };
 
     let sessions = sdk_sessions.lock().await;
-    let handle = match sessions.get(&session_id) {
+    let handle = match sessions.get(&db_session_id) {
         Some(h) => h,
         None => {
             send_error(sender, &envelope.id, "SESSION_NOT_FOUND", "Session not found");
@@ -704,19 +728,15 @@ async fn handle_permission_respond(
             "CHANNEL_ERROR",
             "Permission channel closed",
         );
-        return;
     }
-
-    let _ = store
-        .update_status(&session_id, WsSessionStatus::Running)
-        .await;
 }
 
-/// Handle session.model.set: change the model on an active query.
+/// Handle session.model.set: change the model and persist to DB.
 async fn handle_model_set(
     envelope: WsEnvelope,
     sender: &WsSender,
     sdk_sessions: &SdkSessions,
+    app_state: &AppState,
 ) {
     let payload: ModelSetPayload = match serde_json::from_value(envelope.payload.clone()) {
         Ok(p) => p,
@@ -726,10 +746,16 @@ async fn handle_model_set(
         }
     };
 
-    let session_id = payload.session_id;
+    let db_session_id = match parse_session_id(&payload.session_id) {
+        Some(id) => id,
+        None => {
+            send_error(sender, &envelope.id, "INVALID_SESSION_ID", "Invalid session_id");
+            return;
+        }
+    };
 
     let mut sessions = sdk_sessions.lock().await;
-    let handle = match sessions.get_mut(&session_id) {
+    let handle = match sessions.get_mut(&db_session_id) {
         Some(h) => h,
         None => {
             send_error(sender, &envelope.id, "SESSION_NOT_FOUND", "Session not found");
@@ -737,7 +763,7 @@ async fn handle_model_set(
         }
     };
 
-    info!(session_id, model = %payload.model, "updating desired model");
+    info!(db_session_id, model = %payload.model, "updating desired model");
     handle.desired_model = Some(payload.model.clone());
 
     match &mut handle.state {
@@ -745,16 +771,17 @@ async fn handle_model_set(
             options.model = Some(payload.model.clone());
         }
         QueryState::Active { query, .. } => {
-            // Send control command — don't update spawned_model, the respawn
-            // fallback in prompt.send will catch it if the CLI ignores this.
             let q = query.lock().await;
             if let Err(e) = q.set_model(&payload.model).await {
-                error!(session_id, error = %e, "failed to set model on active query");
+                error!(db_session_id, error = %e, "failed to set model on active query");
                 send_error(sender, &envelope.id, "SDK_ERROR", &e.to_string());
                 return;
             }
         }
     }
+
+    // Persist to DB
+    WsSessionPersistence::update_model_static(&app_state.write_pool, db_session_id, &payload.model).await;
 
     let reply = WsEnvelope::reply(
         &envelope.id,
@@ -765,12 +792,12 @@ async fn handle_model_set(
     let _ = sender.send(Message::Text(String::from(reply).into()));
 }
 
-/// Handle session.mode.set: change the permission mode mid-session.
+/// Handle session.mode.set: change the permission mode and persist to DB.
 async fn handle_mode_set(
     envelope: WsEnvelope,
     sender: &WsSender,
-    store: &Arc<dyn SessionStore>,
     sdk_sessions: &SdkSessions,
+    app_state: &AppState,
 ) {
     let payload: ModeSetPayload = match serde_json::from_value(envelope.payload.clone()) {
         Ok(p) => p,
@@ -780,11 +807,18 @@ async fn handle_mode_set(
         }
     };
 
-    let session_id = payload.session_id;
+    let db_session_id = match parse_session_id(&payload.session_id) {
+        Some(id) => id,
+        None => {
+            send_error(sender, &envelope.id, "INVALID_SESSION_ID", "Invalid session_id");
+            return;
+        }
+    };
+
     let new_mode = parse_permission_mode(&payload.mode);
 
     let mut sessions = sdk_sessions.lock().await;
-    let handle = match sessions.get_mut(&session_id) {
+    let handle = match sessions.get_mut(&db_session_id) {
         Some(h) => h,
         None => {
             send_error(sender, &envelope.id, "SESSION_NOT_FOUND", "Session not found");
@@ -792,31 +826,26 @@ async fn handle_mode_set(
         }
     };
 
-    info!(session_id, mode = %payload.mode, "updating permission mode");
+    info!(db_session_id, mode = %payload.mode, "updating permission mode");
     handle.desired_permission_mode = Some(new_mode.clone());
     handle.config.permission_mode = Some(new_mode.clone());
 
     match &mut handle.state {
         QueryState::Pending(options) => {
-            // Update stored options so the first spawn uses this mode
             options.permission_mode = Some(new_mode);
         }
         QueryState::Active { query, .. } => {
-            // Send control command to the CLI via stdin.
-            // Don't update spawned_permission_mode here — the CLI may silently
-            // ignore the command. The respawn fallback in prompt.send will
-            // detect the mismatch and respawn if needed.
             let q = query.lock().await;
             if let Err(e) = q.set_permission_mode(new_mode).await {
-                error!(session_id, error = %e, "failed to set permission mode on active query");
+                error!(db_session_id, error = %e, "failed to set permission mode on active query");
                 send_error(sender, &envelope.id, "SDK_ERROR", &e.to_string());
                 return;
             }
         }
     }
 
-    // Update store
-    let _ = store.update_permission_mode(&session_id, &payload.mode).await;
+    // Persist to DB
+    WsSessionPersistence::update_permission_mode_static(&app_state.write_pool, db_session_id, &payload.mode).await;
 
     let reply = WsEnvelope::reply(
         &envelope.id,
@@ -831,7 +860,6 @@ async fn handle_mode_set(
 async fn handle_interrupt(
     envelope: WsEnvelope,
     sender: &WsSender,
-    store: &Arc<dyn SessionStore>,
     sdk_sessions: &SdkSessions,
 ) {
     let payload: SessionActionPayload = match serde_json::from_value(envelope.payload.clone()) {
@@ -842,10 +870,16 @@ async fn handle_interrupt(
         }
     };
 
-    let session_id = payload.session_id;
+    let db_session_id = match parse_session_id(&payload.session_id) {
+        Some(id) => id,
+        None => {
+            send_error(sender, &envelope.id, "INVALID_SESSION_ID", "Invalid session_id");
+            return;
+        }
+    };
 
     let sessions = sdk_sessions.lock().await;
-    let handle = match sessions.get(&session_id) {
+    let handle = match sessions.get(&db_session_id) {
         Some(h) => h,
         None => {
             send_error(sender, &envelope.id, "SESSION_NOT_FOUND", "Session not found");
@@ -864,20 +898,15 @@ async fn handle_interrupt(
     let q = query.lock().await;
     if let Err(e) = q.interrupt().await {
         send_error(sender, &envelope.id, "SDK_ERROR", &e.to_string());
-        return;
     }
-
-    let _ = store
-        .update_status(&session_id, WsSessionStatus::Running)
-        .await;
 }
 
-/// Handle session.destroy
+/// Handle session.destroy: mark completed in DB, close subprocess.
 async fn handle_destroy(
     envelope: WsEnvelope,
     sender: &WsSender,
-    store: &Arc<dyn SessionStore>,
     sdk_sessions: &SdkSessions,
+    app_state: &AppState,
 ) {
     let payload: SessionActionPayload = match serde_json::from_value(envelope.payload.clone()) {
         Ok(p) => p,
@@ -887,17 +916,23 @@ async fn handle_destroy(
         }
     };
 
-    let session_id = payload.session_id;
+    let db_session_id = match parse_session_id(&payload.session_id) {
+        Some(id) => id,
+        None => {
+            send_error(sender, &envelope.id, "INVALID_SESSION_ID", "Invalid session_id");
+            return;
+        }
+    };
 
     let mut sessions = sdk_sessions.lock().await;
-    if let Some(handle) = sessions.remove(&session_id) {
+    if let Some(handle) = sessions.remove(&db_session_id) {
         if let QueryState::Active { query, .. } = handle.state {
-            let mut q = query.lock().await;
-            q.close().await;
+            persist_and_close_query(&query, &app_state.write_pool, db_session_id).await;
         }
     }
 
-    let _ = store.destroy_session(&session_id).await;
+    // Mark completed in DB
+    WsSessionPersistence::mark_completed_static(&app_state.write_pool, db_session_id).await;
 
     let reply = WsEnvelope::reply(
         &envelope.id,
@@ -911,47 +946,111 @@ async fn handle_destroy(
     let _ = sender.send(Message::Text(String::from(reply).into()));
 }
 
+/// Handle session.clear: archive claude_session_id, insert divider, reset handle.
+async fn handle_clear(
+    envelope: WsEnvelope,
+    sender: &WsSender,
+    sdk_sessions: &SdkSessions,
+    app_state: &AppState,
+) {
+    let payload: SessionActionPayload = match serde_json::from_value(envelope.payload.clone()) {
+        Ok(p) => p,
+        Err(e) => {
+            send_error(sender, &envelope.id, "INVALID_PAYLOAD", &e.to_string());
+            return;
+        }
+    };
+
+    let db_session_id = match parse_session_id(&payload.session_id) {
+        Some(id) => id,
+        None => {
+            send_error(sender, &envelope.id, "INVALID_SESSION_ID", "Invalid session_id");
+            return;
+        }
+    };
+
+    let mut sessions = sdk_sessions.lock().await;
+    let handle = match sessions.get_mut(&db_session_id) {
+        Some(h) => h,
+        None => {
+            send_error(sender, &envelope.id, "SESSION_NOT_FOUND", "Session not found");
+            return;
+        }
+    };
+
+    // Close active subprocess if any, capturing claude_session_id for archive
+    let cli_sid = if let QueryState::Active { query, .. } = &handle.state {
+        persist_and_close_query(query, &app_state.write_pool, db_session_id).await
+    } else {
+        None
+    };
+
+    // Archive and clear in DB (pass cli_sid to avoid re-reading it)
+    WsSessionPersistence::archive_and_clear(&app_state.write_pool, db_session_id, cli_sid.as_deref()).await;
+
+    // Reset handle to Pending with fresh options (no resume)
+    let fresh_options = Options {
+        cwd: handle.config.cwd.clone(),
+        permission_mode: handle.desired_permission_mode.clone(),
+        model: handle.desired_model.clone(),
+        system_prompt: handle.config.system_prompt.clone(),
+        ..Options::default()
+    };
+    handle.state = QueryState::Pending(fresh_options);
+
+    let reply = WsEnvelope::reply(
+        &envelope.id,
+        "session",
+        "cleared",
+        serde_json::json!({ "session_id": db_session_id.to_string() }),
+    );
+    let _ = sender.send(Message::Text(String::from(reply).into()));
+}
+
 /// Spawn a background task that reads from the SDK message receiver and forwards
 /// messages to the WebSocket client.
 fn spawn_stream_reader(
-    session_id: String,
+    db_session_id: i64,
+    feature_id: i64,
     mut message_rx: mpsc::Receiver<Result<SdkMessage, SdkError>>,
     sender: WsSender,
-    persistence: Option<Arc<Mutex<WsSessionPersistence>>>,
+    write_pool: sqlx::SqlitePool,
 ) {
     tokio::spawn(async move {
-        info!(session_id, "stream reader started");
-        // One-shot: persist the CLI session ID from the first System(Init) message
-        // so future app restarts can --resume this conversation.
-        let mut needs_session_id_capture = persistence.is_some();
+        info!(db_session_id, "stream reader started");
+        let mut persistence = WsSessionPersistence::with_session_id(
+            write_pool.clone(), feature_id, Some(db_session_id),
+        );
+        // Capture the CLI session ID from the first message that has one.
+        // Every SdkMessage variant carries a session_id field.
+        let mut needs_session_id_capture = true;
+
         loop {
             let msg = message_rx.recv().await;
 
             match msg {
                 Some(Ok(sdk_msg)) => {
-                    debug!(session_id, msg_type = ?std::mem::discriminant(&sdk_msg), "SDK MSG → WS");
+                    debug!(db_session_id, msg_type = ?std::mem::discriminant(&sdk_msg), "SDK MSG → WS");
 
                     if needs_session_id_capture {
-                        if let SdkMessage::System(SystemMessage::Init { session_id: ref cli_sid, .. }) = sdk_msg {
-                            needs_session_id_capture = false;
-                            let p_lock = persistence.as_ref().unwrap().lock().await;
-                            p_lock.persist_claude_session_id(cli_sid).await;
+                        if let Some(cli_sid) = sdk_msg.session_id() {
+                            if !cli_sid.is_empty() {
+                                needs_session_id_capture = false;
+                                info!(db_session_id, claude_session_id = %cli_sid, "stream_reader: persisting CLI session_id to DB");
+                                WsSessionPersistence::persist_claude_session_id_static(
+                                    &write_pool, db_session_id, cli_sid,
+                                ).await;
+                            }
                         }
                     }
 
                     // Persist before forwarding (best-effort)
-                    if let Some(ref p) = persistence {
-                        let mut p_lock = p.lock().await;
-                        p_lock.persist_sdk_message(&sdk_msg).await;
-                    }
+                    persistence.persist_sdk_message(&sdk_msg).await;
 
                     let envelope = match &sdk_msg {
                         SdkMessage::Result { .. } => {
                             // Mark session completed
-                            if let Some(ref p) = persistence {
-                                let p_lock = p.lock().await;
-                                p_lock.mark_completed().await;
-                            }
+                            WsSessionPersistence::mark_completed_static(&write_pool, db_session_id).await;
                             WsEnvelope::new(
                                 "session",
                                 "ended",
@@ -979,18 +1078,13 @@ fn spawn_stream_reader(
                         .send(Message::Text(String::from(envelope).into()))
                         .is_err()
                     {
-                        debug!(session_id, "WebSocket sender closed, stopping stream reader");
+                        debug!(db_session_id, "WebSocket sender closed, stopping stream reader");
                         break;
                     }
-
-
                 }
                 Some(Err(e)) => {
-                    error!(session_id, error = %e, "SDK stream error");
-                    if let Some(ref p) = persistence {
-                        let p_lock = p.lock().await;
-                        p_lock.mark_error().await;
-                    }
+                    error!(db_session_id, error = %e, "SDK stream error");
+                    WsSessionPersistence::mark_paused_static(&write_pool, db_session_id).await;
                     let err_env = WsEnvelope::new(
                         "session",
                         "error",
@@ -1005,7 +1099,7 @@ fn spawn_stream_reader(
                 }
                 None => {
                     // Channel closed — stream ended
-                    info!(session_id, "SDK stream closed");
+                    info!(db_session_id, "SDK stream closed");
                     let end_env = WsEnvelope::new(
                         "session",
                         "ended",
@@ -1046,26 +1140,23 @@ mod tests {
         WsEnvelope::new(domain, action, payload)
     }
 
-    async fn make_test_app_state(store: Arc<dyn SessionStore>) -> AppState {
+    async fn make_test_app_state() -> AppState {
         let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
         AppState {
             read_pool: pool.clone(),
             write_pool: pool,
             electron_port: 0,
-            ws_session_store: store,
         }
     }
 
     #[tokio::test]
     async fn test_unknown_domain_returns_error() {
         let (tx, mut rx) = mpsc::unbounded_channel();
-        let store: Arc<dyn SessionStore> =
-            Arc::new(super::super::store::InMemorySessionStore::new());
         let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
 
         let envelope = make_envelope("unknown_domain", "init", serde_json::json!({}));
-        let app_state = make_test_app_state(store.clone()).await;
-        dispatch_envelope(envelope, &tx, &store, &sdk_sessions, &app_state).await;
+        let app_state = make_test_app_state().await;
+        dispatch_envelope(envelope, &tx, &sdk_sessions, &app_state).await;
 
         let msg = rx.recv().await.unwrap();
         if let Message::Text(text) = msg {
@@ -1082,13 +1173,11 @@ mod tests {
     #[tokio::test]
     async fn test_unknown_action_returns_error() {
         let (tx, mut rx) = mpsc::unbounded_channel();
-        let store: Arc<dyn SessionStore> =
-            Arc::new(super::super::store::InMemorySessionStore::new());
         let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
 
         let envelope = make_envelope("session", "nonexistent_action", serde_json::json!({}));
-        let app_state = make_test_app_state(store.clone()).await;
-        dispatch_envelope(envelope, &tx, &store, &sdk_sessions, &app_state).await;
+        let app_state = make_test_app_state().await;
+        dispatch_envelope(envelope, &tx, &sdk_sessions, &app_state).await;
 
         let msg = rx.recv().await.unwrap();
         if let Message::Text(text) = msg {
@@ -1103,448 +1192,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_prompt_send_without_session_returns_error() {
-        let (tx, mut rx) = mpsc::unbounded_channel();
-        let store: Arc<dyn SessionStore> =
-            Arc::new(super::super::store::InMemorySessionStore::new());
-        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
-
-        let envelope = make_envelope(
-            "session",
-            "prompt.send",
-            serde_json::json!({"text": "hello", "session_id": "nonexistent"}),
-        );
-
-        let app_state = make_test_app_state(store.clone()).await;
-        dispatch_envelope(envelope, &tx, &store, &sdk_sessions, &app_state).await;
-
-        let msg = rx.recv().await.unwrap();
-        if let Message::Text(text) = msg {
-            let env: WsEnvelope = serde_json::from_str(&text).unwrap();
-            assert_eq!(env.action, "error");
-            let payload: SessionErrorPayload =
-                serde_json::from_value(env.payload).unwrap();
-            assert_eq!(payload.code, "SESSION_NOT_FOUND");
-        } else {
-            panic!("expected text message");
-        }
-    }
-
-    #[tokio::test]
-    async fn test_permission_respond_without_active_session_returns_error() {
-        let (tx, mut rx) = mpsc::unbounded_channel();
-        let store: Arc<dyn SessionStore> =
-            Arc::new(super::super::store::InMemorySessionStore::new());
-        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
-
-        let envelope = make_envelope(
-            "session",
-            "permission.respond",
-            serde_json::json!({
-                "session_id": "nonexistent",
-                "request_id": "r1",
-                "decision": "allow_once"
-            }),
-        );
-
-        let app_state = make_test_app_state(store.clone()).await;
-        dispatch_envelope(envelope, &tx, &store, &sdk_sessions, &app_state).await;
-
-        let msg = rx.recv().await.unwrap();
-        if let Message::Text(text) = msg {
-            let env: WsEnvelope = serde_json::from_str(&text).unwrap();
-            assert_eq!(env.action, "error");
-            let payload: SessionErrorPayload =
-                serde_json::from_value(env.payload).unwrap();
-            assert_eq!(payload.code, "SESSION_NOT_FOUND");
-        } else {
-            panic!("expected text message");
-        }
-    }
-
-    #[tokio::test]
-    async fn test_permission_tx_sends_to_bridge() {
-        // Verify that permission_tx.send delivers to a WsBridgeCanUseTool receiver.
-        // Use a path outside the worktree to trigger NeedsPrompt.
-        let (ws_tx, mut ws_rx) = mpsc::unbounded_channel::<Message>();
-        let (perm_tx, perm_rx) = mpsc::channel::<PermissionResponse>(16);
-
-        let bridge = WsBridgeCanUseTool {
-            sender: ws_tx,
-            response_rx: Arc::new(Mutex::new(perm_rx)),
-            worktree_path: PathBuf::from("/project"),
-            session_cache: Arc::new(Mutex::new(HashSet::new())),
-            allowed_patterns: Arc::new(HashSet::new()),
-        };
-
-        // Spawn bridge call in background — use a file outside the worktree so it prompts
-        let bridge_handle = tokio::spawn(async move {
-            bridge
-                .can_use_tool(PermissionRequest {
-                    tool_name: "Write".to_string(),
-                    input: serde_json::json!({"file_path": "/outside/test.txt"}),
-                    tool_use_id: "req_123".to_string(),
-                    agent_id: None,
-                    suggestions: None,
-                    blocked_path: None,
-                    decision_reason: Some("writing file".to_string()),
-                })
-                .await
-        });
-
-        // Bridge should send permission.request to WS
-        let msg = ws_rx.recv().await.unwrap();
-        if let Message::Text(text) = msg {
-            let env: WsEnvelope = serde_json::from_str(&text).unwrap();
-            assert_eq!(env.action, "permission.request");
-            let payload: PermissionRequestPayload =
-                serde_json::from_value(env.payload).unwrap();
-            assert_eq!(payload.request_id, "req_123");
-            assert_eq!(payload.tool_name, "Write");
-            assert!(payload.pattern.is_some());
-        } else {
-            panic!("expected text message");
-        }
-
-        // Simulate user granting permission via the channel
-        perm_tx
-            .send(PermissionResponse {
-                decision: PermissionDecision::AllowOnce,
-                feedback: None,
-                updated_input: None,
-            })
-            .await
-            .unwrap();
-
-        // Bridge should return the Allow result
-        let result = bridge_handle.await.unwrap();
-        assert!(matches!(result, PermissionResult::Allow { .. }));
-    }
-
-    /// Helper: send session.init and return the session_id from the response.
-    async fn init_session(
-        tx: &WsSender,
-        rx: &mut mpsc::UnboundedReceiver<Message>,
-        store: &Arc<dyn SessionStore>,
-        sdk_sessions: &SdkSessions,
-    ) -> String {
-        let envelope = make_envelope("session", "init", serde_json::json!({"cwd": "/tmp/test-project"}));
-        let app_state = make_test_app_state(store.clone()).await;
-        dispatch_envelope(envelope, tx, store, sdk_sessions, &app_state).await;
-
-        let msg = rx.recv().await.unwrap();
-        if let Message::Text(text) = msg {
-            let env: WsEnvelope = serde_json::from_str(&text).unwrap();
-            assert_eq!(env.action, "initialized");
-            let payload: SessionInitializedPayload =
-                serde_json::from_value(env.payload).unwrap();
-            payload.session_id
-        } else {
-            panic!("expected text message");
-        }
-    }
-
-    #[tokio::test]
-    async fn test_model_set_on_pending_session() {
-        let (tx, mut rx) = mpsc::unbounded_channel();
-        let store: Arc<dyn SessionStore> =
-            Arc::new(super::super::store::InMemorySessionStore::new());
-        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
-
-        let session_id = init_session(&tx, &mut rx, &store, &sdk_sessions).await;
-
-        let envelope = make_envelope(
-            "session",
-            "model.set",
-            serde_json::json!({"session_id": session_id, "model": "claude-sonnet-4-20250514"}),
-        );
-        let app_state = make_test_app_state(store.clone()).await;
-        dispatch_envelope(envelope, &tx, &store, &sdk_sessions, &app_state).await;
-
-        let msg = rx.recv().await.unwrap();
-        if let Message::Text(text) = msg {
-            let env: WsEnvelope = serde_json::from_str(&text).unwrap();
-            assert_eq!(env.action, "model.set.ok");
-            let payload: serde_json::Value = env.payload;
-            assert_eq!(payload["model"], "claude-sonnet-4-20250514");
-        } else {
-            panic!("expected text message");
-        }
-    }
-
-    #[tokio::test]
-    async fn test_model_set_on_nonexistent_session() {
-        let (tx, mut rx) = mpsc::unbounded_channel();
-        let store: Arc<dyn SessionStore> =
-            Arc::new(super::super::store::InMemorySessionStore::new());
-        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
-
-        let envelope = make_envelope(
-            "session",
-            "model.set",
-            serde_json::json!({"session_id": "does-not-exist", "model": "claude-sonnet-4-20250514"}),
-        );
-        let app_state = make_test_app_state(store.clone()).await;
-        dispatch_envelope(envelope, &tx, &store, &sdk_sessions, &app_state).await;
-
-        let msg = rx.recv().await.unwrap();
-        if let Message::Text(text) = msg {
-            let env: WsEnvelope = serde_json::from_str(&text).unwrap();
-            assert_eq!(env.action, "error");
-            let payload: SessionErrorPayload =
-                serde_json::from_value(env.payload).unwrap();
-            assert_eq!(payload.code, "SESSION_NOT_FOUND");
-        } else {
-            panic!("expected text message");
-        }
-    }
-
-    #[tokio::test]
-    async fn test_model_set_updates_desired_model() {
-        let (tx, mut rx) = mpsc::unbounded_channel();
-        let store: Arc<dyn SessionStore> =
-            Arc::new(super::super::store::InMemorySessionStore::new());
-        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
-
-        let session_id = init_session(&tx, &mut rx, &store, &sdk_sessions).await;
-
-        // Set model to sonnet
-        let envelope = make_envelope(
-            "session",
-            "model.set",
-            serde_json::json!({"session_id": session_id, "model": "claude-sonnet-4-20250514"}),
-        );
-        let app_state = make_test_app_state(store.clone()).await;
-        dispatch_envelope(envelope, &tx, &store, &sdk_sessions, &app_state).await;
-        let _ = rx.recv().await.unwrap(); // consume model.set.ok
-
-        // Set model to opus
-        let envelope = make_envelope(
-            "session",
-            "model.set",
-            serde_json::json!({"session_id": session_id, "model": "claude-opus-4-20250514"}),
-        );
-        let app_state = make_test_app_state(store.clone()).await;
-        dispatch_envelope(envelope, &tx, &store, &sdk_sessions, &app_state).await;
-
-        let msg = rx.recv().await.unwrap();
-        if let Message::Text(text) = msg {
-            let env: WsEnvelope = serde_json::from_str(&text).unwrap();
-            assert_eq!(env.action, "model.set.ok");
-            let payload: serde_json::Value = env.payload;
-            assert_eq!(payload["model"], "claude-opus-4-20250514");
-        } else {
-            panic!("expected text message");
-        }
-
-        // Verify the internal state reflects the latest model
-        let sessions = sdk_sessions.lock().await;
-        let handle = sessions.get(&session_id).unwrap();
-        assert_eq!(handle.desired_model, Some("claude-opus-4-20250514".to_string()));
-    }
-
-    // -----------------------------------------------------------------------
-    // mode.set tests
-    // -----------------------------------------------------------------------
-
-    #[tokio::test]
-    async fn test_mode_set_on_pending_session() {
-        let (tx, mut rx) = mpsc::unbounded_channel();
-        let store: Arc<dyn SessionStore> =
-            Arc::new(super::super::store::InMemorySessionStore::new());
-        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
-
-        let session_id = init_session(&tx, &mut rx, &store, &sdk_sessions).await;
-
-        let envelope = make_envelope(
-            "session",
-            "mode.set",
-            serde_json::json!({"session_id": session_id, "mode": "plan"}),
-        );
-        let app_state = make_test_app_state(store.clone()).await;
-        dispatch_envelope(envelope, &tx, &store, &sdk_sessions, &app_state).await;
-
-        let msg = rx.recv().await.unwrap();
-        if let Message::Text(text) = msg {
-            let env: WsEnvelope = serde_json::from_str(&text).unwrap();
-            assert_eq!(env.action, "mode.changed");
-            let payload: serde_json::Value = env.payload;
-            assert_eq!(payload["mode"], "plan");
-        } else {
-            panic!("expected text message");
-        }
-
-        // Verify internal state
-        let sessions = sdk_sessions.lock().await;
-        let handle = sessions.get(&session_id).unwrap();
-        assert_eq!(handle.desired_permission_mode, Some(PermissionMode::Plan));
-        // spawned_permission_mode is still None (pending, not yet spawned)
-        assert_eq!(handle.spawned_permission_mode, None);
-    }
-
-    #[tokio::test]
-    async fn test_mode_set_updates_pending_options() {
-        let (tx, mut rx) = mpsc::unbounded_channel();
-        let store: Arc<dyn SessionStore> =
-            Arc::new(super::super::store::InMemorySessionStore::new());
-        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
-
-        let session_id = init_session(&tx, &mut rx, &store, &sdk_sessions).await;
-
-        let envelope = make_envelope(
-            "session",
-            "mode.set",
-            serde_json::json!({"session_id": session_id, "mode": "plan"}),
-        );
-        let app_state = make_test_app_state(store.clone()).await;
-        dispatch_envelope(envelope, &tx, &store, &sdk_sessions, &app_state).await;
-        let _ = rx.recv().await.unwrap(); // consume mode.changed
-
-        // Verify the pending options were updated
-        let sessions = sdk_sessions.lock().await;
-        let handle = sessions.get(&session_id).unwrap();
-        if let QueryState::Pending(options) = &handle.state {
-            assert_eq!(options.permission_mode, Some(PermissionMode::Plan));
-        } else {
-            panic!("expected Pending state");
-        }
-    }
-
-    #[tokio::test]
-    async fn test_mode_set_on_nonexistent_session() {
-        let (tx, mut rx) = mpsc::unbounded_channel();
-        let store: Arc<dyn SessionStore> =
-            Arc::new(super::super::store::InMemorySessionStore::new());
-        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
-
-        let envelope = make_envelope(
-            "session",
-            "mode.set",
-            serde_json::json!({"session_id": "does-not-exist", "mode": "plan"}),
-        );
-        let app_state = make_test_app_state(store.clone()).await;
-        dispatch_envelope(envelope, &tx, &store, &sdk_sessions, &app_state).await;
-
-        let msg = rx.recv().await.unwrap();
-        if let Message::Text(text) = msg {
-            let env: WsEnvelope = serde_json::from_str(&text).unwrap();
-            assert_eq!(env.action, "error");
-            let payload: SessionErrorPayload =
-                serde_json::from_value(env.payload).unwrap();
-            assert_eq!(payload.code, "SESSION_NOT_FOUND");
-        } else {
-            panic!("expected text message");
-        }
-    }
-
-    #[tokio::test]
-    async fn test_mode_set_updates_store() {
-        let (tx, mut rx) = mpsc::unbounded_channel();
-        let store: Arc<dyn SessionStore> =
-            Arc::new(super::super::store::InMemorySessionStore::new());
-        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
-
-        let session_id = init_session(&tx, &mut rx, &store, &sdk_sessions).await;
-
-        let envelope = make_envelope(
-            "session",
-            "mode.set",
-            serde_json::json!({"session_id": session_id, "mode": "plan"}),
-        );
-        let app_state = make_test_app_state(store.clone()).await;
-        dispatch_envelope(envelope, &tx, &store, &sdk_sessions, &app_state).await;
-        let _ = rx.recv().await.unwrap(); // consume mode.changed
-
-        let session = store.get_session(&session_id).await.unwrap().unwrap();
-        assert_eq!(session.permission_mode, Some("plan".to_string()));
-    }
-
-    #[tokio::test]
-    async fn test_init_with_permission_mode_sets_desired() {
-        let (tx, mut rx) = mpsc::unbounded_channel();
-        let store: Arc<dyn SessionStore> =
-            Arc::new(super::super::store::InMemorySessionStore::new());
-        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
-
-        let envelope = make_envelope(
-            "session",
-            "init",
-            serde_json::json!({"permission_mode": "plan", "cwd": "/tmp/test-project"}),
-        );
-        let app_state = make_test_app_state(store.clone()).await;
-        dispatch_envelope(envelope, &tx, &store, &sdk_sessions, &app_state).await;
-
-        let msg = rx.recv().await.unwrap();
-        let session_id = if let Message::Text(text) = msg {
-            let env: WsEnvelope = serde_json::from_str(&text).unwrap();
-            assert_eq!(env.action, "initialized");
-            let payload: SessionInitializedPayload =
-                serde_json::from_value(env.payload).unwrap();
-            payload.session_id
-        } else {
-            panic!("expected text message");
-        };
-
-        let sessions = sdk_sessions.lock().await;
-        let handle = sessions.get(&session_id).unwrap();
-        assert_eq!(handle.desired_permission_mode, Some(PermissionMode::Plan));
-        assert_eq!(handle.config.permission_mode, Some(PermissionMode::Plan));
-    }
-
-    #[tokio::test]
-    async fn test_parse_permission_mode_values() {
-        assert_eq!(parse_permission_mode("acceptEdits"), PermissionMode::AcceptEdits);
-        assert_eq!(parse_permission_mode("plan"), PermissionMode::Plan);
-        assert_eq!(parse_permission_mode("bypassPermissions"), PermissionMode::BypassPermissions);
-        assert_eq!(parse_permission_mode("dontAsk"), PermissionMode::DontAsk);
-        assert_eq!(parse_permission_mode("unknown"), PermissionMode::Default);
-        assert_eq!(parse_permission_mode(""), PermissionMode::Default);
-    }
-
-    #[tokio::test]
-    async fn test_init_without_cwd_returns_error() {
-        let (tx, mut rx) = mpsc::unbounded_channel();
-        let store: Arc<dyn SessionStore> =
-            Arc::new(super::super::store::InMemorySessionStore::new());
-        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
-
-        let envelope = make_envelope("session", "init", serde_json::json!({}));
-        let app_state = make_test_app_state(store.clone()).await;
-        dispatch_envelope(envelope, &tx, &store, &sdk_sessions, &app_state).await;
-
-        let msg = rx.recv().await.unwrap();
-        if let Message::Text(text) = msg {
-            let env: WsEnvelope = serde_json::from_str(&text).unwrap();
-            assert_eq!(env.action, "error");
-            let payload: SessionErrorPayload =
-                serde_json::from_value(env.payload).unwrap();
-            assert_eq!(payload.code, "MISSING_CWD");
-        } else {
-            panic!("expected text message");
-        }
-    }
-
-    #[tokio::test]
-    async fn test_malformed_init_payload_returns_error() {
-        let (tx, mut rx) = mpsc::unbounded_channel();
-        let store: Arc<dyn SessionStore> =
-            Arc::new(super::super::store::InMemorySessionStore::new());
-        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
-
-        // init expects an object, send a string
-        let envelope = make_envelope("session", "init", serde_json::json!("not an object"));
-        let app_state = make_test_app_state(store.clone()).await;
-        dispatch_envelope(envelope, &tx, &store, &sdk_sessions, &app_state).await;
-
-        let msg = rx.recv().await.unwrap();
-        if let Message::Text(text) = msg {
-            let env: WsEnvelope = serde_json::from_str(&text).unwrap();
-            assert_eq!(env.action, "error");
-            let payload: SessionErrorPayload =
-                serde_json::from_value(env.payload).unwrap();
-            assert_eq!(payload.code, "INVALID_PAYLOAD");
-        } else {
-            panic!("expected text message");
-        }
+    async fn test_parse_session_id() {
+        assert_eq!(parse_session_id("42"), Some(42));
+        assert_eq!(parse_session_id("abc"), None);
+        assert_eq!(parse_session_id(""), None);
     }
 }

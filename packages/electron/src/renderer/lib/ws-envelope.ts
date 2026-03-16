@@ -82,3 +82,7 @@ export function createModeSet(sessionId: string, mode: string): WsEnvelope {
 export function createDestroy(sessionId: string): WsEnvelope {
   return createEnvelope("session", "destroy", { session_id: sessionId });
 }
+
+export function createSessionClear(sessionId: string): WsEnvelope {
+  return createEnvelope("session", "clear", { session_id: sessionId });
+}

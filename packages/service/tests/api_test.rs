@@ -86,9 +86,6 @@ async fn start_test_server() -> TestServer {
         read_pool: pool.clone(),
         write_pool: pool,
         electron_port: 45679,
-        ws_session_store: std::sync::Arc::new(
-            cadence_service::domain::ws_session::store::InMemorySessionStore::new(),
-        ),
     };
 
     let app = api::build_router(state)

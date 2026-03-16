@@ -21,6 +21,7 @@ import {
   createDestroy,
   createModelSet,
   createModeSet,
+  createSessionClear,
   type SessionConfig,
 } from "@/lib/ws-envelope";
 
@@ -362,6 +363,7 @@ interface WsSessionStore {
   respondToQuestion: (sessionId: string, response: string) => void;
   interrupt: (sessionId: string) => void;
   destroy: (sessionId: string) => void;
+  clearSession: (sessionId: string) => void;
   setModel: (sessionId: string, modelId: string) => void;
   setPermissionMode: (sessionId: string, mode: PermissionMode) => void;
   approvePlan: (sessionId: string) => void;
@@ -592,6 +594,19 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
         break;
       }
 
+      case "cleared": {
+        set(updateSession(get(), sessionId, {
+          blocks: [],
+          status: "idle",
+          streamingState: createStreamingState(),
+          pendingPermission: null,
+          pendingRequestId: "",
+          pendingQuestions: [],
+          pendingPlanApproval: null,
+        }));
+        break;
+      }
+
       case "ended":
       case "turn_complete": {
         if (state.parentToolUseId) {
@@ -772,6 +787,11 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
         isConnected: false,
         status: "completed",
       }));
+    },
+
+    clearSession(sessionId: string) {
+      const session = getSession(sessionId);
+      sendRaw(sessionId, createSessionClear(session.serverSessionId));
     },
 
     setModel(sessionId: string, modelId: string) {

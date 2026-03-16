@@ -1,7 +1,4 @@
-use std::sync::Arc;
 use sqlx::SqlitePool;
-
-use crate::domain::ws_session::store::SessionStore;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -11,6 +8,4 @@ pub struct AppState {
     pub write_pool: SqlitePool,
     /// Port of the Electron IPC HTTP server (for callbacks)
     pub electron_port: u16,
-    /// In-memory store for ephemeral WebSocket sessions
-    pub ws_session_store: Arc<dyn SessionStore>,
 }
