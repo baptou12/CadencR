@@ -16,6 +16,7 @@ import { PlanApprovalBar } from "./PlanApprovalBar";
 import { FileMentionPopover } from "./FileMentionPopover";
 import { SlashCommandPopover } from "./SlashCommandPopover";
 import { ImageAttachmentPreview } from "./ImageAttachmentPreview";
+import { ImageAttachmentButton } from "./ImageAttachmentButton";
 import { useFileMention } from "@/hooks/useFileMention";
 import { useSlashCommand } from "@/hooks/useSlashCommand";
 import { useImageAttachments } from "@/hooks/useImageAttachments";
@@ -150,6 +151,7 @@ export const AgentPromptBar = forwardRef<
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const {
     attachments,
+    addFiles,
     removeAttachment,
     clearAttachments,
     dragHandlers,
@@ -479,6 +481,8 @@ export const AgentPromptBar = forwardRef<
             />
           </SlashCommandPopover>
         </FileMentionPopover>
+
+        <ImageAttachmentButton onFilesSelected={addFiles} />
 
         {/* Circle send / stop button */}
         {isRunning ? (
