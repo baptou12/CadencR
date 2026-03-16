@@ -636,6 +636,26 @@ async fn handle_prompt_send(
                         app_state.write_pool.clone(),
                     );
 
+                    // Fire-and-forget auto-naming for first prompt
+                    {
+                        let write_pool = app_state.write_pool.clone();
+                        let cwd = config.cwd.to_string_lossy().to_string();
+                        let prompt_text = payload.text.clone();
+                        let _sender = sender.clone();
+                        tokio::spawn(async move {
+                            if super::auto_name::has_default_title(&write_pool, feature_id).await {
+                                let result = super::auto_name::auto_name_feature(
+                                    write_pool,
+                                    feature_id,
+                                    prompt_text,
+                                    cwd,
+                                    None,
+                                ).await;
+                                info!(feature_id, name = ?result, "auto-named feature");
+                            }
+                        });
+                    }
+
                     let spawned_pm = config.permission_mode.clone();
                     let mut sessions = sdk_sessions.lock().await;
                     sessions.insert(
