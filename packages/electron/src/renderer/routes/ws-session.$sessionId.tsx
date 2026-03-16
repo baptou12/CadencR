@@ -103,7 +103,7 @@ function WebSocketSessionPage() {
           hasFileChanges={ws.hasFileChanges}
           onViewDiff={handleViewDiff}
           claudeSessionId={ws.claudeSessionId || undefined}
-          slashCommandsOverride={slashCommands.length > 0 ? slashCommands : undefined}
+          slashCommandsOverride={slashCommands}
           slashCommandsLoading={slashCommandsLoading}
           className="h-full"
         />

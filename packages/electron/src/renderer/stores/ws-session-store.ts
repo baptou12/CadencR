@@ -513,6 +513,22 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
     sessionId: string,
     envelope: { domain: string; action: string; payload: unknown },
   ) {
+    // Handle commands domain separately
+    if (envelope.domain === "commands") {
+      if (envelope.action === "list") {
+        const p = envelope.payload as CommandsListPayload;
+        const cmds: SlashCommand[] = (p.commands ?? []).map((c) => ({
+          name: c.name,
+          description: c.description ?? "",
+        }));
+        set(updateSession(get(), sessionId, {
+          slashCommands: cmds,
+          slashCommandsLoading: false,
+        }));
+      }
+      return;
+    }
+
     if (envelope.domain !== "session") return;
 
     const session = getSession(sessionId);
@@ -670,19 +686,6 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
             }),
           );
         }
-        break;
-      }
-
-      case "commands.list": {
-        const p = envelope.payload as CommandsListPayload;
-        const cmds: SlashCommand[] = (p.commands ?? []).map((c) => ({
-          name: c.name,
-          description: c.description ?? "",
-        }));
-        set(updateSession(get(), sessionId, {
-          slashCommands: cmds,
-          slashCommandsLoading: false,
-        }));
         break;
       }
 

@@ -88,7 +88,7 @@ export function createSessionClear(sessionId: string): WsEnvelope {
 }
 
 export function createCommandsGet(cwd: string): WsEnvelope {
-  return createEnvelope("session", "commands.get", { cwd });
+  return createEnvelope("commands", "get", { cwd });
 }
 
 export interface CommandsListPayload {
