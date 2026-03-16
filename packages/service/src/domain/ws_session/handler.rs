@@ -310,6 +310,9 @@ async fn dispatch_envelope(
         "session" => {
             handle_session_action(envelope, sender, sdk_sessions, app_state).await;
         }
+        "commands" => {
+            handle_commands_action(envelope, sender).await;
+        }
         unknown => {
             let err = WsEnvelope::reply(
                 &envelope.id,
@@ -356,6 +359,70 @@ async fn handle_session_action(
                 .unwrap(),
             );
             let _ = sender.send(Message::Text(String::from(err).into()));
+        }
+    }
+}
+
+/// Handle commands domain actions.
+async fn handle_commands_action(envelope: WsEnvelope, sender: &WsSender) {
+    match envelope.action.as_str() {
+        "get" => handle_commands_get(envelope, sender).await,
+        unknown => {
+            let err = WsEnvelope::reply(
+                &envelope.id,
+                "commands",
+                "error",
+                serde_json::to_value(SessionErrorPayload {
+                    code: "UNKNOWN_ACTION".into(),
+                    message: format!("Unknown commands action: {unknown}"),
+                })
+                .unwrap(),
+            );
+            let _ = sender.send(Message::Text(String::from(err).into()));
+        }
+    }
+}
+
+/// Handle commands.get: fetch available slash commands for a given cwd.
+async fn handle_commands_get(envelope: WsEnvelope, sender: &WsSender) {
+    let payload: CommandsGetPayload = match serde_json::from_value(envelope.payload.clone()) {
+        Ok(p) => p,
+        Err(e) => {
+            send_error(sender, &envelope.id, "INVALID_PAYLOAD", &format!("Invalid commands.get payload: {e}"));
+            return;
+        }
+    };
+
+    match claude_agent_sdk_rs::supported_commands(&payload.cwd, None).await {
+        Ok(sdk_commands) => {
+            // Prepend custom commands
+            let mut commands = vec![SlashCommandPayload {
+                name: "clear".into(),
+                description: Some("Clear conversation context and start fresh".into()),
+            }];
+
+            // Convert SDK SlashCommand to protocol payload
+            commands.extend(sdk_commands.into_iter().map(|c| SlashCommandPayload {
+                name: c.name,
+                description: c.description,
+            }));
+
+            let reply = WsEnvelope::reply(
+                &envelope.id,
+                "commands",
+                "list",
+                serde_json::to_value(CommandsListPayload { commands }).unwrap(),
+            );
+            let _ = sender.send(Message::Text(String::from(reply).into()));
+        }
+        Err(e) => {
+            error!(error = %e, cwd = %payload.cwd, "Failed to fetch supported commands");
+            send_error(
+                sender,
+                &envelope.id,
+                "COMMANDS_FETCH_ERROR",
+                &format!("Failed to fetch commands: {e}"),
+            );
         }
     }
 }

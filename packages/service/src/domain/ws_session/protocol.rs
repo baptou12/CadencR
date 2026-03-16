@@ -163,6 +163,25 @@ pub struct FeatureRenamedPayload {
     pub title: String,
 }
 
+// --- Commands payloads ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommandsGetPayload {
+    pub cwd: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SlashCommandPayload {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommandsListPayload {
+    pub commands: Vec<SlashCommandPayload>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
