@@ -207,6 +207,9 @@ struct SdkHandle {
     session_cache: Arc<Mutex<HashSet<String>>>,
     /// Pre-loaded allowed patterns from settings files.
     allowed_patterns: Arc<HashSet<String>>,
+    /// Claude CLI session ID to use for --resume on the first prompt.
+    /// Set from the DB row at init time; consumed (taken) when spawning.
+    resume_session_id: Option<String>,
     /// Config for respawning with --resume after model/mode change.
     config: SessionConfig,
 }
@@ -396,8 +399,8 @@ async fn handle_init(
         }
     };
 
-    // Check what claude_session_id is currently in the DB for this session
-    if let Some(row) = WsSessionPersistence::get_session_row(&app_state.read_pool, db_session_id).await {
+    // Read claude_session_id from DB row so we can --resume on first prompt.
+    let resume_session_id = if let Some(row) = WsSessionPersistence::get_session_row(&app_state.read_pool, db_session_id).await {
         debug!(
             db_session_id,
             feature_id,
@@ -405,7 +408,10 @@ async fn handle_init(
             status = %row.status,
             "handle_init: DB row state at init time"
         );
-    }
+        row.claude_session_id
+    } else {
+        None
+    };
 
     // Build SDK options
     let mut options = Options::default();
@@ -441,6 +447,7 @@ async fn handle_init(
         spawned_model: None,
         desired_permission_mode,
         spawned_permission_mode: None,
+        resume_session_id,
         config,
         session_cache,
         allowed_patterns,
@@ -583,11 +590,9 @@ async fn handle_prompt_send(
                 _ => unreachable!(),
             };
 
-            // Read claude_session_id from DB for --resume on cold start
+            // Use the claude_session_id captured at init time for --resume
             if options.resume.is_none() {
-                if let Some(cli_sid) = WsSessionPersistence::get_latest_claude_session_id(
-                    &app_state.read_pool, feature_id,
-                ).await {
+                if let Some(cli_sid) = handle.resume_session_id.take() {
                     info!(db_session_id, claude_session_id = %cli_sid, "resuming previous CLI session");
                     options.resume = Some(cli_sid);
                 } else {
@@ -645,6 +650,7 @@ async fn handle_prompt_send(
                             spawned_model,
                             desired_permission_mode: spawned_pm.clone(),
                             spawned_permission_mode: spawned_pm,
+                            resume_session_id: None,
                             config,
                             session_cache,
                             allowed_patterns,
@@ -1142,10 +1148,88 @@ mod tests {
 
     async fn make_test_app_state() -> AppState {
         let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        // Create tables needed by handler tests
+        sqlx::query(
+            r#"CREATE TABLE agent_sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                feature_id INTEGER NOT NULL,
+                agent_type TEXT NOT NULL DEFAULT 'session',
+                status TEXT NOT NULL DEFAULT 'idle',
+                claude_session_id TEXT,
+                model TEXT,
+                permission_mode TEXT,
+                has_file_changes INTEGER NOT NULL DEFAULT 0,
+                started_at TEXT,
+                ended_at TEXT
+            )"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            r#"CREATE TABLE agent_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id INTEGER NOT NULL,
+                role TEXT,
+                content TEXT NOT NULL DEFAULT '',
+                message_type TEXT NOT NULL DEFAULT 'text',
+                tool_name TEXT,
+                tool_use_id TEXT,
+                parent_tool_use_id TEXT,
+                model TEXT
+            )"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            r#"CREATE TABLE session_claude_ids (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id INTEGER NOT NULL,
+                claude_session_id TEXT NOT NULL,
+                created_at TEXT
+            )"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
         AppState {
             read_pool: pool.clone(),
             write_pool: pool,
             electron_port: 0,
+        }
+    }
+
+    /// Helper: send a session.init envelope and return the db_session_id from the response.
+    async fn init_session(
+        tx: &WsSender,
+        rx: &mut mpsc::UnboundedReceiver<Message>,
+        sdk_sessions: &SdkSessions,
+        app_state: &AppState,
+        feature_id: i64,
+    ) -> String {
+        let envelope = make_envelope(
+            "session",
+            "init",
+            serde_json::json!({
+                "cwd": "/tmp/test",
+                "feature_id": feature_id,
+            }),
+        );
+        dispatch_envelope(envelope, tx, sdk_sessions, app_state).await;
+
+        let msg = rx.recv().await.unwrap();
+        if let Message::Text(text) = msg {
+            let env: WsEnvelope = serde_json::from_str(&text).unwrap();
+            assert_eq!(env.action, "initialized");
+            let payload: SessionInitializedPayload =
+                serde_json::from_value(env.payload).unwrap();
+            payload.session_id
+        } else {
+            panic!("expected text message");
         }
     }
 
@@ -1196,5 +1280,201 @@ mod tests {
         assert_eq!(parse_session_id("42"), Some(42));
         assert_eq!(parse_session_id("abc"), None);
         assert_eq!(parse_session_id(""), None);
+    }
+
+    #[tokio::test]
+    async fn test_init_creates_session_with_no_resume_for_new_feature() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+        let app_state = make_test_app_state().await;
+
+        let session_id = init_session(&tx, &mut rx, &sdk_sessions, &app_state, 1).await;
+
+        // Session should exist in memory
+        let sessions = sdk_sessions.lock().await;
+        let db_id: i64 = session_id.parse().unwrap();
+        let handle = sessions.get(&db_id).unwrap();
+
+        // Brand new feature → no resume_session_id
+        assert!(handle.resume_session_id.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_init_captures_resume_session_id_from_db() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+        let app_state = make_test_app_state().await;
+
+        // Pre-create a session row with a claude_session_id (simulating previous app run)
+        sqlx::query(
+            "INSERT INTO agent_sessions (feature_id, agent_type, status, claude_session_id) VALUES (1, 'session', 'paused', 'cli-sess-abc')"
+        )
+        .execute(&app_state.write_pool)
+        .await
+        .unwrap();
+
+        let session_id = init_session(&tx, &mut rx, &sdk_sessions, &app_state, 1).await;
+
+        let sessions = sdk_sessions.lock().await;
+        let db_id: i64 = session_id.parse().unwrap();
+        let handle = sessions.get(&db_id).unwrap();
+
+        // Should have captured the existing claude_session_id for resume
+        assert_eq!(handle.resume_session_id, Some("cli-sess-abc".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_init_no_resume_when_claude_session_id_is_null() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+        let app_state = make_test_app_state().await;
+
+        // Pre-create a session row WITHOUT claude_session_id (e.g., after clear)
+        sqlx::query(
+            "INSERT INTO agent_sessions (feature_id, agent_type, status) VALUES (1, 'session', 'paused')"
+        )
+        .execute(&app_state.write_pool)
+        .await
+        .unwrap();
+
+        let session_id = init_session(&tx, &mut rx, &sdk_sessions, &app_state, 1).await;
+
+        let sessions = sdk_sessions.lock().await;
+        let db_id: i64 = session_id.parse().unwrap();
+        let handle = sessions.get(&db_id).unwrap();
+
+        assert!(handle.resume_session_id.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_prompt_send_without_init_returns_session_not_found() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+        let app_state = make_test_app_state().await;
+
+        let envelope = make_envelope(
+            "session",
+            "prompt.send",
+            serde_json::json!({
+                "session_id": "999",
+                "text": "hello",
+            }),
+        );
+        dispatch_envelope(envelope, &tx, &sdk_sessions, &app_state).await;
+
+        let msg = rx.recv().await.unwrap();
+        if let Message::Text(text) = msg {
+            let env: WsEnvelope = serde_json::from_str(&text).unwrap();
+            assert_eq!(env.action, "error");
+            let payload: SessionErrorPayload =
+                serde_json::from_value(env.payload).unwrap();
+            assert_eq!(payload.code, "SESSION_NOT_FOUND");
+        } else {
+            panic!("expected text message");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_init_missing_feature_id_returns_error() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+        let app_state = make_test_app_state().await;
+
+        let envelope = make_envelope(
+            "session",
+            "init",
+            serde_json::json!({ "cwd": "/tmp/test" }),
+        );
+        dispatch_envelope(envelope, &tx, &sdk_sessions, &app_state).await;
+
+        let msg = rx.recv().await.unwrap();
+        if let Message::Text(text) = msg {
+            let env: WsEnvelope = serde_json::from_str(&text).unwrap();
+            assert_eq!(env.action, "error");
+            let payload: SessionErrorPayload =
+                serde_json::from_value(env.payload).unwrap();
+            assert_eq!(payload.code, "MISSING_FEATURE_ID");
+        } else {
+            panic!("expected text message");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_init_missing_cwd_returns_error() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+        let app_state = make_test_app_state().await;
+
+        let envelope = make_envelope(
+            "session",
+            "init",
+            serde_json::json!({ "feature_id": 1 }),
+        );
+        dispatch_envelope(envelope, &tx, &sdk_sessions, &app_state).await;
+
+        let msg = rx.recv().await.unwrap();
+        if let Message::Text(text) = msg {
+            let env: WsEnvelope = serde_json::from_str(&text).unwrap();
+            assert_eq!(env.action, "error");
+            let payload: SessionErrorPayload =
+                serde_json::from_value(env.payload).unwrap();
+            assert_eq!(payload.code, "MISSING_CWD");
+        } else {
+            panic!("expected text message");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_init_reuses_existing_session_row() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+        let app_state = make_test_app_state().await;
+
+        // First init creates the row
+        let session_id_1 = init_session(&tx, &mut rx, &sdk_sessions, &app_state, 1).await;
+        // Second init for same feature reuses the row
+        let session_id_2 = init_session(&tx, &mut rx, &sdk_sessions, &app_state, 1).await;
+
+        assert_eq!(session_id_1, session_id_2);
+    }
+
+    #[tokio::test]
+    async fn test_different_features_get_different_sessions() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+        let app_state = make_test_app_state().await;
+
+        let session_id_1 = init_session(&tx, &mut rx, &sdk_sessions, &app_state, 1).await;
+        let session_id_2 = init_session(&tx, &mut rx, &sdk_sessions, &app_state, 2).await;
+
+        assert_ne!(session_id_1, session_id_2);
+    }
+
+    #[tokio::test]
+    async fn test_prompt_send_with_invalid_session_id_returns_error() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+        let app_state = make_test_app_state().await;
+
+        let envelope = make_envelope(
+            "session",
+            "prompt.send",
+            serde_json::json!({
+                "session_id": "not-a-number",
+                "text": "hello",
+            }),
+        );
+        dispatch_envelope(envelope, &tx, &sdk_sessions, &app_state).await;
+
+        let msg = rx.recv().await.unwrap();
+        if let Message::Text(text) = msg {
+            let env: WsEnvelope = serde_json::from_str(&text).unwrap();
+            assert_eq!(env.action, "error");
+            let payload: SessionErrorPayload =
+                serde_json::from_value(env.payload).unwrap();
+            assert_eq!(payload.code, "INVALID_SESSION_ID");
+        } else {
+            panic!("expected text message");
+        }
     }
 }
