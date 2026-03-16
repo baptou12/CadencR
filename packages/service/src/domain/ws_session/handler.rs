@@ -1053,6 +1053,29 @@ fn spawn_stream_reader(
                     // Persist before forwarding (best-effort)
                     persistence.persist_sdk_message(&sdk_msg).await;
 
+                    // Extract and broadcast token usage (mirrors legacy SdkQueryRunner behavior)
+                    if let Some(usage) = sdk_msg.usage() {
+                        let total_input = usage.input_tokens
+                            + usage.cache_creation_input_tokens.unwrap_or(0)
+                            + usage.cache_read_input_tokens.unwrap_or(0);
+                        let total_output = usage.output_tokens;
+
+                        // Persist to DB (best-effort)
+                        WsSessionPersistence::update_token_usage(&write_pool, db_session_id, total_input, total_output).await;
+
+                        // Broadcast to frontend
+                        let usage_env = WsEnvelope::new(
+                            "session",
+                            "usage_update",
+                            serde_json::to_value(SessionUsageUpdatePayload {
+                                input_tokens: total_input,
+                                output_tokens: total_output,
+                                context_window: 200_000,
+                            }).unwrap(),
+                        );
+                        let _ = sender.send(Message::Text(String::from(usage_env).into()));
+                    }
+
                     let envelope = match &sdk_msg {
                         SdkMessage::Result { .. } => {
                             // Mark session completed

@@ -120,6 +120,13 @@ pub struct ModeSetPayload {
 // --- Server → Client payloads ---
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionUsageUpdatePayload {
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub context_window: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionInitializedPayload {
     pub session_id: String,
 }
