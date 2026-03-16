@@ -274,6 +274,8 @@ export interface AgentSessionProps {
   maximized?: boolean;
   /** Called when user clicks maximize/minimize */
   onToggleMaximize?: () => void;
+  /** Claude Code session ID to display above the prompt bar */
+  claudeSessionId?: string;
 }
 
 /** Handle exposed by AgentSession via forwardRef */
@@ -344,6 +346,7 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
   onMarkDone,
   maximized,
   onToggleMaximize,
+  claudeSessionId,
 }, ref) {
   const promptBarRef = useRef<AgentPromptBarHandle>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -658,6 +661,13 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
 
           {/* Meta toolbar: diff + todos + model */}
           {metaBar}
+
+          {/* Session ID label */}
+          {claudeSessionId && (
+            <div className="flex justify-end px-3 pb-0.5">
+              <span className="select-all font-mono text-[10px] text-muted-foreground/50">{claudeSessionId}</span>
+            </div>
+          )}
 
           {/* Prompt bar */}
           {promptBar}

@@ -454,7 +454,7 @@ async fn handle_init(
         spawned_model: None,
         desired_permission_mode,
         spawned_permission_mode: None,
-        resume_session_id,
+        resume_session_id: resume_session_id.clone(),
         config,
         session_cache,
         allowed_patterns,
@@ -476,6 +476,11 @@ async fn handle_init(
         .unwrap(),
     );
     let _ = sender.send(Message::Text(String::from(reply).into()));
+
+    // If resuming, immediately send the known claude_session_id so the frontend can display it
+    if let Some(ref cli_sid) = resume_session_id {
+        send_claude_session_id(sender, cli_sid);
+    }
 }
 
 /// Parse a session_id string from client payload into i64 DB key.
@@ -1088,6 +1093,8 @@ fn spawn_stream_reader(
                                 WsSessionPersistence::persist_claude_session_id_static(
                                     &write_pool, db_session_id, cli_sid,
                                 ).await;
+                                // Notify frontend of the Claude Code session ID
+                                send_claude_session_id(&sender, cli_sid);
                             }
                         }
                     }
@@ -1189,6 +1196,16 @@ fn spawn_stream_reader(
 }
 
 /// Send an error envelope back to the client.
+/// Notify the frontend of the Claude Code CLI session ID (UUID used for --resume).
+fn send_claude_session_id(sender: &WsSender, cli_sid: &str) {
+    let envelope = WsEnvelope::new(
+        "session",
+        "claude_session_id",
+        serde_json::json!({ "claude_session_id": cli_sid }),
+    );
+    let _ = sender.send(Message::Text(String::from(envelope).into()));
+}
+
 fn send_error(sender: &WsSender, ref_id: &str, code: &str, message: &str) {
     let err = WsEnvelope::reply(
         ref_id,
@@ -1597,6 +1614,82 @@ mod tests {
         .unwrap();
 
         assert_eq!(count, 0);
+    }
+
+    #[tokio::test]
+    async fn test_init_resume_sends_claude_session_id_message() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+        let app_state = make_test_app_state().await;
+
+        // Pre-create a session row with a claude_session_id (simulating previous run)
+        sqlx::query(
+            "INSERT INTO agent_sessions (feature_id, agent_type, status, claude_session_id) VALUES (1, 'session', 'paused', 'resume-uuid-123')"
+        )
+        .execute(&app_state.write_pool)
+        .await
+        .unwrap();
+
+        let envelope = make_envelope(
+            "session",
+            "init",
+            serde_json::json!({
+                "cwd": "/tmp/test",
+                "feature_id": 1,
+            }),
+        );
+        dispatch_envelope(envelope, &tx, &sdk_sessions, &app_state).await;
+
+        // First message should be "initialized"
+        let msg1 = rx.recv().await.unwrap();
+        if let Message::Text(text) = msg1 {
+            let env: WsEnvelope = serde_json::from_str(&text).unwrap();
+            assert_eq!(env.action, "initialized");
+        } else {
+            panic!("expected text message for initialized");
+        }
+
+        // Second message should be "claude_session_id"
+        let msg2 = rx.recv().await.unwrap();
+        if let Message::Text(text) = msg2 {
+            let env: WsEnvelope = serde_json::from_str(&text).unwrap();
+            assert_eq!(env.domain, "session");
+            assert_eq!(env.action, "claude_session_id");
+            let sid = env.payload.get("claude_session_id").unwrap().as_str().unwrap();
+            assert_eq!(sid, "resume-uuid-123");
+        } else {
+            panic!("expected text message for claude_session_id");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_init_no_resume_does_not_send_claude_session_id_message() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+        let app_state = make_test_app_state().await;
+
+        // No pre-existing session — brand new feature
+        let envelope = make_envelope(
+            "session",
+            "init",
+            serde_json::json!({
+                "cwd": "/tmp/test",
+                "feature_id": 1,
+            }),
+        );
+        dispatch_envelope(envelope, &tx, &sdk_sessions, &app_state).await;
+
+        // First message should be "initialized"
+        let msg1 = rx.recv().await.unwrap();
+        if let Message::Text(text) = msg1 {
+            let env: WsEnvelope = serde_json::from_str(&text).unwrap();
+            assert_eq!(env.action, "initialized");
+        } else {
+            panic!("expected text message for initialized");
+        }
+
+        // No further messages should be in the channel
+        assert!(rx.try_recv().is_err(), "expected no claude_session_id message for new session");
     }
 
     #[tokio::test]

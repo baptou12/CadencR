@@ -72,6 +72,7 @@ function WebSocketSessionPage() {
           contextUsage={ws.contextUsage}
           currentModelId={ws.currentModelId}
           onModelChange={ws.setModel}
+          claudeSessionId={ws.claudeSessionId || undefined}
           className="h-full"
         />
       </div>

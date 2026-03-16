@@ -155,6 +155,60 @@ describe("ws-session-store", () => {
     expect(session.persistedLoaded).toBe(true);
   });
 
+  it("claude_session_id action sets claudeSessionId on the session", async () => {
+    const store = useWsSessionStore.getState();
+    store.connect("s1");
+    await tick();
+    const ws = getWs();
+    ws.simulateMessage({
+      domain: "session",
+      action: "initialized",
+      payload: { session_id: "srv-1" },
+    });
+
+    ws.simulateMessage({
+      domain: "session",
+      action: "claude_session_id",
+      payload: { claude_session_id: "uuid-abc-123" },
+    });
+
+    const session = useWsSessionStore.getState().sessions["s1"];
+    expect(session.claudeSessionId).toBe("uuid-abc-123");
+  });
+
+  it("claude_session_id dedup guard skips update when value unchanged", async () => {
+    const store = useWsSessionStore.getState();
+    store.connect("s1");
+    await tick();
+    const ws = getWs();
+    ws.simulateMessage({
+      domain: "session",
+      action: "initialized",
+      payload: { session_id: "srv-1" },
+    });
+
+    ws.simulateMessage({
+      domain: "session",
+      action: "claude_session_id",
+      payload: { claude_session_id: "uuid-abc-123" },
+    });
+
+    // Capture sessions reference after first set
+    const sessionsAfterFirst = useWsSessionStore.getState().sessions;
+
+    // Send the same value again
+    ws.simulateMessage({
+      domain: "session",
+      action: "claude_session_id",
+      payload: { claude_session_id: "uuid-abc-123" },
+    });
+
+    // Sessions object should be the same reference (no update triggered)
+    const sessionsAfterSecond = useWsSessionStore.getState().sessions;
+    expect(sessionsAfterSecond).toBe(sessionsAfterFirst);
+    expect(sessionsAfterSecond["s1"].claudeSessionId).toBe("uuid-abc-123");
+  });
+
   it("handles concurrent sessions independently", async () => {
     const store = useWsSessionStore.getState();
     store.connect("a");

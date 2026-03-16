@@ -312,6 +312,8 @@ export interface SessionEntry {
   currentModelId: string;
   persistedLoaded: boolean;
   contextUsage: ContextUsageState | null;
+  /** Claude Code CLI session ID (UUID) for --resume */
+  claudeSessionId: string;
 }
 
 function createSessionEntry(): SessionEntry {
@@ -319,6 +321,7 @@ function createSessionEntry(): SessionEntry {
     ws: null,
     isConnected: false,
     serverSessionId: "",
+    claudeSessionId: "",
     streamingState: createStreamingState(),
     blocks: [],
     status: "idle",
@@ -509,6 +512,16 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
           serverSessionId: initPayload.session_id ?? "",
           status: "idle",
         }));
+        break;
+      }
+
+      case "claude_session_id": {
+        const payload = envelope.payload as { claude_session_id?: string };
+        if (payload.claude_session_id && payload.claude_session_id !== getSession(sessionId).claudeSessionId) {
+          set(updateSession(get(), sessionId, {
+            claudeSessionId: payload.claude_session_id,
+          }));
+        }
         break;
       }
 

@@ -40,6 +40,7 @@ export interface UseWebSocketSessionReturn {
 
   contextUsage: ContextUsageState | null;
   currentModelId: string;
+  claudeSessionId: string;
   setModel: (modelId: string) => void;
   sendPrompt: (text: string) => void;
   respondToPermission: (requestId: string, granted: boolean) => void;
@@ -120,6 +121,7 @@ export function useWebSocketSession(sessionId: string, featureId?: number): UseW
     pendingPlanApproval: session?.pendingPlanApproval ?? null,
     contextUsage: session?.contextUsage ?? null,
     currentModelId: session?.currentModelId ?? "claude-sonnet-4-6",
+    claudeSessionId: session?.claudeSessionId ?? "",
 
     sendPrompt: (text: string) => store.sendPrompt(sessionId, text),
     respondToPermission: (requestId: string, granted: boolean) => store.respondToPermission(sessionId, requestId, granted),
