@@ -79,6 +79,8 @@ function WebSocketSessionPage() {
       <div className="relative min-h-0 flex-1 overflow-hidden">
         <AgentSession
           agentType="session"
+          featureId={featureId}
+          projectId={projectId}
           blocks={ws.blocks}
           status={ws.status}
           onSend={ws.sendPrompt}
