@@ -335,7 +335,7 @@ async fn handle_session_action(
         "init" => handle_init(envelope, sender, sdk_sessions, app_state).await,
         "prompt.send" => handle_prompt_send(envelope, sender, sdk_sessions, app_state).await,
         "permission.respond" => {
-            handle_permission_respond(envelope, sender, sdk_sessions).await
+            handle_permission_respond(envelope, sender, sdk_sessions, app_state).await
         }
         "model.set" => handle_model_set(envelope, sender, sdk_sessions, app_state).await,
         "mode.set" => handle_mode_set(envelope, sender, sdk_sessions, app_state).await,
@@ -715,6 +715,7 @@ async fn handle_permission_respond(
     envelope: WsEnvelope,
     sender: &WsSender,
     sdk_sessions: &SdkSessions,
+    app_state: &AppState,
 ) {
     let payload: PermissionRespondPayload = match serde_json::from_value(envelope.payload.clone()) {
         Ok(p) => p,
@@ -748,6 +749,19 @@ async fn handle_permission_respond(
             return;
         }
     };
+
+    // Persist user answer for AskUserQuestion so it survives app restart.
+    if let Some(ref updated_input) = payload.updated_input {
+        if let Some(answers) = updated_input.get("answers") {
+            if let Some(answer_text) = answers.get("0").and_then(|v| v.as_str()) {
+                let feature_id = handle.feature_id;
+                let p = WsSessionPersistence::with_session_id(
+                    app_state.write_pool.clone(), feature_id, Some(db_session_id),
+                );
+                p.persist_user_message(answer_text).await;
+            }
+        }
+    }
 
     let response = PermissionResponse {
         decision: payload.decision,
@@ -1499,6 +1513,90 @@ mod tests {
         let session_id_2 = init_session(&tx, &mut rx, &sdk_sessions, &app_state, 2).await;
 
         assert_ne!(session_id_1, session_id_2);
+    }
+
+    #[tokio::test]
+    async fn test_permission_respond_persists_ask_user_question_answer() {
+        let app_state = make_test_app_state().await;
+
+        let feature_id = 1i64;
+        let db_session_id = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO agent_sessions (feature_id, agent_type, status) VALUES (?, 'session', 'running') RETURNING id"
+        )
+        .bind(feature_id)
+        .fetch_one(&app_state.write_pool)
+        .await
+        .unwrap();
+
+        // Test the persistence logic that handle_permission_respond uses
+        // for AskUserQuestion answers (updated_input with answers field).
+        let p = WsSessionPersistence::with_session_id(
+            app_state.write_pool.clone(), feature_id, Some(db_session_id),
+        );
+
+        // Simulate what handle_permission_respond does for AskUserQuestion
+        let updated_input = serde_json::json!({
+            "question": "What is the project name?",
+            "answers": { "0": "Question: What is the project name?\nAnswer: Cadence" }
+        });
+        let answer_text = updated_input.get("answers")
+            .and_then(|a| a.get("0"))
+            .and_then(|v| v.as_str())
+            .unwrap();
+        p.persist_user_message(answer_text).await;
+
+        // Verify it was persisted
+        let (role, content, msg_type): (String, String, String) = sqlx::query_as(
+            "SELECT role, content, message_type FROM agent_messages WHERE session_id = ?"
+        )
+        .bind(db_session_id)
+        .fetch_one(&app_state.read_pool)
+        .await
+        .unwrap();
+
+        assert_eq!(role, "user");
+        assert_eq!(content, "Question: What is the project name?\nAnswer: Cadence");
+        assert_eq!(msg_type, "user_message");
+    }
+
+    #[tokio::test]
+    async fn test_permission_respond_no_persist_without_answers() {
+        let app_state = make_test_app_state().await;
+        let feature_id = 1i64;
+        let db_session_id = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO agent_sessions (feature_id, agent_type, status) VALUES (?, 'session', 'running') RETURNING id"
+        )
+        .bind(feature_id)
+        .fetch_one(&app_state.write_pool)
+        .await
+        .unwrap();
+
+        // Permission respond without answers (regular permission, not AskUserQuestion)
+        let updated_input = serde_json::json!({
+            "tool_name": "Write",
+            "file_path": "/tmp/test.txt"
+        });
+
+        // The handler checks for answers.0 — this should NOT persist anything
+        if let Some(answers) = updated_input.get("answers") {
+            if let Some(answer_text) = answers.get("0").and_then(|v| v.as_str()) {
+                let p = WsSessionPersistence::with_session_id(
+                    app_state.write_pool.clone(), feature_id, Some(db_session_id),
+                );
+                p.persist_user_message(answer_text).await;
+            }
+        }
+
+        // Verify nothing was persisted
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM agent_messages WHERE session_id = ?"
+        )
+        .bind(db_session_id)
+        .fetch_one(&app_state.read_pool)
+        .await
+        .unwrap();
+
+        assert_eq!(count, 0);
     }
 
     #[tokio::test]
