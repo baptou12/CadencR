@@ -315,6 +315,7 @@ export interface SessionEntry {
   contextUsage: ContextUsageState | null;
   /** Claude Code CLI session ID (UUID) for --resume */
   claudeSessionId: string;
+  hasFileChanges: boolean;
 }
 
 function createSessionEntry(): SessionEntry {
@@ -335,6 +336,7 @@ function createSessionEntry(): SessionEntry {
     currentModelId: DEFAULT_MODEL,
     persistedLoaded: false,
     contextUsage: null,
+    hasFileChanges: false,
   };
 }
 
@@ -540,7 +542,13 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
         if (allMutations.length > 0) {
           const currentSession = getSession(sessionId);
           const newBlocks = applyMutations(currentSession.blocks, allMutations, state);
-          set(updateSession(get(), sessionId, { blocks: newBlocks, status: "running" }));
+          const FILE_CHANGE_TOOLS = new Set(["Write", "Edit", "NotebookEdit"]);
+          const hasNewFileChange = allMutations.some(
+            (m) => m.action === "append" && m.block.type === "tool_call" && m.block.toolName && FILE_CHANGE_TOOLS.has(m.block.toolName),
+          );
+          const patch: Partial<SessionEntry> = { blocks: newBlocks, status: "running" };
+          if (hasNewFileChange) patch.hasFileChanges = true;
+          set(updateSession(get(), sessionId, patch));
         } else {
           set(updateSession(get(), sessionId, { status: "running" }));
         }
@@ -620,6 +628,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
           pendingRequestId: "",
           pendingQuestions: [],
           pendingPlanApproval: null,
+          hasFileChanges: false,
         }));
         break;
       }

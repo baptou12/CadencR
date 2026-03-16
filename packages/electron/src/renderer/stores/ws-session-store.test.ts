@@ -235,6 +235,121 @@ describe("ws-session-store", () => {
     expect(session.currentModelId).toBe(DEFAULT_MODEL);
   });
 
+  it("sets hasFileChanges when Write tool_call block is received", async () => {
+    const store = useWsSessionStore.getState();
+    store.connect("s1");
+    await tick();
+    const ws = getWs();
+    ws.simulateMessage({ domain: "session", action: "initialized", payload: { session_id: "srv-1" } });
+
+    expect(useWsSessionStore.getState().sessions["s1"].hasFileChanges).toBe(false);
+
+    // Simulate an assistant message with a Write tool_use block
+    ws.simulateMessage({
+      domain: "session",
+      action: "message",
+      payload: {
+        blocks: [
+          {
+            type: "assistant",
+            message: {
+              content: [
+                { type: "tool_use", id: "tu-1", name: "Write", input: { file_path: "/tmp/test.ts", content: "hello" } },
+              ],
+            },
+          },
+        ],
+      },
+    });
+
+    expect(useWsSessionStore.getState().sessions["s1"].hasFileChanges).toBe(true);
+  });
+
+  it("sets hasFileChanges for Edit and NotebookEdit tools", async () => {
+    const store = useWsSessionStore.getState();
+    store.connect("s1");
+    await tick();
+    const ws = getWs();
+    ws.simulateMessage({ domain: "session", action: "initialized", payload: { session_id: "srv-1" } });
+
+    ws.simulateMessage({
+      domain: "session",
+      action: "message",
+      payload: {
+        blocks: [
+          {
+            type: "assistant",
+            message: {
+              content: [
+                { type: "tool_use", id: "tu-2", name: "Edit", input: { file_path: "/tmp/test.ts" } },
+              ],
+            },
+          },
+        ],
+      },
+    });
+
+    expect(useWsSessionStore.getState().sessions["s1"].hasFileChanges).toBe(true);
+  });
+
+  it("does not set hasFileChanges for non-file-changing tools", async () => {
+    const store = useWsSessionStore.getState();
+    store.connect("s1");
+    await tick();
+    const ws = getWs();
+    ws.simulateMessage({ domain: "session", action: "initialized", payload: { session_id: "srv-1" } });
+
+    ws.simulateMessage({
+      domain: "session",
+      action: "message",
+      payload: {
+        blocks: [
+          {
+            type: "assistant",
+            message: {
+              content: [
+                { type: "tool_use", id: "tu-3", name: "Read", input: { file_path: "/tmp/test.ts" } },
+              ],
+            },
+          },
+        ],
+      },
+    });
+
+    expect(useWsSessionStore.getState().sessions["s1"].hasFileChanges).toBe(false);
+  });
+
+  it("resets hasFileChanges on cleared action", async () => {
+    const store = useWsSessionStore.getState();
+    store.connect("s1");
+    await tick();
+    const ws = getWs();
+    ws.simulateMessage({ domain: "session", action: "initialized", payload: { session_id: "srv-1" } });
+
+    // Set hasFileChanges via a Write tool
+    ws.simulateMessage({
+      domain: "session",
+      action: "message",
+      payload: {
+        blocks: [
+          {
+            type: "assistant",
+            message: {
+              content: [
+                { type: "tool_use", id: "tu-4", name: "Write", input: { file_path: "/tmp/test.ts", content: "x" } },
+              ],
+            },
+          },
+        ],
+      },
+    });
+    expect(useWsSessionStore.getState().sessions["s1"].hasFileChanges).toBe(true);
+
+    // Clear session
+    ws.simulateMessage({ domain: "session", action: "cleared", payload: {} });
+    expect(useWsSessionStore.getState().sessions["s1"].hasFileChanges).toBe(false);
+  });
+
   it("handles concurrent sessions independently", async () => {
     const store = useWsSessionStore.getState();
     store.connect("a");

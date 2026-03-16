@@ -1,6 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useHotkeys } from "react-hotkeys-hook";
 import { AgentSession } from "@/components/AgentSession";
+import { DiffViewerModal } from "@/components/diff/DiffViewerModal";
 import { FeatureTopBar } from "@/components/FeatureTopBar";
 import { useWebSocketSession } from "@/hooks/useWebSocketSession";
 import { useResolvedModel } from "@/hooks/useResolvedModel";
@@ -39,6 +41,17 @@ function WebSocketSessionPage() {
   const { resolveModel } = useResolvedModel(featureId, projectId);
   const resolvedModelId = resolveModel("session");
 
+  const [inlineDiffOpen, setInlineDiffOpen] = useState(false);
+  const handleViewDiff = useCallback(() => setInlineDiffOpen(true), []);
+  useHotkeys(
+    "meta+d",
+    (e) => {
+      e.preventDefault();
+      setInlineDiffOpen(true);
+    },
+    { enableOnFormTags: true },
+  );
+
   // Auto-init session once connected — only once per sessionId
   const { isConnected, initSession } = ws;
   useEffect(() => {
@@ -75,10 +88,18 @@ function WebSocketSessionPage() {
           contextUsage={ws.contextUsage}
           currentModelId={ws.currentModelId}
           onModelChange={ws.setModel}
+          hasFileChanges={ws.hasFileChanges}
+          onViewDiff={handleViewDiff}
           claudeSessionId={ws.claudeSessionId || undefined}
           className="h-full"
         />
       </div>
+      <DiffViewerModal
+        featureId={featureId}
+        open={inlineDiffOpen}
+        onOpenChange={setInlineDiffOpen}
+        hideFooter
+      />
     </div>
   );
 }

@@ -42,6 +42,7 @@ export interface UseWebSocketSessionReturn {
   contextUsage: ContextUsageState | null;
   currentModelId: string;
   claudeSessionId: string;
+  hasFileChanges: boolean;
   setModel: (modelId: string) => void;
   sendPrompt: (text: string) => void;
   respondToPermission: (requestId: string, granted: boolean) => void;
@@ -123,6 +124,7 @@ export function useWebSocketSession(sessionId: string, featureId?: number): UseW
     contextUsage: session?.contextUsage ?? null,
     currentModelId: session?.currentModelId ?? DEFAULT_MODEL,
     claudeSessionId: session?.claudeSessionId ?? "",
+    hasFileChanges: session?.hasFileChanges ?? false,
 
     sendPrompt: (text: string) => store.sendPrompt(sessionId, text),
     respondToPermission: (requestId: string, granted: boolean) => store.respondToPermission(sessionId, requestId, granted),
