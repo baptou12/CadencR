@@ -105,6 +105,7 @@ function WebSocketSessionPage() {
           claudeSessionId={ws.claudeSessionId || undefined}
           slashCommandsOverride={slashCommands}
           slashCommandsLoading={slashCommandsLoading}
+          todos={session?.todos ?? null}
           className="h-full"
         />
       </div>

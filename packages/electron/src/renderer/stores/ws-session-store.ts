@@ -9,7 +9,7 @@
 import { create } from "zustand";
 import { DEFAULT_MODEL } from "../../shared/models";
 import type { AgentBlockData } from "@/components/AgentBlock";
-import type { AgentStatus } from "@/types/agent";
+import type { AgentStatus, TodoItem } from "@/types/agent";
 import type { ContextUsageState } from "@/hooks/useContextUsage";
 import type { PendingPermission } from "@/components/ToolPermissionPrompt";
 import type { AgentQuestion } from "@/components/AgentQuestionDrawer";
@@ -321,6 +321,7 @@ export interface SessionEntry {
   hasFileChanges: boolean;
   slashCommands: SlashCommand[];
   slashCommandsLoading: boolean;
+  todos: TodoItem[];
 }
 
 function createSessionEntry(): SessionEntry {
@@ -344,6 +345,7 @@ function createSessionEntry(): SessionEntry {
     hasFileChanges: false,
     slashCommands: [],
     slashCommandsLoading: false,
+    todos: [],
   };
 }
 
@@ -572,8 +574,49 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
           const hasNewFileChange = allMutations.some(
             (m) => m.action === "append" && m.block.type === "tool_call" && m.block.toolName && FILE_CHANGE_TOOLS.has(m.block.toolName),
           );
+          // Extract todos from any TodoWrite tool_call blocks
+          // Mutations may lack toolName (e.g. replace/update deltas), so also check
+          // the merged block in newBlocks to find TodoWrite blocks affected by mutations.
+          const mutatedIds = new Set(allMutations.map((m) => m.block.id));
+          const findTodoBlock = (): AgentBlockData | undefined => {
+            // Check top-level blocks
+            const top = newBlocks.find(
+              (b) => b.type === "tool_call" && b.toolName === "TodoWrite" && mutatedIds.has(b.id),
+            );
+            if (top) return top;
+            // Check child blocks (subagent context)
+            for (const b of newBlocks) {
+              if (!b.childBlocks) continue;
+              const child = b.childBlocks.find(
+                (c) => c.type === "tool_call" && c.toolName === "TodoWrite" && mutatedIds.has(c.id),
+              );
+              if (child) return child;
+            }
+            // Fallback: check mutations directly (for non-streamed append with toolName)
+            return allMutations.find(
+              (m) => m.block.type === "tool_call" && m.block.toolName === "TodoWrite",
+            )?.block;
+          };
+          const todoBlock = findTodoBlock();
           const patch: Partial<SessionEntry> = { blocks: newBlocks, status: "running" };
           if (hasNewFileChange) patch.hasFileChanges = true;
+          if (todoBlock) {
+            const argsStr = todoBlock.toolArgs || todoBlock.content;
+            if (argsStr) {
+              try {
+                const parsed = JSON.parse(argsStr);
+                if (Array.isArray(parsed?.todos)) {
+                  patch.todos = parsed.todos.map((t: Record<string, unknown>) => ({
+                    content: String(t.content ?? ""),
+                    status: t.status as TodoItem["status"],
+                    activeForm: String(t.activeForm ?? ""),
+                  }));
+                }
+              } catch {
+                // Incomplete JSON during streaming — ignore
+              }
+            }
+          }
           set(updateSession(get(), sessionId, patch));
         } else {
           set(updateSession(get(), sessionId, { status: "running" }));
@@ -935,7 +978,31 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
     },
 
     setPersistedState(sessionId: string, blocks: AgentBlockData[], status: AgentStatus) {
-      set(updateSession(get(), sessionId, { blocks, status, persistedLoaded: true }));
+      // Extract todos from restored blocks (last TodoWrite wins)
+      const allBlocks = blocks.flatMap((b) => b.childBlocks ? [b, ...b.childBlocks] : [b]);
+      let todos: TodoItem[] | undefined;
+      for (let i = allBlocks.length - 1; i >= 0; i--) {
+        const b = allBlocks[i];
+        if (b.type === "tool_call" && b.toolName === "TodoWrite") {
+          const argsStr = b.toolArgs || b.content;
+          if (argsStr) {
+            try {
+              const parsed = JSON.parse(argsStr);
+              if (Array.isArray(parsed?.todos)) {
+                todos = parsed.todos.map((t: Record<string, unknown>) => ({
+                  content: String(t.content ?? ""),
+                  status: t.status as TodoItem["status"],
+                  activeForm: String(t.activeForm ?? ""),
+                }));
+              }
+            } catch {
+              // Malformed JSON — skip
+            }
+          }
+          break;
+        }
+      }
+      set(updateSession(get(), sessionId, { blocks, status, persistedLoaded: true, ...(todos ? { todos } : {}) }));
     },
   };
 });
