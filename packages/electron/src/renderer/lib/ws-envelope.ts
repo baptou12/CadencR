@@ -86,3 +86,11 @@ export function createDestroy(sessionId: string): WsEnvelope {
 export function createSessionClear(sessionId: string): WsEnvelope {
   return createEnvelope("session", "clear", { session_id: sessionId });
 }
+
+export function createCommandsGet(cwd: string): WsEnvelope {
+  return createEnvelope("commands", "get", { cwd });
+}
+
+export interface CommandsListPayload {
+  commands: Array<{ name: string; description?: string }>;
+}
