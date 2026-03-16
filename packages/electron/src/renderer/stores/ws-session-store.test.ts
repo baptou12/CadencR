@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { DEFAULT_MODEL } from "../../shared/models";
 import { useWsSessionStore } from "./ws-session-store";
 
 // --- Mock WebSocket ---
@@ -207,6 +208,31 @@ describe("ws-session-store", () => {
     const sessionsAfterSecond = useWsSessionStore.getState().sessions;
     expect(sessionsAfterSecond).toBe(sessionsAfterFirst);
     expect(sessionsAfterSecond["s1"].claudeSessionId).toBe("uuid-abc-123");
+  });
+
+  it("new session defaults currentModelId to DEFAULT_MODEL", async () => {
+    useWsSessionStore.getState().connect("s1");
+    await tick();
+    const session = useWsSessionStore.getState().sessions["s1"];
+    expect(session.currentModelId).toBe(DEFAULT_MODEL);
+  });
+
+  it("initSession with model updates currentModelId in store", async () => {
+    const store = useWsSessionStore.getState();
+    store.connect("s1");
+    await tick();
+    store.initSession("s1", { model: "claude-haiku-4-5-20251001" });
+    const session = useWsSessionStore.getState().sessions["s1"];
+    expect(session.currentModelId).toBe("claude-haiku-4-5-20251001");
+  });
+
+  it("initSession without model keeps DEFAULT_MODEL", async () => {
+    const store = useWsSessionStore.getState();
+    store.connect("s1");
+    await tick();
+    store.initSession("s1", { cwd: "/tmp" });
+    const session = useWsSessionStore.getState().sessions["s1"];
+    expect(session.currentModelId).toBe(DEFAULT_MODEL);
   });
 
   it("handles concurrent sessions independently", async () => {

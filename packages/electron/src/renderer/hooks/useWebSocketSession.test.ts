@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
+import { DEFAULT_MODEL } from "../../shared/models";
 
 vi.mock("@/api/generated", () => ({
   useGetFeatureAgentState: vi.fn(() => ({ data: undefined, isLoading: false })),
@@ -87,6 +88,14 @@ describe("useWebSocketSession", () => {
     });
     expect(MockWebSocket.instances.length).toBe(1);
     expect(result.current.isConnected).toBe(true);
+  });
+
+  it("currentModelId defaults to DEFAULT_MODEL", async () => {
+    const { result } = renderHook(() => useWebSocketSession("test-id"));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    expect(result.current.currentModelId).toBe(DEFAULT_MODEL);
   });
 
   it("initSession sends correct envelope", async () => {

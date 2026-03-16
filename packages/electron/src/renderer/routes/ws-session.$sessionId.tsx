@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 import { AgentSession } from "@/components/AgentSession";
 import { FeatureTopBar } from "@/components/FeatureTopBar";
 import { useWebSocketSession } from "@/hooks/useWebSocketSession";
+import { useResolvedModel } from "@/hooks/useResolvedModel";
 import { useWsSessionStore } from "@/stores/ws-session-store";
 
 interface WsSessionSearch {
@@ -35,15 +36,17 @@ function WebSocketSessionPage() {
   const ws = useWebSocketSession(sessionId, featureId);
   const session = useWsSessionStore((s) => s.sessions[sessionId]);
   const initializedRef = useRef<string | null>(null);
+  const { resolveModel } = useResolvedModel(featureId, projectId);
+  const resolvedModelId = resolveModel("session");
 
   // Auto-init session once connected — only once per sessionId
   const { isConnected, initSession } = ws;
   useEffect(() => {
     if (isConnected && initializedRef.current !== sessionId && session?.serverSessionId === "") {
       initializedRef.current = sessionId;
-      initSession({ cwd, featureId });
+      initSession({ cwd, featureId, model: resolvedModelId });
     }
-  }, [isConnected, initSession, cwd, featureId, sessionId, session?.serverSessionId]);
+  }, [isConnected, initSession, cwd, featureId, sessionId, session?.serverSessionId, resolvedModelId]);
 
   return (
     <div className="flex h-full flex-col">

@@ -6,6 +6,7 @@
  */
 
 import { useEffect } from "react";
+import { DEFAULT_MODEL } from "../../shared/models";
 import type { AgentBlockData } from "@/components/AgentBlock";
 import type { AgentBlock } from "@/api/generated";
 import { useGetFeatureAgentState } from "@/api/generated";
@@ -120,7 +121,7 @@ export function useWebSocketSession(sessionId: string, featureId?: number): UseW
     permissionMode: session?.permissionMode ?? "acceptEdits",
     pendingPlanApproval: session?.pendingPlanApproval ?? null,
     contextUsage: session?.contextUsage ?? null,
-    currentModelId: session?.currentModelId ?? "claude-sonnet-4-6",
+    currentModelId: session?.currentModelId ?? DEFAULT_MODEL,
     claudeSessionId: session?.claudeSessionId ?? "",
 
     sendPrompt: (text: string) => store.sendPrompt(sessionId, text),

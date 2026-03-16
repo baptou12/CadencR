@@ -7,6 +7,7 @@
  */
 
 import { create } from "zustand";
+import { DEFAULT_MODEL } from "../../shared/models";
 import type { AgentBlockData } from "@/components/AgentBlock";
 import type { AgentStatus } from "@/types/agent";
 import type { ContextUsageState } from "@/hooks/useContextUsage";
@@ -331,7 +332,7 @@ function createSessionEntry(): SessionEntry {
     pendingQuestionToolInput: {},
     permissionMode: "acceptEdits",
     pendingPlanApproval: null,
-    currentModelId: "claude-sonnet-4-6",
+    currentModelId: DEFAULT_MODEL,
     persistedLoaded: false,
     contextUsage: null,
   };
@@ -735,6 +736,9 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
     send: sendRaw,
 
     initSession(sessionId: string, config: SessionConfig) {
+      if (config.model) {
+        set(updateSession(get(), sessionId, { currentModelId: config.model }));
+      }
       sendRaw(sessionId, createSessionInit(config));
     },
 
