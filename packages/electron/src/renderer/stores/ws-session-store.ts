@@ -376,7 +376,7 @@ interface WsSessionStore {
   // Actions
   send: (sessionId: string, data: unknown) => void;
   initSession: (sessionId: string, config: SessionConfig) => void;
-  sendPrompt: (sessionId: string, text: string) => void;
+  sendPrompt: (sessionId: string, text: string, images?: Array<{ base64: string; mimeType: string }>) => void;
   respondToPermission: (sessionId: string, requestId: string, granted: boolean) => void;
   respondToQuestion: (sessionId: string, response: string) => void;
   interrupt: (sessionId: string) => void;
