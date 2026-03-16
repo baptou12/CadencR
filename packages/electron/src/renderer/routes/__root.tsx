@@ -79,8 +79,12 @@ function RootLayout() {
       ? Number(routerState.location.search.projectId)
       : null;
 
-  // Extract active feature ID from the current route
-  const activeFeatureId = routeParams[2] ? Number(routeParams[2]) : null;
+  // Extract active feature ID from the current route (fallback to search params for ws-session)
+  const activeFeatureId = routeParams[2]
+    ? Number(routeParams[2])
+    : routerState.location.search?.featureId
+      ? Number(routerState.location.search.featureId)
+      : null;
 
   const queryClient = useQueryClient();
 
