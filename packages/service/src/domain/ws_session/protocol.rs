@@ -260,7 +260,7 @@ mod tests {
         let _: SessionInitPayload = serde_json::from_value(v).unwrap();
 
         // PromptSendPayload
-        let p = PromptSendPayload { session_id: "s1".into(), text: "hello".into() };
+        let p = PromptSendPayload { session_id: "s1".into(), text: "hello".into(), images: vec![] };
         let v = serde_json::to_value(&p).unwrap();
         let _: PromptSendPayload = serde_json::from_value(v).unwrap();
 

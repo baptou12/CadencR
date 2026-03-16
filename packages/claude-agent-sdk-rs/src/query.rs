@@ -582,7 +582,7 @@ async fn reader_loop(
 ///
 /// # async fn example() -> Result<(), claude_agent_sdk_rs::SdkError> {
 /// let options = Options::default();
-/// let mut q = query("Hello Claude", options).await?;
+/// let mut q = query("Hello Claude".into(), options).await?;
 ///
 /// while let Some(msg) = q.next().await {
 ///     match msg {
@@ -1009,9 +1009,11 @@ echo '{"type":"result","subtype":"success","uuid":"u2","session_id":"sess_take",
         let dir = TempDir::new().unwrap();
         let script_path = dir.path().join("claude");
 
-        // Mock CLI: emit a permission request, read the response, then emit result
+        // Mock CLI: handle initialize, read user prompt, emit a permission request, read the response, then emit result
         let script = r#"#!/bin/sh
-read -r INPUT
+read -r INIT_REQ
+echo '{"type":"control_response","response":{"subtype":"success","request_id":"init_perm","response":{"pid":9999}}}'
+read -r USER_PROMPT
 echo '{"type":"system","subtype":"init","uuid":"u1","session_id":"sess_456","claude_code_version":"1.0","cwd":"/tmp","tools":[],"mcp_servers":[],"model":"claude-sonnet-4-20250514","permission_mode":"default","slash_commands":[],"output_style":"stream","skills":[],"plugins":[]}'
 echo '{"type":"control_request","request_id":"req_1_perm","request":{"subtype":"can_use_tool","tool_name":"Write","input":{"path":"/tmp/test.txt"}}}'
 read -r RESPONSE
