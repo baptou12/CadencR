@@ -36,4 +36,13 @@ impl McpContext {
             done_sender: tokio::sync::Mutex::new(Some(done_sender)),
         })
     }
+
+    /// Resolve a pending approval by request ID. Returns true if the approval was found and resolved.
+    pub fn resolve_approval(&self, request_id: &str, result: ApprovalResult) -> bool {
+        if let Some((_, sender)) = self.pending_approvals.remove(request_id) {
+            sender.send(result).is_ok()
+        } else {
+            false
+        }
+    }
 }
