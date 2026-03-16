@@ -24,8 +24,11 @@ import {
   createModelSet,
   createModeSet,
   createSessionClear,
+  createCommandsGet,
   type SessionConfig,
+  type CommandsListPayload,
 } from "@/lib/ws-envelope";
+import type { SlashCommand } from "@/hooks/useSlashCommand";
 
 export type PermissionMode = "acceptEdits" | "plan";
 
@@ -316,6 +319,8 @@ export interface SessionEntry {
   /** Claude Code CLI session ID (UUID) for --resume */
   claudeSessionId: string;
   hasFileChanges: boolean;
+  slashCommands: SlashCommand[];
+  slashCommandsLoading: boolean;
 }
 
 function createSessionEntry(): SessionEntry {
@@ -337,6 +342,8 @@ function createSessionEntry(): SessionEntry {
     persistedLoaded: false,
     contextUsage: null,
     hasFileChanges: false,
+    slashCommands: [],
+    slashCommandsLoading: false,
   };
 }
 
@@ -377,6 +384,9 @@ interface WsSessionStore {
   setPermissionMode: (sessionId: string, mode: PermissionMode) => void;
   approvePlan: (sessionId: string) => void;
   requestPlanChanges: (sessionId: string, feedback: string) => void;
+
+  // Slash commands
+  requestSlashCommands: (sessionId: string, cwd: string) => void;
 
   // Persisted state restoration
   markPersistedLoaded: (sessionId: string) => void;
@@ -663,6 +673,19 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
         break;
       }
 
+      case "commands.list": {
+        const p = envelope.payload as CommandsListPayload;
+        const cmds: SlashCommand[] = (p.commands ?? []).map((c) => ({
+          name: c.name,
+          description: c.description ?? "",
+        }));
+        set(updateSession(get(), sessionId, {
+          slashCommands: cmds,
+          slashCommandsLoading: false,
+        }));
+        break;
+      }
+
       case "ended":
       case "turn_complete": {
         if (state.parentToolUseId) {
@@ -894,6 +917,14 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
         ],
         status: "running",
       }));
+    },
+
+    requestSlashCommands(sessionId: string, cwd: string) {
+      const session = getSession(sessionId);
+      // Don't re-request if already loaded or loading
+      if (session.slashCommands.length > 0 || session.slashCommandsLoading) return;
+      set(updateSession(get(), sessionId, { slashCommandsLoading: true }));
+      sendRaw(sessionId, createCommandsGet(cwd));
     },
 
     markPersistedLoaded(sessionId: string) {

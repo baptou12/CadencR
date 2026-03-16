@@ -52,6 +52,11 @@ function WebSocketSessionPage() {
     { enableOnFormTags: true },
   );
 
+  // Slash commands from ws-session store
+  const slashCommands = session?.slashCommands ?? [];
+  const slashCommandsLoading = session?.slashCommandsLoading ?? false;
+  const requestSlashCommands = useWsSessionStore((s) => s.requestSlashCommands);
+
   // Auto-init session once connected — only once per sessionId
   const { isConnected, initSession } = ws;
   useEffect(() => {
@@ -60,6 +65,13 @@ function WebSocketSessionPage() {
       initSession({ cwd, featureId, model: resolvedModelId });
     }
   }, [isConnected, initSession, cwd, featureId, sessionId, session?.serverSessionId, resolvedModelId]);
+
+  // Request slash commands once the session is initialized
+  useEffect(() => {
+    if (session?.serverSessionId && cwd) {
+      requestSlashCommands(sessionId, cwd);
+    }
+  }, [session?.serverSessionId, cwd, sessionId, requestSlashCommands]);
 
   return (
     <div className="flex h-full flex-col">
@@ -91,6 +103,8 @@ function WebSocketSessionPage() {
           hasFileChanges={ws.hasFileChanges}
           onViewDiff={handleViewDiff}
           claudeSessionId={ws.claudeSessionId || undefined}
+          slashCommandsOverride={slashCommands.length > 0 ? slashCommands : undefined}
+          slashCommandsLoading={slashCommandsLoading}
           className="h-full"
         />
       </div>

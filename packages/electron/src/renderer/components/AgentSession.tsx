@@ -276,6 +276,10 @@ export interface AgentSessionProps {
   onToggleMaximize?: () => void;
   /** Claude Code session ID to display above the prompt bar */
   claudeSessionId?: string;
+  /** Override slash commands (bypasses tRPC fetch). Used by ws-session. */
+  slashCommandsOverride?: import("@/hooks/useSlashCommand").SlashCommand[];
+  /** Whether the override commands are still loading */
+  slashCommandsLoading?: boolean;
 }
 
 /** Handle exposed by AgentSession via forwardRef */
@@ -347,6 +351,8 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
   maximized,
   onToggleMaximize,
   claudeSessionId,
+  slashCommandsOverride,
+  slashCommandsLoading,
 }, ref) {
   const promptBarRef = useRef<AgentPromptBarHandle>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -637,6 +643,8 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
       subprocessId={subprocessId}
       onToggleMaximize={onToggleMaximize}
       noTopPadding={!!hasMeta}
+      slashCommandsOverride={slashCommandsOverride}
+      slashCommandsLoading={slashCommandsLoading}
     />
   ) : null;
 

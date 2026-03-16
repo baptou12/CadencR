@@ -91,6 +91,10 @@ export interface AgentPromptBarProps {
   onToggleMaximize?: () => void;
   /** When true, removes top padding (e.g. when a chip row is rendered directly above) */
   noTopPadding?: boolean;
+  /** Override slash commands (bypasses tRPC fetch). Used by ws-session. */
+  slashCommandsOverride?: import("@/hooks/useSlashCommand").SlashCommand[];
+  /** Whether the override commands are still loading */
+  slashCommandsLoading?: boolean;
 }
 
 /** Handle exposed by AgentPromptBar via forwardRef */
@@ -128,6 +132,8 @@ export const AgentPromptBar = forwardRef<
     subprocessId,
     onToggleMaximize,
     noTopPadding,
+    slashCommandsOverride,
+    slashCommandsLoading,
   },
   ref,
 ) {
@@ -158,7 +164,7 @@ export const AgentPromptBar = forwardRef<
   const mention = useFileMention(filesQuery.data ?? undefined);
 
   // Slash command support
-  const slashEnabled = !!featureId && !!projectId;
+  const slashEnabled = !!featureId && !!projectId && !slashCommandsOverride;
   const commandsQuery = trpc.sessions.getSupportedCommands.useQuery(
     {
       subprocessId: subprocessId ?? null,
@@ -167,7 +173,8 @@ export const AgentPromptBar = forwardRef<
     },
     { enabled: slashEnabled },
   );
-  const slash = useSlashCommand(commandsQuery.data ?? undefined);
+  const slashCommandSource = slashCommandsOverride ?? commandsQuery.data ?? undefined;
+  const slash = useSlashCommand(slashCommandSource);
 
   useImperativeHandle(ref, () => ({
     focusInput: () => {
@@ -452,7 +459,7 @@ export const AgentPromptBar = forwardRef<
             items={slash.filteredItems}
             selectedIndex={slash.selectedIndex}
             onSelect={handleSlashSelect}
-            isLoading={commandsQuery.isLoading || commandsQuery.isFetching}
+            isLoading={slashCommandsLoading || commandsQuery.isLoading || commandsQuery.isFetching}
           >
             <Textarea
               ref={textareaRef}
