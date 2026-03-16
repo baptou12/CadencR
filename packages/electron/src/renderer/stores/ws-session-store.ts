@@ -376,7 +376,7 @@ interface WsSessionStore {
   // Actions
   send: (sessionId: string, data: unknown) => void;
   initSession: (sessionId: string, config: SessionConfig) => void;
-  sendPrompt: (sessionId: string, text: string) => void;
+  sendPrompt: (sessionId: string, text: string, images?: Array<{ base64: string; mimeType: string }>) => void;
   respondToPermission: (sessionId: string, requestId: string, granted: boolean) => void;
   respondToQuestion: (sessionId: string, response: string) => void;
   interrupt: (sessionId: string) => void;
@@ -820,9 +820,19 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       sendRaw(sessionId, createSessionInit(config));
     },
 
-    sendPrompt(sessionId: string, text: string) {
+    sendPrompt(sessionId: string, text: string, images?: Array<{ base64: string; mimeType: string }>) {
       const session = getSession(sessionId);
-      sendRaw(sessionId, createPromptSend(session.serverSessionId, text));
+      sendRaw(sessionId, createPromptSend(session.serverSessionId, text, images));
+
+      const content = images && images.length > 0
+        ? JSON.stringify([
+            { type: "text", text },
+            ...images.map(img => ({
+              type: "image",
+              source: { type: "base64", media_type: img.mimeType, data: img.base64 }
+            }))
+          ])
+        : text;
 
       session.streamingState.counter += 1;
       set(updateSession(get(), sessionId, {
@@ -831,7 +841,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
           {
             id: `ws-user-${session.streamingState.counter}`,
             type: "user_message" as const,
-            content: text,
+            content,
             isError: false,
             createdAt: new Date().toISOString(),
           },

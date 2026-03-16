@@ -86,9 +86,18 @@ pub struct SessionInitPayload {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImagePayload {
+    pub base64: String,
+    #[serde(rename = "mimeType")]
+    pub mime_type: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PromptSendPayload {
     pub session_id: String,
     pub text: String,
+    #[serde(default)]
+    pub images: Vec<ImagePayload>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -251,7 +260,7 @@ mod tests {
         let _: SessionInitPayload = serde_json::from_value(v).unwrap();
 
         // PromptSendPayload
-        let p = PromptSendPayload { session_id: "s1".into(), text: "hello".into() };
+        let p = PromptSendPayload { session_id: "s1".into(), text: "hello".into(), images: vec![] };
         let v = serde_json::to_value(&p).unwrap();
         let _: PromptSendPayload = serde_json::from_value(v).unwrap();
 

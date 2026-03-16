@@ -60,7 +60,7 @@ pub async fn auto_name_feature(
         ..Options::default()
     };
 
-    let mut query = match claude_agent_sdk_rs::query(&prompt, options).await {
+    let mut query = match claude_agent_sdk_rs::query(serde_json::Value::String(prompt.clone()), options).await {
         Ok(q) => q,
         Err(e) => {
             error!(feature_id, error = %e, "auto-name: SDK query spawn failed");
