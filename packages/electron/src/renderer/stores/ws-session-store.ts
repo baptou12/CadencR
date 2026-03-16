@@ -628,6 +628,18 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
         break;
       }
 
+      case "feature.renamed": {
+        const p = envelope.payload as { feature_id?: number; title?: string };
+        if (p.feature_id != null && typeof window !== "undefined") {
+          window.dispatchEvent(
+            new CustomEvent("ws:feature-renamed", {
+              detail: { featureId: p.feature_id, title: p.title },
+            }),
+          );
+        }
+        break;
+      }
+
       case "ended":
       case "turn_complete": {
         if (state.parentToolUseId) {
