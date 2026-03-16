@@ -593,7 +593,7 @@ async fn reader_loop(
 /// # Ok(())
 /// # }
 /// ```
-pub async fn query(prompt: impl Into<String>, mut options: Options) -> Result<Query, SdkError> {
+pub async fn query(content: serde_json::Value, mut options: Options) -> Result<Query, SdkError> {
     let cli_path = find_cli(options.path_to_cli.as_deref())?;
     let mut process = CliProcess::spawn(&cli_path, &options).await?;
 
@@ -623,7 +623,7 @@ pub async fn query(prompt: impl Into<String>, mut options: Options) -> Result<Qu
     // Write initial prompt to stdin
     let prompt_msg = serde_json::json!({
         "type": "user",
-        "message": { "role": "user", "content": prompt.into() },
+        "message": { "role": "user", "content": content },
         "parent_tool_use_id": null,
         "session_id": ""
     });
@@ -894,7 +894,7 @@ echo '{"type":"result","subtype":"success","uuid":"u3","session_id":"sess_123","
             ..Options::default()
         };
 
-        let mut q = query("test", options).await.unwrap();
+        let mut q = query(serde_json::Value::String("test".into()), options).await.unwrap();
 
         let mut messages = Vec::new();
         while let Some(msg) = q.next().await {
@@ -944,7 +944,7 @@ sleep 300
             ..Options::default()
         };
 
-        let mut q = query("test", options).await.unwrap();
+        let mut q = query(serde_json::Value::String("test".into()), options).await.unwrap();
 
         // Read the system init message
         let msg = q.next().await;
@@ -983,7 +983,7 @@ echo '{"type":"result","subtype":"success","uuid":"u2","session_id":"sess_take",
             ..Options::default()
         };
 
-        let mut q = query("test", options).await.unwrap();
+        let mut q = query(serde_json::Value::String("test".into()), options).await.unwrap();
 
         // Take the receiver out
         let mut rx = q.take_message_rx();
@@ -1030,7 +1030,7 @@ echo '{"type":"result","subtype":"success","uuid":"u3","session_id":"sess_456","
             ..Options::default()
         };
 
-        let mut q = query("test", options).await.unwrap();
+        let mut q = query(serde_json::Value::String("test".into()), options).await.unwrap();
 
         let mut messages = Vec::new();
         while let Some(msg) = q.next().await {
@@ -1074,7 +1074,7 @@ echo '{"type":"result","subtype":"success","uuid":"u2","session_id":"sess_init",
             ..Options::default()
         };
 
-        let mut q = query("test", options).await.unwrap();
+        let mut q = query(serde_json::Value::String("test".into()), options).await.unwrap();
 
         let mut messages = Vec::new();
         while let Some(msg) = q.next().await {
@@ -1121,7 +1121,7 @@ echo '{"type":"result","subtype":"success","uuid":"u2","session_id":"sess_clinit
             ..Options::default()
         };
 
-        let mut q = query("test", options).await.unwrap();
+        let mut q = query(serde_json::Value::String("test".into()), options).await.unwrap();
 
         let mut messages = Vec::new();
         while let Some(msg) = q.next().await {

@@ -47,8 +47,16 @@ export function createSessionInit(config: SessionConfig): WsEnvelope {
   });
 }
 
-export function createPromptSend(sessionId: string, text: string): WsEnvelope {
-  return createEnvelope("session", "prompt.send", { session_id: sessionId, text });
+export function createPromptSend(
+  sessionId: string,
+  text: string,
+  images?: Array<{ base64: string; mimeType: string }>,
+): WsEnvelope {
+  return createEnvelope("session", "prompt.send", {
+    session_id: sessionId,
+    text,
+    ...(images && images.length > 0 ? { images } : {}),
+  });
 }
 
 export function createPermissionRespond(

@@ -20,6 +20,42 @@ use super::permissions::{self, ResolvedPermission};
 use super::persistence::WsSessionPersistence;
 use super::protocol::*;
 
+/// Build the content value for the Claude CLI.
+/// Returns a plain string Value when no images, or a JSON array of content blocks when images are present.
+fn build_content_value(text: &str, images: &[ImagePayload]) -> serde_json::Value {
+    if images.is_empty() {
+        serde_json::Value::String(text.to_string())
+    } else {
+        let mut blocks: Vec<serde_json::Value> = Vec::with_capacity(1 + images.len());
+        blocks.push(serde_json::json!({
+            "type": "text",
+            "text": text
+        }));
+        for img in images {
+            blocks.push(serde_json::json!({
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": img.mime_type,
+                    "data": img.base64
+                }
+            }));
+        }
+        serde_json::Value::Array(blocks)
+    }
+}
+
+/// Build the persistence string for a user message.
+/// Plain text when no images, JSON-serialized content blocks when images are present.
+fn build_persist_content(text: &str, images: &[ImagePayload]) -> String {
+    if images.is_empty() {
+        text.to_string()
+    } else {
+        let content = build_content_value(text, images);
+        serde_json::to_string(&content).unwrap_or_else(|_| text.to_string())
+    }
+}
+
 /// Parse a permission mode string from the client into a PermissionMode enum value.
 fn parse_permission_mode(mode: &str) -> PermissionMode {
     match mode {
@@ -674,9 +710,10 @@ async fn handle_prompt_send(
 
             // Persist user message (session row already exists from handle_init)
             let write_pool = app_state.write_pool.clone();
+            let persist_content = build_persist_content(&payload.text, &payload.images);
             {
                 let p = WsSessionPersistence::with_session_id(write_pool.clone(), feature_id, Some(db_session_id));
-                p.persist_user_message(&payload.text).await;
+                p.persist_user_message(&persist_content).await;
             }
 
             // Set up permission bridge
@@ -690,8 +727,9 @@ async fn handle_prompt_send(
             };
             options.can_use_tool = Some(Box::new(bridge));
 
+            let content_value = build_content_value(&payload.text, &payload.images);
             info!(db_session_id, prompt = %payload.text, model = ?options.model, "spawning SDK query");
-            match claude_agent_sdk_rs::query(&payload.text, options).await {
+            match claude_agent_sdk_rs::query(content_value, options).await {
                 Ok(mut real_query) => {
                     info!(db_session_id, "SDK query spawned successfully, starting stream reader");
                     let message_rx = real_query.take_message_rx();
@@ -755,15 +793,16 @@ async fn handle_prompt_send(
         }
         QueryState::Active { query, .. } => {
             // Persist follow-up user message
+            let persist_content = build_persist_content(&payload.text, &payload.images);
             let p = WsSessionPersistence::with_session_id(
                 app_state.write_pool.clone(), handle.feature_id, Some(db_session_id),
             );
-            p.persist_user_message(&payload.text).await;
+            p.persist_user_message(&persist_content).await;
 
             let q = query.lock().await;
             let turn_state = q.turn_state().await;
             info!(db_session_id, turn_state = ?turn_state, "follow-up prompt");
-            let content = serde_json::json!(payload.text);
+            let content = build_content_value(&payload.text, &payload.images);
             if let Err(e) = q.stream_input(content).await {
                 error!(db_session_id, error = %e, "stream_input failed");
                 send_error(sender, &envelope.id, "SDK_ERROR", &e.to_string());

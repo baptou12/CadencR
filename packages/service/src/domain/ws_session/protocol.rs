@@ -86,9 +86,18 @@ pub struct SessionInitPayload {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImagePayload {
+    pub base64: String,
+    #[serde(rename = "mimeType")]
+    pub mime_type: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PromptSendPayload {
     pub session_id: String,
     pub text: String,
+    #[serde(default)]
+    pub images: Vec<ImagePayload>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
