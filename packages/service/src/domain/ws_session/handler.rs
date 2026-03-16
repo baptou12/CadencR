@@ -641,7 +641,7 @@ async fn handle_prompt_send(
                         let write_pool = app_state.write_pool.clone();
                         let cwd = config.cwd.to_string_lossy().to_string();
                         let prompt_text = payload.text.clone();
-                        let _sender = sender.clone();
+                        let naming_sender = sender.clone();
                         tokio::spawn(async move {
                             if super::auto_name::has_default_title(&write_pool, feature_id).await {
                                 let result = super::auto_name::auto_name_feature(
@@ -650,6 +650,7 @@ async fn handle_prompt_send(
                                     prompt_text,
                                     cwd,
                                     None,
+                                    naming_sender,
                                 ).await;
                                 info!(feature_id, name = ?result, "auto-named feature");
                             }

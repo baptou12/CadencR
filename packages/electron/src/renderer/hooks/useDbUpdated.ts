@@ -52,4 +52,15 @@ export function useDbUpdated() {
       api.offDbUpdated(listener as undefined);
     };
   }, [utils, queryClient]);
+
+  // Also listen for WS-based feature rename events
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { featureId } = (e as CustomEvent).detail as { featureId: number; title: string };
+      void queryClient.invalidateQueries({ queryKey: ["features", "detail", featureId] });
+      void queryClient.invalidateQueries({ queryKey: ["features", "list"] });
+    };
+    window.addEventListener("ws:feature-renamed", handler);
+    return () => window.removeEventListener("ws:feature-renamed", handler);
+  }, [queryClient]);
 }

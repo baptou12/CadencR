@@ -1,12 +1,16 @@
 use std::path::PathBuf;
 
+use axum::extract::ws::Message;
 use regex_lite::Regex;
 use sqlx::SqlitePool;
+use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 
 use claude_agent_sdk_rs::{
     ContentBlock, ContentDelta, Options, PermissionMode, SdkMessage, StreamEventData,
 };
+
+use super::protocol::{FeatureRenamedPayload, WsEnvelope};
 
 const AUTO_NAME_SYSTEM_PROMPT: &str = "You are a feature naming assistant. Your ONLY job is to output a short name (3-7 words) for a coding session. ALWAYS output a name, even if the input is vague — just pick a reasonable generic name. Examples: 'hi' → 'General Coding Session', 'fix the login bug' → 'Fix Login Bug', 'I want to add dark mode' → 'Add Dark Mode Support'.";
 
@@ -39,6 +43,7 @@ pub async fn auto_name_feature(
     user_input: String,
     cwd: String,
     cli_path: Option<PathBuf>,
+    ws_sender: mpsc::UnboundedSender<Message>,
 ) -> Option<String> {
     let escaped_input = user_input.replace('"', "\\\"");
     let prompt = format!(
@@ -126,6 +131,19 @@ pub async fn auto_name_feature(
         error!(feature_id, error = %e, "auto-name: DB update failed");
         return None;
     }
+
+    // Notify frontend via WS envelope
+    let payload = FeatureRenamedPayload {
+        feature_id,
+        title: name.clone(),
+    };
+    let envelope = WsEnvelope::new(
+        "session",
+        "feature.renamed",
+        serde_json::to_value(&payload).unwrap(),
+    );
+    let json: String = envelope.into();
+    let _ = ws_sender.send(Message::Text(json.into()));
 
     info!(feature_id, name = %name, "auto-named feature");
     Some(name)

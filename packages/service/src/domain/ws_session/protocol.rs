@@ -157,6 +157,12 @@ pub struct SessionEndedPayload {
     pub reason: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FeatureRenamedPayload {
+    pub feature_id: i64,
+    pub title: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
