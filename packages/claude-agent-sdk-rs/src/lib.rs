@@ -20,4 +20,4 @@ pub use permissions::{
 };
 pub use options::{Options, OptionsBuilder};
 pub use mcp::McpServerConfig;
-pub use query::{query, Query, TurnState};
+pub use query::{query, supported_commands, Query, TurnState};

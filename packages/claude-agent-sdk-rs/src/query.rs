@@ -665,6 +665,129 @@ pub async fn query(prompt: impl Into<String>, mut options: Options) -> Result<Qu
     })
 }
 
+// ── Supported commands ───────────────────────────────────────────────────────
+
+/// Fetch available slash commands for a given working directory.
+///
+/// Spawns a lightweight CLI subprocess, reads the first `system.init` message
+/// to extract the `slash_commands` list, then kills the subprocess. This avoids
+/// starting a full query/session just to discover available commands.
+///
+/// The CLI's init message only provides command names (strings), so the returned
+/// `SlashCommand` values have `description: None`.
+///
+/// # Timeout
+///
+/// If the CLI doesn't emit an init message within 10 seconds, returns
+/// [`SdkError::Timeout`].
+pub async fn supported_commands(
+    cwd: &str,
+    path_to_cli: Option<&std::path::Path>,
+) -> Result<Vec<crate::types::SlashCommand>, SdkError> {
+    use crate::transport::{find_cli, CliProcess};
+    use crate::messages::{SdkMessage, SystemMessage};
+
+    let cli_path = find_cli(path_to_cli)?;
+
+    // Build minimal options — just enough to spawn the CLI and get init message.
+    let options = Options {
+        cwd: std::path::PathBuf::from(cwd),
+        ..Options::default()
+    };
+
+    let mut process = CliProcess::spawn(&cli_path, &options).await?;
+
+    // Write the initialize control request + a dummy prompt to trigger init.
+    let stdin = process.take_stdin();
+    let process_stdin = tokio::sync::Mutex::new(stdin);
+
+    let init_request_id = format!(
+        "init_cmd_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+    );
+    let init_msg = serde_json::json!({
+        "type": "control_request",
+        "request_id": init_request_id,
+        "request": { "subtype": "initialize" }
+    });
+    write_to_stdin(&process_stdin, &init_msg).await?;
+
+    let prompt_msg = serde_json::json!({
+        "type": "user",
+        "message": { "role": "user", "content": "noop" },
+        "parent_tool_use_id": null,
+        "session_id": ""
+    });
+    write_to_stdin(&process_stdin, &prompt_msg).await?;
+
+    // Read messages until we get the system init, with a 10s timeout.
+    let result = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            match process.read_message().await? {
+                Some(raw) => {
+                    // Skip control_response messages
+                    if raw.get("type").and_then(|t| t.as_str()) == Some("control_response") {
+                        continue;
+                    }
+                    // Handle initialize control_request from CLI
+                    if control_request_subtype(&raw) == Some("initialize") {
+                        let request_id = raw
+                            .get("request_id")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let response_json = serde_json::json!({
+                            "type": "control_response",
+                            "response": {
+                                "subtype": "success",
+                                "request_id": request_id,
+                                "response": {}
+                            }
+                        });
+                        write_to_stdin(&process_stdin, &response_json).await?;
+                        continue;
+                    }
+                    // Try parsing as SdkMessage
+                    let message: SdkMessage = match serde_json::from_value(raw) {
+                        Ok(msg) => msg,
+                        Err(_) => continue,
+                    };
+                    if let SdkMessage::System(SystemMessage::Init { slash_commands, .. }) = message
+                    {
+                        return Ok::<Vec<crate::types::SlashCommand>, SdkError>(
+                            slash_commands
+                                .into_iter()
+                                .map(|name| crate::types::SlashCommand {
+                                    name,
+                                    description: None,
+                                })
+                                .collect(),
+                        );
+                    }
+                    // Not the init message, keep reading
+                }
+                None => {
+                    // EOF before init
+                    let (code, stderr) = process.wait_with_stderr().await;
+                    return Err(SdkError::ProcessExit { code, stderr });
+                }
+            }
+        }
+    })
+    .await;
+
+    // Kill the subprocess regardless of outcome.
+    let _ = process.kill().await;
+
+    match result {
+        Ok(commands) => commands,
+        Err(_elapsed) => Err(SdkError::Timeout),
+    }
+}
+
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -1011,5 +1134,40 @@ echo '{"type":"result","subtype":"success","uuid":"u2","session_id":"sess_clinit
 
         let sid = q.session_id().await;
         assert_eq!(sid, Some("sess_clinit".to_string()));
+    }
+
+    #[tokio::test]
+    async fn supported_commands_extracts_slash_commands() {
+        use std::os::unix::fs::PermissionsExt;
+        use tempfile::TempDir;
+
+        let dir = TempDir::new().unwrap();
+        let script_path = dir.path().join("claude");
+
+        // Mock CLI: read init + prompt, emit system init with slash_commands, then exit
+        let script = r#"#!/bin/sh
+read -r INIT_REQ
+read -r USER_PROMPT
+echo '{"type":"system","subtype":"init","uuid":"u1","session_id":"sess_cmd","claude_code_version":"1.0","cwd":"/tmp","tools":[],"mcp_servers":[],"model":"claude-sonnet-4-20250514","permission_mode":"default","slash_commands":["compact","review","init"],"output_style":"stream","skills":[],"plugins":[]}'
+echo '{"type":"result","subtype":"success","uuid":"u2","session_id":"sess_cmd","duration_ms":10,"duration_api_ms":5,"is_error":false,"num_turns":1,"result":"ok","errors":null,"stop_reason":"end_turn","total_cost_usd":0.0,"usage":{"input_tokens":1,"output_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":0},"permission_denials":[],"structured_output":null}'
+"#;
+
+        std::fs::write(&script_path, script).unwrap();
+        let mut perms = std::fs::metadata(&script_path).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&script_path, perms).unwrap();
+
+        let commands = supported_commands(
+            "/tmp",
+            Some(script_path.as_path()),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(commands.len(), 3);
+        assert_eq!(commands[0].name, "compact");
+        assert_eq!(commands[1].name, "review");
+        assert_eq!(commands[2].name, "init");
+        assert!(commands[0].description.is_none());
     }
 }
