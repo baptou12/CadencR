@@ -350,6 +350,178 @@ describe("ws-session-store", () => {
     expect(useWsSessionStore.getState().sessions["s1"].hasFileChanges).toBe(false);
   });
 
+  it("extracts todos from TodoWrite tool_call in assistant message", async () => {
+    const store = useWsSessionStore.getState();
+    store.connect("s1");
+    await tick();
+    const ws = getWs();
+    ws.simulateMessage({ domain: "session", action: "initialized", payload: { session_id: "srv-1" } });
+
+    ws.simulateMessage({
+      domain: "session",
+      action: "message",
+      payload: {
+        blocks: [
+          {
+            type: "assistant",
+            message: {
+              content: [
+                {
+                  type: "tool_use",
+                  id: "tu-todo-1",
+                  name: "TodoWrite",
+                  input: {
+                    todos: [
+                      { content: "Write tests", status: "in_progress", activeForm: "Writing tests" },
+                      { content: "Deploy", status: "pending", activeForm: "Deploy app" },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+
+    const session = useWsSessionStore.getState().sessions["s1"];
+    expect(session.todos).toEqual([
+      { content: "Write tests", status: "in_progress", activeForm: "Writing tests" },
+      { content: "Deploy", status: "pending", activeForm: "Deploy app" },
+    ]);
+  });
+
+  it("extracts todos from streamed TodoWrite (content_block_start + deltas + assistant replace)", async () => {
+    const store = useWsSessionStore.getState();
+    store.connect("s1");
+    await tick();
+    const ws = getWs();
+    ws.simulateMessage({ domain: "session", action: "initialized", payload: { session_id: "srv-1" } });
+
+    // 1. content_block_start — creates tool_call with empty args
+    ws.simulateMessage({
+      domain: "session",
+      action: "message",
+      payload: {
+        blocks: [
+          {
+            type: "event",
+            event: {
+              type: "content_block_start",
+              index: 0,
+              content_block: { type: "tool_use", id: "tu-stream-1", name: "TodoWrite" },
+            },
+          },
+        ],
+      },
+    });
+
+    // 2. content_block_delta — partial JSON
+    ws.simulateMessage({
+      domain: "session",
+      action: "message",
+      payload: {
+        blocks: [
+          {
+            type: "event",
+            event: {
+              type: "content_block_delta",
+              index: 0,
+              delta: { type: "input_json_delta", partial_json: '{"todos":[{"content":"Task 1","status":"comple' },
+            },
+          },
+        ],
+      },
+    });
+
+    // Partial JSON shouldn't produce todos yet
+    expect(useWsSessionStore.getState().sessions["s1"].todos).toEqual([]);
+
+    // 3. assistant message with complete input — replace action (no toolName in mutation)
+    ws.simulateMessage({
+      domain: "session",
+      action: "message",
+      payload: {
+        blocks: [
+          {
+            type: "assistant",
+            message: {
+              content: [
+                {
+                  type: "tool_use",
+                  id: "tu-stream-1",
+                  name: "TodoWrite",
+                  input: {
+                    todos: [{ content: "Task 1", status: "completed", activeForm: "Done" }],
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+
+    const session = useWsSessionStore.getState().sessions["s1"];
+    expect(session.todos).toEqual([
+      { content: "Task 1", status: "completed", activeForm: "Done" },
+    ]);
+  });
+
+  it("setPersistedState extracts todos from restored blocks", () => {
+    useWsSessionStore.getState().connect("s1");
+    const blocks = [
+      { id: "b1", type: "text" as const, content: "hello" },
+      {
+        id: "b2",
+        type: "tool_call" as const,
+        content: JSON.stringify({ todos: [{ content: "Restored task", status: "pending", activeForm: "Restoring" }] }),
+        toolName: "TodoWrite",
+        toolArgs: JSON.stringify({ todos: [{ content: "Restored task", status: "pending", activeForm: "Restoring" }] }),
+      },
+      { id: "b3", type: "text" as const, content: "done" },
+    ];
+    useWsSessionStore.getState().setPersistedState("s1", blocks, "completed");
+    const session = useWsSessionStore.getState().sessions["s1"];
+    expect(session.todos).toEqual([
+      { content: "Restored task", status: "pending", activeForm: "Restoring" },
+    ]);
+  });
+
+  it("setPersistedState extracts todos from child blocks", () => {
+    useWsSessionStore.getState().connect("s1");
+    const blocks = [
+      {
+        id: "b1",
+        type: "tool_call" as const,
+        content: "{}",
+        toolName: "Agent",
+        childBlocks: [
+          {
+            id: "b2",
+            type: "tool_call" as const,
+            content: JSON.stringify({ todos: [{ content: "Child task", status: "completed", activeForm: "Done" }] }),
+            toolName: "TodoWrite",
+            toolArgs: JSON.stringify({ todos: [{ content: "Child task", status: "completed", activeForm: "Done" }] }),
+          },
+        ],
+      },
+    ];
+    useWsSessionStore.getState().setPersistedState("s1", blocks, "completed");
+    const session = useWsSessionStore.getState().sessions["s1"];
+    expect(session.todos).toEqual([
+      { content: "Child task", status: "completed", activeForm: "Done" },
+    ]);
+  });
+
+  it("setPersistedState without TodoWrite blocks leaves todos empty", () => {
+    useWsSessionStore.getState().connect("s1");
+    const blocks = [{ id: "b1", type: "text" as const, content: "no todos here" }];
+    useWsSessionStore.getState().setPersistedState("s1", blocks, "completed");
+    const session = useWsSessionStore.getState().sessions["s1"];
+    expect(session.todos).toEqual([]);
+  });
+
   it("handles concurrent sessions independently", async () => {
     const store = useWsSessionStore.getState();
     store.connect("a");
