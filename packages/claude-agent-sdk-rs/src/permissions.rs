@@ -56,8 +56,8 @@ pub struct PermissionRequest {
 pub enum PermissionResult {
     #[serde(rename = "allow")]
     Allow {
-        #[serde(rename = "updatedInput", skip_serializing_if = "Option::is_none")]
-        updated_input: Option<serde_json::Value>,
+        #[serde(rename = "updatedInput")]
+        updated_input: serde_json::Value,
         #[serde(rename = "updatedPermissions", skip_serializing_if = "Option::is_none")]
         updated_permissions: Option<Vec<PermissionUpdate>>,
         #[serde(rename = "toolUseId", skip_serializing_if = "Option::is_none")]
@@ -101,11 +101,11 @@ pub struct AllowAllTools;
 
 #[async_trait]
 impl CanUseTool for AllowAllTools {
-    async fn can_use_tool(&self, _request: PermissionRequest) -> PermissionResult {
+    async fn can_use_tool(&self, request: PermissionRequest) -> PermissionResult {
         PermissionResult::Allow {
-            updated_input: None,
+            updated_input: request.input,
             updated_permissions: None,
-            tool_use_id: None,
+            tool_use_id: Some(request.tool_use_id),
         }
     }
 }

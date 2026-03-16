@@ -53,12 +53,13 @@ fn permission_mode_as_cli_flag() {
 #[test]
 fn permission_result_allow_serializes_with_behavior_tag() {
     let result = PermissionResult::Allow {
-        updated_input: None,
+        updated_input: serde_json::json!({"command": "ls"}),
         updated_permissions: None,
         tool_use_id: None,
     };
     let json: serde_json::Value = serde_json::to_value(&result).unwrap();
     assert_eq!(json["behavior"], "allow");
+    assert_eq!(json["updatedInput"], serde_json::json!({"command": "ls"}));
 }
 
 #[test]
@@ -76,14 +77,16 @@ fn permission_result_deny_serializes_with_message_and_interrupt() {
 }
 
 #[test]
-fn permission_result_allow_skips_none_fields() {
+fn permission_result_allow_always_includes_updated_input() {
+    let input = serde_json::json!({"file_path": "/tmp/test.txt", "content": "hello"});
     let result = PermissionResult::Allow {
-        updated_input: None,
+        updated_input: input.clone(),
         updated_permissions: None,
         tool_use_id: None,
     };
     let json: serde_json::Value = serde_json::to_value(&result).unwrap();
-    assert!(json.get("updatedInput").is_none());
+    // updatedInput must always be present with original tool input (CLI Zod schema requires a record)
+    assert_eq!(json["updatedInput"], input);
     assert!(json.get("updatedPermissions").is_none());
     assert!(json.get("toolUseId").is_none());
 }
@@ -91,7 +94,7 @@ fn permission_result_allow_skips_none_fields() {
 #[test]
 fn permission_result_allow_serializes_camel_case_fields() {
     let result = PermissionResult::Allow {
-        updated_input: Some(serde_json::json!({"answer": "yes"})),
+        updated_input: serde_json::json!({"answer": "yes"}),
         updated_permissions: None,
         tool_use_id: Some("tu-99".to_string()),
     };
@@ -102,6 +105,18 @@ fn permission_result_allow_serializes_camel_case_fields() {
     // snake_case variants must NOT be present
     assert!(json.get("updated_input").is_none());
     assert!(json.get("tool_use_id").is_none());
+}
+
+#[test]
+fn permission_result_allow_roundtrips_through_deserialize() {
+    let original = serde_json::json!({
+        "behavior": "allow",
+        "updatedInput": {"answers": {"0": "yes"}},
+        "toolUseId": "t1"
+    });
+    let result: PermissionResult = serde_json::from_value(original.clone()).unwrap();
+    let reserialized = serde_json::to_value(&result).unwrap();
+    assert_eq!(reserialized, original);
 }
 
 // ---------------------------------------------------------------------------

@@ -75,7 +75,7 @@ impl CanUseTool for WsBridgeCanUseTool {
             ResolvedPermission::Allow => {
                 debug!(tool_name = %request.tool_name, "auto-allowed");
                 return PermissionResult::Allow {
-                    updated_input: None,
+                    updated_input: request.input,
                     updated_permissions: None,
                     tool_use_id: Some(request.tool_use_id),
                 };
@@ -98,7 +98,7 @@ impl CanUseTool for WsBridgeCanUseTool {
                     debug!(tool_name = %request.tool_name, pattern = %pattern, "allowed by settings pattern");
                     self.session_cache.lock().await.insert(pattern);
                     return PermissionResult::Allow {
-                        updated_input: None,
+                        updated_input: request.input,
                         updated_permissions: None,
                         tool_use_id: Some(request.tool_use_id),
                     };
@@ -121,16 +121,18 @@ impl CanUseTool for WsBridgeCanUseTool {
                 let _ = self.sender.send(Message::Text(String::from(envelope).into()));
 
                 // Wait for user response
+                let original_input = request.input;
                 let mut rx = self.response_rx.lock().await;
                 match rx.recv().await {
                     Some(response) => {
+                        let input = response.updated_input.unwrap_or(original_input);
                         match response.decision {
                             PermissionDecision::AllowOnce => {
                                 if !force_prompt {
                                     self.session_cache.lock().await.insert(pattern);
                                 }
                                 PermissionResult::Allow {
-                                    updated_input: response.updated_input,
+                                    updated_input: input,
                                     updated_permissions: None,
                                     tool_use_id: Some(request.tool_use_id),
                                 }
@@ -144,7 +146,7 @@ impl CanUseTool for WsBridgeCanUseTool {
                                     error!(error = %e, "failed to persist permission to settings.local.json");
                                 }
                                 PermissionResult::Allow {
-                                    updated_input: response.updated_input,
+                                    updated_input: input,
                                     updated_permissions: None,
                                     tool_use_id: Some(request.tool_use_id),
                                 }
@@ -1083,8 +1085,6 @@ fn spawn_stream_reader(
 
             match msg {
                 Some(Ok(sdk_msg)) => {
-                    debug!(db_session_id, msg_type = ?std::mem::discriminant(&sdk_msg), "SDK MSG → WS");
-
                     if needs_session_id_capture {
                         if let Some(cli_sid) = sdk_msg.session_id() {
                             if !cli_sid.is_empty() {
