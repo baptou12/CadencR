@@ -9,7 +9,7 @@
 import { create } from "zustand";
 import { DEFAULT_MODEL } from "../../shared/models";
 import type { AgentBlockData } from "@/components/AgentBlock";
-import type { AgentStatus } from "@/types/agent";
+import type { AgentStatus, TodoItem } from "@/types/agent";
 import type { ContextUsageState } from "@/hooks/useContextUsage";
 import type { PendingPermission } from "@/components/ToolPermissionPrompt";
 import type { AgentQuestion } from "@/components/AgentQuestionDrawer";
@@ -321,6 +321,7 @@ export interface SessionEntry {
   hasFileChanges: boolean;
   slashCommands: SlashCommand[];
   slashCommandsLoading: boolean;
+  todos: TodoItem[];
 }
 
 function createSessionEntry(): SessionEntry {
@@ -344,6 +345,7 @@ function createSessionEntry(): SessionEntry {
     hasFileChanges: false,
     slashCommands: [],
     slashCommandsLoading: false,
+    todos: [],
   };
 }
 
@@ -572,8 +574,33 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
           const hasNewFileChange = allMutations.some(
             (m) => m.action === "append" && m.block.type === "tool_call" && m.block.toolName && FILE_CHANGE_TOOLS.has(m.block.toolName),
           );
+          // Extract todos from any TodoWrite tool_call blocks
+          const todoMutation = allMutations.find(
+            (m) => m.block.type === "tool_call" && m.block.toolName === "TodoWrite",
+          );
           const patch: Partial<SessionEntry> = { blocks: newBlocks, status: "running" };
           if (hasNewFileChange) patch.hasFileChanges = true;
+          if (todoMutation) {
+            // For replace actions, content has full JSON; for append+updates, find the block in newBlocks
+            const todoBlock = newBlocks.find(
+              (b) => b.id === todoMutation.block.id && b.type === "tool_call",
+            ) ?? todoMutation.block;
+            const argsStr = todoBlock.toolArgs || todoBlock.content;
+            if (argsStr) {
+              try {
+                const parsed = JSON.parse(argsStr);
+                if (Array.isArray(parsed?.todos)) {
+                  patch.todos = parsed.todos.map((t: Record<string, unknown>) => ({
+                    content: String(t.content ?? ""),
+                    status: t.status as TodoItem["status"],
+                    activeForm: String(t.activeForm ?? ""),
+                  }));
+                }
+              } catch {
+                // Incomplete JSON during streaming — ignore
+              }
+            }
+          }
           set(updateSession(get(), sessionId, patch));
         } else {
           set(updateSession(get(), sessionId, { status: "running" }));
