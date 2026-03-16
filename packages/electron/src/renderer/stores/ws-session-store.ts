@@ -9,6 +9,7 @@
 import { create } from "zustand";
 import type { AgentBlockData } from "@/components/AgentBlock";
 import type { AgentStatus } from "@/types/agent";
+import type { ContextUsageState } from "@/hooks/useContextUsage";
 import type { PendingPermission } from "@/components/ToolPermissionPrompt";
 import type { AgentQuestion } from "@/components/AgentQuestionDrawer";
 import { parseAskUserQuestions } from "@/components/AgentQuestionDrawer";
@@ -310,6 +311,7 @@ export interface SessionEntry {
   pendingPlanApproval: PendingPlanApproval | null;
   currentModelId: string;
   persistedLoaded: boolean;
+  contextUsage: ContextUsageState | null;
 }
 
 function createSessionEntry(): SessionEntry {
@@ -328,6 +330,7 @@ function createSessionEntry(): SessionEntry {
     pendingPlanApproval: null,
     currentModelId: "claude-sonnet-4-6",
     persistedLoaded: false,
+    contextUsage: null,
   };
 }
 
@@ -603,6 +606,24 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
           pendingRequestId: "",
           pendingQuestions: [],
           pendingPlanApproval: null,
+        }));
+        break;
+      }
+
+      case "usage_update": {
+        const u = envelope.payload as { input_tokens: number; output_tokens: number; context_window: number };
+        const totalTokens = u.input_tokens + u.output_tokens;
+        const contextWindow = u.context_window || 200000;
+        const usageRatio = Math.min(1, totalTokens / contextWindow);
+        set(updateSession(get(), sessionId, {
+          contextUsage: {
+            inputTokens: u.input_tokens,
+            outputTokens: u.output_tokens,
+            totalTokens,
+            contextWindow,
+            usageRatio,
+            wasCompacted: false,
+          },
         }));
         break;
       }

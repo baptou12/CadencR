@@ -69,6 +69,7 @@ function WebSocketSessionPage() {
           pendingPlanApproval={ws.pendingPlanApproval}
           onPlanApprove={ws.approvePlan}
           onPlanRequestChanges={ws.requestPlanChanges}
+          contextUsage={ws.contextUsage}
           currentModelId={ws.currentModelId}
           onModelChange={ws.setModel}
           className="h-full"

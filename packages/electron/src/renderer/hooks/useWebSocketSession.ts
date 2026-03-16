@@ -18,6 +18,7 @@ import type { AgentStatus } from "@/types/agent";
 import type { PendingPermission } from "@/components/ToolPermissionPrompt";
 import type { AgentQuestion } from "@/components/AgentQuestionDrawer";
 import type { SessionConfig } from "@/lib/ws-envelope";
+import type { ContextUsageState } from "@/hooks/useContextUsage";
 
 export type { PermissionMode, PendingPlanApproval };
 
@@ -37,6 +38,7 @@ export interface UseWebSocketSessionReturn {
   approvePlan: () => void;
   requestPlanChanges: (feedback: string) => void;
 
+  contextUsage: ContextUsageState | null;
   currentModelId: string;
   setModel: (modelId: string) => void;
   sendPrompt: (text: string) => void;
@@ -116,6 +118,7 @@ export function useWebSocketSession(sessionId: string, featureId?: number): UseW
     pendingQuestions: session?.pendingQuestions ?? [],
     permissionMode: session?.permissionMode ?? "acceptEdits",
     pendingPlanApproval: session?.pendingPlanApproval ?? null,
+    contextUsage: session?.contextUsage ?? null,
     currentModelId: session?.currentModelId ?? "claude-sonnet-4-6",
 
     sendPrompt: (text: string) => store.sendPrompt(sessionId, text),

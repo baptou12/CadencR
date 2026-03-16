@@ -455,6 +455,16 @@ impl WsSessionPersistence {
         }
     }
 
+    /// Update token usage counters on a session row (best-effort).
+    pub async fn update_token_usage(pool: &SqlitePool, session_id: i64, input_tokens: u64, output_tokens: u64) {
+        let _ = sqlx::query("UPDATE agent_sessions SET input_tokens = ?, output_tokens = ? WHERE id = ?")
+            .bind(input_tokens as i64)
+            .bind(output_tokens as i64)
+            .bind(session_id)
+            .execute(pool)
+            .await;
+    }
+
     /// Mark all running sessions as paused on startup (stale session cleanup).
     pub async fn cleanup_stale_sessions(pool: &SqlitePool) {
         let now = chrono::Utc::now().to_rfc3339();
@@ -526,6 +536,9 @@ mod tests {
                 model TEXT,
                 permission_mode TEXT,
                 has_file_changes INTEGER NOT NULL DEFAULT 0,
+                input_tokens INTEGER NOT NULL DEFAULT 0,
+                output_tokens INTEGER NOT NULL DEFAULT 0,
+                context_window INTEGER NOT NULL DEFAULT 200000,
                 started_at TEXT,
                 ended_at TEXT
             )"#,
@@ -933,6 +946,25 @@ mod tests {
         let row: (String,) = sqlx::query_as("SELECT status FROM agent_sessions WHERE id = ?")
             .bind(id).fetch_one(&pool).await.unwrap();
         assert_eq!(row.0, "completed");
+    }
+
+    #[tokio::test]
+    async fn test_update_token_usage() {
+        let pool = setup_test_db().await;
+        let mut p = WsSessionPersistence::new(pool.clone(), 1);
+        let id = p.find_or_create_session(None, None).await.unwrap();
+
+        WsSessionPersistence::update_token_usage(&pool, id, 1500, 300).await;
+
+        let row: (i64, i64) = sqlx::query_as(
+            "SELECT input_tokens, output_tokens FROM agent_sessions WHERE id = ?",
+        )
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(row.0, 1500);
+        assert_eq!(row.1, 300);
     }
 
     #[tokio::test]
