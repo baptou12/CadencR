@@ -57,6 +57,10 @@ impl CanUseTool for WsBridgeCanUseTool {
             "WsBridgeCanUseTool::can_use_tool called"
         );
 
+        // Tools like AskUserQuestion must always be forwarded to the frontend
+        // so the UI can display a dynamic form and collect the user's response.
+        let force_prompt = permissions::FRONTEND_PROMPT_TOOLS.contains(&request.tool_name.as_str());
+
         // Resolve permission server-side
         let cache = self.session_cache.lock().await;
         let resolved = permissions::resolve_permission(
@@ -88,8 +92,9 @@ impl CanUseTool for WsBridgeCanUseTool {
                 description,
                 pattern,
             } => {
-                // Check if pattern is in pre-loaded allowed patterns from settings files
-                if self.allowed_patterns.contains(&pattern) {
+                // Check if pattern is in pre-loaded allowed patterns from settings files.
+                // Skip for force_prompt tools — they always need the frontend round-trip.
+                if !force_prompt && self.allowed_patterns.contains(&pattern) {
                     debug!(tool_name = %request.tool_name, pattern = %pattern, "allowed by settings pattern");
                     self.session_cache.lock().await.insert(pattern);
                     return PermissionResult::Allow {
@@ -121,7 +126,9 @@ impl CanUseTool for WsBridgeCanUseTool {
                     Some(response) => {
                         match response.decision {
                             PermissionDecision::AllowOnce => {
-                                self.session_cache.lock().await.insert(pattern);
+                                if !force_prompt {
+                                    self.session_cache.lock().await.insert(pattern);
+                                }
                                 PermissionResult::Allow {
                                     updated_input: response.updated_input,
                                     updated_permissions: None,

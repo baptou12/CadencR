@@ -55,11 +55,15 @@ const PATH_TOOLS: &[&str] = &["Glob", "Grep"];
 const ALWAYS_ALLOW_TOOLS: &[&str] = &[
     "WebSearch",
     "WebFetch",
-    "AskUserQuestion",
     "ExitPlanMode",
     "TodoRead",
     "TodoWrite",
 ];
+
+/// Tools that must always be sent to the frontend as a permission request,
+/// regardless of permission resolution. AskUserQuestion needs the frontend
+/// to display a dynamic form and collect the user's answers.
+pub const FRONTEND_PROMPT_TOOLS: &[&str] = &["AskUserQuestion"];
 
 // ---------------------------------------------------------------------------
 // Path helpers
@@ -261,6 +265,15 @@ pub fn resolve_permission(
     worktree_path: &Path,
     session_cache: &HashSet<String>,
 ) -> ResolvedPermission {
+    // Tools that must always prompt the frontend (e.g. AskUserQuestion needs
+    // the UI to collect user answers via the permission.request flow).
+    if FRONTEND_PROMPT_TOOLS.contains(&tool_name) {
+        return ResolvedPermission::NeedsPrompt {
+            description: format!("{tool_name} requires user interaction"),
+            pattern: format!("{tool_name}(*)"),
+        };
+    }
+
     // Always-allowed tools (no file system impact)
     if ALWAYS_ALLOW_TOOLS.contains(&tool_name) {
         return ResolvedPermission::Allow;
@@ -420,6 +433,34 @@ mod tests {
                 "{tool} should be auto-allowed"
             );
         }
+    }
+
+    #[test]
+    fn test_frontend_prompt_tools_not_auto_allowed() {
+        let worktree = PathBuf::from("/project");
+        let cache = HashSet::new();
+
+        // AskUserQuestion must NOT be auto-allowed — it needs the frontend
+        // round-trip to collect the user's answers via the permission.request flow.
+        for tool in FRONTEND_PROMPT_TOOLS {
+            assert_ne!(
+                resolve_permission(tool, &serde_json::json!({}), &worktree, &cache),
+                ResolvedPermission::Allow,
+                "{tool} should NOT be auto-allowed (requires frontend prompt)"
+            );
+        }
+    }
+
+    #[test]
+    fn test_ask_user_question_not_in_always_allow() {
+        assert!(
+            !ALWAYS_ALLOW_TOOLS.contains(&"AskUserQuestion"),
+            "AskUserQuestion must not be in ALWAYS_ALLOW_TOOLS"
+        );
+        assert!(
+            FRONTEND_PROMPT_TOOLS.contains(&"AskUserQuestion"),
+            "AskUserQuestion must be in FRONTEND_PROMPT_TOOLS"
+        );
     }
 
     #[test]
