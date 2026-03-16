@@ -459,7 +459,7 @@ export const AgentPromptBar = forwardRef<
             items={slash.filteredItems}
             selectedIndex={slash.selectedIndex}
             onSelect={handleSlashSelect}
-            isLoading={slashCommandsLoading || commandsQuery.isLoading || commandsQuery.isFetching}
+            isLoading={slashCommandsOverride ? (slashCommandsLoading ?? false) : (commandsQuery.isLoading || commandsQuery.isFetching)}
           >
             <Textarea
               ref={textareaRef}

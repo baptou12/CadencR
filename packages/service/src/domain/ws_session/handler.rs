@@ -384,6 +384,9 @@ async fn handle_commands_action(envelope: WsEnvelope, sender: &WsSender) {
 }
 
 /// Handle commands.get: fetch available slash commands for a given cwd.
+///
+/// Resolves commands by scanning the filesystem for custom commands/skills
+/// and combining with hardcoded built-in commands. Does NOT spawn a CLI subprocess.
 async fn handle_commands_get(envelope: WsEnvelope, sender: &WsSender) {
     let payload: CommandsGetPayload = match serde_json::from_value(envelope.payload.clone()) {
         Ok(p) => p,
@@ -393,38 +396,23 @@ async fn handle_commands_get(envelope: WsEnvelope, sender: &WsSender) {
         }
     };
 
-    match claude_agent_sdk_rs::supported_commands(&payload.cwd, None).await {
-        Ok(sdk_commands) => {
-            // Prepend custom commands
-            let mut commands = vec![SlashCommandPayload {
-                name: "clear".into(),
-                description: Some("Clear conversation context and start fresh".into()),
-            }];
+    let resolved = super::slash_commands::resolve_commands(&payload.cwd).await;
 
-            // Convert SDK SlashCommand to protocol payload
-            commands.extend(sdk_commands.into_iter().map(|c| SlashCommandPayload {
-                name: c.name,
-                description: c.description,
-            }));
+    let commands: Vec<SlashCommandPayload> = resolved
+        .into_iter()
+        .map(|c| SlashCommandPayload {
+            name: c.name,
+            description: c.description,
+        })
+        .collect();
 
-            let reply = WsEnvelope::reply(
-                &envelope.id,
-                "commands",
-                "list",
-                serde_json::to_value(CommandsListPayload { commands }).unwrap(),
-            );
-            let _ = sender.send(Message::Text(String::from(reply).into()));
-        }
-        Err(e) => {
-            error!(error = %e, cwd = %payload.cwd, "Failed to fetch supported commands");
-            send_error(
-                sender,
-                &envelope.id,
-                "COMMANDS_FETCH_ERROR",
-                &format!("Failed to fetch commands: {e}"),
-            );
-        }
-    }
+    let reply = WsEnvelope::reply(
+        &envelope.id,
+        "commands",
+        "list",
+        serde_json::to_value(CommandsListPayload { commands }).unwrap(),
+    );
+    let _ = sender.send(Message::Text(String::from(reply).into()));
 }
 
 /// Handle session.init: DB-driven session creation.
