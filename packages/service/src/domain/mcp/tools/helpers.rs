@@ -1,6 +1,20 @@
 use rmcp::model::{CallToolResult, Content};
 use sqlx::SqlitePool;
 
+/// Extract a required i64 parameter from JSON args, returning a clear error if missing.
+pub fn require_i64(args: &serde_json::Value, key: &str) -> Result<i64, String> {
+    args[key]
+        .as_i64()
+        .ok_or_else(|| format!("Missing required parameter: {key}"))
+}
+
+/// Extract a required string parameter from JSON args, returning a clear error if missing.
+pub fn require_str<'a>(args: &'a serde_json::Value, key: &str) -> Result<&'a str, String> {
+    args[key]
+        .as_str()
+        .ok_or_else(|| format!("Missing required parameter: {key}"))
+}
+
 /// Wraps text in a successful tool result
 pub fn text_result(text: &str) -> CallToolResult {
     CallToolResult::success(vec![Content::text(text)])

@@ -12,7 +12,7 @@ use rmcp::{
 
 use crate::domain::mcp::context::McpContext;
 use crate::domain::mcp::tools::{
-    create_prd::CreatePrdTool, edit_prd::EditPrdTool, helpers::{error_result, text_result},
+    create_prd::CreatePrdTool, edit_prd::EditPrdTool, helpers::{error_result, require_str, text_result},
     mark_agent_done::MarkAgentDoneTool, show_prd::ShowPrdTool,
 };
 
@@ -68,14 +68,15 @@ impl ServerHandler for PrdServer {
                 .unwrap_or(serde_json::Value::Null);
 
             let result = match request.name.as_ref() {
-                "create_prd" => self.create_prd.call(args["prd"].as_str().unwrap_or("")).await,
+                "create_prd" => match require_str(&args, "prd") {
+                    Ok(v) => self.create_prd.call(v).await,
+                    Err(e) => Err(e),
+                },
                 "edit_prd" => {
-                    self.edit_prd
-                        .call(
-                            args["old_string"].as_str().unwrap_or(""),
-                            args["new_string"].as_str().unwrap_or(""),
-                        )
-                        .await
+                    match (require_str(&args, "old_string"), require_str(&args, "new_string")) {
+                        (Ok(old), Ok(new)) => self.edit_prd.call(old, new).await,
+                        (Err(e), _) | (_, Err(e)) => Err(e),
+                    }
                 }
                 "show_prd" => self.show_prd.call().await,
                 "mark_agent_done" => {

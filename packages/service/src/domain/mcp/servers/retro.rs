@@ -12,7 +12,7 @@ use rmcp::{
 
 use crate::domain::mcp::context::McpContext;
 use crate::domain::mcp::tools::{
-    helpers::{error_result, text_result}, list_conversations::ListConversationsTool,
+    helpers::{error_result, require_i64, text_result}, list_conversations::ListConversationsTool,
     list_phases::ListPhasesTool, mark_agent_done::MarkAgentDoneTool,
     read_conversation::ReadConversationTool, read_phase::ReadPhaseTool, read_plan::ReadPlanTool,
     read_prd::ReadPrdTool,
@@ -87,20 +87,32 @@ impl ServerHandler for RetroServer {
                 .unwrap_or(serde_json::Value::Null);
 
             let result = match request.name.as_ref() {
-                "read_plan" => self.read_plan.call(args["plan_id"].as_i64().unwrap_or(0)).await,
-                "list_phases" => self.list_phases.call(args["plan_id"].as_i64().unwrap_or(0)).await,
-                "read_phase" => self.read_phase.call(args["phase_id"].as_i64().unwrap_or(0)).await,
+                "read_plan" => match require_i64(&args, "plan_id") {
+                    Ok(v) => self.read_plan.call(v).await,
+                    Err(e) => Err(e),
+                },
+                "list_phases" => match require_i64(&args, "plan_id") {
+                    Ok(v) => self.list_phases.call(v).await,
+                    Err(e) => Err(e),
+                },
+                "read_phase" => match require_i64(&args, "phase_id") {
+                    Ok(v) => self.read_phase.call(v).await,
+                    Err(e) => Err(e),
+                },
                 "read_prd" => self.read_prd.call().await,
                 "list_conversations" => self.list_conversations.call().await,
-                "read_conversation" => {
-                    self.read_conversation
-                        .call(
-                            args["session_id"].as_i64().unwrap_or(0),
-                            args["offset"].as_i64(),
-                            args["limit"].as_i64(),
-                        )
-                        .await
-                }
+                "read_conversation" => match require_i64(&args, "session_id") {
+                    Ok(session_id) => {
+                        self.read_conversation
+                            .call(
+                                session_id,
+                                args["offset"].as_i64(),
+                                args["limit"].as_i64(),
+                            )
+                            .await
+                    }
+                    Err(e) => Err(e),
+                },
                 "mark_agent_done" => {
                     self.mark_agent_done.call(args["summary"].as_str().map(|s| s.to_string())).await
                 }

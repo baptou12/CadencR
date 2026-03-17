@@ -12,7 +12,7 @@ use rmcp::{
 
 use crate::domain::mcp::context::McpContext;
 use crate::domain::mcp::tools::{
-    helpers::{error_result, text_result}, list_phases::ListPhasesTool,
+    helpers::{error_result, require_i64, text_result}, list_phases::ListPhasesTool,
     mark_agent_done::MarkAgentDoneTool, mark_phase_done::MarkPhaseDoneTool,
     read_phase::ReadPhaseTool, read_plan::ReadPlanTool, read_prd::ReadPrdTool,
 };
@@ -83,22 +83,34 @@ impl ServerHandler for SessionServer {
                 .unwrap_or(serde_json::Value::Null);
 
             let result = match request.name.as_ref() {
-                "read_plan" => self.read_plan.call(args["plan_id"].as_i64().unwrap_or(0)).await,
-                "list_phases" => self.list_phases.call(args["plan_id"].as_i64().unwrap_or(0)).await,
-                "read_phase" => self.read_phase.call(args["phase_id"].as_i64().unwrap_or(0)).await,
+                "read_plan" => match require_i64(&args, "plan_id") {
+                    Ok(v) => self.read_plan.call(v).await,
+                    Err(e) => Err(e),
+                },
+                "list_phases" => match require_i64(&args, "plan_id") {
+                    Ok(v) => self.list_phases.call(v).await,
+                    Err(e) => Err(e),
+                },
+                "read_phase" => match require_i64(&args, "phase_id") {
+                    Ok(v) => self.read_phase.call(v).await,
+                    Err(e) => Err(e),
+                },
                 "read_prd" => self.read_prd.call().await,
                 "mark_agent_done" => {
                     self.mark_agent_done.call(args["summary"].as_str().map(|s| s.to_string())).await
                 }
-                "mark_phase_done" => {
-                    self.mark_phase_done
-                        .call(
-                            args["phase_id"].as_i64().unwrap_or(0),
-                            args["implementation_notes"].as_str().map(|s| s.to_string()),
-                            args["deviations"].as_str().map(|s| s.to_string()),
-                        )
-                        .await
-                }
+                "mark_phase_done" => match require_i64(&args, "phase_id") {
+                    Ok(phase_id) => {
+                        self.mark_phase_done
+                            .call(
+                                phase_id,
+                                args["implementation_notes"].as_str().map(|s| s.to_string()),
+                                args["deviations"].as_str().map(|s| s.to_string()),
+                            )
+                            .await
+                    }
+                    Err(e) => Err(e),
+                },
                 other => Err(format!("Unknown tool: {other}")),
             };
 

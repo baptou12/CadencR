@@ -13,7 +13,7 @@ use rmcp::{
 use crate::domain::mcp::context::McpContext;
 use crate::domain::mcp::tools::{
     create_phase::CreatePhaseTool, finalize_phases::FinalizePhases,
-    helpers::{error_result, text_result}, list_phases::ListPhasesTool,
+    helpers::{error_result, require_i64, require_str, text_result}, list_phases::ListPhasesTool,
     mark_agent_done::MarkAgentDoneTool, read_phase::ReadPhaseTool, read_plan::ReadPlanTool,
     remove_phase::RemovePhaseTool, update_phase::UpdatePhaseTool,
 };
@@ -90,42 +90,68 @@ impl ServerHandler for RiskServer {
                 .unwrap_or(serde_json::Value::Null);
 
             let result = match request.name.as_ref() {
-                "read_plan" => self.read_plan.call(args["plan_id"].as_i64().unwrap_or(0)).await,
-                "list_phases" => self.list_phases.call(args["plan_id"].as_i64().unwrap_or(0)).await,
-                "read_phase" => self.read_phase.call(args["phase_id"].as_i64().unwrap_or(0)).await,
+                "read_plan" => match require_i64(&args, "plan_id") {
+                    Ok(v) => self.read_plan.call(v).await,
+                    Err(e) => Err(e),
+                },
+                "list_phases" => match require_i64(&args, "plan_id") {
+                    Ok(v) => self.list_phases.call(v).await,
+                    Err(e) => Err(e),
+                },
+                "read_phase" => match require_i64(&args, "phase_id") {
+                    Ok(v) => self.read_phase.call(v).await,
+                    Err(e) => Err(e),
+                },
                 "create_phase" => {
-                    self.create_phase
-                        .call(
-                            args["plan_id"].as_i64().unwrap_or(0),
-                            args["step_number"].as_i64().unwrap_or(0),
-                            args["title"].as_str().unwrap_or("").to_string(),
-                            args["prompt"].as_str().unwrap_or("").to_string(),
-                            args["complexity"].as_i64().map(|v| v as i8),
-                            args["commit_message"].as_str().map(|s| s.to_string()),
-                            args["phase_type"].as_str().map(|s| s.to_string()),
-                        )
-                        .await
+                    match (
+                        require_i64(&args, "plan_id"),
+                        require_i64(&args, "step_number"),
+                        require_str(&args, "title"),
+                        require_str(&args, "prompt"),
+                    ) {
+                        (Ok(plan_id), Ok(step_number), Ok(title), Ok(prompt)) => {
+                            self.create_phase
+                                .call(
+                                    plan_id,
+                                    step_number,
+                                    title.to_string(),
+                                    prompt.to_string(),
+                                    args["complexity"].as_i64().map(|v| v as i8),
+                                    args["commit_message"].as_str().map(|s| s.to_string()),
+                                    args["phase_type"].as_str().map(|s| s.to_string()),
+                                )
+                                .await
+                        }
+                        (Err(e), _, _, _) | (_, Err(e), _, _) | (_, _, Err(e), _) | (_, _, _, Err(e)) => Err(e),
+                    }
                 }
-                "update_phase" => {
-                    self.update_phase
-                        .call(
-                            args["phase_id"].as_i64().unwrap_or(0),
-                            args["title"].as_str().map(|s| s.to_string()),
-                            args["step_number"].as_i64(),
-                            args["complexity"].as_i64().map(|v| v as i8),
-                            args["commit_message"].as_str().map(|s| s.to_string()),
-                            args["prompt"].as_str().map(|s| s.to_string()),
-                            args["phase_type"].as_str().map(|s| s.to_string()),
-                        )
-                        .await
-                }
-                "remove_phase" => self.remove_phase.call(args["phase_id"].as_i64().unwrap_or(0)).await,
+                "update_phase" => match require_i64(&args, "phase_id") {
+                    Ok(phase_id) => {
+                        self.update_phase
+                            .call(
+                                phase_id,
+                                args["title"].as_str().map(|s| s.to_string()),
+                                args["step_number"].as_i64(),
+                                args["complexity"].as_i64().map(|v| v as i8),
+                                args["commit_message"].as_str().map(|s| s.to_string()),
+                                args["prompt"].as_str().map(|s| s.to_string()),
+                                args["phase_type"].as_str().map(|s| s.to_string()),
+                            )
+                            .await
+                    }
+                    Err(e) => Err(e),
+                },
+                "remove_phase" => match require_i64(&args, "phase_id") {
+                    Ok(v) => self.remove_phase.call(v).await,
+                    Err(e) => Err(e),
+                },
                 "mark_agent_done" => {
                     self.mark_agent_done.call(args["summary"].as_str().map(|s| s.to_string())).await
                 }
-                "finalize_phases" => {
-                    self.finalize_phases.call(args["plan_id"].as_i64().unwrap_or(0)).await
-                }
+                "finalize_phases" => match require_i64(&args, "plan_id") {
+                    Ok(v) => self.finalize_phases.call(v).await,
+                    Err(e) => Err(e),
+                },
                 other => Err(format!("Unknown tool: {other}")),
             };
 
