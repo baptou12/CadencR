@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::domain::mcp::McpContext;
+use super::helpers::verify_plan_ownership;
 
 pub struct ReadPlanTool {
     pub ctx: Arc<McpContext>,
@@ -36,6 +37,8 @@ impl ReadPlanTool {
     }
 
     pub async fn call(&self, plan_id: i64) -> Result<String, String> {
+        verify_plan_ownership(&self.ctx.read_pool, plan_id, self.ctx.feature_id).await?;
+
         let plan: PlanRow = sqlx::query_as(
             "SELECT id, feature_id, title, status, summary, context, clarifications, completion_conditions, created_at, updated_at FROM plans WHERE id = ?"
         )

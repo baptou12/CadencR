@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::domain::mcp::McpContext;
+use super::helpers::verify_phase_ownership;
 
 pub struct ReadPhaseTool {
     pub ctx: Arc<McpContext>,
@@ -28,6 +29,8 @@ impl ReadPhaseTool {
     }
 
     pub async fn call(&self, phase_id: i64) -> Result<String, String> {
+        verify_phase_ownership(&self.ctx.read_pool, phase_id, self.ctx.feature_id).await?;
+
         let p: PhaseRow = sqlx::query_as(
             "SELECT id, plan_id, step_number, title, status, complexity, commit_message, prompt, order_index, implementation_notes, deviations, phase_type FROM phases WHERE id = ?",
         )

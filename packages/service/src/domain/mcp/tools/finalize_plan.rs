@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::domain::mcp::McpContext;
+use super::helpers::verify_plan_ownership;
 
 pub struct FinalizePlanTool {
     pub ctx: Arc<McpContext>,
@@ -12,6 +13,8 @@ impl FinalizePlanTool {
     }
 
     pub async fn call(&self, plan_id: i64) -> Result<String, String> {
+        verify_plan_ownership(&self.ctx.read_pool, plan_id, self.ctx.feature_id).await?;
+
         sqlx::query("UPDATE phases SET status = 'pending' WHERE plan_id = ? AND status = 'draft'")
             .bind(plan_id)
             .execute(&self.ctx.write_pool)

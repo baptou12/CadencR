@@ -4,6 +4,7 @@ use sqlx::sqlite::SqliteArguments;
 use sqlx::Arguments;
 
 use crate::domain::mcp::McpContext;
+use super::helpers::verify_phase_ownership;
 
 pub struct UpdatePhaseTool {
     pub ctx: Arc<McpContext>,
@@ -25,6 +26,8 @@ impl UpdatePhaseTool {
         prompt: Option<String>,
         phase_type: Option<String>,
     ) -> Result<String, String> {
+        verify_phase_ownership(&self.ctx.read_pool, phase_id, self.ctx.feature_id).await?;
+
         // Verify phase exists and is draft
         let status: String = sqlx::query_scalar("SELECT status FROM phases WHERE id = ?")
             .bind(phase_id)

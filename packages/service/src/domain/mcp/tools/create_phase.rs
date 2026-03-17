@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::domain::mcp::McpContext;
+use super::helpers::verify_plan_ownership;
 
 pub struct CreatePhaseTool {
     pub ctx: Arc<McpContext>,
@@ -21,6 +22,8 @@ impl CreatePhaseTool {
         commit_message: Option<String>,
         phase_type: Option<String>,
     ) -> Result<String, String> {
+        verify_plan_ownership(&self.ctx.read_pool, plan_id, self.ctx.feature_id).await?;
+
         let max_idx: Option<i64> = sqlx::query_scalar(
             "SELECT MAX(order_index) FROM phases WHERE plan_id = ?",
         )

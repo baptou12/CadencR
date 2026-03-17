@@ -4,6 +4,7 @@ use sqlx::sqlite::SqliteArguments;
 use sqlx::Arguments;
 
 use crate::domain::mcp::McpContext;
+use super::helpers::verify_plan_ownership;
 
 pub struct UpdatePlanTool {
     pub ctx: Arc<McpContext>,
@@ -23,6 +24,8 @@ impl UpdatePlanTool {
         clarifications: Option<String>,
         completion_conditions: Option<String>,
     ) -> Result<String, String> {
+        verify_plan_ownership(&self.ctx.read_pool, plan_id, self.ctx.feature_id).await?;
+
         let mut sets = Vec::new();
         let mut args = SqliteArguments::default();
 

@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::domain::mcp::McpContext;
+use super::helpers::verify_phase_ownership;
 
 pub struct MarkPhaseDoneTool {
     pub ctx: Arc<McpContext>,
@@ -17,6 +18,8 @@ impl MarkPhaseDoneTool {
         implementation_notes: Option<String>,
         deviations: Option<String>,
     ) -> Result<String, String> {
+        verify_phase_ownership(&self.ctx.read_pool, phase_id, self.ctx.feature_id).await?;
+
         sqlx::query("UPDATE phases SET status = 'done', implementation_notes = ?, deviations = ? WHERE id = ?")
             .bind(&implementation_notes)
             .bind(&deviations)

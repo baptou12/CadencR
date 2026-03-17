@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::domain::mcp::McpContext;
+use super::helpers::verify_phase_ownership;
 
 pub struct RemovePhaseTool {
     pub ctx: Arc<McpContext>,
@@ -12,6 +13,8 @@ impl RemovePhaseTool {
     }
 
     pub async fn call(&self, phase_id: i64) -> Result<String, String> {
+        verify_phase_ownership(&self.ctx.read_pool, phase_id, self.ctx.feature_id).await?;
+
         let status: String = sqlx::query_scalar("SELECT status FROM phases WHERE id = ?")
             .bind(phase_id)
             .fetch_one(&self.ctx.read_pool)

@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::domain::mcp::McpContext;
+use super::helpers::verify_plan_ownership;
 
 pub struct ListPhasesTool {
     pub ctx: Arc<McpContext>,
@@ -22,6 +23,8 @@ impl ListPhasesTool {
     }
 
     pub async fn call(&self, plan_id: i64) -> Result<String, String> {
+        verify_plan_ownership(&self.ctx.read_pool, plan_id, self.ctx.feature_id).await?;
+
         let phases: Vec<PhaseRow> = sqlx::query_as(
             "SELECT id, step_number, title, status, phase_type, complexity FROM phases WHERE plan_id = ? ORDER BY step_number, order_index",
         )
