@@ -57,10 +57,10 @@ fn build_persist_content(text: &str, images: &[ImagePayload]) -> String {
 }
 
 /// Response sent through the permission channel from the WebSocket handler.
-pub(in crate::domain::ws_session) struct PermissionResponse {
-    pub(in crate::domain::ws_session) decision: PermissionDecision,
-    pub(in crate::domain::ws_session) feedback: Option<String>,
-    pub(in crate::domain::ws_session) updated_input: Option<serde_json::Value>,
+pub(crate) struct PermissionResponse {
+    pub(crate) decision: PermissionDecision,
+    pub(crate) feedback: Option<String>,
+    pub(crate) updated_input: Option<serde_json::Value>,
 }
 
 /// CanUseTool implementation that resolves permissions server-side when possible,

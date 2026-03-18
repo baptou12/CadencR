@@ -79,6 +79,15 @@ export function WsFeatureView({ featureId, projectId }: WsFeatureViewProps) {
         }
         return;
       }
+      // ESC → interrupt active agent
+      if (e.key === "Escape") {
+        e.preventDefault();
+        const { selectedItemId, interruptItem, workflowStatus } = store;
+        if (selectedItemId != null && (workflowStatus === "building" || workflowStatus === "paused")) {
+          interruptItem(selectedItemId);
+        }
+        return;
+      }
       // CMD+OPT+UP/DOWN → navigate sidebar
       if (e.metaKey && e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
         e.preventDefault();
@@ -222,7 +231,7 @@ export function WsFeatureView({ featureId, projectId }: WsFeatureViewProps) {
             onStop={() => {}}
             pendingPermission={selectedAgent.pendingPermission}
             onPermissionDecision={(decision) => {
-              store.respondToPermission(selectedItem.id, "", decision);
+              store.respondToPermission(selectedItem.id, selectedAgent?.pendingPermission?.requestId ?? "", decision);
             }}
             featureId={featureId}
             projectId={projectId}

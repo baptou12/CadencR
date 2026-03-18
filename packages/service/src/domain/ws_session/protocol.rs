@@ -263,6 +263,20 @@ pub struct WorkflowPermissionRespondPayload {
     pub queue_item_id: i64,
     pub request_id: String,
     pub decision: String,
+    pub feedback: Option<String>,
+    pub updated_input: Option<serde_json::Value>,
+}
+
+/// Server → Client: permission request from a workflow agent.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowPermissionRequestPayload {
+    pub feature_id: i64,
+    pub queue_item_id: i64,
+    pub request_id: String,
+    pub tool_name: String,
+    pub tool_input: serde_json::Value,
+    pub description: Option<String>,
+    pub pattern: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -329,16 +343,6 @@ pub struct WorkflowAgentStreamPayload {
     pub queue_item_id: i64,
     pub session_id: i64,
     pub message: serde_json::Value,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WorkflowPermissionRequestPayload {
-    pub feature_id: i64,
-    pub queue_item_id: i64,
-    pub request_id: String,
-    pub tool_name: String,
-    pub tool_input: serde_json::Value,
-    pub description: Option<String>,
 }
 
 #[cfg(test)]

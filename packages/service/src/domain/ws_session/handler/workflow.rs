@@ -7,6 +7,7 @@ use tracing::{info, warn};
 use crate::app_state::AppState;
 use crate::domain::features::models::WorkflowType;
 use crate::domain::workflow::engine::WorkflowEngine;
+use crate::domain::ws_session::persistence::WsSessionPersistence;
 use crate::domain::ws_session::protocol::*;
 use super::{SdkSessions, WsSender};
 
@@ -62,7 +63,7 @@ pub async fn handle_workflow_action(
         "skip_item" => handle_skip_item(envelope, sender).await,
         "retry_item" => handle_retry_item(envelope, sender).await,
         "permission.respond" => handle_permission_respond(envelope, sender).await,
-        "prompt.send" => handle_prompt_send(envelope, sender).await,
+        "prompt.send" => handle_prompt_send(envelope, sender, app_state).await,
         "interrupt" => handle_interrupt(envelope, sender, app_state).await,
         "set_autonomy" => handle_set_autonomy(envelope, sender).await,
         unknown => {
@@ -453,22 +454,44 @@ async fn handle_permission_respond(envelope: WsEnvelope, sender: &WsSender) {
         }
     };
 
-    let Some(_engine) = get_engine(payload.feature_id) else {
+    let Some(engine) = get_engine(payload.feature_id) else {
         send_workflow_error(sender, &envelope.id, "NO_ENGINE", &format!("No workflow engine for feature {}", payload.feature_id));
         return;
     };
 
-    // TODO: Route permission response to correct agent's permission channel (Phase 4+)
-    warn!(feature_id = payload.feature_id, "permission.respond called but routing not yet implemented");
-    let ack = WsEnvelope::reply(&envelope.id, "workflow", "acknowledged", serde_json::json!({
-        "feature_id": payload.feature_id,
-        "status": "not_yet_implemented",
-        "action": "permission.respond",
-    }));
-    let _ = sender.send(Message::Text(String::from(ack).into()));
+    // Parse decision string to PermissionDecision enum
+    let decision = match payload.decision.as_str() {
+        "allow_once" | "AllowOnce" => PermissionDecision::AllowOnce,
+        "allow_future" | "AllowFuture" => PermissionDecision::AllowFuture,
+        "deny" | "Deny" => PermissionDecision::Deny,
+        other => {
+            send_workflow_error(sender, &envelope.id, "INVALID_DECISION", &format!("Unknown decision: {other}"));
+            return;
+        }
+    };
+
+    let response = super::session_prompt::PermissionResponse {
+        decision,
+        feedback: payload.feedback,
+        updated_input: payload.updated_input,
+    };
+
+    match engine.respond_permission(payload.queue_item_id, response).await {
+        Ok(()) => {
+            let ack = WsEnvelope::reply(&envelope.id, "workflow", "acknowledged", serde_json::json!({
+                "feature_id": payload.feature_id,
+                "action": "permission.respond",
+            }));
+            let _ = sender.send(Message::Text(String::from(ack).into()));
+        }
+        Err(e) => {
+            warn!(feature_id = payload.feature_id, queue_item_id = payload.queue_item_id, error = %e, "permission.respond failed — agent may be orphaned");
+            send_workflow_error(sender, &envelope.id, "AGENT_ORPHANED", &e);
+        }
+    }
 }
 
-async fn handle_prompt_send(envelope: WsEnvelope, sender: &WsSender) {
+async fn handle_prompt_send(envelope: WsEnvelope, sender: &WsSender, app_state: &AppState) {
     let payload: WorkflowPromptSendPayload = match serde_json::from_value(envelope.payload.clone()) {
         Ok(p) => p,
         Err(e) => {
@@ -477,19 +500,35 @@ async fn handle_prompt_send(envelope: WsEnvelope, sender: &WsSender) {
         }
     };
 
-    let Some(_engine) = get_engine(payload.feature_id) else {
+    let Some(engine) = get_engine(payload.feature_id) else {
         send_workflow_error(sender, &envelope.id, "NO_ENGINE", &format!("No workflow engine for feature {}", payload.feature_id));
         return;
     };
 
-    // TODO: Route prompt to correct running agent (Phase 4+)
-    warn!(feature_id = payload.feature_id, "prompt.send called but routing not yet implemented");
-    let ack = WsEnvelope::reply(&envelope.id, "workflow", "acknowledged", serde_json::json!({
-        "feature_id": payload.feature_id,
-        "status": "not_yet_implemented",
-        "action": "prompt.send",
-    }));
-    let _ = sender.send(Message::Text(String::from(ack).into()));
+    // Persist user message if we can find the db_session_id
+    if let Some(db_session_id_ref) = engine.active_items.get(&payload.queue_item_id) {
+        let db_session_id = *db_session_id_ref;
+        let p = WsSessionPersistence::with_session_id(
+            app_state.write_pool.clone(),
+            payload.feature_id,
+            Some(db_session_id),
+        );
+        p.persist_user_message(&payload.text).await;
+    }
+
+    match engine.send_prompt(payload.queue_item_id, &payload.text, payload.images).await {
+        Ok(()) => {
+            let ack = WsEnvelope::reply(&envelope.id, "workflow", "acknowledged", serde_json::json!({
+                "feature_id": payload.feature_id,
+                "action": "prompt.send",
+            }));
+            let _ = sender.send(Message::Text(String::from(ack).into()));
+        }
+        Err(e) => {
+            warn!(feature_id = payload.feature_id, queue_item_id = payload.queue_item_id, error = %e, "prompt.send failed — agent may be orphaned");
+            send_workflow_error(sender, &envelope.id, "AGENT_ORPHANED", &e);
+        }
+    }
 }
 
 async fn handle_interrupt(envelope: WsEnvelope, sender: &WsSender, app_state: &AppState) {

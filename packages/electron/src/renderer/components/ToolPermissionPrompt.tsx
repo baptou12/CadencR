@@ -10,6 +10,7 @@ export interface PendingPermission {
   input: Record<string, unknown>;
   description: string;
   pattern: string;
+  requestId?: string;
 }
 
 interface ToolPermissionPromptProps {

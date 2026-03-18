@@ -2,7 +2,7 @@ mod commands;
 pub(crate) mod mcp_spawn;
 mod session_control;
 mod session_init;
-mod session_prompt;
+pub(crate) mod session_prompt;
 pub(crate) mod workflow;
 
 use std::collections::{HashMap, HashSet};

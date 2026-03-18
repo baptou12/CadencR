@@ -3,17 +3,21 @@
 //! The engine is workflow-type-agnostic — it delegates item-specific decisions
 //! (agent type, prompts, MCP config) to the WorkflowStrategy trait.
 
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use dashmap::DashMap;
 use sqlx::SqlitePool;
 use tokio::sync::mpsc;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use axum::extract::ws::Message;
-use claude_agent_sdk_rs::{Options, PermissionMode, Query, SdkError, SdkMessage};
+use claude_agent_sdk_rs::{
+    CanUseTool, Options, PermissionRequest, PermissionResult, Query, SdkError, SdkMessage,
+};
 
 use crate::domain::features::models::{QueueItem, WorkflowType};
 use crate::domain::features::repository as repo;
@@ -22,10 +26,148 @@ use crate::domain::mcp::servers::AgentType;
 use crate::domain::workflow::prompts::Prompts;
 use crate::domain::workflow::strategies::{self, WorkflowStrategy};
 use crate::domain::ws_session::handler::mcp_spawn::build_mcp_server_config;
+use crate::domain::ws_session::handler::session_prompt::PermissionResponse;
+use crate::domain::ws_session::permissions;
 use crate::domain::ws_session::persistence::WsSessionPersistence;
 use crate::domain::ws_session::protocol::*;
 
 pub type WsSender = mpsc::UnboundedSender<Message>;
+
+/// CanUseTool implementation for workflow agents that bridges permission requests
+/// to the frontend via workflow.permission.request envelopes.
+struct WorkflowPermissionBridge {
+    queue_item_id: i64,
+    feature_id: i64,
+    sender: WsSender,
+    response_rx: Arc<tokio::sync::Mutex<mpsc::Receiver<PermissionResponse>>>,
+    worktree_path: PathBuf,
+    session_cache: Arc<tokio::sync::Mutex<HashSet<String>>>,
+    allowed_patterns: Arc<HashSet<String>>,
+}
+
+#[async_trait]
+impl CanUseTool for WorkflowPermissionBridge {
+    async fn can_use_tool(&self, request: PermissionRequest) -> PermissionResult {
+        debug!(
+            tool_name = %request.tool_name,
+            queue_item_id = self.queue_item_id,
+            "WorkflowPermissionBridge::can_use_tool called"
+        );
+
+        let force_prompt = permissions::FRONTEND_PROMPT_TOOLS.contains(&request.tool_name.as_str());
+
+        // Server-side resolution
+        let cache = self.session_cache.lock().await;
+        let resolved = permissions::resolve_permission(
+            &request.tool_name,
+            &request.input,
+            &self.worktree_path,
+            &cache,
+        );
+        drop(cache);
+
+        match resolved {
+            permissions::ResolvedPermission::Allow => {
+                debug!(tool_name = %request.tool_name, "workflow auto-allowed");
+                return PermissionResult::Allow {
+                    updated_input: request.input,
+                    updated_permissions: None,
+                    tool_use_id: Some(request.tool_use_id),
+                };
+            }
+            permissions::ResolvedPermission::Deny { reason } => {
+                debug!(tool_name = %request.tool_name, reason = %reason, "workflow auto-denied");
+                return PermissionResult::Deny {
+                    message: reason,
+                    interrupt: Some(false),
+                    tool_use_id: Some(request.tool_use_id),
+                };
+            }
+            permissions::ResolvedPermission::NeedsPrompt { description, pattern } => {
+                // Check allowed_patterns from settings files
+                if !force_prompt && self.allowed_patterns.contains(&pattern) {
+                    debug!(tool_name = %request.tool_name, pattern = %pattern, "workflow allowed by settings pattern");
+                    self.session_cache.lock().await.insert(pattern);
+                    return PermissionResult::Allow {
+                        updated_input: request.input,
+                        updated_permissions: None,
+                        tool_use_id: Some(request.tool_use_id),
+                    };
+                }
+
+                // Bridge to frontend via workflow.permission.request
+                debug!(tool_name = %request.tool_name, pattern = %pattern, "workflow prompting user");
+                let payload = WorkflowPermissionRequestPayload {
+                    feature_id: self.feature_id,
+                    queue_item_id: self.queue_item_id,
+                    request_id: request.tool_use_id.clone(),
+                    tool_name: request.tool_name.clone(),
+                    tool_input: request.input.clone(),
+                    description: Some(description),
+                    pattern: Some(pattern.clone()),
+                };
+                let envelope = WsEnvelope::new(
+                    "workflow",
+                    "permission.request",
+                    serde_json::to_value(payload).unwrap(),
+                );
+                let _ = self.sender.send(Message::Text(String::from(envelope).into()));
+
+                // Wait for user response
+                let original_input = request.input;
+                let mut rx: tokio::sync::MutexGuard<'_, mpsc::Receiver<PermissionResponse>> = self.response_rx.lock().await;
+                match rx.recv().await {
+                    Some(response) => {
+                        let input = response.updated_input.unwrap_or(original_input);
+                        match response.decision {
+                            PermissionDecision::AllowOnce => {
+                                if !force_prompt {
+                                    self.session_cache.lock().await.insert(pattern);
+                                }
+                                PermissionResult::Allow {
+                                    updated_input: input,
+                                    updated_permissions: None,
+                                    tool_use_id: Some(request.tool_use_id),
+                                }
+                            }
+                            PermissionDecision::AllowFuture => {
+                                self.session_cache.lock().await.insert(pattern.clone());
+                                if let Err(e) = permissions::append_to_settings_local(
+                                    &self.worktree_path,
+                                    &pattern,
+                                ) {
+                                    error!(error = %e, "failed to persist workflow permission to settings.local.json");
+                                }
+                                PermissionResult::Allow {
+                                    updated_input: input,
+                                    updated_permissions: None,
+                                    tool_use_id: Some(request.tool_use_id),
+                                }
+                            }
+                            PermissionDecision::Deny => {
+                                let message = response
+                                    .feedback
+                                    .unwrap_or_else(|| "User denied permission".to_string());
+                                PermissionResult::Deny {
+                                    message,
+                                    interrupt: Some(false),
+                                    tool_use_id: Some(request.tool_use_id),
+                                }
+                            }
+                        }
+                    }
+                    None => {
+                        PermissionResult::Deny {
+                            message: "Permission channel closed".to_string(),
+                            interrupt: Some(false),
+                            tool_use_id: Some(request.tool_use_id),
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 
 pub struct WorkflowEngine {
     pub feature_id: i64,
@@ -40,6 +182,8 @@ pub struct WorkflowEngine {
     pub active_items: Arc<DashMap<i64, i64>>,
     /// queue_item_id → Query handle (for interrupt/stream_input)
     pub queries: Arc<DashMap<i64, Arc<tokio::sync::Mutex<Query>>>>,
+    /// queue_item_id → permission response sender (for bridging permissions to agents)
+    pub permission_txs: Arc<DashMap<i64, mpsc::Sender<PermissionResponse>>>,
     /// Shared MCP context for approval gates (plan/PRD approval resolution).
     /// Created lazily when plan/PRD agents are spawned.
     pub mcp_context: Arc<tokio::sync::RwLock<Option<Arc<McpContext>>>>,
@@ -70,6 +214,7 @@ impl WorkflowEngine {
             max_parallel,
             active_items: Arc::new(DashMap::new()),
             queries: Arc::new(DashMap::new()),
+            permission_txs: Arc::new(DashMap::new()),
             mcp_context: Arc::new(tokio::sync::RwLock::new(None)),
             cancel_tx,
             cancel_rx,
@@ -138,10 +283,23 @@ impl WorkflowEngine {
             .await
             .unwrap_or_else(|| PathBuf::from("."));
 
-        // 4. Build options and spawn
-        let options = Options {
+        // 4. Set up permission bridge
+        let (perm_tx, perm_rx) = mpsc::channel::<PermissionResponse>(16);
+        self.permission_txs.insert(synthetic_item_id, perm_tx);
+        let allowed_patterns = Arc::new(permissions::load_allowed_patterns(&cwd));
+        let bridge = WorkflowPermissionBridge {
+            queue_item_id: synthetic_item_id,
+            feature_id: self.feature_id,
+            sender: self.ws_sender.clone(),
+            response_rx: Arc::new(tokio::sync::Mutex::new(perm_rx)),
+            worktree_path: cwd.clone(),
+            session_cache: Arc::new(tokio::sync::Mutex::new(HashSet::new())),
+            allowed_patterns,
+        };
+
+        // 5. Build options and spawn
+        let mut options = Options {
             cwd,
-            permission_mode: Some(PermissionMode::BypassPermissions),
             system_prompt: if system_prompt.is_empty() {
                 None
             } else {
@@ -150,6 +308,7 @@ impl WorkflowEngine {
             mcp_servers: Some(mcp_servers),
             ..Options::default()
         };
+        options.can_use_tool = Some(Box::new(bridge));
 
         let content_value = serde_json::Value::String(initial_prompt.to_string());
 
@@ -338,14 +497,28 @@ impl WorkflowEngine {
         // 5. Resolve cwd — use project directory from feature
         let cwd = self.get_feature_cwd().await.unwrap_or_else(|| PathBuf::from("."));
 
-        // 6. Build Options and spawn
-        let options = Options {
+        // 6. Set up permission bridge
+        let (perm_tx, perm_rx) = mpsc::channel::<PermissionResponse>(16);
+        self.permission_txs.insert(item_id, perm_tx);
+        let allowed_patterns = Arc::new(permissions::load_allowed_patterns(&cwd));
+        let bridge = WorkflowPermissionBridge {
+            queue_item_id: item_id,
+            feature_id: self.feature_id,
+            sender: self.ws_sender.clone(),
+            response_rx: Arc::new(tokio::sync::Mutex::new(perm_rx)),
+            worktree_path: cwd.clone(),
+            session_cache: Arc::new(tokio::sync::Mutex::new(HashSet::new())),
+            allowed_patterns,
+        };
+
+        // 7. Build Options and spawn
+        let mut options = Options {
             cwd: cwd.clone(),
-            permission_mode: Some(PermissionMode::BypassPermissions),
             system_prompt: if system_prompt.is_empty() { None } else { Some(system_prompt) },
             mcp_servers: Some(mcp_servers),
             ..Options::default()
         };
+        options.can_use_tool = Some(Box::new(bridge));
 
         let content_value = serde_json::Value::String(initial_prompt);
 
@@ -409,6 +582,7 @@ impl WorkflowEngine {
 
         self.active_items.remove(&item_id);
         self.queries.remove(&item_id);
+        self.permission_txs.remove(&item_id);
 
         if let Err(e) = repo::mark_item_completed(&self.write_pool, item_id, result).await {
             error!(item_id, error = %e, "failed to mark item completed");
@@ -484,6 +658,7 @@ impl WorkflowEngine {
 
         self.active_items.remove(&item_id);
         self.queries.remove(&item_id);
+        self.permission_txs.remove(&item_id);
 
         if let Err(e) = repo::mark_item_error(&self.write_pool, item_id, Some(error)).await {
             error!(item_id, error = %e, "failed to mark item error");
@@ -537,6 +712,26 @@ impl WorkflowEngine {
         } else {
             Err(format!("No query handle or PID for item {queue_item_id}"))
         }
+    }
+
+    /// Route a permission response to the correct agent's permission channel.
+    pub async fn respond_permission(&self, queue_item_id: i64, response: PermissionResponse) -> Result<(), String> {
+        if let Some(tx) = self.permission_txs.get(&queue_item_id) {
+            return tx.send(response).await
+                .map_err(|_| format!("Permission channel closed for item {queue_item_id}"));
+        }
+        Err(format!("No permission channel for item {queue_item_id} — agent may need restart"))
+    }
+
+    /// Send a follow-up prompt to a running workflow agent.
+    pub async fn send_prompt(&self, queue_item_id: i64, text: &str, _images: Option<Vec<String>>) -> Result<(), String> {
+        if let Some(query) = self.queries.get(&queue_item_id) {
+            let q = query.lock().await;
+            let content = serde_json::Value::String(text.to_string());
+            q.stream_input(content).await.map_err(|e| format!("stream_input failed: {e}"))?;
+            return Ok(());
+        }
+        Err(format!("No query handle for item {queue_item_id} — agent may need restart"))
     }
 
     /// Retry a failed queue item.

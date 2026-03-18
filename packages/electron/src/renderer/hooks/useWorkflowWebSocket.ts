@@ -97,6 +97,7 @@ interface WorkflowState {
   retryItem: (itemId: number) => void;
   respondToPermission: (itemId: number, requestId: string, decision: "allow_once" | "allow_future" | "deny") => void;
   sendPromptToAgent: (itemId: number, text: string, images?: Array<{ base64: string; mimeType: string }>) => void;
+  interruptItem: (itemId: number) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -258,11 +259,20 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         const itemId = payload.queue_item_id as number;
         const permission: PendingPermission = {
           toolName: payload.tool_name as string,
-          input: (payload.input ?? {}) as Record<string, unknown>,
+          input: (payload.tool_input ?? payload.input ?? {}) as Record<string, unknown>,
           description: (payload.description ?? "") as string,
           pattern: (payload.pattern ?? "") as string,
+          requestId: (payload.request_id ?? "") as string,
         };
         set(state => {
+          // Handle plan/PRD agent permissions (synthetic IDs)
+          if (itemId === -1 && state.planAgent) {
+            return { planAgent: { ...state.planAgent, pendingPermission: permission } };
+          }
+          if (itemId === -2 && state.prdAgent) {
+            return { prdAgent: { ...state.prdAgent, pendingPermission: permission } };
+          }
+          // Queue agent permissions
           const activeAgents = new Map(state.activeAgents);
           const agent = activeAgents.get(itemId);
           if (!agent) return {};
@@ -389,6 +399,10 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
 
     sendPromptToAgent(itemId, text, images) {
       send("prompt.send", { queue_item_id: itemId, text, images });
+    },
+
+    interruptItem(itemId) {
+      send("interrupt", { queue_item_id: itemId });
     },
   };
 });
