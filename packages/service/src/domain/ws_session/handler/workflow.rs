@@ -2,7 +2,6 @@ use axum::extract::ws::Message;
 use tracing::info;
 
 use crate::app_state::AppState;
-use crate::domain::features::repository as features_repo;
 use crate::domain::ws_session::protocol::*;
 use super::{SdkSessions, WsSender};
 
@@ -54,11 +53,17 @@ async fn handle_feature_start(
         }
     };
 
-    let title = payload.title.as_deref().unwrap_or("Untitled Feature");
+    let feature_id = payload.feature_id;
 
-    match features_repo::create_feature(&app_state.write_pool, payload.project_id, title, "ws-feature").await {
-        Ok(feature_id) => {
-            info!(feature_id, project_id = payload.project_id, "created ws-feature");
+    // Verify the feature exists
+    let exists = sqlx::query("SELECT 1 FROM features WHERE id = ?")
+        .bind(feature_id)
+        .fetch_optional(&app_state.read_pool)
+        .await;
+
+    match exists {
+        Ok(Some(_)) => {
+            info!(feature_id, "attached workflow to existing ws-feature");
             let resp = WsEnvelope::reply(
                 &envelope.id,
                 "workflow",
@@ -67,14 +72,27 @@ async fn handle_feature_start(
             );
             let _ = sender.send(Message::Text(String::from(resp).into()));
         }
+        Ok(None) => {
+            let err = WsEnvelope::reply(
+                &envelope.id,
+                "workflow",
+                "error",
+                serde_json::to_value(SessionErrorPayload {
+                    code: "NOT_FOUND".into(),
+                    message: format!("Feature {feature_id} not found"),
+                })
+                .unwrap(),
+            );
+            let _ = sender.send(Message::Text(String::from(err).into()));
+        }
         Err(e) => {
             let err = WsEnvelope::reply(
                 &envelope.id,
                 "workflow",
                 "error",
                 serde_json::to_value(SessionErrorPayload {
-                    code: "CREATE_FAILED".into(),
-                    message: format!("Failed to create feature: {e}"),
+                    code: "LOOKUP_FAILED".into(),
+                    message: format!("Failed to look up feature: {e}"),
                 })
                 .unwrap(),
             );

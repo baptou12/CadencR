@@ -195,7 +195,8 @@ pub struct CommandsListPayload {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowFeatureStartPayload {
-    pub project_id: i64,
+    pub feature_id: i64,
+    pub project_id: Option<i64>,
     pub title: Option<String>,
 }
 
