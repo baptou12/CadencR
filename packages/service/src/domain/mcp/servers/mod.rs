@@ -159,7 +159,8 @@ fn tool_update_phase() -> Tool {
                 "complexity": { "type": "integer", "description": "New complexity rating (1-5)" },
                 "commit_message": { "type": "string", "description": "New commit message" },
                 "prompt": { "type": "string", "description": "New prompt/instructions" },
-                "phase_type": { "type": "string", "description": "New phase type" }
+                "phase_type": { "type": "string", "description": "New phase type" },
+                "depends_on": { "type": "array", "items": { "type": "string" }, "description": "Array of phase titles this phase depends on" }
             },
             "required": ["phase_id"]
         }),

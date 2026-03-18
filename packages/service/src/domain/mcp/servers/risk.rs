@@ -139,6 +139,9 @@ impl ServerHandler for RiskServer {
                                 args["commit_message"].as_str().map(|s| s.to_string()),
                                 args["prompt"].as_str().map(|s| s.to_string()),
                                 args["phase_type"].as_str().map(|s| s.to_string()),
+                                args["depends_on"].as_array().map(|arr| {
+                                    arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect()
+                                }),
                             )
                             .await
                     }

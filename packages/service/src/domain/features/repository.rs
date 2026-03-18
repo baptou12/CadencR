@@ -631,7 +631,7 @@ pub async fn unblock_ready_items(pool: &SqlitePool, feature_id: i64) -> Result<V
            AND NOT EXISTS (
                SELECT 1 FROM workflow_dependencies d
                INNER JOIN workflow_queue dep ON dep.id = d.depends_on_item_id
-               WHERE d.queue_item_id = q.id AND dep.status != 'completed'
+               WHERE d.queue_item_id = q.id AND dep.status NOT IN ('completed', 'skipped')
            )
            ORDER BY q.order_index"#,
     )

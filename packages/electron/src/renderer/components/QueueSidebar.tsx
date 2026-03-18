@@ -16,6 +16,7 @@ import {
   PauseCircleIcon,
   SkipForwardIcon,
   Loader2Icon,
+  RotateCcwIcon,
 } from "lucide-react";
 import type { QueueItem, QueueItemStatus } from "@/hooks/useWorkflowWebSocket";
 
@@ -66,10 +67,12 @@ interface QueueSidebarProps {
   queue: QueueItem[];
   selectedItemId: number | null;
   onSelectItem: (itemId: number) => void;
+  onRetryItem?: (itemId: number) => void;
+  onSkipItem?: (itemId: number) => void;
   className?: string;
 }
 
-export function QueueSidebar({ queue, selectedItemId, onSelectItem, className }: QueueSidebarProps) {
+export function QueueSidebar({ queue, selectedItemId, onSelectItem, onRetryItem, onSkipItem, className }: QueueSidebarProps) {
   const groups = useMemo(() => groupItems(queue), [queue]);
 
   if (queue.length === 0) {
@@ -101,6 +104,8 @@ export function QueueSidebar({ queue, selectedItemId, onSelectItem, className }:
                     item={item}
                     isSelected={selectedItemId === item.id}
                     onClick={() => onSelectItem(item.id)}
+                    onRetry={onRetryItem ? () => onRetryItem(item.id) : undefined}
+                    onSkip={onSkipItem ? () => onSkipItem(item.id) : undefined}
                   />
                 ))}
               </div>
@@ -111,6 +116,8 @@ export function QueueSidebar({ queue, selectedItemId, onSelectItem, className }:
                   item={item}
                   isSelected={selectedItemId === item.id}
                   onClick={() => onSelectItem(item.id)}
+                  onRetry={onRetryItem ? () => onRetryItem(item.id) : undefined}
+                  onSkip={onSkipItem ? () => onSkipItem(item.id) : undefined}
                 />
               ))
             )}
@@ -125,23 +132,56 @@ export function QueueSidebar({ queue, selectedItemId, onSelectItem, className }:
 // Individual row
 // ---------------------------------------------------------------------------
 
-function QueueItemRow({ item, isSelected, onClick }: { item: QueueItem; isSelected: boolean; onClick: () => void }) {
+function QueueItemRow({ item, isSelected, onClick, onRetry, onSkip }: {
+  item: QueueItem;
+  isSelected: boolean;
+  onClick: () => void;
+  onRetry?: () => void;
+  onSkip?: () => void;
+}) {
   const config = STATUS_CONFIG[item.status];
   const label = item.phase_title ?? item.item_type;
+  const isError = item.status === "error";
 
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors",
-        "hover:bg-gray-800/60",
-        isSelected && "bg-gray-800/80 ring-1 ring-gray-700",
-        item.status === "running" && "animate-pulse-subtle",
+    <div className="flex flex-col">
+      <button
+        type="button"
+        onClick={onClick}
+        className={cn(
+          "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors",
+          "hover:bg-gray-800/60",
+          isSelected && "bg-gray-800/80 ring-1 ring-gray-700",
+          item.status === "running" && "animate-pulse-subtle",
+        )}
+      >
+        <span className={cn("shrink-0", config.className)}>{config.icon}</span>
+        <span className="min-w-0 truncate text-gray-300">{label}</span>
+      </button>
+      {isError && (onRetry || onSkip) && (
+        <div className="flex items-center gap-1 px-2 pb-1">
+          {onRetry && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onRetry(); }}
+              className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-gray-400 hover:bg-gray-700 hover:text-gray-200"
+            >
+              <RotateCcwIcon className="size-2.5" />
+              Retry
+            </button>
+          )}
+          {onSkip && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onSkip(); }}
+              className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-gray-400 hover:bg-gray-700 hover:text-gray-200"
+            >
+              <SkipForwardIcon className="size-2.5" />
+              Skip
+            </button>
+          )}
+        </div>
       )}
-    >
-      <span className={cn("shrink-0", config.className)}>{config.icon}</span>
-      <span className="min-w-0 truncate text-gray-300">{label}</span>
-    </button>
+    </div>
   );
 }

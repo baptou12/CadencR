@@ -538,6 +538,97 @@ impl WorkflowEngine {
         row.and_then(|(d,)| d).map(PathBuf::from)
     }
 
+    /// Spawn a background task that periodically checks for stuck agents.
+    /// Items running longer than `timeout_minutes` are marked as error.
+    pub fn spawn_timeout_checker(&self, timeout_minutes: u64) {
+        let read_pool = self.read_pool.clone();
+        let write_pool = self.write_pool.clone();
+        let feature_id = self.feature_id;
+        let sender = self.ws_sender.clone();
+        let active_items = self.active_items.clone();
+
+        tokio::spawn(async move {
+            let interval = std::time::Duration::from_secs(60); // check every minute
+            loop {
+                tokio::time::sleep(interval).await;
+
+                // Find running items that started more than timeout_minutes ago
+                let stale: Vec<(i64,)> = match sqlx::query_as(
+                    "SELECT id FROM workflow_queue WHERE feature_id = ? AND status = 'running' AND started_at < datetime('now', ?)",
+                )
+                .bind(feature_id)
+                .bind(format!("-{timeout_minutes} minutes"))
+                .fetch_all(&read_pool)
+                .await {
+                    Ok(rows) => rows,
+                    Err(e) => {
+                        error!(feature_id, error = %e, "timeout checker query failed");
+                        continue;
+                    }
+                };
+
+                for (item_id,) in stale {
+                    warn!(feature_id, item_id, "agent timed out");
+                    active_items.remove(&item_id);
+
+                    if let Err(e) = repo::mark_item_error(&write_pool, item_id, Some("Agent timed out")).await {
+                        error!(item_id, error = %e, "failed to mark timed-out item");
+                        continue;
+                    }
+
+                    let envelope = WsEnvelope::new(
+                        "workflow",
+                        "item_error",
+                        serde_json::json!({
+                            "feature_id": feature_id,
+                            "queue_item_id": item_id,
+                            "error": "Agent timed out",
+                        }),
+                    );
+                    let _ = sender.send(Message::Text(String::from(envelope).into()));
+                }
+            }
+        });
+    }
+
+    /// Restore workflow state from DB on reconnection.
+    /// Marks stale running items as error and sends full queue update.
+    pub async fn restore_on_reconnect(&self) -> Result<(), String> {
+        info!(feature_id = self.feature_id, "restoring workflow state on reconnect");
+
+        // Mark any items that were "running" as error (stale from server restart)
+        let stale_items: Vec<(i64,)> = sqlx::query_as(
+            "SELECT id FROM workflow_queue WHERE feature_id = ? AND status = 'running'",
+        )
+        .bind(self.feature_id)
+        .fetch_all(&self.read_pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        for (item_id,) in &stale_items {
+            if let Err(e) = repo::mark_item_error(&self.write_pool, *item_id, Some("Stale after reconnect")).await {
+                error!(item_id, error = %e, "failed to mark stale item");
+            }
+        }
+
+        // Send full queue update
+        let all_items = repo::get_queue_for_feature(&self.read_pool, self.feature_id)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let envelope = WsEnvelope::new(
+            "workflow",
+            "queue_update",
+            serde_json::json!({
+                "feature_id": self.feature_id,
+                "items": all_items,
+            }),
+        );
+        let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
+
+        Ok(())
+    }
+
     /// Get the group_index for a completed item (for autonomy level 2 checks).
     async fn get_current_group_index(&self, item_id: i64) -> Option<i64> {
         let row: Option<(Option<i64>,)> =

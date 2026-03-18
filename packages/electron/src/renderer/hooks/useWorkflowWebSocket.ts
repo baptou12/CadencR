@@ -50,6 +50,7 @@ export interface QueueItem {
   order_index: number;
   group_index: number | null;
   agent_session_id: number | null;
+  result: string | null;
 }
 
 export interface AgentSessionState {
@@ -197,7 +198,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         const error = payload.error as string;
         set(state => {
           const queue = state.queue.map(q =>
-            q.id === itemId ? { ...q, status: "error" as const } : q,
+            q.id === itemId ? { ...q, status: "error" as const, result: error } : q,
           );
           const activeAgents = new Map(state.activeAgents);
           const agent = activeAgents.get(itemId);

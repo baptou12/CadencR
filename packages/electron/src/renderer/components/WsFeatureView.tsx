@@ -238,6 +238,8 @@ export function WsFeatureView({ featureId, projectId }: WsFeatureViewProps) {
         queue={store.queue}
         selectedItemId={store.selectedItemId}
         onSelectItem={store.selectItem}
+        onRetryItem={(id) => store.retryItem(id)}
+        onSkipItem={(id) => store.skipItem(id)}
         className="w-64 shrink-0 border-l border-gray-800"
       />
     </div>

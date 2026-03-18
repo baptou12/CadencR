@@ -138,6 +138,14 @@ async fn handle_feature_start(
         app_state.max_parallel_agents,
     ));
 
+    // Restore state on reconnect (mark stale running items, send queue update)
+    if let Err(e) = engine.restore_on_reconnect().await {
+        warn!(feature_id, error = %e, "failed to restore on reconnect");
+    }
+
+    // Start timeout checker (30 min default)
+    engine.spawn_timeout_checker(30);
+
     ENGINES.insert(feature_id, engine);
 
     info!(feature_id, workflow_type = %workflow_type.as_str(), "workflow engine created");
