@@ -54,7 +54,8 @@ pub async fn handle_workflow_action(
         "start_prd" => handle_start_prd(envelope, sender).await,
         "plan.approved" | "plan.rejected" => handle_plan_approval(envelope, sender).await,
         "prd.approved" | "prd.rejected" => handle_prd_approval(envelope, sender).await,
-        "start_build" => handle_start_build(envelope, sender).await,
+        "populate_queue" => handle_populate_queue(envelope, sender, app_state).await,
+        "start_build" => handle_start_build(envelope, sender, app_state).await,
         "continue" => handle_continue(envelope, sender).await,
         "skip_item" => handle_skip_item(envelope, sender).await,
         "retry_item" => handle_retry_item(envelope, sender).await,
@@ -309,7 +310,41 @@ async fn handle_prd_approval(envelope: WsEnvelope, sender: &WsSender) {
     let _ = sender.send(Message::Text(String::from(ack).into()));
 }
 
-async fn handle_start_build(envelope: WsEnvelope, sender: &WsSender) {
+async fn handle_populate_queue(envelope: WsEnvelope, sender: &WsSender, app_state: &AppState) {
+    let payload: WorkflowPopulateQueuePayload = match serde_json::from_value(envelope.payload.clone()) {
+        Ok(p) => p,
+        Err(e) => {
+            send_workflow_error(sender, &envelope.id, "INVALID_PAYLOAD", &format!("Invalid populate_queue payload: {e}"));
+            return;
+        }
+    };
+
+    let feature_id = payload.feature_id;
+    let Some(engine) = get_engine(feature_id) else {
+        send_workflow_error(sender, &envelope.id, "NO_ENGINE", &format!("No workflow engine for feature {feature_id}"));
+        return;
+    };
+
+    let strategy = crate::domain::workflow::strategies::get_strategy(&engine.workflow_type);
+    info!(feature_id, "populating workflow queue");
+    match strategy
+        .populate_queue(&app_state.write_pool, &app_state.read_pool, feature_id, payload.plan_id)
+        .await
+    {
+        Ok(items) => {
+            let ack = WsEnvelope::reply(&envelope.id, "workflow", "queue.populated", serde_json::json!({
+                "feature_id": feature_id,
+                "item_count": items.len(),
+            }));
+            let _ = sender.send(Message::Text(String::from(ack).into()));
+        }
+        Err(e) => {
+            send_workflow_error(sender, &envelope.id, "POPULATE_FAILED", &format!("Failed to populate queue: {e}"));
+        }
+    }
+}
+
+async fn handle_start_build(envelope: WsEnvelope, sender: &WsSender, app_state: &AppState) {
     let payload: WorkflowStartBuildPayload = match serde_json::from_value(envelope.payload.clone()) {
         Ok(p) => p,
         Err(e) => {
@@ -322,6 +357,26 @@ async fn handle_start_build(envelope: WsEnvelope, sender: &WsSender) {
         send_workflow_error(sender, &envelope.id, "NO_ENGINE", &format!("No workflow engine for feature {}", payload.feature_id));
         return;
     };
+
+    // Ensure queue is populated before advancing (idempotent — skips if already populated)
+    let strategy = crate::domain::workflow::strategies::get_strategy(&engine.workflow_type);
+    let items = crate::domain::features::repository::get_queue_for_feature(&app_state.read_pool, payload.feature_id)
+        .await
+        .unwrap_or_default();
+    if items.is_empty() {
+        info!(feature_id = payload.feature_id, "start_build: queue empty, populating first");
+        // Try to find the plan_id for this feature
+        let plan_id: Option<i64> = sqlx::query_scalar("SELECT id FROM plans WHERE feature_id = ? ORDER BY id DESC LIMIT 1")
+            .bind(payload.feature_id)
+            .fetch_optional(&app_state.read_pool)
+            .await
+            .ok()
+            .flatten();
+        if let Err(e) = strategy.populate_queue(&app_state.write_pool, &app_state.read_pool, payload.feature_id, plan_id).await {
+            send_workflow_error(sender, &envelope.id, "POPULATE_FAILED", &format!("Failed to populate queue: {e}"));
+            return;
+        }
+    }
 
     info!(feature_id = payload.feature_id, "start_build: advancing engine");
     if let Err(e) = engine.advance().await {

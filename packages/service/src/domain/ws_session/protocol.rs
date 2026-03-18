@@ -230,6 +230,12 @@ pub struct WorkflowApprovalPayload {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowPopulateQueuePayload {
+    pub feature_id: i64,
+    pub plan_id: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowStartBuildPayload {
     pub feature_id: i64,
 }
