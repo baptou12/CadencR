@@ -258,6 +258,22 @@ export function ProjectTree({
                         >
                           New Session (WebSocket)
                         </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setExpanded((prev) => ({
+                              ...prev,
+                              [project.id]: true,
+                            }));
+                            pendingProjectIdRef.current = project.id;
+                            createFeatureMutation.mutate({
+                              project_id: project.id,
+                              type: "ws-feature",
+                            });
+                          }}
+                        >
+                          New Feature (WebSocket)
+                        </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
 

@@ -6,6 +6,7 @@ import { useGetFeature, useListProjects } from "@/api/generated";
 import { FeatureTopBar } from "@/components/FeatureTopBar";
 import { AgentSession, type AgentSessionHandle } from "@/components/AgentSession";
 import { FeatureWorkflowView } from "@/components/FeatureWorkflowView";
+import { WsFeatureView } from "@/components/WsFeatureView";
 import { DiffViewerModal, type ExecuteAgentState } from "@/components/diff/DiffViewerModal";
 import { TerminalPanel, type TerminalPanelHandle } from "@/components/terminal/TerminalPanel";
 import { useFeatureAgentState } from "@/hooks/useFeatureAgentState";
@@ -46,6 +47,16 @@ function FeaturePage() {
       <SessionFeatureView
         featureId={numericFeatureId}
         projectId={numericProjectId}
+      />
+    );
+  }
+
+  if (feature?.type === "ws-feature") {
+    return (
+      <WsFeatureView
+        featureId={numericFeatureId}
+        projectId={numericProjectId}
+        feature={feature}
       />
     );
   }
