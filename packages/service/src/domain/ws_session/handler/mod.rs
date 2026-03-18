@@ -196,6 +196,12 @@ async fn handle_connection(socket: WebSocket, state: AppState) {
     }
     drop(sessions);
 
+    // Cleanup workflow engines for this connection
+    for feature_id in workflow::tracked_feature_ids() {
+        debug!(feature_id, "WS cleanup: removing workflow engine");
+        workflow::remove_engine(feature_id);
+    }
+
     send_task.abort();
 }
 

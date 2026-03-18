@@ -191,18 +191,142 @@ pub struct CommandsListPayload {
     pub commands: Vec<SlashCommandPayload>,
 }
 
-// --- Workflow payloads ---
+// --- Workflow payloads (Client → Server) ---
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowFeatureStartPayload {
     pub feature_id: i64,
     pub project_id: Option<i64>,
     pub title: Option<String>,
+    pub workflow_type: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowFeatureStartResponse {
     pub feature_id: i64,
+    pub workflow_type: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowStartPlanPayload {
+    pub feature_id: i64,
+    pub workflow_type: String,
+    pub description: String,
+    pub images: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowApprovalPayload {
+    pub feature_id: i64,
+    pub request_id: String,
+    pub approved: bool,
+    pub feedback: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowStartBuildPayload {
+    pub feature_id: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowContinuePayload {
+    pub feature_id: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowSkipItemPayload {
+    pub feature_id: i64,
+    pub item_id: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowRetryItemPayload {
+    pub feature_id: i64,
+    pub item_id: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowPermissionRespondPayload {
+    pub feature_id: i64,
+    pub queue_item_id: i64,
+    pub request_id: String,
+    pub decision: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowPromptSendPayload {
+    pub feature_id: i64,
+    pub queue_item_id: i64,
+    pub text: String,
+    pub images: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowSetAutonomyPayload {
+    pub feature_id: i64,
+    pub level: u8,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowInterruptPayload {
+    pub feature_id: i64,
+    pub queue_item_id: i64,
+}
+
+// --- Workflow payloads (Server → Client) ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowQueueUpdatePayload {
+    pub feature_id: i64,
+    pub workflow_type: String,
+    pub items: Vec<QueueItemPayload>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QueueItemPayload {
+    pub id: i64,
+    pub item_type: String,
+    pub phase_id: Option<i64>,
+    pub phase_title: Option<String>,
+    pub status: String,
+    pub order_index: i64,
+    pub group_index: Option<i64>,
+    pub agent_session_id: Option<i64>,
+    pub started_at: Option<String>,
+    pub ended_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowItemEventPayload {
+    pub feature_id: i64,
+    pub item_id: i64,
+    pub item_type: String,
+    pub phase_title: Option<String>,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowPausedPayload {
+    pub feature_id: i64,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowAgentStreamPayload {
+    pub feature_id: i64,
+    pub queue_item_id: i64,
+    pub session_id: i64,
+    pub message: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowPermissionRequestPayload {
+    pub feature_id: i64,
+    pub queue_item_id: i64,
+    pub request_id: String,
+    pub tool_name: String,
+    pub tool_input: serde_json::Value,
+    pub description: Option<String>,
 }
 
 #[cfg(test)]
