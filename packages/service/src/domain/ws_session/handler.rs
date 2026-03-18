@@ -741,6 +741,7 @@ async fn handle_prompt_send(
                         message_rx,
                         sender.clone(),
                         app_state.write_pool.clone(),
+                        sdk_sessions.clone(),
                     );
 
                     // Fire-and-forget auto-naming for first prompt
@@ -1164,6 +1165,7 @@ fn spawn_stream_reader(
     mut message_rx: mpsc::Receiver<Result<SdkMessage, SdkError>>,
     sender: WsSender,
     write_pool: sqlx::SqlitePool,
+    sdk_sessions: SdkSessions,
 ) {
     tokio::spawn(async move {
         info!(db_session_id, "stream reader started");
@@ -1283,6 +1285,29 @@ fn spawn_stream_reader(
                     let _ = sender.send(Message::Text(String::from(end_env).into()));
                     break;
                 }
+            }
+        }
+
+        // Transition Active → Pending so the next prompt.send spawns a fresh
+        // CLI process with --resume instead of writing to the dead stdin.
+        let mut sessions = sdk_sessions.lock().await;
+        if let Some(handle) = sessions.get_mut(&db_session_id) {
+            if let QueryState::Active { ref query, .. } = handle.state {
+                let q = query.lock().await;
+                let claude_session_id = q.session_id().await;
+                drop(q);
+
+                let options = Options {
+                    cwd: handle.config.cwd.clone(),
+                    permission_mode: handle.desired_permission_mode.clone(),
+                    model: handle.desired_model.clone(),
+                    system_prompt: handle.config.system_prompt.clone(),
+                    resume: claude_session_id,
+                    ..Options::default()
+                };
+
+                info!(db_session_id, "stream ended, transitioning Active → Pending for resume");
+                handle.state = QueryState::Pending(options);
             }
         }
 
@@ -1784,6 +1809,194 @@ mod tests {
 
         // No further messages should be in the channel
         assert!(rx.try_recv().is_err(), "expected no claude_session_id message for new session");
+    }
+
+    /// Helper: insert an SdkHandle with QueryState::Active using a test stub Query.
+    fn make_active_handle(
+        feature_id: i64,
+        session_id: Option<String>,
+    ) -> SdkHandle {
+        let query = Query::new_test_stub(session_id);
+        let (permission_tx, _permission_rx) = mpsc::channel::<PermissionResponse>(1);
+        SdkHandle {
+            state: QueryState::Active {
+                query: Arc::new(Mutex::new(query)),
+                permission_tx,
+            },
+            feature_id,
+            desired_model: Some("sonnet".to_string()),
+            spawned_model: Some("sonnet".to_string()),
+            desired_permission_mode: None,
+            spawned_permission_mode: None,
+            session_cache: Arc::new(Mutex::new(HashSet::new())),
+            allowed_patterns: Arc::new(HashSet::new()),
+            resume_session_id: None,
+            config: SessionConfig {
+                cwd: PathBuf::from("/tmp/test"),
+                canonical_cwd: PathBuf::from("/tmp/test"),
+                permission_mode: None,
+                system_prompt: None,
+            },
+        }
+    }
+
+    #[tokio::test]
+    async fn test_stream_reader_transitions_active_to_pending_on_stream_close() {
+        let app_state = make_test_app_state().await;
+        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+        let (ws_tx, mut ws_rx) = mpsc::unbounded_channel();
+
+        let db_session_id = 42i64;
+        let feature_id = 1i64;
+        let cli_session_id = "cli-sess-for-resume".to_string();
+
+        // Insert an Active handle
+        {
+            let mut sessions = sdk_sessions.lock().await;
+            sessions.insert(db_session_id, make_active_handle(feature_id, Some(cli_session_id.clone())));
+        }
+
+        // Create a message channel and immediately close the sender to simulate stream end
+        let (msg_tx, msg_rx) = mpsc::channel::<Result<SdkMessage, SdkError>>(1);
+        drop(msg_tx);
+
+        spawn_stream_reader(
+            db_session_id,
+            feature_id,
+            msg_rx,
+            ws_tx,
+            app_state.write_pool.clone(),
+            sdk_sessions.clone(),
+        );
+
+        // Wait for the "session.ended" message from the stream reader
+        let msg = ws_rx.recv().await.unwrap();
+        if let Message::Text(text) = msg {
+            let env: WsEnvelope = serde_json::from_str(&text).unwrap();
+            assert_eq!(env.action, "ended");
+            let payload: SessionEndedPayload = serde_json::from_value(env.payload).unwrap();
+            assert_eq!(payload.reason, "stream_closed");
+        } else {
+            panic!("expected text message");
+        }
+
+        // Give the spawned task a moment to complete the state transition
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        // Verify state transitioned to Pending with resume session ID
+        let sessions = sdk_sessions.lock().await;
+        let handle = sessions.get(&db_session_id).unwrap();
+        match &handle.state {
+            QueryState::Pending(options) => {
+                assert_eq!(options.resume, Some(cli_session_id));
+                assert_eq!(options.cwd, PathBuf::from("/tmp/test"));
+                assert_eq!(options.model, Some("sonnet".to_string()));
+            }
+            QueryState::Active { .. } => {
+                panic!("expected Pending state after stream close, but found Active");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_stream_reader_transitions_active_to_pending_on_error() {
+        let app_state = make_test_app_state().await;
+        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+        let (ws_tx, mut ws_rx) = mpsc::unbounded_channel();
+
+        let db_session_id = 43i64;
+        let feature_id = 2i64;
+
+        // Insert an Active handle (no session ID this time)
+        {
+            let mut sessions = sdk_sessions.lock().await;
+            sessions.insert(db_session_id, make_active_handle(feature_id, None));
+        }
+
+        // Create session row for mark_paused_static
+        sqlx::query(
+            "INSERT INTO agent_sessions (id, feature_id, agent_type, status) VALUES (?, ?, 'session', 'running')"
+        )
+        .bind(db_session_id)
+        .bind(feature_id)
+        .execute(&app_state.write_pool)
+        .await
+        .unwrap();
+
+        // Send an error through the channel
+        let (msg_tx, msg_rx) = mpsc::channel::<Result<SdkMessage, SdkError>>(1);
+        msg_tx.send(Err(SdkError::ProcessExit {
+            code: Some(1),
+            stderr: "something went wrong".to_string(),
+        })).await.unwrap();
+        drop(msg_tx);
+
+        spawn_stream_reader(
+            db_session_id,
+            feature_id,
+            msg_rx,
+            ws_tx,
+            app_state.write_pool.clone(),
+            sdk_sessions.clone(),
+        );
+
+        // Wait for the error message
+        let msg = ws_rx.recv().await.unwrap();
+        if let Message::Text(text) = msg {
+            let env: WsEnvelope = serde_json::from_str(&text).unwrap();
+            assert_eq!(env.action, "error");
+        } else {
+            panic!("expected text message");
+        }
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        // Verify state transitioned to Pending with no resume (no session ID)
+        let sessions = sdk_sessions.lock().await;
+        let handle = sessions.get(&db_session_id).unwrap();
+        match &handle.state {
+            QueryState::Pending(options) => {
+                assert_eq!(options.resume, None);
+            }
+            QueryState::Active { .. } => {
+                panic!("expected Pending state after stream error, but found Active");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_stream_reader_no_transition_when_session_removed() {
+        // If the session was already removed from the map (e.g., destroy),
+        // the stream reader should not panic.
+        let app_state = make_test_app_state().await;
+        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+        let (ws_tx, mut ws_rx) = mpsc::unbounded_channel();
+
+        // Don't insert any handle — simulate it being removed
+
+        let (msg_tx, msg_rx) = mpsc::channel::<Result<SdkMessage, SdkError>>(1);
+        drop(msg_tx);
+
+        spawn_stream_reader(
+            99,
+            1,
+            msg_rx,
+            ws_tx,
+            app_state.write_pool.clone(),
+            sdk_sessions.clone(),
+        );
+
+        // Should still get the ended message
+        let msg = ws_rx.recv().await.unwrap();
+        if let Message::Text(text) = msg {
+            let env: WsEnvelope = serde_json::from_str(&text).unwrap();
+            assert_eq!(env.action, "ended");
+        }
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        // No panic, no handle in map — just a no-op
+        assert!(sdk_sessions.lock().await.is_empty());
     }
 
     #[tokio::test]

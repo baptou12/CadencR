@@ -283,6 +283,27 @@ impl Query {
         Ok(())
     }
 
+    /// Create a stub `Query` for testing (no real CLI process).
+    /// The returned `Query` has the given `session_id` pre-set and a dummy
+    /// message channel that will never produce messages.
+    #[doc(hidden)]
+    pub fn new_test_stub(session_id: Option<String>) -> Self {
+        let (msg_tx, message_rx) = mpsc::channel(1);
+        drop(msg_tx); // close immediately so stream_input will fail
+        let (interrupt_tx, _interrupt_rx) = mpsc::channel(1);
+        let (kill_tx, _kill_rx) = mpsc::channel(1);
+        Self {
+            message_rx,
+            process_stdin: Arc::new(Mutex::new(None)),
+            session_id: Arc::new(Mutex::new(session_id)),
+            turn_state: Arc::new(Mutex::new(TurnState::AgentWorking)),
+            reader_task: None,
+            interrupt_tx,
+            kill_tx,
+            _cancel_token: None,
+        }
+    }
+
     /// Close stdin (no more user input). The CLI will finish its current
     /// turn and exit.
     pub async fn close_input(&self) -> Result<(), SdkError> {
