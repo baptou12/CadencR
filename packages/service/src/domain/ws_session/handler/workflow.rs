@@ -402,12 +402,7 @@ async fn handle_permission_respond(envelope: WsEnvelope, sender: &WsSender) {
     };
 
     // TODO: Route permission response to correct agent's permission channel (Phase 4+)
-    info!(
-        feature_id = payload.feature_id,
-        queue_item_id = payload.queue_item_id,
-        request_id = %payload.request_id,
-        "workflow permission.respond received (routing not yet implemented)"
-    );
+    send_workflow_error(sender, &envelope.id, "NOT_IMPLEMENTED", "permission.respond routing not yet implemented");
 }
 
 async fn handle_prompt_send(envelope: WsEnvelope, sender: &WsSender) {
@@ -425,11 +420,7 @@ async fn handle_prompt_send(envelope: WsEnvelope, sender: &WsSender) {
     };
 
     // TODO: Route prompt to correct running agent (Phase 4+)
-    info!(
-        feature_id = payload.feature_id,
-        queue_item_id = payload.queue_item_id,
-        "workflow prompt.send received (routing not yet implemented)"
-    );
+    send_workflow_error(sender, &envelope.id, "NOT_IMPLEMENTED", "prompt.send routing not yet implemented");
 }
 
 async fn handle_interrupt(envelope: WsEnvelope, sender: &WsSender) {
@@ -447,11 +438,7 @@ async fn handle_interrupt(envelope: WsEnvelope, sender: &WsSender) {
     };
 
     // TODO: Interrupt specific agent by queue_item_id (Phase 4+)
-    info!(
-        feature_id = payload.feature_id,
-        queue_item_id = payload.queue_item_id,
-        "workflow interrupt received (not yet implemented)"
-    );
+    send_workflow_error(sender, &envelope.id, "NOT_IMPLEMENTED", "interrupt not yet implemented");
 }
 
 async fn handle_set_autonomy(envelope: WsEnvelope, sender: &WsSender) {
