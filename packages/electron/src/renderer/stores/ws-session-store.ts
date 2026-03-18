@@ -40,7 +40,7 @@ export interface PendingPlanApproval {
 // Streaming state — tracks in-flight content blocks by index
 // ---------------------------------------------------------------------------
 
-interface StreamingState {
+export interface StreamingState {
   model: string | null;
   contentBlockIds: Map<number, string>;
   toolUseIds: Map<number, string>;
@@ -51,7 +51,7 @@ interface StreamingState {
   exitPlanModeDetected: boolean;
 }
 
-function createStreamingState(): StreamingState {
+export function createStreamingState(): StreamingState {
   return {
     model: null,
     contentBlockIds: new Map(),
@@ -64,9 +64,9 @@ function createStreamingState(): StreamingState {
   };
 }
 
-type BlockMutation = { action: "append" | "update" | "replace"; block: AgentBlockData };
+export type BlockMutation = { action: "append" | "update" | "replace"; block: AgentBlockData };
 
-function processSdkMessage(
+export function processSdkMessage(
   msg: Record<string, unknown>,
   state: StreamingState,
 ): BlockMutation[] {
@@ -418,7 +418,7 @@ function updateSession(
 // Apply block mutations (same logic as the old hook's setBlocks updater)
 // ---------------------------------------------------------------------------
 
-function applyMutations(
+export function applyMutations(
   prevBlocks: AgentBlockData[],
   allMutations: BlockMutation[],
   streamState: StreamingState,
