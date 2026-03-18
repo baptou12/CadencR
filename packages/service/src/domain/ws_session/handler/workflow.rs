@@ -63,7 +63,7 @@ pub async fn handle_workflow_action(
         "retry_item" => handle_retry_item(envelope, sender).await,
         "permission.respond" => handle_permission_respond(envelope, sender).await,
         "prompt.send" => handle_prompt_send(envelope, sender).await,
-        "interrupt" => handle_interrupt(envelope, sender).await,
+        "interrupt" => handle_interrupt(envelope, sender, app_state).await,
         "set_autonomy" => handle_set_autonomy(envelope, sender).await,
         unknown => {
             send_workflow_error(&sender, &envelope.id, "UNKNOWN_ACTION", &format!("Unknown workflow action: {unknown}"));
@@ -492,7 +492,7 @@ async fn handle_prompt_send(envelope: WsEnvelope, sender: &WsSender) {
     let _ = sender.send(Message::Text(String::from(ack).into()));
 }
 
-async fn handle_interrupt(envelope: WsEnvelope, sender: &WsSender) {
+async fn handle_interrupt(envelope: WsEnvelope, sender: &WsSender, app_state: &AppState) {
     let payload: WorkflowInterruptPayload = match serde_json::from_value(envelope.payload.clone()) {
         Ok(p) => p,
         Err(e) => {
@@ -501,19 +501,67 @@ async fn handle_interrupt(envelope: WsEnvelope, sender: &WsSender) {
         }
     };
 
-    let Some(_engine) = get_engine(payload.feature_id) else {
-        send_workflow_error(sender, &envelope.id, "NO_ENGINE", &format!("No workflow engine for feature {}", payload.feature_id));
-        return;
-    };
+    let item_id = payload.queue_item_id;
 
-    // TODO: Interrupt specific agent by queue_item_id (Phase 4+)
-    warn!(feature_id = payload.feature_id, "interrupt called but not yet implemented");
-    let ack = WsEnvelope::reply(&envelope.id, "workflow", "acknowledged", serde_json::json!({
-        "feature_id": payload.feature_id,
-        "status": "not_yet_implemented",
-        "action": "interrupt",
-    }));
-    let _ = sender.send(Message::Text(String::from(ack).into()));
+    if let Some(engine) = get_engine(payload.feature_id) {
+        match engine.interrupt_item(item_id).await {
+            Ok(()) => {
+                let ack = WsEnvelope::reply(&envelope.id, "workflow", "interrupted", serde_json::json!({
+                    "feature_id": payload.feature_id,
+                    "queue_item_id": item_id,
+                    "status": "interrupted",
+                }));
+                let _ = sender.send(Message::Text(String::from(ack).into()));
+            }
+            Err(e) => {
+                send_workflow_error(sender, &envelope.id, "INTERRUPT_FAILED", &format!("Failed to interrupt item {item_id}: {e}"));
+            }
+        }
+    } else {
+        // No engine (post-reconnect before engine re-created) — fall back to direct PID lookup
+        info!(feature_id = payload.feature_id, item_id, "no engine, attempting PID-based interrupt");
+        use crate::domain::features::repository as repo;
+
+        match repo::get_queue_item(&app_state.read_pool, item_id).await {
+            Ok(Some(item)) if item.pid.is_some() => {
+                let pid = item.pid.unwrap();
+                let result = unsafe { libc::kill(pid as libc::pid_t, libc::SIGINT) };
+                if result == 0 {
+                    info!(item_id, pid, "sent SIGINT via PID fallback (no engine)");
+                    let ack = WsEnvelope::reply(&envelope.id, "workflow", "interrupted", serde_json::json!({
+                        "feature_id": payload.feature_id,
+                        "queue_item_id": item_id,
+                        "status": "interrupted",
+                    }));
+                    let _ = sender.send(Message::Text(String::from(ack).into()));
+                } else {
+                    let err = std::io::Error::last_os_error();
+                    if err.raw_os_error() == Some(libc::ESRCH) {
+                        // Process already dead — mark as error
+                        let _ = repo::mark_item_error(&app_state.write_pool, item_id, Some("Agent process no longer running")).await;
+                        let err_env = WsEnvelope::new("workflow", "item_error", serde_json::json!({
+                            "feature_id": payload.feature_id,
+                            "queue_item_id": item_id,
+                            "error": "Agent process no longer running",
+                        }));
+                        let _ = sender.send(Message::Text(String::from(err_env).into()));
+                        send_workflow_error(sender, &envelope.id, "PROCESS_DEAD", "Agent process already exited");
+                    } else {
+                        send_workflow_error(sender, &envelope.id, "INTERRUPT_FAILED", &format!("kill({pid}, SIGINT) failed: {err}"));
+                    }
+                }
+            }
+            Ok(Some(_)) => {
+                send_workflow_error(sender, &envelope.id, "NO_PID", &format!("No PID recorded for item {item_id}"));
+            }
+            Ok(None) => {
+                send_workflow_error(sender, &envelope.id, "NOT_FOUND", &format!("Queue item {item_id} not found"));
+            }
+            Err(e) => {
+                send_workflow_error(sender, &envelope.id, "DB_ERROR", &format!("Failed to look up item: {e}"));
+            }
+        }
+    }
 }
 
 async fn handle_set_autonomy(envelope: WsEnvelope, sender: &WsSender) {

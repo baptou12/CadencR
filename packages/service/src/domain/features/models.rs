@@ -186,6 +186,7 @@ pub struct QueueItem {
     pub created_at: Option<String>,
     pub started_at: Option<String>,
     pub ended_at: Option<String>,
+    pub pid: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]

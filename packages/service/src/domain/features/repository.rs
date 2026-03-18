@@ -598,6 +598,23 @@ pub async fn mark_item_skipped(pool: &SqlitePool, item_id: i64) -> Result<(), Ap
     Ok(())
 }
 
+pub async fn update_item_pid(pool: &SqlitePool, item_id: i64, pid: i64) -> Result<(), AppError> {
+    sqlx::query("UPDATE workflow_queue SET pid = ? WHERE id = ?")
+        .bind(pid)
+        .bind(item_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn get_queue_item(pool: &SqlitePool, item_id: i64) -> Result<Option<QueueItem>, AppError> {
+    let item = sqlx::query_as::<_, QueueItem>("SELECT * FROM workflow_queue WHERE id = ?")
+        .bind(item_id)
+        .fetch_optional(pool)
+        .await?;
+    Ok(item)
+}
+
 pub async fn get_dependents(pool: &SqlitePool, item_id: i64) -> Result<Vec<QueueItem>, AppError> {
     let rows = sqlx::query_as::<_, QueueItem>(
         r#"SELECT q.* FROM workflow_queue q

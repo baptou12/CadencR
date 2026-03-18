@@ -551,6 +551,15 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 43,
+    description: "Add pid column to workflow_queue",
+    up: (db) => {
+      db.exec(`
+        ALTER TABLE workflow_queue ADD COLUMN pid INTEGER;
+      `);
+    },
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

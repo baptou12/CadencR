@@ -13,7 +13,7 @@ use tokio::sync::mpsc;
 use tracing::{error, info, warn};
 
 use axum::extract::ws::Message;
-use claude_agent_sdk_rs::{Options, PermissionMode, SdkError, SdkMessage};
+use claude_agent_sdk_rs::{Options, PermissionMode, Query, SdkError, SdkMessage};
 
 use crate::domain::features::models::{QueueItem, WorkflowType};
 use crate::domain::features::repository as repo;
@@ -38,6 +38,8 @@ pub struct WorkflowEngine {
     pub max_parallel: usize,
     /// queue_item_id → db_session_id
     pub active_items: Arc<DashMap<i64, i64>>,
+    /// queue_item_id → Query handle (for interrupt/stream_input)
+    pub queries: Arc<DashMap<i64, Arc<tokio::sync::Mutex<Query>>>>,
     /// Shared MCP context for approval gates (plan/PRD approval resolution).
     /// Created lazily when plan/PRD agents are spawned.
     pub mcp_context: Arc<tokio::sync::RwLock<Option<Arc<McpContext>>>>,
@@ -67,6 +69,7 @@ impl WorkflowEngine {
             autonomy_level: AtomicU8::new(3),
             max_parallel,
             active_items: Arc::new(DashMap::new()),
+            queries: Arc::new(DashMap::new()),
             mcp_context: Arc::new(tokio::sync::RwLock::new(None)),
             cancel_tx,
             cancel_rx,
@@ -154,6 +157,10 @@ impl WorkflowEngine {
             Ok(mut real_query) => {
                 let message_rx = real_query.take_message_rx();
 
+                // Store Query handle for interrupt support (skip PID persist for synthetic IDs)
+                let query_handle = Arc::new(tokio::sync::Mutex::new(real_query));
+                self.queries.insert(synthetic_item_id, query_handle);
+
                 // Track in active items with synthetic ID
                 self.active_items.insert(synthetic_item_id, db_session_id);
 
@@ -166,6 +173,7 @@ impl WorkflowEngine {
                     self.ws_sender.clone(),
                     self.write_pool.clone(),
                     self.active_items.clone(),
+                    self.queries.clone(),
                 );
 
                 // Send agent started envelope
@@ -345,6 +353,17 @@ impl WorkflowEngine {
             Ok(mut real_query) => {
                 let message_rx = real_query.take_message_rx();
 
+                // Persist PID for interrupt fallback (survives reconnect/restart)
+                if let Some(pid) = real_query.pid() {
+                    if let Err(e) = repo::update_item_pid(&self.write_pool, item_id, pid as i64).await {
+                        warn!(item_id, error = %e, "failed to persist agent PID");
+                    }
+                }
+
+                // Store Query handle for interrupt support
+                let query_handle = Arc::new(tokio::sync::Mutex::new(real_query));
+                self.queries.insert(item_id, query_handle);
+
                 // Track in active items
                 self.active_items.insert(item_id, db_session_id);
 
@@ -357,6 +376,7 @@ impl WorkflowEngine {
                     self.ws_sender.clone(),
                     self.write_pool.clone(),
                     self.active_items.clone(),
+                    self.queries.clone(),
                 );
 
                 // Send item_started envelope
@@ -388,6 +408,7 @@ impl WorkflowEngine {
         info!(feature_id = self.feature_id, item_id, "queue item completed");
 
         self.active_items.remove(&item_id);
+        self.queries.remove(&item_id);
 
         if let Err(e) = repo::mark_item_completed(&self.write_pool, item_id, result).await {
             error!(item_id, error = %e, "failed to mark item completed");
@@ -462,6 +483,7 @@ impl WorkflowEngine {
         warn!(feature_id = self.feature_id, item_id, error, "queue item errored");
 
         self.active_items.remove(&item_id);
+        self.queries.remove(&item_id);
 
         if let Err(e) = repo::mark_item_error(&self.write_pool, item_id, Some(error)).await {
             error!(item_id, error = %e, "failed to mark item error");
@@ -477,6 +499,44 @@ impl WorkflowEngine {
             }),
         );
         let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
+    }
+
+    /// Interrupt a running queue item.
+    /// Fast path: use in-memory Query handle. Fallback: PID from DB.
+    pub async fn interrupt_item(&self, queue_item_id: i64) -> Result<(), String> {
+        // Fast path: in-memory Query handle
+        if let Some(query) = self.queries.get(&queue_item_id) {
+            let q = query.lock().await;
+            return q.interrupt().await.map_err(|e| format!("Interrupt failed: {e}"));
+        }
+        // Fallback: PID from DB (handles refresh + restart)
+        self.interrupt_by_pid(queue_item_id).await
+    }
+
+    async fn interrupt_by_pid(&self, queue_item_id: i64) -> Result<(), String> {
+        let item = repo::get_queue_item(&self.read_pool, queue_item_id)
+            .await
+            .map_err(|e| format!("DB lookup failed: {e}"))?
+            .ok_or_else(|| format!("Queue item {queue_item_id} not found"))?;
+
+        if let Some(pid) = item.pid {
+            let result = unsafe { libc::kill(pid as libc::pid_t, libc::SIGINT) };
+            if result == 0 {
+                info!(queue_item_id, pid, "sent SIGINT via PID fallback");
+                Ok(())
+            } else {
+                let err = std::io::Error::last_os_error();
+                if err.raw_os_error() == Some(libc::ESRCH) {
+                    // Process already dead — mark item as error
+                    self.on_item_error(queue_item_id, "Agent process no longer running").await;
+                    Err("Process already exited".into())
+                } else {
+                    Err(format!("kill({pid}, SIGINT) failed: {err}"))
+                }
+            }
+        } else {
+            Err(format!("No query handle or PID for item {queue_item_id}"))
+        }
     }
 
     /// Retry a failed queue item.
@@ -620,6 +680,11 @@ impl WorkflowEngine {
             if let Err(e) = repo::mark_item_error(&self.write_pool, *item_id, Some("Stale after reconnect")).await {
                 error!(item_id, error = %e, "failed to mark stale item");
             }
+            // Clear PID since we've lost the Query handles
+            let _ = sqlx::query("UPDATE workflow_queue SET pid = NULL WHERE id = ?")
+                .bind(*item_id)
+                .execute(&self.write_pool)
+                .await;
         }
 
         // Send full queue update
@@ -662,6 +727,7 @@ fn spawn_workflow_stream_reader(
     sender: WsSender,
     write_pool: SqlitePool,
     active_items: Arc<DashMap<i64, i64>>,
+    queries: Arc<DashMap<i64, Arc<tokio::sync::Mutex<Query>>>>,
 ) {
     tokio::spawn(async move {
         info!(queue_item_id, db_session_id, "workflow stream reader started");
@@ -765,6 +831,9 @@ fn spawn_workflow_stream_reader(
                 }
             }
         }
+
+        // Post-stream cleanup: remove query handle
+        queries.remove(&queue_item_id);
 
         // Post-stream callbacks — delegate to the real engine from the registry
         if completed_ok {
