@@ -168,6 +168,23 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         set({ queue: items ?? [] });
         break;
       }
+      case "item_update": {
+        // Differential update: patch a single item in the queue by id
+        const id = payload.id as number;
+        set(state => ({
+          queue: state.queue.map(q =>
+            q.id === id
+              ? {
+                  ...q,
+                  status: (payload.status as QueueItemStatus) ?? q.status,
+                  result: (payload.result as string | null) ?? q.result,
+                  agent_session_id: (payload.agent_session_id as number | null) ?? q.agent_session_id,
+                }
+              : q,
+          ),
+        }));
+        break;
+      }
       case "item_started": {
         const itemId = payload.queue_item_id as number;
         const sessionId = payload.session_id as number;

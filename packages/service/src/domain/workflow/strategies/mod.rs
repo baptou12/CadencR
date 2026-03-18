@@ -48,9 +48,9 @@ pub trait WorkflowStrategy: Send + Sync {
 }
 
 /// Registry of available workflow strategies
-pub fn get_strategy(workflow_type: &WorkflowType) -> Box<dyn WorkflowStrategy> {
+pub fn get_strategy(workflow_type: &WorkflowType) -> Result<Box<dyn WorkflowStrategy>, String> {
     match workflow_type {
-        WorkflowType::FeatureBuild => Box::new(FeatureBuildStrategy),
-        other => panic!("Workflow type {:?} not yet implemented", other),
+        WorkflowType::FeatureBuild => Ok(Box::new(FeatureBuildStrategy)),
+        other => Err(format!("Workflow type {:?} not yet implemented", other)),
     }
 }

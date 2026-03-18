@@ -42,7 +42,8 @@ impl FinalizePlanTool {
         // Populate the workflow queue after plan finalization
         let feature_id = self.ctx.feature_id;
         let workflow_type = crate::domain::features::models::WorkflowType::FeatureBuild;
-        let strategy = crate::domain::workflow::strategies::get_strategy(&workflow_type);
+        let strategy = crate::domain::workflow::strategies::get_strategy(&workflow_type)
+            .map_err(|e| format!("Strategy error: {e}"))?;
         match strategy
             .populate_queue(&self.ctx.write_pool, &self.ctx.read_pool, feature_id, Some(plan_id))
             .await

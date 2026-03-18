@@ -286,7 +286,13 @@ async fn handle_populate_queue(envelope: WsEnvelope, sender: &WsSender, app_stat
     let Some((payload, engine)) = parse_and_get_engine::<WorkflowPopulateQueuePayload>(&envelope, sender) else { return };
 
     let feature_id = payload.feature_id;
-    let strategy = crate::domain::workflow::strategies::get_strategy(&engine.workflow_type);
+    let strategy = match crate::domain::workflow::strategies::get_strategy(&engine.workflow_type) {
+        Ok(s) => s,
+        Err(e) => {
+            send_workflow_error(sender, &envelope.id, "STRATEGY_ERROR", &e);
+            return;
+        }
+    };
     info!(feature_id, "populating workflow queue");
     match strategy
         .populate_queue(&app_state.write_pool, &app_state.read_pool, feature_id, payload.plan_id)
@@ -308,14 +314,22 @@ async fn handle_populate_queue(envelope: WsEnvelope, sender: &WsSender, app_stat
 async fn handle_start_build(envelope: WsEnvelope, sender: &WsSender, app_state: &AppState) {
     let Some((payload, engine)) = parse_and_get_engine::<WorkflowStartBuildPayload>(&envelope, sender) else { return };
 
-    // Ensure queue is populated before advancing (idempotent — skips if already populated)
-    let strategy = crate::domain::workflow::strategies::get_strategy(&engine.workflow_type);
-    let items = crate::domain::features::repository::get_queue_for_feature(&app_state.read_pool, payload.feature_id)
+    // Check if queue needs populating — use a COUNT query instead of fetching all items
+    let item_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM workflow_queue WHERE feature_id = ?")
+        .bind(payload.feature_id)
+        .fetch_one(&app_state.read_pool)
         .await
-        .unwrap_or_default();
-    if items.is_empty() {
+        .unwrap_or(0);
+
+    if item_count == 0 {
         info!(feature_id = payload.feature_id, "start_build: queue empty, populating first");
-        // Try to find the plan_id for this feature
+        let strategy = match crate::domain::workflow::strategies::get_strategy(&engine.workflow_type) {
+            Ok(s) => s,
+            Err(e) => {
+                send_workflow_error(sender, &envelope.id, "STRATEGY_ERROR", &e);
+                return;
+            }
+        };
         let plan_id: Option<i64> = sqlx::query_scalar("SELECT id FROM plans WHERE feature_id = ? ORDER BY id DESC LIMIT 1")
             .bind(payload.feature_id)
             .fetch_optional(&app_state.read_pool)
@@ -440,6 +454,9 @@ async fn handle_interrupt(envelope: WsEnvelope, sender: &WsSender, app_state: &A
         match repo::get_queue_item(&app_state.read_pool, item_id).await {
             Ok(Some(item)) if item.pid.is_some() => {
                 let pid = item.pid.unwrap();
+                warn!(item_id, pid, "no-engine PID fallback interrupt (PID reuse risk — see engine.rs docs)");
+                // SAFETY: libc::kill sends a signal to the given PID. We check the return
+                // value and handle ESRCH. PID reuse risk is inherent but low (see engine.rs).
                 let result = unsafe { libc::kill(pid as libc::pid_t, libc::SIGINT) };
                 if result == 0 {
                     info!(item_id, pid, "sent SIGINT via PID fallback (no engine)");

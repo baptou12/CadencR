@@ -206,7 +206,8 @@ impl WorkflowEngine {
         ws_sender: WsSender,
         max_parallel: usize,
     ) -> Self {
-        let strategy = strategies::get_strategy(&workflow_type);
+        let strategy = strategies::get_strategy(&workflow_type)
+            .expect("WorkflowEngine::new called with unsupported workflow type");
         let (cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
         Self {
             feature_id,
@@ -456,6 +457,9 @@ impl WorkflowEngine {
             .await
             .map_err(|e| e.to_string())?;
 
+        // Send differential item update
+        self.send_item_update(item_id).await;
+
         // 2. Delegate to strategy
         let agent_type = self.strategy.agent_type_for_item(&item.item_type)?;
         let system_prompt = self.strategy.build_system_prompt(&self.read_pool, &item).await?;
@@ -583,6 +587,9 @@ impl WorkflowEngine {
             error!(item_id, error = %e, "failed to mark item completed");
         }
 
+        // Send differential item update
+        self.send_item_update(item_id).await;
+
         // Send item_completed envelope
         let envelope = WsEnvelope::new(
             "workflow",
@@ -659,6 +666,9 @@ impl WorkflowEngine {
             error!(item_id, error = %e, "failed to mark item error");
         }
 
+        // Send differential item update
+        self.send_item_update(item_id).await;
+
         let envelope = WsEnvelope::new(
             "workflow",
             "item_error",
@@ -683,13 +693,28 @@ impl WorkflowEngine {
         self.interrupt_by_pid(queue_item_id).await
     }
 
+    /// PID-based interrupt fallback. Used when no in-memory Query handle exists
+    /// (e.g., after reconnect/restart).
+    ///
+    /// # Safety note on PID reuse
+    /// There is an inherent TOCTOU race with PID-based signals: between reading the PID
+    /// from the DB and sending the signal, the process could exit and the PID could be
+    /// reassigned to an unrelated process. This is mitigated by:
+    /// 1. Preferring the in-memory Query handle path (interrupt_item tries that first).
+    /// 2. This being a last-resort fallback that logs a warning.
+    /// The risk is low in practice because PID reuse on modern systems cycles through
+    /// a large PID space, and the window between DB read and kill() is very short.
     async fn interrupt_by_pid(&self, queue_item_id: i64) -> Result<(), String> {
+        warn!(queue_item_id, "falling back to PID-based interrupt (no in-memory Query handle)");
+
         let item = repo::get_queue_item(&self.read_pool, queue_item_id)
             .await
             .map_err(|e| format!("DB lookup failed: {e}"))?
             .ok_or_else(|| format!("Queue item {queue_item_id} not found"))?;
 
         if let Some(pid) = item.pid {
+            // SAFETY: libc::kill sends a signal to a process. We validate the return value
+            // and handle ESRCH (process not found). PID reuse risk is documented above.
             let result = unsafe { libc::kill(pid as libc::pid_t, libc::SIGINT) };
             if result == 0 {
                 info!(queue_item_id, pid, "sent SIGINT via PID fallback");
@@ -739,6 +764,9 @@ impl WorkflowEngine {
             .await
             .map_err(|e| format!("Failed to reset item for retry: {e}"))?;
 
+        // Send differential item update
+        self.send_item_update(item_id).await;
+
         self.advance().await
     }
 
@@ -751,6 +779,9 @@ impl WorkflowEngine {
             .map_err(|e| e.to_string())?;
 
         self.active_items.remove(&item_id);
+
+        // Send differential item update
+        self.send_item_update(item_id).await;
 
         let envelope = WsEnvelope::new(
             "workflow",
@@ -883,6 +914,35 @@ impl WorkflowEngine {
         let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
 
         Ok(())
+    }
+
+    /// Send a single item update to the frontend (differential update).
+    /// Use this instead of full queue refresh for individual item state changes.
+    async fn send_item_update(&self, item_id: i64) {
+        match repo::get_queue_item(&self.read_pool, item_id).await {
+            Ok(Some(item)) => {
+                let envelope = WsEnvelope::new(
+                    "workflow",
+                    "item_update",
+                    to_value(WorkflowItemUpdatePayload {
+                        feature_id: self.feature_id,
+                        id: item.id,
+                        status: item.status,
+                        started_at: item.started_at,
+                        ended_at: item.ended_at,
+                        result: item.result,
+                        agent_session_id: item.agent_session_id,
+                    }),
+                );
+                let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
+            }
+            Ok(None) => {
+                warn!(item_id, "send_item_update: item not found");
+            }
+            Err(e) => {
+                error!(item_id, error = %e, "send_item_update: DB error");
+            }
+        }
     }
 
     /// Get the group_index for a completed item (for autonomy level 2 checks).

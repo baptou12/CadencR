@@ -390,6 +390,17 @@ pub struct WorkflowQueueUpdatePayload {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowItemUpdatePayload {
+    pub feature_id: i64,
+    pub id: i64,
+    pub status: String,
+    pub started_at: Option<String>,
+    pub ended_at: Option<String>,
+    pub result: Option<String>,
+    pub agent_session_id: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowAgentStreamResultPayload {
     pub queue_item_id: i64,
     pub session_id: i64,
