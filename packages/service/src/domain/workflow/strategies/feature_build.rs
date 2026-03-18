@@ -7,6 +7,7 @@ use crate::domain::features::models::{Phase, QueueItem, WorkflowType};
 use crate::domain::features::repository;
 use crate::domain::mcp::servers::AgentType;
 use crate::domain::workflow::populate::topological_sort;
+use crate::domain::workflow::prompts::{build_execute_prompt, build_qa_prompt, Prompts};
 
 use super::WorkflowStrategy;
 
@@ -174,6 +175,67 @@ impl WorkflowStrategy for FeatureBuildStrategy {
             "retro" => Ok(AgentType::Retro),
             other => Err(format!("Unknown item type for FeatureBuild: {other}")),
         }
+    }
+
+    async fn build_system_prompt(
+        &self,
+        read_pool: &SqlitePool,
+        item: &QueueItem,
+    ) -> Result<String, String> {
+        match item.item_type.as_str() {
+            "execute" | "qa" => {
+                let phase = self.read_phase(read_pool, item.phase_id).await?;
+                let autonomy_auto = true; // workflow queue always runs in auto mode
+                if item.item_type == "execute" {
+                    Ok(build_execute_prompt(
+                        &phase.title,
+                        phase.prompt.as_deref().unwrap_or(""),
+                        phase.commit_message.as_deref().unwrap_or(""),
+                        autonomy_auto,
+                    ))
+                } else {
+                    Ok(build_qa_prompt(
+                        &phase.title,
+                        phase.prompt.as_deref().unwrap_or(""),
+                        autonomy_auto,
+                    ))
+                }
+            }
+            "review" => Ok(Prompts::review().to_string()),
+            "risk" => Ok(Prompts::risk().to_string()),
+            "retro" => Ok(Prompts::retro().to_string()),
+            other => Err(format!("Unknown item type for system prompt: {other}")),
+        }
+    }
+
+    async fn build_initial_prompt(
+        &self,
+        read_pool: &SqlitePool,
+        item: &QueueItem,
+        feature_title: &str,
+    ) -> Result<String, String> {
+        match item.item_type.as_str() {
+            "execute" | "qa" => {
+                let phase = self.read_phase(read_pool, item.phase_id).await?;
+                Ok(phase.prompt.unwrap_or_else(|| phase.title))
+            }
+            "review" => Ok(format!("Review all changes for feature {feature_title}")),
+            "risk" => Ok(format!("Analyze risks for feature {feature_title}")),
+            "retro" => Ok(format!("Run retrospective for feature {feature_title}")),
+            other => Err(format!("Unknown item type for initial prompt: {other}")),
+        }
+    }
+}
+
+impl FeatureBuildStrategy {
+    async fn read_phase(&self, read_pool: &SqlitePool, phase_id: Option<i64>) -> Result<Phase, String> {
+        let phase_id = phase_id.ok_or("Queue item requires a phase_id but none was set")?;
+        sqlx::query_as::<_, Phase>("SELECT * FROM phases WHERE id = ?")
+            .bind(phase_id)
+            .fetch_optional(read_pool)
+            .await
+            .map_err(|e| format!("Failed to read phase: {e}"))?
+            .ok_or_else(|| format!("Phase {phase_id} not found"))
     }
 }
 
