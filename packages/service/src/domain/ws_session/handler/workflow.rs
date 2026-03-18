@@ -2,6 +2,7 @@ use std::sync::{Arc, LazyLock};
 
 use axum::extract::ws::Message;
 use dashmap::DashMap;
+use serde::de::DeserializeOwned;
 use tracing::{info, warn};
 
 use crate::app_state::AppState;
@@ -44,6 +45,49 @@ pub fn get_engine(feature_id: i64) -> Option<Arc<WorkflowEngine>> {
     ENGINES.get(&feature_id).map(|e| Arc::clone(e.value()))
 }
 
+/// Parse a workflow payload and look up the engine in one step.
+/// Sends an error envelope and returns `None` on failure.
+fn parse_and_get_engine<T: DeserializeOwned + HasFeatureId>(
+    envelope: &WsEnvelope,
+    sender: &WsSender,
+) -> Option<(T, Arc<WorkflowEngine>)> {
+    let payload: T = match serde_json::from_value(envelope.payload.clone()) {
+        Ok(p) => p,
+        Err(e) => {
+            send_workflow_error(sender, &envelope.id, "INVALID_PAYLOAD", &format!("Invalid payload: {e}"));
+            return None;
+        }
+    };
+    let engine = match get_engine(payload.feature_id()) {
+        Some(e) => e,
+        None => {
+            send_workflow_error(sender, &envelope.id, "NO_ENGINE", &format!("No workflow engine for feature {}", payload.feature_id()));
+            return None;
+        }
+    };
+    Some((payload, engine))
+}
+
+/// Parse a workflow payload without requiring an engine.
+/// Sends an error envelope and returns `None` on failure.
+fn parse_payload<T: DeserializeOwned>(
+    envelope: &WsEnvelope,
+    sender: &WsSender,
+) -> Option<T> {
+    match serde_json::from_value(envelope.payload.clone()) {
+        Ok(p) => Some(p),
+        Err(e) => {
+            send_workflow_error(sender, &envelope.id, "INVALID_PAYLOAD", &format!("Invalid payload: {e}"));
+            None
+        }
+    }
+}
+
+/// Helper to serialize a typed payload to serde_json::Value.
+fn to_value<T: serde::Serialize>(v: T) -> serde_json::Value {
+    serde_json::to_value(v).unwrap()
+}
+
 /// Handle workflow domain actions.
 pub async fn handle_workflow_action(
     envelope: WsEnvelope,
@@ -77,13 +121,7 @@ async fn handle_feature_start(
     sender: &WsSender,
     app_state: &AppState,
 ) {
-    let payload: WorkflowFeatureStartPayload = match serde_json::from_value(envelope.payload.clone()) {
-        Ok(p) => p,
-        Err(e) => {
-            send_workflow_error(sender, &envelope.id, "INVALID_PAYLOAD", &format!("Invalid feature.start payload: {e}"));
-            return;
-        }
-    };
+    let Some(payload) = parse_payload::<WorkflowFeatureStartPayload>(&envelope, sender) else { return };
 
     let feature_id = payload.feature_id;
 
@@ -168,39 +206,22 @@ async fn handle_feature_start(
 
     info!(feature_id, workflow_type = %workflow_type.as_str(), "workflow engine created");
 
-    let resp = WsEnvelope::reply(
-        &envelope.id,
-        "workflow",
-        "feature.started",
-        serde_json::to_value(WorkflowFeatureStartResponse {
-            feature_id,
-            workflow_type: workflow_type.as_str().to_string(),
-        })
-        .unwrap(),
-    );
+    let resp = WsEnvelope::reply(&envelope.id, "workflow", "feature.started", to_value(WorkflowFeatureStartResponse {
+        feature_id,
+        workflow_type: workflow_type.as_str().to_string(),
+    }));
     let _ = sender.send(Message::Text(String::from(resp).into()));
 }
 
 async fn handle_start_plan(envelope: WsEnvelope, sender: &WsSender) {
-    let payload: WorkflowStartPlanPayload = match serde_json::from_value(envelope.payload.clone()) {
-        Ok(p) => p,
-        Err(e) => {
-            send_workflow_error(sender, &envelope.id, "INVALID_PAYLOAD", &format!("Invalid start_plan payload: {e}"));
-            return;
-        }
-    };
-
-    let Some(engine) = get_engine(payload.feature_id) else {
-        send_workflow_error(sender, &envelope.id, "NO_ENGINE", &format!("No workflow engine for feature {}", payload.feature_id));
-        return;
-    };
+    let Some((payload, engine)) = parse_and_get_engine::<WorkflowStartPlanPayload>(&envelope, sender) else { return };
 
     info!(feature_id = payload.feature_id, "spawning plan agent");
     match engine.spawn_plan_agent(&payload.description).await {
         Ok(session_id) => {
-            let ack = WsEnvelope::reply(&envelope.id, "workflow", "plan.started", serde_json::json!({
-                "feature_id": payload.feature_id,
-                "session_id": session_id,
+            let ack = WsEnvelope::reply(&envelope.id, "workflow", "plan.started", to_value(WorkflowFeatureIdSessionPayload {
+                feature_id: payload.feature_id,
+                session_id,
             }));
             let _ = sender.send(Message::Text(String::from(ack).into()));
         }
@@ -211,25 +232,14 @@ async fn handle_start_plan(envelope: WsEnvelope, sender: &WsSender) {
 }
 
 async fn handle_start_prd(envelope: WsEnvelope, sender: &WsSender) {
-    let payload: WorkflowStartPrdPayload = match serde_json::from_value(envelope.payload.clone()) {
-        Ok(p) => p,
-        Err(e) => {
-            send_workflow_error(sender, &envelope.id, "INVALID_PAYLOAD", &format!("Invalid start_prd payload: {e}"));
-            return;
-        }
-    };
-
-    let Some(engine) = get_engine(payload.feature_id) else {
-        send_workflow_error(sender, &envelope.id, "NO_ENGINE", &format!("No workflow engine for feature {}", payload.feature_id));
-        return;
-    };
+    let Some((payload, engine)) = parse_and_get_engine::<WorkflowStartPrdPayload>(&envelope, sender) else { return };
 
     info!(feature_id = payload.feature_id, "spawning PRD agent");
     match engine.spawn_prd_agent(&payload.description).await {
         Ok(session_id) => {
-            let ack = WsEnvelope::reply(&envelope.id, "workflow", "prd.started", serde_json::json!({
-                "feature_id": payload.feature_id,
-                "session_id": session_id,
+            let ack = WsEnvelope::reply(&envelope.id, "workflow", "prd.started", to_value(WorkflowFeatureIdSessionPayload {
+                feature_id: payload.feature_id,
+                session_id,
             }));
             let _ = sender.send(Message::Text(String::from(ack).into()));
         }
@@ -248,18 +258,7 @@ async fn handle_prd_approval(envelope: WsEnvelope, sender: &WsSender) {
 }
 
 async fn handle_approval(envelope: WsEnvelope, sender: &WsSender, kind: &str) {
-    let payload: WorkflowApprovalPayload = match serde_json::from_value(envelope.payload.clone()) {
-        Ok(p) => p,
-        Err(e) => {
-            send_workflow_error(sender, &envelope.id, "INVALID_PAYLOAD", &format!("Invalid approval payload: {e}"));
-            return;
-        }
-    };
-
-    let Some(engine) = get_engine(payload.feature_id) else {
-        send_workflow_error(sender, &envelope.id, "NO_ENGINE", &format!("No workflow engine for feature {}", payload.feature_id));
-        return;
-    };
+    let Some((payload, engine)) = parse_and_get_engine::<WorkflowApprovalPayload>(&envelope, sender) else { return };
 
     let approved = payload.approved;
     let prefix = format!("{kind}-approval-");
@@ -276,28 +275,17 @@ async fn handle_approval(envelope: WsEnvelope, sender: &WsSender, kind: &str) {
         }
     }
 
-    let ack = WsEnvelope::reply(&envelope.id, "workflow", &format!("{kind}.approval_resolved"), serde_json::json!({
-        "feature_id": payload.feature_id,
-        "approved": approved,
+    let ack = WsEnvelope::reply(&envelope.id, "workflow", &format!("{kind}.approval_resolved"), to_value(WorkflowApprovalResolvedPayload {
+        feature_id: payload.feature_id,
+        approved,
     }));
     let _ = sender.send(Message::Text(String::from(ack).into()));
 }
 
 async fn handle_populate_queue(envelope: WsEnvelope, sender: &WsSender, app_state: &AppState) {
-    let payload: WorkflowPopulateQueuePayload = match serde_json::from_value(envelope.payload.clone()) {
-        Ok(p) => p,
-        Err(e) => {
-            send_workflow_error(sender, &envelope.id, "INVALID_PAYLOAD", &format!("Invalid populate_queue payload: {e}"));
-            return;
-        }
-    };
+    let Some((payload, engine)) = parse_and_get_engine::<WorkflowPopulateQueuePayload>(&envelope, sender) else { return };
 
     let feature_id = payload.feature_id;
-    let Some(engine) = get_engine(feature_id) else {
-        send_workflow_error(sender, &envelope.id, "NO_ENGINE", &format!("No workflow engine for feature {feature_id}"));
-        return;
-    };
-
     let strategy = crate::domain::workflow::strategies::get_strategy(&engine.workflow_type);
     info!(feature_id, "populating workflow queue");
     match strategy
@@ -305,9 +293,9 @@ async fn handle_populate_queue(envelope: WsEnvelope, sender: &WsSender, app_stat
         .await
     {
         Ok(items) => {
-            let ack = WsEnvelope::reply(&envelope.id, "workflow", "queue.populated", serde_json::json!({
-                "feature_id": feature_id,
-                "item_count": items.len(),
+            let ack = WsEnvelope::reply(&envelope.id, "workflow", "queue.populated", to_value(WorkflowQueuePopulatedPayload {
+                feature_id,
+                item_count: items.len(),
             }));
             let _ = sender.send(Message::Text(String::from(ack).into()));
         }
@@ -318,18 +306,7 @@ async fn handle_populate_queue(envelope: WsEnvelope, sender: &WsSender, app_stat
 }
 
 async fn handle_start_build(envelope: WsEnvelope, sender: &WsSender, app_state: &AppState) {
-    let payload: WorkflowStartBuildPayload = match serde_json::from_value(envelope.payload.clone()) {
-        Ok(p) => p,
-        Err(e) => {
-            send_workflow_error(sender, &envelope.id, "INVALID_PAYLOAD", &format!("Invalid start_build payload: {e}"));
-            return;
-        }
-    };
-
-    let Some(engine) = get_engine(payload.feature_id) else {
-        send_workflow_error(sender, &envelope.id, "NO_ENGINE", &format!("No workflow engine for feature {}", payload.feature_id));
-        return;
-    };
+    let Some((payload, engine)) = parse_and_get_engine::<WorkflowStartBuildPayload>(&envelope, sender) else { return };
 
     // Ensure queue is populated before advancing (idempotent — skips if already populated)
     let strategy = crate::domain::workflow::strategies::get_strategy(&engine.workflow_type);
@@ -358,18 +335,7 @@ async fn handle_start_build(envelope: WsEnvelope, sender: &WsSender, app_state: 
 }
 
 async fn handle_continue(envelope: WsEnvelope, sender: &WsSender) {
-    let payload: WorkflowContinuePayload = match serde_json::from_value(envelope.payload.clone()) {
-        Ok(p) => p,
-        Err(e) => {
-            send_workflow_error(sender, &envelope.id, "INVALID_PAYLOAD", &format!("Invalid continue payload: {e}"));
-            return;
-        }
-    };
-
-    let Some(engine) = get_engine(payload.feature_id) else {
-        send_workflow_error(sender, &envelope.id, "NO_ENGINE", &format!("No workflow engine for feature {}", payload.feature_id));
-        return;
-    };
+    let Some((payload, engine)) = parse_and_get_engine::<WorkflowContinuePayload>(&envelope, sender) else { return };
 
     info!(feature_id = payload.feature_id, "continue: advancing engine");
     if let Err(e) = engine.advance().await {
@@ -378,18 +344,7 @@ async fn handle_continue(envelope: WsEnvelope, sender: &WsSender) {
 }
 
 async fn handle_skip_item(envelope: WsEnvelope, sender: &WsSender) {
-    let payload: WorkflowSkipItemPayload = match serde_json::from_value(envelope.payload.clone()) {
-        Ok(p) => p,
-        Err(e) => {
-            send_workflow_error(sender, &envelope.id, "INVALID_PAYLOAD", &format!("Invalid skip_item payload: {e}"));
-            return;
-        }
-    };
-
-    let Some(engine) = get_engine(payload.feature_id) else {
-        send_workflow_error(sender, &envelope.id, "NO_ENGINE", &format!("No workflow engine for feature {}", payload.feature_id));
-        return;
-    };
+    let Some((payload, engine)) = parse_and_get_engine::<WorkflowSkipItemPayload>(&envelope, sender) else { return };
 
     if let Err(e) = engine.skip_item(payload.item_id).await {
         send_workflow_error(sender, &envelope.id, "SKIP_FAILED", &format!("Failed to skip item: {e}"));
@@ -397,18 +352,7 @@ async fn handle_skip_item(envelope: WsEnvelope, sender: &WsSender) {
 }
 
 async fn handle_retry_item(envelope: WsEnvelope, sender: &WsSender) {
-    let payload: WorkflowRetryItemPayload = match serde_json::from_value(envelope.payload.clone()) {
-        Ok(p) => p,
-        Err(e) => {
-            send_workflow_error(sender, &envelope.id, "INVALID_PAYLOAD", &format!("Invalid retry_item payload: {e}"));
-            return;
-        }
-    };
-
-    let Some(engine) = get_engine(payload.feature_id) else {
-        send_workflow_error(sender, &envelope.id, "NO_ENGINE", &format!("No workflow engine for feature {}", payload.feature_id));
-        return;
-    };
+    let Some((payload, engine)) = parse_and_get_engine::<WorkflowRetryItemPayload>(&envelope, sender) else { return };
 
     if let Err(e) = engine.retry_item(payload.item_id).await {
         send_workflow_error(sender, &envelope.id, "RETRY_FAILED", &format!("Failed to retry item: {e}"));
@@ -416,18 +360,7 @@ async fn handle_retry_item(envelope: WsEnvelope, sender: &WsSender) {
 }
 
 async fn handle_permission_respond(envelope: WsEnvelope, sender: &WsSender) {
-    let payload: WorkflowPermissionRespondPayload = match serde_json::from_value(envelope.payload.clone()) {
-        Ok(p) => p,
-        Err(e) => {
-            send_workflow_error(sender, &envelope.id, "INVALID_PAYLOAD", &format!("Invalid permission.respond payload: {e}"));
-            return;
-        }
-    };
-
-    let Some(engine) = get_engine(payload.feature_id) else {
-        send_workflow_error(sender, &envelope.id, "NO_ENGINE", &format!("No workflow engine for feature {}", payload.feature_id));
-        return;
-    };
+    let Some((payload, engine)) = parse_and_get_engine::<WorkflowPermissionRespondPayload>(&envelope, sender) else { return };
 
     let response = super::session_prompt::PermissionResponse {
         decision: payload.decision,
@@ -437,9 +370,9 @@ async fn handle_permission_respond(envelope: WsEnvelope, sender: &WsSender) {
 
     match engine.respond_permission(payload.queue_item_id, response).await {
         Ok(()) => {
-            let ack = WsEnvelope::reply(&envelope.id, "workflow", "acknowledged", serde_json::json!({
-                "feature_id": payload.feature_id,
-                "action": "permission.respond",
+            let ack = WsEnvelope::reply(&envelope.id, "workflow", "acknowledged", to_value(WorkflowAcknowledgedPayload {
+                feature_id: payload.feature_id,
+                action: "permission.respond".into(),
             }));
             let _ = sender.send(Message::Text(String::from(ack).into()));
         }
@@ -451,18 +384,7 @@ async fn handle_permission_respond(envelope: WsEnvelope, sender: &WsSender) {
 }
 
 async fn handle_prompt_send(envelope: WsEnvelope, sender: &WsSender, app_state: &AppState) {
-    let payload: WorkflowPromptSendPayload = match serde_json::from_value(envelope.payload.clone()) {
-        Ok(p) => p,
-        Err(e) => {
-            send_workflow_error(sender, &envelope.id, "INVALID_PAYLOAD", &format!("Invalid prompt.send payload: {e}"));
-            return;
-        }
-    };
-
-    let Some(engine) = get_engine(payload.feature_id) else {
-        send_workflow_error(sender, &envelope.id, "NO_ENGINE", &format!("No workflow engine for feature {}", payload.feature_id));
-        return;
-    };
+    let Some((payload, engine)) = parse_and_get_engine::<WorkflowPromptSendPayload>(&envelope, sender) else { return };
 
     // Persist user message if we can find the db_session_id
     if let Some(db_session_id_ref) = engine.active_items.get(&payload.queue_item_id) {
@@ -477,9 +399,9 @@ async fn handle_prompt_send(envelope: WsEnvelope, sender: &WsSender, app_state: 
 
     match engine.send_prompt(payload.queue_item_id, &payload.text, payload.images).await {
         Ok(()) => {
-            let ack = WsEnvelope::reply(&envelope.id, "workflow", "acknowledged", serde_json::json!({
-                "feature_id": payload.feature_id,
-                "action": "prompt.send",
+            let ack = WsEnvelope::reply(&envelope.id, "workflow", "acknowledged", to_value(WorkflowAcknowledgedPayload {
+                feature_id: payload.feature_id,
+                action: "prompt.send".into(),
             }));
             let _ = sender.send(Message::Text(String::from(ack).into()));
         }
@@ -491,24 +413,19 @@ async fn handle_prompt_send(envelope: WsEnvelope, sender: &WsSender, app_state: 
 }
 
 async fn handle_interrupt(envelope: WsEnvelope, sender: &WsSender, app_state: &AppState) {
-    let payload: WorkflowInterruptPayload = match serde_json::from_value(envelope.payload.clone()) {
-        Ok(p) => p,
-        Err(e) => {
-            send_workflow_error(sender, &envelope.id, "INVALID_PAYLOAD", &format!("Invalid interrupt payload: {e}"));
-            return;
-        }
-    };
+    let Some(payload) = parse_payload::<WorkflowInterruptPayload>(&envelope, sender) else { return };
 
     let item_id = payload.queue_item_id;
+    let interrupted_payload = || to_value(WorkflowInterruptedPayload {
+        feature_id: payload.feature_id,
+        queue_item_id: item_id,
+        status: "interrupted".into(),
+    });
 
     if let Some(engine) = get_engine(payload.feature_id) {
         match engine.interrupt_item(item_id).await {
             Ok(()) => {
-                let ack = WsEnvelope::reply(&envelope.id, "workflow", "interrupted", serde_json::json!({
-                    "feature_id": payload.feature_id,
-                    "queue_item_id": item_id,
-                    "status": "interrupted",
-                }));
+                let ack = WsEnvelope::reply(&envelope.id, "workflow", "interrupted", interrupted_payload());
                 let _ = sender.send(Message::Text(String::from(ack).into()));
             }
             Err(e) => {
@@ -526,21 +443,16 @@ async fn handle_interrupt(envelope: WsEnvelope, sender: &WsSender, app_state: &A
                 let result = unsafe { libc::kill(pid as libc::pid_t, libc::SIGINT) };
                 if result == 0 {
                     info!(item_id, pid, "sent SIGINT via PID fallback (no engine)");
-                    let ack = WsEnvelope::reply(&envelope.id, "workflow", "interrupted", serde_json::json!({
-                        "feature_id": payload.feature_id,
-                        "queue_item_id": item_id,
-                        "status": "interrupted",
-                    }));
+                    let ack = WsEnvelope::reply(&envelope.id, "workflow", "interrupted", interrupted_payload());
                     let _ = sender.send(Message::Text(String::from(ack).into()));
                 } else {
                     let err = std::io::Error::last_os_error();
                     if err.raw_os_error() == Some(libc::ESRCH) {
-                        // Process already dead — mark as error
                         let _ = repo::mark_item_error(&app_state.write_pool, item_id, Some("Agent process no longer running")).await;
-                        let err_env = WsEnvelope::new("workflow", "item_error", serde_json::json!({
-                            "feature_id": payload.feature_id,
-                            "queue_item_id": item_id,
-                            "error": "Agent process no longer running",
+                        let err_env = WsEnvelope::new("workflow", "item_error", to_value(WorkflowItemErrorPayload {
+                            feature_id: payload.feature_id,
+                            queue_item_id: item_id,
+                            error: "Agent process no longer running".into(),
                         }));
                         let _ = sender.send(Message::Text(String::from(err_env).into()));
                         send_workflow_error(sender, &envelope.id, "PROCESS_DEAD", "Agent process already exited");
@@ -563,18 +475,7 @@ async fn handle_interrupt(envelope: WsEnvelope, sender: &WsSender, app_state: &A
 }
 
 async fn handle_set_autonomy(envelope: WsEnvelope, sender: &WsSender) {
-    let payload: WorkflowSetAutonomyPayload = match serde_json::from_value(envelope.payload.clone()) {
-        Ok(p) => p,
-        Err(e) => {
-            send_workflow_error(sender, &envelope.id, "INVALID_PAYLOAD", &format!("Invalid set_autonomy payload: {e}"));
-            return;
-        }
-    };
-
-    let Some(engine) = get_engine(payload.feature_id) else {
-        send_workflow_error(sender, &envelope.id, "NO_ENGINE", &format!("No workflow engine for feature {}", payload.feature_id));
-        return;
-    };
+    let Some((payload, engine)) = parse_and_get_engine::<WorkflowSetAutonomyPayload>(&envelope, sender) else { return };
 
     engine.autonomy_level.store(payload.level, std::sync::atomic::Ordering::Relaxed);
     info!(
@@ -583,9 +484,9 @@ async fn handle_set_autonomy(envelope: WsEnvelope, sender: &WsSender) {
         "autonomy level updated"
     );
 
-    let ack = WsEnvelope::reply(&envelope.id, "workflow", "autonomy.updated", serde_json::json!({
-        "feature_id": payload.feature_id,
-        "level": payload.level,
+    let ack = WsEnvelope::reply(&envelope.id, "workflow", "autonomy.updated", to_value(WorkflowAutonomyUpdatedPayload {
+        feature_id: payload.feature_id,
+        level: payload.level,
     }));
     let _ = sender.send(Message::Text(String::from(ack).into()));
 }

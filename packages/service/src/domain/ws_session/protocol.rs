@@ -191,6 +191,12 @@ pub struct CommandsListPayload {
     pub commands: Vec<SlashCommandPayload>,
 }
 
+/// Trait for workflow payloads that carry a feature_id, used by the
+/// `parse_and_get_engine` helper to extract the id generically.
+pub trait HasFeatureId {
+    fn feature_id(&self) -> i64;
+}
+
 // --- Workflow payloads (Client → Server) ---
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -299,6 +305,31 @@ pub struct WorkflowInterruptPayload {
     pub queue_item_id: i64,
 }
 
+// HasFeatureId impls for all workflow C→S payloads
+macro_rules! impl_has_feature_id {
+    ($($ty:ty),+ $(,)?) => {
+        $(impl HasFeatureId for $ty {
+            fn feature_id(&self) -> i64 { self.feature_id }
+        })+
+    };
+}
+
+impl_has_feature_id!(
+    WorkflowFeatureStartPayload,
+    WorkflowStartPlanPayload,
+    WorkflowStartPrdPayload,
+    WorkflowApprovalPayload,
+    WorkflowPopulateQueuePayload,
+    WorkflowStartBuildPayload,
+    WorkflowContinuePayload,
+    WorkflowSkipItemPayload,
+    WorkflowRetryItemPayload,
+    WorkflowPermissionRespondPayload,
+    WorkflowPromptSendPayload,
+    WorkflowSetAutonomyPayload,
+    WorkflowInterruptPayload,
+);
+
 // --- Workflow payloads (Server → Client) ---
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -308,6 +339,116 @@ pub struct WorkflowItemEventPayload {
     pub item_type: String,
     pub phase_title: Option<String>,
     pub status: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowAgentStartedPayload {
+    pub feature_id: i64,
+    pub queue_item_id: i64,
+    pub session_id: i64,
+    pub agent_type: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowItemStartedPayload {
+    pub feature_id: i64,
+    pub queue_item_id: i64,
+    pub session_id: i64,
+    pub item_type: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowItemCompletedPayload {
+    pub feature_id: i64,
+    pub queue_item_id: i64,
+    pub result: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowItemErrorPayload {
+    pub feature_id: i64,
+    pub queue_item_id: i64,
+    pub error: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowItemSkippedPayload {
+    pub feature_id: i64,
+    pub queue_item_id: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowPausedPayload {
+    pub feature_id: i64,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowQueueUpdatePayload {
+    pub feature_id: i64,
+    pub items: Vec<crate::domain::features::models::QueueItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowAgentStreamResultPayload {
+    pub queue_item_id: i64,
+    pub session_id: i64,
+    #[serde(rename = "type")]
+    pub msg_type: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowAgentStreamBlocksPayload {
+    pub queue_item_id: i64,
+    pub session_id: i64,
+    pub blocks: Vec<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowAgentStreamErrorPayload {
+    pub queue_item_id: i64,
+    pub session_id: i64,
+    #[serde(rename = "type")]
+    pub msg_type: String,
+    pub error: String,
+}
+
+/// Ack payload for simple workflow replies (plan.started, prd.started, etc.)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowFeatureIdSessionPayload {
+    pub feature_id: i64,
+    pub session_id: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowApprovalResolvedPayload {
+    pub feature_id: i64,
+    pub approved: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowQueuePopulatedPayload {
+    pub feature_id: i64,
+    pub item_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowAcknowledgedPayload {
+    pub feature_id: i64,
+    pub action: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowInterruptedPayload {
+    pub feature_id: i64,
+    pub queue_item_id: i64,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowAutonomyUpdatedPayload {
+    pub feature_id: i64,
+    pub level: u8,
 }
 
 #[cfg(test)]

@@ -33,6 +33,11 @@ use crate::domain::ws_session::protocol::*;
 
 pub type WsSender = mpsc::UnboundedSender<Message>;
 
+/// Helper to serialize a typed payload to serde_json::Value.
+fn to_value<T: serde::Serialize>(v: T) -> serde_json::Value {
+    serde_json::to_value(v).unwrap()
+}
+
 /// CanUseTool implementation for workflow agents that bridges permission requests
 /// to the frontend via workflow.permission.request envelopes.
 struct WorkflowPermissionBridge {
@@ -339,11 +344,11 @@ impl WorkflowEngine {
                 let envelope = WsEnvelope::new(
                     "workflow",
                     "agent_started",
-                    serde_json::json!({
-                        "feature_id": self.feature_id,
-                        "queue_item_id": synthetic_item_id,
-                        "session_id": db_session_id,
-                        "agent_type": agent_type_str,
+                    to_value(WorkflowAgentStartedPayload {
+                        feature_id: self.feature_id,
+                        queue_item_id: synthetic_item_id,
+                        session_id: db_session_id,
+                        agent_type: agent_type_str.to_string(),
                     }),
                 );
                 let _ = self
@@ -546,11 +551,11 @@ impl WorkflowEngine {
                 let envelope = WsEnvelope::new(
                     "workflow",
                     "item_started",
-                    serde_json::json!({
-                        "feature_id": self.feature_id,
-                        "queue_item_id": item_id,
-                        "session_id": db_session_id,
-                        "item_type": item.item_type,
+                    to_value(WorkflowItemStartedPayload {
+                        feature_id: self.feature_id,
+                        queue_item_id: item_id,
+                        session_id: db_session_id,
+                        item_type: item.item_type.clone(),
                     }),
                 );
                 let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
@@ -582,10 +587,10 @@ impl WorkflowEngine {
         let envelope = WsEnvelope::new(
             "workflow",
             "item_completed",
-            serde_json::json!({
-                "feature_id": self.feature_id,
-                "queue_item_id": item_id,
-                "result": result,
+            to_value(WorkflowItemCompletedPayload {
+                feature_id: self.feature_id,
+                queue_item_id: item_id,
+                result: result.map(|s| s.to_string()),
             }),
         );
         let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
@@ -615,9 +620,9 @@ impl WorkflowEngine {
                             let envelope = WsEnvelope::new(
                                 "workflow",
                                 "paused",
-                                serde_json::json!({
-                                    "feature_id": self.feature_id,
-                                    "reason": "group_boundary",
+                                to_value(WorkflowPausedPayload {
+                                    feature_id: self.feature_id,
+                                    reason: "group_boundary".into(),
                                 }),
                             );
                             let _ = self
@@ -632,9 +637,9 @@ impl WorkflowEngine {
                 let envelope = WsEnvelope::new(
                     "workflow",
                     "paused",
-                    serde_json::json!({
-                        "feature_id": self.feature_id,
-                        "reason": "autonomy_pause",
+                    to_value(WorkflowPausedPayload {
+                        feature_id: self.feature_id,
+                        reason: "autonomy_pause".into(),
                     }),
                 );
                 let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
@@ -657,10 +662,10 @@ impl WorkflowEngine {
         let envelope = WsEnvelope::new(
             "workflow",
             "item_error",
-            serde_json::json!({
-                "feature_id": self.feature_id,
-                "queue_item_id": item_id,
-                "error": error,
+            to_value(WorkflowItemErrorPayload {
+                feature_id: self.feature_id,
+                queue_item_id: item_id,
+                error: error.to_string(),
             }),
         );
         let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
@@ -750,9 +755,9 @@ impl WorkflowEngine {
         let envelope = WsEnvelope::new(
             "workflow",
             "item_skipped",
-            serde_json::json!({
-                "feature_id": self.feature_id,
-                "queue_item_id": item_id,
+            to_value(WorkflowItemSkippedPayload {
+                feature_id: self.feature_id,
+                queue_item_id: item_id,
             }),
         );
         let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
@@ -835,10 +840,10 @@ impl WorkflowEngine {
                     let envelope = WsEnvelope::new(
                         "workflow",
                         "item_error",
-                        serde_json::json!({
-                            "feature_id": feature_id,
-                            "queue_item_id": item_id,
-                            "error": "Agent timed out",
+                        to_value(WorkflowItemErrorPayload {
+                            feature_id,
+                            queue_item_id: item_id,
+                            error: "Agent timed out".into(),
                         }),
                     );
                     let _ = sender.send(Message::Text(String::from(envelope).into()));
@@ -870,9 +875,9 @@ impl WorkflowEngine {
         let envelope = WsEnvelope::new(
             "workflow",
             "queue_update",
-            serde_json::json!({
-                "feature_id": self.feature_id,
-                "items": all_items,
+            to_value(WorkflowQueueUpdatePayload {
+                feature_id: self.feature_id,
+                items: all_items,
             }),
         );
         let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
@@ -946,10 +951,10 @@ fn spawn_workflow_stream_reader(
                             WsEnvelope::new(
                                 "workflow",
                                 "agent_stream",
-                                serde_json::json!({
-                                    "queue_item_id": queue_item_id,
-                                    "session_id": db_session_id,
-                                    "type": "result",
+                                to_value(WorkflowAgentStreamResultPayload {
+                                    queue_item_id,
+                                    session_id: db_session_id,
+                                    msg_type: "result".into(),
                                 }),
                             )
                         }
@@ -958,10 +963,10 @@ fn spawn_workflow_stream_reader(
                             WsEnvelope::new(
                                 "workflow",
                                 "agent_stream",
-                                serde_json::json!({
-                                    "queue_item_id": queue_item_id,
-                                    "session_id": db_session_id,
-                                    "blocks": [block],
+                                to_value(WorkflowAgentStreamBlocksPayload {
+                                    queue_item_id,
+                                    session_id: db_session_id,
+                                    blocks: vec![block],
                                 }),
                             )
                         }
@@ -985,11 +990,11 @@ fn spawn_workflow_stream_reader(
                     let err_env = WsEnvelope::new(
                         "workflow",
                         "agent_stream",
-                        serde_json::json!({
-                            "queue_item_id": queue_item_id,
-                            "session_id": db_session_id,
-                            "type": "error",
-                            "error": e.to_string(),
+                        to_value(WorkflowAgentStreamErrorPayload {
+                            queue_item_id,
+                            session_id: db_session_id,
+                            msg_type: "error".into(),
+                            error: e.to_string(),
                         }),
                     );
                     let _ = sender.send(Message::Text(String::from(err_env).into()));
