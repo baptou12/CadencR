@@ -191,6 +191,19 @@ pub struct CommandsListPayload {
     pub commands: Vec<SlashCommandPayload>,
 }
 
+// --- Workflow payloads ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowFeatureStartPayload {
+    pub project_id: i64,
+    pub title: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowFeatureStartResponse {
+    pub feature_id: i64,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
