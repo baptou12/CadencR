@@ -216,6 +216,12 @@ pub struct WorkflowStartPlanPayload {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowStartPrdPayload {
+    pub feature_id: i64,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowApprovalPayload {
     pub feature_id: i64,
     pub request_id: String,

@@ -16,6 +16,9 @@ use claude_agent_sdk_rs::{Options, PermissionMode, SdkError, SdkMessage};
 
 use crate::domain::features::models::{QueueItem, WorkflowType};
 use crate::domain::features::repository as repo;
+use crate::domain::mcp::context::{ApprovalResult, McpContext};
+use crate::domain::mcp::servers::AgentType;
+use crate::domain::workflow::prompts::Prompts;
 use crate::domain::workflow::strategies::{self, WorkflowStrategy};
 use crate::domain::ws_session::handler::mcp_spawn::build_mcp_server_config;
 use crate::domain::ws_session::persistence::WsSessionPersistence;
@@ -34,6 +37,9 @@ pub struct WorkflowEngine {
     pub max_parallel: usize,
     /// queue_item_id → db_session_id
     pub active_items: Arc<DashMap<i64, i64>>,
+    /// Shared MCP context for approval gates (plan/PRD approval resolution).
+    /// Created lazily when plan/PRD agents are spawned.
+    pub mcp_context: Arc<tokio::sync::RwLock<Option<Arc<McpContext>>>>,
 }
 
 impl WorkflowEngine {
@@ -56,6 +62,187 @@ impl WorkflowEngine {
             autonomy_level: 3,
             max_parallel,
             active_items: Arc::new(DashMap::new()),
+            mcp_context: Arc::new(tokio::sync::RwLock::new(None)),
+        }
+    }
+
+    /// Spawn a plan agent for this feature. The plan agent runs outside the queue
+    /// and uses a synthetic queue_item_id of -1 for streaming.
+    pub async fn spawn_plan_agent(&self, description: &str) -> Result<i64, String> {
+        self.spawn_pre_queue_agent(
+            AgentType::Plan,
+            "plan",
+            Prompts::plan(),
+            description,
+            -1, // synthetic queue_item_id for plan
+        )
+        .await
+    }
+
+    /// Spawn a PRD agent for this feature. The PRD agent runs outside the queue
+    /// and uses a synthetic queue_item_id of -2 for streaming.
+    pub async fn spawn_prd_agent(&self, description: &str) -> Result<i64, String> {
+        self.spawn_pre_queue_agent(
+            AgentType::Prd,
+            "prd",
+            Prompts::prd(),
+            description,
+            -2, // synthetic queue_item_id for PRD
+        )
+        .await
+    }
+
+    /// Shared logic for spawning plan/PRD agents (pre-queue agents).
+    async fn spawn_pre_queue_agent(
+        &self,
+        agent_type: AgentType,
+        agent_type_str: &str,
+        system_prompt: &str,
+        initial_prompt: &str,
+        synthetic_item_id: i64,
+    ) -> Result<i64, String> {
+        info!(
+            feature_id = self.feature_id,
+            agent_type = agent_type_str,
+            "spawning pre-queue agent"
+        );
+
+        // 1. Create agent session in DB
+        let now = chrono::Utc::now().to_rfc3339();
+        let db_session_id = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO agent_sessions (feature_id, agent_type, status, started_at) VALUES (?, ?, 'running', ?) RETURNING id",
+        )
+        .bind(self.feature_id)
+        .bind(agent_type_str)
+        .bind(&now)
+        .fetch_one(&self.write_pool)
+        .await
+        .map_err(|e| format!("Failed to create {agent_type_str} agent session: {e}"))?;
+
+        // 2. Build MCP config
+        let mcp_servers = build_mcp_server_config(agent_type, self.feature_id);
+
+        // 3. Resolve cwd
+        let cwd = self
+            .get_feature_cwd()
+            .await
+            .unwrap_or_else(|| PathBuf::from("."));
+
+        // 4. Build options and spawn
+        let options = Options {
+            cwd,
+            permission_mode: Some(PermissionMode::BypassPermissions),
+            system_prompt: if system_prompt.is_empty() {
+                None
+            } else {
+                Some(system_prompt.to_string())
+            },
+            mcp_servers: Some(mcp_servers),
+            ..Options::default()
+        };
+
+        let content_value = serde_json::Value::String(initial_prompt.to_string());
+
+        match claude_agent_sdk_rs::query(content_value, options).await {
+            Ok(mut real_query) => {
+                let message_rx = real_query.take_message_rx();
+
+                // Track in active items with synthetic ID
+                self.active_items.insert(synthetic_item_id, db_session_id);
+
+                // Spawn stream reader (reuses the same workflow stream reader)
+                spawn_workflow_stream_reader(
+                    synthetic_item_id,
+                    db_session_id,
+                    self.feature_id,
+                    message_rx,
+                    self.ws_sender.clone(),
+                    self.write_pool.clone(),
+                    self.active_items.clone(),
+                    self.read_pool.clone(),
+                    self.max_parallel,
+                    self.autonomy_level,
+                    self.workflow_type.clone(),
+                );
+
+                // Send agent started envelope
+                let envelope = WsEnvelope::new(
+                    "workflow",
+                    "agent_started",
+                    serde_json::json!({
+                        "feature_id": self.feature_id,
+                        "queue_item_id": synthetic_item_id,
+                        "session_id": db_session_id,
+                        "agent_type": agent_type_str,
+                    }),
+                );
+                let _ = self
+                    .ws_sender
+                    .send(Message::Text(String::from(envelope).into()));
+
+                info!(
+                    feature_id = self.feature_id,
+                    db_session_id,
+                    agent_type = agent_type_str,
+                    "pre-queue agent spawned"
+                );
+                Ok(db_session_id)
+            }
+            Err(e) => {
+                error!(
+                    feature_id = self.feature_id,
+                    agent_type = agent_type_str,
+                    error = %e,
+                    "failed to spawn pre-queue agent"
+                );
+                // Mark session as failed
+                let _ = WsSessionPersistence::mark_paused_static(&self.write_pool, db_session_id)
+                    .await;
+                Err(format!("SDK spawn failed for {agent_type_str}: {e}"))
+            }
+        }
+    }
+
+    /// Resolve a pending approval by request_id pattern.
+    /// Iterates pending_approvals on the engine's McpContext looking for keys
+    /// matching the given prefix, and resolves the first match.
+    pub async fn resolve_approval(
+        &self,
+        prefix: &str,
+        approved: bool,
+        feedback: Option<String>,
+    ) -> Result<bool, String> {
+        let ctx_guard = self.mcp_context.read().await;
+        let Some(ctx) = ctx_guard.as_ref() else {
+            return Err("No MCP context available".to_string());
+        };
+
+        // Find request_id matching the prefix
+        let request_id = ctx
+            .pending_approvals
+            .iter()
+            .find(|entry| entry.key().starts_with(prefix))
+            .map(|entry| entry.key().clone());
+
+        drop(ctx_guard);
+
+        if let Some(request_id) = request_id {
+            let ctx_guard = self.mcp_context.read().await;
+            if let Some(ctx) = ctx_guard.as_ref() {
+                let result = ApprovalResult { approved, feedback };
+                Ok(ctx.resolve_approval(&request_id, result))
+            } else {
+                Err("MCP context disappeared".to_string())
+            }
+        } else {
+            // No pending approval found — this is common when using subprocess MCP.
+            // The approval might need to be resolved via DB in future.
+            warn!(
+                feature_id = self.feature_id,
+                prefix,
+                "no pending approval found matching prefix"
+            );
+            Ok(false)
         }
     }
 
@@ -551,6 +738,7 @@ async fn advance_after_completion(
         autonomy_level,
         max_parallel,
         active_items: active_items.clone(),
+        mcp_context: Arc::new(tokio::sync::RwLock::new(None)),
     };
 
     if let Err(e) = engine.advance().await {

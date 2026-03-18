@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use tokio::sync::oneshot;
 
@@ -33,11 +33,8 @@ impl ShowPrdTool {
         let read_prd = ReadPrdTool::new(Arc::clone(&self.ctx));
         let _prd_content = read_prd.call().await?;
 
-        let ts = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis();
-        let request_id = format!("prd-approval-{}-{ts}", self.ctx.feature_id);
+        // Standardized approval request ID format: prd-approval-{feature_id}
+        let request_id = format!("prd-approval-{}", self.ctx.feature_id);
 
         let (tx, rx) = oneshot::channel::<ApprovalResult>();
         self.ctx.pending_approvals.insert(request_id.clone(), tx);

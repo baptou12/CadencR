@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use tokio::sync::oneshot;
 
@@ -33,12 +33,10 @@ impl ShowPlanTool {
         let read_plan = ReadPlanTool::new(Arc::clone(&self.ctx));
         let _plan_content = read_plan.call(plan_id).await?;
 
-        // Create a unique approval request ID
-        let ts = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis();
-        let request_id = format!("plan-approval-{plan_id}-{ts}");
+        // Standardized approval request ID format: plan-approval-{feature_id}
+        // Uses feature_id (not plan_id) so workflow handlers can resolve by convention.
+        let feature_id = self.ctx.feature_id;
+        let request_id = format!("plan-approval-{feature_id}");
 
         // Create oneshot channel and store sender
         let (tx, rx) = oneshot::channel::<ApprovalResult>();

@@ -51,6 +51,7 @@ pub async fn handle_workflow_action(
     match envelope.action.as_str() {
         "feature.start" => handle_feature_start(envelope, sender, app_state).await,
         "start_plan" => handle_start_plan(envelope, sender).await,
+        "start_prd" => handle_start_prd(envelope, sender).await,
         "plan.approved" | "plan.rejected" => handle_plan_approval(envelope, sender).await,
         "prd.approved" | "prd.rejected" => handle_prd_approval(envelope, sender).await,
         "start_build" => handle_start_build(envelope, sender).await,
@@ -163,17 +164,53 @@ async fn handle_start_plan(envelope: WsEnvelope, sender: &WsSender) {
         }
     };
 
-    let Some(_engine) = get_engine(payload.feature_id) else {
+    let Some(engine) = get_engine(payload.feature_id) else {
         send_workflow_error(sender, &envelope.id, "NO_ENGINE", &format!("No workflow engine for feature {}", payload.feature_id));
         return;
     };
 
-    // TODO: Spawn plan agent via engine strategy (Phase 4+)
-    info!(feature_id = payload.feature_id, "start_plan received (agent spawning not yet implemented)");
-    let ack = WsEnvelope::reply(&envelope.id, "workflow", "plan.started", serde_json::json!({
-        "feature_id": payload.feature_id,
-    }));
-    let _ = sender.send(Message::Text(String::from(ack).into()));
+    info!(feature_id = payload.feature_id, "spawning plan agent");
+    match engine.spawn_plan_agent(&payload.description).await {
+        Ok(session_id) => {
+            let ack = WsEnvelope::reply(&envelope.id, "workflow", "plan.started", serde_json::json!({
+                "feature_id": payload.feature_id,
+                "session_id": session_id,
+            }));
+            let _ = sender.send(Message::Text(String::from(ack).into()));
+        }
+        Err(e) => {
+            send_workflow_error(sender, &envelope.id, "SPAWN_FAILED", &format!("Failed to spawn plan agent: {e}"));
+        }
+    }
+}
+
+async fn handle_start_prd(envelope: WsEnvelope, sender: &WsSender) {
+    let payload: WorkflowStartPrdPayload = match serde_json::from_value(envelope.payload.clone()) {
+        Ok(p) => p,
+        Err(e) => {
+            send_workflow_error(sender, &envelope.id, "INVALID_PAYLOAD", &format!("Invalid start_prd payload: {e}"));
+            return;
+        }
+    };
+
+    let Some(engine) = get_engine(payload.feature_id) else {
+        send_workflow_error(sender, &envelope.id, "NO_ENGINE", &format!("No workflow engine for feature {}", payload.feature_id));
+        return;
+    };
+
+    info!(feature_id = payload.feature_id, "spawning PRD agent");
+    match engine.spawn_prd_agent(&payload.description).await {
+        Ok(session_id) => {
+            let ack = WsEnvelope::reply(&envelope.id, "workflow", "prd.started", serde_json::json!({
+                "feature_id": payload.feature_id,
+                "session_id": session_id,
+            }));
+            let _ = sender.send(Message::Text(String::from(ack).into()));
+        }
+        Err(e) => {
+            send_workflow_error(sender, &envelope.id, "SPAWN_FAILED", &format!("Failed to spawn PRD agent: {e}"));
+        }
+    }
 }
 
 async fn handle_plan_approval(envelope: WsEnvelope, sender: &WsSender) {
@@ -185,13 +222,33 @@ async fn handle_plan_approval(envelope: WsEnvelope, sender: &WsSender) {
         }
     };
 
-    let Some(_engine) = get_engine(payload.feature_id) else {
+    let Some(engine) = get_engine(payload.feature_id) else {
         send_workflow_error(sender, &envelope.id, "NO_ENGINE", &format!("No workflow engine for feature {}", payload.feature_id));
         return;
     };
 
-    // TODO: Resolve plan approval gate (Phase 4+)
-    info!(feature_id = payload.feature_id, approved = payload.approved, "plan approval received");
+    let approved = payload.approved;
+    let prefix = format!("plan-approval-");
+    info!(feature_id = payload.feature_id, approved, "resolving plan approval");
+
+    // Try to resolve via engine's McpContext (in-process path)
+    match engine.resolve_approval(&prefix, approved, payload.feedback.clone()).await {
+        Ok(resolved) => {
+            if !resolved {
+                // Fallback: try resolving by exact request_id from payload
+                let _ = engine.resolve_approval(&payload.request_id, approved, payload.feedback).await;
+            }
+        }
+        Err(e) => {
+            warn!(feature_id = payload.feature_id, error = %e, "failed to resolve plan approval");
+        }
+    }
+
+    let ack = WsEnvelope::reply(&envelope.id, "workflow", "plan.approval_resolved", serde_json::json!({
+        "feature_id": payload.feature_id,
+        "approved": approved,
+    }));
+    let _ = sender.send(Message::Text(String::from(ack).into()));
 }
 
 async fn handle_prd_approval(envelope: WsEnvelope, sender: &WsSender) {
@@ -203,13 +260,31 @@ async fn handle_prd_approval(envelope: WsEnvelope, sender: &WsSender) {
         }
     };
 
-    let Some(_engine) = get_engine(payload.feature_id) else {
+    let Some(engine) = get_engine(payload.feature_id) else {
         send_workflow_error(sender, &envelope.id, "NO_ENGINE", &format!("No workflow engine for feature {}", payload.feature_id));
         return;
     };
 
-    // TODO: Resolve PRD approval gate (Phase 4+)
-    info!(feature_id = payload.feature_id, approved = payload.approved, "PRD approval received");
+    let approved = payload.approved;
+    let prefix = format!("prd-approval-");
+    info!(feature_id = payload.feature_id, approved, "resolving PRD approval");
+
+    match engine.resolve_approval(&prefix, approved, payload.feedback.clone()).await {
+        Ok(resolved) => {
+            if !resolved {
+                let _ = engine.resolve_approval(&payload.request_id, approved, payload.feedback).await;
+            }
+        }
+        Err(e) => {
+            warn!(feature_id = payload.feature_id, error = %e, "failed to resolve PRD approval");
+        }
+    }
+
+    let ack = WsEnvelope::reply(&envelope.id, "workflow", "prd.approval_resolved", serde_json::json!({
+        "feature_id": payload.feature_id,
+        "approved": approved,
+    }));
+    let _ = sender.send(Message::Text(String::from(ack).into()));
 }
 
 async fn handle_start_build(envelope: WsEnvelope, sender: &WsSender) {
