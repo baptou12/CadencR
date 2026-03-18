@@ -152,7 +152,7 @@ pub async fn get_plan_with_phases(
 
     let phases: Vec<Phase> = sqlx::query_as::<_, Phase>(
         r#"SELECT id, plan_id, step_number, title, status, complexity, commit_message,
-           prompt, phase_type, implementation_notes, deviations, order_index
+           prompt, phase_type, implementation_notes, deviations, order_index, depends_on
            FROM phases WHERE plan_id = ? ORDER BY step_number ASC, order_index ASC"#,
     )
     .bind(plan.id)
