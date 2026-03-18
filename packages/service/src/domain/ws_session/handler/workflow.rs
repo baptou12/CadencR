@@ -2,7 +2,7 @@ use std::sync::{Arc, LazyLock};
 
 use axum::extract::ws::Message;
 use dashmap::DashMap;
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
 use crate::app_state::AppState;
 use crate::domain::features::models::WorkflowType;
@@ -37,7 +37,7 @@ fn send_workflow_error(sender: &WsSender, ref_id: &str, code: &str, message: &st
     let _ = sender.send(Message::Text(String::from(err).into()));
 }
 
-fn get_engine(feature_id: i64) -> Option<Arc<WorkflowEngine>> {
+pub fn get_engine(feature_id: i64) -> Option<Arc<WorkflowEngine>> {
     ENGINES.get(&feature_id).map(|e| Arc::clone(e.value()))
 }
 
@@ -454,13 +454,11 @@ async fn handle_set_autonomy(envelope: WsEnvelope, sender: &WsSender) {
         return;
     };
 
-    // Note: WorkflowEngine.autonomy_level is not behind a lock currently,
-    // so we can't mutate it through Arc. This will need interior mutability in a later phase.
-    // For now, log the request.
+    engine.autonomy_level.store(payload.level, std::sync::atomic::Ordering::Relaxed);
     info!(
         feature_id = payload.feature_id,
         level = payload.level,
-        "set_autonomy received (interior mutability needed for update)"
+        "autonomy level updated"
     );
 
     let ack = WsEnvelope::reply(&envelope.id, "workflow", "autonomy.updated", serde_json::json!({

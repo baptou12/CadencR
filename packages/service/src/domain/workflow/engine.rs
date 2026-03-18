@@ -4,6 +4,7 @@
 //! (agent type, prompts, MCP config) to the WorkflowStrategy trait.
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
 
 use dashmap::DashMap;
@@ -33,7 +34,7 @@ pub struct WorkflowEngine {
     pub read_pool: SqlitePool,
     pub write_pool: SqlitePool,
     pub ws_sender: WsSender,
-    pub autonomy_level: u8,
+    pub autonomy_level: AtomicU8,
     pub max_parallel: usize,
     /// queue_item_id → db_session_id
     pub active_items: Arc<DashMap<i64, i64>>,
@@ -59,7 +60,7 @@ impl WorkflowEngine {
             read_pool,
             write_pool,
             ws_sender,
-            autonomy_level: 3,
+            autonomy_level: AtomicU8::new(3),
             max_parallel,
             active_items: Arc::new(DashMap::new()),
             mcp_context: Arc::new(tokio::sync::RwLock::new(None)),
@@ -159,10 +160,6 @@ impl WorkflowEngine {
                     self.ws_sender.clone(),
                     self.write_pool.clone(),
                     self.active_items.clone(),
-                    self.read_pool.clone(),
-                    self.max_parallel,
-                    self.autonomy_level,
-                    self.workflow_type.clone(),
                 );
 
                 // Send agent started envelope
@@ -354,10 +351,6 @@ impl WorkflowEngine {
                     self.ws_sender.clone(),
                     self.write_pool.clone(),
                     self.active_items.clone(),
-                    self.read_pool.clone(),
-                    self.max_parallel,
-                    self.autonomy_level,
-                    self.workflow_type.clone(),
                 );
 
                 // Send item_started envelope
@@ -407,7 +400,7 @@ impl WorkflowEngine {
         let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
 
         // Autonomy-based advancement
-        match self.autonomy_level {
+        match self.autonomy_level.load(Ordering::Relaxed) {
             3 => {
                 if let Err(e) = self.advance().await {
                     error!(error = %e, "advance after completion failed");
@@ -651,10 +644,6 @@ fn spawn_workflow_stream_reader(
     sender: WsSender,
     write_pool: SqlitePool,
     active_items: Arc<DashMap<i64, i64>>,
-    read_pool: SqlitePool,
-    max_parallel: usize,
-    autonomy_level: u8,
-    workflow_type: WorkflowType,
 ) {
     tokio::spawn(async move {
         info!(queue_item_id, db_session_id, "workflow stream reader started");
@@ -757,82 +746,26 @@ fn spawn_workflow_stream_reader(
             }
         }
 
-        // Post-stream callbacks
+        // Post-stream callbacks — delegate to the real engine from the registry
         if completed_ok {
-            active_items.remove(&queue_item_id);
-            if let Err(e) = repo::mark_item_completed(&write_pool, queue_item_id, None).await {
-                error!(queue_item_id, error = %e, "failed to mark item completed in stream reader");
-            }
-
-            let envelope = WsEnvelope::new(
-                "workflow",
-                "item_completed",
-                serde_json::json!({
-                    "feature_id": feature_id,
-                    "queue_item_id": queue_item_id,
-                }),
-            );
-            let _ = sender.send(Message::Text(String::from(envelope).into()));
-
-            // Auto-advance for full autonomy
-            if autonomy_level >= 3 {
-                advance_after_completion(
-                    feature_id,
-                    &read_pool,
-                    &write_pool,
-                    &sender,
-                    &active_items,
-                    max_parallel,
-                    autonomy_level,
-                    &workflow_type,
-                )
-                .await;
+            if let Some(engine) = crate::domain::ws_session::handler::workflow::get_engine(feature_id) {
+                engine.on_item_completed(queue_item_id, None).await;
+            } else {
+                // Fallback: engine gone (disconnect?), do minimal cleanup
+                active_items.remove(&queue_item_id);
+                if let Err(e) = repo::mark_item_completed(&write_pool, queue_item_id, None).await {
+                    error!(queue_item_id, error = %e, "failed to mark item completed (no engine)");
+                }
             }
         } else if let Some(err) = error_msg {
-            active_items.remove(&queue_item_id);
-            if let Err(e) = repo::mark_item_error(&write_pool, queue_item_id, Some(&err)).await {
-                error!(queue_item_id, error = %e, "failed to mark item error in stream reader");
+            if let Some(engine) = crate::domain::ws_session::handler::workflow::get_engine(feature_id) {
+                engine.on_item_error(queue_item_id, &err).await;
+            } else {
+                active_items.remove(&queue_item_id);
+                if let Err(e) = repo::mark_item_error(&write_pool, queue_item_id, Some(&err)).await {
+                    error!(queue_item_id, error = %e, "failed to mark item error (no engine)");
+                }
             }
-
-            let envelope = WsEnvelope::new(
-                "workflow",
-                "item_error",
-                serde_json::json!({
-                    "feature_id": feature_id,
-                    "queue_item_id": queue_item_id,
-                    "error": err,
-                }),
-            );
-            let _ = sender.send(Message::Text(String::from(envelope).into()));
         }
     });
-}
-
-/// Advance the workflow after an item completes (called from stream reader task).
-async fn advance_after_completion(
-    feature_id: i64,
-    read_pool: &SqlitePool,
-    write_pool: &SqlitePool,
-    sender: &WsSender,
-    active_items: &Arc<DashMap<i64, i64>>,
-    max_parallel: usize,
-    autonomy_level: u8,
-    workflow_type: &WorkflowType,
-) {
-    let engine = WorkflowEngine {
-        feature_id,
-        workflow_type: workflow_type.clone(),
-        strategy: strategies::get_strategy(workflow_type),
-        read_pool: read_pool.clone(),
-        write_pool: write_pool.clone(),
-        ws_sender: sender.clone(),
-        autonomy_level,
-        max_parallel,
-        active_items: active_items.clone(),
-        mcp_context: Arc::new(tokio::sync::RwLock::new(None)),
-    };
-
-    if let Err(e) = engine.advance().await {
-        error!(feature_id, error = %e, "advance after completion failed");
-    }
 }

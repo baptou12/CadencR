@@ -3,7 +3,7 @@ pub(crate) mod mcp_spawn;
 mod session_control;
 mod session_init;
 mod session_prompt;
-mod workflow;
+pub(crate) mod workflow;
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
