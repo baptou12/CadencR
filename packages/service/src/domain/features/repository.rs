@@ -1,7 +1,7 @@
 use sqlx::SqlitePool;
 
 use crate::error::AppError;
-use super::models::{Feature, Plan, Phase, PlanProgress, FeatureSetting, FeatureModelSettings};
+use super::models::{Feature, Plan, Phase, PlanProgress, FeatureSetting, FeatureModelSettings, QueueItem, WorkflowDependency};
 
 pub async fn list_by_project(pool: &SqlitePool, project_id: i64) -> Result<Vec<Feature>, AppError> {
     let rows = sqlx::query_as::<_, Feature>(
@@ -483,6 +483,195 @@ pub async fn delete_feature(pool: &SqlitePool, id: i64) -> Result<(), AppError> 
         .await?;
 
     tx.commit().await?;
+    Ok(())
+}
+
+// ── Workflow Queue CRUD ──────────────────────────────────────────────
+
+pub async fn insert_queue_item(
+    pool: &SqlitePool,
+    feature_id: i64,
+    workflow_type: &str,
+    item_type: &str,
+    phase_id: Option<i64>,
+    status: &str,
+    order_index: i64,
+    group_index: Option<i64>,
+) -> Result<i64, AppError> {
+    let result = sqlx::query(
+        r#"INSERT INTO workflow_queue (feature_id, workflow_type, item_type, phase_id, status, order_index, group_index)
+           VALUES (?, ?, ?, ?, ?, ?, ?)"#,
+    )
+    .bind(feature_id)
+    .bind(workflow_type)
+    .bind(item_type)
+    .bind(phase_id)
+    .bind(status)
+    .bind(order_index)
+    .bind(group_index)
+    .execute(pool)
+    .await?;
+    Ok(result.last_insert_rowid())
+}
+
+pub async fn insert_dependency(
+    pool: &SqlitePool,
+    queue_item_id: i64,
+    depends_on_item_id: i64,
+) -> Result<(), AppError> {
+    sqlx::query(
+        "INSERT INTO workflow_dependencies (queue_item_id, depends_on_item_id) VALUES (?, ?)",
+    )
+    .bind(queue_item_id)
+    .bind(depends_on_item_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn get_queue_for_feature(pool: &SqlitePool, feature_id: i64) -> Result<Vec<QueueItem>, AppError> {
+    let rows = sqlx::query_as::<_, QueueItem>(
+        "SELECT * FROM workflow_queue WHERE feature_id = ? ORDER BY order_index",
+    )
+    .bind(feature_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
+pub async fn get_queue_by_workflow_type(
+    pool: &SqlitePool,
+    feature_id: i64,
+    workflow_type: &str,
+) -> Result<Vec<QueueItem>, AppError> {
+    let rows = sqlx::query_as::<_, QueueItem>(
+        "SELECT * FROM workflow_queue WHERE feature_id = ? AND workflow_type = ? ORDER BY order_index",
+    )
+    .bind(feature_id)
+    .bind(workflow_type)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
+pub async fn get_ready_items(pool: &SqlitePool, feature_id: i64) -> Result<Vec<QueueItem>, AppError> {
+    let rows = sqlx::query_as::<_, QueueItem>(
+        "SELECT * FROM workflow_queue WHERE feature_id = ? AND status = 'ready' ORDER BY order_index",
+    )
+    .bind(feature_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
+pub async fn mark_item_running(pool: &SqlitePool, item_id: i64) -> Result<(), AppError> {
+    sqlx::query("UPDATE workflow_queue SET status = 'running', started_at = datetime('now') WHERE id = ?")
+        .bind(item_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn mark_item_completed(pool: &SqlitePool, item_id: i64, result_json: Option<&str>) -> Result<(), AppError> {
+    sqlx::query("UPDATE workflow_queue SET status = 'completed', result = ?, ended_at = datetime('now') WHERE id = ?")
+        .bind(result_json)
+        .bind(item_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn mark_item_error(pool: &SqlitePool, item_id: i64, error_json: Option<&str>) -> Result<(), AppError> {
+    sqlx::query("UPDATE workflow_queue SET status = 'error', result = ?, ended_at = datetime('now') WHERE id = ?")
+        .bind(error_json)
+        .bind(item_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn mark_item_skipped(pool: &SqlitePool, item_id: i64) -> Result<(), AppError> {
+    sqlx::query("UPDATE workflow_queue SET status = 'skipped', ended_at = datetime('now') WHERE id = ?")
+        .bind(item_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn get_dependents(pool: &SqlitePool, item_id: i64) -> Result<Vec<QueueItem>, AppError> {
+    let rows = sqlx::query_as::<_, QueueItem>(
+        r#"SELECT q.* FROM workflow_queue q
+           INNER JOIN workflow_dependencies d ON d.queue_item_id = q.id
+           WHERE d.depends_on_item_id = ?
+           ORDER BY q.order_index"#,
+    )
+    .bind(item_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
+pub async fn get_unmet_dependencies_count(pool: &SqlitePool, item_id: i64) -> Result<i64, AppError> {
+    let row: (i64,) = sqlx::query_as(
+        r#"SELECT COUNT(*) FROM workflow_dependencies d
+           INNER JOIN workflow_queue q ON q.id = d.depends_on_item_id
+           WHERE d.queue_item_id = ? AND q.status != 'completed'"#,
+    )
+    .bind(item_id)
+    .fetch_one(pool)
+    .await?;
+    Ok(row.0)
+}
+
+pub async fn unblock_ready_items(pool: &SqlitePool, feature_id: i64) -> Result<Vec<QueueItem>, AppError> {
+    // Find blocked items whose dependencies are all completed
+    let items = sqlx::query_as::<_, QueueItem>(
+        r#"SELECT q.* FROM workflow_queue q
+           WHERE q.feature_id = ? AND q.status = 'blocked'
+           AND NOT EXISTS (
+               SELECT 1 FROM workflow_dependencies d
+               INNER JOIN workflow_queue dep ON dep.id = d.depends_on_item_id
+               WHERE d.queue_item_id = q.id AND dep.status != 'completed'
+           )
+           ORDER BY q.order_index"#,
+    )
+    .bind(feature_id)
+    .fetch_all(pool)
+    .await?;
+
+    for item in &items {
+        sqlx::query("UPDATE workflow_queue SET status = 'ready' WHERE id = ?")
+            .bind(item.id)
+            .execute(pool)
+            .await?;
+    }
+
+    Ok(items)
+}
+
+pub async fn get_running_count(pool: &SqlitePool, feature_id: i64) -> Result<i64, AppError> {
+    let row: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM workflow_queue WHERE feature_id = ? AND status = 'running'",
+    )
+    .bind(feature_id)
+    .fetch_one(pool)
+    .await?;
+    Ok(row.0)
+}
+
+pub async fn clear_queue_for_feature(pool: &SqlitePool, feature_id: i64) -> Result<(), AppError> {
+    // Dependencies cascade on delete, but delete explicitly for clarity
+    sqlx::query(
+        "DELETE FROM workflow_dependencies WHERE queue_item_id IN (SELECT id FROM workflow_queue WHERE feature_id = ?)",
+    )
+    .bind(feature_id)
+    .execute(pool)
+    .await?;
+
+    sqlx::query("DELETE FROM workflow_queue WHERE feature_id = ?")
+        .bind(feature_id)
+        .execute(pool)
+        .await?;
     Ok(())
 }
 

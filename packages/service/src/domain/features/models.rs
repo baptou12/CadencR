@@ -140,6 +140,61 @@ pub struct SetFeatureModelSettingRequest {
     pub model: String,
 }
 
+/// Supported workflow types. Each maps to a different orchestration strategy.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkflowType {
+    FeatureBuild,
+    CodeReview,
+    DesignImprovement,
+    BugFix,
+}
+
+impl WorkflowType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::FeatureBuild => "feature_build",
+            Self::CodeReview => "code_review",
+            Self::DesignImprovement => "design_improvement",
+            Self::BugFix => "bug_fix",
+        }
+    }
+    pub fn from_str(s: &str) -> Result<Self, String> {
+        match s {
+            "feature_build" => Ok(Self::FeatureBuild),
+            "code_review" => Ok(Self::CodeReview),
+            "design_improvement" => Ok(Self::DesignImprovement),
+            "bug_fix" => Ok(Self::BugFix),
+            _ => Err(format!("Unknown workflow type: {s}")),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct QueueItem {
+    pub id: i64,
+    pub feature_id: i64,
+    pub workflow_type: String,
+    pub item_type: String,
+    pub phase_id: Option<i64>,
+    pub status: String,
+    pub order_index: i64,
+    pub group_index: Option<i64>,
+    pub config: Option<String>,
+    pub agent_session_id: Option<i64>,
+    pub result: Option<String>,
+    pub created_at: Option<String>,
+    pub started_at: Option<String>,
+    pub ended_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct WorkflowDependency {
+    pub id: i64,
+    pub queue_item_id: i64,
+    pub depends_on_item_id: i64,
+}
+
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct ResetPhaseRequest {}
 
