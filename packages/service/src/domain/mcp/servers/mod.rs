@@ -138,7 +138,8 @@ fn tool_create_phase() -> Tool {
                 "prompt": { "type": "string", "description": "Detailed prompt/instructions for the phase" },
                 "complexity": { "type": "integer", "description": "Complexity rating (1-5)" },
                 "commit_message": { "type": "string", "description": "Suggested commit message" },
-                "phase_type": { "type": "string", "description": "Phase type (e.g. code, test, docs)" }
+                "phase_type": { "type": "string", "description": "Phase type (e.g. code, test, docs)" },
+                "depends_on": { "type": "array", "items": { "type": "string" }, "description": "Titles of phases this phase depends on" }
             },
             "required": ["plan_id", "step_number", "title", "prompt"]
         }),

@@ -21,6 +21,7 @@ impl CreatePhaseTool {
         complexity: Option<i8>,
         commit_message: Option<String>,
         phase_type: Option<String>,
+        depends_on: Option<Vec<String>>,
     ) -> Result<String, String> {
         verify_plan_ownership(&self.ctx.read_pool, plan_id, self.ctx.feature_id).await?;
 
@@ -35,9 +36,10 @@ impl CreatePhaseTool {
         let order_index = max_idx.map(|v| v + 1).unwrap_or(0);
         let complexity = complexity.unwrap_or(3) as i64;
         let phase_type = phase_type.unwrap_or_else(|| "value".to_string());
+        let depends_on_json = depends_on.map(|d| serde_json::to_string(&d).unwrap_or_else(|_| "[]".to_string()));
 
         let id: i64 = sqlx::query_scalar(
-            "INSERT INTO phases (plan_id, step_number, title, status, complexity, commit_message, prompt, order_index, phase_type) VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?) RETURNING id",
+            "INSERT INTO phases (plan_id, step_number, title, status, complexity, commit_message, prompt, order_index, phase_type, depends_on) VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?) RETURNING id",
         )
         .bind(plan_id)
         .bind(step_number)
@@ -47,6 +49,7 @@ impl CreatePhaseTool {
         .bind(&prompt)
         .bind(order_index)
         .bind(&phase_type)
+        .bind(&depends_on_json)
         .fetch_one(&self.ctx.write_pool)
         .await
         .map_err(|e| format!("Failed to create phase: {e}"))?;

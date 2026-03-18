@@ -566,7 +566,8 @@ mod tests {
                 phase_type TEXT,
                 implementation_notes TEXT,
                 deviations TEXT,
-                order_index INTEGER DEFAULT 0
+                order_index INTEGER DEFAULT 0,
+                depends_on TEXT
             )"#,
         )
         .execute(&pool)

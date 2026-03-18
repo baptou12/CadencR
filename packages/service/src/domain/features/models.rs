@@ -72,6 +72,7 @@ pub struct Phase {
     pub implementation_notes: Option<String>,
     pub deviations: Option<String>,
     pub order_index: Option<i64>,
+    pub depends_on: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -223,6 +224,7 @@ mod tests {
             implementation_notes: None,
             deviations: None,
             order_index: Some(0),
+            depends_on: None,
         };
 
         let json = serde_json::to_string(&phase).unwrap();
@@ -259,6 +261,7 @@ mod tests {
                 implementation_notes: None,
                 deviations: None,
                 order_index: Some(0),
+                depends_on: None,
             },
         ];
         let pwp = PlanWithPhases { plan, phases };
