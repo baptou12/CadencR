@@ -1,7 +1,7 @@
 use sqlx::SqlitePool;
 
 use crate::error::AppError;
-use super::models::{Feature, Plan, Phase, PlanProgress, FeatureSetting, FeatureModelSettings, QueueItem, WorkflowDependency};
+use super::models::{Feature, Plan, Phase, PlanProgress, FeatureSetting, FeatureModelSettings, QueueItem};
 
 pub async fn list_by_project(pool: &SqlitePool, project_id: i64) -> Result<Vec<Feature>, AppError> {
     let rows = sqlx::query_as::<_, Feature>(
@@ -539,21 +539,6 @@ pub async fn get_queue_for_feature(pool: &SqlitePool, feature_id: i64) -> Result
     Ok(rows)
 }
 
-pub async fn get_queue_by_workflow_type(
-    pool: &SqlitePool,
-    feature_id: i64,
-    workflow_type: &str,
-) -> Result<Vec<QueueItem>, AppError> {
-    let rows = sqlx::query_as::<_, QueueItem>(
-        "SELECT * FROM workflow_queue WHERE feature_id = ? AND workflow_type = ? ORDER BY order_index",
-    )
-    .bind(feature_id)
-    .bind(workflow_type)
-    .fetch_all(pool)
-    .await?;
-    Ok(rows)
-}
-
 pub async fn get_ready_items(pool: &SqlitePool, feature_id: i64) -> Result<Vec<QueueItem>, AppError> {
     let rows = sqlx::query_as::<_, QueueItem>(
         "SELECT * FROM workflow_queue WHERE feature_id = ? AND status = 'ready' ORDER BY order_index",
@@ -615,31 +600,6 @@ pub async fn get_queue_item(pool: &SqlitePool, item_id: i64) -> Result<Option<Qu
     Ok(item)
 }
 
-pub async fn get_dependents(pool: &SqlitePool, item_id: i64) -> Result<Vec<QueueItem>, AppError> {
-    let rows = sqlx::query_as::<_, QueueItem>(
-        r#"SELECT q.* FROM workflow_queue q
-           INNER JOIN workflow_dependencies d ON d.queue_item_id = q.id
-           WHERE d.depends_on_item_id = ?
-           ORDER BY q.order_index"#,
-    )
-    .bind(item_id)
-    .fetch_all(pool)
-    .await?;
-    Ok(rows)
-}
-
-pub async fn get_unmet_dependencies_count(pool: &SqlitePool, item_id: i64) -> Result<i64, AppError> {
-    let row: (i64,) = sqlx::query_as(
-        r#"SELECT COUNT(*) FROM workflow_dependencies d
-           INNER JOIN workflow_queue q ON q.id = d.depends_on_item_id
-           WHERE d.queue_item_id = ? AND q.status != 'completed'"#,
-    )
-    .bind(item_id)
-    .fetch_one(pool)
-    .await?;
-    Ok(row.0)
-}
-
 pub async fn unblock_ready_items(pool: &SqlitePool, feature_id: i64) -> Result<Vec<QueueItem>, AppError> {
     // Atomically update blocked items whose dependencies are all completed/skipped
     sqlx::query(
@@ -664,16 +624,6 @@ pub async fn unblock_ready_items(pool: &SqlitePool, feature_id: i64) -> Result<V
     .await?;
 
     Ok(items)
-}
-
-pub async fn get_running_count(pool: &SqlitePool, feature_id: i64) -> Result<i64, AppError> {
-    let row: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM workflow_queue WHERE feature_id = ? AND status = 'running'",
-    )
-    .bind(feature_id)
-    .fetch_one(pool)
-    .await?;
-    Ok(row.0)
 }
 
 pub async fn clear_queue_for_feature(pool: &SqlitePool, feature_id: i64) -> Result<(), AppError> {

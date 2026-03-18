@@ -28,21 +28,6 @@ impl Prompts {
     pub fn review() -> &'static str {
         include_str!("../../../prompts/review.md")
     }
-    pub fn review_fixer() -> &'static str {
-        include_str!("../../../prompts/review-fixer.md")
-    }
-    pub fn review_fixer_completion_approval() -> &'static str {
-        include_str!("../../../prompts/review-fixer-completion-approval.md")
-    }
-    pub fn review_fixer_completion_auto() -> &'static str {
-        include_str!("../../../prompts/review-fixer-completion-auto.md")
-    }
-    pub fn risk() -> &'static str {
-        include_str!("../../../prompts/risk.md")
-    }
-    pub fn retro() -> &'static str {
-        include_str!("../../../prompts/retro.md")
-    }
 }
 
 /// Build the full system prompt for a phase execution agent.

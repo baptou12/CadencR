@@ -145,26 +145,17 @@ pub struct SetFeatureModelSettingRequest {
 #[serde(rename_all = "snake_case")]
 pub enum WorkflowType {
     FeatureBuild,
-    CodeReview,
-    DesignImprovement,
-    BugFix,
 }
 
 impl WorkflowType {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::FeatureBuild => "feature_build",
-            Self::CodeReview => "code_review",
-            Self::DesignImprovement => "design_improvement",
-            Self::BugFix => "bug_fix",
         }
     }
     pub fn from_str(s: &str) -> Result<Self, String> {
         match s {
             "feature_build" => Ok(Self::FeatureBuild),
-            "code_review" => Ok(Self::CodeReview),
-            "design_improvement" => Ok(Self::DesignImprovement),
-            "bug_fix" => Ok(Self::BugFix),
             _ => Err(format!("Unknown workflow type: {s}")),
         }
     }
@@ -187,13 +178,6 @@ pub struct QueueItem {
     pub started_at: Option<String>,
     pub ended_at: Option<String>,
     pub pid: Option<i64>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
-pub struct WorkflowDependency {
-    pub id: i64,
-    pub queue_item_id: i64,
-    pub depends_on_item_id: i64,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]

@@ -302,47 +302,12 @@ pub struct WorkflowInterruptPayload {
 // --- Workflow payloads (Server → Client) ---
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WorkflowQueueUpdatePayload {
-    pub feature_id: i64,
-    pub workflow_type: String,
-    pub items: Vec<QueueItemPayload>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct QueueItemPayload {
-    pub id: i64,
-    pub item_type: String,
-    pub phase_id: Option<i64>,
-    pub phase_title: Option<String>,
-    pub status: String,
-    pub order_index: i64,
-    pub group_index: Option<i64>,
-    pub agent_session_id: Option<i64>,
-    pub started_at: Option<String>,
-    pub ended_at: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowItemEventPayload {
     pub feature_id: i64,
     pub item_id: i64,
     pub item_type: String,
     pub phase_title: Option<String>,
     pub status: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WorkflowPausedPayload {
-    pub feature_id: i64,
-    pub reason: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WorkflowAgentStreamPayload {
-    pub feature_id: i64,
-    pub queue_item_id: i64,
-    pub session_id: i64,
-    pub message: serde_json::Value,
 }
 
 #[cfg(test)]

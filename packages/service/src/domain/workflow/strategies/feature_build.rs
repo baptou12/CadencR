@@ -202,8 +202,6 @@ impl WorkflowStrategy for FeatureBuildStrategy {
                 }
             }
             "review" => Ok(Prompts::review().to_string()),
-            "risk" => Ok(Prompts::risk().to_string()),
-            "retro" => Ok(Prompts::retro().to_string()),
             other => Err(format!("Unknown item type for system prompt: {other}")),
         }
     }
@@ -220,8 +218,6 @@ impl WorkflowStrategy for FeatureBuildStrategy {
                 Ok(phase.prompt.unwrap_or_else(|| phase.title))
             }
             "review" => Ok(format!("Review all changes for feature {feature_title}")),
-            "risk" => Ok(format!("Analyze risks for feature {feature_title}")),
-            "retro" => Ok(format!("Run retrospective for feature {feature_title}")),
             other => Err(format!("Unknown item type for initial prompt: {other}")),
         }
     }
