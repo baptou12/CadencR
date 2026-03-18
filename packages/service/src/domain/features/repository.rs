@@ -641,27 +641,27 @@ pub async fn get_unmet_dependencies_count(pool: &SqlitePool, item_id: i64) -> Re
 }
 
 pub async fn unblock_ready_items(pool: &SqlitePool, feature_id: i64) -> Result<Vec<QueueItem>, AppError> {
-    // Find blocked items whose dependencies are all completed
-    let items = sqlx::query_as::<_, QueueItem>(
-        r#"SELECT q.* FROM workflow_queue q
-           WHERE q.feature_id = ? AND q.status = 'blocked'
+    // Atomically update blocked items whose dependencies are all completed/skipped
+    sqlx::query(
+        r#"UPDATE workflow_queue SET status = 'ready'
+           WHERE feature_id = ? AND status = 'blocked'
            AND NOT EXISTS (
                SELECT 1 FROM workflow_dependencies d
                INNER JOIN workflow_queue dep ON dep.id = d.depends_on_item_id
-               WHERE d.queue_item_id = q.id AND dep.status NOT IN ('completed', 'skipped')
-           )
-           ORDER BY q.order_index"#,
+               WHERE d.queue_item_id = workflow_queue.id AND dep.status NOT IN ('completed', 'skipped')
+           )"#,
+    )
+    .bind(feature_id)
+    .execute(pool)
+    .await?;
+
+    // Return the newly-ready items
+    let items = sqlx::query_as::<_, QueueItem>(
+        "SELECT * FROM workflow_queue WHERE feature_id = ? AND status = 'ready' ORDER BY order_index",
     )
     .bind(feature_id)
     .fetch_all(pool)
     .await?;
-
-    for item in &items {
-        sqlx::query("UPDATE workflow_queue SET status = 'ready' WHERE id = ?")
-            .bind(item.id)
-            .execute(pool)
-            .await?;
-    }
 
     Ok(items)
 }

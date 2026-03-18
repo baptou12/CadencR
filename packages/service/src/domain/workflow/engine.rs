@@ -387,26 +387,18 @@ impl WorkflowEngine {
             return Err("No MCP context available".to_string());
         };
 
-        // Find request_id matching the prefix
+        // Find and resolve in a single lock scope
         let request_id = ctx
             .pending_approvals
             .iter()
             .find(|entry| entry.key().starts_with(prefix))
             .map(|entry| entry.key().clone());
 
-        drop(ctx_guard);
-
         if let Some(request_id) = request_id {
-            let ctx_guard = self.mcp_context.read().await;
-            if let Some(ctx) = ctx_guard.as_ref() {
-                let result = ApprovalResult { approved, feedback };
-                Ok(ctx.resolve_approval(&request_id, result))
-            } else {
-                Err("MCP context disappeared".to_string())
-            }
+            let result = ApprovalResult { approved, feedback };
+            Ok(ctx.resolve_approval(&request_id, result))
         } else {
             // No pending approval found — this is common when using subprocess MCP.
-            // The approval might need to be resolved via DB in future.
             warn!(
                 feature_id = self.feature_id,
                 prefix,
@@ -418,11 +410,9 @@ impl WorkflowEngine {
 
     /// Advance the workflow: unblock ready items and start them up to capacity.
     pub async fn advance(&self) -> Result<(), String> {
-        let running = repo::get_running_count(&self.read_pool, self.feature_id)
-            .await
-            .map_err(|e| e.to_string())?;
+        let running = self.active_items.len();
 
-        if running as usize >= self.max_parallel {
+        if running >= self.max_parallel {
             info!(
                 feature_id = self.feature_id,
                 running,
@@ -441,7 +431,7 @@ impl WorkflowEngine {
             .await
             .map_err(|e| e.to_string())?;
 
-        let capacity = self.max_parallel - running as usize;
+        let capacity = self.max_parallel - running;
         for item in ready.into_iter().take(capacity) {
             if let Err(e) = self.start_item(item).await {
                 error!(feature_id = self.feature_id, error = %e, "failed to start queue item");
@@ -609,19 +599,19 @@ impl WorkflowEngine {
             }
             2 => {
                 // Advance if next ready items share the same group_index
-                if repo::unblock_ready_items(&self.write_pool, self.feature_id)
-                    .await
-                    .is_ok()
-                {
-                    if let Ok(ready) = repo::get_ready_items(&self.read_pool, self.feature_id).await
-                    {
+                if let Ok(ready) = repo::unblock_ready_items(&self.write_pool, self.feature_id).await {
+                    if !ready.is_empty() {
                         let current_group = self.get_current_group_index(item_id).await;
                         let same_group = ready.iter().all(|r| r.group_index == current_group);
-                        if same_group && !ready.is_empty() {
-                            if let Err(e) = self.advance().await {
-                                error!(error = %e, "advance after completion failed");
+                        if same_group {
+                            // Same group — start them directly without re-querying
+                            let capacity = self.max_parallel - self.active_items.len();
+                            for item in ready.into_iter().take(capacity) {
+                                if let Err(e) = self.start_item(item).await {
+                                    error!(error = %e, "failed to start queue item");
+                                }
                             }
-                        } else if !ready.is_empty() {
+                        } else {
                             let envelope = WsEnvelope::new(
                                 "workflow",
                                 "paused",
@@ -863,24 +853,14 @@ impl WorkflowEngine {
         info!(feature_id = self.feature_id, "restoring workflow state on reconnect");
 
         // Mark any items that were "running" as error (stale from server restart)
-        let stale_items: Vec<(i64,)> = sqlx::query_as(
-            "SELECT id FROM workflow_queue WHERE feature_id = ? AND status = 'running'",
+        // Single UPDATE instead of N×2 individual queries
+        sqlx::query(
+            "UPDATE workflow_queue SET status = 'error', result = 'Stale after reconnect', ended_at = datetime('now'), pid = NULL WHERE feature_id = ? AND status = 'running'",
         )
         .bind(self.feature_id)
-        .fetch_all(&self.read_pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|e| e.to_string())?;
-
-        for (item_id,) in &stale_items {
-            if let Err(e) = repo::mark_item_error(&self.write_pool, *item_id, Some("Stale after reconnect")).await {
-                error!(item_id, error = %e, "failed to mark stale item");
-            }
-            // Clear PID since we've lost the Query handles
-            let _ = sqlx::query("UPDATE workflow_queue SET pid = NULL WHERE id = ?")
-                .bind(*item_id)
-                .execute(&self.write_pool)
-                .await;
-        }
 
         // Send full queue update
         let all_items = repo::get_queue_for_feature(&self.read_pool, self.feature_id)

@@ -187,9 +187,10 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
           const queue = state.queue.map(q =>
             q.id === itemId ? { ...q, status: "completed" as const } : q,
           );
+          const agent = state.activeAgents.get(itemId);
+          if (!agent) return { queue };
           const activeAgents = new Map(state.activeAgents);
-          const agent = activeAgents.get(itemId);
-          if (agent) activeAgents.set(itemId, { ...agent, status: "completed" });
+          activeAgents.set(itemId, { ...agent, status: "completed" });
           return { queue, activeAgents };
         });
         break;
@@ -201,9 +202,10 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
           const queue = state.queue.map(q =>
             q.id === itemId ? { ...q, status: "error" as const, result: error } : q,
           );
+          const agent = state.activeAgents.get(itemId);
+          if (!agent) return { queue, error };
           const activeAgents = new Map(state.activeAgents);
-          const agent = activeAgents.get(itemId);
-          if (agent) activeAgents.set(itemId, { ...agent, status: "error" });
+          activeAgents.set(itemId, { ...agent, status: "error" });
           return { queue, activeAgents, error };
         });
         break;
@@ -247,10 +249,12 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         const msg = payload.message as Record<string, unknown>;
         if (!msg) break;
         set(state => {
+          const agent = state.activeAgents.get(itemId);
+          if (!agent) return state;
+          const updated = processAgentStream(agent, msg);
+          if (updated === agent) return state;
           const activeAgents = new Map(state.activeAgents);
-          const agent = activeAgents.get(itemId);
-          if (!agent) return {};
-          activeAgents.set(itemId, processAgentStream(agent, msg));
+          activeAgents.set(itemId, updated);
           return { activeAgents };
         });
         break;

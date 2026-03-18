@@ -262,7 +262,7 @@ pub struct WorkflowPermissionRespondPayload {
     pub feature_id: i64,
     pub queue_item_id: i64,
     pub request_id: String,
-    pub decision: String,
+    pub decision: PermissionDecision,
     pub feedback: Option<String>,
     pub updated_input: Option<serde_json::Value>,
 }

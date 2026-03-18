@@ -240,44 +240,14 @@ async fn handle_start_prd(envelope: WsEnvelope, sender: &WsSender) {
 }
 
 async fn handle_plan_approval(envelope: WsEnvelope, sender: &WsSender) {
-    let payload: WorkflowApprovalPayload = match serde_json::from_value(envelope.payload.clone()) {
-        Ok(p) => p,
-        Err(e) => {
-            send_workflow_error(sender, &envelope.id, "INVALID_PAYLOAD", &format!("Invalid approval payload: {e}"));
-            return;
-        }
-    };
-
-    let Some(engine) = get_engine(payload.feature_id) else {
-        send_workflow_error(sender, &envelope.id, "NO_ENGINE", &format!("No workflow engine for feature {}", payload.feature_id));
-        return;
-    };
-
-    let approved = payload.approved;
-    let prefix = format!("plan-approval-");
-    info!(feature_id = payload.feature_id, approved, "resolving plan approval");
-
-    // Try to resolve via engine's McpContext (in-process path)
-    match engine.resolve_approval(&prefix, approved, payload.feedback.clone()).await {
-        Ok(resolved) => {
-            if !resolved {
-                // Fallback: try resolving by exact request_id from payload
-                let _ = engine.resolve_approval(&payload.request_id, approved, payload.feedback).await;
-            }
-        }
-        Err(e) => {
-            warn!(feature_id = payload.feature_id, error = %e, "failed to resolve plan approval");
-        }
-    }
-
-    let ack = WsEnvelope::reply(&envelope.id, "workflow", "plan.approval_resolved", serde_json::json!({
-        "feature_id": payload.feature_id,
-        "approved": approved,
-    }));
-    let _ = sender.send(Message::Text(String::from(ack).into()));
+    handle_approval(envelope, sender, "plan").await;
 }
 
 async fn handle_prd_approval(envelope: WsEnvelope, sender: &WsSender) {
+    handle_approval(envelope, sender, "prd").await;
+}
+
+async fn handle_approval(envelope: WsEnvelope, sender: &WsSender, kind: &str) {
     let payload: WorkflowApprovalPayload = match serde_json::from_value(envelope.payload.clone()) {
         Ok(p) => p,
         Err(e) => {
@@ -292,8 +262,8 @@ async fn handle_prd_approval(envelope: WsEnvelope, sender: &WsSender) {
     };
 
     let approved = payload.approved;
-    let prefix = format!("prd-approval-");
-    info!(feature_id = payload.feature_id, approved, "resolving PRD approval");
+    let prefix = format!("{kind}-approval-");
+    info!(feature_id = payload.feature_id, approved, kind, "resolving approval");
 
     match engine.resolve_approval(&prefix, approved, payload.feedback.clone()).await {
         Ok(resolved) => {
@@ -302,11 +272,11 @@ async fn handle_prd_approval(envelope: WsEnvelope, sender: &WsSender) {
             }
         }
         Err(e) => {
-            warn!(feature_id = payload.feature_id, error = %e, "failed to resolve PRD approval");
+            warn!(feature_id = payload.feature_id, error = %e, kind, "failed to resolve approval");
         }
     }
 
-    let ack = WsEnvelope::reply(&envelope.id, "workflow", "prd.approval_resolved", serde_json::json!({
+    let ack = WsEnvelope::reply(&envelope.id, "workflow", &format!("{kind}.approval_resolved"), serde_json::json!({
         "feature_id": payload.feature_id,
         "approved": approved,
     }));
@@ -459,19 +429,8 @@ async fn handle_permission_respond(envelope: WsEnvelope, sender: &WsSender) {
         return;
     };
 
-    // Parse decision string to PermissionDecision enum
-    let decision = match payload.decision.as_str() {
-        "allow_once" | "AllowOnce" => PermissionDecision::AllowOnce,
-        "allow_future" | "AllowFuture" => PermissionDecision::AllowFuture,
-        "deny" | "Deny" => PermissionDecision::Deny,
-        other => {
-            send_workflow_error(sender, &envelope.id, "INVALID_DECISION", &format!("Unknown decision: {other}"));
-            return;
-        }
-    };
-
     let response = super::session_prompt::PermissionResponse {
-        decision,
+        decision: payload.decision,
         feedback: payload.feedback,
         updated_input: payload.updated_input,
     };
