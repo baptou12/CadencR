@@ -58,6 +58,7 @@ export function WsFeatureView({
         featureId={featureId}
         projectId={projectId}
         mode="feature"
+        isWebSocket
         className="shrink-0"
       />
       <div className="flex flex-1 items-center justify-center p-8">
