@@ -15,7 +15,9 @@ static ENGINES: LazyLock<DashMap<i64, Arc<WorkflowEngine>>> = LazyLock::new(Dash
 
 /// Remove the engine for a feature (used on disconnect cleanup).
 pub fn remove_engine(feature_id: i64) {
-    ENGINES.remove(&feature_id);
+    if let Some((_, engine)) = ENGINES.remove(&feature_id) {
+        engine.cancel();
+    }
 }
 
 /// Get all tracked feature_ids (for disconnect cleanup).

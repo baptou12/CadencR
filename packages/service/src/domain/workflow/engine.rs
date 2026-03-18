@@ -41,6 +41,9 @@ pub struct WorkflowEngine {
     /// Shared MCP context for approval gates (plan/PRD approval resolution).
     /// Created lazily when plan/PRD agents are spawned.
     pub mcp_context: Arc<tokio::sync::RwLock<Option<Arc<McpContext>>>>,
+    /// Cancellation signal for background tasks (e.g. timeout checker).
+    cancel_tx: tokio::sync::watch::Sender<bool>,
+    cancel_rx: tokio::sync::watch::Receiver<bool>,
 }
 
 impl WorkflowEngine {
@@ -53,6 +56,7 @@ impl WorkflowEngine {
         max_parallel: usize,
     ) -> Self {
         let strategy = strategies::get_strategy(&workflow_type);
+        let (cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
         Self {
             feature_id,
             workflow_type,
@@ -64,6 +68,8 @@ impl WorkflowEngine {
             max_parallel,
             active_items: Arc::new(DashMap::new()),
             mcp_context: Arc::new(tokio::sync::RwLock::new(None)),
+            cancel_tx,
+            cancel_rx,
         }
     }
 
@@ -533,17 +539,29 @@ impl WorkflowEngine {
 
     /// Spawn a background task that periodically checks for stuck agents.
     /// Items running longer than `timeout_minutes` are marked as error.
+    /// Cancel all background tasks (timeout checker, etc.).
+    pub fn cancel(&self) {
+        let _ = self.cancel_tx.send(true);
+    }
+
     pub fn spawn_timeout_checker(&self, timeout_minutes: u64) {
         let read_pool = self.read_pool.clone();
         let write_pool = self.write_pool.clone();
         let feature_id = self.feature_id;
         let sender = self.ws_sender.clone();
         let active_items = self.active_items.clone();
+        let mut cancel_rx = self.cancel_rx.clone();
 
         tokio::spawn(async move {
             let interval = std::time::Duration::from_secs(60); // check every minute
             loop {
-                tokio::time::sleep(interval).await;
+                tokio::select! {
+                    _ = tokio::time::sleep(interval) => {}
+                    _ = cancel_rx.changed() => {
+                        info!(feature_id, "timeout checker cancelled");
+                        break;
+                    }
+                }
 
                 // Find running items that started more than timeout_minutes ago
                 let stale: Vec<(i64,)> = match sqlx::query_as(
@@ -768,4 +786,11 @@ fn spawn_workflow_stream_reader(
             }
         }
     });
+}
+
+impl Drop for WorkflowEngine {
+    fn drop(&mut self) {
+        // Safety net: cancel background tasks when the engine is dropped.
+        let _ = self.cancel_tx.send(true);
+    }
 }
