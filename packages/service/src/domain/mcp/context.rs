@@ -37,6 +37,19 @@ impl McpContext {
         })
     }
 
+    /// Convenience constructor for feature-scoped MCP contexts.
+    /// Creates a context with fresh channels, suitable for sharing across
+    /// all queue items within a single feature's workflow.
+    pub fn for_feature(
+        feature_id: i64,
+        read_pool: SqlitePool,
+        write_pool: SqlitePool,
+    ) -> (Arc<Self>, oneshot::Receiver<Option<String>>) {
+        let (done_tx, done_rx) = oneshot::channel();
+        let ctx = Self::new(read_pool, write_pool, feature_id, done_tx);
+        (ctx, done_rx)
+    }
+
     /// Resolve a pending approval by request ID. Returns true if the approval was found and resolved.
     pub fn resolve_approval(&self, request_id: &str, result: ApprovalResult) -> bool {
         if let Some((_, sender)) = self.pending_approvals.remove(request_id) {

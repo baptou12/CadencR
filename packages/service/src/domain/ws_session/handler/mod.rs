@@ -1,4 +1,5 @@
 mod commands;
+pub(crate) mod mcp_spawn;
 mod session_control;
 mod session_init;
 mod session_prompt;
