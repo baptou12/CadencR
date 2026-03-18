@@ -329,6 +329,7 @@ mod tests {
             read_pool: pool.clone(),
             write_pool: pool,
             electron_port: 0,
+            max_parallel_agents: 3,
         }
     }
 

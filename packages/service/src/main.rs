@@ -34,6 +34,7 @@ async fn main() -> anyhow::Result<()> {
         read_pool,
         write_pool,
         electron_port: config.electron_port,
+        max_parallel_agents: AppState::max_parallel_from_env(),
     };
 
     let app = api::build_router(state).layer(CorsLayer::permissive());

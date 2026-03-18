@@ -1,0 +1,559 @@
+//! Workflow engine: orchestrates queue execution through a strategy pattern.
+//!
+//! The engine is workflow-type-agnostic — it delegates item-specific decisions
+//! (agent type, prompts, MCP config) to the WorkflowStrategy trait.
+
+use std::path::PathBuf;
+use std::sync::Arc;
+
+use dashmap::DashMap;
+use sqlx::SqlitePool;
+use tokio::sync::mpsc;
+use tracing::{error, info, warn};
+
+use axum::extract::ws::Message;
+use claude_agent_sdk_rs::{Options, PermissionMode, SdkError, SdkMessage};
+
+use crate::domain::features::models::{QueueItem, WorkflowType};
+use crate::domain::features::repository as repo;
+use crate::domain::workflow::strategies::{self, WorkflowStrategy};
+use crate::domain::ws_session::handler::mcp_spawn::build_mcp_server_config;
+use crate::domain::ws_session::persistence::WsSessionPersistence;
+use crate::domain::ws_session::protocol::*;
+
+pub type WsSender = mpsc::UnboundedSender<Message>;
+
+pub struct WorkflowEngine {
+    pub feature_id: i64,
+    pub workflow_type: WorkflowType,
+    pub strategy: Box<dyn WorkflowStrategy>,
+    pub read_pool: SqlitePool,
+    pub write_pool: SqlitePool,
+    pub ws_sender: WsSender,
+    pub autonomy_level: u8,
+    pub max_parallel: usize,
+    /// queue_item_id → db_session_id
+    pub active_items: Arc<DashMap<i64, i64>>,
+}
+
+impl WorkflowEngine {
+    pub fn new(
+        feature_id: i64,
+        workflow_type: WorkflowType,
+        read_pool: SqlitePool,
+        write_pool: SqlitePool,
+        ws_sender: WsSender,
+        max_parallel: usize,
+    ) -> Self {
+        let strategy = strategies::get_strategy(&workflow_type);
+        Self {
+            feature_id,
+            workflow_type,
+            strategy,
+            read_pool,
+            write_pool,
+            ws_sender,
+            autonomy_level: 3,
+            max_parallel,
+            active_items: Arc::new(DashMap::new()),
+        }
+    }
+
+    /// Advance the workflow: unblock ready items and start them up to capacity.
+    pub async fn advance(&self) -> Result<(), String> {
+        let running = repo::get_running_count(&self.read_pool, self.feature_id)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if running as usize >= self.max_parallel {
+            info!(
+                feature_id = self.feature_id,
+                running,
+                max = self.max_parallel,
+                "at capacity, not starting new items"
+            );
+            return Ok(());
+        }
+
+        // Unblock items whose dependencies are all completed
+        repo::unblock_ready_items(&self.write_pool, self.feature_id)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let ready = repo::get_ready_items(&self.read_pool, self.feature_id)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let capacity = self.max_parallel - running as usize;
+        for item in ready.into_iter().take(capacity) {
+            if let Err(e) = self.start_item(item).await {
+                error!(feature_id = self.feature_id, error = %e, "failed to start queue item");
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Start executing a single queue item by spawning an agent.
+    async fn start_item(&self, item: QueueItem) -> Result<(), String> {
+        let item_id = item.id;
+        info!(feature_id = self.feature_id, item_id, item_type = %item.item_type, "starting queue item");
+
+        // 1. Mark running in DB
+        repo::mark_item_running(&self.write_pool, item_id)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        // 2. Delegate to strategy
+        let agent_type = self.strategy.agent_type_for_item(&item.item_type)?;
+        let system_prompt = self.strategy.build_system_prompt(&self.read_pool, &item).await?;
+        let feature_title = self.get_feature_title().await.unwrap_or_default();
+        let initial_prompt = self
+            .strategy
+            .build_initial_prompt(&self.read_pool, &item, &feature_title)
+            .await?;
+
+        // 3. Create agent session in DB
+        let now = chrono::Utc::now().to_rfc3339();
+        let agent_type_str = format!("{:?}", agent_type).to_lowercase();
+        let db_session_id = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO agent_sessions (feature_id, agent_type, status, started_at) VALUES (?, ?, 'running', ?) RETURNING id",
+        )
+        .bind(self.feature_id)
+        .bind(&agent_type_str)
+        .bind(&now)
+        .fetch_one(&self.write_pool)
+        .await
+        .map_err(|e| format!("Failed to create agent session: {e}"))?;
+
+        // Update queue item with session reference
+        sqlx::query("UPDATE workflow_queue SET agent_session_id = ? WHERE id = ?")
+            .bind(db_session_id)
+            .bind(item_id)
+            .execute(&self.write_pool)
+            .await
+            .map_err(|e| format!("Failed to link session to queue item: {e}"))?;
+
+        // 4. Build MCP config
+        let mcp_servers = build_mcp_server_config(agent_type, self.feature_id);
+
+        // 5. Resolve cwd — use project directory from feature
+        let cwd = self.get_feature_cwd().await.unwrap_or_else(|| PathBuf::from("."));
+
+        // 6. Build Options and spawn
+        let options = Options {
+            cwd: cwd.clone(),
+            permission_mode: Some(PermissionMode::BypassPermissions),
+            system_prompt: if system_prompt.is_empty() { None } else { Some(system_prompt) },
+            mcp_servers: Some(mcp_servers),
+            ..Options::default()
+        };
+
+        let content_value = serde_json::Value::String(initial_prompt);
+
+        match claude_agent_sdk_rs::query(content_value, options).await {
+            Ok(mut real_query) => {
+                let message_rx = real_query.take_message_rx();
+
+                // Track in active items
+                self.active_items.insert(item_id, db_session_id);
+
+                // Spawn workflow stream reader
+                spawn_workflow_stream_reader(
+                    item_id,
+                    db_session_id,
+                    self.feature_id,
+                    message_rx,
+                    self.ws_sender.clone(),
+                    self.write_pool.clone(),
+                    self.active_items.clone(),
+                    self.read_pool.clone(),
+                    self.max_parallel,
+                    self.autonomy_level,
+                    self.workflow_type.clone(),
+                );
+
+                // Send item_started envelope
+                let envelope = WsEnvelope::new(
+                    "workflow",
+                    "item_started",
+                    serde_json::json!({
+                        "feature_id": self.feature_id,
+                        "queue_item_id": item_id,
+                        "session_id": db_session_id,
+                        "item_type": item.item_type,
+                    }),
+                );
+                let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
+
+                info!(item_id, db_session_id, "queue item agent spawned");
+                Ok(())
+            }
+            Err(e) => {
+                error!(item_id, error = %e, "failed to spawn agent for queue item");
+                self.on_item_error(item_id, &e.to_string()).await;
+                Err(format!("SDK spawn failed: {e}"))
+            }
+        }
+    }
+
+    /// Called when a queue item completes successfully.
+    pub async fn on_item_completed(&self, item_id: i64, result: Option<&str>) {
+        info!(feature_id = self.feature_id, item_id, "queue item completed");
+
+        self.active_items.remove(&item_id);
+
+        if let Err(e) = repo::mark_item_completed(&self.write_pool, item_id, result).await {
+            error!(item_id, error = %e, "failed to mark item completed");
+        }
+
+        // Send item_completed envelope
+        let envelope = WsEnvelope::new(
+            "workflow",
+            "item_completed",
+            serde_json::json!({
+                "feature_id": self.feature_id,
+                "queue_item_id": item_id,
+                "result": result,
+            }),
+        );
+        let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
+
+        // Autonomy-based advancement
+        match self.autonomy_level {
+            3 => {
+                if let Err(e) = self.advance().await {
+                    error!(error = %e, "advance after completion failed");
+                }
+            }
+            2 => {
+                // Advance if next ready items share the same group_index
+                if repo::unblock_ready_items(&self.write_pool, self.feature_id)
+                    .await
+                    .is_ok()
+                {
+                    if let Ok(ready) = repo::get_ready_items(&self.read_pool, self.feature_id).await
+                    {
+                        let current_group = self.get_current_group_index(item_id).await;
+                        let same_group = ready.iter().all(|r| r.group_index == current_group);
+                        if same_group && !ready.is_empty() {
+                            if let Err(e) = self.advance().await {
+                                error!(error = %e, "advance after completion failed");
+                            }
+                        } else if !ready.is_empty() {
+                            let envelope = WsEnvelope::new(
+                                "workflow",
+                                "paused",
+                                serde_json::json!({
+                                    "feature_id": self.feature_id,
+                                    "reason": "group_boundary",
+                                }),
+                            );
+                            let _ = self
+                                .ws_sender
+                                .send(Message::Text(String::from(envelope).into()));
+                        }
+                    }
+                }
+            }
+            _ => {
+                // Level 1: always pause
+                let envelope = WsEnvelope::new(
+                    "workflow",
+                    "paused",
+                    serde_json::json!({
+                        "feature_id": self.feature_id,
+                        "reason": "autonomy_pause",
+                    }),
+                );
+                let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
+            }
+        }
+    }
+
+    /// Called when a queue item errors.
+    pub async fn on_item_error(&self, item_id: i64, error: &str) {
+        warn!(feature_id = self.feature_id, item_id, error, "queue item errored");
+
+        self.active_items.remove(&item_id);
+
+        if let Err(e) = repo::mark_item_error(&self.write_pool, item_id, Some(error)).await {
+            error!(item_id, error = %e, "failed to mark item error");
+        }
+
+        let envelope = WsEnvelope::new(
+            "workflow",
+            "item_error",
+            serde_json::json!({
+                "feature_id": self.feature_id,
+                "queue_item_id": item_id,
+                "error": error,
+            }),
+        );
+        let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
+    }
+
+    /// Retry a failed queue item.
+    pub async fn retry_item(&self, item_id: i64) -> Result<(), String> {
+        info!(feature_id = self.feature_id, item_id, "retrying queue item");
+
+        sqlx::query("UPDATE workflow_queue SET status = 'ready', started_at = NULL, ended_at = NULL, result = NULL WHERE id = ?")
+            .bind(item_id)
+            .execute(&self.write_pool)
+            .await
+            .map_err(|e| format!("Failed to reset item for retry: {e}"))?;
+
+        self.advance().await
+    }
+
+    /// Skip a queue item and unblock dependents.
+    pub async fn skip_item(&self, item_id: i64) -> Result<(), String> {
+        info!(feature_id = self.feature_id, item_id, "skipping queue item");
+
+        repo::mark_item_skipped(&self.write_pool, item_id)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        self.active_items.remove(&item_id);
+
+        let envelope = WsEnvelope::new(
+            "workflow",
+            "item_skipped",
+            serde_json::json!({
+                "feature_id": self.feature_id,
+                "queue_item_id": item_id,
+            }),
+        );
+        let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
+
+        self.advance().await
+    }
+
+    /// Get the feature title from DB.
+    async fn get_feature_title(&self) -> Option<String> {
+        let row: Option<(String,)> = sqlx::query_as("SELECT title FROM features WHERE id = ?")
+            .bind(self.feature_id)
+            .fetch_optional(&self.read_pool)
+            .await
+            .ok()?;
+        row.map(|(t,)| t)
+    }
+
+    /// Get the feature's working directory (project cwd).
+    async fn get_feature_cwd(&self) -> Option<PathBuf> {
+        let row: Option<(Option<String>,)> = sqlx::query_as(
+            "SELECT p.directory FROM projects p JOIN features f ON f.project_id = p.id WHERE f.id = ?",
+        )
+        .bind(self.feature_id)
+        .fetch_optional(&self.read_pool)
+        .await
+        .ok()?;
+        row.and_then(|(d,)| d).map(PathBuf::from)
+    }
+
+    /// Get the group_index for a completed item (for autonomy level 2 checks).
+    async fn get_current_group_index(&self, item_id: i64) -> Option<i64> {
+        let row: Option<(Option<i64>,)> =
+            sqlx::query_as("SELECT group_index FROM workflow_queue WHERE id = ?")
+                .bind(item_id)
+                .fetch_optional(&self.read_pool)
+                .await
+                .ok()?;
+        row.and_then(|(g,)| g)
+    }
+}
+
+/// Spawn a background task that reads agent stream messages and forwards them
+/// via the workflow domain, then triggers engine callbacks on completion/error.
+fn spawn_workflow_stream_reader(
+    queue_item_id: i64,
+    db_session_id: i64,
+    feature_id: i64,
+    mut message_rx: mpsc::Receiver<Result<SdkMessage, SdkError>>,
+    sender: WsSender,
+    write_pool: SqlitePool,
+    active_items: Arc<DashMap<i64, i64>>,
+    read_pool: SqlitePool,
+    max_parallel: usize,
+    autonomy_level: u8,
+    workflow_type: WorkflowType,
+) {
+    tokio::spawn(async move {
+        info!(queue_item_id, db_session_id, "workflow stream reader started");
+        let mut persistence = WsSessionPersistence::with_session_id(
+            write_pool.clone(),
+            feature_id,
+            Some(db_session_id),
+        );
+        let mut completed_ok = false;
+        let mut error_msg: Option<String> = None;
+
+        loop {
+            match message_rx.recv().await {
+                Some(Ok(sdk_msg)) => {
+                    // Persist message
+                    persistence.persist_sdk_message(&sdk_msg).await;
+
+                    // Extract usage
+                    if let Some(usage) = sdk_msg.usage() {
+                        let total_input = usage.input_tokens
+                            + usage.cache_creation_input_tokens.unwrap_or(0)
+                            + usage.cache_read_input_tokens.unwrap_or(0);
+                        let total_output = usage.output_tokens;
+                        WsSessionPersistence::update_token_usage(
+                            &write_pool,
+                            db_session_id,
+                            total_input,
+                            total_output,
+                        )
+                        .await;
+                    }
+
+                    let envelope = match &sdk_msg {
+                        SdkMessage::Result { .. } => {
+                            completed_ok = true;
+                            WsSessionPersistence::mark_completed_static(
+                                &write_pool,
+                                db_session_id,
+                            )
+                            .await;
+                            WsEnvelope::new(
+                                "workflow",
+                                "agent_stream",
+                                serde_json::json!({
+                                    "queue_item_id": queue_item_id,
+                                    "session_id": db_session_id,
+                                    "type": "result",
+                                }),
+                            )
+                        }
+                        _ => {
+                            let block = serde_json::to_value(&sdk_msg).unwrap_or_default();
+                            WsEnvelope::new(
+                                "workflow",
+                                "agent_stream",
+                                serde_json::json!({
+                                    "queue_item_id": queue_item_id,
+                                    "session_id": db_session_id,
+                                    "blocks": [block],
+                                }),
+                            )
+                        }
+                    };
+
+                    if sender
+                        .send(Message::Text(String::from(envelope).into()))
+                        .is_err()
+                    {
+                        warn!(
+                            queue_item_id,
+                            "WS sender closed, stopping workflow stream reader"
+                        );
+                        break;
+                    }
+                }
+                Some(Err(e)) => {
+                    error!(queue_item_id, error = %e, "workflow SDK stream error");
+                    error_msg = Some(e.to_string());
+                    WsSessionPersistence::mark_paused_static(&write_pool, db_session_id).await;
+                    let err_env = WsEnvelope::new(
+                        "workflow",
+                        "agent_stream",
+                        serde_json::json!({
+                            "queue_item_id": queue_item_id,
+                            "session_id": db_session_id,
+                            "type": "error",
+                            "error": e.to_string(),
+                        }),
+                    );
+                    let _ = sender.send(Message::Text(String::from(err_env).into()));
+                    break;
+                }
+                None => {
+                    info!(queue_item_id, "workflow SDK stream closed");
+                    if !completed_ok {
+                        completed_ok = true;
+                    }
+                    break;
+                }
+            }
+        }
+
+        // Post-stream callbacks
+        if completed_ok {
+            active_items.remove(&queue_item_id);
+            if let Err(e) = repo::mark_item_completed(&write_pool, queue_item_id, None).await {
+                error!(queue_item_id, error = %e, "failed to mark item completed in stream reader");
+            }
+
+            let envelope = WsEnvelope::new(
+                "workflow",
+                "item_completed",
+                serde_json::json!({
+                    "feature_id": feature_id,
+                    "queue_item_id": queue_item_id,
+                }),
+            );
+            let _ = sender.send(Message::Text(String::from(envelope).into()));
+
+            // Auto-advance for full autonomy
+            if autonomy_level >= 3 {
+                advance_after_completion(
+                    feature_id,
+                    &read_pool,
+                    &write_pool,
+                    &sender,
+                    &active_items,
+                    max_parallel,
+                    autonomy_level,
+                    &workflow_type,
+                )
+                .await;
+            }
+        } else if let Some(err) = error_msg {
+            active_items.remove(&queue_item_id);
+            if let Err(e) = repo::mark_item_error(&write_pool, queue_item_id, Some(&err)).await {
+                error!(queue_item_id, error = %e, "failed to mark item error in stream reader");
+            }
+
+            let envelope = WsEnvelope::new(
+                "workflow",
+                "item_error",
+                serde_json::json!({
+                    "feature_id": feature_id,
+                    "queue_item_id": queue_item_id,
+                    "error": err,
+                }),
+            );
+            let _ = sender.send(Message::Text(String::from(envelope).into()));
+        }
+    });
+}
+
+/// Advance the workflow after an item completes (called from stream reader task).
+async fn advance_after_completion(
+    feature_id: i64,
+    read_pool: &SqlitePool,
+    write_pool: &SqlitePool,
+    sender: &WsSender,
+    active_items: &Arc<DashMap<i64, i64>>,
+    max_parallel: usize,
+    autonomy_level: u8,
+    workflow_type: &WorkflowType,
+) {
+    let engine = WorkflowEngine {
+        feature_id,
+        workflow_type: workflow_type.clone(),
+        strategy: strategies::get_strategy(workflow_type),
+        read_pool: read_pool.clone(),
+        write_pool: write_pool.clone(),
+        ws_sender: sender.clone(),
+        autonomy_level,
+        max_parallel,
+        active_items: active_items.clone(),
+    };
+
+    if let Err(e) = engine.advance().await {
+        error!(feature_id, error = %e, "advance after completion failed");
+    }
+}
