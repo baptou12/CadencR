@@ -459,7 +459,13 @@ async fn handle_permission_respond(envelope: WsEnvelope, sender: &WsSender) {
     };
 
     // TODO: Route permission response to correct agent's permission channel (Phase 4+)
-    send_workflow_error(sender, &envelope.id, "NOT_IMPLEMENTED", "permission.respond routing not yet implemented");
+    warn!(feature_id = payload.feature_id, "permission.respond called but routing not yet implemented");
+    let ack = WsEnvelope::reply(&envelope.id, "workflow", "acknowledged", serde_json::json!({
+        "feature_id": payload.feature_id,
+        "status": "not_yet_implemented",
+        "action": "permission.respond",
+    }));
+    let _ = sender.send(Message::Text(String::from(ack).into()));
 }
 
 async fn handle_prompt_send(envelope: WsEnvelope, sender: &WsSender) {
@@ -477,7 +483,13 @@ async fn handle_prompt_send(envelope: WsEnvelope, sender: &WsSender) {
     };
 
     // TODO: Route prompt to correct running agent (Phase 4+)
-    send_workflow_error(sender, &envelope.id, "NOT_IMPLEMENTED", "prompt.send routing not yet implemented");
+    warn!(feature_id = payload.feature_id, "prompt.send called but routing not yet implemented");
+    let ack = WsEnvelope::reply(&envelope.id, "workflow", "acknowledged", serde_json::json!({
+        "feature_id": payload.feature_id,
+        "status": "not_yet_implemented",
+        "action": "prompt.send",
+    }));
+    let _ = sender.send(Message::Text(String::from(ack).into()));
 }
 
 async fn handle_interrupt(envelope: WsEnvelope, sender: &WsSender) {
@@ -495,7 +507,13 @@ async fn handle_interrupt(envelope: WsEnvelope, sender: &WsSender) {
     };
 
     // TODO: Interrupt specific agent by queue_item_id (Phase 4+)
-    send_workflow_error(sender, &envelope.id, "NOT_IMPLEMENTED", "interrupt not yet implemented");
+    warn!(feature_id = payload.feature_id, "interrupt called but not yet implemented");
+    let ack = WsEnvelope::reply(&envelope.id, "workflow", "acknowledged", serde_json::json!({
+        "feature_id": payload.feature_id,
+        "status": "not_yet_implemented",
+        "action": "interrupt",
+    }));
+    let _ = sender.send(Message::Text(String::from(ack).into()));
 }
 
 async fn handle_set_autonomy(envelope: WsEnvelope, sender: &WsSender) {
