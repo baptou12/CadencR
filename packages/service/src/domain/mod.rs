@@ -9,3 +9,4 @@ pub mod terminal;
 pub mod usage;
 pub mod ws_session;
 pub mod mcp;
+pub mod workflow;

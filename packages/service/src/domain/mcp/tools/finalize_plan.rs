@@ -39,6 +39,32 @@ impl FinalizePlanTool {
         tx.commit().await
             .map_err(|e| format!("Failed to commit transaction: {e}"))?;
 
+        // Populate the workflow queue after plan finalization
+        let feature_id = self.ctx.feature_id;
+        let workflow_type = crate::domain::features::models::WorkflowType::FeatureBuild;
+        let strategy = crate::domain::workflow::strategies::get_strategy(&workflow_type);
+        match strategy
+            .populate_queue(&self.ctx.write_pool, &self.ctx.read_pool, feature_id, Some(plan_id))
+            .await
+        {
+            Ok(items) => {
+                tracing::info!(
+                    feature_id,
+                    plan_id,
+                    count = items.len(),
+                    "Workflow queue populated"
+                );
+            }
+            Err(e) => {
+                tracing::error!(
+                    feature_id,
+                    plan_id,
+                    error = %e,
+                    "Failed to populate workflow queue"
+                );
+            }
+        }
+
         Ok("Plan finalized. All draft phases set to pending.".to_string())
     }
 }
