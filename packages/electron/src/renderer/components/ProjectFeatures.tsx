@@ -137,7 +137,7 @@ export function ProjectFeatures({
         </div>
 
         {/* WS indicator */}
-        {feature.type === "ws-session" && (
+        {(feature.type === "ws-session" || feature.type === "ws-feature") && (
           <PlugIcon className="size-3 shrink-0 text-emerald-400" />
         )}
 

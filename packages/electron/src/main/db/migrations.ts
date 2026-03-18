@@ -507,6 +507,13 @@ const migrations: Migration[] = [
       db.exec("CREATE INDEX IF NOT EXISTS idx_agent_messages_session ON agent_messages(session_id)");
     },
   },
+  {
+    version: 41,
+    description: "Add depends_on column to phases table",
+    up: (db) => {
+      db.exec("ALTER TABLE phases ADD COLUMN depends_on TEXT");
+    },
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

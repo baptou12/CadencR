@@ -21,6 +21,7 @@ struct PhaseRow {
     implementation_notes: Option<String>,
     deviations: Option<String>,
     phase_type: Option<String>,
+    depends_on: Option<String>,
 }
 
 impl ReadPhaseTool {
@@ -32,7 +33,7 @@ impl ReadPhaseTool {
         verify_phase_ownership(&self.ctx.read_pool, phase_id, self.ctx.feature_id).await?;
 
         let p: PhaseRow = sqlx::query_as(
-            "SELECT id, plan_id, step_number, title, status, complexity, commit_message, prompt, order_index, implementation_notes, deviations, phase_type FROM phases WHERE id = ?",
+            "SELECT id, plan_id, step_number, title, status, complexity, commit_message, prompt, order_index, implementation_notes, deviations, phase_type, depends_on FROM phases WHERE id = ?",
         )
         .bind(phase_id)
         .fetch_one(&self.ctx.read_pool)
@@ -62,6 +63,14 @@ impl ReadPhaseTool {
         }
         if let Some(ref s) = p.deviations {
             out.push_str(&format!("\n## Deviations\n{s}\n"));
+        }
+        if let Some(ref s) = p.depends_on {
+            // Parse JSON array back to readable list
+            if let Ok(deps) = serde_json::from_str::<Vec<String>>(s) {
+                if !deps.is_empty() {
+                    out.push_str(&format!("\n## Dependencies\n{}\n", deps.join(", ")));
+                }
+            }
         }
 
         Ok(out)

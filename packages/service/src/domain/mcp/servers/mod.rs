@@ -7,8 +7,16 @@ pub mod review;
 pub mod risk;
 pub mod session;
 
+use std::sync::Arc;
+
 use rmcp::model::{Implementation, ServerCapabilities, ServerInfo, Tool};
 use serde_json::json;
+
+use super::context::McpContext;
+use self::{
+    execute::ExecuteServer, plan::PlanServer, prd::PrdServer, qa::QaServer,
+    retro::RetroServer, review::ReviewServer, risk::RiskServer, session::SessionServer,
+};
 
 /// Agent types that can be served
 #[derive(Debug, Clone, Copy)]
@@ -21,6 +29,47 @@ pub enum AgentType {
     Risk,
     Retro,
     Session,
+}
+
+/// A type-erased MCP server wrapper that can hold any agent server type.
+/// Needed because `ServerHandler` is not dyn-compatible (requires `Self: Sized`).
+pub enum McpServer {
+    Plan(PlanServer),
+    Prd(PrdServer),
+    Execute(ExecuteServer),
+    Qa(QaServer),
+    Review(ReviewServer),
+    Risk(RiskServer),
+    Retro(RetroServer),
+    Session(SessionServer),
+}
+
+/// Create the appropriate MCP server for the given agent type.
+pub fn create_mcp_server(agent_type: AgentType, ctx: Arc<McpContext>) -> McpServer {
+    match agent_type {
+        AgentType::Plan => McpServer::Plan(PlanServer::new(ctx)),
+        AgentType::Prd => McpServer::Prd(PrdServer::new(ctx)),
+        AgentType::Execute => McpServer::Execute(ExecuteServer::new(ctx)),
+        AgentType::Qa => McpServer::Qa(QaServer::new(ctx)),
+        AgentType::Review => McpServer::Review(ReviewServer::new(ctx)),
+        AgentType::Risk => McpServer::Risk(RiskServer::new(ctx)),
+        AgentType::Retro => McpServer::Retro(RetroServer::new(ctx)),
+        AgentType::Session => McpServer::Session(SessionServer::new(ctx)),
+    }
+}
+
+/// Returns the MCP server name string for the given agent type.
+pub fn mcp_server_name(agent_type: AgentType) -> &'static str {
+    match agent_type {
+        AgentType::Plan => "cadence-plan",
+        AgentType::Prd => "cadence-prd",
+        AgentType::Execute => "cadence-execute",
+        AgentType::Qa => "cadence-qa",
+        AgentType::Review => "cadence-review",
+        AgentType::Risk => "cadence-risk",
+        AgentType::Retro => "cadence-retro",
+        AgentType::Session => "cadence-session",
+    }
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────
@@ -89,7 +138,8 @@ fn tool_create_phase() -> Tool {
                 "prompt": { "type": "string", "description": "Detailed prompt/instructions for the phase" },
                 "complexity": { "type": "integer", "description": "Complexity rating (1-5)" },
                 "commit_message": { "type": "string", "description": "Suggested commit message" },
-                "phase_type": { "type": "string", "description": "Phase type (e.g. code, test, docs)" }
+                "phase_type": { "type": "string", "description": "Phase type (e.g. code, test, docs)" },
+                "depends_on": { "type": "array", "items": { "type": "string" }, "description": "Titles of phases this phase depends on" }
             },
             "required": ["plan_id", "step_number", "title", "prompt"]
         }),

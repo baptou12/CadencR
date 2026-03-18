@@ -1,7 +1,9 @@
 mod commands;
+pub(crate) mod mcp_spawn;
 mod session_control;
 mod session_init;
 mod session_prompt;
+mod workflow;
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -211,6 +213,9 @@ async fn dispatch_envelope(
         }
         "commands" => {
             commands::handle_commands_action(envelope, sender).await;
+        }
+        "workflow" => {
+            workflow::handle_workflow_action(envelope, sender, sdk_sessions, app_state).await;
         }
         unknown => {
             let err = WsEnvelope::reply(
