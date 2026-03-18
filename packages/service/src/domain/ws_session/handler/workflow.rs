@@ -128,6 +128,20 @@ async fn handle_feature_start(
         }
     };
 
+    // Check if an engine already exists for this feature
+    if let Some(existing) = ENGINES.get(&feature_id) {
+        if existing.active_items.len() > 0 {
+            send_workflow_error(
+                sender,
+                &envelope.id,
+                "ALREADY_RUNNING",
+                &format!("Workflow already running for feature {feature_id}"),
+            );
+            return;
+        }
+        info!(feature_id, "replacing idle engine on reconnect");
+    }
+
     // Create engine and store in registry
     let engine = Arc::new(WorkflowEngine::new(
         feature_id,
