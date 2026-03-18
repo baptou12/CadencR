@@ -755,9 +755,11 @@ fn spawn_workflow_stream_reader(
                     break;
                 }
                 None => {
-                    info!(queue_item_id, "workflow SDK stream closed");
-                    if !completed_ok {
-                        completed_ok = true;
+                    if completed_ok {
+                        info!(queue_item_id, "workflow SDK stream closed after result");
+                    } else {
+                        warn!(queue_item_id, "workflow SDK stream closed unexpectedly without result");
+                        error_msg = Some("Agent stream closed unexpectedly without result".to_string());
                     }
                     break;
                 }
