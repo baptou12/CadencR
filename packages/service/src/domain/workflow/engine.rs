@@ -826,8 +826,23 @@ impl WorkflowEngine {
         row.map(|(t,)| t)
     }
 
-    /// Get the feature's working directory (project cwd).
+    /// Get the feature's working directory.
+    /// Prefers worktree_path from feature_settings if set, otherwise falls back to project directory.
     async fn get_feature_cwd(&self) -> Option<PathBuf> {
+        // Check for worktree_path in feature_settings first
+        let wt_row: Option<(Option<String>,)> = sqlx::query_as(
+            "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
+        )
+        .bind(self.feature_id)
+        .fetch_optional(&self.read_pool)
+        .await
+        .ok()?;
+        if let Some(Some(wt_path)) = wt_row.map(|(v,)| v) {
+            if !wt_path.is_empty() {
+                return Some(PathBuf::from(wt_path));
+            }
+        }
+        // Fall back to project directory
         let row: Option<(Option<String>,)> = sqlx::query_as(
             "SELECT p.directory FROM projects p JOIN features f ON f.project_id = p.id WHERE f.id = ?",
         )

@@ -5,11 +5,13 @@ import type { PlanInputImage } from "@/components/PlanInputView";
 import { AgentSession } from "@/components/AgentSession";
 import type { AgentSessionHandle } from "@/components/AgentSession";
 import { QueueSidebar } from "@/components/QueueSidebar";
+import { WorktreeSetupSection } from "@/components/WorktreeSetupSection";
 import {
   useWorkflowStore,
   type AutonomyLevel,
   type AgentSessionState,
 } from "@/hooks/useWorkflowWebSocket";
+import { useCreateWorktree } from "@/api/generated";
 import type { AgentType } from "../../main/agents/types";
 import { CheckCircle2Icon, PlayIcon, SkipForwardIcon, RotateCcwIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -83,10 +85,11 @@ function isActiveStatus(status: string): boolean {
 // Component
 // ---------------------------------------------------------------------------
 
-export function WsFeatureView({ featureId, projectId }: WsFeatureViewProps) {
+export function WsFeatureView({ featureId, projectId, feature }: WsFeatureViewProps) {
   const store = useWorkflowStore();
   const [openAgent, setOpenAgent] = useState<string | null>(null);
   const agentRefs = useRef<Map<number, AgentSessionHandle | null>>(new Map());
+  const createWorktree = useCreateWorktree();
 
   const setAgentRef = useCallback((index: number, handle: AgentSessionHandle | null) => {
     if (handle) {
@@ -106,6 +109,21 @@ export function WsFeatureView({ featureId, projectId }: WsFeatureViewProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [featureId, projectId]);
 
+  // Approve plan: create worktree first, then send approval
+  const handleApprovePlan = useCallback(() => {
+    createWorktree.mutate(
+      { projectId, featureId, featureTitle: feature.title },
+      {
+        onSuccess: () => store.approvePlan(),
+        onError: (err) => {
+          console.error("Worktree creation failed, proceeding with plan approval:", err);
+          // Still approve — worktree failure shouldn't block the workflow
+          store.approvePlan();
+        },
+      },
+    );
+  }, [createWorktree, projectId, featureId, feature.title, store]);
+
   // Keyboard shortcuts
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -113,7 +131,7 @@ export function WsFeatureView({ featureId, projectId }: WsFeatureViewProps) {
       if (e.metaKey && e.shiftKey && e.key === "b") {
         e.preventDefault();
         if (store.workflowStatus === "plan_approval") {
-          store.approvePlan();
+          handleApprovePlan();
         }
         return;
       }
@@ -141,7 +159,7 @@ export function WsFeatureView({ featureId, projectId }: WsFeatureViewProps) {
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [store]);
+  }, [store, handleApprovePlan]);
 
   // Handlers
   const handleStartPlanning = useCallback(
@@ -271,7 +289,7 @@ export function WsFeatureView({ featureId, projectId }: WsFeatureViewProps) {
     <div className="flex items-center justify-center gap-3 border-t border-gray-800 p-4">
       <button
         type="button"
-        onClick={() => store.approvePlan()}
+        onClick={handleApprovePlan}
         className="flex items-center gap-2 rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-500"
       >
         <PlayIcon className="size-4" />
@@ -517,6 +535,9 @@ export function WsFeatureView({ featureId, projectId }: WsFeatureViewProps) {
         isWebSocket
         className="shrink-0"
       />
+      {store.workflowStatus !== "idle" && (
+        <WorktreeSetupSection featureId={featureId} projectId={projectId} />
+      )}
       {renderContent()}
     </div>
   );
