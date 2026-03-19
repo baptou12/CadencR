@@ -8,6 +8,7 @@ import { QueueSidebar } from "@/components/QueueSidebar";
 import {
   useWorkflowStore,
   type AutonomyLevel,
+  type AgentSessionState,
 } from "@/hooks/useWorkflowWebSocket";
 import type { AgentType } from "../../main/agents/types";
 import { CheckCircle2Icon, PlayIcon, SkipForwardIcon, RotateCcwIcon } from "lucide-react";
@@ -34,6 +35,17 @@ interface WsFeatureViewProps {
 // Helpers
 // ---------------------------------------------------------------------------
 
+const AGENT_LABELS: Record<string, string> = {
+  plan: "Plan",
+  prd: "PRD",
+  execute: "Execute",
+  review: "Review",
+  risk: "Risk",
+  qa: "QA",
+  retro: "Retro",
+  "review-fixer": "Review Fixer",
+};
+
 /** Map queue item_type to AgentType for the AgentSession component. */
 function itemTypeToAgentType(itemType: string): AgentType {
   const map: Record<string, AgentType> = {
@@ -53,13 +65,39 @@ const AUTONOMY_LABELS: Record<AutonomyLevel, string> = {
   3: "Full auto",
 };
 
+/** Unique key for an agent entry (plan/prd use negative synthetic IDs). */
+type AgentEntry = {
+  key: string;
+  queueItemId: number;
+  agentType: AgentType;
+  label: string;
+  state: AgentSessionState;
+  orderIndex: number;
+};
+
+function isActiveStatus(status: string): boolean {
+  return status === "running" || status === "paused";
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
 export function WsFeatureView({ featureId, projectId }: WsFeatureViewProps) {
   const store = useWorkflowStore();
-  const agentRef = useRef<AgentSessionHandle>(null);
+  const [openAgent, setOpenAgent] = useState<string | null>(null);
+  const agentRefs = useRef<Map<number, AgentSessionHandle | null>>(new Map());
+
+  const setAgentRef = useCallback((index: number, handle: AgentSessionHandle | null) => {
+    if (handle) {
+      agentRefs.current.set(index, handle);
+    } else {
+      agentRefs.current.delete(index);
+    }
+  }, []);
+
+  // Ref for scrolling to agents
+  const agentPanelRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
 
   // Connect on mount, disconnect on unmount
   useEffect(() => {
@@ -115,25 +153,90 @@ export function WsFeatureView({ featureId, projectId }: WsFeatureViewProps) {
     [store],
   );
 
-  // Selected agent
-  const selectedAgent = useMemo(() => {
-    if (store.selectedItemId != null) {
-      return store.activeAgents.get(store.selectedItemId) ?? null;
-    }
-    return null;
-  }, [store.selectedItemId, store.activeAgents]);
+  // ---------------------------------------------------------------------------
+  // Build unified agent entries list
+  // ---------------------------------------------------------------------------
 
-  const selectedItem = useMemo(
-    () => store.queue.find(q => q.id === store.selectedItemId) ?? null,
-    [store.queue, store.selectedItemId],
+  const agentEntries = useMemo((): AgentEntry[] => {
+    const entries: AgentEntry[] = [];
+
+    // Plan agent (synthetic id -1)
+    if (store.planAgent) {
+      entries.push({
+        key: "plan",
+        queueItemId: -1,
+        agentType: "plan" as AgentType,
+        label: "Plan",
+        state: store.planAgent,
+        orderIndex: -2,
+      });
+    }
+
+    // PRD agent (synthetic id -2)
+    if (store.prdAgent) {
+      entries.push({
+        key: "prd",
+        queueItemId: -2,
+        agentType: "prd" as AgentType,
+        label: "PRD",
+        state: store.prdAgent,
+        orderIndex: -1,
+      });
+    }
+
+    // Queue agents
+    for (const [queueItemId, agentState] of store.activeAgents) {
+      const queueItem = store.queue.find(q => q.id === queueItemId);
+      const agentType = itemTypeToAgentType(queueItem?.item_type ?? "execute");
+      entries.push({
+        key: `queue-${queueItemId}`,
+        queueItemId,
+        agentType,
+        label: queueItem?.phase_title ?? AGENT_LABELS[agentType] ?? agentType,
+        state: agentState,
+        orderIndex: queueItem?.order_index ?? 999,
+      });
+    }
+
+    // Sort: plan first, prd second, then by order_index
+    entries.sort((a, b) => a.orderIndex - b.orderIndex);
+
+    return entries;
+  }, [store.planAgent, store.prdAgent, store.activeAgents, store.queue]);
+
+  const inactiveEntries = useMemo(
+    () => agentEntries.filter(e => !isActiveStatus(e.state.status)),
+    [agentEntries],
   );
+  const activeEntries = useMemo(
+    () => agentEntries.filter(e => isActiveStatus(e.state.status)),
+    [agentEntries],
+  );
+
+  // Auto-open running agents
+  useEffect(() => {
+    if (activeEntries.length > 0 && openAgent == null) {
+      setOpenAgent(activeEntries[0].key);
+    }
+  }, [activeEntries, openAgent]);
+
+  // Handle sidebar click → scroll to agent
+  const handleSidebarSelect = useCallback((itemId: number) => {
+    store.selectItem(itemId);
+    const key = `queue-${itemId}`;
+    const el = agentPanelRefs.current.get(key);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      setOpenAgent(key);
+    }
+  }, [store]);
 
   // ---------------------------------------------------------------------------
   // Render helpers
   // ---------------------------------------------------------------------------
 
   const renderAutonomySelector = () => (
-    <div className="flex items-center gap-2 text-xs text-gray-400">
+    <div className="flex items-center gap-2 px-3 py-1.5 text-xs text-gray-400">
       <span>Autonomy:</span>
       {([1, 2, 3] as AutonomyLevel[]).map(level => (
         <button
@@ -164,89 +267,98 @@ export function WsFeatureView({ featureId, projectId }: WsFeatureViewProps) {
     </div>
   );
 
-  const renderPlanAgent = () => {
-    if (!store.planAgent) return null;
-    return (
-      <AgentSession
-        ref={agentRef}
-        agentType="plan"
-        blocks={store.planAgent.blocks}
-        status={store.planAgent.status}
-        onSend={(msg, images) => store.sendPromptToAgent(-1, msg, images)}
-        onStop={() => {}}
-        pendingPermission={store.planAgent.pendingPermission}
-        featureId={featureId}
-        projectId={projectId}
-      />
-    );
-  };
-
-  const renderPrdAgent = () => {
-    if (!store.prdAgent) return null;
-    return (
-      <AgentSession
-        agentType="prd"
-        blocks={store.prdAgent.blocks}
-        status={store.prdAgent.status}
-        onSend={(msg, images) => store.sendPromptToAgent(-2, msg, images)}
-        onStop={() => {}}
-        pendingPermission={store.prdAgent.pendingPermission}
-        featureId={featureId}
-        projectId={projectId}
-        collapsible
-      />
-    );
-  };
-
-  const renderPlanApproval = () => (
-    <div className="flex flex-1 flex-col">
-      {renderPlanAgent()}
-      <div className="flex items-center justify-center gap-3 border-t border-gray-800 p-4">
-        <button
-          type="button"
-          onClick={() => store.approvePlan()}
-          className="flex items-center gap-2 rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-500"
-        >
-          <PlayIcon className="size-4" />
-          Approve &amp; Build
-        </button>
-        <RejectPlanButton onReject={(feedback) => store.rejectPlan(feedback)} />
-      </div>
+  const renderPlanApprovalButtons = () => (
+    <div className="flex items-center justify-center gap-3 border-t border-gray-800 p-4">
+      <button
+        type="button"
+        onClick={() => store.approvePlan()}
+        className="flex items-center gap-2 rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-500"
+      >
+        <PlayIcon className="size-4" />
+        Approve &amp; Build
+      </button>
+      <RejectPlanButton onReject={(feedback) => store.rejectPlan(feedback)} />
     </div>
   );
 
-  const renderBuildingView = () => (
-    <div className="flex flex-1 overflow-hidden">
-      {/* Main panel — selected agent */}
-      <div className="flex flex-1 flex-col overflow-hidden">
-        {renderAutonomySelector()}
-        {selectedAgent && selectedItem ? (
-          <AgentSession
-            ref={agentRef}
-            agentType={itemTypeToAgentType(selectedItem.item_type)}
-            blocks={selectedAgent.blocks}
-            status={selectedAgent.status}
-            label={selectedItem.phase_title ?? selectedItem.item_type}
-            onSend={(msg, images) => store.sendPromptToAgent(selectedItem.id, msg, images)}
-            onStop={() => {}}
-            pendingPermission={selectedAgent.pendingPermission}
-            onPermissionDecision={(decision) => {
-              store.respondToPermission(selectedItem.id, selectedAgent?.pendingPermission?.requestId ?? "", decision);
-            }}
-            featureId={featureId}
-            projectId={projectId}
-          />
-        ) : (
-          <div className="flex flex-1 items-center justify-center text-sm text-gray-500">
-            Select a queue item to view its agent session
+  const renderAgentPanel = (entry: AgentEntry, index: number) => {
+    const isOpen = openAgent === entry.key || isActiveStatus(entry.state.status);
+    return (
+      <div
+        key={entry.key}
+        ref={(el) => { agentPanelRefs.current.set(entry.key, el); }}
+      >
+        <AgentSession
+          ref={(handle) => setAgentRef(index, handle)}
+          agentType={entry.agentType}
+          blocks={entry.state.blocks}
+          status={entry.state.status}
+          label={entry.label}
+          collapsible
+          open={isOpen}
+          onToggle={() => setOpenAgent(prev => prev === entry.key ? null : entry.key)}
+          onSend={(msg, images) => store.sendPromptToAgent(entry.queueItemId, msg, images)}
+          onStop={() => store.interruptItem(entry.queueItemId)}
+          pendingPermission={entry.state.pendingPermission}
+          onPermissionDecision={(decision) => {
+            store.respondToPermission(
+              entry.queueItemId,
+              entry.state.pendingPermission?.requestId ?? "",
+              decision,
+            );
+          }}
+          featureId={featureId}
+          projectId={projectId}
+        />
+      </div>
+    );
+  };
+
+  const renderStackedAgents = () => {
+    if (agentEntries.length === 0) {
+      return (
+        <div className="flex flex-1 items-center justify-center text-sm text-gray-500">
+          Waiting for agents to start…
+        </div>
+      );
+    }
+
+    let agentIndex = 0;
+
+    return (
+      <div className="flex flex-1 flex-col overflow-y-auto">
+        {/* Inactive (completed/idle/error) agents — collapsed */}
+        {inactiveEntries.map(entry => renderAgentPanel(entry, agentIndex++))}
+
+        {/* Active agents */}
+        {activeEntries.length === 1 && renderAgentPanel(activeEntries[0], agentIndex++)}
+        {activeEntries.length >= 2 && (
+          <div
+            className={cn(
+              "grid gap-2 p-2",
+              activeEntries.length === 2 ? "grid-cols-2" : "grid-cols-3",
+            )}
+            style={{ height: "60vh" }}
+          >
+            {activeEntries.map(entry => renderAgentPanel(entry, agentIndex++))}
           </div>
         )}
+      </div>
+    );
+  };
+
+  const renderBuildingView = () => (
+    <div className="flex flex-1 overflow-hidden">
+      {/* Main panel — stacked agents */}
+      <div className="flex flex-1 flex-col overflow-hidden">
+        {renderAutonomySelector()}
+        {renderStackedAgents()}
       </div>
       {/* Queue sidebar */}
       <QueueSidebar
         queue={store.queue}
         selectedItemId={store.selectedItemId}
-        onSelectItem={store.selectItem}
+        onSelectItem={handleSidebarSelect}
         onRetryItem={(id) => store.retryItem(id)}
         onSkipItem={(id) => store.skipItem(id)}
         className="w-64 shrink-0 border-l border-gray-800"
@@ -269,7 +381,6 @@ export function WsFeatureView({ featureId, projectId }: WsFeatureViewProps) {
             <PlayIcon className="size-4" />
             Continue
           </button>
-          {/* If there's an errored item, show skip/retry */}
           {store.queue
             .filter(q => q.status === "error")
             .map(q => (
@@ -298,43 +409,73 @@ export function WsFeatureView({ featureId, projectId }: WsFeatureViewProps) {
   );
 
   const renderCompleted = () => (
-    <div className="flex flex-1 flex-col items-center justify-center gap-4 p-8">
-      <CheckCircle2Icon className="size-12 text-green-400" />
-      <h2 className="text-lg font-medium text-gray-200">Workflow Complete</h2>
-      <p className="text-sm text-gray-400">
-        {store.queue.filter(q => q.status === "completed").length} of {store.queue.length} items completed
-      </p>
-      {/* Show sidebar for reviewing completed items */}
-      <div className="mt-4 w-72">
-        <QueueSidebar
-          queue={store.queue}
-          selectedItemId={store.selectedItemId}
-          onSelectItem={store.selectItem}
-        />
+    <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 flex-col overflow-hidden">
+        {agentEntries.length > 0 ? (
+          <div className="flex flex-1 flex-col overflow-y-auto">
+            <div className="flex items-center gap-2 px-3 py-2">
+              <CheckCircle2Icon className="size-5 text-green-400" />
+              <span className="text-sm font-medium text-gray-200">Workflow Complete</span>
+              <span className="text-xs text-gray-500">
+                {store.queue.filter(q => q.status === "completed").length}/{store.queue.length} items
+              </span>
+            </div>
+            {agentEntries.map((entry, i) => renderAgentPanel(entry, i))}
+          </div>
+        ) : (
+          <div className="flex flex-1 flex-col items-center justify-center gap-4 p-8">
+            <CheckCircle2Icon className="size-12 text-green-400" />
+            <h2 className="text-lg font-medium text-gray-200">Workflow Complete</h2>
+            <p className="text-sm text-gray-400">
+              {store.queue.filter(q => q.status === "completed").length} of {store.queue.length} items completed
+            </p>
+          </div>
+        )}
       </div>
+      <QueueSidebar
+        queue={store.queue}
+        selectedItemId={store.selectedItemId}
+        onSelectItem={handleSidebarSelect}
+        className="w-64 shrink-0 border-l border-gray-800"
+      />
     </div>
   );
 
   // ---------------------------------------------------------------------------
-  // Main render
+  // Main render — stacked layout for all workflow states
   // ---------------------------------------------------------------------------
 
   const renderContent = () => {
     switch (store.workflowStatus) {
       case "idle":
         return renderPlanInput();
+
       case "planning":
-        return <div className="flex flex-1 flex-col overflow-hidden">{renderPlanAgent()}</div>;
+        // Plan agent as only panel, expanded
+        return (
+          <div className="flex flex-1 flex-col overflow-hidden">
+            {renderStackedAgents()}
+          </div>
+        );
+
       case "prd":
         return (
           <div className="flex flex-1 flex-col overflow-hidden">
-            {renderPrdAgent()}
+            {renderStackedAgents()}
           </div>
         );
+
       case "plan_approval":
-        return renderPlanApproval();
+        return (
+          <div className="flex flex-1 flex-col overflow-hidden">
+            {renderStackedAgents()}
+            {renderPlanApprovalButtons()}
+          </div>
+        );
+
       case "building":
         return renderBuildingView();
+
       case "paused":
         return (
           <div className="relative flex flex-1 overflow-hidden">
@@ -342,8 +483,10 @@ export function WsFeatureView({ featureId, projectId }: WsFeatureViewProps) {
             {renderPausedOverlay()}
           </div>
         );
+
       case "completed":
         return renderCompleted();
+
       case "error":
         return (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8">
@@ -357,6 +500,7 @@ export function WsFeatureView({ featureId, projectId }: WsFeatureViewProps) {
             </button>
           </div>
         );
+
       default:
         return renderPlanInput();
     }
