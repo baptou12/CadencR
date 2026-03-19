@@ -186,19 +186,18 @@ impl WorkflowStrategy for FeatureBuildStrategy {
         match item.item_type.as_str() {
             "execute" | "qa" => {
                 let phase = self.read_phase(read_pool, item.phase_id).await?;
-                let autonomy_auto = autonomy_level >= 3;
                 if item.item_type == "execute" {
                     Ok(build_execute_prompt(
                         &phase.title,
                         phase.prompt.as_deref().unwrap_or(""),
                         phase.commit_message.as_deref().unwrap_or(""),
-                        autonomy_auto,
+                        autonomy_level,
                     ))
                 } else {
                     Ok(build_qa_prompt(
                         &phase.title,
                         phase.prompt.as_deref().unwrap_or(""),
-                        autonomy_auto,
+                        autonomy_level,
                     ))
                 }
             }
