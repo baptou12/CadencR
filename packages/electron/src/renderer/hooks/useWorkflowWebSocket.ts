@@ -98,6 +98,8 @@ interface WorkflowState {
   respondToPermission: (itemId: number, requestId: string, decision: "allow_once" | "allow_future" | "deny") => void;
   sendPromptToAgent: (itemId: number, text: string, images?: Array<{ base64: string; mimeType: string }>) => void;
   interruptItem: (itemId: number) => void;
+  startSession: (prompt: string, images?: Array<{ base64: string; mimeType: string }>) => void;
+  startRefine: (description: string, images?: Array<{ base64: string; mimeType: string }>) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -259,6 +261,20 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         set(state => ({
           prdAgent: state.prdAgent ? { ...state.prdAgent, status: "completed" as const } : state.prdAgent,
         }));
+        break;
+      }
+      case "session.started": {
+        const sessionId = payload.session_id as number;
+        set(state => {
+          const activeAgents = new Map(state.activeAgents);
+          activeAgents.set(-3, createAgentSession(sessionId));
+          return { activeAgents };
+        });
+        break;
+      }
+      case "refine.started": {
+        // Refine agent streams via plan_agent_stream (synthetic id -4)
+        // planAgent is already set by startRefine()
         break;
       }
       case "agent_stream": {
@@ -424,6 +440,15 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
 
     interruptItem(itemId) {
       send("interrupt", { queue_item_id: itemId });
+    },
+
+    startSession(prompt, images) {
+      send("start_session", { prompt, images });
+    },
+
+    startRefine(description, images) {
+      set({ workflowStatus: "planning", planAgent: createAgentSession(0) });
+      send("start_refine", { description, images });
     },
   };
 });

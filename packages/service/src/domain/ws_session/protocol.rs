@@ -305,6 +305,20 @@ pub struct WorkflowInterruptPayload {
     pub queue_item_id: i64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowStartSessionPayload {
+    pub feature_id: i64,
+    pub prompt: String,
+    pub images: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowStartRefinePayload {
+    pub feature_id: i64,
+    pub description: String,
+    pub images: Option<Vec<String>>,
+}
+
 // HasFeatureId impls for all workflow C→S payloads
 macro_rules! impl_has_feature_id {
     ($($ty:ty),+ $(,)?) => {
@@ -328,6 +342,8 @@ impl_has_feature_id!(
     WorkflowPromptSendPayload,
     WorkflowSetAutonomyPayload,
     WorkflowInterruptPayload,
+    WorkflowStartSessionPayload,
+    WorkflowStartRefinePayload,
 );
 
 // --- Workflow payloads (Server → Client) ---

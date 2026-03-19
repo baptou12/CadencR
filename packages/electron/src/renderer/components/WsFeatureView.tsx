@@ -6,6 +6,7 @@ import { AgentSession } from "@/components/AgentSession";
 import type { AgentSessionHandle } from "@/components/AgentSession";
 import { QueueSidebar } from "@/components/QueueSidebar";
 import { WorktreeSetupSection } from "@/components/WorktreeSetupSection";
+import { WorkflowActionsBar } from "@/components/WorkflowActionsBar";
 import {
   useWorkflowStore,
   type AutonomyLevel,
@@ -253,6 +254,23 @@ export function WsFeatureView({ featureId, projectId, feature }: WsFeatureViewPr
   // Render helpers
   // ---------------------------------------------------------------------------
 
+  const allItemsDone = useMemo(
+    () => store.queue.length > 0 && store.queue.every(q => q.status === "completed" || q.status === "skipped"),
+    [store.queue],
+  );
+
+  const renderActionsBar = () => (
+    <WorkflowActionsBar
+      workflowStatus={store.workflowStatus}
+      featureId={featureId}
+      projectId={projectId}
+      featureType={feature.type}
+      allItemsDone={allItemsDone}
+      onStartSession={(prompt, images) => store.startSession(prompt, images)}
+      onStartRefine={(desc, images) => store.startRefine(desc, images)}
+    />
+  );
+
   const renderAutonomySelector = () => (
     <div className="flex items-center gap-2 px-3 py-1.5 text-xs text-gray-400">
       <span>Autonomy:</span>
@@ -371,6 +389,7 @@ export function WsFeatureView({ featureId, projectId, feature }: WsFeatureViewPr
       <div className="flex flex-1 flex-col overflow-hidden">
         {renderAutonomySelector()}
         {renderStackedAgents()}
+        {renderActionsBar()}
       </div>
       {/* Queue sidebar */}
       <QueueSidebar
@@ -450,6 +469,7 @@ export function WsFeatureView({ featureId, projectId, feature }: WsFeatureViewPr
             </p>
           </div>
         )}
+        {renderActionsBar()}
       </div>
       <QueueSidebar
         queue={store.queue}

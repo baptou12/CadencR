@@ -260,6 +260,67 @@ impl WorkflowEngine {
         .await
     }
 
+    /// Spawn a session agent for ad-hoc exploration/debugging.
+    /// Uses synthetic queue_item_id of -3 for streaming.
+    pub async fn spawn_session_agent(&self, prompt: &str) -> Result<i64, String> {
+        self.spawn_pre_queue_agent(
+            AgentType::Session,
+            "session",
+            Prompts::session(),
+            prompt,
+            -3, // synthetic queue_item_id for session
+        )
+        .await
+    }
+
+    /// Spawn a plan refinement agent that re-runs the plan agent with
+    /// context about existing phases.
+    /// Uses synthetic queue_item_id of -4 for streaming.
+    pub async fn spawn_refine_agent(&self, description: &str) -> Result<i64, String> {
+        // Build refinement prompt that includes existing phases context
+        let phases_context = match self.get_existing_phases_context().await {
+            Ok(ctx) => ctx,
+            Err(e) => {
+                warn!(feature_id = self.feature_id, error = %e, "failed to fetch phases for refine context");
+                String::new()
+            }
+        };
+
+        let refinement_prompt = format!(
+            "The user wants to refine the existing plan. Here are the current phases:\n\n{phases_context}\n\n\
+             User's refinement request:\n{description}\n\n\
+             Please update the plan accordingly — add, modify, or remove phases as needed."
+        );
+
+        self.spawn_pre_queue_agent(
+            AgentType::Plan,
+            "plan",
+            Prompts::plan(),
+            &refinement_prompt,
+            -4, // synthetic queue_item_id for refine
+        )
+        .await
+    }
+
+    /// Fetch existing phases for the feature as context string.
+    async fn get_existing_phases_context(&self) -> Result<String, String> {
+        let rows: Vec<(i64, String, String)> = sqlx::query_as(
+            "SELECT p.id, p.title, COALESCE(p.prompt, '') FROM phases p \
+             JOIN plans pl ON p.plan_id = pl.id \
+             WHERE pl.feature_id = ? ORDER BY p.order_index",
+        )
+        .bind(self.feature_id)
+        .fetch_all(&self.read_pool)
+        .await
+        .map_err(|e| format!("Failed to fetch phases: {e}"))?;
+
+        let mut ctx = String::new();
+        for (id, title, prompt) in &rows {
+            ctx.push_str(&format!("- Phase {id}: {title}\n  {prompt}\n"));
+        }
+        Ok(ctx)
+    }
+
     /// Shared logic for spawning plan/PRD agents (pre-queue agents).
     async fn spawn_pre_queue_agent(
         &self,

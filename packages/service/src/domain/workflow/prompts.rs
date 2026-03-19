@@ -34,6 +34,9 @@ impl Prompts {
     pub fn review() -> &'static str {
         include_str!("../../../prompts/review.md")
     }
+    pub fn session() -> &'static str {
+        include_str!("../../../prompts/session.md")
+    }
 }
 
 /// Build the full system prompt for a phase execution agent.

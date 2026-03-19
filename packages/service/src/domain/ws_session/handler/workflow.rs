@@ -147,6 +147,8 @@ pub async fn handle_workflow_action(
         "prompt.send" => handle_prompt_send(envelope, sender, app_state).await,
         "interrupt" => handle_interrupt(envelope, sender, app_state).await,
         "set_autonomy" => handle_set_autonomy(envelope, sender).await,
+        "start_session" => handle_start_session(envelope, sender).await,
+        "start_refine" => handle_start_refine(envelope, sender).await,
         unknown => {
             send_workflow_error(&sender, &envelope.id, "UNKNOWN_ACTION", &format!("Unknown workflow action: {unknown}"));
         }
@@ -544,4 +546,40 @@ async fn handle_set_autonomy(envelope: WsEnvelope, sender: &WsSender) {
         level: payload.level,
     }));
     let _ = sender.send(Message::Text(String::from(ack).into()));
+}
+
+async fn handle_start_session(envelope: WsEnvelope, sender: &WsSender) {
+    let Some((payload, engine)) = parse_and_get_engine::<WorkflowStartSessionPayload>(&envelope, sender) else { return };
+
+    info!(feature_id = payload.feature_id, "spawning session agent");
+    match engine.spawn_session_agent(&payload.prompt).await {
+        Ok(session_id) => {
+            let ack = WsEnvelope::reply(&envelope.id, "workflow", "session.started", to_value(WorkflowFeatureIdSessionPayload {
+                feature_id: payload.feature_id,
+                session_id,
+            }));
+            let _ = sender.send(Message::Text(String::from(ack).into()));
+        }
+        Err(e) => {
+            send_workflow_error(sender, &envelope.id, "SPAWN_FAILED", &format!("Failed to spawn session agent: {e}"));
+        }
+    }
+}
+
+async fn handle_start_refine(envelope: WsEnvelope, sender: &WsSender) {
+    let Some((payload, engine)) = parse_and_get_engine::<WorkflowStartRefinePayload>(&envelope, sender) else { return };
+
+    info!(feature_id = payload.feature_id, "spawning refine plan agent");
+    match engine.spawn_refine_agent(&payload.description).await {
+        Ok(session_id) => {
+            let ack = WsEnvelope::reply(&envelope.id, "workflow", "refine.started", to_value(WorkflowFeatureIdSessionPayload {
+                feature_id: payload.feature_id,
+                session_id,
+            }));
+            let _ = sender.send(Message::Text(String::from(ack).into()));
+        }
+        Err(e) => {
+            send_workflow_error(sender, &envelope.id, "SPAWN_FAILED", &format!("Failed to spawn refine agent: {e}"));
+        }
+    }
 }
