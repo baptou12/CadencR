@@ -357,6 +357,7 @@ export function WsFeatureView({ featureId, projectId }: WsFeatureViewProps) {
       {/* Queue sidebar */}
       <QueueSidebar
         queue={store.queue}
+        featureId={featureId}
         selectedItemId={store.selectedItemId}
         onSelectItem={handleSidebarSelect}
         onRetryItem={(id) => store.retryItem(id)}
@@ -434,6 +435,7 @@ export function WsFeatureView({ featureId, projectId }: WsFeatureViewProps) {
       </div>
       <QueueSidebar
         queue={store.queue}
+        featureId={featureId}
         selectedItemId={store.selectedItemId}
         onSelectItem={handleSidebarSelect}
         className="w-64 shrink-0 border-l border-gray-800"
