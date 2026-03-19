@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useHotkeys } from "react-hotkeys-hook";
 import { FeatureTopBar } from "@/components/FeatureTopBar";
 import { PlanInputView } from "@/components/PlanInputView";
 import type { PlanInputImage } from "@/components/PlanInputView";
@@ -16,6 +17,7 @@ import { useCreateWorktree } from "@/api/generated";
 import type { AgentType } from "../../main/agents/types";
 import { CheckCircle2Icon, PlayIcon, SkipForwardIcon, RotateCcwIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getActiveFocusZone } from "@/lib/focus-zones";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -125,42 +127,183 @@ export function WsFeatureView({ featureId, projectId, feature }: WsFeatureViewPr
     );
   }, [createWorktree, projectId, featureId, feature.title, store]);
 
-  // Keyboard shortcuts
+  // ---------------------------------------------------------------------------
+  // Focus helpers
+  // ---------------------------------------------------------------------------
+
+  /** Walk DOM from activeElement to find which agentEntry index is focused */
+  const getFocusedAgentIndex = useCallback((): number | null => {
+    let el = document.activeElement as HTMLElement | null;
+    while (el) {
+      const attr = el.getAttribute("data-agent-container");
+      if (attr != null) return Number(attr);
+      el = el.parentElement;
+    }
+    return null;
+  }, []);
+
+  const moveFocus = useCallback(
+    (direction: "up" | "down") => {
+      const count = agentEntries.length;
+      if (count === 0) return;
+      const current = getFocusedAgentIndex();
+      let nextIndex: number;
+      if (current == null) {
+        nextIndex = direction === "down" ? 0 : count - 1;
+      } else if (direction === "down") {
+        nextIndex = current >= count - 1 ? 0 : current + 1;
+      } else {
+        nextIndex = current <= 0 ? count - 1 : current - 1;
+      }
+      agentRefs.current.get(nextIndex)?.focusActiveInput();
+    },
+    [agentEntries, getFocusedAgentIndex],
+  );
+
+  // Auto-focus on new agent start
+  const prevRunningKeysRef = useRef<Set<string>>(new Set());
   useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      // CMD+SHIFT+B → start build
-      if (e.metaKey && e.shiftKey && e.key === "b") {
-        e.preventDefault();
-        if (store.workflowStatus === "plan_approval") {
-          handleApprovePlan();
+    const currentRunning = new Set(
+      agentEntries
+        .filter(e => isActiveStatus(e.state.status))
+        .map(e => e.key),
+    );
+    for (const key of currentRunning) {
+      if (!prevRunningKeysRef.current.has(key)) {
+        // New agent started — auto-expand and focus
+        setOpenAgent(key);
+        const idx = agentEntries.findIndex(e => e.key === key);
+        if (idx >= 0) {
+          requestAnimationFrame(() => {
+            agentRefs.current.get(idx)?.focusPromptBar();
+          });
         }
-        return;
-      }
-      // ESC → interrupt active agent
-      if (e.key === "Escape") {
-        e.preventDefault();
-        const { selectedItemId, interruptItem, workflowStatus } = store;
-        if (selectedItemId != null && (workflowStatus === "building" || workflowStatus === "paused")) {
-          interruptItem(selectedItemId);
-        }
-        return;
-      }
-      // CMD+OPT+UP/DOWN → navigate sidebar
-      if (e.metaKey && e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
-        e.preventDefault();
-        const { queue, selectedItemId, selectItem } = store;
-        if (queue.length === 0) return;
-        const currentIdx = queue.findIndex(q => q.id === selectedItemId);
-        const next = e.key === "ArrowDown"
-          ? Math.min(currentIdx + 1, queue.length - 1)
-          : Math.max(currentIdx - 1, 0);
-        selectItem(queue[next].id);
-        return;
+        break;
       }
     }
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [store, handleApprovePlan]);
+    prevRunningKeysRef.current = currentRunning;
+  }, [agentEntries]);
+
+  // ---------------------------------------------------------------------------
+  // Keyboard shortcuts (react-hotkeys-hook)
+  // ---------------------------------------------------------------------------
+
+  // CMD+OPT+DOWN — focus next agent
+  useHotkeys(
+    "meta+alt+down",
+    (e) => {
+      const zone = getActiveFocusZone();
+      if (zone && zone !== "main-content") return;
+      e.preventDefault();
+      moveFocus("down");
+    },
+    { enableOnFormTags: true },
+  );
+
+  // CMD+OPT+UP — focus previous agent
+  useHotkeys(
+    "meta+alt+up",
+    (e) => {
+      const zone = getActiveFocusZone();
+      if (zone && zone !== "main-content") return;
+      e.preventDefault();
+      moveFocus("up");
+    },
+    { enableOnFormTags: true },
+  );
+
+  // CMD+SHIFT+B — approve plan or continue workflow
+  useHotkeys(
+    "meta+shift+b",
+    (e) => {
+      e.preventDefault();
+      if (store.workflowStatus === "plan_approval") {
+        handleApprovePlan();
+      } else if (store.workflowStatus === "paused") {
+        store.continueWorkflow();
+      }
+    },
+    { enableOnFormTags: true },
+  );
+
+  // CMD+SHIFT+S — open session prompt bar (trigger counter for WorkflowActionsBar)
+  const [_sessionPromptTrigger, setSessionPromptTrigger] = useState(0);
+  useHotkeys(
+    "meta+shift+s",
+    (e) => {
+      if (store.workflowStatus !== "building" && store.workflowStatus !== "completed") return;
+      e.preventDefault();
+      setSessionPromptTrigger(v => v + 1);
+    },
+    { enableOnFormTags: true },
+  );
+
+  // ENTER — toggle expand/collapse on focused agent header; if running, expand & focus prompt
+  useHotkeys(
+    "enter",
+    (e) => {
+      if (getActiveFocusZone() !== "main-content") return;
+      const focused = document.activeElement as HTMLElement | null;
+      if (!focused?.hasAttribute("data-nav-item")) return;
+      const agentIndexStr = focused.getAttribute("data-nav-agent-index");
+      if (agentIndexStr == null) return;
+      const agentIndex = Number(agentIndexStr);
+      const entry = agentEntries[agentIndex];
+      if (!entry) return;
+      const isWorking = isActiveStatus(entry.state.status);
+      if (isWorking) {
+        e.preventDefault();
+        setOpenAgent(entry.key);
+        requestAnimationFrame(() => {
+          agentRefs.current.get(agentIndex)?.focusActiveInput();
+        });
+      } else {
+        e.preventDefault();
+        setOpenAgent(prev => (prev === entry.key ? null : entry.key));
+      }
+    },
+    { enableOnFormTags: false },
+  );
+
+  // ESC — interrupt focused running agent
+  useHotkeys(
+    "escape",
+    (e) => {
+      const agentIndex = getFocusedAgentIndex();
+      if (agentIndex == null) return;
+      const entry = agentEntries[agentIndex];
+      if (!entry || !isActiveStatus(entry.state.status)) return;
+      e.preventDefault();
+      store.interruptItem(entry.queueItemId);
+    },
+    { enableOnFormTags: true },
+  );
+
+  // CMD+1 — approve plan (when plan_approval status)
+  useHotkeys(
+    "meta+1",
+    (e) => {
+      if (store.workflowStatus !== "plan_approval") return;
+      e.preventDefault();
+      handleApprovePlan();
+    },
+    { enableOnFormTags: true },
+  );
+
+  // CMD+2 — focus plan feedback input (when plan_approval status)
+  useHotkeys(
+    "meta+2",
+    (e) => {
+      if (store.workflowStatus !== "plan_approval") return;
+      e.preventDefault();
+      // Focus the plan agent's input so user can type feedback
+      const planIndex = agentEntries.findIndex(entry => entry.key === "plan");
+      if (planIndex >= 0) {
+        agentRefs.current.get(planIndex)?.focusActiveInput();
+      }
+    },
+    { enableOnFormTags: true },
+  );
 
   // Handlers
   const handleStartPlanning = useCallback(
@@ -323,6 +466,7 @@ export function WsFeatureView({ featureId, projectId, feature }: WsFeatureViewPr
       <div
         key={entry.key}
         ref={(el) => { agentPanelRefs.current.set(entry.key, el); }}
+        data-agent-container={index}
       >
         <AgentSession
           ref={(handle) => setAgentRef(index, handle)}
@@ -330,6 +474,7 @@ export function WsFeatureView({ featureId, projectId, feature }: WsFeatureViewPr
           blocks={entry.state.blocks}
           status={entry.state.status}
           label={entry.label}
+          navAgentIndex={index}
           collapsible
           open={isOpen}
           onToggle={() => setOpenAgent(prev => prev === entry.key ? null : entry.key)}
@@ -547,7 +692,7 @@ export function WsFeatureView({ featureId, projectId, feature }: WsFeatureViewPr
   };
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col" data-focus-zone="main-content">
       <FeatureTopBar
         featureId={featureId}
         projectId={projectId}
