@@ -344,7 +344,21 @@ impl_has_feature_id!(
     WorkflowInterruptPayload,
     WorkflowStartSessionPayload,
     WorkflowStartRefinePayload,
+    WorkflowStartReviewFixerPayload,
+    WorkflowMarkDonePayload,
 );
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowStartReviewFixerPayload {
+    pub feature_id: i64,
+    pub comments: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowMarkDonePayload {
+    pub feature_id: i64,
+    pub queue_item_id: i64,
+}
 
 // --- Workflow payloads (Server → Client) ---
 

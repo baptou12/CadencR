@@ -100,6 +100,9 @@ interface WorkflowState {
   interruptItem: (itemId: number) => void;
   startSession: (prompt: string, images?: Array<{ base64: string; mimeType: string }>) => void;
   startRefine: (description: string, images?: Array<{ base64: string; mimeType: string }>) => void;
+  startReviewFixer: (comments: string) => void;
+  markDone: (itemId: number) => void;
+  removeAgent: (itemId: number) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -318,6 +321,20 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         });
         break;
       }
+      case "review_verdict": {
+        // Review created fix phases — queue_update will follow with new items
+        // The verdict is informational; queue items drive execution
+        break;
+      }
+      case "review_fixer.started": {
+        const sessionId = payload.session_id as number;
+        set(state => {
+          const activeAgents = new Map(state.activeAgents);
+          activeAgents.set(-5, createAgentSession(sessionId));
+          return { activeAgents };
+        });
+        break;
+      }
       case "completed": {
         set({ workflowStatus: "completed" });
         break;
@@ -449,6 +466,22 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     startRefine(description, images) {
       set({ workflowStatus: "planning", planAgent: createAgentSession(0) });
       send("start_refine", { description, images });
+    },
+
+    startReviewFixer(comments) {
+      send("start_review_fixer", { comments });
+    },
+
+    markDone(itemId) {
+      send("mark_done", { queue_item_id: itemId });
+    },
+
+    removeAgent(itemId) {
+      set(state => {
+        const activeAgents = new Map(state.activeAgents);
+        activeAgents.delete(itemId);
+        return { activeAgents };
+      });
     },
   };
 });

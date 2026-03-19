@@ -682,6 +682,15 @@ impl WorkflowEngine {
         );
         let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
 
+        // Part A: If a "review" item just completed, check for new phases and re-populate
+        if let Ok(Some(item)) = repo::get_queue_item(&self.read_pool, item_id).await {
+            if item.item_type == "review" {
+                if let Err(e) = self.re_populate_queue_for_new_phases().await {
+                    warn!(feature_id = self.feature_id, error = %e, "re-populate after review failed");
+                }
+            }
+        }
+
         // Autonomy-based advancement
         match self.autonomy_level.load(Ordering::Relaxed) {
             3 => {
@@ -1050,6 +1059,205 @@ impl WorkflowEngine {
                 .await
                 .ok()?;
         row.and_then(|(g,)| g)
+    }
+
+    /// After a review item completes, check if the review agent created new phases
+    /// (via create_phase MCP tool). If so, add new queue items for those phases.
+    async fn re_populate_queue_for_new_phases(&self) -> Result<(), String> {
+        // Get the plan for this feature
+        let plan_id: Option<i64> = sqlx::query_scalar(
+            "SELECT id FROM plans WHERE feature_id = ? ORDER BY id DESC LIMIT 1",
+        )
+        .bind(self.feature_id)
+        .fetch_optional(&self.read_pool)
+        .await
+        .map_err(|e| format!("Failed to get plan: {e}"))?;
+
+        let plan_id = match plan_id {
+            Some(id) => id,
+            None => return Ok(()),
+        };
+
+        // Get all phases for the plan
+        let all_phases: Vec<(i64, String, Option<String>)> = sqlx::query_as(
+            "SELECT id, title, depends_on FROM phases WHERE plan_id = ? ORDER BY order_index",
+        )
+        .bind(plan_id)
+        .fetch_all(&self.read_pool)
+        .await
+        .map_err(|e| format!("Failed to read phases: {e}"))?;
+
+        // Get phase_ids already in the queue
+        let existing_phase_ids: Vec<(Option<i64>,)> = sqlx::query_as(
+            "SELECT phase_id FROM workflow_queue WHERE feature_id = ? AND phase_id IS NOT NULL",
+        )
+        .bind(self.feature_id)
+        .fetch_all(&self.read_pool)
+        .await
+        .map_err(|e| format!("Failed to read queue: {e}"))?;
+
+        let existing: std::collections::HashSet<i64> = existing_phase_ids
+            .into_iter()
+            .filter_map(|(id,)| id)
+            .collect();
+
+        let new_phases: Vec<_> = all_phases
+            .iter()
+            .filter(|(id, _, _)| !existing.contains(id))
+            .collect();
+
+        if new_phases.is_empty() {
+            info!(feature_id = self.feature_id, "review completed, no new phases to add");
+            return Ok(());
+        }
+
+        info!(
+            feature_id = self.feature_id,
+            count = new_phases.len(),
+            "review created fix phases, adding to queue"
+        );
+
+        let max_order: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(MAX(order_index), 0) FROM workflow_queue WHERE feature_id = ?",
+        )
+        .bind(self.feature_id)
+        .fetch_one(&self.read_pool)
+        .await
+        .map_err(|e| format!("Failed to get max order: {e}"))?;
+
+        let max_group: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(MAX(group_index), 0) FROM workflow_queue WHERE feature_id = ?",
+        )
+        .bind(self.feature_id)
+        .fetch_one(&self.read_pool)
+        .await
+        .map_err(|e| format!("Failed to get max group: {e}"))?;
+
+        let workflow_type_str = self.workflow_type.as_str();
+
+        for (i, (phase_id, _title, _deps)) in new_phases.iter().enumerate() {
+            let order = max_order + 1 + i as i64;
+            let group = max_group + 1;
+            repo::insert_queue_item(
+                &self.write_pool,
+                self.feature_id,
+                workflow_type_str,
+                "execute",
+                Some(*phase_id),
+                "ready",
+                order,
+                Some(group),
+            )
+            .await
+            .map_err(|e| format!("Failed to insert fix queue item: {e}"))?;
+        }
+
+        // Add a new review item after the fix phases
+        let review_order = max_order + 1 + new_phases.len() as i64;
+        let review_group = max_group + 2;
+        let review_id = repo::insert_queue_item(
+            &self.write_pool,
+            self.feature_id,
+            workflow_type_str,
+            "review",
+            None,
+            "blocked",
+            review_order,
+            Some(review_group),
+        )
+        .await
+        .map_err(|e| format!("Failed to insert follow-up review: {e}"))?;
+
+        // Make the new review depend on all the new fix items
+        let new_fix_ids: Vec<(i64,)> = sqlx::query_as(
+            "SELECT id FROM workflow_queue WHERE feature_id = ? AND order_index > ? AND item_type = 'execute' ORDER BY order_index",
+        )
+        .bind(self.feature_id)
+        .bind(max_order)
+        .fetch_all(&self.read_pool)
+        .await
+        .map_err(|e| format!("Failed to read new fix items: {e}"))?;
+
+        for (fix_id,) in new_fix_ids {
+            let _ = repo::insert_dependency(&self.write_pool, review_id, fix_id).await;
+        }
+
+        // Send full queue update to frontend
+        let all_items = repo::get_queue_for_feature(&self.read_pool, self.feature_id)
+            .await
+            .map_err(|e| format!("Failed to read queue: {e}"))?;
+
+        let envelope = WsEnvelope::new(
+            "workflow",
+            "queue_update",
+            to_value(WorkflowQueueUpdatePayload {
+                feature_id: self.feature_id,
+                items: all_items,
+            }),
+        );
+        let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
+
+        // Send review_verdict envelope so frontend knows
+        let envelope = WsEnvelope::new(
+            "workflow",
+            "review_verdict",
+            to_value(serde_json::json!({
+                "feature_id": self.feature_id,
+                "verdict": "changes_requested",
+                "fix_phase_count": new_phases.len(),
+            })),
+        );
+        let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
+
+        Ok(())
+    }
+
+    /// Spawn a review fixer agent for manual fix requests.
+    /// Uses synthetic queue_item_id of -5 for streaming.
+    pub async fn spawn_review_fixer_agent(&self, comments: &str) -> Result<i64, String> {
+        let system_prompt = "You are a code review fixer. The user has reviewed a diff and provided comments. \
+            Fix the issues described in the comments. Make minimal, focused changes.";
+
+        self.spawn_pre_queue_agent(
+            AgentType::Execute,
+            "review-fixer",
+            system_prompt,
+            comments,
+            -5,
+        )
+        .await
+    }
+
+    /// Mark a running agent as done (clean shutdown). Used for ad-hoc/session agents.
+    pub async fn mark_done(&self, queue_item_id: i64) -> Result<(), String> {
+        if let Some(query) = self.queries.get(&queue_item_id) {
+            let q = query.lock().await;
+            let _ = q.interrupt().await;
+        }
+
+        self.active_items.remove(&queue_item_id);
+        self.queries.remove(&queue_item_id);
+        self.permission_txs.remove(&queue_item_id);
+
+        if queue_item_id > 0 {
+            if let Err(e) = repo::mark_item_completed(&self.write_pool, queue_item_id, Some("Marked done by user")).await {
+                warn!(queue_item_id, error = %e, "failed to mark item completed on mark_done");
+            }
+            self.send_item_update(queue_item_id).await;
+        }
+
+        let envelope = WsEnvelope::new(
+            "workflow",
+            "item_completed",
+            to_value(WorkflowItemCompletedPayload {
+                feature_id: self.feature_id,
+                queue_item_id,
+                result: Some("Marked done by user".to_string()),
+            }),
+        );
+        let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
+
+        Ok(())
     }
 }
 

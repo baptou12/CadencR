@@ -149,6 +149,8 @@ pub async fn handle_workflow_action(
         "set_autonomy" => handle_set_autonomy(envelope, sender).await,
         "start_session" => handle_start_session(envelope, sender).await,
         "start_refine" => handle_start_refine(envelope, sender).await,
+        "start_review_fixer" => handle_start_review_fixer(envelope, sender).await,
+        "mark_done" => handle_mark_done(envelope, sender).await,
         unknown => {
             send_workflow_error(&sender, &envelope.id, "UNKNOWN_ACTION", &format!("Unknown workflow action: {unknown}"));
         }
@@ -580,6 +582,42 @@ async fn handle_start_refine(envelope: WsEnvelope, sender: &WsSender) {
         }
         Err(e) => {
             send_workflow_error(sender, &envelope.id, "SPAWN_FAILED", &format!("Failed to spawn refine agent: {e}"));
+        }
+    }
+}
+
+async fn handle_start_review_fixer(envelope: WsEnvelope, sender: &WsSender) {
+    let Some((payload, engine)) = parse_and_get_engine::<WorkflowStartReviewFixerPayload>(&envelope, sender) else { return };
+
+    info!(feature_id = payload.feature_id, "spawning review fixer agent");
+    match engine.spawn_review_fixer_agent(&payload.comments).await {
+        Ok(session_id) => {
+            let ack = WsEnvelope::reply(&envelope.id, "workflow", "review_fixer.started", to_value(WorkflowFeatureIdSessionPayload {
+                feature_id: payload.feature_id,
+                session_id,
+            }));
+            let _ = sender.send(Message::Text(String::from(ack).into()));
+        }
+        Err(e) => {
+            send_workflow_error(sender, &envelope.id, "SPAWN_FAILED", &format!("Failed to spawn review fixer: {e}"));
+        }
+    }
+}
+
+async fn handle_mark_done(envelope: WsEnvelope, sender: &WsSender) {
+    let Some((payload, engine)) = parse_and_get_engine::<WorkflowMarkDonePayload>(&envelope, sender) else { return };
+
+    info!(feature_id = payload.feature_id, queue_item_id = payload.queue_item_id, "marking agent done");
+    match engine.mark_done(payload.queue_item_id).await {
+        Ok(()) => {
+            let ack = WsEnvelope::reply(&envelope.id, "workflow", "acknowledged", to_value(WorkflowAcknowledgedPayload {
+                feature_id: payload.feature_id,
+                action: "mark_done".into(),
+            }));
+            let _ = sender.send(Message::Text(String::from(ack).into()));
+        }
+        Err(e) => {
+            send_workflow_error(sender, &envelope.id, "MARK_DONE_FAILED", &format!("Failed to mark done: {e}"));
         }
     }
 }

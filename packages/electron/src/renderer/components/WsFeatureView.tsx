@@ -460,8 +460,25 @@ export function WsFeatureView({ featureId, projectId, feature }: WsFeatureViewPr
     </div>
   );
 
+  // Derive review verdict from completed review agents in activeAgents
+  const reviewVerdict = useMemo((): "changes_requested" | null => {
+    for (const [, agentState] of store.activeAgents) {
+      // Check if any completed agent has finalize_phases tool call
+      if (agentState.status !== "completed") continue;
+      const calledFinalizePhases = agentState.blocks.some(
+        (b) => b.type === "tool_call" && b.toolName === "finalize_phases",
+      );
+      if (calledFinalizePhases) return "changes_requested";
+    }
+    return null;
+  }, [store.activeAgents]);
+
   const renderAgentPanel = (entry: AgentEntry, index: number) => {
     const isOpen = openAgent === entry.key || isActiveStatus(entry.state.status);
+    const isReview = entry.agentType === "review";
+    const canMarkDone = entry.state.status === "running" && (entry.queueItemId < 0);
+    const canDelete = !isActiveStatus(entry.state.status) && entry.queueItemId < 0;
+
     return (
       <div
         key={entry.key}
@@ -480,6 +497,8 @@ export function WsFeatureView({ featureId, projectId, feature }: WsFeatureViewPr
           onToggle={() => setOpenAgent(prev => prev === entry.key ? null : entry.key)}
           onSend={(msg, images) => store.sendPromptToAgent(entry.queueItemId, msg, images)}
           onStop={() => store.interruptItem(entry.queueItemId)}
+          onMarkDone={canMarkDone ? () => store.markDone(entry.queueItemId) : undefined}
+          onDelete={canDelete ? () => store.removeAgent(entry.queueItemId) : undefined}
           pendingPermission={entry.state.pendingPermission}
           onPermissionDecision={(decision) => {
             store.respondToPermission(
@@ -488,6 +507,10 @@ export function WsFeatureView({ featureId, projectId, feature }: WsFeatureViewPr
               decision,
             );
           }}
+          {...(isReview ? {
+            reviewVerdict,
+            onFixImmediately: () => store.startReviewFixer("Fix issues found during review"),
+          } : {})}
           featureId={featureId}
           projectId={projectId}
         />
