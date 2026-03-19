@@ -2,5 +2,6 @@
 members = [
     "packages/service",
     "packages/claude-agent-sdk-rs",
+    "packages/loc",
 ]
 resolver = "2"

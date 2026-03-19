@@ -1,0 +1,12 @@
+[package]
+name = "cadence-loc"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokei = "12.1"
+clap = { version = "4", features = ["derive"] }
+colored = "2"
+git2 = "0.19"
+chrono = "0.4"
+anyhow = "1"
