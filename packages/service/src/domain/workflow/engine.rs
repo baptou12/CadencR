@@ -5,7 +5,7 @@
 
 use std::collections::HashSet;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -192,6 +192,8 @@ pub struct WorkflowEngine {
     /// Shared MCP context for approval gates (plan/PRD approval resolution).
     /// Created lazily when plan/PRD agents are spawned.
     pub mcp_context: Arc<tokio::sync::RwLock<Option<Arc<McpContext>>>>,
+    /// Unix timestamp (seconds) of last activity — updated on advance/completion/error.
+    pub last_activity: AtomicU64,
     /// Cancellation signal for background tasks (e.g. timeout checker).
     cancel_tx: tokio::sync::watch::Sender<bool>,
     cancel_rx: tokio::sync::watch::Receiver<bool>,
@@ -208,6 +210,10 @@ impl WorkflowEngine {
     ) -> Self {
         let strategy = strategies::get_strategy(&workflow_type)
             .expect("WorkflowEngine::new called with unsupported workflow type");
+        let now_secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
         let (cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
         Self {
             feature_id,
@@ -222,6 +228,7 @@ impl WorkflowEngine {
             queries: Arc::new(DashMap::new()),
             permission_txs: Arc::new(DashMap::new()),
             mcp_context: Arc::new(tokio::sync::RwLock::new(None)),
+            last_activity: AtomicU64::new(now_secs),
             cancel_tx,
             cancel_rx,
         }
@@ -414,8 +421,18 @@ impl WorkflowEngine {
         }
     }
 
+    /// Update the last_activity timestamp to now.
+    fn touch_activity(&self) {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        self.last_activity.store(now, Ordering::Relaxed);
+    }
+
     /// Advance the workflow: unblock ready items and start them up to capacity.
     pub async fn advance(&self) -> Result<(), String> {
+        self.touch_activity();
         let running = self.active_items.len();
 
         if running >= self.max_parallel {
@@ -462,7 +479,8 @@ impl WorkflowEngine {
 
         // 2. Delegate to strategy
         let agent_type = self.strategy.agent_type_for_item(&item.item_type)?;
-        let system_prompt = self.strategy.build_system_prompt(&self.read_pool, &item).await?;
+        let autonomy = self.autonomy_level.load(Ordering::Relaxed);
+        let system_prompt = self.strategy.build_system_prompt(&self.read_pool, &item, autonomy).await?;
         let feature_title = self.get_feature_title().await.unwrap_or_default();
         let initial_prompt = self
             .strategy
@@ -577,6 +595,7 @@ impl WorkflowEngine {
 
     /// Called when a queue item completes successfully.
     pub async fn on_item_completed(&self, item_id: i64, result: Option<&str>) {
+        self.touch_activity();
         info!(feature_id = self.feature_id, item_id, "queue item completed");
 
         self.active_items.remove(&item_id);
@@ -656,6 +675,7 @@ impl WorkflowEngine {
 
     /// Called when a queue item errors.
     pub async fn on_item_error(&self, item_id: i64, error: &str) {
+        self.touch_activity();
         warn!(feature_id = self.feature_id, item_id, error, "queue item errored");
 
         self.active_items.remove(&item_id);

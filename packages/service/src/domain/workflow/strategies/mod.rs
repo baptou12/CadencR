@@ -28,10 +28,12 @@ pub trait WorkflowStrategy: Send + Sync {
     fn agent_type_for_item(&self, item_type: &str) -> Result<AgentType, String>;
 
     /// Build the system prompt for an item.
+    /// `autonomy_level`: 1 = confirm everything, 2 = moderate, 3 = full auto.
     async fn build_system_prompt(
         &self,
         _read_pool: &SqlitePool,
         _item: &QueueItem,
+        _autonomy_level: u8,
     ) -> Result<String, String> {
         Ok(String::new())
     }

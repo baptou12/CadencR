@@ -1,4 +1,5 @@
-use std::sync::{Arc, LazyLock};
+use std::sync::atomic::Ordering;
+use std::sync::{Arc, LazyLock, Once};
 
 use axum::extract::ws::Message;
 use dashmap::DashMap;
@@ -14,6 +15,42 @@ use super::{SdkSessions, WsSender};
 
 /// Global engine registry: one engine per feature_id at a time.
 static ENGINES: LazyLock<DashMap<i64, Arc<WorkflowEngine>>> = LazyLock::new(DashMap::new);
+static EVICTION_INIT: Once = Once::new();
+
+/// Spawn the global ENGINES eviction task (runs once).
+/// Evicts engines that have been idle for >30 minutes with no active items.
+fn ensure_eviction_task() {
+    EVICTION_INIT.call_once(|| {
+        tokio::spawn(async {
+            let interval = std::time::Duration::from_secs(5 * 60); // check every 5 min
+            let idle_threshold_secs: u64 = 30 * 60; // 30 min idle
+            loop {
+                tokio::time::sleep(interval).await;
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+
+                let mut to_evict = Vec::new();
+                for entry in ENGINES.iter() {
+                    let engine = entry.value();
+                    if engine.active_items.is_empty() {
+                        let last = engine.last_activity.load(Ordering::Relaxed);
+                        if now.saturating_sub(last) > idle_threshold_secs {
+                            to_evict.push(*entry.key());
+                        }
+                    }
+                }
+                for feature_id in to_evict {
+                    if let Some((_, engine)) = ENGINES.remove(&feature_id) {
+                        engine.cancel();
+                        info!(feature_id, "evicted idle workflow engine from ENGINES registry");
+                    }
+                }
+            }
+        });
+    });
+}
 
 /// Remove the engine for a feature (used on disconnect cleanup).
 pub fn remove_engine(feature_id: i64) {
@@ -199,10 +236,11 @@ async fn handle_feature_start(
         warn!(feature_id, error = %e, "failed to restore on reconnect");
     }
 
-    // Start timeout checker (30 min default)
-    engine.spawn_timeout_checker(30);
+    // Start timeout checker (configurable via CADENCE_AGENT_TIMEOUT_MINUTES)
+    engine.spawn_timeout_checker(app_state.agent_timeout_minutes);
 
     ENGINES.insert(feature_id, engine);
+    ensure_eviction_task();
 
     info!(feature_id, workflow_type = %workflow_type.as_str(), "workflow engine created");
 

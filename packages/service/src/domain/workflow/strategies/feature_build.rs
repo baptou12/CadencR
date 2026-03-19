@@ -181,11 +181,12 @@ impl WorkflowStrategy for FeatureBuildStrategy {
         &self,
         read_pool: &SqlitePool,
         item: &QueueItem,
+        autonomy_level: u8,
     ) -> Result<String, String> {
         match item.item_type.as_str() {
             "execute" | "qa" => {
                 let phase = self.read_phase(read_pool, item.phase_id).await?;
-                let autonomy_auto = true; // workflow queue always runs in auto mode
+                let autonomy_auto = autonomy_level >= 3;
                 if item.item_type == "execute" {
                     Ok(build_execute_prompt(
                         &phase.title,

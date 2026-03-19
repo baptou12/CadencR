@@ -11,6 +11,9 @@ pub struct AppState {
     /// Maximum number of parallel workflow agents. Defaults to 3.
     /// Overridden by CADENCE_MAX_PARALLEL env var.
     pub max_parallel_agents: usize,
+    /// Agent timeout in minutes. Defaults to 30.
+    /// Overridden by CADENCE_AGENT_TIMEOUT_MINUTES env var.
+    pub agent_timeout_minutes: u64,
 }
 
 impl AppState {
@@ -20,5 +23,13 @@ impl AppState {
             .ok()
             .and_then(|v| v.parse::<usize>().ok())
             .unwrap_or(3)
+    }
+
+    /// Read agent_timeout_minutes from CADENCE_AGENT_TIMEOUT_MINUTES env var, defaulting to 30.
+    pub fn agent_timeout_minutes_from_env() -> u64 {
+        std::env::var("CADENCE_AGENT_TIMEOUT_MINUTES")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(30)
     }
 }

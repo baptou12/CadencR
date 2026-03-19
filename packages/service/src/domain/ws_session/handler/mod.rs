@@ -336,6 +336,7 @@ mod tests {
             write_pool: pool,
             electron_port: 0,
             max_parallel_agents: 3,
+            agent_timeout_minutes: 30,
         }
     }
 
