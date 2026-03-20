@@ -6,6 +6,7 @@
  */
 
 import { useEffect, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import type { FeatureSession } from "./useFeatureAgentState";
 import type { AgentType } from "../../main/agents/types";
 import type { AgentStatus } from "@/types/agent";
@@ -14,7 +15,9 @@ import {
   type QueueItem,
   type QueueItemStatus,
   type AgentSessionState,
+  type FeatureSnapshot,
 } from "./useWorkflowWebSocket";
+import { customInstance } from "@/api/client";
 import { deriveViewState, type WorkflowBackend } from "./workflowBackendTypes";
 
 // ---------------------------------------------------------------------------
@@ -197,12 +200,35 @@ export function useWsWorkflowBackend(
 ): WorkflowBackend {
   const store = useWorkflowStore();
 
+  // Fetch snapshot in parallel with WS connect
+  const { data: snapshot } = useQuery<FeatureSnapshot>({
+    queryKey: ["feature-snapshot", featureId],
+    queryFn: () =>
+      customInstance<FeatureSnapshot>({
+        url: `/api/features/${featureId}/snapshot`,
+        method: "GET",
+      }),
+    enabled,
+    staleTime: Infinity, // Only fetch once
+    retry: 1,
+  });
+
   useEffect(() => {
     if (!enabled) return;
     store.connect(featureId, projectId);
     return () => store.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [featureId, projectId, enabled]);
+
+  // Hydrate store from snapshot when it arrives
+  useEffect(() => {
+    if (snapshot) {
+      store.hydrateFromSnapshot(snapshot);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [snapshot]);
+
+  const isHydrating = enabled && !store.hydrated && !snapshot;
 
   const { sessions, planSession, prdSession } = useMemo(
     () => buildSessionEntries(store.queue, store.activeAgents, store.planAgent, store.prdAgent),
@@ -246,8 +272,8 @@ export function useWsWorkflowBackend(
     // Derived
     hasAnyAgentOutput,
     noAgentsRunning,
-    view,
-    isLoading: false,
+    view: isHydrating ? "plan-input" as const : view,
+    isLoading: isHydrating,
 
     // Loading flags (WS actions are fire-and-forget)
     isStartingPlan: false,

@@ -75,6 +75,33 @@ export type WorktreeStatus =
   | "ready"
   | "setup_error";
 
+export interface AgentSessionSummary {
+  id: number;
+  queue_item_id: number | null;
+  status: string;
+  agent_type: string | null;
+}
+
+export interface PlanSnapshot {
+  id: number;
+  name: string | null;
+}
+
+export interface WorktreeSnapshot {
+  path: string;
+  branch: string;
+  status: string;
+}
+
+export interface FeatureSnapshot {
+  workflow_status: WorkflowStatus;
+  queue: QueueItem[];
+  agent_sessions: AgentSessionSummary[];
+  plan: PlanSnapshot | null;
+  worktree: WorktreeSnapshot | null;
+  autonomy_level: number;
+}
+
 interface WorkflowState {
   // Connection
   ws: WebSocket | null;
@@ -91,6 +118,7 @@ interface WorkflowState {
   autonomyLevel: AutonomyLevel;
   selectedItemId: number | null;
   error: string | null;
+  hydrated: boolean;
 
   // Worktree state
   worktreeStatus: WorktreeStatus;
@@ -104,6 +132,7 @@ interface WorkflowState {
   disconnect: () => void;
   selectItem: (itemId: number | null) => void;
   setAutonomyLevel: (level: AutonomyLevel) => void;
+  hydrateFromSnapshot: (snapshot: FeatureSnapshot) => void;
 
   // Outgoing messages
   startPlan: (description: string, images?: Array<{ base64: string; mimeType: string }>) => void;
@@ -217,7 +246,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     switch (action) {
       case "queue_update": {
         const items = payload.items as QueueItem[];
-        set({ queue: items ?? [] });
+        set({ queue: items ?? [], hydrated: true });
         break;
       }
       case "item_update": {
@@ -512,6 +541,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     autonomyLevel: 3,
     selectedItemId: null,
     error: null,
+    hydrated: false,
     worktreeStatus: "idle",
     worktreePath: null,
     worktreeBranch: null,
@@ -526,7 +556,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
       set({
         ws, featureId, projectId,
         queue: [], activeAgents: new Map(), planAgent: null, prdAgent: null,
-        workflowStatus: "idle", pauseReason: null, selectedItemId: null, error: null,
+        workflowStatus: "idle", pauseReason: null, selectedItemId: null, error: null, hydrated: false,
         worktreeStatus: "idle" as const, worktreePath: null, worktreeBranch: null, worktreeSetupOutput: [], worktreeError: null,
       });
 
@@ -548,6 +578,44 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
       const { ws } = get();
       if (ws) ws.close();
       set({ ws: null });
+    },
+
+    hydrateFromSnapshot(snapshot) {
+      const state = get();
+      // Don't overwrite if already hydrated or WS has delivered real-time data
+      if (state.hydrated || state.queue.length > 0) return;
+
+      const activeAgents = new Map(state.activeAgents);
+      for (const session of snapshot.agent_sessions) {
+        if (session.queue_item_id != null) {
+          activeAgents.set(session.queue_item_id, {
+            sessionId: session.id,
+            blocks: [],
+            streamingState: createStreamingState(),
+            status: (session.status as AgentSessionState["status"]) ?? "idle",
+            pendingPermission: null,
+            pendingQuestions: [],
+            pendingQuestionToolInput: {},
+            pendingQuestionRequestId: "",
+          });
+        }
+      }
+
+      const patch: Partial<WorkflowState> = {
+        queue: snapshot.queue,
+        workflowStatus: snapshot.workflow_status,
+        autonomyLevel: (snapshot.autonomy_level as AutonomyLevel) ?? 3,
+        activeAgents,
+        hydrated: true,
+      };
+
+      if (snapshot.worktree) {
+        patch.worktreePath = snapshot.worktree.path;
+        patch.worktreeBranch = snapshot.worktree.branch;
+        patch.worktreeStatus = snapshot.worktree.status as WorktreeStatus;
+      }
+
+      set(patch);
     },
 
     selectItem(itemId) {
