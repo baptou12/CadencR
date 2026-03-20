@@ -855,10 +855,19 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
 
     populateAgentBlocks(itemId, blocks) {
       set(state => {
-        const agent = state.activeAgents.get(itemId);
+        // Resolve the agent from the correct slot (plan/prd vs activeAgents)
+        let agent: AgentSessionState | null = null;
+        if (itemId === PLAN_KEY) agent = state.planAgent;
+        else if (itemId === PRD_KEY) agent = state.prdAgent;
+        else agent = state.activeAgents.get(itemId) ?? null;
+
         if (!agent || agent.historyLoaded || agent.blocks.length > 0) return state;
+
+        const updated = { ...agent, blocks, historyLoaded: true };
+        if (itemId === PLAN_KEY) return { planAgent: updated };
+        if (itemId === PRD_KEY) return { prdAgent: updated };
         const activeAgents = new Map(state.activeAgents);
-        activeAgents.set(itemId, { ...agent, blocks, historyLoaded: true });
+        activeAgents.set(itemId, updated);
         return { activeAgents };
       });
     },

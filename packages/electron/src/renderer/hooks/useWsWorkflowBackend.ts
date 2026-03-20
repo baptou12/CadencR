@@ -246,7 +246,12 @@ export function useWsWorkflowBackend(
 
   const loadAgentHistory = useCallback((entry: FeatureSession) => {
     const itemId = findQueueItemId(entry, store.queue, store.activeAgents);
-    const agent = store.activeAgents.get(itemId);
+    // Resolve agent from the correct slot (plan/prd use dedicated slots)
+    const PLAN_KEY = AGENT_TYPE_SYNTHETIC_KEYS.plan;
+    const PRD_KEY = AGENT_TYPE_SYNTHETIC_KEYS.prd;
+    const agent = itemId === PLAN_KEY ? store.planAgent
+      : itemId === PRD_KEY ? store.prdAgent
+      : store.activeAgents.get(itemId);
     if (!agent || agent.historyLoaded || agent.blocks.length > 0) return;
     const sessionId = agent.sessionId;
     if (sessionId <= 0) return;
