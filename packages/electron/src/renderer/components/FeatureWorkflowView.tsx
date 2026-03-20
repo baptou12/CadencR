@@ -524,13 +524,6 @@ export function FeatureWorkflowView({
               </div>
             )}
 
-            {backend.error && (
-              <div className="shrink-0 mx-6 mt-4 flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                <AlertTriangleIcon className="size-4 shrink-0" />
-                <span className="flex-1">{backend.error}</span>
-              </div>
-            )}
-
             {(backend.hasAnyAgentOutput ||
               actions.canStartBuild ||
               actions.canStartRisk ||
@@ -792,6 +785,13 @@ export function FeatureWorkflowView({
                     </div>
                   </div>
                 )}
+              </div>
+            )}
+
+            {backend.error && (
+              <div className="shrink-0 mx-6 mt-4 flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                <AlertTriangleIcon className="size-4 shrink-0" />
+                <span className="flex-1">{backend.error}</span>
               </div>
             )}
 
