@@ -600,6 +600,33 @@ describe("useWorkflowStore", () => {
       expect(state.activeAgents.has(AGENT_TYPE_SYNTHETIC_KEYS.session)).toBe(true);
       expect(state.activeAgents.has(10)).toBe(true);
     });
+
+    it("hydrates worktree state from snapshot", () => {
+      useWorkflowStore.getState().hydrateFromSnapshot(
+        makeSnapshot({
+          worktree: { path: "/tmp/wt", branch: "feat-123", status: "ready" },
+        }),
+      );
+
+      const state = useWorkflowStore.getState();
+      expect(state.worktreeStatus).toBe("ready");
+      expect(state.worktreePath).toBe("/tmp/wt");
+      expect(state.worktreeBranch).toBe("feat-123");
+    });
+
+    it("leaves worktree as idle when snapshot has no worktree", () => {
+      // Reset store to clear state from previous tests
+      useWorkflowStore.setState({ hydrated: false, worktreeStatus: "idle", worktreePath: null, worktreeBranch: null });
+
+      useWorkflowStore.getState().hydrateFromSnapshot(
+        makeSnapshot({ worktree: null }),
+      );
+
+      const state = useWorkflowStore.getState();
+      expect(state.worktreeStatus).toBe("idle");
+      expect(state.worktreePath).toBeNull();
+      expect(state.worktreeBranch).toBeNull();
+    });
   });
 
   // -------------------------------------------------------------------------

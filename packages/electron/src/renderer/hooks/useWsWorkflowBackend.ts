@@ -226,13 +226,18 @@ export function useWsWorkflowBackend(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [featureId, projectId, enabled]);
 
-  // Hydrate store from snapshot when it arrives
+  // Hydrate store from snapshot when it arrives.
+  // We also depend on `store.hydrated` so that when the component remounts
+  // (navigating back to the same feature) and `connect()` has reset
+  // `hydrated` to false, we re-hydrate from the cached snapshot even though
+  // the snapshot reference hasn't changed (staleTime: Infinity).
+  const hydrated = store.hydrated;
   useEffect(() => {
-    if (snapshot) {
+    if (snapshot && !hydrated) {
       store.hydrateFromSnapshot(snapshot);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [snapshot]);
+  }, [snapshot, hydrated]);
 
   const isHydrating = enabled && !store.hydrated;
 
