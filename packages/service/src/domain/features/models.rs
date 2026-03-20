@@ -188,6 +188,57 @@ pub struct OverridePhaseStatusRequest {
     pub status: String,
 }
 
+// ---------------------------------------------------------------------------
+// Snapshot types
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, ToSchema)]
+pub struct SnapshotQueueItem {
+    pub id: i64,
+    pub item_type: String,
+    pub phase_id: Option<i64>,
+    pub phase_title: Option<String>,
+    pub status: String,
+    pub order_index: i64,
+    pub group_index: Option<i64>,
+    pub agent_session_id: Option<i64>,
+    pub result: Option<String>,
+}
+
+#[derive(Debug, Serialize, sqlx::FromRow, ToSchema)]
+pub struct AgentSessionSummary {
+    pub id: i64,
+    pub agent_type: String,
+    pub status: String,
+    pub queue_item_id: Option<i64>,
+    pub created_at: String,
+    pub updated_at: Option<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct PlanSnapshot {
+    pub id: i64,
+    pub status: String,
+    pub phases: Vec<Phase>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct WorktreeSnapshot {
+    pub path: Option<String>,
+    pub branch: Option<String>,
+    pub status: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct FeatureSnapshotResponse {
+    pub workflow_status: String,
+    pub queue: Vec<SnapshotQueueItem>,
+    pub agent_sessions: Vec<AgentSessionSummary>,
+    pub plan: Option<PlanSnapshot>,
+    pub worktree: Option<WorktreeSnapshot>,
+    pub autonomy_level: u8,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

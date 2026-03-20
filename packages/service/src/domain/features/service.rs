@@ -4,6 +4,7 @@ use crate::error::AppError;
 use super::models::{
     Feature, PlanProgress, PlanWithPhases, PrdResponse, IsEmptyResponse,
     WorkingDirResponse, CreateFeatureResponse, FeatureSetting, FeatureModelSettings,
+    FeatureSnapshotResponse,
 };
 use super::repository;
 
@@ -135,4 +136,11 @@ pub async fn delete_feature(
     }
 
     repository::delete_feature(write_pool, id).await
+}
+
+pub async fn get_feature_snapshot(
+    pool: &SqlitePool,
+    feature_id: i64,
+) -> Result<FeatureSnapshotResponse, AppError> {
+    repository::get_feature_snapshot(pool, feature_id).await
 }

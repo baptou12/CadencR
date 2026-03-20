@@ -539,6 +539,128 @@ pub async fn get_queue_for_feature(pool: &SqlitePool, feature_id: i64) -> Result
     Ok(rows)
 }
 
+pub async fn get_feature_snapshot(
+    pool: &SqlitePool,
+    feature_id: i64,
+) -> Result<super::models::FeatureSnapshotResponse, AppError> {
+    use super::models::*;
+
+    // 1. Queue items with phase_title via LEFT JOIN
+    let queue: Vec<SnapshotQueueItem> = sqlx::query_as::<_, SnapshotQueueItem>(
+        r#"SELECT q.id, q.item_type, q.phase_id,
+                  p.title as phase_title,
+                  q.status, q.order_index, q.group_index,
+                  q.agent_session_id, q.result
+           FROM workflow_queue q
+           LEFT JOIN phases p ON q.phase_id = p.id
+           WHERE q.feature_id = ?
+           ORDER BY q.order_index"#,
+    )
+    .bind(feature_id)
+    .fetch_all(pool)
+    .await?;
+
+    // 2. Agent sessions (lightweight summary)
+    let agent_sessions: Vec<AgentSessionSummary> = sqlx::query_as::<_, AgentSessionSummary>(
+        r#"SELECT s.id, COALESCE(s.agent_type, 'unknown') as agent_type, COALESCE(s.status, 'idle') as status,
+                  wq.id as queue_item_id,
+                  COALESCE(s.started_at, '') as created_at,
+                  NULL as updated_at
+           FROM agent_sessions s
+           LEFT JOIN workflow_queue wq ON wq.agent_session_id = s.id AND wq.feature_id = ?
+           WHERE s.feature_id = ?"#,
+    )
+    .bind(feature_id)
+    .bind(feature_id)
+    .fetch_all(pool)
+    .await?;
+
+    // 3. Plan + phases
+    let plan_snapshot = match get_plan_with_phases(pool, feature_id).await? {
+        Some((plan, phases)) => Some(PlanSnapshot {
+            id: plan.id,
+            status: plan.status.unwrap_or_else(|| "draft".to_string()),
+            phases,
+        }),
+        None => None,
+    };
+
+    // 4. Feature settings for worktree + autonomy
+    let settings = get_feature_settings(pool, feature_id).await?;
+    let worktree_path = settings.iter().find(|s| s.key == "worktree_path").map(|s| s.value.clone());
+    let worktree_branch = settings.iter().find(|s| s.key == "worktree_branch").map(|s| s.value.clone());
+    let worktree_status_val = settings.iter().find(|s| s.key == "worktree_status").map(|s| s.value.as_str());
+
+    let worktree = if worktree_path.is_some() || worktree_branch.is_some() || worktree_status_val.is_some() {
+        Some(WorktreeSnapshot {
+            path: worktree_path,
+            branch: worktree_branch,
+            status: worktree_status_val.unwrap_or("none").to_string(),
+        })
+    } else {
+        None
+    };
+
+    let autonomy_level: u8 = settings
+        .iter()
+        .find(|s| s.key == "agent_autonomy")
+        .and_then(|s| s.value.parse().ok())
+        .unwrap_or(3);
+
+    // 5. Derive workflow status
+    let workflow_status = derive_workflow_status(&queue, &plan_snapshot);
+
+    Ok(FeatureSnapshotResponse {
+        workflow_status,
+        queue,
+        agent_sessions,
+        plan: plan_snapshot,
+        worktree,
+        autonomy_level,
+    })
+}
+
+fn derive_workflow_status(queue: &[super::models::SnapshotQueueItem], plan: &Option<super::models::PlanSnapshot>) -> String {
+    // 1. No queue and no plan → idle
+    if queue.is_empty() && plan.is_none() {
+        return "idle".to_string();
+    }
+
+    if let Some(p) = plan {
+        // 2. Plan is draft → planning
+        if p.status == "draft" {
+            return "planning".to_string();
+        }
+        // 3. Plan pending approval
+        if p.status == "pending_approval" {
+            return "plan_approval".to_string();
+        }
+    }
+
+    let has_running = queue.iter().any(|i| i.status == "running");
+    let has_error = queue.iter().any(|i| i.status == "error");
+    let has_ready_or_blocked = queue.iter().any(|i| i.status == "ready" || i.status == "blocked");
+
+    // 4. Any running → building
+    if has_running {
+        return "building".to_string();
+    }
+    // 5. Error and none running → error
+    if has_error {
+        return "error".to_string();
+    }
+    // 6. Ready/blocked and none running → paused
+    if has_ready_or_blocked {
+        return "paused".to_string();
+    }
+    // 7. All completed/skipped
+    if !queue.is_empty() && queue.iter().all(|i| i.status == "completed" || i.status == "skipped") {
+        return "completed".to_string();
+    }
+
+    "idle".to_string()
+}
+
 pub async fn get_ready_items(pool: &SqlitePool, feature_id: i64) -> Result<Vec<QueueItem>, AppError> {
     let rows = sqlx::query_as::<_, QueueItem>(
         "SELECT * FROM workflow_queue WHERE feature_id = ? AND status = 'ready' ORDER BY order_index",

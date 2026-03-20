@@ -210,6 +210,16 @@ pub async fn get_working_dir_handler(
     ))
 }
 
+#[utoipa::path(get, path = "/api/features/{id}/snapshot",
+    params(("id" = i64, Path,)),
+    responses((status = 200, body = FeatureSnapshotResponse)))]
+pub async fn get_feature_snapshot_handler(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Result<Json<FeatureSnapshotResponse>, AppError> {
+    Ok(Json(service::get_feature_snapshot(&state.read_pool, id).await?))
+}
+
 #[derive(serde::Serialize, utoipa::ToSchema)]
 pub struct SuccessResponse {
     pub success: bool,
@@ -229,5 +239,6 @@ pub fn features_router() -> Router<AppState> {
         .route("/api/phases/{id}/status", put(override_phase_status_handler))
         .route("/api/features/{id}/settings", get(get_feature_settings_handler).put(set_feature_setting_handler))
         .route("/api/features/{id}/model-settings", get(get_feature_model_settings_handler).put(set_feature_model_setting_handler))
+        .route("/api/features/{id}/snapshot", get(get_feature_snapshot_handler))
         .route("/api/features/{id}/working-dir", get(get_working_dir_handler))
 }
