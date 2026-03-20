@@ -164,11 +164,15 @@ function buildSessionEntries(
 // Find queue item ID from a FeatureSession (reverse lookup)
 // ---------------------------------------------------------------------------
 
-function findQueueItemId(
+export function findQueueItemId(
   entry: FeatureSession,
   queue: QueueItem[],
   activeAgents: Map<number, AgentSessionState>,
 ): number {
+  // Pre-queue agents use fixed synthetic IDs on the backend
+  if (entry.agentType === "plan") return -1;
+  if (entry.agentType === "prd") return -2;
+
   // Check activeAgents for matching sessionId
   for (const [itemId, agent] of activeAgents) {
     if (agent.sessionId === entry.sessionDbId) return itemId;
