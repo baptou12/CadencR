@@ -536,6 +536,33 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     },
 
     sendPromptToAgent(itemId, text, images) {
+      // Optimistically add user message block (mirrors ws-session-store behavior)
+      set(state => {
+        const userBlock = {
+          id: `ws-user-${Date.now()}`,
+          type: "user_message" as const,
+          content: text,
+          isError: false,
+          createdAt: new Date().toISOString(),
+        };
+
+        // Pre-queue agents (plan/prd)
+        if (itemId === -1 && state.planAgent) {
+          return { planAgent: { ...state.planAgent, blocks: [...state.planAgent.blocks, userBlock] } };
+        }
+        if (itemId === -2 && state.prdAgent) {
+          return { prdAgent: { ...state.prdAgent, blocks: [...state.prdAgent.blocks, userBlock] } };
+        }
+
+        // Queue agents
+        const agent = state.activeAgents.get(itemId);
+        if (agent) {
+          const activeAgents = new Map(state.activeAgents);
+          activeAgents.set(itemId, { ...agent, blocks: [...agent.blocks, userBlock] });
+          return { activeAgents };
+        }
+        return {};
+      });
       send("prompt.send", { queue_item_id: itemId, text, images });
     },
 
