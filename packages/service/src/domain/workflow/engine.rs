@@ -1604,3 +1604,389 @@ impl Drop for WorkflowEngine {
         let _ = self.cancel_tx.send(true);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::Ordering;
+
+    /// Helper: create in-memory SQLite pool for tests.
+    async fn test_pool() -> SqlitePool {
+        SqlitePool::connect("sqlite::memory:").await.unwrap()
+    }
+
+    /// Helper: create a WorkflowEngine with in-memory pools and a dummy WsSender.
+    async fn test_engine() -> (WorkflowEngine, mpsc::UnboundedReceiver<Message>) {
+        let pool = test_pool().await;
+        let (tx, rx) = mpsc::unbounded_channel();
+        let engine = WorkflowEngine::new(
+            1,
+            WorkflowType::FeatureBuild,
+            pool.clone(),
+            pool,
+            tx,
+            2,
+        );
+        (engine, rx)
+    }
+
+    // ── 1. Constants ──
+
+    #[test]
+    fn test_synthetic_item_ids_are_negative() {
+        assert!(PLAN_ITEM_ID < 0);
+        assert!(PRD_ITEM_ID < 0);
+        assert!(SESSION_ITEM_ID < 0);
+        assert!(REFINE_ITEM_ID < 0);
+    }
+
+    #[test]
+    fn test_synthetic_item_ids_are_distinct() {
+        let ids = [PLAN_ITEM_ID, PRD_ITEM_ID, SESSION_ITEM_ID, REFINE_ITEM_ID];
+        let unique: std::collections::HashSet<i64> = ids.iter().copied().collect();
+        assert_eq!(unique.len(), ids.len(), "Synthetic IDs must be unique");
+    }
+
+    // ── 2. WorkflowEngine creation and initialization ──
+
+    #[tokio::test]
+    async fn test_engine_creation_defaults() {
+        let (engine, _rx) = test_engine().await;
+
+        assert_eq!(engine.feature_id, 1);
+        assert_eq!(engine.workflow_type, WorkflowType::FeatureBuild);
+        assert_eq!(engine.max_parallel, 2);
+        assert_eq!(engine.autonomy_level.load(Ordering::Relaxed), 3);
+        assert!(engine.active_items.is_empty());
+        assert!(engine.queries.is_empty());
+        assert!(engine.permission_txs.is_empty());
+        assert!(engine.interrupted_items.is_empty());
+        assert!(engine.paused_sessions.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_engine_last_activity_initialized() {
+        let (engine, _rx) = test_engine().await;
+        let activity = engine.last_activity.load(Ordering::Relaxed);
+        // Should be a reasonable recent timestamp (after 2020)
+        assert!(activity > 1_577_836_800, "last_activity should be a recent Unix timestamp");
+    }
+
+    #[tokio::test]
+    async fn test_engine_touch_activity_updates_timestamp() {
+        let (engine, _rx) = test_engine().await;
+        let before = engine.last_activity.load(Ordering::Relaxed);
+        // touch_activity should update to current time (same second or later)
+        engine.touch_activity();
+        let after = engine.last_activity.load(Ordering::Relaxed);
+        assert!(after >= before);
+    }
+
+    // ── 3. Strategy registry ──
+
+    #[test]
+    fn test_strategy_feature_build() {
+        let strategy = strategies::get_strategy(&WorkflowType::FeatureBuild);
+        assert!(strategy.is_ok());
+        assert_eq!(strategy.unwrap().workflow_type(), WorkflowType::FeatureBuild);
+    }
+
+    // ── 4. DashMap-based state tracking (queue ordering, active items) ──
+
+    #[tokio::test]
+    async fn test_active_items_tracking() {
+        let (engine, _rx) = test_engine().await;
+
+        // Simulate tracking active items
+        engine.active_items.insert(10, 100);
+        engine.active_items.insert(20, 200);
+
+        assert_eq!(engine.active_items.len(), 2);
+        assert_eq!(*engine.active_items.get(&10).unwrap(), 100);
+        assert_eq!(*engine.active_items.get(&20).unwrap(), 200);
+
+        // Remove one
+        engine.active_items.remove(&10);
+        assert_eq!(engine.active_items.len(), 1);
+        assert!(engine.active_items.get(&10).is_none());
+    }
+
+    #[tokio::test]
+    async fn test_interrupted_items_tracking() {
+        let (engine, _rx) = test_engine().await;
+
+        engine.interrupted_items.insert(42);
+        assert!(engine.interrupted_items.contains(&42));
+
+        // remove returns Some if it was present
+        let removed = engine.interrupted_items.remove(&42);
+        assert!(removed.is_some());
+
+        // Double remove returns None
+        let removed_again = engine.interrupted_items.remove(&42);
+        assert!(removed_again.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_paused_sessions_tracking() {
+        let (engine, _rx) = test_engine().await;
+
+        engine.paused_sessions.insert(5, "session-abc".to_string());
+        assert_eq!(*engine.paused_sessions.get(&5).unwrap(), "session-abc");
+
+        // Remove returns the value
+        let removed = engine.paused_sessions.remove(&5);
+        assert!(removed.is_some());
+        assert_eq!(removed.unwrap().1, "session-abc");
+    }
+
+    // ── 5. Permission channel routing ──
+
+    #[tokio::test]
+    async fn test_respond_permission_no_channel() {
+        let (engine, _rx) = test_engine().await;
+
+        let response = PermissionResponse {
+            decision: PermissionDecision::AllowOnce,
+            feedback: None,
+            updated_input: None,
+        };
+        let result = engine.respond_permission(999, response).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("No permission channel"));
+    }
+
+    #[tokio::test]
+    async fn test_respond_permission_with_channel() {
+        let (engine, _rx) = test_engine().await;
+
+        let (tx, mut perm_rx) = mpsc::channel::<PermissionResponse>(16);
+        engine.permission_txs.insert(42, tx);
+
+        let response = PermissionResponse {
+            decision: PermissionDecision::AllowOnce,
+            feedback: None,
+            updated_input: None,
+        };
+        let result = engine.respond_permission(42, response).await;
+        assert!(result.is_ok());
+
+        // Verify the response was received
+        let received = perm_rx.recv().await.unwrap();
+        assert!(matches!(received.decision, PermissionDecision::AllowOnce));
+    }
+
+    // ── 6. Capacity check (advance logic) ──
+
+    #[tokio::test]
+    async fn test_advance_at_capacity_is_noop() {
+        let (engine, _rx) = test_engine().await;
+        // max_parallel is 2, fill active_items to capacity
+        engine.active_items.insert(1, 100);
+        engine.active_items.insert(2, 200);
+
+        // advance should return Ok but not start new items (no DB so nothing to query)
+        // Since there's no workflow_queue table, it would error on unblock_ready_items,
+        // but at-capacity check happens first
+        let result = engine.advance().await;
+        assert!(result.is_ok());
+    }
+
+    // ── 7. to_value helper ──
+
+    #[test]
+    fn test_to_value_string() {
+        let v = to_value("hello");
+        assert_eq!(v, serde_json::Value::String("hello".to_string()));
+    }
+
+    #[test]
+    fn test_to_value_struct() {
+        let v = to_value(serde_json::json!({"key": 42}));
+        assert_eq!(v["key"], 42);
+    }
+
+    // ── 8. WorkflowType round-trip ──
+
+    #[test]
+    fn test_workflow_type_as_str() {
+        assert_eq!(WorkflowType::FeatureBuild.as_str(), "feature_build");
+    }
+
+    #[test]
+    fn test_workflow_type_from_str() {
+        assert_eq!(
+            WorkflowType::from_str("feature_build").unwrap(),
+            WorkflowType::FeatureBuild
+        );
+        assert!(WorkflowType::from_str("unknown").is_err());
+    }
+
+    // ── 9. Cancel signal ──
+
+    #[tokio::test]
+    async fn test_cancel_signal() {
+        let (engine, _rx) = test_engine().await;
+        let mut cancel_rx = engine.cancel_rx.clone();
+
+        assert!(!*cancel_rx.borrow());
+        engine.cancel();
+        // After cancel, the receiver should see true
+        cancel_rx.changed().await.unwrap();
+        assert!(*cancel_rx.borrow());
+    }
+
+    // ── 10. Drop triggers cancel ──
+
+    #[tokio::test]
+    async fn test_drop_triggers_cancel() {
+        let pool = test_pool().await;
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let engine = WorkflowEngine::new(1, WorkflowType::FeatureBuild, pool.clone(), pool, tx, 1);
+        let mut cancel_rx = engine.cancel_rx.clone();
+
+        drop(engine);
+        cancel_rx.changed().await.unwrap();
+        assert!(*cancel_rx.borrow());
+    }
+
+    // ── 11. Agent type mapping via strategy ──
+
+    #[tokio::test]
+    async fn test_strategy_agent_type_mapping() {
+        let (engine, _rx) = test_engine().await;
+
+        assert!(matches!(engine.strategy.agent_type_for_item("execute"), Ok(AgentType::Execute)));
+        assert!(matches!(engine.strategy.agent_type_for_item("qa"), Ok(AgentType::Qa)));
+        assert!(matches!(engine.strategy.agent_type_for_item("review"), Ok(AgentType::Review)));
+        assert!(engine.strategy.agent_type_for_item("bogus").is_err());
+    }
+
+    // ── 12. Autonomy level atomic updates ──
+
+    #[tokio::test]
+    async fn test_autonomy_level_update() {
+        let (engine, _rx) = test_engine().await;
+
+        assert_eq!(engine.autonomy_level.load(Ordering::Relaxed), 3);
+        engine.autonomy_level.store(1, Ordering::Relaxed);
+        assert_eq!(engine.autonomy_level.load(Ordering::Relaxed), 1);
+        engine.autonomy_level.store(2, Ordering::Relaxed);
+        assert_eq!(engine.autonomy_level.load(Ordering::Relaxed), 2);
+    }
+
+    // ── 13. QueueItem construction helper for testing ──
+
+    fn make_queue_item(id: i64, item_type: &str, status: &str, order: i64, group: Option<i64>) -> QueueItem {
+        QueueItem {
+            id,
+            feature_id: 1,
+            workflow_type: "feature_build".to_string(),
+            item_type: item_type.to_string(),
+            phase_id: Some(id * 10),
+            status: status.to_string(),
+            order_index: order,
+            group_index: group,
+            config: None,
+            agent_session_id: None,
+            result: None,
+            created_at: None,
+            started_at: None,
+            ended_at: None,
+            pid: None,
+        }
+    }
+
+    #[test]
+    fn test_queue_item_ordering() {
+        let items = vec![
+            make_queue_item(3, "execute", "ready", 2, Some(1)),
+            make_queue_item(1, "execute", "ready", 0, Some(0)),
+            make_queue_item(2, "execute", "blocked", 1, Some(0)),
+            make_queue_item(4, "review", "blocked", 3, Some(2)),
+        ];
+
+        // Items should be sortable by order_index for queue priority
+        let mut sorted = items.clone();
+        sorted.sort_by_key(|i| i.order_index);
+        assert_eq!(sorted[0].id, 1);
+        assert_eq!(sorted[1].id, 2);
+        assert_eq!(sorted[2].id, 3);
+        assert_eq!(sorted[3].id, 4);
+    }
+
+    #[test]
+    fn test_queue_item_group_index_parallel_identification() {
+        let items = vec![
+            make_queue_item(1, "execute", "ready", 0, Some(0)),
+            make_queue_item(2, "execute", "ready", 1, Some(0)),
+            make_queue_item(3, "execute", "blocked", 2, Some(1)),
+        ];
+
+        // Items in the same group can run in parallel
+        let group_0: Vec<_> = items.iter().filter(|i| i.group_index == Some(0)).collect();
+        assert_eq!(group_0.len(), 2);
+
+        let group_1: Vec<_> = items.iter().filter(|i| i.group_index == Some(1)).collect();
+        assert_eq!(group_1.len(), 1);
+    }
+
+    #[test]
+    fn test_queue_item_status_transitions() {
+        // Verify valid status strings used throughout the engine
+        let valid_statuses = ["ready", "blocked", "running", "completed", "error", "skipped", "paused"];
+        for status in &valid_statuses {
+            let item = make_queue_item(1, "execute", status, 0, Some(0));
+            assert_eq!(item.status, *status);
+        }
+    }
+
+    // ── 14. Topological sort integration (re-exported from populate) ──
+
+    #[test]
+    fn test_topological_sort_with_workflow_phases() {
+        use crate::domain::workflow::populate::topological_sort;
+
+        // Simulate: setup(1) -> core(2) -> tests(3), setup(1) -> tests(3)
+        let nodes = vec![1, 2, 3];
+        let edges = vec![(1, 2), (1, 3), (2, 3)];
+        let result = topological_sort(&nodes, &edges).unwrap();
+
+        let groups: std::collections::HashMap<i64, usize> = result.iter().copied().collect();
+        assert_eq!(groups[&1], 0); // setup at depth 0
+        assert_eq!(groups[&2], 1); // core at depth 1
+        assert_eq!(groups[&3], 2); // tests at depth 2
+
+        // Verify topological ordering
+        let pos: std::collections::HashMap<i64, usize> = result
+            .iter()
+            .enumerate()
+            .map(|(i, &(id, _))| (id, i))
+            .collect();
+        assert!(pos[&1] < pos[&2]);
+        assert!(pos[&1] < pos[&3]);
+        assert!(pos[&2] < pos[&3]);
+    }
+
+    #[test]
+    fn test_topological_sort_cycle_detection() {
+        use crate::domain::workflow::populate::topological_sort;
+
+        let nodes = vec![1, 2];
+        let edges = vec![(1, 2), (2, 1)];
+        assert!(topological_sort(&nodes, &edges).is_err());
+    }
+
+    #[test]
+    fn test_topological_sort_independent_phases() {
+        use crate::domain::workflow::populate::topological_sort;
+
+        // All phases independent — all should be group 0
+        let nodes = vec![10, 20, 30];
+        let edges = vec![];
+        let result = topological_sort(&nodes, &edges).unwrap();
+        for &(_, group) in &result {
+            assert_eq!(group, 0);
+        }
+    }
+}

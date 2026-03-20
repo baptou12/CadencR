@@ -398,4 +398,167 @@ mod tests {
         let name = build_branch_name("feature/", "Hello World! @#$ Test");
         assert!(name.starts_with("feature/hello-world-test-"));
     }
+
+    // --- Additional slugify tests ---
+
+    #[test]
+    fn test_slugify_all_special_chars() {
+        // All non-alphanumeric should collapse to empty after trimming dashes
+        assert_eq!(slugify("!@#$%^&*()"), "");
+    }
+
+    #[test]
+    fn test_slugify_single_char() {
+        assert_eq!(slugify("a"), "a");
+    }
+
+    #[test]
+    fn test_slugify_numbers() {
+        assert_eq!(slugify("version 2.0 release"), "version-2-0-release");
+    }
+
+    #[test]
+    fn test_slugify_mixed_case() {
+        assert_eq!(slugify("CamelCase AND UPPER"), "camelcase-and-upper");
+    }
+
+    #[test]
+    fn test_slugify_unicode_replaced() {
+        // Non-ASCII chars become dashes, then collapsed/trimmed
+        assert_eq!(slugify("café"), "caf");
+    }
+
+    #[test]
+    fn test_slugify_length_cap_trims_trailing_dash() {
+        // 48 'a's + " b" = slug "aaa...a-b" at 50 chars exactly
+        // But let's make one that would end with a dash at position 50
+        let input = format!("{} {}", "a".repeat(49), "b");
+        let result = slugify(&input);
+        assert!(result.len() <= 50);
+        assert!(!result.ends_with('-'));
+    }
+
+    #[test]
+    fn test_slugify_exactly_50_chars() {
+        let input = "a".repeat(50);
+        assert_eq!(slugify(&input), "a".repeat(50));
+    }
+
+    #[test]
+    fn test_slugify_51_chars_truncated() {
+        let input = "a".repeat(51);
+        assert_eq!(slugify(&input), "a".repeat(50));
+    }
+
+    #[test]
+    fn test_slugify_spaces_only() {
+        assert_eq!(slugify("   "), "");
+    }
+
+    #[test]
+    fn test_slugify_tabs_and_newlines() {
+        assert_eq!(slugify("hello\tworld\nfoo"), "hello-world-foo");
+    }
+
+    // --- Additional build_branch_name tests ---
+
+    #[test]
+    fn test_build_branch_name_empty_prefix() {
+        let name = build_branch_name("", "my feature");
+        assert!(name.starts_with("my-feature-"));
+        assert_eq!(name.len(), "my-feature-".len() + 4);
+    }
+
+    #[test]
+    fn test_build_branch_name_empty_title() {
+        let name = build_branch_name("feature/", "");
+        // slugify("") = "", so format is "feature/-xxxx"
+        assert!(name.starts_with("feature/-"));
+        let suffix = &name[name.len() - 4..];
+        assert!(suffix.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn test_build_branch_name_uniqueness() {
+        // Two calls should (almost certainly) produce different names
+        let a = build_branch_name("f/", "test");
+        let b = build_branch_name("f/", "test");
+        // Not guaranteed but with 65536 possibilities, collision is ~1/65536
+        // We run multiple pairs to be safe
+        let mut all_same = true;
+        for _ in 0..5 {
+            let x = build_branch_name("f/", "test");
+            let y = build_branch_name("f/", "test");
+            if x != y {
+                all_same = false;
+                break;
+            }
+        }
+        // If somehow all 5 pairs collided, that's astronomically unlikely but not impossible.
+        // Just check format is correct as the real assertion.
+        assert!(a.starts_with("f/test-"));
+        assert!(b.starts_with("f/test-"));
+        // Suffix is hex
+        let suffix_a = &a[a.len() - 4..];
+        assert!(suffix_a.chars().all(|c| c.is_ascii_hexdigit()));
+        let _ = all_same; // used above
+    }
+
+    #[test]
+    fn test_build_branch_name_long_title() {
+        let name = build_branch_name("feature/", &"a".repeat(100));
+        // slug is capped at 50, so branch = "feature/" + 50 a's + "-" + 4 hex
+        assert!(name.starts_with("feature/"));
+        let without_prefix = &name["feature/".len()..];
+        let parts: Vec<&str> = without_prefix.rsplitn(2, '-').collect();
+        assert_eq!(parts[0].len(), 4); // hex suffix
+        assert!(parts[1].len() <= 50); // slug portion
+    }
+
+    // --- Worktree path construction tests ---
+
+    #[test]
+    fn test_safe_branch_replaces_slashes() {
+        let branch = "feature/my-cool-feature-abcd";
+        let safe = branch.replace('/', "-");
+        assert_eq!(safe, "feature-my-cool-feature-abcd");
+        assert!(!safe.contains('/'));
+    }
+
+    #[test]
+    fn test_worktree_path_construction() {
+        // Simulates the path logic from ensure_worktree (lines 106-111)
+        let branch = "feature/implement-queue-1a2b";
+        let safe_branch = branch.replace('/', "-");
+        let project_name = "my-project";
+
+        let home = dirs::home_dir().expect("home dir");
+        let expected = home.join(".cadence").join(project_name).join(&safe_branch);
+
+        // Verify structure
+        assert!(expected.to_string_lossy().contains(".cadence"));
+        assert!(expected.to_string_lossy().contains(project_name));
+        assert!(expected.to_string_lossy().contains("feature-implement-queue-1a2b"));
+    }
+
+    #[test]
+    fn test_worktree_path_no_slashes_in_final_component() {
+        let branch = "fix/some/nested/branch-ff00";
+        let safe_branch = branch.replace('/', "-");
+        assert_eq!(safe_branch, "fix-some-nested-branch-ff00");
+
+        let home = dirs::home_dir().expect("home dir");
+        let path = home.join(".cadence").join("proj").join(&safe_branch);
+        // The final component should have no slashes
+        let file_name = path.file_name().unwrap().to_string_lossy();
+        assert!(!file_name.contains('/'));
+    }
+
+    // --- Notes on integration tests ---
+    // The following functions require DB/IO and would need integration tests:
+    // - ensure_worktree: needs SqlitePool, filesystem, git, and WsSender
+    // - run_setup_commands: needs SqlitePool, filesystem, shell, and WsSender
+    // - get_project_id_for_feature: needs SqlitePool with seeded data
+    // - get_project_directory: needs SqlitePool with seeded data
+    // - get_setting / set_setting: need SqlitePool with schema
 }

@@ -721,3 +721,360 @@ async fn prepare_worktree(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::sync::mpsc;
+
+    fn make_sender() -> (WsSender, mpsc::UnboundedReceiver<Message>) {
+        mpsc::unbounded_channel()
+    }
+
+    fn recv_envelope(rx: &mut mpsc::UnboundedReceiver<Message>) -> WsEnvelope {
+        match rx.try_recv().unwrap() {
+            Message::Text(text) => serde_json::from_str::<WsEnvelope>(&text).unwrap(),
+            _ => panic!("expected text message"),
+        }
+    }
+
+    fn make_envelope(action: &str, payload: serde_json::Value) -> WsEnvelope {
+        WsEnvelope {
+            id: "test-id-123".to_string(),
+            domain: "workflow".to_string(),
+            action: action.to_string(),
+            r#ref: None,
+            payload,
+        }
+    }
+
+    // --- send_workflow_error tests ---
+
+    #[test]
+    fn test_send_workflow_error_produces_correct_envelope() {
+        let (tx, mut rx) = make_sender();
+        send_workflow_error(&tx, "ref-42", "NO_ENGINE", "Engine not found");
+
+        let env = recv_envelope(&mut rx);
+        assert_eq!(env.domain, "workflow");
+        assert_eq!(env.action, "error");
+        assert_eq!(env.r#ref.as_deref(), Some("ref-42"));
+
+        let payload: SessionErrorPayload = serde_json::from_value(env.payload).unwrap();
+        assert_eq!(payload.code, "NO_ENGINE");
+        assert_eq!(payload.message, "Engine not found");
+    }
+
+    // --- parse_payload tests ---
+
+    #[test]
+    fn test_parse_payload_valid() {
+        let (tx, mut _rx) = make_sender();
+        let envelope = make_envelope("skip_item", serde_json::json!({"feature_id": 1, "item_id": 5}));
+        let result = parse_payload::<WorkflowSkipItemPayload>(&envelope, &tx);
+        assert!(result.is_some());
+        let p = result.unwrap();
+        assert_eq!(p.feature_id, 1);
+        assert_eq!(p.item_id, 5);
+    }
+
+    #[test]
+    fn test_parse_payload_invalid_sends_error() {
+        let (tx, mut rx) = make_sender();
+        let envelope = make_envelope("skip_item", serde_json::json!({"wrong_field": true}));
+        let result = parse_payload::<WorkflowSkipItemPayload>(&envelope, &tx);
+        assert!(result.is_none());
+
+        let env = recv_envelope(&mut rx);
+        assert_eq!(env.action, "error");
+        let payload: SessionErrorPayload = serde_json::from_value(env.payload).unwrap();
+        assert_eq!(payload.code, "INVALID_PAYLOAD");
+    }
+
+    // --- parse_and_get_engine tests ---
+
+    #[test]
+    fn test_parse_and_get_engine_invalid_payload() {
+        let (tx, mut rx) = make_sender();
+        let envelope = make_envelope("continue", serde_json::json!({}));
+        let result = parse_and_get_engine::<WorkflowContinuePayload>(&envelope, &tx);
+        assert!(result.is_none());
+
+        let env = recv_envelope(&mut rx);
+        let payload: SessionErrorPayload = serde_json::from_value(env.payload).unwrap();
+        assert_eq!(payload.code, "INVALID_PAYLOAD");
+    }
+
+    #[test]
+    fn test_parse_and_get_engine_no_engine() {
+        let (tx, mut rx) = make_sender();
+        // Valid payload but no engine registered for feature 99999
+        let envelope = make_envelope("continue", serde_json::json!({"feature_id": 99999}));
+        let result = parse_and_get_engine::<WorkflowContinuePayload>(&envelope, &tx);
+        assert!(result.is_none());
+
+        let env = recv_envelope(&mut rx);
+        let payload: SessionErrorPayload = serde_json::from_value(env.payload).unwrap();
+        assert_eq!(payload.code, "NO_ENGINE");
+        assert!(payload.message.contains("99999"));
+    }
+
+    // --- handle_workflow_action unknown action test ---
+
+    #[tokio::test]
+    async fn test_unknown_workflow_action_returns_error() {
+        let (tx, mut rx) = make_sender();
+        let sdk_sessions: SdkSessions = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        let app_state = AppState {
+            read_pool: pool.clone(),
+            write_pool: pool,
+            electron_port: 0,
+            max_parallel_agents: 3,
+            agent_timeout_minutes: 30,
+        };
+
+        let envelope = make_envelope("totally_bogus_action", serde_json::json!({}));
+        handle_workflow_action(envelope, &tx, &sdk_sessions, &app_state).await;
+
+        let env = recv_envelope(&mut rx);
+        assert_eq!(env.action, "error");
+        let payload: SessionErrorPayload = serde_json::from_value(env.payload).unwrap();
+        assert_eq!(payload.code, "UNKNOWN_ACTION");
+        assert!(payload.message.contains("totally_bogus_action"));
+    }
+
+    // --- Action routing sends appropriate errors for missing engines ---
+
+    #[tokio::test]
+    async fn test_continue_without_engine_returns_no_engine() {
+        let (tx, mut rx) = make_sender();
+        let sdk_sessions: SdkSessions = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        let app_state = AppState {
+            read_pool: pool.clone(),
+            write_pool: pool,
+            electron_port: 0,
+            max_parallel_agents: 3,
+            agent_timeout_minutes: 30,
+        };
+
+        let envelope = make_envelope("continue", serde_json::json!({"feature_id": 12345}));
+        handle_workflow_action(envelope, &tx, &sdk_sessions, &app_state).await;
+
+        let env = recv_envelope(&mut rx);
+        assert_eq!(env.action, "error");
+        let payload: SessionErrorPayload = serde_json::from_value(env.payload).unwrap();
+        assert_eq!(payload.code, "NO_ENGINE");
+    }
+
+    #[tokio::test]
+    async fn test_skip_item_without_engine_returns_no_engine() {
+        let (tx, mut rx) = make_sender();
+        let sdk_sessions: SdkSessions = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        let app_state = AppState {
+            read_pool: pool.clone(),
+            write_pool: pool,
+            electron_port: 0,
+            max_parallel_agents: 3,
+            agent_timeout_minutes: 30,
+        };
+
+        let envelope = make_envelope("skip_item", serde_json::json!({"feature_id": 12345, "item_id": 1}));
+        handle_workflow_action(envelope, &tx, &sdk_sessions, &app_state).await;
+
+        let env = recv_envelope(&mut rx);
+        let payload: SessionErrorPayload = serde_json::from_value(env.payload).unwrap();
+        assert_eq!(payload.code, "NO_ENGINE");
+    }
+
+    #[tokio::test]
+    async fn test_retry_item_without_engine_returns_no_engine() {
+        let (tx, mut rx) = make_sender();
+        let sdk_sessions: SdkSessions = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        let app_state = AppState {
+            read_pool: pool.clone(),
+            write_pool: pool,
+            electron_port: 0,
+            max_parallel_agents: 3,
+            agent_timeout_minutes: 30,
+        };
+
+        let envelope = make_envelope("retry_item", serde_json::json!({"feature_id": 12345, "item_id": 1}));
+        handle_workflow_action(envelope, &tx, &sdk_sessions, &app_state).await;
+
+        let env = recv_envelope(&mut rx);
+        let payload: SessionErrorPayload = serde_json::from_value(env.payload).unwrap();
+        assert_eq!(payload.code, "NO_ENGINE");
+    }
+
+    #[tokio::test]
+    async fn test_set_autonomy_without_engine_returns_no_engine() {
+        let (tx, mut rx) = make_sender();
+        let sdk_sessions: SdkSessions = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        let app_state = AppState {
+            read_pool: pool.clone(),
+            write_pool: pool,
+            electron_port: 0,
+            max_parallel_agents: 3,
+            agent_timeout_minutes: 30,
+        };
+
+        let envelope = make_envelope("set_autonomy", serde_json::json!({"feature_id": 12345, "level": 2}));
+        handle_workflow_action(envelope, &tx, &sdk_sessions, &app_state).await;
+
+        let env = recv_envelope(&mut rx);
+        let payload: SessionErrorPayload = serde_json::from_value(env.payload).unwrap();
+        assert_eq!(payload.code, "NO_ENGINE");
+    }
+
+    #[tokio::test]
+    async fn test_permission_respond_without_engine_returns_no_engine() {
+        let (tx, mut rx) = make_sender();
+        let sdk_sessions: SdkSessions = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        let app_state = AppState {
+            read_pool: pool.clone(),
+            write_pool: pool,
+            electron_port: 0,
+            max_parallel_agents: 3,
+            agent_timeout_minutes: 30,
+        };
+
+        let envelope = make_envelope("permission.respond", serde_json::json!({
+            "feature_id": 12345,
+            "queue_item_id": 1,
+            "request_id": "r1",
+            "decision": "allow_once"
+        }));
+        handle_workflow_action(envelope, &tx, &sdk_sessions, &app_state).await;
+
+        let env = recv_envelope(&mut rx);
+        let payload: SessionErrorPayload = serde_json::from_value(env.payload).unwrap();
+        assert_eq!(payload.code, "NO_ENGINE");
+    }
+
+    #[tokio::test]
+    async fn test_prompt_send_without_engine_returns_no_engine() {
+        let (tx, mut rx) = make_sender();
+        let sdk_sessions: SdkSessions = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        let app_state = AppState {
+            read_pool: pool.clone(),
+            write_pool: pool,
+            electron_port: 0,
+            max_parallel_agents: 3,
+            agent_timeout_minutes: 30,
+        };
+
+        let envelope = make_envelope("prompt.send", serde_json::json!({
+            "feature_id": 12345,
+            "queue_item_id": 1,
+            "text": "hello"
+        }));
+        handle_workflow_action(envelope, &tx, &sdk_sessions, &app_state).await;
+
+        let env = recv_envelope(&mut rx);
+        let payload: SessionErrorPayload = serde_json::from_value(env.payload).unwrap();
+        assert_eq!(payload.code, "NO_ENGINE");
+    }
+
+    #[tokio::test]
+    async fn test_mark_done_without_engine_returns_no_engine() {
+        let (tx, mut rx) = make_sender();
+        let sdk_sessions: SdkSessions = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        let app_state = AppState {
+            read_pool: pool.clone(),
+            write_pool: pool,
+            electron_port: 0,
+            max_parallel_agents: 3,
+            agent_timeout_minutes: 30,
+        };
+
+        let envelope = make_envelope("mark_done", serde_json::json!({"feature_id": 12345, "queue_item_id": 1}));
+        handle_workflow_action(envelope, &tx, &sdk_sessions, &app_state).await;
+
+        let env = recv_envelope(&mut rx);
+        let payload: SessionErrorPayload = serde_json::from_value(env.payload).unwrap();
+        assert_eq!(payload.code, "NO_ENGINE");
+    }
+
+    // --- Invalid payload routing tests ---
+
+    #[tokio::test]
+    async fn test_continue_with_invalid_payload_returns_invalid_payload() {
+        let (tx, mut rx) = make_sender();
+        let sdk_sessions: SdkSessions = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        let app_state = AppState {
+            read_pool: pool.clone(),
+            write_pool: pool,
+            electron_port: 0,
+            max_parallel_agents: 3,
+            agent_timeout_minutes: 30,
+        };
+
+        let envelope = make_envelope("continue", serde_json::json!({"wrong": true}));
+        handle_workflow_action(envelope, &tx, &sdk_sessions, &app_state).await;
+
+        let env = recv_envelope(&mut rx);
+        let payload: SessionErrorPayload = serde_json::from_value(env.payload).unwrap();
+        assert_eq!(payload.code, "INVALID_PAYLOAD");
+    }
+
+    #[tokio::test]
+    async fn test_skip_item_with_invalid_payload_returns_invalid_payload() {
+        let (tx, mut rx) = make_sender();
+        let sdk_sessions: SdkSessions = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        let app_state = AppState {
+            read_pool: pool.clone(),
+            write_pool: pool,
+            electron_port: 0,
+            max_parallel_agents: 3,
+            agent_timeout_minutes: 30,
+        };
+
+        let envelope = make_envelope("skip_item", serde_json::json!({}));
+        handle_workflow_action(envelope, &tx, &sdk_sessions, &app_state).await;
+
+        let env = recv_envelope(&mut rx);
+        let payload: SessionErrorPayload = serde_json::from_value(env.payload).unwrap();
+        assert_eq!(payload.code, "INVALID_PAYLOAD");
+    }
+
+    // --- to_value helper test ---
+
+    #[test]
+    fn test_to_value_helper() {
+        let val = to_value(WorkflowAcknowledgedPayload {
+            feature_id: 1,
+            action: "test".into(),
+        });
+        assert_eq!(val["feature_id"], 1);
+        assert_eq!(val["action"], "test");
+    }
+
+    // --- Engine registry tests ---
+
+    #[test]
+    fn test_get_engine_returns_none_for_unknown_feature() {
+        assert!(get_engine(999888777).is_none());
+    }
+
+    #[test]
+    fn test_remove_engine_no_panic_for_unknown_feature() {
+        // Should not panic when removing a non-existent engine
+        remove_engine(999888776);
+    }
+
+    #[test]
+    fn test_tracked_feature_ids_type() {
+        // Just verify it returns a Vec<i64> without panicking
+        let _ids: Vec<i64> = tracked_feature_ids();
+    }
+}

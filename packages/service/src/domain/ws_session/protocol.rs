@@ -661,6 +661,496 @@ mod tests {
         assert_eq!(p.workflow_type.as_deref(), Some("feature_build"));
     }
 
+    // --- Workflow payload serialization/deserialization tests ---
+
+    #[test]
+    fn test_workflow_feature_start_payload_roundtrip() {
+        let p = WorkflowFeatureStartPayload {
+            feature_id: 42,
+            project_id: Some(7),
+            title: Some("Dark mode".into()),
+            workflow_type: Some("feature_build".into()),
+        };
+        let v = serde_json::to_value(&p).unwrap();
+        let deserialized: WorkflowFeatureStartPayload = serde_json::from_value(v).unwrap();
+        assert_eq!(deserialized.feature_id, 42);
+        assert_eq!(deserialized.project_id, Some(7));
+        assert_eq!(deserialized.title.as_deref(), Some("Dark mode"));
+        assert_eq!(deserialized.workflow_type.as_deref(), Some("feature_build"));
+    }
+
+    #[test]
+    fn test_workflow_feature_start_payload_minimal() {
+        let json = serde_json::json!({"feature_id": 1});
+        let p: WorkflowFeatureStartPayload = serde_json::from_value(json).unwrap();
+        assert_eq!(p.feature_id, 1);
+        assert!(p.project_id.is_none());
+        assert!(p.title.is_none());
+        assert!(p.workflow_type.is_none());
+    }
+
+    #[test]
+    fn test_workflow_feature_start_payload_missing_feature_id() {
+        let json = serde_json::json!({"project_id": 1});
+        let result = serde_json::from_value::<WorkflowFeatureStartPayload>(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_workflow_feature_start_response_roundtrip() {
+        let p = WorkflowFeatureStartResponse {
+            feature_id: 10,
+            workflow_type: "feature_build".into(),
+        };
+        let v = serde_json::to_value(&p).unwrap();
+        let d: WorkflowFeatureStartResponse = serde_json::from_value(v).unwrap();
+        assert_eq!(d.feature_id, 10);
+        assert_eq!(d.workflow_type, "feature_build");
+    }
+
+    #[test]
+    fn test_workflow_approval_payload_roundtrip() {
+        let p = WorkflowApprovalPayload {
+            feature_id: 5,
+            request_id: "req-123".into(),
+            approved: true,
+            feedback: Some("Looks good".into()),
+        };
+        let json = serde_json::to_string(&p).unwrap();
+        let d: WorkflowApprovalPayload = serde_json::from_str(&json).unwrap();
+        assert_eq!(d.feature_id, 5);
+        assert!(d.approved);
+        assert_eq!(d.feedback.as_deref(), Some("Looks good"));
+    }
+
+    #[test]
+    fn test_workflow_approval_payload_no_feedback() {
+        let json = serde_json::json!({
+            "feature_id": 5,
+            "request_id": "req-1",
+            "approved": false
+        });
+        let p: WorkflowApprovalPayload = serde_json::from_value(json).unwrap();
+        assert!(!p.approved);
+        assert!(p.feedback.is_none());
+    }
+
+    #[test]
+    fn test_workflow_skip_item_payload_roundtrip() {
+        let p = WorkflowSkipItemPayload { feature_id: 1, item_id: 99 };
+        let v = serde_json::to_value(&p).unwrap();
+        let d: WorkflowSkipItemPayload = serde_json::from_value(v).unwrap();
+        assert_eq!(d.feature_id, 1);
+        assert_eq!(d.item_id, 99);
+    }
+
+    #[test]
+    fn test_workflow_retry_item_payload_roundtrip() {
+        let p = WorkflowRetryItemPayload { feature_id: 2, item_id: 50 };
+        let v = serde_json::to_value(&p).unwrap();
+        let d: WorkflowRetryItemPayload = serde_json::from_value(v).unwrap();
+        assert_eq!(d.feature_id, 2);
+        assert_eq!(d.item_id, 50);
+    }
+
+    #[test]
+    fn test_workflow_continue_payload_roundtrip() {
+        let p = WorkflowContinuePayload { feature_id: 7 };
+        let v = serde_json::to_value(&p).unwrap();
+        let d: WorkflowContinuePayload = serde_json::from_value(v).unwrap();
+        assert_eq!(d.feature_id, 7);
+    }
+
+    #[test]
+    fn test_workflow_start_build_payload_roundtrip() {
+        let p = WorkflowStartBuildPayload { feature_id: 3 };
+        let v = serde_json::to_value(&p).unwrap();
+        let d: WorkflowStartBuildPayload = serde_json::from_value(v).unwrap();
+        assert_eq!(d.feature_id, 3);
+    }
+
+    #[test]
+    fn test_workflow_populate_queue_payload_roundtrip() {
+        let p = WorkflowPopulateQueuePayload { feature_id: 4, plan_id: Some(10) };
+        let v = serde_json::to_value(&p).unwrap();
+        let d: WorkflowPopulateQueuePayload = serde_json::from_value(v).unwrap();
+        assert_eq!(d.feature_id, 4);
+        assert_eq!(d.plan_id, Some(10));
+    }
+
+    #[test]
+    fn test_workflow_populate_queue_payload_no_plan() {
+        let json = serde_json::json!({"feature_id": 4});
+        let p: WorkflowPopulateQueuePayload = serde_json::from_value(json).unwrap();
+        assert!(p.plan_id.is_none());
+    }
+
+    #[test]
+    fn test_workflow_permission_respond_payload_roundtrip() {
+        let p = WorkflowPermissionRespondPayload {
+            feature_id: 1,
+            queue_item_id: 5,
+            request_id: "r1".into(),
+            decision: PermissionDecision::AllowFuture,
+            feedback: Some("ok".into()),
+            updated_input: Some(serde_json::json!({"key": "val"})),
+        };
+        let v = serde_json::to_value(&p).unwrap();
+        let d: WorkflowPermissionRespondPayload = serde_json::from_value(v).unwrap();
+        assert_eq!(d.decision, PermissionDecision::AllowFuture);
+        assert_eq!(d.queue_item_id, 5);
+        assert_eq!(d.updated_input.unwrap()["key"], "val");
+    }
+
+    #[test]
+    fn test_workflow_prompt_send_payload_roundtrip() {
+        let p = WorkflowPromptSendPayload {
+            feature_id: 1,
+            queue_item_id: 2,
+            text: "hello agent".into(),
+            images: Some(vec!["base64data".into()]),
+        };
+        let v = serde_json::to_value(&p).unwrap();
+        let d: WorkflowPromptSendPayload = serde_json::from_value(v).unwrap();
+        assert_eq!(d.text, "hello agent");
+        assert_eq!(d.images.unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_workflow_set_autonomy_payload_roundtrip() {
+        let p = WorkflowSetAutonomyPayload { feature_id: 1, level: 3 };
+        let v = serde_json::to_value(&p).unwrap();
+        let d: WorkflowSetAutonomyPayload = serde_json::from_value(v).unwrap();
+        assert_eq!(d.level, 3);
+    }
+
+    #[test]
+    fn test_workflow_interrupt_payload_roundtrip() {
+        let p = WorkflowInterruptPayload { feature_id: 1, queue_item_id: 42 };
+        let v = serde_json::to_value(&p).unwrap();
+        let d: WorkflowInterruptPayload = serde_json::from_value(v).unwrap();
+        assert_eq!(d.queue_item_id, 42);
+    }
+
+    #[test]
+    fn test_workflow_start_session_payload_roundtrip() {
+        let p = WorkflowStartSessionPayload {
+            feature_id: 1,
+            prompt: "fix the bug".into(),
+            images: None,
+        };
+        let v = serde_json::to_value(&p).unwrap();
+        let d: WorkflowStartSessionPayload = serde_json::from_value(v).unwrap();
+        assert_eq!(d.prompt, "fix the bug");
+        assert!(d.images.is_none());
+    }
+
+    #[test]
+    fn test_workflow_start_refine_payload_roundtrip() {
+        let p = WorkflowStartRefinePayload {
+            feature_id: 1,
+            description: "refine the plan".into(),
+            images: Some(vec![]),
+        };
+        let v = serde_json::to_value(&p).unwrap();
+        let d: WorkflowStartRefinePayload = serde_json::from_value(v).unwrap();
+        assert_eq!(d.description, "refine the plan");
+    }
+
+    #[test]
+    fn test_workflow_start_review_fixer_payload_roundtrip() {
+        let p = WorkflowStartReviewFixerPayload {
+            feature_id: 1,
+            comments: "fix lint errors".into(),
+        };
+        let v = serde_json::to_value(&p).unwrap();
+        let d: WorkflowStartReviewFixerPayload = serde_json::from_value(v).unwrap();
+        assert_eq!(d.comments, "fix lint errors");
+    }
+
+    #[test]
+    fn test_workflow_mark_done_payload_roundtrip() {
+        let p = WorkflowMarkDonePayload { feature_id: 1, queue_item_id: 10 };
+        let v = serde_json::to_value(&p).unwrap();
+        let d: WorkflowMarkDonePayload = serde_json::from_value(v).unwrap();
+        assert_eq!(d.queue_item_id, 10);
+    }
+
+    #[test]
+    fn test_workflow_start_prd_payload_roundtrip() {
+        let p = WorkflowStartPrdPayload {
+            feature_id: 3,
+            description: "build a dashboard".into(),
+        };
+        let v = serde_json::to_value(&p).unwrap();
+        let d: WorkflowStartPrdPayload = serde_json::from_value(v).unwrap();
+        assert_eq!(d.feature_id, 3);
+        assert_eq!(d.description, "build a dashboard");
+    }
+
+    // --- Server → Client workflow event payloads ---
+
+    #[test]
+    fn test_workflow_item_event_payload_roundtrip() {
+        let p = WorkflowItemEventPayload {
+            feature_id: 1,
+            item_id: 5,
+            item_type: "execute".into(),
+            phase_title: Some("Phase 1".into()),
+            status: "running".into(),
+        };
+        let v = serde_json::to_value(&p).unwrap();
+        let d: WorkflowItemEventPayload = serde_json::from_value(v).unwrap();
+        assert_eq!(d.item_type, "execute");
+        assert_eq!(d.phase_title.as_deref(), Some("Phase 1"));
+    }
+
+    #[test]
+    fn test_workflow_agent_started_payload_roundtrip() {
+        let p = WorkflowAgentStartedPayload {
+            feature_id: 1,
+            queue_item_id: 2,
+            session_id: 100,
+            agent_type: "execute".into(),
+        };
+        let v = serde_json::to_value(&p).unwrap();
+        let d: WorkflowAgentStartedPayload = serde_json::from_value(v).unwrap();
+        assert_eq!(d.session_id, 100);
+        assert_eq!(d.agent_type, "execute");
+    }
+
+    #[test]
+    fn test_workflow_item_completed_payload_roundtrip() {
+        let p = WorkflowItemCompletedPayload {
+            feature_id: 1,
+            queue_item_id: 3,
+            result: Some("success".into()),
+        };
+        let v = serde_json::to_value(&p).unwrap();
+        let d: WorkflowItemCompletedPayload = serde_json::from_value(v).unwrap();
+        assert_eq!(d.result.as_deref(), Some("success"));
+    }
+
+    #[test]
+    fn test_workflow_item_error_payload_roundtrip() {
+        let p = WorkflowItemErrorPayload {
+            feature_id: 1,
+            queue_item_id: 4,
+            error: "timeout".into(),
+        };
+        let v = serde_json::to_value(&p).unwrap();
+        let d: WorkflowItemErrorPayload = serde_json::from_value(v).unwrap();
+        assert_eq!(d.error, "timeout");
+    }
+
+    #[test]
+    fn test_workflow_interrupted_payload_roundtrip() {
+        let p = WorkflowInterruptedPayload {
+            feature_id: 1,
+            queue_item_id: 5,
+            status: "interrupted".into(),
+        };
+        let v = serde_json::to_value(&p).unwrap();
+        let d: WorkflowInterruptedPayload = serde_json::from_value(v).unwrap();
+        assert_eq!(d.status, "interrupted");
+    }
+
+    #[test]
+    fn test_workflow_autonomy_updated_payload_roundtrip() {
+        let p = WorkflowAutonomyUpdatedPayload { feature_id: 1, level: 5 };
+        let v = serde_json::to_value(&p).unwrap();
+        let d: WorkflowAutonomyUpdatedPayload = serde_json::from_value(v).unwrap();
+        assert_eq!(d.level, 5);
+    }
+
+    #[test]
+    fn test_workflow_queue_populated_payload_roundtrip() {
+        let p = WorkflowQueuePopulatedPayload { feature_id: 1, item_count: 12 };
+        let v = serde_json::to_value(&p).unwrap();
+        let d: WorkflowQueuePopulatedPayload = serde_json::from_value(v).unwrap();
+        assert_eq!(d.item_count, 12);
+    }
+
+    #[test]
+    fn test_workflow_acknowledged_payload_roundtrip() {
+        let p = WorkflowAcknowledgedPayload {
+            feature_id: 1,
+            action: "mark_done".into(),
+        };
+        let v = serde_json::to_value(&p).unwrap();
+        let d: WorkflowAcknowledgedPayload = serde_json::from_value(v).unwrap();
+        assert_eq!(d.action, "mark_done");
+    }
+
+    #[test]
+    fn test_workflow_approval_resolved_payload_roundtrip() {
+        let p = WorkflowApprovalResolvedPayload { feature_id: 1, approved: false };
+        let v = serde_json::to_value(&p).unwrap();
+        let d: WorkflowApprovalResolvedPayload = serde_json::from_value(v).unwrap();
+        assert!(!d.approved);
+    }
+
+    #[test]
+    fn test_workflow_agent_stream_blocks_payload_roundtrip() {
+        let p = WorkflowAgentStreamBlocksPayload {
+            queue_item_id: 1,
+            session_id: 2,
+            blocks: vec![serde_json::json!({"type": "text", "content": "hello"})],
+        };
+        let v = serde_json::to_value(&p).unwrap();
+        let d: WorkflowAgentStreamBlocksPayload = serde_json::from_value(v).unwrap();
+        assert_eq!(d.blocks.len(), 1);
+    }
+
+    #[test]
+    fn test_workflow_agent_stream_error_payload_roundtrip() {
+        let p = WorkflowAgentStreamErrorPayload {
+            queue_item_id: 1,
+            session_id: 2,
+            msg_type: "error".into(),
+            error: "bad things".into(),
+        };
+        let json = serde_json::to_value(&p).unwrap();
+        // Verify "type" rename
+        assert_eq!(json["type"], "error");
+        assert!(json.get("msg_type").is_none());
+        let d: WorkflowAgentStreamErrorPayload = serde_json::from_value(json).unwrap();
+        assert_eq!(d.msg_type, "error");
+        assert_eq!(d.error, "bad things");
+    }
+
+    #[test]
+    fn test_workflow_agent_stream_result_payload_type_rename() {
+        let p = WorkflowAgentStreamResultPayload {
+            queue_item_id: 1,
+            session_id: 2,
+            msg_type: "result".into(),
+        };
+        let json = serde_json::to_value(&p).unwrap();
+        assert_eq!(json["type"], "result");
+        assert!(json.get("msg_type").is_none());
+    }
+
+    #[test]
+    fn test_workflow_worktree_creating_payload_roundtrip() {
+        let p = WorkflowWorktreeCreatingPayload {
+            feature_id: 1,
+            branch: "feat/dark-mode".into(),
+            path: "/tmp/worktree".into(),
+        };
+        let v = serde_json::to_value(&p).unwrap();
+        let d: WorkflowWorktreeCreatingPayload = serde_json::from_value(v).unwrap();
+        assert_eq!(d.branch, "feat/dark-mode");
+    }
+
+    #[test]
+    fn test_workflow_worktree_created_payload_roundtrip() {
+        let p = WorkflowWorktreeCreatedPayload {
+            feature_id: 1,
+            path: "/tmp/wt".into(),
+            branch: "feat/x".into(),
+        };
+        let v = serde_json::to_value(&p).unwrap();
+        let d: WorkflowWorktreeCreatedPayload = serde_json::from_value(v).unwrap();
+        assert_eq!(d.path, "/tmp/wt");
+    }
+
+    #[test]
+    fn test_workflow_permission_request_payload_roundtrip() {
+        let p = WorkflowPermissionRequestPayload {
+            feature_id: 1,
+            queue_item_id: 2,
+            request_id: "perm-1".into(),
+            tool_name: "Bash".into(),
+            tool_input: serde_json::json!({"command": "ls"}),
+            description: Some("list files".into()),
+            pattern: Some("Bash(ls:*)".into()),
+        };
+        let v = serde_json::to_value(&p).unwrap();
+        let d: WorkflowPermissionRequestPayload = serde_json::from_value(v).unwrap();
+        assert_eq!(d.tool_name, "Bash");
+        assert_eq!(d.pattern.as_deref(), Some("Bash(ls:*)"));
+    }
+
+    #[test]
+    fn test_workflow_item_update_payload_roundtrip() {
+        let p = WorkflowItemUpdatePayload {
+            feature_id: 1,
+            id: 5,
+            status: "completed".into(),
+            started_at: Some("2026-01-01T00:00:00Z".into()),
+            ended_at: Some("2026-01-01T00:01:00Z".into()),
+            result: Some("ok".into()),
+            agent_session_id: Some(42),
+        };
+        let v = serde_json::to_value(&p).unwrap();
+        let d: WorkflowItemUpdatePayload = serde_json::from_value(v).unwrap();
+        assert_eq!(d.status, "completed");
+        assert_eq!(d.agent_session_id, Some(42));
+    }
+
+    // --- PermissionDecision serialization ---
+
+    #[test]
+    fn test_permission_decision_serialization() {
+        assert_eq!(serde_json::to_value(&PermissionDecision::AllowOnce).unwrap(), "allow_once");
+        assert_eq!(serde_json::to_value(&PermissionDecision::AllowFuture).unwrap(), "allow_future");
+        assert_eq!(serde_json::to_value(&PermissionDecision::Deny).unwrap(), "deny");
+    }
+
+    #[test]
+    fn test_permission_decision_deserialization() {
+        let d: PermissionDecision = serde_json::from_value(serde_json::json!("allow_once")).unwrap();
+        assert_eq!(d, PermissionDecision::AllowOnce);
+        let d: PermissionDecision = serde_json::from_value(serde_json::json!("deny")).unwrap();
+        assert_eq!(d, PermissionDecision::Deny);
+    }
+
+    #[test]
+    fn test_permission_decision_invalid_variant() {
+        let result = serde_json::from_value::<PermissionDecision>(serde_json::json!("invalid"));
+        assert!(result.is_err());
+    }
+
+    // --- HasFeatureId trait ---
+
+    #[test]
+    fn test_has_feature_id_trait() {
+        let p = WorkflowSkipItemPayload { feature_id: 42, item_id: 1 };
+        assert_eq!(p.feature_id(), 42);
+
+        let p = WorkflowContinuePayload { feature_id: 99 };
+        assert_eq!(p.feature_id(), 99);
+
+        let p = WorkflowInterruptPayload { feature_id: 7, queue_item_id: 3 };
+        assert_eq!(p.feature_id(), 7);
+    }
+
+    // --- Envelope with workflow payloads ---
+
+    #[test]
+    fn test_envelope_with_workflow_payload_full_roundtrip() {
+        let payload = WorkflowSkipItemPayload { feature_id: 1, item_id: 5 };
+        let env = WsEnvelope::new("workflow", "skip_item", serde_json::to_value(&payload).unwrap());
+        let json_str: String = env.into();
+        let parsed = WsEnvelope::try_from(json_str).unwrap();
+        assert_eq!(parsed.domain, "workflow");
+        assert_eq!(parsed.action, "skip_item");
+        let inner: WorkflowSkipItemPayload = serde_json::from_value(parsed.payload).unwrap();
+        assert_eq!(inner.item_id, 5);
+    }
+
+    #[test]
+    fn test_reply_envelope_with_workflow_error() {
+        let error = SessionErrorPayload { code: "NO_ENGINE".into(), message: "No engine".into() };
+        let reply = WsEnvelope::reply("orig-id", "workflow", "error", serde_json::to_value(&error).unwrap());
+        assert_eq!(reply.r#ref.as_deref(), Some("orig-id"));
+        assert_eq!(reply.domain, "workflow");
+        assert_eq!(reply.action, "error");
+        let parsed: SessionErrorPayload = serde_json::from_value(reply.payload).unwrap();
+        assert_eq!(parsed.code, "NO_ENGINE");
+    }
+
     #[test]
     fn test_envelope_requires_id_field() {
         // Envelopes missing the `id` field must fail deserialization

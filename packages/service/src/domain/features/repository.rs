@@ -1269,4 +1269,473 @@ mod tests {
             .bind(fid).fetch_one(&pool).await.unwrap();
         assert_eq!(dvf_count.0, 0);
     }
+
+    #[tokio::test]
+    async fn test_set_feature_model_setting_invalid_type() {
+        let pool = setup_test_db().await;
+        let proj = create_test_project(&pool).await;
+        let fid = create_feature(&pool, proj, "Feature", "feature").await.unwrap();
+
+        let result = set_feature_model_setting(&pool, fid, "invalid_type", "model").await;
+        assert!(matches!(result, Err(AppError::BadRequest(_))));
+    }
+
+    #[tokio::test]
+    async fn test_override_phase_status_not_found() {
+        let pool = setup_test_db().await;
+        let result = override_phase_status(&pool, 9999, "completed").await;
+        assert!(matches!(result, Err(AppError::NotFound(_))));
+    }
+
+    #[tokio::test]
+    async fn test_reset_phase_not_found() {
+        let pool = setup_test_db().await;
+        let result = reset_phase(&pool, 9999).await;
+        assert!(matches!(result, Err(AppError::NotFound(_))));
+    }
+
+    #[tokio::test]
+    async fn test_reset_phase_next_phase_completed() {
+        let pool = setup_test_db().await;
+        let proj = create_test_project(&pool).await;
+        let fid = create_feature(&pool, proj, "Feature", "feature").await.unwrap();
+
+        let plan_res = sqlx::query("INSERT INTO plans (feature_id, title, status) VALUES (?, 'Plan', 'active')")
+            .bind(fid).execute(&pool).await.unwrap();
+        let plan_id = plan_res.last_insert_rowid();
+
+        let p1 = sqlx::query("INSERT INTO phases (plan_id, step_number, title, status) VALUES (?, 1, 'P1', 'completed')")
+            .bind(plan_id).execute(&pool).await.unwrap().last_insert_rowid();
+        sqlx::query("INSERT INTO phases (plan_id, step_number, title, status) VALUES (?, 2, 'P2', 'completed')")
+            .bind(plan_id).execute(&pool).await.unwrap();
+
+        let result = reset_phase(&pool, p1).await;
+        assert!(matches!(result, Err(AppError::BadRequest(_))));
+    }
+
+    #[tokio::test]
+    async fn test_is_empty_false_active_session() {
+        let pool = setup_test_db().await;
+        let proj = create_test_project(&pool).await;
+        let fid = create_feature(&pool, proj, "Feature", "feature").await.unwrap();
+
+        sqlx::query("INSERT INTO agent_sessions (feature_id, title, status) VALUES (?, 'sess', 'running')")
+            .bind(fid).execute(&pool).await.unwrap();
+
+        let empty = is_empty(&pool, fid).await.unwrap();
+        assert!(!empty);
+    }
+
+    #[tokio::test]
+    async fn test_is_empty_nonexistent_feature() {
+        let pool = setup_test_db().await;
+        let empty = is_empty(&pool, 9999).await.unwrap();
+        assert!(empty);
+    }
+
+    #[tokio::test]
+    async fn test_is_empty_false_has_plan() {
+        let pool = setup_test_db().await;
+        let proj = create_test_project(&pool).await;
+        let fid = create_feature(&pool, proj, "Feature", "feature").await.unwrap();
+
+        sqlx::query("INSERT INTO plans (feature_id, title, status) VALUES (?, 'Plan', 'active')")
+            .bind(fid).execute(&pool).await.unwrap();
+
+        let empty = is_empty(&pool, fid).await.unwrap();
+        assert!(!empty);
+    }
+
+    #[tokio::test]
+    async fn test_get_prd() {
+        let pool = setup_test_db().await;
+        let proj = create_test_project(&pool).await;
+        let fid = create_feature(&pool, proj, "Feature", "feature").await.unwrap();
+
+        // No PRD initially
+        let prd = get_prd(&pool, fid).await.unwrap();
+        assert!(prd.is_none());
+
+        // Set PRD
+        sqlx::query("UPDATE features SET prd = 'my prd content' WHERE id = ?")
+            .bind(fid).execute(&pool).await.unwrap();
+
+        let prd = get_prd(&pool, fid).await.unwrap();
+        assert_eq!(prd.as_deref(), Some("my prd content"));
+    }
+
+    #[tokio::test]
+    async fn test_get_plan_progress_no_plan() {
+        let pool = setup_test_db().await;
+        let proj = create_test_project(&pool).await;
+        let fid = create_feature(&pool, proj, "Feature", "feature").await.unwrap();
+
+        let progress = get_plan_progress(&pool, fid).await.unwrap();
+        assert_eq!(progress.total, 0);
+        assert_eq!(progress.done, 0);
+    }
+
+    #[tokio::test]
+    async fn test_resolve_working_dir_session_type_skips_worktree() {
+        let pool = setup_test_db().await;
+        let proj_res = sqlx::query("INSERT INTO projects (name, path) VALUES ('Proj', '/tmp/proj')")
+            .execute(&pool).await.unwrap();
+        let proj = proj_res.last_insert_rowid();
+        let fid = create_feature(&pool, proj, "Session", "session").await.unwrap();
+
+        // Even with worktree_path set, session type should fall through to project path
+        sqlx::query("INSERT INTO feature_settings (feature_id, key, value) VALUES (?, 'worktree_path', '/tmp/wt')")
+            .bind(fid).execute(&pool).await.unwrap();
+
+        let dir = resolve_working_dir(&pool, fid, proj).await.unwrap();
+        assert_eq!(dir, Some("/tmp/proj".to_string()));
+    }
+
+    // ── Workflow Queue Tests ─────────────────────────────────────────
+
+    async fn setup_test_db_with_queue() -> SqlitePool {
+        let pool = setup_test_db().await;
+
+        sqlx::query(
+            r#"CREATE TABLE workflow_queue (
+                id INTEGER PRIMARY KEY,
+                feature_id INTEGER,
+                workflow_type TEXT,
+                item_type TEXT,
+                phase_id INTEGER,
+                status TEXT DEFAULT 'blocked',
+                order_index INTEGER DEFAULT 0,
+                group_index INTEGER,
+                config TEXT,
+                agent_session_id INTEGER,
+                result TEXT,
+                created_at TEXT DEFAULT (datetime('now')),
+                started_at TEXT,
+                ended_at TEXT,
+                pid INTEGER
+            )"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            r#"CREATE TABLE workflow_dependencies (
+                queue_item_id INTEGER,
+                depends_on_item_id INTEGER,
+                PRIMARY KEY(queue_item_id, depends_on_item_id)
+            )"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        pool
+    }
+
+    #[tokio::test]
+    async fn test_insert_and_get_queue_item() {
+        let pool = setup_test_db_with_queue().await;
+        let proj = create_test_project(&pool).await;
+        let fid = create_feature(&pool, proj, "Feature", "feature").await.unwrap();
+
+        let item_id = insert_queue_item(&pool, fid, "feature_build", "prd", None, "ready", 0, None)
+            .await
+            .unwrap();
+
+        let item = get_queue_item(&pool, item_id).await.unwrap().unwrap();
+        assert_eq!(item.feature_id, fid);
+        assert_eq!(item.workflow_type, "feature_build");
+        assert_eq!(item.item_type, "prd");
+        assert_eq!(item.status, "ready");
+        assert_eq!(item.order_index, 0);
+        assert!(item.phase_id.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_get_queue_item_not_found() {
+        let pool = setup_test_db_with_queue().await;
+        let item = get_queue_item(&pool, 9999).await.unwrap();
+        assert!(item.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_insert_queue_item_with_phase() {
+        let pool = setup_test_db_with_queue().await;
+        let proj = create_test_project(&pool).await;
+        let fid = create_feature(&pool, proj, "Feature", "feature").await.unwrap();
+
+        let item_id = insert_queue_item(&pool, fid, "feature_build", "execute", Some(42), "blocked", 1, Some(0))
+            .await
+            .unwrap();
+
+        let item = get_queue_item(&pool, item_id).await.unwrap().unwrap();
+        assert_eq!(item.phase_id, Some(42));
+        assert_eq!(item.group_index, Some(0));
+        assert_eq!(item.status, "blocked");
+    }
+
+    #[tokio::test]
+    async fn test_get_queue_for_feature() {
+        let pool = setup_test_db_with_queue().await;
+        let proj = create_test_project(&pool).await;
+        let fid = create_feature(&pool, proj, "Feature", "feature").await.unwrap();
+
+        insert_queue_item(&pool, fid, "feature_build", "prd", None, "ready", 0, None).await.unwrap();
+        insert_queue_item(&pool, fid, "feature_build", "plan", None, "blocked", 1, None).await.unwrap();
+        insert_queue_item(&pool, fid, "feature_build", "execute", Some(1), "blocked", 2, Some(0)).await.unwrap();
+
+        let items = get_queue_for_feature(&pool, fid).await.unwrap();
+        assert_eq!(items.len(), 3);
+        // Verify ordering
+        assert_eq!(items[0].order_index, 0);
+        assert_eq!(items[1].order_index, 1);
+        assert_eq!(items[2].order_index, 2);
+    }
+
+    #[tokio::test]
+    async fn test_get_queue_for_feature_empty() {
+        let pool = setup_test_db_with_queue().await;
+        let proj = create_test_project(&pool).await;
+        let fid = create_feature(&pool, proj, "Feature", "feature").await.unwrap();
+
+        let items = get_queue_for_feature(&pool, fid).await.unwrap();
+        assert!(items.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_get_ready_items() {
+        let pool = setup_test_db_with_queue().await;
+        let proj = create_test_project(&pool).await;
+        let fid = create_feature(&pool, proj, "Feature", "feature").await.unwrap();
+
+        insert_queue_item(&pool, fid, "feature_build", "prd", None, "ready", 0, None).await.unwrap();
+        insert_queue_item(&pool, fid, "feature_build", "plan", None, "blocked", 1, None).await.unwrap();
+        insert_queue_item(&pool, fid, "feature_build", "execute", None, "ready", 2, None).await.unwrap();
+
+        let ready = get_ready_items(&pool, fid).await.unwrap();
+        assert_eq!(ready.len(), 2);
+        assert!(ready.iter().all(|i| i.status == "ready"));
+    }
+
+    #[tokio::test]
+    async fn test_mark_item_running() {
+        let pool = setup_test_db_with_queue().await;
+        let proj = create_test_project(&pool).await;
+        let fid = create_feature(&pool, proj, "Feature", "feature").await.unwrap();
+
+        let item_id = insert_queue_item(&pool, fid, "feature_build", "prd", None, "ready", 0, None).await.unwrap();
+        mark_item_running(&pool, item_id).await.unwrap();
+
+        let item = get_queue_item(&pool, item_id).await.unwrap().unwrap();
+        assert_eq!(item.status, "running");
+        assert!(item.started_at.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_mark_item_completed() {
+        let pool = setup_test_db_with_queue().await;
+        let proj = create_test_project(&pool).await;
+        let fid = create_feature(&pool, proj, "Feature", "feature").await.unwrap();
+
+        let item_id = insert_queue_item(&pool, fid, "feature_build", "prd", None, "running", 0, None).await.unwrap();
+        mark_item_completed(&pool, item_id, Some(r#"{"ok": true}"#)).await.unwrap();
+
+        let item = get_queue_item(&pool, item_id).await.unwrap().unwrap();
+        assert_eq!(item.status, "completed");
+        assert_eq!(item.result.as_deref(), Some(r#"{"ok": true}"#));
+        assert!(item.ended_at.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_mark_item_completed_no_result() {
+        let pool = setup_test_db_with_queue().await;
+        let proj = create_test_project(&pool).await;
+        let fid = create_feature(&pool, proj, "Feature", "feature").await.unwrap();
+
+        let item_id = insert_queue_item(&pool, fid, "feature_build", "prd", None, "running", 0, None).await.unwrap();
+        mark_item_completed(&pool, item_id, None).await.unwrap();
+
+        let item = get_queue_item(&pool, item_id).await.unwrap().unwrap();
+        assert_eq!(item.status, "completed");
+        assert!(item.result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_mark_item_error() {
+        let pool = setup_test_db_with_queue().await;
+        let proj = create_test_project(&pool).await;
+        let fid = create_feature(&pool, proj, "Feature", "feature").await.unwrap();
+
+        let item_id = insert_queue_item(&pool, fid, "feature_build", "prd", None, "running", 0, None).await.unwrap();
+        mark_item_error(&pool, item_id, Some(r#"{"error": "failed"}"#)).await.unwrap();
+
+        let item = get_queue_item(&pool, item_id).await.unwrap().unwrap();
+        assert_eq!(item.status, "error");
+        assert_eq!(item.result.as_deref(), Some(r#"{"error": "failed"}"#));
+        assert!(item.ended_at.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_mark_item_skipped() {
+        let pool = setup_test_db_with_queue().await;
+        let proj = create_test_project(&pool).await;
+        let fid = create_feature(&pool, proj, "Feature", "feature").await.unwrap();
+
+        let item_id = insert_queue_item(&pool, fid, "feature_build", "prd", None, "blocked", 0, None).await.unwrap();
+        mark_item_skipped(&pool, item_id).await.unwrap();
+
+        let item = get_queue_item(&pool, item_id).await.unwrap().unwrap();
+        assert_eq!(item.status, "skipped");
+        assert!(item.ended_at.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_update_item_pid() {
+        let pool = setup_test_db_with_queue().await;
+        let proj = create_test_project(&pool).await;
+        let fid = create_feature(&pool, proj, "Feature", "feature").await.unwrap();
+
+        let item_id = insert_queue_item(&pool, fid, "feature_build", "prd", None, "running", 0, None).await.unwrap();
+        update_item_pid(&pool, item_id, 12345).await.unwrap();
+
+        let item = get_queue_item(&pool, item_id).await.unwrap().unwrap();
+        assert_eq!(item.pid, Some(12345));
+    }
+
+    #[tokio::test]
+    async fn test_insert_dependency_and_unblock() {
+        let pool = setup_test_db_with_queue().await;
+        let proj = create_test_project(&pool).await;
+        let fid = create_feature(&pool, proj, "Feature", "feature").await.unwrap();
+
+        let item1 = insert_queue_item(&pool, fid, "feature_build", "prd", None, "ready", 0, None).await.unwrap();
+        let item2 = insert_queue_item(&pool, fid, "feature_build", "plan", None, "blocked", 1, None).await.unwrap();
+
+        insert_dependency(&pool, item2, item1).await.unwrap();
+
+        // item2 should stay blocked because item1 is not completed
+        let ready = unblock_ready_items(&pool, fid).await.unwrap();
+        assert_eq!(ready.len(), 1); // only item1
+        assert_eq!(ready[0].id, item1);
+
+        // Complete item1
+        mark_item_completed(&pool, item1, None).await.unwrap();
+
+        // Now item2 should be unblocked
+        let ready = unblock_ready_items(&pool, fid).await.unwrap();
+        assert_eq!(ready.len(), 1);
+        assert_eq!(ready[0].id, item2);
+        assert_eq!(ready[0].status, "ready");
+    }
+
+    #[tokio::test]
+    async fn test_unblock_with_skipped_dependency() {
+        let pool = setup_test_db_with_queue().await;
+        let proj = create_test_project(&pool).await;
+        let fid = create_feature(&pool, proj, "Feature", "feature").await.unwrap();
+
+        let item1 = insert_queue_item(&pool, fid, "feature_build", "prd", None, "ready", 0, None).await.unwrap();
+        let item2 = insert_queue_item(&pool, fid, "feature_build", "plan", None, "blocked", 1, None).await.unwrap();
+
+        insert_dependency(&pool, item2, item1).await.unwrap();
+        mark_item_skipped(&pool, item1).await.unwrap();
+
+        let ready = unblock_ready_items(&pool, fid).await.unwrap();
+        assert!(ready.iter().any(|i| i.id == item2));
+    }
+
+    #[tokio::test]
+    async fn test_unblock_multiple_dependencies() {
+        let pool = setup_test_db_with_queue().await;
+        let proj = create_test_project(&pool).await;
+        let fid = create_feature(&pool, proj, "Feature", "feature").await.unwrap();
+
+        let item1 = insert_queue_item(&pool, fid, "feature_build", "prd", None, "completed", 0, None).await.unwrap();
+        let item2 = insert_queue_item(&pool, fid, "feature_build", "plan", None, "running", 1, None).await.unwrap();
+        let item3 = insert_queue_item(&pool, fid, "feature_build", "execute", None, "blocked", 2, None).await.unwrap();
+
+        // item3 depends on both item1 and item2
+        insert_dependency(&pool, item3, item1).await.unwrap();
+        insert_dependency(&pool, item3, item2).await.unwrap();
+
+        // item2 still running, so item3 stays blocked
+        let ready = unblock_ready_items(&pool, fid).await.unwrap();
+        assert!(!ready.iter().any(|i| i.id == item3));
+
+        // Complete item2
+        mark_item_completed(&pool, item2, None).await.unwrap();
+
+        let ready = unblock_ready_items(&pool, fid).await.unwrap();
+        assert!(ready.iter().any(|i| i.id == item3));
+    }
+
+    #[tokio::test]
+    async fn test_clear_queue_for_feature() {
+        let pool = setup_test_db_with_queue().await;
+        let proj = create_test_project(&pool).await;
+        let fid = create_feature(&pool, proj, "Feature", "feature").await.unwrap();
+
+        let item1 = insert_queue_item(&pool, fid, "feature_build", "prd", None, "ready", 0, None).await.unwrap();
+        let item2 = insert_queue_item(&pool, fid, "feature_build", "plan", None, "blocked", 1, None).await.unwrap();
+        insert_dependency(&pool, item2, item1).await.unwrap();
+
+        clear_queue_for_feature(&pool, fid).await.unwrap();
+
+        let items = get_queue_for_feature(&pool, fid).await.unwrap();
+        assert!(items.is_empty());
+
+        // Dependencies should also be gone
+        let dep_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM workflow_dependencies")
+            .fetch_one(&pool).await.unwrap();
+        assert_eq!(dep_count.0, 0);
+    }
+
+    #[tokio::test]
+    async fn test_clear_queue_isolates_features() {
+        let pool = setup_test_db_with_queue().await;
+        let proj = create_test_project(&pool).await;
+        let fid1 = create_feature(&pool, proj, "Feature 1", "feature").await.unwrap();
+        let fid2 = create_feature(&pool, proj, "Feature 2", "feature").await.unwrap();
+
+        insert_queue_item(&pool, fid1, "feature_build", "prd", None, "ready", 0, None).await.unwrap();
+        insert_queue_item(&pool, fid2, "feature_build", "prd", None, "ready", 0, None).await.unwrap();
+
+        clear_queue_for_feature(&pool, fid1).await.unwrap();
+
+        let items1 = get_queue_for_feature(&pool, fid1).await.unwrap();
+        assert!(items1.is_empty());
+
+        let items2 = get_queue_for_feature(&pool, fid2).await.unwrap();
+        assert_eq!(items2.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_is_empty_session_no_messages() {
+        let pool = setup_test_db().await;
+        let proj = create_test_project(&pool).await;
+        let fid = create_feature(&pool, proj, "Session", "session").await.unwrap();
+
+        // Session with no messages should be empty
+        sqlx::query("INSERT INTO agent_sessions (feature_id, title, status) VALUES (?, 'sess', 'idle')")
+            .bind(fid).execute(&pool).await.unwrap();
+
+        let empty = is_empty(&pool, fid).await.unwrap();
+        assert!(empty);
+    }
+
+    #[tokio::test]
+    async fn test_set_feature_setting_upsert() {
+        let pool = setup_test_db().await;
+        let proj = create_test_project(&pool).await;
+        let fid = create_feature(&pool, proj, "Feature", "feature").await.unwrap();
+
+        set_feature_setting(&pool, fid, "custom_key", "value1").await.unwrap();
+        set_feature_setting(&pool, fid, "custom_key", "value2").await.unwrap();
+
+        let settings = get_feature_settings(&pool, fid).await.unwrap();
+        let custom = settings.iter().filter(|s| s.key == "custom_key").collect::<Vec<_>>();
+        assert_eq!(custom.len(), 1);
+        assert_eq!(custom[0].value, "value2");
+    }
 }
