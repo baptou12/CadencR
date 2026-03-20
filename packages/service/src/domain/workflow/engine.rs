@@ -45,6 +45,28 @@ fn to_value<T: serde::Serialize>(v: T) -> serde_json::Value {
     serde_json::to_value(v).unwrap()
 }
 
+/// Derive workflow status from queue items (mirrors snapshot logic).
+fn derive_status_from_queue(items: &[QueueItem]) -> String {
+    if items.is_empty() {
+        return "idle".to_string();
+    }
+    let has_running = items.iter().any(|i| i.status == "running");
+    let has_error = items.iter().any(|i| i.status == "error");
+    let has_ready_or_blocked = items.iter().any(|i| i.status == "ready" || i.status == "blocked");
+
+    if has_running {
+        "building".to_string()
+    } else if has_error {
+        "error".to_string()
+    } else if has_ready_or_blocked {
+        "paused".to_string()
+    } else if items.iter().all(|i| i.status == "completed" || i.status == "skipped") {
+        "completed".to_string()
+    } else {
+        "idle".to_string()
+    }
+}
+
 /// CanUseTool implementation for workflow agents that bridges permission requests
 /// to the frontend via workflow.permission.request envelopes.
 struct WorkflowPermissionBridge {
@@ -1203,12 +1225,15 @@ impl WorkflowEngine {
             .await
             .map_err(|e| e.to_string())?;
 
+        let workflow_status = derive_status_from_queue(&all_items);
+
         let envelope = WsEnvelope::new(
             "workflow",
             "queue_update",
             to_value(WorkflowQueueUpdatePayload {
                 feature_id: self.feature_id,
                 items: all_items,
+                workflow_status: Some(workflow_status),
             }),
         );
         let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
@@ -1388,6 +1413,7 @@ impl WorkflowEngine {
             to_value(WorkflowQueueUpdatePayload {
                 feature_id: self.feature_id,
                 items: all_items,
+                workflow_status: None,
             }),
         );
         let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));

@@ -418,6 +418,8 @@ pub struct WorkflowPausedPayload {
 pub struct WorkflowQueueUpdatePayload {
     pub feature_id: i64,
     pub items: Vec<crate::domain::features::models::QueueItem>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workflow_status: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

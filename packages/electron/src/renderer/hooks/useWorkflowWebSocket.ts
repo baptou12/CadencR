@@ -249,7 +249,11 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     switch (action) {
       case "queue_update": {
         const items = payload.items as QueueItem[];
-        set({ queue: items ?? [], hydrated: true });
+        const updates: Record<string, unknown> = { queue: items ?? [], hydrated: true };
+        if (payload.workflow_status) {
+          updates.workflowStatus = payload.workflow_status as string;
+        }
+        set(updates);
         break;
       }
       case "item_update": {
