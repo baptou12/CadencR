@@ -144,6 +144,9 @@ export interface WorkflowBackend {
   deleteSession(sessionDbId: number): void;
   handleResume(agentType: string, sessionDbId: number): void;
 
+  // -- Lazy history loading (WS only) --
+  loadAgentHistory?(entry: FeatureSession): void;
+
   // -- Queue-specific (optional) --
   skipItem?(itemId: number): void;
   retryItem?(itemId: number): void;

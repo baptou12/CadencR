@@ -38,7 +38,7 @@ interface ServerBlock {
   model?: string;
 }
 
-function serverBlocksToAgentBlocks(serverBlocks: ServerBlock[]): AgentBlockData[] {
+export function serverBlocksToAgentBlocks(serverBlocks: ServerBlock[]): AgentBlockData[] {
   return serverBlocks.map((sb) => ({
     id: sb.id,
     type: sb.type as AgentBlockData["type"],

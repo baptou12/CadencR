@@ -63,6 +63,7 @@ export interface AgentSessionState {
   pendingQuestions: AgentQuestion[];
   pendingQuestionToolInput: Record<string, unknown>;
   pendingQuestionRequestId: string;
+  historyLoaded: boolean;
 }
 
 export type AutonomyLevel = 1 | 2 | 3;
@@ -153,6 +154,7 @@ interface WorkflowState {
   startReviewFixer: (comments: string) => void;
   markDone: (itemId: number) => void;
   removeAgent: (itemId: number) => void;
+  populateAgentBlocks: (itemId: number, blocks: AgentBlockData[]) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -177,6 +179,7 @@ function createAgentSession(sessionId: number): AgentSessionState {
     pendingQuestions: [],
     pendingQuestionToolInput: {},
     pendingQuestionRequestId: "",
+    historyLoaded: false,
   };
 }
 
@@ -597,6 +600,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
             pendingQuestions: [],
             pendingQuestionToolInput: {},
             pendingQuestionRequestId: "",
+            historyLoaded: false,
           });
         }
       }
@@ -803,6 +807,16 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
       set(state => {
         const activeAgents = new Map(state.activeAgents);
         activeAgents.delete(itemId);
+        return { activeAgents };
+      });
+    },
+
+    populateAgentBlocks(itemId, blocks) {
+      set(state => {
+        const agent = state.activeAgents.get(itemId);
+        if (!agent || agent.historyLoaded || agent.blocks.length > 0) return state;
+        const activeAgents = new Map(state.activeAgents);
+        activeAgents.set(itemId, { ...agent, blocks, historyLoaded: true });
         return { activeAgents };
       });
     },

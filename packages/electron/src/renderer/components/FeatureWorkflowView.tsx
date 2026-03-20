@@ -561,11 +561,15 @@ export function FeatureWorkflowView({
                           entry.status === "running" ||
                           entry.status === "paused"
                         }
-                        onToggle={() =>
+                        onToggle={() => {
                           setOpenAgent((prev) =>
                             prev === sessionKey ? null : sessionKey,
-                          )
-                        }
+                          );
+                          // Lazy-load history when expanding a completed/paused agent
+                          if (openAgent !== sessionKey && entry.blocks.length === 0 && backend.loadAgentHistory) {
+                            backend.loadAgentHistory(entry);
+                          }
+                        }}
                         maximized={isThisMaximized}
                         onToggleMaximize={() =>
                           setMaximizedAgent((prev) =>

@@ -5,10 +5,12 @@
  * mapping queue items + active agent sessions into FeatureSession[].
  */
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { FeatureSession } from "./useFeatureAgentState";
+import { serverBlocksToAgentBlocks } from "./useFeatureAgentState";
 import type { AgentType } from "../../main/agents/types";
+import type { FeatureAgentStateResponse } from "../api/generated";
 import type { AgentStatus } from "@/types/agent";
 import {
   useWorkflowStore,
@@ -239,6 +241,27 @@ export function useWsWorkflowBackend(
   const noAgentsRunning = !sessions.some((s) => s.status === "running");
   const view = deriveViewState(store.workflowStatus, sessions);
 
+  const loadAgentHistory = useCallback((entry: FeatureSession) => {
+    const itemId = findQueueItemId(entry, store.queue, store.activeAgents);
+    const agent = store.activeAgents.get(itemId);
+    if (!agent || agent.historyLoaded || agent.blocks.length > 0) return;
+    const sessionId = agent.sessionId;
+    if (sessionId <= 0) return;
+
+    customInstance<FeatureAgentStateResponse>({
+      url: `/api/features/${featureId}/agent-state`,
+      method: "GET",
+    }).then((resp) => {
+      const match = resp.sessions.find((s) => s.sessionDbId === sessionId);
+      if (match && match.blocks.length > 0) {
+        const blocks = serverBlocksToAgentBlocks(match.blocks as never[]);
+        store.populateAgentBlocks(itemId, blocks);
+      }
+    }).catch(() => {
+      // Silently ignore — user can retry by collapsing/expanding
+    });
+  }, [featureId, store]);
+
   // Review verdict: check if any review item has changes_requested result
   const reviewVerdict = store.queue.some(
     (q) => q.item_type === "review" && q.result === "changes_requested",
@@ -355,6 +378,9 @@ export function useWsWorkflowBackend(
       const itemId = findQueueItemId(entry, store.queue, store.activeAgents);
       store.resumeItem(itemId);
     },
+
+    // Lazy history loading
+    loadAgentHistory,
 
     // Queue-specific
     skipItem: (itemId) => store.skipItem(itemId),
