@@ -608,7 +608,7 @@ pub async fn get_feature_snapshot(
         .unwrap_or(3);
 
     // 5. Derive workflow status
-    let workflow_status = derive_workflow_status(&queue, &plan_snapshot);
+    let workflow_status = derive_workflow_status(&queue, &plan_snapshot, &agent_sessions);
 
     Ok(FeatureSnapshotResponse {
         workflow_status,
@@ -620,7 +620,29 @@ pub async fn get_feature_snapshot(
     })
 }
 
-fn derive_workflow_status(queue: &[super::models::SnapshotQueueItem], plan: &Option<super::models::PlanSnapshot>) -> String {
+fn derive_workflow_status(
+    queue: &[super::models::SnapshotQueueItem],
+    plan: &Option<super::models::PlanSnapshot>,
+    sessions: &[super::models::AgentSessionSummary],
+) -> String {
+    // Single pass: check plan/prd session states and whether any session is running
+    let (has_active_plan, has_active_prd, any_session_running) =
+        sessions.iter().fold((false, false, false), |(plan, prd, running), s| {
+            (
+                plan || (s.agent_type == "plan" && (s.status == "running" || s.status == "paused")),
+                prd || (s.agent_type == "prd" && (s.status == "running" || s.status == "paused")),
+                running || s.status == "running",
+            )
+        });
+
+    // Running/paused plan or prd agents take priority
+    if has_active_plan {
+        return "planning".to_string();
+    }
+    if has_active_prd {
+        return "prd".to_string();
+    }
+
     // 1. No queue and no plan → idle
     if queue.is_empty() && plan.is_none() {
         return "idle".to_string();
@@ -655,6 +677,22 @@ fn derive_workflow_status(queue: &[super::models::SnapshotQueueItem], plan: &Opt
     }
     // 7. All completed/skipped
     if !queue.is_empty() && queue.iter().all(|i| i.status == "completed" || i.status == "skipped") {
+        return "completed".to_string();
+    }
+
+    // 8. Plan exists and is active (approved) but queue is empty → plan_approval
+    //    so the user can see the plan and start building
+    if let Some(p) = plan {
+        if p.status == "active" {
+            return "plan_approval".to_string();
+        }
+    }
+
+    // 9. If there are any agent sessions at all, don't return idle — show as building/completed
+    if !sessions.is_empty() {
+        if any_session_running {
+            return "building".to_string();
+        }
         return "completed".to_string();
     }
 

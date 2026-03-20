@@ -18,6 +18,7 @@ import type { ActionAvailability } from "./useFeatureState";
 // ---------------------------------------------------------------------------
 
 export type ViewState =
+  | "loading"
   | "plan-input"
   | "planning"
   | "prd"
@@ -34,9 +35,12 @@ export function deriveViewState(
   status: WorkflowStatus,
   sessions: FeatureSession[],
 ): ViewState {
+  // If sessions exist, never show plan-input — the feature has been worked on
+  const hasSessions = sessions.length > 0;
+
   switch (status) {
     case "idle":
-      return "plan-input";
+      return hasSessions ? "agents-active" : "plan-input";
     case "planning":
       return "planning";
     case "prd":
@@ -46,18 +50,17 @@ export function deriveViewState(
     case "building":
       return "agents-active";
     case "paused":
-      return "paused";
+      return hasSessions ? "agents-active" : "paused";
     case "completed":
       return "done";
     case "error": {
-      // If there are active sessions, show agents view; otherwise plan-input
       const hasActive = sessions.some(
         (s) => s.status === "running" || s.status === "waiting",
       );
-      return hasActive ? "agents-active" : "plan-input";
+      return hasActive || hasSessions ? "agents-active" : "plan-input";
     }
     default:
-      return "plan-input";
+      return hasSessions ? "agents-active" : "plan-input";
   }
 }
 

@@ -4,7 +4,8 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { useWorkflowStore } from "./useWorkflowWebSocket";
+import { useWorkflowStore, AGENT_TYPE_SYNTHETIC_KEYS } from "./useWorkflowWebSocket";
+import type { FeatureSnapshot, AgentSessionSummary } from "./useWorkflowWebSocket";
 
 // Mock ws-session-store so we can test routing without the full SDK parser.
 vi.mock("@/stores/ws-session-store", () => {
@@ -90,6 +91,7 @@ beforeEach(() => {
     autonomyLevel: 1,
     selectedItemId: null,
     error: null,
+    hydrated: false,
   });
 });
 
@@ -434,6 +436,149 @@ describe("useWorkflowStore", () => {
 
       expect(useWorkflowStore.getState().activeAgents.get(3)!.status).toBe("running");
       expect(useWorkflowStore.getState().queue[0].status).toBe("running");
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // hydrateFromSnapshot
+  // -------------------------------------------------------------------------
+
+  describe("hydrateFromSnapshot", () => {
+    function makeSnapshot(overrides?: Partial<FeatureSnapshot>): FeatureSnapshot {
+      return {
+        workflow_status: "building",
+        queue: [],
+        agent_sessions: [],
+        plan: null,
+        worktree: null,
+        autonomy_level: 3,
+        ...overrides,
+      };
+    }
+
+    function makeSessionSummary(overrides?: Partial<AgentSessionSummary>): AgentSessionSummary {
+      return { id: 1, queue_item_id: null, status: "completed", agent_type: null, ...overrides };
+    }
+
+    it("routes plan agent_type to planAgent slot", () => {
+      useWorkflowStore.getState().hydrateFromSnapshot(
+        makeSnapshot({ agent_sessions: [makeSessionSummary({ id: 10, agent_type: "plan", status: "paused" })] }),
+      );
+
+      const { planAgent, activeAgents } = useWorkflowStore.getState();
+      expect(planAgent).not.toBeNull();
+      expect(planAgent!.sessionId).toBe(10);
+      expect(planAgent!.status).toBe("paused");
+      expect(activeAgents.size).toBe(0);
+    });
+
+    it("routes prd agent_type to prdAgent slot", () => {
+      useWorkflowStore.getState().hydrateFromSnapshot(
+        makeSnapshot({ agent_sessions: [makeSessionSummary({ id: 20, agent_type: "prd" })] }),
+      );
+
+      const { prdAgent, activeAgents } = useWorkflowStore.getState();
+      expect(prdAgent).not.toBeNull();
+      expect(prdAgent!.sessionId).toBe(20);
+      expect(activeAgents.size).toBe(0);
+    });
+
+    it("routes session agent_type to activeAgents with SESSION_KEY", () => {
+      useWorkflowStore.getState().hydrateFromSnapshot(
+        makeSnapshot({ agent_sessions: [makeSessionSummary({ id: 30, agent_type: "session" })] }),
+      );
+
+      const sessionKey = AGENT_TYPE_SYNTHETIC_KEYS.session;
+      expect(useWorkflowStore.getState().activeAgents.has(sessionKey)).toBe(true);
+      expect(useWorkflowStore.getState().activeAgents.get(sessionKey)!.sessionId).toBe(30);
+    });
+
+    it("routes review-fixer agent_type to activeAgents with REVIEW_FIXER_KEY", () => {
+      useWorkflowStore.getState().hydrateFromSnapshot(
+        makeSnapshot({ agent_sessions: [makeSessionSummary({ id: 40, agent_type: "review-fixer" })] }),
+      );
+
+      const key = AGENT_TYPE_SYNTHETIC_KEYS["review-fixer"];
+      expect(useWorkflowStore.getState().activeAgents.has(key)).toBe(true);
+      expect(useWorkflowStore.getState().activeAgents.get(key)!.sessionId).toBe(40);
+    });
+
+    it("routes sessions with queue_item_id to activeAgents by that id", () => {
+      useWorkflowStore.getState().hydrateFromSnapshot(
+        makeSnapshot({
+          agent_sessions: [makeSessionSummary({ id: 50, queue_item_id: 99, agent_type: "execute" })],
+          queue: [{ id: 99, item_type: "execute", phase_id: null, phase_title: null, status: "running", order_index: 0, group_index: null, agent_session_id: 50, result: null }],
+        }),
+      );
+
+      expect(useWorkflowStore.getState().activeAgents.has(99)).toBe(true);
+      expect(useWorkflowStore.getState().activeAgents.get(99)!.sessionId).toBe(50);
+    });
+
+    it("uses fallback key (-1000 - id) for unknown agent_type without queue_item_id", () => {
+      useWorkflowStore.getState().hydrateFromSnapshot(
+        makeSnapshot({ agent_sessions: [makeSessionSummary({ id: 7, agent_type: "unknown_type" })] }),
+      );
+
+      expect(useWorkflowStore.getState().activeAgents.has(-1007)).toBe(true);
+      expect(useWorkflowStore.getState().activeAgents.get(-1007)!.sessionId).toBe(7);
+    });
+
+    it("fallback key does not collide with synthetic keys", () => {
+      useWorkflowStore.getState().hydrateFromSnapshot(
+        makeSnapshot({
+          agent_sessions: [
+            makeSessionSummary({ id: 60, agent_type: "session" }),
+            makeSessionSummary({ id: 3, agent_type: "some_custom" }),
+          ],
+        }),
+      );
+
+      const { activeAgents } = useWorkflowStore.getState();
+      expect(activeAgents.has(AGENT_TYPE_SYNTHETIC_KEYS.session)).toBe(true);
+      expect(activeAgents.get(AGENT_TYPE_SYNTHETIC_KEYS.session)!.sessionId).toBe(60);
+      expect(activeAgents.has(-1003)).toBe(true);
+      expect(activeAgents.get(-1003)!.sessionId).toBe(3);
+    });
+
+    it("sets workflowStatus and hydrated flag", () => {
+      useWorkflowStore.getState().hydrateFromSnapshot(
+        makeSnapshot({ workflow_status: "plan_approval" }),
+      );
+
+      const state = useWorkflowStore.getState();
+      expect(state.workflowStatus).toBe("plan_approval");
+      expect(state.hydrated).toBe(true);
+    });
+
+    it("does not overwrite if already hydrated", () => {
+      useWorkflowStore.setState({ hydrated: true, workflowStatus: "building" });
+
+      useWorkflowStore.getState().hydrateFromSnapshot(
+        makeSnapshot({ workflow_status: "idle" }),
+      );
+
+      expect(useWorkflowStore.getState().workflowStatus).toBe("building");
+    });
+
+    it("hydrates multiple agent types in a single snapshot", () => {
+      useWorkflowStore.getState().hydrateFromSnapshot(
+        makeSnapshot({
+          workflow_status: "building",
+          agent_sessions: [
+            makeSessionSummary({ id: 1, agent_type: "plan", status: "completed" }),
+            makeSessionSummary({ id: 2, agent_type: "prd", status: "completed" }),
+            makeSessionSummary({ id: 3, agent_type: "session", status: "paused" }),
+            makeSessionSummary({ id: 4, queue_item_id: 10, agent_type: "execute", status: "running" }),
+          ],
+        }),
+      );
+
+      const state = useWorkflowStore.getState();
+      expect(state.planAgent).not.toBeNull();
+      expect(state.prdAgent).not.toBeNull();
+      expect(state.activeAgents.has(AGENT_TYPE_SYNTHETIC_KEYS.session)).toBe(true);
+      expect(state.activeAgents.has(10)).toBe(true);
     });
   });
 });

@@ -14,6 +14,7 @@ import type { FeatureAgentStateResponse } from "../api/generated";
 import type { AgentStatus } from "@/types/agent";
 import {
   useWorkflowStore,
+  AGENT_TYPE_SYNTHETIC_KEYS,
   type QueueItem,
   type QueueItemStatus,
   type AgentSessionState,
@@ -153,11 +154,13 @@ function buildSessionEntries(
     }
   }
 
-  // Add special agents (session=-3, review_fixer=-5) not tied to queue items
+  // Add agents not tied to queue items (negative synthetic keys; plan/prd handled above)
+  const planKey = AGENT_TYPE_SYNTHETIC_KEYS.plan;
+  const prdKey = AGENT_TYPE_SYNTHETIC_KEYS.prd;
+  const reviewFixerKey = AGENT_TYPE_SYNTHETIC_KEYS["review-fixer"];
   for (const [key, agent] of activeAgents) {
-    if (key < 0 && key !== -1 && key !== -2) {
-      // Synthetic agents: -3=session, -5=review-fixer
-      const agentType: AgentType = key === -5 ? "review-fixer" : "session";
+    if (key < 0 && key !== planKey && key !== prdKey) {
+      const agentType: AgentType = key === reviewFixerKey ? "review-fixer" : "session";
       sessions.push(agentStateToFeatureSession(agent, agentType));
     }
   }
@@ -230,7 +233,7 @@ export function useWsWorkflowBackend(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [snapshot]);
 
-  const isHydrating = enabled && !store.hydrated && !snapshot;
+  const isHydrating = enabled && !store.hydrated;
 
   const { sessions, planSession, prdSession } = useMemo(
     () => buildSessionEntries(store.queue, store.activeAgents, store.planAgent, store.prdAgent),
@@ -295,7 +298,7 @@ export function useWsWorkflowBackend(
     // Derived
     hasAnyAgentOutput,
     noAgentsRunning,
-    view: isHydrating ? "plan-input" as const : view,
+    view: isHydrating ? "loading" as const : view,
     isLoading: isHydrating,
 
     // Loading flags (WS actions are fire-and-forget)

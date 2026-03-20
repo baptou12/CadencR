@@ -486,6 +486,12 @@ export function FeatureWorkflowView({
       <div className="relative min-h-0 flex-1 overflow-hidden">
         <div className="flex h-full min-h-0 overflow-hidden">
           <div className="min-h-0 flex-1 flex flex-col overflow-hidden">
+            {view === "loading" && (
+              <div className="flex-1 flex items-center justify-center">
+                <Loader2Icon className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            )}
+
             {view === "plan-input" && (
               <div className="flex-1 flex items-center justify-center overflow-auto p-6">
                 <PlanInputView
@@ -511,7 +517,7 @@ export function FeatureWorkflowView({
               </div>
             )}
 
-            {view !== "plan-input" && !maximizedAgent && (
+            {view !== "plan-input" && view !== "loading" && !maximizedAgent && (
               <div className="shrink-0 px-6 pt-6">
                 <WorktreeSetupSection
                   featureId={featureId}
@@ -524,7 +530,7 @@ export function FeatureWorkflowView({
               </div>
             )}
 
-            {(backend.hasAnyAgentOutput ||
+            {(backend.sessionEntries.length > 0 ||
               actions.canStartBuild ||
               actions.canStartRisk ||
               actions.canStartReview ||

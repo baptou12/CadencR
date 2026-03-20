@@ -158,6 +158,26 @@ interface WorkflowState {
 }
 
 // ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+/** Maps agent_type strings to synthetic queue-item IDs used by the WS protocol. */
+export const AGENT_TYPE_SYNTHETIC_KEYS: Record<string, number> = {
+  plan: -1,
+  prd: -2,
+  session: -3,
+  refine: -4,
+  "review-fixer": -5,
+  review_fixer: -5,
+};
+
+/** Shorthand constants for the most-used synthetic keys. */
+const PLAN_KEY = AGENT_TYPE_SYNTHETIC_KEYS.plan;       // -1
+const PRD_KEY = AGENT_TYPE_SYNTHETIC_KEYS.prd;         // -2
+const SESSION_KEY = AGENT_TYPE_SYNTHETIC_KEYS.session;  // -3
+const REVIEW_FIXER_KEY = AGENT_TYPE_SYNTHETIC_KEYS["review-fixer"]; // -5
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -202,10 +222,10 @@ function patchAgentByItemId(
   itemId: number,
   patch: Partial<AgentSessionState>,
 ): Partial<WorkflowState> {
-  if (itemId === -1 && state.planAgent) {
+  if (itemId === PLAN_KEY && state.planAgent) {
     return { planAgent: { ...state.planAgent, ...patch } };
   }
-  if (itemId === -2 && state.prdAgent) {
+  if (itemId === PRD_KEY && state.prdAgent) {
     return { prdAgent: { ...state.prdAgent, ...patch } };
   }
   const agent = state.activeAgents.get(itemId);
@@ -368,7 +388,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         const sessionId = payload.session_id as number;
         set(state => {
           const activeAgents = new Map(state.activeAgents);
-          activeAgents.set(-3, createAgentSession(sessionId));
+          activeAgents.set(SESSION_KEY, createAgentSession(sessionId));
           return { activeAgents };
         });
         break;
@@ -387,8 +407,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         if (msgs.length === 0) break;
 
         // Route plan/PRD agent streams (synthetic IDs) to planAgent/prdAgent
-        if (itemId === -1 || itemId === -2) {
-          const key = itemId === -1 ? "planAgent" : "prdAgent";
+        if (itemId === PLAN_KEY || itemId === PRD_KEY) {
+          const key = itemId === PLAN_KEY ? "planAgent" : "prdAgent";
           set(state => {
             let agent = state[key] ?? createAgentSession(0);
             for (const msg of msgs) {
@@ -429,10 +449,10 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
             pendingPermission: null,
           };
           set(state => {
-            if (itemId === -1 && state.planAgent) {
+            if (itemId === PLAN_KEY && state.planAgent) {
               return { planAgent: { ...state.planAgent, ...questionPatch } };
             }
-            if (itemId === -2 && state.prdAgent) {
+            if (itemId === PRD_KEY && state.prdAgent) {
               return { prdAgent: { ...state.prdAgent, ...questionPatch } };
             }
             const activeAgents = new Map(state.activeAgents);
@@ -453,10 +473,10 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         };
         set(state => {
           // Handle plan/PRD agent permissions (synthetic IDs)
-          if (itemId === -1 && state.planAgent) {
+          if (itemId === PLAN_KEY && state.planAgent) {
             return { planAgent: { ...state.planAgent, pendingPermission: permission } };
           }
-          if (itemId === -2 && state.prdAgent) {
+          if (itemId === PRD_KEY && state.prdAgent) {
             return { prdAgent: { ...state.prdAgent, pendingPermission: permission } };
           }
           // Queue agent permissions
@@ -477,7 +497,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         const sessionId = payload.session_id as number;
         set(state => {
           const activeAgents = new Map(state.activeAgents);
-          activeAgents.set(-5, createAgentSession(sessionId));
+          activeAgents.set(REVIEW_FIXER_KEY, createAgentSession(sessionId));
           return { activeAgents };
         });
         break;
@@ -593,19 +613,35 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
       if (state.hydrated || state.queue.length > 0) return;
 
       const activeAgents = new Map(state.activeAgents);
+      let planAgent: AgentSessionState | null = state.planAgent;
+      let prdAgent: AgentSessionState | null = state.prdAgent;
+
       for (const session of snapshot.agent_sessions) {
-        if (session.queue_item_id != null) {
-          activeAgents.set(session.queue_item_id, {
-            sessionId: session.id,
-            blocks: [],
-            streamingState: createStreamingState(),
-            status: (session.status as AgentSessionState["status"]) ?? "idle",
-            pendingPermission: null,
-            pendingQuestions: [],
-            pendingQuestionToolInput: {},
-            pendingQuestionRequestId: "",
-            historyLoaded: false,
-          });
+        const agentState: AgentSessionState = {
+          sessionId: session.id,
+          blocks: [],
+          streamingState: createStreamingState(),
+          status: (session.status as AgentSessionState["status"]) ?? "idle",
+          pendingPermission: null,
+          pendingQuestions: [],
+          pendingQuestionToolInput: {},
+          pendingQuestionRequestId: "",
+          historyLoaded: false,
+        };
+
+        // Use queue_item_id when available; otherwise map agent_type to its
+        // synthetic key (same IDs the WS protocol uses at runtime).
+        const syntheticKey = session.queue_item_id
+          ?? AGENT_TYPE_SYNTHETIC_KEYS[session.agent_type ?? ""]
+          ?? (-1000 - session.id); // fallback avoids collision with -1..-5
+
+        // Plan/prd go into dedicated state slots; everything else into activeAgents
+        if (syntheticKey === PLAN_KEY && !planAgent) {
+          planAgent = agentState;
+        } else if (syntheticKey === PRD_KEY && !prdAgent) {
+          prdAgent = agentState;
+        } else {
+          activeAgents.set(syntheticKey, agentState);
         }
       }
 
@@ -614,6 +650,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         workflowStatus: snapshot.workflow_status,
         autonomyLevel: (snapshot.autonomy_level as AutonomyLevel) ?? 3,
         activeAgents,
+        planAgent,
+        prdAgent,
         hydrated: true,
       };
 
@@ -690,8 +728,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
       // Find the agent to get the stored tool input and request ID
       const state = get();
       let agent: AgentSessionState | null = null;
-      if (itemId === -1) agent = state.planAgent;
-      else if (itemId === -2) agent = state.prdAgent;
+      if (itemId === PLAN_KEY) agent = state.planAgent;
+      else if (itemId === PRD_KEY) agent = state.prdAgent;
       else agent = state.activeAgents.get(itemId) ?? null;
 
       if (!agent) return;
@@ -714,10 +752,10 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         pendingQuestionRequestId: "",
       };
       set(state => {
-        if (itemId === -1 && state.planAgent) {
+        if (itemId === PLAN_KEY && state.planAgent) {
           return { planAgent: { ...state.planAgent, ...clearPatch } };
         }
-        if (itemId === -2 && state.prdAgent) {
+        if (itemId === PRD_KEY && state.prdAgent) {
           return { prdAgent: { ...state.prdAgent, ...clearPatch } };
         }
         const activeAgents = new Map(state.activeAgents);
@@ -739,8 +777,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         };
 
         // Resolve current blocks for the target agent
-        const currentAgent = itemId === -1 ? state.planAgent
-          : itemId === -2 ? state.prdAgent
+        const currentAgent = itemId === PLAN_KEY ? state.planAgent
+          : itemId === PRD_KEY ? state.prdAgent
           : state.activeAgents.get(itemId);
         if (!currentAgent) return {};
 

@@ -23,8 +23,8 @@ function deriveLegacyWorkflowStatus(
 ): WorkflowStatus {
   const { plan, prd, execute } = wf;
 
-  if (plan.status === "running") return "planning";
-  if (prd.status === "running") return "prd";
+  if (plan.status === "running" || plan.status === "paused") return "planning";
+  if (prd.status === "running" || prd.status === "paused") return "prd";
 
   // Plan completed but not yet building — approval state
   if (
