@@ -146,6 +146,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     const { ws, featureId } = get();
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({
+        id: crypto.randomUUID(),
         domain: "workflow",
         action,
         payload: { feature_id: featureId, ...payload },
@@ -282,12 +283,32 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
       }
       case "agent_stream": {
         const itemId = payload.queue_item_id as number;
-        const msg = payload.message as Record<string, unknown>;
-        if (!msg) break;
+        // The engine sends SDK messages in a `blocks` array
+        const blocks = (payload.blocks ?? []) as Record<string, unknown>[];
+        const singleMsg = payload.message as Record<string, unknown> | undefined;
+        const msgs = blocks.length > 0 ? blocks : singleMsg ? [singleMsg] : [];
+        if (msgs.length === 0) break;
+
+        // Route plan/PRD agent streams (synthetic IDs) to planAgent/prdAgent
+        if (itemId === -1 || itemId === -2) {
+          const key = itemId === -1 ? "planAgent" : "prdAgent";
+          set(state => {
+            let agent = state[key] ?? createAgentSession(0);
+            for (const msg of msgs) {
+              agent = processAgentStream(agent, msg);
+            }
+            return { [key]: agent };
+          });
+          break;
+        }
+
         set(state => {
           const agent = state.activeAgents.get(itemId);
           if (!agent) return state;
-          const updated = processAgentStream(agent, msg);
+          let updated = agent;
+          for (const msg of msgs) {
+            updated = processAgentStream(updated, msg);
+          }
           if (updated === agent) return state;
           const activeAgents = new Map(state.activeAgents);
           activeAgents.set(itemId, updated);
@@ -374,6 +395,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
 
       ws.addEventListener("open", () => {
         ws.send(JSON.stringify({
+          id: crypto.randomUUID(),
           domain: "workflow",
           action: "feature.start",
           payload: { feature_id: featureId, project_id: projectId },

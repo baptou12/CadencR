@@ -216,7 +216,8 @@ pub struct WorkflowFeatureStartResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowStartPlanPayload {
     pub feature_id: i64,
-    pub workflow_type: String,
+    #[serde(default)]
+    pub workflow_type: Option<String>,
     pub description: String,
     pub images: Option<Vec<String>>,
 }
@@ -599,5 +600,45 @@ mod tests {
         let p = SessionEndedPayload { reason: "done".into() };
         let v = serde_json::to_value(&p).unwrap();
         let _: SessionEndedPayload = serde_json::from_value(v).unwrap();
+    }
+
+    #[test]
+    fn test_start_plan_payload_without_workflow_type() {
+        // The frontend doesn't send workflow_type — it must deserialize without it
+        let json = serde_json::json!({
+            "feature_id": 42,
+            "description": "implement dark mode",
+            "images": []
+        });
+        let p: WorkflowStartPlanPayload = serde_json::from_value(json).unwrap();
+        assert_eq!(p.feature_id, 42);
+        assert_eq!(p.description, "implement dark mode");
+        assert!(p.workflow_type.is_none());
+    }
+
+    #[test]
+    fn test_start_plan_payload_with_workflow_type() {
+        // workflow_type is still accepted when provided
+        let json = serde_json::json!({
+            "feature_id": 42,
+            "workflow_type": "feature_build",
+            "description": "implement dark mode"
+        });
+        let p: WorkflowStartPlanPayload = serde_json::from_value(json).unwrap();
+        assert_eq!(p.workflow_type.as_deref(), Some("feature_build"));
+    }
+
+    #[test]
+    fn test_envelope_requires_id_field() {
+        // Envelopes missing the `id` field must fail deserialization
+        let json = serde_json::json!({
+            "domain": "workflow",
+            "action": "start_plan",
+            "payload": { "feature_id": 1, "description": "test" }
+        }).to_string();
+        let result = WsEnvelope::try_from(json);
+        assert!(result.is_err());
+        let err = format!("{}", result.unwrap_err());
+        assert!(err.contains("id"), "error should mention missing id field: {err}");
     }
 }
