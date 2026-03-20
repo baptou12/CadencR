@@ -130,7 +130,8 @@ impl Options {
         // MCP servers are serialised as JSON and passed via --mcp-config.
         if let Some(servers) = &self.mcp_servers {
             if !servers.is_empty() {
-                match serde_json::to_string(servers) {
+                let wrapper = serde_json::json!({ "mcpServers": servers });
+                match serde_json::to_string(&wrapper) {
                     Ok(json) => {
                         args.push("--mcp-config".to_string());
                         args.push(json);
