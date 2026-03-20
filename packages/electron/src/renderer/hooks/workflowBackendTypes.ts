@@ -7,6 +7,7 @@ import type { FeatureSession } from "./useFeatureAgentState";
 import type { AgentStatus } from "@/types/agent";
 import type {
   WorkflowStatus,
+  WorktreeStatus,
   QueueItem,
   AutonomyLevel,
 } from "./useWorkflowWebSocket";
@@ -149,6 +150,13 @@ export interface WorkflowBackend {
   setAutonomyLevel?(level: AutonomyLevel): void;
   selectItem?(itemId: number): void;
   selectedItemId?: number | null;
+
+  // -- Worktree state (WS only, null for tRPC) --
+  worktreeStatus?: WorktreeStatus;
+  worktreePath?: string | null;
+  worktreeBranch?: string | null;
+  worktreeSetupOutput?: string[];
+  worktreeError?: string | null;
 
   // -- Refs/callbacks --
   refetch?(): void;

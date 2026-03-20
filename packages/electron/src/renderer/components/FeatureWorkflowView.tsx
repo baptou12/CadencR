@@ -516,6 +516,10 @@ export function FeatureWorkflowView({
                 <WorktreeSetupSection
                   featureId={featureId}
                   projectId={projectId}
+                  wsWorktreeStatus={backend.worktreeStatus}
+                  wsWorktreeBranch={backend.worktreeBranch}
+                  wsWorktreeSetupOutput={backend.worktreeSetupOutput}
+                  wsWorktreeError={backend.worktreeError}
                 />
               </div>
             )}

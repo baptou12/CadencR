@@ -8,6 +8,7 @@ import {
   RefreshCwIcon,
 } from "lucide-react";
 import { useRetryWorktreeSetup, useGetFeatureSettings } from "@/api/generated";
+import type { WorktreeStatus } from "@/hooks/useWorkflowWebSocket";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -68,24 +69,55 @@ function LogOutput({ log }: { log: string }) {
   );
 }
 
+/** Map WorktreeStatus from WS store to tRPC-style SetupStep */
+function wsStatusToStep(status: WorktreeStatus): SetupStep | null {
+  switch (status) {
+    case "idle": return null;
+    case "creating": return "creating";
+    case "created": return "created";
+    case "setup_running": return "setup";
+    case "ready": return "done";
+    case "setup_error": return "error";
+  }
+}
+
 export function WorktreeSetupSection({
   featureId,
   projectId,
+  wsWorktreeStatus,
+  wsWorktreeBranch,
+  wsWorktreeSetupOutput,
+  wsWorktreeError,
 }: {
   featureId: number;
   projectId: number;
+  /** WS-driven worktree state (optional — when set, overrides tRPC polling) */
+  wsWorktreeStatus?: WorktreeStatus;
+  wsWorktreeBranch?: string | null;
+  wsWorktreeSetupOutput?: string[];
+  wsWorktreeError?: string | null;
 }) {
-  const { data: settingsArray } = useGetFeatureSettings(featureId);
-  const settings = settingsArray
+  const useWsMode = wsWorktreeStatus != null && wsWorktreeStatus !== "idle";
+
+  const { data: settingsArray } = useGetFeatureSettings(featureId, { enabled: !useWsMode });
+  const settings = !useWsMode && settingsArray
     ? Object.fromEntries(settingsArray.map((s) => [s.key, s.value]))
     : undefined;
 
   const retryMutation = useRetryWorktreeSetup();
 
-  const step = (settings?.worktree_setup_step as SetupStep) ?? null;
-  const log = settings?.worktree_setup_log ?? "";
-  const error = settings?.worktree_setup_error ?? "";
-  const branch = settings?.worktree_branch ?? "";
+  const step = useWsMode
+    ? wsStatusToStep(wsWorktreeStatus!)
+    : ((settings?.worktree_setup_step as SetupStep) ?? null);
+  const log = useWsMode
+    ? (wsWorktreeSetupOutput ?? []).join("\n")
+    : (settings?.worktree_setup_log ?? "");
+  const error = useWsMode
+    ? (wsWorktreeError ?? "")
+    : (settings?.worktree_setup_error ?? "");
+  const branch = useWsMode
+    ? (wsWorktreeBranch ?? "")
+    : (settings?.worktree_branch ?? "");
 
   const isDone = step === "done";
   const isError = step === "error";

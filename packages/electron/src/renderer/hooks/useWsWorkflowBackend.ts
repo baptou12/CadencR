@@ -327,5 +327,12 @@ export function useWsWorkflowBackend(
     setAutonomyLevel: (level) => store.setAutonomyLevel(level),
     selectItem: (itemId) => store.selectItem(itemId),
     selectedItemId: store.selectedItemId,
+
+    // Worktree state
+    worktreeStatus: store.worktreeStatus,
+    worktreePath: store.worktreePath,
+    worktreeBranch: store.worktreeBranch,
+    worktreeSetupOutput: store.worktreeSetupOutput,
+    worktreeError: store.worktreeError,
   };
 }
