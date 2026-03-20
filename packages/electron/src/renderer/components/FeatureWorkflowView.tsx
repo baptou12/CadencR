@@ -353,6 +353,20 @@ export function FeatureWorkflowView({
     if (saved > 0) setTerminalHeightPx(saved);
   }, [terminalHeightSetting.value]);
 
+  // Auto-load conversation history for agents that are already open (paused/running)
+  // but have empty blocks — e.g. after app restart
+  useEffect(() => {
+    if (!backend.loadAgentHistory) return;
+    for (const entry of backend.sessionEntries) {
+      if (
+        (entry.status === "paused" || entry.status === "running") &&
+        entry.blocks.length === 0
+      ) {
+        backend.loadAgentHistory(entry);
+      }
+    }
+  }, [backend]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleTerminalToolbarMouseDown = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault();
