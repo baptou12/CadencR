@@ -213,6 +213,7 @@ pub struct AgentSessionSummary {
     pub queue_item_id: Option<i64>,
     pub created_at: String,
     pub updated_at: Option<String>,
+    pub claude_session_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]

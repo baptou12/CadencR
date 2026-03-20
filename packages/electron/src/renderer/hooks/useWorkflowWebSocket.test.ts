@@ -128,6 +128,8 @@ function makeAgentSession(overrides?: Record<string, unknown>) {
     pendingQuestions: [],
     pendingQuestionToolInput: {},
     pendingQuestionRequestId: "",
+    historyLoaded: false,
+    claudeSessionId: null,
     ...overrides,
   };
 }
@@ -709,6 +711,221 @@ describe("useWorkflowStore", () => {
       useWorkflowStore.getState().populateAgentBlocks(999, fakeBlocks as never[]);
       const after = useWorkflowStore.getState();
       expect(after.activeAgents).toBe(before.activeAgents);
+    });
+  });
+
+  // ── agent_paused (reconnect resume support) ──
+
+  describe("agent_paused", () => {
+    it("creates planAgent in paused state with claudeSessionId on reconnect", () => {
+      const ws = connectStore();
+      expect(useWorkflowStore.getState().planAgent).toBeNull();
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "agent_paused",
+        payload: {
+          feature_id: 1,
+          queue_item_id: AGENT_TYPE_SYNTHETIC_KEYS.plan,
+          session_id: 42,
+          agent_type: "plan",
+          claude_session_id: "cc-sess-abc",
+        },
+      });
+
+      const plan = useWorkflowStore.getState().planAgent;
+      expect(plan).not.toBeNull();
+      expect(plan!.status).toBe("paused");
+      expect(plan!.sessionId).toBe(42);
+      expect(plan!.claudeSessionId).toBe("cc-sess-abc");
+    });
+
+    it("preserves existing planAgent blocks when paused", () => {
+      const ws = connectStore();
+      useWorkflowStore.setState({
+        planAgent: makeAgentSession({ sessionId: 42, blocks: [{ type: "text", content: "hello" }] }) as never,
+      });
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "agent_paused",
+        payload: {
+          feature_id: 1,
+          queue_item_id: AGENT_TYPE_SYNTHETIC_KEYS.plan,
+          session_id: 42,
+          agent_type: "plan",
+          claude_session_id: "cc-sess-xyz",
+        },
+      });
+
+      const plan = useWorkflowStore.getState().planAgent;
+      expect(plan!.status).toBe("paused");
+      expect(plan!.claudeSessionId).toBe("cc-sess-xyz");
+      expect(plan!.blocks).toHaveLength(1);
+    });
+
+    it("creates prdAgent in paused state on reconnect", () => {
+      const ws = connectStore();
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "agent_paused",
+        payload: {
+          feature_id: 1,
+          queue_item_id: AGENT_TYPE_SYNTHETIC_KEYS.prd,
+          session_id: 99,
+          agent_type: "prd",
+          claude_session_id: "cc-prd-sess",
+        },
+      });
+
+      const prd = useWorkflowStore.getState().prdAgent;
+      expect(prd).not.toBeNull();
+      expect(prd!.status).toBe("paused");
+      expect(prd!.claudeSessionId).toBe("cc-prd-sess");
+    });
+
+    it("creates activeAgent in paused state for session key", () => {
+      const ws = connectStore();
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "agent_paused",
+        payload: {
+          feature_id: 1,
+          queue_item_id: AGENT_TYPE_SYNTHETIC_KEYS.session,
+          session_id: 55,
+          agent_type: "session",
+          claude_session_id: "cc-session-id",
+        },
+      });
+
+      const agent = useWorkflowStore.getState().activeAgents.get(AGENT_TYPE_SYNTHETIC_KEYS.session);
+      expect(agent).toBeDefined();
+      expect(agent!.status).toBe("paused");
+      expect(agent!.claudeSessionId).toBe("cc-session-id");
+    });
+  });
+
+  // ── agent_session_id (session ID capture during streaming) ──
+
+  describe("agent_session_id", () => {
+    it("sets claudeSessionId on existing planAgent", () => {
+      const ws = connectStore();
+      useWorkflowStore.setState({
+        planAgent: makeAgentSession({ sessionId: 10 }) as never,
+      });
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "agent_session_id",
+        payload: {
+          queue_item_id: AGENT_TYPE_SYNTHETIC_KEYS.plan,
+          session_id: 10,
+          claude_session_id: "captured-uuid",
+        },
+      });
+
+      expect(useWorkflowStore.getState().planAgent!.claudeSessionId).toBe("captured-uuid");
+    });
+
+    it("is a no-op when planAgent does not exist", () => {
+      const ws = connectStore();
+      expect(useWorkflowStore.getState().planAgent).toBeNull();
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "agent_session_id",
+        payload: {
+          queue_item_id: AGENT_TYPE_SYNTHETIC_KEYS.plan,
+          session_id: 10,
+          claude_session_id: "captured-uuid",
+        },
+      });
+
+      // Should remain null — no agent to patch
+      expect(useWorkflowStore.getState().planAgent).toBeNull();
+    });
+
+    it("sets claudeSessionId on existing activeAgent", () => {
+      const ws = connectStore();
+      const agents = new Map();
+      agents.set(7, makeAgentSession({ sessionId: 7 }));
+      useWorkflowStore.setState({ activeAgents: agents });
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "agent_session_id",
+        payload: {
+          queue_item_id: 7,
+          session_id: 7,
+          claude_session_id: "active-uuid",
+        },
+      });
+
+      expect(useWorkflowStore.getState().activeAgents.get(7)!.claudeSessionId).toBe("active-uuid");
+    });
+
+    it("ignores empty claude_session_id", () => {
+      const ws = connectStore();
+      useWorkflowStore.setState({
+        planAgent: makeAgentSession({ sessionId: 10 }) as never,
+      });
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "agent_session_id",
+        payload: {
+          queue_item_id: AGENT_TYPE_SYNTHETIC_KEYS.plan,
+          session_id: 10,
+          claude_session_id: "",
+        },
+      });
+
+      expect(useWorkflowStore.getState().planAgent!.claudeSessionId).toBeNull();
+    });
+  });
+
+  // ── hydrateFromSnapshot includes claudeSessionId ──
+
+  describe("hydrateFromSnapshot with claudeSessionId", () => {
+    it("hydrates plan agent with claude_session_id from snapshot", () => {
+      const snapshot: FeatureSnapshot = {
+        workflow_status: "planning",
+        queue: [],
+        agent_sessions: [
+          { id: 100, agent_type: "plan", status: "paused", queue_item_id: null, claude_session_id: "snap-uuid" } as AgentSessionSummary,
+        ],
+        plan: null,
+        worktree: null,
+        autonomy_level: 3,
+      };
+
+      useWorkflowStore.getState().hydrateFromSnapshot(snapshot);
+
+      const plan = useWorkflowStore.getState().planAgent;
+      expect(plan).not.toBeNull();
+      expect(plan!.claudeSessionId).toBe("snap-uuid");
+      expect(plan!.status).toBe("paused");
+    });
+
+    it("hydrates agent with null claude_session_id when not present", () => {
+      const snapshot: FeatureSnapshot = {
+        workflow_status: "planning",
+        queue: [],
+        agent_sessions: [
+          { id: 101, agent_type: "plan", status: "completed", queue_item_id: null, claude_session_id: null } as AgentSessionSummary,
+        ],
+        plan: null,
+        worktree: null,
+        autonomy_level: 3,
+      };
+
+      useWorkflowStore.getState().hydrateFromSnapshot(snapshot);
+
+      const plan = useWorkflowStore.getState().planAgent;
+      expect(plan).not.toBeNull();
+      expect(plan!.claudeSessionId).toBeNull();
     });
   });
 });

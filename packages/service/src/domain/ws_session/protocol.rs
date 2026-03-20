@@ -381,6 +381,15 @@ pub struct WorkflowAgentStartedPayload {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowAgentPausedPayload {
+    pub feature_id: i64,
+    pub queue_item_id: i64,
+    pub session_id: i64,
+    pub agent_type: String,
+    pub claude_session_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowItemStartedPayload {
     pub feature_id: i64,
     pub queue_item_id: i64,

@@ -64,6 +64,8 @@ export interface AgentSessionState {
   pendingQuestionToolInput: Record<string, unknown>;
   pendingQuestionRequestId: string;
   historyLoaded: boolean;
+  /** Claude Code CLI session ID (UUID) for --resume */
+  claudeSessionId: string | null;
 }
 
 export type AutonomyLevel = 1 | 2 | 3;
@@ -81,6 +83,7 @@ export interface AgentSessionSummary {
   queue_item_id: number | null;
   status: string;
   agent_type: string | null;
+  claude_session_id: string | null;
 }
 
 export interface PlanSnapshot {
@@ -200,6 +203,7 @@ function createAgentSession(sessionId: number): AgentSessionState {
     pendingQuestionToolInput: {},
     pendingQuestionRequestId: "",
     historyLoaded: false,
+    claudeSessionId: null,
   };
 }
 
@@ -409,6 +413,36 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
       case "refine.started": {
         // Refine agent streams via plan_agent_stream (synthetic id -4)
         // planAgent is already set by startRefine()
+        break;
+      }
+      case "agent_paused": {
+        // Received on reconnect when a pre-queue agent (plan/prd/session/refine) is resumable
+        const pausedItemId = payload.queue_item_id as number;
+        const pausedSessionId = payload.session_id as number;
+        const pausedClaudeSessionId = (payload.claude_session_id as string) || null;
+        set(state => {
+          const patch = { sessionId: pausedSessionId, status: "paused" as const, claudeSessionId: pausedClaudeSessionId };
+          if (pausedItemId === PLAN_KEY) {
+            const existing = state.planAgent ?? createAgentSession(pausedSessionId);
+            return { planAgent: { ...existing, ...patch } };
+          }
+          if (pausedItemId === PRD_KEY) {
+            const existing = state.prdAgent ?? createAgentSession(pausedSessionId);
+            return { prdAgent: { ...existing, ...patch } };
+          }
+          const activeAgents = new Map(state.activeAgents);
+          const existing = activeAgents.get(pausedItemId) ?? createAgentSession(pausedSessionId);
+          activeAgents.set(pausedItemId, { ...existing, ...patch });
+          return { activeAgents };
+        });
+        break;
+      }
+      case "agent_session_id": {
+        // Received when the backend captures the Claude Code session ID during streaming
+        const sidItemId = payload.queue_item_id as number;
+        const ccSessionId = payload.claude_session_id as string;
+        if (!ccSessionId) break;
+        set(state => patchAgentByItemId(state, sidItemId, { claudeSessionId: ccSessionId }));
         break;
       }
       case "agent_stream": {
@@ -640,6 +674,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
           pendingQuestionToolInput: {},
           pendingQuestionRequestId: "",
           historyLoaded: false,
+          claudeSessionId: session.claude_session_id ?? null,
         };
 
         // Use queue_item_id when available; otherwise map agent_type to its

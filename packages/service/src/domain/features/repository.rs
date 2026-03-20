@@ -565,7 +565,8 @@ pub async fn get_feature_snapshot(
         r#"SELECT s.id, COALESCE(s.agent_type, 'unknown') as agent_type, COALESCE(s.status, 'idle') as status,
                   wq.id as queue_item_id,
                   COALESCE(s.started_at, '') as created_at,
-                  NULL as updated_at
+                  NULL as updated_at,
+                  s.claude_session_id
            FROM agent_sessions s
            LEFT JOIN workflow_queue wq ON wq.agent_session_id = s.id AND wq.feature_id = ?
            WHERE s.feature_id = ?"#,

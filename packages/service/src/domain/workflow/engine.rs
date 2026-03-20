@@ -40,6 +40,48 @@ use crate::domain::ws_session::protocol::*;
 
 pub type WsSender = mpsc::UnboundedSender<Message>;
 
+/// Map a synthetic queue_item_id to its agent type string (DB column value).
+fn synthetic_id_to_agent_type_str(id: i64) -> Option<&'static str> {
+    match id {
+        PLAN_ITEM_ID => Some("plan"),
+        PRD_ITEM_ID => Some("prd"),
+        SESSION_ITEM_ID => Some("session"),
+        REFINE_ITEM_ID => Some("refine"),
+        _ => None,
+    }
+}
+
+/// Map an agent type string to its synthetic queue_item_id.
+fn agent_type_str_to_synthetic_id(agent_type: &str) -> Option<i64> {
+    match agent_type {
+        "plan" => Some(PLAN_ITEM_ID),
+        "prd" => Some(PRD_ITEM_ID),
+        "session" => Some(SESSION_ITEM_ID),
+        "refine" => Some(REFINE_ITEM_ID),
+        _ => None,
+    }
+}
+
+/// Map a synthetic queue_item_id to the SDK AgentType enum.
+fn synthetic_id_to_sdk_agent_type(id: i64) -> Option<AgentType> {
+    match id {
+        PLAN_ITEM_ID | REFINE_ITEM_ID => Some(AgentType::Plan),
+        PRD_ITEM_ID => Some(AgentType::Prd),
+        SESSION_ITEM_ID => Some(AgentType::Session),
+        _ => None,
+    }
+}
+
+/// Map a synthetic queue_item_id to its default system prompt.
+fn synthetic_id_to_system_prompt(id: i64) -> Option<&'static str> {
+    match id {
+        PLAN_ITEM_ID | REFINE_ITEM_ID => Some(Prompts::plan()),
+        PRD_ITEM_ID => Some(Prompts::prd()),
+        SESSION_ITEM_ID => Some(Prompts::session()),
+        _ => None,
+    }
+}
+
 /// Helper to serialize a typed payload to serde_json::Value.
 fn to_value<T: serde::Serialize>(v: T) -> serde_json::Value {
     serde_json::to_value(v).unwrap()
@@ -834,9 +876,18 @@ impl WorkflowEngine {
             self.send_item_update(item_id).await;
         }
 
-        // Mark the agent session as paused
+        // Mark the agent session as paused and persist claude_session_id for resume across restarts
         if let Some(db_session_id) = self.active_items.get(&item_id) {
-            WsSessionPersistence::mark_paused_static(&self.write_pool, *db_session_id).await;
+            let db_sid = *db_session_id;
+            WsSessionPersistence::mark_paused_static(&self.write_pool, db_sid).await;
+
+            // Persist the claude_session_id from in-memory paused_sessions to DB
+            // so it survives engine recreation on page navigation / reconnect
+            if let Some(cc_sid_ref) = self.paused_sessions.get(&item_id) {
+                let cc_sid = cc_sid_ref.clone();
+                info!(item_id, db_session_id = db_sid, cc_session_id = %cc_sid, "persisting claude_session_id to DB for resume");
+                WsSessionPersistence::persist_claude_session_id_static(&self.write_pool, db_sid, &cc_sid).await;
+            }
         }
     }
 
@@ -963,6 +1014,48 @@ impl WorkflowEngine {
             return self.resume_item(queue_item_id, &cc_session_id, text).await;
         }
 
+        // Fallback: check DB for a claude_session_id we can resume with
+        // (handles the case where paused_sessions wasn't populated, e.g. page refresh)
+        if let Some(agent_type_str) = synthetic_id_to_agent_type_str(queue_item_id) {
+            let row: Option<(i64, Option<String>)> = sqlx::query_as(
+                "SELECT id, claude_session_id FROM agent_sessions \
+                 WHERE feature_id = ? AND agent_type = ? AND status IN ('running', 'paused') \
+                 ORDER BY id DESC LIMIT 1",
+            )
+            .bind(self.feature_id)
+            .bind(agent_type_str)
+            .fetch_optional(&self.read_pool)
+            .await
+            .ok()
+            .flatten();
+
+            if let Some((db_session_id, Some(ref cc_session_id))) = row {
+                if !cc_session_id.is_empty() {
+                    let cc_sid = cc_session_id.clone();
+                    info!(queue_item_id, db_session_id, cc_session_id = %cc_sid, "DB fallback: resuming paused agent with --resume");
+                    self.active_items.insert(queue_item_id, db_session_id);
+                    return self.resume_item(queue_item_id, &cc_sid, text).await;
+                }
+            }
+
+            // No claude_session_id at all — restart the agent fresh
+            if let Some((db_session_id, _)) = row {
+                info!(queue_item_id, db_session_id, "no claude_session_id — restarting agent fresh");
+                WsSessionPersistence::mark_completed_static(&self.write_pool, db_session_id).await;
+            }
+
+            let sdk_type = synthetic_id_to_sdk_agent_type(queue_item_id).unwrap();
+            let system_prompt = synthetic_id_to_system_prompt(queue_item_id).unwrap();
+            info!(queue_item_id, agent_type = agent_type_str, "restarting pre-queue agent fresh (no resumable session)");
+            return self.spawn_pre_queue_agent(
+                sdk_type,
+                agent_type_str,
+                system_prompt,
+                text,
+                queue_item_id,
+            ).await.map(|_| ());
+        }
+
         Err(format!("No query handle for item {queue_item_id} — agent may need restart"))
     }
 
@@ -977,10 +1070,7 @@ impl WorkflowEngine {
         })?;
 
         // Determine agent type for MCP config
-        let agent_type = if queue_item_id == PLAN_ITEM_ID { AgentType::Plan }
-            else if queue_item_id == PRD_ITEM_ID { AgentType::Prd }
-            else if queue_item_id == SESSION_ITEM_ID { AgentType::Session }
-            else { AgentType::Execute };
+        let agent_type = synthetic_id_to_sdk_agent_type(queue_item_id).unwrap_or(AgentType::Execute);
         let mcp_servers = build_mcp_server_config(agent_type, self.feature_id);
 
         // Set up permission bridge
@@ -1213,8 +1303,40 @@ impl WorkflowEngine {
     pub async fn restore_on_reconnect(&self) -> Result<(), String> {
         info!(feature_id = self.feature_id, "restoring workflow state on reconnect");
 
-        // Mark any items that were "running" as error (stale from server restart)
-        // Single UPDATE instead of N×2 individual queries
+        // Restore paused pre-queue agents from DB so they can be resumed via prompt.send.
+        // Look for agent_sessions that were running/paused and have a claude_session_id.
+        let resumable_sessions: Vec<(i64, String, String)> = sqlx::query_as(
+            "SELECT id, agent_type, claude_session_id FROM agent_sessions \
+             WHERE feature_id = ? AND claude_session_id IS NOT NULL \
+             AND status IN ('running', 'paused') \
+             ORDER BY id DESC",
+        )
+        .bind(self.feature_id)
+        .fetch_all(&self.read_pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        // Resolve synthetic IDs once, populate in-memory state, and collect for notification
+        let mut restored: Vec<(i64, i64, String, String)> = Vec::new(); // (synthetic_id, db_session_id, agent_type, cc_session_id)
+        for (db_session_id, agent_type, cc_session_id) in &resumable_sessions {
+            let Some(synthetic_id) = agent_type_str_to_synthetic_id(agent_type) else {
+                continue; // regular queue items handled separately
+            };
+            info!(
+                feature_id = self.feature_id,
+                db_session_id,
+                agent_type = agent_type.as_str(),
+                cc_session_id = cc_session_id.as_str(),
+                synthetic_id,
+                "restoring paused pre-queue agent for resume"
+            );
+            self.paused_sessions.insert(synthetic_id, cc_session_id.clone());
+            self.active_items.insert(synthetic_id, *db_session_id);
+            WsSessionPersistence::mark_paused_static(&self.write_pool, *db_session_id).await;
+            restored.push((synthetic_id, *db_session_id, agent_type.clone(), cc_session_id.clone()));
+        }
+
+        // Mark any queue items that were "running" as error (stale from server restart)
         sqlx::query(
             "UPDATE workflow_queue SET status = 'error', result = 'Stale after reconnect', ended_at = datetime('now'), pid = NULL WHERE feature_id = ? AND status = 'running'",
         )
@@ -1240,6 +1362,22 @@ impl WorkflowEngine {
             }),
         );
         let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
+
+        // Notify frontend about restored paused agents
+        for (synthetic_id, db_session_id, agent_type, cc_session_id) in &restored {
+            let envelope = WsEnvelope::new(
+                "workflow",
+                "agent_paused",
+                to_value(WorkflowAgentPausedPayload {
+                    feature_id: self.feature_id,
+                    queue_item_id: *synthetic_id,
+                    session_id: *db_session_id,
+                    agent_type: agent_type.clone(),
+                    claude_session_id: cc_session_id.clone(),
+                }),
+            );
+            let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
+        }
 
         Ok(())
     }
@@ -1507,10 +1645,35 @@ fn spawn_workflow_stream_reader(
         );
         let mut completed_ok = false;
         let mut error_msg: Option<String> = None;
+        let mut needs_session_id_capture = true;
 
         loop {
             match message_rx.recv().await {
                 Some(Ok(sdk_msg)) => {
+                    // Capture claude_session_id from the first message that has one
+                    if needs_session_id_capture {
+                        if let Some(cli_sid) = sdk_msg.session_id() {
+                            if !cli_sid.is_empty() {
+                                needs_session_id_capture = false;
+                                info!(queue_item_id, db_session_id, claude_session_id = %cli_sid, "workflow stream_reader: persisting CLI session_id to DB");
+                                WsSessionPersistence::persist_claude_session_id_static(
+                                    &write_pool, db_session_id, cli_sid,
+                                ).await;
+                                // Notify frontend so it can display/track the session ID
+                                let sid_env = WsEnvelope::new(
+                                    "workflow",
+                                    "agent_session_id",
+                                    serde_json::json!({
+                                        "queue_item_id": queue_item_id,
+                                        "session_id": db_session_id,
+                                        "claude_session_id": cli_sid,
+                                    }),
+                                );
+                                let _ = sender.send(Message::Text(String::from(sid_env).into()));
+                            }
+                        }
+                    }
+
                     // Check MCP server status on init
                     if let SdkMessage::System(SystemMessage::Init { ref mcp_servers, ref tools, .. }) = sdk_msg {
                         info!(queue_item_id, ?mcp_servers, tool_count = tools.len(), "received init message from CLI");
@@ -2056,5 +2219,233 @@ mod tests {
         for &(_, group) in &result {
             assert_eq!(group, 0);
         }
+    }
+
+    // ── Synthetic ID helper functions ──
+
+    #[test]
+    fn test_synthetic_id_to_agent_type_str() {
+        assert_eq!(synthetic_id_to_agent_type_str(PLAN_ITEM_ID), Some("plan"));
+        assert_eq!(synthetic_id_to_agent_type_str(PRD_ITEM_ID), Some("prd"));
+        assert_eq!(synthetic_id_to_agent_type_str(SESSION_ITEM_ID), Some("session"));
+        assert_eq!(synthetic_id_to_agent_type_str(REFINE_ITEM_ID), Some("refine"));
+        assert_eq!(synthetic_id_to_agent_type_str(0), None);
+        assert_eq!(synthetic_id_to_agent_type_str(42), None);
+        assert_eq!(synthetic_id_to_agent_type_str(-99), None);
+    }
+
+    #[test]
+    fn test_agent_type_str_to_synthetic_id() {
+        assert_eq!(agent_type_str_to_synthetic_id("plan"), Some(PLAN_ITEM_ID));
+        assert_eq!(agent_type_str_to_synthetic_id("prd"), Some(PRD_ITEM_ID));
+        assert_eq!(agent_type_str_to_synthetic_id("session"), Some(SESSION_ITEM_ID));
+        assert_eq!(agent_type_str_to_synthetic_id("refine"), Some(REFINE_ITEM_ID));
+        assert_eq!(agent_type_str_to_synthetic_id("execute"), None);
+        assert_eq!(agent_type_str_to_synthetic_id(""), None);
+    }
+
+    #[test]
+    fn test_synthetic_id_roundtrip() {
+        // str -> id -> str roundtrip
+        for agent_type in &["plan", "prd", "session", "refine"] {
+            let id = agent_type_str_to_synthetic_id(agent_type).unwrap();
+            let back = synthetic_id_to_agent_type_str(id).unwrap();
+            assert_eq!(*agent_type, back);
+        }
+    }
+
+    #[test]
+    fn test_synthetic_id_to_sdk_agent_type() {
+        assert!(matches!(synthetic_id_to_sdk_agent_type(PLAN_ITEM_ID), Some(AgentType::Plan)));
+        assert!(matches!(synthetic_id_to_sdk_agent_type(REFINE_ITEM_ID), Some(AgentType::Plan)));
+        assert!(matches!(synthetic_id_to_sdk_agent_type(PRD_ITEM_ID), Some(AgentType::Prd)));
+        assert!(matches!(synthetic_id_to_sdk_agent_type(SESSION_ITEM_ID), Some(AgentType::Session)));
+        assert!(synthetic_id_to_sdk_agent_type(42).is_none());
+    }
+
+    #[test]
+    fn test_synthetic_id_to_system_prompt() {
+        // Just verify they return Some for valid IDs and None for invalid
+        assert!(synthetic_id_to_system_prompt(PLAN_ITEM_ID).is_some());
+        assert!(synthetic_id_to_system_prompt(PRD_ITEM_ID).is_some());
+        assert!(synthetic_id_to_system_prompt(SESSION_ITEM_ID).is_some());
+        assert!(synthetic_id_to_system_prompt(REFINE_ITEM_ID).is_some());
+        assert!(synthetic_id_to_system_prompt(42).is_none());
+    }
+
+    // ── restore_on_reconnect ──
+
+    /// Helper: create an engine with real schema for DB-backed tests.
+    async fn test_engine_with_schema() -> (WorkflowEngine, mpsc::UnboundedReceiver<Message>) {
+        let pool = test_pool().await;
+        sqlx::query(
+            r#"CREATE TABLE features (
+                id INTEGER PRIMARY KEY, project_id INTEGER, title TEXT,
+                status TEXT DEFAULT 'draft', type TEXT DEFAULT 'feature'
+            )"#,
+        ).execute(&pool).await.unwrap();
+        sqlx::query(
+            r#"CREATE TABLE agent_sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                feature_id INTEGER NOT NULL,
+                agent_type TEXT NOT NULL DEFAULT 'session',
+                status TEXT NOT NULL DEFAULT 'idle',
+                claude_session_id TEXT,
+                model TEXT, permission_mode TEXT,
+                has_file_changes INTEGER NOT NULL DEFAULT 0,
+                input_tokens INTEGER NOT NULL DEFAULT 0,
+                output_tokens INTEGER NOT NULL DEFAULT 0,
+                context_window INTEGER NOT NULL DEFAULT 200000,
+                started_at TEXT, ended_at TEXT
+            )"#,
+        ).execute(&pool).await.unwrap();
+        sqlx::query(
+            r#"CREATE TABLE workflow_queue (
+                id INTEGER PRIMARY KEY,
+                feature_id INTEGER NOT NULL,
+                workflow_type TEXT NOT NULL DEFAULT 'feature_build',
+                item_type TEXT NOT NULL,
+                phase_id INTEGER,
+                status TEXT NOT NULL DEFAULT 'pending',
+                order_index INTEGER NOT NULL,
+                group_index INTEGER,
+                config JSON,
+                agent_session_id INTEGER,
+                result JSON,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                started_at DATETIME, ended_at DATETIME, pid INTEGER
+            )"#,
+        ).execute(&pool).await.unwrap();
+        sqlx::query(
+            r#"CREATE TABLE workflow_dependencies (
+                item_id INTEGER NOT NULL,
+                depends_on_id INTEGER NOT NULL,
+                PRIMARY KEY (item_id, depends_on_id)
+            )"#,
+        ).execute(&pool).await.unwrap();
+
+        let (tx, rx) = mpsc::unbounded_channel();
+        let engine = WorkflowEngine::new(
+            1,
+            WorkflowType::FeatureBuild,
+            pool.clone(),
+            pool,
+            tx,
+            2,
+        );
+        (engine, rx)
+    }
+
+    #[tokio::test]
+    async fn test_restore_on_reconnect_populates_paused_sessions() {
+        let (engine, mut rx) = test_engine_with_schema().await;
+
+        // Insert a paused plan session with a claude_session_id
+        sqlx::query(
+            "INSERT INTO agent_sessions (feature_id, agent_type, status, claude_session_id) VALUES (1, 'plan', 'paused', 'cc-resume-123')"
+        ).execute(&engine.write_pool).await.unwrap();
+
+        engine.restore_on_reconnect().await.unwrap();
+
+        // paused_sessions should have the plan agent's session ID
+        assert!(engine.paused_sessions.contains_key(&PLAN_ITEM_ID));
+        assert_eq!(*engine.paused_sessions.get(&PLAN_ITEM_ID).unwrap(), "cc-resume-123");
+
+        // active_items should map PLAN_ITEM_ID to the db session id
+        assert!(engine.active_items.contains_key(&PLAN_ITEM_ID));
+
+        // Should have sent queue_update + agent_paused messages
+        let mut got_queue_update = false;
+        let mut got_agent_paused = false;
+        while let Ok(msg) = rx.try_recv() {
+            if let Message::Text(text) = msg {
+                let text_str: &str = &text;
+                if text_str.contains("queue_update") { got_queue_update = true; }
+                if text_str.contains("agent_paused") && text_str.contains("cc-resume-123") {
+                    got_agent_paused = true;
+                }
+            }
+        }
+        assert!(got_queue_update, "should have sent queue_update");
+        assert!(got_agent_paused, "should have sent agent_paused with claude_session_id");
+    }
+
+    #[tokio::test]
+    async fn test_restore_on_reconnect_ignores_sessions_without_claude_session_id() {
+        let (engine, _rx) = test_engine_with_schema().await;
+
+        // Insert a running session WITHOUT claude_session_id
+        sqlx::query(
+            "INSERT INTO agent_sessions (feature_id, agent_type, status) VALUES (1, 'plan', 'running')"
+        ).execute(&engine.write_pool).await.unwrap();
+
+        engine.restore_on_reconnect().await.unwrap();
+
+        // paused_sessions should be empty — no claude_session_id to resume with
+        assert!(engine.paused_sessions.is_empty());
+        assert!(engine.active_items.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_restore_on_reconnect_marks_stale_queue_items_as_error() {
+        let (engine, _rx) = test_engine_with_schema().await;
+
+        // Insert a running queue item
+        sqlx::query(
+            "INSERT INTO workflow_queue (feature_id, item_type, status, order_index) VALUES (1, 'execute', 'running', 0)"
+        ).execute(&engine.write_pool).await.unwrap();
+
+        engine.restore_on_reconnect().await.unwrap();
+
+        // Queue item should now be 'error'
+        let row: (String,) = sqlx::query_as(
+            "SELECT status FROM workflow_queue WHERE feature_id = 1"
+        ).fetch_one(&engine.read_pool).await.unwrap();
+        assert_eq!(row.0, "error");
+    }
+
+    #[tokio::test]
+    async fn test_restore_on_reconnect_ignores_other_features() {
+        let (engine, _rx) = test_engine_with_schema().await;
+
+        // Insert a paused session for a DIFFERENT feature
+        sqlx::query(
+            "INSERT INTO agent_sessions (feature_id, agent_type, status, claude_session_id) VALUES (999, 'plan', 'paused', 'other-feature')"
+        ).execute(&engine.write_pool).await.unwrap();
+
+        engine.restore_on_reconnect().await.unwrap();
+
+        // Should not restore sessions from other features
+        assert!(engine.paused_sessions.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_send_prompt_returns_error_for_unknown_positive_item() {
+        let (engine, _rx) = test_engine().await;
+
+        // Positive queue_item_id with no query handle or paused session
+        let result = engine.send_prompt(999, "hello", None).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("No query handle"));
+    }
+
+    #[tokio::test]
+    async fn test_send_prompt_uses_paused_session_for_resume() {
+        let (engine, _rx) = test_engine_with_schema().await;
+
+        // Create a session and populate paused_sessions + active_items
+        let db_id: i64 = sqlx::query_scalar(
+            "INSERT INTO agent_sessions (feature_id, agent_type, status, claude_session_id) VALUES (1, 'plan', 'paused', 'cc-resume-456') RETURNING id"
+        ).fetch_one(&engine.write_pool).await.unwrap();
+
+        engine.paused_sessions.insert(PLAN_ITEM_ID, "cc-resume-456".to_string());
+        engine.active_items.insert(PLAN_ITEM_ID, db_id);
+
+        // send_prompt will try to resume via the SDK — we can't test the full
+        // SDK flow here, but we can verify the paused_session was consumed
+        let _ = engine.send_prompt(PLAN_ITEM_ID, "continue", None).await;
+
+        // The paused session should have been removed (consumed by resume attempt)
+        assert!(!engine.paused_sessions.contains_key(&PLAN_ITEM_ID));
     }
 }

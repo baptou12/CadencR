@@ -663,6 +663,7 @@ export function FeatureWorkflowView({
                         featureId={featureId}
                         projectId={projectId}
                         sessionId={entry.sessionDbId}
+                        claudeSessionId={entry.claudeSessionId || undefined}
                         initialDraft={entry.draftPrompt}
                         subprocessId={entry.subprocessId ?? undefined}
                         pendingPermission={entry.pendingPermission}
