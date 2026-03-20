@@ -128,6 +128,57 @@ export function WsFeatureView({ featureId, projectId, feature }: WsFeatureViewPr
   }, [createWorktree, projectId, featureId, feature.title, store]);
 
   // ---------------------------------------------------------------------------
+  // Build unified agent entries list
+  // ---------------------------------------------------------------------------
+
+  const agentEntries = useMemo((): AgentEntry[] => {
+    const entries: AgentEntry[] = [];
+
+    // Plan agent (synthetic id -1)
+    if (store.planAgent) {
+      entries.push({
+        key: "plan",
+        queueItemId: -1,
+        agentType: "plan" as AgentType,
+        label: "Plan",
+        state: store.planAgent,
+        orderIndex: -2,
+      });
+    }
+
+    // PRD agent (synthetic id -2)
+    if (store.prdAgent) {
+      entries.push({
+        key: "prd",
+        queueItemId: -2,
+        agentType: "prd" as AgentType,
+        label: "PRD",
+        state: store.prdAgent,
+        orderIndex: -1,
+      });
+    }
+
+    // Queue agents
+    for (const [queueItemId, agentState] of store.activeAgents) {
+      const queueItem = store.queue.find(q => q.id === queueItemId);
+      const agentType = itemTypeToAgentType(queueItem?.item_type ?? "execute");
+      entries.push({
+        key: `queue-${queueItemId}`,
+        queueItemId,
+        agentType,
+        label: queueItem?.phase_title ?? AGENT_LABELS[agentType] ?? agentType,
+        state: agentState,
+        orderIndex: queueItem?.order_index ?? 999,
+      });
+    }
+
+    // Sort: plan first, prd second, then by order_index
+    entries.sort((a, b) => a.orderIndex - b.orderIndex);
+
+    return entries;
+  }, [store.planAgent, store.prdAgent, store.activeAgents, store.queue]);
+
+  // ---------------------------------------------------------------------------
   // Focus helpers
   // ---------------------------------------------------------------------------
 
@@ -314,57 +365,6 @@ export function WsFeatureView({ featureId, projectId, feature }: WsFeatureViewPr
     (description: string, images: PlanInputImage[]) => store.startPrd(description, images),
     [store],
   );
-
-  // ---------------------------------------------------------------------------
-  // Build unified agent entries list
-  // ---------------------------------------------------------------------------
-
-  const agentEntries = useMemo((): AgentEntry[] => {
-    const entries: AgentEntry[] = [];
-
-    // Plan agent (synthetic id -1)
-    if (store.planAgent) {
-      entries.push({
-        key: "plan",
-        queueItemId: -1,
-        agentType: "plan" as AgentType,
-        label: "Plan",
-        state: store.planAgent,
-        orderIndex: -2,
-      });
-    }
-
-    // PRD agent (synthetic id -2)
-    if (store.prdAgent) {
-      entries.push({
-        key: "prd",
-        queueItemId: -2,
-        agentType: "prd" as AgentType,
-        label: "PRD",
-        state: store.prdAgent,
-        orderIndex: -1,
-      });
-    }
-
-    // Queue agents
-    for (const [queueItemId, agentState] of store.activeAgents) {
-      const queueItem = store.queue.find(q => q.id === queueItemId);
-      const agentType = itemTypeToAgentType(queueItem?.item_type ?? "execute");
-      entries.push({
-        key: `queue-${queueItemId}`,
-        queueItemId,
-        agentType,
-        label: queueItem?.phase_title ?? AGENT_LABELS[agentType] ?? agentType,
-        state: agentState,
-        orderIndex: queueItem?.order_index ?? 999,
-      });
-    }
-
-    // Sort: plan first, prd second, then by order_index
-    entries.sort((a, b) => a.orderIndex - b.orderIndex);
-
-    return entries;
-  }, [store.planAgent, store.prdAgent, store.activeAgents, store.queue]);
 
   const inactiveEntries = useMemo(
     () => agentEntries.filter(e => !isActiveStatus(e.state.status)),
