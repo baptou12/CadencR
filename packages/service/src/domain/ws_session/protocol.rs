@@ -493,6 +493,39 @@ pub struct WorkflowAutonomyUpdatedPayload {
     pub level: u8,
 }
 
+// --- Workflow worktree payloads (Server → Client) ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowWorktreeCreatingPayload {
+    pub feature_id: i64,
+    pub branch: String,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowWorktreeCreatedPayload {
+    pub feature_id: i64,
+    pub path: String,
+    pub branch: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowWorktreeSetupOutputPayload {
+    pub feature_id: i64,
+    pub line: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowWorktreeReadyPayload {
+    pub feature_id: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowWorktreeSetupErrorPayload {
+    pub feature_id: i64,
+    pub error: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
