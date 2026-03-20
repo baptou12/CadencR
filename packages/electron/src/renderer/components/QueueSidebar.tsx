@@ -113,10 +113,17 @@ export function QueueSidebar({ queue, featureId, selectedItemId, onSelectItem, o
 
   // Build a map from phase_id to phase data for quick lookup
   const phaseMap = useMemo(() => {
-    if (!plan?.phases) return new Map<number, (typeof plan.phases)[number]>();
-    const m = new Map<number, (typeof plan.phases)[number]>();
+    if (!plan?.phases) return new Map<number, PhaseInfo>();
+    const m = new Map<number, PhaseInfo>();
     for (const p of plan.phases) {
-      m.set(p.id, p);
+      m.set(p.id, {
+        prompt: p.prompt,
+        commit_message: p.commit_message,
+        implementation_notes: p.implementation_notes,
+        deviations: p.deviations,
+        complexity: typeof p.complexity === "number" ? p.complexity : null,
+        status: p.status ?? undefined,
+      });
     }
     return m;
   }, [plan]);

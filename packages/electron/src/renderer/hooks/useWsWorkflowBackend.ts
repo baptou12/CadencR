@@ -189,14 +189,16 @@ function findQueueItemId(
 export function useWsWorkflowBackend(
   featureId: number,
   projectId: number,
+  enabled = true,
 ): WorkflowBackend {
   const store = useWorkflowStore();
 
   useEffect(() => {
+    if (!enabled) return;
     store.connect(featureId, projectId);
     return () => store.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [featureId, projectId]);
+  }, [featureId, projectId, enabled]);
 
   const { sessions, planSession, prdSession } = useMemo(
     () => buildSessionEntries(store.queue, store.activeAgents, store.planAgent, store.prdAgent),

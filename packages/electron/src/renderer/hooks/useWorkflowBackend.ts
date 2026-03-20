@@ -26,8 +26,10 @@ export function useWorkflowBackend(
   projectId: number,
   featureType: string,
 ): WorkflowBackend {
-  if (featureType === "ws-feature") {
-    return useWsWorkflowBackend(featureId, projectId);
-  }
-  return useTrpcWorkflowBackend(featureId, projectId);
+  // Always call both hooks to maintain stable hook order (Rules of Hooks).
+  const isWs = featureType === "ws-feature";
+  const wsBackend = useWsWorkflowBackend(featureId, projectId, isWs);
+  const trpcBackend = useTrpcWorkflowBackend(featureId, projectId);
+
+  return isWs ? wsBackend : trpcBackend;
 }
