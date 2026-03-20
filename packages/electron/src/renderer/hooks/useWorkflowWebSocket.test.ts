@@ -955,4 +955,43 @@ describe("useWorkflowStore", () => {
       expect(plan!.claudeSessionId).toBeNull();
     });
   });
+
+  describe("feature.renamed (cross-domain)", () => {
+    it("sets featureTitle from session-domain event", () => {
+      const ws = connectStore(1);
+      dispatch(ws, {
+        id: "srv-1",
+        domain: "session",
+        action: "feature.renamed",
+        payload: { feature_id: 1, title: "Auto Named Feature" },
+      });
+      expect(useWorkflowStore.getState().featureTitle).toBe("Auto Named Feature");
+    });
+
+    it("ignores feature.renamed with no title", () => {
+      const ws = connectStore(1);
+      dispatch(ws, {
+        id: "srv-1",
+        domain: "session",
+        action: "feature.renamed",
+        payload: { feature_id: 1 },
+      });
+      expect(useWorkflowStore.getState().featureTitle).toBeNull();
+    });
+
+    it("resets featureTitle on new connect", () => {
+      const ws = connectStore(1);
+      dispatch(ws, {
+        id: "srv-1",
+        domain: "session",
+        action: "feature.renamed",
+        payload: { feature_id: 1, title: "Old Name" },
+      });
+      expect(useWorkflowStore.getState().featureTitle).toBe("Old Name");
+
+      // Reconnect to a different feature
+      connectStore(2);
+      expect(useWorkflowStore.getState().featureTitle).toBeNull();
+    });
+  });
 });

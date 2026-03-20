@@ -322,6 +322,8 @@ export interface SessionEntry {
   slashCommands: SlashCommand[];
   slashCommandsLoading: boolean;
   todos: TodoItem[];
+  /** Live feature title pushed via WS after auto-naming. */
+  featureTitle: string | null;
 }
 
 function createSessionEntry(): SessionEntry {
@@ -346,6 +348,7 @@ function createSessionEntry(): SessionEntry {
     slashCommands: [],
     slashCommandsLoading: false,
     todos: [],
+    featureTitle: null,
   };
 }
 
@@ -722,12 +725,8 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
 
       case "feature.renamed": {
         const p = envelope.payload as { feature_id?: number; title?: string };
-        if (p.feature_id != null && typeof window !== "undefined") {
-          window.dispatchEvent(
-            new CustomEvent("ws:feature-renamed", {
-              detail: { featureId: p.feature_id, title: p.title },
-            }),
-          );
+        if (p.title) {
+          set(updateSession(get(), sessionId, { featureTitle: p.title }));
         }
         break;
       }

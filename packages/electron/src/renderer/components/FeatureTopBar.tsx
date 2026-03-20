@@ -16,6 +16,7 @@ import {
 } from "@/api/generated";
 import { DiffViewerModal, type ExecuteAgentState } from "./diff/DiffViewerModal";
 import { ModelSelector } from "./ModelSelector";
+import { useFeatureTitle } from "@/hooks/useFeatureTitle";
 import zedLogo from "../../../assets/zed-logo.png";
 
 const STATUS_COLORS: Record<string, string> = {
@@ -42,6 +43,8 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", executeS
   const queryClient = useQueryClient();
 
   const { data: feature } = useGetFeature(featureId);
+  // Live WS-pushed title from auto-naming (falls back to null).
+  const wsTitle = useFeatureTitle(featureId);
   const { data: progress } = useGetFeaturePlanProgress(featureId, { enabled: !isSession });
   const { data: featureSettingsData } = useGetFeatureSettings(featureId);
   const featureSettingsMap = featureSettingsData ? Object.fromEntries(featureSettingsData.map(s => [s.key, s.value])) : {};
@@ -126,7 +129,7 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", executeS
         </Badge>
       )}
 
-      <h1 className="text-lg font-semibold">{feature.title}</h1>
+      <h1 className="text-lg font-semibold">{wsTitle ?? feature.title}</h1>
 
       {isWebSocket && (
         <Badge variant="secondary" className="bg-teal-500/15 text-teal-300 text-[10px] px-1.5 py-0 inline-flex items-center gap-1">

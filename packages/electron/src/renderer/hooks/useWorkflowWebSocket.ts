@@ -124,6 +124,9 @@ interface WorkflowState {
   error: string | null;
   hydrated: boolean;
 
+  /** Live feature title pushed via WS after auto-naming. */
+  featureTitle: string | null;
+
   // Worktree state
   worktreeStatus: WorktreeStatus;
   worktreePath: string | null;
@@ -280,6 +283,13 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     const domain = data.domain as string;
     const action = data.action as string;
     const payload = (data.payload ?? {}) as Record<string, unknown>;
+
+    // Handle cross-domain events before the workflow-only guard
+    if (domain === "session" && action === "feature.renamed") {
+      const title = payload.title as string | undefined;
+      if (title) set({ featureTitle: title });
+      return;
+    }
 
     if (domain !== "workflow") return;
 
@@ -621,6 +631,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     worktreeBranch: null,
     worktreeSetupOutput: [],
     worktreeError: null,
+    featureTitle: null,
 
     connect(featureId, projectId) {
       const prev = get().ws;
@@ -632,6 +643,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         queue: [], activeAgents: new Map(), planAgent: null, prdAgent: null,
         workflowStatus: "idle", pauseReason: null, selectedItemId: null, error: null, hydrated: false,
         worktreeStatus: "idle" as const, worktreePath: null, worktreeBranch: null, worktreeSetupOutput: [], worktreeError: null,
+        featureTitle: null,
       });
 
       ws.addEventListener("open", () => {
