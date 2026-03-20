@@ -112,7 +112,7 @@ function dispatch(ws: MockWebSocket, data: Record<string, unknown>) {
   ws.emit("message", { data: JSON.stringify(data) });
 }
 
-function makeAgentSession() {
+function makeAgentSession(overrides?: Record<string, unknown>) {
   return {
     sessionId: 0,
     blocks: [] as unknown[],
@@ -123,6 +123,10 @@ function makeAgentSession() {
       toolCalls: new Map(),
     },
     pendingPermission: null,
+    pendingQuestions: [],
+    pendingQuestionToolInput: {},
+    pendingQuestionRequestId: "",
+    ...overrides,
   };
 }
 
@@ -293,6 +297,143 @@ describe("useWorkflowStore", () => {
       });
 
       expect(useWorkflowStore.getState().activeAgents.size).toBe(0);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Interrupt / Resume
+  // -------------------------------------------------------------------------
+
+  describe("interruptItem", () => {
+    it("optimistically sets planAgent status to paused", () => {
+      const ws = connectStore();
+      useWorkflowStore.setState({ planAgent: makeAgentSession({ status: "running" }) });
+
+      useWorkflowStore.getState().interruptItem(-1);
+
+      expect(useWorkflowStore.getState().planAgent!.status).toBe("paused");
+      // Should also send the interrupt envelope
+      const sent = ws.sent.find(s => JSON.parse(s).action === "interrupt");
+      expect(sent).toBeDefined();
+      expect(JSON.parse(sent!).payload.queue_item_id).toBe(-1);
+    });
+
+    it("optimistically sets prdAgent status to paused", () => {
+      connectStore();
+      useWorkflowStore.setState({ prdAgent: makeAgentSession({ status: "running" }) });
+
+      useWorkflowStore.getState().interruptItem(-2);
+
+      expect(useWorkflowStore.getState().prdAgent!.status).toBe("paused");
+    });
+
+    it("optimistically sets activeAgent and queue item to paused", () => {
+      connectStore();
+      const agents = new Map();
+      agents.set(10, makeAgentSession({ sessionId: 100, status: "running" }));
+      useWorkflowStore.setState({
+        activeAgents: agents,
+        queue: [{ id: 10, status: "running", item_type: "execute", phase_id: null, phase_title: null, order_index: 0, group_index: null, agent_session_id: 100, result: null }],
+      });
+
+      useWorkflowStore.getState().interruptItem(10);
+
+      expect(useWorkflowStore.getState().activeAgents.get(10)!.status).toBe("paused");
+      expect(useWorkflowStore.getState().queue[0].status).toBe("paused");
+    });
+  });
+
+  describe("interrupted message handler", () => {
+    it("sets planAgent to paused on interrupted message", () => {
+      const ws = connectStore();
+      useWorkflowStore.setState({ planAgent: makeAgentSession({ status: "running" }) });
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "interrupted",
+        payload: { queue_item_id: -1, feature_id: 1, status: "interrupted" },
+      });
+
+      expect(useWorkflowStore.getState().planAgent!.status).toBe("paused");
+    });
+
+    it("sets activeAgent to paused and updates queue on interrupted message", () => {
+      const ws = connectStore();
+      const agents = new Map();
+      agents.set(5, makeAgentSession({ sessionId: 50, status: "running" }));
+      useWorkflowStore.setState({
+        activeAgents: agents,
+        queue: [{ id: 5, status: "running", item_type: "execute", phase_id: null, phase_title: null, order_index: 0, group_index: null, agent_session_id: 50, result: null }],
+      });
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "interrupted",
+        payload: { queue_item_id: 5, feature_id: 1, status: "interrupted" },
+      });
+
+      expect(useWorkflowStore.getState().activeAgents.get(5)!.status).toBe("paused");
+      expect(useWorkflowStore.getState().queue[0].status).toBe("paused");
+    });
+  });
+
+  describe("resumeItem", () => {
+    it("sets planAgent back to running and sends prompt.send", () => {
+      const ws = connectStore();
+      useWorkflowStore.setState({ planAgent: makeAgentSession({ status: "paused" }) });
+
+      useWorkflowStore.getState().resumeItem(-1);
+
+      expect(useWorkflowStore.getState().planAgent!.status).toBe("running");
+      const sent = ws.sent.find(s => JSON.parse(s).action === "prompt.send");
+      expect(sent).toBeDefined();
+      const envelope = JSON.parse(sent!);
+      expect(envelope.payload.queue_item_id).toBe(-1);
+      expect(envelope.payload.text).toBe("");
+    });
+
+    it("sets activeAgent back to running and updates queue", () => {
+      connectStore();
+      const agents = new Map();
+      agents.set(7, makeAgentSession({ sessionId: 70, status: "paused" }));
+      useWorkflowStore.setState({
+        activeAgents: agents,
+        queue: [{ id: 7, status: "paused", item_type: "execute", phase_id: null, phase_title: null, order_index: 0, group_index: null, agent_session_id: 70, result: null }],
+      });
+
+      useWorkflowStore.getState().resumeItem(7);
+
+      expect(useWorkflowStore.getState().activeAgents.get(7)!.status).toBe("running");
+      expect(useWorkflowStore.getState().queue[0].status).toBe("running");
+    });
+  });
+
+  describe("sendPromptToAgent", () => {
+    it("sets paused planAgent back to running and appends user message", () => {
+      connectStore();
+      useWorkflowStore.setState({ planAgent: makeAgentSession({ status: "paused" }) });
+
+      useWorkflowStore.getState().sendPromptToAgent(-1, "continue please");
+
+      const { planAgent } = useWorkflowStore.getState();
+      expect(planAgent!.status).toBe("running");
+      expect(planAgent!.blocks.length).toBe(1);
+      expect(planAgent!.blocks[0]).toMatchObject({ type: "user_message", content: "continue please" });
+    });
+
+    it("sets paused activeAgent back to running and updates queue", () => {
+      connectStore();
+      const agents = new Map();
+      agents.set(3, makeAgentSession({ sessionId: 30, status: "paused" }));
+      useWorkflowStore.setState({
+        activeAgents: agents,
+        queue: [{ id: 3, status: "paused", item_type: "execute", phase_id: null, phase_title: null, order_index: 0, group_index: null, agent_session_id: 30, result: null }],
+      });
+
+      useWorkflowStore.getState().sendPromptToAgent(3, "go on");
+
+      expect(useWorkflowStore.getState().activeAgents.get(3)!.status).toBe("running");
+      expect(useWorkflowStore.getState().queue[0].status).toBe("running");
     });
   });
 });

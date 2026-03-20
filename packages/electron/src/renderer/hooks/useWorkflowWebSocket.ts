@@ -118,6 +118,7 @@ interface WorkflowState {
   respondToQuestion: (itemId: number, response: string) => void;
   sendPromptToAgent: (itemId: number, text: string, images?: Array<{ base64: string; mimeType: string }>) => void;
   interruptItem: (itemId: number) => void;
+  resumeItem: (itemId: number) => void;
   startSession: (prompt: string, images?: Array<{ base64: string; mimeType: string }>) => void;
   startRefine: (description: string, images?: Array<{ base64: string; mimeType: string }>) => void;
   startReviewFixer: (comments: string) => void;
@@ -158,6 +159,28 @@ function processAgentStream(
   if (mutations.length === 0) return agent;
   const blocks = applyMutations(agent.blocks, mutations, agent.streamingState);
   return { ...agent, blocks };
+}
+
+/**
+ * Route a partial update to the correct agent (planAgent, prdAgent, or activeAgents)
+ * based on the synthetic item ID. Returns a Zustand state patch.
+ */
+function patchAgentByItemId(
+  state: WorkflowState,
+  itemId: number,
+  patch: Partial<AgentSessionState>,
+): Partial<WorkflowState> {
+  if (itemId === -1 && state.planAgent) {
+    return { planAgent: { ...state.planAgent, ...patch } };
+  }
+  if (itemId === -2 && state.prdAgent) {
+    return { prdAgent: { ...state.prdAgent, ...patch } };
+  }
+  const agent = state.activeAgents.get(itemId);
+  if (!agent) return {};
+  const activeAgents = new Map(state.activeAgents);
+  activeAgents.set(itemId, { ...agent, ...patch });
+  return { activeAgents };
 }
 
 // ---------------------------------------------------------------------------
@@ -253,6 +276,21 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
           const activeAgents = new Map(state.activeAgents);
           activeAgents.set(itemId, { ...agent, status: "error" });
           return { queue, activeAgents, error };
+        });
+        break;
+      }
+      case "interrupted": {
+        const itemId = payload.queue_item_id as number;
+        set(state => {
+          const agentPatch = patchAgentByItemId(state, itemId, { status: "paused" });
+          // Also update queue item status for positive IDs
+          if (itemId > 0) {
+            const queue = state.queue.map(q =>
+              q.id === itemId ? { ...q, status: "paused" as const } : q,
+            );
+            return { ...agentPatch, queue };
+          }
+          return agentPatch;
         });
         break;
       }
@@ -614,7 +652,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     },
 
     sendPromptToAgent(itemId, text, images) {
-      // Optimistically add user message block (mirrors ws-session-store behavior)
+      // Optimistically add user message block and set status to running (handles resume from paused)
       set(state => {
         const userBlock = {
           id: `ws-user-${Date.now()}`,
@@ -624,28 +662,56 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
           createdAt: new Date().toISOString(),
         };
 
-        // Pre-queue agents (plan/prd)
-        if (itemId === -1 && state.planAgent) {
-          return { planAgent: { ...state.planAgent, blocks: [...state.planAgent.blocks, userBlock] } };
-        }
-        if (itemId === -2 && state.prdAgent) {
-          return { prdAgent: { ...state.prdAgent, blocks: [...state.prdAgent.blocks, userBlock] } };
-        }
+        // Resolve current blocks for the target agent
+        const currentAgent = itemId === -1 ? state.planAgent
+          : itemId === -2 ? state.prdAgent
+          : state.activeAgents.get(itemId);
+        if (!currentAgent) return {};
 
-        // Queue agents
-        const agent = state.activeAgents.get(itemId);
-        if (agent) {
-          const activeAgents = new Map(state.activeAgents);
-          activeAgents.set(itemId, { ...agent, blocks: [...agent.blocks, userBlock] });
-          return { activeAgents };
+        const agentPatch = patchAgentByItemId(state, itemId, {
+          status: "running",
+          blocks: [...currentAgent.blocks, userBlock],
+        });
+        if (itemId > 0) {
+          const queue = state.queue.map(q =>
+            q.id === itemId && q.status === "paused" ? { ...q, status: "running" as const } : q,
+          );
+          return { ...agentPatch, queue };
         }
-        return {};
+        return agentPatch;
       });
       send("prompt.send", { queue_item_id: itemId, text, images });
     },
 
     interruptItem(itemId) {
+      // Optimistically update agent status to paused so the UI responds immediately
+      set(state => {
+        const agentPatch = patchAgentByItemId(state, itemId, { status: "paused" });
+        if (itemId > 0) {
+          const queue = state.queue.map(q =>
+            q.id === itemId && q.status === "running" ? { ...q, status: "paused" as const } : q,
+          );
+          return { ...agentPatch, queue };
+        }
+        return agentPatch;
+      });
       send("interrupt", { queue_item_id: itemId });
+    },
+
+    resumeItem(itemId) {
+      // Optimistically set agent back to running
+      set(state => {
+        const agentPatch = patchAgentByItemId(state, itemId, { status: "running" });
+        if (itemId > 0) {
+          const queue = state.queue.map(q =>
+            q.id === itemId && q.status === "paused" ? { ...q, status: "running" as const } : q,
+          );
+          return { ...agentPatch, queue };
+        }
+        return agentPatch;
+      });
+      // Send empty prompt to trigger resume on the backend
+      send("prompt.send", { queue_item_id: itemId, text: "", images: null });
     },
 
     startSession(prompt, images) {

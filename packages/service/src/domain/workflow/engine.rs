@@ -16,7 +16,7 @@ use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use dashmap::DashMap;
+use dashmap::{DashMap, DashSet};
 use sqlx::SqlitePool;
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
@@ -254,6 +254,10 @@ pub struct WorkflowEngine {
     pub permission_txs: Arc<DashMap<i64, mpsc::Sender<PermissionResponse>>>,
     /// Unix timestamp (seconds) of last activity — updated on advance/completion/error.
     pub last_activity: AtomicU64,
+    /// Items that were explicitly interrupted (to distinguish from normal completion).
+    pub interrupted_items: Arc<DashSet<i64>>,
+    /// queue_item_id → Claude Code session ID (for --resume after interrupt)
+    pub paused_sessions: Arc<DashMap<i64, String>>,
     /// Cancellation signal for background tasks (e.g. timeout checker).
     cancel_tx: tokio::sync::watch::Sender<bool>,
     cancel_rx: tokio::sync::watch::Receiver<bool>,
@@ -287,6 +291,8 @@ impl WorkflowEngine {
             active_items: Arc::new(DashMap::new()),
             queries: Arc::new(DashMap::new()),
             permission_txs: Arc::new(DashMap::new()),
+            interrupted_items: Arc::new(DashSet::new()),
+            paused_sessions: Arc::new(DashMap::new()),
             last_activity: AtomicU64::new(now_secs),
             cancel_tx,
             cancel_rx,
@@ -691,12 +697,19 @@ impl WorkflowEngine {
 
     /// Called when a queue item completes successfully.
     pub async fn on_item_completed(&self, item_id: i64, result: Option<&str>) {
+        // If this item was interrupted, treat as paused instead of completed
+        if self.interrupted_items.remove(&item_id).is_some() {
+            self.on_item_paused(item_id).await;
+            return;
+        }
+
         self.touch_activity();
         info!(feature_id = self.feature_id, item_id, "queue item completed");
 
         self.active_items.remove(&item_id);
         self.queries.remove(&item_id);
         self.permission_txs.remove(&item_id);
+        self.paused_sessions.remove(&item_id);
 
         if let Err(e) = repo::mark_item_completed(&self.write_pool, item_id, result).await {
             error!(item_id, error = %e, "failed to mark item completed");
@@ -778,14 +791,46 @@ impl WorkflowEngine {
         }
     }
 
+    /// Called when a queue item is paused (interrupted by user).
+    /// Keeps the session alive so it can be resumed later.
+    async fn on_item_paused(&self, item_id: i64) {
+        self.touch_activity();
+        info!(feature_id = self.feature_id, item_id, "queue item paused (interrupted)");
+
+        // Session ID was already captured in interrupt_item (before stream reader removes query handle)
+        // Don't remove active_items or permission_txs — we want to resume
+        // Query handle is already removed by the stream reader at this point
+
+        // Mark as paused in DB
+        if item_id > 0 {
+            let _ = sqlx::query("UPDATE workflow_queue SET status = 'paused' WHERE id = ?")
+                .bind(item_id)
+                .execute(&self.write_pool)
+                .await;
+            self.send_item_update(item_id).await;
+        }
+
+        // Mark the agent session as paused
+        if let Some(db_session_id) = self.active_items.get(&item_id) {
+            WsSessionPersistence::mark_paused_static(&self.write_pool, *db_session_id).await;
+        }
+    }
+
     /// Called when a queue item errors.
     pub async fn on_item_error(&self, item_id: i64, error: &str) {
+        // If this item was interrupted, treat as paused instead of error
+        if self.interrupted_items.remove(&item_id).is_some() {
+            self.on_item_paused(item_id).await;
+            return;
+        }
+
         self.touch_activity();
         warn!(feature_id = self.feature_id, item_id, error, "queue item errored");
 
         self.active_items.remove(&item_id);
         self.queries.remove(&item_id);
         self.permission_txs.remove(&item_id);
+        self.paused_sessions.remove(&item_id);
 
         if let Err(e) = repo::mark_item_error(&self.write_pool, item_id, Some(error)).await {
             error!(item_id, error = %e, "failed to mark item error");
@@ -809,9 +854,17 @@ impl WorkflowEngine {
     /// Interrupt a running queue item.
     /// Fast path: use in-memory Query handle. Fallback: PID from DB.
     pub async fn interrupt_item(&self, queue_item_id: i64) -> Result<(), String> {
-        // Fast path: in-memory Query handle
+        // Mark as interrupted so the stream reader treats completion as pause
+        self.interrupted_items.insert(queue_item_id);
+
+        // Capture Claude Code session ID NOW while the query handle still exists
+        // (the stream reader will remove the handle before on_item_paused runs)
         if let Some(query) = self.queries.get(&queue_item_id) {
             let q = query.lock().await;
+            if let Some(cc_session_id) = q.session_id().await {
+                info!(queue_item_id, cc_session_id = %cc_session_id, "captured Claude session ID for resume");
+                self.paused_sessions.insert(queue_item_id, cc_session_id);
+            }
             return q.interrupt().await.map_err(|e| format!("Interrupt failed: {e}"));
         }
         // Fallback: PID from DB (handles refresh + restart)
@@ -869,14 +922,121 @@ impl WorkflowEngine {
     }
 
     /// Send a follow-up prompt to a running workflow agent.
+    /// If the agent was paused (interrupted), this will resume it by spawning
+    /// a new Claude Code process with `--resume`.
     pub async fn send_prompt(&self, queue_item_id: i64, text: &str, _images: Option<Vec<String>>) -> Result<(), String> {
+        // Fast path: agent is still running, send via stdin
         if let Some(query) = self.queries.get(&queue_item_id) {
             let q = query.lock().await;
             let content = serde_json::Value::String(text.to_string());
             q.stream_input(content).await.map_err(|e| format!("stream_input failed: {e}"))?;
             return Ok(());
         }
+
+        // Slow path: agent was paused, resume by spawning new process
+        if let Some((_, cc_session_id)) = self.paused_sessions.remove(&queue_item_id) {
+            info!(queue_item_id, cc_session_id = %cc_session_id, "resuming paused agent with --resume");
+            return self.resume_item(queue_item_id, &cc_session_id, text).await;
+        }
+
         Err(format!("No query handle for item {queue_item_id} — agent may need restart"))
+    }
+
+    /// Resume a paused agent by spawning a new Claude Code process with `--resume`.
+    async fn resume_item(&self, queue_item_id: i64, cc_session_id: &str, prompt: &str) -> Result<(), String> {
+        let db_session_id = self.active_items.get(&queue_item_id)
+            .map(|r| *r)
+            .ok_or_else(|| format!("No active session for item {queue_item_id}"))?;
+
+        let cwd = self.get_feature_cwd().await.ok_or_else(|| {
+            format!("No working directory found for feature {}", self.feature_id)
+        })?;
+
+        // Determine agent type for MCP config
+        let agent_type = if queue_item_id == PLAN_ITEM_ID { AgentType::Plan }
+            else if queue_item_id == PRD_ITEM_ID { AgentType::Prd }
+            else if queue_item_id == SESSION_ITEM_ID { AgentType::Session }
+            else { AgentType::Execute };
+        let mcp_servers = build_mcp_server_config(agent_type, self.feature_id);
+
+        // Set up permission bridge
+        let (perm_tx, perm_rx) = mpsc::channel::<PermissionResponse>(16);
+        self.permission_txs.insert(queue_item_id, perm_tx);
+        let allowed_patterns = Arc::new(permissions::load_allowed_patterns(&cwd));
+        let bridge = WorkflowPermissionBridge {
+            queue_item_id,
+            feature_id: self.feature_id,
+            sender: self.ws_sender.clone(),
+            response_rx: Arc::new(tokio::sync::Mutex::new(perm_rx)),
+            worktree_path: cwd.clone(),
+            session_cache: Arc::new(tokio::sync::Mutex::new(HashSet::new())),
+            allowed_patterns,
+        };
+
+        // Build options with --resume
+        let mut options = Options {
+            cwd: cwd.clone(),
+            permission_mode: Some(PermissionMode::AcceptEdits),
+            resume: Some(cc_session_id.to_string()),
+            mcp_servers: Some(mcp_servers),
+            ..Options::default()
+        };
+        options.can_use_tool = Some(Box::new(bridge));
+
+        // Use the user's prompt if non-empty, otherwise just resume
+        let content_value = if prompt.is_empty() {
+            serde_json::Value::String("Continue where you left off.".to_string())
+        } else {
+            serde_json::Value::String(prompt.to_string())
+        };
+
+        match claude_agent_sdk_rs::query(content_value, options).await {
+            Ok(mut real_query) => {
+                let message_rx = real_query.take_message_rx();
+
+                if let Some(pid) = real_query.pid() {
+                    if queue_item_id > 0 {
+                        let _ = repo::update_item_pid(&self.write_pool, queue_item_id, pid as i64).await;
+                    }
+                }
+
+                let query_handle = Arc::new(tokio::sync::Mutex::new(real_query));
+                self.queries.insert(queue_item_id, query_handle);
+
+                // Update queue item status back to running
+                if queue_item_id > 0 {
+                    let _ = sqlx::query("UPDATE workflow_queue SET status = 'running' WHERE id = ?")
+                        .bind(queue_item_id)
+                        .execute(&self.write_pool)
+                        .await;
+                    self.send_item_update(queue_item_id).await;
+                }
+
+                // Update agent session status
+                let _ = sqlx::query("UPDATE agent_sessions SET status = 'running' WHERE id = ?")
+                    .bind(db_session_id)
+                    .execute(&self.write_pool)
+                    .await;
+
+                spawn_workflow_stream_reader(
+                    queue_item_id,
+                    db_session_id,
+                    self.feature_id,
+                    message_rx,
+                    self.ws_sender.clone(),
+                    self.write_pool.clone(),
+                    self.active_items.clone(),
+                    self.queries.clone(),
+                );
+
+                info!(queue_item_id, "agent resumed successfully");
+                Ok(())
+            }
+            Err(e) => {
+                error!(queue_item_id, error = %e, "failed to resume agent");
+                Err(format!("Failed to resume agent: {e}"))
+            }
+        }
     }
 
     /// Retry a failed queue item.

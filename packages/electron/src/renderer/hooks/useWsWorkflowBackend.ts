@@ -73,7 +73,7 @@ function queueItemToFeatureSession(
     pendingPermission: agentState?.pendingPermission ?? null,
     pendingQuestions: agentState?.pendingQuestions?.length ? agentState.pendingQuestions : null,
     hasFileChanges: false,
-    resumable: false,
+    resumable: item.status === "paused" || agentState?.status === "paused",
     phaseId: item.phase_id,
     phaseTitle: item.phase_title,
     subprocessId: null,
@@ -103,7 +103,7 @@ function agentStateToFeatureSession(
     pendingPermission: agentState.pendingPermission,
     pendingQuestions: agentState?.pendingQuestions?.length ? agentState.pendingQuestions : null,
     hasFileChanges: false,
-    resumable: false,
+    resumable: agentState.status === "paused",
     phaseId: null,
     phaseTitle: null,
     subprocessId: null,
@@ -281,6 +281,7 @@ export function useWsWorkflowBackend(
       const itemId = findQueueItemId(entry, store.queue, store.activeAgents);
       store.interruptItem(itemId);
     },
+    // In WS workflow, stop and interrupt are the same (SIGINT → pause)
     interruptAgent: (entry) => {
       const itemId = findQueueItemId(entry, store.queue, store.activeAgents);
       store.interruptItem(itemId);
@@ -322,8 +323,11 @@ export function useWsWorkflowBackend(
       }
       store.removeAgent(sessionDbId);
     },
-    handleResume: () => {
-      // WS workflow doesn't support resume in the same way
+    handleResume: (_agentType, sessionDbId) => {
+      const entry = sessions.find(s => s.sessionDbId === sessionDbId);
+      if (!entry) return;
+      const itemId = findQueueItemId(entry, store.queue, store.activeAgents);
+      store.resumeItem(itemId);
     },
 
     // Queue-specific
