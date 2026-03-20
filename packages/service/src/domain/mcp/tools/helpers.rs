@@ -25,6 +25,46 @@ pub fn error_result(msg: &str) -> CallToolResult {
     CallToolResult::error(vec![Content::text(msg)])
 }
 
+/// Look up or create the plan for a feature.
+/// If a plan already exists, returns its ID. Otherwise creates one.
+/// Safe under concurrency: SQLite serializes writes, so the INSERT
+/// can only race with another INSERT on the same write pool.
+pub async fn get_or_create_plan_id(pool: &SqlitePool, feature_id: i64) -> Result<i64, String> {
+    if let Ok(id) = sqlx::query_scalar::<_, i64>(
+        "SELECT id FROM plans WHERE feature_id = ? ORDER BY id DESC LIMIT 1",
+    )
+    .bind(feature_id)
+    .fetch_one(pool)
+    .await
+    {
+        return Ok(id);
+    }
+
+    sqlx::query_scalar::<_, i64>(
+        "INSERT INTO plans (feature_id, title, status) VALUES (?, 'Untitled Plan', 'draft') RETURNING id",
+    )
+    .bind(feature_id)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| format!("Failed to create plan for feature {feature_id}: {e}"))
+}
+
+/// Get plan_id from args or resolve it from feature_id. If the agent passes plan_id,
+/// use it (with ownership check). If omitted, look up (or create) the feature's plan.
+pub async fn get_or_resolve_plan_id(
+    args: &serde_json::Value,
+    pool: &SqlitePool,
+    feature_id: i64,
+) -> Result<i64, String> {
+    match args["plan_id"].as_i64() {
+        Some(plan_id) => {
+            verify_plan_ownership(pool, plan_id, feature_id).await?;
+            Ok(plan_id)
+        }
+        None => get_or_create_plan_id(pool, feature_id).await,
+    }
+}
+
 /// Verify that a plan belongs to the given feature_id.
 pub async fn verify_plan_ownership(
     pool: &SqlitePool,

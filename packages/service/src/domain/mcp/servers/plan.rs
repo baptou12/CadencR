@@ -13,10 +13,10 @@ use rmcp::{
 use crate::domain::mcp::context::McpContext;
 use crate::domain::mcp::tools::{
     create_phase::CreatePhaseTool, finalize_plan::FinalizePlanTool,
-    helpers::{error_result, require_i64, require_str, text_result}, list_phases::ListPhasesTool,
-    mark_agent_done::MarkAgentDoneTool, read_phase::ReadPhaseTool, read_plan::ReadPlanTool,
-    remove_phase::RemovePhaseTool, show_plan::ShowPlanTool, update_phase::UpdatePhaseTool,
-    update_plan::UpdatePlanTool,
+    helpers::{error_result, get_or_resolve_plan_id, require_i64, require_str, text_result},
+    list_phases::ListPhasesTool, mark_agent_done::MarkAgentDoneTool, read_phase::ReadPhaseTool,
+    read_plan::ReadPlanTool, remove_phase::RemovePhaseTool, show_plan::ShowPlanTool,
+    update_phase::UpdatePhaseTool, update_plan::UpdatePlanTool,
 };
 
 use super::{
@@ -97,12 +97,17 @@ impl ServerHandler for PlanServer {
                 .map(|m| serde_json::Value::Object(m.clone()))
                 .unwrap_or(serde_json::Value::Null);
 
+            // Helper: resolve plan_id from args or feature context
+            // Uses write_pool since get_or_resolve_plan_id may need to create a plan
+            let feature_id = self.ctx.feature_id;
+            let pool = &self.ctx.write_pool;
+
             let result = match request.name.as_ref() {
-                "read_plan" => match require_i64(&args, "plan_id") {
+                "read_plan" => match get_or_resolve_plan_id(&args, pool, feature_id).await {
                     Ok(v) => self.read_plan.call(v).await,
                     Err(e) => Err(e),
                 },
-                "list_phases" => match require_i64(&args, "plan_id") {
+                "list_phases" => match get_or_resolve_plan_id(&args, pool, feature_id).await {
                     Ok(v) => self.list_phases.call(v).await,
                     Err(e) => Err(e),
                 },
@@ -112,7 +117,7 @@ impl ServerHandler for PlanServer {
                 },
                 "create_phase" => {
                     match (
-                        require_i64(&args, "plan_id"),
+                        get_or_resolve_plan_id(&args, pool, feature_id).await,
                         require_i64(&args, "step_number"),
                         require_str(&args, "title"),
                         require_str(&args, "prompt"),
@@ -159,7 +164,7 @@ impl ServerHandler for PlanServer {
                     Ok(v) => self.remove_phase.call(v).await,
                     Err(e) => Err(e),
                 },
-                "update_plan" => match require_i64(&args, "plan_id") {
+                "update_plan" => match get_or_resolve_plan_id(&args, pool, feature_id).await {
                     Ok(plan_id) => {
                         self.update_plan
                             .call(
@@ -174,11 +179,11 @@ impl ServerHandler for PlanServer {
                     }
                     Err(e) => Err(e),
                 },
-                "show_plan" => match require_i64(&args, "plan_id") {
+                "show_plan" => match get_or_resolve_plan_id(&args, pool, feature_id).await {
                     Ok(v) => self.show_plan.call(v).await,
                     Err(e) => Err(e),
                 },
-                "finalize_plan" => match require_i64(&args, "plan_id") {
+                "finalize_plan" => match get_or_resolve_plan_id(&args, pool, feature_id).await {
                     Ok(v) => self.finalize_plan.call(v).await,
                     Err(e) => Err(e),
                 },

@@ -3,6 +3,13 @@
 //! The engine is workflow-type-agnostic — it delegates item-specific decisions
 //! (agent type, prompts, MCP config) to the WorkflowStrategy trait.
 
+/// Synthetic queue_item_id for pre-queue agents (not in the DB queue).
+/// These are negative to avoid collision with real queue item IDs.
+pub const PLAN_ITEM_ID: i64 = -1;
+pub const PRD_ITEM_ID: i64 = -2;
+pub const SESSION_ITEM_ID: i64 = -3;
+pub const REFINE_ITEM_ID: i64 = -4;
+
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
@@ -22,7 +29,6 @@ use claude_agent_sdk_rs::{
 
 use crate::domain::features::models::{QueueItem, WorkflowType};
 use crate::domain::features::repository as repo;
-use crate::domain::mcp::context::{ApprovalResult, McpContext};
 use crate::domain::mcp::servers::AgentType;
 use crate::domain::workflow::prompts::Prompts;
 use crate::domain::workflow::strategies::{self, WorkflowStrategy};
@@ -59,6 +65,62 @@ impl CanUseTool for WorkflowPermissionBridge {
             queue_item_id = self.queue_item_id,
             "WorkflowPermissionBridge::can_use_tool called"
         );
+
+        // Intercept approval-gate tools (show_plan, show_prd): emit WS event
+        // and block on the permission channel until the user approves/rejects.
+        // This avoids cross-process coordination — the approval gate runs
+        // in the engine process via canUseTool, not in the MCP subprocess.
+        let is_show_plan = request.tool_name.contains("show_plan");
+        let is_show_prd = !is_show_plan && request.tool_name.contains("show_prd");
+        if is_show_plan || is_show_prd {
+            let event_name = if is_show_plan { "plan_ready" } else { "prd_ready" };
+            info!(
+                feature_id = self.feature_id,
+                tool_name = %request.tool_name,
+                "approval gate detected, emitting {} and blocking", event_name
+            );
+
+            let gate_env = WsEnvelope::new(
+                "workflow",
+                event_name,
+                serde_json::to_value(serde_json::json!({
+                    "feature_id": self.feature_id,
+                    "queue_item_id": self.queue_item_id,
+                }))
+                .unwrap(),
+            );
+            let _ = self.sender.send(Message::Text(String::from(gate_env).into()));
+
+            // Block on permission channel — frontend will send approval through
+            // the same permission.respond mechanism (or plan.approved/prd.approved).
+            let mut rx = self.response_rx.lock().await;
+            return match rx.recv().await {
+                Some(response) => match response.decision {
+                    PermissionDecision::AllowOnce | PermissionDecision::AllowFuture => {
+                        PermissionResult::Allow {
+                            updated_input: request.input,
+                            updated_permissions: None,
+                            tool_use_id: Some(request.tool_use_id),
+                        }
+                    }
+                    PermissionDecision::Deny => {
+                        let feedback = response
+                            .feedback
+                            .unwrap_or_else(|| "Plan/PRD rejected by user".to_string());
+                        PermissionResult::Deny {
+                            message: feedback,
+                            interrupt: Some(false),
+                            tool_use_id: Some(request.tool_use_id),
+                        }
+                    }
+                },
+                None => PermissionResult::Deny {
+                    message: "Approval channel closed".to_string(),
+                    interrupt: Some(false),
+                    tool_use_id: Some(request.tool_use_id),
+                },
+            };
+        }
 
         let force_prompt = permissions::FRONTEND_PROMPT_TOOLS.contains(&request.tool_name.as_str());
 
@@ -190,9 +252,6 @@ pub struct WorkflowEngine {
     pub queries: Arc<DashMap<i64, Arc<tokio::sync::Mutex<Query>>>>,
     /// queue_item_id → permission response sender (for bridging permissions to agents)
     pub permission_txs: Arc<DashMap<i64, mpsc::Sender<PermissionResponse>>>,
-    /// Shared MCP context for approval gates (plan/PRD approval resolution).
-    /// Created lazily when plan/PRD agents are spawned.
-    pub mcp_context: Arc<tokio::sync::RwLock<Option<Arc<McpContext>>>>,
     /// Unix timestamp (seconds) of last activity — updated on advance/completion/error.
     pub last_activity: AtomicU64,
     /// Cancellation signal for background tasks (e.g. timeout checker).
@@ -228,7 +287,6 @@ impl WorkflowEngine {
             active_items: Arc::new(DashMap::new()),
             queries: Arc::new(DashMap::new()),
             permission_txs: Arc::new(DashMap::new()),
-            mcp_context: Arc::new(tokio::sync::RwLock::new(None)),
             last_activity: AtomicU64::new(now_secs),
             cancel_tx,
             cancel_rx,
@@ -243,7 +301,7 @@ impl WorkflowEngine {
             "plan",
             Prompts::plan(),
             description,
-            -1, // synthetic queue_item_id for plan
+            PLAN_ITEM_ID,
         )
         .await
     }
@@ -256,7 +314,7 @@ impl WorkflowEngine {
             "prd",
             Prompts::prd(),
             description,
-            -2, // synthetic queue_item_id for PRD
+            PRD_ITEM_ID,
         )
         .await
     }
@@ -269,7 +327,7 @@ impl WorkflowEngine {
             "session",
             Prompts::session(),
             prompt,
-            -3, // synthetic queue_item_id for session
+            SESSION_ITEM_ID,
         )
         .await
     }
@@ -298,7 +356,7 @@ impl WorkflowEngine {
             "plan",
             Prompts::plan(),
             &refinement_prompt,
-            -4, // synthetic queue_item_id for refine
+            REFINE_ITEM_ID,
         )
         .await
     }
@@ -379,7 +437,14 @@ impl WorkflowEngine {
             system_prompt: if system_prompt.is_empty() {
                 None
             } else {
-                Some(system_prompt.to_string())
+                // Inject feature_id context so the agent knows its feature
+                // and can use MCP tools without guessing IDs
+                Some(format!(
+                    "{system_prompt}\n\n## Feature Context\n\nYour feature_id is **{}**. \
+                     The MCP tools will auto-resolve plan_id from your feature — you do NOT need to pass plan_id to any tool. \
+                     Just omit it and the correct plan will be used automatically.",
+                    self.feature_id
+                ))
             },
             mcp_servers: Some(mcp_servers),
             ..Options::default()
@@ -446,41 +511,6 @@ impl WorkflowEngine {
                     .await;
                 Err(format!("SDK spawn failed for {agent_type_str}: {e}"))
             }
-        }
-    }
-
-    /// Resolve a pending approval by request_id pattern.
-    /// Iterates pending_approvals on the engine's McpContext looking for keys
-    /// matching the given prefix, and resolves the first match.
-    pub async fn resolve_approval(
-        &self,
-        prefix: &str,
-        approved: bool,
-        feedback: Option<String>,
-    ) -> Result<bool, String> {
-        let ctx_guard = self.mcp_context.read().await;
-        let Some(ctx) = ctx_guard.as_ref() else {
-            return Err("No MCP context available".to_string());
-        };
-
-        // Find and resolve in a single lock scope
-        let request_id = ctx
-            .pending_approvals
-            .iter()
-            .find(|entry| entry.key().starts_with(prefix))
-            .map(|entry| entry.key().clone());
-
-        if let Some(request_id) = request_id {
-            let result = ApprovalResult { approved, feedback };
-            Ok(ctx.resolve_approval(&request_id, result))
-        } else {
-            // No pending approval found — this is common when using subprocess MCP.
-            warn!(
-                feature_id = self.feature_id,
-                prefix,
-                "no pending approval found matching prefix"
-            );
-            Ok(false)
         }
     }
 

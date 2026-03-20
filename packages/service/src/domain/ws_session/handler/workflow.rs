@@ -308,28 +308,48 @@ async fn handle_start_prd(envelope: WsEnvelope, sender: &WsSender, app_state: &A
 }
 
 async fn handle_plan_approval(envelope: WsEnvelope, sender: &WsSender) {
-    handle_approval(envelope, sender, "plan").await;
+    use crate::domain::workflow::engine::PLAN_ITEM_ID;
+    handle_approval(envelope, sender, "plan", PLAN_ITEM_ID).await;
 }
 
 async fn handle_prd_approval(envelope: WsEnvelope, sender: &WsSender) {
-    handle_approval(envelope, sender, "prd").await;
+    use crate::domain::workflow::engine::PRD_ITEM_ID;
+    handle_approval(envelope, sender, "prd", PRD_ITEM_ID).await;
 }
 
-async fn handle_approval(envelope: WsEnvelope, sender: &WsSender, kind: &str) {
+/// Route plan/PRD approval through the permission channel.
+///
+/// The approval gate is implemented via `canUseTool` in WorkflowPermissionBridge:
+/// when `show_plan`/`show_prd` tool calls are detected, the bridge emits a
+/// `plan_ready`/`prd_ready` WS event and blocks on the permission channel.
+/// This handler resolves that block by sending through the same channel.
+async fn handle_approval(envelope: WsEnvelope, sender: &WsSender, kind: &str, synthetic_item_id: i64) {
     let Some((payload, engine)) = parse_and_get_engine::<WorkflowApprovalPayload>(&envelope, sender) else { return };
 
     let approved = payload.approved;
-    let prefix = format!("{kind}-approval-");
-    info!(feature_id = payload.feature_id, approved, kind, "resolving approval");
+    info!(feature_id = payload.feature_id, approved, kind, "resolving approval via permission channel");
 
-    match engine.resolve_approval(&prefix, approved, payload.feedback.clone()).await {
-        Ok(resolved) => {
-            if !resolved {
-                let _ = engine.resolve_approval(&payload.request_id, approved, payload.feedback).await;
-            }
+    // Map approval decision to permission response
+    let decision = if approved {
+        PermissionDecision::AllowOnce
+    } else {
+        PermissionDecision::Deny
+    };
+
+    let response = super::session_prompt::PermissionResponse {
+        decision,
+        feedback: payload.feedback.clone(),
+        updated_input: None,
+    };
+
+    // Send through the permission channel for the synthetic queue_item_id
+    // (plan=-1, prd=-2) which the WorkflowPermissionBridge is blocking on.
+    match engine.respond_permission(synthetic_item_id, response).await {
+        Ok(()) => {
+            info!(feature_id = payload.feature_id, kind, "approval routed through permission channel");
         }
         Err(e) => {
-            warn!(feature_id = payload.feature_id, error = %e, kind, "failed to resolve approval");
+            warn!(feature_id = payload.feature_id, error = %e, kind, "failed to route approval — agent may not be waiting");
         }
     }
 

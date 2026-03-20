@@ -37,6 +37,13 @@ pub fn build_mcp_server_config(
         .to_string_lossy()
         .to_string();
 
+    // Pass DB path via environment so the MCP subprocess can access the same database
+    // for reading/writing plans, phases, PRDs, etc.
+    let mut env_vars = HashMap::new();
+    if let Ok(db_path) = env::var("CADENCE_DB_PATH") {
+        env_vars.insert("CADENCE_DB_PATH".to_string(), db_path);
+    }
+
     let config = McpServerConfig::Stdio {
         command: binary_path,
         args: Some(vec![
@@ -46,7 +53,11 @@ pub fn build_mcp_server_config(
             "--feature-id".to_string(),
             feature_id.to_string(),
         ]),
-        env: None,
+        env: if env_vars.is_empty() {
+            None
+        } else {
+            Some(env_vars)
+        },
     };
 
     let mut servers = HashMap::new();
