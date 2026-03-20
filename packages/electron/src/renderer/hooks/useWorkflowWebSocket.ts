@@ -10,6 +10,7 @@ import { create } from "zustand";
 import type { AgentBlockData } from "@/components/AgentBlock";
 import type { AgentStatus } from "@/types/agent";
 import type { PendingPermission } from "@/components/ToolPermissionPrompt";
+import { parseAskUserQuestions, type AgentQuestion } from "@/components/AgentQuestionDrawer";
 import {
   type StreamingState,
   createStreamingState,
@@ -59,6 +60,9 @@ export interface AgentSessionState {
   streamingState: StreamingState;
   status: AgentStatus;
   pendingPermission: PendingPermission | null;
+  pendingQuestions: AgentQuestion[];
+  pendingQuestionToolInput: Record<string, unknown>;
+  pendingQuestionRequestId: string;
 }
 
 export type AutonomyLevel = 1 | 2 | 3;
@@ -111,6 +115,7 @@ interface WorkflowState {
   skipItem: (itemId: number) => void;
   retryItem: (itemId: number) => void;
   respondToPermission: (itemId: number, requestId: string, decision: "allow_once" | "allow_future" | "deny") => void;
+  respondToQuestion: (itemId: number, response: string) => void;
   sendPromptToAgent: (itemId: number, text: string, images?: Array<{ base64: string; mimeType: string }>) => void;
   interruptItem: (itemId: number) => void;
   startSession: (prompt: string, images?: Array<{ base64: string; mimeType: string }>) => void;
@@ -139,6 +144,9 @@ function createAgentSession(sessionId: number): AgentSessionState {
     streamingState: createStreamingState(),
     status: "running",
     pendingPermission: null,
+    pendingQuestions: [],
+    pendingQuestionToolInput: {},
+    pendingQuestionRequestId: "",
   };
 }
 
@@ -333,12 +341,41 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
       }
       case "permission.request": {
         const itemId = payload.queue_item_id as number;
+        const toolName = payload.tool_name as string;
+        const toolInput = (payload.tool_input ?? payload.input ?? {}) as Record<string, unknown>;
+        const requestId = (payload.request_id ?? "") as string;
+
+        // AskUserQuestion: parse as questions (same as standalone session)
+        if (toolName === "AskUserQuestion") {
+          const questions = parseAskUserQuestions(toolInput);
+          const questionPatch = {
+            pendingQuestions: questions,
+            pendingQuestionToolInput: toolInput,
+            pendingQuestionRequestId: requestId,
+            pendingPermission: null,
+          };
+          set(state => {
+            if (itemId === -1 && state.planAgent) {
+              return { planAgent: { ...state.planAgent, ...questionPatch } };
+            }
+            if (itemId === -2 && state.prdAgent) {
+              return { prdAgent: { ...state.prdAgent, ...questionPatch } };
+            }
+            const activeAgents = new Map(state.activeAgents);
+            const agent = activeAgents.get(itemId);
+            if (!agent) return {};
+            activeAgents.set(itemId, { ...agent, ...questionPatch });
+            return { activeAgents };
+          });
+          break;
+        }
+
         const permission: PendingPermission = {
-          toolName: payload.tool_name as string,
-          input: (payload.tool_input ?? payload.input ?? {}) as Record<string, unknown>,
+          toolName,
+          input: toolInput,
           description: (payload.description ?? "") as string,
           pattern: (payload.pattern ?? "") as string,
-          requestId: (payload.request_id ?? "") as string,
+          requestId,
         };
         set(state => {
           // Handle plan/PRD agent permissions (synthetic IDs)
@@ -531,6 +568,47 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         const activeAgents = new Map(state.activeAgents);
         const agent = activeAgents.get(itemId);
         if (agent) activeAgents.set(itemId, { ...agent, pendingPermission: null });
+        return { activeAgents };
+      });
+    },
+
+    respondToQuestion(itemId, response) {
+      // Find the agent to get the stored tool input and request ID
+      const state = get();
+      let agent: AgentSessionState | null = null;
+      if (itemId === -1) agent = state.planAgent;
+      else if (itemId === -2) agent = state.prdAgent;
+      else agent = state.activeAgents.get(itemId) ?? null;
+
+      if (!agent) return;
+
+      const updatedInput = {
+        ...agent.pendingQuestionToolInput,
+        answers: { "0": response },
+      };
+      send("permission.respond", {
+        queue_item_id: itemId,
+        request_id: agent.pendingQuestionRequestId,
+        decision: "allow_once",
+        updated_input: updatedInput,
+      });
+
+      // Clear questions state
+      const clearPatch = {
+        pendingQuestions: [] as AgentQuestion[],
+        pendingQuestionToolInput: {},
+        pendingQuestionRequestId: "",
+      };
+      set(state => {
+        if (itemId === -1 && state.planAgent) {
+          return { planAgent: { ...state.planAgent, ...clearPatch } };
+        }
+        if (itemId === -2 && state.prdAgent) {
+          return { prdAgent: { ...state.prdAgent, ...clearPatch } };
+        }
+        const activeAgents = new Map(state.activeAgents);
+        const a = activeAgents.get(itemId);
+        if (a) activeAgents.set(itemId, { ...a, ...clearPatch });
         return { activeAgents };
       });
     },

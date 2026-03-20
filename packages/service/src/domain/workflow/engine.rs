@@ -16,7 +16,8 @@ use tracing::{debug, error, info, warn};
 
 use axum::extract::ws::Message;
 use claude_agent_sdk_rs::{
-    CanUseTool, Options, PermissionRequest, PermissionResult, Query, SdkError, SdkMessage,
+    CanUseTool, Options, PermissionMode, PermissionRequest, PermissionResult, Query, SdkError,
+    SdkMessage,
 };
 
 use crate::domain::features::models::{QueueItem, WorkflowType};
@@ -339,7 +340,7 @@ impl WorkflowEngine {
         // 1. Create agent session in DB
         let now = chrono::Utc::now().to_rfc3339();
         let db_session_id = sqlx::query_scalar::<_, i64>(
-            "INSERT INTO agent_sessions (feature_id, agent_type, status, started_at) VALUES (?, ?, 'running', ?) RETURNING id",
+            "INSERT INTO agent_sessions (feature_id, agent_type, status, started_at, permission_mode) VALUES (?, ?, 'running', ?, 'acceptEdits') RETURNING id",
         )
         .bind(self.feature_id)
         .bind(agent_type_str)
@@ -374,6 +375,7 @@ impl WorkflowEngine {
         // 5. Build options and spawn
         let mut options = Options {
             cwd,
+            permission_mode: Some(PermissionMode::AcceptEdits),
             system_prompt: if system_prompt.is_empty() {
                 None
             } else {
@@ -552,7 +554,7 @@ impl WorkflowEngine {
         let now = chrono::Utc::now().to_rfc3339();
         let agent_type_str = format!("{:?}", agent_type).to_lowercase();
         let db_session_id = sqlx::query_scalar::<_, i64>(
-            "INSERT INTO agent_sessions (feature_id, agent_type, status, started_at) VALUES (?, ?, 'running', ?) RETURNING id",
+            "INSERT INTO agent_sessions (feature_id, agent_type, status, started_at, permission_mode) VALUES (?, ?, 'running', ?, 'acceptEdits') RETURNING id",
         )
         .bind(self.feature_id)
         .bind(&agent_type_str)
@@ -594,6 +596,7 @@ impl WorkflowEngine {
         // 7. Build Options and spawn
         let mut options = Options {
             cwd: cwd.clone(),
+            permission_mode: Some(PermissionMode::AcceptEdits),
             system_prompt: if system_prompt.is_empty() { None } else { Some(system_prompt) },
             mcp_servers: Some(mcp_servers),
             ..Options::default()

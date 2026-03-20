@@ -71,7 +71,7 @@ function queueItemToFeatureSession(
     status: mapQueueStatusToAgentStatus(item.status, agentState?.status),
     blocks: agentState?.blocks ?? [],
     pendingPermission: agentState?.pendingPermission ?? null,
-    pendingQuestions: null,
+    pendingQuestions: agentState?.pendingQuestions?.length ? agentState.pendingQuestions : null,
     hasFileChanges: false,
     resumable: false,
     phaseId: item.phase_id,
@@ -101,7 +101,7 @@ function agentStateToFeatureSession(
     status: agentState.status,
     blocks: agentState.blocks,
     pendingPermission: agentState.pendingPermission,
-    pendingQuestions: null,
+    pendingQuestions: agentState?.pendingQuestions?.length ? agentState.pendingQuestions : null,
     hasFileChanges: false,
     resumable: false,
     phaseId: null,
@@ -291,8 +291,9 @@ export function useWsWorkflowBackend(
       const mapped = decision === "allow" ? "allow_once" : decision === "deny" ? "deny" : "allow_once";
       store.respondToPermission(itemId, requestId, mapped as "allow_once" | "allow_future" | "deny");
     },
-    submitAnswers: () => {
-      // WS doesn't use questions flow
+    submitAnswers: (entry, response) => {
+      const itemId = findQueueItemId(entry, store.queue, store.activeAgents);
+      store.respondToQuestion(itemId, response);
     },
     startSession: (prompt, images) => store.startSession(prompt, images?.map(i => ({ base64: i, mimeType: "image/png" }))),
     startRefine: (description, images) => store.startRefine(description, images?.map(i => ({ base64: i, mimeType: "image/png" }))),
