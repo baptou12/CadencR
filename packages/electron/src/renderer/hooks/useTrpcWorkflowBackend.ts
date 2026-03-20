@@ -105,6 +105,25 @@ export function useTrpcWorkflowBackend(
     wf.isStartingFix ||
     wf.isContinuingBuild;
 
+  // Derive action availability from agent statuses
+  const actions = useMemo(() => {
+    const planDone = wf.plan.status === "completed";
+    const execIdle = wf.execute.status === "idle";
+    const execDone = wf.execute.status === "completed";
+    const execError = wf.execute.status === "error";
+    const hasPlan = planDone || wf.plan.blocks.length > 0;
+    return {
+      canStartPlan: !hasPlan && wf.plan.status === "idle" && (wf.prd.status === "idle" || wf.prd.status === "completed"),
+      canStartPrd: !hasPlan && wf.plan.status === "idle" && wf.prd.status === "idle",
+      canStartBuild: hasPlan && (execIdle || execError || execDone),
+      canStartRisk: hasPlan && wf.risk.status !== "running",
+      canStartReview: hasPlan && wf.review.status !== "running" && (wf.execute.status === "running" || execDone || wf.execute.status === "paused"),
+      canStartWorkflowSession: hasPlan,
+      canStartRefine: hasPlan,
+      canStartRetro: execDone,
+    };
+  }, [wf.plan, wf.prd, wf.execute, wf.risk, wf.review]);
+
   return {
     // -- Read state --
     workflowStatus,
@@ -115,6 +134,9 @@ export function useTrpcWorkflowBackend(
     queue: null,
     autonomyLevel: 3,
     error: null,
+
+    // -- Action availability --
+    actions,
 
     // -- Derived state --
     hasAnyAgentOutput: wf.hasAnyAgentOutput,
@@ -131,6 +153,13 @@ export function useTrpcWorkflowBackend(
     isStartingRetro: wf.isStartingRetro,
     isStartingFix: wf.isStartingFix,
     isContinuingBuild: wf.isContinuingBuild,
+    isStartingWorkflowSession: wf.isStartingWorkflowSession,
+    isStartingRefinePlan: wf.isStartingRefinePlan,
+    isAddingFixPhase: wf.isAddingFixPhase,
+    canContinueBuild: wf.canContinueBuild,
+    executeWaitingNextStep: wf.executeWaitingNextStep,
+    executeStatus: wf.execute.status,
+    planApprovalError: chat.planApprovalError ?? null,
 
     // -- Commands --
     startPlan: (description: string, images?: string[]) => {
@@ -154,9 +183,20 @@ export function useTrpcWorkflowBackend(
     ) => chat.handlePlanRequestChanges(subprocessId, feedback, sessionDbId),
     startBuilding: () => void wf.handleStartBuilding(),
     continueWorkflow: () => void wf.handleContinueBuild(),
-    sendToAgent: (entry: FeatureSession, message: string, images?: string[]) =>
-      void wf.handleAgentSend(entry, message, images as never),
-    stopAgent: (entry: FeatureSession) => wf.handleAgentStop(entry),
+    sendToAgent: (entry: FeatureSession, message: string, images?: string[]) => {
+      if (entry.agentType === "execute" && entry.subprocessId) {
+        void wf.sendToExecuteSubprocess(entry.subprocessId, message, images as never);
+      } else {
+        void wf.handleAgentSend(entry, message, images as never);
+      }
+    },
+    stopAgent: (entry: FeatureSession) => {
+      if (entry.agentType === "execute" && entry.subprocessId) {
+        void wf.interruptExecuteSubprocess(entry.subprocessId, entry.sessionDbId);
+      } else {
+        wf.handleAgentStop(entry);
+      }
+    },
     interruptAgent: (entry: FeatureSession) => {
       if (entry.subprocessId) {
         void wf.interruptExecuteSubprocess(entry.subprocessId, entry.sessionDbId);
@@ -173,20 +213,22 @@ export function useTrpcWorkflowBackend(
         feedback,
       ),
     submitAnswers: (entry: FeatureSession, response: string) =>
-      void chat.handleAnswerSubmit(
-        entry,
-        response,
-      ),
+      wf.handleSessionQuestionResponse(entry, response),
     startSession: (prompt: string, images?: string[]) =>
       void wf.handleStartWorkflowSession(prompt, images as never),
     startRefine: (description: string, images?: string[]) =>
       void wf.handleStartRefinePlan(description, images as never),
+    startRisk: () => void wf.handleStartRisk(),
+    startReview: () => void wf.handleStartReview(),
+    startRetro: () => void wf.handleStartRetro(),
     startReviewFixer: (comments: string) =>
       startReviewFixerMutation.mutate({
         featureId,
         projectId,
         prompt: comments,
       }),
+    addFixPhase: wf.handleAddFixPhase ? () => wf.handleAddFixPhase() : undefined,
+    fixImmediately: wf.handleFixImmediately ? () => wf.handleFixImmediately() : undefined,
     markDone: (sessionDbId: number) => wf.handleMarkSessionDone(sessionDbId),
     deleteSession: (sessionDbId: number) =>
       deleteSessionMutation.mutate({ sessionId: sessionDbId }),

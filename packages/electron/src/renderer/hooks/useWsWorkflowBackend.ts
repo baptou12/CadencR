@@ -225,6 +225,18 @@ export function useWsWorkflowBackend(
     autonomyLevel: store.autonomyLevel,
     error: store.error,
 
+    // Action availability (WS workflow manages its own state machine)
+    actions: {
+      canStartPlan: store.workflowStatus === "idle",
+      canStartPrd: store.workflowStatus === "idle",
+      canStartBuild: store.workflowStatus === "plan_approval",
+      canStartRisk: false,
+      canStartReview: false,
+      canStartWorkflowSession: store.workflowStatus !== "idle",
+      canStartRefine: store.workflowStatus !== "idle",
+      canStartRetro: store.workflowStatus === "completed",
+    },
+
     // Derived
     hasAnyAgentOutput,
     noAgentsRunning,
@@ -240,6 +252,13 @@ export function useWsWorkflowBackend(
     isStartingRetro: false,
     isStartingFix: false,
     isContinuingBuild: false,
+    isStartingWorkflowSession: false,
+    isStartingRefinePlan: false,
+    isAddingFixPhase: false,
+    canContinueBuild: false,
+    executeWaitingNextStep: null,
+    executeStatus: "idle" as const,
+    planApprovalError: null,
 
     // Commands
     startPlan: (description, images) => store.startPlan(description, images?.map(i => ({ base64: i, mimeType: "image/png" }))),
@@ -271,7 +290,12 @@ export function useWsWorkflowBackend(
     },
     startSession: (prompt, images) => store.startSession(prompt, images?.map(i => ({ base64: i, mimeType: "image/png" }))),
     startRefine: (description, images) => store.startRefine(description, images?.map(i => ({ base64: i, mimeType: "image/png" }))),
+    startRisk: () => { /* WS workflow handles risk via queue */ },
+    startReview: () => { /* WS workflow handles review via queue */ },
+    startRetro: () => { /* WS workflow handles retro via queue */ },
     startReviewFixer: (comments) => store.startReviewFixer(comments),
+    addFixPhase: undefined,
+    fixImmediately: undefined,
     markDone: (sessionDbId) => {
       // Find the queue item for this session and mark it done
       for (const [itemId, agent] of store.activeAgents) {

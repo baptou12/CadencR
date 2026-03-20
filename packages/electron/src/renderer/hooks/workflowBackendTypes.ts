@@ -4,11 +4,13 @@
  */
 
 import type { FeatureSession } from "./useFeatureAgentState";
+import type { AgentStatus } from "@/types/agent";
 import type {
   WorkflowStatus,
   QueueItem,
   AutonomyLevel,
 } from "./useWorkflowWebSocket";
+import type { ActionAvailability } from "./useFeatureState";
 
 // ---------------------------------------------------------------------------
 // View state
@@ -80,6 +82,9 @@ export interface WorkflowBackend {
   view: ViewState;
   isLoading: boolean;
 
+  // -- Action availability (from useFeatureState or equivalent) --
+  actions: ActionAvailability;
+
   // -- Loading flags --
   isStartingPlan: boolean;
   isStartingPrd: boolean;
@@ -89,6 +94,13 @@ export interface WorkflowBackend {
   isStartingRetro: boolean;
   isStartingFix: boolean;
   isContinuingBuild: boolean;
+  isStartingWorkflowSession: boolean;
+  isStartingRefinePlan: boolean;
+  isAddingFixPhase: boolean;
+  canContinueBuild: boolean;
+  executeWaitingNextStep: number | null;
+  executeStatus: AgentStatus;
+  planApprovalError: string | null;
 
   // -- Commands --
   startPlan(description: string, images?: string[]): void;
@@ -121,7 +133,12 @@ export interface WorkflowBackend {
   submitAnswers(entry: FeatureSession, response: string): void;
   startSession(prompt: string, images?: string[]): void;
   startRefine(description: string, images?: string[]): void;
+  startRisk(): void;
+  startReview(): void;
+  startRetro(): void;
   startReviewFixer(comments: string): void;
+  addFixPhase?(): void;
+  fixImmediately?(): void;
   markDone(sessionDbId: number): void;
   deleteSession(sessionDbId: number): void;
   handleResume(agentType: string, sessionDbId: number): void;
