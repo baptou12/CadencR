@@ -9,6 +9,8 @@ use tracing::{info, warn};
 use crate::app_state::AppState;
 use crate::domain::features::models::WorkflowType;
 use crate::domain::workflow::engine::WorkflowEngine;
+use crate::domain::workflow::worktree;
+use crate::domain::ws_session::auto_name;
 use crate::domain::ws_session::persistence::WsSessionPersistence;
 use crate::domain::ws_session::protocol::*;
 use super::{SdkSessions, WsSender};
@@ -134,8 +136,8 @@ pub async fn handle_workflow_action(
 ) {
     match envelope.action.as_str() {
         "feature.start" => handle_feature_start(envelope, sender, app_state).await,
-        "start_plan" => handle_start_plan(envelope, sender).await,
-        "start_prd" => handle_start_prd(envelope, sender).await,
+        "start_plan" => handle_start_plan(envelope, sender, app_state).await,
+        "start_prd" => handle_start_prd(envelope, sender, app_state).await,
         "plan.approved" | "plan.rejected" => handle_plan_approval(envelope, sender).await,
         "prd.approved" | "prd.rejected" => handle_prd_approval(envelope, sender).await,
         "populate_queue" => handle_populate_queue(envelope, sender, app_state).await,
@@ -255,14 +257,21 @@ async fn handle_feature_start(
     let _ = sender.send(Message::Text(String::from(resp).into()));
 }
 
-async fn handle_start_plan(envelope: WsEnvelope, sender: &WsSender) {
+async fn handle_start_plan(envelope: WsEnvelope, sender: &WsSender, app_state: &AppState) {
     let Some((payload, engine)) = parse_and_get_engine::<WorkflowStartPlanPayload>(&envelope, sender) else { return };
+    let feature_id = payload.feature_id;
 
-    info!(feature_id = payload.feature_id, "spawning plan agent");
+    // Auto-name if needed, ensure worktree exists
+    if let Err(e) = prepare_worktree(feature_id, &payload.description, sender, app_state).await {
+        send_workflow_error(sender, &envelope.id, "WORKTREE_FAILED", &e);
+        return;
+    }
+
+    info!(feature_id, "spawning plan agent");
     match engine.spawn_plan_agent(&payload.description).await {
         Ok(session_id) => {
             let ack = WsEnvelope::reply(&envelope.id, "workflow", "plan.started", to_value(WorkflowFeatureIdSessionPayload {
-                feature_id: payload.feature_id,
+                feature_id,
                 session_id,
             }));
             let _ = sender.send(Message::Text(String::from(ack).into()));
@@ -273,14 +282,21 @@ async fn handle_start_plan(envelope: WsEnvelope, sender: &WsSender) {
     }
 }
 
-async fn handle_start_prd(envelope: WsEnvelope, sender: &WsSender) {
+async fn handle_start_prd(envelope: WsEnvelope, sender: &WsSender, app_state: &AppState) {
     let Some((payload, engine)) = parse_and_get_engine::<WorkflowStartPrdPayload>(&envelope, sender) else { return };
+    let feature_id = payload.feature_id;
 
-    info!(feature_id = payload.feature_id, "spawning PRD agent");
+    // Auto-name if needed, ensure worktree exists
+    if let Err(e) = prepare_worktree(feature_id, &payload.description, sender, app_state).await {
+        send_workflow_error(sender, &envelope.id, "WORKTREE_FAILED", &e);
+        return;
+    }
+
+    info!(feature_id, "spawning PRD agent");
     match engine.spawn_prd_agent(&payload.description).await {
         Ok(session_id) => {
             let ack = WsEnvelope::reply(&envelope.id, "workflow", "prd.started", to_value(WorkflowFeatureIdSessionPayload {
-                feature_id: payload.feature_id,
+                feature_id,
                 session_id,
             }));
             let _ = sender.send(Message::Text(String::from(ack).into()));
@@ -381,6 +397,24 @@ async fn handle_start_build(envelope: WsEnvelope, sender: &WsSender, app_state: 
         if let Err(e) = strategy.populate_queue(&app_state.write_pool, &app_state.read_pool, payload.feature_id, plan_id).await {
             send_workflow_error(sender, &envelope.id, "POPULATE_FAILED", &format!("Failed to populate queue: {e}"));
             return;
+        }
+    }
+
+    // Ensure worktree exists (idempotent)
+    match worktree::get_project_id_for_feature(&app_state.read_pool, payload.feature_id).await {
+        Ok(project_id) => {
+            if let Err(e) = worktree::ensure_worktree(
+                &app_state.read_pool,
+                &app_state.write_pool,
+                payload.feature_id,
+                project_id,
+                sender,
+            ).await {
+                warn!(feature_id = payload.feature_id, error = %e, "ensure_worktree failed in start_build (continuing anyway)");
+            }
+        }
+        Err(e) => {
+            warn!(feature_id = payload.feature_id, error = %e, "could not look up project_id for worktree (continuing anyway)");
         }
     }
 
@@ -620,4 +654,50 @@ async fn handle_mark_done(envelope: WsEnvelope, sender: &WsSender) {
             send_workflow_error(sender, &envelope.id, "MARK_DONE_FAILED", &format!("Failed to mark done: {e}"));
         }
     }
+}
+
+/// Shared worktree preparation for plan/PRD handlers:
+/// 1. Auto-name feature if it has a default title
+/// 2. Ensure worktree exists (blocking)
+/// 3. Spawn setup commands (non-blocking)
+async fn prepare_worktree(
+    feature_id: i64,
+    description: &str,
+    sender: &WsSender,
+    app_state: &AppState,
+) -> Result<(), String> {
+    let project_id = worktree::get_project_id_for_feature(&app_state.read_pool, feature_id).await?;
+    let project_dir = worktree::get_project_directory(&app_state.read_pool, project_id).await?;
+
+    // Auto-name if feature still has default title
+    if auto_name::has_default_title(&app_state.read_pool, feature_id).await {
+        info!(feature_id, "auto-naming feature before worktree creation");
+        let _ = auto_name::auto_name_feature(
+            app_state.write_pool.clone(),
+            feature_id,
+            description.to_string(),
+            project_dir.clone(),
+            None,
+            sender.clone(),
+        ).await;
+    }
+
+    // Create worktree (blocking, idempotent)
+    let worktree_path = worktree::ensure_worktree(
+        &app_state.read_pool,
+        &app_state.write_pool,
+        feature_id,
+        project_id,
+        sender,
+    ).await?;
+
+    // Spawn setup commands (non-blocking)
+    let read_pool = app_state.read_pool.clone();
+    let write_pool = app_state.write_pool.clone();
+    let ws = sender.clone();
+    tokio::spawn(async move {
+        worktree::run_setup_commands(read_pool, write_pool, feature_id, worktree_path, ws).await;
+    });
+
+    Ok(())
 }

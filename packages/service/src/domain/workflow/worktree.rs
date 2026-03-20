@@ -293,6 +293,24 @@ pub async fn run_setup_commands(
     }));
 }
 
+/// Look up the project_id for a given feature.
+pub async fn get_project_id_for_feature(pool: &SqlitePool, feature_id: i64) -> Result<i64, String> {
+    sqlx::query_scalar("SELECT project_id FROM features WHERE id = ?")
+        .bind(feature_id)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| format!("Failed to look up project for feature {}: {}", feature_id, e))
+}
+
+/// Look up the project directory for a given project_id.
+pub async fn get_project_directory(pool: &SqlitePool, project_id: i64) -> Result<String, String> {
+    sqlx::query_scalar("SELECT directory FROM projects WHERE id = ?")
+        .bind(project_id)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| format!("Failed to look up directory for project {}: {}", project_id, e))
+}
+
 // --- DB helpers ---
 
 async fn get_setting(pool: &SqlitePool, feature_id: i64, key: &str) -> Option<String> {

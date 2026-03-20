@@ -355,7 +355,7 @@ impl WorkflowEngine {
         let cwd = self
             .get_feature_cwd()
             .await
-            .unwrap_or_else(|| PathBuf::from("."));
+            .ok_or_else(|| format!("No working directory found for feature {}. Was ensure_worktree called?", self.feature_id))?;
 
         // 4. Set up permission bridge
         let (perm_tx, perm_rx) = mpsc::channel::<PermissionResponse>(16);
@@ -573,7 +573,9 @@ impl WorkflowEngine {
         let mcp_servers = build_mcp_server_config(agent_type, self.feature_id);
 
         // 5. Resolve cwd — use project directory from feature
-        let cwd = self.get_feature_cwd().await.unwrap_or_else(|| PathBuf::from("."));
+        let cwd = self.get_feature_cwd().await.ok_or_else(|| {
+            format!("No working directory found for feature {}. Was ensure_worktree called?", self.feature_id)
+        })?;
 
         // 6. Set up permission bridge
         let (perm_tx, perm_rx) = mpsc::channel::<PermissionResponse>(16);
