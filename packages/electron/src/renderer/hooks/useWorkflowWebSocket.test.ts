@@ -561,6 +561,24 @@ describe("useWorkflowStore", () => {
       expect(useWorkflowStore.getState().workflowStatus).toBe("building");
     });
 
+    it("sets historyLoaded false and blocks empty for all hydrated agents", () => {
+      useWorkflowStore.getState().hydrateFromSnapshot(
+        makeSnapshot({
+          agent_sessions: [
+            makeSessionSummary({ id: 10, agent_type: "plan", status: "paused" }),
+            makeSessionSummary({ id: 20, queue_item_id: 5, agent_type: "execute", status: "paused" }),
+          ],
+          queue: [{ id: 5, item_type: "execute", phase_id: null, phase_title: null, status: "paused", order_index: 0, group_index: null, agent_session_id: 20, result: null }],
+        }),
+      );
+
+      const state = useWorkflowStore.getState();
+      expect(state.planAgent!.historyLoaded).toBe(false);
+      expect(state.planAgent!.blocks).toEqual([]);
+      expect(state.activeAgents.get(5)!.historyLoaded).toBe(false);
+      expect(state.activeAgents.get(5)!.blocks).toEqual([]);
+    });
+
     it("hydrates multiple agent types in a single snapshot", () => {
       useWorkflowStore.getState().hydrateFromSnapshot(
         makeSnapshot({
@@ -579,6 +597,118 @@ describe("useWorkflowStore", () => {
       expect(state.prdAgent).not.toBeNull();
       expect(state.activeAgents.has(AGENT_TYPE_SYNTHETIC_KEYS.session)).toBe(true);
       expect(state.activeAgents.has(10)).toBe(true);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // populateAgentBlocks
+  // -------------------------------------------------------------------------
+
+  describe("populateAgentBlocks", () => {
+    const fakeBlocks = [{ type: "text" as const, content: "hello" }];
+
+    it("populates blocks for a plan agent in planAgent slot", () => {
+      // Hydrate a plan agent with empty blocks
+      useWorkflowStore.getState().hydrateFromSnapshot({
+        workflow_status: "building",
+        queue: [],
+        agent_sessions: [{ id: 10, agent_type: "plan", status: "paused", queue_item_id: null }],
+        plan: null,
+        worktree: null,
+        autonomy_level: 3,
+      });
+
+      expect(useWorkflowStore.getState().planAgent!.blocks).toEqual([]);
+
+      useWorkflowStore.getState().populateAgentBlocks(AGENT_TYPE_SYNTHETIC_KEYS.plan, fakeBlocks as never[]);
+
+      const { planAgent } = useWorkflowStore.getState();
+      expect(planAgent!.blocks).toEqual(fakeBlocks);
+      expect(planAgent!.historyLoaded).toBe(true);
+    });
+
+    it("populates blocks for a prd agent in prdAgent slot", () => {
+      useWorkflowStore.getState().hydrateFromSnapshot({
+        workflow_status: "building",
+        queue: [],
+        agent_sessions: [{ id: 20, agent_type: "prd", status: "paused", queue_item_id: null }],
+        plan: null,
+        worktree: null,
+        autonomy_level: 3,
+      });
+
+      useWorkflowStore.getState().populateAgentBlocks(AGENT_TYPE_SYNTHETIC_KEYS.prd, fakeBlocks as never[]);
+
+      const { prdAgent } = useWorkflowStore.getState();
+      expect(prdAgent!.blocks).toEqual(fakeBlocks);
+      expect(prdAgent!.historyLoaded).toBe(true);
+    });
+
+    it("populates blocks for a queue-based agent in activeAgents", () => {
+      useWorkflowStore.getState().hydrateFromSnapshot({
+        workflow_status: "building",
+        queue: [{ id: 99, item_type: "execute", phase_id: null, phase_title: null, status: "paused", order_index: 0, group_index: null, agent_session_id: 50, result: null }],
+        agent_sessions: [{ id: 50, agent_type: "execute", status: "paused", queue_item_id: 99 }],
+        plan: null,
+        worktree: null,
+        autonomy_level: 3,
+      });
+
+      useWorkflowStore.getState().populateAgentBlocks(99, fakeBlocks as never[]);
+
+      const agent = useWorkflowStore.getState().activeAgents.get(99);
+      expect(agent!.blocks).toEqual(fakeBlocks);
+      expect(agent!.historyLoaded).toBe(true);
+    });
+
+    it("does not overwrite if historyLoaded is already true", () => {
+      useWorkflowStore.getState().hydrateFromSnapshot({
+        workflow_status: "building",
+        queue: [],
+        agent_sessions: [{ id: 10, agent_type: "plan", status: "paused", queue_item_id: null }],
+        plan: null,
+        worktree: null,
+        autonomy_level: 3,
+      });
+
+      const planKey = AGENT_TYPE_SYNTHETIC_KEYS.plan;
+      // First populate
+      useWorkflowStore.getState().populateAgentBlocks(planKey, fakeBlocks as never[]);
+      // Second populate with different blocks — should be a no-op
+      useWorkflowStore.getState().populateAgentBlocks(planKey, [{ type: "text", content: "overwrite" }] as never[]);
+
+      expect(useWorkflowStore.getState().planAgent!.blocks).toEqual(fakeBlocks);
+    });
+
+    it("does not overwrite if blocks are already non-empty", () => {
+      useWorkflowStore.getState().hydrateFromSnapshot({
+        workflow_status: "building",
+        queue: [{ id: 5, item_type: "execute", phase_id: null, phase_title: null, status: "running", order_index: 0, group_index: null, agent_session_id: 30, result: null }],
+        agent_sessions: [{ id: 30, agent_type: "execute", status: "running", queue_item_id: 5 }],
+        plan: null,
+        worktree: null,
+        autonomy_level: 3,
+      });
+
+      // Simulate real-time blocks arriving via WS before populate
+      useWorkflowStore.setState((state) => {
+        const activeAgents = new Map(state.activeAgents);
+        const agent = activeAgents.get(5)!;
+        activeAgents.set(5, { ...agent, blocks: [{ type: "text", content: "live" }] as never[] });
+        return { activeAgents };
+      });
+
+      useWorkflowStore.getState().populateAgentBlocks(5, fakeBlocks as never[]);
+
+      // Should keep the live blocks, not the history fetch
+      expect(useWorkflowStore.getState().activeAgents.get(5)!.blocks).toEqual([{ type: "text", content: "live" }]);
+    });
+
+    it("is a no-op when agent does not exist", () => {
+      const before = useWorkflowStore.getState();
+      useWorkflowStore.getState().populateAgentBlocks(999, fakeBlocks as never[]);
+      const after = useWorkflowStore.getState();
+      expect(after.activeAgents).toBe(before.activeAgents);
     });
   });
 });
