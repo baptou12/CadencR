@@ -214,6 +214,19 @@ function processAgentStream(
 }
 
 /**
+ * Resolve an agent from the correct state slot based on its item ID.
+ * Plan/prd agents live in dedicated slots; everything else in activeAgents.
+ */
+export function resolveAgentByItemId(
+  state: Pick<WorkflowState, "planAgent" | "prdAgent" | "activeAgents">,
+  itemId: number,
+): AgentSessionState | null {
+  if (itemId === PLAN_KEY) return state.planAgent;
+  if (itemId === PRD_KEY) return state.prdAgent;
+  return state.activeAgents.get(itemId) ?? null;
+}
+
+/**
  * Route a partial update to the correct agent (planAgent, prdAgent, or activeAgents)
  * based on the synthetic item ID. Returns a Zustand state patch.
  */
@@ -855,20 +868,9 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
 
     populateAgentBlocks(itemId, blocks) {
       set(state => {
-        // Resolve the agent from the correct slot (plan/prd vs activeAgents)
-        let agent: AgentSessionState | null = null;
-        if (itemId === PLAN_KEY) agent = state.planAgent;
-        else if (itemId === PRD_KEY) agent = state.prdAgent;
-        else agent = state.activeAgents.get(itemId) ?? null;
-
+        const agent = resolveAgentByItemId(state, itemId);
         if (!agent || agent.historyLoaded || agent.blocks.length > 0) return state;
-
-        const updated = { ...agent, blocks, historyLoaded: true };
-        if (itemId === PLAN_KEY) return { planAgent: updated };
-        if (itemId === PRD_KEY) return { prdAgent: updated };
-        const activeAgents = new Map(state.activeAgents);
-        activeAgents.set(itemId, updated);
-        return { activeAgents };
+        return patchAgentByItemId(state, itemId, { blocks, historyLoaded: true });
       });
     },
   };

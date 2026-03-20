@@ -5,7 +5,7 @@
  * mapping queue items + active agent sessions into FeatureSession[].
  */
 
-import { useEffect, useMemo, useCallback } from "react";
+import { useEffect, useMemo, useCallback, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { FeatureSession } from "./useFeatureAgentState";
 import { serverBlocksToAgentBlocks } from "./useFeatureAgentState";
@@ -15,6 +15,7 @@ import type { AgentStatus } from "@/types/agent";
 import {
   useWorkflowStore,
   AGENT_TYPE_SYNTHETIC_KEYS,
+  resolveAgentByItemId,
   type QueueItem,
   type QueueItemStatus,
   type AgentSessionState,
@@ -244,31 +245,49 @@ export function useWsWorkflowBackend(
   const noAgentsRunning = !sessions.some((s) => s.status === "running");
   const view = deriveViewState(store.workflowStatus, sessions);
 
+  // In-flight guard: prevents duplicate API calls while a fetch is pending
+  const historyFetchInFlight = useRef(false);
+
   const loadAgentHistory = useCallback((entry: FeatureSession) => {
-    const itemId = findQueueItemId(entry, store.queue, store.activeAgents);
-    // Resolve agent from the correct slot (plan/prd use dedicated slots)
-    const PLAN_KEY = AGENT_TYPE_SYNTHETIC_KEYS.plan;
-    const PRD_KEY = AGENT_TYPE_SYNTHETIC_KEYS.prd;
-    const agent = itemId === PLAN_KEY ? store.planAgent
-      : itemId === PRD_KEY ? store.prdAgent
-      : store.activeAgents.get(itemId);
+    const storeState = useWorkflowStore.getState();
+    const itemId = findQueueItemId(entry, storeState.queue, storeState.activeAgents);
+    const agent = resolveAgentByItemId(storeState, itemId);
     if (!agent || agent.historyLoaded || agent.blocks.length > 0) return;
-    const sessionId = agent.sessionId;
-    if (sessionId <= 0) return;
+    if (agent.sessionId <= 0) return;
+    if (historyFetchInFlight.current) return;
+
+    historyFetchInFlight.current = true;
 
     customInstance<FeatureAgentStateResponse>({
       url: `/api/features/${featureId}/agent-state`,
       method: "GET",
     }).then((resp) => {
-      const match = resp.sessions.find((s) => s.sessionDbId === sessionId);
-      if (match && match.blocks.length > 0) {
-        const blocks = serverBlocksToAgentBlocks(match.blocks as never[]);
-        store.populateAgentBlocks(itemId, blocks);
+      // Single API call returns all sessions — distribute blocks to all agents
+      for (const session of resp.sessions) {
+        if (session.blocks.length === 0) continue;
+        const blocks = serverBlocksToAgentBlocks(session.blocks as never[]);
+        // Find the item ID for this session
+        const state = useWorkflowStore.getState();
+        for (const [id, a] of state.activeAgents) {
+          if (a.sessionId === session.sessionDbId) {
+            storeState.populateAgentBlocks(id, blocks);
+            break;
+          }
+        }
+        // Also check plan/prd slots
+        if (state.planAgent?.sessionId === session.sessionDbId) {
+          storeState.populateAgentBlocks(AGENT_TYPE_SYNTHETIC_KEYS.plan, blocks);
+        }
+        if (state.prdAgent?.sessionId === session.sessionDbId) {
+          storeState.populateAgentBlocks(AGENT_TYPE_SYNTHETIC_KEYS.prd, blocks);
+        }
       }
     }).catch(() => {
       // Silently ignore — user can retry by collapsing/expanding
+    }).finally(() => {
+      historyFetchInFlight.current = false;
     });
-  }, [featureId, store]);
+  }, [featureId]);
 
   // Review verdict: check if any review item has changes_requested result
   const reviewVerdict = store.queue.some(

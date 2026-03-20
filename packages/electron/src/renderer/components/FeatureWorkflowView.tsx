@@ -354,18 +354,24 @@ export function FeatureWorkflowView({
   }, [terminalHeightSetting.value]);
 
   // Auto-load conversation history for agents that are already open (paused/running)
-  // but have empty blocks — e.g. after app restart
+  // but have empty blocks — e.g. after app restart. The batched loadAgentHistory
+  // makes a single API call and distributes blocks to all agents, so we only need
+  // to trigger it once. We key on sessionCount so it fires after hydration.
+  const sessionCount = backend.sessionEntries.length;
+  const { loadAgentHistory } = backend;
   useEffect(() => {
-    if (!backend.loadAgentHistory) return;
+    if (!loadAgentHistory || sessionCount === 0) return;
     for (const entry of backend.sessionEntries) {
       if (
         (entry.status === "paused" || entry.status === "running") &&
         entry.blocks.length === 0
       ) {
-        backend.loadAgentHistory(entry);
+        loadAgentHistory(entry);
+        break; // single API call distributes blocks to all agents
       }
     }
-  }, [backend]); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally key on count, not entries array
+  }, [sessionCount, loadAgentHistory]);
 
   const handleTerminalToolbarMouseDown = useCallback(
     (e: React.MouseEvent) => {
