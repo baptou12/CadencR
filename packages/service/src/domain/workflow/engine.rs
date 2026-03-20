@@ -916,7 +916,7 @@ impl WorkflowEngine {
         }
         // Fall back to project directory
         let row: Option<(Option<String>,)> = sqlx::query_as(
-            "SELECT p.directory FROM projects p JOIN features f ON f.project_id = p.id WHERE f.id = ?",
+            "SELECT p.path FROM projects p JOIN features f ON f.project_id = p.id WHERE f.id = ?",
         )
         .bind(self.feature_id)
         .fetch_optional(&self.read_pool)

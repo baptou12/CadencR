@@ -159,8 +159,15 @@ vi.mock("@/trpc", () => {
   };
 });
 
+const { mockUseWorkflowBackend } = vi.hoisted(() => ({
+  mockUseWorkflowBackend: vi.fn(),
+}));
+
 vi.mock("@/hooks/useWorkflowBackend", () => ({
-  useWorkflowBackend: vi.fn(() => ({
+  useWorkflowBackend: mockUseWorkflowBackend,
+}));
+
+const defaultBackend = {
     workflowStatus: "idle",
     sessionEntries: [],
     planSession: null,
@@ -218,8 +225,7 @@ vi.mock("@/hooks/useWorkflowBackend", () => ({
     markDone: vi.fn(),
     deleteSession: vi.fn(),
     handleResume: vi.fn(),
-  })),
-}));
+  };
 
 vi.mock("@/hooks/useContextUsage", () => ({
   useContextUsage: vi.fn(() => new Map()),
@@ -304,6 +310,7 @@ const mockFeature = {
 describe("FeatureWorkflowView", () => {
   beforeEach(() => {
     mockInvalidate.mockClear();
+    mockUseWorkflowBackend.mockReturnValue(defaultBackend);
   });
 
   it("renders without crashing", () => {
@@ -340,6 +347,44 @@ describe("FeatureWorkflowView", () => {
       />,
     );
     expect(screen.getByTestId("plan-sidebar")).toBeInTheDocument();
+  });
+
+  it("displays workflow error banner when backend.error is set", () => {
+    mockUseWorkflowBackend.mockReturnValue({
+      ...defaultBackend,
+      view: "agents",
+      error: "Failed to look up directory for project 2",
+    });
+    render(
+      <FeatureWorkflowView
+        featureId={1}
+        projectId={1}
+        feature={mockFeature}
+        featureQuery={{ refetch: vi.fn() }}
+      />,
+    );
+    expect(
+      screen.getByText("Failed to look up directory for project 2"),
+    ).toBeInTheDocument();
+  });
+
+  it("does not display error banner when backend.error is null", () => {
+    mockUseWorkflowBackend.mockReturnValue({
+      ...defaultBackend,
+      view: "agents",
+      error: null,
+    });
+    render(
+      <FeatureWorkflowView
+        featureId={1}
+        projectId={1}
+        feature={mockFeature}
+        featureQuery={{ refetch: vi.fn() }}
+      />,
+    );
+    expect(
+      screen.queryByText("Failed to look up directory for project 2"),
+    ).not.toBeInTheDocument();
   });
 
   it("renders with undefined feature", () => {

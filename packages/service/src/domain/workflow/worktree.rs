@@ -72,7 +72,7 @@ pub async fn ensure_worktree(
 
     // 2. Look up project directory and branch prefix
     let (project_dir, project_name) = sqlx::query_as::<_, (String, String)>(
-        "SELECT p.directory, p.name FROM projects p WHERE p.id = ?",
+        "SELECT p.path, p.name FROM projects p WHERE p.id = ?",
     )
     .bind(project_id)
     .fetch_optional(read_pool)
@@ -304,7 +304,7 @@ pub async fn get_project_id_for_feature(pool: &SqlitePool, feature_id: i64) -> R
 
 /// Look up the project directory for a given project_id.
 pub async fn get_project_directory(pool: &SqlitePool, project_id: i64) -> Result<String, String> {
-    sqlx::query_scalar("SELECT directory FROM projects WHERE id = ?")
+    sqlx::query_scalar("SELECT path FROM projects WHERE id = ?")
         .bind(project_id)
         .fetch_one(pool)
         .await
