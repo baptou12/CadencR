@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::env;
 
 use claude_agent_sdk_rs::mcp::McpServerConfig;
+use tracing::info;
 
 use crate::domain::mcp::servers::{mcp_server_name, AgentType};
 
@@ -44,15 +45,31 @@ pub fn build_mcp_server_config(
         env_vars.insert("CADENCE_DB_PATH".to_string(), db_path);
     }
 
+    // Build CLI args. Always pass --db-path explicitly so the subprocess
+    // doesn't rely solely on inheriting the environment variable.
+    let mut mcp_args = vec![
+        "mcp-serve".to_string(),
+        "--agent-type".to_string(),
+        format!("{:?}", agent_type).to_lowercase(),
+        "--feature-id".to_string(),
+        feature_id.to_string(),
+    ];
+    if let Ok(db_path) = env::var("CADENCE_DB_PATH") {
+        mcp_args.insert(0, db_path);
+        mcp_args.insert(0, "--db-path".to_string());
+    }
+
+    info!(
+        server_name,
+        binary_path,
+        ?mcp_args,
+        feature_id,
+        "built MCP server config for agent spawn"
+    );
+
     let config = McpServerConfig::Stdio {
         command: binary_path,
-        args: Some(vec![
-            "mcp-serve".to_string(),
-            "--agent-type".to_string(),
-            format!("{:?}", agent_type).to_lowercase(),
-            "--feature-id".to_string(),
-            feature_id.to_string(),
-        ]),
+        args: Some(mcp_args),
         env: if env_vars.is_empty() {
             None
         } else {

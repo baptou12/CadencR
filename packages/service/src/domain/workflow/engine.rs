@@ -24,12 +24,12 @@ use tracing::{debug, error, info, warn};
 use axum::extract::ws::Message;
 use claude_agent_sdk_rs::{
     CanUseTool, Options, PermissionMode, PermissionRequest, PermissionResult, Query, SdkError,
-    SdkMessage,
+    SdkMessage, SystemMessage,
 };
 
 use crate::domain::features::models::{QueueItem, WorkflowType};
 use crate::domain::features::repository as repo;
-use crate::domain::mcp::servers::AgentType;
+use crate::domain::mcp::servers::{AgentType, mcp_server_name};
 use crate::domain::workflow::prompts::Prompts;
 use crate::domain::workflow::strategies::{self, WorkflowStrategy};
 use crate::domain::ws_session::handler::mcp_spawn::build_mcp_server_config;
@@ -497,6 +497,7 @@ impl WorkflowEngine {
                     synthetic_item_id,
                     db_session_id,
                     self.feature_id,
+                    mcp_server_name(agent_type).to_string(),
                     message_rx,
                     self.ws_sender.clone(),
                     self.write_pool.clone(),
@@ -686,6 +687,7 @@ impl WorkflowEngine {
                     item_id,
                     db_session_id,
                     self.feature_id,
+                    mcp_server_name(agent_type).to_string(),
                     message_rx,
                     self.ws_sender.clone(),
                     self.write_pool.clone(),
@@ -1044,6 +1046,7 @@ impl WorkflowEngine {
                     queue_item_id,
                     db_session_id,
                     self.feature_id,
+                    mcp_server_name(agent_type).to_string(),
                     message_rx,
                     self.ws_sender.clone(),
                     self.write_pool.clone(),
@@ -1488,6 +1491,7 @@ fn spawn_workflow_stream_reader(
     queue_item_id: i64,
     db_session_id: i64,
     feature_id: i64,
+    expected_mcp_server: String,
     mut message_rx: mpsc::Receiver<Result<SdkMessage, SdkError>>,
     sender: WsSender,
     write_pool: SqlitePool,
@@ -1507,6 +1511,44 @@ fn spawn_workflow_stream_reader(
         loop {
             match message_rx.recv().await {
                 Some(Ok(sdk_msg)) => {
+                    // Check MCP server status on init
+                    if let SdkMessage::System(SystemMessage::Init { ref mcp_servers, ref tools, .. }) = sdk_msg {
+                        info!(queue_item_id, ?mcp_servers, tool_count = tools.len(), "received init message from CLI");
+                        let server_status = mcp_servers.iter().find(|s| s.name == expected_mcp_server);
+                        let mcp_ok = server_status.map_or(false, |s| s.status == "connected");
+                        if !mcp_ok {
+                            let status_detail = match server_status {
+                                Some(s) => format!("status: {}", s.status),
+                                None => "server not found in init".to_string(),
+                            };
+                            let err = format!(
+                                "MCP server '{}' failed to connect ({}). The agent cannot function without its tools.",
+                                expected_mcp_server, status_detail
+                            );
+                            error!(queue_item_id, %err, "MCP server not connected");
+                            error_msg = Some(err.clone());
+                            WsSessionPersistence::mark_paused_static(&write_pool, db_session_id).await;
+                            let err_env = WsEnvelope::new(
+                                "workflow",
+                                "agent_stream",
+                                to_value(WorkflowAgentStreamErrorPayload {
+                                    queue_item_id,
+                                    session_id: db_session_id,
+                                    msg_type: "error".into(),
+                                    error: err,
+                                }),
+                            );
+                            let _ = sender.send(Message::Text(String::from(err_env).into()));
+                            // Interrupt the running CLI process so it doesn't continue without tools
+                            if let Some(query_handle) = queries.get(&queue_item_id) {
+                                let q = query_handle.value().lock().await;
+                                let _ = q.interrupt().await;
+                            }
+                            break;
+                        }
+                        info!(queue_item_id, server = %expected_mcp_server, "MCP server connected");
+                    }
+
                     // Persist message
                     persistence.persist_sdk_message(&sdk_msg).await;
 

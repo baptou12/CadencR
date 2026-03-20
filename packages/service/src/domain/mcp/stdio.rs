@@ -17,6 +17,10 @@ use super::servers::McpServer;
 use crate::shared::db;
 
 /// Run an MCP server over stdin/stdout.
+///
+/// `serve()` completes the MCP handshake and returns a `RunningService`.
+/// We must call `.waiting()` to keep the server alive and processing
+/// requests until the transport closes (i.e. the client disconnects).
 pub async fn run_mcp_stdio(
     db_path: &str,
     agent_type_str: &str,
@@ -34,26 +38,28 @@ pub async fn run_mcp_stdio(
     let write_pool = db::create_write_pool(db_path).await?;
     let read_pool = db::create_read_pool(db_path).await?;
 
-    let (done_tx, done_rx) = oneshot::channel();
+    // The done_sender is used by mark_agent_done/mark_phase_done tools.
+    // We drop the receiver since we use .waiting() to keep the server alive.
+    let (done_tx, _done_rx) = oneshot::channel();
     let ctx = McpContext::new(read_pool, write_pool, feature_id, done_tx);
 
     let server = super::servers::create_mcp_server(agent_type, ctx);
     let stdio = rmcp::transport::io::stdio();
 
-    match server {
-        McpServer::Plan(s) => { s.serve(stdio).await?; }
-        McpServer::Prd(s) => { s.serve(stdio).await?; }
-        McpServer::Execute(s) => { s.serve(stdio).await?; }
-        McpServer::Qa(s) => { s.serve(stdio).await?; }
-        McpServer::Review(s) => { s.serve(stdio).await?; }
-        McpServer::Risk(s) => { s.serve(stdio).await?; }
-        McpServer::Retro(s) => { s.serve(stdio).await?; }
-        McpServer::Session(s) => { s.serve(stdio).await?; }
-    }
+    // serve() completes the initialize handshake and returns a RunningService.
+    // waiting() keeps the server alive processing tool calls until the
+    // transport closes (client disconnects or stdin EOF).
+    let quit_reason = match server {
+        McpServer::Plan(s) => s.serve(stdio).await?.waiting().await,
+        McpServer::Prd(s) => s.serve(stdio).await?.waiting().await,
+        McpServer::Execute(s) => s.serve(stdio).await?.waiting().await,
+        McpServer::Qa(s) => s.serve(stdio).await?.waiting().await,
+        McpServer::Review(s) => s.serve(stdio).await?.waiting().await,
+        McpServer::Risk(s) => s.serve(stdio).await?.waiting().await,
+        McpServer::Retro(s) => s.serve(stdio).await?.waiting().await,
+        McpServer::Session(s) => s.serve(stdio).await?.waiting().await,
+    };
 
-    // Wait for the agent to signal completion
-    let _ = done_rx.await;
-
-    info!("MCP stdio server shutting down");
+    info!(?quit_reason, "MCP stdio server shutting down");
     Ok(())
 }
