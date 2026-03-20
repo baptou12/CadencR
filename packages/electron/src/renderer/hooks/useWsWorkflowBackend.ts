@@ -1,0 +1,305 @@
+/**
+ * WebSocket workflow backend adapter.
+ *
+ * Implements WorkflowBackend by wrapping the Zustand useWorkflowStore,
+ * mapping queue items + active agent sessions into FeatureSession[].
+ */
+
+import { useEffect, useMemo } from "react";
+import type { FeatureSession } from "./useFeatureAgentState";
+import type { AgentType } from "../../main/agents/types";
+import type { AgentStatus } from "@/types/agent";
+import {
+  useWorkflowStore,
+  type QueueItem,
+  type QueueItemStatus,
+  type AgentSessionState,
+} from "./useWorkflowWebSocket";
+import { deriveViewState, type WorkflowBackend } from "./workflowBackendTypes";
+
+// ---------------------------------------------------------------------------
+// Mappers
+// ---------------------------------------------------------------------------
+
+function mapItemTypeToAgentType(itemType: string): AgentType {
+  switch (itemType) {
+    case "execute":
+    case "plan":
+    case "prd":
+    case "qa":
+    case "review":
+    case "risk":
+    case "retro":
+    case "session":
+      return itemType as AgentType;
+    case "review-fixer":
+    case "review_fixer":
+      return "review-fixer";
+    default:
+      return "execute";
+  }
+}
+
+function mapQueueStatusToAgentStatus(
+  queueStatus: QueueItemStatus,
+  agentStatus: AgentStatus | undefined,
+): AgentStatus {
+  switch (queueStatus) {
+    case "running":
+      return agentStatus === "running" ? "running" : (agentStatus ?? "running");
+    case "completed":
+      return "completed";
+    case "error":
+      return "error";
+    case "paused":
+      return "paused";
+    case "skipped":
+      return "completed";
+    default:
+      // pending, blocked, ready
+      return "idle";
+  }
+}
+
+function queueItemToFeatureSession(
+  item: QueueItem,
+  agentState: AgentSessionState | undefined,
+): FeatureSession {
+  return {
+    sessionDbId: agentState?.sessionId ?? item.agent_session_id ?? -item.id,
+    agentType: mapItemTypeToAgentType(item.item_type),
+    status: mapQueueStatusToAgentStatus(item.status, agentState?.status),
+    blocks: agentState?.blocks ?? [],
+    pendingPermission: agentState?.pendingPermission ?? null,
+    pendingQuestions: null,
+    hasFileChanges: false,
+    resumable: false,
+    phaseId: item.phase_id,
+    phaseTitle: item.phase_title,
+    subprocessId: null,
+    model: null,
+    claudeSessionId: null,
+    runId: null,
+    todos: null,
+    permissionMode: "acceptEdits",
+    pendingPlanApproval: null,
+    inputTokens: 0,
+    outputTokens: 0,
+    contextWindow: 200000,
+    wasCompacted: false,
+    draftPrompt: null,
+  };
+}
+
+function agentStateToFeatureSession(
+  agentState: AgentSessionState,
+  agentType: AgentType,
+): FeatureSession {
+  return {
+    sessionDbId: agentState.sessionId,
+    agentType,
+    status: agentState.status,
+    blocks: agentState.blocks,
+    pendingPermission: agentState.pendingPermission,
+    pendingQuestions: null,
+    hasFileChanges: false,
+    resumable: false,
+    phaseId: null,
+    phaseTitle: null,
+    subprocessId: null,
+    model: null,
+    claudeSessionId: null,
+    runId: null,
+    todos: null,
+    permissionMode: "acceptEdits",
+    pendingPlanApproval: null,
+    inputTokens: 0,
+    outputTokens: 0,
+    contextWindow: 200000,
+    wasCompacted: false,
+    draftPrompt: null,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Build session entries from store state
+// ---------------------------------------------------------------------------
+
+function buildSessionEntries(
+  queue: QueueItem[],
+  activeAgents: Map<number, AgentSessionState>,
+  planAgent: AgentSessionState | null,
+  prdAgent: AgentSessionState | null,
+): { sessions: FeatureSession[]; planSession: FeatureSession | null; prdSession: FeatureSession | null } {
+  const planSession = planAgent ? agentStateToFeatureSession(planAgent, "plan") : null;
+  const prdSession = prdAgent ? agentStateToFeatureSession(prdAgent, "prd") : null;
+
+  const sessions: FeatureSession[] = [];
+
+  // Add plan/prd sessions first
+  if (planSession) sessions.push(planSession);
+  if (prdSession) sessions.push(prdSession);
+
+  // Add queue item sessions (running, completed, error — anything with visible state)
+  for (const item of queue) {
+    const agentState = activeAgents.get(item.id);
+    if (item.status === "running" || item.status === "completed" || item.status === "error" || item.status === "paused" || agentState) {
+      sessions.push(queueItemToFeatureSession(item, agentState));
+    }
+  }
+
+  // Add special agents (session=-3, review_fixer=-5) not tied to queue items
+  for (const [key, agent] of activeAgents) {
+    if (key < 0 && key !== -1 && key !== -2) {
+      // Synthetic agents: -3=session, -5=review-fixer
+      const agentType: AgentType = key === -5 ? "review-fixer" : "session";
+      sessions.push(agentStateToFeatureSession(agent, agentType));
+    }
+  }
+
+  return { sessions, planSession, prdSession };
+}
+
+// ---------------------------------------------------------------------------
+// Find queue item ID from a FeatureSession (reverse lookup)
+// ---------------------------------------------------------------------------
+
+function findQueueItemId(
+  entry: FeatureSession,
+  queue: QueueItem[],
+  activeAgents: Map<number, AgentSessionState>,
+): number {
+  // Check activeAgents for matching sessionId
+  for (const [itemId, agent] of activeAgents) {
+    if (agent.sessionId === entry.sessionDbId) return itemId;
+  }
+  // Check queue for matching agent_session_id
+  for (const item of queue) {
+    if (item.agent_session_id === entry.sessionDbId) return item.id;
+  }
+  // Fallback: negative sessionDbId means -item.id was used
+  if (entry.sessionDbId < 0) return -entry.sessionDbId;
+  return entry.sessionDbId;
+}
+
+// ---------------------------------------------------------------------------
+// Hook
+// ---------------------------------------------------------------------------
+
+export function useWsWorkflowBackend(
+  featureId: number,
+  projectId: number,
+): WorkflowBackend {
+  const store = useWorkflowStore();
+
+  useEffect(() => {
+    store.connect(featureId, projectId);
+    return () => store.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [featureId, projectId]);
+
+  const { sessions, planSession, prdSession } = useMemo(
+    () => buildSessionEntries(store.queue, store.activeAgents, store.planAgent, store.prdAgent),
+    [store.queue, store.activeAgents, store.planAgent, store.prdAgent],
+  );
+
+  const hasAnyAgentOutput = sessions.some((s) => s.blocks.length > 0);
+  const noAgentsRunning = !sessions.some((s) => s.status === "running");
+  const view = deriveViewState(store.workflowStatus, sessions);
+
+  // Review verdict: check if any review item has changes_requested result
+  const reviewVerdict = store.queue.some(
+    (q) => q.item_type === "review" && q.result === "changes_requested",
+  )
+    ? ("changes_requested" as const)
+    : null;
+
+  return {
+    // Read state
+    workflowStatus: store.workflowStatus,
+    sessionEntries: sessions,
+    planSession,
+    prdSession,
+    reviewVerdict,
+    queue: store.queue,
+    autonomyLevel: store.autonomyLevel,
+    error: store.error,
+
+    // Derived
+    hasAnyAgentOutput,
+    noAgentsRunning,
+    view,
+    isLoading: false,
+
+    // Loading flags (WS actions are fire-and-forget)
+    isStartingPlan: false,
+    isStartingPrd: false,
+    isStartingExecute: false,
+    isStartingRisk: false,
+    isStartingReview: false,
+    isStartingRetro: false,
+    isStartingFix: false,
+    isContinuingBuild: false,
+
+    // Commands
+    startPlan: (description, images) => store.startPlan(description, images?.map(i => ({ base64: i, mimeType: "image/png" }))),
+    startPrd: (description, images) => store.startPrd(description, images?.map(i => ({ base64: i, mimeType: "image/png" }))),
+    approvePlan: (_subprocessId, _sessionDbId, requestId) => store.approvePlan(requestId ?? undefined),
+    rejectPlan: (feedback, _subprocessId, _sessionDbId, requestId) => store.rejectPlan(feedback, requestId ?? undefined),
+    startBuilding: () => store.startBuild(),
+    continueWorkflow: () => store.continueWorkflow(),
+    sendToAgent: (entry, message, images) => {
+      const itemId = findQueueItemId(entry, store.queue, store.activeAgents);
+      store.sendPromptToAgent(itemId, message, images?.map(i => ({ base64: i, mimeType: "image/png" })));
+    },
+    stopAgent: (entry) => {
+      const itemId = findQueueItemId(entry, store.queue, store.activeAgents);
+      store.interruptItem(itemId);
+    },
+    interruptAgent: (entry) => {
+      const itemId = findQueueItemId(entry, store.queue, store.activeAgents);
+      store.interruptItem(itemId);
+    },
+    submitPermission: (entry, decision, _feedback) => {
+      const itemId = findQueueItemId(entry, store.queue, store.activeAgents);
+      const requestId = entry.pendingPermission?.requestId ?? "";
+      const mapped = decision === "allow" ? "allow_once" : decision === "deny" ? "deny" : "allow_once";
+      store.respondToPermission(itemId, requestId, mapped as "allow_once" | "allow_future" | "deny");
+    },
+    submitAnswers: () => {
+      // WS doesn't use questions flow
+    },
+    startSession: (prompt, images) => store.startSession(prompt, images?.map(i => ({ base64: i, mimeType: "image/png" }))),
+    startRefine: (description, images) => store.startRefine(description, images?.map(i => ({ base64: i, mimeType: "image/png" }))),
+    startReviewFixer: (comments) => store.startReviewFixer(comments),
+    markDone: (sessionDbId) => {
+      // Find the queue item for this session and mark it done
+      for (const [itemId, agent] of store.activeAgents) {
+        if (agent.sessionId === sessionDbId) {
+          store.markDone(itemId);
+          return;
+        }
+      }
+      store.markDone(sessionDbId);
+    },
+    deleteSession: (sessionDbId) => {
+      for (const [itemId, agent] of store.activeAgents) {
+        if (agent.sessionId === sessionDbId) {
+          store.removeAgent(itemId);
+          return;
+        }
+      }
+      store.removeAgent(sessionDbId);
+    },
+    handleResume: () => {
+      // WS workflow doesn't support resume in the same way
+    },
+
+    // Queue-specific
+    skipItem: (itemId) => store.skipItem(itemId),
+    retryItem: (itemId) => store.retryItem(itemId),
+    setAutonomyLevel: (level) => store.setAutonomyLevel(level),
+    selectItem: (itemId) => store.selectItem(itemId),
+    selectedItemId: store.selectedItemId,
+  };
+}

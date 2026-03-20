@@ -15,17 +15,7 @@ export {
 
 import type { WorkflowBackend } from "./workflowBackendTypes";
 import { useTrpcWorkflowBackend } from "./useTrpcWorkflowBackend";
-
-// ---------------------------------------------------------------------------
-// Stub adapters (replaced in subsequent phases)
-// ---------------------------------------------------------------------------
-
-function useWsWorkflowBackend(
-  _featureId: number,
-  _projectId: number,
-): WorkflowBackend {
-  throw new Error("useWsWorkflowBackend not yet implemented");
-}
+import { useWsWorkflowBackend } from "./useWsWorkflowBackend";
 
 // ---------------------------------------------------------------------------
 // Dispatcher hook
