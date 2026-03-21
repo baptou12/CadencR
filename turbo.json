@@ -2,10 +2,15 @@
   "$schema": "https://turbo.build/schema.json",
   "tasks": {
     "build": {
+      "dependsOn": ["^build"],
       "outputs": []
     },
     "dev": {
-      "dependsOn": ["@cadence/service#build"],
+      "dependsOn": ["^build"],
+      "cache": false
+    },
+    "@cadence/electron#dev": {
+      "dependsOn": ["@cadence/service#dev", "@cadence/claude-agent-sdk-rs#dev"],
       "cache": false,
       "persistent": true
     },
@@ -25,6 +30,7 @@
       "cache": false
     },
     "build:release": {
+      "dependsOn": ["^build:release"],
       "outputs": []
     },
     "make": {
