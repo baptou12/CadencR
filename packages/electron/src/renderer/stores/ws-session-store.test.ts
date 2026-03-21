@@ -567,4 +567,224 @@ describe("ws-session-store", () => {
       expect(useWsSessionStore.getState().sessions["s1"].featureTitle).toBeNull();
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // Plan approval gate flow
+  // ---------------------------------------------------------------------------
+
+  describe("plan approval gate", () => {
+    async function setupWithInit() {
+      const store = useWsSessionStore.getState();
+      store.connect("s1");
+      await tick();
+      const ws = getWs();
+      ws.simulateMessage({ domain: "session", action: "initialized", payload: { session_id: "srv-1" } });
+      return { store, ws };
+    }
+
+    function streamExitPlanMode(ws: MockWebSocket) {
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [{
+            type: "assistant",
+            message: {
+              content: [
+                { type: "tool_use", id: "toolu_plan", name: "ExitPlanMode", input: { plan: "## My Plan" } },
+              ],
+            },
+          }],
+        },
+      });
+    }
+
+    function sendPlanPermissionRequest(ws: MockWebSocket) {
+      ws.simulateMessage({
+        domain: "session",
+        action: "permission.request",
+        payload: {
+          request_id: "req-plan-1",
+          tool_name: "ExitPlanMode",
+          tool_input: { plan: "## My Plan" },
+          description: "Plan is ready for approval",
+        },
+      });
+    }
+
+    it("ExitPlanMode permission.request shows plan approval bar", async () => {
+      const { ws } = await setupWithInit();
+      streamExitPlanMode(ws);
+      sendPlanPermissionRequest(ws);
+
+      const session = useWsSessionStore.getState().sessions["s1"];
+      expect(session.pendingPlanApproval).toEqual({ plan: "## My Plan" });
+      expect(session.pendingRequestId).toBe("req-plan-1");
+      expect(session.status).toBe("paused");
+    });
+
+    it("ExitPlanMode permission.request clears exitPlanModeDetected flag", async () => {
+      const { ws } = await setupWithInit();
+      streamExitPlanMode(ws);
+
+      // exitPlanModeDetected should be set after streaming
+      const stateBefore = useWsSessionStore.getState().sessions["s1"];
+      expect(stateBefore.streamingState.exitPlanModeDetected).toBe(true);
+
+      sendPlanPermissionRequest(ws);
+
+      // Flag should be cleared so turn_complete doesn't re-trigger
+      const stateAfter = useWsSessionStore.getState().sessions["s1"];
+      expect(stateAfter.streamingState.exitPlanModeDetected).toBe(false);
+    });
+
+    it("approvePlan sends permission.respond and mode.set, switches to acceptEdits", async () => {
+      const { ws } = await setupWithInit();
+      streamExitPlanMode(ws);
+      sendPlanPermissionRequest(ws);
+
+      useWsSessionStore.getState().approvePlan("s1");
+
+      const session = useWsSessionStore.getState().sessions["s1"];
+      expect(session.pendingPlanApproval).toBeNull();
+      expect(session.pendingRequestId).toBe("");
+      expect(session.permissionMode).toBe("acceptEdits");
+      expect(session.status).toBe("running");
+
+      // Should have sent mode.set and permission.respond
+      const sent = ws.sent.map((s) => JSON.parse(s));
+      const modeSet = sent.find((m: Record<string, unknown>) => m.action === "mode.set");
+      expect(modeSet).toBeDefined();
+      expect(modeSet.payload.mode).toBe("acceptEdits");
+
+      const permResp = sent.find((m: Record<string, unknown>) => m.action === "permission.respond");
+      expect(permResp).toBeDefined();
+      expect(permResp.payload.request_id).toBe("req-plan-1");
+      expect(permResp.payload.decision).toBe("allow_once");
+    });
+
+    it("approvePlan adds 'Plan approved.' user message and marks plan block approved", async () => {
+      const { ws } = await setupWithInit();
+      streamExitPlanMode(ws);
+      sendPlanPermissionRequest(ws);
+
+      useWsSessionStore.getState().approvePlan("s1");
+
+      const session = useWsSessionStore.getState().sessions["s1"];
+      const userMsgs = session.blocks.filter((b) => b.type === "user_message");
+      expect(userMsgs).toHaveLength(1);
+      expect(userMsgs[0].content).toBe("Plan approved.");
+
+      const planBlock = session.blocks.find((b) => b.toolName === "ExitPlanMode");
+      expect(planBlock?.planApprovalStatus).toBe("approved");
+    });
+
+    it("requestPlanChanges sends permission.respond with deny and feedback", async () => {
+      const { ws } = await setupWithInit();
+      streamExitPlanMode(ws);
+      sendPlanPermissionRequest(ws);
+
+      useWsSessionStore.getState().requestPlanChanges("s1", "Use a simpler approach");
+
+      const session = useWsSessionStore.getState().sessions["s1"];
+      expect(session.pendingPlanApproval).toBeNull();
+      expect(session.pendingRequestId).toBe("");
+      expect(session.status).toBe("running");
+
+      const sent = ws.sent.map((s) => JSON.parse(s));
+      const permResp = sent.find((m: Record<string, unknown>) => m.action === "permission.respond");
+      expect(permResp).toBeDefined();
+      expect(permResp.payload.decision).toBe("deny");
+      expect(permResp.payload.feedback).toBe("Use a simpler approach");
+    });
+
+    it("requestPlanChanges adds feedback as user message and marks plan block rejected", async () => {
+      const { ws } = await setupWithInit();
+      streamExitPlanMode(ws);
+      sendPlanPermissionRequest(ws);
+
+      useWsSessionStore.getState().requestPlanChanges("s1", "Try again differently");
+
+      const session = useWsSessionStore.getState().sessions["s1"];
+      const userMsgs = session.blocks.filter((b) => b.type === "user_message");
+      expect(userMsgs).toHaveLength(1);
+      expect(userMsgs[0].content).toBe("Try again differently");
+
+      const planBlock = session.blocks.find((b) => b.toolName === "ExitPlanMode");
+      expect(planBlock?.planApprovalStatus).toBe("rejected");
+    });
+
+    it("turn_complete after gate-based approval does not re-trigger approval bar", async () => {
+      const { ws } = await setupWithInit();
+      streamExitPlanMode(ws);
+      sendPlanPermissionRequest(ws);
+      useWsSessionStore.getState().approvePlan("s1");
+
+      // Simulate turn_complete after the CLI resumes
+      ws.simulateMessage({ domain: "session", action: "turn_complete", payload: {} });
+
+      const session = useWsSessionStore.getState().sessions["s1"];
+      expect(session.pendingPlanApproval).toBeNull();
+      expect(session.status).toBe("idle");
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // EnterPlanMode detection
+  // ---------------------------------------------------------------------------
+
+  describe("EnterPlanMode detection", () => {
+    it("EnterPlanMode in stream switches permissionMode to plan", async () => {
+      const store = useWsSessionStore.getState();
+      store.connect("s1");
+      await tick();
+      const ws = getWs();
+      ws.simulateMessage({ domain: "session", action: "initialized", payload: { session_id: "srv-1" } });
+
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [{
+            type: "assistant",
+            message: {
+              content: [
+                { type: "tool_use", id: "tu-enter", name: "EnterPlanMode", input: {} },
+              ],
+            },
+          }],
+        },
+      });
+
+      expect(useWsSessionStore.getState().sessions["s1"].permissionMode).toBe("plan");
+    });
+
+    it("EnterPlanMode flag is reset after processing", async () => {
+      const store = useWsSessionStore.getState();
+      store.connect("s1");
+      await tick();
+      const ws = getWs();
+      ws.simulateMessage({ domain: "session", action: "initialized", payload: { session_id: "srv-1" } });
+
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [{
+            type: "assistant",
+            message: {
+              content: [
+                { type: "tool_use", id: "tu-enter", name: "EnterPlanMode", input: {} },
+              ],
+            },
+          }],
+        },
+      });
+
+      const session = useWsSessionStore.getState().sessions["s1"];
+      expect(session.permissionMode).toBe("plan");
+      // Flag should have been consumed
+      expect(session.streamingState.enterPlanModeDetected).toBe(false);
+    });
+  });
 });
