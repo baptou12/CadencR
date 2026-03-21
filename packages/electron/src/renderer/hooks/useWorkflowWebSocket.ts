@@ -28,6 +28,7 @@ export type WorkflowStatus =
   | "planning"
   | "prd"
   | "plan_approval"
+  | "ready_to_build"
   | "building"
   | "paused"
   | "completed"
@@ -387,9 +388,10 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         set({ workflowStatus: "paused", pauseReason: reason });
         break;
       }
-      case "status_update": {
-        const status = payload.status as WorkflowStatus;
-        set({ workflowStatus: status });
+      case "status_update":
+      case "status_changed": {
+        const status = (payload.status as WorkflowStatus) ?? (payload.workflow_status as WorkflowStatus);
+        if (status) set({ workflowStatus: status });
         break;
       }
       case "plan_agent_stream":

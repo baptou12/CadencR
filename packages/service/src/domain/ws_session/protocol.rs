@@ -433,6 +433,13 @@ pub struct WorkflowPausedPayload {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowStatusChangedPayload {
+    pub feature_id: i64,
+    pub status: String,
+    pub previous_status: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowQueueUpdatePayload {
     pub feature_id: i64,
     pub items: Vec<crate::domain::features::models::QueueItem>,

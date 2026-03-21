@@ -560,6 +560,15 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 44,
+    description: "Add workflow_status column to features table",
+    up: (db) => {
+      db.exec(`
+        ALTER TABLE features ADD COLUMN workflow_status TEXT NOT NULL DEFAULT 'idle';
+      `);
+    },
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

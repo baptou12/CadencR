@@ -342,6 +342,16 @@ async fn handle_approval(envelope: WsEnvelope, sender: &WsSender, kind: &str, sy
         updated_input: None,
     };
 
+    // Update workflow status based on approval decision
+    if kind == "plan" {
+        use crate::domain::workflow::status::WorkflowStatus;
+        if approved {
+            engine.set_status(WorkflowStatus::ReadyToBuild).await;
+        } else {
+            engine.set_status(WorkflowStatus::Planning).await;
+        }
+    }
+
     // Send through the permission channel for the synthetic queue_item_id
     // (plan=-1, prd=-2) which the WorkflowPermissionBridge is blocking on.
     match engine.respond_permission(synthetic_item_id, response).await {
@@ -438,6 +448,9 @@ async fn handle_start_build(envelope: WsEnvelope, sender: &WsSender, app_state: 
         }
     }
 
+    // Set status to Building before advancing
+    engine.set_status(crate::domain::workflow::status::WorkflowStatus::Building).await;
+
     info!(feature_id = payload.feature_id, "start_build: advancing engine");
     if let Err(e) = engine.advance().await {
         send_workflow_error(sender, &envelope.id, "ADVANCE_FAILED", &format!("Failed to advance: {e}"));
@@ -446,6 +459,8 @@ async fn handle_start_build(envelope: WsEnvelope, sender: &WsSender, app_state: 
 
 async fn handle_continue(envelope: WsEnvelope, sender: &WsSender) {
     let Some((payload, engine)) = parse_and_get_engine::<WorkflowContinuePayload>(&envelope, sender) else { return };
+
+    engine.set_status(crate::domain::workflow::status::WorkflowStatus::Building).await;
 
     info!(feature_id = payload.feature_id, "continue: advancing engine");
     if let Err(e) = engine.advance().await {

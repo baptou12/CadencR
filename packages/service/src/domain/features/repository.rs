@@ -529,6 +529,62 @@ pub async fn insert_dependency(
     Ok(())
 }
 
+pub async fn get_workflow_status(
+    pool: &SqlitePool,
+    feature_id: i64,
+) -> Result<crate::domain::workflow::status::WorkflowStatus, AppError> {
+    let row: Option<(String,)> = sqlx::query_as(
+        "SELECT COALESCE(workflow_status, 'idle') FROM features WHERE id = ?",
+    )
+    .bind(feature_id)
+    .fetch_optional(pool)
+    .await?;
+
+    let status_str = row.map(|r| r.0).unwrap_or_else(|| "idle".to_string());
+    status_str.parse().map_err(|e: String| AppError::BadRequest(e))
+}
+
+pub async fn set_workflow_status(
+    pool: &SqlitePool,
+    feature_id: i64,
+    new_status: crate::domain::workflow::status::WorkflowStatus,
+) -> Result<crate::domain::workflow::status::WorkflowStatus, AppError> {
+    use crate::domain::workflow::status::WorkflowStatus;
+
+    // Read current status
+    let current = get_workflow_status(pool, feature_id).await.unwrap_or(WorkflowStatus::Idle);
+
+    // Validate transition
+    current.transition(new_status).map_err(|e| {
+        tracing::warn!(feature_id, from = %current, to = %new_status, "invalid workflow transition (forcing)");
+        AppError::BadRequest(e)
+    })?;
+
+    // Write to DB
+    sqlx::query("UPDATE features SET workflow_status = ? WHERE id = ?")
+        .bind(new_status.to_string())
+        .bind(feature_id)
+        .execute(pool)
+        .await?;
+
+    Ok(new_status)
+}
+
+/// Force-set workflow status without transition validation.
+/// Used for recovery/reconnect scenarios where the DB state may be stale.
+pub async fn force_workflow_status(
+    pool: &SqlitePool,
+    feature_id: i64,
+    status: crate::domain::workflow::status::WorkflowStatus,
+) -> Result<(), AppError> {
+    sqlx::query("UPDATE features SET workflow_status = ? WHERE id = ?")
+        .bind(status.to_string())
+        .bind(feature_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 pub async fn get_queue_for_feature(pool: &SqlitePool, feature_id: i64) -> Result<Vec<QueueItem>, AppError> {
     let rows = sqlx::query_as::<_, QueueItem>(
         "SELECT * FROM workflow_queue WHERE feature_id = ? ORDER BY order_index",
@@ -608,8 +664,11 @@ pub async fn get_feature_snapshot(
         .and_then(|s| s.value.parse().ok())
         .unwrap_or(3);
 
-    // 5. Derive workflow status
-    let workflow_status = derive_workflow_status(&queue, &plan_snapshot, &agent_sessions);
+    // 5. Read workflow status from DB (explicit state machine)
+    let workflow_status = get_workflow_status(pool, feature_id)
+        .await
+        .unwrap_or(crate::domain::workflow::status::WorkflowStatus::Idle)
+        .to_string();
 
     Ok(FeatureSnapshotResponse {
         workflow_status,
@@ -619,85 +678,6 @@ pub async fn get_feature_snapshot(
         worktree,
         autonomy_level,
     })
-}
-
-fn derive_workflow_status(
-    queue: &[super::models::SnapshotQueueItem],
-    plan: &Option<super::models::PlanSnapshot>,
-    sessions: &[super::models::AgentSessionSummary],
-) -> String {
-    // Single pass: check plan/prd session states and whether any session is running
-    let (has_active_plan, has_active_prd, any_session_running) =
-        sessions.iter().fold((false, false, false), |(plan, prd, running), s| {
-            (
-                plan || (s.agent_type == "plan" && (s.status == "running" || s.status == "paused")),
-                prd || (s.agent_type == "prd" && (s.status == "running" || s.status == "paused")),
-                running || s.status == "running",
-            )
-        });
-
-    // Running/paused plan or prd agents take priority
-    if has_active_plan {
-        return "planning".to_string();
-    }
-    if has_active_prd {
-        return "prd".to_string();
-    }
-
-    // 1. No queue and no plan → idle
-    if queue.is_empty() && plan.is_none() {
-        return "idle".to_string();
-    }
-
-    if let Some(p) = plan {
-        // 2. Plan is draft → planning
-        if p.status == "draft" {
-            return "planning".to_string();
-        }
-        // 3. Plan pending approval
-        if p.status == "pending_approval" {
-            return "plan_approval".to_string();
-        }
-    }
-
-    let has_running = queue.iter().any(|i| i.status == "running");
-    let has_error = queue.iter().any(|i| i.status == "error");
-    let has_ready_or_blocked = queue.iter().any(|i| i.status == "ready" || i.status == "blocked");
-
-    // 4. Any running → building
-    if has_running {
-        return "building".to_string();
-    }
-    // 5. Error and none running → error
-    if has_error {
-        return "error".to_string();
-    }
-    // 6. Ready/blocked and none running → paused
-    if has_ready_or_blocked {
-        return "paused".to_string();
-    }
-    // 7. All completed/skipped
-    if !queue.is_empty() && queue.iter().all(|i| i.status == "completed" || i.status == "skipped") {
-        return "completed".to_string();
-    }
-
-    // 8. Plan exists and is active (approved) but queue is empty → plan_approval
-    //    so the user can see the plan and start building
-    if let Some(p) = plan {
-        if p.status == "active" {
-            return "plan_approval".to_string();
-        }
-    }
-
-    // 9. If there are any agent sessions at all, don't return idle — show as building/completed
-    if !sessions.is_empty() {
-        if any_session_running {
-            return "building".to_string();
-        }
-        return "completed".to_string();
-    }
-
-    "idle".to_string()
 }
 
 pub async fn get_ready_items(pool: &SqlitePool, feature_id: i64) -> Result<Vec<QueueItem>, AppError> {

@@ -98,27 +98,7 @@ fn send_feature_updated_envelope(sender: &WsSender, feature_id: i64, changed: &[
     let _ = sender.send(Message::Text(String::from(envelope).into()));
 }
 
-/// Derive workflow status from queue items (mirrors snapshot logic).
-fn derive_status_from_queue(items: &[QueueItem]) -> String {
-    if items.is_empty() {
-        return "idle".to_string();
-    }
-    let has_running = items.iter().any(|i| i.status == "running");
-    let has_error = items.iter().any(|i| i.status == "error");
-    let has_ready_or_blocked = items.iter().any(|i| i.status == "ready" || i.status == "blocked");
-
-    if has_running {
-        "building".to_string()
-    } else if has_error {
-        "error".to_string()
-    } else if has_ready_or_blocked {
-        "paused".to_string()
-    } else if items.iter().all(|i| i.status == "completed" || i.status == "skipped") {
-        "completed".to_string()
-    } else {
-        "idle".to_string()
-    }
-}
+use crate::domain::workflow::status::WorkflowStatus;
 
 /// CanUseTool implementation for workflow agents that bridges permission requests
 /// to the frontend via workflow.permission.request envelopes.
@@ -131,6 +111,7 @@ struct WorkflowPermissionBridge {
     session_cache: Arc<tokio::sync::Mutex<HashSet<String>>>,
     allowed_patterns: Arc<HashSet<String>>,
     read_pool: SqlitePool,
+    write_pool: SqlitePool,
     db_session_id: i64,
 }
 
@@ -240,6 +221,21 @@ impl CanUseTool for WorkflowPermissionBridge {
                 .unwrap(),
             );
             let _ = self.sender.send(Message::Text(String::from(gate_env).into()));
+
+            // Update workflow status to PlanApproval when plan is shown
+            if is_show_plan {
+                let _ = repo::set_workflow_status(&self.write_pool, self.feature_id, WorkflowStatus::PlanApproval).await;
+                let status_env = WsEnvelope::new(
+                    "workflow",
+                    "status_changed",
+                    to_value(WorkflowStatusChangedPayload {
+                        feature_id: self.feature_id,
+                        status: "plan_approval".to_string(),
+                        previous_status: "planning".to_string(),
+                    }),
+                );
+                let _ = self.sender.send(Message::Text(String::from(status_env).into()));
+            }
 
             // Emit the plan content as a synthetic text block so it appears in the
             // agent's conversation before the user decides to approve/reject.
@@ -482,6 +478,7 @@ impl WorkflowEngine {
     /// Spawn a plan agent for this feature. The plan agent runs outside the queue
     /// and uses a synthetic queue_item_id of -1 for streaming.
     pub async fn spawn_plan_agent(&self, description: &str) -> Result<i64, String> {
+        self.set_status(WorkflowStatus::Planning).await;
         // Check if a PRD exists — if so, use PRD-specific preamble
         let prd: Option<String> = sqlx::query_scalar::<_, Option<String>>(
             "SELECT prd FROM features WHERE id = ?",
@@ -525,6 +522,7 @@ impl WorkflowEngine {
     /// Spawn a PRD agent for this feature. The PRD agent runs outside the queue
     /// and uses a synthetic queue_item_id of -2 for streaming.
     pub async fn spawn_prd_agent(&self, description: &str) -> Result<i64, String> {
+        self.set_status(WorkflowStatus::Prd).await;
         let prd_instructions = "Use the MCP tools to build the PRD. Call create_prd to store the initial PRD content, \
             then call show_prd to present it for approval. If rejected, use edit_prd for targeted changes \
             (or create_prd for full rewrites), then call show_prd again. Once approved, call mark_agent_done.";
@@ -703,6 +701,7 @@ impl WorkflowEngine {
             session_cache: Arc::new(tokio::sync::Mutex::new(HashSet::new())),
             allowed_patterns,
             read_pool: self.read_pool.clone(),
+            write_pool: self.write_pool.clone(),
             db_session_id,
         };
 
@@ -811,6 +810,54 @@ impl WorkflowEngine {
         self.last_activity.store(now, Ordering::Relaxed);
     }
 
+    /// Transition the workflow to a new status, persisting to DB and notifying the frontend.
+    /// Logs a warning and continues if the transition is invalid (to avoid blocking the workflow).
+    pub async fn set_status(&self, new_status: WorkflowStatus) {
+        let current = repo::get_workflow_status(&self.read_pool, self.feature_id)
+            .await
+            .unwrap_or(WorkflowStatus::Idle);
+
+        if current == new_status {
+            return;
+        }
+
+        match repo::set_workflow_status(&self.write_pool, self.feature_id, new_status).await {
+            Ok(_) => {
+                info!(feature_id = self.feature_id, from = %current, to = %new_status, "workflow status changed");
+            }
+            Err(e) => {
+                // Force-set on invalid transition to avoid getting stuck
+                warn!(feature_id = self.feature_id, from = %current, to = %new_status, error = %e, "invalid transition, force-setting");
+                let _ = repo::force_workflow_status(&self.write_pool, self.feature_id, new_status).await;
+            }
+        }
+
+        // Notify frontend
+        let envelope = WsEnvelope::new(
+            "workflow",
+            "status_changed",
+            to_value(WorkflowStatusChangedPayload {
+                feature_id: self.feature_id,
+                status: new_status.to_string(),
+                previous_status: current.to_string(),
+            }),
+        );
+        let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
+    }
+
+    /// Check if all queue items are completed/skipped and no active items remain.
+    /// If so, transition to Completed status.
+    async fn check_workflow_completion(&self) {
+        if !self.active_items.is_empty() {
+            return;
+        }
+        if let Ok(items) = repo::get_queue_for_feature(&self.read_pool, self.feature_id).await {
+            if !items.is_empty() && items.iter().all(|i| i.status == "completed" || i.status == "skipped") {
+                self.set_status(WorkflowStatus::Completed).await;
+            }
+        }
+    }
+
     /// Advance the workflow: unblock ready items and start them up to capacity.
     pub async fn advance(&self) -> Result<(), String> {
         self.touch_activity();
@@ -910,6 +957,7 @@ impl WorkflowEngine {
             session_cache: Arc::new(tokio::sync::Mutex::new(HashSet::new())),
             allowed_patterns,
             read_pool: self.read_pool.clone(),
+            write_pool: self.write_pool.clone(),
             db_session_id,
         };
 
@@ -1068,6 +1116,7 @@ impl WorkflowEngine {
                                 }
                             }
                         } else {
+                            self.set_status(WorkflowStatus::Paused).await;
                             let envelope = WsEnvelope::new(
                                 "workflow",
                                 "paused",
@@ -1085,6 +1134,7 @@ impl WorkflowEngine {
             }
             _ => {
                 // Level 1: always pause
+                self.set_status(WorkflowStatus::Paused).await;
                 let envelope = WsEnvelope::new(
                     "workflow",
                     "paused",
@@ -1096,6 +1146,9 @@ impl WorkflowEngine {
                 let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
             }
         }
+
+        // Check if all items are completed after advancement
+        self.check_workflow_completion().await;
     }
 
     /// Called when a queue item is paused (interrupted by user).
@@ -1165,6 +1218,11 @@ impl WorkflowEngine {
             }),
         );
         let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
+
+        // Set Error status if no other items are still running
+        if self.active_items.is_empty() {
+            self.set_status(WorkflowStatus::Error).await;
+        }
     }
 
     /// Interrupt a running queue item.
@@ -1327,6 +1385,7 @@ impl WorkflowEngine {
             session_cache: Arc::new(tokio::sync::Mutex::new(HashSet::new())),
             allowed_patterns,
             read_pool: self.read_pool.clone(),
+            write_pool: self.write_pool.clone(),
             db_session_id,
         };
 
@@ -1588,12 +1647,15 @@ impl WorkflowEngine {
         .await
         .map_err(|e| e.to_string())?;
 
-        // Send full queue update
+        // Send full queue update with DB-stored status
         let all_items = repo::get_queue_for_feature(&self.read_pool, self.feature_id)
             .await
             .map_err(|e| e.to_string())?;
 
-        let workflow_status = derive_status_from_queue(&all_items);
+        let workflow_status = repo::get_workflow_status(&self.read_pool, self.feature_id)
+            .await
+            .unwrap_or(WorkflowStatus::Idle)
+            .to_string();
 
         let envelope = WsEnvelope::new(
             "workflow",
