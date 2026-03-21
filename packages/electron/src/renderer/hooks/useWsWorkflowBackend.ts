@@ -355,7 +355,7 @@ export function useWsWorkflowBackend(
     isStartingWorkflowSession: false,
     isStartingRefinePlan: false,
     isAddingFixPhase: false,
-    canContinueBuild: false,
+    canContinueBuild: store.workflowStatus === "paused" && noAgentsRunning,
     executeWaitingNextStep: null,
     executeStatus: "idle" as const,
     planApprovalError: null,
