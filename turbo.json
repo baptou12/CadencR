@@ -9,8 +9,12 @@
       "dependsOn": ["^build"],
       "cache": false
     },
+    "@cadence/service#dev": {
+      "cache": false,
+      "persistent": true
+    },
     "@cadence/electron#dev": {
-      "dependsOn": ["@cadence/service#dev", "@cadence/claude-agent-sdk-rs#dev"],
+      "dependsOn": ["@cadence/claude-agent-sdk-rs#dev"],
       "cache": false,
       "persistent": true
     },

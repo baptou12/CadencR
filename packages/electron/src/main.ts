@@ -105,10 +105,14 @@ app.on("ready", async () => {
 
   // Start Rust backend for git/features operations
   const dbPath = path.join(app.getPath("userData"), "cadence.db");
-  try {
-    await startRustBackend(dbPath, undefined, ELECTRON_IPC_PORT);
-  } catch (err) {
-    console.error("[rust-backend] Failed to start:", err);
+  if (app.isPackaged) {
+    try {
+      await startRustBackend(dbPath, undefined, ELECTRON_IPC_PORT);
+    } catch (err) {
+      console.error("[rust-backend] Failed to start:", err);
+    }
+  } else {
+    console.log("[rust-backend] Dev mode — expecting Rust backend already running on port 5005");
   }
 
   // Expose the Rust backend port to preload via env var (preload runs synchronously)
@@ -155,7 +159,9 @@ app.on("before-quit", (e) => {
     e.preventDefault();
     // Stop Rust backend and IPC server, then dispose Effect runtime.
     Promise.all([
-      stopRustBackend().catch((err) => console.error("[rust-backend] Error stopping:", err)),
+      app.isPackaged
+        ? stopRustBackend().catch((err) => console.error("[rust-backend] Error stopping:", err))
+        : Promise.resolve(),
       stopElectronIpcServer().catch((err) => console.error("[electron-ipc-server] Error stopping:", err)),
     ])
       .then(() => AppRuntime.dispose())

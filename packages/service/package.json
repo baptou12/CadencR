@@ -8,7 +8,7 @@
   "scripts": {
     "build": "cargo build",
     "build:release": "cargo build --release",
-    "dev": "cargo build",
+    "dev": "cargo watch -w src -x 'run -- --db-path ~/Library/Application\\ Support/cadence/cadence.db --port 5005'",
     "test": "cargo test",
     "lint": "cargo check"
   }
