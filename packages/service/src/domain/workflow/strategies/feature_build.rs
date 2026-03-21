@@ -226,11 +226,12 @@ impl WorkflowStrategy for FeatureBuildStrategy {
         read_pool: &SqlitePool,
         item: &QueueItem,
         feature_title: &str,
+        autonomy_level: u8,
     ) -> Result<String, String> {
         match item.item_type.as_str() {
             "execute" => {
                 let phase = self.read_phase(read_pool, item.phase_id).await?;
-                self.build_enriched_execute_prompt(read_pool, &phase).await
+                self.build_enriched_execute_prompt(read_pool, &phase, autonomy_level).await
             }
             "qa" => {
                 let phase = self.read_phase(read_pool, item.phase_id).await?;
@@ -262,6 +263,7 @@ impl FeatureBuildStrategy {
         &self,
         read_pool: &SqlitePool,
         phase: &Phase,
+        autonomy_level: u8,
     ) -> Result<String, String> {
         // Fetch plan-level context
         let plan: Option<PlanContext> = sqlx::query_as(
@@ -328,11 +330,32 @@ impl FeatureBuildStrategy {
              Use `git add <file1> <file2> ...` for each file you changed, then:\n```\ngit commit -m {}\n```",
             serde_json::to_string(commit_msg).unwrap_or_else(|_| format!("\"{commit_msg}\""))
         );
-        sections.push(format!(
-            "## Auto-Commit\n\nAfter completing your implementation, automatically commit your changes:\n{commit_instructions}\n\n\
-             After committing, call `mark_phase_done` with your implementation notes and deviations. \
-             **Do NOT call `mark_phase_done` before committing.**\n\nThen call `mark_agent_done`."
-        ));
+
+        if autonomy_level == 1 {
+            sections.push(format!(
+                "## User Approval Required\n\n\
+                 After outputting your implementation notes and deviations, you MUST ask the user for approval using AskUserQuestion:\n\n\
+                 - Question: \"Review complete. Approve changes and commit?\"\n\
+                 - Options: \"Approve and commit\", \"Skip commit\", \"Request changes\"\n\n\
+                 If the user selects \"Request changes\", they will provide feedback via the \"Other\" option. In that case:\n\
+                 1. Read and address their feedback\n\
+                 2. Make the necessary fixes\n\
+                 3. Re-output your updated implementation notes and deviations\n\
+                 4. Ask for approval again\n\n\
+                 If the user selects \"Approve and commit\":\n{commit_instructions}\n\n\
+                 Then call `mark_phase_done` with your implementation notes and deviations.\n\n\
+                 **Do NOT call `mark_phase_done` until after approval and successful commit.**\n\n\
+                 If the user selects \"Skip commit\", do NOT commit.\n\n\
+                 Repeat the approval loop until the user approves or skips. \
+                 Only call `mark_agent_done` after the user has approved or skipped."
+            ));
+        } else {
+            sections.push(format!(
+                "## Auto-Commit\n\nAfter completing your implementation, automatically commit your changes:\n{commit_instructions}\n\n\
+                 After committing, call `mark_phase_done` with your implementation notes and deviations. \
+                 **Do NOT call `mark_phase_done` before committing.**\n\nThen call `mark_agent_done`."
+            ));
+        }
 
         Ok(sections.join("\n\n---\n\n"))
     }
@@ -596,5 +619,101 @@ mod tests {
         assert!(matches!(strategy.agent_type_for_item("risk"), Ok(AgentType::Risk)));
         assert!(matches!(strategy.agent_type_for_item("retro"), Ok(AgentType::Retro)));
         assert!(strategy.agent_type_for_item("unknown").is_err());
+    }
+
+    // ── Prompt autonomy tests ──
+
+    use crate::domain::workflow::prompts::{build_execute_prompt, build_qa_prompt, build_review_prompt};
+
+    #[test]
+    fn test_execute_system_prompt_approval_for_autonomy_1() {
+        let prompt = build_execute_prompt("Phase 1", "do stuff", "feat: stuff", 1);
+        assert!(prompt.contains("Ask the user for approval"), "autonomy 1 should require approval");
+        assert!(!prompt.contains("Full Autonomy"), "autonomy 1 should not mention full autonomy");
+    }
+
+    #[test]
+    fn test_execute_system_prompt_moderate_for_autonomy_2() {
+        let prompt = build_execute_prompt("Phase 1", "do stuff", "feat: stuff", 2);
+        assert!(prompt.contains("moderate autonomy") || prompt.contains("Autonomy note"),
+            "autonomy 2 should use moderate completion");
+    }
+
+    #[test]
+    fn test_execute_system_prompt_auto_for_autonomy_3() {
+        let prompt = build_execute_prompt("Phase 1", "do stuff", "feat: stuff", 3);
+        assert!(prompt.contains("Commit your changes first") || prompt.contains("commit has succeeded"),
+            "autonomy 3 should use auto completion");
+    }
+
+    #[test]
+    fn test_qa_system_prompt_approval_for_autonomy_1() {
+        let prompt = build_qa_prompt("QA Phase", "test stuff", 1);
+        assert!(prompt.contains("Approval Loop") || prompt.contains("AskUserQuestion"),
+            "QA autonomy 1 should require approval");
+    }
+
+    #[test]
+    fn test_qa_system_prompt_auto_for_autonomy_3() {
+        let prompt = build_qa_prompt("QA Phase", "test stuff", 3);
+        assert!(prompt.contains("Full Autonomy") || prompt.contains("FULL AUTONOMY"),
+            "QA autonomy 3 should use full autonomy");
+    }
+
+    #[test]
+    fn test_review_system_prompt_approval_for_autonomy_1() {
+        let prompt = build_review_prompt(1);
+        assert!(prompt.contains("Approval Loop") || prompt.contains("AskUserQuestion"),
+            "Review autonomy 1 should require approval");
+    }
+
+    #[test]
+    fn test_review_system_prompt_auto_for_autonomy_3() {
+        let prompt = build_review_prompt(3);
+        assert!(prompt.contains("Full Autonomy") || prompt.contains("FULL AUTONOMY"),
+            "Review autonomy 3 should use full autonomy");
+    }
+
+    // ── Enriched execute prompt autonomy tests (requires DB) ──
+
+    async fn test_pool_with_schema() -> SqlitePool {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        sqlx::query(
+            "CREATE TABLE plans (id INTEGER PRIMARY KEY, feature_id INTEGER, summary TEXT, context TEXT, clarifications TEXT)"
+        ).execute(&pool).await.unwrap();
+        sqlx::query(
+            "CREATE TABLE phases (id INTEGER PRIMARY KEY, plan_id INTEGER, step_number INTEGER, title TEXT, \
+             status TEXT DEFAULT 'pending', complexity INTEGER, commit_message TEXT, \
+             prompt TEXT, phase_type TEXT, implementation_notes TEXT, deviations TEXT, \
+             order_index INTEGER DEFAULT 0, depends_on TEXT)"
+        ).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO plans (id, feature_id, summary) VALUES (1, 1, 'test plan')")
+            .execute(&pool).await.unwrap();
+        sqlx::query(
+            "INSERT INTO phases (id, plan_id, step_number, title, prompt, commit_message) VALUES (1, 1, 1, 'Test Phase', 'implement it', 'feat: test')"
+        ).execute(&pool).await.unwrap();
+        pool
+    }
+
+    #[tokio::test]
+    async fn test_enriched_execute_prompt_autonomy_1_shows_approval() {
+        let pool = test_pool_with_schema().await;
+        let phase: Phase = sqlx::query_as("SELECT * FROM phases WHERE id = 1")
+            .fetch_one(&pool).await.unwrap();
+        let strategy = FeatureBuildStrategy;
+        let prompt = strategy.build_enriched_execute_prompt(&pool, &phase, 1).await.unwrap();
+        assert!(prompt.contains("User Approval Required"), "autonomy 1 initial prompt should require user approval");
+        assert!(!prompt.contains("Auto-Commit"), "autonomy 1 initial prompt should NOT contain Auto-Commit");
+    }
+
+    #[tokio::test]
+    async fn test_enriched_execute_prompt_autonomy_3_shows_auto_commit() {
+        let pool = test_pool_with_schema().await;
+        let phase: Phase = sqlx::query_as("SELECT * FROM phases WHERE id = 1")
+            .fetch_one(&pool).await.unwrap();
+        let strategy = FeatureBuildStrategy;
+        let prompt = strategy.build_enriched_execute_prompt(&pool, &phase, 3).await.unwrap();
+        assert!(prompt.contains("Auto-Commit"), "autonomy 3 initial prompt should contain Auto-Commit");
+        assert!(!prompt.contains("User Approval Required"), "autonomy 3 initial prompt should NOT require approval");
     }
 }

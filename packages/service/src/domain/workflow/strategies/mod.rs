@@ -40,11 +40,13 @@ pub trait WorkflowStrategy: Send + Sync {
     }
 
     /// Build the initial user prompt for an item.
+    /// `autonomy_level`: 1 = confirm everything, 2 = moderate, 3 = full auto.
     async fn build_initial_prompt(
         &self,
         _read_pool: &SqlitePool,
         _item: &QueueItem,
         _feature_title: &str,
+        _autonomy_level: u8,
     ) -> Result<String, String> {
         Ok(String::new())
     }

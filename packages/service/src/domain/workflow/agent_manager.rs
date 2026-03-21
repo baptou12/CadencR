@@ -334,7 +334,7 @@ impl AgentManager {
         let system_prompt = strategy.build_system_prompt(&self.read_pool, &item, autonomy).await?;
         let feature_title = self.get_feature_title().await.unwrap_or_default();
         let initial_prompt = strategy
-            .build_initial_prompt(&self.read_pool, &item, &feature_title)
+            .build_initial_prompt(&self.read_pool, &item, &feature_title, autonomy)
             .await?;
 
         // 3. Create agent session in DB
@@ -995,6 +995,19 @@ pub fn spawn_workflow_stream_reader(
                                         Some(&["phases", "progress"])
                                     }
                                     t if t.contains("finalize_plan") => {
+                                        // Send queue_update so the frontend sees the newly populated queue
+                                        if let Ok(items) = repo::get_queue_for_feature(&write_pool, feature_id).await {
+                                            let envelope = WsEnvelope::new(
+                                                "workflow",
+                                                "queue_update",
+                                                to_value(WorkflowQueueUpdatePayload {
+                                                    feature_id,
+                                                    items,
+                                                    workflow_status: None,
+                                                }),
+                                            );
+                                            let _ = sender.send(Message::Text(String::from(envelope).into()));
+                                        }
                                         Some(&["plan", "phases", "progress", "status"])
                                     }
                                     t if t.contains("save_plan") || t.contains("create_plan") => {

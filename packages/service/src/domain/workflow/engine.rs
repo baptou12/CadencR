@@ -698,7 +698,7 @@ mod tests {
         assert_eq!(engine.feature_id, 1);
         assert_eq!(engine.workflow_type, WorkflowType::FeatureBuild);
         assert_eq!(engine.queue.max_parallel, 2);
-        assert_eq!(engine.autonomy_level().load(Ordering::Relaxed), 3);
+        assert_eq!(engine.autonomy_level().load(Ordering::Relaxed), 1);
         assert!(engine.active_items().is_empty());
         assert!(engine.agent_manager.queries.is_empty());
         assert!(engine.permissions.permission_txs.is_empty());
@@ -871,7 +871,7 @@ mod tests {
     async fn test_autonomy_level_update() {
         let (engine, _rx) = test_engine().await;
 
-        assert_eq!(engine.autonomy_level().load(Ordering::Relaxed), 3);
+        assert_eq!(engine.autonomy_level().load(Ordering::Relaxed), 1);
         engine.autonomy_level().store(1, Ordering::Relaxed);
         assert_eq!(engine.autonomy_level().load(Ordering::Relaxed), 1);
         engine.autonomy_level().store(2, Ordering::Relaxed);

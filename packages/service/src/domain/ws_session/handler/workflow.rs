@@ -297,6 +297,32 @@ async fn handle_feature_start(
         ensure_background_tasks(app_state.agent_timeout_minutes);
     }
 
+    // Read autonomy level from DB (feature → project → global cascade) and apply to engine
+    if let Some(engine) = ENGINES.get(&feature_id) {
+        let project_id = match payload.project_id {
+            Some(pid) => Some(pid),
+            None => sqlx::query_scalar::<_, i64>("SELECT project_id FROM features WHERE id = ?")
+                .bind(feature_id)
+                .fetch_optional(&app_state.read_pool)
+                .await
+                .ok()
+                .flatten(),
+        };
+        let autonomy_str = crate::domain::settings::resolve_setting(
+            &app_state.read_pool,
+            "agent_autonomy",
+            Some(feature_id),
+            project_id,
+            Some("1"),
+        ).await;
+        let autonomy: u8 = autonomy_str
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(1);
+
+        engine.autonomy_level().store(autonomy, std::sync::atomic::Ordering::Relaxed);
+        info!(feature_id, autonomy, "autonomy level loaded from DB");
+    }
+
     info!(feature_id, workflow_type = %workflow_type.as_str(), "workflow engine created");
 
     let resp = WsEnvelope::reply(&envelope.id, "workflow", "feature.started", to_value(WorkflowFeatureStartResponse {

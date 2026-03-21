@@ -71,7 +71,7 @@ pub async fn get_feature_snapshot(
         .iter()
         .find(|s| s.key == "agent_autonomy")
         .and_then(|s| s.value.parse().ok())
-        .unwrap_or(3);
+        .unwrap_or(1);
 
     // 5. Read workflow status from DB (explicit state machine)
     let workflow_status = get_workflow_status(pool, feature_id)

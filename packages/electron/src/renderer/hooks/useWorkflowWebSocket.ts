@@ -788,7 +788,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     prdAgent: null,
     workflowStatus: "idle",
     pauseReason: null,
-    autonomyLevel: 3,
+    autonomyLevel: 1,
     selectedItemId: null,
     error: null,
     hydrated: false,
@@ -874,7 +874,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
       const patch: Partial<WorkflowState> = {
         queue: snapshot.queue,
         workflowStatus: snapshot.workflow_status,
-        autonomyLevel: (snapshot.autonomy_level as AutonomyLevel) ?? 3,
+        autonomyLevel: (snapshot.autonomy_level as AutonomyLevel) ?? 1,
         activeAgents,
         planAgent,
         prdAgent,

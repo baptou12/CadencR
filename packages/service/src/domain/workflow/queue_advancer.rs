@@ -50,7 +50,7 @@ impl QueueAdvancer {
             workflow_type,
             strategy,
             max_parallel,
-            autonomy_level: AtomicU8::new(3),
+            autonomy_level: AtomicU8::new(1),
             read_pool,
             write_pool,
             ws_sender,
