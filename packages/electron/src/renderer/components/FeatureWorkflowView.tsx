@@ -11,6 +11,7 @@ import { AlertTriangleIcon, CheckCircle2Icon, Loader2Icon } from "lucide-react";
 import { AGENT_ICONS } from "@/components/agent-icons";
 import { Button } from "@/components/ui/button";
 import { PlanSidebar } from "@/components/PlanSidebar";
+import { QueueSidebar } from "@/components/QueueSidebar";
 import { PlanInputView } from "@/components/PlanInputView";
 import { NextStepsBar } from "@/components/NextStepsBar";
 import { getActiveFocusZone } from "@/lib/focus-zones";
@@ -829,8 +830,14 @@ export function FeatureWorkflowView({
           </div>
 
           {backend.queue && backend.queue.length > 0 ? (
-            /* QueueSidebar would go here for WS workflow */
-            null
+            <QueueSidebar
+              queue={backend.queue}
+              featureId={featureId}
+              selectedItemId={backend.selectedItemId ?? null}
+              onSelectItem={backend.selectItem ?? (() => {})}
+              onRetryItem={backend.retryItem}
+              onSkipItem={backend.skipItem}
+            />
           ) : (
             <PlanSidebar featureId={featureId} />
           )}

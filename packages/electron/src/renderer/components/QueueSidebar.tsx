@@ -18,8 +18,6 @@ import {
   Loader2Icon,
   RotateCcwIcon,
   FileText,
-  ChevronDownIcon,
-  ChevronRightIcon,
 } from "lucide-react";
 import {
   Dialog,
@@ -104,7 +102,7 @@ interface QueueSidebarProps {
 
 export function QueueSidebar({ queue, featureId, selectedItemId, onSelectItem, onRetryItem, onSkipItem, className }: QueueSidebarProps) {
   const groups = useMemo(() => groupItems(queue), [queue]);
-  const [expandedItemId, setExpandedItemId] = useState<number | null>(null);
+  const [expandedPhase, setExpandedPhase] = useState<PhaseInfo | null>(null);
   const [showPrd, setShowPrd] = useState(false);
 
   const { data: plan } = useGetFeaturePlan(featureId ?? 0, { enabled: featureId != null && featureId > 0 });
@@ -117,6 +115,8 @@ export function QueueSidebar({ queue, featureId, selectedItemId, onSelectItem, o
     const m = new Map<number, PhaseInfo>();
     for (const p of plan.phases) {
       m.set(p.id, {
+        step_number: p.step_number,
+        title: p.title,
         prompt: p.prompt,
         commit_message: p.commit_message,
         implementation_notes: p.implementation_notes,
@@ -142,13 +142,13 @@ export function QueueSidebar({ queue, featureId, selectedItemId, onSelectItem, o
 
   return (
     <>
-      <div className={cn("flex flex-col overflow-y-auto", className)}>
+      <div className={cn("flex h-full w-80 shrink-0 flex-col overflow-y-auto", className)}>
         {/* Plan header */}
         {plan && (
           <div className="border-b border-gray-800 px-3 py-2.5">
             <h3 className="truncate text-sm font-semibold text-foreground">{plan.title}</h3>
             {plan.summary && (
-              <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{plan.summary}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">{plan.summary}</p>
             )}
           </div>
         )}
@@ -185,26 +185,26 @@ export function QueueSidebar({ queue, featureId, selectedItemId, onSelectItem, o
           {groups.map((group, gi) => (
             <div key={gi}>
               {/* Step divider */}
-              <div className="flex items-center gap-1.5 px-2 py-1 text-[10px] text-muted-foreground">
-                <span className="flex-1 border-t border-border/50" />
-                <span className="shrink-0">Step {(group.groupIndex ?? gi) + 1}</span>
-                <span className="flex-1 border-t border-border/50" />
+              <div className="px-2 pt-2 pb-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60">
+                Step {(group.groupIndex ?? gi) + 1}
               </div>
-              {group.items.map(item => (
-                <QueueItemRow
-                  key={item.id}
-                  item={item}
-                  phase={item.phase_id != null ? phaseMap.get(item.phase_id) : undefined}
-                  isSelected={selectedItemId === item.id}
-                  isExpanded={expandedItemId === item.id}
-                  onClick={() => {
-                    onSelectItem(item.id);
-                    setExpandedItemId(prev => prev === item.id ? null : item.id);
-                  }}
-                  onRetry={onRetryItem ? () => onRetryItem(item.id) : undefined}
-                  onSkip={onSkipItem ? () => onSkipItem(item.id) : undefined}
-                />
-              ))}
+              {group.items.map(item => {
+                const phase = item.phase_id != null ? phaseMap.get(item.phase_id) : undefined;
+                return (
+                  <QueueItemRow
+                    key={item.id}
+                    item={item}
+                    phase={phase}
+                    isSelected={selectedItemId === item.id}
+                    onClick={() => {
+                      onSelectItem(item.id);
+                      if (phase) setExpandedPhase(phase);
+                    }}
+                    onRetry={onRetryItem ? () => onRetryItem(item.id) : undefined}
+                    onSkip={onSkipItem ? () => onSkipItem(item.id) : undefined}
+                  />
+                );
+              })}
             </div>
           ))}
         </div>
@@ -229,6 +229,55 @@ export function QueueSidebar({ queue, featureId, selectedItemId, onSelectItem, o
           </DialogContent>
         )}
       </Dialog>
+
+      {/* Phase Detail Dialog */}
+      <Dialog open={expandedPhase !== null} onOpenChange={(open) => { if (!open) setExpandedPhase(null); }}>
+        {expandedPhase && (
+          <DialogContent className="!max-w-[90vw] !w-[90vw] !max-h-[90vh] !flex !flex-col overflow-hidden">
+            <DialogHeader className="shrink-0">
+              <div className="flex items-center gap-3">
+                <DialogTitle className="text-lg">
+                  {expandedPhase.step_number != null && `Phase ${expandedPhase.step_number}: `}{expandedPhase.title}
+                </DialogTitle>
+              </div>
+              <DialogDescription className="sr-only">
+                Phase details
+              </DialogDescription>
+              <div className="flex items-center gap-2 mt-1">
+                {expandedPhase.status && (
+                  <Badge variant="secondary">{expandedPhase.status}</Badge>
+                )}
+                {expandedPhase.complexity != null && (
+                  <Badge variant="outline">Complexity: {expandedPhase.complexity}</Badge>
+                )}
+              </div>
+            </DialogHeader>
+            <ScrollArea className="flex-1 min-h-0 mt-4 overflow-auto">
+              {expandedPhase.prompt && (
+                <Markdown content={expandedPhase.prompt} />
+              )}
+              {expandedPhase.commit_message && (
+                <div className="mt-4 rounded-md border border-border bg-muted/50 p-3">
+                  <p className="text-xs font-medium text-muted-foreground mb-1">Commit message</p>
+                  <code className="text-sm text-[var(--drac-green)]">{expandedPhase.commit_message}</code>
+                </div>
+              )}
+              {expandedPhase.implementation_notes && (expandedPhase.status === "completed" || expandedPhase.status === "done") && (
+                <div className="mt-4 rounded-md border border-border bg-muted/50 p-3">
+                  <p className="text-xs font-medium text-muted-foreground mb-1">Implementation Notes</p>
+                  <Markdown content={expandedPhase.implementation_notes} className="text-sm" />
+                </div>
+              )}
+              {expandedPhase.deviations && (expandedPhase.status === "completed" || expandedPhase.status === "done") && (
+                <div className="mt-4 rounded-md border border-[var(--drac-orange)]/40 bg-[var(--drac-orange)]/10 p-3">
+                  <p className="text-xs font-medium text-[var(--drac-orange)] mb-1">Deviations</p>
+                  <Markdown content={expandedPhase.deviations} className="text-sm" />
+                </div>
+              )}
+            </ScrollArea>
+          </DialogContent>
+        )}
+      </Dialog>
     </>
   );
 }
@@ -238,6 +287,8 @@ export function QueueSidebar({ queue, featureId, selectedItemId, onSelectItem, o
 // ---------------------------------------------------------------------------
 
 interface PhaseInfo {
+  step_number?: number;
+  title?: string | null;
   prompt?: string | null;
   commit_message?: string | null;
   implementation_notes?: string | null;
@@ -246,20 +297,18 @@ interface PhaseInfo {
   status?: string;
 }
 
-function QueueItemRow({ item, phase, isSelected, isExpanded, onClick, onRetry, onSkip }: {
+function QueueItemRow({ item, phase, isSelected, onClick, onRetry, onSkip }: {
   item: QueueItem;
   phase?: PhaseInfo;
   isSelected: boolean;
-  isExpanded: boolean;
   onClick: () => void;
   onRetry?: () => void;
   onSkip?: () => void;
 }) {
   const config = STATUS_CONFIG[item.status];
   const typeLabel = TYPE_LABELS[item.item_type] ?? item.item_type;
-  const title = item.phase_title;
+  const title = phase?.title ?? item.phase_title;
   const isError = item.status === "error";
-  const hasExpandContent = phase && (phase.prompt || phase.commit_message || phase.implementation_notes || phase.deviations);
 
   return (
     <div className="flex flex-col">
@@ -276,14 +325,11 @@ function QueueItemRow({ item, phase, isSelected, isExpanded, onClick, onRetry, o
         <span className={cn("shrink-0", config.className)}>{config.icon}</span>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
-            <span className="shrink-0 text-xs font-medium text-muted-foreground">{typeLabel}</span>
-            {title && (
-              <>
-                <span className="text-gray-600">&mdash;</span>
-                <span className="min-w-0 truncate text-gray-300">{title}</span>
-              </>
+            {title ? (
+              <span className="min-w-0 truncate text-xs font-medium text-gray-300">{title}</span>
+            ) : (
+              <span className="shrink-0 text-xs font-medium text-muted-foreground">{typeLabel}</span>
             )}
-            {!title && <span className="min-w-0 truncate text-gray-300" />}
           </div>
         </div>
         {phase?.complexity != null && (
@@ -295,11 +341,6 @@ function QueueItemRow({ item, phase, isSelected, isExpanded, onClick, onRetry, o
           <Badge variant="outline" className="shrink-0 text-[9px] px-1 py-0 border-yellow-600 text-yellow-400">
             Retrying ({item.retry_count}/{item.max_retries ?? 1})
           </Badge>
-        )}
-        {hasExpandContent && (
-          <span className="shrink-0 text-gray-600">
-            {isExpanded ? <ChevronDownIcon className="size-3" /> : <ChevronRightIcon className="size-3" />}
-          </span>
         )}
       </button>
 
@@ -329,34 +370,6 @@ function QueueItemRow({ item, phase, isSelected, isExpanded, onClick, onRetry, o
         </div>
       )}
 
-      {/* Expanded detail */}
-      {isExpanded && hasExpandContent && (
-        <div className="mx-2 mb-1 rounded-md border border-gray-800/50 bg-gray-900/40 p-2 text-xs">
-          {phase.prompt && (
-            <div className="max-h-32 overflow-y-auto">
-              <Markdown content={phase.prompt} className="text-xs" />
-            </div>
-          )}
-          {phase.commit_message && (
-            <div className="mt-1.5 rounded border border-border/30 bg-muted/30 px-2 py-1">
-              <span className="text-[10px] text-muted-foreground">Commit: </span>
-              <code className="text-[11px] text-[var(--drac-green)]">{phase.commit_message}</code>
-            </div>
-          )}
-          {phase.implementation_notes && (phase.status === "completed" || phase.status === "done") && (
-            <div className="mt-1.5 rounded border border-border/30 bg-muted/30 px-2 py-1">
-              <p className="text-[10px] text-muted-foreground mb-0.5">Notes</p>
-              <Markdown content={phase.implementation_notes} className="text-xs" />
-            </div>
-          )}
-          {phase.deviations && (phase.status === "completed" || phase.status === "done") && (
-            <div className="mt-1.5 rounded border border-[var(--drac-orange)]/30 bg-[var(--drac-orange)]/5 px-2 py-1">
-              <p className="text-[10px] text-[var(--drac-orange)] mb-0.5">Deviations</p>
-              <Markdown content={phase.deviations} className="text-xs" />
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }
