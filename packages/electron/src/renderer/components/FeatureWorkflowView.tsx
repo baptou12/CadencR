@@ -814,19 +814,6 @@ export function FeatureWorkflowView({
               </div>
             )}
 
-            {view === "done" && !backend.hasAnyAgentOutput && (
-              <div className="mx-auto max-w-2xl space-y-4 p-6">
-                <div className="flex items-center gap-3">
-                  <CheckCircle2Icon className="size-8 text-green-600" />
-                  <div>
-                    <h2 className="text-lg font-semibold">Feature Complete</h2>
-                    <p className="text-sm text-muted-foreground">
-                      This feature has been reviewed and marked as done.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
 
           {backend.queue && backend.queue.length > 0 ? (
