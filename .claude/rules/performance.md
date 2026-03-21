@@ -1,0 +1,1 @@
+Performance is critical — this app targets technical users who expect speed. Avoid unnecessary re-renders, heavy computations on the main thread, and redundant network calls. Lazy-load where appropriate. When in doubt, profile first.

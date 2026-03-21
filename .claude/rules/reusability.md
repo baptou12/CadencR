@@ -1,0 +1,1 @@
+Always search for existing code before writing new code. Grep/glob for similar utilities, helpers, hooks, or components already in the codebase. Duplicate code is a bug — extract shared logic instead of copying.

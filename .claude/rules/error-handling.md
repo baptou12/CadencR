@@ -1,0 +1,1 @@
+Never swallow errors silently. Every error must be surfaced to the user — no empty catch blocks, no `catch (_) {}`, no logging-only without user-visible feedback. On the frontend, show a toast or inline error message. On the backend, return a meaningful error response. A no-op error handler is always wrong.
