@@ -47,7 +47,6 @@ export function useWorkflowAgents({
   const {
     handleQuestionResponse: questionResponse,
     handleContinueBuild: continueBuild,
-    handleAddFixPhase: addFixPhase,
     ...mut
   } = useWorkflowMutations({
     featureId,
@@ -109,31 +108,12 @@ export function useWorkflowAgents({
     await continueBuild();
   }, [continueBuild]);
 
-  // --- Review state (pure derivation — no useState) ---
-  // The review agent uses MCP tools to signal completion and create fix phases directly.
-  // Verdict is derived from whether the review created fix phases (finalize_phases tool call).
-  // Derive review verdict from whether the review agent created fix phases.
-  // null = no action needed (approved or not yet complete), "changes_requested" = fix phases created.
-  const reviewVerdict = useMemo((): "changes_requested" | null => {
-    if (!reviewSession || reviewSession.status !== "completed") return null;
-    const calledFinalizePhases = reviewSession.blocks.some(
-      (b) => b.type === "tool_call" && b.toolName === "finalize_phases",
-    );
-    return calledFinalizePhases ? "changes_requested" : null;
-  }, [reviewSession]);
-
   // --- Generic question response handler (works for ANY agent type) ---
   const handleSessionQuestionResponse = useCallback(
     (entry: FeatureSession, response: string) => {
       questionResponse(entry, response);
     },
     [questionResponse],
-  );
-
-  // --- handleAddFixPhase wrapper (bind review blocks) ---
-  const handleAddFixPhase = useCallback(
-    () => addFixPhase(reviewSession?.blocks ?? []),
-    [addFixPhase, reviewSession],
   );
 
   return {
@@ -144,7 +124,6 @@ export function useWorkflowAgents({
     risk: { status: statusOf(riskSession), blocks: blocksOf(riskSession) },
     review: { status: statusOf(reviewSession), blocks: blocksOf(reviewSession) },
     resumableByType: new Map<string, { claudeSessionId: string; sessionDbId: number }>(),
-    reviewVerdict,
     // Loading states (from mutations)
     isPreparingWorktree: mut.isPreparingWorktree,
     isStartingPlan: mut.isStartingPlan,
@@ -153,8 +132,6 @@ export function useWorkflowAgents({
     isStartingRisk: mut.isStartingRisk,
     isStartingReview: mut.isStartingReview,
     isStartingRetro: mut.isStartingRetro,
-    isAddingFixPhase: mut.isAddingFixPhase,
-    isStartingFix: mut.isStartingFix,
     // Action handlers
     handleStartPlanning: mut.handleStartPlanning,
     handleStartPrd: mut.handleStartPrd,
@@ -163,8 +140,6 @@ export function useWorkflowAgents({
     handleStartRisk: mut.handleStartRisk,
     handleStartReview: mut.handleStartReview,
     handleStartRetro: mut.handleStartRetro,
-    handleAddFixPhase,
-    handleFixImmediately: mut.handleFixImmediately,
     handleResume: mut.handleResume,
     handleAgentSend: mut.handleAgentSend,
     handleAgentStop: mut.handleAgentStop,

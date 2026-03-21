@@ -33,8 +33,6 @@ export function useWorkflowMutations({
   const startRiskMutation = trpc.workflow.startRisk.useMutation();
   const startReviewMutation = trpc.workflow.startReview.useMutation();
   const startRetroMutation = trpc.workflow.startRetro.useMutation();
-  const addFixPhaseMutation = trpc.workflow.addFixPhase.useMutation();
-  const startExecuteForFixMutation = trpc.workflow.startExecute.useMutation();
   const submitAnswersMutation = trpc.agents.submitAnswers.useMutation();
   const stopMutation = trpc.agents.stop.useMutation();
   const stopBySessionIdMutation = trpc.sessions.stopBySessionId.useMutation();
@@ -292,30 +290,6 @@ export function useWorkflowMutations({
     }
   }, [continueExecuteMutation, featureId, projectId, refetch]);
 
-  const handleAddFixPhase = useCallback(async (reviewBlocks: FeatureSession["blocks"]) => {
-    const reviewText = reviewBlocks
-      .filter((b) => b.type === "text")
-      .map((b) => b.content)
-      .join("\n");
-    try {
-      await addFixPhaseMutation.mutateAsync({
-        featureId,
-        fixDescription: `Fix the following issues identified during code review:\n\n${reviewText}`,
-      });
-    } catch {
-      // error handled
-    }
-  }, [addFixPhaseMutation, featureId]);
-
-  const handleFixImmediately = async () => {
-    try {
-      await startExecuteForFixMutation.mutateAsync({ featureId, projectId });
-      void refetch();
-    } catch {
-      // error handled
-    }
-  };
-
   const handleStartWorkflowSession = useCallback(async (prompt: string, _images?: Array<{ base64: string; mimeType: string }>) => {
     if (!prompt.trim()) return;
     try {
@@ -344,8 +318,6 @@ export function useWorkflowMutations({
     isStartingRisk: startRiskMutation.isLoading,
     isStartingReview: startReviewMutation.isLoading,
     isStartingRetro: startRetroMutation.isLoading,
-    isAddingFixPhase: addFixPhaseMutation.isLoading,
-    isStartingFix: startExecuteForFixMutation.isLoading,
     isContinuingBuild: continueExecuteMutation.isLoading,
     isStartingWorkflowSession: startWorkflowSessionMutation.isLoading,
     isStartingRefinePlan: startRefinePlanMutation.isLoading,
@@ -364,8 +336,6 @@ export function useWorkflowMutations({
     sendToExecuteSubprocess,
     interruptExecuteSubprocess,
     handleContinueBuild,
-    handleAddFixPhase,
-    handleFixImmediately,
     handleStartWorkflowSession,
     handleMarkSessionDone,
   };

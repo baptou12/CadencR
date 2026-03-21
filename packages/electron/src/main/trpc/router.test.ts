@@ -51,7 +51,6 @@ vi.mock("../agents/agent-starters", () => ({
   startSessionAgent: vi.fn().mockResolvedValue({ subprocessId: "sp-1", agentType: "session", sessionDbId: 5 }),
   startQaAgent: vi.fn().mockResolvedValue({ subprocessId: "sp-1", agentType: "qa", sessionDbId: 6 }),
   startRetroAgent: vi.fn().mockResolvedValue({ subprocessId: "sp-1", agentType: "retro", sessionDbId: 8 }),
-  addFixPhase: vi.fn().mockReturnValue({ phaseId: 99 }),
 }));
 
 vi.mock("../agents/execute-agent", () => ({
@@ -412,12 +411,6 @@ describe("appRouter - workflowRouter - agent starters", () => {
     const { startQaAgent } = await import("../agents/agent-starters");
     await caller.workflow.startQa({ featureId: 1, projectId: 1 });
     expect(startQaAgent).toHaveBeenCalled();
-  });
-
-  it("agents.addFixPhase calls addFixPhase", async () => {
-    const { addFixPhase } = await import("../agents/agent-starters");
-    await caller.workflow.addFixPhase({ featureId: 1, fixDescription: "Fix the bug" });
-    expect(addFixPhase).toHaveBeenCalledWith(1, "Fix the bug");
   });
 
   it("agents.continueExecute calls processNextPhase", async () => {

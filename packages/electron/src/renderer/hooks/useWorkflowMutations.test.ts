@@ -11,7 +11,6 @@ const mockStartExecute = vi.fn().mockResolvedValue({});
 const mockStartRisk = vi.fn().mockResolvedValue({});
 const mockStartReview = vi.fn().mockResolvedValue({});
 const mockStartRetro = vi.fn().mockResolvedValue({});
-const mockAddFixPhase = vi.fn().mockResolvedValue({});
 const mockSubmitAnswers = vi.fn();
 const mockStop = vi.fn().mockResolvedValue({});
 const mockStopBySessionId = vi.fn().mockResolvedValue({});
@@ -32,7 +31,6 @@ vi.mock("@/trpc", () => ({
       startRisk: { useMutation: vi.fn(() => ({ mutateAsync: mockStartRisk, isLoading: false })) },
       startReview: { useMutation: vi.fn(() => ({ mutateAsync: mockStartReview, isLoading: false })) },
       startRetro: { useMutation: vi.fn(() => ({ mutateAsync: mockStartRetro, isLoading: false })) },
-      addFixPhase: { useMutation: vi.fn(() => ({ mutateAsync: mockAddFixPhase, isLoading: false })) },
       continueExecute: { useMutation: vi.fn(() => ({ mutateAsync: mockContinueExecute, isLoading: false })) },
       startWorkflowSession: { useMutation: vi.fn(() => ({ mutateAsync: mockStartWorkflowSession, isLoading: false })) },
       startRefinePlan: { useMutation: vi.fn(() => ({ mutateAsync: vi.fn(), isLoading: false })) },
@@ -200,17 +198,6 @@ describe("useWorkflowMutations", () => {
     );
     await result.current.handleContinueBuild();
     expect(mockContinueExecute).toHaveBeenCalledWith({ featureId: 1, projectId: 1 });
-  });
-
-  it("handleAddFixPhase calls addFixPhase with fix description", async () => {
-    const blocks = [{ id: "1", type: "text" as const, content: "Fix this bug" }];
-    const { result } = renderHook(() =>
-      useWorkflowMutations({ featureId: 1, projectId: 1, sessions: [], refetch: mockRefetch, getDescription: mockGetDescription }),
-    );
-    await result.current.handleAddFixPhase(blocks);
-    expect(mockAddFixPhase).toHaveBeenCalledWith(
-      expect.objectContaining({ featureId: 1 }),
-    );
   });
 
   it("handleStartWorkflowSession calls startWorkflowSession", async () => {

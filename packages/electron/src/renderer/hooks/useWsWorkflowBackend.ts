@@ -307,20 +307,12 @@ export function useWsWorkflowBackend(
     });
   }, [featureId]);
 
-  // Review verdict: check if any review item has changes_requested result
-  const reviewVerdict = store.queue.some(
-    (q) => q.item_type === "review" && q.result === "changes_requested",
-  )
-    ? ("changes_requested" as const)
-    : null;
-
   return {
     // Read state
     workflowStatus: store.workflowStatus,
     sessionEntries: sessions,
     planSession,
     prdSession,
-    reviewVerdict,
     queue: store.queue,
     autonomyLevel: store.autonomyLevel,
     error: store.error,
@@ -350,11 +342,9 @@ export function useWsWorkflowBackend(
     isStartingRisk: false,
     isStartingReview: false,
     isStartingRetro: false,
-    isStartingFix: false,
     isContinuingBuild: false,
     isStartingWorkflowSession: false,
     isStartingRefinePlan: false,
-    isAddingFixPhase: false,
     canContinueBuild: store.workflowStatus === "paused" && noAgentsRunning,
     executeWaitingNextStep: null,
     executeStatus: "idle" as const,
@@ -396,8 +386,6 @@ export function useWsWorkflowBackend(
     startReview: () => { /* WS workflow handles review via queue */ },
     startRetro: () => store.startRetro(),
     startReviewFixer: (comments) => store.startReviewFixer(comments),
-    addFixPhase: undefined,
-    fixImmediately: undefined,
     markDone: (sessionDbId) => {
       // Find the queue item for this session and mark it done
       for (const [itemId, agent] of store.activeAgents) {

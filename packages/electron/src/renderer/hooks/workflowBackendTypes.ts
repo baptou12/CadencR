@@ -77,7 +77,6 @@ export interface WorkflowBackend {
   sessionEntries: FeatureSession[];
   planSession: FeatureSession | null;
   prdSession: FeatureSession | null;
-  reviewVerdict: "changes_requested" | null;
   /** null for legacy (sidebar uses this to decide PlanSidebar vs QueueSidebar) */
   queue: QueueItem[] | null;
   autonomyLevel: AutonomyLevel;
@@ -99,11 +98,9 @@ export interface WorkflowBackend {
   isStartingRisk: boolean;
   isStartingReview: boolean;
   isStartingRetro: boolean;
-  isStartingFix: boolean;
   isContinuingBuild: boolean;
   isStartingWorkflowSession: boolean;
   isStartingRefinePlan: boolean;
-  isAddingFixPhase: boolean;
   canContinueBuild: boolean;
   executeWaitingNextStep: number | null;
   executeStatus: AgentStatus;
@@ -144,8 +141,6 @@ export interface WorkflowBackend {
   startReview(): void;
   startRetro(): void;
   startReviewFixer(comments: string): void;
-  addFixPhase?(): void;
-  fixImmediately?(): void;
   markDone(sessionDbId: number): void;
   deleteSession(sessionDbId: number): void;
   handleResume(agentType: string, sessionDbId: number): void;

@@ -102,7 +102,6 @@ export function useTrpcWorkflowBackend(
     wf.isStartingRisk ||
     wf.isStartingReview ||
     wf.isStartingRetro ||
-    wf.isStartingFix ||
     wf.isContinuingBuild;
 
   // Derive action availability from agent statuses
@@ -130,7 +129,6 @@ export function useTrpcWorkflowBackend(
     sessionEntries: wf.sessionEntries,
     planSession,
     prdSession,
-    reviewVerdict: wf.reviewVerdict,
     queue: null,
     autonomyLevel: 3,
     error: null,
@@ -151,11 +149,9 @@ export function useTrpcWorkflowBackend(
     isStartingRisk: wf.isStartingRisk,
     isStartingReview: wf.isStartingReview,
     isStartingRetro: wf.isStartingRetro,
-    isStartingFix: wf.isStartingFix,
     isContinuingBuild: wf.isContinuingBuild,
     isStartingWorkflowSession: wf.isStartingWorkflowSession,
     isStartingRefinePlan: wf.isStartingRefinePlan,
-    isAddingFixPhase: wf.isAddingFixPhase,
     canContinueBuild: wf.canContinueBuild,
     executeWaitingNextStep: wf.executeWaitingNextStep,
     executeStatus: wf.execute.status,
@@ -227,8 +223,6 @@ export function useTrpcWorkflowBackend(
         projectId,
         prompt: comments,
       }),
-    addFixPhase: wf.handleAddFixPhase ? () => wf.handleAddFixPhase() : undefined,
-    fixImmediately: wf.handleFixImmediately ? () => wf.handleFixImmediately() : undefined,
     markDone: (sessionDbId: number) => wf.handleMarkSessionDone(sessionDbId),
     deleteSession: (sessionDbId: number) =>
       deleteSessionMutation.mutate({ sessionId: sessionDbId }),

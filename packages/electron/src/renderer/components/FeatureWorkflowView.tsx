@@ -633,19 +633,6 @@ export function FeatureWorkflowView({
                                 )
                             : undefined
                         }
-                        reviewVerdict={backend.reviewVerdict}
-                        onAddFixPhase={
-                          entry.agentType === "review"
-                            ? backend.addFixPhase
-                            : undefined
-                        }
-                        onFixImmediately={
-                          entry.agentType === "review"
-                            ? backend.fixImmediately
-                            : undefined
-                        }
-                        isAddingFixPhase={backend.isAddingFixPhase}
-                        isStartingFix={backend.isStartingFix}
                         hasFileChanges={entry.hasFileChanges}
                         onViewDiff={() => handleViewDiffForAgent(entry)}
                         todos={entry.todos}

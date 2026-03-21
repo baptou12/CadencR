@@ -5,9 +5,7 @@
  * view where multiple agents show).  When false, renders full-screen (for
  * standalone session view).
  *
- * Integrates AgentQuestionDrawer (shown when pendingQuestions is non-empty)
- * and ReviewVerdictActions (shown when agentType is "review" and pattern
- * match data is provided).
+ * Integrates AgentQuestionDrawer (shown when pendingQuestions is non-empty).
  */
 
 import { useState, useEffect, useCallback, useMemo, createElement, useRef, useImperativeHandle, forwardRef, useLayoutEffect } from "react";
@@ -27,7 +25,6 @@ import {
   CheckIcon,
   Maximize2Icon,
   Minimize2Icon,
-  WrenchIcon,
   Zap,
   ClipboardList,
 } from "lucide-react";
@@ -38,7 +35,6 @@ import { AgentTodoList } from "./AgentTodoList";
 import { ContextUsageBar } from "./ContextUsageBar";
 import { BackgroundTasksBadge } from "./BackgroundTasksBadge";
 import { BackgroundTasksModal } from "./BackgroundTasksModal";
-import { ReviewVerdictActions } from "./ReviewVerdictActions";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -207,17 +203,6 @@ export interface AgentSessionProps {
   /** Toggle callback (collapsible mode only) */
   onToggle?: () => void;
 
-  // --- Review verdict props (shown when agentType === "review") ---
-  /** The review verdict: "changes_requested" if fix phases were created, null otherwise */
-  reviewVerdict?: "changes_requested" | null;
-  /** Called when user clicks "Add Fix Phase" */
-  onAddFixPhase?: () => void;
-  /** Called when user clicks "Fix Immediately" */
-  onFixImmediately?: () => void;
-  /** Whether "Add Fix Phase" action is in progress */
-  isAddingFixPhase?: boolean;
-  /** Whether "Fix Immediately" action is in progress */
-  isStartingFix?: boolean;
   /** Index for DOM-based keyboard navigation (sets data-nav-agent-index) */
   navAgentIndex?: number;
 
@@ -319,11 +304,6 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
   disabled,
   open: controlledOpen,
   onToggle,
-  reviewVerdict,
-  onAddFixPhase,
-  onFixImmediately,
-  isAddingFixPhase,
-  isStartingFix,
   navAgentIndex,
   hasFileChanges,
   onViewDiff,
@@ -457,7 +437,7 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
 
   const isIdle = status === "idle" && blocks.length === 0;
   const badge = STATUS_BADGE[status];
-  const IconComponent = icon ?? AGENT_ICONS[agentType] ?? WrenchIcon;
+  const IconComponent = icon ?? AGENT_ICONS[agentType] ?? Loader2Icon;
   const displayLabel = label ?? AGENT_LABELS[agentType] ?? agentType;
 
   // Determine whether the prompt bar should be shown
@@ -473,21 +453,6 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
     const hasQuestions = pendingQuestions && pendingQuestions.length > 0;
     return status !== "idle" || hasOutput || !!hasQuestions;
   })();
-
-  // ---- Review verdict section (for review agent only) ----
-  const reviewVerdictSection =
-    agentType === "review" &&
-    onAddFixPhase &&
-    onFixImmediately ? (
-      <ReviewVerdictActions
-        show={true}
-        reviewVerdict={reviewVerdict ?? null}
-        onAddFixPhase={onAddFixPhase}
-        onFixImmediately={onFixImmediately}
-        isAddingFixPhase={isAddingFixPhase ?? false}
-        isStartingFix={isStartingFix ?? false}
-      />
-    ) : null;
 
   // ---- Inline diff trigger ----
   const showDiffBar = hasFileChanges && onViewDiff;
@@ -661,9 +626,6 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
 
         {/* Bottom section */}
         <div className="shrink-0">
-          {/* Review verdict actions */}
-          {reviewVerdictSection}
-
           {/* Permission prompt */}
           {permissionBar}
 
@@ -836,9 +798,6 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
                 }}
               />
             )}
-
-            {/* Review verdict actions */}
-            {reviewVerdictSection}
 
             {/* Permission prompt */}
             {permissionBar}

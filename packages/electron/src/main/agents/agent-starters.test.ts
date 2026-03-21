@@ -47,7 +47,6 @@ import {
   startRiskAgent,
   startReviewAgent,
   startQaAgent,
-  addFixPhase,
 } from "./agent-starters";
 import { startUnifiedAgent } from "./unified-agent";
 import { transitionFeature } from "./state-transitions";
@@ -186,72 +185,6 @@ describe("agent-starters", () => {
       await expect(
         startReviewAgent({ featureId: 1, projectId: 2, cwd: "/project" }),
       ).rejects.toThrow("No plan found");
-    });
-  });
-
-  describe("addFixPhase", () => {
-    it("creates a fix phase in the plan", () => {
-      const phaseRun = vi.fn().mockReturnValue({ lastInsertRowid: 20 });
-      (getDatabase as any).mockReturnValue({
-        prepare: vi.fn().mockImplementation((sql: string) => {
-          if (sql.includes("SELECT id FROM plans")) {
-            return { get: vi.fn().mockReturnValue({ id: 1 }) };
-          }
-          if (sql.includes("SELECT step_number, order_index")) {
-            return { get: vi.fn().mockReturnValue({ step_number: 2, order_index: 0 }) };
-          }
-          if (sql.includes("INSERT INTO phases")) return { run: phaseRun };
-          return { run: vi.fn(), get: vi.fn(), all: vi.fn().mockReturnValue([]) };
-        }),
-      });
-
-      const result = addFixPhase(1, "Fix the failing tests");
-
-      expect(phaseRun).toHaveBeenCalledWith(
-        1, 3, "Review fixes", "pending", 2, "fix: address review findings", "Fix the failing tests", 0,
-      );
-      expect(result.phaseId).toBe(20);
-    });
-
-    it("throws if no plan found", () => {
-      (getDatabase as any).mockReturnValue({
-        prepare: vi.fn().mockImplementation(() => ({
-          run: vi.fn(),
-          get: vi.fn().mockReturnValue(null),
-          all: vi.fn().mockReturnValue([]),
-        })),
-      });
-
-      expect(() => addFixPhase(1, "Fix it")).toThrow("No plan found");
-    });
-
-    it("uses step 1 when no existing phases", () => {
-      const phaseRun = vi.fn().mockReturnValue({ lastInsertRowid: 21 });
-      (getDatabase as any).mockReturnValue({
-        prepare: vi.fn().mockImplementation((sql: string) => {
-          if (sql.includes("SELECT id FROM plans")) {
-            return { get: vi.fn().mockReturnValue({ id: 1 }) };
-          }
-          if (sql.includes("SELECT step_number, order_index")) {
-            return { get: vi.fn().mockReturnValue(null) };
-          }
-          if (sql.includes("INSERT INTO phases")) return { run: phaseRun };
-          return { run: vi.fn(), get: vi.fn(), all: vi.fn().mockReturnValue([]) };
-        }),
-      });
-
-      addFixPhase(1, "Add tests");
-
-      expect(phaseRun).toHaveBeenCalledWith(
-        expect.any(Number),
-        1,
-        expect.any(String),
-        "pending",
-        expect.any(Number),
-        expect.any(String),
-        "Add tests",
-        0,
-      );
     });
   });
 

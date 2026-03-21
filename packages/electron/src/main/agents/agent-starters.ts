@@ -3,7 +3,7 @@
  * previously spread across separate agent files.
  *
  * Each function does agent-specific DB pre-work, builds a config, and delegates
- * to startUnifiedAgent. The addFixPhase helper (review-specific) also lives here.
+ * to startUnifiedAgent.
  */
 
 import { Effect } from "effect";
@@ -21,7 +21,6 @@ import {
   createRetroConfig,
 } from "./agent-configs";
 import type { AgentType, MessageContent, UnifiedAgentConfig } from "./types";
-import type { PlanRow, PhaseRow } from "../db/types";
 import { getAutonomyLevel } from "./autonomy";
 
 
@@ -281,32 +280,6 @@ export async function startReviewAgent(options: {
       onAgentDone: options.onAgentDone,
     }),
   );
-}
-
-/**
- * Add a fix phase to the existing plan for later execution.
- */
-export function addFixPhase(featureId: number, fixDescription: string): { phaseId: number } {
-  const plan = Effect.runSync(queryOne<Pick<PlanRow, "id">>(
-    "SELECT id FROM plans WHERE feature_id = ? ORDER BY id DESC LIMIT 1",
-    featureId,
-  ));
-
-  if (!plan) throw new Error("No plan found for this feature");
-
-  const lastPhase = Effect.runSync(queryOne<Pick<PhaseRow, "step_number" | "order_index">>(
-    "SELECT step_number, order_index FROM phases WHERE plan_id = ? ORDER BY step_number DESC, order_index DESC LIMIT 1",
-    plan.id,
-  ));
-
-  const stepNumber = (lastPhase?.step_number ?? 0) + 1;
-
-  const result = Effect.runSync(execute(
-    "INSERT INTO phases (plan_id, step_number, title, status, complexity, commit_message, prompt, order_index) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-    plan.id, stepNumber, "Review fixes", "pending", 2, "fix: address review findings", fixDescription, 0,
-  ));
-
-  return { phaseId: result.lastInsertRowid };
 }
 
 // ---------------------------------------------------------------------------

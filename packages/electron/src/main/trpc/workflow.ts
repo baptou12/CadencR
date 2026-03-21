@@ -9,7 +9,6 @@ import {
   startRefinePlanAgent,
   startRiskAgent,
   startReviewAgent,
-  addFixPhase,
   startSessionAgent,
   startQaAgent,
   startReviewFixerAgent,
@@ -177,18 +176,6 @@ export const workflowRouter = router({
 
       const prompt = parts.join("\n\n");
       return startReviewFixerAgent({ ...input, prompt, cwd, worktreePath });
-    }),
-
-  /** Add a fix phase to the plan based on review findings */
-  addFixPhase: publicProcedure
-    .input(
-      z.object({
-        featureId: z.number(),
-        fixDescription: z.string(),
-      }),
-    )
-    .mutation(({ input }) => {
-      return addFixPhase(input.featureId, input.fixDescription);
     }),
 
   /** Start a session agent within a feature workflow (uses worktree). */
