@@ -82,12 +82,14 @@ async fn start_test_server() -> TestServer {
 
     let pool = setup_test_db(&db_path_str, &repo_path_str).await;
 
+    let (turn_state_tx, _) = tokio::sync::broadcast::channel(64);
     let state = AppState {
         read_pool: pool.clone(),
         write_pool: pool,
         electron_port: 45679,
         max_parallel_agents: 3,
         agent_timeout_minutes: 30,
+        turn_state_tx,
     };
 
     let app = api::build_router(state)

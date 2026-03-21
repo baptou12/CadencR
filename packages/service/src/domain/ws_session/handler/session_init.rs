@@ -138,4 +138,7 @@ pub(super) async fn handle_init(
     if let Some(ref cli_sid) = resume_session_id {
         send_claude_session_id(sender, cli_sid);
     }
+
+    // Broadcast turn state (session row just set to 'running')
+    WsSessionPersistence::broadcast_turn_state(&app_state.turn_state_tx, feature_id, "claude");
 }

@@ -71,6 +71,7 @@ pub struct WorkflowPermissionBridge {
     pub read_pool: SqlitePool,
     pub write_pool: SqlitePool,
     pub db_session_id: i64,
+    pub turn_state_tx: tokio::sync::broadcast::Sender<crate::app_state::TurnStateEvent>,
 }
 
 impl WorkflowPermissionBridge {
@@ -311,11 +312,20 @@ impl CanUseTool for WorkflowPermissionBridge {
                 );
                 let _ = self.sender.send(Message::Text(String::from(envelope).into()));
 
+                // Broadcast turn → askUser
+                crate::domain::ws_session::persistence::WsSessionPersistence::broadcast_turn_state(
+                    &self.turn_state_tx, self.feature_id, "askUser",
+                );
+
                 // Wait for user response
                 let original_input = request.input;
                 let mut rx: tokio::sync::MutexGuard<'_, mpsc::Receiver<PermissionResponse>> = self.response_rx.lock().await;
                 match rx.recv().await {
                     Some(response) => {
+                        // Broadcast turn → claude (user responded)
+                        crate::domain::ws_session::persistence::WsSessionPersistence::broadcast_turn_state(
+                            &self.turn_state_tx, self.feature_id, "claude",
+                        );
                         let input = response.updated_input.unwrap_or(original_input);
                         match response.decision {
                             PermissionDecision::AllowOnce => {

@@ -284,6 +284,7 @@ async fn handle_feature_start(
             app_state.write_pool.clone(),
             sender.clone(),
             app_state.max_parallel_agents,
+            app_state.turn_state_tx.clone(),
         ));
 
         if let Err(e) = engine.restore_on_reconnect().await {
@@ -920,13 +921,7 @@ mod tests {
         let (tx, mut rx) = make_sender();
         let sdk_sessions: SdkSessions = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
         let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
-        let app_state = AppState {
-            read_pool: pool.clone(),
-            write_pool: pool,
-            electron_port: 0,
-            max_parallel_agents: 3,
-            agent_timeout_minutes: 30,
-        };
+        let app_state = AppState::with_pool(pool);
 
         let envelope = make_envelope("totally_bogus_action", serde_json::json!({}));
         handle_workflow_action(envelope, &tx, &sdk_sessions, &app_state).await;
@@ -945,13 +940,7 @@ mod tests {
         let (tx, mut rx) = make_sender();
         let sdk_sessions: SdkSessions = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
         let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
-        let app_state = AppState {
-            read_pool: pool.clone(),
-            write_pool: pool,
-            electron_port: 0,
-            max_parallel_agents: 3,
-            agent_timeout_minutes: 30,
-        };
+        let app_state = AppState::with_pool(pool);
 
         let envelope = make_envelope("continue", serde_json::json!({"feature_id": 12345}));
         handle_workflow_action(envelope, &tx, &sdk_sessions, &app_state).await;
@@ -967,13 +956,7 @@ mod tests {
         let (tx, mut rx) = make_sender();
         let sdk_sessions: SdkSessions = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
         let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
-        let app_state = AppState {
-            read_pool: pool.clone(),
-            write_pool: pool,
-            electron_port: 0,
-            max_parallel_agents: 3,
-            agent_timeout_minutes: 30,
-        };
+        let app_state = AppState::with_pool(pool);
 
         let envelope = make_envelope("skip_item", serde_json::json!({"feature_id": 12345, "item_id": 1}));
         handle_workflow_action(envelope, &tx, &sdk_sessions, &app_state).await;
@@ -988,13 +971,7 @@ mod tests {
         let (tx, mut rx) = make_sender();
         let sdk_sessions: SdkSessions = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
         let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
-        let app_state = AppState {
-            read_pool: pool.clone(),
-            write_pool: pool,
-            electron_port: 0,
-            max_parallel_agents: 3,
-            agent_timeout_minutes: 30,
-        };
+        let app_state = AppState::with_pool(pool);
 
         let envelope = make_envelope("retry_item", serde_json::json!({"feature_id": 12345, "item_id": 1}));
         handle_workflow_action(envelope, &tx, &sdk_sessions, &app_state).await;
@@ -1009,13 +986,7 @@ mod tests {
         let (tx, mut rx) = make_sender();
         let sdk_sessions: SdkSessions = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
         let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
-        let app_state = AppState {
-            read_pool: pool.clone(),
-            write_pool: pool,
-            electron_port: 0,
-            max_parallel_agents: 3,
-            agent_timeout_minutes: 30,
-        };
+        let app_state = AppState::with_pool(pool);
 
         let envelope = make_envelope("set_autonomy", serde_json::json!({"feature_id": 12345, "level": 2}));
         handle_workflow_action(envelope, &tx, &sdk_sessions, &app_state).await;
@@ -1030,13 +1001,7 @@ mod tests {
         let (tx, mut rx) = make_sender();
         let sdk_sessions: SdkSessions = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
         let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
-        let app_state = AppState {
-            read_pool: pool.clone(),
-            write_pool: pool,
-            electron_port: 0,
-            max_parallel_agents: 3,
-            agent_timeout_minutes: 30,
-        };
+        let app_state = AppState::with_pool(pool);
 
         let envelope = make_envelope("permission.respond", serde_json::json!({
             "feature_id": 12345,
@@ -1056,13 +1021,7 @@ mod tests {
         let (tx, mut rx) = make_sender();
         let sdk_sessions: SdkSessions = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
         let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
-        let app_state = AppState {
-            read_pool: pool.clone(),
-            write_pool: pool,
-            electron_port: 0,
-            max_parallel_agents: 3,
-            agent_timeout_minutes: 30,
-        };
+        let app_state = AppState::with_pool(pool);
 
         let envelope = make_envelope("prompt.send", serde_json::json!({
             "feature_id": 12345,
@@ -1081,13 +1040,7 @@ mod tests {
         let (tx, mut rx) = make_sender();
         let sdk_sessions: SdkSessions = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
         let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
-        let app_state = AppState {
-            read_pool: pool.clone(),
-            write_pool: pool,
-            electron_port: 0,
-            max_parallel_agents: 3,
-            agent_timeout_minutes: 30,
-        };
+        let app_state = AppState::with_pool(pool);
 
         let envelope = make_envelope("mark_done", serde_json::json!({"feature_id": 12345, "agent_slot": {"type": "queue_item", "id": 1}}));
         handle_workflow_action(envelope, &tx, &sdk_sessions, &app_state).await;
@@ -1104,13 +1057,7 @@ mod tests {
         let (tx, mut rx) = make_sender();
         let sdk_sessions: SdkSessions = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
         let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
-        let app_state = AppState {
-            read_pool: pool.clone(),
-            write_pool: pool,
-            electron_port: 0,
-            max_parallel_agents: 3,
-            agent_timeout_minutes: 30,
-        };
+        let app_state = AppState::with_pool(pool);
 
         let envelope = make_envelope("continue", serde_json::json!({"wrong": true}));
         handle_workflow_action(envelope, &tx, &sdk_sessions, &app_state).await;
@@ -1125,13 +1072,7 @@ mod tests {
         let (tx, mut rx) = make_sender();
         let sdk_sessions: SdkSessions = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
         let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
-        let app_state = AppState {
-            read_pool: pool.clone(),
-            write_pool: pool,
-            electron_port: 0,
-            max_parallel_agents: 3,
-            agent_timeout_minutes: 30,
-        };
+        let app_state = AppState::with_pool(pool);
 
         let envelope = make_envelope("skip_item", serde_json::json!({}));
         handle_workflow_action(envelope, &tx, &sdk_sessions, &app_state).await;

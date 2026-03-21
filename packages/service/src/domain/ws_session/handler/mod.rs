@@ -1,3 +1,4 @@
+mod app;
 mod commands;
 pub(crate) mod mcp_spawn;
 mod session_control;
@@ -189,10 +190,12 @@ async fn handle_connection(socket: WebSocket, state: AppState) {
     let mut sessions = sdk_sessions.lock().await;
     debug!(count = sessions.len(), "WS cleanup: draining sessions");
     for (db_session_id, handle) in sessions.drain() {
+        let feature_id = handle.feature_id;
         if let QueryState::Active { query, .. } = handle.state {
             persist_and_close_query(&query, &state.write_pool, db_session_id).await;
         }
         WsSessionPersistence::mark_paused_static(&state.write_pool, db_session_id).await;
+        WsSessionPersistence::broadcast_turn_state(&state.turn_state_tx, feature_id, "none");
     }
     drop(sessions);
 
@@ -222,6 +225,9 @@ async fn dispatch_envelope(
         }
         "workflow" => {
             workflow::handle_workflow_action(envelope, sender, sdk_sessions, app_state).await;
+        }
+        "app" => {
+            app::handle_app_action(envelope, sender, app_state).await;
         }
         unknown => {
             let err = WsEnvelope::reply(
@@ -295,7 +301,11 @@ mod tests {
                 permission_mode TEXT,
                 has_file_changes INTEGER NOT NULL DEFAULT 0,
                 started_at TEXT,
-                ended_at TEXT
+                ended_at TEXT,
+                pending_questions TEXT,
+                pending_permission TEXT,
+                pending_plan_approval TEXT,
+                pending_prd_approval TEXT
             )"#,
         )
         .execute(&pool)
@@ -331,13 +341,7 @@ mod tests {
         .await
         .unwrap();
 
-        AppState {
-            read_pool: pool.clone(),
-            write_pool: pool,
-            electron_port: 0,
-            max_parallel_agents: 3,
-            agent_timeout_minutes: 30,
-        }
+        AppState::with_pool(pool)
     }
 
     /// Helper: send a session.init envelope and return the db_session_id from the response.
@@ -802,6 +806,7 @@ mod tests {
             msg_rx,
             ws_tx,
             app_state.write_pool.clone(),
+            app_state.turn_state_tx.clone(),
             sdk_sessions.clone(),
         );
 
@@ -873,6 +878,7 @@ mod tests {
             msg_rx,
             ws_tx,
             app_state.write_pool.clone(),
+            app_state.turn_state_tx.clone(),
             sdk_sessions.clone(),
         );
 
@@ -919,6 +925,7 @@ mod tests {
             msg_rx,
             ws_tx,
             app_state.write_pool.clone(),
+            app_state.turn_state_tx.clone(),
             sdk_sessions.clone(),
         );
 
@@ -961,5 +968,70 @@ mod tests {
         } else {
             panic!("expected text message");
         }
+    }
+
+    #[tokio::test]
+    async fn test_app_subscribe_turn_states_sends_snapshot() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+        let app_state = make_test_app_state().await;
+
+        let envelope = make_envelope("app", "subscribe.turn_states", serde_json::json!({}));
+        dispatch_envelope(envelope, &tx, &sdk_sessions, &app_state).await;
+
+        let msg = rx.recv().await.unwrap();
+        if let Message::Text(text) = msg {
+            let env: WsEnvelope = serde_json::from_str(&text).unwrap();
+            assert_eq!(env.domain, "app");
+            assert_eq!(env.action, "turn_states.snapshot");
+            // Payload should have a "states" object (empty since no running sessions)
+            let states = env.payload.get("states").unwrap();
+            assert!(states.is_object());
+        } else {
+            panic!("expected text message");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_app_subscribe_forwards_broadcast_updates() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+        let app_state = make_test_app_state().await;
+
+        let envelope = make_envelope("app", "subscribe.turn_states", serde_json::json!({}));
+        dispatch_envelope(envelope, &tx, &sdk_sessions, &app_state).await;
+
+        // Drain the snapshot message
+        let _ = rx.recv().await.unwrap();
+
+        // Broadcast a turn state change
+        WsSessionPersistence::broadcast_turn_state(&app_state.turn_state_tx, 42, "askUser");
+
+        // Give the forwarding task a moment to process
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let msg = rx.recv().await.unwrap();
+        if let Message::Text(text) = msg {
+            let env: WsEnvelope = serde_json::from_str(&text).unwrap();
+            assert_eq!(env.domain, "app");
+            assert_eq!(env.action, "turn_states.update");
+            assert_eq!(env.payload.get("feature_id").unwrap().as_i64().unwrap(), 42);
+            assert_eq!(env.payload.get("turn").unwrap().as_str().unwrap(), "askUser");
+        } else {
+            panic!("expected text message");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_app_unknown_action_does_not_error() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+        let app_state = make_test_app_state().await;
+
+        let envelope = make_envelope("app", "unknown_action", serde_json::json!({}));
+        dispatch_envelope(envelope, &tx, &sdk_sessions, &app_state).await;
+
+        // No message sent (unknown actions are silently ignored)
+        assert!(rx.try_recv().is_err());
     }
 }

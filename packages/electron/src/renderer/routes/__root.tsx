@@ -31,6 +31,7 @@ import { CommandPalette } from "@/components/CommandPalette";
 import { FocusRing } from "@/components/FocusRing";
 import { KeyboardShortcutsModal } from "@/components/KeyboardShortcutsModal";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { useAppWsStore } from "@/stores/app-ws-store";
 
 const ZONE_ORDER = ["left-sidebar", "main-content", "terminal", "right-sidebar"] as const;
 
@@ -66,6 +67,12 @@ function RootLayout() {
   // Auto-focus left sidebar on mount
   useEffect(() => {
     leftSidebarRef.current?.focus();
+  }, []);
+
+  // Connect global app WebSocket for cross-feature events (turn states, etc.)
+  useEffect(() => {
+    useAppWsStore.getState().connect();
+    return () => useAppWsStore.getState().disconnect();
   }, []);
 
   // Extract active project ID from the current route

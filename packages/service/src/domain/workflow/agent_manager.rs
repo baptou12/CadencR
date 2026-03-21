@@ -36,6 +36,7 @@ pub struct AgentManager {
     pub read_pool: SqlitePool,
     pub write_pool: SqlitePool,
     pub ws_sender: WsSender,
+    pub turn_state_tx: tokio::sync::broadcast::Sender<crate::app_state::TurnStateEvent>,
     /// AgentSlot → Query handle (for interrupt/stream_input)
     pub queries: Arc<DashMap<AgentSlot, Arc<tokio::sync::Mutex<Query>>>>,
     /// AgentSlot → db_session_id
@@ -52,12 +53,14 @@ impl AgentManager {
         read_pool: SqlitePool,
         write_pool: SqlitePool,
         ws_sender: WsSender,
+        turn_state_tx: tokio::sync::broadcast::Sender<crate::app_state::TurnStateEvent>,
     ) -> Self {
         Self {
             feature_id,
             read_pool,
             write_pool,
             ws_sender,
+            turn_state_tx,
             queries: Arc::new(DashMap::new()),
             active_items: Arc::new(DashMap::new()),
             interrupted_items: Arc::new(DashSet::new()),
@@ -73,6 +76,7 @@ impl AgentManager {
             read_pool: old.read_pool.clone(),
             write_pool: old.write_pool.clone(),
             ws_sender: new_sender,
+            turn_state_tx: old.turn_state_tx.clone(),
             queries: Arc::clone(&old.queries),
             active_items: Arc::clone(&old.active_items),
             interrupted_items: Arc::clone(&old.interrupted_items),
@@ -207,6 +211,7 @@ impl AgentManager {
             read_pool: self.read_pool.clone(),
             write_pool: self.write_pool.clone(),
             db_session_id,
+            turn_state_tx: self.turn_state_tx.clone(),
         };
 
         // 5. Resolve model from feature → project → global → default
@@ -376,6 +381,7 @@ impl AgentManager {
             read_pool: self.read_pool.clone(),
             write_pool: self.write_pool.clone(),
             db_session_id,
+            turn_state_tx: self.turn_state_tx.clone(),
         };
 
         // 7. Resolve model from feature → project → global → default
@@ -642,6 +648,7 @@ impl AgentManager {
             read_pool: self.read_pool.clone(),
             write_pool: self.write_pool.clone(),
             db_session_id,
+            turn_state_tx: self.turn_state_tx.clone(),
         };
 
         let mut options = Options {
@@ -1117,7 +1124,8 @@ mod tests {
 
     fn make_agent_manager(pool: SqlitePool, feature_id: i64) -> AgentManager {
         let (tx, _rx) = mpsc::unbounded_channel();
-        AgentManager::new(feature_id, pool.clone(), pool, tx)
+        let (turn_state_tx, _) = tokio::sync::broadcast::channel(64);
+        AgentManager::new(feature_id, pool.clone(), pool, tx, turn_state_tx)
     }
 
     #[tokio::test]

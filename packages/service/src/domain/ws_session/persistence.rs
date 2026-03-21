@@ -467,6 +467,22 @@ impl WsSessionPersistence {
             .await;
     }
 
+    /// Broadcast a turn-state change for a feature to all connected clients.
+    ///
+    /// Turn state is determined at the call site (not queried from DB) because
+    /// the Rust WS handlers track pending state in-memory, not in the DB.
+    /// Valid values: "claude", "askUser", "none".
+    pub fn broadcast_turn_state(
+        tx: &tokio::sync::broadcast::Sender<crate::app_state::TurnStateEvent>,
+        feature_id: i64,
+        turn: &str,
+    ) {
+        let _ = tx.send(crate::app_state::TurnStateEvent {
+            feature_id,
+            turn: turn.to_string(),
+        });
+    }
+
     /// Mark all running sessions as paused on startup (stale session cleanup).
     pub async fn cleanup_stale_sessions(pool: &SqlitePool) {
         let now = chrono::Utc::now().to_rfc3339();
@@ -983,5 +999,32 @@ mod tests {
         let row: (String,) = sqlx::query_as("SELECT status FROM agent_sessions WHERE id = ?")
             .bind(p.session_db_id.unwrap()).fetch_one(&pool).await.unwrap();
         assert_eq!(row.0, "completed");
+    }
+
+    #[tokio::test]
+    async fn test_broadcast_turn_state_sends_event() {
+        let (tx, mut rx) = tokio::sync::broadcast::channel(16);
+        WsSessionPersistence::broadcast_turn_state(&tx, 42, "askUser");
+
+        let event = rx.recv().await.unwrap();
+        assert_eq!(event.feature_id, 42);
+        assert_eq!(event.turn, "askUser");
+    }
+
+    #[tokio::test]
+    async fn test_broadcast_turn_state_none() {
+        let (tx, mut rx) = tokio::sync::broadcast::channel(16);
+        WsSessionPersistence::broadcast_turn_state(&tx, 7, "none");
+
+        let event = rx.recv().await.unwrap();
+        assert_eq!(event.feature_id, 7);
+        assert_eq!(event.turn, "none");
+    }
+
+    #[tokio::test]
+    async fn test_broadcast_turn_state_no_receivers_does_not_panic() {
+        let (tx, _) = tokio::sync::broadcast::channel(16);
+        // Should not panic even with no active receivers
+        WsSessionPersistence::broadcast_turn_state(&tx, 1, "claude");
     }
 }

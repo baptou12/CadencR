@@ -1,4 +1,13 @@
 use sqlx::SqlitePool;
+use tokio::sync::broadcast;
+
+/// A turn-state change for a single feature, broadcast to all connected clients.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct TurnStateEvent {
+    pub feature_id: i64,
+    /// "claude" | "askUser" | "none"
+    pub turn: String,
+}
 
 #[derive(Clone)]
 pub struct AppState {
@@ -14,6 +23,8 @@ pub struct AppState {
     /// Agent timeout in minutes. Defaults to 30.
     /// Overridden by CADENCE_AGENT_TIMEOUT_MINUTES env var.
     pub agent_timeout_minutes: u64,
+    /// Broadcast channel for turn-state changes (cross-feature, all WS clients).
+    pub turn_state_tx: broadcast::Sender<TurnStateEvent>,
 }
 
 impl AppState {
@@ -31,5 +42,19 @@ impl AppState {
             .ok()
             .and_then(|v| v.parse::<u64>().ok())
             .unwrap_or(30)
+    }
+
+    /// Create an AppState for tests with a shared pool and default config.
+    #[cfg(test)]
+    pub fn with_pool(pool: SqlitePool) -> Self {
+        let (turn_state_tx, _) = broadcast::channel(64);
+        Self {
+            read_pool: pool.clone(),
+            write_pool: pool,
+            electron_port: 0,
+            max_parallel_agents: 3,
+            agent_timeout_minutes: 30,
+            turn_state_tx,
+        }
     }
 }

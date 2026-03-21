@@ -166,6 +166,7 @@ impl WorkflowEngine {
         write_pool: SqlitePool,
         ws_sender: WsSender,
         max_parallel: usize,
+        turn_state_tx: tokio::sync::broadcast::Sender<crate::app_state::TurnStateEvent>,
     ) -> Self {
         let now_secs = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -176,6 +177,7 @@ impl WorkflowEngine {
             read_pool.clone(),
             write_pool.clone(),
             ws_sender.clone(),
+            turn_state_tx,
         );
         let queue = QueueAdvancer::new(
             feature_id,
@@ -544,6 +546,7 @@ mod tests {
     async fn test_engine() -> (WorkflowEngine, mpsc::UnboundedReceiver<Message>) {
         let pool = test_pool().await;
         let (tx, rx) = mpsc::unbounded_channel();
+        let (turn_state_tx, _) = tokio::sync::broadcast::channel(64);
         let engine = WorkflowEngine::new(
             1,
             WorkflowType::FeatureBuild,
@@ -551,6 +554,7 @@ mod tests {
             pool,
             tx,
             2,
+            turn_state_tx,
         );
         (engine, rx)
     }
@@ -968,6 +972,7 @@ mod tests {
         ).execute(&pool).await.unwrap();
 
         let (tx, rx) = mpsc::unbounded_channel();
+        let (turn_state_tx, _) = tokio::sync::broadcast::channel(64);
         let engine = WorkflowEngine::new(
             1,
             WorkflowType::FeatureBuild,
@@ -975,6 +980,7 @@ mod tests {
             pool,
             tx,
             2,
+            turn_state_tx,
         );
         (engine, rx)
     }

@@ -71,6 +71,8 @@ struct WsBridgeCanUseTool {
     worktree_path: PathBuf,
     session_cache: Arc<Mutex<HashSet<String>>>,
     allowed_patterns: Arc<HashSet<String>>,
+    feature_id: i64,
+    turn_state_tx: tokio::sync::broadcast::Sender<crate::app_state::TurnStateEvent>,
 }
 
 #[async_trait]
@@ -145,11 +147,17 @@ impl CanUseTool for WsBridgeCanUseTool {
                 );
                 let _ = self.sender.send(Message::Text(String::from(envelope).into()));
 
+                // Broadcast turn → askUser
+                WsSessionPersistence::broadcast_turn_state(&self.turn_state_tx, self.feature_id, "askUser");
+
                 // Wait for user response
                 let original_input = request.input;
                 let mut rx = self.response_rx.lock().await;
                 match rx.recv().await {
                     Some(response) => {
+                        // Broadcast turn → claude (user responded)
+                        WsSessionPersistence::broadcast_turn_state(&self.turn_state_tx, self.feature_id, "claude");
+
                         let input = response.updated_input.unwrap_or(original_input);
                         match response.decision {
                             PermissionDecision::AllowOnce => {
@@ -332,6 +340,8 @@ pub(super) async fn handle_prompt_send(
                 worktree_path,
                 session_cache: session_cache.clone(),
                 allowed_patterns: allowed_patterns.clone(),
+                feature_id,
+                turn_state_tx: app_state.turn_state_tx.clone(),
             };
             options.can_use_tool = Some(Box::new(bridge));
 
@@ -349,6 +359,7 @@ pub(super) async fn handle_prompt_send(
                         message_rx,
                         sender.clone(),
                         app_state.write_pool.clone(),
+                        app_state.turn_state_tx.clone(),
                         sdk_sessions.clone(),
                     );
 
@@ -428,6 +439,7 @@ pub(super) fn spawn_stream_reader(
     mut message_rx: mpsc::Receiver<Result<SdkMessage, SdkError>>,
     sender: WsSender,
     write_pool: sqlx::SqlitePool,
+    turn_state_tx: tokio::sync::broadcast::Sender<crate::app_state::TurnStateEvent>,
     sdk_sessions: SdkSessions,
 ) {
     tokio::spawn(async move {
@@ -488,6 +500,7 @@ pub(super) fn spawn_stream_reader(
                         SdkMessage::Result { .. } => {
                             // Mark session completed
                             WsSessionPersistence::mark_completed_static(&write_pool, db_session_id).await;
+                            WsSessionPersistence::broadcast_turn_state(&turn_state_tx, feature_id, "none");
                             WsEnvelope::new(
                                 "session",
                                 "ended",
@@ -522,6 +535,7 @@ pub(super) fn spawn_stream_reader(
                 Some(Err(e)) => {
                     error!(db_session_id, error = %e, "SDK stream error");
                     WsSessionPersistence::mark_paused_static(&write_pool, db_session_id).await;
+                    WsSessionPersistence::broadcast_turn_state(&turn_state_tx, feature_id, "none");
                     let err_env = WsEnvelope::new(
                         "session",
                         "error",

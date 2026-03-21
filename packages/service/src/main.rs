@@ -51,12 +51,15 @@ async fn main() -> anyhow::Result<()> {
             )
             .await;
 
+            let (turn_state_tx, _) = tokio::sync::broadcast::channel(64);
+
             let state = AppState {
                 read_pool,
                 write_pool,
                 electron_port: config.electron_port,
                 max_parallel_agents: AppState::max_parallel_from_env(),
                 agent_timeout_minutes: AppState::agent_timeout_minutes_from_env(),
+                turn_state_tx,
             };
 
             let app = api::build_router(state).layer(CorsLayer::permissive());
