@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::domain::workflow::engine::AgentSlot;
+
 /// Permission decision from the client.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -276,7 +278,7 @@ pub struct WorkflowRetryItemPayload {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowPermissionRespondPayload {
     pub feature_id: i64,
-    pub queue_item_id: i64,
+    pub agent_slot: AgentSlot,
     pub request_id: String,
     pub decision: PermissionDecision,
     pub feedback: Option<String>,
@@ -287,7 +289,7 @@ pub struct WorkflowPermissionRespondPayload {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowPermissionRequestPayload {
     pub feature_id: i64,
-    pub queue_item_id: i64,
+    pub agent_slot: AgentSlot,
     pub request_id: String,
     pub tool_name: String,
     pub tool_input: serde_json::Value,
@@ -298,7 +300,7 @@ pub struct WorkflowPermissionRequestPayload {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowPromptSendPayload {
     pub feature_id: i64,
-    pub queue_item_id: i64,
+    pub agent_slot: AgentSlot,
     pub text: String,
     pub images: Option<Vec<String>>,
 }
@@ -312,7 +314,7 @@ pub struct WorkflowSetAutonomyPayload {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowInterruptPayload {
     pub feature_id: i64,
-    pub queue_item_id: i64,
+    pub agent_slot: AgentSlot,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -367,7 +369,7 @@ pub struct WorkflowStartReviewFixerPayload {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowMarkDonePayload {
     pub feature_id: i64,
-    pub queue_item_id: i64,
+    pub agent_slot: AgentSlot,
 }
 
 // --- Workflow payloads (Server → Client) ---
@@ -384,7 +386,7 @@ pub struct WorkflowItemEventPayload {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowAgentStartedPayload {
     pub feature_id: i64,
-    pub queue_item_id: i64,
+    pub agent_slot: AgentSlot,
     pub session_id: i64,
     pub agent_type: String,
 }
@@ -392,7 +394,7 @@ pub struct WorkflowAgentStartedPayload {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowAgentPausedPayload {
     pub feature_id: i64,
-    pub queue_item_id: i64,
+    pub agent_slot: AgentSlot,
     pub session_id: i64,
     pub agent_type: String,
     pub claude_session_id: String,
@@ -401,7 +403,7 @@ pub struct WorkflowAgentPausedPayload {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowItemStartedPayload {
     pub feature_id: i64,
-    pub queue_item_id: i64,
+    pub agent_slot: AgentSlot,
     pub session_id: i64,
     pub item_type: String,
 }
@@ -409,21 +411,21 @@ pub struct WorkflowItemStartedPayload {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowItemCompletedPayload {
     pub feature_id: i64,
-    pub queue_item_id: i64,
+    pub agent_slot: AgentSlot,
     pub result: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowItemErrorPayload {
     pub feature_id: i64,
-    pub queue_item_id: i64,
+    pub agent_slot: AgentSlot,
     pub error: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowItemSkippedPayload {
     pub feature_id: i64,
-    pub queue_item_id: i64,
+    pub agent_slot: AgentSlot,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -460,7 +462,7 @@ pub struct WorkflowItemUpdatePayload {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowAgentStreamResultPayload {
-    pub queue_item_id: i64,
+    pub agent_slot: AgentSlot,
     pub session_id: i64,
     #[serde(rename = "type")]
     pub msg_type: String,
@@ -468,14 +470,14 @@ pub struct WorkflowAgentStreamResultPayload {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowAgentStreamBlocksPayload {
-    pub queue_item_id: i64,
+    pub agent_slot: AgentSlot,
     pub session_id: i64,
     pub blocks: Vec<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowAgentStreamErrorPayload {
-    pub queue_item_id: i64,
+    pub agent_slot: AgentSlot,
     pub session_id: i64,
     #[serde(rename = "type")]
     pub msg_type: String,
@@ -510,7 +512,7 @@ pub struct WorkflowAcknowledgedPayload {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowInterruptedPayload {
     pub feature_id: i64,
-    pub queue_item_id: i64,
+    pub agent_slot: AgentSlot,
     pub status: String,
 }
 
@@ -816,7 +818,7 @@ mod tests {
     fn test_workflow_permission_respond_payload_roundtrip() {
         let p = WorkflowPermissionRespondPayload {
             feature_id: 1,
-            queue_item_id: 5,
+            agent_slot: AgentSlot::QueueItem(5),
             request_id: "r1".into(),
             decision: PermissionDecision::AllowFuture,
             feedback: Some("ok".into()),
@@ -825,7 +827,7 @@ mod tests {
         let v = serde_json::to_value(&p).unwrap();
         let d: WorkflowPermissionRespondPayload = serde_json::from_value(v).unwrap();
         assert_eq!(d.decision, PermissionDecision::AllowFuture);
-        assert_eq!(d.queue_item_id, 5);
+        assert_eq!(d.agent_slot, AgentSlot::QueueItem(5));
         assert_eq!(d.updated_input.unwrap()["key"], "val");
     }
 
@@ -833,7 +835,7 @@ mod tests {
     fn test_workflow_prompt_send_payload_roundtrip() {
         let p = WorkflowPromptSendPayload {
             feature_id: 1,
-            queue_item_id: 2,
+            agent_slot: AgentSlot::QueueItem(2),
             text: "hello agent".into(),
             images: Some(vec!["base64data".into()]),
         };
@@ -853,10 +855,10 @@ mod tests {
 
     #[test]
     fn test_workflow_interrupt_payload_roundtrip() {
-        let p = WorkflowInterruptPayload { feature_id: 1, queue_item_id: 42 };
+        let p = WorkflowInterruptPayload { feature_id: 1, agent_slot: AgentSlot::QueueItem(42) };
         let v = serde_json::to_value(&p).unwrap();
         let d: WorkflowInterruptPayload = serde_json::from_value(v).unwrap();
-        assert_eq!(d.queue_item_id, 42);
+        assert_eq!(d.agent_slot, AgentSlot::QueueItem(42));
     }
 
     #[test]
@@ -897,10 +899,10 @@ mod tests {
 
     #[test]
     fn test_workflow_mark_done_payload_roundtrip() {
-        let p = WorkflowMarkDonePayload { feature_id: 1, queue_item_id: 10 };
+        let p = WorkflowMarkDonePayload { feature_id: 1, agent_slot: AgentSlot::QueueItem(10) };
         let v = serde_json::to_value(&p).unwrap();
         let d: WorkflowMarkDonePayload = serde_json::from_value(v).unwrap();
-        assert_eq!(d.queue_item_id, 10);
+        assert_eq!(d.agent_slot, AgentSlot::QueueItem(10));
     }
 
     #[test]
@@ -936,7 +938,7 @@ mod tests {
     fn test_workflow_agent_started_payload_roundtrip() {
         let p = WorkflowAgentStartedPayload {
             feature_id: 1,
-            queue_item_id: 2,
+            agent_slot: AgentSlot::QueueItem(2),
             session_id: 100,
             agent_type: "execute".into(),
         };
@@ -950,7 +952,7 @@ mod tests {
     fn test_workflow_item_completed_payload_roundtrip() {
         let p = WorkflowItemCompletedPayload {
             feature_id: 1,
-            queue_item_id: 3,
+            agent_slot: AgentSlot::QueueItem(3),
             result: Some("success".into()),
         };
         let v = serde_json::to_value(&p).unwrap();
@@ -962,7 +964,7 @@ mod tests {
     fn test_workflow_item_error_payload_roundtrip() {
         let p = WorkflowItemErrorPayload {
             feature_id: 1,
-            queue_item_id: 4,
+            agent_slot: AgentSlot::QueueItem(4),
             error: "timeout".into(),
         };
         let v = serde_json::to_value(&p).unwrap();
@@ -974,7 +976,7 @@ mod tests {
     fn test_workflow_interrupted_payload_roundtrip() {
         let p = WorkflowInterruptedPayload {
             feature_id: 1,
-            queue_item_id: 5,
+            agent_slot: AgentSlot::QueueItem(5),
             status: "interrupted".into(),
         };
         let v = serde_json::to_value(&p).unwrap();
@@ -1020,7 +1022,7 @@ mod tests {
     #[test]
     fn test_workflow_agent_stream_blocks_payload_roundtrip() {
         let p = WorkflowAgentStreamBlocksPayload {
-            queue_item_id: 1,
+            agent_slot: AgentSlot::QueueItem(1),
             session_id: 2,
             blocks: vec![serde_json::json!({"type": "text", "content": "hello"})],
         };
@@ -1032,7 +1034,7 @@ mod tests {
     #[test]
     fn test_workflow_agent_stream_error_payload_roundtrip() {
         let p = WorkflowAgentStreamErrorPayload {
-            queue_item_id: 1,
+            agent_slot: AgentSlot::QueueItem(1),
             session_id: 2,
             msg_type: "error".into(),
             error: "bad things".into(),
@@ -1049,7 +1051,7 @@ mod tests {
     #[test]
     fn test_workflow_agent_stream_result_payload_type_rename() {
         let p = WorkflowAgentStreamResultPayload {
-            queue_item_id: 1,
+            agent_slot: AgentSlot::QueueItem(1),
             session_id: 2,
             msg_type: "result".into(),
         };
@@ -1086,7 +1088,7 @@ mod tests {
     fn test_workflow_permission_request_payload_roundtrip() {
         let p = WorkflowPermissionRequestPayload {
             feature_id: 1,
-            queue_item_id: 2,
+            agent_slot: AgentSlot::QueueItem(2),
             request_id: "perm-1".into(),
             tool_name: "Bash".into(),
             tool_input: serde_json::json!({"command": "ls"}),
@@ -1149,7 +1151,7 @@ mod tests {
         let p = WorkflowContinuePayload { feature_id: 99 };
         assert_eq!(p.feature_id(), 99);
 
-        let p = WorkflowInterruptPayload { feature_id: 7, queue_item_id: 3 };
+        let p = WorkflowInterruptPayload { feature_id: 7, agent_slot: AgentSlot::QueueItem(3) };
         assert_eq!(p.feature_id(), 7);
     }
 

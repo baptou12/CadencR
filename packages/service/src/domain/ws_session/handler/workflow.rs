@@ -308,13 +308,13 @@ async fn handle_start_prd(envelope: WsEnvelope, sender: &WsSender, app_state: &A
 }
 
 async fn handle_plan_approval(envelope: WsEnvelope, sender: &WsSender) {
-    use crate::domain::workflow::engine::PLAN_ITEM_ID;
-    handle_approval(envelope, sender, "plan", PLAN_ITEM_ID).await;
+    use crate::domain::workflow::engine::AgentSlot;
+    handle_approval(envelope, sender, "plan", AgentSlot::Plan).await;
 }
 
 async fn handle_prd_approval(envelope: WsEnvelope, sender: &WsSender) {
-    use crate::domain::workflow::engine::PRD_ITEM_ID;
-    handle_approval(envelope, sender, "prd", PRD_ITEM_ID).await;
+    use crate::domain::workflow::engine::AgentSlot;
+    handle_approval(envelope, sender, "prd", AgentSlot::Prd).await;
 }
 
 /// Route plan/PRD approval through the permission channel.
@@ -323,7 +323,7 @@ async fn handle_prd_approval(envelope: WsEnvelope, sender: &WsSender) {
 /// when `show_plan`/`show_prd` tool calls are detected, the bridge emits a
 /// `plan_ready`/`prd_ready` WS event and blocks on the permission channel.
 /// This handler resolves that block by sending through the same channel.
-async fn handle_approval(envelope: WsEnvelope, sender: &WsSender, kind: &str, synthetic_item_id: i64) {
+async fn handle_approval(envelope: WsEnvelope, sender: &WsSender, kind: &str, slot: crate::domain::workflow::engine::AgentSlot) {
     let Some((payload, engine)) = parse_and_get_engine::<WorkflowApprovalPayload>(&envelope, sender) else { return };
 
     let approved = payload.approved;
@@ -352,9 +352,9 @@ async fn handle_approval(envelope: WsEnvelope, sender: &WsSender, kind: &str, sy
         }
     }
 
-    // Send through the permission channel for the synthetic queue_item_id
-    // (plan=-1, prd=-2) which the WorkflowPermissionBridge is blocking on.
-    match engine.respond_permission(synthetic_item_id, response).await {
+    // Send through the permission channel for the agent slot
+    // which the WorkflowPermissionBridge is blocking on.
+    match engine.respond_permission(slot, response).await {
         Ok(()) => {
             info!(feature_id = payload.feature_id, kind, "approval routed through permission channel");
         }
@@ -493,7 +493,7 @@ async fn handle_permission_respond(envelope: WsEnvelope, sender: &WsSender) {
         updated_input: payload.updated_input,
     };
 
-    match engine.respond_permission(payload.queue_item_id, response).await {
+    match engine.respond_permission(payload.agent_slot.clone(), response).await {
         Ok(()) => {
             let ack = WsEnvelope::reply(&envelope.id, "workflow", "acknowledged", to_value(WorkflowAcknowledgedPayload {
                 feature_id: payload.feature_id,
@@ -502,7 +502,7 @@ async fn handle_permission_respond(envelope: WsEnvelope, sender: &WsSender) {
             let _ = sender.send(Message::Text(String::from(ack).into()));
         }
         Err(e) => {
-            warn!(feature_id = payload.feature_id, queue_item_id = payload.queue_item_id, error = %e, "permission.respond failed — agent may be orphaned");
+            warn!(feature_id = payload.feature_id, agent_slot = %payload.agent_slot, error = %e, "permission.respond failed — agent may be orphaned");
             send_workflow_error(sender, &envelope.id, "AGENT_ORPHANED", &e);
         }
     }
@@ -512,7 +512,7 @@ async fn handle_prompt_send(envelope: WsEnvelope, sender: &WsSender, app_state: 
     let Some((payload, engine)) = parse_and_get_engine::<WorkflowPromptSendPayload>(&envelope, sender) else { return };
 
     // Persist user message if we can find the db_session_id
-    if let Some(db_session_id_ref) = engine.active_items.get(&payload.queue_item_id) {
+    if let Some(db_session_id_ref) = engine.active_items.get(&payload.agent_slot) {
         let db_session_id = *db_session_id_ref;
         let p = WsSessionPersistence::with_session_id(
             app_state.write_pool.clone(),
@@ -522,7 +522,7 @@ async fn handle_prompt_send(envelope: WsEnvelope, sender: &WsSender, app_state: 
         p.persist_user_message(&payload.text).await;
     }
 
-    match engine.send_prompt(payload.queue_item_id, &payload.text, payload.images).await {
+    match engine.send_prompt(payload.agent_slot.clone(), &payload.text, payload.images).await {
         Ok(()) => {
             let ack = WsEnvelope::reply(&envelope.id, "workflow", "acknowledged", to_value(WorkflowAcknowledgedPayload {
                 feature_id: payload.feature_id,
@@ -531,7 +531,7 @@ async fn handle_prompt_send(envelope: WsEnvelope, sender: &WsSender, app_state: 
             let _ = sender.send(Message::Text(String::from(ack).into()));
         }
         Err(e) => {
-            warn!(feature_id = payload.feature_id, queue_item_id = payload.queue_item_id, error = %e, "prompt.send failed — agent may be orphaned");
+            warn!(feature_id = payload.feature_id, agent_slot = %payload.agent_slot, error = %e, "prompt.send failed — agent may be orphaned");
             send_workflow_error(sender, &envelope.id, "AGENT_ORPHANED", &e);
         }
     }
@@ -540,64 +540,68 @@ async fn handle_prompt_send(envelope: WsEnvelope, sender: &WsSender, app_state: 
 async fn handle_interrupt(envelope: WsEnvelope, sender: &WsSender, app_state: &AppState) {
     let Some(payload) = parse_payload::<WorkflowInterruptPayload>(&envelope, sender) else { return };
 
-    let item_id = payload.queue_item_id;
+    let slot = payload.agent_slot.clone();
     let interrupted_payload = || to_value(WorkflowInterruptedPayload {
         feature_id: payload.feature_id,
-        queue_item_id: item_id,
+        agent_slot: slot.clone(),
         status: "interrupted".into(),
     });
 
     if let Some(engine) = get_engine(payload.feature_id) {
-        match engine.interrupt_item(item_id).await {
+        match engine.interrupt_item(slot.clone()).await {
             Ok(()) => {
                 let ack = WsEnvelope::reply(&envelope.id, "workflow", "interrupted", interrupted_payload());
                 let _ = sender.send(Message::Text(String::from(ack).into()));
             }
             Err(e) => {
-                send_workflow_error(sender, &envelope.id, "INTERRUPT_FAILED", &format!("Failed to interrupt item {item_id}: {e}"));
+                send_workflow_error(sender, &envelope.id, "INTERRUPT_FAILED", &format!("Failed to interrupt slot {slot}: {e}"));
             }
         }
     } else {
         // No engine (post-reconnect before engine re-created) — fall back to direct PID lookup
-        info!(feature_id = payload.feature_id, item_id, "no engine, attempting PID-based interrupt");
-        use crate::domain::features::repository as repo;
+        // Only possible for real queue items
+        use crate::domain::workflow::engine::AgentSlot;
+        if let AgentSlot::QueueItem(item_id) = &slot {
+            info!(feature_id = payload.feature_id, item_id, "no engine, attempting PID-based interrupt");
+            use crate::domain::features::repository as repo;
 
-        match repo::get_queue_item(&app_state.read_pool, item_id).await {
-            Ok(Some(item)) if item.pid.is_some() => {
-                let pid = item.pid.unwrap();
-                warn!(item_id, pid, "no-engine PID fallback interrupt (PID reuse risk — see engine.rs docs)");
-                // SAFETY: libc::kill sends a signal to the given PID. We check the return
-                // value and handle ESRCH. PID reuse risk is inherent but low (see engine.rs).
-                let result = unsafe { libc::kill(pid as libc::pid_t, libc::SIGINT) };
-                if result == 0 {
-                    info!(item_id, pid, "sent SIGINT via PID fallback (no engine)");
-                    let ack = WsEnvelope::reply(&envelope.id, "workflow", "interrupted", interrupted_payload());
-                    let _ = sender.send(Message::Text(String::from(ack).into()));
-                } else {
-                    let err = std::io::Error::last_os_error();
-                    if err.raw_os_error() == Some(libc::ESRCH) {
-                        let _ = repo::mark_item_error(&app_state.write_pool, item_id, Some("Agent process no longer running")).await;
-                        let err_env = WsEnvelope::new("workflow", "item_error", to_value(WorkflowItemErrorPayload {
-                            feature_id: payload.feature_id,
-                            queue_item_id: item_id,
-                            error: "Agent process no longer running".into(),
-                        }));
-                        let _ = sender.send(Message::Text(String::from(err_env).into()));
-                        send_workflow_error(sender, &envelope.id, "PROCESS_DEAD", "Agent process already exited");
+            match repo::get_queue_item(&app_state.read_pool, *item_id).await {
+                Ok(Some(item)) if item.pid.is_some() => {
+                    let pid = item.pid.unwrap();
+                    warn!(item_id, pid, "no-engine PID fallback interrupt (PID reuse risk — see engine.rs docs)");
+                    let result = unsafe { libc::kill(pid as libc::pid_t, libc::SIGINT) };
+                    if result == 0 {
+                        info!(item_id, pid, "sent SIGINT via PID fallback (no engine)");
+                        let ack = WsEnvelope::reply(&envelope.id, "workflow", "interrupted", interrupted_payload());
+                        let _ = sender.send(Message::Text(String::from(ack).into()));
                     } else {
-                        send_workflow_error(sender, &envelope.id, "INTERRUPT_FAILED", &format!("kill({pid}, SIGINT) failed: {err}"));
+                        let err = std::io::Error::last_os_error();
+                        if err.raw_os_error() == Some(libc::ESRCH) {
+                            let _ = repo::mark_item_error(&app_state.write_pool, *item_id, Some("Agent process no longer running")).await;
+                            let err_env = WsEnvelope::new("workflow", "item_error", to_value(WorkflowItemErrorPayload {
+                                feature_id: payload.feature_id,
+                                agent_slot: slot.clone(),
+                                error: "Agent process no longer running".into(),
+                            }));
+                            let _ = sender.send(Message::Text(String::from(err_env).into()));
+                            send_workflow_error(sender, &envelope.id, "PROCESS_DEAD", "Agent process already exited");
+                        } else {
+                            send_workflow_error(sender, &envelope.id, "INTERRUPT_FAILED", &format!("kill({pid}, SIGINT) failed: {err}"));
+                        }
                     }
                 }
+                Ok(Some(_)) => {
+                    send_workflow_error(sender, &envelope.id, "NO_PID", &format!("No PID recorded for item {item_id}"));
+                }
+                Ok(None) => {
+                    send_workflow_error(sender, &envelope.id, "NOT_FOUND", &format!("Queue item {item_id} not found"));
+                }
+                Err(e) => {
+                    send_workflow_error(sender, &envelope.id, "DB_ERROR", &format!("Failed to look up item: {e}"));
+                }
             }
-            Ok(Some(_)) => {
-                send_workflow_error(sender, &envelope.id, "NO_PID", &format!("No PID recorded for item {item_id}"));
-            }
-            Ok(None) => {
-                send_workflow_error(sender, &envelope.id, "NOT_FOUND", &format!("Queue item {item_id} not found"));
-            }
-            Err(e) => {
-                send_workflow_error(sender, &envelope.id, "DB_ERROR", &format!("Failed to look up item: {e}"));
-            }
+        } else {
+            send_workflow_error(sender, &envelope.id, "NO_ENGINE", &format!("No workflow engine for feature {} and no PID fallback for non-queue slot", payload.feature_id));
         }
     }
 }
@@ -676,8 +680,8 @@ async fn handle_start_review_fixer(envelope: WsEnvelope, sender: &WsSender) {
 async fn handle_mark_done(envelope: WsEnvelope, sender: &WsSender) {
     let Some((payload, engine)) = parse_and_get_engine::<WorkflowMarkDonePayload>(&envelope, sender) else { return };
 
-    info!(feature_id = payload.feature_id, queue_item_id = payload.queue_item_id, "marking agent done");
-    match engine.mark_done(payload.queue_item_id).await {
+    info!(feature_id = payload.feature_id, agent_slot = %payload.agent_slot, "marking agent done");
+    match engine.mark_done(payload.agent_slot).await {
         Ok(()) => {
             let ack = WsEnvelope::reply(&envelope.id, "workflow", "acknowledged", to_value(WorkflowAcknowledgedPayload {
                 feature_id: payload.feature_id,
@@ -961,7 +965,7 @@ mod tests {
 
         let envelope = make_envelope("permission.respond", serde_json::json!({
             "feature_id": 12345,
-            "queue_item_id": 1,
+            "agent_slot": {"type": "queue_item", "id": 1},
             "request_id": "r1",
             "decision": "allow_once"
         }));
@@ -987,7 +991,7 @@ mod tests {
 
         let envelope = make_envelope("prompt.send", serde_json::json!({
             "feature_id": 12345,
-            "queue_item_id": 1,
+            "agent_slot": {"type": "queue_item", "id": 1},
             "text": "hello"
         }));
         handle_workflow_action(envelope, &tx, &sdk_sessions, &app_state).await;
@@ -1010,7 +1014,7 @@ mod tests {
             agent_timeout_minutes: 30,
         };
 
-        let envelope = make_envelope("mark_done", serde_json::json!({"feature_id": 12345, "queue_item_id": 1}));
+        let envelope = make_envelope("mark_done", serde_json::json!({"feature_id": 12345, "agent_slot": {"type": "queue_item", "id": 1}}));
         handle_workflow_action(envelope, &tx, &sdk_sessions, &app_state).await;
 
         let env = recv_envelope(&mut rx);

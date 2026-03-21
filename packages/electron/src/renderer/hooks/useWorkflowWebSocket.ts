@@ -166,10 +166,67 @@ interface WorkflowState {
 }
 
 // ---------------------------------------------------------------------------
+// AgentSlot – discriminated union matching the Rust AgentSlot enum
+// ---------------------------------------------------------------------------
+
+/** Discriminated union matching the Rust AgentSlot enum. */
+export type AgentSlot =
+  | { type: "plan" }
+  | { type: "prd" }
+  | { type: "session" }
+  | { type: "refine" }
+  | { type: "review_fixer" }
+  | { type: "queue_item"; id: number };
+
+/** Convert an AgentSlot to a stable string key for use as Map keys. */
+export function agentSlotKey(slot: AgentSlot): string {
+  return slot.type === "queue_item" ? `qi:${slot.id}` : slot.type;
+}
+
+/** Convert an AgentSlot to the legacy numeric ID (for backward compat). */
+export function agentSlotToLegacyId(slot: AgentSlot): number {
+  switch (slot.type) {
+    case "plan": return -1;
+    case "prd": return -2;
+    case "session": return -3;
+    case "refine": return -4;
+    case "review_fixer": return -5;
+    case "queue_item": return slot.id;
+  }
+}
+
+/** Convert a legacy numeric ID to an AgentSlot. */
+function legacyIdToSlot(id: number): AgentSlot {
+  switch (id) {
+    case -1: return { type: "plan" };
+    case -2: return { type: "prd" };
+    case -3: return { type: "session" };
+    case -4: return { type: "refine" };
+    case -5: return { type: "review_fixer" };
+    default: return { type: "queue_item", id };
+  }
+}
+
+/** Check if a slot is a pre-queue agent (not a queue item). */
+function isPreQueueSlot(slot: AgentSlot): boolean {
+  return slot.type !== "queue_item";
+}
+
+/** Parse an agent_slot from a WS payload. Falls back to queue_item_id for backward compat. */
+function parseAgentSlot(payload: Record<string, unknown>): AgentSlot {
+  if (payload.agent_slot) {
+    return payload.agent_slot as AgentSlot;
+  }
+  // Backward compat: parse from legacy queue_item_id
+  const id = payload.queue_item_id as number;
+  return legacyIdToSlot(id);
+}
+
+// ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-/** Maps agent_type strings to synthetic queue-item IDs used by the WS protocol. */
+/** @deprecated Use AgentSlot instead. Maps agent_type strings to synthetic queue-item IDs used by the WS protocol. */
 export const AGENT_TYPE_SYNTHETIC_KEYS: Record<string, number> = {
   plan: -1,
   prd: -2,
@@ -331,7 +388,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         break;
       }
       case "item_started": {
-        const itemId = payload.queue_item_id as number;
+        const slot = parseAgentSlot(payload);
+        const itemId = agentSlotToLegacyId(slot);
         const sessionId = payload.session_id as number;
         set(state => {
           const queue = state.queue.map(q =>
@@ -347,7 +405,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         break;
       }
       case "item_completed": {
-        const itemId = payload.queue_item_id as number;
+        const slot = parseAgentSlot(payload);
+        const itemId = agentSlotToLegacyId(slot);
         set(state => {
           const queue = state.queue.map(q =>
             q.id === itemId ? { ...q, status: "completed" as const } : q,
@@ -358,7 +417,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         break;
       }
       case "item_error": {
-        const itemId = payload.queue_item_id as number;
+        const slot = parseAgentSlot(payload);
+        const itemId = agentSlotToLegacyId(slot);
         const error = payload.error as string;
         set(state => {
           const queue = state.queue.map(q =>
@@ -369,7 +429,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         break;
       }
       case "interrupted": {
-        const itemId = payload.queue_item_id as number;
+        const slot = parseAgentSlot(payload);
+        const itemId = agentSlotToLegacyId(slot);
         set(state => {
           const agentPatch = patchAgentByItemId(state, itemId, { status: "paused" });
           // Also update queue item status for positive IDs
@@ -459,7 +520,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
       }
       case "agent_paused": {
         // Received on reconnect when a pre-queue agent (plan/prd/session/refine) is resumable
-        const pausedItemId = payload.queue_item_id as number;
+        const pausedSlot = parseAgentSlot(payload);
+        const pausedItemId = agentSlotToLegacyId(pausedSlot);
         const pausedSessionId = payload.session_id as number;
         const pausedClaudeSessionId = (payload.claude_session_id as string) || null;
         set(state => {
@@ -481,7 +543,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
       }
       case "agent_session_id": {
         // Received when the backend captures the Claude Code session ID during streaming
-        const sidItemId = payload.queue_item_id as number;
+        const sidSlot = parseAgentSlot(payload);
+        const sidItemId = agentSlotToLegacyId(sidSlot);
         const ccSessionId = payload.claude_session_id as string;
         if (!ccSessionId) break;
         set(state => patchAgentByItemId(state, sidItemId, { claudeSessionId: ccSessionId }));
@@ -490,7 +553,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
       case "agent_user_message": {
         // Backend sends the initial user prompt so it's visible in the UI.
         // This may arrive before the "started" ack, so we ensure the agent exists.
-        const umItemId = payload.queue_item_id as number;
+        const umSlot = parseAgentSlot(payload);
+        const umItemId = agentSlotToLegacyId(umSlot);
         const umContent = payload.content as string;
         if (!umContent) break;
         const userBlock = {
@@ -515,7 +579,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         break;
       }
       case "agent_stream": {
-        const itemId = payload.queue_item_id as number;
+        const streamSlot = parseAgentSlot(payload);
+        const itemId = agentSlotToLegacyId(streamSlot);
         // The engine sends SDK messages in a `blocks` array
         const blocks = (payload.blocks ?? []) as Record<string, unknown>[];
         const singleMsg = payload.message as Record<string, unknown> | undefined;
@@ -550,7 +615,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         break;
       }
       case "permission.request": {
-        const itemId = payload.queue_item_id as number;
+        const permSlot = parseAgentSlot(payload);
+        const itemId = agentSlotToLegacyId(permSlot);
         const toolName = payload.tool_name as string;
         const toolInput = (payload.tool_input ?? payload.input ?? {}) as Record<string, unknown>;
         const requestId = (payload.request_id ?? "") as string;
@@ -843,7 +909,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     },
 
     respondToPermission(itemId, requestId, decision) {
-      send("permission.respond", { queue_item_id: itemId, request_id: requestId, decision });
+      send("permission.respond", { agent_slot: legacyIdToSlot(itemId), request_id: requestId, decision });
       set(state => {
         const activeAgents = new Map(state.activeAgents);
         const agent = activeAgents.get(itemId);
@@ -867,7 +933,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         answers: { "0": response },
       };
       send("permission.respond", {
-        queue_item_id: itemId,
+        agent_slot: legacyIdToSlot(itemId),
         request_id: agent.pendingQuestionRequestId,
         decision: "allow_once",
         updated_input: updatedInput,
@@ -922,7 +988,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         }
         return agentPatch;
       });
-      send("prompt.send", { queue_item_id: itemId, text, images });
+      send("prompt.send", { agent_slot: legacyIdToSlot(itemId), text, images });
     },
 
     interruptItem(itemId) {
@@ -937,7 +1003,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         }
         return agentPatch;
       });
-      send("interrupt", { queue_item_id: itemId });
+      send("interrupt", { agent_slot: legacyIdToSlot(itemId) });
     },
 
     resumeItem(itemId) {
@@ -953,7 +1019,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         return agentPatch;
       });
       // Send empty prompt to trigger resume on the backend
-      send("prompt.send", { queue_item_id: itemId, text: "", images: null });
+      send("prompt.send", { agent_slot: legacyIdToSlot(itemId), text: "", images: null });
     },
 
     startSession(prompt, images) {
@@ -970,7 +1036,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     },
 
     markDone(itemId) {
-      send("mark_done", { queue_item_id: itemId });
+      send("mark_done", { agent_slot: legacyIdToSlot(itemId) });
     },
 
     removeAgent(itemId) {

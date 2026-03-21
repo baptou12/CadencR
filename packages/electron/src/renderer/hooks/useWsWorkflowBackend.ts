@@ -20,6 +20,8 @@ import {
   type QueueItemStatus,
   type AgentSessionState,
   type FeatureSnapshot,
+  type AgentSlot,
+  agentSlotKey,
 } from "./useWorkflowWebSocket";
 import { customInstance } from "@/api/client";
 import { deriveViewState, type WorkflowBackend } from "./workflowBackendTypes";

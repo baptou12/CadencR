@@ -319,7 +319,7 @@ describe("useWorkflowStore", () => {
       // Should also send the interrupt envelope
       const sent = ws.sent.find(s => JSON.parse(s).action === "interrupt");
       expect(sent).toBeDefined();
-      expect(JSON.parse(sent!).payload.queue_item_id).toBe(-1);
+      expect(JSON.parse(sent!).payload.agent_slot).toEqual({ type: "plan" });
     });
 
     it("optimistically sets prdAgent status to paused", () => {
@@ -392,7 +392,7 @@ describe("useWorkflowStore", () => {
       const sent = ws.sent.find(s => JSON.parse(s).action === "prompt.send");
       expect(sent).toBeDefined();
       const envelope = JSON.parse(sent!);
-      expect(envelope.payload.queue_item_id).toBe(-1);
+      expect(envelope.payload.agent_slot).toEqual({ type: "plan" });
       expect(envelope.payload.text).toBe("");
     });
 

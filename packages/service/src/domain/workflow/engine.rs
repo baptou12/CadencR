@@ -3,8 +3,102 @@
 //! The engine is workflow-type-agnostic — it delegates item-specific decisions
 //! (agent type, prompts, MCP config) to the WorkflowStrategy trait.
 
-/// Synthetic queue_item_id for pre-queue agents (not in the DB queue).
-/// These are negative to avoid collision with real queue item IDs.
+use serde::{Deserialize, Serialize};
+
+/// Discriminated union replacing synthetic negative queue_item_id constants.
+/// Pre-queue agents get named variants; real queue items carry their DB id.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(tag = "type", content = "id")]
+pub enum AgentSlot {
+    #[serde(rename = "queue_item")]
+    QueueItem(i64),
+    #[serde(rename = "plan")]
+    Plan,
+    #[serde(rename = "prd")]
+    Prd,
+    #[serde(rename = "session")]
+    Session,
+    #[serde(rename = "refine")]
+    Refine,
+    #[serde(rename = "review_fixer")]
+    ReviewFixer,
+}
+
+impl AgentSlot {
+    /// Backward-compat: map to the legacy synthetic negative IDs.
+    pub fn as_legacy_id(&self) -> i64 {
+        match self {
+            AgentSlot::Plan => -1,
+            AgentSlot::Prd => -2,
+            AgentSlot::Session => -3,
+            AgentSlot::Refine => -4,
+            AgentSlot::ReviewFixer => -5,
+            AgentSlot::QueueItem(id) => *id,
+        }
+    }
+
+    pub fn is_queue_item(&self) -> bool {
+        matches!(self, AgentSlot::QueueItem(_))
+    }
+
+    pub fn agent_type_str(&self) -> Option<&'static str> {
+        match self {
+            AgentSlot::Plan => Some("plan"),
+            AgentSlot::Prd => Some("prd"),
+            AgentSlot::Session => Some("session"),
+            AgentSlot::Refine => Some("refine"),
+            AgentSlot::ReviewFixer => Some("review-fixer"),
+            AgentSlot::QueueItem(_) => None,
+        }
+    }
+
+    pub fn sdk_agent_type(&self) -> Option<AgentType> {
+        match self {
+            AgentSlot::Plan | AgentSlot::Refine => Some(AgentType::Plan),
+            AgentSlot::Prd => Some(AgentType::Prd),
+            AgentSlot::Session => Some(AgentType::Session),
+            AgentSlot::ReviewFixer => Some(AgentType::Execute),
+            AgentSlot::QueueItem(_) => None,
+        }
+    }
+
+    pub fn system_prompt(&self) -> Option<&'static str> {
+        match self {
+            AgentSlot::Plan | AgentSlot::Refine => Some(Prompts::plan()),
+            AgentSlot::Prd => Some(Prompts::prd()),
+            AgentSlot::Session => Some(Prompts::session()),
+            _ => None,
+        }
+    }
+}
+
+impl From<i64> for AgentSlot {
+    fn from(id: i64) -> Self {
+        match id {
+            -1 => AgentSlot::Plan,
+            -2 => AgentSlot::Prd,
+            -3 => AgentSlot::Session,
+            -4 => AgentSlot::Refine,
+            -5 => AgentSlot::ReviewFixer,
+            other => AgentSlot::QueueItem(other),
+        }
+    }
+}
+
+impl std::fmt::Display for AgentSlot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AgentSlot::Plan => write!(f, "plan"),
+            AgentSlot::Prd => write!(f, "prd"),
+            AgentSlot::Session => write!(f, "session"),
+            AgentSlot::Refine => write!(f, "refine"),
+            AgentSlot::ReviewFixer => write!(f, "review_fixer"),
+            AgentSlot::QueueItem(id) => write!(f, "queue_item({})", id),
+        }
+    }
+}
+
+/// Synthetic queue_item_id constants — DEPRECATED, use AgentSlot variants instead.
 pub const PLAN_ITEM_ID: i64 = -1;
 pub const PRD_ITEM_ID: i64 = -2;
 pub const SESSION_ITEM_ID: i64 = -3;
@@ -40,44 +134,14 @@ use crate::domain::ws_session::protocol::*;
 
 pub type WsSender = mpsc::UnboundedSender<Message>;
 
-/// Map a synthetic queue_item_id to its agent type string (DB column value).
-fn synthetic_id_to_agent_type_str(id: i64) -> Option<&'static str> {
-    match id {
-        PLAN_ITEM_ID => Some("plan"),
-        PRD_ITEM_ID => Some("prd"),
-        SESSION_ITEM_ID => Some("session"),
-        REFINE_ITEM_ID => Some("refine"),
-        _ => None,
-    }
-}
-
-/// Map an agent type string to its synthetic queue_item_id.
-fn agent_type_str_to_synthetic_id(agent_type: &str) -> Option<i64> {
+/// Map an agent type string to an AgentSlot.
+fn agent_type_str_to_slot(agent_type: &str) -> Option<AgentSlot> {
     match agent_type {
-        "plan" => Some(PLAN_ITEM_ID),
-        "prd" => Some(PRD_ITEM_ID),
-        "session" => Some(SESSION_ITEM_ID),
-        "refine" => Some(REFINE_ITEM_ID),
-        _ => None,
-    }
-}
-
-/// Map a synthetic queue_item_id to the SDK AgentType enum.
-fn synthetic_id_to_sdk_agent_type(id: i64) -> Option<AgentType> {
-    match id {
-        PLAN_ITEM_ID | REFINE_ITEM_ID => Some(AgentType::Plan),
-        PRD_ITEM_ID => Some(AgentType::Prd),
-        SESSION_ITEM_ID => Some(AgentType::Session),
-        _ => None,
-    }
-}
-
-/// Map a synthetic queue_item_id to its default system prompt.
-fn synthetic_id_to_system_prompt(id: i64) -> Option<&'static str> {
-    match id {
-        PLAN_ITEM_ID | REFINE_ITEM_ID => Some(Prompts::plan()),
-        PRD_ITEM_ID => Some(Prompts::prd()),
-        SESSION_ITEM_ID => Some(Prompts::session()),
+        "plan" => Some(AgentSlot::Plan),
+        "prd" => Some(AgentSlot::Prd),
+        "session" => Some(AgentSlot::Session),
+        "refine" => Some(AgentSlot::Refine),
+        "review-fixer" | "review_fixer" => Some(AgentSlot::ReviewFixer),
         _ => None,
     }
 }
@@ -103,7 +167,7 @@ use crate::domain::workflow::status::WorkflowStatus;
 /// CanUseTool implementation for workflow agents that bridges permission requests
 /// to the frontend via workflow.permission.request envelopes.
 struct WorkflowPermissionBridge {
-    queue_item_id: i64,
+    slot: AgentSlot,
     feature_id: i64,
     sender: WsSender,
     response_rx: Arc<tokio::sync::Mutex<mpsc::Receiver<PermissionResponse>>>,
@@ -193,7 +257,7 @@ impl CanUseTool for WorkflowPermissionBridge {
     async fn can_use_tool(&self, request: PermissionRequest) -> PermissionResult {
         debug!(
             tool_name = %request.tool_name,
-            queue_item_id = self.queue_item_id,
+            slot = %self.slot,
             "WorkflowPermissionBridge::can_use_tool called"
         );
 
@@ -216,7 +280,7 @@ impl CanUseTool for WorkflowPermissionBridge {
                 event_name,
                 serde_json::to_value(serde_json::json!({
                     "feature_id": self.feature_id,
-                    "queue_item_id": self.queue_item_id,
+                    "agent_slot": self.slot,
                 }))
                 .unwrap(),
             );
@@ -253,7 +317,7 @@ impl CanUseTool for WorkflowPermissionBridge {
                             "workflow",
                             "plan_content",
                             serde_json::json!({
-                                "queue_item_id": self.queue_item_id,
+                                "agent_slot": self.slot,
                                 "session_id": self.db_session_id,
                                 "content": content,
                             }),
@@ -343,7 +407,7 @@ impl CanUseTool for WorkflowPermissionBridge {
                 debug!(tool_name = %request.tool_name, pattern = %pattern, "workflow prompting user");
                 let payload = WorkflowPermissionRequestPayload {
                     feature_id: self.feature_id,
-                    queue_item_id: self.queue_item_id,
+                    agent_slot: self.slot.clone(),
                     request_id: request.tool_use_id.clone(),
                     tool_name: request.tool_name.clone(),
                     tool_input: request.input.clone(),
@@ -422,18 +486,18 @@ pub struct WorkflowEngine {
     pub ws_sender: WsSender,
     pub autonomy_level: AtomicU8,
     pub max_parallel: usize,
-    /// queue_item_id → db_session_id
-    pub active_items: Arc<DashMap<i64, i64>>,
-    /// queue_item_id → Query handle (for interrupt/stream_input)
-    pub queries: Arc<DashMap<i64, Arc<tokio::sync::Mutex<Query>>>>,
-    /// queue_item_id → permission response sender (for bridging permissions to agents)
-    pub permission_txs: Arc<DashMap<i64, mpsc::Sender<PermissionResponse>>>,
+    /// AgentSlot → db_session_id
+    pub active_items: Arc<DashMap<AgentSlot, i64>>,
+    /// AgentSlot → Query handle (for interrupt/stream_input)
+    pub queries: Arc<DashMap<AgentSlot, Arc<tokio::sync::Mutex<Query>>>>,
+    /// AgentSlot → permission response sender (for bridging permissions to agents)
+    pub permission_txs: Arc<DashMap<AgentSlot, mpsc::Sender<PermissionResponse>>>,
     /// Unix timestamp (seconds) of last activity — updated on advance/completion/error.
     pub last_activity: AtomicU64,
     /// Items that were explicitly interrupted (to distinguish from normal completion).
-    pub interrupted_items: Arc<DashSet<i64>>,
-    /// queue_item_id → Claude Code session ID (for --resume after interrupt)
-    pub paused_sessions: Arc<DashMap<i64, String>>,
+    pub interrupted_items: Arc<DashSet<AgentSlot>>,
+    /// AgentSlot → Claude Code session ID (for --resume after interrupt)
+    pub paused_sessions: Arc<DashMap<AgentSlot, String>>,
     /// Cancellation signal for background tasks (e.g. timeout checker).
     cancel_tx: tokio::sync::watch::Sender<bool>,
     cancel_rx: tokio::sync::watch::Receiver<bool>,
@@ -514,13 +578,12 @@ impl WorkflowEngine {
             "plan",
             Prompts::plan(),
             &enriched_prompt,
-            PLAN_ITEM_ID,
+            AgentSlot::Plan,
         )
         .await
     }
 
-    /// Spawn a PRD agent for this feature. The PRD agent runs outside the queue
-    /// and uses a synthetic queue_item_id of -2 for streaming.
+    /// Spawn a PRD agent for this feature.
     pub async fn spawn_prd_agent(&self, description: &str) -> Result<i64, String> {
         self.set_status(WorkflowStatus::Prd).await;
         let prd_instructions = "Use the MCP tools to build the PRD. Call create_prd to store the initial PRD content, \
@@ -536,27 +599,25 @@ impl WorkflowEngine {
             "prd",
             Prompts::prd(),
             &enriched_prompt,
-            PRD_ITEM_ID,
+            AgentSlot::Prd,
         )
         .await
     }
 
     /// Spawn a session agent for ad-hoc exploration/debugging.
-    /// Uses synthetic queue_item_id of -3 for streaming.
     pub async fn spawn_session_agent(&self, prompt: &str) -> Result<i64, String> {
         self.spawn_pre_queue_agent(
             AgentType::Session,
             "session",
             Prompts::session(),
             prompt,
-            SESSION_ITEM_ID,
+            AgentSlot::Session,
         )
         .await
     }
 
     /// Spawn a plan refinement agent that re-runs the plan agent with
     /// context about existing phases.
-    /// Uses synthetic queue_item_id of -4 for streaming.
     pub async fn spawn_refine_agent(&self, description: &str) -> Result<i64, String> {
         let refinement_prompt = match self.build_refine_context(description).await {
             Ok(prompt) => prompt,
@@ -575,7 +636,7 @@ impl WorkflowEngine {
             "plan",
             Prompts::plan(),
             &refinement_prompt,
-            REFINE_ITEM_ID,
+            AgentSlot::Refine,
         )
         .await
     }
@@ -659,7 +720,7 @@ impl WorkflowEngine {
         agent_type_str: &str,
         system_prompt: &str,
         initial_prompt: &str,
-        synthetic_item_id: i64,
+        slot: AgentSlot,
     ) -> Result<i64, String> {
         info!(
             feature_id = self.feature_id,
@@ -690,10 +751,10 @@ impl WorkflowEngine {
 
         // 4. Set up permission bridge
         let (perm_tx, perm_rx) = mpsc::channel::<PermissionResponse>(16);
-        self.permission_txs.insert(synthetic_item_id, perm_tx);
+        self.permission_txs.insert(slot.clone(), perm_tx);
         let allowed_patterns = Arc::new(permissions::load_allowed_patterns(&cwd));
         let bridge = WorkflowPermissionBridge {
-            queue_item_id: synthetic_item_id,
+            slot: slot.clone(),
             feature_id: self.feature_id,
             sender: self.ws_sender.clone(),
             response_rx: Arc::new(tokio::sync::Mutex::new(perm_rx)),
@@ -735,7 +796,7 @@ impl WorkflowEngine {
             );
             p.persist_user_message(initial_prompt).await;
         }
-        self.send_user_message_event(synthetic_item_id, db_session_id, initial_prompt);
+        self.send_user_message_event(slot.clone(), db_session_id, initial_prompt);
 
         let content_value = serde_json::Value::String(initial_prompt.to_string());
 
@@ -745,14 +806,14 @@ impl WorkflowEngine {
 
                 // Store Query handle for interrupt support (skip PID persist for synthetic IDs)
                 let query_handle = Arc::new(tokio::sync::Mutex::new(real_query));
-                self.queries.insert(synthetic_item_id, query_handle);
+                self.queries.insert(slot.clone(), query_handle);
 
-                // Track in active items with synthetic ID
-                self.active_items.insert(synthetic_item_id, db_session_id);
+                // Track in active items
+                self.active_items.insert(slot.clone(), db_session_id);
 
                 // Spawn stream reader (reuses the same workflow stream reader)
                 spawn_workflow_stream_reader(
-                    synthetic_item_id,
+                    slot.clone(),
                     db_session_id,
                     self.feature_id,
                     mcp_server_name(agent_type).to_string(),
@@ -769,7 +830,7 @@ impl WorkflowEngine {
                     "agent_started",
                     to_value(WorkflowAgentStartedPayload {
                         feature_id: self.feature_id,
-                        queue_item_id: synthetic_item_id,
+                        agent_slot: slot,
                         session_id: db_session_id,
                         agent_type: agent_type_str.to_string(),
                     }),
@@ -945,11 +1006,12 @@ impl WorkflowEngine {
         })?;
 
         // 6. Set up permission bridge
+        let slot = AgentSlot::QueueItem(item_id);
         let (perm_tx, perm_rx) = mpsc::channel::<PermissionResponse>(16);
-        self.permission_txs.insert(item_id, perm_tx);
+        self.permission_txs.insert(slot.clone(), perm_tx);
         let allowed_patterns = Arc::new(permissions::load_allowed_patterns(&cwd));
         let bridge = WorkflowPermissionBridge {
-            queue_item_id: item_id,
+            slot: slot.clone(),
             feature_id: self.feature_id,
             sender: self.ws_sender.clone(),
             response_rx: Arc::new(tokio::sync::Mutex::new(perm_rx)),
@@ -980,7 +1042,7 @@ impl WorkflowEngine {
             );
             p.persist_user_message(&initial_prompt).await;
         }
-        self.send_user_message_event(item_id, db_session_id, &initial_prompt);
+        self.send_user_message_event(slot.clone(), db_session_id, &initial_prompt);
 
         let content_value = serde_json::Value::String(initial_prompt);
 
@@ -997,14 +1059,14 @@ impl WorkflowEngine {
 
                 // Store Query handle for interrupt support
                 let query_handle = Arc::new(tokio::sync::Mutex::new(real_query));
-                self.queries.insert(item_id, query_handle);
+                self.queries.insert(slot.clone(), query_handle);
 
                 // Track in active items
-                self.active_items.insert(item_id, db_session_id);
+                self.active_items.insert(slot.clone(), db_session_id);
 
                 // Spawn workflow stream reader
                 spawn_workflow_stream_reader(
-                    item_id,
+                    slot.clone(),
                     db_session_id,
                     self.feature_id,
                     mcp_server_name(agent_type).to_string(),
@@ -1021,7 +1083,7 @@ impl WorkflowEngine {
                     "item_started",
                     to_value(WorkflowItemStartedPayload {
                         feature_id: self.feature_id,
-                        queue_item_id: item_id,
+                        agent_slot: slot,
                         session_id: db_session_id,
                         item_type: item.item_type.clone(),
                     }),
@@ -1033,34 +1095,37 @@ impl WorkflowEngine {
             }
             Err(e) => {
                 error!(item_id, error = %e, "failed to spawn agent for queue item");
-                self.on_item_error(item_id, &e.to_string()).await;
+                self.on_item_error(AgentSlot::QueueItem(item_id), &e.to_string()).await;
                 Err(format!("SDK spawn failed: {e}"))
             }
         }
     }
 
     /// Called when a queue item completes successfully.
-    pub async fn on_item_completed(&self, item_id: i64, result: Option<&str>) {
+    pub async fn on_item_completed(&self, slot: AgentSlot, result: Option<&str>) {
         // If this item was interrupted, treat as paused instead of completed
-        if self.interrupted_items.remove(&item_id).is_some() {
-            self.on_item_paused(item_id).await;
+        if self.interrupted_items.remove(&slot).is_some() {
+            self.on_item_paused(slot).await;
             return;
         }
 
         self.touch_activity();
-        info!(feature_id = self.feature_id, item_id, "queue item completed");
+        info!(feature_id = self.feature_id, slot = %slot, "queue item completed");
 
-        self.active_items.remove(&item_id);
-        self.queries.remove(&item_id);
-        self.permission_txs.remove(&item_id);
-        self.paused_sessions.remove(&item_id);
+        self.active_items.remove(&slot);
+        self.queries.remove(&slot);
+        self.permission_txs.remove(&slot);
+        self.paused_sessions.remove(&slot);
 
-        if let Err(e) = repo::mark_item_completed(&self.write_pool, item_id, result).await {
-            error!(item_id, error = %e, "failed to mark item completed");
+        let legacy_id = slot.as_legacy_id();
+        if let Err(e) = repo::mark_item_completed(&self.write_pool, legacy_id, result).await {
+            error!(slot = %slot, error = %e, "failed to mark item completed");
         }
 
-        // Send differential item update
-        self.send_item_update(item_id).await;
+        // Send differential item update (only for real queue items)
+        if let AgentSlot::QueueItem(item_id) = &slot {
+            self.send_item_update(*item_id).await;
+        }
 
         // Send item_completed envelope
         let envelope = WsEnvelope::new(
@@ -1068,28 +1133,30 @@ impl WorkflowEngine {
             "item_completed",
             to_value(WorkflowItemCompletedPayload {
                 feature_id: self.feature_id,
-                queue_item_id: item_id,
+                agent_slot: slot.clone(),
                 result: result.map(|s| s.to_string()),
             }),
         );
         let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
 
         // Notify frontend when pre-queue agents (plan/prd) complete
-        if item_id == PLAN_ITEM_ID {
+        if matches!(slot, AgentSlot::Plan) {
             self.send_feature_updated(&["plan", "phases", "progress"]);
-        } else if item_id == PRD_ITEM_ID {
+        } else if matches!(slot, AgentSlot::Prd) {
             self.send_feature_updated(&["prd"]);
         }
 
         // Part A: If a "review" item just completed, check for new phases and re-populate
-        if let Ok(Some(item)) = repo::get_queue_item(&self.read_pool, item_id).await {
-            // Notify frontend for item types that affect plan progress/phases
-            if matches!(item.item_type.as_str(), "execute" | "review") {
-                self.send_feature_updated(&["progress", "phases"]);
-            }
-            if item.item_type == "review" {
-                if let Err(e) = self.re_populate_queue_for_new_phases().await {
-                    warn!(feature_id = self.feature_id, error = %e, "re-populate after review failed");
+        if let AgentSlot::QueueItem(item_id) = &slot {
+            if let Ok(Some(item)) = repo::get_queue_item(&self.read_pool, *item_id).await {
+                // Notify frontend for item types that affect plan progress/phases
+                if matches!(item.item_type.as_str(), "execute" | "review") {
+                    self.send_feature_updated(&["progress", "phases"]);
+                }
+                if item.item_type == "review" {
+                    if let Err(e) = self.re_populate_queue_for_new_phases().await {
+                        warn!(feature_id = self.feature_id, error = %e, "re-populate after review failed");
+                    }
                 }
             }
         }
@@ -1105,7 +1172,11 @@ impl WorkflowEngine {
                 // Advance if next ready items share the same group_index
                 if let Ok(ready) = repo::unblock_ready_items(&self.write_pool, self.feature_id).await {
                     if !ready.is_empty() {
-                        let current_group = self.get_current_group_index(item_id).await;
+                        let current_group = if let AgentSlot::QueueItem(id) = &slot {
+                            self.get_current_group_index(*id).await
+                        } else {
+                            None
+                        };
                         let same_group = ready.iter().all(|r| r.group_index == current_group);
                         if same_group {
                             // Same group — start them directly without re-querying
@@ -1153,67 +1224,70 @@ impl WorkflowEngine {
 
     /// Called when a queue item is paused (interrupted by user).
     /// Keeps the session alive so it can be resumed later.
-    async fn on_item_paused(&self, item_id: i64) {
+    async fn on_item_paused(&self, slot: AgentSlot) {
         self.touch_activity();
-        info!(feature_id = self.feature_id, item_id, "queue item paused (interrupted)");
+        info!(feature_id = self.feature_id, slot = %slot, "queue item paused (interrupted)");
 
         // Session ID was already captured in interrupt_item (before stream reader removes query handle)
         // Don't remove active_items or permission_txs — we want to resume
         // Query handle is already removed by the stream reader at this point
 
-        // Mark as paused in DB
-        if item_id > 0 {
+        // Mark as paused in DB (only for real queue items)
+        if let AgentSlot::QueueItem(item_id) = &slot {
             let _ = sqlx::query("UPDATE workflow_queue SET status = 'paused' WHERE id = ?")
                 .bind(item_id)
                 .execute(&self.write_pool)
                 .await;
-            self.send_item_update(item_id).await;
+            self.send_item_update(*item_id).await;
         }
 
         // Mark the agent session as paused and persist claude_session_id for resume across restarts
-        if let Some(db_session_id) = self.active_items.get(&item_id) {
+        if let Some(db_session_id) = self.active_items.get(&slot) {
             let db_sid = *db_session_id;
             WsSessionPersistence::mark_paused_static(&self.write_pool, db_sid).await;
 
             // Persist the claude_session_id from in-memory paused_sessions to DB
             // so it survives engine recreation on page navigation / reconnect
-            if let Some(cc_sid_ref) = self.paused_sessions.get(&item_id) {
+            if let Some(cc_sid_ref) = self.paused_sessions.get(&slot) {
                 let cc_sid = cc_sid_ref.clone();
-                debug!(item_id, db_session_id = db_sid, cc_session_id = %cc_sid, "persisting claude_session_id to DB for resume");
+                debug!(slot = %slot, db_session_id = db_sid, cc_session_id = %cc_sid, "persisting claude_session_id to DB for resume");
                 WsSessionPersistence::persist_claude_session_id_static(&self.write_pool, db_sid, &cc_sid).await;
             }
         }
     }
 
     /// Called when a queue item errors.
-    pub async fn on_item_error(&self, item_id: i64, error: &str) {
+    pub async fn on_item_error(&self, slot: AgentSlot, error: &str) {
         // If this item was interrupted, treat as paused instead of error
-        if self.interrupted_items.remove(&item_id).is_some() {
-            self.on_item_paused(item_id).await;
+        if self.interrupted_items.remove(&slot).is_some() {
+            self.on_item_paused(slot).await;
             return;
         }
 
         self.touch_activity();
-        warn!(feature_id = self.feature_id, item_id, error, "queue item errored");
+        warn!(feature_id = self.feature_id, slot = %slot, error, "queue item errored");
 
-        self.active_items.remove(&item_id);
-        self.queries.remove(&item_id);
-        self.permission_txs.remove(&item_id);
-        self.paused_sessions.remove(&item_id);
+        self.active_items.remove(&slot);
+        self.queries.remove(&slot);
+        self.permission_txs.remove(&slot);
+        self.paused_sessions.remove(&slot);
 
-        if let Err(e) = repo::mark_item_error(&self.write_pool, item_id, Some(error)).await {
-            error!(item_id, error = %e, "failed to mark item error");
+        let legacy_id = slot.as_legacy_id();
+        if let Err(e) = repo::mark_item_error(&self.write_pool, legacy_id, Some(error)).await {
+            error!(slot = %slot, error = %e, "failed to mark item error");
         }
 
-        // Send differential item update
-        self.send_item_update(item_id).await;
+        // Send differential item update (only for real queue items)
+        if let AgentSlot::QueueItem(item_id) = &slot {
+            self.send_item_update(*item_id).await;
+        }
 
         let envelope = WsEnvelope::new(
             "workflow",
             "item_error",
             to_value(WorkflowItemErrorPayload {
                 feature_id: self.feature_id,
-                queue_item_id: item_id,
+                agent_slot: slot,
                 error: error.to_string(),
             }),
         );
@@ -1227,22 +1301,25 @@ impl WorkflowEngine {
 
     /// Interrupt a running queue item.
     /// Fast path: use in-memory Query handle. Fallback: PID from DB.
-    pub async fn interrupt_item(&self, queue_item_id: i64) -> Result<(), String> {
+    pub async fn interrupt_item(&self, slot: AgentSlot) -> Result<(), String> {
         // Mark as interrupted so the stream reader treats completion as pause
-        self.interrupted_items.insert(queue_item_id);
+        self.interrupted_items.insert(slot.clone());
 
         // Capture Claude Code session ID NOW while the query handle still exists
         // (the stream reader will remove the handle before on_item_paused runs)
-        if let Some(query) = self.queries.get(&queue_item_id) {
+        if let Some(query) = self.queries.get(&slot) {
             let q = query.lock().await;
             if let Some(cc_session_id) = q.session_id().await {
-                debug!(queue_item_id, cc_session_id = %cc_session_id, "captured Claude session ID for resume");
-                self.paused_sessions.insert(queue_item_id, cc_session_id);
+                debug!(slot = %slot, cc_session_id = %cc_session_id, "captured Claude session ID for resume");
+                self.paused_sessions.insert(slot.clone(), cc_session_id);
             }
             return q.interrupt().await.map_err(|e| format!("Interrupt failed: {e}"));
         }
-        // Fallback: PID from DB (handles refresh + restart)
-        self.interrupt_by_pid(queue_item_id).await
+        // Fallback: PID from DB (handles refresh + restart) — only for real queue items
+        if let AgentSlot::QueueItem(item_id) = &slot {
+            return self.interrupt_by_pid(*item_id).await;
+        }
+        Err(format!("No query handle for slot {slot}"))
     }
 
     /// PID-based interrupt fallback. Used when no in-memory Query handle exists
@@ -1275,7 +1352,7 @@ impl WorkflowEngine {
                 let err = std::io::Error::last_os_error();
                 if err.raw_os_error() == Some(libc::ESRCH) {
                     // Process already dead — mark item as error
-                    self.on_item_error(queue_item_id, "Agent process no longer running").await;
+                    self.on_item_error(AgentSlot::QueueItem(queue_item_id), "Agent process no longer running").await;
                     Err("Process already exited".into())
                 } else {
                     Err(format!("kill({pid}, SIGINT) failed: {err}"))
@@ -1287,20 +1364,20 @@ impl WorkflowEngine {
     }
 
     /// Route a permission response to the correct agent's permission channel.
-    pub async fn respond_permission(&self, queue_item_id: i64, response: PermissionResponse) -> Result<(), String> {
-        if let Some(tx) = self.permission_txs.get(&queue_item_id) {
+    pub async fn respond_permission(&self, slot: AgentSlot, response: PermissionResponse) -> Result<(), String> {
+        if let Some(tx) = self.permission_txs.get(&slot) {
             return tx.send(response).await
-                .map_err(|_| format!("Permission channel closed for item {queue_item_id}"));
+                .map_err(|_| format!("Permission channel closed for slot {slot}"));
         }
-        Err(format!("No permission channel for item {queue_item_id} — agent may need restart"))
+        Err(format!("No permission channel for slot {slot} — agent may need restart"))
     }
 
     /// Send a follow-up prompt to a running workflow agent.
     /// If the agent was paused (interrupted), this will resume it by spawning
     /// a new Claude Code process with `--resume`.
-    pub async fn send_prompt(&self, queue_item_id: i64, text: &str, _images: Option<Vec<String>>) -> Result<(), String> {
+    pub async fn send_prompt(&self, slot: AgentSlot, text: &str, _images: Option<Vec<String>>) -> Result<(), String> {
         // Fast path: agent is still running, send via stdin
-        if let Some(query) = self.queries.get(&queue_item_id) {
+        if let Some(query) = self.queries.get(&slot) {
             let q = query.lock().await;
             let content = serde_json::Value::String(text.to_string());
             q.stream_input(content).await.map_err(|e| format!("stream_input failed: {e}"))?;
@@ -1308,14 +1385,14 @@ impl WorkflowEngine {
         }
 
         // Slow path: agent was paused, resume by spawning new process
-        if let Some((_, cc_session_id)) = self.paused_sessions.remove(&queue_item_id) {
-            info!(queue_item_id, cc_session_id = %cc_session_id, "resuming paused agent with --resume");
-            return self.resume_item(queue_item_id, &cc_session_id, text).await;
+        if let Some((_, cc_session_id)) = self.paused_sessions.remove(&slot) {
+            info!(slot = %slot, cc_session_id = %cc_session_id, "resuming paused agent with --resume");
+            return self.resume_item(slot, &cc_session_id, text).await;
         }
 
         // Fallback: check DB for a claude_session_id we can resume with
         // (handles the case where paused_sessions wasn't populated, e.g. page refresh)
-        if let Some(agent_type_str) = synthetic_id_to_agent_type_str(queue_item_id) {
+        if let Some(agent_type_str) = slot.agent_type_str() {
             let row: Option<(i64, Option<String>)> = sqlx::query_as(
                 "SELECT id, claude_session_id FROM agent_sessions \
                  WHERE feature_id = ? AND agent_type = ? AND status IN ('running', 'paused') \
@@ -1331,53 +1408,53 @@ impl WorkflowEngine {
             if let Some((db_session_id, Some(ref cc_session_id))) = row {
                 if !cc_session_id.is_empty() {
                     let cc_sid = cc_session_id.clone();
-                    info!(queue_item_id, db_session_id, cc_session_id = %cc_sid, "DB fallback: resuming paused agent with --resume");
-                    self.active_items.insert(queue_item_id, db_session_id);
-                    return self.resume_item(queue_item_id, &cc_sid, text).await;
+                    info!(slot = %slot, db_session_id, cc_session_id = %cc_sid, "DB fallback: resuming paused agent with --resume");
+                    self.active_items.insert(slot.clone(), db_session_id);
+                    return self.resume_item(slot, &cc_sid, text).await;
                 }
             }
 
             // No claude_session_id at all — restart the agent fresh
             if let Some((db_session_id, _)) = row {
-                info!(queue_item_id, db_session_id, "no claude_session_id — restarting agent fresh");
+                info!(slot = %slot, db_session_id, "no claude_session_id — restarting agent fresh");
                 WsSessionPersistence::mark_completed_static(&self.write_pool, db_session_id).await;
             }
 
-            let sdk_type = synthetic_id_to_sdk_agent_type(queue_item_id).unwrap();
-            let system_prompt = synthetic_id_to_system_prompt(queue_item_id).unwrap();
-            info!(queue_item_id, agent_type = agent_type_str, "restarting pre-queue agent fresh (no resumable session)");
+            let sdk_type = slot.sdk_agent_type().unwrap();
+            let system_prompt = slot.system_prompt().unwrap();
+            info!(slot = %slot, agent_type = agent_type_str, "restarting pre-queue agent fresh (no resumable session)");
             return self.spawn_pre_queue_agent(
                 sdk_type,
                 agent_type_str,
                 system_prompt,
                 text,
-                queue_item_id,
+                slot,
             ).await.map(|_| ());
         }
 
-        Err(format!("No query handle for item {queue_item_id} — agent may need restart"))
+        Err(format!("No query handle for slot {slot} — agent may need restart"))
     }
 
     /// Resume a paused agent by spawning a new Claude Code process with `--resume`.
-    async fn resume_item(&self, queue_item_id: i64, cc_session_id: &str, prompt: &str) -> Result<(), String> {
-        let db_session_id = self.active_items.get(&queue_item_id)
+    async fn resume_item(&self, slot: AgentSlot, cc_session_id: &str, prompt: &str) -> Result<(), String> {
+        let db_session_id = self.active_items.get(&slot)
             .map(|r| *r)
-            .ok_or_else(|| format!("No active session for item {queue_item_id}"))?;
+            .ok_or_else(|| format!("No active session for slot {slot}"))?;
 
         let cwd = self.get_feature_cwd().await.ok_or_else(|| {
             format!("No working directory found for feature {}", self.feature_id)
         })?;
 
         // Determine agent type for MCP config
-        let agent_type = synthetic_id_to_sdk_agent_type(queue_item_id).unwrap_or(AgentType::Execute);
+        let agent_type = slot.sdk_agent_type().unwrap_or(AgentType::Execute);
         let mcp_servers = build_mcp_server_config(agent_type, self.feature_id);
 
         // Set up permission bridge
         let (perm_tx, perm_rx) = mpsc::channel::<PermissionResponse>(16);
-        self.permission_txs.insert(queue_item_id, perm_tx);
+        self.permission_txs.insert(slot.clone(), perm_tx);
         let allowed_patterns = Arc::new(permissions::load_allowed_patterns(&cwd));
         let bridge = WorkflowPermissionBridge {
-            queue_item_id,
+            slot: slot.clone(),
             feature_id: self.feature_id,
             sender: self.ws_sender.clone(),
             response_rx: Arc::new(tokio::sync::Mutex::new(perm_rx)),
@@ -1411,21 +1488,21 @@ impl WorkflowEngine {
                 let message_rx = real_query.take_message_rx();
 
                 if let Some(pid) = real_query.pid() {
-                    if queue_item_id > 0 {
-                        let _ = repo::update_item_pid(&self.write_pool, queue_item_id, pid as i64).await;
+                    if let AgentSlot::QueueItem(item_id) = &slot {
+                        let _ = repo::update_item_pid(&self.write_pool, *item_id, pid as i64).await;
                     }
                 }
 
                 let query_handle = Arc::new(tokio::sync::Mutex::new(real_query));
-                self.queries.insert(queue_item_id, query_handle);
+                self.queries.insert(slot.clone(), query_handle);
 
                 // Update queue item status back to running
-                if queue_item_id > 0 {
+                if let AgentSlot::QueueItem(item_id) = &slot {
                     let _ = sqlx::query("UPDATE workflow_queue SET status = 'running' WHERE id = ?")
-                        .bind(queue_item_id)
+                        .bind(item_id)
                         .execute(&self.write_pool)
                         .await;
-                    self.send_item_update(queue_item_id).await;
+                    self.send_item_update(*item_id).await;
                 }
 
                 // Update agent session status
@@ -1435,7 +1512,7 @@ impl WorkflowEngine {
                     .await;
 
                 spawn_workflow_stream_reader(
-                    queue_item_id,
+                    slot.clone(),
                     db_session_id,
                     self.feature_id,
                     mcp_server_name(agent_type).to_string(),
@@ -1446,11 +1523,11 @@ impl WorkflowEngine {
                     self.queries.clone(),
                 );
 
-                info!(queue_item_id, "agent resumed successfully");
+                info!(slot = %slot, "agent resumed successfully");
                 Ok(())
             }
             Err(e) => {
-                error!(queue_item_id, error = %e, "failed to resume agent");
+                error!(slot = %slot, error = %e, "failed to resume agent");
                 Err(format!("Failed to resume agent: {e}"))
             }
         }
@@ -1480,7 +1557,7 @@ impl WorkflowEngine {
             .await
             .map_err(|e| e.to_string())?;
 
-        self.active_items.remove(&item_id);
+        self.active_items.remove(&AgentSlot::QueueItem(item_id));
 
         // Send differential item update
         self.send_item_update(item_id).await;
@@ -1490,7 +1567,7 @@ impl WorkflowEngine {
             "item_skipped",
             to_value(WorkflowItemSkippedPayload {
                 feature_id: self.feature_id,
-                queue_item_id: item_id,
+                agent_slot: AgentSlot::QueueItem(item_id),
             }),
         );
         let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
@@ -1578,7 +1655,7 @@ impl WorkflowEngine {
 
                 for (item_id,) in stale {
                     warn!(feature_id, item_id, "agent timed out");
-                    active_items.remove(&item_id);
+                    active_items.remove(&AgentSlot::QueueItem(item_id));
 
                     if let Err(e) = repo::mark_item_error(&write_pool, item_id, Some("Agent timed out")).await {
                         error!(item_id, error = %e, "failed to mark timed-out item");
@@ -1590,7 +1667,7 @@ impl WorkflowEngine {
                         "item_error",
                         to_value(WorkflowItemErrorPayload {
                             feature_id,
-                            queue_item_id: item_id,
+                            agent_slot: AgentSlot::QueueItem(item_id),
                             error: "Agent timed out".into(),
                         }),
                     );
@@ -1618,10 +1695,10 @@ impl WorkflowEngine {
         .await
         .map_err(|e| e.to_string())?;
 
-        // Resolve synthetic IDs once, populate in-memory state, and collect for notification
-        let mut restored: Vec<(i64, i64, String, String)> = Vec::new(); // (synthetic_id, db_session_id, agent_type, cc_session_id)
+        // Resolve slots once, populate in-memory state, and collect for notification
+        let mut restored: Vec<(AgentSlot, i64, String, String)> = Vec::new(); // (slot, db_session_id, agent_type, cc_session_id)
         for (db_session_id, agent_type, cc_session_id) in &resumable_sessions {
-            let Some(synthetic_id) = agent_type_str_to_synthetic_id(agent_type) else {
+            let Some(slot) = agent_type_str_to_slot(agent_type) else {
                 continue; // regular queue items handled separately
             };
             info!(
@@ -1629,13 +1706,13 @@ impl WorkflowEngine {
                 db_session_id,
                 agent_type = agent_type.as_str(),
                 cc_session_id = cc_session_id.as_str(),
-                synthetic_id,
+                slot = %slot,
                 "restoring paused pre-queue agent for resume"
             );
-            self.paused_sessions.insert(synthetic_id, cc_session_id.clone());
-            self.active_items.insert(synthetic_id, *db_session_id);
+            self.paused_sessions.insert(slot.clone(), cc_session_id.clone());
+            self.active_items.insert(slot.clone(), *db_session_id);
             WsSessionPersistence::mark_paused_static(&self.write_pool, *db_session_id).await;
-            restored.push((synthetic_id, *db_session_id, agent_type.clone(), cc_session_id.clone()));
+            restored.push((slot, *db_session_id, agent_type.clone(), cc_session_id.clone()));
         }
 
         // Mark any queue items that were "running" as error (stale from server restart)
@@ -1669,13 +1746,13 @@ impl WorkflowEngine {
         let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
 
         // Notify frontend about restored paused agents
-        for (synthetic_id, db_session_id, agent_type, cc_session_id) in &restored {
+        for (slot, db_session_id, agent_type, cc_session_id) in &restored {
             let envelope = WsEnvelope::new(
                 "workflow",
                 "agent_paused",
                 to_value(WorkflowAgentPausedPayload {
                     feature_id: self.feature_id,
-                    queue_item_id: *synthetic_id,
+                    agent_slot: slot.clone(),
                     session_id: *db_session_id,
                     agent_type: agent_type.clone(),
                     claude_session_id: cc_session_id.clone(),
@@ -1722,12 +1799,12 @@ impl WorkflowEngine {
 
     /// Send the initial user message to the frontend as an `agent_user_message` event.
     /// This lets the UI display the first prompt that was sent to the agent.
-    fn send_user_message_event(&self, queue_item_id: i64, session_id: i64, content: &str) {
+    fn send_user_message_event(&self, slot: AgentSlot, session_id: i64, content: &str) {
         let envelope = WsEnvelope::new(
             "workflow",
             "agent_user_message",
             serde_json::json!({
-                "queue_item_id": queue_item_id,
+                "agent_slot": slot,
                 "session_id": session_id,
                 "content": content,
             }),
@@ -1899,7 +1976,6 @@ impl WorkflowEngine {
     }
 
     /// Spawn a review fixer agent for manual fix requests.
-    /// Uses synthetic queue_item_id of -5 for streaming.
     pub async fn spawn_review_fixer_agent(&self, comments: &str) -> Result<i64, String> {
         let system_prompt = "You are a code review fixer. The user has reviewed a diff and provided comments. \
             Fix the issues described in the comments. Make minimal, focused changes.";
@@ -1909,27 +1985,27 @@ impl WorkflowEngine {
             "review-fixer",
             system_prompt,
             comments,
-            -5,
+            AgentSlot::ReviewFixer,
         )
         .await
     }
 
     /// Mark a running agent as done (clean shutdown). Used for ad-hoc/session agents.
-    pub async fn mark_done(&self, queue_item_id: i64) -> Result<(), String> {
-        if let Some(query) = self.queries.get(&queue_item_id) {
+    pub async fn mark_done(&self, slot: AgentSlot) -> Result<(), String> {
+        if let Some(query) = self.queries.get(&slot) {
             let q = query.lock().await;
             let _ = q.interrupt().await;
         }
 
-        self.active_items.remove(&queue_item_id);
-        self.queries.remove(&queue_item_id);
-        self.permission_txs.remove(&queue_item_id);
+        self.active_items.remove(&slot);
+        self.queries.remove(&slot);
+        self.permission_txs.remove(&slot);
 
-        if queue_item_id > 0 {
-            if let Err(e) = repo::mark_item_completed(&self.write_pool, queue_item_id, Some("Marked done by user")).await {
-                warn!(queue_item_id, error = %e, "failed to mark item completed on mark_done");
+        if let AgentSlot::QueueItem(item_id) = &slot {
+            if let Err(e) = repo::mark_item_completed(&self.write_pool, *item_id, Some("Marked done by user")).await {
+                warn!(slot = %slot, error = %e, "failed to mark item completed on mark_done");
             }
-            self.send_item_update(queue_item_id).await;
+            self.send_item_update(*item_id).await;
         }
 
         let envelope = WsEnvelope::new(
@@ -1937,7 +2013,7 @@ impl WorkflowEngine {
             "item_completed",
             to_value(WorkflowItemCompletedPayload {
                 feature_id: self.feature_id,
-                queue_item_id,
+                agent_slot: slot,
                 result: Some("Marked done by user".to_string()),
             }),
         );
@@ -1950,18 +2026,18 @@ impl WorkflowEngine {
 /// Spawn a background task that reads agent stream messages and forwards them
 /// via the workflow domain, then triggers engine callbacks on completion/error.
 fn spawn_workflow_stream_reader(
-    queue_item_id: i64,
+    slot: AgentSlot,
     db_session_id: i64,
     feature_id: i64,
     expected_mcp_server: String,
     mut message_rx: mpsc::Receiver<Result<SdkMessage, SdkError>>,
     sender: WsSender,
     write_pool: SqlitePool,
-    active_items: Arc<DashMap<i64, i64>>,
-    queries: Arc<DashMap<i64, Arc<tokio::sync::Mutex<Query>>>>,
+    active_items: Arc<DashMap<AgentSlot, i64>>,
+    queries: Arc<DashMap<AgentSlot, Arc<tokio::sync::Mutex<Query>>>>,
 ) {
     tokio::spawn(async move {
-        debug!(queue_item_id, db_session_id, "workflow stream reader started");
+        debug!(slot = %slot, db_session_id, "workflow stream reader started");
         let mut persistence = WsSessionPersistence::with_session_id(
             write_pool.clone(),
             feature_id,
@@ -1982,7 +2058,7 @@ fn spawn_workflow_stream_reader(
                         if let Some(cli_sid) = sdk_msg.session_id() {
                             if !cli_sid.is_empty() {
                                 needs_session_id_capture = false;
-                                debug!(queue_item_id, db_session_id, claude_session_id = %cli_sid, "persisting CLI session_id to DB");
+                                debug!(slot = %slot, db_session_id, claude_session_id = %cli_sid, "persisting CLI session_id to DB");
                                 WsSessionPersistence::persist_claude_session_id_static(
                                     &write_pool, db_session_id, cli_sid,
                                 ).await;
@@ -1991,7 +2067,7 @@ fn spawn_workflow_stream_reader(
                                     "workflow",
                                     "agent_session_id",
                                     serde_json::json!({
-                                        "queue_item_id": queue_item_id,
+                                        "agent_slot": &slot,
                                         "session_id": db_session_id,
                                         "claude_session_id": cli_sid,
                                     }),
@@ -2003,7 +2079,7 @@ fn spawn_workflow_stream_reader(
 
                     // Check MCP server status on init
                     if let SdkMessage::System(SystemMessage::Init { ref mcp_servers, ref tools, .. }) = sdk_msg {
-                        debug!(queue_item_id, ?mcp_servers, tool_count = tools.len(), "received init message from CLI");
+                        debug!(slot = %slot, ?mcp_servers, tool_count = tools.len(), "received init message from CLI");
                         let server_status = mcp_servers.iter().find(|s| s.name == expected_mcp_server);
                         let mcp_ok = server_status.map_or(false, |s| s.status == "connected");
                         if !mcp_ok {
@@ -2015,14 +2091,14 @@ fn spawn_workflow_stream_reader(
                                 "MCP server '{}' failed to connect ({}). The agent cannot function without its tools.",
                                 expected_mcp_server, status_detail
                             );
-                            error!(queue_item_id, %err, "MCP server not connected");
+                            error!(slot = %slot, %err, "MCP server not connected");
                             error_msg = Some(err.clone());
                             WsSessionPersistence::mark_paused_static(&write_pool, db_session_id).await;
                             let err_env = WsEnvelope::new(
                                 "workflow",
                                 "agent_stream",
                                 to_value(WorkflowAgentStreamErrorPayload {
-                                    queue_item_id,
+                                    agent_slot: slot.clone(),
                                     session_id: db_session_id,
                                     msg_type: "error".into(),
                                     error: err,
@@ -2030,13 +2106,13 @@ fn spawn_workflow_stream_reader(
                             );
                             let _ = sender.send(Message::Text(String::from(err_env).into()));
                             // Interrupt the running CLI process so it doesn't continue without tools
-                            if let Some(query_handle) = queries.get(&queue_item_id) {
+                            if let Some(query_handle) = queries.get(&slot) {
                                 let q = query_handle.value().lock().await;
                                 let _ = q.interrupt().await;
                             }
                             break;
                         }
-                        debug!(queue_item_id, server = %expected_mcp_server, "MCP server connected");
+                        debug!(slot = %slot, server = %expected_mcp_server, "MCP server connected");
                     }
 
                     // Persist message
@@ -2059,7 +2135,7 @@ fn spawn_workflow_stream_reader(
 
                     let envelope = match &sdk_msg {
                         SdkMessage::Result { .. } => {
-                            debug!(queue_item_id, "received SDK Result message — marking completed_ok");
+                            debug!(slot = %slot, "received SDK Result message — marking completed_ok");
                             completed_ok = true;
                             WsSessionPersistence::mark_completed_static(
                                 &write_pool,
@@ -2070,7 +2146,7 @@ fn spawn_workflow_stream_reader(
                                 "workflow",
                                 "agent_stream",
                                 to_value(WorkflowAgentStreamResultPayload {
-                                    queue_item_id,
+                                    agent_slot: slot.clone(),
                                     session_id: db_session_id,
                                     msg_type: "result".into(),
                                 }),
@@ -2082,7 +2158,7 @@ fn spawn_workflow_stream_reader(
                                 "workflow",
                                 "agent_stream",
                                 to_value(WorkflowAgentStreamBlocksPayload {
-                                    queue_item_id,
+                                    agent_slot: slot.clone(),
                                     session_id: db_session_id,
                                     blocks: vec![block],
                                 }),
@@ -2095,7 +2171,7 @@ fn spawn_workflow_stream_reader(
                         .is_err()
                     {
                         warn!(
-                            queue_item_id,
+                            slot = %slot,
                             "WS sender closed, stopping workflow stream reader"
                         );
                         break;
@@ -2107,7 +2183,7 @@ fn spawn_workflow_stream_reader(
                     // the CLI process may not exit (mark_agent_done is a no-op
                     // in MCP subprocess mode).
                     if completed_ok {
-                        debug!(queue_item_id, "breaking out of stream loop after Result");
+                        debug!(slot = %slot, "breaking out of stream loop after Result");
                         break;
                     }
 
@@ -2171,14 +2247,14 @@ fn spawn_workflow_stream_reader(
                     }
                 }
                 Some(Err(e)) => {
-                    error!(queue_item_id, error = %e, "workflow SDK stream error");
+                    error!(slot = %slot, error = %e, "workflow SDK stream error");
                     error_msg = Some(e.to_string());
                     WsSessionPersistence::mark_paused_static(&write_pool, db_session_id).await;
                     let err_env = WsEnvelope::new(
                         "workflow",
                         "agent_stream",
                         to_value(WorkflowAgentStreamErrorPayload {
-                            queue_item_id,
+                            agent_slot: slot.clone(),
                             session_id: db_session_id,
                             msg_type: "error".into(),
                             error: e.to_string(),
@@ -2189,9 +2265,9 @@ fn spawn_workflow_stream_reader(
                 }
                 None => {
                     if completed_ok {
-                        debug!(queue_item_id, "workflow SDK stream closed after result");
+                        debug!(slot = %slot, "workflow SDK stream closed after result");
                     } else {
-                        warn!(queue_item_id, "workflow SDK stream closed unexpectedly without result");
+                        warn!(slot = %slot, "workflow SDK stream closed unexpectedly without result");
                         error_msg = Some("Agent stream closed unexpectedly without result".to_string());
                     }
                     break;
@@ -2200,27 +2276,29 @@ fn spawn_workflow_stream_reader(
         }
 
         // Post-stream cleanup: remove query handle
-        queries.remove(&queue_item_id);
+        queries.remove(&slot);
 
         // Post-stream callbacks — delegate to the real engine from the registry
-        debug!(queue_item_id, completed_ok, has_error = error_msg.is_some(), "stream reader post-loop: dispatching callbacks");
+        debug!(slot = %slot, completed_ok, has_error = error_msg.is_some(), "stream reader post-loop: dispatching callbacks");
         if completed_ok {
             if let Some(engine) = crate::domain::ws_session::handler::workflow::get_engine(feature_id) {
-                engine.on_item_completed(queue_item_id, None).await;
+                engine.on_item_completed(slot, None).await;
             } else {
-                warn!(queue_item_id, feature_id, "no engine found for on_item_completed");
-                active_items.remove(&queue_item_id);
-                if let Err(e) = repo::mark_item_completed(&write_pool, queue_item_id, None).await {
-                    error!(queue_item_id, error = %e, "failed to mark item completed (no engine)");
+                warn!(slot = %slot, feature_id, "no engine found for on_item_completed");
+                let legacy_id = slot.as_legacy_id();
+                active_items.remove(&slot);
+                if let Err(e) = repo::mark_item_completed(&write_pool, legacy_id, None).await {
+                    error!(slot = %slot, error = %e, "failed to mark item completed (no engine)");
                 }
             }
         } else if let Some(err) = error_msg {
             if let Some(engine) = crate::domain::ws_session::handler::workflow::get_engine(feature_id) {
-                engine.on_item_error(queue_item_id, &err).await;
+                engine.on_item_error(slot, &err).await;
             } else {
-                active_items.remove(&queue_item_id);
-                if let Err(e) = repo::mark_item_error(&write_pool, queue_item_id, Some(&err)).await {
-                    error!(queue_item_id, error = %e, "failed to mark item error (no engine)");
+                let legacy_id = slot.as_legacy_id();
+                active_items.remove(&slot);
+                if let Err(e) = repo::mark_item_error(&write_pool, legacy_id, Some(&err)).await {
+                    error!(slot = %slot, error = %e, "failed to mark item error (no engine)");
                 }
             }
         }
@@ -2327,32 +2405,32 @@ mod tests {
         let (engine, _rx) = test_engine().await;
 
         // Simulate tracking active items
-        engine.active_items.insert(10, 100);
-        engine.active_items.insert(20, 200);
+        engine.active_items.insert(AgentSlot::QueueItem(10), 100);
+        engine.active_items.insert(AgentSlot::QueueItem(20), 200);
 
         assert_eq!(engine.active_items.len(), 2);
-        assert_eq!(*engine.active_items.get(&10).unwrap(), 100);
-        assert_eq!(*engine.active_items.get(&20).unwrap(), 200);
+        assert_eq!(*engine.active_items.get(&AgentSlot::QueueItem(10)).unwrap(), 100);
+        assert_eq!(*engine.active_items.get(&AgentSlot::QueueItem(20)).unwrap(), 200);
 
         // Remove one
-        engine.active_items.remove(&10);
+        engine.active_items.remove(&AgentSlot::QueueItem(10));
         assert_eq!(engine.active_items.len(), 1);
-        assert!(engine.active_items.get(&10).is_none());
+        assert!(engine.active_items.get(&AgentSlot::QueueItem(10)).is_none());
     }
 
     #[tokio::test]
     async fn test_interrupted_items_tracking() {
         let (engine, _rx) = test_engine().await;
 
-        engine.interrupted_items.insert(42);
-        assert!(engine.interrupted_items.contains(&42));
+        engine.interrupted_items.insert(AgentSlot::QueueItem(42));
+        assert!(engine.interrupted_items.contains(&AgentSlot::QueueItem(42)));
 
         // remove returns Some if it was present
-        let removed = engine.interrupted_items.remove(&42);
+        let removed = engine.interrupted_items.remove(&AgentSlot::QueueItem(42));
         assert!(removed.is_some());
 
         // Double remove returns None
-        let removed_again = engine.interrupted_items.remove(&42);
+        let removed_again = engine.interrupted_items.remove(&AgentSlot::QueueItem(42));
         assert!(removed_again.is_none());
     }
 
@@ -2360,11 +2438,11 @@ mod tests {
     async fn test_paused_sessions_tracking() {
         let (engine, _rx) = test_engine().await;
 
-        engine.paused_sessions.insert(5, "session-abc".to_string());
-        assert_eq!(*engine.paused_sessions.get(&5).unwrap(), "session-abc");
+        engine.paused_sessions.insert(AgentSlot::QueueItem(5), "session-abc".to_string());
+        assert_eq!(*engine.paused_sessions.get(&AgentSlot::QueueItem(5)).unwrap(), "session-abc");
 
         // Remove returns the value
-        let removed = engine.paused_sessions.remove(&5);
+        let removed = engine.paused_sessions.remove(&AgentSlot::QueueItem(5));
         assert!(removed.is_some());
         assert_eq!(removed.unwrap().1, "session-abc");
     }
@@ -2380,7 +2458,7 @@ mod tests {
             feedback: None,
             updated_input: None,
         };
-        let result = engine.respond_permission(999, response).await;
+        let result = engine.respond_permission(AgentSlot::QueueItem(999), response).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("No permission channel"));
     }
@@ -2390,14 +2468,14 @@ mod tests {
         let (engine, _rx) = test_engine().await;
 
         let (tx, mut perm_rx) = mpsc::channel::<PermissionResponse>(16);
-        engine.permission_txs.insert(42, tx);
+        engine.permission_txs.insert(AgentSlot::QueueItem(42), tx);
 
         let response = PermissionResponse {
             decision: PermissionDecision::AllowOnce,
             feedback: None,
             updated_input: None,
         };
-        let result = engine.respond_permission(42, response).await;
+        let result = engine.respond_permission(AgentSlot::QueueItem(42), response).await;
         assert!(result.is_ok());
 
         // Verify the response was received
@@ -2411,8 +2489,8 @@ mod tests {
     async fn test_advance_at_capacity_is_noop() {
         let (engine, _rx) = test_engine().await;
         // max_parallel is 2, fill active_items to capacity
-        engine.active_items.insert(1, 100);
-        engine.active_items.insert(2, 200);
+        engine.active_items.insert(AgentSlot::QueueItem(1), 100);
+        engine.active_items.insert(AgentSlot::QueueItem(2), 200);
 
         // advance should return Ok but not start new items (no DB so nothing to query)
         // Since there's no workflow_queue table, it would error on unblock_ready_items,
@@ -2619,56 +2697,71 @@ mod tests {
         }
     }
 
-    // ── Synthetic ID helper functions ──
+    // ── AgentSlot tests ──
 
     #[test]
-    fn test_synthetic_id_to_agent_type_str() {
-        assert_eq!(synthetic_id_to_agent_type_str(PLAN_ITEM_ID), Some("plan"));
-        assert_eq!(synthetic_id_to_agent_type_str(PRD_ITEM_ID), Some("prd"));
-        assert_eq!(synthetic_id_to_agent_type_str(SESSION_ITEM_ID), Some("session"));
-        assert_eq!(synthetic_id_to_agent_type_str(REFINE_ITEM_ID), Some("refine"));
-        assert_eq!(synthetic_id_to_agent_type_str(0), None);
-        assert_eq!(synthetic_id_to_agent_type_str(42), None);
-        assert_eq!(synthetic_id_to_agent_type_str(-99), None);
+    fn test_agent_slot_agent_type_str() {
+        assert_eq!(AgentSlot::Plan.agent_type_str(), Some("plan"));
+        assert_eq!(AgentSlot::Prd.agent_type_str(), Some("prd"));
+        assert_eq!(AgentSlot::Session.agent_type_str(), Some("session"));
+        assert_eq!(AgentSlot::Refine.agent_type_str(), Some("refine"));
+        assert_eq!(AgentSlot::ReviewFixer.agent_type_str(), Some("review-fixer"));
+        assert_eq!(AgentSlot::QueueItem(42).agent_type_str(), None);
     }
 
     #[test]
-    fn test_agent_type_str_to_synthetic_id() {
-        assert_eq!(agent_type_str_to_synthetic_id("plan"), Some(PLAN_ITEM_ID));
-        assert_eq!(agent_type_str_to_synthetic_id("prd"), Some(PRD_ITEM_ID));
-        assert_eq!(agent_type_str_to_synthetic_id("session"), Some(SESSION_ITEM_ID));
-        assert_eq!(agent_type_str_to_synthetic_id("refine"), Some(REFINE_ITEM_ID));
-        assert_eq!(agent_type_str_to_synthetic_id("execute"), None);
-        assert_eq!(agent_type_str_to_synthetic_id(""), None);
+    fn test_agent_type_str_to_slot_mapping() {
+        assert_eq!(agent_type_str_to_slot("plan"), Some(AgentSlot::Plan));
+        assert_eq!(agent_type_str_to_slot("prd"), Some(AgentSlot::Prd));
+        assert_eq!(agent_type_str_to_slot("session"), Some(AgentSlot::Session));
+        assert_eq!(agent_type_str_to_slot("refine"), Some(AgentSlot::Refine));
+        assert_eq!(agent_type_str_to_slot("review-fixer"), Some(AgentSlot::ReviewFixer));
+        assert_eq!(agent_type_str_to_slot("review_fixer"), Some(AgentSlot::ReviewFixer));
+        assert_eq!(agent_type_str_to_slot("execute"), None);
+        assert_eq!(agent_type_str_to_slot(""), None);
     }
 
     #[test]
-    fn test_synthetic_id_roundtrip() {
-        // str -> id -> str roundtrip
-        for agent_type in &["plan", "prd", "session", "refine"] {
-            let id = agent_type_str_to_synthetic_id(agent_type).unwrap();
-            let back = synthetic_id_to_agent_type_str(id).unwrap();
-            assert_eq!(*agent_type, back);
+    fn test_agent_slot_roundtrip_via_legacy_id() {
+        for slot in &[AgentSlot::Plan, AgentSlot::Prd, AgentSlot::Session, AgentSlot::Refine, AgentSlot::ReviewFixer] {
+            let id = slot.as_legacy_id();
+            let back = AgentSlot::from(id);
+            assert_eq!(&back, slot);
         }
+        // QueueItem roundtrips too
+        assert_eq!(AgentSlot::from(42), AgentSlot::QueueItem(42));
     }
 
     #[test]
-    fn test_synthetic_id_to_sdk_agent_type() {
-        assert!(matches!(synthetic_id_to_sdk_agent_type(PLAN_ITEM_ID), Some(AgentType::Plan)));
-        assert!(matches!(synthetic_id_to_sdk_agent_type(REFINE_ITEM_ID), Some(AgentType::Plan)));
-        assert!(matches!(synthetic_id_to_sdk_agent_type(PRD_ITEM_ID), Some(AgentType::Prd)));
-        assert!(matches!(synthetic_id_to_sdk_agent_type(SESSION_ITEM_ID), Some(AgentType::Session)));
-        assert!(synthetic_id_to_sdk_agent_type(42).is_none());
+    fn test_agent_slot_sdk_agent_type() {
+        assert!(matches!(AgentSlot::Plan.sdk_agent_type(), Some(AgentType::Plan)));
+        assert!(matches!(AgentSlot::Refine.sdk_agent_type(), Some(AgentType::Plan)));
+        assert!(matches!(AgentSlot::Prd.sdk_agent_type(), Some(AgentType::Prd)));
+        assert!(matches!(AgentSlot::Session.sdk_agent_type(), Some(AgentType::Session)));
+        assert!(matches!(AgentSlot::ReviewFixer.sdk_agent_type(), Some(AgentType::Execute)));
+        assert!(AgentSlot::QueueItem(42).sdk_agent_type().is_none());
     }
 
     #[test]
-    fn test_synthetic_id_to_system_prompt() {
-        // Just verify they return Some for valid IDs and None for invalid
-        assert!(synthetic_id_to_system_prompt(PLAN_ITEM_ID).is_some());
-        assert!(synthetic_id_to_system_prompt(PRD_ITEM_ID).is_some());
-        assert!(synthetic_id_to_system_prompt(SESSION_ITEM_ID).is_some());
-        assert!(synthetic_id_to_system_prompt(REFINE_ITEM_ID).is_some());
-        assert!(synthetic_id_to_system_prompt(42).is_none());
+    fn test_agent_slot_system_prompt() {
+        assert!(AgentSlot::Plan.system_prompt().is_some());
+        assert!(AgentSlot::Prd.system_prompt().is_some());
+        assert!(AgentSlot::Session.system_prompt().is_some());
+        assert!(AgentSlot::Refine.system_prompt().is_some());
+        assert!(AgentSlot::ReviewFixer.system_prompt().is_none());
+        assert!(AgentSlot::QueueItem(42).system_prompt().is_none());
+    }
+
+    #[test]
+    fn test_agent_slot_is_queue_item() {
+        assert!(!AgentSlot::Plan.is_queue_item());
+        assert!(AgentSlot::QueueItem(1).is_queue_item());
+    }
+
+    #[test]
+    fn test_agent_slot_display() {
+        assert_eq!(format!("{}", AgentSlot::Plan), "plan");
+        assert_eq!(format!("{}", AgentSlot::QueueItem(42)), "queue_item(42)");
     }
 
     // ── restore_on_reconnect ──
@@ -2746,11 +2839,11 @@ mod tests {
         engine.restore_on_reconnect().await.unwrap();
 
         // paused_sessions should have the plan agent's session ID
-        assert!(engine.paused_sessions.contains_key(&PLAN_ITEM_ID));
-        assert_eq!(*engine.paused_sessions.get(&PLAN_ITEM_ID).unwrap(), "cc-resume-123");
+        assert!(engine.paused_sessions.contains_key(&AgentSlot::Plan));
+        assert_eq!(*engine.paused_sessions.get(&AgentSlot::Plan).unwrap(), "cc-resume-123");
 
-        // active_items should map PLAN_ITEM_ID to the db session id
-        assert!(engine.active_items.contains_key(&PLAN_ITEM_ID));
+        // active_items should map AgentSlot::Plan to the db session id
+        assert!(engine.active_items.contains_key(&AgentSlot::Plan));
 
         // Should have sent queue_update + agent_paused messages
         let mut got_queue_update = false;
@@ -2822,7 +2915,7 @@ mod tests {
         let (engine, _rx) = test_engine().await;
 
         // Positive queue_item_id with no query handle or paused session
-        let result = engine.send_prompt(999, "hello", None).await;
+        let result = engine.send_prompt(AgentSlot::QueueItem(999), "hello", None).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("No query handle"));
     }
@@ -2836,15 +2929,15 @@ mod tests {
             "INSERT INTO agent_sessions (feature_id, agent_type, status, claude_session_id) VALUES (1, 'plan', 'paused', 'cc-resume-456') RETURNING id"
         ).fetch_one(&engine.write_pool).await.unwrap();
 
-        engine.paused_sessions.insert(PLAN_ITEM_ID, "cc-resume-456".to_string());
-        engine.active_items.insert(PLAN_ITEM_ID, db_id);
+        engine.paused_sessions.insert(AgentSlot::Plan, "cc-resume-456".to_string());
+        engine.active_items.insert(AgentSlot::Plan, db_id);
 
         // send_prompt will try to resume via the SDK — we can't test the full
         // SDK flow here, but we can verify the paused_session was consumed
-        let _ = engine.send_prompt(PLAN_ITEM_ID, "continue", None).await;
+        let _ = engine.send_prompt(AgentSlot::Plan, "continue", None).await;
 
         // The paused session should have been removed (consumed by resume attempt)
-        assert!(!engine.paused_sessions.contains_key(&PLAN_ITEM_ID));
+        assert!(!engine.paused_sessions.contains_key(&AgentSlot::Plan));
     }
 
     // ── on_item_completed sends feature.updated for pre-queue agents ──
@@ -2857,7 +2950,7 @@ mod tests {
         sqlx::query("INSERT INTO features (id, project_id, title) VALUES (1, 1, 'test')")
             .execute(&engine.write_pool).await.unwrap();
 
-        engine.on_item_completed(PLAN_ITEM_ID, Some("done")).await;
+        engine.on_item_completed(AgentSlot::Plan, Some("done")).await;
 
         let mut got_item_completed = false;
         let mut got_feature_updated = false;
@@ -2892,7 +2985,7 @@ mod tests {
         sqlx::query("INSERT INTO features (id, project_id, title) VALUES (1, 1, 'test')")
             .execute(&engine.write_pool).await.unwrap();
 
-        engine.on_item_completed(PRD_ITEM_ID, None).await;
+        engine.on_item_completed(AgentSlot::Prd, None).await;
 
         let mut got_feature_updated = false;
         let mut updated_fields: Vec<String> = Vec::new();
@@ -2920,8 +3013,8 @@ mod tests {
         sqlx::query("INSERT INTO features (id, project_id, title) VALUES (1, 1, 'test')")
             .execute(&engine.write_pool).await.unwrap();
 
-        // Regular queue item (positive ID) should NOT trigger feature.updated
-        engine.on_item_completed(42, Some("done")).await;
+        // Regular queue item should NOT trigger feature.updated
+        engine.on_item_completed(AgentSlot::QueueItem(42), Some("done")).await;
 
         let mut got_feature_updated = false;
         while let Ok(msg) = rx.try_recv() {
