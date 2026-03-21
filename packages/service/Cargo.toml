@@ -29,6 +29,9 @@ rmcp = { version = "1", features = ["server", "transport-streamable-http-server"
 dashmap = "6"
 libc = "0.2"
 
+[lints]
+workspace = true
+
 [dev-dependencies]
 tempfile = "3"
 assert-json-diff = "2"

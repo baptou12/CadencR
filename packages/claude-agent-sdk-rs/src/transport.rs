@@ -328,7 +328,7 @@ mod tests {
         perms.set_mode(0o755);
         std::fs::set_permissions(&script, perms).unwrap();
 
-        let options = Options::default();
+        let _options = Options::default();
         // We can't actually run with default options since the real CLI won't
         // be available, so test close_stdin logic directly.
         let mut dummy_stdin: Option<BufWriter<ChildStdin>> = None;
