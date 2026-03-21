@@ -178,6 +178,8 @@ pub struct QueueItem {
     pub started_at: Option<String>,
     pub ended_at: Option<String>,
     pub pid: Option<i64>,
+    pub max_retries: i64,
+    pub retry_count: i64,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -511,6 +513,8 @@ mod tests {
             started_at: None,
             ended_at: None,
             pid: Some(12345),
+            max_retries: 1,
+            retry_count: 0,
         };
 
         let json = serde_json::to_string(&item).unwrap();
@@ -527,6 +531,8 @@ mod tests {
         assert_eq!(back.agent_session_id, Some(42));
         assert!(back.result.is_none());
         assert_eq!(back.pid, Some(12345));
+        assert_eq!(back.max_retries, 1);
+        assert_eq!(back.retry_count, 0);
     }
 
     #[test]
@@ -547,6 +553,8 @@ mod tests {
             started_at: None,
             ended_at: None,
             pid: None,
+            max_retries: 1,
+            retry_count: 0,
         };
 
         let json = serde_json::to_string(&item).unwrap();

@@ -423,6 +423,14 @@ pub struct WorkflowItemErrorPayload {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowItemRetryingPayload {
+    pub feature_id: i64,
+    pub queue_item_id: i64,
+    pub retry_count: i64,
+    pub max_retries: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowItemSkippedPayload {
     pub feature_id: i64,
     pub agent_slot: AgentSlot,

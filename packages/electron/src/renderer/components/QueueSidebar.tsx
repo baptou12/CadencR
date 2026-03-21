@@ -291,6 +291,11 @@ function QueueItemRow({ item, phase, isSelected, isExpanded, onClick, onRetry, o
             {phase.complexity}
           </Badge>
         )}
+        {(item.retry_count ?? 0) > 0 && (
+          <Badge variant="outline" className="shrink-0 text-[9px] px-1 py-0 border-yellow-600 text-yellow-400">
+            Retrying ({item.retry_count}/{item.max_retries ?? 1})
+          </Badge>
+        )}
         {hasExpandContent && (
           <span className="shrink-0 text-gray-600">
             {isExpanded ? <ChevronDownIcon className="size-3" /> : <ChevronRightIcon className="size-3" />}

@@ -54,6 +54,8 @@ export interface QueueItem {
   group_index: number | null;
   agent_session_id: number | null;
   result: string | null;
+  max_retries?: number;
+  retry_count?: number;
 }
 
 export interface AgentSessionState {
@@ -425,6 +427,18 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
             q.id === itemId ? { ...q, status: "error" as const, result: error } : q,
           );
           return { queue, error, ...patchAgentByItemId(state, itemId, { status: "error" }) };
+        });
+        break;
+      }
+      case "item_retrying": {
+        const itemId = payload.queue_item_id as number;
+        const retryCount = payload.retry_count as number;
+        const maxRetries = payload.max_retries as number;
+        set(state => {
+          const queue = state.queue.map(q =>
+            q.id === itemId ? { ...q, status: "ready" as const, retry_count: retryCount, max_retries: maxRetries } : q,
+          );
+          return { queue };
         });
         break;
       }

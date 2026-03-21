@@ -795,6 +795,8 @@ mod tests {
             started_at: None,
             ended_at: None,
             pid: None,
+            max_retries: 1,
+            retry_count: 0,
         }
     }
 
@@ -990,7 +992,9 @@ mod tests {
                 agent_session_id INTEGER,
                 result JSON,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                started_at DATETIME, ended_at DATETIME, pid INTEGER
+                started_at DATETIME, ended_at DATETIME, pid INTEGER,
+                max_retries INTEGER NOT NULL DEFAULT 1,
+                retry_count INTEGER NOT NULL DEFAULT 0
             )"#,
         ).execute(&pool).await.unwrap();
         sqlx::query(

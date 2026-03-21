@@ -569,6 +569,16 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 45,
+    description: "Add max_retries and retry_count columns to workflow_queue",
+    up: (db) => {
+      db.exec(`
+        ALTER TABLE workflow_queue ADD COLUMN max_retries INTEGER NOT NULL DEFAULT 1;
+        ALTER TABLE workflow_queue ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0;
+      `);
+    },
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

@@ -237,7 +237,7 @@ impl QueueAdvancer {
         }
     }
 
-    /// Called when a queue item errors.
+    /// Called when a queue item errors. Auto-retries if retry_count < max_retries.
     pub async fn on_item_error(
         &self,
         slot: AgentSlot,
@@ -258,6 +258,51 @@ impl QueueAdvancer {
         permissions.cleanup(&slot);
 
         let legacy_id = slot.as_legacy_id();
+
+        // Check if we can auto-retry
+        if let AgentSlot::QueueItem(item_id) = &slot {
+            if let Ok(Some(item)) = repo::get_queue_item(&self.write_pool, *item_id).await {
+                if item.retry_count < item.max_retries {
+                    match repo::increment_retry_count(&self.write_pool, *item_id).await {
+                        Ok(new_count) => {
+                            warn!(
+                                feature_id = self.feature_id,
+                                item_id = *item_id,
+                                "auto-retrying item {} (attempt {}/{})",
+                                item_id, new_count, item.max_retries
+                            );
+
+                            if let Err(e) = repo::mark_item_ready(&self.write_pool, *item_id).await {
+                                tracing::error!(item_id = *item_id, error = %e, "failed to reset item to ready for retry");
+                            }
+
+                            let envelope = WsEnvelope::new(
+                                "workflow",
+                                "item_retrying",
+                                to_value(WorkflowItemRetryingPayload {
+                                    feature_id: self.feature_id,
+                                    queue_item_id: *item_id,
+                                    retry_count: new_count,
+                                    max_retries: item.max_retries,
+                                }),
+                            );
+                            let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
+
+                            agent_manager.send_item_update(*item_id).await;
+
+                            // Trigger advance to pick up the retried item
+                            let _ = self.advance(agent_manager, permissions).await;
+                            return;
+                        }
+                        Err(e) => {
+                            tracing::error!(item_id = *item_id, error = %e, "failed to increment retry count");
+                        }
+                    }
+                }
+            }
+        }
+
+        // No retry available — proceed with error handling
         if let Err(e) = repo::mark_item_error(&self.write_pool, legacy_id, Some(error)).await {
             tracing::error!(slot = %slot, error = %e, "failed to mark item error");
         }

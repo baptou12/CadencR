@@ -781,7 +781,9 @@ mod tests {
                 created_at TEXT DEFAULT (datetime('now')),
                 started_at TEXT,
                 ended_at TEXT,
-                pid INTEGER
+                pid INTEGER,
+                max_retries INTEGER NOT NULL DEFAULT 1,
+                retry_count INTEGER NOT NULL DEFAULT 0
             )"#,
         )
         .execute(&pool)

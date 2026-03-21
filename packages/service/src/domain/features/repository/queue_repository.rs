@@ -13,9 +13,23 @@ pub async fn insert_queue_item(
     order_index: i64,
     group_index: Option<i64>,
 ) -> Result<i64, AppError> {
+    insert_queue_item_with_retries(pool, feature_id, workflow_type, item_type, phase_id, status, order_index, group_index, 1).await
+}
+
+pub async fn insert_queue_item_with_retries(
+    pool: &SqlitePool,
+    feature_id: i64,
+    workflow_type: &str,
+    item_type: &str,
+    phase_id: Option<i64>,
+    status: &str,
+    order_index: i64,
+    group_index: Option<i64>,
+    max_retries: i64,
+) -> Result<i64, AppError> {
     let result = sqlx::query(
-        r#"INSERT INTO workflow_queue (feature_id, workflow_type, item_type, phase_id, status, order_index, group_index)
-           VALUES (?, ?, ?, ?, ?, ?, ?)"#,
+        r#"INSERT INTO workflow_queue (feature_id, workflow_type, item_type, phase_id, status, order_index, group_index, max_retries)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)"#,
     )
     .bind(feature_id)
     .bind(workflow_type)
@@ -24,6 +38,7 @@ pub async fn insert_queue_item(
     .bind(status)
     .bind(order_index)
     .bind(group_index)
+    .bind(max_retries)
     .execute(pool)
     .await?;
     Ok(result.last_insert_rowid())
@@ -139,6 +154,24 @@ pub async fn unblock_ready_items(pool: &SqlitePool, feature_id: i64) -> Result<V
     .await?;
 
     Ok(items)
+}
+
+pub async fn increment_retry_count(pool: &SqlitePool, item_id: i64) -> Result<i64, AppError> {
+    let row: (i64,) = sqlx::query_as(
+        "UPDATE workflow_queue SET retry_count = retry_count + 1 WHERE id = ? RETURNING retry_count",
+    )
+    .bind(item_id)
+    .fetch_one(pool)
+    .await?;
+    Ok(row.0)
+}
+
+pub async fn mark_item_ready(pool: &SqlitePool, item_id: i64) -> Result<(), AppError> {
+    sqlx::query("UPDATE workflow_queue SET status = 'ready', started_at = NULL, ended_at = NULL WHERE id = ?")
+        .bind(item_id)
+        .execute(pool)
+        .await?;
+    Ok(())
 }
 
 pub async fn clear_queue_for_feature(pool: &SqlitePool, feature_id: i64) -> Result<(), AppError> {
