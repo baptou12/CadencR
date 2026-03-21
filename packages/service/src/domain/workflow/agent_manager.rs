@@ -779,7 +779,7 @@ impl AgentManager {
 
     /// Send a differential item update envelope.
     pub async fn send_item_update(&self, item_id: i64) {
-        match repo::get_queue_item(&self.read_pool, item_id).await {
+        match repo::get_queue_item(&self.write_pool, item_id).await {
             Ok(Some(item)) => {
                 let envelope = WsEnvelope::new(
                     "workflow",

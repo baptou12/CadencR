@@ -39,4 +39,9 @@ export function invalidateFeatureQueries(featureId: number, changed: string[]): 
     seen.add(keyStr);
     queryClient.invalidateQueries({ queryKey });
   }
+  // When the feature status changes, also invalidate the feature list so the
+  // sidebar/project view picks up the new status badge.
+  if (changed.includes("status")) {
+    void queryClient.invalidateQueries({ queryKey: ["features", "list"], exact: false });
+  }
 }

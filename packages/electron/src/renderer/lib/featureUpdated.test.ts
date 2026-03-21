@@ -56,23 +56,32 @@ describe("invalidateFeatureQueries", () => {
 
   it("handles all known fields at once", () => {
     invalidateFeatureQueries(7, ["title", "plan", "prd", "phases", "progress", "settings", "status"]);
-    // plan and phases share a key, title and status share a key, so 5 unique invalidations
-    expect(mockInvalidateQueries).toHaveBeenCalledTimes(5);
+    // plan and phases share a key, title and status share a key, so 5 unique + 1 list invalidation
+    expect(mockInvalidateQueries).toHaveBeenCalledTimes(6);
   });
 
-  it("invalidates feature query for status field", () => {
+  it("invalidates feature query and list query for status field", () => {
     invalidateFeatureQueries(10, ["status"]);
-    expect(mockInvalidateQueries).toHaveBeenCalledOnce();
+    expect(mockInvalidateQueries).toHaveBeenCalledTimes(2);
     expect(mockInvalidateQueries).toHaveBeenCalledWith({
       queryKey: ["features", "detail", 10],
+    });
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({
+      queryKey: ["features", "list"],
+      exact: false,
     });
   });
 
   it("deduplicates when 'title' and 'status' both resolve to the feature query key", () => {
     invalidateFeatureQueries(3, ["title", "status"]);
-    expect(mockInvalidateQueries).toHaveBeenCalledOnce();
+    // 1 unique feature detail key + 1 list invalidation for status
+    expect(mockInvalidateQueries).toHaveBeenCalledTimes(2);
     expect(mockInvalidateQueries).toHaveBeenCalledWith({
       queryKey: ["features", "detail", 3],
+    });
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({
+      queryKey: ["features", "list"],
+      exact: false,
     });
   });
 });

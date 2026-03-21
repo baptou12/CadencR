@@ -101,9 +101,17 @@ fn ensure_background_tasks(timeout_minutes: u64) {
     });
 }
 
-/// Remove the engine for a feature (used on disconnect cleanup).
+/// Remove the engine for a feature (used during shutdown).
+#[allow(dead_code)]
 pub fn remove_engine(feature_id: i64) {
     ENGINES.remove(&feature_id);
+}
+
+/// Detach the WS sender from an engine (on disconnect), keeping the engine alive.
+pub fn detach_engine_sender(feature_id: i64) {
+    if let Some(engine) = ENGINES.get(&feature_id) {
+        engine.detach_sender();
+    }
 }
 
 /// Get all tracked feature_ids (for disconnect cleanup).
@@ -262,20 +270,20 @@ async fn handle_feature_start(
 
     // Check if an engine already exists for this feature
     if let Some(existing) = ENGINES.get(&feature_id) {
-        if !existing.active_items().is_empty() {
-            send_workflow_error(
-                sender,
-                &envelope.id,
-                "ALREADY_RUNNING",
-                &format!("Workflow already running for feature {feature_id}"),
-            );
-            return;
+        let has_active = !existing.active_items().is_empty();
+        // Reattach the new WS sender to the existing engine
+        info!(feature_id, has_active, "reattaching sender to existing engine on reconnect");
+        existing.reattach_sender(sender.clone());
+
+        if has_active {
+            // Replay current state to the reconnecting client
+            info!(feature_id, "replaying active agent state to reconnected client");
+            if let Err(e) = existing.replay_state_to_client().await {
+                warn!(feature_id, error = %e, "failed to replay state on reconnect");
+            }
         }
-        // Idle engine exists — reuse it with updated sender, skip restore_on_reconnect
-        info!(feature_id, "reusing idle engine on reconnect (updated sender)");
-        let reconnected = Arc::new(WorkflowEngine::reconnect_with_sender(&existing, sender.clone()));
-        drop(existing); // release DashMap ref before insert
-        ENGINES.insert(feature_id, reconnected);
+
+        drop(existing);
         ensure_background_tasks(app_state.agent_timeout_minutes);
     } else {
         // No existing engine — create fresh and restore from DB
@@ -337,7 +345,7 @@ async fn handle_start_plan(envelope: WsEnvelope, sender: &WsSender, app_state: &
     let feature_id = payload.feature_id;
 
     // Auto-name if needed, ensure worktree exists
-    if let Err(e) = prepare_worktree(feature_id, &payload.description, sender, app_state).await {
+    if let Err(e) = prepare_worktree(feature_id, &payload.description, &engine.ws_sender, app_state).await {
         send_workflow_error(sender, &envelope.id, "WORKTREE_FAILED", &e);
         return;
     }
@@ -362,7 +370,7 @@ async fn handle_start_prd(envelope: WsEnvelope, sender: &WsSender, app_state: &A
     let feature_id = payload.feature_id;
 
     // Auto-name if needed, ensure worktree exists
-    if let Err(e) = prepare_worktree(feature_id, &payload.description, sender, app_state).await {
+    if let Err(e) = prepare_worktree(feature_id, &payload.description, &engine.ws_sender, app_state).await {
         send_workflow_error(sender, &envelope.id, "WORKTREE_FAILED", &e);
         return;
     }
@@ -558,7 +566,7 @@ async fn handle_start_build(envelope: WsEnvelope, sender: &WsSender, app_state: 
                 &app_state.write_pool,
                 payload.feature_id,
                 project_id,
-                sender,
+                &engine.ws_sender,
             ).await {
                 warn!(feature_id = payload.feature_id, error = %e, "ensure_worktree failed in start_build (continuing anyway)");
             }
@@ -571,6 +579,17 @@ async fn handle_start_build(envelope: WsEnvelope, sender: &WsSender, app_state: 
     // Set status to Building before advancing
     engine.set_status(crate::domain::workflow::status::WorkflowStatus::Building).await;
 
+    // Set the feature status to in-progress
+    if sqlx::query("UPDATE features SET status = 'in-progress' WHERE id = ? AND status NOT IN ('in-progress', 'done', 'archived')")
+        .bind(payload.feature_id)
+        .execute(&app_state.write_pool)
+        .await
+        .map(|r| r.rows_affected() > 0)
+        .unwrap_or(false)
+    {
+        crate::domain::workflow::engine::send_feature_updated_envelope(&engine.ws_sender, payload.feature_id, &["status"]);
+    }
+
     info!(feature_id = payload.feature_id, "start_build: advancing engine");
     if let Err(e) = engine.advance().await {
         send_workflow_error(sender, &envelope.id, "ADVANCE_FAILED", &format!("Failed to advance: {e}"));
@@ -581,6 +600,32 @@ async fn handle_continue(envelope: WsEnvelope, sender: &WsSender) {
     let Some((payload, engine)) = parse_and_get_engine::<WorkflowContinuePayload>(&envelope, sender) else { return };
 
     engine.set_status(crate::domain::workflow::status::WorkflowStatus::Building).await;
+
+    // Set the feature status to in-progress
+    if sqlx::query("UPDATE features SET status = 'in-progress' WHERE id = ? AND status NOT IN ('in-progress', 'done', 'archived')")
+        .bind(payload.feature_id)
+        .execute(&engine.write_pool)
+        .await
+        .map(|r| r.rows_affected() > 0)
+        .unwrap_or(false)
+    {
+        crate::domain::workflow::engine::send_feature_updated_envelope(&engine.ws_sender, payload.feature_id, &["status"]);
+    }
+
+    // Send current queue state before advancing so the frontend has up-to-date
+    // items (new items may have been added since the last queue_update).
+    if let Ok(items) = crate::domain::features::repository::get_queue_for_feature(&engine.read_pool, payload.feature_id).await {
+        let queue_env = WsEnvelope::new(
+            "workflow",
+            "queue_update",
+            to_value(WorkflowQueueUpdatePayload {
+                feature_id: payload.feature_id,
+                items,
+                workflow_status: None,
+            }),
+        );
+        let _ = sender.send(Message::Text(String::from(queue_env).into()));
+    }
 
     info!(feature_id = payload.feature_id, "continue: advancing engine");
     if let Err(e) = engine.advance().await {
@@ -858,7 +903,7 @@ async fn handle_mark_done(envelope: WsEnvelope, sender: &WsSender) {
 async fn prepare_worktree(
     feature_id: i64,
     description: &str,
-    sender: &WsSender,
+    engine_sender: &crate::domain::workflow::engine::WsSender,
     app_state: &AppState,
 ) -> Result<(), String> {
     let project_id = worktree::get_project_id_for_feature(&app_state.read_pool, feature_id).await?;
@@ -867,14 +912,16 @@ async fn prepare_worktree(
     // Auto-name if feature still has default title
     if auto_name::has_default_title(&app_state.read_pool, feature_id).await {
         info!(feature_id, "auto-naming feature before worktree creation");
-        let _ = auto_name::auto_name_feature(
-            app_state.write_pool.clone(),
-            feature_id,
-            description.to_string(),
-            project_dir.clone(),
-            None,
-            sender.clone(),
-        ).await;
+        if let Some(raw) = engine_sender.raw_clone() {
+            let _ = auto_name::auto_name_feature(
+                app_state.write_pool.clone(),
+                feature_id,
+                description.to_string(),
+                project_dir.clone(),
+                None,
+                raw,
+            ).await;
+        }
     }
 
     // Create worktree (blocking, idempotent)
@@ -883,13 +930,13 @@ async fn prepare_worktree(
         &app_state.write_pool,
         feature_id,
         project_id,
-        sender,
+        engine_sender,
     ).await?;
 
     // Spawn setup commands (non-blocking)
     let read_pool = app_state.read_pool.clone();
     let write_pool = app_state.write_pool.clone();
-    let ws = sender.clone();
+    let ws = engine_sender.clone();
     tokio::spawn(async move {
         worktree::run_setup_commands(read_pool, write_pool, feature_id, worktree_path, ws).await;
     });

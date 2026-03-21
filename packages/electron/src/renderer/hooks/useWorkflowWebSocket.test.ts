@@ -1619,4 +1619,90 @@ describe("useWorkflowStore", () => {
       expect(agent!.blocks[0]).toMatchObject({ type: "user_message", content: "Execute this" });
     });
   });
+
+  describe("startingBuild / continuingBuild flags", () => {
+    it("startBuild sets startingBuild flag", () => {
+      const ws = connectStore();
+      expect(useWorkflowStore.getState().startingBuild).toBe(false);
+      useWorkflowStore.getState().startBuild();
+      expect(useWorkflowStore.getState().startingBuild).toBe(true);
+      // Verify the message was sent
+      expect(ws.sent.length).toBeGreaterThan(0);
+      const msg = JSON.parse(ws.sent[ws.sent.length - 1]);
+      expect(msg.action).toBe("start_build");
+    });
+
+    it("continueWorkflow sets continuingBuild flag", () => {
+      const ws = connectStore();
+      expect(useWorkflowStore.getState().continuingBuild).toBe(false);
+      useWorkflowStore.getState().continueWorkflow();
+      expect(useWorkflowStore.getState().continuingBuild).toBe(true);
+      const msg = JSON.parse(ws.sent[ws.sent.length - 1]);
+      expect(msg.action).toBe("continue");
+    });
+
+    it("status_changed to building clears both flags", () => {
+      const ws = connectStore();
+      useWorkflowStore.setState({ startingBuild: true, continuingBuild: true });
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "status_changed",
+        payload: { status: "building", previous_status: "ready_to_build" },
+      });
+
+      expect(useWorkflowStore.getState().startingBuild).toBe(false);
+      expect(useWorkflowStore.getState().continuingBuild).toBe(false);
+    });
+
+    it("status_changed to paused clears both flags", () => {
+      const ws = connectStore();
+      useWorkflowStore.setState({ startingBuild: true, continuingBuild: true });
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "status_changed",
+        payload: { status: "paused", previous_status: "building" },
+      });
+
+      expect(useWorkflowStore.getState().startingBuild).toBe(false);
+      expect(useWorkflowStore.getState().continuingBuild).toBe(false);
+    });
+
+    it("status_changed to error clears both flags", () => {
+      const ws = connectStore();
+      useWorkflowStore.setState({ continuingBuild: true });
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "status_changed",
+        payload: { status: "error", previous_status: "building" },
+      });
+
+      expect(useWorkflowStore.getState().continuingBuild).toBe(false);
+    });
+
+    it("workflow error event clears both flags", () => {
+      const ws = connectStore();
+      useWorkflowStore.setState({ startingBuild: true, continuingBuild: true });
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "error",
+        payload: { message: "Something failed" },
+      });
+
+      expect(useWorkflowStore.getState().startingBuild).toBe(false);
+      expect(useWorkflowStore.getState().continuingBuild).toBe(false);
+    });
+
+    it("connect resets flags", () => {
+      connectStore();
+      useWorkflowStore.setState({ startingBuild: true, continuingBuild: true });
+      // Reconnect
+      connectStore(2, 2);
+      expect(useWorkflowStore.getState().startingBuild).toBe(false);
+      expect(useWorkflowStore.getState().continuingBuild).toBe(false);
+    });
+  });
 });

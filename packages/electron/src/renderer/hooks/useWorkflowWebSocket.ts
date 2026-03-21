@@ -129,6 +129,10 @@ interface WorkflowState {
   error: string | null;
   hydrated: boolean;
 
+  // In-flight request flags (not optimistic state — just tracking pending requests)
+  startingBuild: boolean;
+  continuingBuild: boolean;
+
   /** Live feature title pushed via WS after auto-naming. */
   featureTitle: string | null;
 
@@ -485,6 +489,12 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
             }
           }
 
+          // Clear in-flight flags when we receive a status change
+          if (status === "building" || status === "paused" || status === "error" || status === "completed") {
+            updates.startingBuild = false;
+            updates.continuingBuild = false;
+          }
+
           set(updates);
         }
         break;
@@ -772,7 +782,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         break;
       }
       case "error": {
-        set({ workflowStatus: "error", error: payload.message as string });
+        set({ workflowStatus: "error", error: payload.message as string, startingBuild: false, continuingBuild: false });
         break;
       }
     }
@@ -793,6 +803,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     selectedItemId: null,
     error: null,
     hydrated: false,
+    startingBuild: false,
+    continuingBuild: false,
     worktreeStatus: "idle",
     worktreePath: null,
     worktreeBranch: null,
@@ -808,7 +820,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
       set({
         ws, featureId, projectId,
         queue: [], activeAgents: new Map(), planAgent: null, prdAgent: null,
-        workflowStatus: "idle", pauseReason: null, selectedItemId: null, error: null, hydrated: false,
+        workflowStatus: "idle", pauseReason: null, selectedItemId: null, error: null, hydrated: false, startingBuild: false, continuingBuild: false,
         worktreeStatus: "idle" as const, worktreePath: null, worktreeBranch: null, worktreeSetupOutput: [], worktreeError: null,
         featureTitle: null,
       });
@@ -949,10 +961,12 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     },
 
     startBuild() {
+      set({ startingBuild: true });
       send("start_build", {});
     },
 
     continueWorkflow() {
+      set({ continuingBuild: true });
       send("continue", {});
     },
 

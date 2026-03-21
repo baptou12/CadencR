@@ -338,11 +338,11 @@ export function useWsWorkflowBackend(
     // Loading flags (WS actions are fire-and-forget)
     isStartingPlan: false,
     isStartingPrd: false,
-    isStartingExecute: false,
+    isStartingExecute: store.startingBuild,
     isStartingRisk: false,
     isStartingReview: false,
     isStartingRetro: false,
-    isContinuingBuild: false,
+    isContinuingBuild: store.continuingBuild,
     isStartingWorkflowSession: false,
     isStartingRefinePlan: false,
     canContinueBuild: store.workflowStatus === "paused" && noAgentsRunning,
