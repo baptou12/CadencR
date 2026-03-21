@@ -466,7 +466,29 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
       case "status_update":
       case "status_changed": {
         const status = (payload.status as WorkflowStatus) ?? (payload.workflow_status as WorkflowStatus);
-        if (status) set({ workflowStatus: status });
+        if (status) {
+          const previousStatus = (payload.previous_status as WorkflowStatus) ?? get().workflowStatus;
+          const updates: Partial<ReturnType<typeof get>> = { workflowStatus: status };
+
+          // When leaving plan_approval, reset planAgent status back to "running"
+          if (previousStatus === "plan_approval" && status !== "plan_approval") {
+            const planAgent = get().planAgent;
+            if (planAgent) {
+              updates.planAgent = { ...planAgent, status: "running" as const };
+            }
+          }
+
+          // When leaving prd status after prd approval, reset prdAgent status back to "running"
+          // (prd_ready sets prdAgent.status to "paused"; transitioning away means approval resolved)
+          if (previousStatus === "prd" && status === "planning") {
+            const prdAgent = get().prdAgent;
+            if (prdAgent && prdAgent.status === "paused") {
+              updates.prdAgent = { ...prdAgent, status: "completed" as const };
+            }
+          }
+
+          set(updates);
+        }
         break;
       }
       case "plan_agent_stream":
@@ -881,11 +903,43 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     },
 
     approvePlan(requestId) {
-      send("plan.approved", { approved: true, request_id: requestId });
+      const isPrd = get().workflowStatus === "prd";
+      send(isPrd ? "prd.approved" : "plan.approved", { approved: true, request_id: requestId });
+      // Add user message to the appropriate agent conversation
+      set(state => {
+        const agentKey = isPrd ? "prdAgent" : "planAgent";
+        const agent = state[agentKey];
+        if (!agent) return {};
+        const label = isPrd ? "PRD" : "Plan";
+        const block = {
+          id: `ws-user-${Date.now()}`,
+          type: "user_message" as const,
+          content: `✅ ${label} approved`,
+          isError: false,
+          createdAt: new Date().toISOString(),
+        };
+        return { [agentKey]: { ...agent, blocks: [...agent.blocks, block] } };
+      });
     },
 
     rejectPlan(feedback, requestId) {
-      send("plan.rejected", { approved: false, feedback, request_id: requestId });
+      const isPrd = get().workflowStatus === "prd";
+      send(isPrd ? "prd.rejected" : "plan.rejected", { approved: false, feedback, request_id: requestId });
+      // Add user feedback message to the appropriate agent conversation
+      set(state => {
+        const agentKey = isPrd ? "prdAgent" : "planAgent";
+        const agent = state[agentKey];
+        if (!agent) return {};
+        const label = isPrd ? "PRD" : "Plan";
+        const block = {
+          id: `ws-user-${Date.now()}`,
+          type: "user_message" as const,
+          content: `**${label} feedback:**\n${feedback}`,
+          isError: false,
+          createdAt: new Date().toISOString(),
+        };
+        return { [agentKey]: { ...agent, blocks: [...agent.blocks, block] } };
+      });
     },
 
     startBuild() {

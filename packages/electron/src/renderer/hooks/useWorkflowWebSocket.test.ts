@@ -1186,6 +1186,190 @@ describe("useWorkflowStore", () => {
       // No optimistic update — workflowStatus stays idle
       expect(useWorkflowStore.getState().workflowStatus).toBe("idle");
     });
+
+    it("approvePlan sends prd.approved when workflowStatus is prd", () => {
+      const ws = connectStore();
+      useWorkflowStore.setState({
+        prdAgent: makeAgentSession({ status: "paused" }),
+        workflowStatus: "prd",
+      });
+
+      useWorkflowStore.getState().approvePlan("req-prd-1");
+
+      const sent = ws.sent.find(s => JSON.parse(s).action === "prd.approved");
+      expect(sent).toBeDefined();
+      expect(JSON.parse(sent!).payload.request_id).toBe("req-prd-1");
+      // Should NOT have sent plan.approved
+      const planSent = ws.sent.find(s => JSON.parse(s).action === "plan.approved");
+      expect(planSent).toBeUndefined();
+    });
+
+    it("approvePlan adds user_message to prdAgent when workflowStatus is prd", () => {
+      connectStore();
+      useWorkflowStore.setState({
+        prdAgent: makeAgentSession({ status: "paused" }),
+        workflowStatus: "prd",
+      });
+
+      useWorkflowStore.getState().approvePlan();
+
+      const { prdAgent } = useWorkflowStore.getState();
+      expect(prdAgent!.blocks).toHaveLength(1);
+      expect(prdAgent!.blocks[0]).toMatchObject({ type: "user_message", content: expect.stringContaining("PRD") });
+    });
+
+    it("approvePlan adds user_message to planAgent when workflowStatus is plan_approval", () => {
+      connectStore();
+      useWorkflowStore.setState({
+        planAgent: makeAgentSession({ status: "paused" }),
+        workflowStatus: "plan_approval",
+      });
+
+      useWorkflowStore.getState().approvePlan();
+
+      const { planAgent } = useWorkflowStore.getState();
+      expect(planAgent!.blocks).toHaveLength(1);
+      expect(planAgent!.blocks[0]).toMatchObject({ type: "user_message", content: expect.stringContaining("Plan") });
+    });
+
+    it("rejectPlan sends prd.rejected when workflowStatus is prd", () => {
+      const ws = connectStore();
+      useWorkflowStore.setState({
+        prdAgent: makeAgentSession({ status: "paused" }),
+        workflowStatus: "prd",
+      });
+
+      useWorkflowStore.getState().rejectPlan("needs work", "req-prd-2");
+
+      const sent = ws.sent.find(s => JSON.parse(s).action === "prd.rejected");
+      expect(sent).toBeDefined();
+      const envelope = JSON.parse(sent!);
+      expect(envelope.payload.feedback).toBe("needs work");
+      expect(envelope.payload.request_id).toBe("req-prd-2");
+      // Should NOT have sent plan.rejected
+      const planSent = ws.sent.find(s => JSON.parse(s).action === "plan.rejected");
+      expect(planSent).toBeUndefined();
+    });
+
+    it("rejectPlan adds user_message to prdAgent when workflowStatus is prd", () => {
+      connectStore();
+      useWorkflowStore.setState({
+        prdAgent: makeAgentSession({ status: "paused" }),
+        workflowStatus: "prd",
+      });
+
+      useWorkflowStore.getState().rejectPlan("more detail please");
+
+      const { prdAgent } = useWorkflowStore.getState();
+      expect(prdAgent!.blocks).toHaveLength(1);
+      expect(prdAgent!.blocks[0]).toMatchObject({ type: "user_message", content: expect.stringContaining("PRD") });
+      expect(prdAgent!.blocks[0]).toMatchObject({ content: expect.stringContaining("more detail please") });
+    });
+
+    it("rejectPlan adds user_message to planAgent when workflowStatus is plan_approval", () => {
+      connectStore();
+      useWorkflowStore.setState({
+        planAgent: makeAgentSession({ status: "paused" }),
+        workflowStatus: "plan_approval",
+      });
+
+      useWorkflowStore.getState().rejectPlan("needs more detail");
+
+      const { planAgent } = useWorkflowStore.getState();
+      expect(planAgent!.blocks).toHaveLength(1);
+      expect(planAgent!.blocks[0]).toMatchObject({ type: "user_message", content: expect.stringContaining("Plan") });
+      expect(planAgent!.blocks[0]).toMatchObject({ content: expect.stringContaining("needs more detail") });
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // status_changed — agent status resets
+  // -------------------------------------------------------------------------
+
+  describe("status_changed agent resets", () => {
+    it("resets planAgent status to running when leaving plan_approval", () => {
+      const ws = connectStore();
+      useWorkflowStore.setState({
+        planAgent: makeAgentSession({ status: "paused" }),
+        workflowStatus: "plan_approval",
+      });
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "status_changed",
+        payload: { previous_status: "plan_approval", status: "planning" },
+      });
+
+      expect(useWorkflowStore.getState().planAgent!.status).toBe("running");
+      expect(useWorkflowStore.getState().workflowStatus).toBe("planning");
+    });
+
+    it("does not reset planAgent when staying in plan_approval", () => {
+      const ws = connectStore();
+      useWorkflowStore.setState({
+        planAgent: makeAgentSession({ status: "paused" }),
+        workflowStatus: "plan_approval",
+      });
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "status_changed",
+        payload: { previous_status: "plan_approval", status: "plan_approval" },
+      });
+
+      expect(useWorkflowStore.getState().planAgent!.status).toBe("paused");
+    });
+
+    it("sets prdAgent to completed when transitioning from prd to planning", () => {
+      const ws = connectStore();
+      useWorkflowStore.setState({
+        prdAgent: makeAgentSession({ status: "paused" }),
+        workflowStatus: "prd",
+      });
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "status_changed",
+        payload: { previous_status: "prd", status: "planning" },
+      });
+
+      expect(useWorkflowStore.getState().prdAgent!.status).toBe("completed");
+      expect(useWorkflowStore.getState().workflowStatus).toBe("planning");
+    });
+
+    it("does not reset prdAgent when prd transitions to non-planning status", () => {
+      const ws = connectStore();
+      useWorkflowStore.setState({
+        prdAgent: makeAgentSession({ status: "paused" }),
+        workflowStatus: "prd",
+      });
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "status_changed",
+        payload: { previous_status: "prd", status: "error" },
+      });
+
+      // prdAgent stays paused — only prd→planning triggers completed
+      expect(useWorkflowStore.getState().prdAgent!.status).toBe("paused");
+    });
+
+    it("does not reset prdAgent if it is not paused", () => {
+      const ws = connectStore();
+      useWorkflowStore.setState({
+        prdAgent: makeAgentSession({ status: "running" }),
+        workflowStatus: "prd",
+      });
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "status_changed",
+        payload: { previous_status: "prd", status: "planning" },
+      });
+
+      // Only paused prdAgents get set to completed
+      expect(useWorkflowStore.getState().prdAgent!.status).toBe("running");
+    });
   });
 
   // -------------------------------------------------------------------------

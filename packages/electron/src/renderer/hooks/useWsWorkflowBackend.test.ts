@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { findQueueItemId } from "./useWsWorkflowBackend";
+import { findQueueItemId, buildSessionEntries } from "./useWsWorkflowBackend";
 import type { FeatureSession } from "@/hooks/useFeatureAgentState";
 import type { AgentSessionState } from "./useWorkflowWebSocket";
 
@@ -59,5 +59,63 @@ describe("findQueueItemId", () => {
   it("falls back to sessionDbId when no match found", () => {
     const entry = makeEntry({ sessionDbId: 300 });
     expect(findQueueItemId(entry, [], new Map())).toBe(300);
+  });
+});
+
+function makeAgentState(overrides?: Partial<AgentSessionState>): AgentSessionState {
+  return {
+    sessionId: 1,
+    blocks: [],
+    streamingState: { activeTextIndex: null, activeThinkingIndex: null, toolCalls: new Map() } as never,
+    status: "running",
+    pendingPermission: null,
+    pendingQuestions: [],
+    pendingQuestionToolInput: {},
+    pendingQuestionRequestId: "",
+    historyLoaded: false,
+    claudeSessionId: null,
+    ...overrides,
+  };
+}
+
+describe("buildSessionEntries", () => {
+  it("sets pendingPlanApproval on planSession when workflowStatus is plan_approval", () => {
+    const planAgent = makeAgentState({ sessionId: 10, status: "paused" });
+    const { planSession } = buildSessionEntries([], new Map(), planAgent, null, "plan_approval");
+
+    expect(planSession).not.toBeNull();
+    expect(planSession!.pendingPlanApproval).toEqual({});
+  });
+
+  it("does not set pendingPlanApproval on planSession when workflowStatus is not plan_approval", () => {
+    const planAgent = makeAgentState({ sessionId: 10, status: "paused" });
+    const { planSession } = buildSessionEntries([], new Map(), planAgent, null, "planning");
+
+    expect(planSession).not.toBeNull();
+    expect(planSession!.pendingPlanApproval).toBeNull();
+  });
+
+  it("sets pendingPlanApproval on prdSession when workflowStatus is prd and prdAgent is paused", () => {
+    const prdAgent = makeAgentState({ sessionId: 20, status: "paused" });
+    const { prdSession } = buildSessionEntries([], new Map(), null, prdAgent, "prd");
+
+    expect(prdSession).not.toBeNull();
+    expect(prdSession!.pendingPlanApproval).toEqual({});
+  });
+
+  it("does not set pendingPlanApproval on prdSession when prdAgent is not paused", () => {
+    const prdAgent = makeAgentState({ sessionId: 20, status: "running" });
+    const { prdSession } = buildSessionEntries([], new Map(), null, prdAgent, "prd");
+
+    expect(prdSession).not.toBeNull();
+    expect(prdSession!.pendingPlanApproval).toBeNull();
+  });
+
+  it("does not set pendingPlanApproval on prdSession when workflowStatus is not prd", () => {
+    const prdAgent = makeAgentState({ sessionId: 20, status: "paused" });
+    const { prdSession } = buildSessionEntries([], new Map(), null, prdAgent, "planning");
+
+    expect(prdSession).not.toBeNull();
+    expect(prdSession!.pendingPlanApproval).toBeNull();
   });
 });

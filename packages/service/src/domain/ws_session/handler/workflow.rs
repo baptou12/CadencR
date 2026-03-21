@@ -389,12 +389,41 @@ async fn handle_approval(envelope: WsEnvelope, sender: &WsSender, kind: &str, sl
     };
 
     // Update workflow status based on approval decision
-    if kind == "plan" {
+    {
         use crate::domain::workflow::status::WorkflowStatus;
-        if approved {
-            engine.set_status(WorkflowStatus::ReadyToBuild).await;
+        if kind == "plan" {
+            if approved {
+                engine.set_status(WorkflowStatus::ReadyToBuild).await;
+            } else {
+                engine.set_status(WorkflowStatus::Planning).await;
+            }
+        } else if kind == "prd" {
+            if approved {
+                engine.set_status(WorkflowStatus::Planning).await;
+            } else {
+                engine.set_status(WorkflowStatus::Prd).await;
+            }
+        }
+    }
+
+    // Persist user message for the approval/rejection so it shows in the conversation history
+    if let Some(db_session_id) = engine.active_items().get(&slot).map(|r| *r) {
+        let label = if kind == "plan" { "Plan" } else { "PRD" };
+        let content = if approved {
+            format!("✅ {label} approved")
+        } else if let Some(ref fb) = payload.feedback {
+            format!("**{label} feedback:**\n{fb}")
         } else {
-            engine.set_status(WorkflowStatus::Planning).await;
+            format!("❌ {label} rejected")
+        };
+        if let Err(e) = sqlx::query(
+            "INSERT INTO agent_messages (session_id, role, content, message_type) VALUES (?, 'user', ?, 'user_message')"
+        )
+        .bind(db_session_id)
+        .bind(&content)
+        .execute(&engine.write_pool)
+        .await {
+            warn!(feature_id = payload.feature_id, error = %e, "failed to persist approval user message");
         }
     }
 

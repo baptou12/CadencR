@@ -134,7 +134,7 @@ function agentStateToFeatureSession(
 // Build session entries from store state
 // ---------------------------------------------------------------------------
 
-function buildSessionEntries(
+export function buildSessionEntries(
   queue: QueueItem[],
   activeAgents: Map<number, AgentSessionState>,
   planAgent: AgentSessionState | null,
@@ -148,6 +148,12 @@ function buildSessionEntries(
   // plan agent session so the approval bar renders in the AgentPromptBar.
   if (workflowStatus === "plan_approval" && planSession) {
     planSession.pendingPlanApproval = {};
+  }
+
+  // When the PRD agent is paused (prd_ready fired) and workflow is in "prd" state,
+  // set pendingPlanApproval on the PRD session so the approval bar renders.
+  if (workflowStatus === "prd" && prdSession && prdAgent?.status === "paused") {
+    prdSession.pendingPlanApproval = {};
   }
 
   const sessions: FeatureSession[] = [];
