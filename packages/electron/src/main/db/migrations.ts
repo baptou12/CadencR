@@ -514,6 +514,71 @@ const migrations: Migration[] = [
       db.exec("ALTER TABLE phases ADD COLUMN depends_on TEXT");
     },
   },
+  {
+    version: 42,
+    description: "Create workflow_queue and workflow_dependencies tables",
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE workflow_queue (
+          id INTEGER PRIMARY KEY,
+          feature_id INTEGER NOT NULL REFERENCES features(id),
+          workflow_type TEXT NOT NULL DEFAULT 'feature_build'
+            CHECK(workflow_type IN ('feature_build', 'code_review', 'design_improvement', 'bug_fix')),
+          item_type TEXT NOT NULL CHECK(item_type IN ('plan', 'prd', 'execute', 'qa', 'review', 'risk', 'retro', 'investigate', 'design')),
+          phase_id INTEGER REFERENCES phases(id),
+          status TEXT NOT NULL DEFAULT 'pending'
+            CHECK(status IN ('pending', 'blocked', 'ready', 'running', 'paused', 'completed', 'error', 'skipped')),
+          order_index INTEGER NOT NULL,
+          group_index INTEGER,
+          config JSON,
+          agent_session_id INTEGER REFERENCES agent_sessions(id),
+          result JSON,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          started_at DATETIME,
+          ended_at DATETIME
+        );
+
+        CREATE TABLE workflow_dependencies (
+          id INTEGER PRIMARY KEY,
+          queue_item_id INTEGER NOT NULL REFERENCES workflow_queue(id) ON DELETE CASCADE,
+          depends_on_item_id INTEGER NOT NULL REFERENCES workflow_queue(id) ON DELETE CASCADE,
+          UNIQUE(queue_item_id, depends_on_item_id)
+        );
+
+        CREATE INDEX idx_workflow_queue_feature ON workflow_queue(feature_id);
+        CREATE INDEX idx_workflow_queue_status ON workflow_queue(status);
+        CREATE INDEX idx_workflow_queue_type ON workflow_queue(workflow_type);
+      `);
+    },
+  },
+  {
+    version: 43,
+    description: "Add pid column to workflow_queue",
+    up: (db) => {
+      db.exec(`
+        ALTER TABLE workflow_queue ADD COLUMN pid INTEGER;
+      `);
+    },
+  },
+  {
+    version: 44,
+    description: "Add workflow_status column to features table",
+    up: (db) => {
+      db.exec(`
+        ALTER TABLE features ADD COLUMN workflow_status TEXT NOT NULL DEFAULT 'idle';
+      `);
+    },
+  },
+  {
+    version: 45,
+    description: "Add max_retries and retry_count columns to workflow_queue",
+    up: (db) => {
+      db.exec(`
+        ALTER TABLE workflow_queue ADD COLUMN max_retries INTEGER NOT NULL DEFAULT 1;
+        ALTER TABLE workflow_queue ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0;
+      `);
+    },
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

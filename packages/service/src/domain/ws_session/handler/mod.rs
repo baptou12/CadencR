@@ -2,8 +2,8 @@ mod commands;
 pub(crate) mod mcp_spawn;
 mod session_control;
 mod session_init;
-mod session_prompt;
-mod workflow;
+pub(crate) mod session_prompt;
+pub(crate) mod workflow;
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -48,7 +48,7 @@ pub(super) struct SessionConfig {
 /// Handle for a running SDK session, stored per-connection.
 /// Keyed by `i64` (agent_sessions.id). DB is the source of truth for session
 /// config; memory holds only live process state and ephemeral tracking.
-pub(super) struct SdkHandle {
+pub struct SdkHandle {
     pub(super) state: QueryState,
     /// feature_id for persistence lookups.
     pub(super) feature_id: i64,
@@ -196,6 +196,12 @@ async fn handle_connection(socket: WebSocket, state: AppState) {
     }
     drop(sessions);
 
+    // Cleanup workflow engines for this connection
+    for feature_id in workflow::tracked_feature_ids() {
+        debug!(feature_id, "WS cleanup: removing workflow engine");
+        workflow::remove_engine(feature_id);
+    }
+
     send_task.abort();
 }
 
@@ -329,6 +335,8 @@ mod tests {
             read_pool: pool.clone(),
             write_pool: pool,
             electron_port: 0,
+            max_parallel_agents: 3,
+            agent_timeout_minutes: 30,
         }
     }
 

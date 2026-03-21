@@ -7,8 +7,6 @@ vi.mock("react-hotkeys-hook", () => ({
 }));
 
 const mockInvalidate = vi.fn();
-const mockDeleteSession = vi.fn();
-const mockUpdateFeatureStatus = vi.fn();
 
 vi.mock("@/trpc", () => {
   const React = require("react");
@@ -40,7 +38,7 @@ vi.mock("@/trpc", () => {
         useMutation: vi.fn(() => ({ mutate: vi.fn() })),
       },
       updateStatus: {
-        useMutation: vi.fn(() => ({ mutate: mockUpdateFeatureStatus })),
+        useMutation: vi.fn(() => ({ mutate: vi.fn() })),
       },
       getPlanWithPhases: {
         useQuery: vi.fn(() => ({ data: null })),
@@ -87,7 +85,7 @@ vi.mock("@/trpc", () => {
         })),
       },
       deleteSession: {
-        useMutation: vi.fn(() => ({ mutate: mockDeleteSession })),
+        useMutation: vi.fn(() => ({ mutate: vi.fn() })),
       },
       getFeatureTurnStates: {
         useQuery: vi.fn(() => ({ data: {} })),
@@ -161,39 +159,76 @@ vi.mock("@/trpc", () => {
   };
 });
 
-vi.mock("@/hooks/useFeatureState", () => ({
-  useFeatureState: vi.fn(() => ({
-    featureStatus: "idle",
-    workflowState: "idle",
-    canStartPlan: true,
-    canStartPrd: true,
-    canStartExecute: false,
-    canStartRisk: false,
-    canStartReview: false,
-    canStartQA: false,
-    canStartBuild: false,
-    isRunning: false,
-    view: {},
-    actions: {},
-  })),
+const { mockUseWorkflowBackend } = vi.hoisted(() => ({
+  mockUseWorkflowBackend: vi.fn(),
 }));
 
-vi.mock("@/hooks/useWorkflowAgents", () => ({
-  useWorkflowAgents: vi.fn(() => ({
-    sessionEntries: [],
-    startAgent: vi.fn(),
-    stopAgent: vi.fn(),
-    handleSend: vi.fn(),
-    plan: { status: "idle", blocks: [] },
-    prd: { status: "idle", blocks: [] },
-    execute: { status: "idle", blocks: [] },
-    risk: { status: "idle", blocks: [] },
-    review: { status: "idle", blocks: [] },
-  })),
+vi.mock("@/hooks/useWorkflowBackend", () => ({
+  useWorkflowBackend: mockUseWorkflowBackend,
 }));
+
+const defaultBackend = {
+    workflowStatus: "idle",
+    sessionEntries: [],
+    planSession: null,
+    prdSession: null,
+    reviewVerdict: null,
+    queue: null,
+    autonomyLevel: 3,
+    error: null,
+    actions: {
+      canStartPlan: true,
+      canStartPrd: true,
+      canStartBuild: false,
+      canStartRisk: false,
+      canStartReview: false,
+      canStartWorkflowSession: false,
+      canStartRefine: false,
+      canStartRetro: false,
+    },
+    hasAnyAgentOutput: false,
+    noAgentsRunning: true,
+    view: "plan-input",
+    isLoading: false,
+    isStartingPlan: false,
+    isStartingPrd: false,
+    isStartingExecute: false,
+    isStartingRisk: false,
+    isStartingReview: false,
+    isStartingRetro: false,
+    isStartingFix: false,
+    isContinuingBuild: false,
+    isStartingWorkflowSession: false,
+    isStartingRefinePlan: false,
+    isAddingFixPhase: false,
+    canContinueBuild: false,
+    executeWaitingNextStep: null,
+    executeStatus: "idle",
+    planApprovalError: null,
+    startPlan: vi.fn(),
+    startPrd: vi.fn(),
+    approvePlan: vi.fn(),
+    rejectPlan: vi.fn(),
+    startBuilding: vi.fn(),
+    continueWorkflow: vi.fn(),
+    sendToAgent: vi.fn(),
+    stopAgent: vi.fn(),
+    interruptAgent: vi.fn(),
+    submitPermission: vi.fn(),
+    submitAnswers: vi.fn(),
+    startSession: vi.fn(),
+    startRefine: vi.fn(),
+    startRisk: vi.fn(),
+    startReview: vi.fn(),
+    startRetro: vi.fn(),
+    startReviewFixer: vi.fn(),
+    markDone: vi.fn(),
+    deleteSession: vi.fn(),
+    handleResume: vi.fn(),
+  };
 
 vi.mock("@/hooks/useContextUsage", () => ({
-  useContextUsage: vi.fn(() => ({})),
+  useContextUsage: vi.fn(() => new Map()),
 }));
 
 vi.mock("@/hooks/useResolvedModel", () => ({
@@ -218,19 +253,6 @@ vi.mock("@/hooks/useTerminalState", () => ({
   useTerminalStore: vi.fn((selector) =>
     selector({ sendToTerminal: vi.fn(), clearInitialCommand: vi.fn() }),
   ),
-}));
-
-vi.mock("@/hooks/useAgentChat", () => ({
-  useAgentChat: vi.fn(() => ({
-    handleSend: vi.fn(),
-    handleStop: vi.fn(),
-    handleResume: vi.fn(),
-    handleAnswer: vi.fn(),
-    handlePermissionDecision: vi.fn(),
-    handlePlanApprove: vi.fn(),
-    handlePlanRequestChanges: vi.fn(),
-    handlePermissionModeToggle: vi.fn(),
-  })),
 }));
 
 vi.mock("@/components/FeatureTopBar", () => ({
@@ -288,6 +310,7 @@ const mockFeature = {
 describe("FeatureWorkflowView", () => {
   beforeEach(() => {
     mockInvalidate.mockClear();
+    mockUseWorkflowBackend.mockReturnValue(defaultBackend);
   });
 
   it("renders without crashing", () => {
@@ -324,6 +347,44 @@ describe("FeatureWorkflowView", () => {
       />,
     );
     expect(screen.getByTestId("plan-sidebar")).toBeInTheDocument();
+  });
+
+  it("displays workflow error banner when backend.error is set", () => {
+    mockUseWorkflowBackend.mockReturnValue({
+      ...defaultBackend,
+      view: "agents",
+      error: "Failed to look up directory for project 2",
+    });
+    render(
+      <FeatureWorkflowView
+        featureId={1}
+        projectId={1}
+        feature={mockFeature}
+        featureQuery={{ refetch: vi.fn() }}
+      />,
+    );
+    expect(
+      screen.getByText("Failed to look up directory for project 2"),
+    ).toBeInTheDocument();
+  });
+
+  it("does not display error banner when backend.error is null", () => {
+    mockUseWorkflowBackend.mockReturnValue({
+      ...defaultBackend,
+      view: "agents",
+      error: null,
+    });
+    render(
+      <FeatureWorkflowView
+        featureId={1}
+        projectId={1}
+        feature={mockFeature}
+        featureQuery={{ refetch: vi.fn() }}
+      />,
+    );
+    expect(
+      screen.queryByText("Failed to look up directory for project 2"),
+    ).not.toBeInTheDocument();
   });
 
   it("renders with undefined feature", () => {

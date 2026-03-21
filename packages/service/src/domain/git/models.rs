@@ -135,6 +135,7 @@ pub struct DeleteFeatureBranchParams {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
+#[allow(dead_code)]
 pub struct HasUncommittedChangesParams {
     pub project_id: i64,
     pub feature_id: i64,

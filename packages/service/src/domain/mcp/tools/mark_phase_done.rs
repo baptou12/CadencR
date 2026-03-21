@@ -28,6 +28,12 @@ impl MarkPhaseDoneTool {
             .await
             .map_err(|e| format!("Failed to mark phase done: {e}"))?;
 
+        // Signal the done channel so the workflow engine knows this item completed
+        let mut guard = self.ctx.done_sender.lock().await;
+        if let Some(sender) = guard.take() {
+            let _ = sender.send(Some(format!("Phase {phase_id} done")));
+        }
+
         Ok(format!("Phase {phase_id} marked as done"))
     }
 }

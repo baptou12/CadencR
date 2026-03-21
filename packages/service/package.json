@@ -2,6 +2,9 @@
   "name": "@cadence/service",
   "private": true,
   "version": "0.1.0",
+  "dependencies": {
+    "@cadence/claude-agent-sdk-rs": "workspace:*"
+  },
   "scripts": {
     "build": "cargo build",
     "build:release": "cargo build --release",

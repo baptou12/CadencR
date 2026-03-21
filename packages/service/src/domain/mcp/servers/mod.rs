@@ -31,6 +31,24 @@ pub enum AgentType {
     Session,
 }
 
+impl std::str::FromStr for AgentType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "plan" => Ok(Self::Plan),
+            "prd" => Ok(Self::Prd),
+            "execute" => Ok(Self::Execute),
+            "qa" => Ok(Self::Qa),
+            "review" => Ok(Self::Review),
+            "risk" => Ok(Self::Risk),
+            "retro" => Ok(Self::Retro),
+            "session" => Ok(Self::Session),
+            other => Err(format!("Unknown agent type: {other}")),
+        }
+    }
+}
+
 /// A type-erased MCP server wrapper that can hold any agent server type.
 /// Needed because `ServerHandler` is not dyn-compatible (requires `Self: Sized`).
 pub enum McpServer {
@@ -92,9 +110,8 @@ fn plan_id_tool(name: &'static str, description: &'static str) -> Tool {
         json!({
             "type": "object",
             "properties": {
-                "plan_id": { "type": "integer", "description": "The plan ID" }
-            },
-            "required": ["plan_id"]
+                "plan_id": { "type": "integer", "description": "The plan ID (optional — auto-resolved from feature if omitted)" }
+            }
         }),
     )
 }
@@ -132,7 +149,7 @@ fn tool_create_phase() -> Tool {
         json!({
             "type": "object",
             "properties": {
-                "plan_id": { "type": "integer", "description": "The plan ID" },
+                "plan_id": { "type": "integer", "description": "The plan ID (optional — auto-resolved from feature if omitted)" },
                 "step_number": { "type": "integer", "description": "Step number for ordering" },
                 "title": { "type": "string", "description": "Phase title" },
                 "prompt": { "type": "string", "description": "Detailed prompt/instructions for the phase" },
@@ -141,7 +158,7 @@ fn tool_create_phase() -> Tool {
                 "phase_type": { "type": "string", "description": "Phase type (e.g. code, test, docs)" },
                 "depends_on": { "type": "array", "items": { "type": "string" }, "description": "Titles of phases this phase depends on" }
             },
-            "required": ["plan_id", "step_number", "title", "prompt"]
+            "required": ["step_number", "title", "prompt"]
         }),
     )
 }
@@ -159,7 +176,8 @@ fn tool_update_phase() -> Tool {
                 "complexity": { "type": "integer", "description": "New complexity rating (1-5)" },
                 "commit_message": { "type": "string", "description": "New commit message" },
                 "prompt": { "type": "string", "description": "New prompt/instructions" },
-                "phase_type": { "type": "string", "description": "New phase type" }
+                "phase_type": { "type": "string", "description": "New phase type" },
+                "depends_on": { "type": "array", "items": { "type": "string" }, "description": "Array of phase titles this phase depends on" }
             },
             "required": ["phase_id"]
         }),
@@ -177,14 +195,13 @@ fn tool_update_plan() -> Tool {
         json!({
             "type": "object",
             "properties": {
-                "plan_id": { "type": "integer", "description": "The plan ID" },
+                "plan_id": { "type": "integer", "description": "The plan ID (optional — auto-resolved from feature if omitted)" },
                 "title": { "type": "string", "description": "New plan title" },
                 "summary": { "type": "string", "description": "New plan summary" },
                 "context": { "type": "string", "description": "New plan context" },
                 "clarifications": { "type": "string", "description": "New clarifications" },
                 "completion_conditions": { "type": "string", "description": "New completion conditions" }
-            },
-            "required": ["plan_id"]
+            }
         }),
     )
 }

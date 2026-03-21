@@ -32,6 +32,18 @@ vi.mock("@/api/generated", () => ({
   getListFeaturesQueryKey: vi.fn((id: number) => ["features", "list", id]),
 }));
 
+vi.mock("@/stores/ws-session-store", () => ({
+  useWsSessionStore: vi.fn((selector: (s: { sessions: Record<string, unknown> }) => unknown) =>
+    selector({ sessions: {} }),
+  ),
+}));
+
+vi.mock("@/hooks/useWorkflowWebSocket", () => ({
+  useWorkflowStore: vi.fn((selector: (s: { featureId: null; featureTitle: null }) => unknown) =>
+    selector({ featureId: null, featureTitle: null }),
+  ),
+}));
+
 vi.mock("@/trpc", () => {
   const React = require("react");
   return {
@@ -56,6 +68,7 @@ describe("ProjectFeatures", () => {
     render(
       <ProjectFeatures
         projectId={1}
+        projectPath="/test/path"
         activeFeatureId={null}
         featureTurnStates={{}}
         onSelectFeature={vi.fn()}
@@ -70,6 +83,7 @@ describe("ProjectFeatures", () => {
     render(
       <ProjectFeatures
         projectId={1}
+        projectPath="/test/path"
         activeFeatureId={null}
         featureTurnStates={{}}
         onSelectFeature={vi.fn()}
@@ -82,6 +96,7 @@ describe("ProjectFeatures", () => {
     render(
       <ProjectFeatures
         projectId={1}
+        projectPath="/test/path"
         activeFeatureId={1}
         featureTurnStates={{}}
         onSelectFeature={vi.fn()}
@@ -97,6 +112,7 @@ describe("ProjectFeatures", () => {
     render(
       <ProjectFeatures
         projectId={1}
+        projectPath="/test/path"
         activeFeatureId={null}
         featureTurnStates={{}}
         onSelectFeature={vi.fn()}
@@ -116,6 +132,7 @@ describe("ProjectFeatures", () => {
     render(
       <ProjectFeatures
         projectId={1}
+        projectPath="/test/path"
         activeFeatureId={null}
         featureTurnStates={{}}
         onSelectFeature={onSelectFeature}
@@ -129,6 +146,7 @@ describe("ProjectFeatures", () => {
     render(
       <ProjectFeatures
         projectId={1}
+        projectPath="/test/path"
         activeFeatureId={null}
         featureTurnStates={{}}
         onSelectFeature={vi.fn()}

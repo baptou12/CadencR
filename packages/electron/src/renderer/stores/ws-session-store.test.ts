@@ -541,4 +541,30 @@ describe("ws-session-store", () => {
     expect(sessions["a"].blocks[0].content).toBe("msg-a");
     expect(sessions["b"].blocks[0].content).toBe("msg-b");
   });
+
+  describe("feature.renamed", () => {
+    it("sets featureTitle on the session entry", async () => {
+      useWsSessionStore.getState().connect("s1");
+      await tick();
+      const ws = getWs();
+      ws.simulateMessage({
+        domain: "session",
+        action: "feature.renamed",
+        payload: { feature_id: 1, title: "New Feature Name" },
+      });
+      expect(useWsSessionStore.getState().sessions["s1"].featureTitle).toBe("New Feature Name");
+    });
+
+    it("ignores feature.renamed with no title", async () => {
+      useWsSessionStore.getState().connect("s1");
+      await tick();
+      const ws = getWs();
+      ws.simulateMessage({
+        domain: "session",
+        action: "feature.renamed",
+        payload: { feature_id: 1 },
+      });
+      expect(useWsSessionStore.getState().sessions["s1"].featureTitle).toBeNull();
+    });
+  });
 });

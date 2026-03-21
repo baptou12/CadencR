@@ -10,43 +10,84 @@ use tower_http::cors::CorsLayer;
 use tracing::info;
 
 use app_state::AppState;
-use config::Config;
+use config::{Command, Config};
 use shared::db;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "cadence_service=info".into()),
-        )
-        .init();
-
     let config = Config::parse();
 
-    let write_pool = db::create_write_pool(&config.db_path).await?;
-    let read_pool = db::create_read_pool(&config.db_path).await?;
+    let is_mcp = config.command.is_some();
+    init_tracing(is_mcp);
 
-    // Mark any sessions left as 'running' from a previous crash as 'paused'
-    domain::ws_session::persistence::WsSessionPersistence::cleanup_stale_sessions(&write_pool).await;
+    match &config.command {
+        Some(Command::McpServe {
+            agent_type,
+            feature_id,
+        }) => {
+            let db_path = config
+                .db_path
+                .clone()
+                .expect("--db-path or CADENCE_DB_PATH env var required for mcp-serve");
 
-    let state = AppState {
-        read_pool,
-        write_pool,
-        electron_port: config.electron_port,
-    };
+            domain::mcp::stdio::run_mcp_stdio(&db_path, agent_type, *feature_id).await?;
+        }
+        None => {
 
-    let app = api::build_router(state).layer(CorsLayer::permissive());
+            let db_path = config
+                .db_path
+                .clone()
+                .expect("--db-path or CADENCE_DB_PATH env var required");
 
-    let addr = format!("127.0.0.1:{}", config.port);
-    info!("Cadence service listening on {addr}");
+            // Set env var so MCP subprocesses inherit it
+            std::env::set_var("CADENCE_DB_PATH", &db_path);
 
-    let listener = tokio::net::TcpListener::bind(&addr).await?;
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await?;
+            let write_pool = db::create_write_pool(&db_path).await?;
+            let read_pool = db::create_read_pool(&db_path).await?;
+
+            // Mark any sessions left as 'running' from a previous crash as 'paused'
+            domain::ws_session::persistence::WsSessionPersistence::cleanup_stale_sessions(
+                &write_pool,
+            )
+            .await;
+
+            let state = AppState {
+                read_pool,
+                write_pool,
+                electron_port: config.electron_port,
+                max_parallel_agents: AppState::max_parallel_from_env(),
+                agent_timeout_minutes: AppState::agent_timeout_minutes_from_env(),
+            };
+
+            let app = api::build_router(state).layer(CorsLayer::permissive());
+
+            let addr = format!("127.0.0.1:{}", config.port);
+            info!("Cadence service listening on {addr}");
+
+            let listener = tokio::net::TcpListener::bind(&addr).await?;
+            axum::serve(listener, app)
+                .with_graceful_shutdown(shutdown_signal())
+                .await?;
+        }
+    }
 
     Ok(())
+}
+
+/// Initialize tracing. MCP subprocess mode writes to stderr to avoid
+/// interfering with the MCP JSON protocol on stdout.
+fn init_tracing(to_stderr: bool) {
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| "cadence_service=info".into());
+
+    if to_stderr {
+        tracing_subscriber::fmt()
+            .with_env_filter(filter)
+            .with_writer(std::io::stderr)
+            .init();
+    } else {
+        tracing_subscriber::fmt().with_env_filter(filter).init();
+    }
 }
 
 async fn shutdown_signal() {

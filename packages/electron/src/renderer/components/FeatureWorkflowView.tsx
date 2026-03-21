@@ -1,7 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
-import { useQueryClient } from "@tanstack/react-query";
-import { trpc } from "@/trpc";
 import { useGetFeaturePrd, useGetFeaturePlan } from "@/api/generated";
 import { FeatureTopBar } from "@/components/FeatureTopBar";
 import {
@@ -9,14 +7,12 @@ import {
   AGENT_LABELS,
   type AgentSessionHandle,
 } from "@/components/AgentSession";
-import { CheckCircle2Icon, Loader2Icon } from "lucide-react";
+import { AlertTriangleIcon, CheckCircle2Icon, Loader2Icon } from "lucide-react";
 import { AGENT_ICONS } from "@/components/agent-icons";
 import { Button } from "@/components/ui/button";
-import { useFeatureState, type FeatureStatus } from "@/hooks/useFeatureState";
 import { PlanSidebar } from "@/components/PlanSidebar";
 import { PlanInputView } from "@/components/PlanInputView";
 import { NextStepsBar } from "@/components/NextStepsBar";
-import { useWorkflowAgents } from "@/hooks/useWorkflowAgents";
 import { getActiveFocusZone } from "@/lib/focus-zones";
 import {
   DiffViewerModal,
@@ -32,15 +28,15 @@ import { useContextUsage } from "@/hooks/useContextUsage";
 import { useResolvedModel } from "@/hooks/useResolvedModel";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import { useTerminalState, useTerminalStore } from "@/hooks/useTerminalState";
-import { useAgentChat } from "@/hooks/useAgentChat";
 import { CodeBlockActionsContext, type CodeBlockActions } from "@/components/CodeBlockActionsContext";
 import { cn } from "@/lib/utils";
+import { useWorkflowBackend } from "@/hooks/useWorkflowBackend";
 
 export function FeatureWorkflowView({
   featureId,
   projectId,
   feature,
-  featureQuery,
+  featureQuery: _featureQuery,
 }: {
   featureId: number;
   projectId: number;
@@ -56,7 +52,7 @@ export function FeatureWorkflowView({
     | undefined;
   featureQuery: { refetch: () => unknown };
 }) {
-  // UI state that was previously inside useWorkflowAgents
+  // UI state
   const [description, setDescription] = useState("");
   const descriptionRef = useRef(description);
   descriptionRef.current = description;
@@ -64,14 +60,14 @@ export function FeatureWorkflowView({
 
   const { data: prdData } = useGetFeaturePrd(featureId);
 
-  const wf = useWorkflowAgents({
+  // ---- Unified backend ----
+  const backend = useWorkflowBackend(
     featureId,
     projectId,
-    featureQuery,
-    getDescription: () => descriptionRef.current || prdData?.prd || "",
-  });
-  const contextUsageMap = useContextUsage(featureId, wf.sessionEntries);
-  const queryClient = useQueryClient();
+    feature?.type ?? "feature",
+  );
+
+  const contextUsageMap = useContextUsage(featureId, backend.sessionEntries);
 
   // --- Model settings for inline model switcher ---
   const { resolveModel, handleModelChange } = useResolvedModel(
@@ -79,27 +75,15 @@ export function FeatureWorkflowView({
     projectId,
   );
 
-  const chat = useAgentChat({
-    featureId,
-    projectId,
-    refetch: () => queryClient.invalidateQueries({ queryKey: ["sessions", "agentState", featureId] }),
-  });
-
-  const deleteSession = trpc.sessions.deleteSession.useMutation({
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["sessions", "agentState", featureId] });
-    },
-  });
-
   const handleDeleteAgent = useCallback(
     (entry: FeatureSession) => {
       if (!entry.sessionDbId) return;
       const label = AGENT_LABELS[entry.agentType] ?? entry.agentType;
       if (confirm(`Remove "${label}" agent? This will delete its messages.`)) {
-        deleteSession.mutate({ sessionId: entry.sessionDbId });
+        backend.deleteSession(entry.sessionDbId);
       }
     },
-    [deleteSession],
+    [backend],
   );
 
   // --- Maximized agent state ---
@@ -108,38 +92,17 @@ export function FeatureWorkflowView({
   // Auto-clear maximize when the maximized agent finishes
   useEffect(() => {
     if (!maximizedAgent) return;
-    const entry = wf.sessionEntries.find((e) => {
+    const entry = backend.sessionEntries.find((e) => {
       const key = `${e.agentType}-${e.sessionDbId}`;
       return key === maximizedAgent;
     });
     if (entry && entry.status !== "running" && entry.status !== "paused") {
       setMaximizedAgent(null);
     }
-  }, [maximizedAgent, wf.sessionEntries]);
-
-  // Plan approval handled by chat.handlePlanApprove / chat.handlePlanRequestChanges
-
-  // --- Review fixer agent ---
-  const startReviewFixer = trpc.workflow.startReviewFixer.useMutation({
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["sessions", "agentState", featureId] });
-    },
-  });
-
-  const handleStartReviewFixer = useCallback(
-    (formattedComments: string) => {
-      startReviewFixer.mutate({
-        featureId,
-        projectId,
-        prompt: formattedComments,
-      });
-    },
-    [featureId, projectId, startReviewFixer],
-  );
+  }, [maximizedAgent, backend.sessionEntries]);
 
   // --- Inline diff viewer modal state ---
   const [inlineDiffOpen, setInlineDiffOpen] = useState(false);
-  // Track which agent opened the diff modal so comments go to the right agent
   const [diffAgentState, setDiffAgentState] = useState<
     ExecuteAgentState | undefined
   >(undefined);
@@ -178,10 +141,9 @@ export function FeatureWorkflowView({
 
   const moveFocus = useCallback(
     (direction: "up" | "down") => {
-      const count = wf.sessionEntries.length;
+      const count = backend.sessionEntries.length;
       if (count === 0) return;
 
-      // Find which agent currently contains focus by walking up the DOM
       let currentAgentIndex = -1;
       let el: HTMLElement | null = document.activeElement as HTMLElement | null;
       while (el) {
@@ -204,10 +166,9 @@ export function FeatureWorkflowView({
 
       agentRefs.current.get(nextIndex)?.focusActiveInput();
     },
-    [wf.sessionEntries],
+    [backend.sessionEntries],
   );
 
-  // CMD+OPT+DOWN: move focus to next agent session
   useHotkeys(
     "meta+alt+down",
     (e) => {
@@ -219,7 +180,6 @@ export function FeatureWorkflowView({
     { enableOnFormTags: true },
   );
 
-  // CMD+OPT+UP: move focus to previous agent session
   useHotkeys(
     "meta+alt+up",
     (e) => {
@@ -231,8 +191,6 @@ export function FeatureWorkflowView({
     { enableOnFormTags: true },
   );
 
-  // Enter: toggle expand/collapse for non-working agents;
-  // for working agents, expand and focus prompt bar
   useHotkeys(
     "enter",
     (e) => {
@@ -242,7 +200,7 @@ export function FeatureWorkflowView({
       const agentIndexStr = focused.getAttribute("data-nav-agent-index");
       if (agentIndexStr == null) return;
       const agentIndex = Number(agentIndexStr);
-      const entry = wf.sessionEntries[agentIndex];
+      const entry = backend.sessionEntries[agentIndex];
       if (!entry) return;
       const sessionKey = `${entry.agentType}-${entry.sessionDbId}`;
       const isWorking = entry.status === "running" || entry.status === "paused";
@@ -263,17 +221,14 @@ export function FeatureWorkflowView({
     { enableOnFormTags: false },
   );
 
-  // CMD+OPT+Z: leave text input, refocus the parent agent header
   useHotkeys(
     "meta+alt+z",
     (e) => {
       if (getActiveFocusZone() !== "main-content") return;
       e.preventDefault();
-      // Blur active element (textarea) to return to agent header focus
       if (document.activeElement instanceof HTMLElement) {
         document.activeElement.blur();
       }
-      // Re-focus the main-content zone so onFocus delegation picks the first nav item
       const zone = document.querySelector('[data-focus-zone="main-content"]');
       if (zone instanceof HTMLElement) {
         zone.focus();
@@ -287,19 +242,18 @@ export function FeatureWorkflowView({
     "meta+shift+b",
     (e) => {
       if (
-        wf.canContinueBuild &&
-        wf.handleContinueBuild &&
-        !wf.isContinuingBuild
+        backend.canContinueBuild &&
+        !backend.isContinuingBuild
       ) {
         e.preventDefault();
-        wf.handleContinueBuild();
+        backend.continueWorkflow();
       } else if (
-        actions.canStartBuild &&
-        !wf.canContinueBuild &&
-        !wf.isStartingExecute
+        backend.actions.canStartBuild &&
+        !backend.canContinueBuild &&
+        !backend.isStartingExecute
       ) {
         e.preventDefault();
-        wf.handleStartBuilding();
+        backend.startBuilding();
       }
     },
     { enableOnFormTags: true },
@@ -310,7 +264,7 @@ export function FeatureWorkflowView({
   useHotkeys(
     "meta+shift+s",
     (e) => {
-      if (!actions.canStartWorkflowSession || wf.isStartingWorkflowSession)
+      if (!backend.actions.canStartWorkflowSession || backend.isStartingWorkflowSession)
         return;
       e.preventDefault();
       setSessionPromptTrigger((v) => v + 1);
@@ -328,13 +282,13 @@ export function FeatureWorkflowView({
       const agentIndexStr = focused.getAttribute("data-nav-agent-index");
       if (agentIndexStr == null) return;
       const agentIndex = Number(agentIndexStr);
-      const entry = wf.sessionEntries[agentIndex];
+      const entry = backend.sessionEntries[agentIndex];
       if (!entry || entry.status !== "running") return;
       e.preventDefault();
       if (entry.agentType === "execute" && entry.subprocessId) {
-        void wf.interruptExecuteSubprocess(entry.subprocessId);
+        backend.interruptAgent(entry);
       } else {
-        void wf.handleAgentStop(entry);
+        backend.stopAgent(entry);
       }
     },
     { enableOnFormTags: true },
@@ -351,27 +305,21 @@ export function FeatureWorkflowView({
     return phases.every((p) => p.status === "done" || p.status === "completed");
   }, [planWithPhasesQuery.data]);
 
-  const { view, actions } = useFeatureState({
-    featureStatus: feature?.status as FeatureStatus | undefined,
-    plan: { status: wf.plan.status, blocks: wf.plan.blocks },
-    prd: { status: wf.prd.status, blocks: wf.prd.blocks },
-    execute: { status: wf.execute.status, blocks: wf.execute.blocks },
-    risk: { status: wf.risk.status, blocks: wf.risk.blocks },
-    review: { status: wf.review.status, blocks: wf.review.blocks },
-  });
+  // Use backend.view instead of useFeatureState
+  const view = backend.view;
+  const actions = backend.actions;
 
   // Auto-focus the prompt bar of a newly started agent
   const prevRunningAgentsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     const currentRunning = new Set(
-      wf.sessionEntries
+      backend.sessionEntries
         .filter((e) => e.status === "running" || e.status === "paused")
         .map((e) => `${e.agentType}-${e.sessionDbId}`),
     );
-    // Find agents that just became running/paused
     for (const key of currentRunning) {
       if (!prevRunningAgentsRef.current.has(key)) {
-        const index = wf.sessionEntries.findIndex(
+        const index = backend.sessionEntries.findIndex(
           (e) => `${e.agentType}-${e.sessionDbId}` === key,
         );
         if (index >= 0) {
@@ -379,14 +327,13 @@ export function FeatureWorkflowView({
             agentRefs.current.get(index)?.focusPromptBar();
           });
         }
-        break; // focus only the first new one
+        break;
       }
     }
     prevRunningAgentsRef.current = currentRunning;
-  }, [wf.sessionEntries]);
+  }, [backend.sessionEntries]);
 
-  // Count how many agents currently have pending questions — disable shortcuts when > 1
-  const agentsWithQuestions = wf.sessionEntries.filter(
+  const agentsWithQuestions = backend.sessionEntries.filter(
     (e) => e.pendingQuestions && e.pendingQuestions.length > 0,
   ).length;
 
@@ -401,11 +348,30 @@ export function FeatureWorkflowView({
   const terminalHeightSetting = useDebouncedSetting("terminal_panel_height_px");
   const [terminalHeightPx, setTerminalHeightPx] = useState(300);
 
-  // Sync height from DB when setting loads
   useEffect(() => {
     const saved = Number(terminalHeightSetting.value);
     if (saved > 0) setTerminalHeightPx(saved);
   }, [terminalHeightSetting.value]);
+
+  // Auto-load conversation history for agents that are already open (paused/running)
+  // but have empty blocks — e.g. after app restart. The batched loadAgentHistory
+  // makes a single API call and distributes blocks to all agents, so we only need
+  // to trigger it once. We key on sessionCount so it fires after hydration.
+  const sessionCount = backend.sessionEntries.length;
+  const { loadAgentHistory } = backend;
+  useEffect(() => {
+    if (!loadAgentHistory || sessionCount === 0) return;
+    for (const entry of backend.sessionEntries) {
+      if (
+        (entry.status === "paused" || entry.status === "running") &&
+        entry.blocks.length === 0
+      ) {
+        loadAgentHistory(entry);
+        break; // single API call distributes blocks to all agents
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally key on count, not entries array
+  }, [sessionCount, loadAgentHistory]);
 
   const handleTerminalToolbarMouseDown = useCallback(
     (e: React.MouseEvent) => {
@@ -432,11 +398,9 @@ export function FeatureWorkflowView({
     [terminalHeightPx, terminalHeightSetting],
   );
 
-  /** Focus the last active agent's prompt (used when terminal collapses) */
   const focusLastAgentPrompt = useCallback(() => {
     requestAnimationFrame(() => {
-      // Try to focus the last running/paused agent, otherwise the last agent
-      const entries = wf.sessionEntries;
+      const entries = backend.sessionEntries;
       const activeIndex = entries.findLastIndex(
         (e) => e.status === "running" || e.status === "paused",
       );
@@ -445,23 +409,21 @@ export function FeatureWorkflowView({
         agentRefs.current.get(targetIndex)?.focusActiveInput();
       }
     });
-  }, [wf.sessionEntries]);
+  }, [backend.sessionEntries]);
 
-  /** Get the FeatureSession entry for the currently focused agent (by DOM walk) */
   const getFocusedEntry = useCallback((): FeatureSession | null => {
     let el: HTMLElement | null = document.activeElement as HTMLElement | null;
     while (el) {
       const attr = el.getAttribute("data-agent-container");
       if (attr != null) {
         const idx = Number(attr);
-        return wf.sessionEntries[idx] ?? null;
+        return backend.sessionEntries[idx] ?? null;
       }
       el = el.parentElement;
     }
     return null;
-  }, [wf.sessionEntries]);
+  }, [backend.sessionEntries]);
 
-  // CMD+D — open agent-scoped diff modal for focused agent
   useHotkeys(
     "meta+d",
     (e) => {
@@ -473,7 +435,6 @@ export function FeatureWorkflowView({
     { enableOnFormTags: true },
   );
 
-  // CMD+M — mark focused session agent as done
   useHotkeys(
     "meta+m",
     (e) => {
@@ -483,32 +444,29 @@ export function FeatureWorkflowView({
       if (entry.agentType !== "session" && entry.agentType !== "review-fixer")
         return;
       if (entry.status !== "running" && entry.status !== "paused") return;
-      wf.handleMarkSessionDone(entry.sessionDbId);
+      backend.markDone(entry.sessionDbId);
     },
     { enableOnFormTags: true },
   );
 
-  // CMD+1 — approve plan for focused agent
   useHotkeys(
     "meta+1",
     (e) => {
       e.preventDefault();
       const entry = getFocusedEntry();
       if (!entry || !entry.pendingPlanApproval || !entry.subprocessId) return;
-      chat.handlePlanApprove(entry.subprocessId);
+      backend.approvePlan(entry.subprocessId);
     },
     { enableOnFormTags: true },
   );
 
-  // CMD+2 — request changes on plan for focused agent (focus prompt input)
   useHotkeys(
     "meta+2",
     (e) => {
       e.preventDefault();
       const entry = getFocusedEntry();
       if (!entry || !entry.pendingPlanApproval) return;
-      // Find the index of this entry and focus its active input so user can type feedback
-      const idx = wf.sessionEntries.indexOf(entry);
+      const idx = backend.sessionEntries.indexOf(entry);
       if (idx >= 0) {
         agentRefs.current.get(idx)?.focusActiveInput();
       }
@@ -516,7 +474,6 @@ export function FeatureWorkflowView({
     { enableOnFormTags: true },
   );
 
-  // Ctrl+` — toggle terminal panel
   useHotkeys(
     "ctrl+backquote",
     (e) => {
@@ -532,7 +489,6 @@ export function FeatureWorkflowView({
     { enableOnFormTags: true },
   );
 
-  // Ctrl+Shift+` — add a new split pane (only when panel is open)
   useHotkeys(
     "ctrl+shift+backquote",
     (e) => {
@@ -550,35 +506,51 @@ export function FeatureWorkflowView({
       <div className="relative min-h-0 flex-1 overflow-hidden">
         <div className="flex h-full min-h-0 overflow-hidden">
           <div className="min-h-0 flex-1 flex flex-col overflow-hidden">
+            {view === "loading" && (
+              <div className="flex-1 flex items-center justify-center">
+                <Loader2Icon className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            )}
+
             {view === "plan-input" && (
               <div className="flex-1 flex items-center justify-center overflow-auto p-6">
                 <PlanInputView
                   onStartPlanning={(text, images) => {
                     descriptionRef.current = text;
                     setDescription(text);
-                    wf.handleStartPlanning(images);
+                    backend.startPlan(
+                      text || prdData?.prd || "",
+                      images.map((i) => i.base64),
+                    );
                   }}
                   onStartPrd={(text, images) => {
                     descriptionRef.current = text;
                     setDescription(text);
-                    wf.handleStartPrd(images);
+                    backend.startPrd(
+                      text || prdData?.prd || "",
+                      images.map((i) => i.base64),
+                    );
                   }}
-                  isStartingPlan={wf.isStartingPlan}
-                  isStartingPrd={wf.isStartingPrd}
+                  isStartingPlan={backend.isStartingPlan}
+                  isStartingPrd={backend.isStartingPrd}
                 />
               </div>
             )}
 
-            {view !== "plan-input" && !maximizedAgent && (
+            {view !== "plan-input" && view !== "loading" && !maximizedAgent && (
               <div className="shrink-0 px-6 pt-6">
                 <WorktreeSetupSection
                   featureId={featureId}
                   projectId={projectId}
+                  wsWorktreeStatus={backend.worktreeStatus}
+                  wsWorktreeBranch={backend.worktreeBranch}
+                  wsWorktreeSetupOutput={backend.worktreeSetupOutput}
+                  wsWorktreeError={backend.worktreeError}
                 />
               </div>
             )}
 
-            {(wf.hasAnyAgentOutput ||
+            {(backend.sessionEntries.length > 0 ||
               actions.canStartBuild ||
               actions.canStartRisk ||
               actions.canStartReview ||
@@ -599,7 +571,6 @@ export function FeatureWorkflowView({
                     const sessionKey = `${entry.agentType}-${entry.sessionDbId}`;
                     const questions = entry.pendingQuestions ?? [];
                     const isThisMaximized = maximizedAgent === sessionKey;
-                    // Hide non-maximized agents when another is maximized
                     if (maximizedAgent && !isThisMaximized) return null;
                     return (
                       <AgentSession
@@ -616,11 +587,15 @@ export function FeatureWorkflowView({
                           entry.status === "running" ||
                           entry.status === "paused"
                         }
-                        onToggle={() =>
+                        onToggle={() => {
                           setOpenAgent((prev) =>
                             prev === sessionKey ? null : sessionKey,
-                          )
-                        }
+                          );
+                          // Lazy-load history when expanding a completed/paused agent
+                          if (openAgent !== sessionKey && entry.blocks.length === 0 && backend.loadAgentHistory) {
+                            backend.loadAgentHistory(entry);
+                          }
+                        }}
                         maximized={isThisMaximized}
                         onToggleMaximize={() =>
                           setMaximizedAgent((prev) =>
@@ -636,61 +611,41 @@ export function FeatureWorkflowView({
                             entry.agentType === "review-fixer") &&
                           (entry.status === "running" ||
                             entry.status === "paused")
-                            ? () => wf.handleMarkSessionDone(entry.sessionDbId)
+                            ? () => backend.markDone(entry.sessionDbId)
                             : undefined
                         }
                         onAnswerSubmit={(response) =>
-                          wf.handleSessionQuestionResponse(entry, response)
+                          backend.submitAnswers(entry, response)
                         }
                         onSend={(message, images) => {
-                          if (
-                            entry.agentType === "execute" &&
-                            entry.subprocessId
-                          ) {
-                            wf.sendToExecuteSubprocess(
-                              entry.subprocessId,
-                              message,
-                              images,
-                            );
-                          } else {
-                            wf.handleAgentSend(entry, message, images);
-                          }
+                          backend.sendToAgent(entry, message, images?.map((i: { base64: string }) => i.base64));
                         }}
                         onStop={() => {
-                          if (
-                            entry.agentType === "execute" &&
-                            entry.subprocessId
-                          ) {
-                            void wf.interruptExecuteSubprocess(
-                              entry.subprocessId,
-                            );
-                          } else {
-                            void wf.handleAgentStop(entry);
-                          }
+                          backend.stopAgent(entry);
                         }}
                         resumable={entry.resumable}
                         onResume={
                           entry.resumable
                             ? () =>
-                                void wf.handleResume(
+                                void backend.handleResume(
                                   entry.agentType,
                                   entry.sessionDbId,
                                 )
                             : undefined
                         }
-                        reviewVerdict={wf.reviewVerdict}
+                        reviewVerdict={backend.reviewVerdict}
                         onAddFixPhase={
                           entry.agentType === "review"
-                            ? wf.handleAddFixPhase
+                            ? backend.addFixPhase
                             : undefined
                         }
                         onFixImmediately={
                           entry.agentType === "review"
-                            ? wf.handleFixImmediately
+                            ? backend.fixImmediately
                             : undefined
                         }
-                        isAddingFixPhase={wf.isAddingFixPhase}
-                        isStartingFix={wf.isStartingFix}
+                        isAddingFixPhase={backend.isAddingFixPhase}
+                        isStartingFix={backend.isStartingFix}
                         hasFileChanges={entry.hasFileChanges}
                         onViewDiff={() => handleViewDiffForAgent(entry)}
                         todos={entry.todos}
@@ -708,29 +663,26 @@ export function FeatureWorkflowView({
                         featureId={featureId}
                         projectId={projectId}
                         sessionId={entry.sessionDbId}
+                        claudeSessionId={entry.claudeSessionId || undefined}
                         initialDraft={entry.draftPrompt}
                         subprocessId={entry.subprocessId ?? undefined}
                         pendingPermission={entry.pendingPermission}
                         onPermissionDecision={(decision, feedback) =>
-                          chat.handlePermissionDecision(
-                            entry.subprocessId,
-                            decision,
-                            feedback,
-                          )
+                          backend.submitPermission(entry, decision, feedback)
                         }
                         pendingPlanApproval={entry.pendingPlanApproval}
-                        planApprovalError={chat.planApprovalError}
+                        planApprovalError={backend.planApprovalError}
                         planApproveLabel="Approve"
                         onPlanApprove={() =>
-                          chat.handlePlanApprove(
+                          backend.approvePlan(
                             entry.subprocessId,
                             entry.sessionDbId,
                           )
                         }
                         onPlanRequestChanges={(feedback: string) =>
-                          chat.handlePlanRequestChanges(
-                            entry.subprocessId,
+                          backend.rejectPlan(
                             feedback,
+                            entry.subprocessId,
                             entry.sessionDbId,
                           )
                         }
@@ -745,23 +697,21 @@ export function FeatureWorkflowView({
                     );
                   };
 
-                  const activeEntries = wf.sessionEntries.filter(
+                  const activeEntries = backend.sessionEntries.filter(
                     (e) => e.status === "running" || e.status === "paused",
                   );
-                  const inactiveEntries = wf.sessionEntries.filter(
+                  const inactiveEntries = backend.sessionEntries.filter(
                     (e) => e.status !== "running" && e.status !== "paused",
                   );
                   const useGrid = activeEntries.length >= 2 && !maximizedAgent;
 
                   return (
                     <>
-                      {/* Inactive agents stacked vertically */}
                       {inactiveEntries.map((entry) => {
-                        const idx = wf.sessionEntries.indexOf(entry);
+                        const idx = backend.sessionEntries.indexOf(entry);
                         return renderAgent(entry, idx, false);
                       })}
 
-                      {/* Active agents side-by-side in a grid when multiple are running */}
                       {useGrid ? (
                         <div
                           className={cn(
@@ -772,13 +722,13 @@ export function FeatureWorkflowView({
                           style={{ height: "60vh" }}
                         >
                           {activeEntries.map((entry) => {
-                            const idx = wf.sessionEntries.indexOf(entry);
+                            const idx = backend.sessionEntries.indexOf(entry);
                             return renderAgent(entry, idx, true);
                           })}
                         </div>
                       ) : (
                         activeEntries.map((entry) => {
-                          const idx = wf.sessionEntries.indexOf(entry);
+                          const idx = backend.sessionEntries.indexOf(entry);
                           return renderAgent(entry, idx, false);
                         })
                       )}
@@ -786,15 +736,15 @@ export function FeatureWorkflowView({
                   );
                 })()}
 
-                {!maximizedAgent && actions.canStartPlan && wf.noAgentsRunning && (
+                {!maximizedAgent && actions.canStartPlan && backend.noAgentsRunning && (
                   <div className="shrink-0 flex py-4">
                     <Button
                       size="lg"
-                      onClick={() => wf.handleStartPlanning()}
-                      disabled={wf.isStartingPlan}
+                      onClick={() => backend.startPlan(descriptionRef.current || prdData?.prd || "")}
+                      disabled={backend.isStartingPlan}
                       className="gap-2"
                     >
-                      {wf.isStartingPlan ? (
+                      {backend.isStartingPlan ? (
                         <Loader2Icon className="size-4 animate-spin" />
                       ) : (
                         <AGENT_ICONS.plan className="size-4" />
@@ -808,43 +758,47 @@ export function FeatureWorkflowView({
                   <div className="shrink-0">
                     <NextStepsBar
                       show={
-                        wf.noAgentsRunning &&
+                        backend.noAgentsRunning &&
                         (actions.canStartBuild ||
                           actions.canStartRisk ||
                           actions.canStartReview ||
                           actions.canStartWorkflowSession ||
-                          wf.canContinueBuild ||
+                          backend.canContinueBuild ||
                           allPhasesDone ||
                           actions.canStartRetro)
                       }
                       canStartBuild={actions.canStartBuild}
                       canStartRisk={actions.canStartRisk}
                       canStartReview={actions.canStartReview}
-                      executeStatus={wf.execute.status}
-                      onStartBuilding={wf.handleStartBuilding}
-                      onStartRisk={wf.handleStartRisk}
-                      onStartReview={wf.handleStartReview}
-                      isStartingExecute={wf.isStartingExecute}
-                      isStartingRisk={wf.isStartingRisk}
-                      isStartingReview={wf.isStartingReview}
-                      canContinueBuild={wf.canContinueBuild}
-                      onContinueBuild={wf.handleContinueBuild}
-                      isContinuingBuild={wf.isContinuingBuild}
-                      nextStepNumber={wf.executeWaitingNextStep}
+                      executeStatus={backend.executeStatus}
+                      onStartBuilding={() => backend.startBuilding()}
+                      onStartRisk={() => backend.startRisk()}
+                      onStartReview={() => backend.startReview()}
+                      isStartingExecute={backend.isStartingExecute}
+                      isStartingRisk={backend.isStartingRisk}
+                      isStartingReview={backend.isStartingReview}
+                      canContinueBuild={backend.canContinueBuild}
+                      onContinueBuild={() => backend.continueWorkflow()}
+                      isContinuingBuild={backend.isContinuingBuild}
+                      nextStepNumber={backend.executeWaitingNextStep}
                       canStartWorkflowSession={actions.canStartWorkflowSession}
-                      onStartWorkflowSession={wf.handleStartWorkflowSession}
-                      isStartingWorkflowSession={wf.isStartingWorkflowSession}
+                      onStartWorkflowSession={(prompt, images) => {
+                        backend.startSession(prompt, images?.map((i: { base64: string }) => i.base64));
+                      }}
+                      isStartingWorkflowSession={backend.isStartingWorkflowSession}
                       allPhasesDone={allPhasesDone}
                       projectId={projectId}
                       featureId={featureId}
                       featureType={feature?.type}
                       canStartRefine={actions.canStartRefine}
-                      onStartRefinePlan={wf.handleStartRefinePlan}
-                      isStartingRefinePlan={wf.isStartingRefinePlan}
+                      onStartRefinePlan={(description, images) => {
+                        backend.startRefine(description, images?.map((i: { base64: string }) => i.base64));
+                      }}
+                      isStartingRefinePlan={backend.isStartingRefinePlan}
                       openSessionPrompt={sessionPromptTrigger}
                       canStartRetro={actions.canStartRetro}
-                      onStartRetro={wf.handleStartRetro}
-                      isStartingRetro={wf.isStartingRetro}
+                      onStartRetro={() => backend.startRetro()}
+                      isStartingRetro={backend.isStartingRetro}
                     />
                   </div>
                 )}
@@ -865,7 +819,14 @@ export function FeatureWorkflowView({
               </div>
             )}
 
-            {view === "done" && !wf.hasAnyAgentOutput && (
+            {backend.error && (
+              <div className="shrink-0 mx-6 mt-4 flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                <AlertTriangleIcon className="size-4 shrink-0" />
+                <span className="flex-1">{backend.error}</span>
+              </div>
+            )}
+
+            {view === "done" && !backend.hasAnyAgentOutput && (
               <div className="mx-auto max-w-2xl space-y-4 p-6">
                 <div className="flex items-center gap-3">
                   <CheckCircle2Icon className="size-8 text-green-600" />
@@ -879,7 +840,13 @@ export function FeatureWorkflowView({
               </div>
             )}
           </div>
-          <PlanSidebar featureId={featureId} />
+
+          {backend.queue && backend.queue.length > 0 ? (
+            /* QueueSidebar would go here for WS workflow */
+            null
+          ) : (
+            <PlanSidebar featureId={featureId} />
+          )}
         </div>
         {terminalState.panes.length > 0 && (
           <div
@@ -912,7 +879,7 @@ export function FeatureWorkflowView({
         open={inlineDiffOpen}
         onOpenChange={setInlineDiffOpen}
         executeState={diffAgentState}
-        onStartReviewFixer={handleStartReviewFixer}
+        onStartReviewFixer={(comments) => backend.startReviewFixer(comments)}
       />
     </div>
     </CodeBlockActionsContext.Provider>

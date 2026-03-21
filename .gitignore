@@ -10,3 +10,6 @@ packages/*/out/
 packages/*/.vite/
 packages/service/target/
 target/
+*.db
+*.db-shm
+*.db-wal

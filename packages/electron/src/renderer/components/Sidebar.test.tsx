@@ -34,6 +34,11 @@ vi.mock("../api/generated", () => ({
   useUpdateFeatureStatus: vi.fn(() => ({ mutate: vi.fn() })),
   getListFeaturesQueryKey: vi.fn((id: number) => ["features", "list", id]),
   useGetFeatureTurnStates: vi.fn(() => ({ data: { states: {} } })),
+  getGetFeatureQueryKey: (id: number) => ["features", "detail", id],
+  getGetFeaturePrdQueryKey: (id: number) => ["features", "prd", id],
+  getGetFeaturePlanQueryKey: (id: number) => ["features", "plan", id],
+  getGetFeaturePlanProgressQueryKey: (id: number) => ["features", "planProgress", id],
+  getGetFeatureSettingsQueryKey: (id: number) => ["features", "settings", id],
 }));
 
 vi.mock("@/trpc", () => {

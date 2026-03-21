@@ -126,12 +126,6 @@ pub struct FeatureAgentStateResponse {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
-pub struct FeatureTurnState {
-    pub feature_id: i64,
-    pub turn: String,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
 pub struct TurnStatesResponse {
     pub states: HashMap<String, String>,
 }

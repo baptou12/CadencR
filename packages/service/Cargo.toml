@@ -25,8 +25,12 @@ uuid = { version = "1", features = ["v4"] }
 async-trait = "0.1"
 chrono = { version = "0.4", features = ["serde"] }
 reqwest = { version = "0.12", features = ["json"] }
-rmcp = { version = "1", features = ["server", "transport-streamable-http-server"] }
+rmcp = { version = "1", features = ["server", "transport-streamable-http-server", "transport-io"] }
 dashmap = "6"
+libc = "0.2"
+
+[lints]
+workspace = true
 
 [dev-dependencies]
 tempfile = "3"

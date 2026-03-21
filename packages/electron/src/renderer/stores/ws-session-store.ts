@@ -29,6 +29,7 @@ import {
   type CommandsListPayload,
 } from "@/lib/ws-envelope";
 import type { SlashCommand } from "@/hooks/useSlashCommand";
+import { invalidateFeatureQueries } from "@/lib/featureUpdated";
 
 export type PermissionMode = "acceptEdits" | "plan";
 
@@ -40,7 +41,7 @@ export interface PendingPlanApproval {
 // Streaming state — tracks in-flight content blocks by index
 // ---------------------------------------------------------------------------
 
-interface StreamingState {
+export interface StreamingState {
   model: string | null;
   contentBlockIds: Map<number, string>;
   toolUseIds: Map<number, string>;
@@ -51,7 +52,7 @@ interface StreamingState {
   exitPlanModeDetected: boolean;
 }
 
-function createStreamingState(): StreamingState {
+export function createStreamingState(): StreamingState {
   return {
     model: null,
     contentBlockIds: new Map(),
@@ -64,9 +65,9 @@ function createStreamingState(): StreamingState {
   };
 }
 
-type BlockMutation = { action: "append" | "update" | "replace"; block: AgentBlockData };
+export type BlockMutation = { action: "append" | "update" | "replace"; block: AgentBlockData };
 
-function processSdkMessage(
+export function processSdkMessage(
   msg: Record<string, unknown>,
   state: StreamingState,
 ): BlockMutation[] {
@@ -322,6 +323,8 @@ export interface SessionEntry {
   slashCommands: SlashCommand[];
   slashCommandsLoading: boolean;
   todos: TodoItem[];
+  /** Live feature title pushed via WS after auto-naming. */
+  featureTitle: string | null;
 }
 
 function createSessionEntry(): SessionEntry {
@@ -346,6 +349,7 @@ function createSessionEntry(): SessionEntry {
     slashCommands: [],
     slashCommandsLoading: false,
     todos: [],
+    featureTitle: null,
   };
 }
 
@@ -418,7 +422,7 @@ function updateSession(
 // Apply block mutations (same logic as the old hook's setBlocks updater)
 // ---------------------------------------------------------------------------
 
-function applyMutations(
+export function applyMutations(
   prevBlocks: AgentBlockData[],
   allMutations: BlockMutation[],
   streamState: StreamingState,
@@ -528,6 +532,13 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
           slashCommandsLoading: false,
         }));
       }
+      return;
+    }
+
+    // Handle feature domain events
+    if (envelope.domain === "feature" && envelope.action === "updated") {
+      const p = envelope.payload as { feature_id?: number; changed?: string[] };
+      if (p.feature_id) invalidateFeatureQueries(p.feature_id, p.changed ?? []);
       return;
     }
 
@@ -722,12 +733,8 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
 
       case "feature.renamed": {
         const p = envelope.payload as { feature_id?: number; title?: string };
-        if (p.feature_id != null && typeof window !== "undefined") {
-          window.dispatchEvent(
-            new CustomEvent("ws:feature-renamed", {
-              detail: { featureId: p.feature_id, title: p.title },
-            }),
-          );
+        if (p.title) {
+          set(updateSession(get(), sessionId, { featureTitle: p.title }));
         }
         break;
       }

@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { wsSessionIdFromFeature } from "@/lib/ws-session-id";
+import { useWsSessionStore } from "@/stores/ws-session-store";
+import { useWorkflowStore } from "@/hooks/useWorkflowWebSocket";
 import { useNavigate } from "@tanstack/react-router";
 import { TrashIcon, ArchiveIcon, BotIcon, MessageCircleQuestionIcon, ChevronRightIcon, ChevronDownIcon, PlugIcon } from "lucide-react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -46,6 +48,17 @@ export function ProjectFeatures({
   const [showArchived, setShowArchived] = useState(false);
   const [confirmFeatureId, setConfirmFeatureId] = useState<number | null>(null);
   const { data: features = [] } = useListFeatures(projectId);
+
+  // Live WS-pushed titles from auto-naming. Read raw store slices; derive per-feature inline.
+  const wsSessions = useWsSessionStore((s) => s.sessions);
+  const workflowFeatureId = useWorkflowStore((s) => s.featureId);
+  const workflowTitle = useWorkflowStore((s) => s.featureTitle);
+
+  /** Resolve the live WS title for a feature, or undefined to fall back to HTTP data. */
+  const getLiveTitle = (id: number): string | undefined => {
+    if (workflowFeatureId === id && workflowTitle) return workflowTitle;
+    return wsSessions[wsSessionIdFromFeature(id)]?.featureTitle ?? undefined;
+  };
 
   const activeFeatures = features.filter((f) => f.status !== "archived");
   const archivedFeatures = features.filter((f) => f.status === "archived");
@@ -143,7 +156,7 @@ export function ProjectFeatures({
 
         {/* Feature name */}
         <span className={`min-w-0 truncate flex-1 ${feature.status === "archived" ? "text-muted-foreground" : ""}`}>
-          {feature.title}
+          {getLiveTitle(feature.id) ?? feature.title}
         </span>
 
         {/* Right-pinned actions */}

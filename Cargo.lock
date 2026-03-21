@@ -304,6 +304,7 @@ dependencies = [
  "dashmap 6.1.0",
  "dirs 6.0.0",
  "futures",
+ "libc",
  "rand 0.8.5",
  "regex-lite",
  "reqwest",

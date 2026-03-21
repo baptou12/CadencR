@@ -86,6 +86,8 @@ async fn start_test_server() -> TestServer {
         read_pool: pool.clone(),
         write_pool: pool,
         electron_port: 45679,
+        max_parallel_agents: 3,
+        agent_timeout_minutes: 30,
     };
 
     let app = api::build_router(state)

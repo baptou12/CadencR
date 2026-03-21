@@ -25,6 +25,7 @@ impl UpdatePhaseTool {
         commit_message: Option<String>,
         prompt: Option<String>,
         phase_type: Option<String>,
+        depends_on: Option<Vec<String>>,
     ) -> Result<String, String> {
         verify_phase_ownership(&self.ctx.read_pool, phase_id, self.ctx.feature_id).await?;
 
@@ -65,6 +66,37 @@ impl UpdatePhaseTool {
         if let Some(v) = &phase_type {
             sets.push("phase_type = ?");
             args.add(v).unwrap();
+        }
+        if let Some(ref deps) = depends_on {
+            // Validate that referenced phase titles exist within the same plan
+            let plan_id: i64 = sqlx::query_scalar("SELECT plan_id FROM phases WHERE id = ?")
+                .bind(phase_id)
+                .fetch_one(&self.ctx.read_pool)
+                .await
+                .map_err(|_| format!("Phase {phase_id} not found"))?;
+
+            for dep_title in deps {
+                let exists: bool = sqlx::query_scalar(
+                    "SELECT EXISTS(SELECT 1 FROM phases WHERE plan_id = ? AND title = ?)",
+                )
+                .bind(plan_id)
+                .bind(dep_title)
+                .fetch_one(&self.ctx.read_pool)
+                .await
+                .map_err(|e| format!("Failed to validate depends_on: {e}"))?;
+
+                if !exists {
+                    return Err(format!(
+                        "Dependency '{}' not found in the same plan",
+                        dep_title
+                    ));
+                }
+            }
+
+            let deps_json = serde_json::to_string(deps)
+                .map_err(|e| format!("Failed to serialize depends_on: {e}"))?;
+            sets.push("depends_on = ?");
+            args.add(deps_json).unwrap();
         }
 
         if sets.is_empty() {

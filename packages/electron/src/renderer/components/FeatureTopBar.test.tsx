@@ -38,6 +38,10 @@ vi.mock("@/api/generated", () => ({
   useGitOpenInZed: vi.fn(() => ({ mutate: vi.fn() })),
 }));
 
+vi.mock("@/hooks/useFeatureTitle", () => ({
+  useFeatureTitle: vi.fn(() => null),
+}));
+
 vi.mock("@/trpc", () => {
   const React = require("react");
   return {

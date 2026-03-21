@@ -287,6 +287,10 @@ pub async fn create_worktree(
     repository::set_feature_setting(&state.write_pool, body.feature_id, SETTING_WORKTREE_PATH, &worktree_path).await?;
     repository::set_feature_setting(&state.write_pool, body.feature_id, SETTING_WORKTREE_BRANCH, &branch).await?;
 
+    // TODO: Run project_settings.setup_worktree commands (e.g. `pnpm install`) after creating the worktree.
+    // The legacy Electron code runs these as a separate background step via GitWorktree service.
+    // This needs to be implemented here to match the legacy behavior.
+
     Ok(CreateWorktreeResponse { worktree_path, branch })
 }
 

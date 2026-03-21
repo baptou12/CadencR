@@ -5,3 +5,8 @@ members = [
     "packages/loc",
 ]
 resolver = "2"
+
+[workspace.lints.rust]
+dead_code = "deny"
+unused_imports = "deny"
+unused_variables = "deny"

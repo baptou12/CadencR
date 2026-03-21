@@ -140,12 +140,103 @@ pub struct SetFeatureModelSettingRequest {
     pub model: String,
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
-pub struct ResetPhaseRequest {}
+/// Supported workflow types. Each maps to a different orchestration strategy.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkflowType {
+    FeatureBuild,
+}
+
+impl WorkflowType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::FeatureBuild => "feature_build",
+        }
+    }
+    pub fn from_str(s: &str) -> Result<Self, String> {
+        match s {
+            "feature_build" => Ok(Self::FeatureBuild),
+            _ => Err(format!("Unknown workflow type: {s}")),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct QueueItem {
+    pub id: i64,
+    pub feature_id: i64,
+    pub workflow_type: String,
+    pub item_type: String,
+    pub phase_id: Option<i64>,
+    pub status: String,
+    pub order_index: i64,
+    pub group_index: Option<i64>,
+    pub config: Option<String>,
+    pub agent_session_id: Option<i64>,
+    pub result: Option<String>,
+    pub created_at: Option<String>,
+    pub started_at: Option<String>,
+    pub ended_at: Option<String>,
+    pub pid: Option<i64>,
+    pub max_retries: i64,
+    pub retry_count: i64,
+}
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct OverridePhaseStatusRequest {
     pub status: String,
+}
+
+// ---------------------------------------------------------------------------
+// Snapshot types
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, ToSchema)]
+pub struct SnapshotQueueItem {
+    pub id: i64,
+    pub item_type: String,
+    pub phase_id: Option<i64>,
+    pub phase_title: Option<String>,
+    pub status: String,
+    pub order_index: i64,
+    pub group_index: Option<i64>,
+    pub agent_session_id: Option<i64>,
+    pub result: Option<String>,
+}
+
+#[derive(Debug, Serialize, sqlx::FromRow, ToSchema)]
+pub struct AgentSessionSummary {
+    pub id: i64,
+    pub agent_type: String,
+    pub status: String,
+    pub queue_item_id: Option<i64>,
+    pub created_at: String,
+    pub updated_at: Option<String>,
+    pub claude_session_id: Option<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct PlanSnapshot {
+    pub id: i64,
+    pub status: String,
+    pub phases: Vec<Phase>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct WorktreeSnapshot {
+    pub path: Option<String>,
+    pub branch: Option<String>,
+    pub status: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct FeatureSnapshotResponse {
+    pub workflow_status: String,
+    pub queue: Vec<SnapshotQueueItem>,
+    pub agent_sessions: Vec<AgentSessionSummary>,
+    pub plan: Option<PlanSnapshot>,
+    pub worktree: Option<WorktreeSnapshot>,
+    pub autonomy_level: u8,
 }
 
 #[cfg(test)]
@@ -359,5 +450,161 @@ mod tests {
         let json = r#"{"status": "completed"}"#;
         let req: OverridePhaseStatusRequest = serde_json::from_str(json).unwrap();
         assert_eq!(req.status, "completed");
+    }
+
+    #[test]
+    fn test_workflow_type_as_str() {
+        assert_eq!(WorkflowType::FeatureBuild.as_str(), "feature_build");
+    }
+
+    #[test]
+    fn test_workflow_type_from_str_valid() {
+        let wt = WorkflowType::from_str("feature_build").unwrap();
+        assert_eq!(wt, WorkflowType::FeatureBuild);
+    }
+
+    #[test]
+    fn test_workflow_type_from_str_invalid() {
+        let result = WorkflowType::from_str("unknown");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Unknown workflow type"));
+    }
+
+    #[test]
+    fn test_workflow_type_serde_roundtrip() {
+        let wt = WorkflowType::FeatureBuild;
+        let json = serde_json::to_string(&wt).unwrap();
+        assert_eq!(json, r#""feature_build""#);
+        let back: WorkflowType = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, WorkflowType::FeatureBuild);
+    }
+
+    #[test]
+    fn test_workflow_type_deserialize_snake_case() {
+        let back: WorkflowType = serde_json::from_str(r#""feature_build""#).unwrap();
+        assert_eq!(back, WorkflowType::FeatureBuild);
+    }
+
+    #[test]
+    fn test_workflow_type_clone_and_eq() {
+        let wt = WorkflowType::FeatureBuild;
+        let cloned = wt.clone();
+        assert_eq!(wt, cloned);
+    }
+
+    #[test]
+    fn test_queue_item_serde_roundtrip() {
+        let item = QueueItem {
+            id: 1,
+            feature_id: 10,
+            workflow_type: "feature_build".to_string(),
+            item_type: "execute".to_string(),
+            phase_id: Some(5),
+            status: "ready".to_string(),
+            order_index: 0,
+            group_index: Some(1),
+            config: Some(r#"{"key":"val"}"#.to_string()),
+            agent_session_id: Some(42),
+            result: None,
+            created_at: Some("2024-01-01T00:00:00".to_string()),
+            started_at: None,
+            ended_at: None,
+            pid: Some(12345),
+            max_retries: 1,
+            retry_count: 0,
+        };
+
+        let json = serde_json::to_string(&item).unwrap();
+        let back: QueueItem = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.id, 1);
+        assert_eq!(back.feature_id, 10);
+        assert_eq!(back.workflow_type, "feature_build");
+        assert_eq!(back.item_type, "execute");
+        assert_eq!(back.phase_id, Some(5));
+        assert_eq!(back.status, "ready");
+        assert_eq!(back.order_index, 0);
+        assert_eq!(back.group_index, Some(1));
+        assert_eq!(back.config.as_deref(), Some(r#"{"key":"val"}"#));
+        assert_eq!(back.agent_session_id, Some(42));
+        assert!(back.result.is_none());
+        assert_eq!(back.pid, Some(12345));
+        assert_eq!(back.max_retries, 1);
+        assert_eq!(back.retry_count, 0);
+    }
+
+    #[test]
+    fn test_queue_item_serde_all_none_optionals() {
+        let item = QueueItem {
+            id: 1,
+            feature_id: 10,
+            workflow_type: "feature_build".to_string(),
+            item_type: "prd".to_string(),
+            phase_id: None,
+            status: "blocked".to_string(),
+            order_index: 0,
+            group_index: None,
+            config: None,
+            agent_session_id: None,
+            result: None,
+            created_at: None,
+            started_at: None,
+            ended_at: None,
+            pid: None,
+            max_retries: 1,
+            retry_count: 0,
+        };
+
+        let json = serde_json::to_string(&item).unwrap();
+        let back: QueueItem = serde_json::from_str(&json).unwrap();
+        assert!(back.phase_id.is_none());
+        assert!(back.group_index.is_none());
+        assert!(back.config.is_none());
+        assert!(back.pid.is_none());
+    }
+
+    #[test]
+    fn test_create_feature_request_minimal() {
+        let json = r#"{"project_id": 1}"#;
+        let req: CreateFeatureRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.project_id, 1);
+        assert!(req.title.is_none());
+        assert!(req.type_.is_none());
+    }
+
+    #[test]
+    fn test_prd_response_serde() {
+        let resp = PrdResponse { prd: Some("content".to_string()) };
+        let json = serde_json::to_string(&resp).unwrap();
+        let val: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(val["prd"], "content");
+
+        let resp_none = PrdResponse { prd: None };
+        let json_none = serde_json::to_string(&resp_none).unwrap();
+        let val_none: serde_json::Value = serde_json::from_str(&json_none).unwrap();
+        assert!(val_none["prd"].is_null());
+    }
+
+    #[test]
+    fn test_is_empty_response_serde() {
+        let resp = IsEmptyResponse { empty: true };
+        let json = serde_json::to_string(&resp).unwrap();
+        let val: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(val["empty"], true);
+    }
+
+    #[test]
+    fn test_create_feature_response_serde() {
+        let resp = CreateFeatureResponse { id: 42 };
+        let json = serde_json::to_string(&resp).unwrap();
+        let val: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(val["id"], 42);
+    }
+
+    #[test]
+    fn test_working_dir_response_serde() {
+        let resp = WorkingDirResponse { path: Some("/tmp/dir".to_string()) };
+        let json = serde_json::to_string(&resp).unwrap();
+        let val: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(val["path"], "/tmp/dir");
     }
 }

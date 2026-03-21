@@ -189,6 +189,9 @@ pub struct Query {
 
     /// Cancellation token.
     _cancel_token: Option<CancellationToken>,
+
+    /// PID of the CLI subprocess (captured at spawn time).
+    pid: Option<u32>,
 }
 
 impl Stream for Query {
@@ -233,6 +236,12 @@ impl Query {
             .await
             .map_err(|_| SdkError::InputClosed)?;
         Ok(())
+    }
+
+    /// Get the PID of the CLI subprocess (captured at spawn time).
+    /// Returns `None` for test stubs or if the process had no PID.
+    pub fn pid(&self) -> Option<u32> {
+        self.pid
     }
 
     /// Gracefully kill the child process (SIGTERM → wait 5s → SIGKILL) and
@@ -301,6 +310,7 @@ impl Query {
             interrupt_tx,
             kill_tx,
             _cancel_token: None,
+            pid: None,
         }
     }
 
@@ -618,6 +628,9 @@ pub async fn query(content: serde_json::Value, mut options: Options) -> Result<Q
     let cli_path = find_cli(options.path_to_cli.as_deref())?;
     let mut process = CliProcess::spawn(&cli_path, &options).await?;
 
+    // Capture PID before moving process into reader loop.
+    let pid = process.pid();
+
     // Take stdin out of the process — Query and the reader loop share it
     // via Arc<Mutex<..>> so the reader loop can write permission responses
     // and Query can write user messages / control commands.
@@ -683,6 +696,7 @@ pub async fn query(content: serde_json::Value, mut options: Options) -> Result<Q
         interrupt_tx,
         kill_tx,
         _cancel_token: cancel_token,
+        pid,
     })
 }
 
