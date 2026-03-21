@@ -28,7 +28,7 @@ struct PhaseRow {
     title: String,
     status: String,
     phase_type: Option<String>,
-    complexity: Option<String>,
+    complexity: Option<i64>,
 }
 
 impl ReadPlanTool {
@@ -77,7 +77,7 @@ impl ReadPlanTool {
                 p.step_number,
                 p.title,
                 p.phase_type.as_deref().unwrap_or("-"),
-                p.complexity.as_deref().unwrap_or("-"),
+                p.complexity.map(|c| c.to_string()).as_deref().unwrap_or("-"),
                 p.status,
             ));
         }

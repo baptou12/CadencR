@@ -53,7 +53,7 @@ function mapQueueStatusToAgentStatus(
 ): AgentStatus {
   switch (queueStatus) {
     case "running":
-      return agentStatus === "running" ? "running" : (agentStatus ?? "running");
+      return agentStatus ?? "running";
     case "completed":
       return "completed";
     case "error":
@@ -137,9 +137,16 @@ function buildSessionEntries(
   activeAgents: Map<number, AgentSessionState>,
   planAgent: AgentSessionState | null,
   prdAgent: AgentSessionState | null,
+  workflowStatus?: string,
 ): { sessions: FeatureSession[]; planSession: FeatureSession | null; prdSession: FeatureSession | null } {
   const planSession = planAgent ? agentStateToFeatureSession(planAgent, "plan") : null;
   const prdSession = prdAgent ? agentStateToFeatureSession(prdAgent, "prd") : null;
+
+  // When the workflow is in plan_approval state, set pendingPlanApproval on the
+  // plan agent session so the approval bar renders in the AgentPromptBar.
+  if (workflowStatus === "plan_approval" && planSession) {
+    planSession.pendingPlanApproval = {};
+  }
 
   const sessions: FeatureSession[] = [];
 
@@ -242,8 +249,8 @@ export function useWsWorkflowBackend(
   const isHydrating = enabled && !store.hydrated;
 
   const { sessions, planSession, prdSession } = useMemo(
-    () => buildSessionEntries(store.queue, store.activeAgents, store.planAgent, store.prdAgent),
-    [store.queue, store.activeAgents, store.planAgent, store.prdAgent],
+    () => buildSessionEntries(store.queue, store.activeAgents, store.planAgent, store.prdAgent, store.workflowStatus),
+    [store.queue, store.activeAgents, store.planAgent, store.prdAgent, store.workflowStatus],
   );
 
   const hasAnyAgentOutput = sessions.some((s) => s.blocks.length > 0);

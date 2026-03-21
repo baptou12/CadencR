@@ -239,7 +239,8 @@ pub struct WorkflowStartPrdPayload {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowApprovalPayload {
     pub feature_id: i64,
-    pub request_id: String,
+    #[serde(default)]
+    pub request_id: Option<String>,
     pub approved: bool,
     pub feedback: Option<String>,
 }
@@ -731,7 +732,7 @@ mod tests {
     fn test_workflow_approval_payload_roundtrip() {
         let p = WorkflowApprovalPayload {
             feature_id: 5,
-            request_id: "req-123".into(),
+            request_id: Some("req-123".into()),
             approved: true,
             feedback: Some("Looks good".into()),
         };

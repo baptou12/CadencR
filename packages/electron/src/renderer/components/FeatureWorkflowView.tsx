@@ -841,7 +841,7 @@ export function FeatureWorkflowView({
             )}
           </div>
 
-          {backend.queue ? (
+          {backend.queue && backend.queue.length > 0 ? (
             /* QueueSidebar would go here for WS workflow */
             null
           ) : (

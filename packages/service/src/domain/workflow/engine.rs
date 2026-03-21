@@ -130,6 +130,81 @@ struct WorkflowPermissionBridge {
     worktree_path: PathBuf,
     session_cache: Arc<tokio::sync::Mutex<HashSet<String>>>,
     allowed_patterns: Arc<HashSet<String>>,
+    read_pool: SqlitePool,
+    db_session_id: i64,
+}
+
+impl WorkflowPermissionBridge {
+    /// Fetch plan content as formatted markdown for display in the conversation.
+    async fn fetch_plan_content(&self, plan_id: i64) -> Option<String> {
+        #[derive(sqlx::FromRow)]
+        struct PlanRow {
+            title: String,
+            summary: Option<String>,
+            completion_conditions: Option<String>,
+        }
+        #[derive(sqlx::FromRow)]
+        struct PhaseRow {
+            step_number: i64,
+            title: String,
+            phase_type: Option<String>,
+            complexity: Option<i64>,
+            prompt: Option<String>,
+            commit_message: Option<String>,
+            depends_on: Option<String>,
+        }
+
+        let plan: PlanRow = sqlx::query_as(
+            "SELECT title, summary, completion_conditions FROM plans WHERE id = ?",
+        )
+        .bind(plan_id)
+        .fetch_optional(&self.read_pool)
+        .await
+        .ok()??;
+
+        let phases: Vec<PhaseRow> = sqlx::query_as(
+            "SELECT step_number, title, phase_type, complexity, prompt, commit_message, depends_on FROM phases WHERE plan_id = ? ORDER BY step_number, order_index",
+        )
+        .bind(plan_id)
+        .fetch_all(&self.read_pool)
+        .await
+        .unwrap_or_default();
+
+        let mut out = format!("# Plan: {}\n", plan.title);
+        if let Some(ref s) = plan.summary {
+            out.push_str(&format!("\n## Summary\n{s}\n"));
+        }
+        if let Some(ref s) = plan.completion_conditions {
+            out.push_str(&format!("\n## Completion Conditions\n{s}\n"));
+        }
+        if !phases.is_empty() {
+            out.push_str("\n## Phases\n");
+            for p in &phases {
+                let phase_type = p.phase_type.as_deref().unwrap_or("value");
+                let complexity = p.complexity.map(|c| c.to_string()).unwrap_or_else(|| "-".to_string());
+                out.push_str(&format!(
+                    "\n### Phase {} — {} `[{}]` (complexity: {})\n",
+                    p.step_number, p.title, phase_type, complexity,
+                ));
+                if let Some(ref deps) = p.depends_on {
+                    if !deps.is_empty() {
+                        out.push_str(&format!("**Depends on:** {deps}\n"));
+                    }
+                }
+                if let Some(ref cm) = p.commit_message {
+                    if !cm.is_empty() {
+                        out.push_str(&format!("**Commit:** `{cm}`\n"));
+                    }
+                }
+                if let Some(ref prompt) = p.prompt {
+                    if !prompt.is_empty() {
+                        out.push_str(&format!("\n{prompt}\n"));
+                    }
+                }
+            }
+        }
+        Some(out)
+    }
 }
 
 #[async_trait]
@@ -165,6 +240,32 @@ impl CanUseTool for WorkflowPermissionBridge {
                 .unwrap(),
             );
             let _ = self.sender.send(Message::Text(String::from(gate_env).into()));
+
+            // Emit the plan content as a synthetic text block so it appears in the
+            // agent's conversation before the user decides to approve/reject.
+            if is_show_plan {
+                if let Ok(Some(plan_id)) = sqlx::query_scalar::<_, i64>(
+                    "SELECT id FROM plans WHERE feature_id = ? ORDER BY id DESC LIMIT 1",
+                )
+                .bind(self.feature_id)
+                .fetch_optional(&self.read_pool)
+                .await
+                {
+                    let plan_content = self.fetch_plan_content(plan_id).await;
+                    if let Some(content) = plan_content {
+                        let content_env = WsEnvelope::new(
+                            "workflow",
+                            "plan_content",
+                            serde_json::json!({
+                                "queue_item_id": self.queue_item_id,
+                                "session_id": self.db_session_id,
+                                "content": content,
+                            }),
+                        );
+                        let _ = self.sender.send(Message::Text(String::from(content_env).into()));
+                    }
+                }
+            }
 
             // Also notify that plan/prd data is ready for fetching
             let changed: &[&str] = if is_show_plan { &["plan", "phases", "progress"] } else { &["prd"] };
@@ -601,6 +702,8 @@ impl WorkflowEngine {
             worktree_path: cwd.clone(),
             session_cache: Arc::new(tokio::sync::Mutex::new(HashSet::new())),
             allowed_patterns,
+            read_pool: self.read_pool.clone(),
+            db_session_id,
         };
 
         // 5. Build options and spawn
@@ -806,6 +909,8 @@ impl WorkflowEngine {
             worktree_path: cwd.clone(),
             session_cache: Arc::new(tokio::sync::Mutex::new(HashSet::new())),
             allowed_patterns,
+            read_pool: self.read_pool.clone(),
+            db_session_id,
         };
 
         // 7. Build Options and spawn
@@ -921,6 +1026,13 @@ impl WorkflowEngine {
         );
         let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
 
+        // Notify frontend when pre-queue agents (plan/prd) complete
+        if item_id == PLAN_ITEM_ID {
+            self.send_feature_updated(&["plan", "phases", "progress"]);
+        } else if item_id == PRD_ITEM_ID {
+            self.send_feature_updated(&["prd"]);
+        }
+
         // Part A: If a "review" item just completed, check for new phases and re-populate
         if let Ok(Some(item)) = repo::get_queue_item(&self.read_pool, item_id).await {
             // Notify frontend for item types that affect plan progress/phases
@@ -1014,7 +1126,7 @@ impl WorkflowEngine {
             // so it survives engine recreation on page navigation / reconnect
             if let Some(cc_sid_ref) = self.paused_sessions.get(&item_id) {
                 let cc_sid = cc_sid_ref.clone();
-                info!(item_id, db_session_id = db_sid, cc_session_id = %cc_sid, "persisting claude_session_id to DB for resume");
+                debug!(item_id, db_session_id = db_sid, cc_session_id = %cc_sid, "persisting claude_session_id to DB for resume");
                 WsSessionPersistence::persist_claude_session_id_static(&self.write_pool, db_sid, &cc_sid).await;
             }
         }
@@ -1066,7 +1178,7 @@ impl WorkflowEngine {
         if let Some(query) = self.queries.get(&queue_item_id) {
             let q = query.lock().await;
             if let Some(cc_session_id) = q.session_id().await {
-                info!(queue_item_id, cc_session_id = %cc_session_id, "captured Claude session ID for resume");
+                debug!(queue_item_id, cc_session_id = %cc_session_id, "captured Claude session ID for resume");
                 self.paused_sessions.insert(queue_item_id, cc_session_id);
             }
             return q.interrupt().await.map_err(|e| format!("Interrupt failed: {e}"));
@@ -1214,6 +1326,8 @@ impl WorkflowEngine {
             worktree_path: cwd.clone(),
             session_cache: Arc::new(tokio::sync::Mutex::new(HashSet::new())),
             allowed_patterns,
+            read_pool: self.read_pool.clone(),
+            db_session_id,
         };
 
         // Build options with --resume
@@ -1785,7 +1899,7 @@ fn spawn_workflow_stream_reader(
     queries: Arc<DashMap<i64, Arc<tokio::sync::Mutex<Query>>>>,
 ) {
     tokio::spawn(async move {
-        info!(queue_item_id, db_session_id, "workflow stream reader started");
+        debug!(queue_item_id, db_session_id, "workflow stream reader started");
         let mut persistence = WsSessionPersistence::with_session_id(
             write_pool.clone(),
             feature_id,
@@ -1794,6 +1908,9 @@ fn spawn_workflow_stream_reader(
         let mut completed_ok = false;
         let mut error_msg: Option<String> = None;
         let mut needs_session_id_capture = true;
+        // Track which feature aspects need refreshing after the current tool call completes.
+        // Set from Assistant messages (tool_use blocks), cleared when User message (tool_result) arrives.
+        let mut pending_feature_update: Option<Vec<&'static str>> = None;
 
         loop {
             match message_rx.recv().await {
@@ -1803,7 +1920,7 @@ fn spawn_workflow_stream_reader(
                         if let Some(cli_sid) = sdk_msg.session_id() {
                             if !cli_sid.is_empty() {
                                 needs_session_id_capture = false;
-                                info!(queue_item_id, db_session_id, claude_session_id = %cli_sid, "workflow stream_reader: persisting CLI session_id to DB");
+                                debug!(queue_item_id, db_session_id, claude_session_id = %cli_sid, "persisting CLI session_id to DB");
                                 WsSessionPersistence::persist_claude_session_id_static(
                                     &write_pool, db_session_id, cli_sid,
                                 ).await;
@@ -1824,7 +1941,7 @@ fn spawn_workflow_stream_reader(
 
                     // Check MCP server status on init
                     if let SdkMessage::System(SystemMessage::Init { ref mcp_servers, ref tools, .. }) = sdk_msg {
-                        info!(queue_item_id, ?mcp_servers, tool_count = tools.len(), "received init message from CLI");
+                        debug!(queue_item_id, ?mcp_servers, tool_count = tools.len(), "received init message from CLI");
                         let server_status = mcp_servers.iter().find(|s| s.name == expected_mcp_server);
                         let mcp_ok = server_status.map_or(false, |s| s.status == "connected");
                         if !mcp_ok {
@@ -1857,7 +1974,7 @@ fn spawn_workflow_stream_reader(
                             }
                             break;
                         }
-                        info!(queue_item_id, server = %expected_mcp_server, "MCP server connected");
+                        debug!(queue_item_id, server = %expected_mcp_server, "MCP server connected");
                     }
 
                     // Persist message
@@ -1880,6 +1997,7 @@ fn spawn_workflow_stream_reader(
 
                     let envelope = match &sdk_msg {
                         SdkMessage::Result { .. } => {
+                            debug!(queue_item_id, "received SDK Result message — marking completed_ok");
                             completed_ok = true;
                             WsSessionPersistence::mark_completed_static(
                                 &write_pool,
@@ -1920,6 +2038,75 @@ fn spawn_workflow_stream_reader(
                         );
                         break;
                     }
+
+                    // Result received — agent is done. Break immediately so we
+                    // run the post-stream callbacks (on_item_completed). Without
+                    // this, the loop blocks on message_rx.recv() forever because
+                    // the CLI process may not exit (mark_agent_done is a no-op
+                    // in MCP subprocess mode).
+                    if completed_ok {
+                        debug!(queue_item_id, "breaking out of stream loop after Result");
+                        break;
+                    }
+
+                    // Live-refresh: detect plan/phase-modifying tool calls via the
+                    // Assistant→User message pair. The Assistant message contains
+                    // tool_use blocks (tool about to run); the User message contains
+                    // the tool_result (tool finished). We collect which fields changed
+                    // from the Assistant and emit feature.updated on the User message.
+                    match &sdk_msg {
+                        SdkMessage::Assistant { message, .. } => {
+                            use claude_agent_sdk_rs::types::ContentBlock;
+                            let mut fields: Vec<&'static str> = Vec::new();
+                            for block in &message.content {
+                                if let ContentBlock::ToolUse { name, .. } = block {
+                                    if name.contains("create_phase") || name.contains("finalize_phases") {
+                                        fields.extend_from_slice(&["phases", "progress"]);
+                                    } else if name.contains("finalize_plan") {
+                                        fields.extend_from_slice(&["plan", "phases", "progress"]);
+                                    } else if name.contains("save_plan") || name.contains("create_plan") {
+                                        fields.extend_from_slice(&["plan"]);
+                                    } else if name.contains("save_prd") || name.contains("create_prd") {
+                                        fields.extend_from_slice(&["prd"]);
+                                    }
+                                }
+                            }
+                            if !fields.is_empty() {
+                                fields.dedup();
+                                pending_feature_update = Some(fields);
+                            }
+                        }
+                        SdkMessage::User { .. } => {
+                            // Tool result arrived — the tool has finished executing.
+                            if let Some(fields) = pending_feature_update.take() {
+                                send_feature_updated_envelope(&sender, feature_id, &fields);
+                            }
+                        }
+                        SdkMessage::ToolUseSummary { ref data, .. } => {
+                            // Fallback: some tool calls may emit summaries directly
+                            if let Some(tool_name) = data.get("tool_name").and_then(|v| v.as_str()) {
+                                let changed: Option<&[&str]> = match tool_name {
+                                    t if t.contains("create_phase") || t.contains("finalize_phases") => {
+                                        Some(&["phases", "progress"])
+                                    }
+                                    t if t.contains("finalize_plan") => {
+                                        Some(&["plan", "phases", "progress"])
+                                    }
+                                    t if t.contains("save_plan") || t.contains("create_plan") => {
+                                        Some(&["plan"])
+                                    }
+                                    t if t.contains("save_prd") || t.contains("create_prd") => {
+                                        Some(&["prd"])
+                                    }
+                                    _ => None,
+                                };
+                                if let Some(fields) = changed {
+                                    send_feature_updated_envelope(&sender, feature_id, fields);
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
                 }
                 Some(Err(e)) => {
                     error!(queue_item_id, error = %e, "workflow SDK stream error");
@@ -1940,7 +2127,7 @@ fn spawn_workflow_stream_reader(
                 }
                 None => {
                     if completed_ok {
-                        info!(queue_item_id, "workflow SDK stream closed after result");
+                        debug!(queue_item_id, "workflow SDK stream closed after result");
                     } else {
                         warn!(queue_item_id, "workflow SDK stream closed unexpectedly without result");
                         error_msg = Some("Agent stream closed unexpectedly without result".to_string());
@@ -1954,11 +2141,12 @@ fn spawn_workflow_stream_reader(
         queries.remove(&queue_item_id);
 
         // Post-stream callbacks — delegate to the real engine from the registry
+        debug!(queue_item_id, completed_ok, has_error = error_msg.is_some(), "stream reader post-loop: dispatching callbacks");
         if completed_ok {
             if let Some(engine) = crate::domain::ws_session::handler::workflow::get_engine(feature_id) {
                 engine.on_item_completed(queue_item_id, None).await;
             } else {
-                // Fallback: engine gone (disconnect?), do minimal cleanup
+                warn!(queue_item_id, feature_id, "no engine found for on_item_completed");
                 active_items.remove(&queue_item_id);
                 if let Err(e) = repo::mark_item_completed(&write_pool, queue_item_id, None).await {
                     error!(queue_item_id, error = %e, "failed to mark item completed (no engine)");
@@ -2595,5 +2783,114 @@ mod tests {
 
         // The paused session should have been removed (consumed by resume attempt)
         assert!(!engine.paused_sessions.contains_key(&PLAN_ITEM_ID));
+    }
+
+    // ── on_item_completed sends feature.updated for pre-queue agents ──
+
+    #[tokio::test]
+    async fn test_on_item_completed_plan_sends_feature_updated() {
+        let (engine, mut rx) = test_engine_with_schema().await;
+
+        // Insert a feature row so mark_item_completed doesn't fail
+        sqlx::query("INSERT INTO features (id, project_id, title) VALUES (1, 1, 'test')")
+            .execute(&engine.write_pool).await.unwrap();
+
+        engine.on_item_completed(PLAN_ITEM_ID, Some("done")).await;
+
+        let mut got_item_completed = false;
+        let mut got_feature_updated = false;
+        let mut updated_fields: Vec<String> = Vec::new();
+        while let Ok(msg) = rx.try_recv() {
+            if let Message::Text(text) = msg {
+                let text_str: &str = &text;
+                if text_str.contains("item_completed") {
+                    got_item_completed = true;
+                }
+                if text_str.contains("\"updated\"") && text_str.contains("\"feature\"") {
+                    got_feature_updated = true;
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(text_str) {
+                        if let Some(changed) = v["payload"]["changed"].as_array() {
+                            updated_fields = changed.iter().filter_map(|v| v.as_str().map(String::from)).collect();
+                        }
+                    }
+                }
+            }
+        }
+        assert!(got_item_completed, "should send item_completed");
+        assert!(got_feature_updated, "should send feature.updated for plan agent");
+        assert!(updated_fields.contains(&"plan".to_string()));
+        assert!(updated_fields.contains(&"phases".to_string()));
+        assert!(updated_fields.contains(&"progress".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_on_item_completed_prd_sends_feature_updated() {
+        let (engine, mut rx) = test_engine_with_schema().await;
+
+        sqlx::query("INSERT INTO features (id, project_id, title) VALUES (1, 1, 'test')")
+            .execute(&engine.write_pool).await.unwrap();
+
+        engine.on_item_completed(PRD_ITEM_ID, None).await;
+
+        let mut got_feature_updated = false;
+        let mut updated_fields: Vec<String> = Vec::new();
+        while let Ok(msg) = rx.try_recv() {
+            if let Message::Text(text) = msg {
+                let text_str: &str = &text;
+                if text_str.contains("\"updated\"") && text_str.contains("\"feature\"") {
+                    got_feature_updated = true;
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(text_str) {
+                        if let Some(changed) = v["payload"]["changed"].as_array() {
+                            updated_fields = changed.iter().filter_map(|v| v.as_str().map(String::from)).collect();
+                        }
+                    }
+                }
+            }
+        }
+        assert!(got_feature_updated, "should send feature.updated for prd agent");
+        assert_eq!(updated_fields, vec!["prd"]);
+    }
+
+    #[tokio::test]
+    async fn test_on_item_completed_regular_item_no_feature_updated() {
+        let (engine, mut rx) = test_engine_with_schema().await;
+
+        sqlx::query("INSERT INTO features (id, project_id, title) VALUES (1, 1, 'test')")
+            .execute(&engine.write_pool).await.unwrap();
+
+        // Regular queue item (positive ID) should NOT trigger feature.updated
+        engine.on_item_completed(42, Some("done")).await;
+
+        let mut got_feature_updated = false;
+        while let Ok(msg) = rx.try_recv() {
+            if let Message::Text(text) = msg {
+                let text_str: &str = &text;
+                if text_str.contains("\"updated\"") && text_str.contains("\"feature\"") {
+                    got_feature_updated = true;
+                }
+            }
+        }
+        assert!(!got_feature_updated, "regular items should NOT send feature.updated");
+    }
+
+    // ── send_feature_updated_envelope helper ──
+
+    #[test]
+    fn test_send_feature_updated_envelope_format() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        send_feature_updated_envelope(&tx, 123, &["plan", "phases"]);
+
+        let msg = rx.try_recv().unwrap();
+        if let Message::Text(text) = msg {
+            let v: serde_json::Value = serde_json::from_str(&text).unwrap();
+            assert_eq!(v["domain"], "feature");
+            assert_eq!(v["action"], "updated");
+            assert_eq!(v["payload"]["feature_id"], 123);
+            let changed: Vec<String> = v["payload"]["changed"].as_array().unwrap()
+                .iter().filter_map(|v| v.as_str().map(String::from)).collect();
+            assert_eq!(changed, vec!["plan", "phases"]);
+        } else {
+            panic!("expected Text message");
+        }
     }
 }

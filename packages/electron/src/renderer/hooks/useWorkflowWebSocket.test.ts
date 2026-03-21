@@ -1106,6 +1106,245 @@ describe("useWorkflowStore", () => {
   });
 
   // -------------------------------------------------------------------------
+  // Plan approval flow — approvePlan / rejectPlan
+  // -------------------------------------------------------------------------
+
+  describe("plan approval flow", () => {
+    it("plan_ready sets planAgent to paused (not completed)", () => {
+      const ws = connectStore();
+      useWorkflowStore.setState({ planAgent: makeAgentSession({ status: "running" }) });
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "plan_ready",
+        payload: { feature_id: 1 },
+      });
+
+      const state = useWorkflowStore.getState();
+      expect(state.planAgent!.status).toBe("paused");
+      expect(state.workflowStatus).toBe("plan_approval");
+    });
+
+    it("prd_ready sets prdAgent to paused (not completed)", () => {
+      const ws = connectStore();
+      useWorkflowStore.setState({ prdAgent: makeAgentSession({ status: "running" }) });
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "prd_ready",
+        payload: { feature_id: 1 },
+      });
+
+      expect(useWorkflowStore.getState().prdAgent!.status).toBe("paused");
+    });
+
+    it("approvePlan sets planAgent to running and workflowStatus to building", () => {
+      const ws = connectStore();
+      useWorkflowStore.setState({
+        planAgent: makeAgentSession({ status: "paused" }),
+        workflowStatus: "plan_approval",
+      });
+
+      useWorkflowStore.getState().approvePlan("req-1");
+
+      const state = useWorkflowStore.getState();
+      expect(state.planAgent!.status).toBe("running");
+      expect(state.workflowStatus).toBe("building");
+      const sent = ws.sent.find(s => JSON.parse(s).action === "plan.approved");
+      expect(sent).toBeDefined();
+      expect(JSON.parse(sent!).payload.request_id).toBe("req-1");
+    });
+
+    it("rejectPlan sets planAgent to running and workflowStatus to planning", () => {
+      const ws = connectStore();
+      useWorkflowStore.setState({
+        planAgent: makeAgentSession({ status: "paused" }),
+        workflowStatus: "plan_approval",
+      });
+
+      useWorkflowStore.getState().rejectPlan("needs more detail", "req-2");
+
+      const state = useWorkflowStore.getState();
+      expect(state.planAgent!.status).toBe("running");
+      expect(state.workflowStatus).toBe("planning");
+      const sent = ws.sent.find(s => JSON.parse(s).action === "plan.rejected");
+      expect(sent).toBeDefined();
+      const envelope = JSON.parse(sent!);
+      expect(envelope.payload.feedback).toBe("needs more detail");
+      expect(envelope.payload.request_id).toBe("req-2");
+    });
+
+    it("approvePlan is safe when planAgent is null", () => {
+      connectStore();
+      useWorkflowStore.setState({ planAgent: null });
+
+      useWorkflowStore.getState().approvePlan();
+
+      expect(useWorkflowStore.getState().planAgent).toBeNull();
+      expect(useWorkflowStore.getState().workflowStatus).toBe("building");
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // item_completed / item_error — agent status updates via patchAgentByItemId
+  // -------------------------------------------------------------------------
+
+  describe("item_completed and item_error", () => {
+    it("item_completed sets planAgent (synthetic id -1) to completed", () => {
+      const ws = connectStore();
+      useWorkflowStore.setState({ planAgent: makeAgentSession({ status: "running" }) });
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "item_completed",
+        payload: { queue_item_id: -1, feature_id: 1 },
+      });
+
+      expect(useWorkflowStore.getState().planAgent!.status).toBe("completed");
+    });
+
+    it("item_completed sets prdAgent (synthetic id -2) to completed", () => {
+      const ws = connectStore();
+      useWorkflowStore.setState({ prdAgent: makeAgentSession({ status: "running" }) });
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "item_completed",
+        payload: { queue_item_id: -2, feature_id: 1 },
+      });
+
+      expect(useWorkflowStore.getState().prdAgent!.status).toBe("completed");
+    });
+
+    it("item_completed sets activeAgent to completed and updates queue", () => {
+      const ws = connectStore();
+      const agents = new Map();
+      agents.set(10, makeAgentSession({ status: "running" }));
+      useWorkflowStore.setState({
+        activeAgents: agents,
+        queue: [{ id: 10, status: "running", item_type: "execute", phase_id: null, phase_title: null, order_index: 0, group_index: null, agent_session_id: 100, result: null }],
+      });
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "item_completed",
+        payload: { queue_item_id: 10, feature_id: 1 },
+      });
+
+      expect(useWorkflowStore.getState().activeAgents.get(10)!.status).toBe("completed");
+      expect(useWorkflowStore.getState().queue[0].status).toBe("completed");
+    });
+
+    it("item_error sets planAgent (synthetic id -1) to error", () => {
+      const ws = connectStore();
+      useWorkflowStore.setState({ planAgent: makeAgentSession({ status: "running" }) });
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "item_error",
+        payload: { queue_item_id: -1, error: "something broke", feature_id: 1 },
+      });
+
+      expect(useWorkflowStore.getState().planAgent!.status).toBe("error");
+    });
+
+    it("item_error sets activeAgent to error and updates queue", () => {
+      const ws = connectStore();
+      const agents = new Map();
+      agents.set(5, makeAgentSession({ status: "running" }));
+      useWorkflowStore.setState({
+        activeAgents: agents,
+        queue: [{ id: 5, status: "running", item_type: "execute", phase_id: null, phase_title: null, order_index: 0, group_index: null, agent_session_id: 50, result: null }],
+      });
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "item_error",
+        payload: { queue_item_id: 5, error: "timeout", feature_id: 1 },
+      });
+
+      expect(useWorkflowStore.getState().activeAgents.get(5)!.status).toBe("error");
+      expect(useWorkflowStore.getState().queue[0].status).toBe("error");
+      expect(useWorkflowStore.getState().error).toBe("timeout");
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // plan_content — live plan display
+  // -------------------------------------------------------------------------
+
+  describe("plan_content", () => {
+    it("injects tool_call block with __show_plan toolName", () => {
+      const ws = connectStore();
+      useWorkflowStore.setState({ planAgent: makeAgentSession() });
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "plan_content",
+        payload: { content: "# My Plan\n- Phase 1\n- Phase 2" },
+      });
+
+      const { planAgent } = useWorkflowStore.getState();
+      expect(planAgent!.blocks).toHaveLength(1);
+      expect(planAgent!.blocks[0]).toMatchObject({
+        type: "tool_call",
+        toolName: "__show_plan",
+      });
+      const args = JSON.parse((planAgent!.blocks[0] as { toolArgs: string }).toolArgs);
+      expect(args.plan).toBe("# My Plan\n- Phase 1\n- Phase 2");
+    });
+
+    it("creates planAgent on the fly if null", () => {
+      const ws = connectStore();
+      useWorkflowStore.setState({ planAgent: null });
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "plan_content",
+        payload: { content: "Plan text" },
+      });
+
+      expect(useWorkflowStore.getState().planAgent).not.toBeNull();
+      expect(useWorkflowStore.getState().planAgent!.blocks).toHaveLength(1);
+    });
+
+    it("ignores plan_content with empty content", () => {
+      const ws = connectStore();
+      useWorkflowStore.setState({ planAgent: makeAgentSession() });
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "plan_content",
+        payload: { content: "" },
+      });
+
+      expect(useWorkflowStore.getState().planAgent!.blocks).toHaveLength(0);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // feature.updated — cache invalidation
+  // -------------------------------------------------------------------------
+
+  describe("feature.updated", () => {
+    it("calls invalidateFeatureQueries for feature.updated events", () => {
+      const ws = connectStore(42);
+
+      // We can't easily mock invalidateFeatureQueries since it's imported,
+      // but we can verify the message is processed (doesn't throw, doesn't
+      // update workflow state).
+      dispatch(ws, {
+        domain: "feature",
+        action: "updated",
+        payload: { feature_id: 42, changed: ["phases", "progress"] },
+      });
+
+      // Verify no workflow state was modified (it's a cross-domain event)
+      expect(useWorkflowStore.getState().workflowStatus).toBe("idle");
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // Block preservation across started events
   // -------------------------------------------------------------------------
 

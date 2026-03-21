@@ -351,11 +351,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
           const queue = state.queue.map(q =>
             q.id === itemId ? { ...q, status: "completed" as const } : q,
           );
-          const agent = state.activeAgents.get(itemId);
-          if (!agent) return { queue };
-          const activeAgents = new Map(state.activeAgents);
-          activeAgents.set(itemId, { ...agent, status: "completed" });
-          return { queue, activeAgents };
+          // Use patchAgent helper so plan/prd (synthetic IDs) are handled too
+          return { queue, ...patchAgentByItemId(state, itemId, { status: "completed" }) };
         });
         break;
       }
@@ -366,11 +363,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
           const queue = state.queue.map(q =>
             q.id === itemId ? { ...q, status: "error" as const, result: error } : q,
           );
-          const agent = state.activeAgents.get(itemId);
-          if (!agent) return { queue, error };
-          const activeAgents = new Map(state.activeAgents);
-          activeAgents.set(itemId, { ...agent, status: "error" });
-          return { queue, activeAgents, error };
+          return { queue, error, ...patchAgentByItemId(state, itemId, { status: "error" }) };
         });
         break;
       }
@@ -411,15 +404,37 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         break;
       }
       case "plan_ready": {
+        // Set status to "paused" (not "completed") so the agent panel stays open
+        // and shows the plan approval bar. The agent is still running on the
+        // backend but blocked on the approval gate.
         set(state => ({
           workflowStatus: "plan_approval",
-          planAgent: state.planAgent ? { ...state.planAgent, status: "completed" as const } : state.planAgent,
+          planAgent: state.planAgent ? { ...state.planAgent, status: "paused" as const } : state.planAgent,
         }));
+        break;
+      }
+      case "plan_content": {
+        // Inject the plan as a tool_call block so the existing PlanBlock (blue card)
+        // renders it with markdown. PlanBlock expects toolArgs = JSON { plan: "..." }.
+        const planContent = payload.content as string;
+        if (!planContent) break;
+        set(state => {
+          const agent = state.planAgent ?? createAgentSession(0);
+          const block = {
+            id: `ws-plan-${Date.now()}`,
+            type: "tool_call" as const,
+            content: "",
+            toolName: "__show_plan",
+            toolArgs: JSON.stringify({ plan: planContent }),
+            createdAt: new Date().toISOString(),
+          };
+          return { planAgent: { ...agent, blocks: [...agent.blocks, block] } };
+        });
         break;
       }
       case "prd_ready": {
         set(state => ({
-          prdAgent: state.prdAgent ? { ...state.prdAgent, status: "completed" as const } : state.prdAgent,
+          prdAgent: state.prdAgent ? { ...state.prdAgent, status: "paused" as const } : state.prdAgent,
         }));
         break;
       }
@@ -786,13 +801,22 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     },
 
     approvePlan(requestId) {
-      send("plan.approved", { request_id: requestId });
-      set({ workflowStatus: "building" });
+      send("plan.approved", { approved: true, request_id: requestId });
+      // Agent resumes (permission bridge unblocks). Set back to "running" —
+      // only item_completed should transition to "completed".
+      set(state => ({
+        workflowStatus: "building" as const,
+        planAgent: state.planAgent ? { ...state.planAgent, status: "running" as const } : state.planAgent,
+      }));
     },
 
     rejectPlan(feedback, requestId) {
-      send("plan.rejected", { feedback, request_id: requestId });
-      set({ workflowStatus: "planning" });
+      send("plan.rejected", { approved: false, feedback, request_id: requestId });
+      // Agent resumes (permission bridge unblocks with Deny + feedback).
+      set(state => ({
+        workflowStatus: "planning" as const,
+        planAgent: state.planAgent ? { ...state.planAgent, status: "running" as const } : state.planAgent,
+      }));
     },
 
     startBuild() {
