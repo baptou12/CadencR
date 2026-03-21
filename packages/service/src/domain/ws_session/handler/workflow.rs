@@ -36,7 +36,7 @@ fn ensure_eviction_task() {
                 let mut to_evict = Vec::new();
                 for entry in ENGINES.iter() {
                     let engine = entry.value();
-                    if engine.active_items.is_empty() {
+                    if engine.active_items().is_empty() {
                         let last = engine.last_activity.load(Ordering::Relaxed);
                         if now.saturating_sub(last) > idle_threshold_secs {
                             to_evict.push(*entry.key());
@@ -215,7 +215,7 @@ async fn handle_feature_start(
 
     // Check if an engine already exists for this feature
     if let Some(existing) = ENGINES.get(&feature_id) {
-        if existing.active_items.len() > 0 {
+        if existing.active_items().len() > 0 {
             send_workflow_error(
                 sender,
                 &envelope.id,
@@ -512,7 +512,7 @@ async fn handle_prompt_send(envelope: WsEnvelope, sender: &WsSender, app_state: 
     let Some((payload, engine)) = parse_and_get_engine::<WorkflowPromptSendPayload>(&envelope, sender) else { return };
 
     // Persist user message if we can find the db_session_id
-    if let Some(db_session_id_ref) = engine.active_items.get(&payload.agent_slot) {
+    if let Some(db_session_id_ref) = engine.active_items().get(&payload.agent_slot) {
         let db_session_id = *db_session_id_ref;
         let p = WsSessionPersistence::with_session_id(
             app_state.write_pool.clone(),
@@ -609,7 +609,7 @@ async fn handle_interrupt(envelope: WsEnvelope, sender: &WsSender, app_state: &A
 async fn handle_set_autonomy(envelope: WsEnvelope, sender: &WsSender) {
     let Some((payload, engine)) = parse_and_get_engine::<WorkflowSetAutonomyPayload>(&envelope, sender) else { return };
 
-    engine.autonomy_level.store(payload.level, std::sync::atomic::Ordering::Relaxed);
+    engine.autonomy_level().store(payload.level, std::sync::atomic::Ordering::Relaxed);
     info!(
         feature_id = payload.feature_id,
         level = payload.level,
