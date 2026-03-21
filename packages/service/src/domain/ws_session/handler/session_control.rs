@@ -47,6 +47,24 @@ pub(super) async fn handle_permission_respond(
     let permission_tx = match &handle.state {
         QueryState::Active { permission_tx, .. } => permission_tx,
         QueryState::Pending(_) => {
+            // Handle restored plan approval: CLI is not running, store result in DB
+            // so the next CLI spawn can pick it up.
+            if payload.request_id.starts_with("plan_restore_") {
+                let approved = matches!(payload.decision, PermissionDecision::AllowOnce | PermissionDecision::AllowFuture);
+                let result_json = serde_json::json!({
+                    "approved": approved,
+                    "feedback": payload.feedback,
+                });
+                let _ = sqlx::query(
+                    "UPDATE agent_sessions SET plan_approval_result = ?, pending_plan_approval = NULL WHERE id = ?"
+                )
+                    .bind(result_json.to_string())
+                    .bind(db_session_id)
+                    .execute(&app_state.write_pool)
+                    .await;
+                info!(db_session_id, approved, "stored restored plan approval result in DB");
+                return;
+            }
             send_error(sender, &envelope.id, "INVALID_STATE", "Session not yet active");
             return;
         }

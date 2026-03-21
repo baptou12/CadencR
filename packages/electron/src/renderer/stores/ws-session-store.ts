@@ -51,6 +51,7 @@ export interface StreamingState {
   counter: number;
   parentToolUseId: string | null;
   exitPlanModeDetected: boolean;
+  enterPlanModeDetected: boolean;
 }
 
 export function createStreamingState(): StreamingState {
@@ -63,6 +64,7 @@ export function createStreamingState(): StreamingState {
     counter: 0,
     parentToolUseId: null,
     exitPlanModeDetected: false,
+    enterPlanModeDetected: false,
   };
 }
 
@@ -122,6 +124,9 @@ export function processSdkMessage(
 
             if (toolName === "ExitPlanMode") {
               state.exitPlanModeDetected = true;
+            }
+            if (toolName === "EnterPlanMode") {
+              state.enterPlanModeDetected = true;
             }
 
             const isSubagent = toolName === "Task" || toolName === "Agent";
@@ -234,6 +239,9 @@ export function processSdkMessage(
           const toolName = cb.name as string;
           if (toolName === "ExitPlanMode") {
             state.exitPlanModeDetected = true;
+          }
+          if (toolName === "EnterPlanMode") {
+            state.enterPlanModeDetected = true;
           }
           const isSubagent = toolName === "Task" || toolName === "Agent";
           const toolBlock: AgentBlockData = {
@@ -352,6 +360,21 @@ function createSessionEntry(): SessionEntry {
     todos: [],
     featureTitle: null,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Helper: mark last plan block with approval status
+// ---------------------------------------------------------------------------
+
+function markLastPlanBlock(blocks: AgentBlockData[], status: "approved" | "rejected"): AgentBlockData[] {
+  // Find the last ExitPlanMode or show_plan block and set its planApprovalStatus
+  const lastIdx = blocks.findLastIndex(
+    (b) => b.type === "tool_call" && (b.toolName === "ExitPlanMode" || b.toolName?.endsWith("__show_plan")),
+  );
+  if (lastIdx === -1) return blocks;
+  const updated = [...blocks];
+  updated[lastIdx] = { ...updated[lastIdx], planApprovalStatus: status };
+  return updated;
 }
 
 // ---------------------------------------------------------------------------
@@ -630,6 +653,10 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
               }
             }
           }
+          if (state.enterPlanModeDetected) {
+            state.enterPlanModeDetected = false;
+            patch.permissionMode = "plan";
+          }
           set(updateSession(get(), sessionId, patch));
         } else {
           set(updateSession(get(), sessionId, { status: "running" }));
@@ -646,7 +673,16 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
           pattern?: string;
         };
 
-        if (p.tool_name === "AskUserQuestion") {
+        if (p.tool_name === "ExitPlanMode") {
+          // Clear the flag so turn_complete doesn't re-trigger the approval bar
+          const session = getSession(sessionId);
+          session.streamingState.exitPlanModeDetected = false;
+          set(updateSession(get(), sessionId, {
+            pendingRequestId: p.request_id,
+            pendingPlanApproval: p.tool_input ?? {},
+            status: "paused",
+          }));
+        } else if (p.tool_name === "AskUserQuestion") {
           const toolInput = (p.tool_input ?? {}) as Record<string, unknown>;
           const questions = parseAskUserQuestions(toolInput);
           set(updateSession(get(), sessionId, {
@@ -971,33 +1007,77 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
 
     approvePlan(sessionId: string) {
       const session = getSession(sessionId);
-      sendRaw(sessionId, createModeSet(session.serverSessionId, "acceptEdits"));
-      sendRaw(sessionId, createPromptSend(session.serverSessionId, "Plan approved. Exit plan mode and proceed with execution."));
-      set(updateSession(get(), sessionId, {
-        permissionMode: "acceptEdits",
-        pendingPlanApproval: null,
-        status: "running",
-      }));
+      // Mark the last plan block as approved and add approval user message
+      const markedBlocks = markLastPlanBlock(session.blocks, "approved");
+      session.streamingState.counter += 1;
+      const updatedBlocks = [
+        ...markedBlocks,
+        {
+          id: `ws-user-${session.streamingState.counter}`,
+          type: "user_message" as const,
+          content: "Plan approved.",
+          isError: false,
+          createdAt: new Date().toISOString(),
+        },
+      ];
+      if (session.pendingRequestId) {
+        // Gate-based approval: respond to the blocked ExitPlanMode permission request
+        // Switch to acceptEdits mode so the CLI can execute the plan
+        sendRaw(sessionId, createModeSet(session.serverSessionId, "acceptEdits"));
+        sendRaw(sessionId, createPermissionRespond(session.serverSessionId, session.pendingRequestId, "allow_once"));
+        set(updateSession(get(), sessionId, {
+          pendingRequestId: "",
+          pendingPlanApproval: null,
+          permissionMode: "acceptEdits",
+          blocks: updatedBlocks,
+          status: "running",
+        }));
+      } else {
+        // Legacy fallback: send as a new prompt
+        sendRaw(sessionId, createModeSet(session.serverSessionId, "acceptEdits"));
+        sendRaw(sessionId, createPromptSend(session.serverSessionId, "Plan approved. Exit plan mode and proceed with execution."));
+        set(updateSession(get(), sessionId, {
+          permissionMode: "acceptEdits",
+          pendingPlanApproval: null,
+          blocks: updatedBlocks,
+          status: "running",
+        }));
+      }
     },
 
     requestPlanChanges(sessionId: string, feedback: string) {
       const session = getSession(sessionId);
+      // Mark the last plan block as rejected and append feedback as user message
+      const blocksWithStatus = markLastPlanBlock(session.blocks, "rejected");
       session.streamingState.counter += 1;
-      sendRaw(sessionId, createPromptSend(session.serverSessionId, feedback));
-      set(updateSession(get(), sessionId, {
-        pendingPlanApproval: null,
-        blocks: [
-          ...session.blocks,
-          {
-            id: `ws-user-${session.streamingState.counter}`,
-            type: "user_message" as const,
-            content: feedback,
-            isError: false,
-            createdAt: new Date().toISOString(),
-          },
-        ],
-        status: "running",
-      }));
+      const blocksWithFeedback = [
+        ...blocksWithStatus,
+        {
+          id: `ws-user-${session.streamingState.counter}`,
+          type: "user_message" as const,
+          content: feedback,
+          isError: false,
+          createdAt: new Date().toISOString(),
+        },
+      ];
+      if (session.pendingRequestId) {
+        // Gate-based rejection: deny the blocked ExitPlanMode permission request with feedback
+        sendRaw(sessionId, createPermissionRespond(session.serverSessionId, session.pendingRequestId, "deny", undefined, feedback));
+        set(updateSession(get(), sessionId, {
+          pendingRequestId: "",
+          pendingPlanApproval: null,
+          blocks: blocksWithFeedback,
+          status: "running",
+        }));
+      } else {
+        // Legacy fallback: send as a new prompt
+        sendRaw(sessionId, createPromptSend(session.serverSessionId, feedback));
+        set(updateSession(get(), sessionId, {
+          pendingPlanApproval: null,
+          blocks: blocksWithFeedback,
+          status: "running",
+        }));
+      }
     },
 
     requestSlashCommands(sessionId: string, cwd: string) {

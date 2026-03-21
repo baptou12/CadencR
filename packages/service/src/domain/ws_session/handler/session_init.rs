@@ -139,6 +139,32 @@ pub(super) async fn handle_init(
         send_claude_session_id(sender, cli_sid);
     }
 
+    // Check if there's a pending plan approval in the DB (e.g., from a previous app session)
+    if let Some(row) = WsSessionPersistence::get_session_row(&app_state.read_pool, db_session_id).await {
+        if row.pending_plan_approval.is_some() {
+            info!(db_session_id, feature_id, "restoring pending plan approval from DB");
+            let plan_input: serde_json::Value = row.pending_plan_approval
+                .as_deref()
+                .and_then(|s| serde_json::from_str(s).ok())
+                .unwrap_or(serde_json::json!({}));
+            let payload = super::super::protocol::PermissionRequestPayload {
+                request_id: format!("plan_restore_{db_session_id}"),
+                tool_name: "ExitPlanMode".to_string(),
+                tool_input: plan_input,
+                description: Some("Plan is ready for approval".to_string()),
+                pattern: None,
+            };
+            let envelope = super::super::protocol::WsEnvelope::new(
+                "session",
+                "permission.request",
+                serde_json::to_value(payload).unwrap(),
+            );
+            let _ = sender.send(axum::extract::ws::Message::Text(String::from(envelope).into()));
+            WsSessionPersistence::broadcast_turn_state(&app_state.turn_state_tx, feature_id, "askUser");
+            return;
+        }
+    }
+
     // Broadcast turn state (session row just set to 'running')
     WsSessionPersistence::broadcast_turn_state(&app_state.turn_state_tx, feature_id, "claude");
 }

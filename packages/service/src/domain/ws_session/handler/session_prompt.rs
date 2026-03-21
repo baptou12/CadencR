@@ -72,6 +72,8 @@ struct WsBridgeCanUseTool {
     session_cache: Arc<Mutex<HashSet<String>>>,
     allowed_patterns: Arc<HashSet<String>>,
     feature_id: i64,
+    db_session_id: i64,
+    write_pool: sqlx::SqlitePool,
     turn_state_tx: tokio::sync::broadcast::Sender<crate::app_state::TurnStateEvent>,
 }
 
@@ -83,6 +85,149 @@ impl CanUseTool for WsBridgeCanUseTool {
             tool_use_id = %request.tool_use_id,
             "WsBridgeCanUseTool::can_use_tool called"
         );
+
+        // EnterPlanMode: persist permission_mode = 'plan' to DB
+        if request.tool_name == "EnterPlanMode" {
+            let _ = sqlx::query("UPDATE agent_sessions SET permission_mode = 'plan' WHERE id = ?")
+                .bind(self.db_session_id)
+                .execute(&self.write_pool)
+                .await;
+            return PermissionResult::Allow {
+                updated_input: request.input,
+                updated_permissions: None,
+                tool_use_id: Some(request.tool_use_id),
+            };
+        }
+
+        // Intercept ExitPlanMode: persist to DB, send plan_approval event, and block until user responds.
+        if request.tool_name == "ExitPlanMode" {
+            // Check for a stored approval result (set when user approved while CLI was not running)
+            #[derive(sqlx::FromRow)]
+            struct ApprovalRow {
+                plan_approval_result: Option<String>,
+            }
+            if let Ok(Some(row)) = sqlx::query_as::<_, ApprovalRow>(
+                "SELECT plan_approval_result FROM agent_sessions WHERE id = ?"
+            )
+                .bind(self.db_session_id)
+                .fetch_optional(&self.write_pool)
+                .await
+            {
+                if let Some(ref result_str) = row.plan_approval_result {
+                    if let Ok(result) = serde_json::from_str::<serde_json::Value>(result_str) {
+                        // Clear stored result
+                        let _ = sqlx::query(
+                            "UPDATE agent_sessions SET plan_approval_result = NULL, pending_plan_approval = NULL WHERE id = ?"
+                        )
+                            .bind(self.db_session_id)
+                            .execute(&self.write_pool)
+                            .await;
+
+                        let approved = result.get("approved").and_then(|v| v.as_bool()).unwrap_or(false);
+                        if approved {
+                            info!("ExitPlanMode: using stored approval result (approved)");
+                            return PermissionResult::Allow {
+                                updated_input: request.input,
+                                updated_permissions: None,
+                                tool_use_id: Some(request.tool_use_id),
+                            };
+                        } else {
+                            let feedback = result.get("feedback")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("User requested changes to the plan.")
+                                .to_string();
+                            info!("ExitPlanMode: using stored approval result (denied)");
+                            return PermissionResult::Deny {
+                                message: feedback,
+                                interrupt: Some(false),
+                                tool_use_id: Some(request.tool_use_id),
+                            };
+                        }
+                    }
+                }
+            }
+
+            info!("ExitPlanMode detected, sending plan_approval and blocking");
+
+            // Persist pending_plan_approval to DB so it survives app restarts
+            let approval_json = serde_json::to_string(&request.input).unwrap_or_else(|_| "{}".to_string());
+            let _ = sqlx::query("UPDATE agent_sessions SET pending_plan_approval = ? WHERE id = ?")
+                .bind(&approval_json)
+                .bind(self.db_session_id)
+                .execute(&self.write_pool)
+                .await;
+
+            let payload = PermissionRequestPayload {
+                request_id: request.tool_use_id.clone(),
+                tool_name: request.tool_name.clone(),
+                tool_input: request.input.clone(),
+                description: Some("Plan is ready for approval".to_string()),
+                pattern: None,
+            };
+            let envelope = WsEnvelope::new(
+                "session",
+                "permission.request",
+                serde_json::to_value(payload).unwrap(),
+            );
+            let _ = self.sender.send(Message::Text(String::from(envelope).into()));
+
+            WsSessionPersistence::broadcast_turn_state(&self.turn_state_tx, self.feature_id, "askUser");
+
+            let mut rx = self.response_rx.lock().await;
+            return match rx.recv().await {
+                Some(response) => {
+                    // Clear pending_plan_approval from DB
+                    let _ = sqlx::query("UPDATE agent_sessions SET pending_plan_approval = NULL WHERE id = ?")
+                        .bind(self.db_session_id)
+                        .execute(&self.write_pool)
+                        .await;
+
+                    WsSessionPersistence::broadcast_turn_state(&self.turn_state_tx, self.feature_id, "claude");
+                    match response.decision {
+                        PermissionDecision::AllowOnce | PermissionDecision::AllowFuture => {
+                            // Persist approval as a user message and switch to acceptEdits mode
+                            let p = WsSessionPersistence::with_session_id(
+                                self.write_pool.clone(), self.feature_id, Some(self.db_session_id),
+                            );
+                            p.persist_user_message("Plan approved.").await;
+                            let _ = sqlx::query("UPDATE agent_sessions SET permission_mode = 'acceptEdits' WHERE id = ?")
+                                .bind(self.db_session_id)
+                                .execute(&self.write_pool)
+                                .await;
+                            PermissionResult::Allow {
+                                updated_input: request.input,
+                                updated_permissions: None,
+                                tool_use_id: Some(request.tool_use_id),
+                            }
+                        }
+                        PermissionDecision::Deny => {
+                            let feedback = response
+                                .feedback
+                                .unwrap_or_else(|| "User requested changes to the plan.".to_string());
+                            // Persist feedback as a user message so it appears in conversation history
+                            let p = WsSessionPersistence::with_session_id(
+                                self.write_pool.clone(), self.feature_id, Some(self.db_session_id),
+                            );
+                            p.persist_user_message(&feedback).await;
+                            PermissionResult::Deny {
+                                message: feedback,
+                                interrupt: Some(false),
+                                tool_use_id: Some(request.tool_use_id),
+                            }
+                        }
+                    }
+                }
+                None => {
+                    // Channel closed (e.g., app restart) — leave pending_plan_approval in DB
+                    // so it can be restored when the session reconnects.
+                    PermissionResult::Deny {
+                        message: "Plan approval channel closed".to_string(),
+                        interrupt: Some(false),
+                        tool_use_id: Some(request.tool_use_id),
+                    }
+                }
+            };
+        }
 
         // Tools like AskUserQuestion must always be forwarded to the frontend
         // so the UI can display a dynamic form and collect the user's response.
@@ -341,6 +486,8 @@ pub(super) async fn handle_prompt_send(
                 session_cache: session_cache.clone(),
                 allowed_patterns: allowed_patterns.clone(),
                 feature_id,
+                db_session_id,
+                write_pool: write_pool.clone(),
                 turn_state_tx: app_state.turn_state_tx.clone(),
             };
             options.can_use_tool = Some(Box::new(bridge));

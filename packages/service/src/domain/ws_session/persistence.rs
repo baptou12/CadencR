@@ -23,6 +23,7 @@ pub struct SessionRow {
     pub permission_mode: Option<String>,
     pub claude_session_id: Option<String>,
     pub status: String,
+    pub pending_plan_approval: Option<String>,
 }
 
 pub struct WsSessionPersistence {
@@ -312,21 +313,22 @@ impl WsSessionPersistence {
 
     /// Read a session row from the DB by its primary key.
     pub async fn get_session_row(pool: &SqlitePool, session_id: i64) -> Option<SessionRow> {
-        let row: Option<(i64, i64, Option<String>, Option<String>, Option<String>, String)> =
+        let row: Option<(i64, i64, Option<String>, Option<String>, Option<String>, String, Option<String>)> =
             sqlx::query_as(
-                "SELECT id, feature_id, model, permission_mode, claude_session_id, status FROM agent_sessions WHERE id = ?"
+                "SELECT id, feature_id, model, permission_mode, claude_session_id, status, pending_plan_approval FROM agent_sessions WHERE id = ?"
             )
             .bind(session_id)
             .fetch_optional(pool)
             .await
             .ok()?;
-        row.map(|(id, feature_id, model, permission_mode, claude_session_id, status)| SessionRow {
+        row.map(|(id, feature_id, model, permission_mode, claude_session_id, status, pending_plan_approval)| SessionRow {
             id,
             feature_id,
             model,
             permission_mode,
             claude_session_id,
             status,
+            pending_plan_approval,
         })
     }
 
@@ -595,7 +597,9 @@ mod tests {
                 output_tokens INTEGER NOT NULL DEFAULT 0,
                 context_window INTEGER NOT NULL DEFAULT 200000,
                 started_at TEXT,
-                ended_at TEXT
+                ended_at TEXT,
+                pending_plan_approval TEXT,
+                plan_approval_result TEXT
             )"#,
         )
         .execute(&pool)
@@ -1102,5 +1106,88 @@ mod tests {
         let (tx, _) = tokio::sync::broadcast::channel(16);
         // Should not panic even with no active receivers
         WsSessionPersistence::broadcast_turn_state(&tx, 1, "claude");
+    }
+
+    #[tokio::test]
+    async fn test_get_session_row_includes_pending_plan_approval() {
+        let pool = setup_test_db().await;
+        let mut p = WsSessionPersistence::new(pool.clone(), 10);
+        let id = p.find_or_create_session(Some("opus"), Some("plan")).await.unwrap();
+
+        // Initially null
+        let row = WsSessionPersistence::get_session_row(&pool, id).await.unwrap();
+        assert!(row.pending_plan_approval.is_none());
+
+        // Set pending_plan_approval
+        sqlx::query("UPDATE agent_sessions SET pending_plan_approval = ? WHERE id = ?")
+            .bind(r#"{"plan":"test"}"#)
+            .bind(id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let row = WsSessionPersistence::get_session_row(&pool, id).await.unwrap();
+        assert_eq!(row.pending_plan_approval.as_deref(), Some(r#"{"plan":"test"}"#));
+    }
+
+    #[tokio::test]
+    async fn test_plan_approval_result_roundtrip() {
+        let pool = setup_test_db().await;
+        let mut p = WsSessionPersistence::new(pool.clone(), 10);
+        let id = p.find_or_create_session(Some("opus"), Some("plan")).await.unwrap();
+
+        // Set pending_plan_approval and plan_approval_result
+        sqlx::query("UPDATE agent_sessions SET pending_plan_approval = ?, plan_approval_result = ? WHERE id = ?")
+            .bind(r#"{"plan":"test"}"#)
+            .bind(r#"{"approved":true}"#)
+            .bind(id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        // Clear both
+        sqlx::query("UPDATE agent_sessions SET pending_plan_approval = NULL, plan_approval_result = NULL WHERE id = ?")
+            .bind(id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let row = WsSessionPersistence::get_session_row(&pool, id).await.unwrap();
+        assert!(row.pending_plan_approval.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_enter_plan_mode_persists_permission_mode() {
+        let pool = setup_test_db().await;
+        let mut p = WsSessionPersistence::new(pool.clone(), 10);
+        let id = p.find_or_create_session(Some("opus"), Some("acceptEdits")).await.unwrap();
+
+        // Simulate EnterPlanMode updating the permission_mode
+        sqlx::query("UPDATE agent_sessions SET permission_mode = 'plan' WHERE id = ?")
+            .bind(id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let row = WsSessionPersistence::get_session_row(&pool, id).await.unwrap();
+        assert_eq!(row.permission_mode.as_deref(), Some("plan"));
+    }
+
+    #[tokio::test]
+    async fn test_exit_plan_mode_approval_switches_to_accept_edits() {
+        let pool = setup_test_db().await;
+        let mut p = WsSessionPersistence::new(pool.clone(), 10);
+        let id = p.find_or_create_session(Some("opus"), Some("plan")).await.unwrap();
+
+        // Simulate ExitPlanMode approval switching mode
+        sqlx::query("UPDATE agent_sessions SET permission_mode = 'acceptEdits', pending_plan_approval = NULL WHERE id = ?")
+            .bind(id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let row = WsSessionPersistence::get_session_row(&pool, id).await.unwrap();
+        assert_eq!(row.permission_mode.as_deref(), Some("acceptEdits"));
+        assert!(row.pending_plan_approval.is_none());
     }
 }

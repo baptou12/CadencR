@@ -306,7 +306,8 @@ mod tests {
                 pending_questions TEXT,
                 pending_permission TEXT,
                 pending_plan_approval TEXT,
-                pending_prd_approval TEXT
+                pending_prd_approval TEXT,
+                plan_approval_result TEXT
             )"#,
         )
         .execute(&pool)
