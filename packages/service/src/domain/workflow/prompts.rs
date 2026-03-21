@@ -34,6 +34,15 @@ impl Prompts {
     pub fn review() -> &'static str {
         include_str!("../../../prompts/review.md")
     }
+    pub fn review_completion_approval() -> &'static str {
+        include_str!("../../../prompts/review-completion-approval.md")
+    }
+    pub fn review_completion_auto() -> &'static str {
+        include_str!("../../../prompts/review-completion-auto.md")
+    }
+    pub fn review_completion_moderate() -> &'static str {
+        include_str!("../../../prompts/review-completion-moderate.md")
+    }
     pub fn session() -> &'static str {
         include_str!("../../../prompts/session.md")
     }
@@ -55,7 +64,13 @@ pub fn build_execute_prompt(
         _ => Prompts::execute_completion_approval(),
     };
     format!(
-        "{base}\n\n## Current Phase\n\n**Title:** {phase_title}\n**Commit Message:** {commit_message}\n\n{phase_prompt}\n\n{completion}"
+        "{base}\n\n## Important\n\
+         - Stay focused on the current phase only\n\
+         - If something is unclear, make a reasonable decision and proceed\n\
+         - Quality over speed\n\
+         - Always call mark_phase_done, even if everything went exactly to plan\n\n\
+         ## Current Phase\n\n**Title:** {phase_title}\n**Commit Message:** {commit_message}\n\n{phase_prompt}\n\n{completion}\n\n\
+         When your task is complete, call `mark_agent_done` and stop."
     )
 }
 
@@ -69,6 +84,26 @@ pub fn build_qa_prompt(phase_title: &str, phase_prompt: &str, autonomy_level: u8
         _ => Prompts::qa_completion_approval(),
     };
     format!(
-        "{base}\n\n## Current QA Phase\n\n**Title:** {phase_title}\n\n{phase_prompt}\n\n{completion}"
+        "{base}\n\n\
+         ## Rules\n\
+         - Design test cases that are SPECIFIC to what was actually implemented — not generic tests\n\
+         - Use the project's QA procedure to know HOW to test (simulators, MCPs, browser tools, etc.)\n\
+         - Actually interact with the application — do not just read code and guess\n\
+         - Be thorough — test happy paths, edge cases, and error scenarios\n\
+         - Provide evidence for each test result (screenshots, console output, etc.)\n\
+         - If proposing fix phases, make them precise and actionable\n\n\
+         ## Current QA Phase\n\n**Title:** {phase_title}\n\n{phase_prompt}\n\n{completion}"
     )
+}
+
+/// Build the full system prompt for the review agent.
+/// Includes review base + autonomy-level completion suffix.
+pub fn build_review_prompt(autonomy_level: u8) -> String {
+    let base = Prompts::review();
+    let completion = match autonomy_level {
+        3.. => Prompts::review_completion_auto(),
+        2 => Prompts::review_completion_moderate(),
+        _ => Prompts::review_completion_approval(),
+    };
+    format!("{base}\n\n{completion}")
 }

@@ -994,4 +994,167 @@ describe("useWorkflowStore", () => {
       expect(useWorkflowStore.getState().featureTitle).toBeNull();
     });
   });
+
+  // -------------------------------------------------------------------------
+  // agent_user_message
+  // -------------------------------------------------------------------------
+
+  describe("agent_user_message", () => {
+    it("adds user_message block to planAgent", () => {
+      const ws = connectStore();
+      useWorkflowStore.setState({ planAgent: makeAgentSession() });
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "agent_user_message",
+        payload: { queue_item_id: -1, session_id: 10, content: "Create a plan for auth" },
+      });
+
+      const { planAgent } = useWorkflowStore.getState();
+      expect(planAgent).not.toBeNull();
+      expect(planAgent!.blocks).toHaveLength(1);
+      expect(planAgent!.blocks[0]).toMatchObject({
+        type: "user_message",
+        content: "Create a plan for auth",
+      });
+    });
+
+    it("adds user_message block to prdAgent", () => {
+      const ws = connectStore();
+      useWorkflowStore.setState({ prdAgent: makeAgentSession() });
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "agent_user_message",
+        payload: { queue_item_id: -2, session_id: 20, content: "PRD for feature X" },
+      });
+
+      const { prdAgent } = useWorkflowStore.getState();
+      expect(prdAgent).not.toBeNull();
+      expect(prdAgent!.blocks).toHaveLength(1);
+      expect(prdAgent!.blocks[0]).toMatchObject({
+        type: "user_message",
+        content: "PRD for feature X",
+      });
+    });
+
+    it("adds user_message block to activeAgents queue item", () => {
+      const ws = connectStore();
+      const agents = new Map();
+      agents.set(42, makeAgentSession());
+      useWorkflowStore.setState({ activeAgents: agents });
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "agent_user_message",
+        payload: { queue_item_id: 42, session_id: 30, content: "Implement the phase" },
+      });
+
+      const agent = useWorkflowStore.getState().activeAgents.get(42);
+      expect(agent).toBeDefined();
+      expect(agent!.blocks).toHaveLength(1);
+      expect(agent!.blocks[0]).toMatchObject({
+        type: "user_message",
+        content: "Implement the phase",
+      });
+    });
+
+    it("creates planAgent on the fly if not yet initialized", () => {
+      const ws = connectStore();
+      useWorkflowStore.setState({ planAgent: null });
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "agent_user_message",
+        payload: { queue_item_id: -1, session_id: 10, content: "Plan this" },
+      });
+
+      const { planAgent } = useWorkflowStore.getState();
+      expect(planAgent).not.toBeNull();
+      expect(planAgent!.blocks).toHaveLength(1);
+      expect(planAgent!.blocks[0]).toMatchObject({ type: "user_message", content: "Plan this" });
+    });
+
+    it("creates activeAgent on the fly for queue items", () => {
+      const ws = connectStore();
+      useWorkflowStore.setState({ activeAgents: new Map() });
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "agent_user_message",
+        payload: { queue_item_id: 99, session_id: 50, content: "Execute phase" },
+      });
+
+      const agent = useWorkflowStore.getState().activeAgents.get(99);
+      expect(agent).toBeDefined();
+      expect(agent!.blocks).toHaveLength(1);
+      expect(agent!.blocks[0]).toMatchObject({ type: "user_message", content: "Execute phase" });
+    });
+
+    it("ignores agent_user_message with empty content", () => {
+      const ws = connectStore();
+      useWorkflowStore.setState({ planAgent: makeAgentSession() });
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "agent_user_message",
+        payload: { queue_item_id: -1, session_id: 10, content: "" },
+      });
+
+      expect(useWorkflowStore.getState().planAgent!.blocks).toHaveLength(0);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Block preservation across started events
+  // -------------------------------------------------------------------------
+
+  describe("block preservation on started events", () => {
+    it("session.started preserves existing blocks", () => {
+      const ws = connectStore();
+      // Simulate user message arriving before session.started
+      const agents = new Map();
+      agents.set(-3, makeAgentSession({
+        blocks: [{ type: "user_message", content: "Hello" }],
+      }));
+      useWorkflowStore.setState({ activeAgents: agents });
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "session.started",
+        payload: { feature_id: 1, session_id: 77 },
+      });
+
+      const agent = useWorkflowStore.getState().activeAgents.get(-3);
+      expect(agent).toBeDefined();
+      expect(agent!.sessionId).toBe(77);
+      expect(agent!.blocks).toHaveLength(1);
+      expect(agent!.blocks[0]).toMatchObject({ type: "user_message", content: "Hello" });
+    });
+
+    it("item_started preserves existing blocks", () => {
+      const ws = connectStore();
+      // Simulate user message arriving before item_started
+      const agents = new Map();
+      agents.set(10, makeAgentSession({
+        blocks: [{ type: "user_message", content: "Execute this" }],
+      }));
+      useWorkflowStore.setState({
+        activeAgents: agents,
+        queue: [{ id: 10, status: "ready", item_type: "execute", phase_id: 1, phase_title: "P1", order_index: 0, group_index: 0, agent_session_id: null, result: null }],
+      });
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "item_started",
+        payload: { feature_id: 1, queue_item_id: 10, session_id: 88, item_type: "execute" },
+      });
+
+      const agent = useWorkflowStore.getState().activeAgents.get(10);
+      expect(agent).toBeDefined();
+      expect(agent!.sessionId).toBe(88);
+      expect(agent!.blocks).toHaveLength(1);
+      expect(agent!.blocks[0]).toMatchObject({ type: "user_message", content: "Execute this" });
+    });
+  });
 });

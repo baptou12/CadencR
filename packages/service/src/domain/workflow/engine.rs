@@ -366,11 +366,41 @@ impl WorkflowEngine {
     /// Spawn a plan agent for this feature. The plan agent runs outside the queue
     /// and uses a synthetic queue_item_id of -1 for streaming.
     pub async fn spawn_plan_agent(&self, description: &str) -> Result<i64, String> {
+        // Check if a PRD exists — if so, use PRD-specific preamble
+        let prd: Option<String> = sqlx::query_scalar::<_, Option<String>>(
+            "SELECT prd FROM features WHERE id = ?",
+        )
+        .bind(self.feature_id)
+        .fetch_optional(&self.read_pool)
+        .await
+        .map_err(|e| format!("Failed to read feature PRD: {e}"))?
+        .flatten();
+
+        let (preamble, desc) = if let Some(ref prd_content) = prd {
+            if !prd_content.is_empty() {
+                (
+                    "Please create a detailed implementation plan based on the following Product Requirements Document (PRD):\n\n",
+                    prd_content.as_str(),
+                )
+            } else {
+                ("Please create a detailed implementation plan for the following feature:\n\n", description)
+            }
+        } else {
+            ("Please create a detailed implementation plan for the following feature:\n\n", description)
+        };
+
+        let plan_instructions = "Start by exploring the codebase to understand the project structure and existing patterns. \
+            Then ask me clarifying questions. Finally, build the phased plan using the tools, call show_plan, and ask for my approval.";
+
+        let enriched_prompt = format!(
+            "{preamble}{desc}\n\n{plan_instructions}"
+        );
+
         self.spawn_pre_queue_agent(
             AgentType::Plan,
             "plan",
             Prompts::plan(),
-            description,
+            &enriched_prompt,
             PLAN_ITEM_ID,
         )
         .await
@@ -379,11 +409,19 @@ impl WorkflowEngine {
     /// Spawn a PRD agent for this feature. The PRD agent runs outside the queue
     /// and uses a synthetic queue_item_id of -2 for streaming.
     pub async fn spawn_prd_agent(&self, description: &str) -> Result<i64, String> {
+        let prd_instructions = "Use the MCP tools to build the PRD. Call create_prd to store the initial PRD content, \
+            then call show_prd to present it for approval. If rejected, use edit_prd for targeted changes \
+            (or create_prd for full rewrites), then call show_prd again. Once approved, call mark_agent_done.";
+
+        let enriched_prompt = format!(
+            "Please create a comprehensive PRD for the following feature:\n\n{description}\n\n{prd_instructions}"
+        );
+
         self.spawn_pre_queue_agent(
             AgentType::Prd,
             "prd",
             Prompts::prd(),
-            description,
+            &enriched_prompt,
             PRD_ITEM_ID,
         )
         .await
@@ -406,20 +444,17 @@ impl WorkflowEngine {
     /// context about existing phases.
     /// Uses synthetic queue_item_id of -4 for streaming.
     pub async fn spawn_refine_agent(&self, description: &str) -> Result<i64, String> {
-        // Build refinement prompt that includes existing phases context
-        let phases_context = match self.get_existing_phases_context().await {
-            Ok(ctx) => ctx,
+        let refinement_prompt = match self.build_refine_context(description).await {
+            Ok(prompt) => prompt,
             Err(e) => {
-                warn!(feature_id = self.feature_id, error = %e, "failed to fetch phases for refine context");
-                String::new()
+                warn!(feature_id = self.feature_id, error = %e, "failed to build refine context, using simple prompt");
+                format!(
+                    "The user wants to refine the existing plan.\n\n\
+                     User's refinement request:\n{description}\n\n\
+                     Please update the plan accordingly — add, modify, or remove phases as needed."
+                )
             }
         };
-
-        let refinement_prompt = format!(
-            "The user wants to refine the existing plan. Here are the current phases:\n\n{phases_context}\n\n\
-             User's refinement request:\n{description}\n\n\
-             Please update the plan accordingly — add, modify, or remove phases as needed."
-        );
 
         self.spawn_pre_queue_agent(
             AgentType::Plan,
@@ -431,23 +466,76 @@ impl WorkflowEngine {
         .await
     }
 
-    /// Fetch existing phases for the feature as context string.
-    async fn get_existing_phases_context(&self) -> Result<String, String> {
-        let rows: Vec<(i64, String, String)> = sqlx::query_as(
-            "SELECT p.id, p.title, COALESCE(p.prompt, '') FROM phases p \
-             JOIN plans pl ON p.plan_id = pl.id \
-             WHERE pl.feature_id = ? ORDER BY p.order_index",
+    /// Build a rich refinement context matching the legacy `buildRefineContext()`.
+    /// Includes plan summary, codebase context, all existing phases with status,
+    /// and refinement instructions with correct step numbering.
+    async fn build_refine_context(&self, description: &str) -> Result<String, String> {
+        // Fetch the plan
+        let plan: Option<(i64, Option<String>, Option<String>)> = sqlx::query_as(
+            "SELECT id, summary, context FROM plans WHERE feature_id = ? ORDER BY id DESC LIMIT 1",
         )
         .bind(self.feature_id)
+        .fetch_optional(&self.read_pool)
+        .await
+        .map_err(|e| format!("Failed to fetch plan: {e}"))?;
+
+        let (plan_id, summary, context) = plan.ok_or("No plan found for this feature — cannot refine without an existing plan.")?;
+
+        // Fetch all phases with status/notes
+        let phases: Vec<(i64, String, String, Option<String>, Option<String>)> = sqlx::query_as(
+            "SELECT step_number, title, status, implementation_notes, phase_type FROM phases \
+             WHERE plan_id = ? ORDER BY step_number, order_index",
+        )
+        .bind(plan_id)
         .fetch_all(&self.read_pool)
         .await
         .map_err(|e| format!("Failed to fetch phases: {e}"))?;
 
-        let mut ctx = String::new();
-        for (id, title, prompt) in &rows {
-            ctx.push_str(&format!("- Phase {id}: {title}\n  {prompt}\n"));
+        let max_step = phases.iter().map(|(s, _, _, _, _)| *s).max().unwrap_or(0);
+
+        let mut parts: Vec<String> = Vec::new();
+        if let Some(ref s) = summary {
+            if !s.is_empty() {
+                parts.push(format!("**Plan Summary:** {s}"));
+            }
         }
-        Ok(ctx)
+        if let Some(ref c) = context {
+            if !c.is_empty() {
+                parts.push(format!("**Codebase Context:** {c}"));
+            }
+        }
+
+        if !phases.is_empty() {
+            parts.push("\n## Existing Phases:".to_string());
+            for (step, title, status, notes, phase_type) in &phases {
+                let mut line = format!("Step {step}. [{}] {title}", status.to_uppercase());
+                if let Some(pt) = phase_type {
+                    line.push_str(&format!(" ({pt})"));
+                }
+                if let Some(n) = notes {
+                    if !n.is_empty() {
+                        line.push_str(&format!("\n   Notes: {n}"));
+                    }
+                }
+                parts.push(line);
+            }
+        }
+
+        let refine_instructions = format!(
+            "\n## Refinement Instructions\n\
+             This is a REFINEMENT of an existing plan (Plan ID: {plan_id}). The phases listed above already exist.\n\
+             - Do NOT recreate or duplicate completed phases.\n\
+             - Add NEW phases to extend the plan based on the user's request below.\n\
+             - Use step numbers starting from {}.\n\
+             - You may also update or remove existing DRAFT or PENDING phases if needed.\n\
+             - After building the new phases, call show_plan for approval, then finalize_plan.",
+            max_step + 1,
+        );
+
+        Ok(format!(
+            "{}\n{refine_instructions}\n\n## User's Refinement Request\n{description}",
+            parts.join("\n"),
+        ))
     }
 
     /// Shared logic for spawning plan/PRD agents (pre-queue agents).
@@ -520,6 +608,17 @@ impl WorkflowEngine {
             ..Options::default()
         };
         options.can_use_tool = Some(Box::new(bridge));
+
+        // Persist the initial user prompt and send it to the frontend so it's visible
+        {
+            let p = WsSessionPersistence::with_session_id(
+                self.write_pool.clone(),
+                self.feature_id,
+                Some(db_session_id),
+            );
+            p.persist_user_message(initial_prompt).await;
+        }
+        self.send_user_message_event(synthetic_item_id, db_session_id, initial_prompt);
 
         let content_value = serde_json::Value::String(initial_prompt.to_string());
 
@@ -703,6 +802,17 @@ impl WorkflowEngine {
             ..Options::default()
         };
         options.can_use_tool = Some(Box::new(bridge));
+
+        // Persist the initial user prompt and send it to the frontend so it's visible
+        {
+            let p = WsSessionPersistence::with_session_id(
+                self.write_pool.clone(),
+                self.feature_id,
+                Some(db_session_id),
+            );
+            p.persist_user_message(&initial_prompt).await;
+        }
+        self.send_user_message_event(item_id, db_session_id, &initial_prompt);
 
         let content_value = serde_json::Value::String(initial_prompt);
 
@@ -1409,6 +1519,21 @@ impl WorkflowEngine {
                 error!(item_id, error = %e, "send_item_update: DB error");
             }
         }
+    }
+
+    /// Send the initial user message to the frontend as an `agent_user_message` event.
+    /// This lets the UI display the first prompt that was sent to the agent.
+    fn send_user_message_event(&self, queue_item_id: i64, session_id: i64, content: &str) {
+        let envelope = WsEnvelope::new(
+            "workflow",
+            "agent_user_message",
+            serde_json::json!({
+                "queue_item_id": queue_item_id,
+                "session_id": session_id,
+                "content": content,
+            }),
+        );
+        let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
     }
 
     /// Get the group_index for a completed item (for autonomy level 2 checks).

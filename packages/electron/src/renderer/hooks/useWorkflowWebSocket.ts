@@ -328,7 +328,10 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
             q.id === itemId ? { ...q, status: "running" as const, agent_session_id: sessionId } : q,
           );
           const activeAgents = new Map(state.activeAgents);
-          activeAgents.set(itemId, createAgentSession(sessionId));
+          const existing = activeAgents.get(itemId);
+          // Preserve blocks (e.g. user message) that arrived before this event
+          const session = { ...createAgentSession(sessionId), blocks: existing?.blocks ?? [] };
+          activeAgents.set(itemId, session);
           return { queue, activeAgents, selectedItemId: state.selectedItemId ?? itemId };
         });
         break;
@@ -415,7 +418,10 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         const sessionId = payload.session_id as number;
         set(state => {
           const activeAgents = new Map(state.activeAgents);
-          activeAgents.set(SESSION_KEY, createAgentSession(sessionId));
+          const existing = activeAgents.get(SESSION_KEY);
+          // Preserve blocks (e.g. user message) that arrived before this ack
+          const session = { ...createAgentSession(sessionId), blocks: existing?.blocks ?? [] };
+          activeAgents.set(SESSION_KEY, session);
           return { activeAgents };
         });
         break;
@@ -453,6 +459,33 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         const ccSessionId = payload.claude_session_id as string;
         if (!ccSessionId) break;
         set(state => patchAgentByItemId(state, sidItemId, { claudeSessionId: ccSessionId }));
+        break;
+      }
+      case "agent_user_message": {
+        // Backend sends the initial user prompt so it's visible in the UI.
+        // This may arrive before the "started" ack, so we ensure the agent exists.
+        const umItemId = payload.queue_item_id as number;
+        const umContent = payload.content as string;
+        if (!umContent) break;
+        const userBlock = {
+          id: `ws-user-${Date.now()}`,
+          type: "user_message" as const,
+          content: umContent,
+          isError: false,
+          createdAt: new Date().toISOString(),
+        };
+        set(state => {
+          const existing = resolveAgentByItemId(state, umItemId);
+          const agent = existing ?? createAgentSession(0);
+          const updated = { ...agent, blocks: [...agent.blocks, userBlock] };
+
+          // Route to correct slot
+          if (umItemId === PLAN_KEY) return { planAgent: updated };
+          if (umItemId === PRD_KEY) return { prdAgent: updated };
+          const activeAgents = new Map(state.activeAgents);
+          activeAgents.set(umItemId, updated);
+          return { activeAgents };
+        });
         break;
       }
       case "agent_stream": {
