@@ -8,6 +8,7 @@ pub struct ReadPlanTool {
 }
 
 #[derive(sqlx::FromRow)]
+#[allow(dead_code)]
 struct PlanRow {
     id: i64,
     feature_id: i64,
@@ -22,6 +23,7 @@ struct PlanRow {
 }
 
 #[derive(sqlx::FromRow)]
+#[allow(dead_code)]
 struct PhaseRow {
     id: i64,
     step_number: i64,

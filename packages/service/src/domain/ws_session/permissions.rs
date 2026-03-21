@@ -24,6 +24,7 @@ pub enum ResolvedPermission {
     /// Tool is auto-allowed (no user prompt needed).
     Allow,
     /// Tool is always denied.
+    #[allow(dead_code)]
     Deny { reason: String },
     /// Tool needs user approval.
     NeedsPrompt {

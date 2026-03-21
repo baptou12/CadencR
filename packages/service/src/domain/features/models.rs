@@ -183,9 +183,6 @@ pub struct QueueItem {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
-pub struct ResetPhaseRequest {}
-
-#[derive(Debug, Deserialize, ToSchema)]
 pub struct OverridePhaseStatusRequest {
     pub status: String,
 }

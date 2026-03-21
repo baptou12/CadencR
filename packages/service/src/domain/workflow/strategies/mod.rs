@@ -13,6 +13,7 @@ use self::feature_build::FeatureBuildStrategy;
 #[async_trait]
 pub trait WorkflowStrategy: Send + Sync {
     /// The workflow type identifier (matches DB column)
+    #[allow(dead_code)]
     fn workflow_type(&self) -> WorkflowType;
 
     /// Populate the queue for this workflow. Called after plan finalization.
@@ -53,6 +54,5 @@ pub trait WorkflowStrategy: Send + Sync {
 pub fn get_strategy(workflow_type: &WorkflowType) -> Result<Box<dyn WorkflowStrategy>, String> {
     match workflow_type {
         WorkflowType::FeatureBuild => Ok(Box::new(FeatureBuildStrategy)),
-        other => Err(format!("Workflow type {:?} not yet implemented", other)),
     }
 }

@@ -15,6 +15,7 @@ const INSERT_MESSAGE_SQL: &str =
 
 /// A row from the `agent_sessions` table with the fields needed by the WS handler.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct SessionRow {
     pub id: i64,
     pub feature_id: i64,
@@ -343,6 +344,7 @@ impl WsSessionPersistence {
     }
 
     /// Mark a session as running with ended_at = NULL.
+    #[allow(dead_code)]
     pub async fn mark_running_static(pool: &SqlitePool, session_id: i64) {
         if let Err(e) = sqlx::query("UPDATE agent_sessions SET status = 'running', ended_at = NULL WHERE id = ?")
             .bind(session_id)
@@ -480,11 +482,13 @@ impl WsSessionPersistence {
     }
 
     /// Store the Claude CLI session ID so future app restarts can --resume.
+    #[allow(dead_code)]
     pub async fn persist_claude_session_id(&self, claude_session_id: &str) {
         let Some(session_id) = self.session_db_id else { return };
         Self::persist_claude_session_id_static(&self.write_pool, session_id, claude_session_id).await;
     }
 
+    #[allow(dead_code)]
     pub async fn mark_completed(&self) {
         let Some(session_id) = self.session_db_id else { return };
         Self::mark_completed_static(&self.write_pool, session_id).await;
@@ -494,6 +498,7 @@ impl WsSessionPersistence {
     /// `agent_sessions` and the `session_claude_ids` archive table.
     /// (The Electron stop-session flow NULLs claude_session_id and archives it
     /// to session_claude_ids, so we check both sources in a single query.)
+    #[allow(dead_code)]
     pub async fn get_latest_claude_session_id(pool: &SqlitePool, feature_id: i64) -> Option<String> {
         let row: Option<(String,)> = sqlx::query_as(
             r#"SELECT claude_session_id FROM (

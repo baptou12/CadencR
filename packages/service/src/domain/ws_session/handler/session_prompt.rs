@@ -57,7 +57,7 @@ fn build_persist_content(text: &str, images: &[ImagePayload]) -> String {
 }
 
 /// Response sent through the permission channel from the WebSocket handler.
-pub(crate) struct PermissionResponse {
+pub struct PermissionResponse {
     pub(crate) decision: PermissionDecision,
     pub(crate) feedback: Option<String>,
     pub(crate) updated_input: Option<serde_json::Value>,

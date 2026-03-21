@@ -375,15 +375,6 @@ pub struct WorkflowMarkDonePayload {
 // --- Workflow payloads (Server → Client) ---
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WorkflowItemEventPayload {
-    pub feature_id: i64,
-    pub item_id: i64,
-    pub item_type: String,
-    pub phase_title: Option<String>,
-    pub status: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowAgentStartedPayload {
     pub feature_id: i64,
     pub agent_slot: AgentSlot,
@@ -528,39 +519,6 @@ pub struct WorkflowInterruptedPayload {
 pub struct WorkflowAutonomyUpdatedPayload {
     pub feature_id: i64,
     pub level: u8,
-}
-
-// --- Workflow worktree payloads (Server → Client) ---
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WorkflowWorktreeCreatingPayload {
-    pub feature_id: i64,
-    pub branch: String,
-    pub path: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WorkflowWorktreeCreatedPayload {
-    pub feature_id: i64,
-    pub path: String,
-    pub branch: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WorkflowWorktreeSetupOutputPayload {
-    pub feature_id: i64,
-    pub line: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WorkflowWorktreeReadyPayload {
-    pub feature_id: i64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WorkflowWorktreeSetupErrorPayload {
-    pub feature_id: i64,
-    pub error: String,
 }
 
 #[cfg(test)]
@@ -928,21 +886,6 @@ mod tests {
     // --- Server → Client workflow event payloads ---
 
     #[test]
-    fn test_workflow_item_event_payload_roundtrip() {
-        let p = WorkflowItemEventPayload {
-            feature_id: 1,
-            item_id: 5,
-            item_type: "execute".into(),
-            phase_title: Some("Phase 1".into()),
-            status: "running".into(),
-        };
-        let v = serde_json::to_value(&p).unwrap();
-        let d: WorkflowItemEventPayload = serde_json::from_value(v).unwrap();
-        assert_eq!(d.item_type, "execute");
-        assert_eq!(d.phase_title.as_deref(), Some("Phase 1"));
-    }
-
-    #[test]
     fn test_workflow_agent_started_payload_roundtrip() {
         let p = WorkflowAgentStartedPayload {
             feature_id: 1,
@@ -1066,30 +1009,6 @@ mod tests {
         let json = serde_json::to_value(&p).unwrap();
         assert_eq!(json["type"], "result");
         assert!(json.get("msg_type").is_none());
-    }
-
-    #[test]
-    fn test_workflow_worktree_creating_payload_roundtrip() {
-        let p = WorkflowWorktreeCreatingPayload {
-            feature_id: 1,
-            branch: "feat/dark-mode".into(),
-            path: "/tmp/worktree".into(),
-        };
-        let v = serde_json::to_value(&p).unwrap();
-        let d: WorkflowWorktreeCreatingPayload = serde_json::from_value(v).unwrap();
-        assert_eq!(d.branch, "feat/dark-mode");
-    }
-
-    #[test]
-    fn test_workflow_worktree_created_payload_roundtrip() {
-        let p = WorkflowWorktreeCreatedPayload {
-            feature_id: 1,
-            path: "/tmp/wt".into(),
-            branch: "feat/x".into(),
-        };
-        let v = serde_json::to_value(&p).unwrap();
-        let d: WorkflowWorktreeCreatedPayload = serde_json::from_value(v).unwrap();
-        assert_eq!(d.path, "/tmp/wt");
     }
 
     #[test]

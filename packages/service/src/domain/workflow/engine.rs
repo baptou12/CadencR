@@ -38,10 +38,6 @@ impl AgentSlot {
         }
     }
 
-    pub fn is_queue_item(&self) -> bool {
-        matches!(self, AgentSlot::QueueItem(_))
-    }
-
     pub fn agent_type_str(&self) -> Option<&'static str> {
         match self {
             AgentSlot::Plan => Some("plan"),
@@ -98,12 +94,6 @@ impl std::fmt::Display for AgentSlot {
         }
     }
 }
-
-/// Synthetic queue_item_id constants — DEPRECATED, use AgentSlot variants instead.
-pub const PLAN_ITEM_ID: i64 = -1;
-pub const PRD_ITEM_ID: i64 = -2;
-pub const SESSION_ITEM_ID: i64 = -3;
-pub const REFINE_ITEM_ID: i64 = -4;
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -525,11 +515,6 @@ impl WorkflowEngine {
         self.agent_manager.mark_done(slot).await
     }
 
-    /// Broadcast a `feature.updated` event to the frontend.
-    pub fn send_feature_updated(&self, changed: &[&str]) {
-        send_feature_updated_envelope(&self.ws_sender, self.feature_id, changed);
-    }
-
     // ── Restore + lifecycle ──
 
     pub async fn restore_on_reconnect(&self) -> Result<(), String> {
@@ -570,24 +555,7 @@ mod tests {
         (engine, rx)
     }
 
-    // ── 1. Constants ──
-
-    #[test]
-    fn test_synthetic_item_ids_are_negative() {
-        assert!(PLAN_ITEM_ID < 0);
-        assert!(PRD_ITEM_ID < 0);
-        assert!(SESSION_ITEM_ID < 0);
-        assert!(REFINE_ITEM_ID < 0);
-    }
-
-    #[test]
-    fn test_synthetic_item_ids_are_distinct() {
-        let ids = [PLAN_ITEM_ID, PRD_ITEM_ID, SESSION_ITEM_ID, REFINE_ITEM_ID];
-        let unique: std::collections::HashSet<i64> = ids.iter().copied().collect();
-        assert_eq!(unique.len(), ids.len(), "Synthetic IDs must be unique");
-    }
-
-    // ── 2. WorkflowEngine creation and initialization ──
+    // ── WorkflowEngine creation and initialization ──
 
     #[tokio::test]
     async fn test_engine_creation_defaults() {
@@ -939,12 +907,6 @@ mod tests {
         assert!(AgentSlot::Refine.system_prompt().is_some());
         assert!(AgentSlot::ReviewFixer.system_prompt().is_none());
         assert!(AgentSlot::QueueItem(42).system_prompt().is_none());
-    }
-
-    #[test]
-    fn test_agent_slot_is_queue_item() {
-        assert!(!AgentSlot::Plan.is_queue_item());
-        assert!(AgentSlot::QueueItem(1).is_queue_item());
     }
 
     #[test]

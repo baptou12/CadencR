@@ -48,7 +48,7 @@ pub(super) struct SessionConfig {
 /// Handle for a running SDK session, stored per-connection.
 /// Keyed by `i64` (agent_sessions.id). DB is the source of truth for session
 /// config; memory holds only live process state and ephemeral tracking.
-pub(super) struct SdkHandle {
+pub struct SdkHandle {
     pub(super) state: QueryState,
     /// feature_id for persistence lookups.
     pub(super) feature_id: i64,

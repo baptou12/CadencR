@@ -209,11 +209,6 @@ function legacyIdToSlot(id: number): AgentSlot {
   }
 }
 
-/** Check if a slot is a pre-queue agent (not a queue item). */
-function isPreQueueSlot(slot: AgentSlot): boolean {
-  return slot.type !== "queue_item";
-}
-
 /** Parse an agent_slot from a WS payload. Falls back to queue_item_id for backward compat. */
 function parseAgentSlot(payload: Record<string, unknown>): AgentSlot {
   if (payload.agent_slot) {
