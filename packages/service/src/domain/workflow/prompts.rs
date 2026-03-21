@@ -46,6 +46,12 @@ impl Prompts {
     pub fn session() -> &'static str {
         include_str!("../../../prompts/session.md")
     }
+    pub fn risk() -> &'static str {
+        include_str!("../../../prompts/risk.md")
+    }
+    pub fn retro() -> &'static str {
+        include_str!("../../../prompts/retro.md")
+    }
 }
 
 /// Build the full system prompt for a phase execution agent.

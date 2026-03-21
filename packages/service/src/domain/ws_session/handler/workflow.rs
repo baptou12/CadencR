@@ -197,6 +197,8 @@ pub async fn handle_workflow_action(
         "start_session" => handle_start_session(envelope, sender).await,
         "start_refine" => handle_start_refine(envelope, sender).await,
         "start_review_fixer" => handle_start_review_fixer(envelope, sender).await,
+        "start_risk" => handle_start_risk(envelope, sender).await,
+        "start_retro" => handle_start_retro(envelope, sender).await,
         "mark_done" => handle_mark_done(envelope, sender).await,
         unknown => {
             send_workflow_error(&sender, &envelope.id, "UNKNOWN_ACTION", &format!("Unknown workflow action: {unknown}"));
@@ -749,6 +751,42 @@ async fn handle_start_review_fixer(envelope: WsEnvelope, sender: &WsSender) {
         }
         Err(e) => {
             send_workflow_error(sender, &envelope.id, "SPAWN_FAILED", &format!("Failed to spawn review fixer: {e}"));
+        }
+    }
+}
+
+async fn handle_start_risk(envelope: WsEnvelope, sender: &WsSender) {
+    let Some((payload, engine)) = parse_and_get_engine::<WorkflowStartRiskPayload>(&envelope, sender) else { return };
+
+    info!(feature_id = payload.feature_id, "spawning risk agent");
+    match engine.spawn_risk_agent().await {
+        Ok(session_id) => {
+            let ack = WsEnvelope::reply(&envelope.id, "workflow", "risk.started", to_value(WorkflowFeatureIdSessionPayload {
+                feature_id: payload.feature_id,
+                session_id,
+            }));
+            let _ = sender.send(Message::Text(String::from(ack).into()));
+        }
+        Err(e) => {
+            send_workflow_error(sender, &envelope.id, "SPAWN_FAILED", &format!("Failed to spawn risk agent: {e}"));
+        }
+    }
+}
+
+async fn handle_start_retro(envelope: WsEnvelope, sender: &WsSender) {
+    let Some((payload, engine)) = parse_and_get_engine::<WorkflowStartRetroPayload>(&envelope, sender) else { return };
+
+    info!(feature_id = payload.feature_id, "spawning retro agent");
+    match engine.spawn_retro_agent().await {
+        Ok(session_id) => {
+            let ack = WsEnvelope::reply(&envelope.id, "workflow", "retro.started", to_value(WorkflowFeatureIdSessionPayload {
+                feature_id: payload.feature_id,
+                session_id,
+            }));
+            let _ = sender.send(Message::Text(String::from(ack).into()));
+        }
+        Err(e) => {
+            send_workflow_error(sender, &envelope.id, "SPAWN_FAILED", &format!("Failed to spawn retro agent: {e}"));
         }
     }
 }

@@ -162,6 +162,8 @@ interface WorkflowState {
   startSession: (prompt: string, images?: Array<{ base64: string; mimeType: string }>) => void;
   startRefine: (description: string, images?: Array<{ base64: string; mimeType: string }>) => void;
   startReviewFixer: (comments: string) => void;
+  startRisk: () => void;
+  startRetro: () => void;
   markDone: (itemId: number) => void;
   removeAgent: (itemId: number) => void;
   populateAgentBlocks: (itemId: number, blocks: AgentBlockData[]) => void;
@@ -547,6 +549,14 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
       case "refine.started": {
         // Refine agent streams via plan_agent_stream (synthetic id -4)
         // planAgent is already set by startRefine()
+        break;
+      }
+      case "risk.started": {
+        // Risk agent uses synthetic id -6
+        break;
+      }
+      case "retro.started": {
+        // Retro agent uses synthetic id -7
         break;
       }
       case "agent_paused": {
@@ -1071,6 +1081,14 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
 
     startReviewFixer(comments) {
       send("start_review_fixer", { comments });
+    },
+
+    startRisk() {
+      send("start_risk", {});
+    },
+
+    startRetro() {
+      send("start_retro", {});
     },
 
     markDone(itemId) {

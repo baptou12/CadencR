@@ -331,6 +331,16 @@ pub struct WorkflowStartRefinePayload {
     pub images: Option<Vec<String>>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowStartRiskPayload {
+    pub feature_id: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowStartRetroPayload {
+    pub feature_id: i64,
+}
+
 // HasFeatureId impls for all workflow C→S payloads
 macro_rules! impl_has_feature_id {
     ($($ty:ty),+ $(,)?) => {
@@ -357,6 +367,8 @@ impl_has_feature_id!(
     WorkflowStartSessionPayload,
     WorkflowStartRefinePayload,
     WorkflowStartReviewFixerPayload,
+    WorkflowStartRiskPayload,
+    WorkflowStartRetroPayload,
     WorkflowMarkDonePayload,
 );
 
@@ -861,6 +873,22 @@ mod tests {
         let v = serde_json::to_value(&p).unwrap();
         let d: WorkflowStartReviewFixerPayload = serde_json::from_value(v).unwrap();
         assert_eq!(d.comments, "fix lint errors");
+    }
+
+    #[test]
+    fn test_workflow_start_risk_payload_roundtrip() {
+        let p = WorkflowStartRiskPayload { feature_id: 42 };
+        let v = serde_json::to_value(&p).unwrap();
+        let d: WorkflowStartRiskPayload = serde_json::from_value(v).unwrap();
+        assert_eq!(d.feature_id, 42);
+    }
+
+    #[test]
+    fn test_workflow_start_retro_payload_roundtrip() {
+        let p = WorkflowStartRetroPayload { feature_id: 99 };
+        let v = serde_json::to_value(&p).unwrap();
+        let d: WorkflowStartRetroPayload = serde_json::from_value(v).unwrap();
+        assert_eq!(d.feature_id, 99);
     }
 
     #[test]

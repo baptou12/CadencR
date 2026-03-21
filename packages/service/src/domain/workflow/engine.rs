@@ -23,6 +23,10 @@ pub enum AgentSlot {
     Refine,
     #[serde(rename = "review_fixer")]
     ReviewFixer,
+    #[serde(rename = "risk")]
+    Risk,
+    #[serde(rename = "retro")]
+    Retro,
 }
 
 impl AgentSlot {
@@ -34,6 +38,8 @@ impl AgentSlot {
             AgentSlot::Session => -3,
             AgentSlot::Refine => -4,
             AgentSlot::ReviewFixer => -5,
+            AgentSlot::Risk => -6,
+            AgentSlot::Retro => -7,
             AgentSlot::QueueItem(id) => *id,
         }
     }
@@ -45,6 +51,8 @@ impl AgentSlot {
             AgentSlot::Session => Some("session"),
             AgentSlot::Refine => Some("refine"),
             AgentSlot::ReviewFixer => Some("review-fixer"),
+            AgentSlot::Risk => Some("risk"),
+            AgentSlot::Retro => Some("retro"),
             AgentSlot::QueueItem(_) => None,
         }
     }
@@ -55,6 +63,8 @@ impl AgentSlot {
             AgentSlot::Prd => Some(AgentType::Prd),
             AgentSlot::Session => Some(AgentType::Session),
             AgentSlot::ReviewFixer => Some(AgentType::Execute),
+            AgentSlot::Risk => Some(AgentType::Risk),
+            AgentSlot::Retro => Some(AgentType::Retro),
             AgentSlot::QueueItem(_) => None,
         }
     }
@@ -64,6 +74,8 @@ impl AgentSlot {
             AgentSlot::Plan | AgentSlot::Refine => Some(Prompts::plan()),
             AgentSlot::Prd => Some(Prompts::prd()),
             AgentSlot::Session => Some(Prompts::session()),
+            AgentSlot::Risk => Some(Prompts::risk()),
+            AgentSlot::Retro => Some(Prompts::retro()),
             _ => None,
         }
     }
@@ -77,6 +89,8 @@ impl From<i64> for AgentSlot {
             -3 => AgentSlot::Session,
             -4 => AgentSlot::Refine,
             -5 => AgentSlot::ReviewFixer,
+            -6 => AgentSlot::Risk,
+            -7 => AgentSlot::Retro,
             other => AgentSlot::QueueItem(other),
         }
     }
@@ -90,6 +104,8 @@ impl std::fmt::Display for AgentSlot {
             AgentSlot::Session => write!(f, "session"),
             AgentSlot::Refine => write!(f, "refine"),
             AgentSlot::ReviewFixer => write!(f, "review_fixer"),
+            AgentSlot::Risk => write!(f, "risk"),
+            AgentSlot::Retro => write!(f, "retro"),
             AgentSlot::QueueItem(id) => write!(f, "queue_item({})", id),
         }
     }
@@ -390,6 +406,120 @@ impl WorkflowEngine {
             system_prompt,
             comments,
             AgentSlot::ReviewFixer,
+            &self.permissions,
+        ).await
+    }
+
+    pub async fn spawn_risk_agent(&self) -> Result<i64, String> {
+        // Query feature title
+        let feature: Option<(String,)> = sqlx::query_as(
+            "SELECT title FROM features WHERE id = ?",
+        )
+        .bind(self.feature_id)
+        .fetch_optional(&self.read_pool)
+        .await
+        .map_err(|e| format!("DB error querying feature: {e}"))?;
+
+        let feature_title = feature.map(|f| f.0).unwrap_or_else(|| format!("#{}", self.feature_id));
+
+        // Query plan
+        let plan: Option<(i64, Option<String>, Option<String>, Option<String>)> = sqlx::query_as(
+            "SELECT id, summary, context, raw_markdown FROM plans WHERE feature_id = ? ORDER BY id DESC LIMIT 1",
+        )
+        .bind(self.feature_id)
+        .fetch_optional(&self.read_pool)
+        .await
+        .map_err(|e| format!("DB error querying plan: {e}"))?;
+
+        // Query phases if plan exists
+        let phases: Vec<(i32, String, String)> = if let Some(ref p) = plan {
+            sqlx::query_as(
+                "SELECT step_number, title, status FROM phases WHERE plan_id = ? ORDER BY step_number, order_index",
+            )
+            .bind(p.0)
+            .fetch_all(&self.read_pool)
+            .await
+            .unwrap_or_default()
+        } else {
+            vec![]
+        };
+
+        // Build rich context string
+        let mut context_parts = vec![format!("## Feature: {feature_title}")];
+        if let Some(ref p) = plan {
+            if let Some(ref summary) = p.1 {
+                context_parts.push(format!("**Plan Summary:** {summary}"));
+            }
+            if let Some(ref ctx) = p.2 {
+                context_parts.push(format!("**Codebase Context:** {ctx}"));
+            }
+        }
+        if !phases.is_empty() {
+            context_parts.push("\n## Phases:".to_string());
+            for (step, title, status) in &phases {
+                context_parts.push(format!("{step}. {title} — {status}"));
+            }
+        }
+        if let Some(ref p) = plan {
+            if let Some(ref md) = p.3 {
+                context_parts.push(format!("\n## Full Plan\n{md}"));
+            }
+        }
+        let rich_context = context_parts.join("\n");
+
+        let plan_id_note = plan.as_ref().map(|p| {
+            format!("\n\n**Plan ID: {}** — Use this ID when calling MCP tools like `read_plan`, `list_phases`, `create_phase`, `finalize_phases`, etc.", p.0)
+        }).unwrap_or_default();
+
+        let prompt = format!(
+            "Please perform a risk analysis for this feature.\n\n\
+             {rich_context}{plan_id_note}\n\n\
+             Start by running `git diff main...HEAD` (or the appropriate base branch) to see what code has actually changed. \
+             Then explore the codebase to understand the full context and impact of these changes. Generate a comprehensive risk report."
+        );
+
+        self.agent_manager.spawn_pre_queue_agent(
+            AgentType::Risk,
+            "risk",
+            Prompts::risk(),
+            &prompt,
+            AgentSlot::Risk,
+            &self.permissions,
+        ).await
+    }
+
+    pub async fn spawn_retro_agent(&self) -> Result<i64, String> {
+        // Query plan ID for hint
+        let plan: Option<(i64,)> = sqlx::query_as(
+            "SELECT id FROM plans WHERE feature_id = ? ORDER BY id DESC LIMIT 1",
+        )
+        .bind(self.feature_id)
+        .fetch_optional(&self.read_pool)
+        .await
+        .map_err(|e| format!("DB error querying plan: {e}"))?;
+
+        let plan_hint = match plan {
+            Some(p) => format!(
+                "The plan ID for this feature is **{}**. Use this when calling `read_plan` and `list_phases`.",
+                p.0
+            ),
+            None => "No plan was found for this feature — skip plan/phase reading and focus on PRD and conversations.".to_string(),
+        };
+
+        let prompt = format!(
+            "Please produce a retrospective report for feature ID {}.\n\n\
+             {plan_hint}\n\n\
+             Use the available MCP tools to read the PRD, plan, phases, and agent conversation history, \
+             then write the retrospective report in chat. When finished, call `mark_agent_done`.",
+            self.feature_id
+        );
+
+        self.agent_manager.spawn_pre_queue_agent(
+            AgentType::Retro,
+            "retro",
+            Prompts::retro(),
+            &prompt,
+            AgentSlot::Retro,
             &self.permissions,
         ).await
     }
