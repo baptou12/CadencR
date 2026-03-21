@@ -35,6 +35,7 @@ export type WorkflowStatus =
   | "error";
 
 export type QueueItemStatus =
+  | "draft"
   | "pending"
   | "blocked"
   | "ready"

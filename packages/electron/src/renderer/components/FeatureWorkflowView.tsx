@@ -816,9 +816,9 @@ export function FeatureWorkflowView({
 
           </div>
 
-          {backend.queue && backend.queue.length > 0 ? (
+          {feature?.type === "ws-feature" && (prdData || backend.queue) ? (
             <QueueSidebar
-              queue={backend.queue}
+              queue={backend.queue ?? []}
               featureId={featureId}
               selectedItemId={backend.selectedItemId ?? null}
               onSelectItem={backend.selectItem ?? (() => {})}

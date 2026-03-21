@@ -11,6 +11,7 @@ import {
   CheckCircle2Icon,
   CircleIcon,
   LockIcon,
+  PencilIcon,
   PlayCircleIcon,
   XCircleIcon,
   PauseCircleIcon,
@@ -37,6 +38,7 @@ import type { QueueItem, QueueItemStatus } from "@/hooks/useWorkflowWebSocket";
 // ---------------------------------------------------------------------------
 
 const STATUS_CONFIG: Record<QueueItemStatus, { icon: React.ReactNode; className: string; label: string }> = {
+  draft: { icon: <PencilIcon className="size-3.5" />, className: "text-gray-600", label: "Draft" },
   pending: { icon: <CircleIcon className="size-3.5" />, className: "text-gray-500", label: "Pending" },
   blocked: { icon: <LockIcon className="size-3.5" />, className: "text-gray-600", label: "Blocked" },
   ready: { icon: <PlayCircleIcon className="size-3.5" />, className: "text-yellow-400", label: "Ready" },
@@ -101,11 +103,30 @@ interface QueueSidebarProps {
 }
 
 export function QueueSidebar({ queue, featureId, selectedItemId, onSelectItem, onRetryItem, onSkipItem, className }: QueueSidebarProps) {
-  const groups = useMemo(() => groupItems(queue), [queue]);
+  // When queue is empty but plan has phases, synthesize draft items from phases
+  const { data: plan } = useGetFeaturePlan(featureId ?? 0, { enabled: featureId != null && featureId > 0 });
+
+  const effectiveQueue = useMemo(() => {
+    if (queue.length > 0 || !plan?.phases?.length) return queue;
+    return plan.phases.map((p, i): QueueItem => ({
+      id: -p.id, // negative to distinguish from real queue items
+      item_type: p.phase_type ?? "execute",
+      phase_id: p.id,
+      phase_title: p.title,
+      status: "draft" as QueueItemStatus,
+      order_index: i,
+      group_index: p.step_number ?? i,
+      agent_session_id: null,
+      result: null,
+      retry_count: 0,
+      max_retries: 0,
+    }));
+  }, [queue, plan]);
+
+  const groups = useMemo(() => groupItems(effectiveQueue), [effectiveQueue]);
   const [expandedPhase, setExpandedPhase] = useState<PhaseInfo | null>(null);
   const [showPrd, setShowPrd] = useState(false);
 
-  const { data: plan } = useGetFeaturePlan(featureId ?? 0, { enabled: featureId != null && featureId > 0 });
   const { data: prdData } = useGetFeaturePrd(featureId ?? 0, { enabled: featureId != null && featureId > 0 });
   const prd = prdData?.prd;
 
@@ -128,16 +149,12 @@ export function QueueSidebar({ queue, featureId, selectedItemId, onSelectItem, o
     return m;
   }, [plan]);
 
-  // Progress
+  // Progress (only count real queue items, not draft placeholders)
   const completedCount = queue.filter(i => i.status === "completed" || i.status === "skipped").length;
   const totalCount = queue.length;
 
-  if (queue.length === 0 && !plan && !prd) {
-    return (
-      <div className={cn("flex items-center justify-center p-4 text-sm text-gray-500", className)}>
-        No queue items yet
-      </div>
-    );
+  if (effectiveQueue.length === 0 && !plan && !prd) {
+    return null;
   }
 
   return (
@@ -186,7 +203,7 @@ export function QueueSidebar({ queue, featureId, selectedItemId, onSelectItem, o
             <div key={gi}>
               {/* Step divider */}
               <div className="px-2 pt-2 pb-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60">
-                Step {(group.groupIndex ?? gi) + 1}
+                Step {gi + 1}
               </div>
               {group.items.map(item => {
                 const phase = item.phase_id != null ? phaseMap.get(item.phase_id) : undefined;
