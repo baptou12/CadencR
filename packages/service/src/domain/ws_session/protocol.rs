@@ -172,6 +172,14 @@ pub struct FeatureRenamedPayload {
     pub title: String,
 }
 
+/// Server → Client: one or more aspects of a feature changed.
+/// The frontend uses `changed` to selectively invalidate React Query caches.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FeatureUpdatedPayload {
+    pub feature_id: i64,
+    pub changed: Vec<String>,
+}
+
 // --- Commands payloads ---
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

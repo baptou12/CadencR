@@ -10,7 +10,18 @@ use claude_agent_sdk_rs::{
     ContentBlock, ContentDelta, Options, PermissionMode, SdkMessage, StreamEventData,
 };
 
-use super::protocol::{FeatureRenamedPayload, WsEnvelope};
+use super::protocol::{FeatureRenamedPayload, FeatureUpdatedPayload, WsEnvelope};
+
+/// Send a `feature.updated` envelope over the given WebSocket sender.
+fn send_feature_updated(sender: &mpsc::UnboundedSender<Message>, feature_id: i64, changed: &[&str]) {
+    let payload = FeatureUpdatedPayload {
+        feature_id,
+        changed: changed.iter().map(|s| s.to_string()).collect(),
+    };
+    let envelope = WsEnvelope::new("feature", "updated", serde_json::to_value(&payload).unwrap());
+    let json: String = envelope.into();
+    let _ = sender.send(Message::Text(json.into()));
+}
 
 const AUTO_NAME_SYSTEM_PROMPT: &str = "You are a feature naming assistant. Your ONLY job is to output a short name (3-7 words) for a coding session. ALWAYS output a name, even if the input is vague — just pick a reasonable generic name. Examples: 'hi' → 'General Coding Session', 'fix the login bug' → 'Fix Login Bug', 'I want to add dark mode' → 'Add Dark Mode Support'.";
 
@@ -150,6 +161,9 @@ pub async fn auto_name_feature(
     );
     let json: String = envelope.into();
     let _ = ws_sender.send(Message::Text(json.into()));
+
+    // Also emit feature.updated so the sidebar list can refresh
+    send_feature_updated(&ws_sender, feature_id, &["title"]);
 
     info!(feature_id, name = %name, "auto-named feature");
     Some(name)

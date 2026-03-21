@@ -164,6 +164,12 @@ pub async fn ensure_worktree(
         "branch": branch,
     }));
 
+    // 11. Notify frontend to refetch settings (branch name, worktree path, etc.)
+    send_envelope(ws_sender, "feature", "updated", serde_json::json!({
+        "feature_id": feature_id,
+        "changed": ["settings"],
+    }));
+
     Ok(worktree_path)
 }
 

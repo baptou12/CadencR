@@ -29,6 +29,7 @@ import {
   type CommandsListPayload,
 } from "@/lib/ws-envelope";
 import type { SlashCommand } from "@/hooks/useSlashCommand";
+import { invalidateFeatureQueries } from "@/lib/featureUpdated";
 
 export type PermissionMode = "acceptEdits" | "plan";
 
@@ -531,6 +532,13 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
           slashCommandsLoading: false,
         }));
       }
+      return;
+    }
+
+    // Handle feature domain events
+    if (envelope.domain === "feature" && envelope.action === "updated") {
+      const p = envelope.payload as { feature_id?: number; changed?: string[] };
+      if (p.feature_id) invalidateFeatureQueries(p.feature_id, p.changed ?? []);
       return;
     }
 

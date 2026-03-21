@@ -17,6 +17,7 @@ import {
   processSdkMessage,
   applyMutations,
 } from "@/stores/ws-session-store";
+import { invalidateFeatureQueries } from "@/lib/featureUpdated";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -288,6 +289,14 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     if (domain === "session" && action === "feature.renamed") {
       const title = payload.title as string | undefined;
       if (title) set({ featureTitle: title });
+      return;
+    }
+
+    // Handle feature.updated events — invalidate React Query caches
+    if (domain === "feature" && action === "updated") {
+      const changed = (payload.changed ?? []) as string[];
+      const featureId = get().featureId;
+      if (featureId) invalidateFeatureQueries(featureId, changed);
       return;
     }
 

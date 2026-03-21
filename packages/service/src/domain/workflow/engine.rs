@@ -87,6 +87,17 @@ fn to_value<T: serde::Serialize>(v: T) -> serde_json::Value {
     serde_json::to_value(v).unwrap()
 }
 
+/// Send a `feature.updated` envelope over the given WebSocket sender.
+/// Usable from both `WorkflowEngine` methods and standalone contexts (e.g. `WorkflowPermissionBridge`).
+fn send_feature_updated_envelope(sender: &WsSender, feature_id: i64, changed: &[&str]) {
+    let payload = FeatureUpdatedPayload {
+        feature_id,
+        changed: changed.iter().map(|s| s.to_string()).collect(),
+    };
+    let envelope = WsEnvelope::new("feature", "updated", to_value(payload));
+    let _ = sender.send(Message::Text(String::from(envelope).into()));
+}
+
 /// Derive workflow status from queue items (mirrors snapshot logic).
 fn derive_status_from_queue(items: &[QueueItem]) -> String {
     if items.is_empty() {
@@ -154,6 +165,10 @@ impl CanUseTool for WorkflowPermissionBridge {
                 .unwrap(),
             );
             let _ = self.sender.send(Message::Text(String::from(gate_env).into()));
+
+            // Also notify that plan/prd data is ready for fetching
+            let changed: &[&str] = if is_show_plan { &["plan", "phases", "progress"] } else { &["prd"] };
+            send_feature_updated_envelope(&self.sender, self.feature_id, changed);
 
             // Block on permission channel — frontend will send approval through
             // the same permission.respond mechanism (or plan.approved/prd.approved).
@@ -908,6 +923,10 @@ impl WorkflowEngine {
 
         // Part A: If a "review" item just completed, check for new phases and re-populate
         if let Ok(Some(item)) = repo::get_queue_item(&self.read_pool, item_id).await {
+            // Notify frontend for item types that affect plan progress/phases
+            if matches!(item.item_type.as_str(), "execute" | "review") {
+                self.send_feature_updated(&["progress", "phases"]);
+            }
             if item.item_type == "review" {
                 if let Err(e) = self.re_populate_queue_for_new_phases().await {
                     warn!(feature_id = self.feature_id, error = %e, "re-populate after review failed");
@@ -1492,8 +1511,12 @@ impl WorkflowEngine {
         Ok(())
     }
 
-    /// Send a single item update to the frontend (differential update).
-    /// Use this instead of full queue refresh for individual item state changes.
+    /// Broadcast a `feature.updated` event to the frontend.
+    /// `changed` lists which aspects changed (e.g. "plan", "prd", "phases", "title", "settings", "progress").
+    pub fn send_feature_updated(&self, changed: &[&str]) {
+        send_feature_updated_envelope(&self.ws_sender, self.feature_id, changed);
+    }
+
     async fn send_item_update(&self, item_id: i64) {
         match repo::get_queue_item(&self.read_pool, item_id).await {
             Ok(Some(item)) => {
