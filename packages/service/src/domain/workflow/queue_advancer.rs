@@ -552,11 +552,13 @@ impl QueueAdvancer {
     pub async fn restore_on_reconnect(&self, agent_manager: &AgentManager) -> Result<(), String> {
         info!(feature_id = self.feature_id, "restoring workflow state on reconnect");
 
-        // Restore paused pre-queue agents from DB
+        // Restore paused pre-queue agents from DB.
+        // Only restore sessions that haven't ended (ended_at IS NULL) — sessions with
+        // ended_at set are finished even if status wasn't updated.
         let resumable_sessions: Vec<(i64, String, String)> = sqlx::query_as(
             "SELECT id, agent_type, claude_session_id FROM agent_sessions \
              WHERE feature_id = ? AND claude_session_id IS NOT NULL \
-             AND status IN ('running', 'paused') \
+             AND status = 'paused' \
              ORDER BY id DESC",
         )
         .bind(self.feature_id)
@@ -565,10 +567,15 @@ impl QueueAdvancer {
         .map_err(|e| e.to_string())?;
 
         let mut restored: Vec<(AgentSlot, i64, String, String)> = Vec::new();
+        let mut seen_slots = std::collections::HashSet::new();
         for (db_session_id, agent_type, cc_session_id) in &resumable_sessions {
             let Some(slot) = agent_type_str_to_slot(agent_type) else {
                 continue;
             };
+            // Only restore the most recent session per slot
+            if !seen_slots.insert(slot.clone()) {
+                continue;
+            }
             info!(
                 feature_id = self.feature_id,
                 db_session_id,
@@ -583,7 +590,31 @@ impl QueueAdvancer {
             restored.push((slot, *db_session_id, agent_type.clone(), cc_session_id.clone()));
         }
 
-        // Mark stale running queue items as error
+        // Restore paused queue items (from graceful shutdown via pause_all).
+        // The relationship is: workflow_queue.agent_session_id → agent_sessions.id
+        let paused_queue_items: Vec<(i64, Option<i64>, Option<String>)> = sqlx::query_as(
+            "SELECT wq.id, wq.agent_session_id, ags.claude_session_id \
+             FROM workflow_queue wq \
+             LEFT JOIN agent_sessions ags ON ags.id = wq.agent_session_id \
+             WHERE wq.feature_id = ? AND wq.status = 'paused'",
+        )
+        .bind(self.feature_id)
+        .fetch_all(&self.read_pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        for (item_id, agent_session_id, cc_session_id) in &paused_queue_items {
+            let slot = AgentSlot::QueueItem(*item_id);
+            if let Some(ref sid) = cc_session_id {
+                info!(feature_id = self.feature_id, item_id, cc_session_id = %sid, "restoring paused queue item for resume");
+                agent_manager.paused_sessions.insert(slot.clone(), sid.clone());
+            }
+            if let Some(db_sid) = agent_session_id {
+                agent_manager.active_items.insert(slot.clone(), *db_sid);
+            }
+        }
+
+        // Mark stale running queue items as error (only truly orphaned ones)
         sqlx::query(
             "UPDATE workflow_queue SET status = 'error', result = 'Stale after reconnect', ended_at = datetime('now'), pid = NULL WHERE feature_id = ? AND status = 'running'",
         )
@@ -627,6 +658,26 @@ impl QueueAdvancer {
                 }),
             );
             let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
+        }
+
+        // Notify frontend about restored paused queue items
+        for (item_id, _agent_session_id, cc_session_id) in &paused_queue_items {
+            if let Some(ref sid) = cc_session_id {
+                let slot = AgentSlot::QueueItem(*item_id);
+                let db_sid = agent_manager.active_items.get(&slot).map(|e| *e.value()).unwrap_or(0);
+                let envelope = WsEnvelope::new(
+                    "workflow",
+                    "agent_paused",
+                    to_value(WorkflowAgentPausedPayload {
+                        feature_id: self.feature_id,
+                        agent_slot: slot,
+                        session_id: db_sid,
+                        agent_type: "execute".to_string(),
+                        claude_session_id: sid.clone(),
+                    }),
+                );
+                let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
+            }
         }
 
         Ok(())

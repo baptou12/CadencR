@@ -114,4 +114,9 @@ async fn shutdown_signal() {
         _ = terminate => {},
     }
     tracing::info!("Shutdown signal received, shutting down gracefully...");
+
+    // Pause all workflow agents so they can resume on next start
+    crate::domain::ws_session::handler::workflow::pause_all_engines().await;
+
+    tracing::info!("All workflow agents paused.");
 }

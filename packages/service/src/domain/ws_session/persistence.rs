@@ -523,7 +523,7 @@ impl WsSessionPersistence {
     pub async fn cleanup_stale_sessions(pool: &SqlitePool) {
         let now = chrono::Utc::now().to_rfc3339();
         if let Err(e) = sqlx::query(
-            "UPDATE agent_sessions SET status = 'paused', ended_at = ? WHERE status = 'running' AND agent_type = 'session'"
+            "UPDATE agent_sessions SET status = 'paused', ended_at = ? WHERE status = 'running'"
         )
         .bind(&now)
         .execute(pool)

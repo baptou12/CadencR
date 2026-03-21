@@ -26,6 +26,10 @@ pub async fn get_feature_snapshot(
     .await?;
 
     // 2. Agent sessions (lightweight summary)
+    // Only return sessions that are relevant to the current workflow state:
+    //   - linked to a queue item (execute agents), OR
+    //   - known pre-queue agent types (plan, prd, session, refine, review-fixer, risk, retro)
+    //     that are still running or paused (not completed/error)
     let agent_sessions: Vec<AgentSessionSummary> = sqlx::query_as::<_, AgentSessionSummary>(
         r#"SELECT s.id, COALESCE(s.agent_type, 'unknown') as agent_type, COALESCE(s.status, 'idle') as status,
                   wq.id as queue_item_id,
@@ -34,7 +38,12 @@ pub async fn get_feature_snapshot(
                   s.claude_session_id
            FROM agent_sessions s
            LEFT JOIN workflow_queue wq ON wq.agent_session_id = s.id AND wq.feature_id = ?
-           WHERE s.feature_id = ?"#,
+           WHERE s.feature_id = ?
+             AND (
+               wq.id IS NOT NULL
+               OR (s.agent_type IN ('plan', 'prd', 'session', 'refine', 'review-fixer', 'risk', 'retro')
+                   AND s.status IN ('running', 'paused'))
+             )"#,
     )
     .bind(feature_id)
     .bind(feature_id)

@@ -1705,4 +1705,206 @@ describe("useWorkflowStore", () => {
       expect(useWorkflowStore.getState().continuingBuild).toBe(false);
     });
   });
+
+  // -------------------------------------------------------------------------
+  // agent_running / agent_paused with AgentSlot format (reconnection)
+  // -------------------------------------------------------------------------
+
+  describe("agent_running with agent_slot", () => {
+    it("routes to planAgent when slot is plan", () => {
+      const ws = connectStore();
+      expect(useWorkflowStore.getState().planAgent).toBeNull();
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "agent_running",
+        payload: { feature_id: 1, agent_slot: { type: "plan" }, session_id: 100, agent_type: "plan" },
+      });
+
+      const plan = useWorkflowStore.getState().planAgent;
+      expect(plan).not.toBeNull();
+      expect(plan!.status).toBe("running");
+      expect(plan!.sessionId).toBe(100);
+    });
+
+    it("routes to prdAgent when slot is prd", () => {
+      const ws = connectStore();
+      expect(useWorkflowStore.getState().prdAgent).toBeNull();
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "agent_running",
+        payload: { feature_id: 1, agent_slot: { type: "prd" }, session_id: 200, agent_type: "prd" },
+      });
+
+      const prd = useWorkflowStore.getState().prdAgent;
+      expect(prd).not.toBeNull();
+      expect(prd!.status).toBe("running");
+      expect(prd!.sessionId).toBe(200);
+    });
+
+    it("routes to activeAgents for queue items", () => {
+      const ws = connectStore();
+      useWorkflowStore.setState({
+        queue: [{ id: 42, status: "ready", item_type: "execute", phase_id: 1, phase_title: "P1", order_index: 0, group_index: 0, agent_session_id: null, result: null }],
+      });
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "agent_running",
+        payload: { feature_id: 1, agent_slot: { type: "queue_item", id: 42 }, session_id: 300, agent_type: "execute" },
+      });
+
+      const agent = useWorkflowStore.getState().activeAgents.get(42);
+      expect(agent).toBeDefined();
+      expect(agent!.status).toBe("running");
+      expect(agent!.sessionId).toBe(300);
+    });
+
+    it("updates queue item status to running", () => {
+      const ws = connectStore();
+      useWorkflowStore.setState({
+        queue: [{ id: 42, status: "ready", item_type: "execute", phase_id: 1, phase_title: "P1", order_index: 0, group_index: 0, agent_session_id: null, result: null }],
+      });
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "agent_running",
+        payload: { feature_id: 1, agent_slot: { type: "queue_item", id: 42 }, session_id: 300, agent_type: "execute" },
+      });
+
+      const queueItem = useWorkflowStore.getState().queue.find(q => q.id === 42);
+      expect(queueItem!.status).toBe("running");
+      expect(queueItem!.agent_session_id).toBe(300);
+    });
+
+    it("sets selectedItemId if none is set", () => {
+      const ws = connectStore();
+      expect(useWorkflowStore.getState().selectedItemId).toBeNull();
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "agent_running",
+        payload: { feature_id: 1, agent_slot: { type: "queue_item", id: 42 }, session_id: 300, agent_type: "execute" },
+      });
+
+      expect(useWorkflowStore.getState().selectedItemId).toBe(42);
+    });
+
+    it("does not overwrite existing selectedItemId", () => {
+      const ws = connectStore();
+      useWorkflowStore.setState({ selectedItemId: 10 });
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "agent_running",
+        payload: { feature_id: 1, agent_slot: { type: "queue_item", id: 42 }, session_id: 300, agent_type: "execute" },
+      });
+
+      expect(useWorkflowStore.getState().selectedItemId).toBe(10);
+    });
+
+    it("creates agent session if none exists", () => {
+      const ws = connectStore();
+      expect(useWorkflowStore.getState().planAgent).toBeNull();
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "agent_running",
+        payload: { feature_id: 1, agent_slot: { type: "plan" }, session_id: 100, agent_type: "plan" },
+      });
+
+      const plan = useWorkflowStore.getState().planAgent;
+      expect(plan).not.toBeNull();
+      expect(plan!.blocks).toEqual([]);
+      expect(plan!.status).toBe("running");
+    });
+
+    it("preserves existing agent blocks when patching", () => {
+      const ws = connectStore();
+      useWorkflowStore.setState({
+        planAgent: makeAgentSession({ sessionId: 100, blocks: [{ type: "text", content: "existing" }] }) as never,
+      });
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "agent_running",
+        payload: { feature_id: 1, agent_slot: { type: "plan" }, session_id: 100, agent_type: "plan" },
+      });
+
+      const plan = useWorkflowStore.getState().planAgent;
+      expect(plan!.status).toBe("running");
+      expect(plan!.blocks).toHaveLength(1);
+      expect(plan!.blocks[0]).toMatchObject({ type: "text", content: "existing" });
+    });
+  });
+
+  describe("agent_paused with agent_slot", () => {
+    it("routes to planAgent with paused status and claudeSessionId", () => {
+      const ws = connectStore();
+      expect(useWorkflowStore.getState().planAgent).toBeNull();
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "agent_paused",
+        payload: { feature_id: 1, agent_slot: { type: "plan" }, session_id: 42, agent_type: "plan", claude_session_id: "cc-123" },
+      });
+
+      const plan = useWorkflowStore.getState().planAgent;
+      expect(plan).not.toBeNull();
+      expect(plan!.status).toBe("paused");
+      expect(plan!.sessionId).toBe(42);
+      expect(plan!.claudeSessionId).toBe("cc-123");
+    });
+
+    it("routes to prdAgent with paused status and claudeSessionId", () => {
+      const ws = connectStore();
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "agent_paused",
+        payload: { feature_id: 1, agent_slot: { type: "prd" }, session_id: 99, agent_type: "prd", claude_session_id: "cc-prd" },
+      });
+
+      const prd = useWorkflowStore.getState().prdAgent;
+      expect(prd).not.toBeNull();
+      expect(prd!.status).toBe("paused");
+      expect(prd!.claudeSessionId).toBe("cc-prd");
+    });
+
+    it("routes to activeAgents for queue items with paused status", () => {
+      const ws = connectStore();
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "agent_paused",
+        payload: { feature_id: 1, agent_slot: { type: "queue_item", id: 55 }, session_id: 400, agent_type: "execute", claude_session_id: "cc-qi" },
+      });
+
+      const agent = useWorkflowStore.getState().activeAgents.get(55);
+      expect(agent).toBeDefined();
+      expect(agent!.status).toBe("paused");
+      expect(agent!.sessionId).toBe(400);
+      expect(agent!.claudeSessionId).toBe("cc-qi");
+    });
+
+    it("preserves existing agent blocks when paused", () => {
+      const ws = connectStore();
+      useWorkflowStore.setState({
+        planAgent: makeAgentSession({ sessionId: 42, blocks: [{ type: "text", content: "work" }] }) as never,
+      });
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "agent_paused",
+        payload: { feature_id: 1, agent_slot: { type: "plan" }, session_id: 42, agent_type: "plan", claude_session_id: "cc-456" },
+      });
+
+      const plan = useWorkflowStore.getState().planAgent;
+      expect(plan!.status).toBe("paused");
+      expect(plan!.claudeSessionId).toBe("cc-456");
+      expect(plan!.blocks).toHaveLength(1);
+      expect(plan!.blocks[0]).toMatchObject({ type: "text", content: "work" });
+    });
+  });
 });

@@ -199,10 +199,10 @@ async fn handle_connection(socket: WebSocket, state: AppState) {
     }
     drop(sessions);
 
-    // Cleanup workflow engines for this connection
+    // Detach WS sender from workflow engines (keep engines alive for reconnect)
     for feature_id in workflow::tracked_feature_ids() {
-        debug!(feature_id, "WS cleanup: removing workflow engine");
-        workflow::remove_engine(feature_id);
+        debug!(feature_id, "WS cleanup: detaching sender from workflow engine");
+        workflow::detach_engine_sender(feature_id);
     }
 
     send_task.abort();

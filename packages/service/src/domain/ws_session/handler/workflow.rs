@@ -33,12 +33,20 @@ fn ensure_background_tasks(timeout_minutes: u64) {
                     .unwrap_or_default()
                     .as_secs();
 
+                let detached_idle_threshold_secs: u64 = 5 * 60;
                 let mut to_evict = Vec::new();
                 for entry in ENGINES.iter() {
                     let engine = entry.value();
                     if engine.active_items().is_empty() {
                         let last = engine.last_activity.load(Ordering::Relaxed);
-                        if now.saturating_sub(last) > idle_threshold_secs {
+                        let age = now.saturating_sub(last);
+                        // Detached engines (no WS client) get a shorter idle timeout
+                        let threshold = if engine.has_sender() {
+                            idle_threshold_secs
+                        } else {
+                            detached_idle_threshold_secs
+                        };
+                        if age > threshold {
                             to_evict.push(*entry.key());
                         }
                     }
@@ -101,12 +109,6 @@ fn ensure_background_tasks(timeout_minutes: u64) {
     });
 }
 
-/// Remove the engine for a feature (used during shutdown).
-#[allow(dead_code)]
-pub fn remove_engine(feature_id: i64) {
-    ENGINES.remove(&feature_id);
-}
-
 /// Detach the WS sender from an engine (on disconnect), keeping the engine alive.
 pub fn detach_engine_sender(feature_id: i64) {
     if let Some(engine) = ENGINES.get(&feature_id) {
@@ -117,6 +119,19 @@ pub fn detach_engine_sender(feature_id: i64) {
 /// Get all tracked feature_ids (for disconnect cleanup).
 pub fn tracked_feature_ids() -> Vec<i64> {
     ENGINES.iter().map(|entry| *entry.key()).collect::<Vec<_>>()
+}
+
+/// Pause all agents across all engines (for graceful shutdown).
+/// Called from main.rs shutdown_signal — not detected by lib dead_code lint.
+#[allow(dead_code)]
+pub async fn pause_all_engines() {
+    let feature_ids = tracked_feature_ids();
+    for feature_id in feature_ids {
+        if let Some(engine) = ENGINES.get(&feature_id) {
+            info!(feature_id, "shutdown: pausing all agents");
+            engine.pause_all().await;
+        }
+    }
 }
 
 fn send_workflow_error(sender: &WsSender, ref_id: &str, code: &str, message: &str) {
@@ -225,48 +240,29 @@ async fn handle_feature_start(
 
     // Verify the feature exists and get its type
     let feature_row: Result<Option<(String,)>, _> = sqlx::query_as(
-        "SELECT type_ FROM features WHERE id = ?"
+        "SELECT type FROM features WHERE id = ?"
     )
     .bind(feature_id)
     .fetch_optional(&app_state.read_pool)
     .await;
 
-    // Fallback: try without type_ column (legacy schema)
     let feature_type = match feature_row {
         Ok(Some((t,))) => t,
-        _ => {
-            // Try just checking existence
-            let exists = sqlx::query("SELECT 1 FROM features WHERE id = ?")
-                .bind(feature_id)
-                .fetch_optional(&app_state.read_pool)
-                .await;
-
-            match exists {
-                Ok(Some(_)) => {
-                    // Use workflow_type from payload or default
-                    payload.workflow_type.clone().unwrap_or_else(|| "feature_build".to_string())
-                }
-                Ok(None) => {
-                    send_workflow_error(sender, &envelope.id, "NOT_FOUND", &format!("Feature {feature_id} not found"));
-                    return;
-                }
-                Err(e) => {
-                    send_workflow_error(sender, &envelope.id, "LOOKUP_FAILED", &format!("Failed to look up feature: {e}"));
-                    return;
-                }
-            }
+        Ok(None) => {
+            send_workflow_error(sender, &envelope.id, "NOT_FOUND", &format!("Feature {feature_id} not found"));
+            return;
         }
-    };
-
-    // Determine workflow type
-    let workflow_type_str = payload.workflow_type.unwrap_or(feature_type);
-    let workflow_type = match WorkflowType::from_str(&workflow_type_str) {
-        Ok(wt) => wt,
         Err(e) => {
-            send_workflow_error(sender, &envelope.id, "INVALID_WORKFLOW_TYPE", &e);
+            send_workflow_error(sender, &envelope.id, "LOOKUP_FAILED", &format!("Failed to look up feature: {e}"));
             return;
         }
     };
+
+    // ws-session features don't use the workflow engine for agent restoration
+    let is_workflow_feature = feature_type == "ws-feature";
+
+    let workflow_type_str = payload.workflow_type.unwrap_or_else(|| "feature_build".to_string());
+    let workflow_type = WorkflowType::from_str(&workflow_type_str).unwrap_or(WorkflowType::FeatureBuild);
 
     // Check if an engine already exists for this feature
     if let Some(existing) = ENGINES.get(&feature_id) {
@@ -297,8 +293,10 @@ async fn handle_feature_start(
             app_state.turn_state_tx.clone(),
         ));
 
-        if let Err(e) = engine.restore_on_reconnect().await {
-            warn!(feature_id, error = %e, "failed to restore on reconnect");
+        if is_workflow_feature {
+            if let Err(e) = engine.restore_on_reconnect().await {
+                warn!(feature_id, error = %e, "failed to restore on reconnect");
+            }
         }
 
         ENGINES.insert(feature_id, engine);
@@ -1229,9 +1227,9 @@ mod tests {
     }
 
     #[test]
-    fn test_remove_engine_no_panic_for_unknown_feature() {
-        // Should not panic when removing a non-existent engine
-        remove_engine(999888776);
+    fn test_detach_engine_sender_no_panic_for_unknown_feature() {
+        // Should not panic when detaching a non-existent engine
+        detach_engine_sender(999888776);
     }
 
     #[test]

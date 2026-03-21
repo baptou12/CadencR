@@ -130,7 +130,54 @@ use crate::domain::workflow::status::WorkflowStatus;
 use crate::domain::ws_session::handler::session_prompt::PermissionResponse;
 use crate::domain::ws_session::protocol::*;
 
-pub type WsSender = mpsc::UnboundedSender<Message>;
+/// WebSocket sender that can be detached (on WS disconnect) and reattached
+/// (on reconnect) without dropping the engine. Messages sent while detached
+/// are silently dropped.
+#[derive(Clone)]
+pub struct WsSender {
+    inner: std::sync::Arc<std::sync::Mutex<Option<mpsc::UnboundedSender<Message>>>>,
+}
+
+impl WsSender {
+    pub fn new(tx: mpsc::UnboundedSender<Message>) -> Self {
+        Self {
+            inner: std::sync::Arc::new(std::sync::Mutex::new(Some(tx))),
+        }
+    }
+
+    /// Send a message. Returns Ok if sent or if detached (silently drops).
+    pub fn send(&self, msg: Message) -> Result<(), mpsc::error::SendError<Message>> {
+        let guard = self.inner.lock().unwrap();
+        if let Some(ref tx) = *guard {
+            tx.send(msg)
+        } else {
+            Ok(()) // detached — silently drop
+        }
+    }
+
+    /// Detach the underlying sender (on WS disconnect). Messages will be dropped.
+    pub fn detach(&self) {
+        let mut guard = self.inner.lock().unwrap();
+        *guard = None;
+    }
+
+    /// Reattach a new underlying sender (on WS reconnect).
+    pub fn reattach(&self, tx: mpsc::UnboundedSender<Message>) {
+        let mut guard = self.inner.lock().unwrap();
+        *guard = Some(tx);
+    }
+
+    /// Check if a sender is currently attached.
+    pub fn is_attached(&self) -> bool {
+        self.inner.lock().unwrap().is_some()
+    }
+
+    /// Get a clone of the raw underlying sender (for interop with code that
+    /// still takes `mpsc::UnboundedSender<Message>`).  Returns None if detached.
+    pub fn raw_clone(&self) -> Option<mpsc::UnboundedSender<Message>> {
+        self.inner.lock().unwrap().clone()
+    }
+}
 
 /// Map an agent type string to an AgentSlot.
 pub fn agent_type_str_to_slot(agent_type: &str) -> Option<AgentSlot> {
@@ -140,6 +187,8 @@ pub fn agent_type_str_to_slot(agent_type: &str) -> Option<AgentSlot> {
         "session" => Some(AgentSlot::Session),
         "refine" => Some(AgentSlot::Refine),
         "review-fixer" | "review_fixer" => Some(AgentSlot::ReviewFixer),
+        "risk" => Some(AgentSlot::Risk),
+        "retro" => Some(AgentSlot::Retro),
         _ => None,
     }
 }
@@ -180,7 +229,7 @@ impl WorkflowEngine {
         workflow_type: WorkflowType,
         read_pool: SqlitePool,
         write_pool: SqlitePool,
-        ws_sender: WsSender,
+        raw_sender: mpsc::UnboundedSender<Message>,
         max_parallel: usize,
         turn_state_tx: tokio::sync::broadcast::Sender<crate::app_state::TurnStateEvent>,
     ) -> Self {
@@ -188,6 +237,7 @@ impl WorkflowEngine {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
+        let ws_sender = WsSender::new(raw_sender);
         let agent_manager = AgentManager::new(
             feature_id,
             read_pool.clone(),
@@ -218,41 +268,94 @@ impl WorkflowEngine {
         }
     }
 
-    /// Create a new engine that shares in-memory state (active_items, queries,
-    /// paused_sessions, permissions) with the old engine but uses a new WsSender.
-    /// Used on reconnect to avoid redundant DB queries.
-    pub fn reconnect_with_sender(old: &WorkflowEngine, new_sender: WsSender) -> Self {
-        let now_secs = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
+    /// Reattach a new raw WS sender to this engine (on reconnect).
+    /// All components share the same WsSender Arc, so this updates them all.
+    pub fn reattach_sender(&self, raw_sender: mpsc::UnboundedSender<Message>) {
+        self.ws_sender.reattach(raw_sender);
+        self.touch_activity();
+    }
 
-        let agent_manager = AgentManager::reconnect_with_sender(&old.agent_manager, new_sender.clone());
-        let queue = QueueAdvancer::new(
-            old.feature_id,
-            old.workflow_type.clone(),
-            old.queue.max_parallel,
-            old.read_pool.clone(),
-            old.write_pool.clone(),
-            new_sender.clone(),
-        );
-        // Preserve autonomy level from old engine
-        queue.autonomy_level.store(
-            old.queue.autonomy_level.load(Ordering::Relaxed),
-            Ordering::Relaxed,
-        );
+    /// Detach the WS sender (on disconnect). Messages will be silently dropped.
+    pub fn detach_sender(&self) {
+        self.ws_sender.detach();
+    }
 
-        Self {
-            feature_id: old.feature_id,
-            workflow_type: old.workflow_type.clone(),
-            agent_manager,
-            queue,
-            permissions: old.permissions.clone(),
-            last_activity: AtomicU64::new(now_secs),
-            read_pool: old.read_pool.clone(),
-            write_pool: old.write_pool.clone(),
-            ws_sender: new_sender,
+    /// Whether a WS client is currently connected.
+    pub fn has_sender(&self) -> bool {
+        self.ws_sender.is_attached()
+    }
+
+    /// Pause all running agents for graceful shutdown.
+    pub async fn pause_all(&self) {
+        self.agent_manager.pause_all().await;
+    }
+
+    /// Replay current engine state to a reconnected client: queue state,
+    /// workflow status, and agent statuses (running/paused).
+    pub async fn replay_state_to_client(&self) -> Result<(), String> {
+        info!(feature_id = self.feature_id, "replaying engine state to reconnected client");
+
+        // 1. Send full queue update
+        let all_items = repo::get_queue_for_feature(&self.read_pool, self.feature_id)
+            .await
+            .map_err(|e| e.to_string())?;
+        let workflow_status = repo::get_workflow_status(&self.read_pool, self.feature_id)
+            .await
+            .unwrap_or(WorkflowStatus::Idle)
+            .to_string();
+        let queue_env = WsEnvelope::new(
+            "workflow",
+            "queue_update",
+            to_value(WorkflowQueueUpdatePayload {
+                feature_id: self.feature_id,
+                items: all_items,
+                workflow_status: Some(workflow_status),
+            }),
+        );
+        let _ = self.ws_sender.send(Message::Text(String::from(queue_env).into()));
+
+        // 2. Report active (running) agents
+        for entry in self.agent_manager.active_items.iter() {
+            let slot = entry.key().clone();
+            let db_session_id = *entry.value();
+            let is_running = self.agent_manager.queries.contains_key(&slot);
+            let is_paused = self.agent_manager.paused_sessions.contains_key(&slot);
+
+            if is_running {
+                // Agent process is alive — tell client it's running
+                let agent_type = slot.agent_type_str().unwrap_or("execute").to_string();
+                let envelope = WsEnvelope::new(
+                    "workflow",
+                    "agent_running",
+                    to_value(WorkflowAgentStartedPayload {
+                        feature_id: self.feature_id,
+                        agent_slot: slot,
+                        session_id: db_session_id,
+                        agent_type,
+                    }),
+                );
+                let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
+            } else if is_paused {
+                // Agent is paused with a resume session
+                if let Some(cc_sid) = self.agent_manager.paused_sessions.get(&slot) {
+                    let agent_type = slot.agent_type_str().unwrap_or("execute").to_string();
+                    let envelope = WsEnvelope::new(
+                        "workflow",
+                        "agent_paused",
+                        to_value(WorkflowAgentPausedPayload {
+                            feature_id: self.feature_id,
+                            agent_slot: slot,
+                            session_id: db_session_id,
+                            agent_type,
+                            claude_session_id: cc_sid.clone(),
+                        }),
+                    );
+                    let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
+                }
+            }
         }
+
+        Ok(())
     }
 
     // ── Backward-compatible accessors for workflow handler ──
@@ -1304,7 +1407,8 @@ mod tests {
     #[test]
     fn test_send_feature_updated_envelope_format() {
         let (tx, mut rx) = mpsc::unbounded_channel();
-        send_feature_updated_envelope(&tx, 123, &["plan", "phases"]);
+        let ws = WsSender::new(tx);
+        send_feature_updated_envelope(&ws, 123, &["plan", "phases"]);
 
         let msg = rx.try_recv().unwrap();
         if let Message::Text(text) = msg {
@@ -1318,5 +1422,230 @@ mod tests {
         } else {
             panic!("expected Text message");
         }
+    }
+
+    // ── WsSender detach/reattach tests ──
+
+    #[test]
+    fn test_ws_sender_detach_drops_messages() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let ws = WsSender::new(tx);
+
+        ws.detach();
+        let result = ws.send(Message::Text("hello".into()));
+        assert!(result.is_ok(), "send on detached sender should return Ok");
+        assert!(rx.try_recv().is_err(), "no message should arrive after detach");
+    }
+
+    #[test]
+    fn test_ws_sender_reattach_restores_delivery() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let ws = WsSender::new(tx);
+
+        ws.detach();
+        assert!(ws.send(Message::Text("dropped".into())).is_ok());
+
+        let (tx2, mut rx2) = mpsc::unbounded_channel();
+        ws.reattach(tx2);
+        ws.send(Message::Text("delivered".into())).unwrap();
+
+        let msg = rx2.try_recv().unwrap();
+        if let Message::Text(text) = msg {
+            assert_eq!(&*text, "delivered");
+        } else {
+            panic!("expected Text message");
+        }
+    }
+
+    #[test]
+    fn test_ws_sender_is_attached_reflects_state() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let ws = WsSender::new(tx);
+
+        assert!(ws.is_attached());
+        ws.detach();
+        assert!(!ws.is_attached());
+
+        let (tx2, _rx2) = mpsc::unbounded_channel();
+        ws.reattach(tx2);
+        assert!(ws.is_attached());
+    }
+
+    #[test]
+    fn test_ws_sender_raw_clone_none_when_detached() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let ws = WsSender::new(tx);
+
+        assert!(ws.raw_clone().is_some());
+        ws.detach();
+        assert!(ws.raw_clone().is_none());
+    }
+
+    #[test]
+    fn test_ws_sender_raw_clone_some_when_attached() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let ws = WsSender::new(tx);
+
+        let cloned = ws.raw_clone();
+        assert!(cloned.is_some());
+        // Verify the cloned sender can actually send
+        let (tx2, mut rx2) = mpsc::unbounded_channel();
+        ws.reattach(tx2);
+        let cloned2 = ws.raw_clone().unwrap();
+        cloned2.send(Message::Text("via clone".into())).unwrap();
+        let msg = rx2.try_recv().unwrap();
+        if let Message::Text(text) = msg {
+            assert_eq!(&*text, "via clone");
+        } else {
+            panic!("expected Text message");
+        }
+    }
+
+    // ── WorkflowEngine reattach/detach sender tests ──
+
+    #[tokio::test]
+    async fn test_engine_reattach_sender_updates_sender() {
+        let (engine, _rx) = test_engine().await;
+
+        let (tx2, mut rx2) = mpsc::unbounded_channel();
+        engine.reattach_sender(tx2);
+
+        engine.ws_sender.send(Message::Text("after reattach".into())).unwrap();
+        let msg = rx2.try_recv().unwrap();
+        if let Message::Text(text) = msg {
+            assert_eq!(&*text, "after reattach");
+        } else {
+            panic!("expected Text message");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_engine_detach_sender_makes_has_sender_false() {
+        let (engine, _rx) = test_engine().await;
+
+        assert!(engine.has_sender());
+        engine.detach_sender();
+        assert!(!engine.has_sender());
+    }
+
+    // ── replay_state_to_client tests ──
+
+    #[tokio::test]
+    async fn test_replay_state_sends_queue_update_and_agent_messages() {
+        let (engine, mut rx) = test_engine_with_schema().await;
+
+        sqlx::query("INSERT INTO features (id, project_id, title, status) VALUES (1, 1, 'test', 'in-progress')")
+            .execute(&engine.write_pool).await.unwrap();
+
+        // Add a paused agent (active_items + paused_sessions, no query handle)
+        engine.agent_manager.active_items.insert(AgentSlot::Prd, 20);
+        engine.agent_manager.paused_sessions.insert(AgentSlot::Prd, "cc-pause-789".to_string());
+
+        engine.replay_state_to_client().await.unwrap();
+
+        let mut got_queue_update = false;
+        let mut got_agent_paused = false;
+        while let Ok(msg) = rx.try_recv() {
+            if let Message::Text(text) = msg {
+                let text_str: &str = &text;
+                if text_str.contains("queue_update") { got_queue_update = true; }
+                if text_str.contains("agent_paused") && text_str.contains("cc-pause-789") {
+                    got_agent_paused = true;
+                }
+            }
+        }
+        assert!(got_queue_update, "should send queue_update");
+        assert!(got_agent_paused, "should send agent_paused for paused agent");
+    }
+
+    // ── restore_on_reconnect: paused queue items with claude_session_id ──
+
+    #[tokio::test]
+    async fn test_restore_on_reconnect_restores_paused_queue_items_with_session() {
+        let (engine, mut rx) = test_engine_with_schema().await;
+
+        // Insert an agent_session for the queue item
+        sqlx::query(
+            "INSERT INTO agent_sessions (id, feature_id, agent_type, status, claude_session_id) VALUES (50, 1, 'execute', 'paused', 'cc-queue-456')"
+        ).execute(&engine.write_pool).await.unwrap();
+
+        // Insert a paused queue item linked to that session
+        sqlx::query(
+            "INSERT INTO workflow_queue (id, feature_id, item_type, status, order_index, agent_session_id) VALUES (7, 1, 'execute', 'paused', 0, 50)"
+        ).execute(&engine.write_pool).await.unwrap();
+
+        engine.restore_on_reconnect().await.unwrap();
+
+        let slot = AgentSlot::QueueItem(7);
+        assert!(engine.agent_manager.paused_sessions.contains_key(&slot));
+        assert_eq!(*engine.agent_manager.paused_sessions.get(&slot).unwrap(), "cc-queue-456");
+        assert!(engine.active_items().contains_key(&slot));
+        assert_eq!(*engine.active_items().get(&slot).unwrap(), 50);
+
+        let mut got_agent_paused = false;
+        while let Ok(msg) = rx.try_recv() {
+            if let Message::Text(text) = msg {
+                let text_str: &str = &text;
+                if text_str.contains("agent_paused") && text_str.contains("cc-queue-456") {
+                    got_agent_paused = true;
+                }
+            }
+        }
+        assert!(got_agent_paused, "should send agent_paused for restored queue item");
+    }
+
+    // ── restore_on_reconnect: seen_slots dedup ──
+
+    #[tokio::test]
+    async fn test_restore_on_reconnect_deduplicates_by_slot() {
+        let (engine, _rx) = test_engine_with_schema().await;
+
+        // Insert two paused plan sessions — only the most recent (highest id) should be restored
+        sqlx::query(
+            "INSERT INTO agent_sessions (id, feature_id, agent_type, status, claude_session_id) VALUES (1, 1, 'plan', 'paused', 'old-session')"
+        ).execute(&engine.write_pool).await.unwrap();
+        sqlx::query(
+            "INSERT INTO agent_sessions (id, feature_id, agent_type, status, claude_session_id) VALUES (2, 1, 'plan', 'paused', 'new-session')"
+        ).execute(&engine.write_pool).await.unwrap();
+
+        engine.restore_on_reconnect().await.unwrap();
+
+        // Only one Plan slot should be restored, with the newest session (id=2, ORDER BY id DESC)
+        assert_eq!(*engine.agent_manager.paused_sessions.get(&AgentSlot::Plan).unwrap(), "new-session");
+        assert_eq!(*engine.active_items().get(&AgentSlot::Plan).unwrap(), 2);
+    }
+
+    // ── restore_on_reconnect: status filter (only 'paused') ──
+
+    #[tokio::test]
+    async fn test_restore_on_reconnect_only_restores_paused_status() {
+        let (engine, _rx) = test_engine_with_schema().await;
+
+        // A 'running' session with claude_session_id should NOT be restored
+        sqlx::query(
+            "INSERT INTO agent_sessions (id, feature_id, agent_type, status, claude_session_id) VALUES (1, 1, 'plan', 'running', 'running-session')"
+        ).execute(&engine.write_pool).await.unwrap();
+
+        // A 'paused' session should be restored
+        sqlx::query(
+            "INSERT INTO agent_sessions (id, feature_id, agent_type, status, claude_session_id) VALUES (2, 1, 'prd', 'paused', 'paused-session')"
+        ).execute(&engine.write_pool).await.unwrap();
+
+        engine.restore_on_reconnect().await.unwrap();
+
+        assert!(!engine.agent_manager.paused_sessions.contains_key(&AgentSlot::Plan), "running session should not be restored");
+        assert!(engine.agent_manager.paused_sessions.contains_key(&AgentSlot::Prd), "paused session should be restored");
+    }
+
+    // ── agent_type_str_to_slot: risk and retro ──
+
+    #[test]
+    fn test_agent_type_str_to_slot_risk() {
+        assert_eq!(agent_type_str_to_slot("risk"), Some(AgentSlot::Risk));
+    }
+
+    #[test]
+    fn test_agent_type_str_to_slot_retro() {
+        assert_eq!(agent_type_str_to_slot("retro"), Some(AgentSlot::Retro));
     }
 }

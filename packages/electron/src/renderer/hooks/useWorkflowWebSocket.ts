@@ -318,6 +318,27 @@ function patchAgentByItemId(
   return { activeAgents };
 }
 
+/** Like patchAgentByItemId but creates the agent if it doesn't exist. */
+function upsertAgentByItemId(
+  state: WorkflowState,
+  itemId: number,
+  sessionId: number,
+  patch: Partial<AgentSessionState>,
+): Partial<WorkflowState> {
+  if (itemId === PLAN_KEY) {
+    const existing = state.planAgent ?? createAgentSession(sessionId);
+    return { planAgent: { ...existing, ...patch } };
+  }
+  if (itemId === PRD_KEY) {
+    const existing = state.prdAgent ?? createAgentSession(sessionId);
+    return { prdAgent: { ...existing, ...patch } };
+  }
+  const activeAgents = new Map(state.activeAgents);
+  const existing = activeAgents.get(itemId) ?? createAgentSession(sessionId);
+  activeAgents.set(itemId, { ...existing, ...patch });
+  return { activeAgents };
+}
+
 // ---------------------------------------------------------------------------
 // Store
 // ---------------------------------------------------------------------------
@@ -571,25 +592,27 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         break;
       }
       case "agent_paused": {
-        // Received on reconnect when a pre-queue agent (plan/prd/session/refine) is resumable
         const pausedSlot = parseAgentSlot(payload);
         const pausedItemId = agentSlotToLegacyId(pausedSlot);
         const pausedSessionId = payload.session_id as number;
         const pausedClaudeSessionId = (payload.claude_session_id as string) || null;
+        set(state => upsertAgentByItemId(state, pausedItemId, pausedSessionId, {
+          sessionId: pausedSessionId, status: "paused", claudeSessionId: pausedClaudeSessionId,
+        }));
+        break;
+      }
+      case "agent_running": {
+        const runSlot = parseAgentSlot(payload);
+        const runItemId = agentSlotToLegacyId(runSlot);
+        const runSessionId = payload.session_id as number;
         set(state => {
-          const patch = { sessionId: pausedSessionId, status: "paused" as const, claudeSessionId: pausedClaudeSessionId };
-          if (pausedItemId === PLAN_KEY) {
-            const existing = state.planAgent ?? createAgentSession(pausedSessionId);
-            return { planAgent: { ...existing, ...patch } };
-          }
-          if (pausedItemId === PRD_KEY) {
-            const existing = state.prdAgent ?? createAgentSession(pausedSessionId);
-            return { prdAgent: { ...existing, ...patch } };
-          }
-          const activeAgents = new Map(state.activeAgents);
-          const existing = activeAgents.get(pausedItemId) ?? createAgentSession(pausedSessionId);
-          activeAgents.set(pausedItemId, { ...existing, ...patch });
-          return { activeAgents };
+          const agentPatch = upsertAgentByItemId(state, runItemId, runSessionId, {
+            sessionId: runSessionId, status: "running",
+          });
+          const queue = state.queue.map(q =>
+            q.id === runItemId ? { ...q, status: "running" as const, agent_session_id: runSessionId } : q,
+          );
+          return { ...agentPatch, queue, selectedItemId: state.selectedItemId ?? runItemId };
         });
         break;
       }

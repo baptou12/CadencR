@@ -68,21 +68,7 @@ impl AgentManager {
         }
     }
 
-    /// Create a new AgentManager sharing in-memory state (queries, active_items,
-    /// interrupted_items, paused_sessions) but with a new WsSender.
-    pub fn reconnect_with_sender(old: &AgentManager, new_sender: WsSender) -> Self {
-        Self {
-            feature_id: old.feature_id,
-            read_pool: old.read_pool.clone(),
-            write_pool: old.write_pool.clone(),
-            ws_sender: new_sender,
-            turn_state_tx: old.turn_state_tx.clone(),
-            queries: Arc::clone(&old.queries),
-            active_items: Arc::clone(&old.active_items),
-            interrupted_items: Arc::clone(&old.interrupted_items),
-            paused_sessions: Arc::clone(&old.paused_sessions),
-        }
-    }
+
 
     /// Get the feature's working directory.
     /// Prefers worktree_path from feature_settings if set, otherwise falls back to project directory.
@@ -586,6 +572,30 @@ impl AgentManager {
             ).await.map(|_| ());
         }
 
+        // Fallback for queue items: look up claude_session_id via workflow_queue.agent_session_id
+        if let AgentSlot::QueueItem(item_id) = &slot {
+            let row: Option<(i64, Option<String>)> = sqlx::query_as(
+                "SELECT ags.id, ags.claude_session_id FROM agent_sessions ags \
+                 INNER JOIN workflow_queue wq ON wq.agent_session_id = ags.id \
+                 WHERE wq.id = ? AND ags.status IN ('running', 'paused') \
+                 LIMIT 1",
+            )
+            .bind(*item_id)
+            .fetch_optional(&self.read_pool)
+            .await
+            .ok()
+            .flatten();
+
+            if let Some((db_session_id, Some(ref cc_session_id))) = row {
+                if !cc_session_id.is_empty() {
+                    let cc_sid = cc_session_id.clone();
+                    info!(slot = %slot, db_session_id, cc_session_id = %cc_sid, "DB fallback: resuming paused queue item with --resume");
+                    self.active_items.insert(slot.clone(), db_session_id);
+                    return self.resume_item(slot, &cc_sid, text, permissions).await;
+                }
+            }
+        }
+
         Err(format!("No query handle for slot {slot} — agent may need restart"))
     }
 
@@ -720,6 +730,44 @@ impl AgentManager {
         self.active_items.remove(slot);
         self.queries.remove(slot);
         self.paused_sessions.remove(slot);
+    }
+
+    /// Pause all running agents: capture claude_session_id, interrupt, mark paused in DB.
+    /// Used during graceful shutdown so agents can be resumed on next app start.
+    pub async fn pause_all(&self) {
+        let slots: Vec<AgentSlot> = self.queries.iter().map(|e| e.key().clone()).collect();
+        for slot in slots {
+            if let Some(query_arc) = self.queries.get(&slot) {
+                let q = query_arc.lock().await;
+                // Capture session ID for resume
+                if let Some(cc_session_id) = q.session_id().await {
+                    info!(slot = %slot, cc_session_id = %cc_session_id, "pause_all: captured session ID");
+                    self.paused_sessions.insert(slot.clone(), cc_session_id.clone());
+                    // Persist to DB
+                    if let Some(db_session_id) = self.active_items.get(&slot).map(|e| *e.value()) {
+                        WsSessionPersistence::persist_claude_session_id_static(
+                            &self.write_pool, db_session_id, &cc_session_id,
+                        ).await;
+                        WsSessionPersistence::mark_paused_static(
+                            &self.write_pool, db_session_id,
+                        ).await;
+                    }
+                }
+                // Interrupt the process
+                let _ = q.interrupt().await;
+                drop(q);
+            }
+            // Also mark queue items as paused in workflow_queue
+            if let AgentSlot::QueueItem(item_id) = &slot {
+                let _ = sqlx::query(
+                    "UPDATE workflow_queue SET status = 'paused', ended_at = datetime('now') WHERE id = ? AND status = 'running'",
+                )
+                .bind(*item_id)
+                .execute(&self.write_pool)
+                .await;
+            }
+        }
+        info!(feature_id = self.feature_id, "pause_all: all agents paused");
     }
 
     /// Mark a running agent as done (clean shutdown).
@@ -1138,7 +1186,7 @@ mod tests {
     fn make_agent_manager(pool: SqlitePool, feature_id: i64) -> AgentManager {
         let (tx, _rx) = mpsc::unbounded_channel();
         let (turn_state_tx, _) = tokio::sync::broadcast::channel(64);
-        AgentManager::new(feature_id, pool.clone(), pool, tx, turn_state_tx)
+        AgentManager::new(feature_id, pool.clone(), pool, WsSender::new(tx), turn_state_tx)
     }
 
     #[tokio::test]
