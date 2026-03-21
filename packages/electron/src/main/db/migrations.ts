@@ -579,6 +579,15 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 46,
+    description: "Migrate all standalone sessions to ws-sessions",
+    up: (db) => {
+      db.exec(`
+        UPDATE features SET type = 'ws-session' WHERE type = 'session';
+      `);
+    },
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {
