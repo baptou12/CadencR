@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 import { cn } from "@/lib/utils";
-import { ChevronRightIcon, WrenchIcon, BrainIcon, LayersIcon, LoaderIcon, TerminalIcon, CopyIcon, CheckIcon } from "lucide-react";
+import { ChevronRightIcon, WrenchIcon, BrainIcon, LayersIcon, LoaderIcon, TerminalIcon, CopyIcon, CheckIcon, CircleCheckIcon, CircleXIcon } from "lucide-react";
 import { parseToolCall } from "@/lib/tool-call-parser";
 import { Markdown } from "@/components/Markdown";
 import { InlineDiffBlock } from "@/components/InlineDiffBlock";
@@ -70,6 +70,8 @@ export interface AgentBlockData {
   createdAt?: string;
   /** Model name for assistant messages (e.g. "claude-opus-4-6") */
   model?: string;
+  /** Plan approval status — set after user approves or rejects */
+  planApprovalStatus?: "approved" | "rejected";
 }
 
 interface AgentBlockProps {
@@ -92,7 +94,7 @@ export function AgentBlock({ block, isStreaming, basePath }: AgentBlockProps) {
         return <TaskAgentBlock block={block} isStreaming={isStreaming} basePath={basePath} />;
       }
       if (block.toolName === "ExitPlanMode" || block.toolName?.endsWith("__show_plan")) {
-        return <PlanBlock args={block.toolArgs} />;
+        return <PlanBlock args={block.toolArgs} approvalStatus={block.planApprovalStatus} />;
       }
       if (block.toolName === "Write" || block.toolName === "Edit") {
         const diff = diffFromToolArgs(block.toolName, block.toolArgs);
@@ -167,7 +169,7 @@ function TextBlock({ content }: { content: string }) {
   );
 }
 
-function PlanBlock({ args }: { args?: string }) {
+function PlanBlock({ args, approvalStatus }: { args?: string; approvalStatus?: "approved" | "rejected" }) {
   let plan: string | undefined;
   if (args) {
     try {
@@ -189,6 +191,18 @@ function PlanBlock({ args }: { args?: string }) {
       <div className="px-3 py-2">
         <Markdown content={plan} />
       </div>
+      {approvalStatus && (
+        <div className={cn(
+          "flex items-center gap-1.5 border-t px-3 py-1.5 text-xs font-medium",
+          approvalStatus === "approved"
+            ? "border-green-800/50 text-green-400"
+            : "border-red-800/50 text-red-400",
+        )}>
+          {approvalStatus === "approved"
+            ? <><CircleCheckIcon className="size-3" /> Approved</>
+            : <><CircleXIcon className="size-3" /> Rejected</>}
+        </div>
+      )}
     </div>
   );
 }
@@ -435,7 +449,7 @@ function TaskAgentBlock({ block, isStreaming, basePath }: { block: AgentBlockDat
 function CompactBlock({ block, basePath }: { block: AgentBlockData; basePath?: string }) {
   if (block.type === "tool_call" && block.toolName) {
     if (block.toolName === "ExitPlanMode" || block.toolName.endsWith("__show_plan")) {
-      return <PlanBlock args={block.toolArgs} />;
+      return <PlanBlock args={block.toolArgs} approvalStatus={block.planApprovalStatus} />;
     }
     const summary = parseToolCall(block.toolName, block.toolArgs);
     const detail = summary?.detail && basePath ? toRelativePath(summary.detail, basePath) : summary?.detail;
