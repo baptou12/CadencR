@@ -95,6 +95,10 @@ export function createSessionClear(sessionId: string): WsEnvelope {
   return createEnvelope("session", "clear", { session_id: sessionId });
 }
 
+export function createSessionDelete(sessionId: string): WsEnvelope {
+  return createEnvelope("session", "delete", { session_id: sessionId });
+}
+
 export function createCommandsGet(cwd: string): WsEnvelope {
   return createEnvelope("commands", "get", { cwd });
 }

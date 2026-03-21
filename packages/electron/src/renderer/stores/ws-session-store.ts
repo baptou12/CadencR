@@ -24,6 +24,7 @@ import {
   createModelSet,
   createModeSet,
   createSessionClear,
+  createSessionDelete,
   createCommandsGet,
   type SessionConfig,
   type CommandsListPayload,
@@ -386,6 +387,7 @@ interface WsSessionStore {
   interrupt: (sessionId: string) => void;
   destroy: (sessionId: string) => void;
   clearSession: (sessionId: string) => void;
+  deleteSession: (sessionId: string) => void;
   setModel: (sessionId: string, modelId: string) => void;
   setPermissionMode: (sessionId: string, mode: PermissionMode) => void;
   approvePlan: (sessionId: string) => void;
@@ -713,6 +715,17 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
         break;
       }
 
+      case "deleted": {
+        // Remove session entry entirely from the store
+        const session = get().sessions[sessionId];
+        if (session?.ws) {
+          session.ws.close();
+        }
+        const { [sessionId]: _, ...rest } = get().sessions;
+        set({ sessions: rest });
+        break;
+      }
+
       case "usage_update": {
         const u = envelope.payload as { input_tokens: number; output_tokens: number; context_window: number };
         const totalTokens = u.input_tokens + u.output_tokens;
@@ -937,6 +950,11 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
     clearSession(sessionId: string) {
       const session = getSession(sessionId);
       sendRaw(sessionId, createSessionClear(session.serverSessionId));
+    },
+
+    deleteSession(sessionId: string) {
+      const session = getSession(sessionId);
+      sendRaw(sessionId, createSessionDelete(session.serverSessionId));
     },
 
     setModel(sessionId: string, modelId: string) {

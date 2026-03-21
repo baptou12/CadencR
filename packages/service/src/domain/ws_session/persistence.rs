@@ -483,6 +483,40 @@ impl WsSessionPersistence {
         });
     }
 
+    /// Hard-delete a session and all its messages from the database.
+    ///
+    /// Returns `Ok(feature_id)` on success (for turn-state broadcast),
+    /// or `Err(reason)` if the session doesn't exist or is still running.
+    pub async fn delete_session_static(pool: &SqlitePool, session_id: i64) -> Result<i64, String> {
+        // Look up feature_id and status
+        let row: Option<(i64, String)> = sqlx::query_as(
+            "SELECT feature_id, status FROM agent_sessions WHERE id = ?",
+        )
+        .bind(session_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        let (feature_id, status) = match row {
+            Some(r) => r,
+            None => return Err("session not found".to_string()),
+        };
+
+        if status == "running" {
+            return Err("cannot delete a running session".to_string());
+        }
+
+        // Delete in dependency order
+        let _ = sqlx::query("DELETE FROM session_claude_ids WHERE session_id = ?")
+            .bind(session_id).execute(pool).await;
+        let _ = sqlx::query("DELETE FROM agent_messages WHERE session_id = ?")
+            .bind(session_id).execute(pool).await;
+        let _ = sqlx::query("DELETE FROM agent_sessions WHERE id = ?")
+            .bind(session_id).execute(pool).await;
+
+        Ok(feature_id)
+    }
+
     /// Mark all running sessions as paused on startup (stale session cleanup).
     pub async fn cleanup_stale_sessions(pool: &SqlitePool) {
         let now = chrono::Utc::now().to_rfc3339();
@@ -999,6 +1033,48 @@ mod tests {
         let row: (String,) = sqlx::query_as("SELECT status FROM agent_sessions WHERE id = ?")
             .bind(p.session_db_id.unwrap()).fetch_one(&pool).await.unwrap();
         assert_eq!(row.0, "completed");
+    }
+
+    #[tokio::test]
+    async fn test_delete_session_removes_all_rows() {
+        let pool = setup_test_db().await;
+        let mut p = WsSessionPersistence::new(pool.clone(), 1);
+        let id = p.find_or_create_session(None, None).await.unwrap();
+        p.persist_user_message("hello").await;
+        WsSessionPersistence::mark_paused_static(&pool, id).await;
+
+        let result = WsSessionPersistence::delete_session_static(&pool, id).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 1); // feature_id
+
+        // Verify all rows are gone
+        let session: Option<(i64,)> = sqlx::query_as("SELECT id FROM agent_sessions WHERE id = ?")
+            .bind(id).fetch_optional(&pool).await.unwrap();
+        assert!(session.is_none());
+
+        let msgs: Vec<(i64,)> = sqlx::query_as("SELECT id FROM agent_messages WHERE session_id = ?")
+            .bind(id).fetch_all(&pool).await.unwrap();
+        assert!(msgs.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_delete_session_rejects_running() {
+        let pool = setup_test_db().await;
+        let mut p = WsSessionPersistence::new(pool.clone(), 1);
+        let id = p.find_or_create_session(None, None).await.unwrap();
+        // Session is 'running' by default from find_or_create
+
+        let result = WsSessionPersistence::delete_session_static(&pool, id).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("running"));
+    }
+
+    #[tokio::test]
+    async fn test_delete_session_not_found() {
+        let pool = setup_test_db().await;
+        let result = WsSessionPersistence::delete_session_static(&pool, 999).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not found"));
     }
 
     #[tokio::test]

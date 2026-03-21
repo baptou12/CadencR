@@ -302,6 +302,50 @@ pub(super) async fn handle_destroy(
     let _ = sender.send(Message::Text(String::from(reply).into()));
 }
 
+/// Handle session.delete: hard-delete a session and its messages from the DB.
+pub(super) async fn handle_delete(
+    envelope: WsEnvelope,
+    sender: &WsSender,
+    sdk_sessions: &SdkSessions,
+    app_state: &AppState,
+) {
+    let payload: SessionActionPayload = match serde_json::from_value(envelope.payload.clone()) {
+        Ok(p) => p,
+        Err(e) => {
+            send_error(sender, &envelope.id, "INVALID_PAYLOAD", &e.to_string());
+            return;
+        }
+    };
+
+    let db_session_id = match parse_session_id(&payload.session_id) {
+        Some(id) => id,
+        None => {
+            send_error(sender, &envelope.id, "INVALID_SESSION_ID", "Invalid session_id");
+            return;
+        }
+    };
+
+    // Remove from in-memory map if present (shouldn't be active, but clean up)
+    sdk_sessions.lock().await.remove(&db_session_id);
+
+    match WsSessionPersistence::delete_session_static(&app_state.write_pool, db_session_id).await {
+        Ok(feature_id) => {
+            WsSessionPersistence::broadcast_turn_state(&app_state.turn_state_tx, feature_id, "none");
+
+            let reply = WsEnvelope::reply(
+                &envelope.id,
+                "session",
+                "deleted",
+                serde_json::json!({ "session_id": db_session_id.to_string() }),
+            );
+            let _ = sender.send(Message::Text(String::from(reply).into()));
+        }
+        Err(reason) => {
+            send_error(sender, &envelope.id, "DELETE_FAILED", &reason);
+        }
+    }
+}
+
 /// Handle session.clear: archive conversation and reset to fresh state.
 pub(super) async fn handle_clear(
     envelope: WsEnvelope,

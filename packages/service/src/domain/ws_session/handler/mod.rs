@@ -262,6 +262,7 @@ async fn handle_session_action(
         "mode.set" => session_control::handle_mode_set(envelope, sender, sdk_sessions, app_state).await,
         "interrupt" => session_control::handle_interrupt(envelope, sender, sdk_sessions).await,
         "destroy" => session_control::handle_destroy(envelope, sender, sdk_sessions, app_state).await,
+        "delete" => session_control::handle_delete(envelope, sender, sdk_sessions, app_state).await,
         "clear" => session_control::handle_clear(envelope, sender, sdk_sessions, app_state).await,
         unknown => {
             let err = WsEnvelope::reply(
@@ -1033,5 +1034,67 @@ mod tests {
 
         // No message sent (unknown actions are silently ignored)
         assert!(rx.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn test_session_delete_paused_session() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+        let app_state = make_test_app_state().await;
+
+        // Create and pause a session
+        let session_id_str = init_session(&tx, &mut rx, &sdk_sessions, &app_state, 1).await;
+        let db_session_id: i64 = session_id_str.parse().unwrap();
+        WsSessionPersistence::mark_paused_static(&app_state.write_pool, db_session_id).await;
+
+        let envelope = make_envelope(
+            "session",
+            "delete",
+            serde_json::json!({ "session_id": session_id_str }),
+        );
+        dispatch_envelope(envelope, &tx, &sdk_sessions, &app_state).await;
+
+        let msg = rx.recv().await.unwrap();
+        if let Message::Text(text) = msg {
+            let env: WsEnvelope = serde_json::from_str(&text).unwrap();
+            assert_eq!(env.action, "deleted");
+        } else {
+            panic!("expected text message");
+        }
+
+        // Verify DB row is gone
+        let row: Option<(i64,)> = sqlx::query_as("SELECT id FROM agent_sessions WHERE id = ?")
+            .bind(db_session_id)
+            .fetch_optional(&app_state.read_pool)
+            .await
+            .unwrap();
+        assert!(row.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_session_delete_running_session_fails() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+        let app_state = make_test_app_state().await;
+
+        // Create a session (status = 'running' by default)
+        let session_id_str = init_session(&tx, &mut rx, &sdk_sessions, &app_state, 1).await;
+
+        let envelope = make_envelope(
+            "session",
+            "delete",
+            serde_json::json!({ "session_id": session_id_str }),
+        );
+        dispatch_envelope(envelope, &tx, &sdk_sessions, &app_state).await;
+
+        let msg = rx.recv().await.unwrap();
+        if let Message::Text(text) = msg {
+            let env: WsEnvelope = serde_json::from_str(&text).unwrap();
+            assert_eq!(env.action, "error");
+            let payload: SessionErrorPayload = serde_json::from_value(env.payload).unwrap();
+            assert_eq!(payload.code, "DELETE_FAILED");
+        } else {
+            panic!("expected text message");
+        }
     }
 }
