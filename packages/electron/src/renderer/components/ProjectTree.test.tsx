@@ -50,7 +50,6 @@ vi.mock("../api/generated", () => ({
   useUpdateFeatureStatus: vi.fn(() => ({ mutate: vi.fn() })),
   getListFeaturesQueryKey: vi.fn((id: number) => ["features", "list", id]),
   useGetFeatureEmpty: vi.fn(() => ({ data: { empty: false } })),
-  useGetFeatureTurnStates: vi.fn(() => ({ data: { states: {} } })),
 }));
 
 vi.mock("@/stores/ws-session-store", () => ({

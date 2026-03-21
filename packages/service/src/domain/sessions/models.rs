@@ -126,11 +126,6 @@ pub struct FeatureAgentStateResponse {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
-pub struct TurnStatesResponse {
-    pub states: HashMap<String, String>,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
 pub struct DraftResponse {
     #[serde(rename = "draftPrompt")]
     pub draft_prompt: Option<String>,
@@ -268,13 +263,4 @@ mod tests {
         assert!(req_null.draft.is_none());
     }
 
-    #[test]
-    fn test_turn_states_response_serde() {
-        let mut states = HashMap::new();
-        states.insert("42".to_string(), "claude".to_string());
-        let resp = TurnStatesResponse { states };
-        let json = serde_json::to_string(&resp).unwrap();
-        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed["states"]["42"], "claude");
-    }
 }

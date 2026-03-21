@@ -33,7 +33,6 @@ vi.mock("../api/generated", () => ({
   useDeleteFeature: vi.fn(() => ({ mutate: vi.fn() })),
   useUpdateFeatureStatus: vi.fn(() => ({ mutate: vi.fn() })),
   getListFeaturesQueryKey: vi.fn((id: number) => ["features", "list", id]),
-  useGetFeatureTurnStates: vi.fn(() => ({ data: { states: {} } })),
   getGetFeatureQueryKey: (id: number) => ["features", "detail", id],
   getGetFeaturePrdQueryKey: (id: number) => ["features", "prd", id],
   getGetFeaturePlanQueryKey: (id: number) => ["features", "plan", id],

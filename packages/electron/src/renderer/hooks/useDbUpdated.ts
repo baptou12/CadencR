@@ -43,7 +43,6 @@ export function useDbUpdated() {
         case "agent_session":
           void utils.sessions.getActiveFeatureIds.invalidate();
           void queryClient.invalidateQueries({ queryKey: ["sessions", "agentState", featureId] });
-          void queryClient.invalidateQueries({ queryKey: ["sessions", "turnStates"] });
           break;
       }
     });

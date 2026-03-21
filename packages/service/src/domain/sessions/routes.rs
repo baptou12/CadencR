@@ -39,15 +39,6 @@ pub async fn get_feature_agent_state_handler(
     Ok(Json(repository::get_feature_agent_state(&state.read_pool, feature_id, after_map).await?))
 }
 
-#[utoipa::path(get, path = "/api/sessions/turn-states",
-    responses((status = 200, body = TurnStatesResponse)))]
-pub async fn get_feature_turn_states_handler(
-    State(state): State<AppState>,
-) -> Result<Json<TurnStatesResponse>, AppError> {
-    let states = repository::get_feature_turn_states(&state.read_pool).await?;
-    Ok(Json(TurnStatesResponse { states }))
-}
-
 #[utoipa::path(get, path = "/api/sessions/{session_id}/draft",
     params(("session_id" = i64, Path,)),
     responses((status = 200, body = DraftResponse)))]
@@ -76,6 +67,5 @@ pub fn sessions_router() -> Router<AppState> {
     Router::new()
         .route("/api/features/{feature_id}/sessions", get(get_sessions_handler))
         .route("/api/features/{feature_id}/agent-state", get(get_feature_agent_state_handler))
-        .route("/api/sessions/turn-states", get(get_feature_turn_states_handler))
         .route("/api/sessions/{session_id}/draft", get(get_draft_handler).put(save_draft_handler))
 }
