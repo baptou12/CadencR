@@ -18,6 +18,7 @@ use claude_agent_sdk_rs::{Options, PermissionMode, Query, SdkError, SdkMessage, 
 use crate::domain::features::models::QueueItem;
 use crate::domain::features::repository as repo;
 use crate::domain::mcp::servers::{AgentType, mcp_server_name};
+use crate::domain::workspace::repository as workspace_repo;
 use crate::domain::workflow::engine::{AgentSlot, WsSender};
 use crate::domain::workflow::permission_router::{PermissionRouter, WorkflowPermissionBridge};
 use crate::domain::workflow::strategies::WorkflowStrategy;
@@ -104,6 +105,56 @@ impl AgentManager {
         row.and_then(|(d,)| d).map(PathBuf::from)
     }
 
+    /// Resolve the model for a given agent type using the cascade:
+    /// feature column → project column → global settings → default.
+    ///
+    /// The literal value "default" is treated as unset and falls through.
+    async fn resolve_model(&self, agent_type_str: &str) -> String {
+        const DEFAULT_MODEL: &str = "claude-opus-4-6";
+        let db_key = format!("model_{agent_type_str}");
+
+        // 1. Feature-level (real column on features table)
+        let feature_val: Option<(Option<String>,)> = sqlx::query_as(
+            &format!(r#"SELECT "{db_key}" as v FROM features WHERE id = ?"#),
+        )
+        .bind(self.feature_id)
+        .fetch_optional(&self.read_pool)
+        .await
+        .ok()
+        .flatten();
+        if let Some((Some(ref v),)) = feature_val {
+            if !v.is_empty() && v != "default" {
+                return v.clone();
+            }
+        }
+
+        // 2. Project-level (real column on projects table)
+        let project_val: Option<(Option<String>,)> = sqlx::query_as(
+            &format!(
+                r#"SELECT p."{db_key}" as v FROM projects p JOIN features f ON f.project_id = p.id WHERE f.id = ?"#,
+            ),
+        )
+        .bind(self.feature_id)
+        .fetch_optional(&self.read_pool)
+        .await
+        .ok()
+        .flatten();
+        if let Some((Some(ref v),)) = project_val {
+            if !v.is_empty() && v != "default" {
+                return v.clone();
+            }
+        }
+
+        // 3. Global settings (EAV table)
+        if let Ok(Some(v)) = workspace_repo::get_setting(&self.read_pool, &db_key).await {
+            if !v.is_empty() && v != "default" {
+                return v;
+            }
+        }
+
+        DEFAULT_MODEL.to_string()
+    }
+
     /// Shared logic for spawning plan/PRD agents (pre-queue agents).
     pub async fn spawn_pre_queue_agent(
         &self,
@@ -158,10 +209,22 @@ impl AgentManager {
             db_session_id,
         };
 
-        // 5. Build options and spawn
+        // 5. Resolve model from feature → project → global → default
+        let model = self.resolve_model(agent_type_str).await;
+        info!(feature_id = self.feature_id, agent_type = agent_type_str, model = %model, "resolved model for pre-queue agent");
+
+        // Persist model to agent session
+        let _ = sqlx::query("UPDATE agent_sessions SET model = ? WHERE id = ?")
+            .bind(&model)
+            .bind(db_session_id)
+            .execute(&self.write_pool)
+            .await;
+
+        // 6. Build options and spawn
         let mut options = Options {
             cwd,
             permission_mode: Some(PermissionMode::AcceptEdits),
+            model: Some(model),
             system_prompt: if system_prompt.is_empty() {
                 None
             } else {
@@ -315,10 +378,22 @@ impl AgentManager {
             db_session_id,
         };
 
-        // 7. Build Options and spawn
+        // 7. Resolve model from feature → project → global → default
+        let model = self.resolve_model(&agent_type_str).await;
+        info!(feature_id = self.feature_id, agent_type = %agent_type_str, model = %model, "resolved model for queue item");
+
+        // Persist model to agent session
+        let _ = sqlx::query("UPDATE agent_sessions SET model = ? WHERE id = ?")
+            .bind(&model)
+            .bind(db_session_id)
+            .execute(&self.write_pool)
+            .await;
+
+        // 8. Build Options and spawn
         let mut options = Options {
             cwd: cwd.clone(),
             permission_mode: Some(PermissionMode::AcceptEdits),
+            model: Some(model),
             system_prompt: if system_prompt.is_empty() { None } else { Some(system_prompt) },
             mcp_servers: Some(mcp_servers),
             ..Options::default()
@@ -527,6 +602,32 @@ impl AgentManager {
         let agent_type = slot.sdk_agent_type().unwrap_or(AgentType::Execute);
         let mcp_servers = build_mcp_server_config(agent_type, self.feature_id);
 
+        // Resolve model: use agent_type_str from slot, or look up from DB session
+        let agent_type_str_for_model = match slot.agent_type_str() {
+            Some(s) => s.to_string(),
+            None => {
+                // Queue item — look up agent_type from the session row
+                let row: Option<(String,)> = sqlx::query_as(
+                    "SELECT agent_type FROM agent_sessions WHERE id = ?",
+                )
+                .bind(db_session_id)
+                .fetch_optional(&self.read_pool)
+                .await
+                .ok()
+                .flatten();
+                row.map(|(t,)| t).unwrap_or_else(|| "execute".to_string())
+            }
+        };
+        let model = self.resolve_model(&agent_type_str_for_model).await;
+        info!(feature_id = self.feature_id, agent_type = %agent_type_str_for_model, model = %model, "resolved model for resumed agent");
+
+        // Persist model to agent session
+        let _ = sqlx::query("UPDATE agent_sessions SET model = ? WHERE id = ?")
+            .bind(&model)
+            .bind(db_session_id)
+            .execute(&self.write_pool)
+            .await;
+
         let (perm_tx, perm_rx) = mpsc::channel::<PermissionResponse>(16);
         permissions.register(slot.clone(), perm_tx);
         let allowed_patterns = Arc::new(permissions::load_allowed_patterns(&cwd));
@@ -546,6 +647,7 @@ impl AgentManager {
         let mut options = Options {
             cwd: cwd.clone(),
             permission_mode: Some(PermissionMode::AcceptEdits),
+            model: Some(model),
             resume: Some(cc_session_id.to_string()),
             mcp_servers: Some(mcp_servers),
             ..Options::default()
@@ -961,4 +1063,171 @@ pub fn spawn_workflow_stream_reader(
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqlx::sqlite::SqlitePoolOptions;
+
+    async fn setup_test_db() -> SqlitePool {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+
+        sqlx::query(
+            "CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "CREATE TABLE projects (\
+                id INTEGER PRIMARY KEY, \
+                name TEXT, \
+                path TEXT, \
+                model_plan TEXT, model_prd TEXT, model_execute TEXT, \
+                model_risk TEXT, model_review TEXT, \"model_review-fixer\" TEXT, \
+                model_session TEXT, model_qa TEXT, model_retro TEXT\
+            )",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "CREATE TABLE features (\
+                id INTEGER PRIMARY KEY, \
+                project_id INTEGER, \
+                title TEXT, \
+                model_plan TEXT, model_prd TEXT, model_execute TEXT, \
+                model_risk TEXT, model_review TEXT, \"model_review-fixer\" TEXT, \
+                model_session TEXT, model_qa TEXT, model_retro TEXT\
+            )",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        pool
+    }
+
+    fn make_agent_manager(pool: SqlitePool, feature_id: i64) -> AgentManager {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        AgentManager::new(feature_id, pool.clone(), pool, tx)
+    }
+
+    #[tokio::test]
+    async fn test_resolve_model_returns_default_when_no_settings() {
+        let pool = setup_test_db().await;
+        sqlx::query("INSERT INTO projects (id, name) VALUES (1, 'test')")
+            .execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO features (id, project_id, title) VALUES (1, 1, 'feat')")
+            .execute(&pool).await.unwrap();
+
+        let mgr = make_agent_manager(pool, 1);
+        let model = mgr.resolve_model("plan").await;
+        assert_eq!(model, "claude-opus-4-6");
+    }
+
+    #[tokio::test]
+    async fn test_resolve_model_uses_global_setting() {
+        let pool = setup_test_db().await;
+        sqlx::query("INSERT INTO projects (id, name) VALUES (1, 'test')")
+            .execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO features (id, project_id, title) VALUES (1, 1, 'feat')")
+            .execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO settings (key, value) VALUES ('model_plan', 'sonnet')")
+            .execute(&pool).await.unwrap();
+
+        let mgr = make_agent_manager(pool, 1);
+        let model = mgr.resolve_model("plan").await;
+        assert_eq!(model, "sonnet");
+    }
+
+    #[tokio::test]
+    async fn test_resolve_model_project_overrides_global() {
+        let pool = setup_test_db().await;
+        sqlx::query("INSERT INTO projects (id, name, model_plan) VALUES (1, 'test', 'claude-sonnet-4')")
+            .execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO features (id, project_id, title) VALUES (1, 1, 'feat')")
+            .execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO settings (key, value) VALUES ('model_plan', 'claude-opus-4-6')")
+            .execute(&pool).await.unwrap();
+
+        let mgr = make_agent_manager(pool, 1);
+        let model = mgr.resolve_model("plan").await;
+        assert_eq!(model, "claude-sonnet-4");
+    }
+
+    #[tokio::test]
+    async fn test_resolve_model_feature_overrides_project() {
+        let pool = setup_test_db().await;
+        sqlx::query("INSERT INTO projects (id, name, model_plan) VALUES (1, 'test', 'claude-sonnet-4')")
+            .execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO features (id, project_id, title, model_plan) VALUES (1, 1, 'feat', 'claude-haiku-3-5')")
+            .execute(&pool).await.unwrap();
+
+        let mgr = make_agent_manager(pool, 1);
+        let model = mgr.resolve_model("plan").await;
+        assert_eq!(model, "claude-haiku-3-5");
+    }
+
+    #[tokio::test]
+    async fn test_resolve_model_default_value_falls_through() {
+        let pool = setup_test_db().await;
+        sqlx::query("INSERT INTO projects (id, name, model_plan) VALUES (1, 'test', 'sonnet')")
+            .execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO features (id, project_id, title, model_plan) VALUES (1, 1, 'feat', 'default')")
+            .execute(&pool).await.unwrap();
+
+        let mgr = make_agent_manager(pool, 1);
+        let model = mgr.resolve_model("plan").await;
+        assert_eq!(model, "sonnet");
+    }
+
+    #[tokio::test]
+    async fn test_resolve_model_empty_string_falls_through() {
+        let pool = setup_test_db().await;
+        sqlx::query("INSERT INTO projects (id, name, model_execute) VALUES (1, 'test', 'claude-sonnet-4')")
+            .execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO features (id, project_id, title, model_execute) VALUES (1, 1, 'feat', '')")
+            .execute(&pool).await.unwrap();
+
+        let mgr = make_agent_manager(pool, 1);
+        let model = mgr.resolve_model("execute").await;
+        assert_eq!(model, "claude-sonnet-4");
+    }
+
+    #[tokio::test]
+    async fn test_resolve_model_global_default_falls_through() {
+        let pool = setup_test_db().await;
+        sqlx::query("INSERT INTO projects (id, name) VALUES (1, 'test')")
+            .execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO features (id, project_id, title) VALUES (1, 1, 'feat')")
+            .execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO settings (key, value) VALUES ('model_plan', 'default')")
+            .execute(&pool).await.unwrap();
+
+        let mgr = make_agent_manager(pool, 1);
+        let model = mgr.resolve_model("plan").await;
+        assert_eq!(model, "claude-opus-4-6");
+    }
+
+    #[tokio::test]
+    async fn test_resolve_model_different_agent_types() {
+        let pool = setup_test_db().await;
+        sqlx::query("INSERT INTO projects (id, name, model_plan, model_execute) VALUES (1, 'test', 'plan-model', 'exec-model')")
+            .execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO features (id, project_id, title) VALUES (1, 1, 'feat')")
+            .execute(&pool).await.unwrap();
+
+        let mgr = make_agent_manager(pool, 1);
+        assert_eq!(mgr.resolve_model("plan").await, "plan-model");
+        assert_eq!(mgr.resolve_model("execute").await, "exec-model");
+        assert_eq!(mgr.resolve_model("review").await, "claude-opus-4-6");
+    }
 }
