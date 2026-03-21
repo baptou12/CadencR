@@ -861,7 +861,7 @@ pub fn spawn_workflow_stream_reader(
                                     if name.contains("create_phase") || name.contains("finalize_phases") {
                                         fields.extend_from_slice(&["phases", "progress"]);
                                     } else if name.contains("finalize_plan") {
-                                        fields.extend_from_slice(&["plan", "phases", "progress"]);
+                                        fields.extend_from_slice(&["plan", "phases", "progress", "status"]);
                                     } else if name.contains("save_plan") || name.contains("create_plan") {
                                         fields.extend_from_slice(&["plan"]);
                                     } else if name.contains("save_prd") || name.contains("create_prd") {
@@ -886,7 +886,7 @@ pub fn spawn_workflow_stream_reader(
                                         Some(&["phases", "progress"])
                                     }
                                     t if t.contains("finalize_plan") => {
-                                        Some(&["plan", "phases", "progress"])
+                                        Some(&["plan", "phases", "progress", "status"])
                                     }
                                     t if t.contains("save_plan") || t.contains("create_plan") => {
                                         Some(&["plan"])

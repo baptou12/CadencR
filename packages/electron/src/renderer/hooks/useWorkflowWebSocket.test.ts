@@ -1138,7 +1138,7 @@ describe("useWorkflowStore", () => {
       expect(useWorkflowStore.getState().prdAgent!.status).toBe("paused");
     });
 
-    it("approvePlan sets planAgent to running and workflowStatus to building", () => {
+    it("approvePlan sends message without optimistic state update", () => {
       const ws = connectStore();
       useWorkflowStore.setState({
         planAgent: makeAgentSession({ status: "paused" }),
@@ -1148,14 +1148,15 @@ describe("useWorkflowStore", () => {
       useWorkflowStore.getState().approvePlan("req-1");
 
       const state = useWorkflowStore.getState();
-      expect(state.planAgent!.status).toBe("running");
-      expect(state.workflowStatus).toBe("building");
+      // No optimistic update — status stays until backend confirms via status_changed
+      expect(state.planAgent!.status).toBe("paused");
+      expect(state.workflowStatus).toBe("plan_approval");
       const sent = ws.sent.find(s => JSON.parse(s).action === "plan.approved");
       expect(sent).toBeDefined();
       expect(JSON.parse(sent!).payload.request_id).toBe("req-1");
     });
 
-    it("rejectPlan sets planAgent to running and workflowStatus to planning", () => {
+    it("rejectPlan sends message without optimistic state update", () => {
       const ws = connectStore();
       useWorkflowStore.setState({
         planAgent: makeAgentSession({ status: "paused" }),
@@ -1165,8 +1166,9 @@ describe("useWorkflowStore", () => {
       useWorkflowStore.getState().rejectPlan("needs more detail", "req-2");
 
       const state = useWorkflowStore.getState();
-      expect(state.planAgent!.status).toBe("running");
-      expect(state.workflowStatus).toBe("planning");
+      // No optimistic update — status stays until backend confirms via status_changed
+      expect(state.planAgent!.status).toBe("paused");
+      expect(state.workflowStatus).toBe("plan_approval");
       const sent = ws.sent.find(s => JSON.parse(s).action === "plan.rejected");
       expect(sent).toBeDefined();
       const envelope = JSON.parse(sent!);
@@ -1181,7 +1183,8 @@ describe("useWorkflowStore", () => {
       useWorkflowStore.getState().approvePlan();
 
       expect(useWorkflowStore.getState().planAgent).toBeNull();
-      expect(useWorkflowStore.getState().workflowStatus).toBe("building");
+      // No optimistic update — workflowStatus stays idle
+      expect(useWorkflowStore.getState().workflowStatus).toBe("idle");
     });
   });
 

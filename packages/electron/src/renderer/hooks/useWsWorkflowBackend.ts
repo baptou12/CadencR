@@ -325,11 +325,11 @@ export function useWsWorkflowBackend(
     actions: {
       canStartPlan: store.workflowStatus === "idle",
       canStartPrd: store.workflowStatus === "idle",
-      canStartBuild: store.workflowStatus === "plan_approval",
+      canStartBuild: store.workflowStatus === "ready_to_build",
       canStartRisk: false,
       canStartReview: false,
-      canStartWorkflowSession: store.workflowStatus !== "idle",
-      canStartRefine: store.workflowStatus !== "idle",
+      canStartWorkflowSession: store.workflowStatus === "ready_to_build" || store.workflowStatus === "building" || store.workflowStatus === "paused" || store.workflowStatus === "completed",
+      canStartRefine: store.workflowStatus === "ready_to_build" || store.workflowStatus === "building" || store.workflowStatus === "paused" || store.workflowStatus === "completed",
       canStartRetro: store.workflowStatus === "completed",
     },
 

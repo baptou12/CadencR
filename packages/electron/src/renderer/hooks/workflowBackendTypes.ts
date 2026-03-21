@@ -23,6 +23,7 @@ export type ViewState =
   | "planning"
   | "prd"
   | "plan-approval"
+  | "ready-to-build"
   | "agents-active"
   | "paused"
   | "done";
@@ -47,6 +48,8 @@ export function deriveViewState(
       return "prd";
     case "plan_approval":
       return "plan-approval";
+    case "ready_to_build":
+      return "ready-to-build";
     case "building":
       return "agents-active";
     case "paused":

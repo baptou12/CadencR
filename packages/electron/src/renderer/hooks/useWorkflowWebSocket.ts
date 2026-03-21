@@ -873,49 +873,31 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     },
 
     startPlan(description, images) {
-      set({ workflowStatus: "planning", planAgent: createAgentSession(0) });
       send("start_plan", { description, images });
     },
 
     startPrd(description, images) {
-      set({ workflowStatus: "prd", prdAgent: createAgentSession(0) });
       send("start_prd", { description, images });
     },
 
     approvePlan(requestId) {
       send("plan.approved", { approved: true, request_id: requestId });
-      // Agent resumes (permission bridge unblocks). Set back to "running" —
-      // only item_completed should transition to "completed".
-      set(state => ({
-        workflowStatus: "building" as const,
-        planAgent: state.planAgent ? { ...state.planAgent, status: "running" as const } : state.planAgent,
-      }));
     },
 
     rejectPlan(feedback, requestId) {
       send("plan.rejected", { approved: false, feedback, request_id: requestId });
-      // Agent resumes (permission bridge unblocks with Deny + feedback).
-      set(state => ({
-        workflowStatus: "planning" as const,
-        planAgent: state.planAgent ? { ...state.planAgent, status: "running" as const } : state.planAgent,
-      }));
     },
 
     startBuild() {
       send("start_build", {});
-      set({ workflowStatus: "building" });
     },
 
     continueWorkflow() {
       send("continue", {});
-      set({ workflowStatus: "building", pauseReason: null });
     },
 
     skipItem(itemId) {
       send("skip_item", { item_id: itemId });
-      set(state => ({
-        queue: state.queue.map(q => q.id === itemId ? { ...q, status: "skipped" as const } : q),
-      }));
     },
 
     retryItem(itemId) {
@@ -924,12 +906,6 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
 
     respondToPermission(itemId, requestId, decision) {
       send("permission.respond", { agent_slot: legacyIdToSlot(itemId), request_id: requestId, decision });
-      set(state => {
-        const activeAgents = new Map(state.activeAgents);
-        const agent = activeAgents.get(itemId);
-        if (agent) activeAgents.set(itemId, { ...agent, pendingPermission: null });
-        return { activeAgents };
-      });
     },
 
     respondToQuestion(itemId, response) {
@@ -1041,7 +1017,6 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     },
 
     startRefine(description, images) {
-      set({ workflowStatus: "planning", planAgent: createAgentSession(0) });
       send("start_refine", { description, images });
     },
 

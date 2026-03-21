@@ -12,7 +12,7 @@ import {
 } from "@/api/generated";
 
 /** Valid values for the `changed` array in a `feature.updated` payload. */
-export type FeatureChangedField = "title" | "plan" | "prd" | "phases" | "progress" | "settings";
+export type FeatureChangedField = "title" | "plan" | "prd" | "phases" | "progress" | "settings" | "status";
 
 const FIELD_TO_QUERY_KEY: Record<FeatureChangedField, (id: number) => readonly unknown[]> = {
   title: getGetFeatureQueryKey,
@@ -21,6 +21,7 @@ const FIELD_TO_QUERY_KEY: Record<FeatureChangedField, (id: number) => readonly u
   phases: getGetFeaturePlanQueryKey,
   progress: getGetFeaturePlanProgressQueryKey,
   settings: getGetFeatureSettingsQueryKey,
+  status: getGetFeatureQueryKey,
 };
 
 /**
