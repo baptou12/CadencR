@@ -118,4 +118,36 @@ describe("buildSessionEntries", () => {
     expect(prdSession).not.toBeNull();
     expect(prdSession!.pendingPlanApproval).toBeNull();
   });
+
+  it("includes running queue item with matching activeAgent in sessions", () => {
+    const queue = [
+      { id: 10, status: "running" as const, item_type: "execute", phase_id: 1, phase_title: "Phase 1", order_index: 0, group_index: 0, agent_session_id: 88, result: null },
+    ];
+    const agents = new Map<number, AgentSessionState>([
+      [10, makeAgentState({ sessionId: 88, status: "running" })],
+    ]);
+    const { sessions } = buildSessionEntries(queue, agents, null, null, "building");
+
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0].sessionDbId).toBe(88);
+    expect(sessions[0].status).toBe("running");
+    expect(sessions[0].phaseTitle).toBe("Phase 1");
+  });
+
+  it("queue_update before item_started: agent appears in sessions after both arrive", () => {
+    // Simulates the fix where queue_update is sent before advance/item_started
+    // so the frontend has the queue item when item_started arrives.
+    const queue = [
+      { id: 10, status: "running" as const, item_type: "execute", phase_id: 1, phase_title: "Setup", order_index: 0, group_index: 0, agent_session_id: 42, result: null },
+    ];
+    const agents = new Map<number, AgentSessionState>([
+      [10, makeAgentState({ sessionId: 42, status: "running" })],
+    ]);
+    const { sessions } = buildSessionEntries(queue, agents, null, null, "building");
+
+    // The agent should appear because its queue item exists and has a matching activeAgent
+    const setupSession = sessions.find((s) => s.phaseTitle === "Setup");
+    expect(setupSession).toBeDefined();
+    expect(setupSession!.sessionDbId).toBe(42);
+  });
 });

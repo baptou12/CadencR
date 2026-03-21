@@ -1,3 +1,4 @@
+use serde_json;
 use std::collections::HashMap;
 
 use async_trait::async_trait;
@@ -10,6 +11,24 @@ use crate::domain::workflow::populate::topological_sort;
 use crate::domain::workflow::prompts::{build_execute_prompt, build_qa_prompt, build_review_prompt};
 
 use super::WorkflowStrategy;
+
+/// Parse a `depends_on` string that may be a JSON array (e.g. `["A", "B"]`) or comma-separated titles.
+fn parse_depends_on(raw: &str) -> Vec<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return vec![];
+    }
+    // Try JSON array first
+    if let Ok(titles) = serde_json::from_str::<Vec<String>>(trimmed) {
+        return titles;
+    }
+    // Fall back to comma-separated
+    trimmed
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
 
 /// Lightweight plan context for enriching prompts (subset of Plan fields).
 #[derive(sqlx::FromRow)]
@@ -66,16 +85,8 @@ impl WorkflowStrategy for FeatureBuildStrategy {
         let mut edges: Vec<(i64, i64)> = Vec::new();
         for phase in &phases {
             if let Some(ref deps_str) = phase.depends_on {
-                let deps_str = deps_str.trim();
-                if deps_str.is_empty() {
-                    continue;
-                }
-                for dep_title in deps_str.split(',') {
-                    let dep_title = dep_title.trim();
-                    if dep_title.is_empty() {
-                        continue;
-                    }
-                    let dep_phase = title_to_phase.get(dep_title).ok_or_else(|| {
+                for dep_title in parse_depends_on(deps_str) {
+                    let dep_phase = title_to_phase.get(dep_title.as_str()).ok_or_else(|| {
                         format!(
                             "Phase '{}' depends on '{}' which does not exist in plan",
                             phase.title, dep_title
@@ -104,7 +115,7 @@ impl WorkflowStrategy for FeatureBuildStrategy {
             let group_index = *id_to_group.get(&phase.id).unwrap_or(&0) as i64;
 
             let item_type = map_phase_type_to_item_type(phase.phase_type.as_deref());
-            let has_deps = phase.depends_on.as_ref().map_or(false, |d| !d.trim().is_empty());
+            let has_deps = phase.depends_on.as_ref().map_or(false, |d| !parse_depends_on(d).is_empty());
             let status = if has_deps { "blocked" } else { "ready" };
 
             let queue_id = repository::insert_queue_item(
@@ -126,12 +137,8 @@ impl WorkflowStrategy for FeatureBuildStrategy {
         // 7. Insert dependency edges
         for phase in &phases {
             if let Some(ref deps_str) = phase.depends_on {
-                for dep_title in deps_str.split(',') {
-                    let dep_title = dep_title.trim();
-                    if dep_title.is_empty() {
-                        continue;
-                    }
-                    if let Some(dep_phase) = title_to_phase.get(dep_title) {
+                for dep_title in parse_depends_on(deps_str) {
+                    if let Some(dep_phase) = title_to_phase.get(dep_title.as_str()) {
                         let queue_item_id = phase_to_queue_item[&phase.id];
                         let depends_on_item_id = phase_to_queue_item[&dep_phase.id];
                         repository::insert_dependency(write_pool, queue_item_id, depends_on_item_id)
@@ -546,6 +553,38 @@ mod tests {
         assert_eq!(map_phase_type_to_item_type(Some("qa")), "qa");
         assert_eq!(map_phase_type_to_item_type(None), "execute");
         assert_eq!(map_phase_type_to_item_type(Some("unknown")), "execute");
+    }
+
+    #[test]
+    fn parse_depends_on_empty_string() {
+        assert_eq!(parse_depends_on(""), Vec::<String>::new());
+        assert_eq!(parse_depends_on("   "), Vec::<String>::new());
+    }
+
+    #[test]
+    fn parse_depends_on_json_array() {
+        assert_eq!(parse_depends_on(r#"["A", "B"]"#), vec!["A", "B"]);
+    }
+
+    #[test]
+    fn parse_depends_on_json_array_single() {
+        assert_eq!(parse_depends_on(r#"["A"]"#), vec!["A"]);
+    }
+
+    #[test]
+    fn parse_depends_on_comma_separated() {
+        assert_eq!(parse_depends_on("A, B"), vec!["A", "B"]);
+    }
+
+    #[test]
+    fn parse_depends_on_single_value() {
+        assert_eq!(parse_depends_on("A"), vec!["A"]);
+    }
+
+    #[test]
+    fn parse_depends_on_whitespace_handling() {
+        assert_eq!(parse_depends_on("  A , B  "), vec!["A", "B"]);
+        assert_eq!(parse_depends_on("  A  "), vec!["A"]);
     }
 
     #[test]

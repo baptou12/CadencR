@@ -1558,6 +1558,42 @@ describe("useWorkflowStore", () => {
       expect(agent!.blocks[0]).toMatchObject({ type: "user_message", content: "Hello" });
     });
 
+    it("queue_update before item_started populates queue so agent is matched", () => {
+      const ws = connectStore();
+
+      // 1. queue_update arrives first (the fix: sent before advance)
+      dispatch(ws, {
+        domain: "workflow",
+        action: "queue_update",
+        payload: {
+          feature_id: 1,
+          items: [
+            { id: 10, status: "ready", item_type: "execute", phase_id: 1, phase_title: "Setup", order_index: 0, group_index: 0, agent_session_id: null, result: null },
+          ],
+        },
+      });
+
+      // Queue should be populated
+      expect(useWorkflowStore.getState().queue).toHaveLength(1);
+      expect(useWorkflowStore.getState().queue[0].id).toBe(10);
+
+      // 2. item_started arrives after
+      dispatch(ws, {
+        domain: "workflow",
+        action: "item_started",
+        payload: { feature_id: 1, queue_item_id: 10, session_id: 55, item_type: "execute" },
+      });
+
+      // Agent should be created for the queue item
+      const agent = useWorkflowStore.getState().activeAgents.get(10);
+      expect(agent).toBeDefined();
+      expect(agent!.sessionId).toBe(55);
+
+      // Queue item status should be updated to running
+      const queueItem = useWorkflowStore.getState().queue.find((q) => q.id === 10);
+      expect(queueItem?.status).toBe("running");
+    });
+
     it("item_started preserves existing blocks", () => {
       const ws = connectStore();
       // Simulate user message arriving before item_started

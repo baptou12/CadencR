@@ -506,6 +506,22 @@ async fn handle_start_build(envelope: WsEnvelope, sender: &WsSender, app_state: 
             send_workflow_error(sender, &envelope.id, "POPULATE_FAILED", &format!("Failed to populate queue: {e}"));
             return;
         }
+
+    }
+
+    // Always send queue state to the frontend before advancing, so that
+    // item_started messages find matching queue items in the store.
+    if let Ok(items) = crate::domain::features::repository::get_queue_for_feature(&app_state.read_pool, payload.feature_id).await {
+        let queue_env = WsEnvelope::new(
+            "workflow",
+            "queue_update",
+            to_value(WorkflowQueueUpdatePayload {
+                feature_id: payload.feature_id,
+                items,
+                workflow_status: None,
+            }),
+        );
+        let _ = sender.send(Message::Text(String::from(queue_env).into()));
     }
 
     // Ensure worktree exists (idempotent)
