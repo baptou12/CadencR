@@ -26,6 +26,7 @@ use crate::domain::ws_session::protocol::*;
 use super::engine::{send_feature_updated_envelope, to_value};
 
 /// Manages permission channels for all active workflow agents.
+#[derive(Clone)]
 pub struct PermissionRouter {
     pub permission_txs: Arc<DashMap<AgentSlot, mpsc::Sender<PermissionResponse>>>,
 }

@@ -64,6 +64,21 @@ impl AgentManager {
         }
     }
 
+    /// Create a new AgentManager sharing in-memory state (queries, active_items,
+    /// interrupted_items, paused_sessions) but with a new WsSender.
+    pub fn reconnect_with_sender(old: &AgentManager, new_sender: WsSender) -> Self {
+        Self {
+            feature_id: old.feature_id,
+            read_pool: old.read_pool.clone(),
+            write_pool: old.write_pool.clone(),
+            ws_sender: new_sender,
+            queries: Arc::clone(&old.queries),
+            active_items: Arc::clone(&old.active_items),
+            interrupted_items: Arc::clone(&old.interrupted_items),
+            paused_sessions: Arc::clone(&old.paused_sessions),
+        }
+    }
+
     /// Get the feature's working directory.
     /// Prefers worktree_path from feature_settings if set, otherwise falls back to project directory.
     pub async fn get_feature_cwd(&self) -> Option<PathBuf> {

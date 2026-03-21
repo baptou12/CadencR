@@ -210,6 +210,43 @@ impl WorkflowEngine {
         }
     }
 
+    /// Create a new engine that shares in-memory state (active_items, queries,
+    /// paused_sessions, permissions) with the old engine but uses a new WsSender.
+    /// Used on reconnect to avoid redundant DB queries.
+    pub fn reconnect_with_sender(old: &WorkflowEngine, new_sender: WsSender) -> Self {
+        let now_secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        let agent_manager = AgentManager::reconnect_with_sender(&old.agent_manager, new_sender.clone());
+        let queue = QueueAdvancer::new(
+            old.feature_id,
+            old.workflow_type.clone(),
+            old.queue.max_parallel,
+            old.read_pool.clone(),
+            old.write_pool.clone(),
+            new_sender.clone(),
+        );
+        // Preserve autonomy level from old engine
+        queue.autonomy_level.store(
+            old.queue.autonomy_level.load(Ordering::Relaxed),
+            Ordering::Relaxed,
+        );
+
+        Self {
+            feature_id: old.feature_id,
+            workflow_type: old.workflow_type.clone(),
+            agent_manager,
+            queue,
+            permissions: old.permissions.clone(),
+            last_activity: AtomicU64::new(now_secs),
+            read_pool: old.read_pool.clone(),
+            write_pool: old.write_pool.clone(),
+            ws_sender: new_sender,
+        }
+    }
+
     // ── Backward-compatible accessors for workflow handler ──
 
     /// Access to active_items (for handler/eviction checks).

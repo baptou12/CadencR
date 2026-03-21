@@ -260,7 +260,7 @@ async fn handle_feature_start(
 
     // Check if an engine already exists for this feature
     if let Some(existing) = ENGINES.get(&feature_id) {
-        if existing.active_items().len() > 0 {
+        if !existing.active_items().is_empty() {
             send_workflow_error(
                 sender,
                 &envelope.id,
@@ -269,26 +269,30 @@ async fn handle_feature_start(
             );
             return;
         }
-        info!(feature_id, "replacing idle engine on reconnect");
+        // Idle engine exists — reuse it with updated sender, skip restore_on_reconnect
+        info!(feature_id, "reusing idle engine on reconnect (updated sender)");
+        let reconnected = Arc::new(WorkflowEngine::reconnect_with_sender(&existing, sender.clone()));
+        drop(existing); // release DashMap ref before insert
+        ENGINES.insert(feature_id, reconnected);
+        ensure_background_tasks(app_state.agent_timeout_minutes);
+    } else {
+        // No existing engine — create fresh and restore from DB
+        let engine = Arc::new(WorkflowEngine::new(
+            feature_id,
+            workflow_type.clone(),
+            app_state.read_pool.clone(),
+            app_state.write_pool.clone(),
+            sender.clone(),
+            app_state.max_parallel_agents,
+        ));
+
+        if let Err(e) = engine.restore_on_reconnect().await {
+            warn!(feature_id, error = %e, "failed to restore on reconnect");
+        }
+
+        ENGINES.insert(feature_id, engine);
+        ensure_background_tasks(app_state.agent_timeout_minutes);
     }
-
-    // Create engine and store in registry
-    let engine = Arc::new(WorkflowEngine::new(
-        feature_id,
-        workflow_type.clone(),
-        app_state.read_pool.clone(),
-        app_state.write_pool.clone(),
-        sender.clone(),
-        app_state.max_parallel_agents,
-    ));
-
-    // Restore state on reconnect (mark stale running items, send queue update)
-    if let Err(e) = engine.restore_on_reconnect().await {
-        warn!(feature_id, error = %e, "failed to restore on reconnect");
-    }
-
-    ENGINES.insert(feature_id, engine);
-    ensure_background_tasks(app_state.agent_timeout_minutes);
 
     info!(feature_id, workflow_type = %workflow_type.as_str(), "workflow engine created");
 
