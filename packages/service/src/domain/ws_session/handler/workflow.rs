@@ -17,15 +17,15 @@ use super::{SdkSessions, WsSender};
 
 /// Global engine registry: one engine per feature_id at a time.
 static ENGINES: LazyLock<DashMap<i64, Arc<WorkflowEngine>>> = LazyLock::new(DashMap::new);
-static EVICTION_INIT: Once = Once::new();
+static BACKGROUND_INIT: Once = Once::new();
 
-/// Spawn the global ENGINES eviction task (runs once).
-/// Evicts engines that have been idle for >30 minutes with no active items.
-fn ensure_eviction_task() {
-    EVICTION_INIT.call_once(|| {
+/// Spawn global background tasks (runs once): engine eviction + timeout checker.
+fn ensure_background_tasks(timeout_minutes: u64) {
+    BACKGROUND_INIT.call_once(move || {
+        // Eviction task: remove idle engines every 5 min
         tokio::spawn(async {
-            let interval = std::time::Duration::from_secs(5 * 60); // check every 5 min
-            let idle_threshold_secs: u64 = 30 * 60; // 30 min idle
+            let interval = std::time::Duration::from_secs(5 * 60);
+            let idle_threshold_secs: u64 = 30 * 60;
             loop {
                 tokio::time::sleep(interval).await;
                 let now = std::time::SystemTime::now()
@@ -44,9 +44,56 @@ fn ensure_eviction_task() {
                     }
                 }
                 for feature_id in to_evict {
-                    if let Some((_, engine)) = ENGINES.remove(&feature_id) {
-                        engine.cancel();
+                    if let Some((_, _engine)) = ENGINES.remove(&feature_id) {
                         info!(feature_id, "evicted idle workflow engine from ENGINES registry");
+                    }
+                }
+            }
+        });
+
+        // Global timeout checker: scan all engines every 60s for stale running items
+        tokio::spawn(async move {
+            let interval = std::time::Duration::from_secs(60);
+            loop {
+                tokio::time::sleep(interval).await;
+
+                for entry in ENGINES.iter() {
+                    let engine = entry.value();
+                    let feature_id = engine.feature_id;
+
+                    let stale: Vec<(i64,)> = match sqlx::query_as(
+                        "SELECT id FROM workflow_queue WHERE feature_id = ? AND status = 'running' AND started_at < datetime('now', ?)",
+                    )
+                    .bind(feature_id)
+                    .bind(format!("-{timeout_minutes} minutes"))
+                    .fetch_all(&engine.read_pool)
+                    .await {
+                        Ok(rows) => rows,
+                        Err(e) => {
+                            tracing::error!(feature_id, error = %e, "timeout checker query failed");
+                            continue;
+                        }
+                    };
+
+                    for (item_id,) in stale {
+                        warn!(feature_id, item_id, "agent timed out");
+                        engine.active_items().remove(&crate::domain::workflow::engine::AgentSlot::QueueItem(item_id));
+
+                        if let Err(e) = crate::domain::features::repository::mark_item_error(&engine.write_pool, item_id, Some("Agent timed out")).await {
+                            tracing::error!(item_id, error = %e, "failed to mark timed-out item");
+                            continue;
+                        }
+
+                        let envelope = WsEnvelope::new(
+                            "workflow",
+                            "item_error",
+                            serde_json::to_value(WorkflowItemErrorPayload {
+                                feature_id,
+                                agent_slot: crate::domain::workflow::engine::AgentSlot::QueueItem(item_id),
+                                error: "Agent timed out".into(),
+                            }).unwrap_or_default(),
+                        );
+                        let _ = engine.ws_sender.send(Message::Text(String::from(envelope).into()));
                     }
                 }
             }
@@ -56,9 +103,7 @@ fn ensure_eviction_task() {
 
 /// Remove the engine for a feature (used on disconnect cleanup).
 pub fn remove_engine(feature_id: i64) {
-    if let Some((_, engine)) = ENGINES.remove(&feature_id) {
-        engine.cancel();
-    }
+    ENGINES.remove(&feature_id);
 }
 
 /// Get all tracked feature_ids (for disconnect cleanup).
@@ -242,11 +287,8 @@ async fn handle_feature_start(
         warn!(feature_id, error = %e, "failed to restore on reconnect");
     }
 
-    // Start timeout checker (configurable via CADENCE_AGENT_TIMEOUT_MINUTES)
-    engine.spawn_timeout_checker(app_state.agent_timeout_minutes);
-
     ENGINES.insert(feature_id, engine);
-    ensure_eviction_task();
+    ensure_background_tasks(app_state.agent_timeout_minutes);
 
     info!(feature_id, workflow_type = %workflow_type.as_str(), "workflow engine created");
 

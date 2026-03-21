@@ -162,10 +162,7 @@ pub struct WorkflowEngine {
     pub permissions: PermissionRouter,
     /// Unix timestamp (seconds) of last activity — updated on advance/completion/error.
     pub last_activity: AtomicU64,
-    /// Cancellation signal for background tasks (e.g. timeout checker).
-    cancel_tx: tokio::sync::watch::Sender<bool>,
-    cancel_rx: tokio::sync::watch::Receiver<bool>,
-    // DB pools kept for orchestration-level queries (status, timeout checker)
+    // DB pools kept for orchestration-level queries (status)
     pub read_pool: SqlitePool,
     pub write_pool: SqlitePool,
     pub ws_sender: WsSender,
@@ -184,8 +181,6 @@ impl WorkflowEngine {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
-        let (cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
-
         let agent_manager = AgentManager::new(
             feature_id,
             read_pool.clone(),
@@ -209,8 +204,6 @@ impl WorkflowEngine {
             queue,
             permissions,
             last_activity: AtomicU64::new(now_secs),
-            cancel_tx,
-            cancel_rx,
             read_pool,
             write_pool,
             ws_sender,
@@ -506,78 +499,12 @@ impl WorkflowEngine {
         self.queue.restore_on_reconnect(&self.agent_manager).await
     }
 
-    pub fn cancel(&self) {
-        let _ = self.cancel_tx.send(true);
-    }
-
-    pub fn spawn_timeout_checker(&self, timeout_minutes: u64) {
-        let read_pool = self.read_pool.clone();
-        let write_pool = self.write_pool.clone();
-        let feature_id = self.feature_id;
-        let sender = self.ws_sender.clone();
-        let active_items = self.agent_manager.active_items.clone();
-        let mut cancel_rx = self.cancel_rx.clone();
-
-        tokio::spawn(async move {
-            let interval = std::time::Duration::from_secs(60);
-            loop {
-                tokio::select! {
-                    _ = tokio::time::sleep(interval) => {}
-                    _ = cancel_rx.changed() => {
-                        info!(feature_id, "timeout checker cancelled");
-                        break;
-                    }
-                }
-
-                let stale: Vec<(i64,)> = match sqlx::query_as(
-                    "SELECT id FROM workflow_queue WHERE feature_id = ? AND status = 'running' AND started_at < datetime('now', ?)",
-                )
-                .bind(feature_id)
-                .bind(format!("-{timeout_minutes} minutes"))
-                .fetch_all(&read_pool)
-                .await {
-                    Ok(rows) => rows,
-                    Err(e) => {
-                        tracing::error!(feature_id, error = %e, "timeout checker query failed");
-                        continue;
-                    }
-                };
-
-                for (item_id,) in stale {
-                    warn!(feature_id, item_id, "agent timed out");
-                    active_items.remove(&AgentSlot::QueueItem(item_id));
-
-                    if let Err(e) = repo::mark_item_error(&write_pool, item_id, Some("Agent timed out")).await {
-                        tracing::error!(item_id, error = %e, "failed to mark timed-out item");
-                        continue;
-                    }
-
-                    let envelope = WsEnvelope::new(
-                        "workflow",
-                        "item_error",
-                        to_value(WorkflowItemErrorPayload {
-                            feature_id,
-                            agent_slot: AgentSlot::QueueItem(item_id),
-                            error: "Agent timed out".into(),
-                        }),
-                    );
-                    let _ = sender.send(Message::Text(String::from(envelope).into()));
-                }
-            }
-        });
-    }
 }
 
 #[async_trait::async_trait]
 impl StatusSetter for WorkflowEngine {
     async fn set_status(&self, status: WorkflowStatus) {
         self.set_status(status).await;
-    }
-}
-
-impl Drop for WorkflowEngine {
-    fn drop(&mut self) {
-        let _ = self.cancel_tx.send(true);
     }
 }
 
@@ -787,34 +714,7 @@ mod tests {
         assert!(WorkflowType::from_str("unknown").is_err());
     }
 
-    // ── 9. Cancel signal ──
-
-    #[tokio::test]
-    async fn test_cancel_signal() {
-        let (engine, _rx) = test_engine().await;
-        let mut cancel_rx = engine.cancel_rx.clone();
-
-        assert!(!*cancel_rx.borrow());
-        engine.cancel();
-        cancel_rx.changed().await.unwrap();
-        assert!(*cancel_rx.borrow());
-    }
-
-    // ── 10. Drop triggers cancel ──
-
-    #[tokio::test]
-    async fn test_drop_triggers_cancel() {
-        let pool = test_pool().await;
-        let (tx, _rx) = mpsc::unbounded_channel();
-        let engine = WorkflowEngine::new(1, WorkflowType::FeatureBuild, pool.clone(), pool, tx, 1);
-        let mut cancel_rx = engine.cancel_rx.clone();
-
-        drop(engine);
-        cancel_rx.changed().await.unwrap();
-        assert!(*cancel_rx.borrow());
-    }
-
-    // ── 11. Agent type mapping via strategy ──
+    // ── 9. Agent type mapping via strategy ──
 
     #[tokio::test]
     async fn test_strategy_agent_type_mapping() {
