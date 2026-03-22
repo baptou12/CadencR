@@ -133,6 +133,7 @@ export function NextStepsBar({
         variant: "default" as const,
         kbdShortcut: ["enter"],
         onClick: (text: string, images?: Array<{ base64: string; mimeType: string }>) => {
+          setShowRefinePrompt(false);
           onStartRefinePlan?.(text, images);
         },
       },
@@ -152,6 +153,7 @@ export function NextStepsBar({
         variant: "default" as const,
         kbdShortcut: ["enter"],
         onClick: (text: string, images?: Array<{ base64: string; mimeType: string }>) => {
+          setShowSessionPrompt(false);
           onStartWorkflowSession?.(text, images);
         },
       },
