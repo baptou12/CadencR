@@ -939,9 +939,9 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
             .slice(1)
             .map((l) => l.replace(/^Answer:\s*/, ""))
             .join("\n");
-          return `*${question}*\n**${answer}**`;
+          return `*${question}*\n\n**${answer}**`;
         })
-        .join("\n\n");
+        .join("\n\n\n\n");
 
       session.streamingState.counter += 1;
       set(updateSession(get(), sessionId, {

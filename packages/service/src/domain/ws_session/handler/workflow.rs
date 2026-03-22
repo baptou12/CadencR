@@ -213,7 +213,7 @@ pub async fn handle_workflow_action(
         "continue" => handle_continue(envelope, sender).await,
         "skip_item" => handle_skip_item(envelope, sender).await,
         "retry_item" => handle_retry_item(envelope, sender).await,
-        "permission.respond" => handle_permission_respond(envelope, sender).await,
+        "permission.respond" => handle_permission_respond(envelope, sender, app_state).await,
         "prompt.send" => handle_prompt_send(envelope, sender, app_state).await,
         "interrupt" => handle_interrupt(envelope, sender, app_state).await,
         "set_autonomy" => handle_set_autonomy(envelope, sender).await,
@@ -647,8 +647,40 @@ async fn handle_retry_item(envelope: WsEnvelope, sender: &WsSender) {
     }
 }
 
-async fn handle_permission_respond(envelope: WsEnvelope, sender: &WsSender) {
+async fn handle_permission_respond(envelope: WsEnvelope, sender: &WsSender, app_state: &AppState) {
     let Some((payload, engine)) = parse_and_get_engine::<WorkflowPermissionRespondPayload>(&envelope, sender) else { return };
+
+    // Persist user answer for AskUserQuestion and notify the frontend so it
+    // appears in the conversation (mirrors the ws-session behaviour).
+    if let Some(ref updated_input) = payload.updated_input {
+        if let Some(answers) = updated_input.get("answers") {
+            if let Some(answer_text) = answers.get("0").and_then(|v| v.as_str()) {
+                if let Some(db_session_id_ref) = engine.active_items().get(&payload.agent_slot) {
+                    let db_session_id = *db_session_id_ref;
+                    let p = WsSessionPersistence::with_session_id(
+                        app_state.write_pool.clone(),
+                        payload.feature_id,
+                        Some(db_session_id),
+                    );
+                    p.persist_user_message(answer_text).await;
+
+                    let formatted = format_qa_answer(answer_text);
+
+                    // Send agent_user_message so the frontend adds the answer to the conversation.
+                    let user_msg = WsEnvelope::new(
+                        "workflow",
+                        "agent_user_message",
+                        serde_json::json!({
+                            "agent_slot": payload.agent_slot,
+                            "session_id": db_session_id,
+                            "content": formatted,
+                        }),
+                    );
+                    let _ = sender.send(Message::Text(String::from(user_msg).into()));
+                }
+            }
+        }
+    }
 
     let response = super::session_prompt::PermissionResponse {
         decision: payload.decision,
@@ -940,6 +972,22 @@ async fn prepare_worktree(
     });
 
     Ok(())
+}
+
+/// Format a raw Q&A response string into markdown with italic questions and bold answers.
+fn format_qa_answer(raw: &str) -> String {
+    raw.split("\n\n")
+        .map(|qa| {
+            let mut lines = qa.lines();
+            let question = lines.next().unwrap_or("");
+            let answer: String = lines
+                .map(|l| l.strip_prefix("Answer: ").unwrap_or(l))
+                .collect::<Vec<_>>()
+                .join("\n");
+            format!("*{question}*\n\n**{answer}**")
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n\n\n")
 }
 
 #[cfg(test)]
@@ -1236,5 +1284,45 @@ mod tests {
     fn test_tracked_feature_ids_type() {
         // Just verify it returns a Vec<i64> without panicking
         let _ids: Vec<i64> = tracked_feature_ids();
+    }
+
+    // --- format_qa_answer tests ---
+
+    #[test]
+    fn test_format_qa_single_pair() {
+        let raw = "What is the goal?\nAnswer: Build a widget";
+        let result = format_qa_answer(raw);
+        assert_eq!(result, "*What is the goal?*\n\n**Build a widget**");
+    }
+
+    #[test]
+    fn test_format_qa_multiple_pairs() {
+        let raw = "First question?\nAnswer: First answer\n\nSecond question?\nAnswer: Second answer";
+        let result = format_qa_answer(raw);
+        assert_eq!(
+            result,
+            "*First question?*\n\n**First answer**\n\n\n\n*Second question?*\n\n**Second answer**"
+        );
+    }
+
+    #[test]
+    fn test_format_qa_no_answer_prefix() {
+        let raw = "Question?\nJust a plain answer";
+        let result = format_qa_answer(raw);
+        assert_eq!(result, "*Question?*\n\n**Just a plain answer**");
+    }
+
+    #[test]
+    fn test_format_qa_multiline_answer() {
+        let raw = "Question?\nAnswer: Line one\nLine two";
+        let result = format_qa_answer(raw);
+        assert_eq!(result, "*Question?*\n\n**Line one\nLine two**");
+    }
+
+    #[test]
+    fn test_format_qa_question_only() {
+        let raw = "Just a question?";
+        let result = format_qa_answer(raw);
+        assert_eq!(result, "*Just a question?*\n\n****");
     }
 }
