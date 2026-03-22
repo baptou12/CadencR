@@ -8,6 +8,7 @@ import {
 import { useHotkeys } from "react-hotkeys-hook";
 import { Sidebar } from "@/components/Sidebar";
 import { Toaster } from "@/components/ui/sonner";
+import { toast } from "sonner";
 import { useDbUpdated } from "@/hooks/useDbUpdated";
 import { useOperationToasts } from "@/hooks/useOperationToasts";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
@@ -134,6 +135,9 @@ function RootLayout() {
   // Track which feature to navigate to after deletion
   const deleteNavTargetRef = useRef<number | null>(null);
   const deleteFeatureMutation = useDeleteFeature({
+    onError: () => {
+      toast.error("Failed to delete feature");
+    },
     onSuccess: () => {
       invalidateFeatures();
       if (activeProjectId == null) return;

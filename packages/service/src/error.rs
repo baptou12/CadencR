@@ -41,6 +41,10 @@ impl IntoResponse for AppError {
             AppError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR"),
         };
 
+        if status.is_server_error() {
+            tracing::error!(code = code, error = %self, "request failed");
+        }
+
         let body = ErrorResponse {
             error: self.to_string(),
             code: code.to_string(),

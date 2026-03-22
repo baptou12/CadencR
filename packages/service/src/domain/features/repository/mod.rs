@@ -158,6 +158,32 @@ mod tests {
         .await
         .unwrap();
 
+        sqlx::query(
+            r#"CREATE TABLE session_claude_ids (
+                id INTEGER PRIMARY KEY,
+                session_id INTEGER REFERENCES agent_sessions(id),
+                claude_session_id TEXT
+            )"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            r#"CREATE TABLE workflow_queue (
+                id INTEGER PRIMARY KEY,
+                feature_id INTEGER,
+                item_type TEXT NOT NULL DEFAULT 'execute',
+                phase_id INTEGER,
+                status TEXT NOT NULL DEFAULT 'pending',
+                order_index INTEGER NOT NULL DEFAULT 0,
+                agent_session_id INTEGER
+            )"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
         pool
     }
 
@@ -765,30 +791,17 @@ mod tests {
     async fn setup_test_db_with_queue() -> SqlitePool {
         let pool = setup_test_db().await;
 
-        sqlx::query(
-            r#"CREATE TABLE workflow_queue (
-                id INTEGER PRIMARY KEY,
-                feature_id INTEGER,
-                workflow_type TEXT,
-                item_type TEXT,
-                phase_id INTEGER,
-                status TEXT DEFAULT 'blocked',
-                order_index INTEGER DEFAULT 0,
-                group_index INTEGER,
-                config TEXT,
-                agent_session_id INTEGER,
-                result TEXT,
-                created_at TEXT DEFAULT (datetime('now')),
-                started_at TEXT,
-                ended_at TEXT,
-                pid INTEGER,
-                max_retries INTEGER NOT NULL DEFAULT 1,
-                retry_count INTEGER NOT NULL DEFAULT 0
-            )"#,
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
+        // workflow_queue is already created by setup_test_db; add extra columns for queue tests
+        sqlx::query("ALTER TABLE workflow_queue ADD COLUMN workflow_type TEXT").execute(&pool).await.unwrap();
+        sqlx::query("ALTER TABLE workflow_queue ADD COLUMN group_index INTEGER").execute(&pool).await.unwrap();
+        sqlx::query("ALTER TABLE workflow_queue ADD COLUMN config TEXT").execute(&pool).await.unwrap();
+        sqlx::query("ALTER TABLE workflow_queue ADD COLUMN result TEXT").execute(&pool).await.unwrap();
+        sqlx::query("ALTER TABLE workflow_queue ADD COLUMN created_at TEXT DEFAULT (datetime('now'))").execute(&pool).await.unwrap();
+        sqlx::query("ALTER TABLE workflow_queue ADD COLUMN started_at TEXT").execute(&pool).await.unwrap();
+        sqlx::query("ALTER TABLE workflow_queue ADD COLUMN ended_at TEXT").execute(&pool).await.unwrap();
+        sqlx::query("ALTER TABLE workflow_queue ADD COLUMN pid INTEGER").execute(&pool).await.unwrap();
+        sqlx::query("ALTER TABLE workflow_queue ADD COLUMN max_retries INTEGER NOT NULL DEFAULT 1").execute(&pool).await.unwrap();
+        sqlx::query("ALTER TABLE workflow_queue ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0").execute(&pool).await.unwrap();
 
         sqlx::query(
             r#"CREATE TABLE workflow_dependencies (
@@ -1108,5 +1121,71 @@ mod tests {
         let custom = settings.iter().filter(|s| s.key == "custom_key").collect::<Vec<_>>();
         assert_eq!(custom.len(), 1);
         assert_eq!(custom[0].value, "value2");
+    }
+
+    #[tokio::test]
+    async fn test_delete_feature_with_workflow_queue() {
+        let pool = setup_test_db().await;
+        // Recreate workflow_queue with FK constraints to mirror production schema
+        sqlx::query("DROP TABLE workflow_queue").execute(&pool).await.unwrap();
+        sqlx::query(
+            r#"CREATE TABLE workflow_queue (
+                id INTEGER PRIMARY KEY,
+                feature_id INTEGER REFERENCES features(id),
+                item_type TEXT NOT NULL DEFAULT 'execute',
+                phase_id INTEGER REFERENCES phases(id),
+                status TEXT NOT NULL DEFAULT 'pending',
+                order_index INTEGER NOT NULL DEFAULT 0,
+                agent_session_id INTEGER REFERENCES agent_sessions(id)
+            )"#,
+        ).execute(&pool).await.unwrap();
+        sqlx::query("PRAGMA foreign_keys = ON").execute(&pool).await.unwrap();
+        let proj = create_test_project(&pool).await;
+        let fid = create_feature(&pool, proj, "Feature", "feature").await.unwrap();
+
+        // Create plan + phase
+        let plan_id = sqlx::query("INSERT INTO plans (feature_id, title, status) VALUES (?, 'Plan', 'active')")
+            .bind(fid).execute(&pool).await.unwrap().last_insert_rowid();
+        let phase_id = sqlx::query("INSERT INTO phases (plan_id, step_number, title) VALUES (?, 1, 'Phase 1')")
+            .bind(plan_id).execute(&pool).await.unwrap().last_insert_rowid();
+
+        // Create session + message + claude_id
+        let sess_id = sqlx::query("INSERT INTO agent_sessions (feature_id, title) VALUES (?, 'sess')")
+            .bind(fid).execute(&pool).await.unwrap().last_insert_rowid();
+        sqlx::query("INSERT INTO agent_messages (session_id, content) VALUES (?, 'hello')")
+            .bind(sess_id).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO session_claude_ids (session_id, claude_session_id) VALUES (?, 'cid-1')")
+            .bind(sess_id).execute(&pool).await.unwrap();
+
+        // Create workflow_queue referencing phase + session + feature
+        sqlx::query(
+            "INSERT INTO workflow_queue (feature_id, item_type, order_index, phase_id, agent_session_id) VALUES (?, 'execute', 0, ?, ?)"
+        )
+        .bind(fid).bind(phase_id).bind(sess_id)
+        .execute(&pool).await.unwrap();
+
+        // Delete should succeed despite FK constraints
+        delete_feature(&pool, fid).await.unwrap();
+
+        // Verify everything is gone
+        let feature = get_by_id(&pool, fid).await.unwrap();
+        assert!(feature.is_none());
+
+        let wq: Vec<(i64,)> = sqlx::query_as("SELECT id FROM workflow_queue WHERE feature_id = ?")
+            .bind(fid).fetch_all(&pool).await.unwrap();
+        assert!(wq.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_delete_feature_no_related_data() {
+        let pool = setup_test_db().await;
+        sqlx::query("PRAGMA foreign_keys = ON").execute(&pool).await.unwrap();
+        let proj = create_test_project(&pool).await;
+        let fid = create_feature(&pool, proj, "Empty Feature", "feature").await.unwrap();
+
+        delete_feature(&pool, fid).await.unwrap();
+
+        let feature = get_by_id(&pool, fid).await.unwrap();
+        assert!(feature.is_none());
     }
 }

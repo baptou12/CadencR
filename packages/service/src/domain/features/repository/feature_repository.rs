@@ -163,7 +163,13 @@ pub async fn resolve_working_dir(pool: &SqlitePool, feature_id: i64, project_id:
 pub async fn delete_feature(pool: &SqlitePool, id: i64) -> Result<(), AppError> {
     let mut tx = pool.begin().await?;
 
-    // Get all plan IDs for cascade delete
+    // Delete workflow_queue first — it has FKs to phases, agent_sessions, and features
+    sqlx::query("DELETE FROM workflow_queue WHERE feature_id = ?")
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+
+    // Delete phases (FK to plans)
     let plan_ids: Vec<(i64,)> =
         sqlx::query_as("SELECT id FROM plans WHERE feature_id = ?")
             .bind(id)
@@ -181,6 +187,14 @@ pub async fn delete_feature(pool: &SqlitePool, id: i64) -> Result<(), AppError> 
         .bind(id)
         .execute(&mut *tx)
         .await?;
+
+    // Delete session children, then sessions
+    sqlx::query(
+        "DELETE FROM session_claude_ids WHERE session_id IN (SELECT id FROM agent_sessions WHERE feature_id = ?)",
+    )
+    .bind(id)
+    .execute(&mut *tx)
+    .await?;
 
     sqlx::query(
         "DELETE FROM agent_messages WHERE session_id IN (SELECT id FROM agent_sessions WHERE feature_id = ?)",
