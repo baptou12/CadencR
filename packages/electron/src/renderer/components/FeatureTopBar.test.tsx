@@ -34,8 +34,7 @@ vi.mock("@/api/generated", () => ({
   })),
   useGetBranch: vi.fn(() => ({ data: { branch: "main" } })),
   useGetFileBlobShas: vi.fn(() => ({ data: [] })),
-  useGitOpenInTerminal: vi.fn(() => ({ mutate: mockOpenTerminal })),
-  useGitOpenInZed: vi.fn(() => ({ mutate: vi.fn() })),
+  useOpenExternalHandler: vi.fn(() => ({ mutate: mockOpenTerminal })),
 }));
 
 vi.mock("@/hooks/useFeatureTitle", () => ({
@@ -51,14 +50,6 @@ vi.mock("@/trpc", () => {
         React.createElement(React.Fragment, null, children),
       workflow: {
         startReviewFixer: {
-          useMutation: vi.fn(() => ({ mutate: vi.fn() })),
-        },
-      },
-      git: {
-        openInTerminal: {
-          useMutation: vi.fn(() => ({ mutate: mockOpenTerminal })),
-        },
-        openInZed: {
           useMutation: vi.fn(() => ({ mutate: vi.fn() })),
         },
       },

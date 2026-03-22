@@ -6,8 +6,6 @@ const TOAST_ID = "global-ops";
 
 /** Maps tRPC query keys to friendly, non-technical labels */
 const OPERATION_LABELS: Record<string, string> = {
-  "git.openInTerminal": "Opening terminal",
-  "git.openInZed": "Opening editor",
   "usage.getUsage": "Checking usage",
 };
 
