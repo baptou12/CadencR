@@ -131,7 +131,7 @@ export function ProjectTree({
   };
 
   return (
-    <div className="flex h-full min-w-0 flex-col gap-2 overflow-hidden">
+    <div className="flex h-full min-h-0 min-w-0 flex-col gap-2 overflow-hidden">
       <div className="flex items-center justify-between px-2">
         <span className="text-xs font-semibold uppercase text-muted-foreground">
           Projects
@@ -148,7 +148,7 @@ export function ProjectTree({
         </Button>
       </div>
 
-      <ScrollArea className="flex-1 min-w-0">
+      <ScrollArea className="flex-1 min-h-0 min-w-0 overflow-hidden">
         <div className="flex min-w-0 flex-col gap-0.5 px-1">
           {projects.map((project) => {
             const isExpanded = expanded[project.id] ?? false;

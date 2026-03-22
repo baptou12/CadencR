@@ -258,7 +258,11 @@ export function ProjectFeatures({
             <span className="shrink-0">Archived ({archivedFeatures.length})</span>
             <span className="flex-1 border-t border-border/50" />
           </button>
-          {showArchived && archivedFeatures.map(renderFeature)}
+          {showArchived && (
+            <div className="max-h-[calc(5*2.25rem)] overflow-y-auto">
+              {archivedFeatures.map(renderFeature)}
+            </div>
+          )}
         </>
       )}
     </div>
