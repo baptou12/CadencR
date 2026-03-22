@@ -19,7 +19,7 @@ const SETTING_WORKTREE_BRANCH: &str = "worktree_branch";
 
 /// Resolve the git directory for a feature.
 /// Non-session features use worktree_path if available, otherwise project path.
-async fn resolve_feature_git_path(
+pub async fn resolve_feature_git_path(
     state: &AppState,
     feature_id: i64,
 ) -> Result<Option<String>, AppError> {

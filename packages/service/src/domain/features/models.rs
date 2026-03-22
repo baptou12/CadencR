@@ -183,6 +183,16 @@ pub struct QueueItem {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
+pub struct OpenExternalRequest {
+    pub app: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct OpenExternalResponse {
+    pub success: bool,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct OverridePhaseStatusRequest {
     pub status: String,
 }
