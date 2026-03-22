@@ -88,17 +88,6 @@ vi.mock("@/trpc", () => {
           useQuery: vi.fn(() => ({ data: undefined })),
         },
       },
-      sessions: {
-        getSupportedCommands: {
-          useQuery: vi.fn(() => ({ data: undefined })),
-        },
-        getBackgroundTasks: {
-          useQuery: vi.fn(() => ({ data: [] })),
-        },
-        killBackgroundTask: {
-          useMutation: vi.fn(() => ({ mutate: vi.fn() })),
-        },
-      },
     },
   };
 });

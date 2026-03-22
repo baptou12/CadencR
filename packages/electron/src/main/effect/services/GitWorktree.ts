@@ -3,8 +3,7 @@
  *
  * This is a stateless module — no Effect.Tag. All functions return Effects
  * that can be run via AppRuntime.runPromise(). Functions that track progress
- * (setupWorktreeForFeatureEffect) depend on the Database and EventBroadcaster
- * services already in AppLayer.
+ * (setupWorktreeForFeatureEffect) depend on the Database service in AppLayer.
  *
  * Query functions (getCurrentBranchEffect, getDiffEffect, etc.) return
  * Effect<T, never> swallowing errors at the boundary, or Effect<T, GitCommandError>
@@ -19,7 +18,6 @@ import os from "node:os";
 import fs from "node:fs";
 import crypto from "node:crypto";
 import { Database } from "./Database.js";
-import { EventBroadcaster } from "./EventBroadcaster.js";
 import {
   CommandError,
   GitCommandError,
@@ -341,7 +339,6 @@ function runSetupCommandsEffect(
 ): Effect.Effect<void, DatabaseError, Database | EventBroadcaster> {
   return Effect.gen(function* () {
     const db = yield* Database;
-    const eb = yield* EventBroadcaster;
 
     const setupRow = yield* db.queryOne<{ value: string }>(
       "SELECT value FROM project_settings WHERE project_id = ? AND key = 'setup_worktree'",
@@ -353,7 +350,6 @@ function runSetupCommandsEffect(
 
     yield* setFeatureSettingEffect(featureId, "worktree_setup_step", "setup");
     yield* setFeatureSettingEffect(featureId, "worktree_setup_log", "");
-    yield* eb.notifyDbUpdated("feature", featureId);
 
     const lines = setupCommands.split("\n").filter((l) => l.trim());
     let accumulatedLog = "";
@@ -361,8 +357,7 @@ function runSetupCommandsEffect(
     for (const cmd of lines) {
       accumulatedLog += `$ ${cmd}\n`;
       yield* setFeatureSettingEffect(featureId, "worktree_setup_log", accumulatedLog);
-      yield* eb.notifyDbUpdated("feature", featureId);
-
+  
       const cmdResult = yield* execCommand(cmd, {
         cwd: worktreePath,
         timeout: 120_000,
@@ -373,16 +368,14 @@ function runSetupCommandsEffect(
         if (stdout) accumulatedLog += stdout;
         if (stderr) accumulatedLog += stderr;
         yield* setFeatureSettingEffect(featureId, "worktree_setup_log", accumulatedLog);
-        yield* eb.notifyDbUpdated("feature", featureId);
-      } else {
+          } else {
         const err = cmdResult.left;
         const errorMessage = err.stderr || String(err.cause ?? err);
         accumulatedLog += `ERROR: ${errorMessage}\n`;
         yield* setFeatureSettingEffect(featureId, "worktree_setup_log", accumulatedLog);
         yield* setFeatureSettingEffect(featureId, "worktree_setup_step", "error");
         yield* setFeatureSettingEffect(featureId, "worktree_setup_error", errorMessage);
-        yield* eb.notifyDbUpdated("feature", featureId);
-        return; // stop on first error, like the original
+            return; // stop on first error, like the original
       }
     }
   });
@@ -399,11 +392,10 @@ export function setupWorktreeForFeatureEffect(
 ): Effect.Effect<
   string | void,
   WorktreeError | DatabaseError,
-  Database | EventBroadcaster
+  Database
 > {
   return Effect.gen(function* () {
     const db = yield* Database;
-    const eb = yield* EventBroadcaster;
 
     const feature = yield* db.queryOne<{ title: string; type: string }>(
       "SELECT title, type FROM features WHERE id = ?",
@@ -448,19 +440,16 @@ export function setupWorktreeForFeatureEffect(
       }
       yield* runSetupCommandsEffect(projectId, featureId, wtRow.value);
       yield* setFeatureSettingEffect(featureId, "worktree_setup_step", "done");
-      yield* eb.notifyDbUpdated("feature", featureId);
-      return;
+        return;
     }
 
     // Step 1: Named
     yield* setFeatureSettingEffect(featureId, "worktree_setup_step", "named");
-    yield* eb.notifyDbUpdated("feature", featureId);
 
     // Step 2: Create worktree (catch errors and store in DB like original)
     const createResult = yield* Effect.gen(function* () {
       yield* setFeatureSettingEffect(featureId, "worktree_setup_step", "creating");
-      yield* eb.notifyDbUpdated("feature", featureId);
-
+  
       const prefixRow = yield* db.queryOne<{ branch_prefix: string | null }>(
         "SELECT branch_prefix FROM projects WHERE id = ?",
         projectId,
@@ -473,8 +462,7 @@ export function setupWorktreeForFeatureEffect(
       yield* setFeatureSettingEffect(featureId, "worktree_path", wt.worktreePath);
       yield* setFeatureSettingEffect(featureId, "worktree_branch", wt.branch);
       yield* setFeatureSettingEffect(featureId, "worktree_setup_step", "created");
-      yield* eb.notifyDbUpdated("feature", featureId);
-
+  
       return wt;
     }).pipe(
       Effect.catchAll((err) =>
@@ -484,8 +472,7 @@ export function setupWorktreeForFeatureEffect(
           console.error("[worktree-setup] Failed:", errorMessage);
           yield* setFeatureSettingEffect(featureId, "worktree_setup_step", "error");
           yield* setFeatureSettingEffect(featureId, "worktree_setup_error", errorMessage);
-          yield* eb.notifyDbUpdated("feature", featureId);
-          return null;
+                return null;
         }),
       ),
     );
@@ -499,7 +486,6 @@ export function setupWorktreeForFeatureEffect(
     // Step 3: Run setup commands (errors stored in DB by runSetupCommandsEffect)
     yield* runSetupCommandsEffect(projectId, featureId, createResult.worktreePath);
     yield* setFeatureSettingEffect(featureId, "worktree_setup_step", "done");
-    yield* eb.notifyDbUpdated("feature", featureId);
   });
 }
 

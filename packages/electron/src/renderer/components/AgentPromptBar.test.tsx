@@ -73,11 +73,6 @@ vi.mock("@/trpc", () => {
           useQuery: vi.fn(() => ({ data: undefined })),
         },
       },
-      sessions: {
-        getSupportedCommands: {
-          useQuery: vi.fn(() => ({ data: undefined })),
-        },
-      },
     },
   };
 });

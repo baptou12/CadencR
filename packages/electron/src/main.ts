@@ -1,22 +1,14 @@
-import { app, BrowserWindow, dialog } from "electron";
+import { app, BrowserWindow } from "electron";
 import path from "node:path";
 import { Effect } from "effect";
 import { createIPCHandler } from "electron-trpc/main";
 import { appRouter } from "./main/trpc/router";
 import { AppRuntime } from "./main/effect/runtime";
-import { setAppRuntime } from "./main/effect/app-runtime-ref";
-import { hasRunningSubprocesses } from "./main/agents/subprocess-manager";
-import { SessionPersistence } from "./main/effect/services/SessionPersistence";
-import { resumeInProgressFeatures } from "./main/agents/resume-features";
 import { fetchAvailableModels } from "./main/agents/available-models";
 import { startRustBackend, stopRustBackend, getRustBackendPort } from "./main/rust-backend";
 import { startElectronIpcServer, stopElectronIpcServer } from "./main/electron-ipc-server";
 
 const ELECTRON_IPC_PORT = 45679;
-
-// Register the AppRuntime singleton so convenience wrappers (effect-helpers.ts)
-// can access it without creating circular module dependencies.
-setAppRuntime(AppRuntime);
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 import electronSquirrelStartup from "electron-squirrel-startup";
@@ -51,32 +43,6 @@ const createWindow = () => {
   }
 
   createIPCHandler({ router: appRouter, windows: [mainWindow] });
-
-  mainWindow.on("close", (e) => {
-    if (!isQuitting && hasRunningSubprocesses()) {
-      e.preventDefault();
-      dialog
-        .showMessageBox(mainWindow, {
-          type: "warning",
-          title: "Agents Running",
-          message: "AI agents are still running. Closing now will interrupt them.",
-          detail: "Agent sessions can be resumed when you reopen the app.",
-          buttons: ["Wait", "Quit Anyway"],
-          defaultId: 0,
-          cancelId: 0,
-        })
-        .then(({ response }) => {
-          if (response === 1) {
-            isQuitting = true;
-            // Effect runtime disposal handles PTY cleanup, subprocess shutdown,
-            // and DB close in reverse-dependency order via registered finalizers.
-            AppRuntime.dispose().finally(() => {
-              mainWindow.destroy();
-            });
-          }
-        });
-    }
-  });
 };
 
 let isQuitting = false;
@@ -88,13 +54,6 @@ app.on("ready", async () => {
   // Running a no-op effect forces lazy initialization so services are ready.
   await AppRuntime.runPromise(Effect.void);
   fetchAvailableModels().catch(() => {}); // warm up cache
-  // Restore in-memory session map from DB (for reconnection after restart).
-  try {
-    await AppRuntime.runPromise(SessionPersistence.restoreSessionMap());
-  } catch (err) {
-    console.error("[startup] Failed to restore session map:", err);
-  }
-  resumeInProgressFeatures();
 
   // Start Electron IPC server (for Rust → Electron callbacks)
   try {
@@ -129,32 +88,7 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", (e) => {
-  if (!isQuitting && hasRunningSubprocesses()) {
-    e.preventDefault();
-    const win = BrowserWindow.getAllWindows()[0];
-    if (win) {
-      dialog
-        .showMessageBox(win, {
-          type: "warning",
-          title: "Agents Running",
-          message: "AI agents are still running. Quitting now will interrupt them.",
-          detail: "Agent sessions can be resumed when you reopen the app.",
-          buttons: ["Wait", "Quit Anyway"],
-          defaultId: 0,
-          cancelId: 0,
-        })
-        .then(({ response }) => {
-          if (response === 1) {
-            isQuitting = true;
-            // Effect runtime disposal handles PTY cleanup, subprocess shutdown,
-            // and DB close in reverse-dependency order via registered finalizers.
-            AppRuntime.dispose().finally(() => {
-              app.quit();
-            });
-          }
-        });
-    }
-  } else if (!isQuitting) {
+  if (!isQuitting) {
     isQuitting = true;
     e.preventDefault();
     // Stop Rust backend and IPC server, then dispose Effect runtime.

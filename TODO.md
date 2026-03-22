@@ -1,0 +1,5 @@
+- [ ] Le layout des permissions ne gere pas l'option other, ca passe sous le prompt
+- [ ] Infinite "Loading workspace" en loader
+- [ ] Once ws-feature session is started, the prompt should be closed in the next action bar
+- [ ] Le scroll ne fonctionne pas dans la sidebar si trop de conversation existent
+- [ ] Create worktree pour n'importe quelle standalone sessions

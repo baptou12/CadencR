@@ -18,7 +18,6 @@ import {
   ResizableHandle,
 } from "@/components/ui/resizable";
 import type { PanelSize } from "react-resizable-panels";
-import { trpc } from "@/trpc";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useCreateFeature,
@@ -229,19 +228,6 @@ function RootLayout() {
     (e) => {
       e.preventDefault();
       focusZoneByDirection("right");
-    },
-    { enableOnFormTags: true },
-  );
-
-  // CMD+Escape -> stop all running agents globally (with confirmation)
-  const stopAllMutation = trpc.agents.stopAll.useMutation();
-  useHotkeys(
-    "meta+escape",
-    (e) => {
-      e.preventDefault();
-      const confirmed = window.confirm("Stop all running agents across all features and projects?");
-      if (!confirmed) return;
-      stopAllMutation.mutate();
     },
     { enableOnFormTags: true },
   );

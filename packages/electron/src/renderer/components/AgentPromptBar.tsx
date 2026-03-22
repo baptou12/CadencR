@@ -23,7 +23,6 @@ import { useImageAttachments } from "@/hooks/useImageAttachments";
 import { usePromptDraft } from "@/hooks/usePromptDraft";
 import { usePromptHistory } from "@/hooks/usePromptHistory";
 import { KbdShortcut } from "./KbdShortcut";
-import { trpc } from "@/trpc";
 import { useListFiles } from "@/api/generated";
 import type { AgentQuestion } from "./AgentQuestionDrawer";
 import type { AgentStatus } from "@/types/agent";
@@ -166,17 +165,7 @@ export const AgentPromptBar = forwardRef<
   const mention = useFileMention(filesQuery.data ?? undefined);
 
   // Slash command support
-  const slashEnabled = !!featureId && !!projectId && !slashCommandsOverride;
-  const commandsQuery = trpc.sessions.getSupportedCommands.useQuery(
-    {
-      subprocessId: subprocessId ?? null,
-      featureId: featureId!,
-      projectId: projectId!,
-    },
-    { enabled: slashEnabled },
-  );
-  const slashCommandSource = slashCommandsOverride ?? commandsQuery.data ?? undefined;
-  const slash = useSlashCommand(slashCommandSource);
+  const slash = useSlashCommand(slashCommandsOverride);
 
   useImperativeHandle(ref, () => ({
     focusInput: () => {
@@ -461,7 +450,7 @@ export const AgentPromptBar = forwardRef<
             items={slash.filteredItems}
             selectedIndex={slash.selectedIndex}
             onSelect={handleSlashSelect}
-            isLoading={slashCommandsOverride ? (slashCommandsLoading ?? false) : (commandsQuery.isLoading || commandsQuery.isFetching)}
+            isLoading={slashCommandsLoading ?? false}
           >
             <Textarea
               ref={textareaRef}
