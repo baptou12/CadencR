@@ -4,36 +4,6 @@ import { queryOne } from "../db/query";
 import type { AgentMessageRow } from "../db/types";
 import type { DatabaseError } from "../effect/errors";
 
-/**
- * Resolve the git directory for a feature.
- * Session features always use the project path (they work on main).
- * Workflow features use their worktree path if available.
- */
-export function resolveFeatureGitPath(featureId: number): Effect.Effect<string | null, DatabaseError> {
-  return Effect.gen(function* () {
-    const feature = yield* queryOne<{ project_id: number; type: string }>(
-      "SELECT project_id, type FROM features WHERE id = ?",
-      featureId,
-    );
-    if (!feature) return null;
-
-    // Session features always use the project path directly
-    if (feature.type !== "ws-session") {
-      const wtRow = yield* queryOne<{ value: string }>(
-        "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
-        featureId,
-      );
-      if (wtRow) return wtRow.value;
-    }
-
-    const project = yield* queryOne<{ path: string }>(
-      "SELECT path FROM projects WHERE id = ?",
-      feature.project_id,
-    );
-    return project?.path ?? null;
-  });
-}
-
 /** Check if a feature still has its default auto-generated title (e.g. "Session 3") */
 export function hasDefaultTitle(featureId: number): Effect.Effect<boolean, DatabaseError> {
   return Effect.gen(function* () {

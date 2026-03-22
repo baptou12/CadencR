@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { useHotkeys } from "react-hotkeys-hook";
 import { Badge } from "@/components/ui/badge";
@@ -7,12 +7,12 @@ import { Switch } from "@/components/ui/switch";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TerminalIcon, SettingsIcon, GitCompareArrowsIcon, BrainCircuitIcon, CpuIcon, PlugIcon } from "lucide-react";
-import { trpc } from "@/trpc";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useGetStats, useGetBranch,
   useGetFeature, useGetFeaturePlanProgress,
   useGetFeatureSettings, getGetFeatureSettingsQueryKey, useSetFeatureSetting,
+  useOpenExternalHandler,
 } from "@/api/generated";
 import { DiffViewerModal } from "./diff/DiffViewerModal";
 import { ModelSelector } from "./ModelSelector";
@@ -91,8 +91,7 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", isWebSoc
     },
     { enableOnFormTags: true },
   );
-  const openTerminal = trpc.git.openInTerminal.useMutation();
-  const openZed = trpc.git.openInZed.useMutation();
+  const openExternal = useOpenExternalHandler();
 
   const setFeatureSetting = useSetFeatureSetting({
     onSuccess: () => {
@@ -164,7 +163,7 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", isWebSoc
         className="size-7"
         title="Open in Zed"
         disabled={!isSession && !worktreeBranch}
-        onClick={() => openZed.mutate({ featureId })}
+        onClick={() => openExternal.mutate({ id: featureId, data: { app: "zed" } })}
       >
         <img src={zedLogo} alt="Zed" className="size-4" />
       </Button>
@@ -175,7 +174,7 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", isWebSoc
         className="size-7"
         title="Open terminal"
         disabled={!isSession && !worktreeBranch}
-        onClick={() => openTerminal.mutate({ featureId })}
+        onClick={() => openExternal.mutate({ id: featureId, data: { app: "terminal" } })}
       >
         <TerminalIcon className="size-4" />
       </Button>

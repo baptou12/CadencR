@@ -1,7 +1,8 @@
 use axum::extract::{Json, Path, Query, State};
-use axum::routing::{get, put};
+use axum::routing::{get, post, put};
 use axum::Router;
 use serde::Deserialize;
+use std::process::Command;
 
 use crate::app_state::AppState;
 use crate::domain::features::models::*;
@@ -220,6 +221,36 @@ pub async fn get_feature_snapshot_handler(
     Ok(Json(service::get_feature_snapshot(&state.read_pool, id).await?))
 }
 
+#[utoipa::path(post, path = "/api/features/{id}/open-external",
+    params(("id" = i64, Path,)),
+    request_body = OpenExternalRequest,
+    responses((status = 200, body = OpenExternalResponse)))]
+pub async fn open_external_handler(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Json(body): Json<OpenExternalRequest>,
+) -> Result<Json<OpenExternalResponse>, AppError> {
+    let path = crate::domain::git::service::resolve_feature_git_path(&state, id).await?;
+    let path = path.ok_or_else(|| AppError::NotFound("Feature working directory not found".to_string()))?;
+
+    match body.app {
+        ExternalApp::Terminal => {
+            if Command::new("open").args(["-a", "iTerm", &path]).spawn().is_err() {
+                Command::new("open").args(["-a", "Terminal", &path]).spawn().map_err(|_| {
+                    AppError::BadRequest("No supported terminal app found. Install iTerm or use macOS Terminal.".to_string())
+                })?;
+            }
+        }
+        ExternalApp::Zed => {
+            Command::new("zed").arg(&path).spawn().map_err(|_| {
+                AppError::BadRequest("Zed editor not found. Install it from https://zed.dev and ensure the 'zed' CLI is in your PATH.".to_string())
+            })?;
+        }
+    }
+
+    Ok(Json(OpenExternalResponse { success: true }))
+}
+
 #[derive(serde::Serialize, utoipa::ToSchema)]
 pub struct SuccessResponse {
     pub success: bool,
@@ -241,4 +272,5 @@ pub fn features_router() -> Router<AppState> {
         .route("/api/features/{id}/model-settings", get(get_feature_model_settings_handler).put(set_feature_model_setting_handler))
         .route("/api/features/{id}/snapshot", get(get_feature_snapshot_handler))
         .route("/api/features/{id}/working-dir", get(get_working_dir_handler))
+        .route("/api/features/{id}/open-external", post(open_external_handler))
 }

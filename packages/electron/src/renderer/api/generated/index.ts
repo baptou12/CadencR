@@ -1467,3 +1467,23 @@ export function useSaveSessionDraft(
     ...options,
   });
 }
+
+export type ExternalApp = "terminal" | "zed";
+
+export interface OpenExternalRequest {
+  app: ExternalApp;
+}
+
+export interface OpenExternalResponse {
+  success: boolean;
+}
+
+export function useOpenExternalHandler(
+  options?: UseMutationOptions<OpenExternalResponse, ErrorType<unknown>, { id: number; data: OpenExternalRequest }>,
+) {
+  return useMutation<OpenExternalResponse, ErrorType<unknown>, { id: number; data: OpenExternalRequest }>({
+    mutationFn: ({ id, data }) =>
+      customInstance({ method: "POST", url: `/api/features/${id}/open-external`, data }),
+    ...options,
+  });
+}
