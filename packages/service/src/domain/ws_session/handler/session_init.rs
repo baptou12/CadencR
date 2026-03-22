@@ -165,6 +165,13 @@ pub(super) async fn handle_init(
         }
     }
 
+    // Clear stale pending_questions so the frontend doesn't show a stale form.
+    // The user can say "retry" to have the agent re-ask.
+    let _ = sqlx::query("UPDATE agent_sessions SET pending_questions = NULL WHERE id = ? AND pending_questions IS NOT NULL")
+        .bind(db_session_id)
+        .execute(&app_state.write_pool)
+        .await;
+
     // Broadcast turn state (session row just set to 'running')
     WsSessionPersistence::broadcast_turn_state(&app_state.turn_state_tx, feature_id, "claude");
 }

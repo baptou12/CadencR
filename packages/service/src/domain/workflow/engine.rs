@@ -1211,7 +1211,8 @@ mod tests {
                 input_tokens INTEGER NOT NULL DEFAULT 0,
                 output_tokens INTEGER NOT NULL DEFAULT 0,
                 context_window INTEGER NOT NULL DEFAULT 200000,
-                started_at TEXT, ended_at TEXT
+                started_at TEXT, ended_at TEXT,
+                pending_questions TEXT
             )"#,
         ).execute(&pool).await.unwrap();
         sqlx::query(
@@ -1672,6 +1673,24 @@ mod tests {
 
         assert!(!engine.agent_manager.paused_sessions.contains_key(&AgentSlot::Plan), "running session should not be restored");
         assert!(engine.agent_manager.paused_sessions.contains_key(&AgentSlot::Prd), "paused session should be restored");
+    }
+
+    // ── restore_on_reconnect: clears stale pending_questions ──
+
+    #[tokio::test]
+    async fn test_restore_on_reconnect_clears_stale_pending_questions() {
+        let (engine, _rx) = test_engine_with_schema().await;
+
+        sqlx::query(
+            "INSERT INTO agent_sessions (feature_id, agent_type, status, pending_questions) VALUES (1, 'plan', 'paused', '{\"tool_name\":\"AskUserQuestion\"}')"
+        ).execute(&engine.write_pool).await.unwrap();
+
+        engine.restore_on_reconnect().await.unwrap();
+
+        let row: (Option<String>,) = sqlx::query_as(
+            "SELECT pending_questions FROM agent_sessions WHERE feature_id = 1"
+        ).fetch_one(&engine.read_pool).await.unwrap();
+        assert!(row.0.is_none(), "pending_questions should be cleared on reconnect");
     }
 
     // ── agent_type_str_to_slot: risk and retro ──

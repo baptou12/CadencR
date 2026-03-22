@@ -614,6 +614,14 @@ impl QueueAdvancer {
             }
         }
 
+        // Clear stale pending_questions so the frontend doesn't show stale forms.
+        let _ = sqlx::query(
+            "UPDATE agent_sessions SET pending_questions = NULL WHERE feature_id = ? AND pending_questions IS NOT NULL"
+        )
+        .bind(self.feature_id)
+        .execute(&self.write_pool)
+        .await;
+
         // Mark stale running queue items as error (only truly orphaned ones)
         sqlx::query(
             "UPDATE workflow_queue SET status = 'error', result = 'Stale after reconnect', ended_at = datetime('now'), pid = NULL WHERE feature_id = ? AND status = 'running'",
