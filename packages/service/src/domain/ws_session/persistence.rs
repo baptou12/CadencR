@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use sqlx::SqlitePool;
 use tracing::{debug, error};
 
-use claude_agent_sdk_rs::{SdkMessage, ContentBlock, ContentDelta, StreamEventData};
+use claude_agent_sdk_rs::{AssistantMessageBody, SdkMessage, ContentBlock, ContentDelta, StreamEventData};
 
 const INSERT_MESSAGE_SQL: &str =
     "INSERT INTO agent_messages (session_id, role, content, message_type, tool_name, tool_use_id, parent_tool_use_id, model) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
@@ -121,18 +121,7 @@ impl WsSessionPersistence {
     /// Persist a user message.
     pub async fn persist_user_message(&self, text: &str) {
         let Some(session_id) = self.session_db_id else { return };
-        if let Err(e) = sqlx::query(INSERT_MESSAGE_SQL)
-            .bind(session_id)
-            .bind("user")
-            .bind(text)
-            .bind("user_message")
-            .bind(None::<String>)
-            .bind(None::<String>)
-            .bind(None::<String>)
-            .bind(None::<String>)
-            .execute(&self.write_pool)
-            .await
-        {
+        if let Err(e) = Self::insert_message(&self.write_pool, session_id, "user", text, "user_message", None, None, None, None).await {
             error!(error = %e, "failed to persist user message");
         }
     }
@@ -150,27 +139,35 @@ impl WsSessionPersistence {
                 // Extract tool_result items from user messages
                 self.persist_user_tool_results(session_id, message, parent_tool_use_id.as_deref()).await;
             }
+            SdkMessage::Assistant { message, parent_tool_use_id, .. } => {
+                if let Some(ptuid) = parent_tool_use_id.as_deref() {
+                    self.persist_assistant_subagent(session_id, message, ptuid).await;
+                }
+            }
             SdkMessage::System(sys_msg) => {
                 use claude_agent_sdk_rs::SystemMessage;
                 match sys_msg {
                     SystemMessage::CompactBoundary { .. } => {
-                        let _ = sqlx::query(INSERT_MESSAGE_SQL)
-                            .bind(session_id)
-                            .bind("system")
-                            .bind("compact_boundary")
-                            .bind("compact_divider")
-                            .bind(None::<String>)
-                            .bind(None::<String>)
-                            .bind(None::<String>)
-                            .bind(None::<String>)
-                            .execute(&self.write_pool)
-                            .await;
+                        let _ = Self::insert_message(&self.write_pool, session_id, "system", "compact_boundary", "compact_divider", None, None, None, None).await;
                     }
                     _ => {}
                 }
             }
             _ => {}
         }
+    }
+
+    /// Insert a single row into agent_messages.
+    async fn insert_message(
+        pool: &SqlitePool, session_id: i64, role: &str, content: &str,
+        message_type: &str, tool_name: Option<&str>, tool_use_id: Option<&str>,
+        ptuid: Option<&str>, model: Option<&str>,
+    ) -> Result<sqlx::sqlite::SqliteQueryResult, sqlx::Error> {
+        sqlx::query(INSERT_MESSAGE_SQL)
+            .bind(session_id).bind(role).bind(content)
+            .bind(message_type).bind(tool_name).bind(tool_use_id)
+            .bind(ptuid).bind(model)
+            .execute(pool).await
     }
 
     async fn persist_stream_event(&mut self, session_id: i64, event: &StreamEventData, ptuid: Option<&str>) {
@@ -183,26 +180,14 @@ impl WsSessionPersistence {
             StreamEventData::ContentBlockStart { index, content_block } => {
                 match content_block {
                     ContentBlock::Text { text } => {
-                        let _ = sqlx::query(INSERT_MESSAGE_SQL)
-                            .bind(session_id).bind("assistant").bind(text)
-                            .bind("text").bind(None::<String>).bind(None::<String>)
-                            .bind(ptuid).bind(model)
-                            .execute(&self.write_pool).await;
+                        let _ = Self::insert_message(&self.write_pool, session_id, "assistant", text, "text", None, None, ptuid, model).await;
                     }
                     ContentBlock::Thinking { thinking, .. } => {
-                        let _ = sqlx::query(INSERT_MESSAGE_SQL)
-                            .bind(session_id).bind("assistant").bind(thinking)
-                            .bind("thinking").bind(None::<String>).bind(None::<String>)
-                            .bind(ptuid).bind(model)
-                            .execute(&self.write_pool).await;
+                        let _ = Self::insert_message(&self.write_pool, session_id, "assistant", thinking, "thinking", None, None, ptuid, model).await;
                     }
                     ContentBlock::ToolUse { id, name, input } => {
                         let content = serde_json::to_string(input).unwrap_or_default();
-                        let result = sqlx::query(INSERT_MESSAGE_SQL)
-                            .bind(session_id).bind("assistant").bind(&content)
-                            .bind("tool_call").bind(name).bind(id)
-                            .bind(ptuid).bind(model)
-                            .execute(&self.write_pool).await;
+                        let result = Self::insert_message(&self.write_pool, session_id, "assistant", &content, "tool_call", Some(name), Some(id), ptuid, model).await;
 
                         if let Ok(r) = result {
                             let row_id = r.last_insert_rowid();
@@ -221,18 +206,10 @@ impl WsSessionPersistence {
             StreamEventData::ContentBlockDelta { index, delta } => {
                 match delta {
                     ContentDelta::TextDelta { text } => {
-                        let _ = sqlx::query(INSERT_MESSAGE_SQL)
-                            .bind(session_id).bind("assistant").bind(text)
-                            .bind("text_delta").bind(None::<String>).bind(None::<String>)
-                            .bind(ptuid).bind(model)
-                            .execute(&self.write_pool).await;
+                        let _ = Self::insert_message(&self.write_pool, session_id, "assistant", text, "text_delta", None, None, ptuid, model).await;
                     }
                     ContentDelta::ThinkingDelta { thinking } => {
-                        let _ = sqlx::query(INSERT_MESSAGE_SQL)
-                            .bind(session_id).bind("assistant").bind(thinking)
-                            .bind("thinking_delta").bind(None::<String>).bind(None::<String>)
-                            .bind(ptuid).bind(model)
-                            .execute(&self.write_pool).await;
+                        let _ = Self::insert_message(&self.write_pool, session_id, "assistant", thinking, "thinking_delta", None, None, ptuid, model).await;
                     }
                     ContentDelta::InputJsonDelta { partial_json } => {
                         if let Some(accumulated) = self.pending_tool_inputs.get_mut(index) {
@@ -292,17 +269,7 @@ impl WsSessionPersistence {
             };
             let msg_type = if is_error { "tool_error" } else { "tool_result" };
 
-            let _ = sqlx::query(INSERT_MESSAGE_SQL)
-                .bind(session_id)
-                .bind("tool")
-                .bind(&content)
-                .bind(msg_type)
-                .bind(None::<String>)
-                .bind(tool_use_id)
-                .bind(ptuid)
-                .bind(None::<String>)
-                .execute(&self.write_pool)
-                .await;
+            let _ = Self::insert_message(&self.write_pool, session_id, "tool", &content, msg_type, None, tool_use_id, ptuid, None).await;
         }
     }
 
@@ -312,6 +279,46 @@ impl WsSessionPersistence {
             .bind(session_id)
             .execute(&self.write_pool)
             .await;
+    }
+
+    /// Persist sub-agent content from an `assistant` message.
+    ///
+    /// Stream events for sub-agent tool_calls lack `parent_tool_use_id`, so we
+    /// UPDATE existing rows to add the parent link. Text/thinking are inserted fresh.
+    async fn persist_assistant_subagent(&self, session_id: i64, message: &AssistantMessageBody, ptuid: &str) {
+        let model = Some(message.model.as_str());
+        for cb in &message.content {
+            match cb {
+                ContentBlock::ToolUse { id, name, input } => {
+                    let content = serde_json::to_string(input).unwrap_or_default();
+                    let result = sqlx::query(
+                        "UPDATE agent_messages SET parent_tool_use_id = ?, content = ? \
+                         WHERE session_id = ? AND tool_use_id = ? AND message_type = 'tool_call' \
+                         AND parent_tool_use_id IS NULL"
+                    )
+                        .bind(ptuid).bind(&content)
+                        .bind(session_id).bind(id)
+                        .execute(&self.write_pool).await;
+
+                    match result {
+                        Ok(r) if r.rows_affected() == 0 => {
+                            let _ = Self::insert_message(&self.write_pool, session_id, "assistant", &content, "tool_call", Some(name), Some(id), Some(ptuid), model).await;
+                        }
+                        Err(e) => {
+                            error!(error = %e, session_id, tool_use_id = %id, "failed to update sub-agent tool_call parent");
+                        }
+                        _ => {}
+                    }
+                }
+                ContentBlock::Text { text } => {
+                    let _ = Self::insert_message(&self.write_pool, session_id, "assistant", text, "text", None, None, Some(ptuid), model).await;
+                }
+                ContentBlock::Thinking { thinking, .. } => {
+                    let _ = Self::insert_message(&self.write_pool, session_id, "assistant", thinking, "thinking", None, None, Some(ptuid), model).await;
+                }
+                _ => {}
+            }
+        }
     }
 
     /// Read a session row from the DB by its primary key.
@@ -434,17 +441,7 @@ impl WsSessionPersistence {
         }
 
         // Insert clear_divider message
-        let _ = sqlx::query(INSERT_MESSAGE_SQL)
-            .bind(session_id)
-            .bind("system")
-            .bind("clear_divider")
-            .bind("clear_divider")
-            .bind(None::<String>)
-            .bind(None::<String>)
-            .bind(None::<String>)
-            .bind(None::<String>)
-            .execute(pool)
-            .await;
+        let _ = Self::insert_message(pool, session_id, "system", "clear_divider", "clear_divider", None, None, None, None).await;
 
         // NULL out claude_session_id
         let _ = sqlx::query("UPDATE agent_sessions SET claude_session_id = NULL WHERE id = ?")
@@ -1222,5 +1219,157 @@ mod tests {
         let row = WsSessionPersistence::get_session_row(&pool, id).await.unwrap();
         assert_eq!(row.permission_mode.as_deref(), Some("acceptEdits"));
         assert!(row.pending_plan_approval.is_none());
+    }
+
+    // ---- Sub-agent assistant message persistence tests ----
+
+    fn make_assistant_message(content: Vec<ContentBlock>) -> AssistantMessageBody {
+        AssistantMessageBody {
+            id: "msg-test".to_string(),
+            content,
+            model: "claude-sonnet-4-20250514".to_string(),
+            stop_reason: Some("end_turn".to_string()),
+            usage: None,
+            msg_type: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_assistant_subagent_updates_tool_call_parent() {
+        let pool = setup_test_db().await;
+        let mut p = WsSessionPersistence::new(pool.clone(), 1);
+        let sid = p.find_or_create_session(None, None).await.unwrap();
+
+        // Simulate stream_event tool_call (no parent_tool_use_id)
+        let _ = WsSessionPersistence::insert_message(&pool, sid, "assistant", "{\"command\":\"ls\"}", "tool_call", Some("Bash"), Some("toolu_child1"), None, None).await;
+
+        // Simulate assistant message arriving with parent
+        let msg = make_assistant_message(vec![
+            ContentBlock::ToolUse {
+                id: "toolu_child1".to_string(),
+                name: "Bash".to_string(),
+                input: serde_json::json!({"command": "ls -la"}),
+            },
+        ]);
+        p.persist_assistant_subagent(sid, &msg, "toolu_parent").await;
+
+        // The existing row should now have parent_tool_use_id set
+        let row: (Option<String>, String) = sqlx::query_as(
+            "SELECT parent_tool_use_id, content FROM agent_messages WHERE tool_use_id = 'toolu_child1'"
+        ).fetch_one(&pool).await.unwrap();
+        assert_eq!(row.0.as_deref(), Some("toolu_parent"));
+        // Content should be updated from the assistant message
+        assert!(row.1.contains("ls -la"));
+
+        // Should not have created a duplicate
+        let count: (i64,) = sqlx::query_as(
+            "SELECT COUNT(*) FROM agent_messages WHERE tool_use_id = 'toolu_child1'"
+        ).fetch_one(&pool).await.unwrap();
+        assert_eq!(count.0, 1);
+    }
+
+    #[tokio::test]
+    async fn test_assistant_subagent_inserts_when_no_existing_row() {
+        let pool = setup_test_db().await;
+        let mut p = WsSessionPersistence::new(pool.clone(), 1);
+        let sid = p.find_or_create_session(None, None).await.unwrap();
+
+        // No prior stream_event row — assistant message should insert
+        let msg = make_assistant_message(vec![
+            ContentBlock::ToolUse {
+                id: "toolu_new".to_string(),
+                name: "Read".to_string(),
+                input: serde_json::json!({"file_path": "/tmp/test"}),
+            },
+        ]);
+        p.persist_assistant_subagent(sid, &msg, "toolu_parent").await;
+
+        let row: (String, String, Option<String>) = sqlx::query_as(
+            "SELECT tool_name, content, parent_tool_use_id FROM agent_messages WHERE tool_use_id = 'toolu_new'"
+        ).fetch_one(&pool).await.unwrap();
+        assert_eq!(row.0, "Read");
+        assert!(row.1.contains("/tmp/test"));
+        assert_eq!(row.2.as_deref(), Some("toolu_parent"));
+    }
+
+    #[tokio::test]
+    async fn test_assistant_subagent_persists_text_and_thinking() {
+        let pool = setup_test_db().await;
+        let mut p = WsSessionPersistence::new(pool.clone(), 1);
+        let sid = p.find_or_create_session(None, None).await.unwrap();
+
+        let msg = make_assistant_message(vec![
+            ContentBlock::Thinking {
+                thinking: "Let me analyze...".to_string(),
+                signature: None,
+            },
+            ContentBlock::Text {
+                text: "Here are my findings.".to_string(),
+            },
+        ]);
+        p.persist_assistant_subagent(sid, &msg, "toolu_parent").await;
+
+        let rows: Vec<(String, String, Option<String>)> = sqlx::query_as(
+            "SELECT message_type, content, parent_tool_use_id FROM agent_messages WHERE session_id = ? ORDER BY id"
+        ).bind(sid).fetch_all(&pool).await.unwrap();
+
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].0, "thinking");
+        assert_eq!(rows[0].1, "Let me analyze...");
+        assert_eq!(rows[0].2.as_deref(), Some("toolu_parent"));
+        assert_eq!(rows[1].0, "text");
+        assert_eq!(rows[1].1, "Here are my findings.");
+        assert_eq!(rows[1].2.as_deref(), Some("toolu_parent"));
+    }
+
+    #[tokio::test]
+    async fn test_assistant_without_parent_is_skipped() {
+        let pool = setup_test_db().await;
+        let mut p = WsSessionPersistence::new(pool.clone(), 1);
+        let sid = p.find_or_create_session(None, None).await.unwrap();
+
+        let sdk_msg = SdkMessage::Assistant {
+            uuid: "u1".to_string(),
+            session_id: "s1".to_string(),
+            message: make_assistant_message(vec![
+                ContentBlock::Text { text: "top-level response".to_string() },
+            ]),
+            parent_tool_use_id: None,
+            error: None,
+        };
+        p.persist_sdk_message(&sdk_msg).await;
+
+        let count: (i64,) = sqlx::query_as(
+            "SELECT COUNT(*) FROM agent_messages WHERE session_id = ?"
+        ).bind(sid).fetch_one(&pool).await.unwrap();
+        assert_eq!(count.0, 0, "top-level assistant messages should not be persisted via this path");
+    }
+
+    #[tokio::test]
+    async fn test_assistant_subagent_dispatched_via_persist_sdk_message() {
+        let pool = setup_test_db().await;
+        let mut p = WsSessionPersistence::new(pool.clone(), 1);
+        let _sid = p.find_or_create_session(None, None).await.unwrap();
+
+        let sdk_msg = SdkMessage::Assistant {
+            uuid: "u1".to_string(),
+            session_id: "s1".to_string(),
+            message: make_assistant_message(vec![
+                ContentBlock::ToolUse {
+                    id: "toolu_via_sdk".to_string(),
+                    name: "Grep".to_string(),
+                    input: serde_json::json!({"pattern": "foo"}),
+                },
+            ]),
+            parent_tool_use_id: Some("toolu_agent".to_string()),
+            error: None,
+        };
+        p.persist_sdk_message(&sdk_msg).await;
+
+        let row: (String, Option<String>) = sqlx::query_as(
+            "SELECT tool_name, parent_tool_use_id FROM agent_messages WHERE tool_use_id = 'toolu_via_sdk'"
+        ).fetch_one(&pool).await.unwrap();
+        assert_eq!(row.0, "Grep");
+        assert_eq!(row.1.as_deref(), Some("toolu_agent"));
     }
 }
