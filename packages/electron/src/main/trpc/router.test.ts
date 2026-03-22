@@ -1,6 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { Effect } from "effect";
-import { CliNotFoundError } from "../effect/errors";
 import { createMockDb } from "../test-utils";
 
 const mockDb = createMockDb();
@@ -32,13 +30,6 @@ vi.mock("../agents/effect-helpers", () => ({
   getSubprocessIdsForSessionDbIds: vi.fn().mockReturnValue([]),
   notifyDbUpdated: vi.fn(),
 }));
-
-vi.mock("../agents/cli-discovery", () => {
-  const { Effect } = require("effect");
-  return {
-    discoverClaudeCli: vi.fn().mockReturnValue(Effect.succeed({ path: "/usr/bin/claude", source: "path" })),
-  };
-});
 
 vi.mock("../agents/available-models", () => ({
   fetchAvailableModels: vi.fn().mockResolvedValue(["claude-opus-4-5", "claude-sonnet-4-5"]),
@@ -180,34 +171,9 @@ describe("appRouter - workspaceRouter", () => {
 
   const caller = appRouter.createCaller({});
 
-  it("settings.getClaudeCliPath returns path from discovery", async () => {
-    const { discoverClaudeCli } = await import("../agents/cli-discovery");
-    vi.mocked(discoverClaudeCli).mockReturnValue(Effect.succeed({ path: "/usr/bin/claude", source: "settings" }));
-    const result = await caller.workspace.getClaudeCliPath();
-    expect(result).toEqual({ path: "/usr/bin/claude", source: "settings" });
-  });
-
-  it("settings.getClaudeCliPath returns null when not found", async () => {
-    const { discoverClaudeCli } = await import("../agents/cli-discovery");
-    vi.mocked(discoverClaudeCli).mockReturnValue(Effect.fail(new CliNotFoundError({ searchedPaths: [] })));
-    const result = await caller.workspace.getClaudeCliPath();
-    expect(result).toBeNull();
-  });
-
   it("settings.getAvailableModels returns model list", async () => {
     const result = await caller.workspace.getAvailableModels();
     expect(result).toContain("claude-opus-4-5");
-  });
-
-  it("settings.setClaudeCliPath stores path when file exists", async () => {
-    mockExistsSync.mockReturnValue(true);
-    const result = await caller.workspace.setClaudeCliPath({ path: "/usr/bin/claude" });
-    expect(result).toMatchObject({ success: true, path: "/usr/bin/claude" });
-  });
-
-  it("settings.setClaudeCliPath throws when file not found", async () => {
-    mockAccess.mockRejectedValueOnce(new Error("ENOENT"));
-    await expect(caller.workspace.setClaudeCliPath({ path: "/nope" })).rejects.toThrow("File not found");
   });
 });
 

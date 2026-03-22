@@ -142,15 +142,4 @@ export const terminalRouter = router({
       return { success: true };
     }),
 
-  /** Kill all PTYs for a given feature */
-  killAll: publicProcedure
-    .input(
-      z.object({
-        featureId: z.number(),
-      }),
-    )
-    .mutation(async ({ input }) => {
-      await AppRuntime.runPromise(PtyManager.killAllForFeature(input.featureId));
-      return { success: true };
-    }),
 });
