@@ -14,7 +14,7 @@ import {
   useGetFeature, useGetFeaturePlanProgress,
   useGetFeatureSettings, getGetFeatureSettingsQueryKey, useSetFeatureSetting,
 } from "@/api/generated";
-import { DiffViewerModal, type ExecuteAgentState } from "./diff/DiffViewerModal";
+import { DiffViewerModal } from "./diff/DiffViewerModal";
 import { ModelSelector } from "./ModelSelector";
 import { useFeatureTitle } from "@/hooks/useFeatureTitle";
 import zedLogo from "../../../assets/zed-logo.png";
@@ -31,12 +31,11 @@ interface FeatureTopBarProps {
   featureId: number;
   projectId: number;
   mode?: "feature" | "session";
-  executeState?: ExecuteAgentState;
   isWebSocket?: boolean;
   className?: string;
 }
 
-export function FeatureTopBar({ featureId, projectId, mode = "feature", executeState, isWebSocket, className }: FeatureTopBarProps) {
+export function FeatureTopBar({ featureId, projectId, mode = "feature", isWebSocket, className }: FeatureTopBarProps) {
   const isSession = mode === "session";
   const [diffOpen, setDiffOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -261,7 +260,6 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", executeS
         open={diffOpen}
         onOpenChange={setDiffOpen}
         diffMode={isSession ? "worktree" : "branch"}
-        executeState={executeState}
       />
     </div>
   );

@@ -14,10 +14,7 @@ import { QueueSidebar } from "@/components/QueueSidebar";
 import { PlanInputView } from "@/components/PlanInputView";
 import { NextStepsBar } from "@/components/NextStepsBar";
 import { getActiveFocusZone } from "@/lib/focus-zones";
-import {
-  DiffViewerModal,
-  type ExecuteAgentState,
-} from "@/components/diff/DiffViewerModal";
+import { DiffViewerModal } from "@/components/diff/DiffViewerModal";
 import { WorktreeSetupSection } from "@/components/WorktreeSetupSection";
 import {
   TerminalPanel,
@@ -103,25 +100,7 @@ export function FeatureWorkflowView({
 
   // --- Inline diff viewer modal state ---
   const [inlineDiffOpen, setInlineDiffOpen] = useState(false);
-  const [diffAgentState, setDiffAgentState] = useState<
-    ExecuteAgentState | undefined
-  >(undefined);
-
-  const handleViewDiffForAgent = useCallback((entry: FeatureSession) => {
-    if (
-      entry.subprocessId &&
-      (entry.status === "running" ||
-        entry.status === "completed" ||
-        entry.status === "paused")
-    ) {
-      setDiffAgentState({
-        subprocessId: entry.subprocessId,
-        status: entry.status,
-        pendingQuestions: entry.pendingQuestions,
-      });
-    } else {
-      setDiffAgentState(undefined);
-    }
+  const handleViewDiffForAgent = useCallback(() => {
     setInlineDiffOpen(true);
   }, []);
 
@@ -850,7 +829,6 @@ export function FeatureWorkflowView({
         featureId={featureId}
         open={inlineDiffOpen}
         onOpenChange={setInlineDiffOpen}
-        executeState={diffAgentState}
         onStartReviewFixer={(comments) => backend.startReviewFixer(comments)}
       />
     </div>

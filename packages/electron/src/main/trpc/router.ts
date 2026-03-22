@@ -3,7 +3,6 @@ import { router, publicProcedure } from "./trpc";
 import { projectsRouter } from "./projects";
 import { workspaceRouter } from "./workspace";
 import { agentsRouter } from "./agents";
-import { workflowRouter } from "./workflow";
 import { sessionsRouter } from "./sessions";
 import { gitRouter } from "./git";
 import { usageRouter } from "./usage";
@@ -16,7 +15,6 @@ export const appRouter = router({
   workspace: workspaceRouter,
   projects: projectsRouter,
   agents: agentsRouter,
-  workflow: workflowRouter,
   sessions: sessionsRouter,
   git: gitRouter,
   usage: usageRouter,

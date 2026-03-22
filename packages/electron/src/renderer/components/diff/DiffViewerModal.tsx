@@ -10,22 +10,13 @@ import { Button } from "@/components/ui/button";
 import { SendIcon, Loader2Icon } from "lucide-react";
 import { KbdShortcut } from "@/components/KbdShortcut";
 import { DiffViewer } from "./DiffViewer";
-import { trpc } from "@/trpc";
-import { useListDiffComments, useMarkDiffCommentsSent, useDeletePendingDiffComments } from "@/api/generated";
+import { useListDiffComments, useDeletePendingDiffComments } from "@/api/generated";
 import { useQueryClient } from "@tanstack/react-query";
-import type { AgentQuestion } from "@/components/AgentQuestionDrawer";
-
-export interface ExecuteAgentState {
-  subprocessId: string;
-  status: string;
-  pendingQuestions: AgentQuestion[] | null;
-}
 
 interface DiffViewerModalProps {
   featureId: number;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  executeState?: ExecuteAgentState;
   diffMode?: "worktree" | "branch";
   hideFooter?: boolean;
   onStartReviewFixer?: (formattedComments: string) => void;
@@ -54,7 +45,6 @@ export function DiffViewerModal({
   featureId,
   open,
   onOpenChange,
-  executeState,
   diffMode = "worktree",
   hideFooter = false,
   onStartReviewFixer,
@@ -63,67 +53,34 @@ export function DiffViewerModal({
   const queryClient = useQueryClient();
 
   const { data: comments = [] } = useListDiffComments(featureId, { enabled: open });
-  const markAsSent = useMarkDiffCommentsSent();
   const deletePending = useDeletePendingDiffComments();
-  const sendMessage = trpc.agents.sendMessage.useMutation();
-  const submitAnswers = trpc.agents.submitAnswers.useMutation();
 
   const pendingComments = comments.filter((c) => c.status === "pending");
-
-  const hasPendingQuestions = !!(
-    executeState?.pendingQuestions && executeState.pendingQuestions.length > 0
-  );
-  const isAgentRunning = (executeState?.status === "running" || executeState?.status === "completed") && !hasPendingQuestions;
 
   const buttonLabel = useMemo(() => {
     const count = pendingComments.length;
     const noun = count !== 1 ? "comments" : "comment";
-    if (hasPendingQuestions) return `Request changes with ${count} ${noun}`;
-    if (isAgentRunning) return `Send ${count} ${noun} to agent`;
     if (onStartReviewFixer) return `Fix ${count} ${noun}`;
     return `Send ${count} ${noun}`;
-  }, [pendingComments.length, hasPendingQuestions, isAgentRunning, onStartReviewFixer]);
+  }, [pendingComments.length, onStartReviewFixer]);
 
   const handleSendToAgent = useCallback(async () => {
     if (pendingComments.length === 0 || sending) return;
     setSending(true);
     try {
       const message = formatCommentsForAgent(pendingComments);
-      const deliveredToAgent = isAgentRunning || hasPendingQuestions;
 
-      if (deliveredToAgent) {
-        await deletePending.mutateAsync({ featureId });
-      } else if (onStartReviewFixer) {
+      if (onStartReviewFixer) {
         await deletePending.mutateAsync({ featureId });
         onStartReviewFixer(message);
-      } else {
-        await markAsSent.mutateAsync({ featureId });
       }
       await queryClient.invalidateQueries({ queryKey: ["diff-comments", featureId] });
-
-      if (isAgentRunning && executeState?.subprocessId) {
-        await sendMessage.mutateAsync({
-          id: executeState.subprocessId,
-          message,
-        });
-      } else if (hasPendingQuestions && executeState?.subprocessId) {
-        const questions = executeState.pendingQuestions!;
-        const answers: Record<string, string> = {};
-        // Answer each pending question with "Request changes" + the comments
-        for (const q of questions) {
-          answers[q.question] = `Request changes\n\n${message}`;
-        }
-        await submitAnswers.mutateAsync({
-          subprocessId: executeState.subprocessId,
-          answers,
-        });
-      }
 
       onOpenChange(false);
     } finally {
       setSending(false);
     }
-  }, [pendingComments, sending, featureId, isAgentRunning, hasPendingQuestions, executeState, deletePending, markAsSent, queryClient, sendMessage, submitAnswers, onOpenChange, onStartReviewFixer]);
+  }, [pendingComments, sending, featureId, deletePending, queryClient, onOpenChange, onStartReviewFixer]);
 
   useEffect(() => {
     if (!open) return;
