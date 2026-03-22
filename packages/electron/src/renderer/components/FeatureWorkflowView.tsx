@@ -339,7 +339,7 @@ export function FeatureWorkflowView({
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally key on count, not entries array
-  }, [sessionCount, loadAgentHistory]);
+  }, [sessionCount, loadAgentHistory, featureId]);
 
   const handleTerminalToolbarMouseDown = useCallback(
     (e: React.MouseEvent) => {
