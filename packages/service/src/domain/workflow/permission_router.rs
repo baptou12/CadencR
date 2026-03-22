@@ -296,6 +296,7 @@ impl CanUseTool for WorkflowPermissionBridge {
 
                 // Bridge to frontend via workflow.permission.request
                 debug!(tool_name = %request.tool_name, pattern = %pattern, "workflow prompting user");
+                let is_ask_user_question = request.tool_name == "AskUserQuestion";
                 let payload = WorkflowPermissionRequestPayload {
                     feature_id: self.feature_id,
                     agent_slot: self.slot.clone(),
@@ -312,6 +313,23 @@ impl CanUseTool for WorkflowPermissionBridge {
                 );
                 let _ = self.sender.send(Message::Text(String::from(envelope).into()));
 
+                // Persist pending question data so it survives navigation/refresh
+                if is_ask_user_question {
+                    let pq_json = serde_json::json!({
+                        "tool_name": &request.tool_name,
+                        "tool_input": &request.input,
+                        "request_id": &request.tool_use_id,
+                        "pattern": &pattern,
+                    });
+                    let _ = sqlx::query(
+                        "UPDATE agent_sessions SET pending_questions = ? WHERE id = ?"
+                    )
+                    .bind(pq_json.to_string())
+                    .bind(self.db_session_id)
+                    .execute(&self.write_pool)
+                    .await;
+                }
+
                 // Broadcast turn → askUser
                 crate::domain::ws_session::persistence::WsSessionPersistence::broadcast_turn_state(
                     &self.turn_state_tx, self.feature_id, "askUser",
@@ -322,6 +340,16 @@ impl CanUseTool for WorkflowPermissionBridge {
                 let mut rx: tokio::sync::MutexGuard<'_, mpsc::Receiver<PermissionResponse>> = self.response_rx.lock().await;
                 match rx.recv().await {
                     Some(response) => {
+                        // Clear persisted pending questions now that user has responded
+                        if is_ask_user_question {
+                            let _ = sqlx::query(
+                                "UPDATE agent_sessions SET pending_questions = NULL WHERE id = ?"
+                            )
+                            .bind(self.db_session_id)
+                            .execute(&self.write_pool)
+                            .await;
+                        }
+
                         // Broadcast turn → claude (user responded)
                         crate::domain::ws_session::persistence::WsSessionPersistence::broadcast_turn_state(
                             &self.turn_state_tx, self.feature_id, "claude",

@@ -329,7 +329,7 @@ impl WorkflowEngine {
                     "agent_running",
                     to_value(WorkflowAgentStartedPayload {
                         feature_id: self.feature_id,
-                        agent_slot: slot,
+                        agent_slot: slot.clone(),
                         session_id: db_session_id,
                         agent_type,
                     }),
@@ -344,13 +344,39 @@ impl WorkflowEngine {
                         "agent_paused",
                         to_value(WorkflowAgentPausedPayload {
                             feature_id: self.feature_id,
-                            agent_slot: slot,
+                            agent_slot: slot.clone(),
                             session_id: db_session_id,
                             agent_type,
                             claude_session_id: cc_sid.clone(),
                         }),
                     );
                     let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
+                }
+            }
+
+            // Replay pending permission.request for any active agent with pending questions
+            if let Ok(Some(pq_json)) = sqlx::query_scalar::<_, String>(
+                "SELECT pending_questions FROM agent_sessions WHERE id = ? AND pending_questions IS NOT NULL"
+            )
+            .bind(db_session_id)
+            .fetch_optional(&self.read_pool)
+            .await
+            {
+                if let Ok(pq) = serde_json::from_str::<serde_json::Value>(&pq_json) {
+                    let perm_env = WsEnvelope::new(
+                        "workflow",
+                        "permission.request",
+                        to_value(WorkflowPermissionRequestPayload {
+                            feature_id: self.feature_id,
+                            agent_slot: slot,
+                            request_id: pq["request_id"].as_str().unwrap_or("").to_string(),
+                            tool_name: pq["tool_name"].as_str().unwrap_or("AskUserQuestion").to_string(),
+                            tool_input: pq["tool_input"].clone(),
+                            description: None,
+                            pattern: pq["pattern"].as_str().map(|s| s.to_string()),
+                        }),
+                    );
+                    let _ = self.ws_sender.send(Message::Text(String::from(perm_env).into()));
                 }
             }
         }
@@ -1694,6 +1720,94 @@ mod tests {
     }
 
     // ── agent_type_str_to_slot: risk and retro ──
+
+    #[tokio::test]
+    async fn test_replay_state_sends_pending_question_permission_request() {
+        let (engine, mut rx) = test_engine_with_schema().await;
+
+        sqlx::query("INSERT INTO features (id, project_id, title, status) VALUES (1, 1, 'test', 'in-progress')")
+            .execute(&engine.write_pool).await.unwrap();
+
+        // Insert an agent_session with pending_questions
+        let pq = serde_json::json!({
+            "tool_name": "AskUserQuestion",
+            "tool_input": {"question": "Which database?"},
+            "request_id": "toolu_abc123",
+            "pattern": "AskUserQuestion"
+        });
+        sqlx::query(
+            "INSERT INTO agent_sessions (id, feature_id, agent_type, status, pending_questions) VALUES (30, 1, 'plan', 'running', ?)"
+        )
+        .bind(pq.to_string())
+        .execute(&engine.write_pool).await.unwrap();
+
+        // Add as paused agent (testable without mocking Query)
+        engine.agent_manager.active_items.insert(AgentSlot::Plan, 30);
+        engine.agent_manager.paused_sessions.insert(AgentSlot::Plan, "cc-session-xyz".to_string());
+
+        engine.replay_state_to_client().await.unwrap();
+
+        let mut got_queue_update = false;
+        let mut got_agent_paused = false;
+        let mut got_permission_request = false;
+        let mut permission_payload: Option<serde_json::Value> = None;
+
+        while let Ok(msg) = rx.try_recv() {
+            if let Message::Text(text) = msg {
+                let text_str: &str = &text;
+                if text_str.contains("queue_update") { got_queue_update = true; }
+                if text_str.contains("agent_paused") { got_agent_paused = true; }
+                if text_str.contains("permission.request") {
+                    got_permission_request = true;
+                    permission_payload = serde_json::from_str(text_str).ok();
+                }
+            }
+        }
+        assert!(got_queue_update, "should send queue_update");
+        assert!(got_agent_paused, "should send agent_paused");
+        assert!(got_permission_request, "should replay permission.request for pending question");
+
+        // Verify payload contents
+        let payload = permission_payload.expect("permission.request should be valid JSON");
+        let p = &payload["payload"];
+        assert_eq!(p["tool_name"].as_str().unwrap(), "AskUserQuestion");
+        assert_eq!(p["request_id"].as_str().unwrap(), "toolu_abc123");
+        assert_eq!(p["tool_input"]["question"].as_str().unwrap(), "Which database?");
+    }
+
+    #[tokio::test]
+    async fn test_replay_state_no_pending_questions_no_permission_request() {
+        let (engine, mut rx) = test_engine_with_schema().await;
+
+        sqlx::query("INSERT INTO features (id, project_id, title, status) VALUES (1, 1, 'test', 'in-progress')")
+            .execute(&engine.write_pool).await.unwrap();
+
+        // Insert agent_session WITHOUT pending_questions
+        sqlx::query(
+            "INSERT INTO agent_sessions (id, feature_id, agent_type, status) VALUES (31, 1, 'prd', 'running')"
+        ).execute(&engine.write_pool).await.unwrap();
+
+        engine.agent_manager.active_items.insert(AgentSlot::Prd, 31);
+        engine.agent_manager.paused_sessions.insert(AgentSlot::Prd, "cc-pause-no-pq".to_string());
+
+        engine.replay_state_to_client().await.unwrap();
+
+        let mut got_queue_update = false;
+        let mut got_agent_paused = false;
+        let mut got_permission_request = false;
+
+        while let Ok(msg) = rx.try_recv() {
+            if let Message::Text(text) = msg {
+                let text_str: &str = &text;
+                if text_str.contains("queue_update") { got_queue_update = true; }
+                if text_str.contains("agent_paused") { got_agent_paused = true; }
+                if text_str.contains("permission.request") { got_permission_request = true; }
+            }
+        }
+        assert!(got_queue_update, "should send queue_update");
+        assert!(got_agent_paused, "should send agent_paused");
+        assert!(!got_permission_request, "should NOT send permission.request when no pending questions");
+    }
 
     #[test]
     fn test_agent_type_str_to_slot_risk() {
