@@ -20,11 +20,6 @@ const DatabaseConstructor = vi.fn().mockImplementation(function () {
 
 vi.mock("better-sqlite3", () => ({ default: DatabaseConstructor }));
 
-// Mock migrations to avoid running real SQL in unit test
-vi.mock("./migrations", () => ({
-  runMigrations: vi.fn(),
-}));
-
 describe("database", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -57,11 +52,13 @@ describe("database", () => {
     expect(mockDb.pragma).toHaveBeenCalledWith("journal_mode = WAL");
   });
 
-  it("calls runMigrations on first init", async () => {
-    const { runMigrations } = await import("./migrations");
+  it("does not run migrations (handled by Rust service)", async () => {
     const { getDatabase } = await import("./database");
     getDatabase();
-    expect(runMigrations).toHaveBeenCalledTimes(1);
+    // Migrations are now handled by the Rust service at startup.
+    // getDatabase() should only open the connection and set pragmas.
+    expect(mockDb.pragma).toHaveBeenCalledTimes(1);
+    expect(mockDb.pragma).toHaveBeenCalledWith("journal_mode = WAL");
   });
 
   it("closeDatabase resets the singleton", async () => {

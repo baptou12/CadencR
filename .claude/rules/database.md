@@ -1,6 +1,11 @@
 ---
 paths:
   - "packages/electron/src/main/db/**"
+  - "packages/service/src/shared/db.rs"
+  - "packages/service/src/shared/migrate.rs"
+  - "packages/service/migrations/**"
 ---
 
-Use `better-sqlite3` synchronous API only — no async DB calls. New tables require a new numbered migration in `migrations.ts` following the existing pattern.
+Electron uses `better-sqlite3` synchronous API for reads only — no async DB calls, no migrations.
+
+Schema migrations are managed by sqlx in the Rust service (`packages/service/migrations/`). New migrations use timestamp-based naming: `YYYYMMDDHHMMSS_description.sql`. They are embedded at compile time via `sqlx::migrate!()` and run automatically on server startup. Migrations are non-reversible (plain `.sql`, not `.up.sql`/`.down.sql`).
