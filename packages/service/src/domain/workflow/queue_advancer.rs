@@ -214,7 +214,7 @@ impl QueueAdvancer {
     }
 
     /// Called when a queue item is paused (interrupted by user).
-    async fn on_item_paused(&self, slot: AgentSlot, agent_manager: &AgentManager) {
+    pub async fn on_item_paused(&self, slot: AgentSlot, agent_manager: &AgentManager) {
         info!(feature_id = self.feature_id, slot = %slot, "queue item paused (interrupted)");
 
         if let AgentSlot::QueueItem(item_id) = &slot {

@@ -716,6 +716,11 @@ impl WorkflowEngine {
         self.queue.on_item_completed(slot, result, &self.agent_manager, &self.permissions, self).await;
     }
 
+    pub async fn on_item_paused(&self, slot: AgentSlot) {
+        self.touch_activity();
+        self.queue.on_item_paused(slot, &self.agent_manager).await;
+    }
+
     pub async fn on_item_error(&self, slot: AgentSlot, error: &str) {
         self.touch_activity();
         self.queue.on_item_error(slot, error, &self.agent_manager, &self.permissions, self).await;

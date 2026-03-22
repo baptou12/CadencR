@@ -880,6 +880,7 @@ pub fn spawn_workflow_stream_reader(
             Some(db_session_id),
         );
         let mut completed_ok = false;
+        let mut agent_done_called = false;
         let mut error_msg: Option<String> = None;
         let mut needs_session_id_capture = true;
         let mut pending_feature_update: Option<Vec<&'static str>> = None;
@@ -967,13 +968,15 @@ pub fn spawn_workflow_stream_reader(
 
                     let envelope = match &sdk_msg {
                         SdkMessage::Result { .. } => {
-                            debug!(slot = %slot, "received SDK Result message — marking completed_ok");
+                            debug!(slot = %slot, agent_done_called, "received SDK Result message");
                             completed_ok = true;
-                            WsSessionPersistence::mark_completed_static(
-                                &write_pool,
-                                db_session_id,
-                            )
-                            .await;
+                            if agent_done_called {
+                                WsSessionPersistence::mark_completed_static(
+                                    &write_pool,
+                                    db_session_id,
+                                )
+                                .await;
+                            }
                             WsEnvelope::new(
                                 "workflow",
                                 "agent_stream",
@@ -1015,6 +1018,9 @@ pub fn spawn_workflow_stream_reader(
                             let mut fields: Vec<&'static str> = Vec::new();
                             for block in &message.content {
                                 if let ContentBlock::ToolUse { name, .. } = block {
+                                    if name.contains("mark_agent_done") || name.contains("mark_phase_done") {
+                                        agent_done_called = true;
+                                    }
                                     if name.contains("create_phase") || name.contains("finalize_phases") {
                                         fields.extend_from_slice(&["phases", "progress"]);
                                     } else if name.contains("finalize_plan") {
@@ -1038,6 +1044,9 @@ pub fn spawn_workflow_stream_reader(
                         }
                         SdkMessage::ToolUseSummary { ref data, .. } => {
                             if let Some(tool_name) = data.get("tool_name").and_then(|v| v.as_str()) {
+                                if tool_name.contains("mark_agent_done") || tool_name.contains("mark_phase_done") {
+                                    agent_done_called = true;
+                                }
                                 let changed: Option<&[&str]> = match tool_name {
                                     t if t.contains("create_phase") || t.contains("finalize_phases") => {
                                         Some(&["phases", "progress"])
@@ -1107,8 +1116,9 @@ pub fn spawn_workflow_stream_reader(
         queries.remove(&slot);
 
         // Post-stream callbacks — delegate to the real engine from the registry
-        debug!(slot = %slot, completed_ok, has_error = error_msg.is_some(), "stream reader post-loop: dispatching callbacks");
-        if completed_ok {
+        debug!(slot = %slot, completed_ok, agent_done_called, has_error = error_msg.is_some(), "stream reader post-loop: dispatching callbacks");
+        if completed_ok && agent_done_called {
+            // Agent explicitly called mark_agent_done — treat as completed
             if let Some(engine) = crate::domain::ws_session::handler::workflow::get_engine(feature_id) {
                 engine.on_item_completed(slot, None).await;
             } else {
@@ -1118,6 +1128,13 @@ pub fn spawn_workflow_stream_reader(
                 if let Err(e) = repo::mark_item_completed(&write_pool, legacy_id, None).await {
                     error!(slot = %slot, error = %e, "failed to mark item completed (no engine)");
                 }
+            }
+        } else if completed_ok && !agent_done_called {
+            // CLI turn ended but agent did not call mark_agent_done — treat as paused
+            info!(slot = %slot, "agent turn ended without mark_agent_done — treating as paused");
+            WsSessionPersistence::mark_paused_static(&write_pool, db_session_id).await;
+            if let Some(engine) = crate::domain::ws_session::handler::workflow::get_engine(feature_id) {
+                engine.on_item_paused(slot).await;
             }
         } else if let Some(err) = error_msg {
             if let Some(engine) = crate::domain::ws_session::handler::workflow::get_engine(feature_id) {
