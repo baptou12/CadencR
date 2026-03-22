@@ -540,6 +540,13 @@ export function FeatureWorkflowView({
               </div>
             )}
 
+            {!backend.hasAnyAgentOutput && backend.sessionEntries.length === 0 &&
+              view !== "plan-input" && view !== "loading" && (
+              <div className="flex-1 flex items-center justify-center">
+                <Loader2Icon className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            )}
+
             {(backend.sessionEntries.length > 0 ||
               actions.canStartBuild ||
               actions.canStartRisk ||

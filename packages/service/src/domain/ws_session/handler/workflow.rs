@@ -9,6 +9,7 @@ use tracing::{info, warn};
 use crate::app_state::AppState;
 use crate::domain::features::models::WorkflowType;
 use crate::domain::workflow::engine::WorkflowEngine;
+use crate::domain::workflow::status::WorkflowStatus;
 use crate::domain::workflow::worktree;
 use crate::domain::ws_session::auto_name;
 use crate::domain::ws_session::persistence::WsSessionPersistence;
@@ -342,8 +343,12 @@ async fn handle_start_plan(envelope: WsEnvelope, sender: &WsSender, app_state: &
     let Some((payload, engine)) = parse_and_get_engine::<WorkflowStartPlanPayload>(&envelope, sender) else { return };
     let feature_id = payload.feature_id;
 
+    // Immediately transition so the frontend leaves plan-input view
+    engine.set_status(WorkflowStatus::Planning).await;
+
     // Auto-name if needed, ensure worktree exists
     if let Err(e) = prepare_worktree(feature_id, &payload.description, &engine.ws_sender, app_state).await {
+        engine.set_status(WorkflowStatus::Idle).await;
         send_workflow_error(sender, &envelope.id, "WORKTREE_FAILED", &e);
         return;
     }
@@ -358,6 +363,7 @@ async fn handle_start_plan(envelope: WsEnvelope, sender: &WsSender, app_state: &
             let _ = sender.send(Message::Text(String::from(ack).into()));
         }
         Err(e) => {
+            engine.set_status(WorkflowStatus::Idle).await;
             send_workflow_error(sender, &envelope.id, "SPAWN_FAILED", &format!("Failed to spawn plan agent: {e}"));
         }
     }
@@ -367,8 +373,12 @@ async fn handle_start_prd(envelope: WsEnvelope, sender: &WsSender, app_state: &A
     let Some((payload, engine)) = parse_and_get_engine::<WorkflowStartPrdPayload>(&envelope, sender) else { return };
     let feature_id = payload.feature_id;
 
+    // Immediately transition so the frontend leaves plan-input view
+    engine.set_status(WorkflowStatus::Prd).await;
+
     // Auto-name if needed, ensure worktree exists
     if let Err(e) = prepare_worktree(feature_id, &payload.description, &engine.ws_sender, app_state).await {
+        engine.set_status(WorkflowStatus::Idle).await;
         send_workflow_error(sender, &envelope.id, "WORKTREE_FAILED", &e);
         return;
     }
@@ -383,6 +393,7 @@ async fn handle_start_prd(envelope: WsEnvelope, sender: &WsSender, app_state: &A
             let _ = sender.send(Message::Text(String::from(ack).into()));
         }
         Err(e) => {
+            engine.set_status(WorkflowStatus::Idle).await;
             send_workflow_error(sender, &envelope.id, "SPAWN_FAILED", &format!("Failed to spawn PRD agent: {e}"));
         }
     }
@@ -425,7 +436,6 @@ async fn handle_approval(envelope: WsEnvelope, sender: &WsSender, kind: &str, sl
 
     // Update workflow status based on approval decision
     {
-        use crate::domain::workflow::status::WorkflowStatus;
         if kind == "plan" {
             if approved {
                 engine.set_status(WorkflowStatus::ReadyToBuild).await;

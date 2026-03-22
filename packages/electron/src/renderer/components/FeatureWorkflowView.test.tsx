@@ -387,6 +387,57 @@ describe("FeatureWorkflowView", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("shows spinner when planning with no agent output", () => {
+    mockUseWorkflowBackend.mockReturnValue({
+      ...defaultBackend,
+      view: "planning",
+      workflowStatus: "planning",
+      hasAnyAgentOutput: false,
+      sessionEntries: [],
+    });
+    const { container } = render(
+      <FeatureWorkflowView
+        featureId={1}
+        projectId={1}
+        feature={mockFeature}
+        featureQuery={{ refetch: vi.fn() }}
+      />,
+    );
+    expect(container.querySelector(".animate-spin")).toBeInTheDocument();
+    expect(screen.queryByTestId("plan-input-view")).not.toBeInTheDocument();
+  });
+
+  it("shows spinner when prd with no agent output", () => {
+    mockUseWorkflowBackend.mockReturnValue({
+      ...defaultBackend,
+      view: "prd",
+      workflowStatus: "prd",
+      hasAnyAgentOutput: false,
+      sessionEntries: [],
+    });
+    const { container } = render(
+      <FeatureWorkflowView
+        featureId={1}
+        projectId={1}
+        feature={mockFeature}
+        featureQuery={{ refetch: vi.fn() }}
+      />,
+    );
+    expect(container.querySelector(".animate-spin")).toBeInTheDocument();
+  });
+
+  it("does not show spinner on plan-input view", () => {
+    const { container } = render(
+      <FeatureWorkflowView
+        featureId={1}
+        projectId={1}
+        feature={mockFeature}
+        featureQuery={{ refetch: vi.fn() }}
+      />,
+    );
+    expect(container.querySelector(".animate-spin")).not.toBeInTheDocument();
+  });
+
   it("renders with undefined feature", () => {
     const { container } = render(
       <FeatureWorkflowView
