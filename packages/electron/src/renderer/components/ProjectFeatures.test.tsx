@@ -14,10 +14,10 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 const mockFeatures = [
-  { id: 1, title: "Feature One", type: "feature", status: "draft", project_id: 1 },
-  { id: 2, title: "Feature Two", type: "feature", status: "in-progress", project_id: 1 },
-  { id: 3, title: "Session One", type: "session", status: "draft", project_id: 1 },
-  { id: 4, title: "Archived Feature", type: "feature", status: "archived", project_id: 1 },
+  { id: 1, title: "Feature One", type: "ws-feature", status: "draft", project_id: 1 },
+  { id: 2, title: "Feature Two", type: "ws-feature", status: "in-progress", project_id: 1 },
+  { id: 3, title: "Session One", type: "ws-session", status: "draft", project_id: 1 },
+  { id: 4, title: "Archived Feature", type: "ws-feature", status: "archived", project_id: 1 },
 ];
 
 vi.mock("@/api/generated", () => ({

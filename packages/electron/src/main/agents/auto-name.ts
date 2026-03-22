@@ -105,7 +105,7 @@ async function runAutoName(
   // Chain worktree setup after naming (only for non-session features)
   if (projectId != null) {
     const feature = Effect.runSync(queryOne<{ type: string }>("SELECT type FROM features WHERE id = ?", featureId));
-    if (feature?.type !== "session") {
+    if (feature?.type !== "ws-session") {
       AppRuntime.runPromise(setupWorktreeForFeatureEffect(projectId, featureId)).catch(
         (err) => {
           console.error("[auto-name] Worktree setup failed:", err);

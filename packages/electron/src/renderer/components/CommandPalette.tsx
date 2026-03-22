@@ -63,7 +63,7 @@ function ProjectFeatureGroup({
             keywords={[projectName, f.title]}
             onSelect={() => onSelect(projectId, f.id)}
           >
-            {f.type === "session" ? (
+            {f.type === "ws-session" ? (
               <MessageSquareIcon className="mr-2" />
             ) : (
               <FileTextIcon className="mr-2" />
@@ -166,7 +166,7 @@ export function CommandPalette({
           title: "Untitled Feature",
         });
       } else if (mode === "pick-project-session") {
-        createSessionMutation.mutate({ project_id: projectId, type: "session" });
+        createSessionMutation.mutate({ project_id: projectId, type: "ws-session" });
       }
       close();
     },
@@ -295,7 +295,7 @@ export function CommandPalette({
               if (activeProjectId != null) {
                 createSessionMutation.mutate({
                   project_id: activeProjectId,
-                  type: "session",
+                  type: "ws-session",
                 });
                 close();
               } else {

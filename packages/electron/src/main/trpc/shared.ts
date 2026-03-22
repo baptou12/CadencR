@@ -18,7 +18,7 @@ export function resolveFeatureGitPath(featureId: number): Effect.Effect<string |
     if (!feature) return null;
 
     // Session features always use the project path directly
-    if (feature.type !== "session") {
+    if (feature.type !== "ws-session") {
       const wtRow = yield* queryOne<{ value: string }>(
         "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
         featureId,

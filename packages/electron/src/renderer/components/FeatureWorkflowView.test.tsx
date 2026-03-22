@@ -22,7 +22,7 @@ vi.mock("@/trpc", () => {
             id: 1,
             title: "Test Feature",
             status: "draft",
-            type: "feature",
+            type: "ws-feature",
             project_id: 1,
             created_at: "2024-01-01",
           },
@@ -306,7 +306,7 @@ const mockFeature = {
   id: 1,
   title: "Test Feature",
   status: "draft",
-  type: "feature",
+  type: "ws-feature",
   project_id: 1,
   created_at: "2024-01-01",
 };

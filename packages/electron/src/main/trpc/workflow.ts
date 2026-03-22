@@ -246,7 +246,7 @@ export const workflowRouter = router({
           );
 
           let wtRow: { value: string } | null = null;
-          if (featureRow?.type !== "session") {
+          if (featureRow?.type !== "ws-session") {
             wtRow = yield* queryOne<{ value: string }>(
               "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
               input.featureId,
@@ -273,7 +273,7 @@ export const workflowRouter = router({
       // Session-type features always use the project path directly (no worktree)
       let cwd = project.path;
       let worktreePath: string | undefined;
-      if (featureRow?.type !== "session" && wtRow?.value) {
+      if (featureRow?.type !== "ws-session" && wtRow?.value) {
         cwd = wtRow.value;
         worktreePath = wtRow.value;
       }
@@ -323,7 +323,7 @@ export const workflowRouter = router({
       );
 
       // Session-type features should never have worktrees
-      if (feature.type === "session") {
+      if (feature.type === "ws-session") {
         return { cwd: project.path };
       }
 

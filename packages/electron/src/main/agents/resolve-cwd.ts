@@ -21,7 +21,7 @@ export function resolveAgentCwd(
     );
 
     const wtRow =
-      feature?.type === "session"
+      feature?.type === "ws-session"
         ? null
         : yield* queryOne<SettingRow>(
             "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",

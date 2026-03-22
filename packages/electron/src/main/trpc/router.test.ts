@@ -366,7 +366,7 @@ describe("appRouter - workflowRouter - agent starters", () => {
           return { path: "/project/path" };
         }
         if (sql.includes("FROM features")) {
-          return { title: "Feature A", type: "feature", project_id: 1 };
+          return { title: "Feature A", type: "ws-feature", project_id: 1 };
         }
         return undefined;
       }),

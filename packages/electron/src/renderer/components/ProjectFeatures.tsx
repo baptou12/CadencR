@@ -161,7 +161,7 @@ export function ProjectFeatures({
 
         {/* Right-pinned actions */}
         <div className="absolute inset-y-0 right-0 flex items-center gap-1 rounded-r-md pr-1.5 pl-6 bg-gradient-to-l from-sidebar from-60% to-transparent group-hover/feature:from-accent group-[.bg-accent]/feature:from-accent">
-          {feature.type !== "session" && feature.type !== "ws-session" && (
+          {feature.type !== "ws-session" && (
             <Select
               value={feature.status}
               onValueChange={(v) =>

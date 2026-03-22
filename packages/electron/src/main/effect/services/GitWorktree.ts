@@ -416,7 +416,7 @@ export function setupWorktreeForFeatureEffect(
     }
 
     // Session-type features must never have worktrees
-    if (feature.type === "session") {
+    if (feature.type === "ws-session") {
       console.warn(
         `[worktree-setup] Skipping worktree for session-type feature ${featureId}`,
       );

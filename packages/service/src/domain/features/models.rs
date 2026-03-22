@@ -250,7 +250,7 @@ mod tests {
             id: 1,
             project_id: 2,
             title: "Test Feature".to_string(),
-            type_: "feature".to_string(),
+            type_: "ws-feature".to_string(),
             status: "active".to_string(),
             prd: Some("prd content".to_string()),
             workflow_step: Some("step1".to_string()),
@@ -275,7 +275,7 @@ mod tests {
         assert!(json.contains(r#""model_review-fixer""#));
 
         let deserialized: serde_json::Value = serde_json::from_str(&json).unwrap();
-        assert_eq!(deserialized["type"], "feature");
+        assert_eq!(deserialized["type"], "ws-feature");
         assert_eq!(deserialized["model_review-fixer"], "claude-fixer");
         assert_eq!(deserialized["title"], "Test Feature");
     }
@@ -409,11 +409,11 @@ mod tests {
 
     #[test]
     fn test_create_feature_request_serde() {
-        let json = r#"{"project_id": 1, "title": "My Feature", "type": "feature"}"#;
+        let json = r#"{"project_id": 1, "title": "My Feature", "type": "ws-feature"}"#;
         let req: CreateFeatureRequest = serde_json::from_str(json).unwrap();
         assert_eq!(req.project_id, 1);
         assert_eq!(req.title.as_deref(), Some("My Feature"));
-        assert_eq!(req.type_.as_deref(), Some("feature"));
+        assert_eq!(req.type_.as_deref(), Some("ws-feature"));
     }
 
     #[test]

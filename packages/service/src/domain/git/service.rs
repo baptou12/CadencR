@@ -30,7 +30,7 @@ async fn resolve_feature_git_path(
         None => return Ok(None),
     };
 
-    if feature_type != "session" && feature_type != "ws-session" {
+    if feature_type != "ws-session" {
         let wt = repository::get_feature_setting(&state.read_pool, feature_id, SETTING_WORKTREE_PATH).await?;
         if let Some(path) = wt {
             return Ok(Some(path));

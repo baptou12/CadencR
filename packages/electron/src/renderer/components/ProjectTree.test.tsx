@@ -38,7 +38,7 @@ vi.mock("../api/generated", () => ({
   })),
   getListProjectsQueryKey: vi.fn(() => ["projects"]),
   useListFeatures: vi.fn(() => ({
-    data: [{ id: 10, title: "Feature One", type: "feature", status: "draft", project_id: 1 }],
+    data: [{ id: 10, title: "Feature One", type: "ws-feature", status: "draft", project_id: 1 }],
   })),
   useCreateFeature: vi.fn((opts?: { onSuccess?: (r: unknown) => void }) => ({
     mutate: (data: unknown) => {

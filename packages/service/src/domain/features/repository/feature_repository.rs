@@ -112,7 +112,7 @@ pub async fn is_empty(pool: &SqlitePool, id: i64) -> Result<bool, AppError> {
         return Ok(false);
     }
 
-    if ftype == "session" || ftype == "ws-session" {
+    if ftype == "ws-session" {
         let msg: Option<(i64,)> = sqlx::query_as(
             "SELECT 1 FROM agent_messages WHERE session_id IN (SELECT id FROM agent_sessions WHERE feature_id = ?) LIMIT 1",
         )
@@ -139,7 +139,7 @@ pub async fn resolve_working_dir(pool: &SqlitePool, feature_id: i64, project_id:
             .await?;
 
     if let Some((ftype,)) = feature_row {
-        if ftype != "session" {
+        if ftype != "ws-session" {
             let setting: Option<(String,)> = sqlx::query_as(
                 "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
             )

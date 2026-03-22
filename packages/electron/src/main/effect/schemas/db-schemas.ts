@@ -50,7 +50,7 @@ export const ProjectSettingRowSchema = Schema.Struct({
 // Features
 // ---------------------------------------------------------------------------
 
-export const FeatureTypeSchema = Schema.Literal("feature", "session", "ws-session", "ws-feature");
+export const FeatureTypeSchema = Schema.Literal("ws-session", "ws-feature");
 
 export const FeatureStatusSchema = Schema.Literal("draft", "planned", "in-progress", "done", "archived");
 

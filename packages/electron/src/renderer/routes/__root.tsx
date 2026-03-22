@@ -266,7 +266,7 @@ function RootLayout() {
     (e) => {
       e.preventDefault();
       if (activeProjectId == null) return;
-      createSessionMutation.mutate({ project_id: activeProjectId, type: "session" });
+      createSessionMutation.mutate({ project_id: activeProjectId, type: "ws-session" });
     },
     { enableOnFormTags: true },
   );

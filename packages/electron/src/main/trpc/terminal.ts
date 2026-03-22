@@ -34,7 +34,7 @@ function resolveTerminalCwd(featureId: number, projectId: number): Promise<strin
       const feature = yield* queryOne<{ type: string }>("SELECT type FROM features WHERE id = ?", featureId);
 
       // For non-session features, try worktree path first
-      if (feature && feature.type !== "session") {
+      if (feature && feature.type !== "ws-session") {
         const wtRow = yield* queryOne<Pick<SettingRow, "value">>(
           "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
           featureId,

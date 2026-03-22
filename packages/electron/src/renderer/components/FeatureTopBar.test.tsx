@@ -15,7 +15,7 @@ vi.mock("@/api/generated", () => ({
       id: 1,
       title: "My Test Feature",
       status: "in-progress",
-      type: "feature",
+      type: "ws-feature",
       project_id: 1,
       created_at: "2024-01-01",
     },

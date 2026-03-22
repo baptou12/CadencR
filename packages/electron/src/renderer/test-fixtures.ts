@@ -52,7 +52,7 @@ export function createMockFeature(overrides: Partial<FeatureRow> = {}): FeatureR
     id,
     project_id: 1,
     title: `Test Feature ${id}`,
-    type: "feature",
+    type: "ws-feature",
     status: "draft",
     created_at: "2024-01-01T00:00:00.000Z",
     model_plan: null,

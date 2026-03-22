@@ -118,16 +118,20 @@ describe("ProjectSettingRowSchema", () => {
 // ---------------------------------------------------------------------------
 
 describe("FeatureTypeSchema", () => {
-  it("accepts 'feature'", () => {
-    expect(decode(FeatureTypeSchema, "feature")).toBe("feature");
-  });
-
-  it("accepts 'session'", () => {
-    expect(decode(FeatureTypeSchema, "session")).toBe("session");
+  it("accepts 'ws-feature'", () => {
+    expect(decode(FeatureTypeSchema, "ws-feature")).toBe("ws-feature");
   });
 
   it("accepts 'ws-session'", () => {
     expect(decode(FeatureTypeSchema, "ws-session")).toBe("ws-session");
+  });
+
+  it("rejects legacy 'feature' type", () => {
+    expectParseError(FeatureTypeSchema, "feature");
+  });
+
+  it("rejects legacy 'session' type", () => {
+    expectParseError(FeatureTypeSchema, "session");
   });
 
   it("rejects unknown literal", () => {
@@ -148,7 +152,7 @@ describe("FeatureRowSchema", () => {
     id: 10,
     project_id: 1,
     title: "My Feature",
-    type: "feature",
+    type: "ws-feature",
     status: "in-progress",
     created_at: "2024-06-01T00:00:00Z",
     model_plan: null,
@@ -168,12 +172,12 @@ describe("FeatureRowSchema", () => {
   it("accepts a valid feature row", () => {
     const result = decode(FeatureRowSchema, validFeature);
     expect(result.id).toBe(10);
-    expect(result.type).toBe("feature");
+    expect(result.type).toBe("ws-feature");
   });
 
-  it("accepts type = 'session'", () => {
-    const result = decode(FeatureRowSchema, { ...validFeature, type: "session" });
-    expect(result.type).toBe("session");
+  it("accepts type = 'ws-session'", () => {
+    const result = decode(FeatureRowSchema, { ...validFeature, type: "ws-session" });
+    expect(result.type).toBe("ws-session");
   });
 
   it("rejects invalid type", () => {

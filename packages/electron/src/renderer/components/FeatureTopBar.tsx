@@ -95,20 +95,6 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", executeS
   const openTerminal = trpc.git.openInTerminal.useMutation();
   const openZed = trpc.git.openInZed.useMutation();
 
-  // Review fixer agent (start from diff viewer when no agent is running)
-  const startReviewFixer = trpc.workflow.startReviewFixer.useMutation({
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["sessions", "agentState", featureId] });
-    },
-  });
-
-  const handleStartReviewFixer = useCallback(
-    (formattedComments: string) => {
-      startReviewFixer.mutate({ featureId, projectId, prompt: formattedComments });
-    },
-    [featureId, projectId, startReviewFixer],
-  );
-
   const setFeatureSetting = useSetFeatureSetting({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: getGetFeatureSettingsQueryKey(featureId) });
@@ -276,7 +262,6 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", executeS
         onOpenChange={setDiffOpen}
         diffMode={isSession ? "worktree" : "branch"}
         executeState={executeState}
-        onStartReviewFixer={handleStartReviewFixer}
       />
     </div>
   );
