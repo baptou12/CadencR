@@ -1045,6 +1045,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
 
     respondToPermission(itemId, requestId, decision) {
       send("permission.respond", { agent_slot: legacyIdToSlot(itemId), request_id: requestId, decision });
+      // Clear pendingPermission so the prompt dismisses immediately
+      set(state => patchAgentByItemId(state, itemId, { pendingPermission: null }));
     },
 
     respondToQuestion(itemId, response) {

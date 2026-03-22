@@ -4,7 +4,7 @@ use std::sync::{Arc, LazyLock, Once};
 use axum::extract::ws::Message;
 use dashmap::DashMap;
 use serde::de::DeserializeOwned;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::app_state::AppState;
 use crate::domain::features::models::WorkflowType;
@@ -85,8 +85,16 @@ fn ensure_background_tasks(timeout_minutes: u64) {
                     };
 
                     for (item_id,) in stale {
-                        warn!(feature_id, item_id, "agent timed out");
-                        engine.active_items().remove(&crate::domain::workflow::engine::AgentSlot::QueueItem(item_id));
+                        // Skip items that are still actively tracked — the agent
+                        // process is alive and the stream reader is monitoring it.
+                        // Only timeout truly orphaned items (status=running in DB
+                        // but no active stream reader).
+                        let slot = crate::domain::workflow::engine::AgentSlot::QueueItem(item_id);
+                        if engine.active_items().contains_key(&slot) {
+                            debug!(feature_id, item_id, "timeout checker: skipping active item");
+                            continue;
+                        }
+                        warn!(feature_id, item_id, "agent timed out (orphaned)");
 
                         if let Err(e) = crate::domain::features::repository::mark_item_error(&engine.write_pool, item_id, Some("Agent timed out")).await {
                             tracing::error!(item_id, error = %e, "failed to mark timed-out item");

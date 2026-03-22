@@ -45,7 +45,6 @@ import type { AgentQuestion } from "./AgentQuestionDrawer";
 import type { TodoItem } from "@/types/agent";
 import type { ContextUsageState } from "@/hooks/useContextUsage";
 import type { PendingPermission } from "./ToolPermissionPrompt";
-import { ToolPermissionPrompt } from "./ToolPermissionPrompt";
 import { AGENT_ICONS } from "./agent-icons";
 import { trpc } from "../trpc";
 import { useGetFeatureWorkingDir } from "../api/generated";
@@ -547,16 +546,7 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
     </div>
   ) : null;
 
-  // ---- Permission prompt bar ----
-  const permissionBar = pendingPermission && onPermissionDecision ? (
-    <div data-permission-area>
-      <ToolPermissionPrompt
-        permission={pendingPermission}
-        onDecision={onPermissionDecision}
-        disableShortcuts={disableShortcuts}
-      />
-    </div>
-  ) : null;
+  // Permission is now rendered inside AgentPromptBar (replaces prompt input)
 
   // ---- Stream content ----
   const streamContent = (
@@ -604,6 +594,8 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
       noTopPadding={!!hasMeta}
       slashCommandsOverride={slashCommandsOverride}
       slashCommandsLoading={slashCommandsLoading}
+      pendingPermission={pendingPermission}
+      onPermissionDecision={onPermissionDecision}
     />
   ) : null;
 
@@ -620,9 +612,6 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
 
         {/* Bottom section */}
         <div className="shrink-0">
-          {/* Permission prompt */}
-          {permissionBar}
-
           {/* Meta toolbar: diff + todos + model */}
           {metaBar}
 
@@ -778,9 +767,6 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
                 }}
               />
             )}
-
-            {/* Permission prompt */}
-            {permissionBar}
 
             {/* Meta toolbar: diff + todos + model */}
             {metaBar}

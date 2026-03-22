@@ -13,6 +13,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { AgentQuestionDrawer } from "./AgentQuestionDrawer";
 import { PlanApprovalBar } from "./PlanApprovalBar";
+import { ToolPermissionPrompt } from "./ToolPermissionPrompt";
+import type { PendingPermission } from "./ToolPermissionPrompt";
 import { FileMentionPopover } from "./FileMentionPopover";
 import { SlashCommandPopover } from "./SlashCommandPopover";
 import { ImageAttachmentPreview } from "./ImageAttachmentPreview";
@@ -95,6 +97,10 @@ export interface AgentPromptBarProps {
   slashCommandsOverride?: import("@/hooks/useSlashCommand").SlashCommand[];
   /** Whether the override commands are still loading */
   slashCommandsLoading?: boolean;
+  /** Pending tool permission request from canUseTool callback */
+  pendingPermission?: PendingPermission | null;
+  /** Called when user makes a permission decision */
+  onPermissionDecision?: (decision: "allow_once" | "allow_future" | "deny", feedback?: string) => void;
 }
 
 /** Handle exposed by AgentPromptBar via forwardRef */
@@ -134,6 +140,8 @@ export const AgentPromptBar = forwardRef<
     noTopPadding,
     slashCommandsOverride,
     slashCommandsLoading,
+    pendingPermission,
+    onPermissionDecision,
   },
   ref,
 ) {
@@ -388,6 +396,19 @@ export const AgentPromptBar = forwardRef<
     },
     [mention, text],
   );
+
+  // When a tool permission is pending, render the permission prompt instead of the prompt input
+  if (pendingPermission && onPermissionDecision) {
+    return (
+      <div data-question-area>
+        <ToolPermissionPrompt
+          permission={pendingPermission}
+          onDecision={onPermissionDecision}
+          disableShortcuts={disableShortcuts}
+        />
+      </div>
+    );
+  }
 
   // When plan approval is pending, render the approval bar instead of the prompt input
   if (pendingPlanApproval && onPlanApprove && onPlanRequestChanges) {

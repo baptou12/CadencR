@@ -140,6 +140,28 @@ describe("AgentPromptBar", () => {
     expect(screen.getByText(/What do you need/)).toBeInTheDocument();
   });
 
+  it("renders permission prompt when pendingPermission is provided", () => {
+    render(
+      <AgentPromptBar
+        onSend={onSend}
+        onStop={onStop}
+        status="running"
+        pendingPermission={{
+          toolName: "Bash",
+          input: { command: "ls /tmp" },
+          description: "Run a bash command",
+          pattern: "Bash(/tmp:*)",
+          requestId: "req-1",
+        }}
+        onPermissionDecision={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/Permission Required/)).toBeInTheDocument();
+    expect(screen.getByText(/Allow once/)).toBeInTheDocument();
+    // The regular prompt textarea should not be rendered
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+  });
+
   it("renders with initialDraft text", () => {
     render(
       <AgentPromptBar

@@ -2008,4 +2008,67 @@ describe("useWorkflowStore", () => {
       expect(plan!.blocks[0]).toMatchObject({ type: "text", content: "work" });
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // Permission request / respond
+  // ---------------------------------------------------------------------------
+
+  describe("permission.request and respondToPermission", () => {
+    it("sets pendingPermission on a queue agent when permission.request arrives", () => {
+      const ws = connectStore();
+      const agents = new Map();
+      agents.set(7, makeAgentSession({ sessionId: 100 }));
+      useWorkflowStore.setState({ activeAgents: agents });
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "permission.request",
+        payload: {
+          feature_id: 1,
+          agent_slot: { type: "queue_item", id: 7 },
+          request_id: "req-1",
+          tool_name: "Bash",
+          tool_input: { command: "ls" },
+          description: "Run ls",
+          pattern: "Bash(/tmp:*)",
+        },
+      });
+
+      const agent = useWorkflowStore.getState().activeAgents.get(7);
+      expect(agent!.pendingPermission).toEqual({
+        toolName: "Bash",
+        input: { command: "ls" },
+        description: "Run ls",
+        pattern: "Bash(/tmp:*)",
+        requestId: "req-1",
+      });
+    });
+
+    it("clears pendingPermission when respondToPermission is called", () => {
+      const ws = connectStore();
+      const agents = new Map();
+      agents.set(7, makeAgentSession({
+        sessionId: 100,
+        pendingPermission: {
+          toolName: "Bash",
+          input: { command: "ls" },
+          description: "Run ls",
+          pattern: "Bash(/tmp:*)",
+          requestId: "req-1",
+        },
+      }));
+      useWorkflowStore.setState({ activeAgents: agents });
+
+      useWorkflowStore.getState().respondToPermission(7, "req-1", "allow_once");
+
+      const agent = useWorkflowStore.getState().activeAgents.get(7);
+      expect(agent!.pendingPermission).toBeNull();
+
+      // Also verify the WS message was sent
+      expect(ws.sent.length).toBeGreaterThanOrEqual(1);
+      const msg = JSON.parse(ws.sent[ws.sent.length - 1]);
+      expect(msg.action).toBe("permission.respond");
+      expect(msg.payload.decision).toBe("allow_once");
+    });
+  });
 });
