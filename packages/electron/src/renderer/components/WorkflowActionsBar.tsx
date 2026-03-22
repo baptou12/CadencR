@@ -10,7 +10,7 @@ interface WorkflowActionsBarProps {
   featureId: number;
   projectId: number;
   featureType?: string;
-  allItemsDone: boolean;
+  noExecuteAgentRunning: boolean;
   onStartSession: (prompt: string, images?: Array<{ base64: string; mimeType: string }>) => void;
   onStartRefine: (description: string, images?: Array<{ base64: string; mimeType: string }>) => void;
   className?: string;
@@ -21,7 +21,7 @@ export function WorkflowActionsBar({
   featureId,
   projectId,
   featureType,
-  allItemsDone,
+  noExecuteAgentRunning,
   onStartSession,
   onStartRefine,
   className,
@@ -34,7 +34,7 @@ export function WorkflowActionsBar({
   const sessionPromptRef = useRef<AgentPromptBarHandle>(null);
   const refinePromptRef = useRef<AgentPromptBarHandle>(null);
 
-  const canMerge = allItemsDone && featureType === "feature";
+  const canMerge = noExecuteAgentRunning && (featureType === "feature" || featureType === "ws-feature");
 
   // Auto-focus prompt bars when opened
   useEffect(() => {

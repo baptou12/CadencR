@@ -19,7 +19,7 @@ describe("WorkflowActionsBar", () => {
     featureId: 1,
     projectId: 1,
     featureType: "feature",
-    allItemsDone: false,
+    noExecuteAgentRunning: false,
     onStartSession: vi.fn(),
     onStartRefine: vi.fn(),
   };
@@ -61,21 +61,45 @@ describe("WorkflowActionsBar", () => {
     expect(screen.getByText("Refine Plan")).toBeInTheDocument();
   });
 
-  it("shows Merge & Archive button when completed and all items done", () => {
+  it("shows Merge & Archive button when completed and no execute agent running", () => {
     render(
       <WorkflowActionsBar
         {...defaultProps}
         workflowStatus="completed"
-        allItemsDone={true}
+        noExecuteAgentRunning={true}
         featureType="feature"
       />,
     );
     expect(screen.getByText("Merge & Archive")).toBeInTheDocument();
   });
 
+  it("shows Merge & Archive button for ws-feature type", () => {
+    render(
+      <WorkflowActionsBar
+        {...defaultProps}
+        workflowStatus="completed"
+        noExecuteAgentRunning={true}
+        featureType="ws-feature"
+      />,
+    );
+    expect(screen.getByText("Merge & Archive")).toBeInTheDocument();
+  });
+
+  it("does not show Merge & Archive when execute agent is running", () => {
+    render(
+      <WorkflowActionsBar
+        {...defaultProps}
+        workflowStatus="completed"
+        noExecuteAgentRunning={false}
+        featureType="feature"
+      />,
+    );
+    expect(screen.queryByText("Merge & Archive")).not.toBeInTheDocument();
+  });
+
   it("does not show Merge & Archive when not completed", () => {
     render(
-      <WorkflowActionsBar {...defaultProps} workflowStatus="building" allItemsDone={true} />,
+      <WorkflowActionsBar {...defaultProps} workflowStatus="building" noExecuteAgentRunning={true} />,
     );
     expect(screen.queryByText("Merge & Archive")).not.toBeInTheDocument();
   });
@@ -85,7 +109,7 @@ describe("WorkflowActionsBar", () => {
       <WorkflowActionsBar
         {...defaultProps}
         workflowStatus="completed"
-        allItemsDone={true}
+        noExecuteAgentRunning={true}
         featureType="session"
       />,
     );
@@ -131,7 +155,7 @@ describe("WorkflowActionsBar", () => {
       <WorkflowActionsBar
         {...defaultProps}
         workflowStatus="completed"
-        allItemsDone={true}
+        noExecuteAgentRunning={true}
         featureType="feature"
       />,
     );

@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
-import { useGetFeaturePrd, useGetFeaturePlan } from "@/api/generated";
+import { useGetFeaturePrd } from "@/api/generated";
 import { FeatureTopBar } from "@/components/FeatureTopBar";
 import {
   AgentSession,
@@ -294,17 +294,6 @@ export function FeatureWorkflowView({
     },
     { enableOnFormTags: true },
   );
-
-  // Query plan phases to determine if all phases are done (for Merge & Archive button)
-  const planWithPhasesQuery = useGetFeaturePlan(
-    featureId,
-    { enabled: feature?.type === "feature" },
-  );
-  const allPhasesDone = useMemo(() => {
-    const phases = planWithPhasesQuery.data?.phases;
-    if (!phases || phases.length === 0) return false;
-    return phases.every((p) => p.status === "done" || p.status === "completed");
-  }, [planWithPhasesQuery.data]);
 
   // Use backend.view instead of useFeatureState
   const view = backend.view;
@@ -752,7 +741,7 @@ export function FeatureWorkflowView({
                           actions.canStartReview ||
                           actions.canStartWorkflowSession ||
                           backend.canContinueBuild ||
-                          allPhasesDone ||
+                          backend.executeStatus !== "running" ||
                           actions.canStartRetro)
                       }
                       canStartBuild={actions.canStartBuild}
@@ -774,7 +763,7 @@ export function FeatureWorkflowView({
                         backend.startSession(prompt, images?.map((i: { base64: string }) => i.base64));
                       }}
                       isStartingWorkflowSession={backend.isStartingWorkflowSession}
-                      allPhasesDone={allPhasesDone}
+                      noExecuteAgentRunning={backend.executeStatus !== "running"}
                       projectId={projectId}
                       featureId={featureId}
                       featureType={feature?.type}

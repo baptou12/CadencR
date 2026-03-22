@@ -27,7 +27,7 @@ interface NextStepsBarProps {
   canStartWorkflowSession?: boolean;
   onStartWorkflowSession?: (prompt: string, images?: Array<{ base64: string; mimeType: string }>) => void;
   isStartingWorkflowSession?: boolean;
-  allPhasesDone?: boolean;
+  noExecuteAgentRunning?: boolean;
   projectId?: number;
   featureId?: number;
   featureType?: string;
@@ -59,7 +59,7 @@ export function NextStepsBar({
   canStartWorkflowSession,
   onStartWorkflowSession,
   isStartingWorkflowSession,
-  allPhasesDone,
+  noExecuteAgentRunning,
   projectId,
   featureId,
   featureType,
@@ -76,7 +76,7 @@ export function NextStepsBar({
   const [showSessionPrompt, setShowSessionPrompt] = useState(false);
   const sessionPromptRef = useRef<AgentPromptBarHandle>(null);
 
-  const canMerge = allPhasesDone && featureType === "feature" && projectId != null && featureId != null;
+  const canMerge = noExecuteAgentRunning && (featureType === "feature" || featureType === "ws-feature") && projectId != null && featureId != null;
 
   const isRefineDisabled = !!isStartingRefinePlan;
 
