@@ -74,6 +74,7 @@ export interface AgentSessionState {
   inputTokens: number;
   outputTokens: number;
   contextWindow: number;
+  hasFileChanges: boolean;
 }
 
 export type AutonomyLevel = 1 | 2 | 3;
@@ -277,7 +278,18 @@ function createAgentSession(sessionId: number): AgentSessionState {
     inputTokens: 0,
     outputTokens: 0,
     contextWindow: 200_000,
+    hasFileChanges: false,
   };
+}
+
+const FILE_CHANGE_TOOLS = new Set(["Write", "Edit", "NotebookEdit"]);
+
+function blocksContainFileChange(blocks: AgentBlockData[]): boolean {
+  for (const b of blocks) {
+    if (b.type === "tool_call" && b.toolName && FILE_CHANGE_TOOLS.has(b.toolName)) return true;
+    if (b.childBlocks && blocksContainFileChange(b.childBlocks)) return true;
+  }
+  return false;
 }
 
 function processAgentStream(
@@ -287,7 +299,10 @@ function processAgentStream(
   const mutations = processSdkMessage(msg, agent.streamingState);
   if (mutations.length === 0) return agent;
   const blocks = applyMutations(agent.blocks, mutations, agent.streamingState);
-  return { ...agent, blocks };
+  const hasNewFileChange = !agent.hasFileChanges && mutations.some(
+    (m) => m.action === "append" && m.block.type === "tool_call" && m.block.toolName && FILE_CHANGE_TOOLS.has(m.block.toolName),
+  );
+  return { ...agent, blocks, ...(hasNewFileChange ? { hasFileChanges: true } : {}) };
 }
 
 /**
@@ -909,6 +924,10 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
           pendingQuestionRequestId: "",
           historyLoaded: false,
           claudeSessionId: session.claude_session_id ?? null,
+          inputTokens: 0,
+          outputTokens: 0,
+          contextWindow: 200_000,
+          hasFileChanges: false,
         };
 
         // Use queue_item_id when available; otherwise map agent_type to its
@@ -1197,7 +1216,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
       set(state => {
         const agent = resolveAgentByItemId(state, itemId);
         if (!agent || agent.historyLoaded || agent.blocks.length > 0) return state;
-        return patchAgentByItemId(state, itemId, { blocks, historyLoaded: true });
+        const hasFileChanges = agent.hasFileChanges || blocksContainFileChange(blocks);
+        return patchAgentByItemId(state, itemId, { blocks, historyLoaded: true, hasFileChanges });
       });
     },
   };

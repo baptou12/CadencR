@@ -765,6 +765,81 @@ describe("useWorkflowStore", () => {
       const after = useWorkflowStore.getState();
       expect(after.activeAgents).toBe(before.activeAgents);
     });
+
+    it("sets hasFileChanges when history blocks contain a Write tool_call", () => {
+      useWorkflowStore.getState().hydrateFromSnapshot({
+        workflow_status: "building",
+        queue: [{ id: 5, item_type: "execute", phase_id: null, phase_title: null, status: "completed", order_index: 0, group_index: null, agent_session_id: 30, result: null }],
+        agent_sessions: [{ id: 30, agent_type: "execute", status: "completed", queue_item_id: 5 }],
+        worktree: null,
+        autonomy_level: 3,
+      });
+
+      const blocksWithWrite = [
+        { type: "text" as const, content: "thinking..." },
+        { type: "tool_call" as const, content: "", toolName: "Write", toolArgs: "{}" },
+      ];
+      useWorkflowStore.getState().populateAgentBlocks(5, blocksWithWrite as never[]);
+
+      expect(useWorkflowStore.getState().activeAgents.get(5)!.hasFileChanges).toBe(true);
+    });
+
+    it("sets hasFileChanges when history blocks contain an Edit tool_call", () => {
+      useWorkflowStore.getState().hydrateFromSnapshot({
+        workflow_status: "building",
+        queue: [{ id: 6, item_type: "execute", phase_id: null, phase_title: null, status: "completed", order_index: 0, group_index: null, agent_session_id: 31, result: null }],
+        agent_sessions: [{ id: 31, agent_type: "execute", status: "completed", queue_item_id: 6 }],
+        worktree: null,
+        autonomy_level: 3,
+      });
+
+      const blocksWithEdit = [
+        { type: "tool_call" as const, content: "", toolName: "Edit", toolArgs: "{}" },
+      ];
+      useWorkflowStore.getState().populateAgentBlocks(6, blocksWithEdit as never[]);
+
+      expect(useWorkflowStore.getState().activeAgents.get(6)!.hasFileChanges).toBe(true);
+    });
+
+    it("sets hasFileChanges when a file-change tool is in childBlocks", () => {
+      useWorkflowStore.getState().hydrateFromSnapshot({
+        workflow_status: "building",
+        queue: [{ id: 7, item_type: "execute", phase_id: null, phase_title: null, status: "completed", order_index: 0, group_index: null, agent_session_id: 32, result: null }],
+        agent_sessions: [{ id: 32, agent_type: "execute", status: "completed", queue_item_id: 7 }],
+        worktree: null,
+        autonomy_level: 3,
+      });
+
+      const blocksWithNestedEdit = [
+        {
+          type: "tool_call" as const, content: "", toolName: "Agent", toolArgs: "{}",
+          childBlocks: [
+            { type: "tool_call" as const, content: "", toolName: "NotebookEdit", toolArgs: "{}" },
+          ],
+        },
+      ];
+      useWorkflowStore.getState().populateAgentBlocks(7, blocksWithNestedEdit as never[]);
+
+      expect(useWorkflowStore.getState().activeAgents.get(7)!.hasFileChanges).toBe(true);
+    });
+
+    it("does not set hasFileChanges when no file-change tools in blocks", () => {
+      useWorkflowStore.getState().hydrateFromSnapshot({
+        workflow_status: "building",
+        queue: [{ id: 8, item_type: "execute", phase_id: null, phase_title: null, status: "completed", order_index: 0, group_index: null, agent_session_id: 33, result: null }],
+        agent_sessions: [{ id: 33, agent_type: "execute", status: "completed", queue_item_id: 8 }],
+        worktree: null,
+        autonomy_level: 3,
+      });
+
+      const blocksNoFileChange = [
+        { type: "text" as const, content: "hello" },
+        { type: "tool_call" as const, content: "", toolName: "Read", toolArgs: "{}" },
+      ];
+      useWorkflowStore.getState().populateAgentBlocks(8, blocksNoFileChange as never[]);
+
+      expect(useWorkflowStore.getState().activeAgents.get(8)!.hasFileChanges).toBe(false);
+    });
   });
 
   // ── agent_paused (reconnect resume support) ──

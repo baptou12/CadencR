@@ -74,6 +74,10 @@ function makeAgentState(overrides?: Partial<AgentSessionState>): AgentSessionSta
     pendingQuestionRequestId: "",
     historyLoaded: false,
     claudeSessionId: null,
+    inputTokens: 0,
+    outputTokens: 0,
+    contextWindow: 200_000,
+    hasFileChanges: false,
     ...overrides,
   };
 }
@@ -149,5 +153,40 @@ describe("buildSessionEntries", () => {
     const setupSession = sessions.find((s) => s.phaseTitle === "Setup");
     expect(setupSession).toBeDefined();
     expect(setupSession!.sessionDbId).toBe(42);
+  });
+
+  it("passes hasFileChanges from agentState to session entry via queue item", () => {
+    const queue = [
+      { id: 10, status: "completed" as const, item_type: "execute", phase_id: null, phase_title: null, order_index: 0, group_index: null, agent_session_id: 88, result: null },
+    ];
+    const agents = new Map<number, AgentSessionState>([
+      [10, makeAgentState({ sessionId: 88, status: "completed", hasFileChanges: true })],
+    ]);
+    const { sessions } = buildSessionEntries(queue, agents, null, null, "building");
+
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0].hasFileChanges).toBe(true);
+  });
+
+  it("defaults hasFileChanges to false when agentState has no file changes", () => {
+    const queue = [
+      { id: 11, status: "completed" as const, item_type: "execute", phase_id: null, phase_title: null, order_index: 0, group_index: null, agent_session_id: 89, result: null },
+    ];
+    const agents = new Map<number, AgentSessionState>([
+      [11, makeAgentState({ sessionId: 89, status: "completed", hasFileChanges: false })],
+    ]);
+    const { sessions } = buildSessionEntries(queue, agents, null, null, "building");
+
+    expect(sessions[0].hasFileChanges).toBe(false);
+  });
+
+  it("defaults hasFileChanges to false when no agentState exists for queue item", () => {
+    const queue = [
+      { id: 12, status: "completed" as const, item_type: "execute", phase_id: null, phase_title: null, order_index: 0, group_index: null, agent_session_id: 90, result: null },
+    ];
+    const { sessions } = buildSessionEntries(queue, new Map(), null, null, "building");
+
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0].hasFileChanges).toBe(false);
   });
 });
