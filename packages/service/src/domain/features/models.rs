@@ -183,8 +183,15 @@ pub struct QueueItem {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum ExternalApp {
+    Terminal,
+    Zed,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct OpenExternalRequest {
-    pub app: String,
+    pub app: ExternalApp,
 }
 
 #[derive(Debug, Serialize, ToSchema)]

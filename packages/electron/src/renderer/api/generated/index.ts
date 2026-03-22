@@ -1468,8 +1468,10 @@ export function useSaveSessionDraft(
   });
 }
 
+export type ExternalApp = "terminal" | "zed";
+
 export interface OpenExternalRequest {
-  app: "terminal" | "zed";
+  app: ExternalApp;
 }
 
 export interface OpenExternalResponse {
