@@ -71,6 +71,9 @@ export interface AgentSessionState {
   historyLoaded: boolean;
   /** Claude Code CLI session ID (UUID) for --resume */
   claudeSessionId: string | null;
+  inputTokens: number;
+  outputTokens: number;
+  contextWindow: number;
 }
 
 export type AutonomyLevel = 1 | 2 | 3;
@@ -271,6 +274,9 @@ function createAgentSession(sessionId: number): AgentSessionState {
     pendingQuestionRequestId: "",
     historyLoaded: false,
     claudeSessionId: null,
+    inputTokens: 0,
+    outputTokens: 0,
+    contextWindow: 200_000,
   };
 }
 
@@ -688,6 +694,19 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
           activeAgents.set(itemId, updated);
           return { activeAgents };
         });
+        break;
+      }
+      case "usage_update": {
+        const usageSlot = parseAgentSlot(payload);
+        const usageItemId = agentSlotToLegacyId(usageSlot);
+        const inputTokens = (payload.input_tokens ?? 0) as number;
+        const outputTokens = (payload.output_tokens ?? 0) as number;
+        const contextWindow = (payload.context_window ?? 200_000) as number;
+        set(state => patchAgentByItemId(state, usageItemId, {
+          inputTokens,
+          outputTokens,
+          contextWindow,
+        }));
         break;
       }
       case "permission.request": {

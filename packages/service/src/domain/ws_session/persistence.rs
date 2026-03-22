@@ -469,6 +469,15 @@ impl WsSessionPersistence {
             .await;
     }
 
+    /// Update the context window size for a session (best-effort).
+    pub async fn update_context_window(pool: &SqlitePool, session_id: i64, context_window: u64) {
+        let _ = sqlx::query("UPDATE agent_sessions SET context_window = ? WHERE id = ?")
+            .bind(context_window as i64)
+            .bind(session_id)
+            .execute(pool)
+            .await;
+    }
+
     /// Broadcast a turn-state change for a feature to all connected clients.
     ///
     /// Turn state is determined at the call site (not queried from DB) because

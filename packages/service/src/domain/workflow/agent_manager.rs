@@ -882,6 +882,7 @@ pub fn spawn_workflow_stream_reader(
         let mut agent_done_called = false;
         let mut error_msg: Option<String> = None;
         let mut needs_session_id_capture = true;
+        let mut context_window: u64 = 200_000;
         let mut pending_feature_update: Option<Vec<&'static str>> = None;
 
         loop {
@@ -910,9 +911,11 @@ pub fn spawn_workflow_stream_reader(
                         }
                     }
 
-                    // Check MCP server status on init
-                    if let SdkMessage::System(SystemMessage::Init { ref mcp_servers, ref tools, .. }) = sdk_msg {
-                        debug!(slot = %slot, ?mcp_servers, tool_count = tools.len(), "received init message from CLI");
+                    // Check MCP server status on init and capture context window from model
+                    if let SdkMessage::System(SystemMessage::Init { ref mcp_servers, ref tools, ref model, .. }) = sdk_msg {
+                        context_window = crate::domain::usage::context_window_for_model(model);
+                        WsSessionPersistence::update_context_window(&write_pool, db_session_id, context_window).await;
+                        debug!(slot = %slot, %model, context_window, ?mcp_servers, tool_count = tools.len(), "received init message from CLI");
                         let server_status = mcp_servers.iter().find(|s| s.name == expected_mcp_server);
                         let mcp_ok = server_status.map_or(false, |s| s.status == "connected");
                         if !mcp_ok {
@@ -963,6 +966,20 @@ pub fn spawn_workflow_stream_reader(
                             total_output,
                         )
                         .await;
+
+                        // Broadcast usage to frontend
+                        let usage_env = WsEnvelope::new(
+                            "workflow",
+                            "usage_update",
+                            to_value(serde_json::json!({
+                                "agent_slot": slot,
+                                "session_id": db_session_id,
+                                "input_tokens": total_input,
+                                "output_tokens": total_output,
+                                "context_window": context_window,
+                            })),
+                        );
+                        let _ = sender.send(Message::Text(String::from(usage_env).into()));
                     }
 
                     let envelope = match &sdk_msg {

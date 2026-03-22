@@ -8,7 +8,7 @@ use tokio::sync::{mpsc, Mutex};
 use tracing::{debug, error, info};
 
 use claude_agent_sdk_rs::{
-    CanUseTool, Options, PermissionRequest, PermissionResult, SdkError, SdkMessage,
+    CanUseTool, Options, PermissionRequest, PermissionResult, SdkError, SdkMessage, SystemMessage,
 };
 
 use crate::app_state::AppState;
@@ -597,6 +597,7 @@ pub(super) fn spawn_stream_reader(
         // Capture the CLI session ID from the first message that has one.
         // Every SdkMessage variant carries a session_id field.
         let mut needs_session_id_capture = true;
+        let mut context_window: u64 = 200_000;
 
         loop {
             let msg = message_rx.recv().await;
@@ -615,6 +616,12 @@ pub(super) fn spawn_stream_reader(
                                 send_claude_session_id(&sender, cli_sid);
                             }
                         }
+                    }
+
+                    // Capture context window from init model
+                    if let SdkMessage::System(SystemMessage::Init { ref model, .. }) = sdk_msg {
+                        context_window = crate::domain::usage::context_window_for_model(model);
+                        WsSessionPersistence::update_context_window(&write_pool, db_session_id, context_window).await;
                     }
 
                     // Persist before forwarding (best-effort)
@@ -637,7 +644,7 @@ pub(super) fn spawn_stream_reader(
                             serde_json::to_value(SessionUsageUpdatePayload {
                                 input_tokens: total_input,
                                 output_tokens: total_output,
-                                context_window: 200_000,
+                                context_window,
                             }).unwrap(),
                         );
                         let _ = sender.send(Message::Text(String::from(usage_env).into()));
