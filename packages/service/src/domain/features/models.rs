@@ -213,6 +213,9 @@ pub struct AgentSessionSummary {
     pub created_at: String,
     pub updated_at: Option<String>,
     pub claude_session_id: Option<String>,
+    pub input_tokens: i64,
+    pub output_tokens: i64,
+    pub context_window: i64,
 }
 
 #[derive(Debug, Serialize, ToSchema)]

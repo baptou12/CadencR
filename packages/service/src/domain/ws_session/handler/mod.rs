@@ -307,7 +307,10 @@ mod tests {
                 pending_permission TEXT,
                 pending_plan_approval TEXT,
                 pending_prd_approval TEXT,
-                plan_approval_result TEXT
+                plan_approval_result TEXT,
+                input_tokens INTEGER NOT NULL DEFAULT 0,
+                output_tokens INTEGER NOT NULL DEFAULT 0,
+                context_window INTEGER NOT NULL DEFAULT 200000
             )"#,
         )
         .execute(&pool)

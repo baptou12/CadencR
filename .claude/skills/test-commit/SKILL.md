@@ -2,7 +2,7 @@
 name: test-commit
 description: Write tests for current session changes, then commit everything with pre-commit checks and safe git practices
 user-invocable: true
-disable-model-invocation: true
+disable-model-invocation: false
 allowed-tools: Bash(pnpm *), Bash(cargo *), Read, Grep, Glob, Edit, Write, Agent
 ---
 
@@ -21,6 +21,7 @@ Before committing, write tests for the session's changes:
 - Identify new or modified functions/components that lack test coverage.
 - Write tests for them using the project's existing test patterns (`vitest` for TS, `cargo test` for Rust).
 - Run the tests (`pnpm test` or `cargo test` as appropriate) and ensure they pass.
+- For Rust tests: search the output for the `FAILED` keyword — `cargo test` exits 0 for compilation success even when tests fail. Always check for `FAILED` in the output to catch test failures.
 - If all changes already have adequate test coverage, skip to step 4.
 
 ## 3. Never use `git stash`

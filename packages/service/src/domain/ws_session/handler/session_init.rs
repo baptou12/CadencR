@@ -63,19 +63,20 @@ pub(super) async fn handle_init(
         }
     };
 
-    // Read claude_session_id from DB row so we can --resume on first prompt.
-    let resume_session_id = if let Some(row) = WsSessionPersistence::get_session_row(&app_state.read_pool, db_session_id).await {
-        debug!(
-            db_session_id,
-            feature_id,
-            claude_session_id = ?row.claude_session_id,
-            status = %row.status,
-            "handle_init: DB row state at init time"
-        );
-        row.claude_session_id
-    } else {
-        None
-    };
+    // Read session row for claude_session_id (--resume) and token usage restoration.
+    let (resume_session_id, init_input_tokens, init_output_tokens, init_context_window) =
+        if let Some(row) = WsSessionPersistence::get_session_row(&app_state.read_pool, db_session_id).await {
+            debug!(
+                db_session_id,
+                feature_id,
+                claude_session_id = ?row.claude_session_id,
+                status = %row.status,
+                "handle_init: DB row state at init time"
+            );
+            (row.claude_session_id, row.input_tokens, row.output_tokens, row.context_window)
+        } else {
+            (None, None, None, None)
+        };
 
     // Build SDK options
     let mut options = Options::default();
@@ -129,6 +130,9 @@ pub(super) async fn handle_init(
         "initialized",
         serde_json::to_value(SessionInitializedPayload {
             session_id: db_session_id.to_string(),
+            input_tokens: init_input_tokens.map(|v| v as u64),
+            output_tokens: init_output_tokens.map(|v| v as u64),
+            context_window: init_context_window.map(|v| v as u64),
         })
         .unwrap(),
     );

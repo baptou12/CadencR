@@ -34,7 +34,10 @@ pub async fn get_feature_snapshot(
                   wq.id as queue_item_id,
                   COALESCE(s.started_at, '') as created_at,
                   NULL as updated_at,
-                  s.claude_session_id
+                  s.claude_session_id,
+                  s.input_tokens,
+                  s.output_tokens,
+                  s.context_window
            FROM agent_sessions s
            LEFT JOIN workflow_queue wq ON wq.agent_session_id = s.id AND wq.feature_id = ?
            WHERE s.feature_id = ?

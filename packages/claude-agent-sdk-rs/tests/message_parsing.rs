@@ -163,8 +163,9 @@ fn result_success() {
     } else {
         panic!("wrong variant");
     }
-    // usage() helper on Result
-    assert!(msg.usage().is_some());
+    // usage() excludes Result (cumulative), but cumulative_usage() returns it
+    assert!(msg.usage().is_none());
+    assert!(msg.cumulative_usage().is_some());
 }
 
 #[test]

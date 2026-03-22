@@ -24,6 +24,9 @@ pub struct SessionRow {
     pub claude_session_id: Option<String>,
     pub status: String,
     pub pending_plan_approval: Option<String>,
+    pub input_tokens: Option<i64>,
+    pub output_tokens: Option<i64>,
+    pub context_window: Option<i64>,
 }
 
 pub struct WsSessionPersistence {
@@ -313,15 +316,15 @@ impl WsSessionPersistence {
 
     /// Read a session row from the DB by its primary key.
     pub async fn get_session_row(pool: &SqlitePool, session_id: i64) -> Option<SessionRow> {
-        let row: Option<(i64, i64, Option<String>, Option<String>, Option<String>, String, Option<String>)> =
+        let row: Option<(i64, i64, Option<String>, Option<String>, Option<String>, String, Option<String>, Option<i64>, Option<i64>, Option<i64>)> =
             sqlx::query_as(
-                "SELECT id, feature_id, model, permission_mode, claude_session_id, status, pending_plan_approval FROM agent_sessions WHERE id = ?"
+                "SELECT id, feature_id, model, permission_mode, claude_session_id, status, pending_plan_approval, input_tokens, output_tokens, context_window FROM agent_sessions WHERE id = ?"
             )
             .bind(session_id)
             .fetch_optional(pool)
             .await
             .ok()?;
-        row.map(|(id, feature_id, model, permission_mode, claude_session_id, status, pending_plan_approval)| SessionRow {
+        row.map(|(id, feature_id, model, permission_mode, claude_session_id, status, pending_plan_approval, input_tokens, output_tokens, context_window)| SessionRow {
             id,
             feature_id,
             model,
@@ -329,6 +332,9 @@ impl WsSessionPersistence {
             claude_session_id,
             status,
             pending_plan_approval,
+            input_tokens,
+            output_tokens,
+            context_window,
         })
     }
 

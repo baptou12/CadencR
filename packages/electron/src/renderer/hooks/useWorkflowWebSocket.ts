@@ -93,6 +93,9 @@ export interface AgentSessionSummary {
   status: string;
   agent_type: string | null;
   claude_session_id: string | null;
+  input_tokens: number;
+  output_tokens: number;
+  context_window: number;
 }
 
 export interface PlanSnapshot {
@@ -924,9 +927,9 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
           pendingQuestionRequestId: "",
           historyLoaded: false,
           claudeSessionId: session.claude_session_id ?? null,
-          inputTokens: 0,
-          outputTokens: 0,
-          contextWindow: 200_000,
+          inputTokens: session.input_tokens ?? 0,
+          outputTokens: session.output_tokens ?? 0,
+          contextWindow: session.context_window || 200_000,
           hasFileChanges: false,
         };
 

@@ -574,11 +574,32 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
 
     switch (envelope.action) {
       case "initialized": {
-        const initPayload = envelope.payload as { session_id?: string };
-        set(updateSession(get(), sessionId, {
+        const initPayload = envelope.payload as {
+          session_id?: string;
+          input_tokens?: number;
+          output_tokens?: number;
+          context_window?: number;
+        };
+        const updates: Partial<SessionEntry> = {
           serverSessionId: initPayload.session_id ?? "",
           status: "idle",
-        }));
+        };
+        // Restore context usage from DB if available
+        if (initPayload.input_tokens != null || initPayload.output_tokens != null) {
+          const inputTokens = initPayload.input_tokens ?? 0;
+          const outputTokens = initPayload.output_tokens ?? 0;
+          const contextWindow = initPayload.context_window || 200000;
+          const totalTokens = inputTokens + outputTokens;
+          updates.contextUsage = {
+            inputTokens,
+            outputTokens,
+            totalTokens,
+            contextWindow,
+            usageRatio: Math.min(1, totalTokens / contextWindow),
+            wasCompacted: false,
+          };
+        }
+        set(updateSession(get(), sessionId, updates));
         break;
       }
 

@@ -525,12 +525,23 @@ impl SdkMessage {
 
     /// Extract `Usage` for context-window tracking.
     ///
-    /// Returns usage from `Assistant` messages (most authoritative) or from
-    /// the `Result` message. `StreamEvent(MessageDelta)` usage is not returned
-    /// here since callers typically accumulate from the final assistant message.
+    /// Returns usage from `Assistant` messages only — these report per-API-call
+    /// token counts that reflect the current context window fill level.
+    /// `Result` message usage is **cumulative** across all turns and must NOT be
+    /// used for context-window display (it would cause a spike when the agent
+    /// finishes). `StreamEvent(MessageDelta)` usage is also excluded.
     pub fn usage(&self) -> Option<&Usage> {
         match self {
             SdkMessage::Assistant { message, .. } => message.usage.as_ref(),
+            _ => None,
+        }
+    }
+
+    /// Extract cumulative usage from the `Result` message (total across all turns).
+    ///
+    /// Use this for cost tracking / billing, NOT for context-window display.
+    pub fn cumulative_usage(&self) -> Option<&Usage> {
+        match self {
             SdkMessage::Result { usage, .. } => Some(usage),
             _ => None,
         }
