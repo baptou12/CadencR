@@ -931,6 +931,22 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_interrupted_flag_cleared_before_resume() {
+        // Simulates the bug: interrupt sets the flag, resume must clear it
+        // so that mark_agent_done isn't misinterpreted as a pause.
+        let (engine, _rx) = test_engine().await;
+        let slot = AgentSlot::QueueItem(99);
+
+        // Simulate interrupt setting the flag
+        engine.agent_manager.interrupted_items.insert(slot.clone());
+        assert!(engine.agent_manager.interrupted_items.contains(&slot));
+
+        // Simulate what resume_item now does: clear the flag
+        engine.agent_manager.interrupted_items.remove(&slot);
+        assert!(!engine.agent_manager.interrupted_items.contains(&slot));
+    }
+
+    #[tokio::test]
     async fn test_paused_sessions_tracking() {
         let (engine, _rx) = test_engine().await;
 

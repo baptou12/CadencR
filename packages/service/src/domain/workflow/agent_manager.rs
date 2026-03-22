@@ -581,6 +581,9 @@ impl AgentManager {
         prompt: &str,
         permissions: &PermissionRouter,
     ) -> Result<(), String> {
+        // Clear any stale interrupt flag so mark_agent_done works after resume.
+        self.interrupted_items.remove(&slot);
+
         let db_session_id = self.active_items.get(&slot)
             .map(|r| *r)
             .ok_or_else(|| format!("No active session for slot {slot}"))?;
