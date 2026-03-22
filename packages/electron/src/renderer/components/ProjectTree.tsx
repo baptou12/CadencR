@@ -83,21 +83,6 @@ export function ProjectTree({
     },
   });
 
-  const createSessionMutation = useCreateFeature({
-    onSuccess: (session) => {
-      void queryClient.invalidateQueries({
-        queryKey: getListFeaturesQueryKey(pendingProjectIdRef.current),
-      });
-      void navigate({
-        to: "/projects/$projectId/features/$featureId",
-        params: {
-          projectId: String(pendingProjectIdRef.current),
-          featureId: String(session.id),
-        },
-      });
-    },
-  });
-
   const createWsSessionMutation = useCreateFeature({
     onSuccess: (wsSession) => {
       void queryClient.invalidateQueries({
@@ -215,26 +200,11 @@ export function ProjectTree({
                             pendingProjectIdRef.current = project.id;
                             createFeatureMutation.mutate({
                               project_id: project.id,
+                              type: "ws-feature",
                             });
                           }}
                         >
                           New Feature
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setExpanded((prev) => ({
-                              ...prev,
-                              [project.id]: true,
-                            }));
-                            pendingProjectIdRef.current = project.id;
-                            createSessionMutation.mutate({
-                              project_id: project.id,
-                              type: "session",
-                            });
-                          }}
-                        >
-                          New Session
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           onClick={(e) => {
@@ -250,23 +220,7 @@ export function ProjectTree({
                             });
                           }}
                         >
-                          New Session (WebSocket)
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setExpanded((prev) => ({
-                              ...prev,
-                              [project.id]: true,
-                            }));
-                            pendingProjectIdRef.current = project.id;
-                            createFeatureMutation.mutate({
-                              project_id: project.id,
-                              type: "ws-feature",
-                            });
-                          }}
-                        >
-                          New Feature (WebSocket)
+                          New Session
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>

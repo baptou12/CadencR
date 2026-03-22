@@ -588,6 +588,176 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 48,
+    description: "Migrate all legacy features to ws-features and populate workflow queues",
+    up: (db) => {
+      // 1. Change type
+      db.exec(`UPDATE features SET type = 'ws-feature' WHERE type = 'feature'`);
+
+      // 2. Populate workflow_queue for features with plans/phases that don't already have queues
+      const rows = db
+        .prepare(
+          `SELECT DISTINCT f.id as feature_id, p.id as plan_id
+           FROM features f
+           JOIN plans p ON p.feature_id = f.id
+           WHERE f.type = 'ws-feature'
+             AND NOT EXISTS (SELECT 1 FROM workflow_queue wq WHERE wq.feature_id = f.id)
+           ORDER BY p.id DESC`,
+        )
+        .all() as { feature_id: number; plan_id: number }[];
+
+      // Deduplicate to latest plan per feature
+      const seen = new Set<number>();
+      const featurePlans: { feature_id: number; plan_id: number }[] = [];
+      for (const row of rows) {
+        if (!seen.has(row.feature_id)) {
+          seen.add(row.feature_id);
+          featurePlans.push(row);
+        }
+      }
+
+      if (featurePlans.length === 0) return;
+
+      const insertQueue = db.prepare(
+        `INSERT INTO workflow_queue (feature_id, workflow_type, item_type, phase_id, status, order_index, group_index)
+         VALUES (?, 'feature_build', ?, ?, ?, ?, ?)`,
+      );
+      const insertDep = db.prepare(
+        `INSERT INTO workflow_dependencies (queue_item_id, depends_on_item_id) VALUES (?, ?)`,
+      );
+
+      type PhaseRow = {
+        id: number;
+        title: string;
+        status: string;
+        phase_type: string | null;
+        depends_on: string | null;
+        order_index: number;
+        step_number: number;
+      };
+
+      function parseDeps(raw: string | null): string[] {
+        if (!raw) return [];
+        try {
+          const arr = JSON.parse(raw);
+          if (Array.isArray(arr))
+            return arr
+              .map((s: string) => s.trim())
+              .filter(Boolean);
+        } catch {
+          // not JSON
+        }
+        return raw
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
+      }
+
+      function computeGroup(
+        id: number,
+        adjList: Map<number, number[]>,
+        cache: Map<number, number>,
+        visited: Set<number>,
+      ): number {
+        if (cache.has(id)) return cache.get(id)!;
+        if (visited.has(id)) return 0;
+        visited.add(id);
+        const deps = adjList.get(id) ?? [];
+        const g =
+          deps.length === 0
+            ? 0
+            : Math.max(...deps.map((d) => computeGroup(d, adjList, cache, visited))) + 1;
+        cache.set(id, g);
+        return g;
+      }
+
+      for (const { feature_id, plan_id } of featurePlans) {
+        const phases = db
+          .prepare(
+            `SELECT id, title, status, phase_type, depends_on, order_index, step_number
+             FROM phases WHERE plan_id = ? ORDER BY order_index, step_number`,
+          )
+          .all(plan_id) as PhaseRow[];
+
+        if (phases.length === 0) continue;
+
+        // Build title→phase map and adjacency list
+        const titleMap = new Map<string, PhaseRow>();
+        for (const p of phases) titleMap.set(p.title, p);
+
+        const adjList = new Map<number, number[]>();
+        for (const p of phases) {
+          const deps = parseDeps(p.depends_on)
+            .map((t) => titleMap.get(t)?.id)
+            .filter((id): id is number => id !== undefined);
+          adjList.set(p.id, deps);
+        }
+
+        // Compute group_index (longest dependency path)
+        const groupIndex = new Map<number, number>();
+        for (const p of phases) computeGroup(p.id, adjList, groupIndex, new Set());
+
+        // Sort by group_index, then original order
+        const sorted = [...phases].sort((a, b) => {
+          const ga = groupIndex.get(a.id) ?? 0;
+          const gb = groupIndex.get(b.id) ?? 0;
+          if (ga !== gb) return ga - gb;
+          return (a.order_index - b.order_index) || (a.step_number - b.step_number);
+        });
+
+        // Map phase status → queue item status
+        function mapStatus(phase: PhaseRow): string {
+          const deps = adjList.get(phase.id) ?? [];
+          if (phase.status === "completed" || phase.status === "done") return "completed";
+          if (phase.status === "error") return "error";
+          if (phase.status === "running") return "completed"; // stale running → completed
+          return deps.length > 0 ? "blocked" : "ready";
+        }
+
+        // Insert queue items
+        const phaseToQueueId = new Map<number, number>();
+        for (let i = 0; i < sorted.length; i++) {
+          const p = sorted[i];
+          const result = insertQueue.run(
+            feature_id,
+            p.phase_type === "qa" ? "qa" : "execute",
+            p.id,
+            mapStatus(p),
+            i,
+            groupIndex.get(p.id) ?? 0,
+          );
+          phaseToQueueId.set(p.id, Number(result.lastInsertRowid));
+        }
+
+        // Insert dependencies
+        for (const p of sorted) {
+          const queueId = phaseToQueueId.get(p.id)!;
+          for (const depId of adjList.get(p.id) ?? []) {
+            const depQueueId = phaseToQueueId.get(depId);
+            if (depQueueId) insertDep.run(queueId, depQueueId);
+          }
+        }
+
+        // Insert review item
+        const maxOrder = sorted.length;
+        const maxGroup = Math.max(...groupIndex.values(), 0);
+        const allCompleted = sorted.every((p) => mapStatus(p) === "completed");
+        const reviewResult = insertQueue.run(
+          feature_id,
+          "review",
+          null,
+          allCompleted ? "ready" : "blocked",
+          maxOrder,
+          maxGroup + 1,
+        );
+        const reviewId = Number(reviewResult.lastInsertRowid);
+        for (const qId of phaseToQueueId.values()) {
+          insertDep.run(reviewId, qId);
+        }
+      }
+    },
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

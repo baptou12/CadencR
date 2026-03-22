@@ -139,9 +139,9 @@ describe("FeaturePage route", () => {
     mocks.mockGetByIdQuery.mockReturnValue({ data: undefined });
   });
 
-  it("renders FeatureWorkflowView for regular feature", () => {
+  it("renders FeatureWorkflowView for ws-feature", () => {
     mocks.mockGetByIdQuery.mockReturnValue({
-      data: { id: 1, type: "feature", title: "My Feature" },
+      data: { id: 1, type: "ws-feature", title: "My Feature" },
     });
     render(<FeaturePage />);
     expect(screen.getByTestId("feature-workflow-view")).toBeInTheDocument();
@@ -150,13 +150,5 @@ describe("FeaturePage route", () => {
   it("renders FeatureWorkflowView when feature data is loading (undefined)", () => {
     render(<FeaturePage />);
     expect(screen.getByTestId("feature-workflow-view")).toBeInTheDocument();
-  });
-
-  it("renders AgentSession for session-type feature", () => {
-    mocks.mockGetByIdQuery.mockReturnValue({
-      data: { id: 1, type: "session", title: "My Session" },
-    });
-    render(<FeaturePage />);
-    expect(screen.getByTestId("agent-session")).toBeInTheDocument();
   });
 });

@@ -22,7 +22,7 @@ pub async fn create_feature(
     title: Option<String>,
     type_: Option<String>,
 ) -> Result<CreateFeatureResponse, AppError> {
-    let type_str = type_.as_deref().unwrap_or("feature");
+    let type_str = type_.as_deref().unwrap_or("ws-feature");
     let title = match title {
         Some(t) if !t.trim().is_empty() => t,
         _ => {

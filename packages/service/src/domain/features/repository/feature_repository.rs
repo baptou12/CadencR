@@ -5,7 +5,7 @@ use super::super::models::Feature;
 
 pub async fn list_by_project(pool: &SqlitePool, project_id: i64) -> Result<Vec<Feature>, AppError> {
     let rows = sqlx::query_as::<_, Feature>(
-        r#"SELECT id, project_id, title, COALESCE(type, 'feature') as type_, status,
+        r#"SELECT id, project_id, title, COALESCE(type, 'ws-feature') as type_, status,
            prd, workflow_step, workflow_config,
            model_plan, model_prd, model_execute, model_risk, model_review,
            "model_review-fixer" as model_review_fixer, model_session, model_qa, model_retro,
@@ -21,7 +21,7 @@ pub async fn list_by_project(pool: &SqlitePool, project_id: i64) -> Result<Vec<F
 
 pub async fn get_by_id(pool: &SqlitePool, id: i64) -> Result<Option<Feature>, AppError> {
     let row = sqlx::query_as::<_, Feature>(
-        r#"SELECT id, project_id, title, COALESCE(type, 'feature') as type_, status,
+        r#"SELECT id, project_id, title, COALESCE(type, 'ws-feature') as type_, status,
            prd, workflow_step, workflow_config,
            model_plan, model_prd, model_execute, model_risk, model_review,
            "model_review-fixer" as model_review_fixer, model_session, model_qa, model_retro,
@@ -91,7 +91,7 @@ pub async fn get_prd(pool: &SqlitePool, id: i64) -> Result<Option<String>, AppEr
 
 pub async fn is_empty(pool: &SqlitePool, id: i64) -> Result<bool, AppError> {
     let feature_row: Option<(String, Option<String>)> =
-        sqlx::query_as("SELECT COALESCE(type, 'feature'), prd FROM features WHERE id = ?")
+        sqlx::query_as("SELECT COALESCE(type, 'ws-feature'), prd FROM features WHERE id = ?")
             .bind(id)
             .fetch_optional(pool)
             .await?;
@@ -133,7 +133,7 @@ pub async fn is_empty(pool: &SqlitePool, id: i64) -> Result<bool, AppError> {
 
 pub async fn resolve_working_dir(pool: &SqlitePool, feature_id: i64, project_id: i64) -> Result<Option<String>, AppError> {
     let feature_row: Option<(String,)> =
-        sqlx::query_as("SELECT COALESCE(type, 'feature') FROM features WHERE id = ?")
+        sqlx::query_as("SELECT COALESCE(type, 'ws-feature') FROM features WHERE id = ?")
             .bind(feature_id)
             .fetch_optional(pool)
             .await?;

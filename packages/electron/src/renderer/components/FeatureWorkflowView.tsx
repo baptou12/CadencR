@@ -10,7 +10,6 @@ import {
 import { AlertTriangleIcon, CheckCircle2Icon, Loader2Icon } from "lucide-react";
 import { AGENT_ICONS } from "@/components/agent-icons";
 import { Button } from "@/components/ui/button";
-import { PlanSidebar } from "@/components/PlanSidebar";
 import { QueueSidebar } from "@/components/QueueSidebar";
 import { PlanInputView } from "@/components/PlanInputView";
 import { NextStepsBar } from "@/components/NextStepsBar";
@@ -812,18 +811,14 @@ export function FeatureWorkflowView({
 
           </div>
 
-          {feature?.type === "ws-feature" && (prdData || backend.queue) ? (
-            <QueueSidebar
-              queue={backend.queue ?? []}
-              featureId={featureId}
-              selectedItemId={backend.selectedItemId ?? null}
-              onSelectItem={backend.selectItem ?? (() => {})}
-              onRetryItem={backend.retryItem}
-              onSkipItem={backend.skipItem}
-            />
-          ) : (
-            <PlanSidebar featureId={featureId} />
-          )}
+          <QueueSidebar
+            queue={backend.queue ?? []}
+            featureId={featureId}
+            selectedItemId={backend.selectedItemId ?? null}
+            onSelectItem={backend.selectItem ?? (() => {})}
+            onRetryItem={backend.retryItem}
+            onSkipItem={backend.skipItem}
+          />
         </div>
         {terminalState.panes.length > 0 && (
           <div

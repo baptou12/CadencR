@@ -277,6 +277,10 @@ vi.mock("@/components/PlanSidebar", () => ({
   PlanSidebar: () => <div data-testid="plan-sidebar" />,
 }));
 
+vi.mock("@/components/QueueSidebar", () => ({
+  QueueSidebar: () => <div data-testid="queue-sidebar" />,
+}));
+
 vi.mock("@/components/PlanInputView", () => ({
   PlanInputView: () => <div data-testid="plan-input-view" />,
 }));
@@ -337,7 +341,7 @@ describe("FeatureWorkflowView", () => {
     expect(screen.getByTestId("feature-top-bar")).toBeInTheDocument();
   });
 
-  it("renders plan sidebar", () => {
+  it("renders queue sidebar", () => {
     render(
       <FeatureWorkflowView
         featureId={1}
@@ -346,7 +350,7 @@ describe("FeatureWorkflowView", () => {
         featureQuery={{ refetch: vi.fn() }}
       />,
     );
-    expect(screen.getByTestId("plan-sidebar")).toBeInTheDocument();
+    expect(screen.getByTestId("queue-sidebar")).toBeInTheDocument();
   });
 
   it("displays workflow error banner when backend.error is set", () => {
