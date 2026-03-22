@@ -220,10 +220,9 @@ impl AgentManager {
                 None
             } else {
                 Some(format!(
-                    "{system_prompt}\n\n## Feature Context\n\nYour feature_id is **{}**. \
+                    "{system_prompt}\n\n## MCP Tools\n\n\
                      The MCP tools will auto-resolve plan_id from your feature — you do NOT need to pass plan_id to any tool. \
-                     Just omit it and the correct plan will be used automatically.",
-                    self.feature_id
+                     Just omit it and the correct plan will be used automatically."
                 ))
             },
             mcp_servers: Some(mcp_servers),
