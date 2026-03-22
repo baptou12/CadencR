@@ -42,10 +42,47 @@ async fn setup_test_db(db_path: &str, repo_path: &str) -> SqlitePool {
 
     sqlx::query("CREATE TABLE projects (id INTEGER PRIMARY KEY, name TEXT, path TEXT, branch_prefix TEXT DEFAULT 'feature/')")
         .execute(&pool).await.unwrap();
-    sqlx::query("CREATE TABLE features (id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL, title TEXT, status TEXT DEFAULT 'draft', type TEXT NOT NULL DEFAULT 'feature')")
+    sqlx::query(r#"CREATE TABLE features (
+        id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL, title TEXT,
+        status TEXT DEFAULT 'draft', type TEXT NOT NULL DEFAULT 'feature',
+        workflow_status TEXT DEFAULT 'idle',
+        model_plan TEXT, model_prd TEXT, model_execute TEXT, model_risk TEXT,
+        model_review TEXT, "model_review-fixer" TEXT, model_session TEXT,
+        model_qa TEXT, model_retro TEXT, agent_autonomy TEXT, parallel_execution TEXT
+    )"#)
         .execute(&pool).await.unwrap();
     sqlx::query("CREATE TABLE feature_settings (feature_id INTEGER, key TEXT, value TEXT, PRIMARY KEY(feature_id, key))")
         .execute(&pool).await.unwrap();
+
+    sqlx::query(r#"CREATE TABLE agent_sessions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, feature_id INTEGER NOT NULL,
+        agent_type TEXT NOT NULL DEFAULT 'session', status TEXT NOT NULL DEFAULT 'idle',
+        claude_session_id TEXT, model TEXT, permission_mode TEXT,
+        has_file_changes INTEGER NOT NULL DEFAULT 0,
+        input_tokens INTEGER NOT NULL DEFAULT 0, output_tokens INTEGER NOT NULL DEFAULT 0,
+        context_window INTEGER NOT NULL DEFAULT 200000, started_at TEXT, ended_at TEXT
+    )"#).execute(&pool).await.unwrap();
+    sqlx::query(r#"CREATE TABLE workflow_queue (
+        id INTEGER PRIMARY KEY, feature_id INTEGER NOT NULL,
+        workflow_type TEXT NOT NULL DEFAULT 'feature_build', item_type TEXT NOT NULL,
+        phase_id INTEGER, status TEXT NOT NULL DEFAULT 'pending',
+        order_index INTEGER NOT NULL, group_index INTEGER, config JSON,
+        agent_session_id INTEGER, result JSON,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        started_at DATETIME, ended_at DATETIME, pid INTEGER,
+        max_retries INTEGER NOT NULL DEFAULT 1, retry_count INTEGER NOT NULL DEFAULT 0
+    )"#).execute(&pool).await.unwrap();
+    sqlx::query(r#"CREATE TABLE plans (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, feature_id INTEGER NOT NULL,
+        title TEXT, summary TEXT, context TEXT, clarifications TEXT, completion_conditions TEXT,
+        status TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )"#).execute(&pool).await.unwrap();
+    sqlx::query(r#"CREATE TABLE phases (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, plan_id INTEGER NOT NULL,
+        step_number INTEGER, title TEXT, status TEXT DEFAULT 'pending',
+        complexity TEXT, commit_message TEXT, description TEXT,
+        agent_count INTEGER DEFAULT 1
+    )"#).execute(&pool).await.unwrap();
 
     sqlx::query("INSERT INTO projects (id, name, path) VALUES (1, 'test-project', ?)")
         .bind(repo_path)
@@ -226,4 +263,61 @@ async fn test_file_blob_shas() {
         assert!(item["sha"].is_string());
         assert!(item["file_path"].is_string());
     }
+}
+
+#[tokio::test]
+async fn test_snapshot_includes_completed_plan_agent() {
+    let server = start_test_server().await;
+
+    // Insert a completed plan agent session
+    server.client.post(format!("{}/api/features/1/snapshot", server.base_url)).send().await.ok();
+
+    // We need to insert data directly, so get a separate pool
+    let tmp_dir_path = format!("{}", server._tmp_dir.path().display());
+    let db_path = format!("{}/test.db", tmp_dir_path);
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect(&format!("sqlite:{db_path}"))
+        .await
+        .unwrap();
+
+    // Insert a completed plan agent and a running plan agent
+    sqlx::query("INSERT INTO agent_sessions (id, feature_id, agent_type, status, started_at) VALUES (1, 1, 'plan', 'completed', '2024-01-01')")
+        .execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO agent_sessions (id, feature_id, agent_type, status, started_at) VALUES (2, 1, 'plan', 'running', '2024-01-02')")
+        .execute(&pool).await.unwrap();
+    // Insert an execute agent linked to a queue item
+    sqlx::query("INSERT INTO agent_sessions (id, feature_id, agent_type, status, started_at) VALUES (3, 1, 'execute', 'completed', '2024-01-03')")
+        .execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO workflow_queue (id, feature_id, item_type, status, order_index, agent_session_id) VALUES (1, 1, 'execute', 'completed', 0, 3)")
+        .execute(&pool).await.unwrap();
+    // Insert an unrelated agent type that should NOT appear
+    sqlx::query("INSERT INTO agent_sessions (id, feature_id, agent_type, status, started_at) VALUES (4, 1, 'unknown_type', 'completed', '2024-01-04')")
+        .execute(&pool).await.unwrap();
+
+    pool.close().await;
+
+    // Fetch snapshot
+    let resp = server.client.get(format!("{}/api/features/1/snapshot", server.base_url))
+        .send().await.unwrap();
+    let status = resp.status();
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(status, 200, "snapshot failed: {:?}", body);
+
+    let sessions = body["agent_sessions"].as_array().unwrap();
+    // Should have 3 sessions: completed plan, running plan, and execute (linked to queue)
+    // Should NOT have the unknown_type agent
+    assert_eq!(sessions.len(), 3, "expected 3 agent sessions, got: {:?}", sessions);
+
+    let agent_types: Vec<&str> = sessions.iter()
+        .map(|s| s["agent_type"].as_str().unwrap())
+        .collect();
+    assert!(agent_types.contains(&"plan"), "completed plan agent should be in snapshot");
+
+    let statuses: Vec<&str> = sessions.iter()
+        .filter(|s| s["agent_type"].as_str().unwrap() == "plan")
+        .map(|s| s["status"].as_str().unwrap())
+        .collect();
+    assert!(statuses.contains(&"completed"), "completed plan agent must be included");
+    assert!(statuses.contains(&"running"), "running plan agent must be included");
 }
