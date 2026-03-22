@@ -230,20 +230,23 @@ pub async fn open_external_handler(
     Path(id): Path<i64>,
     Json(body): Json<OpenExternalRequest>,
 ) -> Result<Json<OpenExternalResponse>, AppError> {
-    if body.app != "terminal" && body.app != "zed" {
-        return Err(AppError::BadRequest(format!("Invalid app: {}. Must be 'terminal' or 'zed'", body.app)));
-    }
-
     let path = crate::domain::git::service::resolve_feature_git_path(&state, id).await?;
     let path = path.ok_or_else(|| AppError::NotFound("Feature working directory not found".to_string()))?;
 
-    let spawn_result = match body.app.as_str() {
-        "terminal" => Command::new("open").args(["-a", "iTerm", &path]).spawn(),
-        "zed" => Command::new("zed").arg(&path).spawn(),
-        _ => unreachable!(),
-    };
-
-    spawn_result.map_err(|e| AppError::Internal(format!("Failed to spawn command: {e}")))?;
+    match body.app {
+        ExternalApp::Terminal => {
+            if Command::new("open").args(["-a", "iTerm", &path]).spawn().is_err() {
+                Command::new("open").args(["-a", "Terminal", &path]).spawn().map_err(|_| {
+                    AppError::BadRequest("No supported terminal app found. Install iTerm or use macOS Terminal.".to_string())
+                })?;
+            }
+        }
+        ExternalApp::Zed => {
+            Command::new("zed").arg(&path).spawn().map_err(|_| {
+                AppError::BadRequest("Zed editor not found. Install it from https://zed.dev and ensure the 'zed' CLI is in your PATH.".to_string())
+            })?;
+        }
+    }
 
     Ok(Json(OpenExternalResponse { success: true }))
 }
