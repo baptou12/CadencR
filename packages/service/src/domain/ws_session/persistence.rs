@@ -489,17 +489,17 @@ impl WsSessionPersistence {
     ///
     /// Returns `Ok(feature_id)` on success (for turn-state broadcast),
     /// or `Err(reason)` if the session doesn't exist or is still running.
-    pub async fn delete_session_static(pool: &SqlitePool, session_id: i64) -> Result<i64, String> {
-        // Look up feature_id and status
-        let row: Option<(i64, String)> = sqlx::query_as(
-            "SELECT feature_id, status FROM agent_sessions WHERE id = ?",
+    pub async fn delete_session_static(pool: &SqlitePool, session_id: i64) -> Result<(i64, Option<String>), String> {
+        // Look up feature_id, status, and agent_type
+        let row: Option<(i64, String, Option<String>)> = sqlx::query_as(
+            "SELECT feature_id, status, agent_type FROM agent_sessions WHERE id = ?",
         )
         .bind(session_id)
         .fetch_optional(pool)
         .await
         .map_err(|e| e.to_string())?;
 
-        let (feature_id, status) = match row {
+        let (feature_id, status, agent_type) = match row {
             Some(r) => r,
             None => return Err("session not found".to_string()),
         };
@@ -518,7 +518,7 @@ impl WsSessionPersistence {
         let _ = sqlx::query("DELETE FROM agent_sessions WHERE id = ?")
             .bind(session_id).execute(pool).await;
 
-        Ok(feature_id)
+        Ok((feature_id, agent_type))
     }
 
     /// Mark all running sessions as paused on startup (stale session cleanup).
@@ -1051,7 +1051,7 @@ mod tests {
 
         let result = WsSessionPersistence::delete_session_static(&pool, id).await;
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 1); // feature_id
+        assert_eq!(result.unwrap().0, 1); // feature_id
 
         // Verify all rows are gone
         let session: Option<(i64,)> = sqlx::query_as("SELECT id FROM agent_sessions WHERE id = ?")
@@ -1081,6 +1081,22 @@ mod tests {
         let result = WsSessionPersistence::delete_session_static(&pool, 999).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("not found"));
+    }
+
+    #[tokio::test]
+    async fn test_delete_session_returns_agent_type() {
+        let pool = setup_test_db().await;
+        // Insert a plan-type session directly
+        sqlx::query("INSERT INTO agent_sessions (feature_id, agent_type, status) VALUES (1, 'plan', 'paused')")
+            .execute(&pool).await.unwrap();
+        let id: (i64,) = sqlx::query_as("SELECT id FROM agent_sessions WHERE feature_id = 1 AND agent_type = 'plan'")
+            .fetch_one(&pool).await.unwrap();
+
+        let result = WsSessionPersistence::delete_session_static(&pool, id.0).await;
+        assert!(result.is_ok());
+        let (feature_id, agent_type) = result.unwrap();
+        assert_eq!(feature_id, 1);
+        assert_eq!(agent_type.as_deref(), Some("plan"));
     }
 
     #[tokio::test]

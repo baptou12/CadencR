@@ -343,6 +343,26 @@ mod tests {
         .await
         .unwrap();
 
+        sqlx::query(
+            r#"CREATE TABLE features (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id INTEGER NOT NULL DEFAULT 1,
+                title TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'draft',
+                workflow_status TEXT NOT NULL DEFAULT 'idle',
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Insert a default feature for tests that reference feature_id = 1
+        sqlx::query("INSERT INTO features (id, project_id, title) VALUES (1, 1, 'Test Feature')")
+            .execute(&pool)
+            .await
+            .unwrap();
+
         AppState::with_pool(pool)
     }
 
@@ -1097,5 +1117,55 @@ mod tests {
         } else {
             panic!("expected text message");
         }
+    }
+
+    #[tokio::test]
+    async fn test_session_delete_plan_agent_resets_workflow_status() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+        let app_state = make_test_app_state().await;
+
+        // Create a feature with plan_approval status
+        sqlx::query("UPDATE features SET workflow_status = 'plan_approval' WHERE id = 1")
+            .execute(&app_state.write_pool).await.unwrap();
+
+        // Insert a plan-type session and pause it
+        sqlx::query("INSERT INTO agent_sessions (feature_id, agent_type, status) VALUES (1, 'plan', 'paused')")
+            .execute(&app_state.write_pool).await.unwrap();
+        let (session_id,): (i64,) = sqlx::query_as("SELECT id FROM agent_sessions WHERE feature_id = 1 AND agent_type = 'plan'")
+            .fetch_one(&app_state.write_pool).await.unwrap();
+
+        let envelope = make_envelope(
+            "session",
+            "delete",
+            serde_json::json!({ "session_id": session_id.to_string() }),
+        );
+        dispatch_envelope(envelope, &tx, &sdk_sessions, &app_state).await;
+
+        // First message: status_changed to idle
+        let msg1 = rx.recv().await.unwrap();
+        if let Message::Text(text) = msg1 {
+            let env: WsEnvelope = serde_json::from_str(&text).unwrap();
+            assert_eq!(env.domain, "workflow");
+            assert_eq!(env.action, "status_changed");
+            let status: String = env.payload.get("status").unwrap().as_str().unwrap().to_string();
+            assert_eq!(status, "idle");
+        } else {
+            panic!("expected status_changed message");
+        }
+
+        // Second message: session deleted confirmation
+        let msg2 = rx.recv().await.unwrap();
+        if let Message::Text(text) = msg2 {
+            let env: WsEnvelope = serde_json::from_str(&text).unwrap();
+            assert_eq!(env.action, "deleted");
+        } else {
+            panic!("expected deleted message");
+        }
+
+        // Verify workflow status is reset in DB
+        let (ws_status,): (String,) = sqlx::query_as("SELECT workflow_status FROM features WHERE id = 1")
+            .fetch_one(&app_state.read_pool).await.unwrap();
+        assert_eq!(ws_status, "idle");
     }
 }

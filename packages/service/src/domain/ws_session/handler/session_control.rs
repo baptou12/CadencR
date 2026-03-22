@@ -347,8 +347,32 @@ pub(super) async fn handle_delete(
     sdk_sessions.lock().await.remove(&db_session_id);
 
     match WsSessionPersistence::delete_session_static(&app_state.write_pool, db_session_id).await {
-        Ok(feature_id) => {
+        Ok((feature_id, agent_type)) => {
             WsSessionPersistence::broadcast_turn_state(&app_state.turn_state_tx, feature_id, "none");
+
+            // When deleting a plan or prd agent, reset workflow status to idle
+            // so the UI doesn't show a ghost agent on next hydration.
+            if matches!(agent_type.as_deref(), Some("plan") | Some("prd")) {
+                use crate::domain::features::repository::{force_workflow_status, get_workflow_status};
+                use crate::domain::workflow::status::WorkflowStatus;
+                let previous: WorkflowStatus = get_workflow_status(&app_state.write_pool, feature_id)
+                    .await
+                    .unwrap_or(WorkflowStatus::Idle);
+                if let Err(e) = force_workflow_status(&app_state.write_pool, feature_id, WorkflowStatus::Idle).await {
+                    error!(feature_id, %e, "failed to reset workflow status after session delete");
+                } else {
+                    let status_msg = WsEnvelope::new(
+                        "workflow",
+                        "status_changed",
+                        serde_json::to_value(WorkflowStatusChangedPayload {
+                            feature_id,
+                            status: "idle".to_string(),
+                            previous_status: previous.to_string(),
+                        }).unwrap(),
+                    );
+                    let _ = sender.send(Message::Text(String::from(status_msg).into()));
+                }
+            }
 
             let reply = WsEnvelope::reply(
                 &envelope.id,

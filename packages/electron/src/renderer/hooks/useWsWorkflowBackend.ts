@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useMemo, useCallback, useRef } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { FeatureSession } from "./useFeatureAgentState";
 import { serverBlocksToAgentBlocks } from "./useFeatureAgentState";
 import type { AgentType } from "../../main/agents/types";
@@ -218,6 +218,7 @@ export function useWsWorkflowBackend(
   enabled = true,
 ): WorkflowBackend {
   const store = useWorkflowStore();
+  const queryClient = useQueryClient();
 
   // Fetch snapshot in parallel with WS connect
   const { data: snapshot } = useQuery<FeatureSnapshot>({
@@ -397,13 +398,8 @@ export function useWsWorkflowBackend(
       store.markDone(sessionDbId);
     },
     deleteSession: (sessionDbId) => {
-      for (const [itemId, agent] of store.activeAgents) {
-        if (agent.sessionId === sessionDbId) {
-          store.removeAgent(itemId);
-          return;
-        }
-      }
-      store.removeAgent(sessionDbId);
+      store.deleteSession(sessionDbId);
+      void queryClient.invalidateQueries({ queryKey: ["feature-snapshot", featureId] });
     },
     handleResume: (_agentType, sessionDbId) => {
       const entry = sessions.find(s => s.sessionDbId === sessionDbId);

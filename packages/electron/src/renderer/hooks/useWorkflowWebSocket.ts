@@ -171,6 +171,7 @@ interface WorkflowState {
   startRetro: () => void;
   markDone: (itemId: number) => void;
   removeAgent: (itemId: number) => void;
+  deleteSession: (sessionDbId: number) => void;
   populateAgentBlocks: (itemId: number, blocks: AgentBlockData[]) => void;
 }
 
@@ -1141,6 +1142,35 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         const activeAgents = new Map(state.activeAgents);
         activeAgents.delete(itemId);
         return { activeAgents };
+      });
+    },
+
+    deleteSession(sessionDbId: number) {
+      const { ws } = get();
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          id: crypto.randomUUID(),
+          domain: "session",
+          action: "delete",
+          payload: { session_id: String(sessionDbId) },
+        }));
+      }
+      // Remove from local state (activeAgents, planAgent, or prdAgent)
+      set(state => {
+        if (state.planAgent?.sessionId === sessionDbId) {
+          return { planAgent: null };
+        }
+        if (state.prdAgent?.sessionId === sessionDbId) {
+          return { prdAgent: null };
+        }
+        const activeAgents = new Map(state.activeAgents);
+        for (const [itemId, agent] of activeAgents) {
+          if (agent.sessionId === sessionDbId) {
+            activeAgents.delete(itemId);
+            return { activeAgents };
+          }
+        }
+        return {};
       });
     },
 
