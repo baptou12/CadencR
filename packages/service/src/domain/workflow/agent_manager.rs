@@ -18,7 +18,6 @@ use claude_agent_sdk_rs::{Options, PermissionMode, Query, SdkError, SdkMessage, 
 use crate::domain::features::models::QueueItem;
 use crate::domain::features::repository as repo;
 use crate::domain::mcp::servers::{AgentType, mcp_server_name};
-use crate::domain::workspace::repository as workspace_repo;
 use crate::domain::workflow::engine::{AgentSlot, WsSender};
 use crate::domain::workflow::permission_router::{PermissionRouter, WorkflowPermissionBridge};
 use crate::domain::workflow::strategies::WorkflowStrategy;
@@ -95,54 +94,30 @@ impl AgentManager {
         row.and_then(|(d,)| d).map(PathBuf::from)
     }
 
-    /// Resolve the model for a given agent type using the cascade:
-    /// feature column → project column → global settings → default.
-    ///
-    /// The literal value "default" is treated as unset and falls through.
+    /// Get the project_id for this feature.
+    async fn get_project_id(&self) -> Option<i64> {
+        sqlx::query_scalar::<_, i64>("SELECT project_id FROM features WHERE id = ?")
+            .bind(self.feature_id)
+            .fetch_optional(&self.read_pool)
+            .await
+            .ok()
+            .flatten()
+    }
+
+    /// Resolve the model for a given agent type using the shared settings cascade.
     async fn resolve_model(&self, agent_type_str: &str) -> String {
         const DEFAULT_MODEL: &str = "claude-opus-4-6";
         let db_key = format!("model_{agent_type_str}");
-
-        // 1. Feature-level (real column on features table)
-        let feature_val: Option<(Option<String>,)> = sqlx::query_as(
-            &format!(r#"SELECT "{db_key}" as v FROM features WHERE id = ?"#),
+        let project_id = self.get_project_id().await;
+        crate::domain::settings::resolve_setting(
+            &self.read_pool,
+            &db_key,
+            Some(self.feature_id),
+            project_id,
+            Some(DEFAULT_MODEL),
         )
-        .bind(self.feature_id)
-        .fetch_optional(&self.read_pool)
         .await
-        .ok()
-        .flatten();
-        if let Some((Some(ref v),)) = feature_val {
-            if !v.is_empty() && v != "default" {
-                return v.clone();
-            }
-        }
-
-        // 2. Project-level (real column on projects table)
-        let project_val: Option<(Option<String>,)> = sqlx::query_as(
-            &format!(
-                r#"SELECT p."{db_key}" as v FROM projects p JOIN features f ON f.project_id = p.id WHERE f.id = ?"#,
-            ),
-        )
-        .bind(self.feature_id)
-        .fetch_optional(&self.read_pool)
-        .await
-        .ok()
-        .flatten();
-        if let Some((Some(ref v),)) = project_val {
-            if !v.is_empty() && v != "default" {
-                return v.clone();
-            }
-        }
-
-        // 3. Global settings (EAV table)
-        if let Ok(Some(v)) = workspace_repo::get_setting(&self.read_pool, &db_key).await {
-            if !v.is_empty() && v != "default" {
-                return v;
-            }
-        }
-
-        DEFAULT_MODEL.to_string()
+        .unwrap_or_else(|| DEFAULT_MODEL.to_string())
     }
 
     /// Shared logic for spawning plan/PRD agents (pre-queue agents).
@@ -1279,7 +1254,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_resolve_model_default_value_falls_through() {
+    async fn test_resolve_model_default_is_not_special() {
         let pool = setup_test_db().await;
         sqlx::query("INSERT INTO projects (id, name, model_plan) VALUES (1, 'test', 'sonnet')")
             .execute(&pool).await.unwrap();
@@ -1288,7 +1263,8 @@ mod tests {
 
         let mgr = make_agent_manager(pool, 1);
         let model = mgr.resolve_model("plan").await;
-        assert_eq!(model, "sonnet");
+        // "default" is a regular value, feature level wins
+        assert_eq!(model, "default");
     }
 
     #[tokio::test]
@@ -1305,7 +1281,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_resolve_model_global_default_falls_through() {
+    async fn test_resolve_model_global_default_is_not_special() {
         let pool = setup_test_db().await;
         sqlx::query("INSERT INTO projects (id, name) VALUES (1, 'test')")
             .execute(&pool).await.unwrap();
@@ -1316,7 +1292,8 @@ mod tests {
 
         let mgr = make_agent_manager(pool, 1);
         let model = mgr.resolve_model("plan").await;
-        assert_eq!(model, "claude-opus-4-6");
+        // "default" is a regular value from global settings, not a magic keyword
+        assert_eq!(model, "default");
     }
 
     #[tokio::test]

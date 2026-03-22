@@ -16,7 +16,7 @@ const PROJECT_ONLY_COLUMNS: &[&str] = &["branch_prefix", "qa_prompt"];
 /// - For columns in `PROJECT_ONLY_COLUMNS`: project → global → default.
 /// - For anything else: global settings EAV table → default.
 ///
-/// The literal value `"default"` is treated as unset and falls through.
+/// Only empty strings are treated as unset and fall through.
 pub async fn resolve_setting(
     pool: &SqlitePool,
     key: &str,
@@ -33,7 +33,7 @@ pub async fn resolve_setting(
                 .fetch_optional(pool)
                 .await
             {
-                if !v.is_empty() && v != "default" {
+                if !v.is_empty() {
                     return Some(v);
                 }
             }
@@ -49,7 +49,7 @@ pub async fn resolve_setting(
                 .fetch_optional(pool)
                 .await
             {
-                if !v.is_empty() && v != "default" {
+                if !v.is_empty() {
                     return Some(v);
                 }
             }
@@ -58,7 +58,7 @@ pub async fn resolve_setting(
 
     // 3. Global settings (EAV table)
     if let Ok(Some(v)) = super::workspace::repository::get_setting(pool, key).await {
-        if !v.is_empty() && v != "default" {
+        if !v.is_empty() {
             return Some(v);
         }
     }
@@ -155,15 +155,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_default_value_treated_as_unset() {
+    async fn test_default_value_is_not_special() {
         let pool = test_pool().await;
         sqlx::query("INSERT INTO projects (id, name, path, agent_autonomy) VALUES (1, 'p', '/tmp', 'default')")
             .execute(&pool).await.unwrap();
         sqlx::query("INSERT INTO features (id, project_id, title, agent_autonomy) VALUES (1, 1, 'f', 'default')")
             .execute(&pool).await.unwrap();
 
+        // "default" is a regular value, not a magic keyword — feature level wins
         let result = resolve_setting(&pool, "agent_autonomy", Some(1), Some(1), Some("1")).await;
-        assert_eq!(result, Some("1".to_string()));
+        assert_eq!(result, Some("default".to_string()));
     }
 
     #[tokio::test]
