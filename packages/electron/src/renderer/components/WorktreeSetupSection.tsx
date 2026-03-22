@@ -62,7 +62,7 @@ function LogOutput({ log }: { log: string }) {
   return (
     <pre
       ref={ref}
-      className="mt-1 max-h-40 overflow-auto rounded bg-muted/50 px-2 py-1.5 text-xs font-mono text-muted-foreground whitespace-pre-wrap"
+      className="mt-1 max-h-40 overflow-auto rounded bg-zinc-900 px-2 py-1.5 text-xs font-mono text-zinc-100 whitespace-pre-wrap"
     >
       {log}
     </pre>

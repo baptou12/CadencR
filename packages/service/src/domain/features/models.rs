@@ -227,6 +227,7 @@ pub struct WorktreeSnapshot {
     pub path: Option<String>,
     pub branch: Option<String>,
     pub status: String,
+    pub setup_log: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]

@@ -74,6 +74,40 @@ describe("WorktreeSetupSection", () => {
     expect(screen.getByText("error")).toBeInTheDocument();
   });
 
+  it("renders setup log with terminal styling in ws mode", async () => {
+    const { user } = render(
+      <WorktreeSetupSection
+        featureId={1}
+        projectId={1}
+        wsWorktreeStatus="ready"
+        wsWorktreeBranch="feat/test"
+        wsWorktreeSetupOutput={["installing deps", "all done"]}
+      />
+    );
+    await user.click(screen.getByText("Worktree Setup"));
+    const logEl = screen.getByText((_, el) =>
+      el?.tagName === "PRE" && el.textContent === "installing deps\nall done"
+    );
+    expect(logEl.className).toContain("bg-zinc-900");
+    expect(logEl.className).toContain("text-zinc-100");
+  });
+
+  it("shows persisted log from snapshot on resume via ws mode", async () => {
+    const { user } = render(
+      <WorktreeSetupSection
+        featureId={1}
+        projectId={1}
+        wsWorktreeStatus="ready"
+        wsWorktreeBranch="feat/resume"
+        wsWorktreeSetupOutput={["pnpm install", "completed"]}
+      />
+    );
+    await user.click(screen.getByText("Worktree Setup"));
+    expect(screen.getByText((_, el) =>
+      el?.tagName === "PRE" && el.textContent === "pnpm install\ncompleted"
+    )).toBeInTheDocument();
+  });
+
   it("expands on header click to show steps", async () => {
     mockGetSettings.mockReturnValue({
       data: settingsArray({

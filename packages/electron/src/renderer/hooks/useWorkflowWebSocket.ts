@@ -921,6 +921,9 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         patch.worktreePath = snapshot.worktree.path;
         patch.worktreeBranch = snapshot.worktree.branch;
         patch.worktreeStatus = snapshot.worktree.status as WorktreeStatus;
+        if (snapshot.worktree.setup_log) {
+          patch.worktreeSetupOutput = snapshot.worktree.setup_log.split("\n");
+        }
       }
 
       set(patch);

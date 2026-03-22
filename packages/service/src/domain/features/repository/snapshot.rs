@@ -63,12 +63,14 @@ pub async fn get_feature_snapshot(
     let worktree_path = settings.iter().find(|s| s.key == "worktree_path").map(|s| s.value.clone());
     let worktree_branch = settings.iter().find(|s| s.key == "worktree_branch").map(|s| s.value.clone());
     let worktree_status_val = settings.iter().find(|s| s.key == "worktree_setup_step").map(|s| s.value.as_str());
+    let worktree_setup_log = settings.iter().find(|s| s.key == "worktree_setup_log").map(|s| s.value.clone());
 
     let worktree = if worktree_path.is_some() || worktree_branch.is_some() || worktree_status_val.is_some() {
         Some(WorktreeSnapshot {
             path: worktree_path,
             branch: worktree_branch,
             status: worktree_status_val.unwrap_or("none").to_string(),
+            setup_log: worktree_setup_log,
         })
     } else {
         None

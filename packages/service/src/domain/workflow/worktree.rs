@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use axum::extract::ws::Message;
 use rand::Rng;
@@ -215,8 +216,9 @@ pub async fn run_setup_commands(
         }
     };
 
-    // 4. Parse and run each command
+    // 4. Parse and run each command, accumulating output log
     let commands: Vec<&str> = commands_str.lines().filter(|l| !l.trim().is_empty()).collect();
+    let log_lines = Arc::new(tokio::sync::Mutex::new(Vec::<String>::new()));
     for cmd in commands {
         let mut child = match Command::new("sh")
             .args(["-c", cmd])
@@ -229,6 +231,8 @@ pub async fn run_setup_commands(
             Err(e) => {
                 let error = format!("Failed to spawn command `{cmd}`: {e}");
                 let _ = set_setting(&write_pool, feature_id, "worktree_setup_step", "setup_error").await;
+                let log = log_lines.lock().await.join("\n");
+                let _ = set_setting(&write_pool, feature_id, "worktree_setup_log", &log).await;
                 send_envelope(&ws_sender, "workflow", "worktree.setup_error", serde_json::json!({
                     "feature_id": feature_id,
                     "error": error,
@@ -238,42 +242,56 @@ pub async fn run_setup_commands(
         };
 
         // Stream stdout
-        if let Some(stdout) = child.stdout.take() {
+        let stdout_handle = if let Some(stdout) = child.stdout.take() {
             let ws = ws_sender.clone();
             let fid = feature_id;
-            tokio::spawn(async move {
+            let log = Arc::clone(&log_lines);
+            Some(tokio::spawn(async move {
                 let reader = BufReader::new(stdout);
                 let mut lines = reader.lines();
                 while let Ok(Some(line)) = lines.next_line().await {
+                    log.lock().await.push(line.clone());
                     send_envelope(&ws, "workflow", "worktree.setup_output", serde_json::json!({
                         "feature_id": fid,
                         "line": line,
                     }));
                 }
-            });
-        }
+            }))
+        } else {
+            None
+        };
 
         // Stream stderr
-        if let Some(stderr) = child.stderr.take() {
+        let stderr_handle = if let Some(stderr) = child.stderr.take() {
             let ws = ws_sender.clone();
             let fid = feature_id;
-            tokio::spawn(async move {
+            let log = Arc::clone(&log_lines);
+            Some(tokio::spawn(async move {
                 let reader = BufReader::new(stderr);
                 let mut lines = reader.lines();
                 while let Ok(Some(line)) = lines.next_line().await {
+                    log.lock().await.push(line.clone());
                     send_envelope(&ws, "workflow", "worktree.setup_output", serde_json::json!({
                         "feature_id": fid,
                         "line": line,
                     }));
                 }
-            });
-        }
+            }))
+        } else {
+            None
+        };
+
+        // Wait for stream tasks to finish before checking exit status
+        if let Some(h) = stdout_handle { let _ = h.await; }
+        if let Some(h) = stderr_handle { let _ = h.await; }
 
         match child.wait().await {
             Ok(status) if status.success() => {}
             Ok(status) => {
                 let error = format!("Command `{cmd}` exited with status {status}");
                 let _ = set_setting(&write_pool, feature_id, "worktree_setup_step", "setup_error").await;
+                let log = log_lines.lock().await.join("\n");
+                let _ = set_setting(&write_pool, feature_id, "worktree_setup_log", &log).await;
                 send_envelope(&ws_sender, "workflow", "worktree.setup_error", serde_json::json!({
                     "feature_id": feature_id,
                     "error": error,
@@ -283,6 +301,8 @@ pub async fn run_setup_commands(
             Err(e) => {
                 let error = format!("Failed to wait on command `{cmd}`: {e}");
                 let _ = set_setting(&write_pool, feature_id, "worktree_setup_step", "setup_error").await;
+                let log = log_lines.lock().await.join("\n");
+                let _ = set_setting(&write_pool, feature_id, "worktree_setup_log", &log).await;
                 send_envelope(&ws_sender, "workflow", "worktree.setup_error", serde_json::json!({
                     "feature_id": feature_id,
                     "error": error,
@@ -292,7 +312,9 @@ pub async fn run_setup_commands(
         }
     }
 
-    // 6. Success
+    // 6. Success — persist log and mark ready
+    let log = log_lines.lock().await.join("\n");
+    let _ = set_setting(&write_pool, feature_id, "worktree_setup_log", &log).await;
     let _ = set_setting(&write_pool, feature_id, "worktree_setup_step", "ready").await;
     send_envelope(&ws_sender, "workflow", "worktree.ready", serde_json::json!({
         "feature_id": feature_id,

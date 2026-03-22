@@ -614,6 +614,32 @@ describe("useWorkflowStore", () => {
       expect(state.worktreeBranch).toBe("feat-123");
     });
 
+    it("hydrates worktree setup_log from snapshot", () => {
+      useWorkflowStore.setState({ hydrated: false, worktreeStatus: "idle", worktreeSetupOutput: [] });
+
+      useWorkflowStore.getState().hydrateFromSnapshot(
+        makeSnapshot({
+          worktree: { path: "/tmp/wt", branch: "feat-123", status: "ready", setup_log: "line1\nline2\nline3" },
+        }),
+      );
+
+      const state = useWorkflowStore.getState();
+      expect(state.worktreeSetupOutput).toEqual(["line1", "line2", "line3"]);
+    });
+
+    it("leaves worktreeSetupOutput empty when snapshot has no setup_log", () => {
+      useWorkflowStore.setState({ hydrated: false, worktreeStatus: "idle", worktreeSetupOutput: [] });
+
+      useWorkflowStore.getState().hydrateFromSnapshot(
+        makeSnapshot({
+          worktree: { path: "/tmp/wt", branch: "feat-123", status: "ready" },
+        }),
+      );
+
+      const state = useWorkflowStore.getState();
+      expect(state.worktreeSetupOutput).toEqual([]);
+    });
+
     it("leaves worktree as idle when snapshot has no worktree", () => {
       // Reset store to clear state from previous tests
       useWorkflowStore.setState({ hydrated: false, worktreeStatus: "idle", worktreePath: null, worktreeBranch: null });
