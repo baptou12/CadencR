@@ -1,5 +1,9 @@
-- [ ] Le layout des permissions ne gere pas l'option other, ca passe sous le prompt
-- [ ] Infinite "Loading workspace" en loader
-- [ ] Once ws-feature session is started, the prompt should be closed in the next action bar
-- [ ] Le scroll ne fonctionne pas dans la sidebar si trop de conversation existent
-- [ ] Create worktree pour n'importe quelle standalone sessions
+- [ ] lost titles on execute and QA agents
+- [ ] Turns are wrong in the sidebar, if the CLI is not working, we should not show claude's turn
+- [ ] all agents prompts gets "CODEBASE CONTEXT" title twice
+- [ ] improve agents prompts to get better results
+- [ ] Worktree for standalone sessions
+- [ ] Rework diff tool
+- [ ] Rework terminal
+- [ ] Rework command palette
+- [ ] Rework prompt with lexical
