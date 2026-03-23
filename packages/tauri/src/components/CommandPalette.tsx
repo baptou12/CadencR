@@ -30,6 +30,7 @@ import {
   getListFeaturesQueryKey,
   useCreateFeature,
 } from "../api/generated";
+import { open } from "@tauri-apps/plugin-dialog";
 
 interface CommandPaletteProps {
   open: boolean;
@@ -88,10 +89,6 @@ export function CommandPalette({
 
   const projectsQuery = useListProjects();
 
-  // TODO: Replace with @tauri-apps/plugin-dialog in next phase
-  const selectFolder = async (): Promise<{ name: string; path: string } | null> => {
-    throw new Error("selectFolder not yet implemented for Tauri");
-  };
   const createProjectMutation = useCreateProject({
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: getListProjectsQueryKey() });
@@ -154,9 +151,10 @@ export function CommandPalette({
   );
 
   const handleNewProject = useCallback(async () => {
-    const folder = await selectFolder();
+    const folder = await open({ directory: true, multiple: false });
     if (!folder) return;
-    createProjectMutation.mutate({ name: folder.name, path: folder.path });
+    const name = folder.split("/").pop() ?? folder;
+    createProjectMutation.mutate({ name, path: folder });
     close();
   }, [createProjectMutation, close]);
 

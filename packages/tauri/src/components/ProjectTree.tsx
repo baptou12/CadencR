@@ -29,6 +29,7 @@ import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
 import { ProjectFeatures } from "./ProjectFeatures";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { useAppWsStore } from "@/stores/app-ws-store";
+import { open } from "@tauri-apps/plugin-dialog";
 
 interface ProjectTreeProps {
   activeProjectId: number | null;
@@ -48,10 +49,6 @@ export function ProjectTree({
 
   const featureTurnStates = useAppWsStore((s) => s.featureTurnStates);
 
-  // TODO: Replace with @tauri-apps/plugin-dialog in next phase
-  const selectFolder = async (): Promise<{ name: string; path: string } | null> => {
-    throw new Error("selectFolder not yet implemented for Tauri");
-  };
   const [isSelectingFolder, setIsSelectingFolder] = useState(false);
   const createProjectMutation = useCreateProject({
     onSuccess: () => {
@@ -130,9 +127,10 @@ export function ProjectTree({
   const handleAddProject = async () => {
     setIsSelectingFolder(true);
     try {
-      const folder = await selectFolder();
+      const folder = await open({ directory: true, multiple: false });
       if (!folder) return;
-      createProjectMutation.mutate({ name: folder.name, path: folder.path });
+      const name = folder.split("/").pop() ?? folder;
+      createProjectMutation.mutate({ name, path: folder });
     } finally {
       setIsSelectingFolder(false);
     }
