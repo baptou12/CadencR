@@ -99,42 +99,12 @@ pub async fn resolve_working_dir(
     Ok(WorkingDirResponse { path })
 }
 
-/// Delete a feature. Before deleting, try to stop any running agents via the
-/// Electron IPC callback. If the callback is unavailable, log a warning and
-/// proceed with deletion anyway.
+/// Delete a feature.
 pub async fn delete_feature(
     write_pool: &SqlitePool,
     _read_pool: &SqlitePool,
     id: i64,
-    electron_port: u16,
 ) -> Result<(), AppError> {
-    // Try to stop running agents via Electron IPC
-    if electron_port == 0 {
-        tracing::warn!("electron_port is 0 — skipping stop-agents callback for feature {}", id);
-    } else {
-    let stop_url = format!("http://localhost:{}/stop-agents/{}", electron_port, id);
-    match reqwest::Client::new()
-        .post(&stop_url)
-        .timeout(std::time::Duration::from_secs(5))
-        .send()
-        .await
-    {
-        Ok(resp) if resp.status().is_success() => {
-            tracing::info!("Stopped agents for feature {}", id);
-        }
-        Ok(resp) => {
-            tracing::warn!(
-                "Electron stop-agents returned non-success {} for feature {}",
-                resp.status(),
-                id
-            );
-        }
-        Err(e) => {
-            tracing::warn!("Could not reach Electron stop-agents for feature {}: {}", id, e);
-        }
-    }
-    }
-
     repository::delete_feature(write_pool, id).await
 }
 
