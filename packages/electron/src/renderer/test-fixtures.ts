@@ -10,7 +10,7 @@ import type {
   PhaseRow,
   AgentMessageRow,
   AgentSessionRow,
-} from "../main/db/types";
+} from "./types/db-rows";
 
 // ---------------------------------------------------------------------------
 // Project

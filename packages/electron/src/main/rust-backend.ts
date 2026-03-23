@@ -46,7 +46,6 @@ function healthCheck(port: number): Promise<boolean> {
 export async function startRustBackend(
   dbPath: string,
   port: number = DEFAULT_PORT,
-  electronPort?: number,
 ): Promise<void> {
   currentPort = port;
   const binaryPath = getBinaryPath();
@@ -55,9 +54,6 @@ export async function startRustBackend(
   console.log(`[rust-backend] DB path: ${dbPath}, port: ${port}`);
 
   const args = ["--db-path", dbPath, "--port", String(port)];
-  if (electronPort != null) {
-    args.push("--electron-port", String(electronPort));
-  }
 
   rustProcess = spawn(binaryPath, args, {
     stdio: ["ignore", "pipe", "pipe"],

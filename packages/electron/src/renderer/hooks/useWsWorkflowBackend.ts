@@ -9,7 +9,7 @@ import { useEffect, useMemo, useCallback, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { FeatureSession } from "./useFeatureAgentState";
 import { serverBlocksToAgentBlocks } from "./useFeatureAgentState";
-import type { AgentType } from "../../main/agents/types";
+import type { AgentType } from "../types/agent-types";
 import type { FeatureAgentStateResponse } from "../api/generated";
 import type { AgentStatus } from "@/types/agent";
 import {

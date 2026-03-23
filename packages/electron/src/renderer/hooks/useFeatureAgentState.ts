@@ -13,7 +13,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useGetFeatureAgentState } from "../api/generated";
 import type { AgentBlockData } from "@/components/AgentBlock";
-import type { AgentType } from "../../main/agents/types";
+import type { AgentType } from "../types/agent-types";
 import type { AgentStatus, TodoItem } from "@/types/agent";
 import type { AgentQuestion } from "@/components/AgentQuestionDrawer";
 import type { PendingPermission } from "@/components/ToolPermissionPrompt";

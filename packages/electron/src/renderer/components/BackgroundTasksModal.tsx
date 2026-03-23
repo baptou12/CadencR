@@ -7,7 +7,14 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { BackgroundTask } from "../../main/agents/background-tasks";
+export interface BackgroundTask {
+  id: string;
+  kind: "bash" | "agent";
+  status: "running" | "completed" | "failed" | "cancelled";
+  spawnedAt: number;
+  command?: string;
+  summary?: string;
+}
 
 function relativeTime(ts: number): string {
   const diff = Date.now() - ts;

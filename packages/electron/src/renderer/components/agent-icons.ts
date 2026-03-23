@@ -8,7 +8,7 @@ import {
   FlaskConicalIcon,
   ClipboardListIcon,
 } from "lucide-react";
-import type { AgentType } from "../../main/agents/types";
+import type { AgentType } from "../types/agent-types";
 
 export const AGENT_ICONS: Record<AgentType, typeof PlayIcon> = {
   plan: PlayIcon,

@@ -1,7 +1,7 @@
 import { useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { DEFAULT_MODEL } from "../../shared/models";
-import type { AgentType } from "../../main/agents/types";
+import type { AgentType } from "../types/agent-types";
 import {
   useGetWorkspaceModelSettings,
   useGetProjectModelSettings,

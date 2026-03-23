@@ -40,7 +40,7 @@ import {
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
 import type { AgentBlockData } from "./AgentBlock";
-import type { AgentType } from "../../main/agents/types";
+import type { AgentType } from "../types/agent-types";
 import type { AgentQuestion } from "./AgentQuestionDrawer";
 import type { TodoItem } from "@/types/agent";
 import type { ContextUsageState } from "@/types/agent";
