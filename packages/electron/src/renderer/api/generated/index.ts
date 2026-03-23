@@ -1507,3 +1507,36 @@ export function useOpenExternalHandler(
     ...options,
   });
 }
+
+// ---------------------------------------------------------------------------
+// Usage
+// ---------------------------------------------------------------------------
+
+export interface UsageBucket {
+  utilization: number;
+  resets_at: string | null;
+}
+
+export type UsageStatus = "success" | "cached" | "rate_limited" | "error";
+
+export interface UsageResponse {
+  five_hour: UsageBucket | null;
+  seven_day: UsageBucket | null;
+  seven_day_sonnet: UsageBucket | null;
+  status: UsageStatus;
+  status_message: string | null;
+  retry_at: number | null;
+  updated_at: number;
+}
+
+export const getGetUsageHandlerQueryKey = () => ["getUsageHandler"] as const;
+
+export function useGetUsageHandler(
+  options?: { query?: Omit<UseQueryOptions<UsageResponse, ErrorType<unknown>>, "queryKey" | "queryFn"> },
+) {
+  return useQuery<UsageResponse, ErrorType<unknown>>({
+    queryKey: getGetUsageHandlerQueryKey(),
+    queryFn: () => customInstance({ method: "GET", url: "/api/usage" }),
+    ...options?.query,
+  });
+}

@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { trpc } from "@/trpc";
+import { useGetUsageHandler } from "@/api/generated";
 
 function formatTimeUntilReset(
   resetsAt: string | null | undefined,
@@ -19,13 +19,15 @@ function formatTimeUntilReset(
 }
 
 export const UsageIndicator = memo(function UsageIndicator() {
-  const { data, isLoading } = trpc.usage.getUsage.useQuery(undefined, {
-    refetchInterval: 5 * 60 * 1000,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    refetchOnMount: false,
-    retry: false,
-    staleTime: 5 * 60 * 1000,
+  const { data, isLoading } = useGetUsageHandler({
+    query: {
+      refetchInterval: 5 * 60 * 1000,
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      retry: false,
+      staleTime: 5 * 60 * 1000,
+    },
   });
 
   if (isLoading) {

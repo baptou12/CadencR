@@ -16,6 +16,8 @@ use crate::domain::diff_comments::models as diff_comments_models;
 use crate::domain::diff_comments::routes as diff_comments_routes;
 use crate::domain::sessions::models as sessions_models;
 use crate::domain::sessions::routes as sessions_routes;
+use crate::domain::usage::models as usage_models;
+use crate::domain::usage::routes as usage_routes;
 
 #[derive(OpenApi)]
 #[openapi(
@@ -89,6 +91,7 @@ use crate::domain::sessions::routes as sessions_routes;
         sessions_routes::get_feature_agent_state_handler,
         sessions_routes::get_draft_handler,
         sessions_routes::save_draft_handler,
+        usage_routes::get_usage_handler,
         super::list_models,
     ),
     components(schemas(
@@ -180,6 +183,9 @@ use crate::domain::sessions::routes as sessions_routes;
         sessions_models::DraftResponse,
         sessions_models::SaveDraftRequest,
         sessions_models::SaveDraftResponse,
+        usage_models::UsageResponse,
+        usage_models::UsageBucket,
+        usage_models::UsageStatus,
     )),
 )]
 struct ApiDoc;

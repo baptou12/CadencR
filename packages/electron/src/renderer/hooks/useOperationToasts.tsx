@@ -5,9 +5,7 @@ import { toast } from "sonner";
 const TOAST_ID = "global-ops";
 
 /** Maps tRPC query keys to friendly, non-technical labels */
-const OPERATION_LABELS: Record<string, string> = {
-  "usage.getUsage": "Checking usage",
-};
+const OPERATION_LABELS: Record<string, string> = {};
 
 /** Excluded prefixes — high-frequency polling/streaming queries that shouldn't show toasts */
 const EXCLUDED_PREFIXES = ["agents.", "sessions.", "features."];
