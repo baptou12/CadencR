@@ -74,7 +74,7 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
       (ptyId: string) => {
         if (!mountedRef.current) {
           // Unmounted before ready — kill via ws
-          ws.kill();
+          wsRef.current.kill();
           return;
         }
         ptyIdRef.current = ptyId;
@@ -85,7 +85,7 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
         if (cmd) {
           setTimeout(() => {
             if (mountedRef.current && ptyIdRef.current) {
-              ws.write(cmd);
+              wsRef.current.write(cmd);
             }
             onInitialCommandConsumedRef.current?.();
           }, 150);
@@ -129,7 +129,9 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
       terminalRef.current?.write(`\r\n\x1b[31m[${message}]\x1b[0m\r\n`);
     }, []);
 
-    const ws = useTerminalWebSocket({
+    const wsRef = useRef<ReturnType<typeof useTerminalWebSocket>>(null!);
+
+    const ws = wsRef.current = useTerminalWebSocket({
       featureId: existingPtyId ? undefined : featureId,
       projectId: existingPtyId ? undefined : projectId,
       ptyId: existingPtyId,
@@ -145,7 +147,7 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
       try {
         fitAddonRef.current?.fit();
         const term = terminalRef.current;
-        if (term) ws.resize(term.cols, term.rows);
+        if (term) wsRef.current.resize(term.cols, term.rows);
       } catch {
         // Ignore resize errors during teardown
       }
@@ -178,7 +180,7 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
         const mod = event.metaKey ? "meta" : event.altKey ? "alt" : "";
         const seq = mod ? keyMap[`${mod}+${event.key}`] : undefined;
         if (seq) {
-          ws.write(seq);
+          wsRef.current.write(seq);
           return false;
         }
         return true;
@@ -196,7 +198,7 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
       // User input → WebSocket
       const dataDisposable = terminal.onData((data: string) => {
         if (ptyIdRef.current && !exitedRef.current) {
-          ws.write(data);
+          wsRef.current.write(data);
         }
       });
 
@@ -206,7 +208,7 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
         try {
           fitAddon.fit();
           const id = ptyIdRef.current;
-          if (id) ws.resize(terminal.cols, terminal.rows);
+          if (id) wsRef.current.resize(terminal.cols, terminal.rows);
         } catch {
           // Ignore resize errors during teardown
         }
@@ -219,7 +221,7 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
         dataDisposable.dispose();
 
         if (ptyIdRef.current && !exitedRef.current && shouldKillRef.current) {
-          ws.kill();
+          wsRef.current.kill();
         }
         ptyIdRef.current = null;
         terminal.dispose();
