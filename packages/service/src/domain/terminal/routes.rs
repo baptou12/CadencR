@@ -133,9 +133,9 @@ async fn run_pty_ws_loop(
     let reader = Arc::clone(&handle.master_reader);
     let scrollback = Arc::clone(&handle.scrollback);
     let mut alive_rx = handle.alive.subscribe();
-    // PTY → WS: read PTY output and send to WebSocket
-    let sink = Arc::new(tokio::sync::Mutex::new(ws_sink));
-    let sink_read = Arc::clone(&sink);
+
+    // PTY → WS: use mpsc channel to bridge blocking read → async send
+    let (data_tx, mut data_rx) = tokio::sync::mpsc::channel::<String>(64);
 
     let read_task = tokio::task::spawn_blocking(move || {
         let mut buf = [0u8; 4096];
@@ -148,23 +148,30 @@ async fn run_pty_ws_loop(
 
             let data = String::from_utf8_lossy(&buf[..n]).into_owned();
 
-            // Append to scrollback
             scrollback
                 .lock()
                 .expect("scrollback lock")
                 .append(&buf[..n]);
 
+            if data_tx.blocking_send(data).is_err() {
+                break;
+            }
+        }
+    });
+
+    // Async task: forward data from mpsc channel to WebSocket sink
+    let sink = Arc::new(tokio::sync::Mutex::new(ws_sink));
+    let sink_fwd = Arc::clone(&sink);
+    let forward_task = tokio::spawn(async move {
+        use futures::SinkExt;
+        while let Some(data) = data_rx.recv().await {
             let msg = ServerMessage::Data { data };
             let json = msg.to_json();
-
-            // Send via WebSocket (bridge blocking → async)
-            let sink = Arc::clone(&sink_read);
-            let rt = tokio::runtime::Handle::current();
-            if rt
-                .block_on(async {
-                    use futures::SinkExt;
-                    sink.lock().await.send(Message::Text(json.into())).await
-                })
+            if sink_fwd
+                .lock()
+                .await
+                .send(Message::Text(json.into()))
+                .await
                 .is_err()
             {
                 break;
@@ -214,13 +221,17 @@ async fn run_pty_ws_loop(
     let sink_exit = Arc::clone(&sink);
     let pty_id_exit = pty_id.clone();
     let exit_task = tokio::spawn(async move {
-        // Wait for alive to become false
-        while *alive_rx.borrow_and_update() {
+        // Wait for alive to become Some(exit_code)
+        loop {
+            if alive_rx.borrow_and_update().is_some() {
+                break;
+            }
             if alive_rx.changed().await.is_err() {
                 break;
             }
         }
-        let msg = ServerMessage::Exit { code: 0 };
+        let exit_code = alive_rx.borrow().unwrap_or(-1);
+        let msg = ServerMessage::Exit { code: exit_code };
         let json = msg.to_json();
         use futures::SinkExt;
         let _ = sink_exit
@@ -234,12 +245,13 @@ async fn run_pty_ws_loop(
     // Wait for either the WS write task or read task to finish
     tokio::select! {
         _ = write_task => {
-            // Client disconnected — PTY stays alive for reconnection
             info!(pty_id = %pty_id, "WebSocket closed, PTY kept alive");
         }
         _ = read_task => {
-            // PTY output ended
             info!(pty_id = %pty_id, "PTY read ended");
+        }
+        _ = forward_task => {
+            info!(pty_id = %pty_id, "PTY forward ended");
         }
         _ = exit_task => {
             info!(pty_id = %pty_id, "PTY exited");

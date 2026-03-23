@@ -44,7 +44,7 @@ pub struct PtyHandle {
     pub master_writer: Arc<Mutex<Box<dyn Write + Send>>>,
     pub master_reader: Arc<Mutex<Box<dyn Read + Send>>>,
     pub scrollback: Arc<Mutex<ScrollbackBuffer>>,
-    pub alive: Arc<watch::Sender<bool>>,
+    pub alive: Arc<watch::Sender<Option<i32>>>,
     pub child: Arc<Mutex<Box<dyn portable_pty::Child + Send>>>,
 }
 
@@ -82,7 +82,7 @@ impl PtyManager {
         let writer = pair.master.take_writer()?;
 
         let pty_id = uuid::Uuid::new_v4().to_string();
-        let (alive_tx, _) = watch::channel(true);
+        let (alive_tx, _) = watch::channel::<Option<i32>>(None);
 
         let handle = Arc::new(PtyHandle {
             master: Arc::new(Mutex::new(pair.master)),
@@ -100,14 +100,22 @@ impl PtyManager {
         let child_ref = Arc::clone(&handle.child);
         let pid = pty_id.clone();
         tokio::task::spawn_blocking(move || {
-            let _status = child_ref.lock().expect("child lock").wait();
-            info!(pty_id = %pid, "PTY child exited");
-            let _ = alive_tx.send(false);
+            let status = child_ref.lock().expect("child lock").wait();
+            let exit_code = match status {
+                Ok(s) => s.exit_code() as i32,
+                Err(_) => -1,
+            };
+            info!(pty_id = %pid, exit_code, "PTY child exited");
+            let _ = alive_tx.send(Some(exit_code));
 
-            // Keep scrollback for 5 minutes, then remove
-            std::thread::sleep(std::time::Duration::from_secs(300));
-            terminals.remove(&pid);
-            info!(pty_id = %pid, "PTY handle removed after grace period");
+            // Spawn async task for grace period to avoid blocking a tokio thread
+            let terminals = terminals;
+            let pid = pid;
+            tokio::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(300)).await;
+                terminals.remove(&pid);
+                info!(pty_id = %pid, "PTY handle removed after grace period");
+            });
         });
 
         Ok((pty_id, handle))
@@ -161,7 +169,7 @@ impl PtyManager {
 
     pub fn get_scrollback(&self, pty_id: &str) -> Option<(bool, String)> {
         let handle = self.terminals.get(pty_id)?;
-        let alive = *handle.alive.borrow();
+        let alive = handle.alive.borrow().is_none();
         let scrollback = handle.scrollback.lock().expect("scrollback lock").contents();
         Some((alive, scrollback))
     }
