@@ -89,17 +89,3 @@ HTMLCanvasElement.prototype.getContext = vi.fn(() => ({
   fillRect: vi.fn(),
 })) as unknown as typeof HTMLCanvasElement.prototype.getContext;
 
-// ---------------------------------------------------------------------------
-// window.api (Electron preload bridge) — default stub
-// ---------------------------------------------------------------------------
-
-Object.defineProperty(window, "api", {
-  writable: true,
-  configurable: true,
-  value: {
-    on: vi.fn(),
-    off: vi.fn(),
-    send: vi.fn(),
-    invoke: vi.fn().mockResolvedValue(undefined),
-  },
-});
