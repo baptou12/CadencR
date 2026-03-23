@@ -833,6 +833,7 @@ mod tests {
             app_state.write_pool.clone(),
             app_state.turn_state_tx.clone(),
             sdk_sessions.clone(),
+            None,
         );
 
         // Wait for the "session.ended" message from the stream reader
@@ -905,6 +906,7 @@ mod tests {
             app_state.write_pool.clone(),
             app_state.turn_state_tx.clone(),
             sdk_sessions.clone(),
+            None,
         );
 
         // Wait for the error message
@@ -952,6 +954,7 @@ mod tests {
             app_state.write_pool.clone(),
             app_state.turn_state_tx.clone(),
             sdk_sessions.clone(),
+            None,
         );
 
         // Should still get the ended message

@@ -16,6 +16,7 @@ import { customInstance, type ErrorType } from "../client";
 export interface ModelInfo {
   id: string;
   label: string;
+  context_window: number;
 }
 
 export interface BranchResponse {

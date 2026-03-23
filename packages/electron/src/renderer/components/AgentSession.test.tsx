@@ -10,7 +10,7 @@ vi.mock("react-hotkeys-hook", () => ({
 
 vi.mock("../api/generated", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../api/generated")>()),
-  useListModels: vi.fn(() => ({ data: [{ id: "claude-opus-4-6", label: "Claude Opus 4.6" }] })),
+  useListModels: vi.fn(() => ({ data: [{ id: "opus[1m]", label: "Opus (1M)" }] })),
 }));
 
 // Mock hooks to avoid cascading tRPC dependencies

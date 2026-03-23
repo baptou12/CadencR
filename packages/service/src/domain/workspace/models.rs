@@ -65,15 +65,15 @@ mod tests {
     #[test]
     fn test_model_settings_serialization() {
         let ms = ModelSettings {
-            plan: "claude-opus-4-6".to_string(),
-            prd: "claude-opus-4-6".to_string(),
-            execute: "claude-opus-4-6".to_string(),
-            risk: "claude-opus-4-6".to_string(),
-            review: "claude-opus-4-6".to_string(),
-            review_fixer: "claude-opus-4-6".to_string(),
-            session: "claude-opus-4-6".to_string(),
-            qa: "claude-opus-4-6".to_string(),
-            retro: "claude-opus-4-6".to_string(),
+            plan: "opus[1m]".to_string(),
+            prd: "opus[1m]".to_string(),
+            execute: "opus[1m]".to_string(),
+            risk: "opus[1m]".to_string(),
+            review: "opus[1m]".to_string(),
+            review_fixer: "opus[1m]".to_string(),
+            session: "opus[1m]".to_string(),
+            qa: "opus[1m]".to_string(),
+            retro: "opus[1m]".to_string(),
         };
         let json = serde_json::to_string(&ms).unwrap();
         // review_fixer should be serialized as "review-fixer"
@@ -83,7 +83,7 @@ mod tests {
 
     #[test]
     fn test_model_settings_default_values() {
-        let default_model = "claude-opus-4-6";
+        let default_model = "opus[1m]";
         let ms = ModelSettings {
             plan: default_model.to_string(),
             prd: default_model.to_string(),

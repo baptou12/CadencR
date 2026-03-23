@@ -106,7 +106,7 @@ impl AgentManager {
 
     /// Resolve the model for a given agent type using the shared settings cascade.
     async fn resolve_model(&self, agent_type_str: &str) -> String {
-        const DEFAULT_MODEL: &str = "claude-opus-4-6";
+        const DEFAULT_MODEL: &str = crate::api::DEFAULT_MODEL;
         let db_key = format!("model_{agent_type_str}");
         let project_id = self.get_project_id().await;
         crate::domain::settings::resolve_setting(
@@ -187,6 +187,7 @@ impl AgentManager {
             .await;
 
         // 6. Build options and spawn
+        let options_model = model.clone();
         let mut options = Options {
             cwd,
             permission_mode: Some(PermissionMode::AcceptEdits),
@@ -236,6 +237,7 @@ impl AgentManager {
                     self.write_pool.clone(),
                     self.active_items.clone(),
                     self.queries.clone(),
+                    Some(options_model.as_str()),
                 );
 
                 let envelope = WsEnvelope::new(
@@ -356,6 +358,7 @@ impl AgentManager {
             .await;
 
         // 8. Build Options and spawn
+        let options_model = model.clone();
         let mut options = Options {
             cwd: cwd.clone(),
             permission_mode: Some(PermissionMode::AcceptEdits),
@@ -403,6 +406,7 @@ impl AgentManager {
                     self.write_pool.clone(),
                     self.active_items.clone(),
                     self.queries.clone(),
+                    Some(options_model.as_str()),
                 );
 
                 let envelope = WsEnvelope::new(
@@ -638,6 +642,7 @@ impl AgentManager {
             turn_state_tx: self.turn_state_tx.clone(),
         };
 
+        let options_model = model.clone();
         let mut options = Options {
             cwd: cwd.clone(),
             permission_mode: Some(PermissionMode::AcceptEdits),
@@ -690,6 +695,7 @@ impl AgentManager {
                     self.write_pool.clone(),
                     self.active_items.clone(),
                     self.queries.clone(),
+                    Some(options_model.as_str()),
                 );
 
                 info!(slot = %slot, "agent resumed successfully");
@@ -848,7 +854,11 @@ pub fn spawn_workflow_stream_reader(
     write_pool: SqlitePool,
     active_items: Arc<DashMap<AgentSlot, i64>>,
     queries: Arc<DashMap<AgentSlot, Arc<tokio::sync::Mutex<Query>>>>,
+    model: Option<&str>,
 ) {
+    let initial_context_window = model
+        .map(|m| crate::domain::usage::context_window_for_model(m))
+        .unwrap_or(crate::api::DEFAULT_CONTEXT_WINDOW);
     tokio::spawn(async move {
         debug!(slot = %slot, db_session_id, "workflow stream reader started");
         let mut persistence = WsSessionPersistence::with_session_id(
@@ -860,7 +870,7 @@ pub fn spawn_workflow_stream_reader(
         let mut agent_done_called = false;
         let mut error_msg: Option<String> = None;
         let mut needs_session_id_capture = true;
-        let mut context_window: u64 = 200_000;
+        let mut context_window: u64 = initial_context_window;
         let mut pending_feature_update: Option<Vec<&'static str>> = None;
 
         loop {
@@ -1210,7 +1220,7 @@ mod tests {
 
         let mgr = make_agent_manager(pool, 1);
         let model = mgr.resolve_model("plan").await;
-        assert_eq!(model, "claude-opus-4-6");
+        assert_eq!(model, "opus[1m]");
     }
 
     #[tokio::test]
@@ -1310,6 +1320,6 @@ mod tests {
         let mgr = make_agent_manager(pool, 1);
         assert_eq!(mgr.resolve_model("plan").await, "plan-model");
         assert_eq!(mgr.resolve_model("execute").await, "exec-model");
-        assert_eq!(mgr.resolve_model("review").await, "claude-opus-4-6");
+        assert_eq!(mgr.resolve_model("review").await, "opus[1m]");
     }
 }

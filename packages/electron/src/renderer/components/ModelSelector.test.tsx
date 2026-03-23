@@ -10,7 +10,7 @@ const { mockGetGlobalSettings, mockGetProjectSettings, mockGetFeatureSettings } 
 }));
 
 vi.mock("../api/generated", () => ({
-  useListModels: vi.fn(() => ({ data: [{ id: "claude-opus-4-6", label: "Claude Opus 4.6" }] })),
+  useListModels: vi.fn(() => ({ data: [{ id: "opus[1m]", label: "Opus (1M)" }] })),
   useGetWorkspaceModelSettings: () => mockGetGlobalSettings(),
   useSetWorkspaceModelSetting: vi.fn(() => ({ mutate: vi.fn() })),
   getGetWorkspaceModelSettingsQueryKey: vi.fn(() => ["workspace", "model-settings"]),

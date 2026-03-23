@@ -508,6 +508,7 @@ pub(super) async fn handle_prompt_send(
                         app_state.write_pool.clone(),
                         app_state.turn_state_tx.clone(),
                         sdk_sessions.clone(),
+                        spawned_model.as_deref(),
                     );
 
                     // Fire-and-forget auto-naming for first prompt
@@ -588,7 +589,11 @@ pub(super) fn spawn_stream_reader(
     write_pool: sqlx::SqlitePool,
     turn_state_tx: tokio::sync::broadcast::Sender<crate::app_state::TurnStateEvent>,
     sdk_sessions: SdkSessions,
+    model: Option<&str>,
 ) {
+    let initial_context_window = model
+        .map(|m| crate::domain::usage::context_window_for_model(m))
+        .unwrap_or(crate::api::DEFAULT_CONTEXT_WINDOW);
     tokio::spawn(async move {
         info!(db_session_id, "stream reader started");
         let mut persistence = WsSessionPersistence::with_session_id(
@@ -597,7 +602,7 @@ pub(super) fn spawn_stream_reader(
         // Capture the CLI session ID from the first message that has one.
         // Every SdkMessage variant carries a session_id field.
         let mut needs_session_id_capture = true;
-        let mut context_window: u64 = 200_000;
+        let mut context_window: u64 = initial_context_window;
 
         loop {
             let msg = message_rx.recv().await;

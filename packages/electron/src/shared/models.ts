@@ -1,1 +1,1 @@
-export const DEFAULT_MODEL = "claude-opus-4-6";
+export const DEFAULT_MODEL = "opus[1m]";

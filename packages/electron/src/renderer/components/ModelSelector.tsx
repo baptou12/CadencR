@@ -1,5 +1,6 @@
 import { createElement, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { DEFAULT_MODEL } from "../../shared/models";
 import { Button } from "./ui/button";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "./ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
@@ -94,7 +95,7 @@ export function ModelSelector({ level, projectId, featureId }: ModelSelectorProp
       const globalVal = parentGlobalSettings.data?.[agentType];
       if (globalVal) return globalVal;
     }
-    return "claude-opus-4-6";
+    return DEFAULT_MODEL;
   }
 
   function getModelLabel(modelId: string): string {
@@ -104,7 +105,7 @@ export function ModelSelector({ level, projectId, featureId }: ModelSelectorProp
   function handleChange(agentType: AgentType, value: string) {
     const modelId = value === INHERIT_VALUE ? "" : value;
     if (level === "global") {
-      globalMutation.mutate({ agentType, modelId: modelId || "claude-opus-4-6" });
+      globalMutation.mutate({ agentType, modelId: modelId || DEFAULT_MODEL });
     } else if (level === "project" && projectId != null) {
       projectMutation.mutate({ projectId, modelType: agentType, model: modelId });
     } else if (level === "feature" && featureId != null) {
@@ -116,7 +117,7 @@ export function ModelSelector({ level, projectId, featureId }: ModelSelectorProp
   function getCurrentValue(agentType: AgentType): string {
     const val = settings?.[agentType];
     if (level === "global") {
-      return val ?? "claude-opus-4-6";
+      return val ?? DEFAULT_MODEL;
     }
     return val && val !== "" ? val : INHERIT_VALUE;
   }

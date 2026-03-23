@@ -2,7 +2,7 @@ use sqlx::SqlitePool;
 use crate::error::AppError;
 use super::models::{Setting, ModelSettings};
 
-const DEFAULT_MODEL: &str = "claude-opus-4-6";
+use crate::api::DEFAULT_MODEL;
 const MODEL_KEYS: &[(&str, &str)] = &[
     ("plan", "model_plan"),
     ("prd", "model_prd"),
