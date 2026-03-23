@@ -13,11 +13,6 @@
       "cache": false,
       "persistent": true
     },
-"@cadence/desktop#dev": {
-      "dependsOn": ["@cadence/service#dev"],
-      "cache": false,
-      "persistent": true
-    },
     "@cadence/desktop#build": {
       "dependsOn": ["^build"],
       "outputs": ["src-tauri/target/**"],

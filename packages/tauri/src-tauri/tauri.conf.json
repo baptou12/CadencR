@@ -6,7 +6,7 @@
   "build": {
     "devUrl": "http://localhost:1420",
     "frontendDist": "../dist",
-    "beforeDevCommand": "",
+    "beforeDevCommand": "pnpm vite dev",
     "beforeBuildCommand": "pnpm vite build"
   },
   "app": {
@@ -40,14 +40,7 @@
   },
   "plugins": {
     "shell": {
-      "sidecar": true,
-      "scope": [
-        {
-          "name": "binaries/cadence-service",
-          "sidecar": true,
-          "args": true
-        }
-      ]
+      "open": true
     }
   }
 }
