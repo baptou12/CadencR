@@ -18,6 +18,8 @@ import {
   applyMutations,
 } from "@/stores/ws-session-store";
 import { invalidateFeatureQueries } from "@/lib/featureUpdated";
+import { createCommandsGet, type CommandsListPayload } from "@/lib/ws-envelope";
+import type { SlashCommand } from "@/hooks/useSlashCommand";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -142,6 +144,11 @@ interface WorkflowState {
 
   /** Live feature title pushed via WS after auto-naming. */
   featureTitle: string | null;
+
+  // Slash commands
+  slashCommands: SlashCommand[];
+  slashCommandsLoading: boolean;
+  requestSlashCommands: (cwd: string) => void;
 
   // Worktree state
   worktreeStatus: WorktreeStatus;
@@ -405,6 +412,16 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
       const changed = (payload.changed ?? []) as string[];
       const featureId = get().featureId;
       if (featureId) invalidateFeatureQueries(featureId, changed);
+      return;
+    }
+
+    if (domain === "commands" && action === "list") {
+      const p = payload as unknown as CommandsListPayload;
+      const cmds: SlashCommand[] = (p.commands ?? []).map((c) => ({
+        name: c.name,
+        description: c.description ?? "",
+      }));
+      set({ slashCommands: cmds, slashCommandsLoading: false });
       return;
     }
 
@@ -866,12 +883,22 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     hydrated: false,
     startingBuild: false,
     continuingBuild: false,
+    slashCommands: [],
+    slashCommandsLoading: false,
     worktreeStatus: "idle",
     worktreePath: null,
     worktreeBranch: null,
     worktreeSetupOutput: [],
     worktreeError: null,
     featureTitle: null,
+
+    requestSlashCommands(cwd: string) {
+      const { ws, slashCommands, slashCommandsLoading } = get();
+      if (slashCommands.length > 0 || slashCommandsLoading) return;
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      set({ slashCommandsLoading: true });
+      ws.send(JSON.stringify(createCommandsGet(cwd)));
+    },
 
     connect(featureId, projectId) {
       const prev = get().ws;
@@ -883,7 +910,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         queue: [], activeAgents: new Map(), planAgent: null, prdAgent: null,
         workflowStatus: "idle", pauseReason: null, selectedItemId: null, error: null, hydrated: false, startingBuild: false, continuingBuild: false,
         worktreeStatus: "idle" as const, worktreePath: null, worktreeBranch: null, worktreeSetupOutput: [], worktreeError: null,
-        featureTitle: null,
+        featureTitle: null, slashCommands: [], slashCommandsLoading: false,
       });
 
       ws.addEventListener("open", () => {

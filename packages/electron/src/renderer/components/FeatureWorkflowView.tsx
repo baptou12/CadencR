@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
-import { useGetFeaturePrd } from "@/api/generated";
+import { useGetFeaturePrd, useListProjects } from "@/api/generated";
 import { FeatureTopBar } from "@/components/FeatureTopBar";
 import {
   AgentSession,
@@ -28,6 +28,7 @@ import { useTerminalState, useTerminalStore } from "@/hooks/useTerminalState";
 import { CodeBlockActionsContext, type CodeBlockActions } from "@/components/CodeBlockActionsContext";
 import { cn } from "@/lib/utils";
 import { useWorkflowBackend } from "@/hooks/useWorkflowBackend";
+import { useWorkflowStore } from "@/hooks/useWorkflowWebSocket";
 
 export function FeatureWorkflowView({
   featureId,
@@ -65,6 +66,20 @@ export function FeatureWorkflowView({
   );
 
   const contextUsageMap = useContextUsage(featureId, backend.sessionEntries);
+
+  // Slash commands
+  const projectsQuery = useListProjects();
+  const projectPath = projectsQuery.data?.find((p) => p.id === projectId)?.path;
+  const slashCommands = useWorkflowStore((s) => s.slashCommands);
+  const slashCommandsLoading = useWorkflowStore((s) => s.slashCommandsLoading);
+  const requestSlashCommands = useWorkflowStore((s) => s.requestSlashCommands);
+  const wsReady = useWorkflowStore((s) => s.ws?.readyState === WebSocket.OPEN);
+
+  useEffect(() => {
+    if (wsReady && projectPath) {
+      requestSlashCommands(projectPath);
+    }
+  }, [wsReady, projectPath, requestSlashCommands]);
 
   // --- Model settings for inline model switcher ---
   const { resolveModel, handleModelChange } = useResolvedModel(
@@ -626,6 +641,8 @@ export function FeatureWorkflowView({
                         projectId={projectId}
                         sessionId={entry.sessionDbId}
                         claudeSessionId={entry.claudeSessionId || undefined}
+                        slashCommandsOverride={slashCommands}
+                        slashCommandsLoading={slashCommandsLoading}
                         initialDraft={entry.draftPrompt}
                         subprocessId={entry.subprocessId ?? undefined}
                         pendingPermission={entry.pendingPermission}
