@@ -1,4 +1,3 @@
-use std::io::Read;
 use std::sync::Arc;
 
 use axum::extract::ws::{Message, WebSocket};
@@ -6,14 +5,19 @@ use axum::extract::{Query, State, WebSocketUpgrade};
 use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::Router;
+use futures::SinkExt;
 use futures::StreamExt;
 use serde::Deserialize;
+use tokio::sync::broadcast;
 use tracing::{error, info};
 
 use crate::app_state::AppState;
 use super::cwd::resolve_cwd;
 use super::protocol::{ClientMessage, ServerMessage};
 use super::service::PtyHandle;
+
+type WsSink = futures::stream::SplitSink<WebSocket, Message>;
+type WsStream = futures::stream::SplitStream<WebSocket>;
 
 #[derive(Debug, Deserialize)]
 pub struct TerminalWsParams {
@@ -37,7 +41,6 @@ async fn terminal_ws_handler(
 async fn handle_terminal_ws(socket: WebSocket, params: TerminalWsParams, state: AppState) {
     let pty_manager = &state.pty_manager;
 
-    // Determine if this is a new PTY or a reconnection
     if let Some(pty_id) = params.pty_id {
         handle_reconnect(socket, &pty_id, pty_manager).await;
     } else if let (Some(feature_id), Some(project_id)) = (params.feature_id, params.project_id) {
@@ -112,77 +115,38 @@ async fn handle_new_pty(
         return;
     }
 
-    run_pty_ws_loop(
-        ws_sink,
-        ws_stream,
-        pty_id,
-        handle,
-        state.pty_manager.clone(),
-    )
-    .await;
+    run_pty_ws_loop(ws_sink, ws_stream, pty_id, handle, state.pty_manager.clone()).await;
 }
 
-/// Main loop bridging PTY I/O and WebSocket messages.
-async fn run_pty_ws_loop(
-    ws_sink: futures::stream::SplitSink<WebSocket, Message>,
-    mut ws_stream: futures::stream::SplitStream<WebSocket>,
-    pty_id: String,
-    handle: Arc<PtyHandle>,
-    pty_manager: super::service::PtyManager,
-) {
-    let reader = Arc::clone(&handle.master_reader);
-    let scrollback = Arc::clone(&handle.scrollback);
-    let mut alive_rx = handle.alive.subscribe();
-
-    // PTY → WS: use mpsc channel to bridge blocking read → async send
-    let (data_tx, mut data_rx) = tokio::sync::mpsc::channel::<String>(64);
-
-    let mut read_task = tokio::task::spawn_blocking(move || {
-        let mut buf = [0u8; 4096];
+/// Spawn task that forwards PTY broadcast data to the WebSocket sink.
+fn spawn_pty_to_ws_forwarder(
+    sink: Arc<tokio::sync::Mutex<WsSink>>,
+    mut data_rx: broadcast::Receiver<String>,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
         loop {
-            let n = match reader.lock().expect("reader lock").read(&mut buf) {
-                Ok(0) => break,
-                Ok(n) => n,
-                Err(_) => break,
-            };
-
-            let data = String::from_utf8_lossy(&buf[..n]).into_owned();
-
-            scrollback
-                .lock()
-                .expect("scrollback lock")
-                .append(&buf[..n]);
-
-            if data_tx.blocking_send(data).is_err() {
-                break;
+            match data_rx.recv().await {
+                Ok(data) => {
+                    let msg = ServerMessage::Data { data };
+                    let json = msg.to_json();
+                    if sink.lock().await.send(Message::Text(json.into())).await.is_err() {
+                        break;
+                    }
+                }
+                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(broadcast::error::RecvError::Closed) => break,
             }
         }
-    });
+    })
+}
 
-    // Async task: forward data from mpsc channel to WebSocket sink
-    let sink = Arc::new(tokio::sync::Mutex::new(ws_sink));
-    let sink_fwd = Arc::clone(&sink);
-    let mut forward_task = tokio::spawn(async move {
-        use futures::SinkExt;
-        while let Some(data) = data_rx.recv().await {
-            let msg = ServerMessage::Data { data };
-            let json = msg.to_json();
-            if sink_fwd
-                .lock()
-                .await
-                .send(Message::Text(json.into()))
-                .await
-                .is_err()
-            {
-                break;
-            }
-        }
-    });
-
-    // WS → PTY: read WebSocket messages and dispatch to PTY
-    let pty_id_write = pty_id.clone();
-    let pty_manager_write = pty_manager.clone();
-    let mut write_task = tokio::spawn(async move {
+/// Spawn task that reads WebSocket messages and dispatches writes/resizes/kills to the PTY.
+fn spawn_ws_to_pty_writer(
+    mut ws_stream: WsStream,
+    pty_id: String,
+    pty_manager: super::service::PtyManager,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
         while let Some(Ok(msg)) = ws_stream.next().await {
             match msg {
                 Message::Text(text) => {
@@ -191,22 +155,18 @@ async fn run_pty_ws_loop(
                     };
                     match client_msg {
                         ClientMessage::Write { data } => {
-                            if let Err(e) =
-                                pty_manager_write.write_pty(&pty_id_write, data.as_bytes())
-                            {
-                                error!(pty_id = %pty_id_write, error = %e, "Write failed");
+                            if let Err(e) = pty_manager.write_pty(&pty_id, data.as_bytes()) {
+                                error!(pty_id = %pty_id, error = %e, "Write failed");
                             }
                         }
                         ClientMessage::Resize { cols, rows } => {
-                            if let Err(e) =
-                                pty_manager_write.resize_pty(&pty_id_write, cols, rows)
-                            {
-                                error!(pty_id = %pty_id_write, error = %e, "Resize failed");
+                            if let Err(e) = pty_manager.resize_pty(&pty_id, cols, rows) {
+                                error!(pty_id = %pty_id, error = %e, "Resize failed");
                             }
                         }
                         ClientMessage::Kill => {
-                            if let Err(e) = pty_manager_write.kill_pty(&pty_id_write) {
-                                error!(pty_id = %pty_id_write, error = %e, "Kill failed");
+                            if let Err(e) = pty_manager.kill_pty(&pty_id) {
+                                error!(pty_id = %pty_id, error = %e, "Kill failed");
                             }
                         }
                     }
@@ -215,13 +175,17 @@ async fn run_pty_ws_loop(
                 _ => {}
             }
         }
-    });
+    })
+}
 
-    // Wait for PTY exit to send exit message
-    let sink_exit = Arc::clone(&sink);
-    let pty_id_exit = pty_id.clone();
-    let mut exit_task = tokio::spawn(async move {
-        // Wait for alive to become Some(exit_code)
+/// Spawn task that sends an Exit message to the WebSocket when the PTY process ends.
+fn spawn_exit_watcher(
+    sink: Arc<tokio::sync::Mutex<WsSink>>,
+    pty_id: String,
+    handle: Arc<PtyHandle>,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut alive_rx = handle.alive.subscribe();
         loop {
             if alive_rx.borrow_and_update().is_some() {
                 break;
@@ -233,69 +197,47 @@ async fn run_pty_ws_loop(
         let exit_code = alive_rx.borrow().unwrap_or(-1);
         let msg = ServerMessage::Exit { code: exit_code };
         let json = msg.to_json();
-        use futures::SinkExt;
-        let _ = sink_exit
-            .lock()
-            .await
-            .send(Message::Text(json.into()))
-            .await;
-        info!(pty_id = %pty_id_exit, "Sent exit message");
-    });
+        let _ = sink.lock().await.send(Message::Text(json.into())).await;
+        info!(pty_id = %pty_id, "Sent exit message");
+    })
+}
 
-    // Wait for either the WS write task or read task to finish
+/// Orchestrate PTY ↔ WebSocket bridging using the PTY's persistent broadcast channel.
+async fn run_pty_ws_loop(
+    ws_sink: WsSink,
+    ws_stream: WsStream,
+    pty_id: String,
+    handle: Arc<PtyHandle>,
+    pty_manager: super::service::PtyManager,
+) {
+    let data_rx = handle.data_tx.subscribe();
+    let sink = Arc::new(tokio::sync::Mutex::new(ws_sink));
+
+    let mut forward_task = spawn_pty_to_ws_forwarder(Arc::clone(&sink), data_rx);
+    let mut write_task = spawn_ws_to_pty_writer(ws_stream, pty_id.clone(), pty_manager);
+    let mut exit_task = spawn_exit_watcher(Arc::clone(&sink), pty_id.clone(), Arc::clone(&handle));
+
     tokio::select! {
         _ = &mut write_task => {
             info!(pty_id = %pty_id, "WebSocket closed, PTY kept alive");
         }
-        _ = &mut read_task => {
-            info!(pty_id = %pty_id, "PTY read ended, waiting for exit");
-            // Give exit_task time to send the exit code before aborting
-            let _ = tokio::time::timeout(
-                std::time::Duration::from_secs(5),
-                &mut exit_task,
-            ).await;
-        }
         _ = &mut forward_task => {
-            info!(pty_id = %pty_id, "PTY forward ended, waiting for exit");
-            let _ = tokio::time::timeout(
-                std::time::Duration::from_secs(5),
-                &mut exit_task,
-            ).await;
+            info!(pty_id = %pty_id, "PTY broadcast channel closed");
+            let _ = tokio::time::timeout(std::time::Duration::from_secs(5), &mut exit_task).await;
         }
         _ = &mut exit_task => {
             info!(pty_id = %pty_id, "PTY exited");
         }
     }
 
-    // Abort remaining tasks to avoid orphaned background work.
-    //
-    // Order matters: abort forward_task BEFORE read_task so that data_rx
-    // (owned by forward_task) is dropped first. Once data_rx is dropped, the
-    // next data_tx.blocking_send() call inside the spawn_blocking read thread
-    // returns Err, causing that thread to exit its loop.
-    //
-    // Note: read_task.abort() only drops the JoinHandle — it does NOT cancel
-    // the underlying blocking thread. The thread exits on the next
-    // blocking_send failure (triggered by dropping data_rx via forward_task
-    // abort). For truly idle PTYs the thread remains blocked in read() until
-    // the PTY produces output or the PTY fd is closed (e.g., PTY killed or
-    // process exits). This is acceptable because the PTY is kept alive for
-    // reconnection and the thread holds no significant exclusive resources.
     write_task.abort();
+    forward_task.abort();
     exit_task.abort();
-    forward_task.abort(); // drops data_rx → unblocks read thread on next send
-    read_task.abort();
 
-    // Send close frame so the client gets a clean WebSocket close
-    use futures::SinkExt;
     let _ = sink.lock().await.send(Message::Close(None)).await;
 }
 
-async fn send_msg(
-    sink: &mut futures::stream::SplitSink<WebSocket, Message>,
-    msg: &ServerMessage,
-) -> Result<(), ()> {
-    use futures::SinkExt;
+async fn send_msg(sink: &mut WsSink, msg: &ServerMessage) -> Result<(), ()> {
     sink.send(Message::Text(msg.to_json().into()))
         .await
         .map_err(|e| {

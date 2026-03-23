@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 
 use dashmap::DashMap;
 use portable_pty::{ChildKiller, CommandBuilder, MasterPty, PtySize, native_pty_system};
-use tokio::sync::watch;
+use tokio::sync::{broadcast, watch};
 use tracing::info;
 
 const SCROLLBACK_CAP: usize = 50 * 1024; // 50KB
@@ -42,11 +42,12 @@ impl ScrollbackBuffer {
 pub struct PtyHandle {
     pub master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
     pub master_writer: Arc<Mutex<Box<dyn Write + Send>>>,
-    pub master_reader: Arc<Mutex<Box<dyn Read + Send>>>,
     pub scrollback: Arc<Mutex<ScrollbackBuffer>>,
     pub alive: Arc<watch::Sender<Option<i32>>>,
     /// Killer handle — allows sending signals without holding the child lock.
     pub killer: Arc<Mutex<Box<dyn ChildKiller + Send + Sync>>>,
+    /// Broadcast channel for PTY output data. WebSocket connections subscribe to this.
+    pub data_tx: broadcast::Sender<String>,
 }
 
 /// Manages all PTY sessions. Stored in AppState.
@@ -79,11 +80,12 @@ impl PtyManager {
         let mut child = pair.slave.spawn_command(cmd)?;
         drop(pair.slave);
 
-        let reader = pair.master.try_clone_reader()?;
+        let mut reader = pair.master.try_clone_reader()?;
         let writer = pair.master.take_writer()?;
 
         let pty_id = uuid::Uuid::new_v4().to_string();
         let (alive_tx, _) = watch::channel::<Option<i32>>(None);
+        let (data_tx, _) = broadcast::channel::<String>(256);
 
         // Clone a killer handle before moving child into the blocking task.
         let killer = child.clone_killer();
@@ -91,15 +93,37 @@ impl PtyManager {
         let handle = Arc::new(PtyHandle {
             master: Arc::new(Mutex::new(pair.master)),
             master_writer: Arc::new(Mutex::new(writer)),
-            master_reader: Arc::new(Mutex::new(reader)),
             scrollback: Arc::new(Mutex::new(ScrollbackBuffer::new())),
             alive: Arc::new(alive_tx),
             killer: Arc::new(Mutex::new(killer)),
+            data_tx: data_tx.clone(),
         });
 
         self.terminals.insert(pty_id.clone(), Arc::clone(&handle));
 
-        // Move `child` directly into the blocking task — no Mutex needed.
+        // Persistent reader task: lives as long as the PTY.
+        // Reads PTY output, updates scrollback, and broadcasts to all WS subscribers.
+        let scrollback = Arc::clone(&handle.scrollback);
+        let data_tx_reader = data_tx;
+        tokio::task::spawn_blocking(move || {
+            let mut buf = [0u8; 4096];
+            loop {
+                let n = match reader.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => n,
+                    Err(_) => break,
+                };
+                let data = String::from_utf8_lossy(&buf[..n]).into_owned();
+                scrollback
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .append(&buf[..n]);
+                // send() only fails when there are no receivers — that's fine
+                let _ = data_tx_reader.send(data);
+            }
+        });
+
+        // Child watcher task: signals alive channel and schedules cleanup.
         let terminals = Arc::clone(&self.terminals);
         let alive_tx = Arc::clone(&handle.alive);
         let pid = pty_id.clone();
