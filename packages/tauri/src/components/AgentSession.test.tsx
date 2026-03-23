@@ -71,28 +71,6 @@ vi.mock("@/hooks/useImageAttachments", () => ({
   })),
 }));
 
-vi.mock("@/trpc", () => {
-  const React = require("react");
-  return {
-    trpc: {
-      createClient: vi.fn(() => ({})),
-      Provider: ({ children }: { children: unknown }) =>
-        React.createElement(React.Fragment, null, children),
-      workspace: {},
-      git: {
-        listFiles: {
-          useQuery: vi.fn(() => ({ data: undefined })),
-        },
-      },
-      features: {
-        resolveWorkingDir: {
-          useQuery: vi.fn(() => ({ data: undefined })),
-        },
-      },
-    },
-  };
-});
-
 function makeBlock(id: string, content: string): AgentBlockData {
   return { id, type: "text", content };
 }

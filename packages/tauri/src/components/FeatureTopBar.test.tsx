@@ -41,27 +41,6 @@ vi.mock("@/hooks/useFeatureTitle", () => ({
   useFeatureTitle: vi.fn(() => null),
 }));
 
-vi.mock("@/trpc", () => {
-  const React = require("react");
-  return {
-    trpc: {
-      createClient: vi.fn(() => ({})),
-      Provider: ({ children }: { children: unknown }) =>
-        React.createElement(React.Fragment, null, children),
-      workflow: {
-        startReviewFixer: {
-          useMutation: vi.fn(() => ({ mutate: vi.fn() })),
-        },
-      },
-      useContext: vi.fn(() => ({
-        sessions: {
-          getFeatureAgentState: { invalidate: vi.fn() },
-        },
-      })),
-    },
-  };
-});
-
 // Mock DiffViewerModal
 vi.mock("./diff/DiffViewerModal", () => ({
   DiffViewerModal: ({ open }: { open: boolean }) => {

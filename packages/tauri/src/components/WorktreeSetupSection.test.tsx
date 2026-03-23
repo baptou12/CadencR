@@ -1,7 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@/test-utils";
 import { WorktreeSetupSection } from "./WorktreeSetupSection";
-import React from "react";
 
 const { mockGetSettings, mockRetryMutate } = vi.hoisted(() => ({
   mockGetSettings: vi.fn<() => { data: unknown }>(() => ({ data: null })),
@@ -11,15 +10,6 @@ const { mockGetSettings, mockRetryMutate } = vi.hoisted(() => ({
 vi.mock("@/api/generated", () => ({
   useGetFeatureSettings: mockGetSettings,
   useRetryWorktreeSetup: vi.fn(() => ({ mutate: mockRetryMutate, isLoading: false })),
-}));
-
-vi.mock("@/trpc", () => ({
-  trpc: {
-    createClient: vi.fn(() => ({})),
-    Provider: ({ children }: { children: React.ReactNode }) =>
-      React.createElement(React.Fragment, null, children),
-    useUtils: vi.fn(() => ({})),
-  },
 }));
 
 function settingsArray(obj: Record<string, string>) {

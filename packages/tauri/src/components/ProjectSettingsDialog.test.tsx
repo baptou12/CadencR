@@ -1,7 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@/test-utils";
 import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
-import React from "react";
 
 const { mockGetSettings, mockSetSetting } = vi.hoisted(() => ({
   mockGetSettings: vi.fn(() => ({
@@ -18,39 +17,6 @@ const { mockGetSettings, mockSetSetting } = vi.hoisted(() => ({
 vi.mock("../api/generated", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../api/generated")>()),
   useListModels: vi.fn(() => ({ data: [{ id: "opus[1m]", label: "Opus (1M)" }] })),
-}));
-
-vi.mock("@/trpc", () => ({
-  trpc: {
-    createClient: vi.fn(() => ({})),
-    Provider: ({ children }: { children: React.ReactNode }) =>
-      React.createElement(React.Fragment, null, children),
-    useUtils: vi.fn(() => ({
-      projects: { getSettings: { invalidate: vi.fn() }, getModelSettings: { invalidate: vi.fn() } },
-      workspace: { getModelSettings: { invalidate: vi.fn() } },
-      features: { getModelSettings: { invalidate: vi.fn() } },
-      git: { listProjectWorktrees: { invalidate: vi.fn() } },
-    })),
-    projects: {
-      getSettings: { useQuery: mockGetSettings },
-      setSetting: { useMutation: vi.fn(() => ({ mutate: mockSetSetting })) },
-      getModelSettings: { useQuery: vi.fn(() => ({ data: {}, isLoading: false })) },
-      setModelSetting: { useMutation: vi.fn(() => ({ mutate: vi.fn() })) },
-    },
-    workspace: {
-      getModelSettings: { useQuery: vi.fn(() => ({ data: {}, isLoading: false })) },
-      setModelSetting: { useMutation: vi.fn(() => ({ mutate: vi.fn() })) },
-    },
-    features: {
-      getModelSettings: { useQuery: vi.fn(() => ({ data: {}, isLoading: false })) },
-      setModelSetting: { useMutation: vi.fn(() => ({ mutate: vi.fn() })) },
-    },
-    git: {
-      listProjectWorktrees: { useQuery: vi.fn(() => ({ data: [], isLoading: false })) },
-      deleteWorktree: { useMutation: vi.fn(() => ({ mutate: vi.fn(), isLoading: false })) },
-      removeOrphanWorktree: { useMutation: vi.fn(() => ({ mutate: vi.fn(), isLoading: false })) },
-    },
-  },
 }));
 
 describe("ProjectSettingsDialog", () => {

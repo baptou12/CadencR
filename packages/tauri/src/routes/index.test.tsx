@@ -35,18 +35,6 @@ vi.mock("../api/generated", () => ({
   useListFeatures: () => mocks.mockFeaturesListQuery(),
 }));
 
-vi.mock("../trpc", () => {
-  const React = require("react");
-  return {
-    trpc: {
-      createClient: vi.fn(() => ({})),
-      Provider: ({ children }: { children: unknown }) =>
-        React.createElement(React.Fragment, null, children),
-      useUtils: vi.fn(() => ({})),
-    },
-  };
-});
-
 import { Route } from "./index";
 
 function HomePage() {

@@ -61,22 +61,6 @@ vi.mock("@/hooks/useImageAttachments", () => ({
   })),
 }));
 
-vi.mock("@/trpc", () => {
-  const React = require("react");
-  return {
-    trpc: {
-      createClient: vi.fn(() => ({})),
-      Provider: ({ children }: { children: unknown }) =>
-        React.createElement(React.Fragment, null, children),
-      git: {
-        listFiles: {
-          useQuery: vi.fn(() => ({ data: undefined })),
-        },
-      },
-    },
-  };
-});
-
 describe("AgentPromptBar", () => {
   const onSend = vi.fn();
   const onStop = vi.fn();

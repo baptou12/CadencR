@@ -60,33 +60,6 @@ vi.mock("@/components/ui/resizable", () => ({
   ResizableHandle: () => <div data-testid="resize-handle" />,
 }));
 
-vi.mock("@/trpc", () => {
-  const React = require("react");
-  return {
-    trpc: {
-      createClient: vi.fn(() => ({})),
-      Provider: ({ children }: { children: unknown }) =>
-        React.createElement(React.Fragment, null, children),
-      useUtils: vi.fn(() => ({
-        features: {
-          listByProject: { invalidate: vi.fn(), fetch: vi.fn().mockResolvedValue([]) },
-          getById: { invalidate: vi.fn() },
-          getProgress: { invalidate: vi.fn() },
-        },
-      })),
-      agents: {
-        stopAll: { useMutation: mocks.mockStopAllMutation },
-      },
-      features: {
-        create: { useMutation: mocks.mockCreateFeatureMutation },
-        createSession: { useMutation: mocks.mockCreateSessionMutation },
-        delete: { useMutation: mocks.mockDeleteFeatureMutation },
-        updateStatus: { useMutation: mocks.mockUpdateStatusMutation },
-      },
-    },
-  };
-});
-
 import { Route } from "./__root";
 
 function RootLayout() {

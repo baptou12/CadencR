@@ -44,18 +44,6 @@ vi.mock("@/hooks/useWorkflowWebSocket", () => ({
   ),
 }));
 
-vi.mock("@/trpc", () => {
-  const React = require("react");
-  return {
-    trpc: {
-      createClient: vi.fn(() => ({})),
-      Provider: ({ children }: { children: unknown }) =>
-        React.createElement(React.Fragment, null, children),
-      useUtils: vi.fn(() => ({})),
-    },
-  };
-});
-
 describe("ProjectFeatures", () => {
   beforeEach(() => {
     resetMockIds();

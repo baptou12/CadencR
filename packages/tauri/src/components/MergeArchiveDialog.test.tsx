@@ -24,16 +24,6 @@ vi.mock("@/api/generated", () => ({
   useUpdateFeatureStatus: vi.fn(() => ({ mutate: vi.fn(), isLoading: false })),
 }));
 
-vi.mock("@/trpc", () => {
-  const React = require("react");
-  return {
-    trpc: {
-      createClient: vi.fn(() => ({})),
-      Provider: ({ children }: { children: React.ReactNode }) => React.createElement(React.Fragment, null, children),
-    },
-  };
-});
-
 describe("MergeArchiveDialog", () => {
   it("renders nothing when closed", () => {
     const { container } = render(

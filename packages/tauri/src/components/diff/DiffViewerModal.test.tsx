@@ -32,21 +32,6 @@ vi.mock("./DiffViewer", () => ({
   ),
 }));
 
-vi.mock("@/trpc", () => {
-  const React = require("react");
-  return {
-    trpc: {
-      createClient: vi.fn(() => ({})),
-      Provider: ({ children }: { children: unknown }) =>
-        React.createElement(React.Fragment, null, children),
-      agents: {
-        sendMessage: { useMutation: mocks.mockSendMessage },
-        submitAnswers: { useMutation: mocks.mockSubmitAnswers },
-      },
-    },
-  };
-});
-
 import { DiffViewerModal } from "./DiffViewerModal";
 
 describe("DiffViewerModal", () => {

@@ -5,8 +5,6 @@ import { ProjectTree } from "./ProjectTree";
 import { resetMockIds } from "@/test-fixtures";
 
 const mockNavigate = vi.fn();
-const _mockInvalidate = vi.fn();
-const mockSelectFolder = vi.fn();
 const mockCreateProject = vi.fn();
 const mockDeleteProject = vi.fn();
 const mockCreateFeature = vi.fn();
@@ -64,25 +62,7 @@ vi.mock("@/hooks/useWorkflowWebSocket", () => ({
   ),
 }));
 
-vi.mock("@/trpc", () => {
-  const React = require("react");
-  return {
-    trpc: {
-      createClient: vi.fn(() => ({})),
-      Provider: ({ children }: { children: unknown }) =>
-        React.createElement(React.Fragment, null, children),
-      projects: {
-        selectFolder: {
-          useMutation: vi.fn(() => ({
-            mutateAsync: mockSelectFolder,
-            isLoading: false,
-          })),
-        },
-      },
-      useUtils: vi.fn(() => ({})),
-    },
-  };
-});
+vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 
 // Mock ProjectSettingsDialog
 vi.mock("./ProjectSettingsDialog", () => ({
@@ -94,7 +74,6 @@ describe("ProjectTree", () => {
     resetMockIds();
     mockNavigate.mockClear();
     mockCreateFeature.mockClear();
-    mockSelectFolder.mockClear();
   });
 
   it("renders project list", () => {

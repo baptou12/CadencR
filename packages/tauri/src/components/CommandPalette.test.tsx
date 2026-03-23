@@ -9,57 +9,12 @@ vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => mockNavigate,
 }));
 
-const mockSelectFolder = vi.fn();
 const mockCreateProject = vi.fn();
 const mockCreateFeature = vi.fn();
 const mockCreateSession = vi.fn();
 const mockInvalidate = vi.fn();
 
-vi.mock("@/trpc", () => {
-  const React = require("react");
-  return {
-    trpc: {
-      createClient: vi.fn(() => ({})),
-      Provider: ({ children }: { children: unknown }) =>
-        React.createElement(React.Fragment, null, children),
-      projects: {
-        list: {
-          useQuery: vi.fn(() => ({
-            data: [
-              { id: 1, name: "Project Alpha", path: "/alpha" },
-              { id: 2, name: "Project Beta", path: "/beta" },
-            ],
-          })),
-        },
-        selectFolder: {
-          useMutation: vi.fn(() => ({ mutateAsync: mockSelectFolder })),
-        },
-        create: {
-          useMutation: vi.fn(() => ({ mutate: mockCreateProject })),
-        },
-      },
-      features: {
-        create: {
-          useMutation: vi.fn(() => ({ mutate: mockCreateFeature })),
-        },
-        createSession: {
-          useMutation: vi.fn(() => ({ mutate: mockCreateSession })),
-        },
-        listByProject: {
-          useQuery: vi.fn(() => ({ data: [] })),
-        },
-      },
-      useUtils: vi.fn(() => ({
-        projects: {
-          list: { invalidate: mockInvalidate },
-        },
-        features: {
-          listByProject: { invalidate: mockInvalidate },
-        },
-      })),
-    },
-  };
-});
+vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 
 describe("CommandPalette", () => {
   const onOpenChange = vi.fn();
@@ -68,7 +23,6 @@ describe("CommandPalette", () => {
     onOpenChange.mockClear();
     mockNavigate.mockClear();
     mockCreateFeature.mockClear();
-    mockSelectFolder.mockClear();
   });
 
   it("renders when open", () => {

@@ -3,16 +3,9 @@ import { render, screen } from "@/test-utils";
 import React from "react";
 
 const mocks = vi.hoisted(() => {
-  const mockGetQuery = vi.fn(() => ({ data: "1" }));
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const mockListQueryData = vi.fn(() => ({ data: [] as any[] })) as any;
-  const mockSetMutation = vi.fn(() => ({
-    mutate: vi.fn(),
-    mutateAsync: vi.fn(),
-    isLoading: false,
-  }));
-  const mockRefetch = vi.fn();
-  return { mockGetQuery, mockListQueryData, mockSetMutation, mockRefetch };
+  const mockGetWorkspaceSetting = vi.fn(() => ({ data: { value: "1" }, isSuccess: true }));
+  const mockSetWorkspaceSetting = vi.fn(() => ({ mutate: vi.fn(), isLoading: false }));
+  return { mockGetWorkspaceSetting, mockSetWorkspaceSetting };
 });
 
 vi.mock("@tanstack/react-router", () => ({
@@ -31,38 +24,12 @@ vi.mock("@tanstack/react-router", () => ({
 
 vi.mock("react-hotkeys-hook", () => ({ useHotkeys: vi.fn() }));
 
-vi.mock("../trpc", () => {
-  const React = require("react");
-  return {
-    trpc: {
-      createClient: vi.fn(() => ({})),
-      Provider: ({ children }: { children: unknown }) =>
-        React.createElement(React.Fragment, null, children),
-      useContext: vi.fn(() => ({
-        workspace: { get: { invalidate: vi.fn() } },
-      })),
-      useUtils: vi.fn(() => ({
-        workspace: { get: { invalidate: vi.fn() } },
-      })),
-      workspace: {
-        get: { useQuery: mocks.mockGetQuery },
-        list: {
-          useQuery: () => ({
-            data: mocks.mockListQueryData().data,
-            refetch: mocks.mockRefetch,
-          }),
-        },
-        set: { useMutation: mocks.mockSetMutation },
-      },
-      features: {
-        getById: { useQuery: vi.fn(() => ({ data: undefined })) },
-      },
-      projects: {
-        list: { useQuery: vi.fn(() => ({ data: [] })) },
-      },
-    },
-  };
-});
+vi.mock("../api/generated", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../api/generated")>()),
+  useGetWorkspaceSetting: mocks.mockGetWorkspaceSetting,
+  useSetWorkspaceSetting: mocks.mockSetWorkspaceSetting,
+  getGetWorkspaceSettingQueryKey: vi.fn((key: string) => ["workspace", "setting", key]),
+}));
 
 vi.mock("../components/ModelSelector", () => ({
   ModelSelector: ({ level }: { level: string }) => (
@@ -82,8 +49,7 @@ function SettingsPage() {
 
 describe("SettingsPage route", () => {
   beforeEach(() => {
-    mocks.mockGetQuery.mockReturnValue({ data: "1" });
-    mocks.mockListQueryData.mockReturnValue({ data: [] });
+    mocks.mockGetWorkspaceSetting.mockReturnValue({ data: { value: "1" }, isSuccess: true });
   });
 
   it("renders the settings heading", () => {

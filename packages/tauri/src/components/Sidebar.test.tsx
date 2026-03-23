@@ -45,23 +45,6 @@ vi.mock("../api/generated", () => ({
   useGetFeatureEmpty: vi.fn(() => ({ data: { empty: false } })),
 }));
 
-vi.mock("@/trpc", () => {
-  const React = require("react");
-  return {
-    trpc: {
-      createClient: vi.fn(() => ({})),
-      Provider: ({ children }: { children: unknown }) =>
-        React.createElement(React.Fragment, null, children),
-      projects: {
-        selectFolder: {
-          useMutation: vi.fn(() => ({ mutateAsync: vi.fn(), isLoading: false })),
-        },
-      },
-      useUtils: vi.fn(() => ({})),
-    },
-  };
-});
-
 // Mock ProjectSettingsDialog
 vi.mock("./ProjectSettingsDialog", () => ({
   ProjectSettingsDialog: () => null,

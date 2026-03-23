@@ -100,27 +100,6 @@ vi.mock("@/api/generated", () => ({
   useGetFeature: mocks.mockGetByIdQuery,
 }));
 
-vi.mock("@/trpc", () => {
-  const React = require("react");
-  return {
-    trpc: {
-      createClient: vi.fn(() => ({})),
-      Provider: ({ children }: { children: unknown }) =>
-        React.createElement(React.Fragment, null, children),
-      useUtils: vi.fn(() => ({})),
-      workflow: {
-        startSession: { useMutation: vi.fn(() => ({ mutateAsync: vi.fn(), isLoading: false })) },
-      },
-      agents: {
-        sendMessage: { useMutation: vi.fn(() => ({ mutateAsync: vi.fn() })) },
-        interrupt: { useMutation: vi.fn(() => ({ mutateAsync: vi.fn() })) },
-        resume: { useMutation: vi.fn(() => ({ mutateAsync: vi.fn() })) },
-        clearSession: { useMutation: vi.fn(() => ({ mutateAsync: vi.fn() })) },
-      },
-    },
-  };
-});
-
 import { Route } from "./projects/$projectId/features/$featureId";
 
 function FeaturePage() {
