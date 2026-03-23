@@ -63,6 +63,8 @@ export interface QueueItem {
 
 export interface AgentSessionState {
   sessionId: number;
+  /** The agent type string (e.g. "session", "risk", "review-fixer"). */
+  agentType: string;
   blocks: AgentBlockData[];
   streamingState: StreamingState;
   status: AgentStatus;
@@ -200,6 +202,8 @@ export type AgentSlot =
   | { type: "session" }
   | { type: "refine" }
   | { type: "review_fixer" }
+  | { type: "risk" }
+  | { type: "retro" }
   | { type: "queue_item"; id: number };
 
 /** Convert an AgentSlot to a stable string key for use as Map keys. */
@@ -215,6 +219,8 @@ export function agentSlotToLegacyId(slot: AgentSlot): number {
     case "session": return -3;
     case "refine": return -4;
     case "review_fixer": return -5;
+    case "risk": return -6;
+    case "retro": return -7;
     case "queue_item": return slot.id;
   }
 }
@@ -227,6 +233,8 @@ function legacyIdToSlot(id: number): AgentSlot {
     case -3: return { type: "session" };
     case -4: return { type: "refine" };
     case -5: return { type: "review_fixer" };
+    case -6: return { type: "risk" };
+    case -7: return { type: "retro" };
     default: return { type: "queue_item", id };
   }
 }
@@ -253,6 +261,8 @@ export const AGENT_TYPE_SYNTHETIC_KEYS: Record<string, number> = {
   refine: -4,
   "review-fixer": -5,
   review_fixer: -5,
+  risk: -6,
+  retro: -7,
 };
 
 /** Shorthand constants for the most-used synthetic keys. */
@@ -270,9 +280,10 @@ function getWsUrl(): string {
   return httpUrl.replace(/^http/, "ws") + "/ws";
 }
 
-function createAgentSession(sessionId: number): AgentSessionState {
+function createAgentSession(sessionId: number, agentType = "execute"): AgentSessionState {
   return {
     sessionId,
+    agentType,
     blocks: [],
     streamingState: createStreamingState(),
     status: "running",
@@ -287,6 +298,61 @@ function createAgentSession(sessionId: number): AgentSessionState {
     contextWindow: 200_000,
     hasFileChanges: false,
   };
+}
+
+/** Compute a unique activeAgents map key from a DB session ID. */
+function sessionDbKey(sessionId: number): number {
+  return -1000 - sessionId;
+}
+
+const AGENT_TYPE_TO_SLOT: Record<string, AgentSlot["type"]> = {
+  session: "session",
+  risk: "risk",
+  retro: "retro",
+  "review-fixer": "review_fixer",
+  review_fixer: "review_fixer",
+};
+
+/** Converts a dynamic activeAgents key (≤ -1000) back to an AgentSlot by looking up the stored agent type. */
+function itemIdToSlot(
+  state: Pick<WorkflowState, "activeAgents" | "planAgent" | "prdAgent">,
+  itemId: number,
+): AgentSlot {
+  if (itemId <= -1000) {
+    const agent = state.activeAgents.get(itemId);
+    const slotType = agent && AGENT_TYPE_TO_SLOT[agent.agentType];
+    if (slotType) return { type: slotType } as AgentSlot;
+  }
+  return legacyIdToSlot(itemId);
+}
+
+/** Agent types that can have multiple concurrent instances (not singleton slots). */
+const MULTI_INSTANCE_TYPES = new Set(["session", "risk", "retro", "review-fixer", "review_fixer"]);
+
+/** Find the activeAgents map key for a multi-instance slot, preferring running/paused agents. */
+function resolveActiveKey(
+  state: Pick<WorkflowState, "activeAgents">,
+  slot: AgentSlot,
+): number | null {
+  if (slot.type === "queue_item") return slot.id;
+  if (!MULTI_INSTANCE_TYPES.has(slot.type)) {
+    return AGENT_TYPE_SYNTHETIC_KEYS[slot.type] ?? null;
+  }
+  let fallback: number | null = null;
+  for (const [key, agent] of state.activeAgents) {
+    if (agent.agentType === slot.type) {
+      if (agent.status === "running" || agent.status === "paused" || agent.status === "waiting") return key;
+      if (fallback === null) fallback = key;
+    }
+  }
+  return fallback;
+}
+
+/** Resolve the map key for a multi-instance slot when session_id is available (e.g. agent_paused, agent_running). */
+function resolveMultiInstanceKey(slot: AgentSlot, sessionId: number): number {
+  return MULTI_INSTANCE_TYPES.has(slot.type)
+    ? sessionDbKey(sessionId)
+    : agentSlotToLegacyId(slot);
 }
 
 const FILE_CHANGE_TOOLS = new Set(["Write", "Edit", "NotebookEdit"]);
@@ -323,6 +389,18 @@ export function resolveAgentByItemId(
   if (itemId === PLAN_KEY) return state.planAgent;
   if (itemId === PRD_KEY) return state.prdAgent;
   return state.activeAgents.get(itemId) ?? null;
+}
+
+/** Resolve the activeAgents map key for an incoming WS event's slot. */
+function resolveItemId(
+  state: Pick<WorkflowState, "activeAgents">,
+  slot: AgentSlot,
+): number {
+  if (slot.type === "queue_item") return slot.id;
+  if (MULTI_INSTANCE_TYPES.has(slot.type)) {
+    return resolveActiveKey(state, slot) ?? agentSlotToLegacyId(slot);
+  }
+  return agentSlotToLegacyId(slot);
 }
 
 /**
@@ -470,8 +548,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
       }
       case "item_completed": {
         const slot = parseAgentSlot(payload);
-        const itemId = agentSlotToLegacyId(slot);
         set(state => {
+          const itemId = resolveItemId(state, slot);
           const queue = state.queue.map(q =>
             q.id === itemId ? { ...q, status: "completed" as const } : q,
           );
@@ -482,9 +560,9 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
       }
       case "item_error": {
         const slot = parseAgentSlot(payload);
-        const itemId = agentSlotToLegacyId(slot);
         const error = payload.error as string;
         set(state => {
+          const itemId = resolveItemId(state, slot);
           const queue = state.queue.map(q =>
             q.id === itemId ? { ...q, status: "error" as const, result: error } : q,
           );
@@ -506,8 +584,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
       }
       case "interrupted": {
         const slot = parseAgentSlot(payload);
-        const itemId = agentSlotToLegacyId(slot);
         set(state => {
+          const itemId = resolveItemId(state, slot);
           const agentPatch = patchAgentByItemId(state, itemId, { status: "paused" });
           // Also update queue item status for positive IDs
           if (itemId > 0) {
@@ -607,12 +685,16 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
       }
       case "session.started": {
         const sessionId = payload.session_id as number;
+        const key = sessionDbKey(sessionId);
         set(state => {
           const activeAgents = new Map(state.activeAgents);
-          const existing = activeAgents.get(SESSION_KEY);
-          // Preserve blocks (e.g. user message) that arrived before this ack
-          const session = { ...createAgentSession(sessionId), blocks: existing?.blocks ?? [] };
-          activeAgents.set(SESSION_KEY, session);
+          // Check if there's a placeholder agent at the old SESSION_KEY and migrate it
+          const placeholder = activeAgents.get(SESSION_KEY);
+          if (placeholder) {
+            activeAgents.delete(SESSION_KEY);
+          }
+          const session = { ...createAgentSession(sessionId, "session"), blocks: placeholder?.blocks ?? [] };
+          activeAgents.set(key, session);
           return { activeAgents };
         });
         break;
@@ -632,21 +714,24 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
       }
       case "agent_paused": {
         const pausedSlot = parseAgentSlot(payload);
-        const pausedItemId = agentSlotToLegacyId(pausedSlot);
         const pausedSessionId = payload.session_id as number;
         const pausedClaudeSessionId = (payload.claude_session_id as string) || null;
-        set(state => upsertAgentByItemId(state, pausedItemId, pausedSessionId, {
-          sessionId: pausedSessionId, status: "paused", claudeSessionId: pausedClaudeSessionId,
-        }));
+        set(state => {
+          const pausedItemId = resolveMultiInstanceKey(pausedSlot, pausedSessionId);
+          return upsertAgentByItemId(state, pausedItemId, pausedSessionId, {
+            sessionId: pausedSessionId, status: "paused", claudeSessionId: pausedClaudeSessionId,
+            agentType: pausedSlot.type,
+          });
+        });
         break;
       }
       case "agent_running": {
         const runSlot = parseAgentSlot(payload);
-        const runItemId = agentSlotToLegacyId(runSlot);
         const runSessionId = payload.session_id as number;
         set(state => {
+          const runItemId = resolveMultiInstanceKey(runSlot, runSessionId);
           const agentPatch = upsertAgentByItemId(state, runItemId, runSessionId, {
-            sessionId: runSessionId, status: "running",
+            sessionId: runSessionId, status: "running", agentType: runSlot.type,
           });
           const queue = state.queue.map(q =>
             q.id === runItemId ? { ...q, status: "running" as const, agent_session_id: runSessionId } : q,
@@ -658,17 +743,18 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
       case "agent_session_id": {
         // Received when the backend captures the Claude Code session ID during streaming
         const sidSlot = parseAgentSlot(payload);
-        const sidItemId = agentSlotToLegacyId(sidSlot);
         const ccSessionId = payload.claude_session_id as string;
         if (!ccSessionId) break;
-        set(state => patchAgentByItemId(state, sidItemId, { claudeSessionId: ccSessionId }));
+        set(state => {
+          const sidItemId = resolveItemId(state, sidSlot);
+          return patchAgentByItemId(state, sidItemId, { claudeSessionId: ccSessionId });
+        });
         break;
       }
       case "agent_user_message": {
         // Backend sends the initial user prompt so it's visible in the UI.
         // This may arrive before the "started" ack, so we ensure the agent exists.
         const umSlot = parseAgentSlot(payload);
-        const umItemId = agentSlotToLegacyId(umSlot);
         const umContent = payload.content as string;
         if (!umContent) break;
         const userBlock = {
@@ -679,8 +765,9 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
           createdAt: new Date().toISOString(),
         };
         set(state => {
+          const umItemId = resolveItemId(state, umSlot);
           const existing = resolveAgentByItemId(state, umItemId);
-          const agent = existing ?? createAgentSession(0);
+          const agent = existing ?? createAgentSession(0, umSlot.type);
           const updated = { ...agent, blocks: [...agent.blocks, userBlock] };
 
           // Route to correct slot
@@ -694,18 +781,17 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
       }
       case "agent_stream": {
         const streamSlot = parseAgentSlot(payload);
-        const itemId = agentSlotToLegacyId(streamSlot);
         // The engine sends SDK messages in a `blocks` array
         const blocks = (payload.blocks ?? []) as Record<string, unknown>[];
         const singleMsg = payload.message as Record<string, unknown> | undefined;
         const msgs = blocks.length > 0 ? blocks : singleMsg ? [singleMsg] : [];
         if (msgs.length === 0) break;
 
-        // Route plan/PRD agent streams (synthetic IDs) to planAgent/prdAgent
-        if (itemId === PLAN_KEY || itemId === PRD_KEY) {
-          const key = itemId === PLAN_KEY ? "planAgent" : "prdAgent";
+        // Route plan/PRD agent streams to planAgent/prdAgent
+        if (streamSlot.type === "plan" || streamSlot.type === "prd" || streamSlot.type === "refine") {
+          const key = (streamSlot.type === "prd" ? "prdAgent" : "planAgent") as "planAgent" | "prdAgent";
           set(state => {
-            let agent = state[key] ?? createAgentSession(0);
+            let agent = state[key] ?? createAgentSession(0, streamSlot.type);
             for (const msg of msgs) {
               agent = processAgentStream(agent, msg);
             }
@@ -715,6 +801,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         }
 
         set(state => {
+          const itemId = resolveItemId(state, streamSlot);
           const agent = state.activeAgents.get(itemId);
           if (!agent) return state;
           let updated = agent;
@@ -730,34 +817,35 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
       }
       case "usage_update": {
         const usageSlot = parseAgentSlot(payload);
-        const usageItemId = agentSlotToLegacyId(usageSlot);
         const inputTokens = (payload.input_tokens ?? 0) as number;
         const outputTokens = (payload.output_tokens ?? 0) as number;
         const contextWindow = (payload.context_window ?? 200_000) as number;
-        set(state => patchAgentByItemId(state, usageItemId, {
-          inputTokens,
-          outputTokens,
-          contextWindow,
-        }));
+        set(state => {
+          const usageItemId = resolveItemId(state, usageSlot);
+          return patchAgentByItemId(state, usageItemId, {
+            inputTokens,
+            outputTokens,
+            contextWindow,
+          });
+        });
         break;
       }
       case "permission.request": {
         const permSlot = parseAgentSlot(payload);
-        const itemId = agentSlotToLegacyId(permSlot);
         const toolName = payload.tool_name as string;
         const toolInput = (payload.tool_input ?? payload.input ?? {}) as Record<string, unknown>;
         const requestId = (payload.request_id ?? "") as string;
 
         // AskUserQuestion: parse as questions (same as standalone session)
         if (toolName === "AskUserQuestion") {
-          const questions = parseAskUserQuestions(toolInput);
           const questionPatch = {
-            pendingQuestions: questions,
+            pendingQuestions: parseAskUserQuestions(toolInput),
             pendingQuestionToolInput: toolInput,
             pendingQuestionRequestId: requestId,
             pendingPermission: null,
           };
           set(state => {
+            const itemId = resolveItemId(state, permSlot);
             if (itemId === PLAN_KEY && state.planAgent) {
               return { planAgent: { ...state.planAgent, ...questionPatch } };
             }
@@ -781,6 +869,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
           requestId,
         };
         set(state => {
+          const itemId = resolveItemId(state, permSlot);
           // Handle plan/PRD agent permissions (synthetic IDs)
           if (itemId === PLAN_KEY && state.planAgent) {
             return { planAgent: { ...state.planAgent, pendingPermission: permission } };
@@ -806,7 +895,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         const sessionId = payload.session_id as number;
         set(state => {
           const activeAgents = new Map(state.activeAgents);
-          activeAgents.set(REVIEW_FIXER_KEY, createAgentSession(sessionId));
+          activeAgents.set(sessionDbKey(sessionId), createAgentSession(sessionId, "review-fixer"));
           return { activeAgents };
         });
         break;
@@ -940,8 +1029,10 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
       let prdAgent: AgentSessionState | null = state.prdAgent;
 
       for (const session of snapshot.agent_sessions) {
+        const agentType = session.agent_type ?? "execute";
         const agentState: AgentSessionState = {
           sessionId: session.id,
+          agentType,
           blocks: [],
           streamingState: createStreamingState(),
           status: (session.status as AgentSessionState["status"]) ?? "idle",
@@ -957,20 +1048,20 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
           hasFileChanges: false,
         };
 
-        // Use queue_item_id when available; otherwise map agent_type to its
-        // synthetic key (same IDs the WS protocol uses at runtime).
-        const syntheticKey = session.queue_item_id
-          ?? AGENT_TYPE_SYNTHETIC_KEYS[session.agent_type ?? ""]
-          ?? (-1000 - session.id); // fallback avoids collision with -1..-5
-
-        // Plan/prd go into dedicated state slots; everything else into activeAgents
-        if (syntheticKey === PLAN_KEY && !planAgent) {
-          planAgent = agentState;
-        } else if (syntheticKey === PRD_KEY && !prdAgent) {
-          prdAgent = agentState;
-        } else {
-          activeAgents.set(syntheticKey, agentState);
+        // Plan/prd go into dedicated state slots
+        if (agentType === "plan" || agentType === "refine") {
+          if (!planAgent) planAgent = agentState;
+          continue;
         }
+        if (agentType === "prd") {
+          if (!prdAgent) prdAgent = agentState;
+          continue;
+        }
+
+        // Multi-instance types get unique keys; queue items use their queue ID
+        const key = session.queue_item_id
+          ?? (MULTI_INSTANCE_TYPES.has(agentType) ? sessionDbKey(session.id) : (AGENT_TYPE_SYNTHETIC_KEYS[agentType] ?? sessionDbKey(session.id)));
+        activeAgents.set(key, agentState);
       }
 
       const patch: Partial<WorkflowState> = {
@@ -1071,7 +1162,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     },
 
     respondToPermission(itemId, requestId, decision) {
-      send("permission.respond", { agent_slot: legacyIdToSlot(itemId), request_id: requestId, decision });
+      send("permission.respond", { agent_slot: itemIdToSlot(get(), itemId), request_id: requestId, decision });
       // Clear pendingPermission so the prompt dismisses immediately
       set(state => patchAgentByItemId(state, itemId, { pendingPermission: null }));
     },
@@ -1091,7 +1182,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         answers: { "0": response },
       };
       send("permission.respond", {
-        agent_slot: legacyIdToSlot(itemId),
+        agent_slot: itemIdToSlot(get(), itemId),
         request_id: agent.pendingQuestionRequestId,
         decision: "allow_once",
         updated_input: updatedInput,
@@ -1146,7 +1237,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         }
         return agentPatch;
       });
-      send("prompt.send", { agent_slot: legacyIdToSlot(itemId), text, images });
+      send("prompt.send", { agent_slot: itemIdToSlot(get(), itemId), text, images });
     },
 
     interruptItem(itemId) {
@@ -1161,7 +1252,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         }
         return agentPatch;
       });
-      send("interrupt", { agent_slot: legacyIdToSlot(itemId) });
+      send("interrupt", { agent_slot: itemIdToSlot(get(), itemId) });
     },
 
     resumeItem(itemId) {
@@ -1177,7 +1268,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         return agentPatch;
       });
       // Send empty prompt to trigger resume on the backend
-      send("prompt.send", { agent_slot: legacyIdToSlot(itemId), text: "", images: null });
+      send("prompt.send", { agent_slot: itemIdToSlot(get(), itemId), text: "", images: null });
     },
 
     startSession(prompt, images) {
@@ -1201,7 +1292,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     },
 
     markDone(itemId) {
-      send("mark_done", { agent_slot: legacyIdToSlot(itemId) });
+      send("mark_done", { agent_slot: itemIdToSlot(get(), itemId) });
     },
 
     removeAgent(itemId) {

@@ -117,6 +117,7 @@ function dispatch(ws: MockWebSocket, data: Record<string, unknown>) {
 function makeAgentSession(overrides?: Record<string, unknown>) {
   return {
     sessionId: 0,
+    agentType: "execute",
     blocks: [] as unknown[],
     status: "running" as const,
     streamingState: {
@@ -485,24 +486,22 @@ describe("useWorkflowStore", () => {
       expect(activeAgents.size).toBe(0);
     });
 
-    it("routes session agent_type to activeAgents with SESSION_KEY", () => {
+    it("routes session agent_type to activeAgents with unique key", () => {
       useWorkflowStore.getState().hydrateFromSnapshot(
         makeSnapshot({ agent_sessions: [makeSessionSummary({ id: 30, agent_type: "session" })] }),
       );
 
-      const sessionKey = AGENT_TYPE_SYNTHETIC_KEYS.session;
-      expect(useWorkflowStore.getState().activeAgents.has(sessionKey)).toBe(true);
-      expect(useWorkflowStore.getState().activeAgents.get(sessionKey)!.sessionId).toBe(30);
+      expect(useWorkflowStore.getState().activeAgents.has(-1030)).toBe(true);
+      expect(useWorkflowStore.getState().activeAgents.get(-1030)!.sessionId).toBe(30);
     });
 
-    it("routes review-fixer agent_type to activeAgents with REVIEW_FIXER_KEY", () => {
+    it("routes review-fixer agent_type to activeAgents with unique key", () => {
       useWorkflowStore.getState().hydrateFromSnapshot(
         makeSnapshot({ agent_sessions: [makeSessionSummary({ id: 40, agent_type: "review-fixer" })] }),
       );
 
-      const key = AGENT_TYPE_SYNTHETIC_KEYS["review-fixer"];
-      expect(useWorkflowStore.getState().activeAgents.has(key)).toBe(true);
-      expect(useWorkflowStore.getState().activeAgents.get(key)!.sessionId).toBe(40);
+      expect(useWorkflowStore.getState().activeAgents.has(-1040)).toBe(true);
+      expect(useWorkflowStore.getState().activeAgents.get(-1040)!.sessionId).toBe(40);
     });
 
     it("routes sessions with queue_item_id to activeAgents by that id", () => {
@@ -526,19 +525,22 @@ describe("useWorkflowStore", () => {
       expect(useWorkflowStore.getState().activeAgents.get(-1007)!.sessionId).toBe(7);
     });
 
-    it("fallback key does not collide with synthetic keys", () => {
+    it("multiple session agents each get unique keys", () => {
       useWorkflowStore.getState().hydrateFromSnapshot(
         makeSnapshot({
           agent_sessions: [
             makeSessionSummary({ id: 60, agent_type: "session" }),
+            makeSessionSummary({ id: 61, agent_type: "session" }),
             makeSessionSummary({ id: 3, agent_type: "some_custom" }),
           ],
         }),
       );
 
       const { activeAgents } = useWorkflowStore.getState();
-      expect(activeAgents.has(AGENT_TYPE_SYNTHETIC_KEYS.session)).toBe(true);
-      expect(activeAgents.get(AGENT_TYPE_SYNTHETIC_KEYS.session)!.sessionId).toBe(60);
+      expect(activeAgents.has(-1060)).toBe(true);
+      expect(activeAgents.get(-1060)!.sessionId).toBe(60);
+      expect(activeAgents.has(-1061)).toBe(true);
+      expect(activeAgents.get(-1061)!.sessionId).toBe(61);
       expect(activeAgents.has(-1003)).toBe(true);
       expect(activeAgents.get(-1003)!.sessionId).toBe(3);
     });
@@ -597,7 +599,7 @@ describe("useWorkflowStore", () => {
       const state = useWorkflowStore.getState();
       expect(state.planAgent).not.toBeNull();
       expect(state.prdAgent).not.toBeNull();
-      expect(state.activeAgents.has(AGENT_TYPE_SYNTHETIC_KEYS.session)).toBe(true);
+      expect(state.activeAgents.has(-1003)).toBe(true); // session id=3 → key=-1003
       expect(state.activeAgents.has(10)).toBe(true);
     });
 
@@ -921,14 +923,14 @@ describe("useWorkflowStore", () => {
         action: "agent_paused",
         payload: {
           feature_id: 1,
-          queue_item_id: AGENT_TYPE_SYNTHETIC_KEYS.session,
+          agent_slot: { type: "session" },
           session_id: 55,
           agent_type: "session",
           claude_session_id: "cc-session-id",
         },
       });
 
-      const agent = useWorkflowStore.getState().activeAgents.get(AGENT_TYPE_SYNTHETIC_KEYS.session);
+      const agent = useWorkflowStore.getState().activeAgents.get(-1055);
       expect(agent).toBeDefined();
       expect(agent!.status).toBe("paused");
       expect(agent!.claudeSessionId).toBe("cc-session-id");
@@ -1637,9 +1639,9 @@ describe("useWorkflowStore", () => {
   // -------------------------------------------------------------------------
 
   describe("block preservation on started events", () => {
-    it("session.started preserves existing blocks", () => {
+    it("session.started migrates placeholder blocks to unique key", () => {
       const ws = connectStore();
-      // Simulate user message arriving before session.started
+      // Simulate user message arriving before session.started (at SESSION_KEY placeholder)
       const agents = new Map();
       agents.set(-3, makeAgentSession({
         blocks: [{ type: "user_message", content: "Hello" }],
@@ -1652,7 +1654,9 @@ describe("useWorkflowStore", () => {
         payload: { feature_id: 1, session_id: 77 },
       });
 
-      const agent = useWorkflowStore.getState().activeAgents.get(-3);
+      // Agent should be at unique key, not at SESSION_KEY
+      expect(useWorkflowStore.getState().activeAgents.has(-3)).toBe(false);
+      const agent = useWorkflowStore.getState().activeAgents.get(-1077);
       expect(agent).toBeDefined();
       expect(agent!.sessionId).toBe(77);
       expect(agent!.blocks).toHaveLength(1);

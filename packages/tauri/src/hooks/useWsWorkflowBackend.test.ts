@@ -65,6 +65,7 @@ describe("findQueueItemId", () => {
 function makeAgentState(overrides?: Partial<AgentSessionState>): AgentSessionState {
   return {
     sessionId: 1,
+    agentType: "execute",
     blocks: [],
     streamingState: { activeTextIndex: null, activeThinkingIndex: null, toolCalls: new Map() } as never,
     status: "running",
@@ -188,5 +189,18 @@ describe("buildSessionEntries", () => {
 
     expect(sessions).toHaveLength(1);
     expect(sessions[0].hasFileChanges).toBe(false);
+  });
+
+  it("renders multiple session agents with unique negative keys using agentType from state", () => {
+    const agents = new Map<number, AgentSessionState>([
+      [-1050, makeAgentState({ sessionId: 50, agentType: "session", status: "completed" })],
+      [-1051, makeAgentState({ sessionId: 51, agentType: "session", status: "paused" })],
+      [-1052, makeAgentState({ sessionId: 52, agentType: "risk", status: "completed" })],
+    ]);
+    const { sessions } = buildSessionEntries([], agents, null, null, "building");
+
+    expect(sessions).toHaveLength(3);
+    expect(sessions.map(s => s.agentType)).toEqual(["session", "session", "risk"]);
+    expect(sessions.map(s => s.sessionDbId)).toEqual([50, 51, 52]);
   });
 });

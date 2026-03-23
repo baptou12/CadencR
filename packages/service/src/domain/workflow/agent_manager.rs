@@ -760,7 +760,7 @@ impl AgentManager {
             let _ = q.interrupt().await;
         }
 
-        self.active_items.remove(&slot);
+        let removed = self.active_items.remove(&slot);
         self.queries.remove(&slot);
 
         if let AgentSlot::QueueItem(item_id) = &slot {
@@ -768,6 +768,17 @@ impl AgentManager {
                 warn!(slot = %slot, error = %e, "failed to mark item completed on mark_done");
             }
             self.send_item_update(*item_id).await;
+        }
+
+        // Mark the agent_sessions row as completed for all slot types
+        if let Some((_, db_session_id)) = removed {
+            if let Err(e) = sqlx::query("UPDATE agent_sessions SET status = 'completed', ended_at = datetime('now') WHERE id = ?")
+                .bind(db_session_id)
+                .execute(&self.write_pool)
+                .await
+            {
+                warn!(slot = %slot, error = %e, "failed to mark agent_session completed on mark_done");
+            }
         }
 
         let envelope = WsEnvelope::new(

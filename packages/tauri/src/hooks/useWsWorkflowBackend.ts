@@ -169,13 +169,9 @@ export function buildSessionEntries(
   }
 
   // Add agents not tied to queue items (negative synthetic keys; plan/prd handled above)
-  const planKey = AGENT_TYPE_SYNTHETIC_KEYS.plan;
-  const prdKey = AGENT_TYPE_SYNTHETIC_KEYS.prd;
-  const reviewFixerKey = AGENT_TYPE_SYNTHETIC_KEYS["review-fixer"];
   for (const [key, agent] of activeAgents) {
-    if (key < 0 && key !== planKey && key !== prdKey) {
-      const agentType: AgentType = key === reviewFixerKey ? "review-fixer" : "session";
-      sessions.push(agentStateToFeatureSession(agent, agentType));
+    if (key < 0) {
+      sessions.push(agentStateToFeatureSession(agent, agent.agentType as AgentType));
     }
   }
 
@@ -323,10 +319,10 @@ export function useWsWorkflowBackend(
       canStartPlan: store.workflowStatus === "idle",
       canStartPrd: store.workflowStatus === "idle",
       canStartBuild: store.workflowStatus === "ready_to_build",
-      canStartRisk: store.workflowStatus === "ready_to_build" || store.workflowStatus === "building" || store.workflowStatus === "paused" || store.workflowStatus === "completed",
+      canStartRisk: store.workflowStatus === "ready_to_build" || store.workflowStatus === "building" || store.workflowStatus === "paused" || store.workflowStatus === "completed" || store.workflowStatus === "error",
       canStartReview: false,
-      canStartWorkflowSession: store.workflowStatus === "ready_to_build" || store.workflowStatus === "building" || store.workflowStatus === "paused" || store.workflowStatus === "completed",
-      canStartRefine: store.workflowStatus === "ready_to_build" || store.workflowStatus === "building" || store.workflowStatus === "paused" || store.workflowStatus === "completed",
+      canStartWorkflowSession: store.workflowStatus === "ready_to_build" || store.workflowStatus === "building" || store.workflowStatus === "paused" || store.workflowStatus === "completed" || store.workflowStatus === "error",
+      canStartRefine: store.workflowStatus === "ready_to_build" || store.workflowStatus === "building" || store.workflowStatus === "paused" || store.workflowStatus === "completed" || store.workflowStatus === "error",
       canStartRetro: store.workflowStatus === "completed",
     },
 
