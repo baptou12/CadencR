@@ -14,13 +14,5 @@ declare module "electron-squirrel-startup" {
 interface Window {
   api: {
     rustBackendUrl: string;
-    onAgentEvent: (callback: (event: unknown) => void) => (...args: unknown[]) => void;
-    offAgentEvent: (listener?: (...args: unknown[]) => void) => void;
-    onAskUserQuestion: (callback: (data: unknown) => void) => (...args: unknown[]) => void;
-    offAskUserQuestion: (listener?: (...args: unknown[]) => void) => void;
-    onDbUpdated: (callback: (data: { entity: string; featureId: number }) => void) => (...args: unknown[]) => void;
-    offDbUpdated: (listener?: (...args: unknown[]) => void) => void;
-    onBackgroundTasks: (callback: (data: unknown) => void) => (...args: unknown[]) => void;
-    offBackgroundTasks: (listener?: (...args: unknown[]) => void) => void;
   };
 }
