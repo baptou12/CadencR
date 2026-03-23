@@ -71,10 +71,7 @@ beforeEach(() => {
   // Reset Zustand store between tests
   useWsSessionStore.setState({ sessions: {} });
   vi.stubGlobal("WebSocket", MockWebSocket);
-  vi.stubGlobal("window", {
-    ...globalThis.window,
-    api: { rustBackendUrl: "http://localhost:5005" },
-  });
+  vi.stubGlobal("window", { ...globalThis.window });
 });
 
 afterEach(() => {

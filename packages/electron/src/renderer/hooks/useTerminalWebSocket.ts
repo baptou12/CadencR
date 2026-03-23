@@ -55,7 +55,7 @@ export interface UseTerminalWebSocketReturn {
 }
 
 function buildWsUrl(options: UseTerminalWebSocketOptions): string {
-  const httpUrl = window.api?.rustBackendUrl ?? "http://localhost:5005";
+  const httpUrl = import.meta.env.VITE_API_URL || "http://localhost:5005";
   const wsUrl = httpUrl.replace(/^http/, "ws");
   const params = new URLSearchParams();
 

@@ -266,11 +266,8 @@ const REVIEW_FIXER_KEY = AGENT_TYPE_SYNTHETIC_KEYS["review-fixer"]; // -5
 // ---------------------------------------------------------------------------
 
 function getWsUrl(): string {
-  const httpUrl = window.api?.rustBackendUrl;
-  if (httpUrl) {
-    return httpUrl.replace(/^http/, "ws") + "/ws";
-  }
-  return "ws://localhost:5005/ws";
+  const httpUrl = import.meta.env.VITE_API_URL || "http://localhost:5005";
+  return httpUrl.replace(/^http/, "ws") + "/ws";
 }
 
 function createAgentSession(sessionId: number): AgentSessionState {

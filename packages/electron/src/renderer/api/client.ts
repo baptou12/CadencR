@@ -1,13 +1,6 @@
 import Axios, { type AxiosRequestConfig, type AxiosError } from "axios";
 
-const baseURL = (() => {
-  const url = window.api?.rustBackendUrl;
-  if (!url) {
-    console.warn("[api-client] window.api.rustBackendUrl is undefined, falling back to http://localhost:5005");
-    return "http://localhost:5005";
-  }
-  return url;
-})();
+const baseURL = import.meta.env.VITE_API_URL || "http://localhost:5005";
 
 const axiosInstance = Axios.create({
   baseURL,

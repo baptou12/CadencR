@@ -11,8 +11,3 @@ declare module "electron-squirrel-startup" {
   export default started;
 }
 
-interface Window {
-  api: {
-    rustBackendUrl: string;
-  };
-}

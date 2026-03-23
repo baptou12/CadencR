@@ -4,7 +4,7 @@ import { Effect } from "effect";
 import { createIPCHandler } from "electron-trpc/main";
 import { appRouter } from "./main/trpc/router";
 import { AppRuntime } from "./main/effect/runtime";
-import { startRustBackend, stopRustBackend, getRustBackendPort } from "./main/rust-backend";
+import { startRustBackend, stopRustBackend } from "./main/rust-backend";
 import { startElectronIpcServer, stopElectronIpcServer } from "./main/electron-ipc-server";
 
 const ELECTRON_IPC_PORT = 45679;
@@ -71,9 +71,6 @@ app.on("ready", async () => {
   } else {
     console.log("[rust-backend] Dev mode — expecting Rust backend already running on port 5005");
   }
-
-  // Expose the Rust backend port to preload via env var (preload runs synchronously)
-  process.env.CADENCE_RUST_PORT = String(getRustBackendPort());
 
   createWindow();
 });
