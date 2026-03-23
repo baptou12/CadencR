@@ -3,6 +3,7 @@ members = [
     "packages/service",
     "packages/claude-agent-sdk-rs",
     "packages/loc",
+    "packages/tauri/src-tauri",
 ]
 resolver = "2"
 
