@@ -29,13 +29,13 @@ pub fn run() {
             log::info!("cadence-service is healthy on port {port}");
             Ok(())
         })
-        .on_window_event(|window, event| {
-            if let tauri::WindowEvent::Destroyed = event {
-                if let Some(state) = window.app_handle().try_state::<sidecar::SidecarState>() {
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                if let Some(state) = app.try_state::<sidecar::SidecarState>() {
                     sidecar::stop_sidecar(&state);
                 }
             }
-        })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        });
 }
