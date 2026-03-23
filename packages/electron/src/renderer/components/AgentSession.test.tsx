@@ -8,6 +8,11 @@ vi.mock("react-hotkeys-hook", () => ({
   useHotkeys: vi.fn(),
 }));
 
+vi.mock("../api/generated", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../api/generated")>()),
+  useListModels: vi.fn(() => ({ data: [{ id: "claude-opus-4-6", label: "Claude Opus 4.6" }] })),
+}));
+
 // Mock hooks to avoid cascading tRPC dependencies
 vi.mock("@/hooks/useBackgroundTasks", () => ({
   useBackgroundTasks: vi.fn(() => ({ tasks: [], activeCount: 0 })),
@@ -73,11 +78,7 @@ vi.mock("@/trpc", () => {
       createClient: vi.fn(() => ({})),
       Provider: ({ children }: { children: unknown }) =>
         React.createElement(React.Fragment, null, children),
-      workspace: {
-        getAvailableModels: {
-          useQuery: vi.fn(() => ({ data: [] })),
-        },
-      },
+      workspace: {},
       git: {
         listFiles: {
           useQuery: vi.fn(() => ({ data: undefined })),

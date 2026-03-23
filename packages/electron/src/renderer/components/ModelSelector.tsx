@@ -1,5 +1,4 @@
 import { createElement, useState } from "react";
-import { trpc } from "../trpc";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "./ui/button";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "./ui/command";
@@ -17,6 +16,7 @@ import {
   useGetFeatureModelSettings,
   getGetFeatureModelSettingsQueryKey,
   useSetFeatureModelSetting,
+  useListModels,
 } from "../api/generated";
 
 const AGENT_TYPES = ["plan", "prd", "execute", "risk", "review", "review-fixer", "session", "qa", "retro"] as const;
@@ -44,7 +44,7 @@ interface ModelSelectorProps {
 
 export function ModelSelector({ level, projectId, featureId }: ModelSelectorProps) {
   const queryClient = useQueryClient();
-  const availableModels = trpc.workspace.getAvailableModels.useQuery();
+  const availableModels = useListModels();
   const models = availableModels.data ?? [];
 
   const globalSettings = useGetWorkspaceModelSettings({

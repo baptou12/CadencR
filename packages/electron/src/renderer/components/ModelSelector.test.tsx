@@ -3,28 +3,14 @@ import { render, screen } from "@/test-utils";
 import { ModelSelector } from "./ModelSelector";
 import React from "react";
 
-const { mockGetAvailableModels, mockGetGlobalSettings, mockGetProjectSettings, mockGetFeatureSettings } = vi.hoisted(() => ({
-  mockGetAvailableModels: vi.fn(() => ({ data: [
-    { id: "claude-opus-4-6", label: "Claude Opus 4.6" },
-    { id: "claude-sonnet-4", label: "Claude Sonnet 4" },
-  ]})),
+const { mockGetGlobalSettings, mockGetProjectSettings, mockGetFeatureSettings } = vi.hoisted(() => ({
   mockGetGlobalSettings: vi.fn(() => ({ data: {}, isLoading: false })),
   mockGetProjectSettings: vi.fn(() => ({ data: {}, isLoading: false })),
   mockGetFeatureSettings: vi.fn(() => ({ data: {}, isLoading: false })),
 }));
 
-vi.mock("@/trpc", () => ({
-  trpc: {
-    createClient: vi.fn(() => ({})),
-    Provider: ({ children }: { children: React.ReactNode }) =>
-      React.createElement(React.Fragment, null, children),
-    workspace: {
-      getAvailableModels: { useQuery: mockGetAvailableModels },
-    },
-  },
-}));
-
 vi.mock("../api/generated", () => ({
+  useListModels: vi.fn(() => ({ data: [{ id: "claude-opus-4-6", label: "Claude Opus 4.6" }] })),
   useGetWorkspaceModelSettings: () => mockGetGlobalSettings(),
   useSetWorkspaceModelSetting: vi.fn(() => ({ mutate: vi.fn() })),
   getGetWorkspaceModelSettingsQueryKey: vi.fn(() => ["workspace", "model-settings"]),

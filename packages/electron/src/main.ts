@@ -4,7 +4,6 @@ import { Effect } from "effect";
 import { createIPCHandler } from "electron-trpc/main";
 import { appRouter } from "./main/trpc/router";
 import { AppRuntime } from "./main/effect/runtime";
-import { fetchAvailableModels } from "./main/agents/available-models";
 import { startRustBackend, stopRustBackend, getRustBackendPort } from "./main/rust-backend";
 import { startElectronIpcServer, stopElectronIpcServer } from "./main/electron-ipc-server";
 
@@ -53,7 +52,6 @@ app.on("ready", async () => {
   // Initialize the Effect ManagedRuntime — builds layers, wires services.
   // Running a no-op effect forces lazy initialization so services are ready.
   await AppRuntime.runPromise(Effect.void);
-  fetchAvailableModels().catch(() => {}); // warm up cache
 
   // Start Electron IPC server (for Rust → Electron callbacks)
   try {

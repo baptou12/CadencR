@@ -46,8 +46,7 @@ import type { TodoItem } from "@/types/agent";
 import type { ContextUsageState } from "@/hooks/useContextUsage";
 import type { PendingPermission } from "./ToolPermissionPrompt";
 import { AGENT_ICONS } from "./agent-icons";
-import { trpc } from "../trpc";
-import { useGetFeatureWorkingDir } from "../api/generated";
+import { useGetFeatureWorkingDir, useListModels } from "../api/generated";
 
 // ---------------------------------------------------------------------------
 // Shared types & constants (previously in AgentPanel, now canonical here)
@@ -334,7 +333,7 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [promptBarFocused, setPromptBarFocused] = useState(false);
-  const availableModels = trpc.workspace.getAvailableModels.useQuery();
+  const availableModels = useListModels();
   const models = useMemo(() => availableModels.data ?? [], [availableModels.data]);
   const cwdQuery = useGetFeatureWorkingDir(
     featureId ?? 0,

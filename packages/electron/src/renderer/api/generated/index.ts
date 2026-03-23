@@ -13,6 +13,11 @@ import { customInstance, type ErrorType } from "../client";
 // Types — match the Rust models (snake_case JSON)
 // ---------------------------------------------------------------------------
 
+export interface ModelInfo {
+  id: string;
+  label: string;
+}
+
 export interface BranchResponse {
   branch: string | null;
 }
@@ -642,6 +647,10 @@ export function getGetWorkspaceSettingQueryKey(key: string) {
   return ["workspace", "settings", key] as const;
 }
 
+export function getListModelsQueryKey() {
+  return ["models"] as const;
+}
+
 export function getGetWorkspaceModelSettingsQueryKey() {
   return ["workspace", "model-settings"] as const;
 }
@@ -653,6 +662,16 @@ export function getGetWorkspacePromptHistoryQueryKey(projectId: number) {
 // ---------------------------------------------------------------------------
 // Workspace query hooks
 // ---------------------------------------------------------------------------
+
+export function useListModels(
+  options?: Omit<UseQueryOptions<ModelInfo[], ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<ModelInfo[], ErrorType<unknown>>({
+    queryKey: getListModelsQueryKey(),
+    queryFn: () => customInstance({ method: "GET", url: "/api/models" }),
+    ...options,
+  });
+}
 
 export function useListWorkspaceSettings(
   options?: Omit<UseQueryOptions<WorkspaceSetting[], ErrorType<unknown>>, "queryKey" | "queryFn">,

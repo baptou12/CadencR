@@ -12,13 +12,14 @@ use crate::domain::diff_comments::routes::diff_comments_router;
 use crate::domain::sessions::routes::sessions_router;
 use crate::domain::ws_session::handler::ws_handler;
 
-#[derive(serde::Serialize)]
-struct ModelInfo {
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct ModelInfo {
     id: String,
     label: String,
 }
 
-async fn list_models() -> Json<Vec<ModelInfo>> {
+#[utoipa::path(get, path = "/api/models", responses((status = 200, body = Vec<ModelInfo>)))]
+pub async fn list_models() -> Json<Vec<ModelInfo>> {
     Json(vec![
         ModelInfo { id: "claude-opus-4-6".into(), label: "Opus 4.6".into() },
         ModelInfo { id: "claude-sonnet-4-6".into(), label: "Sonnet 4.6".into() },

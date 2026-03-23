@@ -89,9 +89,11 @@ use crate::domain::sessions::routes as sessions_routes;
         sessions_routes::get_feature_agent_state_handler,
         sessions_routes::get_draft_handler,
         sessions_routes::save_draft_handler,
+        super::list_models,
     ),
     components(schemas(
         HealthResponse,
+        super::ModelInfo,
         models::BranchResponse,
         models::GitStats,
         models::DiffResponse,

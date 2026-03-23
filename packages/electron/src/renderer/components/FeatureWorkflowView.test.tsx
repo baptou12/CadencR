@@ -6,6 +6,11 @@ vi.mock("react-hotkeys-hook", () => ({
   useHotkeys: vi.fn(),
 }));
 
+vi.mock("../api/generated", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../api/generated")>()),
+  useListModels: vi.fn(() => ({ data: [{ id: "claude-opus-4-6", label: "Claude Opus 4.6" }] })),
+}));
+
 const mockInvalidate = vi.fn();
 
 vi.mock("@/trpc", () => {
@@ -133,9 +138,6 @@ vi.mock("@/trpc", () => {
     workspace: {
       get: {
         useQuery: vi.fn(() => ({ data: null })),
-      },
-      getAvailableModels: {
-        useQuery: vi.fn(() => ({ data: [] })),
       },
       getProjectSettings: {
         useQuery: vi.fn(() => ({ data: null })),

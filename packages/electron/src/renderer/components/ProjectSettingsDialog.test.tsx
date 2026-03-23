@@ -15,6 +15,11 @@ const { mockGetSettings, mockSetSetting } = vi.hoisted(() => ({
   mockSetSetting: vi.fn(),
 }));
 
+vi.mock("../api/generated", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../api/generated")>()),
+  useListModels: vi.fn(() => ({ data: [{ id: "claude-opus-4-6", label: "Claude Opus 4.6" }] })),
+}));
+
 vi.mock("@/trpc", () => ({
   trpc: {
     createClient: vi.fn(() => ({})),
@@ -33,7 +38,6 @@ vi.mock("@/trpc", () => ({
       setModelSetting: { useMutation: vi.fn(() => ({ mutate: vi.fn() })) },
     },
     workspace: {
-      getAvailableModels: { useQuery: vi.fn(() => ({ data: [{ id: "claude-opus-4-6", label: "Claude Opus 4.6" }] })) },
       getModelSettings: { useQuery: vi.fn(() => ({ data: {}, isLoading: false })) },
       setModelSetting: { useMutation: vi.fn(() => ({ mutate: vi.fn() })) },
     },
