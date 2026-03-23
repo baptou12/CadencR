@@ -248,10 +248,19 @@ async fn run_pty_ws_loop(
             info!(pty_id = %pty_id, "WebSocket closed, PTY kept alive");
         }
         _ = &mut read_task => {
-            info!(pty_id = %pty_id, "PTY read ended");
+            info!(pty_id = %pty_id, "PTY read ended, waiting for exit");
+            // Give exit_task time to send the exit code before aborting
+            let _ = tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                &mut exit_task,
+            ).await;
         }
         _ = &mut forward_task => {
-            info!(pty_id = %pty_id, "PTY forward ended");
+            info!(pty_id = %pty_id, "PTY forward ended, waiting for exit");
+            let _ = tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                &mut exit_task,
+            ).await;
         }
         _ = &mut exit_task => {
             info!(pty_id = %pty_id, "PTY exited");
@@ -263,6 +272,10 @@ async fn run_pty_ws_loop(
     forward_task.abort();
     exit_task.abort();
     read_task.abort();
+
+    // Send close frame so the client gets a clean WebSocket close
+    use futures::SinkExt;
+    let _ = sink.lock().await.send(Message::Close(None)).await;
 }
 
 async fn send_msg(

@@ -112,7 +112,6 @@ impl PtyManager {
             info!(pty_id = %pid, exit_code, "PTY child exited");
             let _ = alive_tx.send(Some(exit_code));
 
-            let pid = pid;
             tokio::spawn(async move {
                 tokio::time::sleep(std::time::Duration::from_secs(300)).await;
                 terminals.remove(&pid);
