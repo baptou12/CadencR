@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { ProjectTree } from "@/components/ProjectTree";
 import { getActiveFocusZone } from "@/lib/focus-zones";
 import { UsageIndicator } from "@/components/UsageIndicator";
+import { startDragging, toggleMaximize } from "@/lib/window-drag";
 
 export function Sidebar() {
   const navigate = useNavigate();
@@ -108,7 +109,8 @@ export function Sidebar() {
     <aside ref={sidebarRef} className="flex h-full flex-col bg-sidebar">
       <div
         className="group relative h-16"
-        style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
+        onMouseDown={startDragging}
+        onDoubleClick={toggleMaximize}
       >
         <div className="absolute inset-0 flex items-center justify-center">
           <img
@@ -133,7 +135,6 @@ export function Sidebar() {
         </div>
         <div
           className="absolute right-4 inset-y-0 flex items-center opacity-0 group-hover:opacity-100 transition-opacity"
-          style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
         >
           <Link to="/settings">
             <Button variant="ghost" size="icon" className="size-7">

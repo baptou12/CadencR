@@ -2,6 +2,13 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@/test-utils";
 import { FeatureTopBar } from "./FeatureTopBar";
 
+vi.mock("@tauri-apps/api/window", () => ({
+  getCurrentWindow: () => ({
+    startDragging: vi.fn(() => Promise.resolve()),
+    toggleMaximize: vi.fn(() => Promise.resolve()),
+  }),
+}));
+
 vi.mock("react-hotkeys-hook", () => ({
   useHotkeys: vi.fn(),
 }));

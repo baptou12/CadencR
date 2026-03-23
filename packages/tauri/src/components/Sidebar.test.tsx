@@ -2,6 +2,13 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@/test-utils";
 import { Sidebar } from "./Sidebar";
 
+vi.mock("@tauri-apps/api/window", () => ({
+  getCurrentWindow: () => ({
+    startDragging: vi.fn(() => Promise.resolve()),
+    toggleMaximize: vi.fn(() => Promise.resolve()),
+  }),
+}));
+
 const mockNavigate = vi.fn();
 
 let mockLocation: { pathname: string; search?: Record<string, unknown> } = {

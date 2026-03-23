@@ -17,6 +17,7 @@ import {
 import { DiffViewerModal } from "./diff/DiffViewerModal";
 import { ModelSelector } from "./ModelSelector";
 import { useFeatureTitle } from "@/hooks/useFeatureTitle";
+import { startDragging, toggleMaximize } from "@/lib/window-drag";
 import zedLogo from "../../assets/zed-logo.png";
 
 const STATUS_COLORS: Record<string, string> = {
@@ -103,7 +104,7 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", isWebSoc
   if (!feature) return null;
 
   return (
-    <div className={cn("flex items-center gap-3 border-b border-border px-6 py-3", className)}>
+    <div onMouseDown={startDragging} onDoubleClick={toggleMaximize} className={cn("flex items-center gap-3 border-b border-border px-6 py-3", className)}>
       {!isSession && (
         <Badge
           variant="secondary"
