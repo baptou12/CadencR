@@ -4,10 +4,14 @@ import { Sidebar } from "./Sidebar";
 
 const mockNavigate = vi.fn();
 
+let mockLocation: { pathname: string; search?: Record<string, unknown> } = {
+  pathname: "/",
+};
+
 vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => mockNavigate,
   useRouterState: () => ({
-    location: { pathname: "/" },
+    location: mockLocation,
   }),
   Link: ({ children, to }: { children: unknown; to: string }) => {
     const React = require("react");
@@ -38,6 +42,7 @@ vi.mock("../api/generated", () => ({
   getGetFeaturePlanQueryKey: (id: number) => ["features", "plan", id],
   getGetFeaturePlanProgressQueryKey: (id: number) => ["features", "planProgress", id],
   getGetFeatureSettingsQueryKey: (id: number) => ["features", "settings", id],
+  useGetFeatureEmpty: vi.fn(() => ({ data: { empty: false } })),
 }));
 
 vi.mock("@/trpc", () => {
@@ -73,6 +78,7 @@ vi.mock("./UsageIndicator", () => ({
 describe("Sidebar", () => {
   beforeEach(() => {
     mockNavigate.mockClear();
+    mockLocation = { pathname: "/" };
   });
 
   it("renders the app name", () => {
@@ -101,6 +107,15 @@ describe("Sidebar", () => {
   });
 
   it("renders without crashing on any route", () => {
+    render(<Sidebar />);
+    expect(screen.getByText("Cadence")).toBeInTheDocument();
+  });
+
+  it("renders on ws-session route with search params", () => {
+    mockLocation = {
+      pathname: "/ws-session/abc123",
+      search: { projectId: 1, featureId: 3 },
+    };
     render(<Sidebar />);
     expect(screen.getByText("Cadence")).toBeInTheDocument();
   });

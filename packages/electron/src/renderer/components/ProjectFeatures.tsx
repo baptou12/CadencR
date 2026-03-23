@@ -126,7 +126,7 @@ export function ProjectFeatures({
         data-nav-type="feature"
         data-nav-id={String(feature.id)}
         data-nav-project-id={String(projectId)}
-        className={`group/feature relative flex min-w-0 cursor-pointer items-center gap-1 overflow-hidden rounded-md py-1.5 pl-3 pr-2 text-sm outline-none transition-colors hover:bg-accent ${
+        className={`group/feature relative flex min-w-0 cursor-pointer items-center gap-1 overflow-hidden rounded-md py-1.5 pl-3 pr-2 text-sm outline-none hover:bg-accent ${
           activeFeatureId === feature.id ? "bg-accent" : ""
         } ${feature.status === "archived" ? "opacity-50" : ""}`}
         onClick={() => {
@@ -196,7 +196,7 @@ export function ProjectFeatures({
           <Button
             size="sm"
             variant="ghost"
-            className="size-6 shrink-0 p-0 text-muted-foreground hover:text-foreground opacity-0 group-hover/feature:opacity-100"
+            className="size-6 shrink-0 p-0 text-muted-foreground hover:text-foreground opacity-0 group-hover/feature:opacity-100 transition-none"
             onClick={(e) => {
               e.stopPropagation();
               setConfirmFeatureId(feature.id);

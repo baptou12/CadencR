@@ -20,8 +20,16 @@ export function Sidebar() {
   const routeParams = (routerState.location.pathname.match(
     /\/projects\/(\d+)(?:\/features\/(\d+))?/,
   ) ?? []) as string[];
-  const activeProjectId = routeParams[1] ? Number(routeParams[1]) : null;
-  const activeFeatureId = routeParams[2] ? Number(routeParams[2]) : null;
+  const activeProjectId = routeParams[1]
+    ? Number(routeParams[1])
+    : routerState.location.search?.projectId
+      ? Number(routerState.location.search.projectId)
+      : null;
+  const activeFeatureId = routeParams[2]
+    ? Number(routeParams[2])
+    : routerState.location.search?.featureId
+      ? Number(routerState.location.search.featureId)
+      : null;
 
   const effectiveFeatureId = activeFeatureId ?? selectedFeatureId;
 
