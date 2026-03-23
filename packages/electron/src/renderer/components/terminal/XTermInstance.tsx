@@ -131,7 +131,7 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
 
     const wsRef = useRef<ReturnType<typeof useTerminalWebSocket>>(null!);
 
-    const ws = wsRef.current = useTerminalWebSocket({
+    wsRef.current = useTerminalWebSocket({
       featureId: existingPtyId ? undefined : featureId,
       projectId: existingPtyId ? undefined : projectId,
       ptyId: existingPtyId,
