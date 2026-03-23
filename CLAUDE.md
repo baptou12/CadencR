@@ -2,18 +2,17 @@
 
 ## Monorepo Structure
 
-This is a pnpm workspaces + Turborepo monorepo. Source code lives in `packages/electron/`.
+This is a pnpm workspaces + Turborepo monorepo. The desktop app lives in `packages/tauri/` (Tauri v2 + React frontend).
 
 - Run tasks via turbo from root: `pnpm turbo run <task>` (e.g., `pnpm turbo run lint`, `pnpm turbo run test`)
-- Or target the electron package directly: `pnpm --filter @cadence/electron <task>`
+- Or target the desktop package directly: `pnpm --filter @cadence/desktop <task>`
 - Dev server: `pnpm dev` or `pnpm start` from root
 
-## Migration: Electron → Rust API + WebSocket
+## Architecture
 
-We are actively migrating away from the Electron backend toward a Rust API server with WebSocket support. Every change must move in this direction. Do NOT add new Electron/tRPC backend logic — instead, implement new backend functionality in Rust and expose it via the API or WebSocket layer. The frontend will remain (React), but all backend concerns should target the Rust stack. Prefer WebSocket for real-time data and streaming — avoid polling or repeated API calls when a WebSocket subscription can serve the same purpose.
+The app uses Tauri v2 as the desktop shell with a React frontend. The backend is a Rust API server (`packages/service/`) spawned as a sidecar in production. In dev mode, run cadence-service manually. The frontend communicates with the backend via HTTP (Axios) and WebSocket (Zustand store). Folder selection uses `@tauri-apps/plugin-dialog`.
 
 ## Critical Constraints
 
-- Do NOT upgrade tRPC beyond v10 or React Query beyond v4 — `electron-trpc` requires these exact major versions
 - Use `pnpm` (not npm/yarn)
 - Lint with `pnpm run lint` (oxlint via turbo), test with `pnpm test` (vitest via turbo)

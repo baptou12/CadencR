@@ -13,12 +13,7 @@
       "cache": false,
       "persistent": true
     },
-    "@cadence/electron#dev": {
-      "dependsOn": ["@cadence/claude-agent-sdk-rs#dev"],
-      "cache": false,
-      "persistent": true
-    },
-    "@cadence/desktop#dev": {
+"@cadence/desktop#dev": {
       "dependsOn": ["@cadence/service#dev"],
       "cache": false,
       "persistent": true
@@ -39,18 +34,9 @@
     "format:check": {
       "outputs": []
     },
-    "package": {
-      "outputs": ["out/**"],
-      "cache": false
-    },
     "build:release": {
       "dependsOn": ["^build:release"],
       "outputs": []
-    },
-    "make": {
-      "dependsOn": ["@cadence/service#build:release"],
-      "outputs": ["out/**"],
-      "cache": false
     }
   }
 }

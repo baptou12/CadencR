@@ -1,5 +1,0 @@
-{
-  "fileExtensions": ["ts", "tsx"],
-  "tsConfig": "tsconfig.json",
-  "excludeRegExp": ["routeTree\\.gen\\.ts$"]
-}

@@ -5,8 +5,7 @@
  * Auto-allows operations within the worktree or /tmp, prompts for everything else.
  * Handles persisting user approvals to `.claude/settings.local.json`.
  *
- * This is a 1:1 port of the TypeScript implementation in
- * `packages/electron/src/main/agents/permissions.ts`.
+ * Originally ported from the TypeScript Electron implementation.
  */
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
