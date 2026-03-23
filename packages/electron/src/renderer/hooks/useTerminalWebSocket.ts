@@ -83,8 +83,14 @@ export function useTerminalWebSocket(
   const optionsRef = useRef(options);
   optionsRef.current = options;
 
+  // Capture connection params at mount time — we don't want to re-connect
+  // when ptyId is assigned from our own onReady callback (that would tear
+  // down the working connection and try to reconnect immediately).
+  const initialOptionsRef = useRef(options);
+
   useEffect(() => {
-    const url = buildWsUrl(optionsRef.current);
+    let intentionalClose = false;
+    const url = buildWsUrl(initialOptionsRef.current);
     const ws = new WebSocket(url);
     wsRef.current = ws;
 
@@ -119,13 +125,14 @@ export function useTerminalWebSocket(
     };
 
     ws.onerror = () => {
-      toast.error("Terminal WebSocket connection failed");
+      if (!intentionalClose) {
+        toast.error("Terminal WebSocket connection failed");
+      }
     };
 
-    ws.onclose = (event) => {
+    ws.onclose = () => {
       setIsConnected(false);
-      // Code 1000 = normal closure, don't show error
-      if (event.code !== 1000) {
+      if (!intentionalClose) {
         optionsRef.current.onError(
           "Connection lost. Terminal may still be running — reopen to reconnect.",
         );
@@ -133,12 +140,14 @@ export function useTerminalWebSocket(
     };
 
     return () => {
+      intentionalClose = true;
       wsRef.current = null;
       if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
         ws.close(1000, "unmount");
       }
     };
-  }, [options.featureId, options.projectId, options.ptyId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const write = useCallback((data: string) => {
     sendJson(wsRef.current, { type: "write", data });

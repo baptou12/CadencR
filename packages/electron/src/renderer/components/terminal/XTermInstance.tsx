@@ -236,7 +236,7 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
         fitAddonRef.current = null;
       };
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [featureId, projectId, existingPtyId]);
+    }, [featureId, projectId]);
 
     return (
       <div
