@@ -267,10 +267,23 @@ async fn run_pty_ws_loop(
         }
     }
 
-    // Abort remaining tasks to avoid orphaned background work
+    // Abort remaining tasks to avoid orphaned background work.
+    //
+    // Order matters: abort forward_task BEFORE read_task so that data_rx
+    // (owned by forward_task) is dropped first. Once data_rx is dropped, the
+    // next data_tx.blocking_send() call inside the spawn_blocking read thread
+    // returns Err, causing that thread to exit its loop.
+    //
+    // Note: read_task.abort() only drops the JoinHandle — it does NOT cancel
+    // the underlying blocking thread. The thread exits on the next
+    // blocking_send failure (triggered by dropping data_rx via forward_task
+    // abort). For truly idle PTYs the thread remains blocked in read() until
+    // the PTY produces output or the PTY fd is closed (e.g., PTY killed or
+    // process exits). This is acceptable because the PTY is kept alive for
+    // reconnection and the thread holds no significant exclusive resources.
     write_task.abort();
-    forward_task.abort();
     exit_task.abort();
+    forward_task.abort(); // drops data_rx → unblocks read thread on next send
     read_task.abort();
 
     // Send close frame so the client gets a clean WebSocket close
