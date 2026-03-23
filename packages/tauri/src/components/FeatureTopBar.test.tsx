@@ -48,6 +48,11 @@ vi.mock("@/hooks/useFeatureTitle", () => ({
   useFeatureTitle: vi.fn(() => null),
 }));
 
+const mockSetAutonomyLevel = vi.fn();
+vi.mock("@/hooks/useWorkflowWebSocket", () => ({
+  useWorkflowStore: vi.fn(() => mockSetAutonomyLevel),
+}));
+
 // Mock DiffViewerModal
 vi.mock("./diff/DiffViewerModal", () => ({
   DiffViewerModal: ({ open }: { open: boolean }) => {
@@ -68,6 +73,7 @@ describe("FeatureTopBar", () => {
   beforeEach(() => {
     mockOpenTerminal.mockClear();
     mockSetFeatureSetting.mockClear();
+    mockSetAutonomyLevel.mockClear();
   });
 
   it("renders feature title", () => {
@@ -100,4 +106,5 @@ describe("FeatureTopBar", () => {
     // Git stats (3 commits) should be visible somewhere
     expect(screen.getByText("My Test Feature")).toBeInTheDocument();
   });
+
 });

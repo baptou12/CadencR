@@ -17,6 +17,7 @@ import {
 import { DiffViewerModal } from "./diff/DiffViewerModal";
 import { ModelSelector } from "./ModelSelector";
 import { useFeatureTitle } from "@/hooks/useFeatureTitle";
+import { useWorkflowStore, type AutonomyLevel } from "@/hooks/useWorkflowWebSocket";
 import { startDragging, toggleMaximize } from "@/lib/window-drag";
 import zedLogo from "../../assets/zed-logo.png";
 
@@ -41,6 +42,7 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", isWebSoc
   const [diffOpen, setDiffOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const queryClient = useQueryClient();
+  const setAutonomyLevel = useWorkflowStore((s) => s.setAutonomyLevel);
 
   const { data: feature } = useGetFeature(featureId);
   // Live WS-pushed title from auto-naming (falls back to null).
@@ -204,13 +206,14 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", isWebSoc
                   </div>
                   <Select
                     value={featureSettings?.agent_autonomy ?? ""}
-                    onValueChange={(value) =>
+                    onValueChange={(value) => {
                       setFeatureSetting.mutate({
                         featureId,
                         key: "agent_autonomy",
                         value,
-                      })
-                    }
+                      });
+                      setAutonomyLevel(Number(value) as AutonomyLevel);
+                    }}
                   >
                     <SelectTrigger className="h-8 text-sm">
                       <SelectValue placeholder="Inherit from project" />
