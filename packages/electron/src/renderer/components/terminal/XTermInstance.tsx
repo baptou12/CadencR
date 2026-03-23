@@ -64,6 +64,11 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
       },
     }));
 
+    // Stable refs for ws actions so callbacks don't need to re-subscribe
+    const writeRef = useRef<((data: string) => void) | null>(null);
+    const resizeRef = useRef<((cols: number, rows: number) => void) | null>(null);
+    const killRef = useRef<(() => void) | null>(null);
+
     // -- WebSocket callbacks (stable refs to avoid re-connecting) --
 
     const onWsData = useCallback((data: string) => {
@@ -74,7 +79,7 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
       (ptyId: string) => {
         if (!mountedRef.current) {
           // Unmounted before ready — kill via ws
-          wsRef.current.kill();
+          killRef.current?.();
           return;
         }
         ptyIdRef.current = ptyId;
@@ -85,7 +90,7 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
         if (cmd) {
           setTimeout(() => {
             if (mountedRef.current && ptyIdRef.current) {
-              wsRef.current.write(cmd);
+              writeRef.current?.(cmd);
             }
             onInitialCommandConsumedRef.current?.();
           }, 150);
@@ -129,9 +134,7 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
       terminalRef.current?.write(`\r\n\x1b[31m[${message}]\x1b[0m\r\n`);
     }, []);
 
-    const wsRef = useRef<ReturnType<typeof useTerminalWebSocket>>(null!);
-
-    wsRef.current = useTerminalWebSocket({
+    const { write, resize, kill } = useTerminalWebSocket({
       featureId: existingPtyId ? undefined : featureId,
       projectId: existingPtyId ? undefined : projectId,
       ptyId: existingPtyId,
@@ -142,12 +145,16 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
       onError: onWsError,
     });
 
+    writeRef.current = write;
+    resizeRef.current = resize;
+    killRef.current = kill;
+
     // Helper to sync terminal size to backend
     function syncSize() {
       try {
         fitAddonRef.current?.fit();
         const term = terminalRef.current;
-        if (term) wsRef.current.resize(term.cols, term.rows);
+        if (term) resizeRef.current?.(term.cols, term.rows);
       } catch {
         // Ignore resize errors during teardown
       }
@@ -180,7 +187,7 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
         const mod = event.metaKey ? "meta" : event.altKey ? "alt" : "";
         const seq = mod ? keyMap[`${mod}+${event.key}`] : undefined;
         if (seq) {
-          wsRef.current.write(seq);
+          writeRef.current?.(seq);
           return false;
         }
         return true;
@@ -198,7 +205,7 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
       // User input → WebSocket
       const dataDisposable = terminal.onData((data: string) => {
         if (ptyIdRef.current && !exitedRef.current) {
-          wsRef.current.write(data);
+          writeRef.current?.(data);
         }
       });
 
@@ -208,7 +215,7 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
         try {
           fitAddon.fit();
           const id = ptyIdRef.current;
-          if (id) wsRef.current.resize(terminal.cols, terminal.rows);
+          if (id) resizeRef.current?.(terminal.cols, terminal.rows);
         } catch {
           // Ignore resize errors during teardown
         }
@@ -221,7 +228,7 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
         dataDisposable.dispose();
 
         if (ptyIdRef.current && !exitedRef.current && shouldKillRef.current) {
-          wsRef.current.kill();
+          killRef.current?.();
         }
         ptyIdRef.current = null;
         terminal.dispose();
