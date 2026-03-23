@@ -20,10 +20,6 @@ interface Window {
     offAskUserQuestion: (listener?: (...args: unknown[]) => void) => void;
     onDbUpdated: (callback: (data: { entity: string; featureId: number }) => void) => (...args: unknown[]) => void;
     offDbUpdated: (listener?: (...args: unknown[]) => void) => void;
-    onTerminalData: (callback: (data: { ptyId: string; data: string }) => void) => (...args: unknown[]) => void;
-    offTerminalData: (listener?: (...args: unknown[]) => void) => void;
-    onTerminalExit: (callback: (data: { ptyId: string; exitCode: number; signal?: number }) => void) => (...args: unknown[]) => void;
-    offTerminalExit: (listener?: (...args: unknown[]) => void) => void;
     onBackgroundTasks: (callback: (data: unknown) => void) => (...args: unknown[]) => void;
     offBackgroundTasks: (listener?: (...args: unknown[]) => void) => void;
   };
