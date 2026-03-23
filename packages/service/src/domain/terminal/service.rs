@@ -3,7 +3,7 @@ use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 
 use dashmap::DashMap;
-use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
+use portable_pty::{ChildKiller, CommandBuilder, MasterPty, PtySize, native_pty_system};
 use tokio::sync::watch;
 use tracing::info;
 
@@ -45,7 +45,8 @@ pub struct PtyHandle {
     pub master_reader: Arc<Mutex<Box<dyn Read + Send>>>,
     pub scrollback: Arc<Mutex<ScrollbackBuffer>>,
     pub alive: Arc<watch::Sender<Option<i32>>>,
-    pub child: Arc<Mutex<Box<dyn portable_pty::Child + Send>>>,
+    /// Killer handle — allows sending signals without holding the child lock.
+    pub killer: Arc<Mutex<Box<dyn ChildKiller + Send + Sync>>>,
 }
 
 /// Manages all PTY sessions. Stored in AppState.
@@ -75,7 +76,7 @@ impl PtyManager {
         let mut cmd = CommandBuilder::new(&shell);
         cmd.cwd(cwd);
 
-        let child = pair.slave.spawn_command(cmd)?;
+        let mut child = pair.slave.spawn_command(cmd)?;
         drop(pair.slave);
 
         let reader = pair.master.try_clone_reader()?;
@@ -84,23 +85,26 @@ impl PtyManager {
         let pty_id = uuid::Uuid::new_v4().to_string();
         let (alive_tx, _) = watch::channel::<Option<i32>>(None);
 
+        // Clone a killer handle before moving child into the blocking task.
+        let killer = child.clone_killer();
+
         let handle = Arc::new(PtyHandle {
             master: Arc::new(Mutex::new(pair.master)),
             master_writer: Arc::new(Mutex::new(writer)),
             master_reader: Arc::new(Mutex::new(reader)),
             scrollback: Arc::new(Mutex::new(ScrollbackBuffer::new())),
             alive: Arc::new(alive_tx),
-            child: Arc::new(Mutex::new(child)),
+            killer: Arc::new(Mutex::new(killer)),
         });
 
         self.terminals.insert(pty_id.clone(), Arc::clone(&handle));
 
+        // Move `child` directly into the blocking task — no Mutex needed.
         let terminals = Arc::clone(&self.terminals);
         let alive_tx = Arc::clone(&handle.alive);
-        let child_ref = Arc::clone(&handle.child);
         let pid = pty_id.clone();
         tokio::task::spawn_blocking(move || {
-            let status = child_ref.lock().expect("child lock").wait();
+            let status = child.wait();
             let exit_code = match status {
                 Ok(s) => s.exit_code() as i32,
                 Err(_) => -1,
@@ -108,8 +112,6 @@ impl PtyManager {
             info!(pty_id = %pid, exit_code, "PTY child exited");
             let _ = alive_tx.send(Some(exit_code));
 
-            // Spawn async task for grace period to avoid blocking a tokio thread
-            let terminals = terminals;
             let pid = pid;
             tokio::spawn(async move {
                 tokio::time::sleep(std::time::Duration::from_secs(300)).await;
@@ -129,7 +131,7 @@ impl PtyManager {
         handle
             .master_writer
             .lock()
-            .expect("writer lock")
+            .unwrap_or_else(|e| e.into_inner())
             .write_all(data)?;
         Ok(())
     }
@@ -142,7 +144,7 @@ impl PtyManager {
         handle
             .master
             .lock()
-            .expect("master lock")
+            .unwrap_or_else(|e| e.into_inner())
             .resize(PtySize {
                 rows,
                 cols,
@@ -159,9 +161,9 @@ impl PtyManager {
             .get(pty_id)
             .ok_or_else(|| anyhow::anyhow!("PTY not found: {pty_id}"))?;
         handle
-            .child
+            .killer
             .lock()
-            .expect("child lock")
+            .unwrap_or_else(|e| e.into_inner())
             .kill()
             .map_err(|e| anyhow::anyhow!("Failed to kill PTY: {e}"))?;
         Ok(())
@@ -170,7 +172,11 @@ impl PtyManager {
     pub fn get_scrollback(&self, pty_id: &str) -> Option<(bool, String)> {
         let handle = self.terminals.get(pty_id)?;
         let alive = handle.alive.borrow().is_none();
-        let scrollback = handle.scrollback.lock().expect("scrollback lock").contents();
+        let scrollback = handle
+            .scrollback
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .contents();
         Some((alive, scrollback))
     }
 }
