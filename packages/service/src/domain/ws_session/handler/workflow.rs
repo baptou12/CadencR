@@ -300,7 +300,8 @@ async fn handle_feature_start(
             sender.clone(),
             app_state.max_parallel_agents,
             app_state.turn_state_tx.clone(),
-        ));
+        )
+        .await);
 
         if is_workflow_feature {
             if let Err(e) = engine.restore_on_reconnect().await {

@@ -12,6 +12,7 @@ use axum::extract::ws::Message;
 
 use crate::domain::features::models::WorkflowType;
 use crate::domain::features::repository as repo;
+use crate::domain::settings::resolve_setting;
 use crate::domain::workflow::agent_manager::AgentManager;
 use crate::domain::workflow::engine::{agent_type_str_to_slot, AgentSlot, WsSender};
 use crate::domain::workflow::permission_router::PermissionRouter;
@@ -35,7 +36,7 @@ pub struct QueueAdvancer {
 }
 
 impl QueueAdvancer {
-    pub fn new(
+    pub async fn new(
         feature_id: i64,
         workflow_type: WorkflowType,
         max_parallel: usize,
@@ -45,12 +46,33 @@ impl QueueAdvancer {
     ) -> Self {
         let strategy = strategies::get_strategy(&workflow_type)
             .expect("QueueAdvancer::new called with unsupported workflow type");
+
+        let project_id = sqlx::query_scalar::<_, i64>(
+            "SELECT project_id FROM features WHERE id = ?",
+        )
+        .bind(feature_id)
+        .fetch_optional(&read_pool)
+        .await
+        .ok()
+        .flatten();
+
+        let autonomy = resolve_setting(
+            &read_pool,
+            "agent_autonomy",
+            Some(feature_id),
+            project_id,
+            Some("1"),
+        )
+        .await
+        .and_then(|v| v.parse::<u8>().ok())
+        .unwrap_or(1);
+
         Self {
             feature_id,
             workflow_type,
             strategy,
             max_parallel,
-            autonomy_level: AtomicU8::new(1),
+            autonomy_level: AtomicU8::new(autonomy),
             read_pool,
             write_pool,
             ws_sender,

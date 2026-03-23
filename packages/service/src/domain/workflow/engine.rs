@@ -224,7 +224,7 @@ pub struct WorkflowEngine {
 }
 
 impl WorkflowEngine {
-    pub fn new(
+    pub async fn new(
         feature_id: i64,
         workflow_type: WorkflowType,
         read_pool: SqlitePool,
@@ -252,7 +252,8 @@ impl WorkflowEngine {
             read_pool.clone(),
             write_pool.clone(),
             ws_sender.clone(),
-        );
+        )
+        .await;
         let permissions = PermissionRouter::new();
 
         Self {
@@ -851,7 +852,8 @@ mod tests {
             tx,
             2,
             turn_state_tx,
-        );
+        )
+        .await;
         (engine, rx)
     }
 
@@ -1057,6 +1059,54 @@ mod tests {
         engine.autonomy_level().store(1, Ordering::Relaxed);
         assert_eq!(engine.autonomy_level().load(Ordering::Relaxed), 1);
         engine.autonomy_level().store(2, Ordering::Relaxed);
+        assert_eq!(engine.autonomy_level().load(Ordering::Relaxed), 2);
+    }
+
+    // ── 12b. Autonomy level initialized from DB setting ──
+
+    #[tokio::test]
+    async fn test_autonomy_level_from_db_global_setting() {
+        let pool = test_pool().await;
+        sqlx::query("CREATE TABLE IF NOT EXISTS features (id INTEGER PRIMARY KEY, project_id INTEGER, agent_autonomy TEXT)")
+            .execute(&pool).await.unwrap();
+        sqlx::query("CREATE TABLE IF NOT EXISTS projects (id INTEGER PRIMARY KEY, agent_autonomy TEXT)")
+            .execute(&pool).await.unwrap();
+        sqlx::query("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+            .execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO projects (id) VALUES (1)")
+            .execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO features (id, project_id) VALUES (1, 1)")
+            .execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO settings (key, value) VALUES ('agent_autonomy', '3')")
+            .execute(&pool).await.unwrap();
+
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let (turn_state_tx, _) = tokio::sync::broadcast::channel(64);
+        let engine = WorkflowEngine::new(1, WorkflowType::FeatureBuild, pool.clone(), pool, tx, 2, turn_state_tx).await;
+
+        assert_eq!(engine.autonomy_level().load(Ordering::Relaxed), 3);
+    }
+
+    #[tokio::test]
+    async fn test_autonomy_level_feature_overrides_global() {
+        let pool = test_pool().await;
+        sqlx::query("CREATE TABLE IF NOT EXISTS features (id INTEGER PRIMARY KEY, project_id INTEGER, agent_autonomy TEXT)")
+            .execute(&pool).await.unwrap();
+        sqlx::query("CREATE TABLE IF NOT EXISTS projects (id INTEGER PRIMARY KEY, agent_autonomy TEXT)")
+            .execute(&pool).await.unwrap();
+        sqlx::query("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+            .execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO projects (id) VALUES (1)")
+            .execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO features (id, project_id, agent_autonomy) VALUES (1, 1, '2')")
+            .execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO settings (key, value) VALUES ('agent_autonomy', '3')")
+            .execute(&pool).await.unwrap();
+
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let (turn_state_tx, _) = tokio::sync::broadcast::channel(64);
+        let engine = WorkflowEngine::new(1, WorkflowType::FeatureBuild, pool.clone(), pool, tx, 2, turn_state_tx).await;
+
         assert_eq!(engine.autonomy_level().load(Ordering::Relaxed), 2);
     }
 
@@ -1294,7 +1344,8 @@ mod tests {
             tx,
             2,
             turn_state_tx,
-        );
+        )
+        .await;
         (engine, rx)
     }
 
