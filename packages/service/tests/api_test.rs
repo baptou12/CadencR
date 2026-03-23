@@ -127,6 +127,7 @@ async fn start_test_server() -> TestServer {
         max_parallel_agents: 3,
         agent_timeout_minutes: 30,
         turn_state_tx,
+        pty_manager: cadence_service::domain::terminal::service::PtyManager::new(),
     };
 
     let app = api::build_router(state)

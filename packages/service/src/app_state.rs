@@ -1,6 +1,8 @@
 use sqlx::SqlitePool;
 use tokio::sync::broadcast;
 
+use crate::domain::terminal::service::PtyManager;
+
 /// A turn-state change for a single feature, broadcast to all connected clients.
 #[derive(Clone, Debug, serde::Serialize)]
 pub struct TurnStateEvent {
@@ -25,6 +27,8 @@ pub struct AppState {
     pub agent_timeout_minutes: u64,
     /// Broadcast channel for turn-state changes (cross-feature, all WS clients).
     pub turn_state_tx: broadcast::Sender<TurnStateEvent>,
+    /// PTY lifecycle manager for terminal sessions.
+    pub pty_manager: PtyManager,
 }
 
 impl AppState {
@@ -55,6 +59,7 @@ impl AppState {
             max_parallel_agents: 3,
             agent_timeout_minutes: 30,
             turn_state_tx,
+            pty_manager: PtyManager::new(),
         }
     }
 }
