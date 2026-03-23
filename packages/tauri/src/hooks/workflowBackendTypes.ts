@@ -155,7 +155,7 @@ export interface WorkflowBackend {
   selectItem?(itemId: number): void;
   selectedItemId?: number | null;
 
-  // -- Worktree state (WS only, null for tRPC) --
+  // -- Worktree state (WS only, null for HTTP polling) --
   worktreeStatus?: WorktreeStatus;
   worktreePath?: string | null;
   worktreeBranch?: string | null;

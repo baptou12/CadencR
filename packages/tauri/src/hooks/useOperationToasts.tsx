@@ -4,13 +4,13 @@ import { toast } from "sonner";
 
 const TOAST_ID = "global-ops";
 
-/** Maps tRPC query keys to friendly, non-technical labels */
+/** Maps React Query keys to friendly, non-technical labels */
 const OPERATION_LABELS: Record<string, string> = {};
 
 /** Excluded prefixes — high-frequency polling/streaming queries that shouldn't show toasts */
 const EXCLUDED_PREFIXES = ["agents.", "sessions.", "features."];
 
-/** Converts a tRPC key like "diffComments.getByFeature" into "Loading diff comments" */
+/** Converts a query key like "diffComments.getByFeature" into "Loading diff comments" */
 function humanizeKey(key: string): string {
   // Take the router name (first segment), split camelCase, and title-case it
   const router = key.split(".")[0];
@@ -21,7 +21,7 @@ function humanizeKey(key: string): string {
 }
 
 function extractOperationKey(queryKey: readonly unknown[]): string | null {
-  // tRPC v10 query keys are arrays like [["git", "getStats"], { input: ... }]
+  // React Query keys are arrays like [["git", "getStats"], { input: ... }]
   const first = queryKey[0];
   if (Array.isArray(first) && first.length >= 2 && typeof first[0] === "string") {
     const key = first.join(".");

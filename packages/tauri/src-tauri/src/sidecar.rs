@@ -105,7 +105,7 @@ pub fn stop_sidecar(state: &SidecarState) {
     };
 
     if let Some(child) = guard.take() {
-        log::info!("Sending SIGTERM to cadence-service...");
+        log::info!("Stopping cadence-service...");
         if let Err(e) = child.kill() {
             log::error!("Failed to kill sidecar: {e}");
             return;
