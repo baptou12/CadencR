@@ -1,0 +1,56 @@
+import { describe, it, expect, vi } from "vitest";
+import { render, screen } from "@/test-utils";
+import { ModelSelector } from "./ModelSelector";
+import React from "react";
+
+const { mockGetGlobalSettings, mockGetProjectSettings, mockGetFeatureSettings } = vi.hoisted(() => ({
+  mockGetGlobalSettings: vi.fn(() => ({ data: {}, isLoading: false })),
+  mockGetProjectSettings: vi.fn(() => ({ data: {}, isLoading: false })),
+  mockGetFeatureSettings: vi.fn(() => ({ data: {}, isLoading: false })),
+}));
+
+vi.mock("../api/generated", () => ({
+  useListModels: vi.fn(() => ({ data: [{ id: "opus[1m]", label: "Opus (1M)" }] })),
+  useGetWorkspaceModelSettings: () => mockGetGlobalSettings(),
+  useSetWorkspaceModelSetting: vi.fn(() => ({ mutate: vi.fn() })),
+  getGetWorkspaceModelSettingsQueryKey: vi.fn(() => ["workspace", "model-settings"]),
+  useGetProjectModelSettings: () => mockGetProjectSettings(),
+  useSetProjectModelSetting: vi.fn(() => ({ mutate: vi.fn() })),
+  getGetProjectModelSettingsQueryKey: vi.fn(() => ["project", "model-settings"]),
+  useGetFeatureModelSettings: () => mockGetFeatureSettings(),
+  useSetFeatureModelSetting: vi.fn(() => ({ mutate: vi.fn() })),
+  getGetFeatureModelSettingsQueryKey: vi.fn((id: number) => ["features", "model-settings", id]),
+}));
+
+vi.mock("@tanstack/react-query", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@tanstack/react-query")>();
+  return {
+    ...actual,
+    useQueryClient: vi.fn(() => ({ invalidateQueries: vi.fn() })),
+  };
+});
+
+describe("ModelSelector", () => {
+  it("renders agent type labels", () => {
+    render(<ModelSelector level="global" />);
+    expect(screen.getByText("Plan")).toBeInTheDocument();
+    expect(screen.getByText("Execute")).toBeInTheDocument();
+    expect(screen.getByText("Review")).toBeInTheDocument();
+  });
+
+  it("renders selects for all agent types", () => {
+    render(<ModelSelector level="global" />);
+    const combos = screen.getAllByRole("combobox");
+    expect(combos.length).toBeGreaterThanOrEqual(7);
+  });
+
+  it("renders at project level without errors", () => {
+    render(<ModelSelector level="project" projectId={1} />);
+    expect(screen.getByText("Plan")).toBeInTheDocument();
+  });
+
+  it("renders at feature level without errors", () => {
+    render(<ModelSelector level="feature" featureId={1} projectId={1} />);
+    expect(screen.getByText("Execute")).toBeInTheDocument();
+  });
+});

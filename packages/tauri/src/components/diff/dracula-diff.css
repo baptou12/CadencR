@@ -1,0 +1,99 @@
+/* Auto-scroll overflowing text */
+.auto-scroll-text {
+  display: inline-block;
+  white-space: nowrap;
+}
+.auto-scroll-wrapper {
+  overflow: hidden;
+}
+.auto-scroll-text[data-overflows="true"] {
+  animation: scroll-left 8s linear infinite;
+}
+@keyframes scroll-left {
+  0%, 15% { transform: translateX(0); }
+  45%, 55% { transform: translateX(var(--scroll-distance)); }
+  85%, 100% { transform: translateX(0); }
+}
+
+/**
+ * Dracula theme overrides for @git-diff-view/react
+ * Applied via .dracula-diff wrapper class
+ */
+.dracula-diff {
+  --diff-border--: #6272a4;
+  --diff-add-content--: #2e4033;
+  --diff-del-content--: #4d2228;
+  --diff-add-lineNumber--: #2e4033;
+  --diff-del-lineNumber--: #4d2228;
+  --diff-plain-content--: #282a36;
+  --diff-expand-content--: #343746;
+  --diff-plain-lineNumber--: #282a36;
+  --diff-expand-lineNumber--: #343746;
+  --diff-plain-lineNumber-color--: #6272a4;
+  --diff-expand-lineNumber-color--: #6272a4;
+  --diff-hunk-content--: #343746;
+  --diff-hunk-lineNumber--: #343746;
+  --diff-hunk-lineNumber-hover--: #bd93f9;
+  --diff-add-content-highlight--: #50fa7b40;
+  --diff-del-content-highlight--: #ff555540;
+  --diff-add-widget--: #bd93f9;
+  --diff-add-widget-color--: #f8f8f2;
+  --diff-empty-content--: #282a36;
+  --diff-hunk-content-color--: #6272a4;
+
+  color: #f8f8f2;
+  background-color: #282a36;
+}
+
+.dracula-diff [data-state="selected"],
+.dracula-diff .diff-line-selected {
+  background-color: #44475a;
+}
+
+/* Allow shiki token colors to show through on add/del lines.
+   A subtle tint is applied via background so syntax colors remain visible. */
+.dracula-diff .diff-line-old-content .diff-line-syntax-raw span[style],
+.dracula-diff .diff-line-del .diff-line-syntax-raw span[style] {
+  /* shiki inline styles take precedence; no override needed */
+}
+
+.dracula-diff .diff-line-old-content .diff-line-syntax-raw,
+.dracula-diff .diff-line-del .diff-line-syntax-raw {
+  /* Default fallback color for lines without shiki token spans */
+  color: #ff8585;
+}
+
+.dracula-diff .diff-line-new-content .diff-line-syntax-raw,
+.dracula-diff .diff-line-add .diff-line-syntax-raw {
+  /* Default fallback color for lines without shiki token spans */
+  color: #69ff94;
+}
+
+.dracula-diff .diff-line-hunk-content {
+  color: #6272a4;
+  background-color: #343746;
+}
+
+.dracula-diff .current-line,
+.dracula-diff [data-current] {
+  background-color: #44475a;
+}
+
+/* Reset z-index from diff library so it doesn't overlap the terminal panel */
+.dracula-diff .diff-tailwindcss-wrapper .z-\[1\] {
+  z-index: auto;
+}
+
+/* Ensure internal diff table elements don't break border-radius clipping */
+.dracula-diff .diff-table-wrapper {
+  border-radius: inherit;
+}
+
+.dracula-diff table {
+  border-radius: inherit;
+}
+
+/* Last row cells should have bottom border-radius */
+.dracula-diff table tr:last-child td {
+  border-bottom: none;
+}

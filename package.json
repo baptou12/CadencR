@@ -12,6 +12,8 @@
     "format": "turbo run format",
     "format:check": "turbo run format:check",
     "start": "turbo run dev --filter=@cadence/electron",
+    "tauri:dev": "turbo run dev --filter=@cadence/desktop",
+    "tauri:build": "turbo run build --filter=@cadence/desktop",
     "package": "turbo run package",
     "make": "turbo run make",
     "build": "turbo run build",

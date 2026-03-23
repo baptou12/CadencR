@@ -1,0 +1,103 @@
+import { useMemo, useState, useEffect } from "react";
+import { createTwoFilesPatch } from "diff";
+import { DiffView, DiffFile, DiffModeEnum } from "@git-diff-view/react";
+import { getDiffViewHighlighter, type DiffHighlighter } from "@git-diff-view/shiki";
+import "@git-diff-view/react/styles/diff-view.css";
+import "./diff/dracula-diff.css";
+import { langFromPath } from "@/lib/parse-unified-diff";
+
+export interface InlineDiffBlockProps {
+  filePath: string;
+  oldContent: string;
+  newContent: string;
+  /** Base path to strip from filePath for display (e.g. project or worktree root) */
+  basePath?: string;
+}
+
+/**
+ * Compact inline diff block for displaying file changes during agent execution.
+ * Uses @git-diff-view/react in unified mode with the Dracula theme.
+ */
+export function InlineDiffBlock({ filePath, oldContent, newContent, basePath }: InlineDiffBlockProps) {
+  // Show relative path when file is inside the base path (resolved cwd)
+  const displayPath = useMemo(() => {
+    if (!basePath || !filePath.startsWith(basePath)) return filePath;
+    return filePath.slice(basePath.endsWith("/") ? basePath.length : basePath.length + 1);
+  }, [filePath, basePath]);
+  const [shikiHighlighter, setShikiHighlighter] = useState<DiffHighlighter | null>(null);
+
+  useEffect(() => {
+    getDiffViewHighlighter().then((h) => setShikiHighlighter(h));
+  }, []);
+
+  const diffFile = useMemo(() => {
+    if (oldContent === newContent) return null;
+
+    // Generate unified diff from old and new content
+    const patch = createTwoFilesPatch(filePath, filePath, oldContent, newContent);
+
+    // Verify the patch has actual hunks
+    if (!patch.includes("@@")) return null;
+
+    const lang = langFromPath(filePath);
+    try {
+      const file = DiffFile.createInstance({
+        oldFile: {
+          fileName: filePath,
+          fileLang: lang,
+          content: "",
+        },
+        newFile: {
+          fileName: filePath,
+          fileLang: lang,
+          content: "",
+        },
+        hunks: [patch],
+      });
+      file.initTheme("dark");
+      file.initRaw();
+      if (shikiHighlighter) {
+        file.initSyntax({ registerHighlighter: shikiHighlighter });
+      }
+      file.buildSplitDiffLines();
+      file.buildUnifiedDiffLines();
+      return file;
+    } catch {
+      return null;
+    }
+  }, [filePath, oldContent, newContent, shikiHighlighter]);
+
+  // Edge case: identical content
+  if (oldContent === newContent || !diffFile) {
+    return (
+      <div className="rounded-lg border border-[#6272a4] bg-[#282a36] px-3 py-2 text-xs text-[#6272a4]">
+        No changes
+      </div>
+    );
+  }
+
+  const additions = diffFile.additionLength;
+  const deletions = diffFile.deletionLength;
+
+  return (
+    <div className="dracula-diff overflow-hidden rounded-lg border border-[#6272a4] bg-[#282a36]">
+      {/* Compact file header */}
+      <div className="flex items-center gap-2 border-b border-[#6272a4] bg-[color-mix(in_srgb,var(--drac-cyan)_15%,#282a36)] px-3 py-1 text-xs">
+        <span className="flex-1 truncate font-mono text-[#f8f8f2]" title={filePath}>{displayPath}</span>
+        <span className="text-[#50fa7b]">+{additions}</span>
+        <span className="text-[#ff5555]">-{deletions}</span>
+      </div>
+
+      {/* Diff content */}
+      <DiffView
+        diffFile={diffFile}
+        diffViewMode={DiffModeEnum.Unified}
+        diffViewWrap={true}
+        diffViewTheme="dark"
+        diffViewFontSize={13}
+        diffViewHighlight={true}
+        registerHighlighter={shikiHighlighter ?? undefined}
+      />
+    </div>
+  );
+}
