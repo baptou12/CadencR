@@ -137,7 +137,7 @@ async fn run_pty_ws_loop(
     // PTY → WS: use mpsc channel to bridge blocking read → async send
     let (data_tx, mut data_rx) = tokio::sync::mpsc::channel::<String>(64);
 
-    let read_task = tokio::task::spawn_blocking(move || {
+    let mut read_task = tokio::task::spawn_blocking(move || {
         let mut buf = [0u8; 4096];
         loop {
             let n = match reader.lock().expect("reader lock").read(&mut buf) {
@@ -162,7 +162,7 @@ async fn run_pty_ws_loop(
     // Async task: forward data from mpsc channel to WebSocket sink
     let sink = Arc::new(tokio::sync::Mutex::new(ws_sink));
     let sink_fwd = Arc::clone(&sink);
-    let forward_task = tokio::spawn(async move {
+    let mut forward_task = tokio::spawn(async move {
         use futures::SinkExt;
         while let Some(data) = data_rx.recv().await {
             let msg = ServerMessage::Data { data };
@@ -182,7 +182,7 @@ async fn run_pty_ws_loop(
     // WS → PTY: read WebSocket messages and dispatch to PTY
     let pty_id_write = pty_id.clone();
     let pty_manager_write = pty_manager.clone();
-    let write_task = tokio::spawn(async move {
+    let mut write_task = tokio::spawn(async move {
         while let Some(Ok(msg)) = ws_stream.next().await {
             match msg {
                 Message::Text(text) => {
@@ -220,7 +220,7 @@ async fn run_pty_ws_loop(
     // Wait for PTY exit to send exit message
     let sink_exit = Arc::clone(&sink);
     let pty_id_exit = pty_id.clone();
-    let exit_task = tokio::spawn(async move {
+    let mut exit_task = tokio::spawn(async move {
         // Wait for alive to become Some(exit_code)
         loop {
             if alive_rx.borrow_and_update().is_some() {
@@ -244,19 +244,25 @@ async fn run_pty_ws_loop(
 
     // Wait for either the WS write task or read task to finish
     tokio::select! {
-        _ = write_task => {
+        _ = &mut write_task => {
             info!(pty_id = %pty_id, "WebSocket closed, PTY kept alive");
         }
-        _ = read_task => {
+        _ = &mut read_task => {
             info!(pty_id = %pty_id, "PTY read ended");
         }
-        _ = forward_task => {
+        _ = &mut forward_task => {
             info!(pty_id = %pty_id, "PTY forward ended");
         }
-        _ = exit_task => {
+        _ = &mut exit_task => {
             info!(pty_id = %pty_id, "PTY exited");
         }
     }
+
+    // Abort remaining tasks to avoid orphaned background work
+    write_task.abort();
+    forward_task.abort();
+    exit_task.abort();
+    read_task.abort();
 }
 
 async fn send_msg(
