@@ -2,9 +2,8 @@
  * Single hook that provides all agent state for a feature.
  *
  * Data flows through a single path:
- *   1. `trpc.sessions.getFeatureAgentState` — canonical state from DB (pre-built nested blocks)
- *   2. `useDbUpdated` invalidates the query on throttled `db:updated` events from main process
- *   3. Terminal events (agent_done, agent_paused) trigger an immediate refetch
+ *   1. `useGetFeatureAgentState` — canonical state from DB (pre-built nested blocks)
+ *   2. React Query polling and WebSocket events drive refetches
  *
  * Incremental fetching: after the first full load, subsequent fetches only request
  * messages newer than what we already have (via `afterMessageIds`). The server returns
@@ -14,7 +13,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useGetFeatureAgentState } from "../api/generated";
 import type { AgentBlockData } from "@/components/AgentBlock";
-import type { AgentEvent, AgentType } from "../../main/agents/types";
+import type { AgentType } from "../../main/agents/types";
 import type { AgentStatus, TodoItem } from "@/types/agent";
 import type { AgentQuestion } from "@/components/AgentQuestionDrawer";
 import type { PendingPermission } from "@/components/ToolPermissionPrompt";
@@ -229,42 +228,6 @@ export function useFeatureAgentState(featureId: number) {
 
   const afterParam = afterMessageIds ? JSON.stringify(afterMessageIds) : undefined;
   const query = useGetFeatureAgentState(featureId, afterParam, { keepPreviousData: true });
-
-  // Stable ref to query.refetch so the IPC effect doesn't re-register every render
-  const refetchRef = useRef(query.refetch);
-  refetchRef.current = query.refetch;
-
-  // Listen for terminal events (agent_done, agent_paused) to trigger immediate refetch
-  useEffect(() => {
-    const api = (
-      window as unknown as {
-        api?: {
-          onAgentEvent: (cb: (event: unknown) => void) => unknown;
-          offAgentEvent: (listener?: unknown) => void;
-        };
-      }
-    ).api;
-    if (!api) return;
-
-    const listener = api.onAgentEvent((data: unknown) => {
-      const agentEvent = data as AgentEvent;
-      const e = agentEvent.event;
-
-      // Only handle terminal events — stream events are now delivered via DB + throttled notify
-      if (
-        e.type === "agent_done" ||
-        e.type === "agent_paused" ||
-        e.type === "result" ||
-        e.type === "error"
-      ) {
-        void refetchRef.current();
-      }
-    });
-
-    return () => {
-      api.offAgentEvent(listener as undefined);
-    };
-  }, [featureId]);
 
   // Parse question helper — handles both {questions: [...]} and {question: "..."} formats
   const parseQuestions = useCallback((raw: unknown): AgentQuestion[] | null => {

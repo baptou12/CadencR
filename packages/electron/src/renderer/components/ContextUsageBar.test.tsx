@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@/test-utils";
 import { ContextUsageBar } from "./ContextUsageBar";
-import type { ContextUsageState } from "@/hooks/useContextUsage";
+import type { ContextUsageState } from "@/types/agent";
 
 function makeUsage(overrides: Partial<ContextUsageState> = {}): ContextUsageState {
   return {

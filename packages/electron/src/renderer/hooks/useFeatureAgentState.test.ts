@@ -9,8 +9,6 @@ vi.mock("../api/generated", () => ({
   useGetFeatureAgentState: (...args: unknown[]) => mockUseQuery(...args),
 }));
 
-type AgentEventListener = (data: unknown) => void;
-
 /** Helper to build a minimal session payload for tests. */
 function makeSession(overrides: Record<string, unknown> = {}) {
   return {
@@ -42,27 +40,12 @@ function makeSession(overrides: Record<string, unknown> = {}) {
 }
 
 describe("useFeatureAgentState", () => {
-  let onAgentEventListener: AgentEventListener | null = null;
-
   beforeEach(() => {
-    onAgentEventListener = null;
     mockRefetch.mockClear();
     mockUseQuery.mockReturnValue({
       data: { sessions: [] },
       isLoading: false,
       refetch: mockRefetch,
-    });
-
-    Object.defineProperty(window, "api", {
-      value: {
-        onAgentEvent: vi.fn((cb: AgentEventListener) => {
-          onAgentEventListener = cb;
-          return cb;
-        }),
-        offAgentEvent: vi.fn(),
-      },
-      writable: true,
-      configurable: true,
     });
   });
 
@@ -112,27 +95,6 @@ describe("useFeatureAgentState", () => {
     mockUseQuery.mockReturnValue({ data: undefined, isLoading: true, refetch: mockRefetch });
     const { result } = renderHook(() => useFeatureAgentState(1));
     expect(result.current.isLoading).toBe(true);
-  });
-
-  it("triggers refetch on agent_done event", () => {
-    const { result } = renderHook(() => useFeatureAgentState(1));
-    expect(result.current.refetch).toBeDefined();
-
-    // Simulate agent_done event
-    onAgentEventListener?.({ event: { type: "agent_done" } });
-    expect(mockRefetch).toHaveBeenCalledTimes(1);
-  });
-
-  it("triggers refetch on result event", () => {
-    renderHook(() => useFeatureAgentState(1));
-    onAgentEventListener?.({ event: { type: "result" } });
-    expect(mockRefetch).toHaveBeenCalledTimes(1);
-  });
-
-  it("does not trigger refetch on non-terminal events", () => {
-    renderHook(() => useFeatureAgentState(1));
-    onAgentEventListener?.({ event: { type: "text", text: "hello" } });
-    expect(mockRefetch).not.toHaveBeenCalled();
   });
 
   it("parses multi-question format from pendingQuestions", () => {

@@ -11,3 +11,12 @@ export interface TodoItem {
   status: "pending" | "in_progress" | "completed";
   activeForm: string;
 }
+
+export interface ContextUsageState {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  contextWindow: number;
+  usageRatio: number;
+  wasCompacted: boolean;
+}

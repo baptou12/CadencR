@@ -10,7 +10,7 @@ import { create } from "zustand";
 import { DEFAULT_MODEL } from "../../shared/models";
 import type { AgentBlockData } from "@/components/AgentBlock";
 import type { AgentStatus, TodoItem } from "@/types/agent";
-import type { ContextUsageState } from "@/hooks/useContextUsage";
+import type { ContextUsageState } from "@/types/agent";
 import type { PendingPermission } from "@/components/ToolPermissionPrompt";
 import type { AgentQuestion } from "@/components/AgentQuestionDrawer";
 import { parseAskUserQuestions } from "@/components/AgentQuestionDrawer";

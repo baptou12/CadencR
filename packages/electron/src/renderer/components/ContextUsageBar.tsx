@@ -1,4 +1,4 @@
-import type { ContextUsageState } from "@/hooks/useContextUsage";
+import type { ContextUsageState } from "@/types/agent";
 import { cn } from "@/lib/utils";
 
 function getBarColor(ratio: number): string {

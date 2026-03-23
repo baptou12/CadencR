@@ -19,7 +19,7 @@ import type { AgentStatus } from "@/types/agent";
 import type { PendingPermission } from "@/components/ToolPermissionPrompt";
 import type { AgentQuestion } from "@/components/AgentQuestionDrawer";
 import type { SessionConfig } from "@/lib/ws-envelope";
-import type { ContextUsageState } from "@/hooks/useContextUsage";
+import type { ContextUsageState } from "@/types/agent";
 
 export type { PermissionMode, PendingPlanApproval };
 

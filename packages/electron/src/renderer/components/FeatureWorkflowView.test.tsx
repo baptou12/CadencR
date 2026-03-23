@@ -229,10 +229,6 @@ const defaultBackend = {
     handleResume: vi.fn(),
   };
 
-vi.mock("@/hooks/useContextUsage", () => ({
-  useContextUsage: vi.fn(() => new Map()),
-}));
-
 vi.mock("@/hooks/useResolvedModel", () => ({
   useResolvedModel: vi.fn(() => ({
     resolveModel: vi.fn(() => undefined),

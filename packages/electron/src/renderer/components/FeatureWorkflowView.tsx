@@ -21,7 +21,7 @@ import {
   type TerminalPanelHandle,
 } from "@/components/terminal/TerminalPanel";
 import type { FeatureSession } from "@/hooks/useFeatureAgentState";
-import { useContextUsage } from "@/hooks/useContextUsage";
+import type { ContextUsageState } from "@/types/agent";
 import { useResolvedModel } from "@/hooks/useResolvedModel";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import { useTerminalState, useTerminalStore } from "@/hooks/useTerminalState";
@@ -65,7 +65,21 @@ export function FeatureWorkflowView({
     feature?.type ?? "feature",
   );
 
-  const contextUsageMap = useContextUsage(featureId, backend.sessionEntries);
+  const contextUsageMap = useMemo(() => {
+    const map = new Map<number, ContextUsageState>();
+    for (const s of backend.sessionEntries) {
+      const total = s.inputTokens + s.outputTokens;
+      map.set(s.sessionDbId, {
+        inputTokens: s.inputTokens,
+        outputTokens: s.outputTokens,
+        totalTokens: total,
+        contextWindow: s.contextWindow,
+        usageRatio: Math.min(1, s.contextWindow > 0 ? total / s.contextWindow : 0),
+        wasCompacted: s.wasCompacted,
+      });
+    }
+    return map;
+  }, [backend.sessionEntries]);
 
   // Slash commands
   const projectsQuery = useListProjects();

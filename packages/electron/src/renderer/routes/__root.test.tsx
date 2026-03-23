@@ -33,7 +33,6 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 vi.mock("react-hotkeys-hook", () => ({ useHotkeys: vi.fn() }));
-vi.mock("@/hooks/useDbUpdated", () => ({ useDbUpdated: vi.fn() }));
 vi.mock("@/hooks/useDebouncedSetting", () => ({
   useDebouncedSetting: vi.fn(() => ({ value: "256", setValue: vi.fn() })),
 }));

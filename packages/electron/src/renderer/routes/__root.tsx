@@ -9,7 +9,6 @@ import { useHotkeys } from "react-hotkeys-hook";
 import { Sidebar } from "@/components/Sidebar";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
-import { useDbUpdated } from "@/hooks/useDbUpdated";
 import { useOperationToasts } from "@/hooks/useOperationToasts";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import {
@@ -56,7 +55,6 @@ export const Route = createRootRoute({
 });
 
 function RootLayout() {
-  useDbUpdated();
   useOperationToasts();
   const leftWidth = useDebouncedSetting("sidebar_left_width");
   const navigate = useNavigate();

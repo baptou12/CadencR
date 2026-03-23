@@ -43,7 +43,7 @@ import type { AgentBlockData } from "./AgentBlock";
 import type { AgentType } from "../../main/agents/types";
 import type { AgentQuestion } from "./AgentQuestionDrawer";
 import type { TodoItem } from "@/types/agent";
-import type { ContextUsageState } from "@/hooks/useContextUsage";
+import type { ContextUsageState } from "@/types/agent";
 import type { PendingPermission } from "./ToolPermissionPrompt";
 import { AGENT_ICONS } from "./agent-icons";
 import { useGetFeatureWorkingDir, useListModels } from "../api/generated";
