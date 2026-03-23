@@ -1,5 +1,4 @@
 use std::sync::Mutex;
-use tauri::Manager;
 use tauri_plugin_shell::ShellExt;
 use tauri_plugin_shell::process::CommandChild;
 
@@ -21,10 +20,9 @@ impl SidecarState {
 }
 
 pub fn spawn_sidecar(app: &tauri::AppHandle) -> Result<SidecarState, String> {
-    let db_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("Failed to get app data dir: {e}"))?;
+    let db_dir = dirs::data_dir()
+        .ok_or_else(|| "Failed to get data dir".to_string())?
+        .join("cadence");
 
     std::fs::create_dir_all(&db_dir)
         .map_err(|e| format!("Failed to create app data dir: {e}"))?;

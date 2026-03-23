@@ -6,8 +6,8 @@
     "@cadence/claude-agent-sdk-rs": "workspace:*"
   },
   "scripts": {
-    "build": "cargo build",
-    "build:release": "cargo build --release",
+    "build": "cargo build && cp ../../target/debug/cadence-service ../tauri/src-tauri/binaries/cadence-service-$(rustc -vV | sed -n 's/host: //p')",
+    "build:release": "cargo build --release && cp ../../target/release/cadence-service ../tauri/src-tauri/binaries/cadence-service-$(rustc -vV | sed -n 's/host: //p')",
     "dev": "cargo watch -w src -x 'run -- --db-path ~/Library/Application\\ Support/cadence/cadence.db --port 5005'",
     "test": "cargo test",
     "lint": "cargo check"
