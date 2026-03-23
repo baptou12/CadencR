@@ -58,7 +58,7 @@ pub async fn delete_feature_handler(
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> Result<Json<SuccessResponse>, AppError> {
-    service::delete_feature(&state.write_pool, &state.read_pool, id, state.electron_port).await?;
+    service::delete_feature(&state.write_pool, &state.read_pool, id).await?;
     Ok(Json(SuccessResponse { success: true }))
 }
 

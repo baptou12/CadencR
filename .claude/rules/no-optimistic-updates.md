@@ -1,6 +1,6 @@
 ---
 paths:
-  - "packages/electron/src/renderer/**"
+  - "packages/tauri/src/**"
 ---
 
 Do NOT use optimistic updates in the frontend. Everything runs locally — there is no latency to hide. Optimistic updates create multiple sources of truth and add unnecessary complexity.

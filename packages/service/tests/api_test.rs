@@ -123,7 +123,6 @@ async fn start_test_server() -> TestServer {
     let state = AppState {
         read_pool: pool.clone(),
         write_pool: pool,
-        electron_port: 45679,
         max_parallel_agents: 3,
         agent_timeout_minutes: 30,
         turn_state_tx,

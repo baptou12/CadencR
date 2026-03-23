@@ -17,8 +17,6 @@ pub struct AppState {
     pub read_pool: SqlitePool,
     /// Read-write pool (max 1 connection, serializes writes)
     pub write_pool: SqlitePool,
-    /// Port of the Electron IPC HTTP server (for callbacks)
-    pub electron_port: u16,
     /// Maximum number of parallel workflow agents. Defaults to 3.
     /// Overridden by CADENCE_MAX_PARALLEL env var.
     pub max_parallel_agents: usize,
@@ -55,7 +53,6 @@ impl AppState {
         Self {
             read_pool: pool.clone(),
             write_pool: pool,
-            electron_port: 0,
             max_parallel_agents: 3,
             agent_timeout_minutes: 30,
             turn_state_tx,
