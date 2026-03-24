@@ -1069,6 +1069,19 @@ pub fn spawn_workflow_stream_reader(
                                 }
                                 let changed: Option<&[&str]> = match tool_name {
                                     t if t.contains("create_phase") || t.contains("finalize_phases") => {
+                                        // Send queue_update so frontend sees new draft items
+                                        if let Ok(items) = repo::get_queue_for_feature(&write_pool, feature_id).await {
+                                            let envelope = WsEnvelope::new(
+                                                "workflow",
+                                                "queue_update",
+                                                to_value(WorkflowQueueUpdatePayload {
+                                                    feature_id,
+                                                    items,
+                                                    workflow_status: None,
+                                                }),
+                                            );
+                                            let _ = sender.send(Message::Text(String::from(envelope).into()));
+                                        }
                                         Some(&["phases", "progress"])
                                     }
                                     t if t.contains("finalize_plan") => {

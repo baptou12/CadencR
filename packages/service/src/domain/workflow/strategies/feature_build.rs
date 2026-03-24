@@ -557,13 +557,7 @@ impl FeatureBuildStrategy {
     }
 }
 
-fn map_phase_type_to_item_type(phase_type: Option<&str>) -> &'static str {
-    match phase_type {
-        Some("setup") | Some("value") => "execute",
-        Some("qa") => "qa",
-        _ => "execute", // default to execute
-    }
-}
+use crate::domain::features::repository::map_phase_type_to_item_type;
 
 #[cfg(test)]
 mod tests {

@@ -174,6 +174,16 @@ pub async fn mark_item_ready(pool: &SqlitePool, item_id: i64) -> Result<(), AppE
     Ok(())
 }
 
+/// Map a phase's `phase_type` field to the corresponding queue `item_type`.
+/// Shared by `create_phase` (draft insertion), `populate_queue`, and `re_populate`.
+pub fn map_phase_type_to_item_type(phase_type: Option<&str>) -> &'static str {
+    match phase_type {
+        Some("setup") | Some("value") => "execute",
+        Some("qa") => "qa",
+        _ => "execute",
+    }
+}
+
 pub async fn clear_queue_for_feature(pool: &SqlitePool, feature_id: i64) -> Result<(), AppError> {
     // Dependencies cascade on delete, but delete explicitly for clarity
     sqlx::query(

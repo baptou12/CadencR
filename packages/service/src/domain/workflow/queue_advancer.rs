@@ -462,6 +462,15 @@ impl QueueAdvancer {
             .filter_map(|(id,)| id)
             .collect();
 
+        // Upgrade any draft queue items to ready (placeholders from create_phase)
+        sqlx::query(
+            "UPDATE workflow_queue SET status = 'ready' WHERE feature_id = ? AND status = 'draft'",
+        )
+        .bind(self.feature_id)
+        .execute(&self.write_pool)
+        .await
+        .map_err(|e| format!("Failed to upgrade draft items: {e}"))?;
+
         let new_phases: Vec<_> = all_phases
             .iter()
             .filter(|(id, _, _)| !existing.contains(id))
