@@ -226,6 +226,7 @@ pub async fn handle_workflow_action(
         "prompt.send" => handle_prompt_send(envelope, sender, app_state).await,
         "interrupt" => handle_interrupt(envelope, sender, app_state).await,
         "set_autonomy" => handle_set_autonomy(envelope, sender).await,
+        "set_parallel" => handle_set_parallel(envelope, sender, app_state).await,
         "start_session" => handle_start_session(envelope, sender).await,
         "start_refine" => handle_start_refine(envelope, sender).await,
         "start_review_fixer" => handle_start_review_fixer(envelope, sender).await,
@@ -839,6 +840,31 @@ async fn handle_set_autonomy(envelope: WsEnvelope, sender: &WsSender) {
     let _ = sender.send(Message::Text(String::from(ack).into()));
 }
 
+async fn handle_set_parallel(envelope: WsEnvelope, sender: &WsSender, app_state: &AppState) {
+    let Some((payload, engine)) = parse_and_get_engine::<WorkflowSetParallelPayload>(&envelope, sender) else { return };
+
+    let max = if payload.enabled { app_state.max_parallel_agents } else { 1 };
+    engine.set_max_parallel(max);
+    info!(
+        feature_id = payload.feature_id,
+        enabled = payload.enabled,
+        max_parallel = max,
+        "parallel execution updated"
+    );
+
+    // If enabling parallelism, trigger advance to pick up waiting items immediately
+    if payload.enabled {
+        let _ = engine.advance().await;
+    }
+
+    let ack = WsEnvelope::reply(&envelope.id, "workflow", "parallel.updated", to_value(serde_json::json!({
+        "feature_id": payload.feature_id,
+        "enabled": payload.enabled,
+        "max_parallel": max,
+    })));
+    let _ = sender.send(Message::Text(String::from(ack).into()));
+}
+
 async fn handle_start_session(envelope: WsEnvelope, sender: &WsSender) {
     let Some((payload, engine)) = parse_and_get_engine::<WorkflowStartSessionPayload>(&envelope, sender) else { return };
 
@@ -1168,6 +1194,21 @@ mod tests {
         let app_state = AppState::with_pool(pool);
 
         let envelope = make_envelope("retry_item", serde_json::json!({"feature_id": 12345, "item_id": 1}));
+        handle_workflow_action(envelope, &tx, &sdk_sessions, &app_state).await;
+
+        let env = recv_envelope(&mut rx);
+        let payload: SessionErrorPayload = serde_json::from_value(env.payload).unwrap();
+        assert_eq!(payload.code, "NO_ENGINE");
+    }
+
+    #[tokio::test]
+    async fn test_set_parallel_without_engine_returns_no_engine() {
+        let (tx, mut rx) = make_sender();
+        let sdk_sessions: SdkSessions = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        let app_state = AppState::with_pool(pool);
+
+        let envelope = make_envelope("set_parallel", serde_json::json!({"feature_id": 12345, "enabled": false}));
         handle_workflow_action(envelope, &tx, &sdk_sessions, &app_state).await;
 
         let env = recv_envelope(&mut rx);

@@ -318,6 +318,12 @@ pub struct WorkflowSetAutonomyPayload {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowSetParallelPayload {
+    pub feature_id: i64,
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowInterruptPayload {
     pub feature_id: i64,
     pub agent_slot: AgentSlot,
@@ -369,6 +375,7 @@ impl_has_feature_id!(
     WorkflowPermissionRespondPayload,
     WorkflowPromptSendPayload,
     WorkflowSetAutonomyPayload,
+    WorkflowSetParallelPayload,
     WorkflowInterruptPayload,
     WorkflowStartSessionPayload,
     WorkflowStartRefinePayload,
@@ -835,6 +842,15 @@ mod tests {
         let v = serde_json::to_value(&p).unwrap();
         let d: WorkflowSetAutonomyPayload = serde_json::from_value(v).unwrap();
         assert_eq!(d.level, 3);
+    }
+
+    #[test]
+    fn test_workflow_set_parallel_payload_roundtrip() {
+        let p = WorkflowSetParallelPayload { feature_id: 1, enabled: false };
+        let v = serde_json::to_value(&p).unwrap();
+        let d: WorkflowSetParallelPayload = serde_json::from_value(v).unwrap();
+        assert_eq!(d.feature_id, 1);
+        assert!(!d.enabled);
     }
 
     #[test]

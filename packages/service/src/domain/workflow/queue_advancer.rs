@@ -3,7 +3,7 @@
 //! Handles advancing the queue, completing/erroring/skipping/retrying items,
 //! re-populating on review completion, and restoring stale items on reconnect.
 
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 
 use sqlx::SqlitePool;
 use tracing::{error, info, warn};
@@ -28,7 +28,7 @@ pub struct QueueAdvancer {
     pub feature_id: i64,
     pub workflow_type: WorkflowType,
     pub strategy: Box<dyn WorkflowStrategy>,
-    pub max_parallel: usize,
+    pub max_parallel: AtomicUsize,
     pub autonomy_level: AtomicU8,
     pub read_pool: SqlitePool,
     pub write_pool: SqlitePool,
@@ -67,16 +67,30 @@ impl QueueAdvancer {
         .and_then(|v| v.parse::<u8>().ok())
         .unwrap_or(1);
 
+        let parallel_str = resolve_setting(
+            &read_pool,
+            "parallel_execution",
+            Some(feature_id),
+            project_id,
+            Some("true"),
+        )
+        .await;
+        let effective_max = if parallel_str.as_deref() == Some("false") { 1 } else { max_parallel };
+
         Self {
             feature_id,
             workflow_type,
             strategy,
-            max_parallel,
+            max_parallel: AtomicUsize::new(effective_max),
             autonomy_level: AtomicU8::new(autonomy),
             read_pool,
             write_pool,
             ws_sender,
         }
+    }
+
+    pub fn set_max_parallel(&self, val: usize) {
+        self.max_parallel.store(val, Ordering::Relaxed);
     }
 
     /// Advance the workflow: unblock ready items and start them up to capacity.
@@ -86,12 +100,13 @@ impl QueueAdvancer {
         permissions: &PermissionRouter,
     ) -> Result<(), String> {
         let running = agent_manager.active_items.len();
+        let max_parallel = self.max_parallel.load(Ordering::Relaxed);
 
-        if running >= self.max_parallel {
+        if running >= max_parallel {
             info!(
                 feature_id = self.feature_id,
                 running,
-                max = self.max_parallel,
+                max = max_parallel,
                 "at capacity, not starting new items"
             );
             return Ok(());
@@ -106,7 +121,7 @@ impl QueueAdvancer {
             .await
             .map_err(|e| e.to_string())?;
 
-        let capacity = self.max_parallel - running;
+        let capacity = max_parallel - running;
         let autonomy = self.autonomy_level.load(Ordering::Relaxed);
         for item in ready.into_iter().take(capacity) {
             if let Err(e) = agent_manager.start_item(item, self.strategy.as_ref(), autonomy, permissions).await {
@@ -195,7 +210,7 @@ impl QueueAdvancer {
                         };
                         let same_group = ready.iter().all(|r| r.group_index == current_group);
                         if same_group {
-                            let capacity = self.max_parallel - agent_manager.active_items.len();
+                            let capacity = self.max_parallel.load(Ordering::Relaxed) - agent_manager.active_items.len();
                             let autonomy = self.autonomy_level.load(Ordering::Relaxed);
                             for item in ready.into_iter().take(capacity) {
                                 if let Err(e) = agent_manager.start_item(item, self.strategy.as_ref(), autonomy, permissions).await {

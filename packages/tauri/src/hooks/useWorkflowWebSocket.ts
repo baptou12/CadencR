@@ -165,6 +165,7 @@ interface WorkflowState {
   disconnect: () => void;
   selectItem: (itemId: number | null) => void;
   setAutonomyLevel: (level: AutonomyLevel) => void;
+  setParallelExecution: (enabled: boolean) => void;
   hydrateFromSnapshot: (snapshot: FeatureSnapshot) => void;
 
   // Outgoing messages
@@ -1094,6 +1095,10 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     setAutonomyLevel(level) {
       set({ autonomyLevel: level });
       send("set_autonomy", { level });
+    },
+
+    setParallelExecution(enabled: boolean) {
+      send("set_parallel", { enabled });
     },
 
     startPlan(description, images) {

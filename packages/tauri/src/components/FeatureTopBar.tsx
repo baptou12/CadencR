@@ -43,6 +43,7 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", isWebSoc
   const [settingsOpen, setSettingsOpen] = useState(false);
   const queryClient = useQueryClient();
   const setAutonomyLevel = useWorkflowStore((s) => s.setAutonomyLevel);
+  const setParallelExecution = useWorkflowStore((s) => s.setParallelExecution);
 
   const { data: feature } = useGetFeature(featureId);
   // Live WS-pushed title from auto-naming (falls back to null).
@@ -243,13 +244,14 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", isWebSoc
                   <Switch
                     id="feature-parallel-execution"
                     checked={(featureSettings?.parallel_execution ?? "") === "true" || featureSettings?.parallel_execution == null}
-                    onCheckedChange={(checked) =>
+                    onCheckedChange={(checked) => {
                       setFeatureSetting.mutate({
                         featureId,
                         key: "parallel_execution",
                         value: checked ? "true" : "false",
-                      })
-                    }
+                      });
+                      setParallelExecution(checked);
+                    }}
                   />
                 </div>
               </>

@@ -152,6 +152,7 @@ export interface WorkflowBackend {
   skipItem?(itemId: number): void;
   retryItem?(itemId: number): void;
   setAutonomyLevel?(level: AutonomyLevel): void;
+  setParallelExecution?(enabled: boolean): void;
   selectItem?(itemId: number): void;
   selectedItemId?: number | null;
 

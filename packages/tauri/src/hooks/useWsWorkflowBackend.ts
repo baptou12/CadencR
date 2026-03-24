@@ -411,6 +411,7 @@ export function useWsWorkflowBackend(
     skipItem: (itemId) => store.skipItem(itemId),
     retryItem: (itemId) => store.retryItem(itemId),
     setAutonomyLevel: (level) => store.setAutonomyLevel(level),
+    setParallelExecution: (enabled) => store.setParallelExecution(enabled),
     selectItem: (itemId) => store.selectItem(itemId),
     selectedItemId: store.selectedItemId,
 

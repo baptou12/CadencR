@@ -772,6 +772,10 @@ impl WorkflowEngine {
         self.last_activity.store(now, Ordering::Relaxed);
     }
 
+    pub fn set_max_parallel(&self, val: usize) {
+        self.queue.set_max_parallel(val);
+    }
+
     pub async fn advance(&self) -> Result<(), String> {
         self.touch_activity();
         self.queue.advance(&self.agent_manager, &self.permissions).await
@@ -872,7 +876,7 @@ mod tests {
 
         assert_eq!(engine.feature_id, 1);
         assert_eq!(engine.workflow_type, WorkflowType::FeatureBuild);
-        assert_eq!(engine.queue.max_parallel, 2);
+        assert_eq!(engine.queue.max_parallel.load(Ordering::Relaxed), 2);
         assert_eq!(engine.autonomy_level().load(Ordering::Relaxed), 1);
         assert!(engine.active_items().is_empty());
         assert!(engine.agent_manager.queries.is_empty());
@@ -895,6 +899,18 @@ mod tests {
         engine.touch_activity();
         let after = engine.last_activity.load(Ordering::Relaxed);
         assert!(after >= before);
+    }
+
+    #[tokio::test]
+    async fn test_set_max_parallel() {
+        let (engine, _rx) = test_engine().await;
+        assert_eq!(engine.queue.max_parallel.load(Ordering::Relaxed), 2);
+
+        engine.set_max_parallel(1);
+        assert_eq!(engine.queue.max_parallel.load(Ordering::Relaxed), 1);
+
+        engine.set_max_parallel(5);
+        assert_eq!(engine.queue.max_parallel.load(Ordering::Relaxed), 5);
     }
 
     // ── 3. Strategy registry ──
