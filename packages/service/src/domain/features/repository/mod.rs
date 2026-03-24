@@ -1188,4 +1188,111 @@ mod tests {
         let feature = get_by_id(&pool, fid).await.unwrap();
         assert!(feature.is_none());
     }
+
+    // ── Draft Queue Item Tests ──────────────────────────────────────
+
+    #[test]
+    fn test_map_phase_type_to_item_type() {
+        assert_eq!(map_phase_type_to_item_type(Some("setup")), "execute");
+        assert_eq!(map_phase_type_to_item_type(Some("value")), "execute");
+        assert_eq!(map_phase_type_to_item_type(Some("qa")), "qa");
+        assert_eq!(map_phase_type_to_item_type(None), "execute");
+        assert_eq!(map_phase_type_to_item_type(Some("unknown")), "execute");
+    }
+
+    #[tokio::test]
+    async fn test_insert_draft_queue_item() {
+        let pool = setup_test_db_with_queue().await;
+        let proj = create_test_project(&pool).await;
+        let fid = create_feature(&pool, proj, "Feature", "ws-feature").await.unwrap();
+
+        let item_id = insert_queue_item(&pool, fid, "feature_build", "execute", Some(1), "draft", 0, Some(0))
+            .await
+            .unwrap();
+
+        let item = get_queue_item(&pool, item_id).await.unwrap().unwrap();
+        assert_eq!(item.status, "draft");
+        assert_eq!(item.phase_id, Some(1));
+        assert_eq!(item.item_type, "execute");
+    }
+
+    #[tokio::test]
+    async fn test_draft_items_not_returned_by_get_ready_items() {
+        let pool = setup_test_db_with_queue().await;
+        let proj = create_test_project(&pool).await;
+        let fid = create_feature(&pool, proj, "Feature", "ws-feature").await.unwrap();
+
+        insert_queue_item(&pool, fid, "feature_build", "execute", Some(1), "draft", 0, Some(0))
+            .await
+            .unwrap();
+        insert_queue_item(&pool, fid, "feature_build", "execute", Some(2), "ready", 1, Some(0))
+            .await
+            .unwrap();
+
+        let ready = get_ready_items(&pool, fid).await.unwrap();
+        assert_eq!(ready.len(), 1);
+        assert_eq!(ready[0].status, "ready");
+    }
+
+    #[tokio::test]
+    async fn test_upgrade_draft_items_to_ready() {
+        let pool = setup_test_db_with_queue().await;
+        let proj = create_test_project(&pool).await;
+        let fid = create_feature(&pool, proj, "Feature", "ws-feature").await.unwrap();
+
+        let id1 = insert_queue_item(&pool, fid, "feature_build", "execute", Some(1), "draft", 0, Some(0))
+            .await.unwrap();
+        let id2 = insert_queue_item(&pool, fid, "feature_build", "execute", Some(2), "draft", 1, Some(1))
+            .await.unwrap();
+        // A non-draft item should not be affected
+        let id3 = insert_queue_item(&pool, fid, "feature_build", "execute", Some(3), "blocked", 2, Some(1))
+            .await.unwrap();
+
+        // Simulate the upgrade that re_populate_queue_for_new_phases does
+        sqlx::query("UPDATE workflow_queue SET status = 'ready' WHERE feature_id = ? AND status = 'draft'")
+            .bind(fid)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let item1 = get_queue_item(&pool, id1).await.unwrap().unwrap();
+        let item2 = get_queue_item(&pool, id2).await.unwrap().unwrap();
+        let item3 = get_queue_item(&pool, id3).await.unwrap().unwrap();
+        assert_eq!(item1.status, "ready");
+        assert_eq!(item2.status, "ready");
+        assert_eq!(item3.status, "blocked", "non-draft items should not be upgraded");
+    }
+
+    #[tokio::test]
+    async fn test_clear_queue_removes_draft_items() {
+        let pool = setup_test_db_with_queue().await;
+        let proj = create_test_project(&pool).await;
+        let fid = create_feature(&pool, proj, "Feature", "ws-feature").await.unwrap();
+
+        insert_queue_item(&pool, fid, "feature_build", "execute", Some(1), "draft", 0, Some(0))
+            .await.unwrap();
+        insert_queue_item(&pool, fid, "feature_build", "execute", Some(2), "ready", 1, Some(0))
+            .await.unwrap();
+
+        clear_queue_for_feature(&pool, fid).await.unwrap();
+
+        let items = get_queue_for_feature(&pool, fid).await.unwrap();
+        assert!(items.is_empty(), "clear_queue should remove draft items too");
+    }
+
+    #[tokio::test]
+    async fn test_unblock_does_not_affect_draft_items() {
+        let pool = setup_test_db_with_queue().await;
+        let proj = create_test_project(&pool).await;
+        let fid = create_feature(&pool, proj, "Feature", "ws-feature").await.unwrap();
+
+        let draft_id = insert_queue_item(&pool, fid, "feature_build", "execute", Some(1), "draft", 0, Some(0))
+            .await.unwrap();
+
+        // unblock_ready_items only upgrades 'blocked' → 'ready', not 'draft'
+        unblock_ready_items(&pool, fid).await.unwrap();
+
+        let item = get_queue_item(&pool, draft_id).await.unwrap().unwrap();
+        assert_eq!(item.status, "draft", "unblock should not touch draft items");
+    }
 }
