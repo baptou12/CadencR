@@ -76,7 +76,7 @@ impl WsSessionPersistence {
         if let Some((id,)) = existing {
             // Reuse existing session — update status back to running
             if let Err(e) = sqlx::query(
-                "UPDATE agent_sessions SET status = 'running', model = COALESCE(?, model), permission_mode = COALESCE(?, permission_mode) WHERE id = ?"
+                "UPDATE agent_sessions SET status = 'paused', model = COALESCE(?, model), permission_mode = COALESCE(?, permission_mode) WHERE id = ?"
             )
             .bind(model)
             .bind(permission_mode)
@@ -95,7 +95,7 @@ impl WsSessionPersistence {
         // No existing session — create a new one
         let now = chrono::Utc::now().to_rfc3339();
         let result = sqlx::query(
-            "INSERT INTO agent_sessions (feature_id, agent_type, status, model, permission_mode, started_at) VALUES (?, 'session', 'running', ?, ?, ?)"
+            "INSERT INTO agent_sessions (feature_id, agent_type, status, model, permission_mode, started_at) VALUES (?, 'session', 'paused', ?, ?, ?)"
         )
         .bind(self.feature_id)
         .bind(model)
@@ -359,7 +359,6 @@ impl WsSessionPersistence {
     }
 
     /// Mark a session as running with ended_at = NULL.
-    #[allow(dead_code)]
     pub async fn mark_running_static(pool: &SqlitePool, session_id: i64) {
         if let Err(e) = sqlx::query("UPDATE agent_sessions SET status = 'running', ended_at = NULL WHERE id = ?")
             .bind(session_id)
@@ -669,7 +668,7 @@ mod tests {
         .fetch_one(&pool)
         .await
         .unwrap();
-        assert_eq!(row.0, "running");
+        assert_eq!(row.0, "paused");
         assert_eq!(row.1, "opus");
         assert_eq!(row.2, "plan");
     }
@@ -789,7 +788,7 @@ mod tests {
         assert_eq!(row.feature_id, 42);
         assert_eq!(row.model.as_deref(), Some("opus"));
         assert_eq!(row.permission_mode.as_deref(), Some("plan"));
-        assert_eq!(row.status, "running");
+        assert_eq!(row.status, "paused");
     }
 
     #[tokio::test]
@@ -887,13 +886,13 @@ mod tests {
     async fn test_cleanup_stale_sessions() {
         let pool = setup_test_db().await;
 
-        // Create two sessions — one running, one paused
+        // Create two sessions — one marked running (simulating active work), one paused
         let mut p1 = WsSessionPersistence::new(pool.clone(), 1);
-        p1.find_or_create_session(None, None).await; // status = running
+        let id1 = p1.find_or_create_session(None, None).await.unwrap(); // status = paused
+        WsSessionPersistence::mark_running_static(&pool, id1).await; // simulate active SDK query
 
         let mut p2 = WsSessionPersistence::new(pool.clone(), 2);
-        let id2 = p2.find_or_create_session(None, None).await.unwrap();
-        WsSessionPersistence::mark_paused_static(&pool, id2).await;
+        p2.find_or_create_session(None, None).await; // status = paused
 
         WsSessionPersistence::cleanup_stale_sessions(&pool).await;
 
@@ -1080,7 +1079,8 @@ mod tests {
         let pool = setup_test_db().await;
         let mut p = WsSessionPersistence::new(pool.clone(), 1);
         let id = p.find_or_create_session(None, None).await.unwrap();
-        // Session is 'running' by default from find_or_create
+        // Simulate an active session by marking it running
+        WsSessionPersistence::mark_running_static(&pool, id).await;
 
         let result = WsSessionPersistence::delete_session_static(&pool, id).await;
         assert!(result.is_err());

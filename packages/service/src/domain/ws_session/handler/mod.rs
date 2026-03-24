@@ -1104,8 +1104,10 @@ mod tests {
         let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
         let app_state = make_test_app_state().await;
 
-        // Create a session (status = 'running' by default)
+        // Create a session and mark it running (simulating active SDK query)
         let session_id_str = init_session(&tx, &mut rx, &sdk_sessions, &app_state, 1).await;
+        let session_id: i64 = session_id_str.parse().unwrap();
+        WsSessionPersistence::mark_running_static(&app_state.write_pool, session_id).await;
 
         let envelope = make_envelope(
             "session",

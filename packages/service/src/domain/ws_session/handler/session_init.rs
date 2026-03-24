@@ -176,6 +176,6 @@ pub(super) async fn handle_init(
         .execute(&app_state.write_pool)
         .await;
 
-    // Broadcast turn state (session row just set to 'running')
-    WsSessionPersistence::broadcast_turn_state(&app_state.turn_state_tx, feature_id, "claude");
+    // Broadcast "none" to clear any stale turn state — session is idle until a prompt is sent
+    WsSessionPersistence::broadcast_turn_state(&app_state.turn_state_tx, feature_id, "none");
 }

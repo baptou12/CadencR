@@ -497,6 +497,8 @@ pub(super) async fn handle_prompt_send(
             match claude_agent_sdk_rs::query(content_value, options).await {
                 Ok(mut real_query) => {
                     info!(db_session_id, "SDK query spawned successfully, starting stream reader");
+                    WsSessionPersistence::mark_running_static(&app_state.write_pool, db_session_id).await;
+                    WsSessionPersistence::broadcast_turn_state(&app_state.turn_state_tx, feature_id, "claude");
                     let message_rx = real_query.take_message_rx();
                     let query_arc = Arc::new(Mutex::new(real_query));
 
