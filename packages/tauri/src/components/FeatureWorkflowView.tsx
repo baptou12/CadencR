@@ -12,6 +12,7 @@ import { AGENT_ICONS } from "@/components/agent-icons";
 import { Button } from "@/components/ui/button";
 import { QueueSidebar } from "@/components/QueueSidebar";
 import { PlanInputView } from "@/components/PlanInputView";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { NextStepsBar } from "@/components/NextStepsBar";
 import { getActiveFocusZone } from "@/lib/focus-zones";
 import { DiffViewerModal } from "@/components/diff/DiffViewerModal";
@@ -101,16 +102,22 @@ export function FeatureWorkflowView({
     projectId,
   );
 
+  const [deleteTarget, setDeleteTarget] = useState<FeatureSession | null>(null);
+
   const handleDeleteAgent = useCallback(
     (entry: FeatureSession) => {
       if (!entry.sessionDbId) return;
-      const label = AGENT_LABELS[entry.agentType] ?? entry.agentType;
-      if (confirm(`Remove "${label}" agent? This will delete its messages.`)) {
-        backend.deleteSession(entry.sessionDbId);
-      }
+      setDeleteTarget(entry);
     },
-    [backend],
+    [],
   );
+
+  const confirmDelete = useCallback(() => {
+    if (deleteTarget?.sessionDbId) {
+      backend.deleteSession(deleteTarget.sessionDbId);
+    }
+    setDeleteTarget(null);
+  }, [backend, deleteTarget]);
 
   // --- Maximized agent state ---
   const [maximizedAgent, setMaximizedAgent] = useState<string | null>(null);
@@ -855,6 +862,16 @@ export function FeatureWorkflowView({
         open={inlineDiffOpen}
         onOpenChange={setInlineDiffOpen}
         onStartReviewFixer={(comments) => backend.startReviewFixer(comments)}
+      />
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
+        title="Remove agent"
+        description={`Remove "${deleteTarget ? (AGENT_LABELS[deleteTarget.agentType] ?? deleteTarget.agentType) : ""}" agent? This will delete its messages.`}
+        confirmText="Remove"
+        variant="destructive"
+        onConfirm={confirmDelete}
       />
     </div>
     </CodeBlockActionsContext.Provider>

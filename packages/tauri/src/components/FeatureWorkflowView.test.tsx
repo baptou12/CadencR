@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@/test-utils";
+import { render, screen, fireEvent, act } from "@/test-utils";
 import { FeatureWorkflowView } from "./FeatureWorkflowView";
 
 vi.mock("react-hotkeys-hook", () => ({
@@ -139,8 +139,12 @@ vi.mock("@/components/NextStepsBar", () => ({
   NextStepsBar: () => <div data-testid="next-steps-bar" />,
 }));
 
+const { MockAgentSession } = vi.hoisted(() => ({
+  MockAgentSession: vi.fn(() => null),
+}));
+
 vi.mock("@/components/AgentSession", () => ({
-  AgentSession: vi.fn(() => null),
+  AgentSession: MockAgentSession,
   AGENT_LABELS: {
     plan: "Plan",
     prd: "PRD",
@@ -302,5 +306,73 @@ describe("FeatureWorkflowView", () => {
       />,
     );
     expect(container).toBeInTheDocument();
+  });
+
+  describe("agent deletion confirm dialog", () => {
+    const sessionEntry = {
+      agentType: "execute",
+      sessionDbId: 42,
+      status: "idle",
+      messages: [],
+    };
+
+    function renderWithAgent() {
+      const deleteSession = vi.fn();
+      mockUseWorkflowBackend.mockReturnValue({
+        ...defaultBackend,
+        view: "agents",
+        sessionEntries: [sessionEntry],
+        deleteSession,
+      });
+      render(
+        <FeatureWorkflowView
+          featureId={1}
+          projectId={1}
+          feature={mockFeature}
+          featureQuery={{ refetch: vi.fn() }}
+        />,
+      );
+      return { deleteSession };
+    }
+
+    it("shows confirm dialog when delete is triggered", () => {
+      renderWithAgent();
+      // Get the onDelete prop passed to AgentSession and invoke it
+      const lastCall = MockAgentSession.mock.calls.at(-1);
+      const props = lastCall?.[0] as Record<string, unknown>;
+      act(() => { (props.onDelete as () => void)(); });
+      expect(screen.getByText(/Remove "Execute" agent/)).toBeInTheDocument();
+    });
+
+    it("does not delete until user confirms", () => {
+      const { deleteSession } = renderWithAgent();
+      const lastCall = MockAgentSession.mock.calls.at(-1);
+      const props = lastCall?.[0] as Record<string, unknown>;
+      act(() => { (props.onDelete as () => void)(); });
+      // Dialog is open but deleteSession not called yet
+      expect(deleteSession).not.toHaveBeenCalled();
+    });
+
+    it("deletes session when user confirms", () => {
+      const { deleteSession } = renderWithAgent();
+      const lastCall = MockAgentSession.mock.calls.at(-1);
+      const props = lastCall?.[0] as Record<string, unknown>;
+      act(() => { (props.onDelete as () => void)(); });
+      // Click the "Remove" confirm button
+      fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+      expect(deleteSession).toHaveBeenCalledWith(42);
+    });
+
+    it("does not delete when user cancels", () => {
+      const { deleteSession } = renderWithAgent();
+      const lastCall = MockAgentSession.mock.calls.at(-1);
+      const props = lastCall?.[0] as Record<string, unknown>;
+      act(() => { (props.onDelete as () => void)(); });
+      // Click Cancel
+      fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+      expect(deleteSession).not.toHaveBeenCalled();
+      // Dialog should be closed
+      expect(screen.queryByText(/Remove "Execute" agent/)).not.toBeInTheDocument();
+    });
   });
 });
