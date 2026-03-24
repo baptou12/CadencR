@@ -7,6 +7,7 @@
  */
 
 import { create } from "zustand";
+import { buildUserMessageContent } from "@/types/agent-types";
 import { DEFAULT_MODEL } from "../shared/models";
 import type { AgentBlockData } from "@/components/AgentBlock";
 import type { AgentStatus, TodoItem } from "@/types/agent";
@@ -898,15 +899,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       const session = getSession(sessionId);
       sendRaw(sessionId, createPromptSend(session.serverSessionId, text, images));
 
-      const content = images && images.length > 0
-        ? JSON.stringify([
-            { type: "text", text },
-            ...images.map(img => ({
-              type: "image",
-              source: { type: "base64", media_type: img.mimeType, data: img.base64 }
-            }))
-          ])
-        : text;
+      const content = buildUserMessageContent(text, images);
 
       session.streamingState.counter += 1;
       set(updateSession(get(), sessionId, {

@@ -7,6 +7,7 @@
  */
 
 import { create } from "zustand";
+import { buildUserMessageContent } from "@/types/agent-types";
 import type { AgentBlockData } from "@/components/AgentBlock";
 import type { AgentStatus } from "@/types/agent";
 import type { PendingPermission } from "@/components/ToolPermissionPrompt";
@@ -1211,10 +1212,11 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     sendPromptToAgent(itemId, text, images) {
       // Optimistically add user message block and set status to running (handles resume from paused)
       set(state => {
+        const content = buildUserMessageContent(text, images);
         const userBlock = {
           id: `ws-user-${Date.now()}`,
           type: "user_message" as const,
-          content: text,
+          content,
           isError: false,
           createdAt: new Date().toISOString(),
         };

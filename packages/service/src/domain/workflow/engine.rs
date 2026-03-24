@@ -433,7 +433,7 @@ impl WorkflowEngine {
 
     // ── Agent spawning (delegates to AgentManager) ──
 
-    pub async fn spawn_plan_agent(&self, description: &str) -> Result<i64, String> {
+    pub async fn spawn_plan_agent(&self, description: &str, images: &[ImagePayload]) -> Result<i64, String> {
         self.set_status(WorkflowStatus::Planning).await;
         let prd: Option<String> = sqlx::query_scalar::<_, Option<String>>(
             "SELECT prd FROM features WHERE id = ?",
@@ -467,6 +467,7 @@ impl WorkflowEngine {
             "plan",
             Prompts::plan(),
             &enriched_prompt,
+            images,
             AgentSlot::Plan,
             &self.permissions,
         ).await
@@ -487,12 +488,13 @@ impl WorkflowEngine {
             "prd",
             Prompts::prd(),
             &enriched_prompt,
+            &[],
             AgentSlot::Prd,
             &self.permissions,
         ).await
     }
 
-    pub async fn spawn_session_agent(&self, prompt: &str) -> Result<i64, String> {
+    pub async fn spawn_session_agent(&self, prompt: &str, images: &[ImagePayload]) -> Result<i64, String> {
         // Enrich the initial prompt with feature context
         let feature: Option<(String, Option<String>)> = sqlx::query_as(
             "SELECT title, prd FROM features WHERE id = ?",
@@ -530,12 +532,13 @@ impl WorkflowEngine {
             "session",
             Prompts::session(),
             &enriched_prompt,
+            images,
             AgentSlot::Session,
             &self.permissions,
         ).await
     }
 
-    pub async fn spawn_refine_agent(&self, description: &str) -> Result<i64, String> {
+    pub async fn spawn_refine_agent(&self, description: &str, images: &[ImagePayload]) -> Result<i64, String> {
         let refinement_prompt = match self.build_refine_context(description).await {
             Ok(prompt) => prompt,
             Err(e) => {
@@ -553,6 +556,7 @@ impl WorkflowEngine {
             "plan",
             Prompts::plan(),
             &refinement_prompt,
+            images,
             AgentSlot::Refine,
             &self.permissions,
         ).await
@@ -567,6 +571,7 @@ impl WorkflowEngine {
             "review-fixer",
             system_prompt,
             comments,
+            &[],
             AgentSlot::ReviewFixer,
             &self.permissions,
         ).await
@@ -645,6 +650,7 @@ impl WorkflowEngine {
             "risk",
             Prompts::risk(),
             &prompt,
+            &[],
             AgentSlot::Risk,
             &self.permissions,
         ).await
@@ -681,6 +687,7 @@ impl WorkflowEngine {
             "retro",
             Prompts::retro(),
             &prompt,
+            &[],
             AgentSlot::Retro,
             &self.permissions,
         ).await
@@ -805,7 +812,7 @@ impl WorkflowEngine {
         self.agent_manager.interrupt_item(slot).await
     }
 
-    pub async fn send_prompt(&self, slot: AgentSlot, text: &str, images: Option<Vec<String>>) -> Result<(), String> {
+    pub async fn send_prompt(&self, slot: AgentSlot, text: &str, images: Option<Vec<ImagePayload>>) -> Result<(), String> {
         self.agent_manager.send_prompt(slot, text, images, &self.permissions).await
     }
 

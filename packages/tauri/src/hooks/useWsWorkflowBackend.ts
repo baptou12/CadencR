@@ -348,15 +348,15 @@ export function useWsWorkflowBackend(
     planApprovalError: null,
 
     // Commands
-    startPlan: (description, images) => store.startPlan(description, images?.map(i => ({ base64: i, mimeType: "image/png" }))),
-    startPrd: (description, images) => store.startPrd(description, images?.map(i => ({ base64: i, mimeType: "image/png" }))),
+    startPlan: (description, images) => store.startPlan(description, images),
+    startPrd: (description, images) => store.startPrd(description, images),
     approvePlan: (_subprocessId, _sessionDbId, requestId) => store.approvePlan(requestId ?? undefined),
     rejectPlan: (feedback, _subprocessId, _sessionDbId, requestId) => store.rejectPlan(feedback, requestId ?? undefined),
     startBuilding: () => store.startBuild(),
     continueWorkflow: () => store.continueWorkflow(),
     sendToAgent: (entry, message, images) => {
       const itemId = findQueueItemId(entry, store.queue, store.activeAgents);
-      store.sendPromptToAgent(itemId, message, images?.map(i => ({ base64: i, mimeType: "image/png" })));
+      store.sendPromptToAgent(itemId, message, images);
     },
     stopAgent: (entry) => {
       const itemId = findQueueItemId(entry, store.queue, store.activeAgents);

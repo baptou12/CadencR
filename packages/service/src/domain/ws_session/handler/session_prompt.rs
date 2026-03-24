@@ -22,7 +22,7 @@ use super::{
 
 /// Build the content value for the Claude CLI.
 /// Returns a plain string Value when no images, or a JSON array of content blocks when images are present.
-fn build_content_value(text: &str, images: &[ImagePayload]) -> serde_json::Value {
+pub(crate) fn build_content_value(text: &str, images: &[ImagePayload]) -> serde_json::Value {
     if images.is_empty() {
         serde_json::Value::String(text.to_string())
     } else {
@@ -47,7 +47,7 @@ fn build_content_value(text: &str, images: &[ImagePayload]) -> serde_json::Value
 
 /// Build the persistence string for a user message.
 /// Plain text when no images, JSON-serialized content blocks when images are present.
-fn build_persist_content(text: &str, images: &[ImagePayload]) -> String {
+pub(crate) fn build_persist_content(text: &str, images: &[ImagePayload]) -> String {
     if images.is_empty() {
         text.to_string()
     } else {

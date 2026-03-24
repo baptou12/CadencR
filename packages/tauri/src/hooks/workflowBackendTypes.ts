@@ -107,8 +107,8 @@ export interface WorkflowBackend {
   planApprovalError: string | null;
 
   // -- Commands --
-  startPlan(description: string, images?: string[]): void;
-  startPrd(description: string, images?: string[]): void;
+  startPlan(description: string, images?: Array<{ base64: string; mimeType: string }>): void;
+  startPrd(description: string, images?: Array<{ base64: string; mimeType: string }>): void;
   approvePlan(
     subprocessId?: string | null,
     sessionDbId?: number,
@@ -125,7 +125,7 @@ export interface WorkflowBackend {
   sendToAgent(
     entry: FeatureSession,
     message: string,
-    images?: string[],
+    images?: Array<{ base64: string; mimeType: string }>,
   ): void;
   stopAgent(entry: FeatureSession): void;
   interruptAgent(entry: FeatureSession): void;

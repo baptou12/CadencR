@@ -22,7 +22,7 @@ use crate::domain::workflow::engine::{AgentSlot, WsSender};
 use crate::domain::workflow::permission_router::{PermissionRouter, WorkflowPermissionBridge};
 use crate::domain::workflow::strategies::WorkflowStrategy;
 use crate::domain::ws_session::handler::mcp_spawn::build_mcp_server_config;
-use crate::domain::ws_session::handler::session_prompt::PermissionResponse;
+use crate::domain::ws_session::handler::session_prompt::{PermissionResponse, build_content_value};
 use crate::domain::ws_session::permissions;
 use crate::domain::ws_session::persistence::WsSessionPersistence;
 use crate::domain::ws_session::protocol::*;
@@ -127,6 +127,7 @@ impl AgentManager {
         agent_type_str: &str,
         system_prompt: &str,
         initial_prompt: &str,
+        images: &[ImagePayload],
         slot: AgentSlot,
         permissions: &PermissionRouter,
     ) -> Result<i64, String> {
@@ -217,7 +218,7 @@ impl AgentManager {
         }
         self.send_user_message_event(slot.clone(), db_session_id, initial_prompt);
 
-        let content_value = serde_json::Value::String(initial_prompt.to_string());
+        let content_value = build_content_value(initial_prompt, images);
 
         match claude_agent_sdk_rs::query(content_value, options).await {
             Ok(mut real_query) => {
@@ -491,13 +492,15 @@ impl AgentManager {
         &self,
         slot: AgentSlot,
         text: &str,
-        _images: Option<Vec<String>>,
+        images: Option<Vec<ImagePayload>>,
         permissions: &PermissionRouter,
     ) -> Result<(), String> {
+        let imgs = images.unwrap_or_default();
+
         // Fast path: agent is still running, send via stdin
         if let Some(query) = self.queries.get(&slot) {
             let q = query.lock().await;
-            let content = serde_json::Value::String(text.to_string());
+            let content = build_content_value(text, &imgs);
             q.stream_input(content).await.map_err(|e| format!("stream_input failed: {e}"))?;
             return Ok(());
         }
@@ -505,7 +508,7 @@ impl AgentManager {
         // Slow path: agent was paused, resume by spawning new process
         if let Some((_, cc_session_id)) = self.paused_sessions.remove(&slot) {
             info!(slot = %slot, cc_session_id = %cc_session_id, "resuming paused agent with --resume");
-            return self.resume_item(slot, &cc_session_id, text, permissions).await;
+            return self.resume_item(slot, &cc_session_id, text, &imgs, permissions).await;
         }
 
         // Fallback: check DB for a claude_session_id we can resume with
@@ -527,7 +530,7 @@ impl AgentManager {
                     let cc_sid = cc_session_id.clone();
                     info!(slot = %slot, db_session_id, cc_session_id = %cc_sid, "DB fallback: resuming paused agent with --resume");
                     self.active_items.insert(slot.clone(), db_session_id);
-                    return self.resume_item(slot, &cc_sid, text, permissions).await;
+                    return self.resume_item(slot, &cc_sid, text, &imgs, permissions).await;
                 }
             }
 
@@ -545,6 +548,7 @@ impl AgentManager {
                 agent_type_str,
                 system_prompt,
                 text,
+                &imgs,
                 slot,
                 permissions,
             ).await.map(|_| ());
@@ -569,7 +573,7 @@ impl AgentManager {
                     let cc_sid = cc_session_id.clone();
                     info!(slot = %slot, db_session_id, cc_session_id = %cc_sid, "DB fallback: resuming paused queue item with --resume");
                     self.active_items.insert(slot.clone(), db_session_id);
-                    return self.resume_item(slot, &cc_sid, text, permissions).await;
+                    return self.resume_item(slot, &cc_sid, text, &imgs, permissions).await;
                 }
             }
         }
@@ -583,6 +587,7 @@ impl AgentManager {
         slot: AgentSlot,
         cc_session_id: &str,
         prompt: &str,
+        images: &[ImagePayload],
         permissions: &PermissionRouter,
     ) -> Result<(), String> {
         // Clear any stale interrupt flag so mark_agent_done works after resume.
@@ -653,10 +658,10 @@ impl AgentManager {
         };
         options.can_use_tool = Some(Box::new(bridge));
 
-        let content_value = if prompt.is_empty() {
+        let content_value = if prompt.is_empty() && images.is_empty() {
             serde_json::Value::String("Continue where you left off.".to_string())
         } else {
-            serde_json::Value::String(prompt.to_string())
+            build_content_value(prompt, images)
         };
 
         match claude_agent_sdk_rs::query(content_value, options).await {

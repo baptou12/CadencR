@@ -6,7 +6,7 @@ import type { ImageAttachment } from "@/hooks/useImageAttachments";
 function makeAttachment(overrides: Partial<ImageAttachment> = {}): ImageAttachment {
   return {
     id: "att-1",
-    file: new File(["data"], "image.png", { type: "image/png" }),
+    fileName: "image.png",
     previewUrl: "data:image/png;base64,abc123",
     base64: "abc123",
     mimeType: "image/png",
@@ -24,22 +24,22 @@ describe("ImageAttachmentPreview", () => {
 
   it("renders image previews", () => {
     const attachments = [
-      makeAttachment({ id: "1", file: new File([""], "photo.png") }),
-      makeAttachment({ id: "2", file: new File([""], "shot.jpg") }),
+      makeAttachment({ id: "1", fileName: "photo.png" }),
+      makeAttachment({ id: "2", fileName: "shot.jpg" }),
     ];
     render(<ImageAttachmentPreview attachments={attachments} onRemove={vi.fn()} />);
     expect(screen.getAllByRole("img")).toHaveLength(2);
   });
 
   it("renders remove button for each attachment", () => {
-    const att = makeAttachment({ id: "x", file: new File([""], "pic.png") });
+    const att = makeAttachment({ id: "x", fileName: "pic.png" });
     render(<ImageAttachmentPreview attachments={[att]} onRemove={vi.fn()} />);
     expect(screen.getByRole("button", { name: /remove pic\.png/i })).toBeInTheDocument();
   });
 
   it("calls onRemove with the attachment id when remove clicked", async () => {
     const onRemove = vi.fn();
-    const att = makeAttachment({ id: "test-id", file: new File([""], "img.png") });
+    const att = makeAttachment({ id: "test-id", fileName: "img.png" });
     const { user } = render(<ImageAttachmentPreview attachments={[att]} onRemove={onRemove} />);
     await user.click(screen.getByRole("button", { name: /remove/i }));
     expect(onRemove).toHaveBeenCalledWith("test-id");

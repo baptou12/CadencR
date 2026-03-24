@@ -2,6 +2,15 @@ import { renderHook, act, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { useImageAttachments } from "./useImageAttachments";
 
+// Mock Tauri APIs
+const mockOnDragDropEvent = vi.fn().mockResolvedValue(vi.fn());
+vi.mock("@tauri-apps/api/window", () => ({
+  getCurrentWindow: () => ({ onDragDropEvent: mockOnDragDropEvent }),
+}));
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn(),
+}));
+
 // Helper to create a mock File that triggers FileReader.load
 function createMockFile(name: string, type: string, size = 100): File {
   const blob = new Blob(["x".repeat(size)], { type });
@@ -10,11 +19,9 @@ function createMockFile(name: string, type: string, size = 100): File {
 
 describe("useImageAttachments", () => {
   beforeEach(() => {
-    // Mock URL.createObjectURL and URL.revokeObjectURL
     vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:mock-url");
     vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
 
-    // Mock FileReader
     vi.stubGlobal(
       "FileReader",
       class {
@@ -27,7 +34,6 @@ describe("useImageAttachments", () => {
       },
     );
 
-    // Mock crypto.randomUUID
     let counter = 0;
     vi.spyOn(crypto, "randomUUID").mockImplementation(() => `mock-uuid-${++counter}` as `${string}-${string}-${string}-${string}-${string}`);
   });
@@ -57,16 +63,13 @@ describe("useImageAttachments", () => {
   it("rejects unsupported file types", async () => {
     const { result } = renderHook(() => useImageAttachments());
     const file = createMockFile("doc.pdf", "application/pdf");
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
     act(() => {
       result.current.addFiles([file]);
     });
 
-    // Give FileReader time to process (it shouldn't)
     await new Promise((r) => setTimeout(r, 50));
     expect(result.current.attachments).toHaveLength(0);
-    warnSpy.mockRestore();
   });
 
   it("removes an attachment by id", async () => {
@@ -112,46 +115,8 @@ describe("useImageAttachments", () => {
     expect(result.current.attachments).toHaveLength(0);
   });
 
-  it("sets isDragging on drag over", () => {
-    const { result } = renderHook(() => useImageAttachments());
-    const event = { preventDefault: vi.fn() } as unknown as React.DragEvent;
-
-    act(() => {
-      result.current.dragHandlers.onDragOver(event);
-    });
-
-    expect(result.current.isDragging).toBe(true);
-  });
-
-  it("clears isDragging on drag leave", () => {
-    const { result } = renderHook(() => useImageAttachments());
-    const event = { preventDefault: vi.fn() } as unknown as React.DragEvent;
-
-    act(() => {
-      result.current.dragHandlers.onDragOver(event);
-    });
-    act(() => {
-      result.current.dragHandlers.onDragLeave(event);
-    });
-
-    expect(result.current.isDragging).toBe(false);
-  });
-
-  it("adds files on drop", async () => {
-    const { result } = renderHook(() => useImageAttachments());
-    const file = createMockFile("dropped.png", "image/png");
-    const event = {
-      preventDefault: vi.fn(),
-      dataTransfer: { files: [file] },
-    } as unknown as React.DragEvent;
-
-    act(() => {
-      result.current.dragHandlers.onDrop(event);
-    });
-
-    await waitFor(() => {
-      expect(result.current.attachments).toHaveLength(1);
-    });
-    expect(result.current.isDragging).toBe(false);
+  it("registers Tauri drag-drop listener on mount", () => {
+    renderHook(() => useImageAttachments());
+    expect(mockOnDragDropEvent).toHaveBeenCalled();
   });
 });

@@ -515,18 +515,12 @@ export function FeatureWorkflowView({
                   onStartPlanning={(text, images) => {
                     descriptionRef.current = text;
                     setDescription(text);
-                    backend.startPlan(
-                      text || prdData?.prd || "",
-                      images.map((i) => i.base64),
-                    );
+                    backend.startPlan(text || prdData?.prd || "", images);
                   }}
                   onStartPrd={(text, images) => {
                     descriptionRef.current = text;
                     setDescription(text);
-                    backend.startPrd(
-                      text || prdData?.prd || "",
-                      images.map((i) => i.base64),
-                    );
+                    backend.startPrd(text || prdData?.prd || "", images);
                   }}
                   isStartingPlan={backend.isStartingPlan}
                   isStartingPrd={backend.isStartingPrd}
@@ -622,7 +616,7 @@ export function FeatureWorkflowView({
                           backend.submitAnswers(entry, response)
                         }
                         onSend={(message, images) => {
-                          backend.sendToAgent(entry, message, images?.map((i: { base64: string }) => i.base64));
+                          backend.sendToAgent(entry, message, images);
                         }}
                         onStop={() => {
                           backend.stopAgent(entry);

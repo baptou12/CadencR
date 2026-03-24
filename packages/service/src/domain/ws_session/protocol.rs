@@ -235,7 +235,7 @@ pub struct WorkflowStartPlanPayload {
     #[serde(default)]
     pub workflow_type: Option<String>,
     pub description: String,
-    pub images: Option<Vec<String>>,
+    pub images: Option<Vec<ImagePayload>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -308,7 +308,7 @@ pub struct WorkflowPromptSendPayload {
     pub feature_id: i64,
     pub agent_slot: AgentSlot,
     pub text: String,
-    pub images: Option<Vec<String>>,
+    pub images: Option<Vec<ImagePayload>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -327,14 +327,14 @@ pub struct WorkflowInterruptPayload {
 pub struct WorkflowStartSessionPayload {
     pub feature_id: i64,
     pub prompt: String,
-    pub images: Option<Vec<String>>,
+    pub images: Option<Vec<ImagePayload>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowStartRefinePayload {
     pub feature_id: i64,
     pub description: String,
-    pub images: Option<Vec<String>>,
+    pub images: Option<Vec<ImagePayload>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -821,7 +821,7 @@ mod tests {
             feature_id: 1,
             agent_slot: AgentSlot::QueueItem(2),
             text: "hello agent".into(),
-            images: Some(vec!["base64data".into()]),
+            images: Some(vec![ImagePayload { base64: "base64data".into(), mime_type: "image/png".into() }]),
         };
         let v = serde_json::to_value(&p).unwrap();
         let d: WorkflowPromptSendPayload = serde_json::from_value(v).unwrap();

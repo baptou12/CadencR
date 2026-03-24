@@ -363,7 +363,7 @@ async fn handle_start_plan(envelope: WsEnvelope, sender: &WsSender, app_state: &
     }
 
     info!(feature_id, "spawning plan agent");
-    match engine.spawn_plan_agent(&payload.description).await {
+    match engine.spawn_plan_agent(&payload.description, &payload.images.unwrap_or_default()).await {
         Ok(session_id) => {
             let ack = WsEnvelope::reply(&envelope.id, "workflow", "plan.started", to_value(WorkflowFeatureIdSessionPayload {
                 feature_id,
@@ -726,6 +726,7 @@ async fn handle_prompt_send(envelope: WsEnvelope, sender: &WsSender, app_state: 
     let Some((payload, engine)) = parse_and_get_engine::<WorkflowPromptSendPayload>(&envelope, sender) else { return };
 
     // Persist user message if we can find the db_session_id
+    let images = payload.images.unwrap_or_default();
     if let Some(db_session_id_ref) = engine.active_items().get(&payload.agent_slot) {
         let db_session_id = *db_session_id_ref;
         let p = WsSessionPersistence::with_session_id(
@@ -733,10 +734,11 @@ async fn handle_prompt_send(envelope: WsEnvelope, sender: &WsSender, app_state: 
             payload.feature_id,
             Some(db_session_id),
         );
-        p.persist_user_message(&payload.text).await;
+        let persist_content = super::session_prompt::build_persist_content(&payload.text, &images);
+        p.persist_user_message(&persist_content).await;
     }
 
-    match engine.send_prompt(payload.agent_slot.clone(), &payload.text, payload.images).await {
+    match engine.send_prompt(payload.agent_slot.clone(), &payload.text, Some(images)).await {
         Ok(()) => {
             let ack = WsEnvelope::reply(&envelope.id, "workflow", "acknowledged", to_value(WorkflowAcknowledgedPayload {
                 feature_id: payload.feature_id,
@@ -841,7 +843,7 @@ async fn handle_start_session(envelope: WsEnvelope, sender: &WsSender) {
     let Some((payload, engine)) = parse_and_get_engine::<WorkflowStartSessionPayload>(&envelope, sender) else { return };
 
     info!(feature_id = payload.feature_id, "spawning session agent");
-    match engine.spawn_session_agent(&payload.prompt).await {
+    match engine.spawn_session_agent(&payload.prompt, &payload.images.unwrap_or_default()).await {
         Ok(session_id) => {
             let ack = WsEnvelope::reply(&envelope.id, "workflow", "session.started", to_value(WorkflowFeatureIdSessionPayload {
                 feature_id: payload.feature_id,
@@ -859,7 +861,7 @@ async fn handle_start_refine(envelope: WsEnvelope, sender: &WsSender) {
     let Some((payload, engine)) = parse_and_get_engine::<WorkflowStartRefinePayload>(&envelope, sender) else { return };
 
     info!(feature_id = payload.feature_id, "spawning refine plan agent");
-    match engine.spawn_refine_agent(&payload.description).await {
+    match engine.spawn_refine_agent(&payload.description, &payload.images.unwrap_or_default()).await {
         Ok(session_id) => {
             let ack = WsEnvelope::reply(&envelope.id, "workflow", "refine.started", to_value(WorkflowFeatureIdSessionPayload {
                 feature_id: payload.feature_id,
