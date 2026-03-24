@@ -180,6 +180,8 @@ pub struct QueueItem {
     pub pid: Option<i64>,
     pub max_retries: i64,
     pub retry_count: i64,
+    #[sqlx(default)]
+    pub phase_title: Option<String>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -533,6 +535,7 @@ mod tests {
             pid: Some(12345),
             max_retries: 1,
             retry_count: 0,
+            phase_title: None,
         };
 
         let json = serde_json::to_string(&item).unwrap();
@@ -573,6 +576,7 @@ mod tests {
             pid: None,
             max_retries: 1,
             retry_count: 0,
+            phase_title: None,
         };
 
         let json = serde_json::to_string(&item).unwrap();

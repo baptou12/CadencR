@@ -878,6 +878,28 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_get_queue_for_feature_includes_phase_title() {
+        let pool = setup_test_db_with_queue().await;
+        let proj = create_test_project(&pool).await;
+        let fid = create_feature(&pool, proj, "Feature", "ws-feature").await.unwrap();
+
+        // Create a plan and phase
+        let plan_id = sqlx::query("INSERT INTO plans (feature_id, title) VALUES (?, 'Test Plan')")
+            .bind(fid).execute(&pool).await.unwrap().last_insert_rowid();
+        let phase_id = sqlx::query("INSERT INTO phases (plan_id, step_number, title) VALUES (?, 1, 'Implement auth')")
+            .bind(plan_id).execute(&pool).await.unwrap().last_insert_rowid();
+
+        // Insert items: one with a phase, one without
+        insert_queue_item(&pool, fid, "feature_build", "execute", Some(phase_id), "ready", 0, Some(0)).await.unwrap();
+        insert_queue_item(&pool, fid, "feature_build", "qa", None, "blocked", 1, Some(0)).await.unwrap();
+
+        let items = get_queue_for_feature(&pool, fid).await.unwrap();
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].phase_title.as_deref(), Some("Implement auth"));
+        assert_eq!(items[1].phase_title, None);
+    }
+
+    #[tokio::test]
     async fn test_get_queue_for_feature_empty() {
         let pool = setup_test_db_with_queue().await;
         let proj = create_test_project(&pool).await;

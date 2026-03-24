@@ -1154,6 +1154,7 @@ mod tests {
             pid: None,
             max_retries: 1,
             retry_count: 0,
+            phase_title: None,
         }
     }
 
@@ -1347,6 +1348,19 @@ mod tests {
                 started_at DATETIME, ended_at DATETIME, pid INTEGER,
                 max_retries INTEGER NOT NULL DEFAULT 1,
                 retry_count INTEGER NOT NULL DEFAULT 0
+            )"#,
+        ).execute(&pool).await.unwrap();
+        sqlx::query(
+            r#"CREATE TABLE phases (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                plan_id INTEGER NOT NULL,
+                step_number INTEGER,
+                title TEXT,
+                status TEXT DEFAULT 'pending',
+                complexity TEXT,
+                commit_message TEXT,
+                description TEXT,
+                agent_count INTEGER DEFAULT 1
             )"#,
         ).execute(&pool).await.unwrap();
         sqlx::query(

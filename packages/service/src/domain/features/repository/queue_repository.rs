@@ -61,7 +61,11 @@ pub async fn insert_dependency(
 
 pub async fn get_queue_for_feature(pool: &SqlitePool, feature_id: i64) -> Result<Vec<QueueItem>, AppError> {
     let rows = sqlx::query_as::<_, QueueItem>(
-        "SELECT * FROM workflow_queue WHERE feature_id = ? ORDER BY order_index",
+        r#"SELECT q.*, p.title as phase_title
+           FROM workflow_queue q
+           LEFT JOIN phases p ON q.phase_id = p.id
+           WHERE q.feature_id = ?
+           ORDER BY q.order_index"#,
     )
     .bind(feature_id)
     .fetch_all(pool)
