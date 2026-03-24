@@ -33,6 +33,9 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 vi.mock("react-hotkeys-hook", () => ({ useHotkeys: vi.fn() }));
+vi.mock("@tauri-apps/api/webview", () => ({
+  getCurrentWebview: () => ({ setZoom: vi.fn(() => Promise.resolve()) }),
+}));
 vi.mock("@/hooks/useDebouncedSetting", () => ({
   useDebouncedSetting: vi.fn(() => ({ value: "256", setValue: vi.fn() })),
 }));

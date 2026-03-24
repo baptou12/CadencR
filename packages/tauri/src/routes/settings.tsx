@@ -1,8 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ModelSelector } from "../components/ModelSelector";
+import { useZoom } from "@/hooks/useZoom";
 import {
   useGetWorkspaceSetting,
   useSetWorkspaceSetting,
@@ -108,10 +110,34 @@ function LanguageInput() {
   );
 }
 
+function ZoomControl() {
+  const { zoomLevel, zoomIn, zoomOut, resetZoom } = useZoom();
+
+  return (
+    <div className="flex items-center gap-3">
+      <Button variant="outline" size="sm" onClick={zoomOut}>−</Button>
+      <span className="text-sm w-12 text-center tabular-nums">{zoomLevel}%</span>
+      <Button variant="outline" size="sm" onClick={zoomIn}>+</Button>
+      <Button variant="ghost" size="sm" onClick={resetZoom}>Reset</Button>
+      <span className="text-xs text-muted-foreground ml-2">⌘+ / ⌘− / ⌘0</span>
+    </div>
+  );
+}
+
 function SettingsPage() {
   return (
     <div className="p-6 space-y-8">
       <h1 className="text-2xl font-bold">Settings</h1>
+
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-lg font-semibold">Zoom</h2>
+          <p className="text-sm text-muted-foreground">
+            Adjust the global UI zoom level.
+          </p>
+        </div>
+        <ZoomControl />
+      </section>
 
       <section className="space-y-4">
         <div>

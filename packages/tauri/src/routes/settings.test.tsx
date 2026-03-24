@@ -23,6 +23,9 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 vi.mock("react-hotkeys-hook", () => ({ useHotkeys: vi.fn() }));
+vi.mock("@tauri-apps/api/webview", () => ({
+  getCurrentWebview: () => ({ setZoom: vi.fn(() => Promise.resolve()) }),
+}));
 
 vi.mock("../api/generated", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../api/generated")>()),

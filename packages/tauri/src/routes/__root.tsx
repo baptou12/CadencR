@@ -31,6 +31,7 @@ import { FocusRing } from "@/components/FocusRing";
 import { KeyboardShortcutsModal } from "@/components/KeyboardShortcutsModal";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useAppWsStore } from "@/stores/app-ws-store";
+import { useZoomHotkeys } from "@/hooks/useZoom";
 
 const ZONE_ORDER = ["left-sidebar", "main-content", "terminal", "right-sidebar"] as const;
 
@@ -176,6 +177,8 @@ function RootLayout() {
   });
 
   const [confirmAction, setConfirmAction] = useState<"archive" | "delete" | null>(null);
+
+  useZoomHotkeys();
 
   // CMD+, -> navigate to settings
   useHotkeys(
