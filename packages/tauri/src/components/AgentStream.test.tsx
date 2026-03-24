@@ -30,19 +30,19 @@ describe("AgentStream", () => {
     expect(container).toBeInTheDocument();
   });
 
-  it("shows streaming indicator when isStreaming is true", () => {
+  it("shows streaming cursor when isStreaming is true", () => {
     render(
       <AgentStream
         blocks={[makeBlock("1", "Some output", "tool_call")]}
         isStreaming
       />,
     );
-    expect(screen.getByText("Working...")).toBeInTheDocument();
+    expect(screen.getByText("█")).toBeInTheDocument();
   });
 
-  it("shows 'Working...' when streaming", () => {
+  it("shows cursor when streaming with no blocks", () => {
     render(<AgentStream blocks={[]} isStreaming />);
-    expect(screen.getByText("Working...")).toBeInTheDocument();
+    expect(screen.getByText("█")).toBeInTheDocument();
   });
 
   it("renders sender and timestamp header for text blocks", () => {

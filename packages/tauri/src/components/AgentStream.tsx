@@ -38,13 +38,8 @@ export function AgentStream({ blocks, isStreaming, basePath }: AgentStreamProps)
         </div>
       ))}
       {isStreaming && (
-        <div className="flex items-center gap-2 py-2 text-xs text-muted-foreground">
-          <span className="inline-flex gap-0.5 shrink-0">
-            <span className="size-1.5 animate-bounce rounded-full bg-current [animation-delay:0ms]" />
-            <span className="size-1.5 animate-bounce rounded-full bg-current [animation-delay:150ms]" />
-            <span className="size-1.5 animate-bounce rounded-full bg-current [animation-delay:300ms]" />
-          </span>
-          Working...
+        <div className="flex items-center py-2 text-xs text-muted-foreground">
+          <span className="animate-pulse">█</span>
         </div>
       )}
     </div>

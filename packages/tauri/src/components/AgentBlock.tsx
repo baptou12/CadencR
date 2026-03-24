@@ -440,12 +440,6 @@ function TaskAgentBlock({ block, isStreaming, basePath }: { block: AgentBlockDat
         {(showAll ? toolCalls : toolCalls.slice(-DEFAULT_VISIBLE_CHILDREN)).map((child) => (
           <CompactBlock key={child.id} block={child} basePath={basePath} />
         ))}
-        {isRunning && toolCalls.length > 0 && (
-          <div className="flex items-center gap-1.5 pt-1 text-xs text-muted-foreground">
-            <LoaderIcon className="size-3 animate-spin" />
-            Working...
-          </div>
-        )}
       </>)}
     </CollapsibleBlock>
   );
