@@ -83,7 +83,13 @@ function WebSocketSessionPage() {
           projectId={projectId}
           blocks={ws.blocks}
           status={ws.status}
-          onSend={ws.sendPrompt}
+          onSend={(text, images) => {
+            if (text.trim() === "/clear") {
+              ws.clearSession();
+              return;
+            }
+            ws.sendPrompt(text, images);
+          }}
           onStop={ws.interrupt}
           pendingPermission={ws.pendingPermission}
           onPermissionDecision={(decision) => {

@@ -420,12 +420,17 @@ pub(super) async fn handle_clear(
         }
     };
 
-    // Close active subprocess if any, capturing claude_session_id for archive
-    let cli_sid = if let QueryState::Active { query, .. } = &handle.state {
-        persist_and_close_query(query, &app_state.write_pool, db_session_id).await
-    } else {
-        None
+    // Close active subprocess if any, capturing claude_session_id for archive.
+    // If stream already finished (Pending with resume), extract from those options.
+    let cli_sid = match &handle.state {
+        QueryState::Active { query, .. } => {
+            persist_and_close_query(query, &app_state.write_pool, db_session_id).await
+        }
+        QueryState::Pending(opts) => opts.resume.clone(),
     };
+
+    // Also clear the init-time resume_session_id in case it wasn't consumed yet
+    let cli_sid = cli_sid.or_else(|| handle.resume_session_id.take());
 
     // Archive and clear in DB (pass cli_sid to avoid re-reading it)
     WsSessionPersistence::archive_and_clear(&app_state.write_pool, db_session_id, cli_sid.as_deref()).await;
@@ -444,7 +449,10 @@ pub(super) async fn handle_clear(
         &envelope.id,
         "session",
         "cleared",
-        serde_json::json!({ "session_id": db_session_id.to_string() }),
+        serde_json::json!({
+            "session_id": db_session_id.to_string(),
+            "previous_session_id": cli_sid,
+        }),
     );
     let _ = sender.send(Message::Text(String::from(reply).into()));
 }

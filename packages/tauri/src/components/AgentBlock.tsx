@@ -127,7 +127,7 @@ export function AgentBlock({ block, isStreaming, basePath }: AgentBlockProps) {
     case "compact_divider":
       return <CompactDivider />;
     case "clear_divider":
-      return <ClearDivider />;
+      return <ClearDivider previousSessionId={block.content} />;
     default:
       return null;
   }
@@ -341,12 +341,17 @@ function CompactDivider() {
   );
 }
 
-function ClearDivider() {
+function ClearDivider({ previousSessionId }: { previousSessionId?: string }) {
   return (
-    <div className="flex items-center gap-3 py-3">
-      <div className="h-px flex-1 bg-cyan-500/30" />
-      <span className="text-xs font-medium text-cyan-500">Cleared</span>
-      <div className="h-px flex-1 bg-cyan-500/30" />
+    <div className="flex flex-col items-center gap-1 py-3">
+      {previousSessionId && (
+        <span className="text-[10px] text-muted-foreground/50 font-mono">{previousSessionId}</span>
+      )}
+      <div className="flex w-full items-center gap-3">
+        <div className="h-px flex-1 bg-cyan-500/30" />
+        <span className="text-xs font-medium text-cyan-500">Cleared</span>
+        <div className="h-px flex-1 bg-cyan-500/30" />
+      </div>
     </div>
   );
 }

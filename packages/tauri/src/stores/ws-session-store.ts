@@ -757,8 +757,14 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       }
 
       case "cleared": {
+        const session = get().sessions[sessionId];
+        const existingBlocks = session?.blocks ?? [];
+        const previousSessionId = (envelope.payload as Record<string, unknown>)?.previous_session_id as string ?? "";
         set(updateSession(get(), sessionId, {
-          blocks: [],
+          blocks: [
+            ...existingBlocks,
+            { id: `clear-${Date.now()}`, type: "clear_divider" as const, content: previousSessionId },
+          ],
           status: "idle",
           streamingState: createStreamingState(),
           pendingPermission: null,
@@ -766,6 +772,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
           pendingQuestions: [],
           pendingPlanApproval: null,
           hasFileChanges: false,
+          claudeSessionId: "",
         }));
         break;
       }

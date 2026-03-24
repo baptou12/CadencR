@@ -151,6 +151,24 @@ describe("AgentBlock", () => {
       );
       expect(screen.getByText("Cleared")).toBeInTheDocument();
     });
+
+    it("renders previous session ID when provided", () => {
+      render(
+        <AgentBlock block={makeBlock({ type: "clear_divider", content: "cli-sess-abc123" })} />,
+      );
+      expect(screen.getByText("Cleared")).toBeInTheDocument();
+      expect(screen.getByText("cli-sess-abc123")).toBeInTheDocument();
+    });
+
+    it("does not render session ID when content is empty", () => {
+      const { container } = render(
+        <AgentBlock block={makeBlock({ type: "clear_divider", content: "" })} />,
+      );
+      // Only the "Cleared" text and divider lines, no session ID span
+      const spans = container.querySelectorAll("span");
+      expect(spans).toHaveLength(1);
+      expect(spans[0].textContent).toBe("Cleared");
+    });
   });
 
   describe("tool_result block", () => {

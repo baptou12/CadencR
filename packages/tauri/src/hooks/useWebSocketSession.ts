@@ -131,6 +131,7 @@ export function useWebSocketSession(sessionId: string, featureId?: number): UseW
     respondToQuestion: (response: string) => store.respondToQuestion(sessionId, response),
     interrupt: () => store.interrupt(sessionId),
     destroy: () => store.destroy(sessionId),
+    clearSession: () => store.clearSession(sessionId),
     initSession: (config: SessionConfig) => store.initSession(sessionId, config),
     setModel: (modelId: string) => store.setModel(sessionId, modelId),
     setPermissionMode: (mode: PermissionMode) => store.setPermissionMode(sessionId, mode),

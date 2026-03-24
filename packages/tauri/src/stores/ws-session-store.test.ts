@@ -347,6 +347,43 @@ describe("ws-session-store", () => {
     expect(useWsSessionStore.getState().sessions["s1"].hasFileChanges).toBe(false);
   });
 
+  it("cleared action preserves existing blocks and appends clear_divider", async () => {
+    const store = useWsSessionStore.getState();
+    store.connect("s1");
+    await tick();
+    const ws = getWs();
+    ws.simulateMessage({ domain: "session", action: "initialized", payload: { session_id: "srv-1" } });
+
+    // Add a message block
+    ws.simulateMessage({
+      domain: "session",
+      action: "message",
+      payload: {
+        blocks: [
+          { type: "assistant", message: { content: [{ type: "text", text: "hello" }] } },
+        ],
+      },
+    });
+    const blocksBefore = useWsSessionStore.getState().sessions["s1"].blocks;
+    expect(blocksBefore.length).toBeGreaterThan(0);
+
+    // Clear with previous_session_id
+    ws.simulateMessage({
+      domain: "session",
+      action: "cleared",
+      payload: { previous_session_id: "cli-sess-xyz" },
+    });
+    const session = useWsSessionStore.getState().sessions["s1"];
+    // Blocks preserved + clear_divider appended
+    expect(session.blocks.length).toBe(blocksBefore.length + 1);
+    const lastBlock = session.blocks[session.blocks.length - 1];
+    expect(lastBlock.type).toBe("clear_divider");
+    expect(lastBlock.content).toBe("cli-sess-xyz");
+    // claudeSessionId reset
+    expect(session.claudeSessionId).toBe("");
+    expect(session.status).toBe("idle");
+  });
+
   it("extracts todos from TodoWrite tool_call in assistant message", async () => {
     const store = useWsSessionStore.getState();
     store.connect("s1");
