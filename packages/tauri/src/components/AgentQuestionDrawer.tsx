@@ -218,7 +218,7 @@ export function AgentQuestionDrawer({ questions, onSubmit, open, inline, disable
       handleOptionToggle(option.label);
       flashHighlight(digit - 1);
     },
-    { enabled: open && !disableShortcuts, enableOnFormTags: true },
+    { enabled: open && !disableShortcuts, enableOnFormTags: true, enableOnContentEditable: true },
     [open, disableShortcuts, currentQuestion, handleOptionToggle, handleOtherToggle, flashHighlight, otherShortcutIndex],
   );
 

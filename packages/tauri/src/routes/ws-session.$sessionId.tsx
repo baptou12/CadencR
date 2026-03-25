@@ -53,7 +53,7 @@ function WebSocketSessionPage() {
       e.preventDefault();
       setInlineDiffOpen(true);
     },
-    { enableOnFormTags: true },
+    { enableOnFormTags: true, enableOnContentEditable: true },
   );
 
   // Slash commands from ws-session store

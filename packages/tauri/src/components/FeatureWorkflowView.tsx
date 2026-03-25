@@ -192,7 +192,7 @@ export function FeatureWorkflowView({
       e.preventDefault();
       moveFocus("down");
     },
-    { enableOnFormTags: true },
+    { enableOnFormTags: true, enableOnContentEditable: true },
   );
 
   useHotkeys(
@@ -203,7 +203,7 @@ export function FeatureWorkflowView({
       e.preventDefault();
       moveFocus("up");
     },
-    { enableOnFormTags: true },
+    { enableOnFormTags: true, enableOnContentEditable: true },
   );
 
   useHotkeys(
@@ -249,7 +249,7 @@ export function FeatureWorkflowView({
         zone.focus();
       }
     },
-    { enableOnFormTags: true },
+    { enableOnFormTags: true, enableOnContentEditable: true },
   );
 
   // CMD+SHIFT+B: start or continue building
@@ -271,7 +271,7 @@ export function FeatureWorkflowView({
         backend.startBuilding();
       }
     },
-    { enableOnFormTags: true },
+    { enableOnFormTags: true, enableOnContentEditable: true },
   );
 
   // CMD+SHIFT+S: open session prompt bar
@@ -284,7 +284,7 @@ export function FeatureWorkflowView({
       e.preventDefault();
       setSessionPromptTrigger((v) => v + 1);
     },
-    { enableOnFormTags: true },
+    { enableOnFormTags: true, enableOnContentEditable: true },
   );
 
   // Escape: stop the focused running agent
@@ -306,7 +306,7 @@ export function FeatureWorkflowView({
         backend.stopAgent(entry);
       }
     },
-    { enableOnFormTags: true },
+    { enableOnFormTags: true, enableOnContentEditable: true },
   );
 
   // Use backend.view instead of useFeatureState
@@ -436,7 +436,7 @@ export function FeatureWorkflowView({
       if (!entry) return;
       handleViewDiffForAgent(entry);
     },
-    { enableOnFormTags: true },
+    { enableOnFormTags: true, enableOnContentEditable: true },
   );
 
   useHotkeys(
@@ -450,7 +450,7 @@ export function FeatureWorkflowView({
       if (entry.status !== "running" && entry.status !== "paused") return;
       backend.markDone(entry.sessionDbId);
     },
-    { enableOnFormTags: true },
+    { enableOnFormTags: true, enableOnContentEditable: true },
   );
 
   useHotkeys(
@@ -461,7 +461,7 @@ export function FeatureWorkflowView({
       if (!entry || !entry.pendingPlanApproval || !entry.subprocessId) return;
       backend.approvePlan(entry.subprocessId);
     },
-    { enableOnFormTags: true },
+    { enableOnFormTags: true, enableOnContentEditable: true },
   );
 
   useHotkeys(
@@ -475,7 +475,7 @@ export function FeatureWorkflowView({
         agentRefs.current.get(idx)?.focusActiveInput();
       }
     },
-    { enableOnFormTags: true },
+    { enableOnFormTags: true, enableOnContentEditable: true },
   );
 
   useHotkeys(
@@ -490,7 +490,7 @@ export function FeatureWorkflowView({
         requestAnimationFrame(() => terminalRef.current?.focusActivePane());
       }
     },
-    { enableOnFormTags: true },
+    { enableOnFormTags: true, enableOnContentEditable: true },
   );
 
   useHotkeys(
@@ -500,7 +500,7 @@ export function FeatureWorkflowView({
       e.preventDefault();
       terminalState.addPane();
     },
-    { enableOnFormTags: true },
+    { enableOnFormTags: true, enableOnContentEditable: true },
   );
 
   return (

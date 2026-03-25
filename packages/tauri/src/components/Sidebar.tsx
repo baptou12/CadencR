@@ -65,7 +65,7 @@ export function Sidebar() {
       e.preventDefault();
       moveFocus("down");
     },
-    { enableOnFormTags: true },
+    { enableOnFormTags: true, enableOnContentEditable: true },
   );
 
   // CMD+OPT+UP: move focus up in the sidebar
@@ -76,7 +76,7 @@ export function Sidebar() {
       e.preventDefault();
       moveFocus("up");
     },
-    { enableOnFormTags: true },
+    { enableOnFormTags: true, enableOnContentEditable: true },
   );
 
   // Enter: navigate to the focused item

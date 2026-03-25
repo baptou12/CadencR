@@ -83,7 +83,7 @@ export function ToolPermissionPrompt({ permission, onDecision, disableShortcuts 
       // Small delay so the highlight is visible before action
       setTimeout(handleAllowOnce, 150);
     },
-    { enabled: !disableShortcuts, enableOnFormTags: true },
+    { enabled: !disableShortcuts, enableOnFormTags: true, enableOnContentEditable: true },
     [handleAllowOnce, flashHighlight],
   );
 
@@ -95,7 +95,7 @@ export function ToolPermissionPrompt({ permission, onDecision, disableShortcuts 
       flashHighlight(1);
       setTimeout(handleAllowFuture, 150);
     },
-    { enabled: !disableShortcuts, enableOnFormTags: true },
+    { enabled: !disableShortcuts, enableOnFormTags: true, enableOnContentEditable: true },
     [handleAllowFuture, flashHighlight],
   );
 
@@ -111,7 +111,7 @@ export function ToolPermissionPrompt({ permission, onDecision, disableShortcuts 
         setTimeout(handleDenyWithEnter, 150);
       }
     },
-    { enabled: !disableShortcuts, enableOnFormTags: true },
+    { enabled: !disableShortcuts, enableOnFormTags: true, enableOnContentEditable: true },
     [showFeedback, handleDenyWithEnter, flashHighlight],
   );
 

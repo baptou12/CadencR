@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode, type RefObject } from "react";
 import {
+  $createTextNode,
   $getSelection,
   $isRangeSelection,
   $isTextNode,
@@ -83,7 +84,11 @@ export function replaceTriggerWithNode(
     }
 
     parts[targetIndex].replace(newNode);
-    newNode.selectNext(0, 0);
+    // Insert a trailing space so the cursor has a proper text position
+    // after the token node (which has canInsertTextAfter() = false).
+    const spaceNode = $createTextNode(" ");
+    newNode.insertAfter(spaceNode);
+    spaceNode.select();
   });
 
   onDone();
@@ -143,9 +148,10 @@ export function usePopoverKeyboardCommands(
       editor.registerCommand(
         KEY_ENTER_COMMAND,
         (e) => {
-          e?.preventDefault();
           const val = getSelectedValue();
-          if (val !== undefined) onSelect(val);
+          if (val === undefined) return false;
+          e?.preventDefault();
+          onSelect(val);
           return true;
         },
         COMMAND_PRIORITY_HIGH,
@@ -153,9 +159,10 @@ export function usePopoverKeyboardCommands(
       editor.registerCommand(
         KEY_TAB_COMMAND,
         (e) => {
-          e?.preventDefault();
           const val = getSelectedValue();
-          if (val !== undefined) onSelect(val);
+          if (val === undefined) return false;
+          e?.preventDefault();
+          onSelect(val);
           return true;
         },
         COMMAND_PRIORITY_HIGH,
