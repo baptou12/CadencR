@@ -507,7 +507,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     switch (action) {
       case "queue_update": {
         const items = payload.items as QueueItem[];
-        const updates: Record<string, unknown> = { queue: items ?? [], hydrated: true };
+        const updates: Record<string, unknown> = { queue: items ?? [] };
         if (payload.workflow_status) {
           updates.workflowStatus = payload.workflow_status as string;
         }
@@ -1023,8 +1023,12 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
 
     hydrateFromSnapshot(snapshot) {
       const state = get();
-      // Don't overwrite if already hydrated or WS has delivered real-time data
-      if (state.hydrated || state.queue.length > 0) return;
+      if (state.hydrated) return;
+
+      // WS may have already delivered queue data — keep it when available,
+      // but always merge agent sessions from the snapshot so that non-queue
+      // agents (session, risk, retro, etc.) aren't lost.
+      const hasWsQueue = state.queue.length > 0;
 
       const activeAgents = new Map(state.activeAgents);
       let planAgent: AgentSessionState | null = state.planAgent;
@@ -1032,6 +1036,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
 
       for (const session of snapshot.agent_sessions) {
         const agentType = session.agent_type ?? "execute";
+
         const agentState: AgentSessionState = {
           sessionId: session.id,
           agentType,
@@ -1050,25 +1055,24 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
           hasFileChanges: false,
         };
 
-        // Plan/prd go into dedicated state slots
+        // Plan/prd go into dedicated slots; skip if WS already populated them
         if (agentType === "plan" || agentType === "refine") {
           if (!planAgent) planAgent = agentState;
-          continue;
-        }
-        if (agentType === "prd") {
+        } else if (agentType === "prd") {
           if (!prdAgent) prdAgent = agentState;
-          continue;
+        } else {
+          // Multi-instance types get unique keys; queue items use their queue ID
+          const key = session.queue_item_id
+            ?? (MULTI_INSTANCE_TYPES.has(agentType) ? sessionDbKey(session.id) : (AGENT_TYPE_SYNTHETIC_KEYS[agentType] ?? sessionDbKey(session.id)));
+          if (!activeAgents.has(key)) activeAgents.set(key, agentState);
         }
-
-        // Multi-instance types get unique keys; queue items use their queue ID
-        const key = session.queue_item_id
-          ?? (MULTI_INSTANCE_TYPES.has(agentType) ? sessionDbKey(session.id) : (AGENT_TYPE_SYNTHETIC_KEYS[agentType] ?? sessionDbKey(session.id)));
-        activeAgents.set(key, agentState);
       }
 
       const patch: Partial<WorkflowState> = {
-        queue: snapshot.queue,
-        workflowStatus: snapshot.workflow_status,
+        // Prefer WS-delivered queue over snapshot (more up-to-date)
+        queue: hasWsQueue ? state.queue : snapshot.queue,
+        workflowStatus: hasWsQueue && state.workflowStatus !== "idle"
+          ? state.workflowStatus : snapshot.workflow_status,
         autonomyLevel: (snapshot.autonomy_level as AutonomyLevel) ?? 1,
         activeAgents,
         planAgent,

@@ -603,6 +603,61 @@ describe("useWorkflowStore", () => {
       expect(state.activeAgents.has(10)).toBe(true);
     });
 
+    it("merges non-queue agent sessions when WS has already delivered queue data", () => {
+      // Simulate WS queue_update arriving before snapshot hydration
+      const wsQueue = [
+        { id: 5, item_type: "execute", phase_id: null, phase_title: null, status: "running" as const, order_index: 0, group_index: null, agent_session_id: 20, result: null },
+      ];
+      useWorkflowStore.setState({ queue: wsQueue, hydrated: false });
+
+      useWorkflowStore.getState().hydrateFromSnapshot(
+        makeSnapshot({
+          workflow_status: "building",
+          agent_sessions: [
+            makeSessionSummary({ id: 20, queue_item_id: 5, agent_type: "execute", status: "running" }),
+            makeSessionSummary({ id: 30, agent_type: "session", status: "paused" }),
+          ],
+          queue: wsQueue,
+        }),
+      );
+
+      const state = useWorkflowStore.getState();
+      // Session agent should be merged even though WS delivered queue first
+      expect(state.activeAgents.has(-1030)).toBe(true);
+      expect(state.activeAgents.get(-1030)!.sessionId).toBe(30);
+      expect(state.activeAgents.get(-1030)!.status).toBe("paused");
+      // Queue should be preserved from WS (not overwritten by snapshot)
+      expect(state.queue).toBe(wsQueue);
+      expect(state.hydrated).toBe(true);
+    });
+
+    it("preserves WS-delivered activeAgents when snapshot has same session", () => {
+      const wsAgent = { sessionId: 20, blocks: [{ type: "text" as const, content: "ws data" }], status: "running" as const } as AgentSessionState;
+      const activeAgents = new Map<number, AgentSessionState>([[5, wsAgent]]);
+      useWorkflowStore.setState({ activeAgents, hydrated: false });
+
+      useWorkflowStore.getState().hydrateFromSnapshot(
+        makeSnapshot({
+          agent_sessions: [
+            makeSessionSummary({ id: 20, queue_item_id: 5, agent_type: "execute", status: "running" }),
+          ],
+        }),
+      );
+
+      // WS-delivered agent should not be overwritten
+      expect(useWorkflowStore.getState().activeAgents.get(5)).toBe(wsAgent);
+    });
+
+    it("preserves WS-delivered workflowStatus when not idle", () => {
+      useWorkflowStore.setState({ queue: [{ id: 1 }] as never[], workflowStatus: "building", hydrated: false });
+
+      useWorkflowStore.getState().hydrateFromSnapshot(
+        makeSnapshot({ workflow_status: "idle" }),
+      );
+
+      expect(useWorkflowStore.getState().workflowStatus).toBe("building");
+    });
+
     it("hydrates worktree state from snapshot", () => {
       useWorkflowStore.getState().hydrateFromSnapshot(
         makeSnapshot({

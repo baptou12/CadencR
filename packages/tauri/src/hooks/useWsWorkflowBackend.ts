@@ -264,12 +264,16 @@ export function useWsWorkflowBackend(
   const historyFetchInFlight = useRef(false);
 
   const loadAgentHistory = useCallback((entry: FeatureSession) => {
+    if (entry.sessionDbId <= 0) return;
+    if (historyFetchInFlight.current) return;
+
+    // Skip if the agent already exists in the store and has history/blocks.
+    // The agent may not be in activeAgents yet (queue_update arrives before
+    // agent.started), so a missing agent must NOT block the fetch.
     const storeState = useWorkflowStore.getState();
     const itemId = findQueueItemId(entry, storeState.queue, storeState.activeAgents);
     const agent = resolveAgentByItemId(storeState, itemId);
-    if (!agent || agent.historyLoaded || agent.blocks.length > 0) return;
-    if (agent.sessionId <= 0) return;
-    if (historyFetchInFlight.current) return;
+    if (agent && (agent.historyLoaded || agent.blocks.length > 0)) return;
 
     historyFetchInFlight.current = true;
 
