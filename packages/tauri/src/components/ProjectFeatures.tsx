@@ -226,7 +226,7 @@ export function ProjectFeatures({
       {activeFeatures.map(renderFeature)}
 
       <ConfirmDialog
-        open={confirmFeatureId != null}
+        open={confirmFeatureId != null && (isConfirmDelete || !isEmptyQuery.isLoading)}
         onOpenChange={(open) => { if (!open) setConfirmFeatureId(null); }}
         title={isConfirmDelete || shouldDirectDelete ? "Delete feature?" : "Archive feature?"}
         description={isConfirmDelete || shouldDirectDelete ? "This cannot be undone." : undefined}

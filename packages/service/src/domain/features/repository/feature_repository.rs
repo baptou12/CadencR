@@ -101,17 +101,8 @@ pub async fn is_empty(pool: &SqlitePool, id: i64) -> Result<bool, AppError> {
         Some(r) => r,
     };
 
-    // Never consider empty if there are active sessions
-    let active: Option<(i64,)> = sqlx::query_as(
-        "SELECT 1 FROM agent_sessions WHERE feature_id = ? AND status IN ('running', 'paused', 'waiting') LIMIT 1",
-    )
-    .bind(id)
-    .fetch_optional(pool)
-    .await?;
-    if active.is_some() {
-        return Ok(false);
-    }
-
+    // For ws-sessions, emptiness is purely based on whether messages exist
+    // (a paused session with no messages is still empty).
     if ftype == "ws-session" {
         let msg: Option<(i64,)> = sqlx::query_as(
             "SELECT 1 FROM agent_messages WHERE session_id IN (SELECT id FROM agent_sessions WHERE feature_id = ?) LIMIT 1",
@@ -120,6 +111,17 @@ pub async fn is_empty(pool: &SqlitePool, id: i64) -> Result<bool, AppError> {
         .fetch_optional(pool)
         .await?;
         return Ok(msg.is_none());
+    }
+
+    // Never consider empty if there are active sessions (for non-ws-session features)
+    let active: Option<(i64,)> = sqlx::query_as(
+        "SELECT 1 FROM agent_sessions WHERE feature_id = ? AND status IN ('running', 'paused', 'waiting') LIMIT 1",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await?;
+    if active.is_some() {
+        return Ok(false);
     }
 
     let has_prd = prd.map(|p| !p.trim().is_empty()).unwrap_or(false);

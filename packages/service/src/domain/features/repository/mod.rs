@@ -1131,6 +1131,20 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_is_empty_ws_session_paused_no_messages() {
+        let pool = setup_test_db().await;
+        let proj = create_test_project(&pool).await;
+        let fid = create_feature(&pool, proj, "Session", "ws-session").await.unwrap();
+
+        // A paused ws-session with no messages should still be empty
+        sqlx::query("INSERT INTO agent_sessions (feature_id, title, status) VALUES (?, 'sess', 'paused')")
+            .bind(fid).execute(&pool).await.unwrap();
+
+        let empty = is_empty(&pool, fid).await.unwrap();
+        assert!(empty, "ws-session with paused session but no messages should be empty");
+    }
+
+    #[tokio::test]
     async fn test_set_feature_setting_upsert() {
         let pool = setup_test_db().await;
         let proj = create_test_project(&pool).await;
