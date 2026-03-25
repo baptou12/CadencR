@@ -64,11 +64,11 @@ impl PtyManager {
     }
 
     /// Spawn a new PTY in the given working directory. Returns (pty_id, handle).
-    pub fn create_pty(&self, cwd: &str) -> anyhow::Result<(String, Arc<PtyHandle>)> {
+    pub fn create_pty(&self, cwd: &str, cols: u16, rows: u16) -> anyhow::Result<(String, Arc<PtyHandle>)> {
         let pty_system = native_pty_system();
         let pair = pty_system.openpty(PtySize {
-            rows: 24,
-            cols: 80,
+            rows,
+            cols,
             pixel_width: 0,
             pixel_height: 0,
         })?;
@@ -76,6 +76,11 @@ impl PtyManager {
         let shell = detect_shell();
         let mut cmd = CommandBuilder::new(&shell);
         cmd.cwd(cwd);
+        // Ensure the shell knows it's running inside an xterm-compatible terminal.
+        // Without this, programs (e.g. zsh-autosuggestions) emit wrong escape
+        // sequences, causing duplicate/garbled output.  node-pty set this
+        // automatically; portable_pty does not.
+        cmd.env("TERM", "xterm-256color");
 
         let mut child = pair.slave.spawn_command(cmd)?;
         drop(pair.slave);

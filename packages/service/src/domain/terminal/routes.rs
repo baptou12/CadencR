@@ -24,6 +24,8 @@ pub struct TerminalWsParams {
     pub feature_id: Option<i64>,
     pub project_id: Option<i64>,
     pub pty_id: Option<String>,
+    pub cols: Option<u16>,
+    pub rows: Option<u16>,
 }
 
 pub fn terminal_router() -> Router<AppState> {
@@ -44,7 +46,9 @@ async fn handle_terminal_ws(socket: WebSocket, params: TerminalWsParams, state: 
     if let Some(pty_id) = params.pty_id {
         handle_reconnect(socket, &pty_id, pty_manager).await;
     } else if let (Some(feature_id), Some(project_id)) = (params.feature_id, params.project_id) {
-        handle_new_pty(socket, feature_id, project_id, &state).await;
+        let cols = params.cols.unwrap_or(80);
+        let rows = params.rows.unwrap_or(24);
+        handle_new_pty(socket, feature_id, project_id, cols, rows, &state).await;
     } else {
         send_error(socket, "Missing required params: pty_id or (feature_id + project_id)").await;
     }
@@ -87,6 +91,8 @@ async fn handle_new_pty(
     socket: WebSocket,
     feature_id: i64,
     project_id: i64,
+    cols: u16,
+    rows: u16,
     state: &AppState,
 ) {
     let cwd = match resolve_cwd(&state.read_pool, feature_id, project_id).await {
@@ -97,7 +103,7 @@ async fn handle_new_pty(
         }
     };
 
-    let (pty_id, handle) = match state.pty_manager.create_pty(&cwd) {
+    let (pty_id, handle) = match state.pty_manager.create_pty(&cwd, cols, rows) {
         Ok(result) => result,
         Err(e) => {
             send_error(socket, &format!("Failed to create PTY: {e}")).await;
