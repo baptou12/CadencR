@@ -5,7 +5,8 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { useWorkflowStore, AGENT_TYPE_SYNTHETIC_KEYS } from "./useWorkflowWebSocket";
-import type { FeatureSnapshot, AgentSessionSummary } from "./useWorkflowWebSocket";
+import type { FeatureSnapshot, AgentSessionSummary, AgentSessionState } from "./useWorkflowWebSocket";
+import type { AgentBlockData } from "@/components/AgentBlock";
 
 // Mock ws-session-store so we can test routing without the full SDK parser.
 vi.mock("@/stores/ws-session-store", () => {
@@ -114,25 +115,29 @@ function dispatch(ws: MockWebSocket, data: Record<string, unknown>) {
   ws.emit("message", { data: JSON.stringify(data) });
 }
 
-function makeAgentSession(overrides?: Record<string, unknown>) {
+function makeAgentSession(overrides?: Record<string, unknown>): AgentSessionState {
   return {
     sessionId: 0,
     agentType: "execute",
-    blocks: [] as unknown[],
+    blocks: [] as AgentBlockData[],
     status: "running" as const,
     streamingState: {
       activeTextIndex: null,
       activeThinkingIndex: null,
       toolCalls: new Map(),
-    },
+    } as unknown as AgentSessionState["streamingState"],
     pendingPermission: null,
     pendingQuestions: [],
     pendingQuestionToolInput: {},
     pendingQuestionRequestId: "",
     historyLoaded: false,
     claudeSessionId: null,
+    inputTokens: 0,
+    outputTokens: 0,
+    contextWindow: 0,
+    hasFileChanges: false,
     ...overrides,
-  };
+  } as AgentSessionState;
 }
 
 // ---------------------------------------------------------------------------
@@ -460,7 +465,7 @@ describe("useWorkflowStore", () => {
     }
 
     function makeSessionSummary(overrides?: Partial<AgentSessionSummary>): AgentSessionSummary {
-      return { id: 1, queue_item_id: null, status: "completed", agent_type: null, ...overrides };
+      return { id: 1, queue_item_id: null, status: "completed", agent_type: null, claude_session_id: null, input_tokens: 0, output_tokens: 0, context_window: 0, ...overrides };
     }
 
     it("routes plan agent_type to planAgent slot", () => {
@@ -724,7 +729,7 @@ describe("useWorkflowStore", () => {
       useWorkflowStore.getState().hydrateFromSnapshot({
         workflow_status: "building",
         queue: [],
-        agent_sessions: [{ id: 10, agent_type: "plan", status: "paused", queue_item_id: null }],
+        agent_sessions: [{ id: 10, agent_type: "plan", status: "paused", queue_item_id: null, claude_session_id: null, input_tokens: 0, output_tokens: 0, context_window: 0 }],
         plan: null,
         worktree: null,
         autonomy_level: 3,
@@ -743,7 +748,7 @@ describe("useWorkflowStore", () => {
       useWorkflowStore.getState().hydrateFromSnapshot({
         workflow_status: "building",
         queue: [],
-        agent_sessions: [{ id: 20, agent_type: "prd", status: "paused", queue_item_id: null }],
+        agent_sessions: [{ id: 20, agent_type: "prd", status: "paused", queue_item_id: null, claude_session_id: null, input_tokens: 0, output_tokens: 0, context_window: 0 }],
         plan: null,
         worktree: null,
         autonomy_level: 3,
@@ -760,7 +765,7 @@ describe("useWorkflowStore", () => {
       useWorkflowStore.getState().hydrateFromSnapshot({
         workflow_status: "building",
         queue: [{ id: 99, item_type: "execute", phase_id: null, phase_title: null, status: "paused", order_index: 0, group_index: null, agent_session_id: 50, result: null }],
-        agent_sessions: [{ id: 50, agent_type: "execute", status: "paused", queue_item_id: 99 }],
+        agent_sessions: [{ id: 50, agent_type: "execute", status: "paused", queue_item_id: 99, claude_session_id: null, input_tokens: 0, output_tokens: 0, context_window: 0 }],
         plan: null,
         worktree: null,
         autonomy_level: 3,
@@ -777,7 +782,7 @@ describe("useWorkflowStore", () => {
       useWorkflowStore.getState().hydrateFromSnapshot({
         workflow_status: "building",
         queue: [],
-        agent_sessions: [{ id: 10, agent_type: "plan", status: "paused", queue_item_id: null }],
+        agent_sessions: [{ id: 10, agent_type: "plan", status: "paused", queue_item_id: null, claude_session_id: null, input_tokens: 0, output_tokens: 0, context_window: 0 }],
         plan: null,
         worktree: null,
         autonomy_level: 3,
@@ -796,7 +801,7 @@ describe("useWorkflowStore", () => {
       useWorkflowStore.getState().hydrateFromSnapshot({
         workflow_status: "building",
         queue: [{ id: 5, item_type: "execute", phase_id: null, phase_title: null, status: "running", order_index: 0, group_index: null, agent_session_id: 30, result: null }],
-        agent_sessions: [{ id: 30, agent_type: "execute", status: "running", queue_item_id: 5 }],
+        agent_sessions: [{ id: 30, agent_type: "execute", status: "running", queue_item_id: 5, claude_session_id: null, input_tokens: 0, output_tokens: 0, context_window: 0 }],
         plan: null,
         worktree: null,
         autonomy_level: 3,
@@ -827,7 +832,8 @@ describe("useWorkflowStore", () => {
       useWorkflowStore.getState().hydrateFromSnapshot({
         workflow_status: "building",
         queue: [{ id: 5, item_type: "execute", phase_id: null, phase_title: null, status: "completed", order_index: 0, group_index: null, agent_session_id: 30, result: null }],
-        agent_sessions: [{ id: 30, agent_type: "execute", status: "completed", queue_item_id: 5 }],
+        agent_sessions: [{ id: 30, agent_type: "execute", status: "completed", queue_item_id: 5, claude_session_id: null, input_tokens: 0, output_tokens: 0, context_window: 0 }],
+        plan: null,
         worktree: null,
         autonomy_level: 3,
       });
@@ -845,7 +851,8 @@ describe("useWorkflowStore", () => {
       useWorkflowStore.getState().hydrateFromSnapshot({
         workflow_status: "building",
         queue: [{ id: 6, item_type: "execute", phase_id: null, phase_title: null, status: "completed", order_index: 0, group_index: null, agent_session_id: 31, result: null }],
-        agent_sessions: [{ id: 31, agent_type: "execute", status: "completed", queue_item_id: 6 }],
+        agent_sessions: [{ id: 31, agent_type: "execute", status: "completed", queue_item_id: 6, claude_session_id: null, input_tokens: 0, output_tokens: 0, context_window: 0 }],
+        plan: null,
         worktree: null,
         autonomy_level: 3,
       });
@@ -862,7 +869,8 @@ describe("useWorkflowStore", () => {
       useWorkflowStore.getState().hydrateFromSnapshot({
         workflow_status: "building",
         queue: [{ id: 7, item_type: "execute", phase_id: null, phase_title: null, status: "completed", order_index: 0, group_index: null, agent_session_id: 32, result: null }],
-        agent_sessions: [{ id: 32, agent_type: "execute", status: "completed", queue_item_id: 7 }],
+        agent_sessions: [{ id: 32, agent_type: "execute", status: "completed", queue_item_id: 7, claude_session_id: null, input_tokens: 0, output_tokens: 0, context_window: 0 }],
+        plan: null,
         worktree: null,
         autonomy_level: 3,
       });
@@ -884,7 +892,8 @@ describe("useWorkflowStore", () => {
       useWorkflowStore.getState().hydrateFromSnapshot({
         workflow_status: "building",
         queue: [{ id: 8, item_type: "execute", phase_id: null, phase_title: null, status: "completed", order_index: 0, group_index: null, agent_session_id: 33, result: null }],
-        agent_sessions: [{ id: 33, agent_type: "execute", status: "completed", queue_item_id: 8 }],
+        agent_sessions: [{ id: 33, agent_type: "execute", status: "completed", queue_item_id: 8, claude_session_id: null, input_tokens: 0, output_tokens: 0, context_window: 0 }],
+        plan: null,
         worktree: null,
         autonomy_level: 3,
       });

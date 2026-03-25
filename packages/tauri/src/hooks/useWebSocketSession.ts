@@ -48,6 +48,7 @@ export interface UseWebSocketSessionReturn {
   respondToPermission: (requestId: string, granted: boolean) => void;
   interrupt: () => void;
   destroy: () => void;
+  clearSession: () => void;
   initSession: (config: SessionConfig) => void;
 }
 

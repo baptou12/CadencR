@@ -187,7 +187,7 @@ function RootLayout() {
       e.preventDefault();
       void navigate({ to: "/settings" });
     },
-    { enableOnFormTags: true },
+    { enableOnFormTags: true, enableOnContentEditable: true },
   );
 
   // CMD+? -> open keyboard shortcuts help modal
@@ -210,7 +210,7 @@ function RootLayout() {
       e.preventDefault();
       setCommandPaletteOpen((prev) => !prev);
     },
-    { enableOnFormTags: true },
+    { enableOnFormTags: true, enableOnContentEditable: true },
   );
 
   // CMD+SHIFT+[ -> cycle focus left
@@ -220,7 +220,7 @@ function RootLayout() {
       e.preventDefault();
       focusZoneByDirection("left");
     },
-    { enableOnFormTags: true },
+    { enableOnFormTags: true, enableOnContentEditable: true },
   );
 
   // CMD+SHIFT+] -> cycle focus right
@@ -230,7 +230,7 @@ function RootLayout() {
       e.preventDefault();
       focusZoneByDirection("right");
     },
-    { enableOnFormTags: true },
+    { enableOnFormTags: true, enableOnContentEditable: true },
   );
 
   // CMD+N -> create new feature directly
@@ -244,7 +244,7 @@ function RootLayout() {
         title: "Untitled Feature",
       });
     },
-    { enableOnFormTags: true },
+    { enableOnFormTags: true, enableOnContentEditable: true },
   );
 
   // CMD+SHIFT+N -> create new session
@@ -255,7 +255,7 @@ function RootLayout() {
       if (activeProjectId == null) return;
       createSessionMutation.mutate({ project_id: activeProjectId, type: "ws-session" });
     },
-    { enableOnFormTags: true },
+    { enableOnFormTags: true, enableOnContentEditable: true },
   );
 
   // CMD+SHIFT+X -> archive or delete currently opened feature
@@ -290,7 +290,7 @@ function RootLayout() {
         // ignore fetch errors
       }
     },
-    { enableOnFormTags: true },
+    { enableOnFormTags: true, enableOnContentEditable: true },
   );
 
   const handleLeftResize = useCallback(

@@ -1,0 +1,97 @@
+import {
+  TextNode,
+  type DOMConversionMap,
+  type DOMExportOutput,
+  type EditorConfig,
+  type LexicalNode,
+  type NodeKey,
+  type SerializedTextNode,
+  type Spread,
+} from "lexical";
+
+export type SerializedSlashCommandNode = Spread<
+  { commandName: string },
+  SerializedTextNode
+>;
+
+export class SlashCommandNode extends TextNode {
+  __commandName: string;
+
+  static getType(): string {
+    return "slash-command";
+  }
+
+  static clone(node: SlashCommandNode): SlashCommandNode {
+    return new SlashCommandNode(node.__commandName, node.__text, node.__key);
+  }
+
+  constructor(commandName: string, text?: string, key?: NodeKey) {
+    super(text ?? `/${commandName}`, key);
+    this.__commandName = commandName;
+  }
+
+  getCommandName(): string {
+    return this.__commandName;
+  }
+
+  createDOM(config: EditorConfig): HTMLElement {
+    const el = super.createDOM(config);
+    el.className =
+      "inline-block rounded bg-purple-100 text-purple-800 px-1 text-sm font-medium dark:bg-purple-900/40 dark:text-purple-300";
+    el.dataset.commandName = this.__commandName;
+    return el;
+  }
+
+  updateDOM(): boolean {
+    return false;
+  }
+
+  exportDOM(): DOMExportOutput {
+    const element = document.createElement("span");
+    element.textContent = this.getTextContent();
+    element.dataset.commandName = this.__commandName;
+    return { element };
+  }
+
+  static importDOM(): DOMConversionMap | null {
+    return null;
+  }
+
+  static importJSON(serializedNode: SerializedSlashCommandNode): SlashCommandNode {
+    return $createSlashCommandNode(serializedNode.commandName);
+  }
+
+  exportJSON(): SerializedSlashCommandNode {
+    return {
+      ...super.exportJSON(),
+      type: "slash-command",
+      commandName: this.__commandName,
+    };
+  }
+
+  getTextContent(): string {
+    return `/${this.__commandName}`;
+  }
+
+  canInsertTextBefore(): boolean {
+    return false;
+  }
+
+  canInsertTextAfter(): boolean {
+    return false;
+  }
+
+  isTextEntity(): boolean {
+    return true;
+  }
+}
+
+export function $createSlashCommandNode(commandName: string): SlashCommandNode {
+  const node = new SlashCommandNode(commandName);
+  node.setMode("token");
+  return node;
+}
+
+export function $isSlashCommandNode(node: LexicalNode): node is SlashCommandNode {
+  return node instanceof SlashCommandNode;
+}

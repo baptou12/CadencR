@@ -9,12 +9,17 @@
     "tauri": "tauri",
     "lint": "oxlint src/",
     "lint:fix": "oxlint --fix src/",
-    "test": "vitest run"
+    "test": "vitest run",
+    "ts-check": "tsc --noEmit"
   },
   "dependencies": {
     "@git-diff-view/lowlight": "^0.0.39",
     "@git-diff-view/react": "^0.0.39",
     "@git-diff-view/shiki": "^0.0.39",
+    "@lexical/list": "^0.42.0",
+    "@lexical/markdown": "^0.42.0",
+    "@lexical/react": "^0.42.0",
+    "@lexical/rich-text": "^0.42.0",
     "@tanstack/react-query": "^4.43.0",
     "@tanstack/react-router": "^1.159.5",
     "@tanstack/router-vite-plugin": "^1.159.5",
@@ -31,6 +36,7 @@
     "cmdk": "^1.1.1",
     "date-fns": "^4.1.0",
     "diff": "^8.0.3",
+    "lexical": "^0.42.0",
     "lowlight": "^3.3.0",
     "lucide-react": "^0.563.0",
     "radix-ui": "^1.4.3",
@@ -48,10 +54,10 @@
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.18",
     "@tanstack/router-cli": "^1.159.4",
+    "@tauri-apps/cli": "^2",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
-    "@tauri-apps/cli": "^2",
     "@types/diff": "^8.0.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",

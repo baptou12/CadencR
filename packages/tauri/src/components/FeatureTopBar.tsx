@@ -70,7 +70,7 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", isWebSoc
       e.preventDefault();
       setSettingsOpen((prev) => !prev);
     },
-    { enableOnFormTags: true },
+    { enableOnFormTags: true, enableOnContentEditable: true },
   );
 
   // CMD+SHIFT+P -> toggle feature settings popover (primary shortcut)
@@ -80,7 +80,7 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", isWebSoc
       e.preventDefault();
       setSettingsOpen((prev) => !prev);
     },
-    { enableOnFormTags: true },
+    { enableOnFormTags: true, enableOnContentEditable: true },
   );
 
   // CMD+SHIFT+D -> toggle diff viewer
@@ -93,7 +93,7 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", isWebSoc
         return !prev;
       });
     },
-    { enableOnFormTags: true },
+    { enableOnFormTags: true, enableOnContentEditable: true },
   );
   const openExternal = useOpenExternalHandler();
 

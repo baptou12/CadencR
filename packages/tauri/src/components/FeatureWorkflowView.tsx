@@ -192,7 +192,7 @@ export function FeatureWorkflowView({
       e.preventDefault();
       moveFocus("down");
     },
-    { enableOnFormTags: true },
+    { enableOnFormTags: true, enableOnContentEditable: true },
   );
 
   useHotkeys(
@@ -203,7 +203,7 @@ export function FeatureWorkflowView({
       e.preventDefault();
       moveFocus("up");
     },
-    { enableOnFormTags: true },
+    { enableOnFormTags: true, enableOnContentEditable: true },
   );
 
   useHotkeys(
@@ -230,7 +230,13 @@ export function FeatureWorkflowView({
         });
       } else {
         e.preventDefault();
+        const willOpen = openAgent !== sessionKey;
         setOpenAgent((prev) => (prev === sessionKey ? null : sessionKey));
+        if (willOpen) {
+          requestAnimationFrame(() => {
+            agentRefs.current.get(agentIndex)?.focusPromptBar();
+          });
+        }
       }
     },
     { enableOnFormTags: false },
@@ -249,7 +255,7 @@ export function FeatureWorkflowView({
         zone.focus();
       }
     },
-    { enableOnFormTags: true },
+    { enableOnFormTags: true, enableOnContentEditable: true },
   );
 
   // CMD+SHIFT+B: start or continue building
@@ -271,7 +277,7 @@ export function FeatureWorkflowView({
         backend.startBuilding();
       }
     },
-    { enableOnFormTags: true },
+    { enableOnFormTags: true, enableOnContentEditable: true },
   );
 
   // CMD+SHIFT+S: open session prompt bar
@@ -284,7 +290,7 @@ export function FeatureWorkflowView({
       e.preventDefault();
       setSessionPromptTrigger((v) => v + 1);
     },
-    { enableOnFormTags: true },
+    { enableOnFormTags: true, enableOnContentEditable: true },
   );
 
   // Escape: stop the focused running agent
@@ -306,12 +312,22 @@ export function FeatureWorkflowView({
         backend.stopAgent(entry);
       }
     },
-    { enableOnFormTags: true },
+    { enableOnFormTags: true, enableOnContentEditable: true },
   );
 
   // Use backend.view instead of useFeatureState
   const view = backend.view;
   const actions = backend.actions;
+
+  // Auto-focus the first agent's prompt bar on mount
+  const didAutoFocusRef = useRef(false);
+  useEffect(() => {
+    if (didAutoFocusRef.current || backend.sessionEntries.length === 0) return;
+    didAutoFocusRef.current = true;
+    requestAnimationFrame(() => {
+      agentRefs.current.get(0)?.focusPromptBar();
+    });
+  }, [backend.sessionEntries.length]);
 
   // Auto-focus the prompt bar of a newly started agent
   const prevRunningAgentsRef = useRef<Set<string>>(new Set());
@@ -434,9 +450,9 @@ export function FeatureWorkflowView({
       e.preventDefault();
       const entry = getFocusedEntry();
       if (!entry) return;
-      handleViewDiffForAgent(entry);
+      handleViewDiffForAgent();
     },
-    { enableOnFormTags: true },
+    { enableOnFormTags: true, enableOnContentEditable: true },
   );
 
   useHotkeys(
@@ -450,7 +466,7 @@ export function FeatureWorkflowView({
       if (entry.status !== "running" && entry.status !== "paused") return;
       backend.markDone(entry.sessionDbId);
     },
-    { enableOnFormTags: true },
+    { enableOnFormTags: true, enableOnContentEditable: true },
   );
 
   useHotkeys(
@@ -461,7 +477,7 @@ export function FeatureWorkflowView({
       if (!entry || !entry.pendingPlanApproval || !entry.subprocessId) return;
       backend.approvePlan(entry.subprocessId);
     },
-    { enableOnFormTags: true },
+    { enableOnFormTags: true, enableOnContentEditable: true },
   );
 
   useHotkeys(
@@ -475,7 +491,7 @@ export function FeatureWorkflowView({
         agentRefs.current.get(idx)?.focusActiveInput();
       }
     },
-    { enableOnFormTags: true },
+    { enableOnFormTags: true, enableOnContentEditable: true },
   );
 
   useHotkeys(
@@ -490,7 +506,7 @@ export function FeatureWorkflowView({
         requestAnimationFrame(() => terminalRef.current?.focusActivePane());
       }
     },
-    { enableOnFormTags: true },
+    { enableOnFormTags: true, enableOnContentEditable: true },
   );
 
   useHotkeys(
@@ -500,7 +516,7 @@ export function FeatureWorkflowView({
       e.preventDefault();
       terminalState.addPane();
     },
-    { enableOnFormTags: true },
+    { enableOnFormTags: true, enableOnContentEditable: true },
   );
 
   return (
@@ -639,7 +655,7 @@ export function FeatureWorkflowView({
                             : undefined
                         }
                         hasFileChanges={entry.hasFileChanges}
-                        onViewDiff={() => handleViewDiffForAgent(entry)}
+                        onViewDiff={() => handleViewDiffForAgent()}
                         todos={entry.todos}
                         currentModelId={resolveModel(entry.agentType)}
                         onModelChange={(modelId) =>
@@ -659,7 +675,6 @@ export function FeatureWorkflowView({
                         slashCommandsOverride={slashCommands}
                         slashCommandsLoading={slashCommandsLoading}
                         initialDraft={entry.draftPrompt}
-                        subprocessId={entry.subprocessId ?? undefined}
                         pendingPermission={entry.pendingPermission}
                         onPermissionDecision={(decision, feedback) =>
                           backend.submitPermission(entry, decision, feedback)

@@ -92,7 +92,7 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
       e.preventDefault();
       focusPaneByIndex(activePaneIndex - 1);
     },
-    { enableOnFormTags: true },
+    { enableOnFormTags: true, enableOnContentEditable: true },
     [activePaneIndex, focusPaneByIndex],
   );
 
@@ -104,7 +104,7 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
       e.preventDefault();
       focusPaneByIndex(activePaneIndex + 1);
     },
-    { enableOnFormTags: true },
+    { enableOnFormTags: true, enableOnContentEditable: true },
     [activePaneIndex, focusPaneByIndex],
   );
 
