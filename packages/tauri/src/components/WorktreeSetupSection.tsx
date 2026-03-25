@@ -81,6 +81,15 @@ function wsStatusToStep(status: WorktreeStatus): SetupStep | null {
   }
 }
 
+/** Map raw DB worktree_setup_step values to SetupStep (DB stores "ready", UI expects "done") */
+function dbStepToSetupStep(raw: string | undefined): SetupStep | null {
+  if (!raw) return null;
+  if (raw === "ready") return "done";
+  if (raw === "setup_running") return "setup";
+  if (raw === "setup_error") return "error";
+  return raw as SetupStep;
+}
+
 export function WorktreeSetupSection({
   featureId,
   projectId,
@@ -108,7 +117,7 @@ export function WorktreeSetupSection({
 
   const step = useWsMode
     ? wsStatusToStep(wsWorktreeStatus!)
-    : ((settings?.worktree_setup_step as SetupStep) ?? null);
+    : dbStepToSetupStep(settings?.worktree_setup_step);
   const log = useWsMode
     ? (wsWorktreeSetupOutput ?? []).join("\n")
     : (settings?.worktree_setup_log ?? "");

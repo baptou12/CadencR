@@ -98,6 +98,46 @@ describe("WorktreeSetupSection", () => {
     )).toBeInTheDocument();
   });
 
+  it("maps DB 'ready' value to done badge (not running)", () => {
+    mockGetSettings.mockReturnValue({
+      data: settingsArray({
+        worktree_setup_step: "ready",
+        worktree_setup_log: "",
+        worktree_setup_error: "",
+        worktree_branch: "feature/ready-branch",
+      }),
+    });
+    render(<WorktreeSetupSection featureId={1} projectId={1} />);
+    expect(screen.getByText("done")).toBeInTheDocument();
+    expect(screen.queryByText("running")).not.toBeInTheDocument();
+  });
+
+  it("maps DB 'setup_running' value to running badge", () => {
+    mockGetSettings.mockReturnValue({
+      data: settingsArray({
+        worktree_setup_step: "setup_running",
+        worktree_setup_log: "",
+        worktree_setup_error: "",
+        worktree_branch: "",
+      }),
+    });
+    render(<WorktreeSetupSection featureId={1} projectId={1} />);
+    expect(screen.getByText("running")).toBeInTheDocument();
+  });
+
+  it("maps DB 'setup_error' value to error badge", () => {
+    mockGetSettings.mockReturnValue({
+      data: settingsArray({
+        worktree_setup_step: "setup_error",
+        worktree_setup_log: "",
+        worktree_setup_error: "something broke",
+        worktree_branch: "",
+      }),
+    });
+    render(<WorktreeSetupSection featureId={1} projectId={1} />);
+    expect(screen.getByText("error")).toBeInTheDocument();
+  });
+
   it("expands on header click to show steps", async () => {
     mockGetSettings.mockReturnValue({
       data: settingsArray({
