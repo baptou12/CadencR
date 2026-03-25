@@ -1,6 +1,6 @@
 import { useRef } from 'react'
 import { Paperclip } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+
 
 interface ImageAttachmentButtonProps {
   onFilesSelected: (files: FileList | File[]) => void
@@ -32,16 +32,15 @@ export function ImageAttachmentButton({ onFilesSelected, disabled }: ImageAttach
         className="hidden"
         onChange={handleChange}
       />
-      <Button
+      <button
         type="button"
-        variant="ghost"
-        size="icon-lg"
         onClick={handleClick}
         disabled={disabled}
         aria-label="Attach images"
+        className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
       >
-        <Paperclip className="w-4 h-4" />
-      </Button>
+        <Paperclip className="size-3.5" />
+      </button>
     </>
   )
 }

@@ -1,5 +1,4 @@
 import {
-  $applyNodeReplacement,
   TextNode,
   type DOMConversionMap,
   type DOMExportOutput,
@@ -90,7 +89,7 @@ export class SlashCommandNode extends TextNode {
 export function $createSlashCommandNode(commandName: string): SlashCommandNode {
   const node = new SlashCommandNode(commandName);
   node.setMode("token");
-  return $applyNodeReplacement(node);
+  return node;
 }
 
 export function $isSlashCommandNode(node: LexicalNode): node is SlashCommandNode {

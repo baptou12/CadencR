@@ -1,5 +1,4 @@
 import {
-  $applyNodeReplacement,
   TextNode,
   type DOMConversionMap,
   type DOMExportOutput,
@@ -27,7 +26,7 @@ export class MentionNode extends TextNode {
   }
 
   constructor(mentionPath: string, text?: string, key?: NodeKey) {
-    super(text ?? mentionPath, key);
+    super(text ?? `@${mentionPath}`, key);
     this.__mentionPath = mentionPath;
   }
 
@@ -92,9 +91,9 @@ export function $createMentionNode(
   mentionPath: string,
   text?: string,
 ): MentionNode {
-  const node = new MentionNode(mentionPath, text ?? mentionPath);
+  const node = new MentionNode(mentionPath, text);
   node.setMode("token");
-  return $applyNodeReplacement(node);
+  return node;
 }
 
 export function $isMentionNode(node: LexicalNode): node is MentionNode {

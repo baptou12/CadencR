@@ -8,7 +8,7 @@ import {
 import { LexicalComposer } from "@lexical/react/LexicalComposer";
 import { RichTextPlugin } from "@lexical/react/LexicalRichTextPlugin";
 import { ContentEditable } from "@lexical/react/LexicalContentEditable";
-import LexicalErrorBoundary from "@lexical/react/LexicalErrorBoundary";
+import { LexicalErrorBoundary } from "@lexical/react/LexicalErrorBoundary";
 import { HistoryPlugin } from "@lexical/react/LexicalHistoryPlugin";
 import { OnChangePlugin } from "@lexical/react/LexicalOnChangePlugin";
 import { MarkdownShortcutPlugin } from "@lexical/react/LexicalMarkdownShortcutPlugin";
@@ -169,9 +169,7 @@ const PromptEditorInner = forwardRef<PromptEditorHandle, PromptEditorProps>(
           contentEditable={
             <ContentEditable
               className={cn(
-                "placeholder:text-muted-foreground border-input w-full min-w-0 rounded-md border bg-transparent px-3 py-2 text-base shadow-xs outline-none md:text-sm",
-                "focus:border-ring focus:ring-ring/50 focus:ring-[3px]",
-                "min-h-[80px] max-h-[300px] overflow-y-auto resize-none",
+                "w-full min-w-0 outline-none",
                 disabled && "pointer-events-none opacity-50",
                 className,
               )}
@@ -182,7 +180,7 @@ const PromptEditorInner = forwardRef<PromptEditorHandle, PromptEditorProps>(
           }
           placeholder={
             placeholder ? (
-              <div className="text-muted-foreground pointer-events-none absolute top-2 left-3 select-none text-base md:text-sm">
+              <div className="text-muted-foreground pointer-events-none absolute top-0 left-0 select-none text-sm leading-[22px]">
                 {placeholder}
               </div>
             ) : null
@@ -223,7 +221,7 @@ export const PromptEditor = forwardRef<PromptEditorHandle, PromptEditorProps>(
 
     return (
       <LexicalComposer initialConfig={initialConfig}>
-        <div className="relative">
+        <div className="relative min-w-0 flex-1">
           <PromptEditorInner ref={ref} {...props} />
         </div>
       </LexicalComposer>

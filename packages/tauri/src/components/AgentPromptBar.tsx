@@ -6,7 +6,7 @@ import {
   forwardRef,
 } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
-import { Send, StopCircle } from "lucide-react";
+import { Send, Pause } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AgentQuestionDrawer } from "./AgentQuestionDrawer";
 import { PlanApprovalBar } from "./PlanApprovalBar";
@@ -294,7 +294,7 @@ export const AgentPromptBar = forwardRef<
         />
       )}
 
-      <div className="flex items-center gap-0 rounded-3xl bg-muted/40 py-1.5 pl-4 pr-1.5 transition-colors focus-within:bg-muted/55">
+      <div className="flex items-center gap-1.5 rounded-lg bg-muted/40 py-4 pl-4 pr-2.5 transition-colors focus-within:bg-muted/55">
         <PromptEditor
           ref={editorRef}
           onChange={handleEditorChange}
@@ -322,9 +322,9 @@ export const AgentPromptBar = forwardRef<
             type="button"
             onClick={onStop}
             aria-label="Stop agent"
-            className="flex size-7 shrink-0 items-center justify-center rounded-full bg-destructive/15 text-destructive transition-colors hover:bg-destructive/25"
+            className="flex size-7 shrink-0 items-center justify-center rounded-md bg-destructive/15 text-destructive transition-colors hover:bg-destructive/25"
           >
-            <StopCircle className="size-3.5" />
+            <Pause className="size-3.5" />
           </button>
         ) : !splitSendActions ? (
           <button
@@ -332,7 +332,7 @@ export const AgentPromptBar = forwardRef<
             onClick={handleSend}
             disabled={!canSend}
             aria-label="Send message"
-            className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-opacity disabled:opacity-30"
+            className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground transition-opacity disabled:opacity-30"
           >
             <Send className="size-3.5" />
           </button>

@@ -36,7 +36,7 @@ export function SlashCommandPopover({
       {open && (
         <div
           ref={listRef}
-          className="absolute bottom-full left-0 right-0 z-50 mb-1 max-h-[300px] overflow-y-auto rounded-md border border-border bg-popover py-1 shadow-lg"
+          className="absolute bottom-full left-0 z-50 mb-1 w-80 max-h-[300px] overflow-y-auto rounded-md border border-border bg-popover py-1 shadow-lg"
         >
           {isLoading ? (
             <div className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground">

@@ -1,7 +1,7 @@
 import type { EditorThemeClasses } from "lexical";
 
 export const editorTheme: EditorThemeClasses = {
-  paragraph: "mb-1 last:mb-0",
+  paragraph: "m-0 leading-[22px]",
   text: {
     bold: "font-bold",
     italic: "italic",
