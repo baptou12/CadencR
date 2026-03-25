@@ -26,6 +26,8 @@ import {
 import { cn } from "@/lib/utils";
 import { editorTheme } from "./theme";
 import { toast } from "sonner";
+import { MentionNode } from "./nodes/MentionNode";
+import { MentionPlugin } from "./plugins/MentionPlugin";
 
 export interface PromptEditorHandle {
   focus: () => void;
@@ -38,6 +40,7 @@ interface PromptEditorProps {
   onChange?: (text: string) => void;
   placeholder?: string;
   className?: string;
+  mentionFiles?: string[];
 }
 
 function EditorRefPlugin({
@@ -71,7 +74,7 @@ function AutoResizePlugin() {
 }
 
 const PromptEditorInner = forwardRef<PromptEditorHandle, PromptEditorProps>(
-  function PromptEditorInner({ onChange, placeholder, className }, ref) {
+  function PromptEditorInner({ onChange, placeholder, className, mentionFiles }, ref) {
     const editorRef = useRef<LexicalEditor | null>(null);
 
     useImperativeHandle(ref, () => ({
@@ -141,6 +144,7 @@ const PromptEditorInner = forwardRef<PromptEditorHandle, PromptEditorProps>(
         <MarkdownShortcutPlugin transformers={TRANSFORMERS} />
         <OnChangePlugin onChange={handleChange} />
         <AutoResizePlugin />
+        <MentionPlugin files={mentionFiles} />
       </>
     );
   },
@@ -162,7 +166,7 @@ export const PromptEditor = forwardRef<PromptEditorHandle, PromptEditorProps>(
     const initialConfig = {
       namespace: "PromptEditor",
       theme: editorTheme,
-      nodes: [HeadingNode, QuoteNode, ListNode, ListItemNode],
+      nodes: [HeadingNode, QuoteNode, ListNode, ListItemNode, MentionNode],
       onError(error: Error) {
         toast.error(`Editor error: ${error.message}`);
       },
