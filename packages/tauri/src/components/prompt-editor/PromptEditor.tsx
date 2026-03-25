@@ -28,6 +28,9 @@ import { editorTheme } from "./theme";
 import { toast } from "sonner";
 import { MentionNode } from "./nodes/MentionNode";
 import { MentionPlugin } from "./plugins/MentionPlugin";
+import { SlashCommandNode } from "./nodes/SlashCommandNode";
+import { SlashCommandPlugin } from "./plugins/SlashCommandPlugin";
+import type { SlashCommand } from "@/hooks/useSlashCommand";
 
 export interface PromptEditorHandle {
   focus: () => void;
@@ -41,6 +44,8 @@ interface PromptEditorProps {
   placeholder?: string;
   className?: string;
   mentionFiles?: string[];
+  slashCommands?: SlashCommand[];
+  slashCommandsLoading?: boolean;
 }
 
 function EditorRefPlugin({
@@ -74,7 +79,7 @@ function AutoResizePlugin() {
 }
 
 const PromptEditorInner = forwardRef<PromptEditorHandle, PromptEditorProps>(
-  function PromptEditorInner({ onChange, placeholder, className, mentionFiles }, ref) {
+  function PromptEditorInner({ onChange, placeholder, className, mentionFiles, slashCommands, slashCommandsLoading }, ref) {
     const editorRef = useRef<LexicalEditor | null>(null);
 
     useImperativeHandle(ref, () => ({
@@ -145,6 +150,7 @@ const PromptEditorInner = forwardRef<PromptEditorHandle, PromptEditorProps>(
         <OnChangePlugin onChange={handleChange} />
         <AutoResizePlugin />
         <MentionPlugin files={mentionFiles} />
+        <SlashCommandPlugin commands={slashCommands} isLoading={slashCommandsLoading} />
       </>
     );
   },
@@ -166,7 +172,7 @@ export const PromptEditor = forwardRef<PromptEditorHandle, PromptEditorProps>(
     const initialConfig = {
       namespace: "PromptEditor",
       theme: editorTheme,
-      nodes: [HeadingNode, QuoteNode, ListNode, ListItemNode, MentionNode],
+      nodes: [HeadingNode, QuoteNode, ListNode, ListItemNode, MentionNode, SlashCommandNode],
       onError(error: Error) {
         toast.error(`Editor error: ${error.message}`);
       },
