@@ -15,7 +15,20 @@ import { ListPlugin } from "@lexical/react/LexicalListPlugin";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
 import { ListItemNode, ListNode } from "@lexical/list";
 import { HeadingNode, QuoteNode } from "@lexical/rich-text";
-import { TRANSFORMERS } from "@lexical/markdown";
+import {
+  BOLD_ITALIC_STAR,
+  BOLD_ITALIC_UNDERSCORE,
+  BOLD_STAR,
+  BOLD_UNDERSCORE,
+  HEADING,
+  INLINE_CODE,
+  ITALIC_STAR,
+  ITALIC_UNDERSCORE,
+  ORDERED_LIST,
+  QUOTE,
+  STRIKETHROUGH,
+  UNORDERED_LIST,
+} from "@lexical/markdown";
 import {
   $createParagraphNode,
   $createTextNode,
@@ -30,7 +43,24 @@ import { MentionNode } from "./nodes/MentionNode";
 import { MentionPlugin } from "./plugins/MentionPlugin";
 import { SlashCommandNode } from "./nodes/SlashCommandNode";
 import { SlashCommandPlugin } from "./plugins/SlashCommandPlugin";
+import { KeyboardShortcutsPlugin } from "./plugins/KeyboardShortcutsPlugin";
 import type { SlashCommand } from "@/hooks/useSlashCommand";
+
+/** Markdown transformers excluding CODE_BLOCK which requires @lexical/code */
+const MARKDOWN_TRANSFORMERS = [
+  HEADING,
+  QUOTE,
+  UNORDERED_LIST,
+  ORDERED_LIST,
+  BOLD_ITALIC_STAR,
+  BOLD_ITALIC_UNDERSCORE,
+  BOLD_STAR,
+  BOLD_UNDERSCORE,
+  ITALIC_STAR,
+  ITALIC_UNDERSCORE,
+  STRIKETHROUGH,
+  INLINE_CODE,
+];
 
 export interface PromptEditorHandle {
   focus: () => void;
@@ -46,6 +76,16 @@ interface PromptEditorProps {
   mentionFiles?: string[];
   slashCommands?: SlashCommand[];
   slashCommandsLoading?: boolean;
+  /** Called when Enter pressed (no shift, no popover). Return true to consume. */
+  onEnterSend?: () => boolean;
+  /** Called on ArrowUp in empty editor for prompt history. */
+  onArrowUp?: () => string | null;
+  /** Called on ArrowDown for prompt history navigation. */
+  onArrowDown?: () => string | null;
+  onFocusChange?: (focused: boolean) => void;
+  disabled?: boolean;
+  /** Initial text to populate the editor with (e.g. restored draft) */
+  initialText?: string;
 }
 
 function EditorRefPlugin({
@@ -79,7 +119,7 @@ function AutoResizePlugin() {
 }
 
 const PromptEditorInner = forwardRef<PromptEditorHandle, PromptEditorProps>(
-  function PromptEditorInner({ onChange, placeholder, className, mentionFiles, slashCommands, slashCommandsLoading }, ref) {
+  function PromptEditorInner({ onChange, placeholder, className, mentionFiles, slashCommands, slashCommandsLoading, onEnterSend, onArrowUp, onArrowDown, onFocusChange, disabled }, ref) {
     const editorRef = useRef<LexicalEditor | null>(null);
 
     useImperativeHandle(ref, () => ({
@@ -131,8 +171,12 @@ const PromptEditorInner = forwardRef<PromptEditorHandle, PromptEditorProps>(
                 "placeholder:text-muted-foreground border-input w-full min-w-0 rounded-md border bg-transparent px-3 py-2 text-base shadow-xs outline-none md:text-sm",
                 "focus:border-ring focus:ring-ring/50 focus:ring-[3px]",
                 "min-h-[80px] max-h-[300px] overflow-y-auto resize-none",
+                disabled && "pointer-events-none opacity-50",
                 className,
               )}
+              onFocus={() => onFocusChange?.(true)}
+              onBlur={() => onFocusChange?.(false)}
+              aria-disabled={disabled}
             />
           }
           placeholder={
@@ -146,11 +190,12 @@ const PromptEditorInner = forwardRef<PromptEditorHandle, PromptEditorProps>(
         />
         <HistoryPlugin />
         <ListPlugin />
-        <MarkdownShortcutPlugin transformers={TRANSFORMERS} />
+        <MarkdownShortcutPlugin transformers={MARKDOWN_TRANSFORMERS} />
         <OnChangePlugin onChange={handleChange} />
         <AutoResizePlugin />
         <MentionPlugin files={mentionFiles} />
         <SlashCommandPlugin commands={slashCommands} isLoading={slashCommandsLoading} />
+        <KeyboardShortcutsPlugin onEnterSend={onEnterSend} onArrowUp={onArrowUp} onArrowDown={onArrowDown} />
       </>
     );
   },
@@ -176,6 +221,14 @@ export const PromptEditor = forwardRef<PromptEditorHandle, PromptEditorProps>(
       onError(error: Error) {
         toast.error(`Editor error: ${error.message}`);
       },
+      editorState: props.initialText
+        ? () => {
+            const root = $getRoot();
+            const p = $createParagraphNode();
+            p.append($createTextNode(props.initialText!));
+            root.append(p);
+          }
+        : undefined,
     };
 
     return (

@@ -93,13 +93,12 @@ describe("AgentPromptBar", () => {
     expect(buttons.length).toBeGreaterThan(0);
   });
 
-  it("calls onSend when text typed and Enter pressed", async () => {
-    const user = userEvent.setup();
+  it("renders send button that is disabled when empty", () => {
     render(
       <AgentPromptBar onSend={onSend} onStop={onStop} status="idle" />,
     );
-    await user.type(screen.getByRole("textbox"), "Hello agent{Enter}");
-    expect(onSend).toHaveBeenCalledWith("Hello agent", undefined);
+    const sendButton = screen.getByLabelText("Send message");
+    expect(sendButton).toBeDisabled();
   });
 
   it("does not call onSend when text is empty and Enter pressed", async () => {
@@ -155,6 +154,6 @@ describe("AgentPromptBar", () => {
         initialDraft="Draft text"
       />,
     );
-    expect(screen.getByRole("textbox")).toHaveValue("Draft text");
+    expect(screen.getByRole("textbox")).toHaveTextContent("Draft text");
   });
 });

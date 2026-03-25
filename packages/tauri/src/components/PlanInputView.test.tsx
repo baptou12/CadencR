@@ -15,10 +15,10 @@ describe("PlanInputView", () => {
     expect(screen.getByRole("heading", { name: "Start Planning" })).toBeInTheDocument();
   });
 
-  it("renders textarea with placeholder", () => {
+  it("renders editor with placeholder text", () => {
     render(<PlanInputView {...defaultProps} />);
     expect(
-      screen.getByPlaceholderText(/send a message/i)
+      screen.getByText(/send a message/i)
     ).toBeInTheDocument();
   });
 
