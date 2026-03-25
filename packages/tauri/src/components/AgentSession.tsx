@@ -319,7 +319,6 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
   projectId,
   sessionId,
   initialDraft,
-  subprocessId,
   pendingPermission,
   onPermissionDecision,
   onMarkDone,

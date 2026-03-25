@@ -114,6 +114,8 @@ export const AgentPromptBar = forwardRef<
   const [text, setText] = useState(initialDraft ?? "");
   const textRef = useRef(text);
   textRef.current = text;
+  const disabledRef = useRef(disabled);
+  disabledRef.current = disabled;
 
   const { saveDraft } = usePromptDraft({ sessionId, initialDraft: initialDraft ?? null });
   const history = usePromptHistory(projectId ?? 0);
@@ -170,14 +172,14 @@ export const AgentPromptBar = forwardRef<
   const handleEnterSend = useCallback(() => {
     const trimmed = textRef.current.trim();
     const hasContent = trimmed.length > 0 || attachments.length > 0;
-    if (!hasContent || disabled) return true; // consume but don't send
+    if (!hasContent || disabledRef.current) return true; // consume but don't send
     if (splitSendActions && splitSendActions.length > 0) {
       handleSplitAction(splitSendActions[0]);
     } else {
       handleSend();
     }
     return true;
-  }, [attachments, disabled, splitSendActions, handleSplitAction, handleSend]);
+  }, [attachments, splitSendActions, handleSplitAction, handleSend]);
 
   // Editor text change → draft persistence
   const handleEditorChange = useCallback(
