@@ -6,15 +6,13 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { TerminalIcon, SettingsIcon, GitCompareArrowsIcon, BrainCircuitIcon, CpuIcon, PlugIcon } from "lucide-react";
+import { TerminalIcon, SettingsIcon, BrainCircuitIcon, CpuIcon, PlugIcon } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  useGetStats, useGetBranch,
   useGetFeature, useGetFeaturePlanProgress,
   useGetFeatureSettings, getGetFeatureSettingsQueryKey, useSetFeatureSetting,
   useOpenExternalHandler,
 } from "@/api/generated";
-import { DiffViewerModal } from "./diff/DiffViewerModal";
 import { ModelSelector } from "./ModelSelector";
 import { useFeatureTitle } from "@/hooks/useFeatureTitle";
 import { useWorkflowStore, type AutonomyLevel } from "@/hooks/useWorkflowWebSocket";
@@ -39,7 +37,6 @@ interface FeatureTopBarProps {
 
 export function FeatureTopBar({ featureId, projectId, mode = "feature", isWebSocket, className }: FeatureTopBarProps) {
   const isSession = mode === "session";
-  const [diffOpen, setDiffOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const queryClient = useQueryClient();
   const setAutonomyLevel = useWorkflowStore((s) => s.setAutonomyLevel);
@@ -52,16 +49,6 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", isWebSoc
   const { data: featureSettingsData } = useGetFeatureSettings(featureId);
   const featureSettingsMap = featureSettingsData ? Object.fromEntries(featureSettingsData.map(s => [s.key, s.value])) : {};
   const featureSettings = { ...featureSettingsMap };
-
-  const { data: gitStats, refetch: refetchStats } = useGetStats(
-    { featureId, mode: isSession ? "worktree" : "branch" },
-    { refetchInterval: 5 * 60 * 1000 },
-  );
-  const { data: currentBranchData } = useGetBranch(
-    { projectId },
-    { enabled: isSession, refetchInterval: 10000 },
-  );
-  const currentBranch = currentBranchData?.branch ?? null;
 
   // OPT+P -> toggle feature settings popover (secondary shortcut)
   useHotkeys(
@@ -83,18 +70,6 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", isWebSoc
     { enableOnFormTags: true, enableOnContentEditable: true },
   );
 
-  // CMD+SHIFT+D -> toggle diff viewer
-  useHotkeys(
-    "meta+shift+d",
-    (e) => {
-      e.preventDefault();
-      setDiffOpen((prev) => {
-        if (!prev) refetchStats();
-        return !prev;
-      });
-    },
-    { enableOnFormTags: true, enableOnContentEditable: true },
-  );
   const openExternal = useOpenExternalHandler();
 
   const setFeatureSetting = useSetFeatureSetting({
@@ -133,33 +108,6 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", isWebSoc
       )}
 
       <div className="flex-1" />
-
-      {isSession ? (
-        <span className="text-muted-foreground text-sm">
-          {currentBranch ?? "--"}
-        </span>
-      ) : (
-        <span className="text-muted-foreground text-sm">
-          {worktreeBranch ?? "pending"}
-        </span>
-      )}
-
-      <Button
-        variant="ghost"
-        size="sm"
-        className="h-7 gap-1.5 px-2"
-        title="View Diff"
-        disabled={!isSession && !worktreeBranch}
-        onClick={() => { refetchStats(); setDiffOpen(true); }}
-      >
-        <GitCompareArrowsIcon className="size-4" />
-        {gitStats && (gitStats.insertions > 0 || gitStats.deletions > 0) ? (
-          <>
-            <span className="text-xs text-green-400">+{gitStats.insertions}</span>
-            <span className="text-xs text-red-400">-{gitStats.deletions}</span>
-          </>
-        ) : null}
-      </Button>
 
       <Button
         variant="ghost"
@@ -260,12 +208,6 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", isWebSoc
         </PopoverContent>
       </Popover>
 
-      <DiffViewerModal
-        featureId={featureId}
-        open={diffOpen}
-        onOpenChange={setDiffOpen}
-        diffMode={isSession ? "worktree" : "branch"}
-      />
     </div>
   );
 }

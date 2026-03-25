@@ -11,7 +11,7 @@ export const Route = createFileRoute("/")({
   },
 });
 
-function parseSavedFeature(value: string | undefined | null): { projectId: number; featureId: number } | null {
+function parseSavedFeature(value: string | undefined | null): { projectId: number; featureId: number; activeTab?: string } | null {
   if (!value) return null;
   try {
     const parsed = JSON.parse(value);

@@ -10,7 +10,7 @@ describe("KbdShortcut", () => {
 
   it("renders multiple text keys", () => {
     render(<KbdShortcut keys={["ctrl", "S"]} />);
-    expect(screen.getByText("ctrl")).toBeInTheDocument();
+    expect(screen.getByText("⌃")).toBeInTheDocument();
     expect(screen.getByText("S")).toBeInTheDocument();
   });
 

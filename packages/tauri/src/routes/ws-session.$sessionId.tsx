@@ -4,10 +4,16 @@ import { useHotkeys } from "react-hotkeys-hook";
 import { AgentSession, type AgentSessionHandle } from "@/components/AgentSession";
 import { DiffViewerModal } from "@/components/diff/DiffViewerModal";
 import { FeatureTopBar } from "@/components/FeatureTopBar";
+import { FeatureTabBar } from "@/components/FeatureTabBar";
+import { FeatureTerminalTab } from "@/components/FeatureTerminalTab";
+import { FeatureGitTab } from "@/components/FeatureGitTab";
 import { useSaveLastOpenedFeature } from "@/hooks/useSaveLastOpenedFeature";
 import { useWebSocketSession } from "@/hooks/useWebSocketSession";
 import { useResolvedModel } from "@/hooks/useResolvedModel";
 import { useWsSessionStore } from "@/stores/ws-session-store";
+import { useActiveTab } from "@/hooks/useActiveTab";
+import { useGetStats, useGetBranch } from "@/api/generated";
+import { cn } from "@/lib/utils";
 
 interface WsSessionSearch {
   cwd: string;
@@ -37,7 +43,16 @@ function WebSocketSessionPage() {
   const { sessionId } = Route.useParams();
   const { cwd, featureId, projectId } = Route.useSearch();
 
-  useSaveLastOpenedFeature(projectId, featureId);
+  const { activeTab, setActiveTab } = useActiveTab(featureId);
+  useSaveLastOpenedFeature(projectId, featureId, activeTab);
+  const { data: gitStats } = useGetStats(
+    { featureId, mode: "worktree" },
+    { refetchInterval: 5 * 60 * 1000 },
+  );
+  const { data: branchData } = useGetBranch(
+    { projectId },
+    { refetchInterval: 10000 },
+  );
 
   const ws = useWebSocketSession(sessionId, featureId);
   const session = useWsSessionStore((s) => s.sessions[sessionId]);
@@ -57,12 +72,10 @@ function WebSocketSessionPage() {
     { enableOnFormTags: true, enableOnContentEditable: true },
   );
 
-  // Slash commands from ws-session store
   const slashCommands = session?.slashCommands ?? [];
   const slashCommandsLoading = session?.slashCommandsLoading ?? false;
   const requestSlashCommands = useWsSessionStore((s) => s.requestSlashCommands);
 
-  // Auto-init session once connected — only once per sessionId
   const { isConnected, initSession } = ws;
   useEffect(() => {
     if (isConnected && initializedRef.current !== sessionId && session?.serverSessionId === "") {
@@ -71,14 +84,12 @@ function WebSocketSessionPage() {
     }
   }, [isConnected, initSession, cwd, featureId, sessionId, session?.serverSessionId, resolvedModelId]);
 
-  // Auto-focus prompt bar when session page mounts
   useEffect(() => {
     requestAnimationFrame(() => {
       agentSessionRef.current?.focusPromptBar();
     });
   }, []);
 
-  // Request slash commands once the session is initialized
   useEffect(() => {
     if (session?.serverSessionId && cwd) {
       requestSlashCommands(sessionId, cwd);
@@ -88,47 +99,56 @@ function WebSocketSessionPage() {
   return (
     <div className="flex h-full flex-col">
       <FeatureTopBar featureId={featureId} projectId={projectId} mode="session" isWebSocket className="shrink-0" />
+      <FeatureTabBar activeTab={activeTab} onTabChange={setActiveTab} gitStats={gitStats} gitBranch={branchData?.branch} />
       <div className="relative min-h-0 flex-1 overflow-hidden">
-        <AgentSession
-          ref={agentSessionRef}
-          agentType="session"
-          featureId={featureId}
-          projectId={projectId}
-          blocks={ws.blocks}
-          status={ws.status}
-          onSend={(text, images) => {
-            if (text.trim() === "/clear") {
-              ws.clearSession();
-              return;
-            }
-            ws.sendPrompt(text, images);
-          }}
-          onStop={ws.interrupt}
-          pendingPermission={ws.pendingPermission}
-          onPermissionDecision={(decision) => {
-            ws.respondToPermission(ws.pendingRequestId, decision !== "deny");
-          }}
-          pendingQuestions={ws.pendingQuestions.length > 0 ? ws.pendingQuestions : undefined}
-          onAnswerSubmit={ws.respondToQuestion}
-          permissionMode={ws.permissionMode}
-          onPermissionModeToggle={() => {
-            const next = ws.permissionMode === "plan" ? "acceptEdits" : "plan";
-            ws.setPermissionMode(next);
-          }}
-          pendingPlanApproval={ws.pendingPlanApproval}
-          onPlanApprove={ws.approvePlan}
-          onPlanRequestChanges={ws.requestPlanChanges}
-          contextUsage={ws.contextUsage}
-          currentModelId={ws.currentModelId}
-          onModelChange={ws.setModel}
-          hasFileChanges={ws.hasFileChanges}
-          onViewDiff={handleViewDiff}
-          claudeSessionId={ws.claudeSessionId || undefined}
-          slashCommandsOverride={slashCommands}
-          slashCommandsLoading={slashCommandsLoading}
-          todos={session?.todos ?? null}
-          className="h-full"
-        />
+        <FeatureTerminalTab featureId={featureId} projectId={projectId} hidden={activeTab !== "terminal"} />
+
+        {activeTab === "git" && (
+          <FeatureGitTab featureId={featureId} diffMode="worktree" />
+        )}
+
+        <div className={cn("h-full", activeTab !== "agent" && "hidden")}>
+          <AgentSession
+            ref={agentSessionRef}
+            agentType="session"
+            featureId={featureId}
+            projectId={projectId}
+            blocks={ws.blocks}
+            status={ws.status}
+            onSend={(text, images) => {
+              if (text.trim() === "/clear") {
+                ws.clearSession();
+                return;
+              }
+              ws.sendPrompt(text, images);
+            }}
+            onStop={ws.interrupt}
+            pendingPermission={ws.pendingPermission}
+            onPermissionDecision={(decision) => {
+              ws.respondToPermission(ws.pendingRequestId, decision !== "deny");
+            }}
+            pendingQuestions={ws.pendingQuestions.length > 0 ? ws.pendingQuestions : undefined}
+            onAnswerSubmit={ws.respondToQuestion}
+            permissionMode={ws.permissionMode}
+            onPermissionModeToggle={() => {
+              const next = ws.permissionMode === "plan" ? "acceptEdits" : "plan";
+              ws.setPermissionMode(next);
+            }}
+            pendingPlanApproval={ws.pendingPlanApproval}
+            onPlanApprove={ws.approvePlan}
+            onPlanRequestChanges={ws.requestPlanChanges}
+            contextUsage={ws.contextUsage}
+            currentModelId={ws.currentModelId}
+            onModelChange={ws.setModel}
+            hasFileChanges={ws.hasFileChanges}
+            onViewDiff={handleViewDiff}
+            claudeSessionId={ws.claudeSessionId || undefined}
+            slashCommandsOverride={slashCommands}
+            slashCommandsLoading={slashCommandsLoading}
+            todos={session?.todos ?? null}
+            className="h-full"
+          />
+        </div>
       </div>
       <DiffViewerModal
         featureId={featureId}

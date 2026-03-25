@@ -1,7 +1,6 @@
 import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { useGetFeature, useListProjects } from "@/api/generated";
 import { FeatureWorkflowView } from "@/components/FeatureWorkflowView";
-import { useSaveLastOpenedFeature } from "@/hooks/useSaveLastOpenedFeature";
 import { wsSessionIdFromFeature } from "@/lib/ws-session-id";
 
 export const Route = createFileRoute(
@@ -18,10 +17,9 @@ function FeaturePage() {
   const featureQuery = useGetFeature(numericFeatureId);
   const feature = featureQuery.data ?? undefined;
 
-  // Save last-opened feature only for non-ws-session types;
-  // ws-session features save from their own route after redirect.
+  // Both FeatureWorkflowView and ws-session route handle saving
+  // last-opened feature with activeTab, so skip here.
   const isWsSession = feature?.type === "ws-session";
-  useSaveLastOpenedFeature(numericProjectId, numericFeatureId, isWsSession);
 
   if (isWsSession) {
     return (

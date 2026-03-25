@@ -135,17 +135,9 @@ describe("FeaturePage route", () => {
     expect(screen.getByTestId("feature-workflow-view")).toBeInTheDocument();
   });
 
-  it("calls useSaveLastOpenedFeature with correct params", () => {
+  it("does not call useSaveLastOpenedFeature from route (handled by child views)", () => {
     mocks.mockUseParams.mockReturnValue({ featureId: "7", projectId: "3" });
     render(<FeaturePage />);
-    expect(mocks.mockSaveLastOpened).toHaveBeenCalledWith(3, 7, false);
-  });
-
-  it("skips save for ws-session features", () => {
-    mocks.mockGetByIdQuery.mockReturnValue({
-      data: { id: 1, type: "ws-session", title: "Session" },
-    });
-    render(<FeaturePage />);
-    expect(mocks.mockSaveLastOpened).toHaveBeenCalledWith(2, 1, true);
+    expect(mocks.mockSaveLastOpened).not.toHaveBeenCalled();
   });
 });

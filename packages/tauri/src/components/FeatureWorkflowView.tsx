@@ -1,12 +1,11 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
-import { useHotkeys } from "react-hotkeys-hook";
-import { useGetFeaturePrd, useListProjects } from "@/api/generated";
+import { useGetFeaturePrd, useListProjects, useGetStats } from "@/api/generated";
 import { FeatureTopBar } from "@/components/FeatureTopBar";
-import {
-  AgentSession,
-  AGENT_LABELS,
-  type AgentSessionHandle,
-} from "@/components/AgentSession";
+import { FeatureTabBar } from "@/components/FeatureTabBar";
+import { FeatureTerminalTab } from "@/components/FeatureTerminalTab";
+import { FeatureGitTab } from "@/components/FeatureGitTab";
+import { AGENT_LABELS } from "@/components/AgentSession";
+import { WorkflowAgentGrid } from "@/components/WorkflowAgentGrid";
 import { AlertTriangleIcon, CheckCircle2Icon, Loader2Icon } from "lucide-react";
 import { AGENT_ICONS } from "@/components/agent-icons";
 import { Button } from "@/components/ui/button";
@@ -14,18 +13,15 @@ import { QueueSidebar } from "@/components/QueueSidebar";
 import { PlanInputView } from "@/components/PlanInputView";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { NextStepsBar } from "@/components/NextStepsBar";
-import { getActiveFocusZone } from "@/lib/focus-zones";
 import { DiffViewerModal } from "@/components/diff/DiffViewerModal";
 import { WorktreeSetupSection } from "@/components/WorktreeSetupSection";
-import {
-  TerminalPanel,
-  type TerminalPanelHandle,
-} from "@/components/terminal/TerminalPanel";
 import type { FeatureSession } from "@/hooks/useFeatureAgentState";
 import type { ContextUsageState } from "@/types/agent";
 import { useResolvedModel } from "@/hooks/useResolvedModel";
-import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
-import { useTerminalState, useTerminalStore } from "@/hooks/useTerminalState";
+import { useTerminalStore } from "@/hooks/useTerminalState";
+import { useActiveTab } from "@/hooks/useActiveTab";
+import { useSaveLastOpenedFeature } from "@/hooks/useSaveLastOpenedFeature";
+import { useWorkflowKeyboard } from "@/hooks/useWorkflowKeyboard";
 import { CodeBlockActionsContext, type CodeBlockActions } from "@/components/CodeBlockActionsContext";
 import { cn } from "@/lib/utils";
 import { useWorkflowBackend } from "@/hooks/useWorkflowBackend";
@@ -51,11 +47,10 @@ export function FeatureWorkflowView({
     | undefined;
   featureQuery: { refetch: () => unknown };
 }) {
-  // UI state
+  const [openAgent, setOpenAgent] = useState<string | null>(null);
   const [description, setDescription] = useState("");
   const descriptionRef = useRef(description);
   descriptionRef.current = description;
-  const [openAgent, setOpenAgent] = useState<string | null>(null);
 
   const { data: prdData } = useGetFeaturePrd(featureId);
 
@@ -140,243 +135,36 @@ export function FeatureWorkflowView({
     setInlineDiffOpen(true);
   }, []);
 
-  // --- Keyboard navigation (DOM-based focus) ---
-  const agentRefs = useRef<Map<number, AgentSessionHandle>>(new Map());
-
-  const setAgentRef = useCallback(
-    (index: number, handle: AgentSessionHandle | null) => {
-      if (handle) {
-        agentRefs.current.set(index, handle);
-      } else {
-        agentRefs.current.delete(index);
-      }
-    },
-    [],
+  const { agentRefs, setAgentRef, sessionPromptTrigger } = useWorkflowKeyboard(
+    backend, openAgent, setOpenAgent, handleViewDiffForAgent,
   );
 
-  const moveFocus = useCallback(
-    (direction: "up" | "down") => {
-      const count = backend.sessionEntries.length;
-      if (count === 0) return;
-
-      let currentAgentIndex = -1;
-      let el: HTMLElement | null = document.activeElement as HTMLElement | null;
-      while (el) {
-        const containerAttr = el.getAttribute("data-agent-container");
-        if (containerAttr != null) {
-          currentAgentIndex = Number(containerAttr);
-          break;
-        }
-        el = el.parentElement;
-      }
-
-      let nextIndex: number;
-      if (currentAgentIndex === -1) {
-        nextIndex = direction === "down" ? 0 : count - 1;
-      } else if (direction === "down") {
-        nextIndex = currentAgentIndex >= count - 1 ? 0 : currentAgentIndex + 1;
-      } else {
-        nextIndex = currentAgentIndex <= 0 ? count - 1 : currentAgentIndex - 1;
-      }
-
-      agentRefs.current.get(nextIndex)?.focusActiveInput();
-    },
-    [backend.sessionEntries],
-  );
-
-  useHotkeys(
-    "meta+alt+down",
-    (e) => {
-      const zone = getActiveFocusZone();
-      if (zone && zone !== "main-content") return;
-      e.preventDefault();
-      moveFocus("down");
-    },
-    { enableOnFormTags: true, enableOnContentEditable: true },
-  );
-
-  useHotkeys(
-    "meta+alt+up",
-    (e) => {
-      const zone = getActiveFocusZone();
-      if (zone && zone !== "main-content") return;
-      e.preventDefault();
-      moveFocus("up");
-    },
-    { enableOnFormTags: true, enableOnContentEditable: true },
-  );
-
-  useHotkeys(
-    "enter",
-    (e) => {
-      if (getActiveFocusZone() !== "main-content") return;
-      const focused = document.activeElement as HTMLElement | null;
-      if (!focused?.hasAttribute("data-nav-item")) return;
-      const agentIndexStr = focused.getAttribute("data-nav-agent-index");
-      if (agentIndexStr == null) return;
-      const agentIndex = Number(agentIndexStr);
-      const entry = backend.sessionEntries[agentIndex];
-      if (!entry) return;
-      const sessionKey = `${entry.agentType}-${entry.sessionDbId}`;
-      const isWorking = entry.status === "running" || entry.status === "paused";
-      const isOpen = openAgent === sessionKey || isWorking;
-      if (isWorking) {
-        e.preventDefault();
-        if (!isOpen) {
-          setOpenAgent(sessionKey);
-        }
-        requestAnimationFrame(() => {
-          agentRefs.current.get(agentIndex)?.focusActiveInput();
-        });
-      } else {
-        e.preventDefault();
-        const willOpen = openAgent !== sessionKey;
-        setOpenAgent((prev) => (prev === sessionKey ? null : sessionKey));
-        if (willOpen) {
-          requestAnimationFrame(() => {
-            agentRefs.current.get(agentIndex)?.focusPromptBar();
-          });
-        }
-      }
-    },
-    { enableOnFormTags: false },
-  );
-
-  useHotkeys(
-    "meta+alt+z",
-    (e) => {
-      if (getActiveFocusZone() !== "main-content") return;
-      e.preventDefault();
-      if (document.activeElement instanceof HTMLElement) {
-        document.activeElement.blur();
-      }
-      const zone = document.querySelector('[data-focus-zone="main-content"]');
-      if (zone instanceof HTMLElement) {
-        zone.focus();
-      }
-    },
-    { enableOnFormTags: true, enableOnContentEditable: true },
-  );
-
-  // CMD+SHIFT+B: start or continue building
-  useHotkeys(
-    "meta+shift+b",
-    (e) => {
-      if (
-        backend.canContinueBuild &&
-        !backend.isContinuingBuild
-      ) {
-        e.preventDefault();
-        backend.continueWorkflow();
-      } else if (
-        backend.actions.canStartBuild &&
-        !backend.canContinueBuild &&
-        !backend.isStartingExecute
-      ) {
-        e.preventDefault();
-        backend.startBuilding();
-      }
-    },
-    { enableOnFormTags: true, enableOnContentEditable: true },
-  );
-
-  // CMD+SHIFT+S: open session prompt bar
-  const [sessionPromptTrigger, setSessionPromptTrigger] = useState(0);
-  useHotkeys(
-    "meta+shift+s",
-    (e) => {
-      if (!backend.actions.canStartWorkflowSession || backend.isStartingWorkflowSession)
-        return;
-      e.preventDefault();
-      setSessionPromptTrigger((v) => v + 1);
-    },
-    { enableOnFormTags: true, enableOnContentEditable: true },
-  );
-
-  // Escape: stop the focused running agent
-  useHotkeys(
-    "escape",
-    (e) => {
-      if (getActiveFocusZone() !== "main-content") return;
-      const focused = document.activeElement as HTMLElement | null;
-      if (!focused?.hasAttribute("data-nav-item")) return;
-      const agentIndexStr = focused.getAttribute("data-nav-agent-index");
-      if (agentIndexStr == null) return;
-      const agentIndex = Number(agentIndexStr);
-      const entry = backend.sessionEntries[agentIndex];
-      if (!entry || entry.status !== "running") return;
-      e.preventDefault();
-      if (entry.agentType === "execute" && entry.subprocessId) {
-        backend.interruptAgent(entry);
-      } else {
-        backend.stopAgent(entry);
-      }
-    },
-    { enableOnFormTags: true, enableOnContentEditable: true },
-  );
-
-  // Use backend.view instead of useFeatureState
   const view = backend.view;
   const actions = backend.actions;
-
-  // Auto-focus the first agent's prompt bar on mount
-  const didAutoFocusRef = useRef(false);
-  useEffect(() => {
-    if (didAutoFocusRef.current || backend.sessionEntries.length === 0) return;
-    didAutoFocusRef.current = true;
-    requestAnimationFrame(() => {
-      agentRefs.current.get(0)?.focusPromptBar();
-    });
-  }, [backend.sessionEntries.length]);
-
-  // Auto-focus the prompt bar of a newly started agent
-  const prevRunningAgentsRef = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    const currentRunning = new Set(
-      backend.sessionEntries
-        .filter((e) => e.status === "running" || e.status === "paused")
-        .map((e) => `${e.agentType}-${e.sessionDbId}`),
-    );
-    for (const key of currentRunning) {
-      if (!prevRunningAgentsRef.current.has(key)) {
-        const index = backend.sessionEntries.findIndex(
-          (e) => `${e.agentType}-${e.sessionDbId}` === key,
-        );
-        if (index >= 0) {
-          requestAnimationFrame(() => {
-            agentRefs.current.get(index)?.focusPromptBar();
-          });
-        }
-        break;
-      }
-    }
-    prevRunningAgentsRef.current = currentRunning;
-  }, [backend.sessionEntries]);
 
   const agentsWithQuestions = backend.sessionEntries.filter(
     (e) => e.pendingQuestions && e.pendingQuestions.length > 0,
   ).length;
 
-  // Terminal panel state
-  const terminalRef = useRef<TerminalPanelHandle>(null);
-  const terminalState = useTerminalState(featureId);
+  // Tab state
+  const { activeTab, setActiveTab } = useActiveTab(featureId);
+  useSaveLastOpenedFeature(projectId, featureId, activeTab);
+
+  // Git stats for tab bar badge
+  const { data: gitStats } = useGetStats(
+    { featureId, mode: "branch" },
+    { refetchInterval: 5 * 60 * 1000 },
+  );
+
+  // Terminal send-to-terminal action for code blocks
   const sendToTerminalStore = useTerminalStore((s) => s.sendToTerminal);
   const codeBlockActions = useMemo<CodeBlockActions>(
     () => ({ sendToTerminal: (cmd) => sendToTerminalStore(featureId, cmd) }),
     [sendToTerminalStore, featureId],
   );
-  const terminalHeightSetting = useDebouncedSetting("terminal_panel_height_px");
-  const [terminalHeightPx, setTerminalHeightPx] = useState(300);
-
-  useEffect(() => {
-    const saved = Number(terminalHeightSetting.value);
-    if (saved > 0) setTerminalHeightPx(saved);
-  }, [terminalHeightSetting.value]);
 
   // Auto-load conversation history for agents that are already open (paused/running)
-  // but have empty blocks — e.g. after app restart. The batched loadAgentHistory
-  // makes a single API call and distributes blocks to all agents, so we only need
-  // to trigger it once. We key on sessionCount so it fires after hydration.
+  // but have empty blocks — e.g. after app restart.
   const sessionCount = backend.sessionEntries.length;
   const { loadAgentHistory } = backend;
   useEffect(() => {
@@ -387,143 +175,32 @@ export function FeatureWorkflowView({
         entry.blocks.length === 0
       ) {
         loadAgentHistory(entry);
-        break; // single API call distributes blocks to all agents
+        break;
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally key on count, not entries array
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionCount, loadAgentHistory, featureId]);
-
-  const handleTerminalToolbarMouseDown = useCallback(
-    (e: React.MouseEvent) => {
-      e.preventDefault();
-      const startY = e.clientY;
-      const startHeight = terminalHeightPx;
-      const onMouseMove = (ev: MouseEvent) => {
-        const delta = startY - ev.clientY;
-        const newHeight = Math.round(
-          Math.max(80, Math.min(window.innerHeight * 0.8, startHeight + delta)),
-        );
-        setTerminalHeightPx(newHeight);
-        terminalHeightSetting.setValue(String(newHeight));
-      };
-      const onMouseUp = () => {
-        document.removeEventListener("mousemove", onMouseMove);
-        document.removeEventListener("mouseup", onMouseUp);
-        document.body.style.userSelect = "";
-      };
-      document.body.style.userSelect = "none";
-      document.addEventListener("mousemove", onMouseMove);
-      document.addEventListener("mouseup", onMouseUp);
-    },
-    [terminalHeightPx, terminalHeightSetting],
-  );
-
-  const focusLastAgentPrompt = useCallback(() => {
-    requestAnimationFrame(() => {
-      const entries = backend.sessionEntries;
-      const activeIndex = entries.findLastIndex(
-        (e) => e.status === "running" || e.status === "paused",
-      );
-      const targetIndex = activeIndex >= 0 ? activeIndex : entries.length - 1;
-      if (targetIndex >= 0) {
-        agentRefs.current.get(targetIndex)?.focusActiveInput();
-      }
-    });
-  }, [backend.sessionEntries]);
-
-  const getFocusedEntry = useCallback((): FeatureSession | null => {
-    let el: HTMLElement | null = document.activeElement as HTMLElement | null;
-    while (el) {
-      const attr = el.getAttribute("data-agent-container");
-      if (attr != null) {
-        const idx = Number(attr);
-        return backend.sessionEntries[idx] ?? null;
-      }
-      el = el.parentElement;
-    }
-    return null;
-  }, [backend.sessionEntries]);
-
-  useHotkeys(
-    "meta+d",
-    (e) => {
-      e.preventDefault();
-      const entry = getFocusedEntry();
-      if (!entry) return;
-      handleViewDiffForAgent();
-    },
-    { enableOnFormTags: true, enableOnContentEditable: true },
-  );
-
-  useHotkeys(
-    "meta+m",
-    (e) => {
-      e.preventDefault();
-      const entry = getFocusedEntry();
-      if (!entry) return;
-      if (entry.agentType !== "session" && entry.agentType !== "review-fixer")
-        return;
-      if (entry.status !== "running" && entry.status !== "paused") return;
-      backend.markDone(entry.sessionDbId);
-    },
-    { enableOnFormTags: true, enableOnContentEditable: true },
-  );
-
-  useHotkeys(
-    "meta+1",
-    (e) => {
-      e.preventDefault();
-      const entry = getFocusedEntry();
-      if (!entry || !entry.pendingPlanApproval || !entry.subprocessId) return;
-      backend.approvePlan(entry.subprocessId);
-    },
-    { enableOnFormTags: true, enableOnContentEditable: true },
-  );
-
-  useHotkeys(
-    "meta+2",
-    (e) => {
-      e.preventDefault();
-      const entry = getFocusedEntry();
-      if (!entry || !entry.pendingPlanApproval) return;
-      const idx = backend.sessionEntries.indexOf(entry);
-      if (idx >= 0) {
-        agentRefs.current.get(idx)?.focusActiveInput();
-      }
-    },
-    { enableOnFormTags: true, enableOnContentEditable: true },
-  );
-
-  useHotkeys(
-    "ctrl+backquote",
-    (e) => {
-      e.preventDefault();
-      const wasOpen = terminalState.isOpen && !terminalState.isMinimized;
-      terminalState.togglePanel();
-      if (wasOpen) {
-        focusLastAgentPrompt();
-      } else {
-        requestAnimationFrame(() => terminalRef.current?.focusActivePane());
-      }
-    },
-    { enableOnFormTags: true, enableOnContentEditable: true },
-  );
-
-  useHotkeys(
-    "ctrl+shift+backquote",
-    (e) => {
-      if (!terminalState.isOpen || terminalState.isMinimized) return;
-      e.preventDefault();
-      terminalState.addPane();
-    },
-    { enableOnFormTags: true, enableOnContentEditable: true },
-  );
 
   return (
     <CodeBlockActionsContext.Provider value={codeBlockActions}>
     <div className="relative flex h-full flex-col">
       <FeatureTopBar featureId={featureId} projectId={projectId} />
+      <FeatureTabBar activeTab={activeTab} onTabChange={setActiveTab} gitStats={gitStats} gitBranch={backend.worktreeBranch} />
       <div className="relative min-h-0 flex-1 overflow-hidden">
+        {/* Terminal tab — stays mounted to preserve PTY */}
+        <FeatureTerminalTab featureId={featureId} projectId={projectId} hidden={activeTab !== "terminal"} />
+
+        {/* Git tab */}
+        {activeTab === "git" && (
+          <FeatureGitTab
+            featureId={featureId}
+            diffMode="branch"
+            onStartReviewFixer={(comments) => backend.startReviewFixer(comments)}
+          />
+        )}
+
+        {/* Agent tab */}
+        <div className={cn("h-full", activeTab !== "agent" && "hidden")}>
         <div className="flex h-full min-h-0 overflow-hidden">
           <div className="min-h-0 flex-1 flex flex-col overflow-hidden">
             {view === "loading" && (
@@ -577,173 +254,24 @@ export function FeatureWorkflowView({
               actions.canStartReview ||
               actions.canStartRetro) && (
               <div className={cn("flex-1 min-h-0 px-6 py-2", maximizedAgent ? "flex flex-col overflow-hidden" : "overflow-y-auto space-y-2")}>
-                {(() => {
-                  const renderAgent = (
-                    entry: FeatureSession,
-                    index: number,
-                    isGridItem: boolean,
-                  ) => {
-                    const label =
-                      (entry.agentType === "execute" ||
-                        entry.agentType === "qa") &&
-                      entry.phaseTitle
-                        ? `${AGENT_LABELS[entry.agentType] ?? entry.agentType} - ${entry.phaseTitle}`
-                        : (AGENT_LABELS[entry.agentType] ?? entry.agentType);
-                    const sessionKey = `${entry.agentType}-${entry.sessionDbId}`;
-                    const questions = entry.pendingQuestions ?? [];
-                    const isThisMaximized = maximizedAgent === sessionKey;
-                    if (maximizedAgent && !isThisMaximized) return null;
-                    return (
-                      <AgentSession
-                        key={sessionKey}
-                        ref={(handle) => setAgentRef(index, handle)}
-                        collapsible
-                        navAgentIndex={index}
-                        agentType={entry.agentType}
-                        label={label}
-                        status={entry.status}
-                        blocks={entry.blocks}
-                        open={
-                          openAgent === sessionKey ||
-                          entry.status === "running" ||
-                          entry.status === "paused"
-                        }
-                        onToggle={() => {
-                          setOpenAgent((prev) =>
-                            prev === sessionKey ? null : sessionKey,
-                          );
-                          // Lazy-load history when expanding a completed/paused agent
-                          if (openAgent !== sessionKey && entry.blocks.length === 0 && backend.loadAgentHistory) {
-                            backend.loadAgentHistory(entry);
-                          }
-                        }}
-                        maximized={isThisMaximized}
-                        onToggleMaximize={() =>
-                          setMaximizedAgent((prev) =>
-                            prev === sessionKey ? null : sessionKey,
-                          )
-                        }
-                        pendingQuestions={
-                          questions.length > 0 ? questions : undefined
-                        }
-                        disableShortcuts={agentsWithQuestions > 1}
-                        onMarkDone={
-                          (entry.agentType === "session" ||
-                            entry.agentType === "review-fixer") &&
-                          (entry.status === "running" ||
-                            entry.status === "paused")
-                            ? () => backend.markDone(entry.sessionDbId)
-                            : undefined
-                        }
-                        onAnswerSubmit={(response) =>
-                          backend.submitAnswers(entry, response)
-                        }
-                        onSend={(message, images) => {
-                          backend.sendToAgent(entry, message, images);
-                        }}
-                        onStop={() => {
-                          backend.stopAgent(entry);
-                        }}
-                        resumable={entry.resumable}
-                        onResume={
-                          entry.resumable
-                            ? () =>
-                                void backend.handleResume(
-                                  entry.agentType,
-                                  entry.sessionDbId,
-                                )
-                            : undefined
-                        }
-                        hasFileChanges={entry.hasFileChanges}
-                        onViewDiff={() => handleViewDiffForAgent()}
-                        todos={entry.todos}
-                        currentModelId={resolveModel(entry.agentType)}
-                        onModelChange={(modelId) =>
-                          handleModelChange(entry.agentType, modelId)
-                        }
-                        canDelete={
-                          entry.status !== "running" &&
-                          entry.status !== "completed" &&
-                          !!entry.sessionDbId
-                        }
-                        onDelete={() => handleDeleteAgent(entry)}
-                        contextUsage={contextUsageMap.get(entry.sessionDbId)}
-                        featureId={featureId}
-                        projectId={projectId}
-                        sessionId={entry.sessionDbId}
-                        claudeSessionId={entry.claudeSessionId || undefined}
-                        slashCommandsOverride={slashCommands}
-                        slashCommandsLoading={slashCommandsLoading}
-                        initialDraft={entry.draftPrompt}
-                        pendingPermission={entry.pendingPermission}
-                        onPermissionDecision={(decision, feedback) =>
-                          backend.submitPermission(entry, decision, feedback)
-                        }
-                        pendingPlanApproval={entry.pendingPlanApproval}
-                        planApprovalError={backend.planApprovalError}
-                        planApproveLabel="Approve"
-                        onPlanApprove={() =>
-                          backend.approvePlan(
-                            entry.subprocessId,
-                            entry.sessionDbId,
-                          )
-                        }
-                        onPlanRequestChanges={(feedback: string) =>
-                          backend.rejectPlan(
-                            feedback,
-                            entry.subprocessId,
-                            entry.sessionDbId,
-                          )
-                        }
-                        className={
-                          isGridItem
-                            ? "min-h-0 h-full shrink overflow-hidden"
-                            : isThisMaximized
-                              ? "flex-1 min-h-0"
-                              : undefined
-                        }
-                      />
-                    );
-                  };
-
-                  const activeEntries = backend.sessionEntries.filter(
-                    (e) => e.status === "running" || e.status === "paused",
-                  );
-                  const inactiveEntries = backend.sessionEntries.filter(
-                    (e) => e.status !== "running" && e.status !== "paused",
-                  );
-                  const useGrid = activeEntries.length >= 2 && !maximizedAgent;
-
-                  return (
-                    <>
-                      {inactiveEntries.map((entry) => {
-                        const idx = backend.sessionEntries.indexOf(entry);
-                        return renderAgent(entry, idx, false);
-                      })}
-
-                      {useGrid ? (
-                        <div
-                          className={cn(
-                            "grid gap-2 min-h-0",
-                            activeEntries.length === 2 && "grid-cols-2",
-                            activeEntries.length >= 3 && "grid-cols-3",
-                          )}
-                          style={{ height: "60vh" }}
-                        >
-                          {activeEntries.map((entry) => {
-                            const idx = backend.sessionEntries.indexOf(entry);
-                            return renderAgent(entry, idx, true);
-                          })}
-                        </div>
-                      ) : (
-                        activeEntries.map((entry) => {
-                          const idx = backend.sessionEntries.indexOf(entry);
-                          return renderAgent(entry, idx, false);
-                        })
-                      )}
-                    </>
-                  );
-                })()}
+                <WorkflowAgentGrid
+                  backend={backend}
+                  featureId={featureId}
+                  projectId={projectId}
+                  openAgent={openAgent}
+                  setOpenAgent={setOpenAgent}
+                  maximizedAgent={maximizedAgent}
+                  setMaximizedAgent={setMaximizedAgent}
+                  setAgentRef={setAgentRef}
+                  agentsWithQuestions={agentsWithQuestions}
+                  contextUsageMap={contextUsageMap}
+                  resolveModel={resolveModel}
+                  handleModelChange={handleModelChange}
+                  handleDeleteAgent={handleDeleteAgent}
+                  onViewDiff={handleViewDiffForAgent}
+                  slashCommands={slashCommands}
+                  slashCommandsLoading={slashCommandsLoading}
+                />
 
                 {!maximizedAgent && actions.canStartPlan && backend.noAgentsRunning && (
                   <div className="shrink-0 flex py-4">
@@ -846,32 +374,10 @@ export function FeatureWorkflowView({
             onSkipItem={backend.skipItem}
           />
         </div>
-        {terminalState.panes.length > 0 && (
-          <div
-            className="absolute bottom-0 left-0 right-0 z-20 border-t border-[#292e42] transition-transform duration-150 ease-in-out"
-            style={{
-              height: terminalState.isMinimized ? 32 : terminalHeightPx,
-              transform: terminalState.isOpen
-                ? "translateY(0)"
-                : "translateY(100%)",
-            }}
-          >
-            <TerminalPanel
-              ref={terminalRef}
-              featureId={featureId}
-              projectId={projectId}
-              state={terminalState}
-              togglePanel={terminalState.togglePanel}
-              addPane={terminalState.addPane}
-              removePane={terminalState.removePane}
-              minimize={terminalState.minimize}
-              onToolbarMouseDown={handleTerminalToolbarMouseDown}
-              onCollapse={focusLastAgentPrompt}
-            />
-          </div>
-        )}
+      </div>
       </div>
 
+      {/* Per-agent diff modal (CMD+D) — separate from Git tab */}
       <DiffViewerModal
         featureId={featureId}
         open={inlineDiffOpen}

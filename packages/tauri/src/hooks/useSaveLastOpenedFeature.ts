@@ -1,17 +1,18 @@
 import { useEffect } from "react";
 import { useSetWorkspaceSetting } from "@/api/generated";
+import type { FeatureTab } from "./useActiveTab";
 
 /**
- * Persists the current projectId/featureId as the last-opened feature,
+ * Persists the current projectId/featureId/activeTab as the last-opened feature,
  * so the app can restore it on next startup.
  */
-export function useSaveLastOpenedFeature(projectId: number, featureId: number, skip = false) {
+export function useSaveLastOpenedFeature(projectId: number, featureId: number, activeTab?: FeatureTab, skip = false) {
   const { mutate } = useSetWorkspaceSetting();
   useEffect(() => {
     if (skip) return;
     mutate({
       key: "lastOpenedFeature",
-      value: JSON.stringify({ projectId, featureId }),
+      value: JSON.stringify({ projectId, featureId, activeTab: activeTab ?? "agent" }),
     });
-  }, [projectId, featureId, skip, mutate]);
+  }, [projectId, featureId, activeTab, skip, mutate]);
 }
