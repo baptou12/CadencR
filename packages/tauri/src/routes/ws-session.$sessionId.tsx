@@ -4,6 +4,7 @@ import { useHotkeys } from "react-hotkeys-hook";
 import { AgentSession } from "@/components/AgentSession";
 import { DiffViewerModal } from "@/components/diff/DiffViewerModal";
 import { FeatureTopBar } from "@/components/FeatureTopBar";
+import { useSaveLastOpenedFeature } from "@/hooks/useSaveLastOpenedFeature";
 import { useWebSocketSession } from "@/hooks/useWebSocketSession";
 import { useResolvedModel } from "@/hooks/useResolvedModel";
 import { useWsSessionStore } from "@/stores/ws-session-store";
@@ -35,6 +36,9 @@ export const Route = createFileRoute("/ws-session/$sessionId")({
 function WebSocketSessionPage() {
   const { sessionId } = Route.useParams();
   const { cwd, featureId, projectId } = Route.useSearch();
+
+  useSaveLastOpenedFeature(projectId, featureId);
+
   const ws = useWebSocketSession(sessionId, featureId);
   const session = useWsSessionStore((s) => s.sessions[sessionId]);
   const initializedRef = useRef<string | null>(null);

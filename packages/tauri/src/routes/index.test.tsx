@@ -9,7 +9,9 @@ const mocks = vi.hoisted(() => {
   const mockProjectsListQuery = vi.fn(() => ({ data: [] as any[], isSuccess: false })) as any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const mockFeaturesListQuery = vi.fn(() => ({ data: [] as any[], isSuccess: false })) as any;
-  return { mockNavigate, mockUseSearch, mockProjectsListQuery, mockFeaturesListQuery };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const mockLastFeatureQuery = vi.fn(() => ({ data: undefined, isLoading: false })) as any;
+  return { mockNavigate, mockUseSearch, mockProjectsListQuery, mockFeaturesListQuery, mockLastFeatureQuery };
 });
 
 vi.mock("@tanstack/react-router", () => ({
@@ -33,6 +35,7 @@ vi.mock("../api/generated", () => ({
   useListProjects: () => mocks.mockProjectsListQuery(),
   getListProjectsQueryKey: vi.fn(() => ["projects"]),
   useListFeatures: () => mocks.mockFeaturesListQuery(),
+  useGetWorkspaceSetting: () => mocks.mockLastFeatureQuery(),
 }));
 
 import { Route } from "./index";
@@ -90,5 +93,82 @@ describe("HomePage route", () => {
         params: { projectId: "1", featureId: "5" },
       }),
     );
+  });
+
+  it("navigates to saved last-opened feature on startup", () => {
+    mocks.mockLastFeatureQuery.mockReturnValue({
+      data: { value: JSON.stringify({ projectId: 2, featureId: 10 }) },
+      isLoading: false,
+    });
+    mocks.mockProjectsListQuery.mockReturnValue({
+      data: [{ id: 1, name: "P1", path: "/p1" }, { id: 2, name: "P2", path: "/p2" }],
+      isSuccess: true,
+    });
+    mocks.mockFeaturesListQuery.mockReturnValue({
+      data: [{ id: 10, title: "Saved Feature" }, { id: 11, title: "Other" }],
+      isSuccess: true,
+    });
+    render(<HomePage />);
+    expect(mocks.mockNavigate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: "/projects/$projectId/features/$featureId",
+        params: { projectId: "2", featureId: "10" },
+      }),
+    );
+  });
+
+  it("falls back to first feature when saved feature no longer exists", () => {
+    mocks.mockLastFeatureQuery.mockReturnValue({
+      data: { value: JSON.stringify({ projectId: 1, featureId: 999 }) },
+      isLoading: false,
+    });
+    mocks.mockProjectsListQuery.mockReturnValue({
+      data: [{ id: 1, name: "P1", path: "/p1" }],
+      isSuccess: true,
+    });
+    mocks.mockFeaturesListQuery.mockReturnValue({
+      data: [{ id: 5, title: "Feature 1" }],
+      isSuccess: true,
+    });
+    render(<HomePage />);
+    expect(mocks.mockNavigate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: "/projects/$projectId/features/$featureId",
+        params: { projectId: "1", featureId: "5" },
+      }),
+    );
+  });
+
+  it("falls back to first feature when no saved setting exists", () => {
+    mocks.mockLastFeatureQuery.mockReturnValue({ data: undefined, isLoading: false });
+    mocks.mockProjectsListQuery.mockReturnValue({
+      data: [{ id: 1, name: "P1", path: "/p1" }],
+      isSuccess: true,
+    });
+    mocks.mockFeaturesListQuery.mockReturnValue({
+      data: [{ id: 5, title: "Feature 1" }],
+      isSuccess: true,
+    });
+    render(<HomePage />);
+    expect(mocks.mockNavigate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: "/projects/$projectId/features/$featureId",
+        params: { projectId: "1", featureId: "5" },
+      }),
+    );
+  });
+
+  it("does not navigate while last-feature setting is still loading", () => {
+    mocks.mockLastFeatureQuery.mockReturnValue({ data: undefined, isLoading: true });
+    mocks.mockProjectsListQuery.mockReturnValue({
+      data: [{ id: 1, name: "P1", path: "/p1" }],
+      isSuccess: true,
+    });
+    mocks.mockFeaturesListQuery.mockReturnValue({
+      data: [{ id: 5, title: "Feature 1" }],
+      isSuccess: true,
+    });
+    render(<HomePage />);
+    expect(mocks.mockNavigate).not.toHaveBeenCalled();
   });
 });

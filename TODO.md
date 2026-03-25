@@ -1,10 +1,8 @@
 ## FIX
-- [~] terminal cursor (deletion) is completely wrong
+- [~] opening back a conversation that was working clears the agent's conversation
 
 ## FEAT
 - [ ] draft are killing the network
-- [ ] opening the application goes to a random feature
-- [ ] opening back a conversation that was working clears the agent's conversation
 - [ ] improve agents prompts to get better results
 - [ ] Worktree for standalone sessions
 - [ ] custom UI for our mcp tool calls

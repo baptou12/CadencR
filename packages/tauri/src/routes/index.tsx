@@ -1,6 +1,6 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useListProjects, useListFeatures } from "../api/generated";
+import { useListProjects, useListFeatures, useGetWorkspaceSetting } from "../api/generated";
 
 export const Route = createFileRoute("/")({
   component: HomePage,
@@ -11,19 +11,55 @@ export const Route = createFileRoute("/")({
   },
 });
 
+function parseSavedFeature(value: string | undefined | null): { projectId: number; featureId: number } | null {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value);
+    if (typeof parsed.projectId === "number" && typeof parsed.featureId === "number") return parsed;
+  } catch { /* invalid JSON */ }
+  return null;
+}
+
 function HomePage() {
   const navigate = useNavigate();
   const { projectId: searchProjectId } = Route.useSearch();
+
+  const lastFeatureQuery = useGetWorkspaceSetting("lastOpenedFeature");
+  const lastFeatureRaw = lastFeatureQuery.data?.value;
+  const lastFeature = useMemo(() => parseSavedFeature(lastFeatureRaw), [lastFeatureRaw]);
+
   const projectsQuery = useListProjects();
   const fallbackProjectId = projectsQuery.data?.[0]?.id ?? null;
-  const targetProjectId = searchProjectId ?? fallbackProjectId;
+  const targetProjectId = searchProjectId ?? lastFeature?.projectId ?? fallbackProjectId;
 
   const featuresQuery = useListFeatures(targetProjectId ?? 0, {
     enabled: targetProjectId != null,
   });
-  const firstFeatureId = featuresQuery.data?.[0]?.id ?? null;
 
   useEffect(() => {
+    if (lastFeatureQuery.isLoading) return;
+
+    const features = featuresQuery.data;
+    if (!features) return;
+
+    // Try saved feature first (unless searchProjectId overrides)
+    if (lastFeature && !searchProjectId) {
+      const exists = features.some((f) => f.id === lastFeature.featureId);
+      if (exists && targetProjectId === lastFeature.projectId) {
+        void navigate({
+          to: "/projects/$projectId/features/$featureId",
+          params: {
+            projectId: String(lastFeature.projectId),
+            featureId: String(lastFeature.featureId),
+          },
+          replace: true,
+        });
+        return;
+      }
+    }
+
+    // Fallback: first feature of target project
+    const firstFeatureId = features[0]?.id ?? null;
     if (targetProjectId != null && firstFeatureId != null) {
       void navigate({
         to: "/projects/$projectId/features/$featureId",
@@ -34,10 +70,10 @@ function HomePage() {
         replace: true,
       });
     }
-  }, [targetProjectId, firstFeatureId, navigate]);
+  }, [lastFeatureQuery.isLoading, lastFeature, searchProjectId, targetProjectId, featuresQuery.data, navigate]);
 
   // Show helpful message if project exists but has no features
-  if (projectsQuery.isSuccess && targetProjectId != null && featuresQuery.isSuccess && firstFeatureId == null) {
+  if (projectsQuery.isSuccess && targetProjectId != null && featuresQuery.isSuccess && (featuresQuery.data?.length ?? 0) === 0) {
     return (
       <div className="flex h-full items-center justify-center p-6">
         <div className="text-center">

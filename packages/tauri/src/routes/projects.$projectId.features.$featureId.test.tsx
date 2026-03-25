@@ -6,7 +6,8 @@ const mocks = vi.hoisted(() => {
   const mockUseParams = vi.fn(() => ({ featureId: "1", projectId: "2" }));
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const mockGetByIdQuery = vi.fn(() => ({ data: undefined as any })) as any;
-  return { mockUseParams, mockGetByIdQuery };
+  const mockSaveLastOpened = vi.fn();
+  return { mockUseParams, mockGetByIdQuery, mockSaveLastOpened };
 });
 
 vi.mock("@tanstack/react-router", () => ({
@@ -16,6 +17,7 @@ vi.mock("@tanstack/react-router", () => ({
     useParams: mocks.mockUseParams,
   }),
   useNavigate: () => vi.fn(),
+  Navigate: () => null,
   useRouterState: () => ({ location: { pathname: "/" } }),
   Link: ({ children, to }: { children: unknown; to: string }) => {
     const React = require("react");
@@ -98,6 +100,11 @@ vi.mock("@/hooks/useAgentChat", () => ({
 
 vi.mock("@/api/generated", () => ({
   useGetFeature: mocks.mockGetByIdQuery,
+  useListProjects: () => ({ data: [{ id: 2, name: "Test", path: "/test" }] }),
+}));
+
+vi.mock("@/hooks/useSaveLastOpenedFeature", () => ({
+  useSaveLastOpenedFeature: mocks.mockSaveLastOpened,
 }));
 
 import { Route } from "./projects/$projectId/features/$featureId";
@@ -112,6 +119,7 @@ describe("FeaturePage route", () => {
   beforeEach(() => {
     mocks.mockUseParams.mockReturnValue({ featureId: "1", projectId: "2" });
     mocks.mockGetByIdQuery.mockReturnValue({ data: undefined });
+    mocks.mockSaveLastOpened.mockClear();
   });
 
   it("renders FeatureWorkflowView for ws-feature", () => {
@@ -125,5 +133,19 @@ describe("FeaturePage route", () => {
   it("renders FeatureWorkflowView when feature data is loading (undefined)", () => {
     render(<FeaturePage />);
     expect(screen.getByTestId("feature-workflow-view")).toBeInTheDocument();
+  });
+
+  it("calls useSaveLastOpenedFeature with correct params", () => {
+    mocks.mockUseParams.mockReturnValue({ featureId: "7", projectId: "3" });
+    render(<FeaturePage />);
+    expect(mocks.mockSaveLastOpened).toHaveBeenCalledWith(3, 7, false);
+  });
+
+  it("skips save for ws-session features", () => {
+    mocks.mockGetByIdQuery.mockReturnValue({
+      data: { id: 1, type: "ws-session", title: "Session" },
+    });
+    render(<FeaturePage />);
+    expect(mocks.mockSaveLastOpened).toHaveBeenCalledWith(2, 1, true);
   });
 });
