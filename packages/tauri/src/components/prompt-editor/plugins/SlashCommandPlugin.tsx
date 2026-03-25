@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
 import {
   $getSelection,
@@ -46,38 +46,41 @@ function getTriggerMatch(
 export function SlashCommandPlugin({ commands, isLoading }: SlashCommandPluginProps) {
   const [editor] = useLexicalComposerContext();
   const slash = useSlashCommand(commands);
+  const slashRef = useRef(slash);
+  slashRef.current = slash;
   const [cursorRect, setCursorRect] = useState<DOMRect | null>(null);
 
   useEffect(() => {
     return editor.registerUpdateListener(({ editorState }) => {
       editorState.read(() => {
+        const s = slashRef.current;
         const selection = $getSelection();
         if (!$isRangeSelection(selection) || !selection.isCollapsed()) {
-          if (slash.isOpen) slash.close();
+          if (s.isOpen) s.close();
           return;
         }
 
         const anchor = selection.anchor;
         const node = anchor.getNode();
         if (!$isTextNode(node)) {
-          if (slash.isOpen) slash.close();
+          if (s.isOpen) s.close();
           return;
         }
 
         const match = getTriggerMatch(node, anchor.offset);
         if (!match) {
-          if (slash.isOpen) slash.close();
+          if (s.isOpen) s.close();
           return;
         }
 
         // Feed the hook a synthetic text starting with `/` so it triggers
         const syntheticText = "/" + match.query;
-        slash.handleChange(syntheticText, syntheticText.length);
+        s.handleChange(syntheticText, syntheticText.length);
 
         updateCursorRect();
       });
     });
-  }, [editor, slash]);
+  }, [editor]);
 
   const updateCursorRect = useCallback(() => {
     const domSelection = window.getSelection();
@@ -131,15 +134,21 @@ export function SlashCommandPlugin({ commands, isLoading }: SlashCommandPluginPr
   useEffect(() => {
     if (!slash.isOpen) return;
 
-    const commands = [
+    const fakeEvent = (key: string) =>
+      ({
+        key,
+        preventDefault: () => {},
+        shiftKey: false,
+        metaKey: false,
+        altKey: false,
+      }) as React.KeyboardEvent<HTMLTextAreaElement>;
+
+    const cmds = [
       editor.registerCommand(
         KEY_ARROW_DOWN_COMMAND,
         (e) => {
           e?.preventDefault();
-          slash.handleKeyDown(
-            { key: "ArrowDown", preventDefault: () => {} } as React.KeyboardEvent<HTMLTextAreaElement>,
-            "",
-          );
+          slashRef.current.handleKeyDown(fakeEvent("ArrowDown"), "");
           return true;
         },
         COMMAND_PRIORITY_HIGH,
@@ -148,10 +157,7 @@ export function SlashCommandPlugin({ commands, isLoading }: SlashCommandPluginPr
         KEY_ARROW_UP_COMMAND,
         (e) => {
           e?.preventDefault();
-          slash.handleKeyDown(
-            { key: "ArrowUp", preventDefault: () => {} } as React.KeyboardEvent<HTMLTextAreaElement>,
-            "",
-          );
+          slashRef.current.handleKeyDown(fakeEvent("ArrowUp"), "");
           return true;
         },
         COMMAND_PRIORITY_HIGH,
@@ -160,8 +166,9 @@ export function SlashCommandPlugin({ commands, isLoading }: SlashCommandPluginPr
         KEY_ENTER_COMMAND,
         (e) => {
           e?.preventDefault();
-          if (slash.filteredItems.length > 0) {
-            handleSelect(slash.filteredItems[slash.selectedIndex].name);
+          const s = slashRef.current;
+          if (s.filteredItems.length > 0) {
+            handleSelect(s.filteredItems[s.selectedIndex].name);
           }
           return true;
         },
@@ -171,8 +178,9 @@ export function SlashCommandPlugin({ commands, isLoading }: SlashCommandPluginPr
         KEY_TAB_COMMAND,
         (e) => {
           e?.preventDefault();
-          if (slash.filteredItems.length > 0) {
-            handleSelect(slash.filteredItems[slash.selectedIndex].name);
+          const s = slashRef.current;
+          if (s.filteredItems.length > 0) {
+            handleSelect(s.filteredItems[s.selectedIndex].name);
           }
           return true;
         },
@@ -182,15 +190,15 @@ export function SlashCommandPlugin({ commands, isLoading }: SlashCommandPluginPr
         KEY_ESCAPE_COMMAND,
         (e) => {
           e?.preventDefault();
-          slash.close();
+          slashRef.current.close();
           return true;
         },
         COMMAND_PRIORITY_HIGH,
       ),
     ];
 
-    return () => commands.forEach((unregister) => unregister());
-  }, [editor, slash, handleSelect]);
+    return () => cmds.forEach((unregister) => unregister());
+  }, [editor, slash.isOpen, handleSelect]);
 
   if (!slash.isOpen || slash.filteredItems.length === 0 || !cursorRect) {
     return null;

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
 import {
   $getSelection,
@@ -45,41 +45,44 @@ function getTriggerMatch(
 export function MentionPlugin({ files }: MentionPluginProps) {
   const [editor] = useLexicalComposerContext();
   const mention = useFileMention(files);
+  const mentionRef = useRef(mention);
+  mentionRef.current = mention;
   const [cursorRect, setCursorRect] = useState<DOMRect | null>(null);
 
   // Sync editor text changes into the useFileMention hook
   useEffect(() => {
     return editor.registerUpdateListener(({ editorState }) => {
       editorState.read(() => {
+        const m = mentionRef.current;
         const selection = $getSelection();
         if (!$isRangeSelection(selection) || !selection.isCollapsed()) {
-          if (mention.isOpen) mention.close();
+          if (m.isOpen) m.close();
           return;
         }
 
         const anchor = selection.anchor;
         const node = anchor.getNode();
         if (!$isTextNode(node)) {
-          if (mention.isOpen) mention.close();
+          if (m.isOpen) m.close();
           return;
         }
 
         const match = getTriggerMatch(node, anchor.offset);
         if (!match) {
-          if (mention.isOpen) mention.close();
+          if (m.isOpen) m.close();
           return;
         }
 
         // Build a fake "full text" + cursor position for the hook
         const fullText = node.getTextContent();
         const cursorPos = anchor.offset;
-        mention.handleChange(fullText, cursorPos);
+        m.handleChange(fullText, cursorPos);
 
         // Get cursor position for popover
         updateCursorRect();
       });
     });
-  }, [editor, mention]);
+  }, [editor]);
 
   const updateCursorRect = useCallback(() => {
     const domSelection = window.getSelection();
@@ -140,15 +143,21 @@ export function MentionPlugin({ files }: MentionPluginProps) {
   useEffect(() => {
     if (!mention.isOpen) return;
 
+    const fakeEvent = (key: string) =>
+      ({
+        key,
+        preventDefault: () => {},
+        shiftKey: false,
+        metaKey: false,
+        altKey: false,
+      }) as React.KeyboardEvent<HTMLTextAreaElement>;
+
     const commands = [
       editor.registerCommand(
         KEY_ARROW_DOWN_COMMAND,
         (e) => {
           e?.preventDefault();
-          mention.handleKeyDown(
-            { key: "ArrowDown", preventDefault: () => {} } as React.KeyboardEvent<HTMLTextAreaElement>,
-            "",
-          );
+          mentionRef.current.handleKeyDown(fakeEvent("ArrowDown"), "");
           return true;
         },
         COMMAND_PRIORITY_HIGH,
@@ -157,10 +166,7 @@ export function MentionPlugin({ files }: MentionPluginProps) {
         KEY_ARROW_UP_COMMAND,
         (e) => {
           e?.preventDefault();
-          mention.handleKeyDown(
-            { key: "ArrowUp", preventDefault: () => {} } as React.KeyboardEvent<HTMLTextAreaElement>,
-            "",
-          );
+          mentionRef.current.handleKeyDown(fakeEvent("ArrowUp"), "");
           return true;
         },
         COMMAND_PRIORITY_HIGH,
@@ -169,8 +175,9 @@ export function MentionPlugin({ files }: MentionPluginProps) {
         KEY_ENTER_COMMAND,
         (e) => {
           e?.preventDefault();
-          if (mention.filteredItems.length > 0) {
-            handleSelect(mention.filteredItems[mention.selectedIndex].path);
+          const m = mentionRef.current;
+          if (m.filteredItems.length > 0) {
+            handleSelect(m.filteredItems[m.selectedIndex].path);
           }
           return true;
         },
@@ -180,8 +187,9 @@ export function MentionPlugin({ files }: MentionPluginProps) {
         KEY_TAB_COMMAND,
         (e) => {
           e?.preventDefault();
-          if (mention.filteredItems.length > 0) {
-            handleSelect(mention.filteredItems[mention.selectedIndex].path);
+          const m = mentionRef.current;
+          if (m.filteredItems.length > 0) {
+            handleSelect(m.filteredItems[m.selectedIndex].path);
           }
           return true;
         },
@@ -191,7 +199,7 @@ export function MentionPlugin({ files }: MentionPluginProps) {
         KEY_ESCAPE_COMMAND,
         (e) => {
           e?.preventDefault();
-          mention.close();
+          mentionRef.current.close();
           return true;
         },
         COMMAND_PRIORITY_HIGH,
@@ -199,7 +207,7 @@ export function MentionPlugin({ files }: MentionPluginProps) {
     ];
 
     return () => commands.forEach((unregister) => unregister());
-  }, [editor, mention, handleSelect]);
+  }, [editor, mention.isOpen, handleSelect]);
 
   // Render popover positioned at cursor
   if (!mention.isOpen || mention.filteredItems.length === 0 || !cursorRect) {
