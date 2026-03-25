@@ -225,6 +225,11 @@ impl AgentManager {
                 let message_rx = real_query.take_message_rx();
 
                 let query_handle = Arc::new(tokio::sync::Mutex::new(real_query));
+                // Close any existing query for this slot to prevent zombie processes
+                if let Some((_, old_query)) = self.queries.remove(&slot) {
+                    warn!(slot = %slot, "closing existing query before spawning new pre-queue agent");
+                    old_query.lock().await.close().await;
+                }
                 self.queries.insert(slot.clone(), query_handle);
                 self.active_items.insert(slot.clone(), db_session_id);
 
@@ -394,6 +399,11 @@ impl AgentManager {
                 }
 
                 let query_handle = Arc::new(tokio::sync::Mutex::new(real_query));
+                // Close any existing query for this slot to prevent zombie processes
+                if let Some((_, old_query)) = self.queries.remove(&slot) {
+                    warn!(slot = %slot, "closing existing query before spawning new queue item agent");
+                    old_query.lock().await.close().await;
+                }
                 self.queries.insert(slot.clone(), query_handle);
                 self.active_items.insert(slot.clone(), db_session_id);
 
@@ -675,6 +685,11 @@ impl AgentManager {
                 }
 
                 let query_handle = Arc::new(tokio::sync::Mutex::new(real_query));
+                // Close any existing query for this slot to prevent zombie processes
+                if let Some((_, old_query)) = self.queries.remove(&slot) {
+                    warn!(slot = %slot, "closing existing query before resuming agent");
+                    old_query.lock().await.close().await;
+                }
                 self.queries.insert(slot.clone(), query_handle);
 
                 if let AgentSlot::QueueItem(item_id) = &slot {
@@ -1146,6 +1161,7 @@ pub fn spawn_workflow_stream_reader(
         }
 
         // Post-stream cleanup: remove query handle
+        info!(slot = %slot, db_session_id, "workflow stream reader ended — cleaning up query handle");
         queries.remove(&slot);
 
         // Post-stream callbacks — delegate to the real engine from the registry

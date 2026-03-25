@@ -233,7 +233,21 @@ impl CliProcess {
     pub(crate) fn take_stdin(&mut self) -> Option<BufWriter<ChildStdin>> {
         self.stdin.take()
     }
+}
 
+impl Drop for CliProcess {
+    fn drop(&mut self) {
+        // Safety net: if the process is still running when CliProcess is dropped
+        // (e.g. tokio task abort, panic, or missed cleanup), send SIGKILL to
+        // prevent zombie CLI processes that consume tokens in the background.
+        if let Some(pid) = self.child.id() {
+            tracing::warn!(pid, "CliProcess dropped with live process — sending SIGKILL");
+            #[cfg(unix)]
+            unsafe {
+                libc::kill(pid as libc::pid_t, libc::SIGKILL);
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -350,5 +364,50 @@ mod tests {
         cmd.env_remove("CLAUDECODE");
         // If this compiles, the API exists and works as expected.
         let _ = cmd;
+    }
+
+    #[tokio::test]
+    async fn drop_kills_live_process() {
+        // Spawn a long-running process, then drop CliProcess and verify the
+        // process is killed (no zombie).
+        let mut cmd = tokio::process::Command::new("sleep");
+        cmd.arg("300");
+        cmd.stdin(std::process::Stdio::piped());
+        cmd.stdout(std::process::Stdio::piped());
+        cmd.stderr(std::process::Stdio::piped());
+
+        let mut child = cmd.spawn().unwrap();
+        let pid = child.id().unwrap();
+        let stdout = child.stdout.take().expect("stdout");
+        let stderr = child.stderr.take().expect("stderr");
+
+        let stderr_task = tokio::spawn(async move {
+            let mut buf = String::new();
+            use tokio::io::AsyncReadExt;
+            let _ = tokio::io::BufReader::new(stderr).read_to_string(&mut buf).await;
+            buf
+        });
+
+        let cli_process = CliProcess {
+            child,
+            stdin: None,
+            stdout_lines: tokio::io::BufReader::new(stdout).lines(),
+            stderr_task: Some(stderr_task),
+        };
+
+        // Process should be alive
+        assert!(is_process_alive(pid), "process should be alive before drop");
+
+        // Drop triggers SIGKILL
+        drop(cli_process);
+
+        // Give the OS a moment to reap the process
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        assert!(!is_process_alive(pid), "process should be dead after drop");
+    }
+
+    #[cfg(unix)]
+    fn is_process_alive(pid: u32) -> bool {
+        unsafe { libc::kill(pid as libc::pid_t, 0) == 0 }
     }
 }

@@ -8,7 +8,7 @@ use tokio::io::{AsyncWriteExt, BufWriter};
 use tokio::process::ChildStdin;
 use tokio::sync::{mpsc, Mutex};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::error::SdkError;
 use crate::mcp::McpServerConfig;
@@ -425,7 +425,7 @@ async fn reader_loop(
                                 .send(Err(SdkError::ProcessExit { code, stderr }))
                                 .await;
                         }
-                        debug!("CLI process exited (code={code:?})");
+                        info!("CLI process exited (code={code:?})");
                         break;
                     }
                     Err(e) => {
@@ -455,6 +455,10 @@ async fn reader_loop(
                     std::future::pending().await
                 }
             } => {
+                warn!("cancel token fired, killing CLI process");
+                if let Err(e) = process.kill().await {
+                    warn!("failed to kill CLI process on cancel: {e}");
+                }
                 let _ = tx.send(Err(SdkError::Cancelled)).await;
                 break;
             }
@@ -630,6 +634,7 @@ pub async fn query(content: serde_json::Value, mut options: Options) -> Result<Q
 
     // Capture PID before moving process into reader loop.
     let pid = process.pid();
+    info!(pid = ?pid, cli = %cli_path.display(), "CLI process spawned");
 
     // Take stdin out of the process — Query and the reader loop share it
     // via Arc<Mutex<..>> so the reader loop can write permission responses
