@@ -450,7 +450,7 @@ export function FeatureWorkflowView({
       e.preventDefault();
       const entry = getFocusedEntry();
       if (!entry) return;
-      handleViewDiffForAgent(entry);
+      handleViewDiffForAgent();
     },
     { enableOnFormTags: true, enableOnContentEditable: true },
   );
@@ -655,7 +655,7 @@ export function FeatureWorkflowView({
                             : undefined
                         }
                         hasFileChanges={entry.hasFileChanges}
-                        onViewDiff={() => handleViewDiffForAgent(entry)}
+                        onViewDiff={() => handleViewDiffForAgent()}
                         todos={entry.todos}
                         currentModelId={resolveModel(entry.agentType)}
                         onModelChange={(modelId) =>

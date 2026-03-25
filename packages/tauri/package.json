@@ -9,7 +9,8 @@
     "tauri": "tauri",
     "lint": "oxlint src/",
     "lint:fix": "oxlint --fix src/",
-    "test": "vitest run"
+    "test": "vitest run",
+    "ts-check": "tsc --noEmit"
   },
   "dependencies": {
     "@git-diff-view/lowlight": "^0.0.39",

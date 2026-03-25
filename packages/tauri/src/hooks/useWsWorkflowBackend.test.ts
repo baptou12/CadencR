@@ -45,7 +45,7 @@ describe("findQueueItemId", () => {
   it("finds item ID from activeAgents by sessionId", () => {
     const entry = makeEntry({ sessionDbId: 100 });
     const activeAgents = new Map<number, AgentSessionState>([
-      [5, { sessionId: 100, blocks: [], streamingState: {} as never, status: "running", pendingPermission: null }],
+      [5, { sessionId: 100, blocks: [], streamingState: {} as never, status: "running", pendingPermission: null, agentType: "execute", pendingQuestions: [], pendingQuestionToolInput: {}, pendingQuestionRequestId: "", historyLoaded: false, claudeSessionId: null, inputTokens: 0, outputTokens: 0, contextWindow: 0, hasFileChanges: false }],
     ]);
     expect(findQueueItemId(entry, [], activeAgents)).toBe(5);
   });

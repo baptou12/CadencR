@@ -1,2 +1,1 @@
-pnpm turbo run lint
-pnpm turbo run test
+pnpm turbo run lint ts-check test

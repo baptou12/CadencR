@@ -30,7 +30,7 @@ import {
   getListFeaturesQueryKey,
   useCreateFeature,
 } from "../api/generated";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
 interface CommandPaletteProps {
   open: boolean;
@@ -151,7 +151,7 @@ export function CommandPalette({
   );
 
   const handleNewProject = useCallback(async () => {
-    const folder = await open({ directory: true, multiple: false });
+    const folder = await openDialog({ directory: true, multiple: false });
     if (!folder) return;
     const name = folder.split("/").pop() ?? folder;
     createProjectMutation.mutate({ name, path: folder });

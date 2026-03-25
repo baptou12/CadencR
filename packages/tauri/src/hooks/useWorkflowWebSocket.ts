@@ -112,6 +112,7 @@ export interface WorktreeSnapshot {
   path: string;
   branch: string;
   status: string;
+  setup_log?: string;
 }
 
 export interface FeatureSnapshot {

@@ -338,7 +338,7 @@ describe("FeatureWorkflowView", () => {
     it("shows confirm dialog when delete is triggered", () => {
       renderWithAgent();
       // Get the onDelete prop passed to AgentSession and invoke it
-      const lastCall = MockAgentSession.mock.calls.at(-1);
+      const lastCall = (MockAgentSession.mock.calls as unknown[][]).at(-1);
       const props = lastCall?.[0] as Record<string, unknown>;
       act(() => { (props.onDelete as () => void)(); });
       expect(screen.getByText(/Remove "Execute" agent/)).toBeInTheDocument();
@@ -346,7 +346,7 @@ describe("FeatureWorkflowView", () => {
 
     it("does not delete until user confirms", () => {
       const { deleteSession } = renderWithAgent();
-      const lastCall = MockAgentSession.mock.calls.at(-1);
+      const lastCall = (MockAgentSession.mock.calls as unknown[][]).at(-1);
       const props = lastCall?.[0] as Record<string, unknown>;
       act(() => { (props.onDelete as () => void)(); });
       // Dialog is open but deleteSession not called yet
@@ -355,7 +355,7 @@ describe("FeatureWorkflowView", () => {
 
     it("deletes session when user confirms", () => {
       const { deleteSession } = renderWithAgent();
-      const lastCall = MockAgentSession.mock.calls.at(-1);
+      const lastCall = (MockAgentSession.mock.calls as unknown[][]).at(-1);
       const props = lastCall?.[0] as Record<string, unknown>;
       act(() => { (props.onDelete as () => void)(); });
       // Click the "Remove" confirm button
@@ -365,7 +365,7 @@ describe("FeatureWorkflowView", () => {
 
     it("does not delete when user cancels", () => {
       const { deleteSession } = renderWithAgent();
-      const lastCall = MockAgentSession.mock.calls.at(-1);
+      const lastCall = (MockAgentSession.mock.calls as unknown[][]).at(-1);
       const props = lastCall?.[0] as Record<string, unknown>;
       act(() => { (props.onDelete as () => void)(); });
       // Click Cancel

@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback } from "react";
 
 export interface SlashCommand {
+  [key: string]: unknown;
   name: string;
   description: string;
   argumentHint?: string;
