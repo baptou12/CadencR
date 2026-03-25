@@ -1,11 +1,10 @@
 ## FIX
-- [ ] Turns are wrong in the sidebar, if the CLI is not working, we should not show claude's turn
-- [ ] lost titles on execute and QA agents
-- [ ] /clear does nothing
-
+- [~] terminal cursor (deletion) is completely wrong
 
 ## FEAT
-- [ ] From working... to a blinking cursor
+- [ ] draft are killing the network
+- [ ] opening the application goes to a random feature
+- [ ] opening back a conversation that was working clears the agent's conversation
 - [ ] improve agents prompts to get better results
 - [ ] Worktree for standalone sessions
 - [ ] custom UI for our mcp tool calls
@@ -13,3 +12,5 @@
 - [ ] Rework terminal
 - [ ] Rework command palette
 - [ ] Rework prompt with lexical
+- [ ] Theming
+- [ ] Notifications
