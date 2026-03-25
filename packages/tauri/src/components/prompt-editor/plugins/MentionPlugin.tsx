@@ -206,9 +206,6 @@ export function MentionPlugin({ files }: MentionPluginProps) {
     return null;
   }
 
-  const editorRoot = editor.getRootElement();
-  const editorRect = editorRoot?.getBoundingClientRect();
-
   return (
     <div
       className="fixed z-50"

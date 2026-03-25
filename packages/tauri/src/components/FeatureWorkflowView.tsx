@@ -659,7 +659,6 @@ export function FeatureWorkflowView({
                         slashCommandsOverride={slashCommands}
                         slashCommandsLoading={slashCommandsLoading}
                         initialDraft={entry.draftPrompt}
-                        subprocessId={entry.subprocessId ?? undefined}
                         pendingPermission={entry.pendingPermission}
                         onPermissionDecision={(decision, feedback) =>
                           backend.submitPermission(entry, decision, feedback)

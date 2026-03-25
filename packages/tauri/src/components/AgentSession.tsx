@@ -588,7 +588,6 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
       projectId={projectId}
       sessionId={sessionId}
       initialDraft={initialDraft}
-      subprocessId={subprocessId}
       onToggleMaximize={onToggleMaximize}
       noTopPadding={!!hasMeta}
       slashCommandsOverride={slashCommandsOverride}

@@ -8,6 +8,7 @@ import {
 import { LexicalComposer } from "@lexical/react/LexicalComposer";
 import { RichTextPlugin } from "@lexical/react/LexicalRichTextPlugin";
 import { ContentEditable } from "@lexical/react/LexicalContentEditable";
+import LexicalErrorBoundary from "@lexical/react/LexicalErrorBoundary";
 import { HistoryPlugin } from "@lexical/react/LexicalHistoryPlugin";
 import { OnChangePlugin } from "@lexical/react/LexicalOnChangePlugin";
 import { MarkdownShortcutPlugin } from "@lexical/react/LexicalMarkdownShortcutPlugin";
@@ -200,17 +201,6 @@ const PromptEditorInner = forwardRef<PromptEditorHandle, PromptEditorProps>(
     );
   },
 );
-
-function LexicalErrorBoundary({
-  children,
-  onError,
-}: {
-  children: React.ReactNode;
-  onError: (error: Error) => void;
-}) {
-  void onError;
-  return <>{children}</>;
-}
 
 export const PromptEditor = forwardRef<PromptEditorHandle, PromptEditorProps>(
   function PromptEditor(props, ref) {
