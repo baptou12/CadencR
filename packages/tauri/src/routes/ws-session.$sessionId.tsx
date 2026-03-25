@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
-import { AgentSession } from "@/components/AgentSession";
+import { AgentSession, type AgentSessionHandle } from "@/components/AgentSession";
 import { DiffViewerModal } from "@/components/diff/DiffViewerModal";
 import { FeatureTopBar } from "@/components/FeatureTopBar";
 import { useSaveLastOpenedFeature } from "@/hooks/useSaveLastOpenedFeature";
@@ -45,6 +45,7 @@ function WebSocketSessionPage() {
   const { resolveModel } = useResolvedModel(featureId, projectId);
   const resolvedModelId = resolveModel("session");
 
+  const agentSessionRef = useRef<AgentSessionHandle>(null);
   const [inlineDiffOpen, setInlineDiffOpen] = useState(false);
   const handleViewDiff = useCallback(() => setInlineDiffOpen(true), []);
   useHotkeys(
@@ -70,6 +71,13 @@ function WebSocketSessionPage() {
     }
   }, [isConnected, initSession, cwd, featureId, sessionId, session?.serverSessionId, resolvedModelId]);
 
+  // Auto-focus prompt bar when session page mounts
+  useEffect(() => {
+    requestAnimationFrame(() => {
+      agentSessionRef.current?.focusPromptBar();
+    });
+  }, []);
+
   // Request slash commands once the session is initialized
   useEffect(() => {
     if (session?.serverSessionId && cwd) {
@@ -82,6 +90,7 @@ function WebSocketSessionPage() {
       <FeatureTopBar featureId={featureId} projectId={projectId} mode="session" isWebSocket className="shrink-0" />
       <div className="relative min-h-0 flex-1 overflow-hidden">
         <AgentSession
+          ref={agentSessionRef}
           agentType="session"
           featureId={featureId}
           projectId={projectId}

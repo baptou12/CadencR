@@ -230,7 +230,13 @@ export function FeatureWorkflowView({
         });
       } else {
         e.preventDefault();
+        const willOpen = openAgent !== sessionKey;
         setOpenAgent((prev) => (prev === sessionKey ? null : sessionKey));
+        if (willOpen) {
+          requestAnimationFrame(() => {
+            agentRefs.current.get(agentIndex)?.focusPromptBar();
+          });
+        }
       }
     },
     { enableOnFormTags: false },
@@ -312,6 +318,16 @@ export function FeatureWorkflowView({
   // Use backend.view instead of useFeatureState
   const view = backend.view;
   const actions = backend.actions;
+
+  // Auto-focus the first agent's prompt bar on mount
+  const didAutoFocusRef = useRef(false);
+  useEffect(() => {
+    if (didAutoFocusRef.current || backend.sessionEntries.length === 0) return;
+    didAutoFocusRef.current = true;
+    requestAnimationFrame(() => {
+      agentRefs.current.get(0)?.focusPromptBar();
+    });
+  }, [backend.sessionEntries.length]);
 
   // Auto-focus the prompt bar of a newly started agent
   const prevRunningAgentsRef = useRef<Set<string>>(new Set());

@@ -402,9 +402,9 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
       // Priority 2: first focusable element in the question/plan-approval area
       const questionEl = container?.querySelector<HTMLElement>('[data-question-area] button, [data-question-area] input');
       if (questionEl) { questionEl.scrollIntoView({ block: "nearest" }); questionEl.focus(); return; }
-      // Priority 3: prompt bar textarea
-      const textarea = container?.querySelector<HTMLTextAreaElement>('textarea');
-      if (textarea) { textarea.scrollIntoView({ block: "nearest" }); textarea.focus(); return; }
+      // Priority 3: prompt bar (Lexical contenteditable or textarea fallback)
+      const editable = container?.querySelector<HTMLElement>('[contenteditable="true"], textarea');
+      if (editable) { editable.scrollIntoView({ block: "nearest" }); editable.focus(); return; }
       // Priority 4: header
       if (headerRef.current) { headerRef.current.scrollIntoView({ block: "nearest" }); headerRef.current.focus(); }
     },
