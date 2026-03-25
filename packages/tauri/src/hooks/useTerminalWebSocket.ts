@@ -48,13 +48,19 @@ export interface UseTerminalWebSocketOptions {
 }
 
 export interface UseTerminalWebSocketReturn {
+  /** Initiate the WebSocket connection. Call after terminal is fitted to pass accurate dimensions. */
+  connect: (cols: number, rows: number) => void;
   write: (data: string) => void;
   resize: (cols: number, rows: number) => void;
   kill: () => void;
   isConnected: boolean;
 }
 
-function buildWsUrl(options: UseTerminalWebSocketOptions): string {
+function buildWsUrl(
+  options: UseTerminalWebSocketOptions,
+  cols?: number,
+  rows?: number,
+): string {
   const httpUrl = import.meta.env.VITE_API_URL || "http://localhost:5005";
   const wsUrl = httpUrl.replace(/^http/, "ws");
   const params = new URLSearchParams();
@@ -64,6 +70,8 @@ function buildWsUrl(options: UseTerminalWebSocketOptions): string {
   } else {
     if (options.featureId != null) params.set("feature_id", String(options.featureId));
     if (options.projectId != null) params.set("project_id", String(options.projectId));
+    if (cols != null) params.set("cols", String(cols));
+    if (rows != null) params.set("rows", String(rows));
   }
 
   return `${wsUrl}/api/terminal/ws?${params.toString()}`;
@@ -82,17 +90,23 @@ export function useTerminalWebSocket(
   const wsRef = useRef<WebSocket | null>(null);
   const optionsRef = useRef(options);
   optionsRef.current = options;
+  const cleanupRef = useRef<(() => void) | null>(null);
 
-  // Capture connection params at mount time — we don't want to re-connect
-  // when ptyId is assigned from our own onReady callback (that would tear
-  // down the working connection and try to reconnect immediately).
-  const initialOptionsRef = useRef(options);
-
+  // Clean up WebSocket on unmount
   useEffect(() => {
-    let intentionalClose = false;
-    const url = buildWsUrl(initialOptionsRef.current);
+    return () => {
+      cleanupRef.current?.();
+    };
+  }, []);
+
+  const connect = useCallback((cols: number, rows: number) => {
+    // Tear down previous connection if any
+    cleanupRef.current?.();
+
+    const url = buildWsUrl(optionsRef.current, cols, rows);
     const ws = new WebSocket(url);
     wsRef.current = ws;
+    let intentionalClose = false;
 
     ws.onopen = () => {
       setIsConnected(true);
@@ -139,14 +153,13 @@ export function useTerminalWebSocket(
       }
     };
 
-    return () => {
+    cleanupRef.current = () => {
       intentionalClose = true;
       wsRef.current = null;
       if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
         ws.close(1000, "unmount");
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const write = useCallback((data: string) => {
@@ -161,5 +174,5 @@ export function useTerminalWebSocket(
     sendJson(wsRef.current, { type: "kill" });
   }, []);
 
-  return { write, resize, kill, isConnected };
+  return { connect, write, resize, kill, isConnected };
 }

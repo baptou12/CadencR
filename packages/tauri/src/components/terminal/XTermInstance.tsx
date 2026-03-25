@@ -68,6 +68,7 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
     const writeRef = useRef<((data: string) => void) | null>(null);
     const resizeRef = useRef<((cols: number, rows: number) => void) | null>(null);
     const killRef = useRef<(() => void) | null>(null);
+    const connectRef = useRef<((cols: number, rows: number) => void) | null>(null);
 
     // -- WebSocket callbacks (stable refs to avoid re-connecting) --
 
@@ -84,7 +85,6 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
         }
         ptyIdRef.current = ptyId;
         onPtyReady?.(ptyId);
-        syncSize();
         // Write initial command if provided
         const cmd = initialCommandRef.current;
         if (cmd) {
@@ -124,7 +124,14 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
         return;
       }
       if (scrollback) terminalRef.current?.write(scrollback);
-      syncSize();
+      // Sync size after reconnect
+      try {
+        fitAddonRef.current?.fit();
+        const term = terminalRef.current;
+        if (term) resizeRef.current?.(term.cols, term.rows);
+      } catch {
+        // Ignore resize errors
+      }
       terminalRef.current?.focus();
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [onExit]);
@@ -134,7 +141,7 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
       terminalRef.current?.write(`\r\n\x1b[31m[${message}]\x1b[0m\r\n`);
     }, []);
 
-    const { write, resize, kill } = useTerminalWebSocket({
+    const { connect, write, resize, kill } = useTerminalWebSocket({
       featureId: existingPtyId ? undefined : featureId,
       projectId: existingPtyId ? undefined : projectId,
       ptyId: existingPtyId,
@@ -148,17 +155,7 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
     writeRef.current = write;
     resizeRef.current = resize;
     killRef.current = kill;
-
-    // Helper to sync terminal size to backend
-    function syncSize() {
-      try {
-        fitAddonRef.current?.fit();
-        const term = terminalRef.current;
-        if (term) resizeRef.current?.(term.cols, term.rows);
-      } catch {
-        // Ignore resize errors during teardown
-      }
-    }
+    connectRef.current = connect;
 
     useEffect(() => {
       mountedRef.current = true;
@@ -196,12 +193,6 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
       terminalRef.current = terminal;
       fitAddonRef.current = fitAddon;
 
-      try {
-        fitAddon.fit();
-      } catch {
-        // Container might not be sized yet
-      }
-
       // User input → WebSocket
       const dataDisposable = terminal.onData((data: string) => {
         if (ptyIdRef.current && !exitedRef.current) {
@@ -209,15 +200,23 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
         }
       });
 
-      // ResizeObserver for auto-fitting
+      // Connect WebSocket only after the ResizeObserver fires with real dimensions.
+      // This avoids creating the PTY with wrong dimensions when the terminal panel
+      // is still transitioning from height:0 (CSS transition) at mount time.
+      let connected = false;
       const resizeObserver = new ResizeObserver(() => {
         if (!mountedRef.current || exitedRef.current) return;
         try {
           fitAddon.fit();
+        } catch {
+          return; // Container still has no size — wait for next callback
+        }
+        if (!connected) {
+          connected = true;
+          connectRef.current?.(terminal.cols, terminal.rows);
+        } else {
           const id = ptyIdRef.current;
           if (id) resizeRef.current?.(terminal.cols, terminal.rows);
-        } catch {
-          // Ignore resize errors during teardown
         }
       });
       resizeObserver.observe(container);
