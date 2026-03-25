@@ -1913,6 +1913,35 @@ mod tests {
         assert!(!got_permission_request, "should NOT send permission.request when no pending questions");
     }
 
+    #[tokio::test]
+    async fn test_replay_state_sends_queue_update_with_no_active_agents() {
+        // Regression: replay_state_to_client must send queue + status even when
+        // no agents are active, so the frontend gets the correct workflow state
+        // on reconnect (instead of falling back to a stale cached snapshot).
+        let (engine, mut rx) = test_engine_with_schema().await;
+
+        sqlx::query("INSERT INTO features (id, project_id, title, status) VALUES (1, 1, 'test', 'in-progress')")
+            .execute(&engine.write_pool).await.unwrap();
+
+        // No active agents — active_items is empty
+        assert!(engine.agent_manager.active_items.is_empty());
+
+        engine.replay_state_to_client().await.unwrap();
+
+        let mut got_queue_update = false;
+        while let Ok(msg) = rx.try_recv() {
+            if let Message::Text(text) = msg {
+                let text_str: &str = &text;
+                if text_str.contains("queue_update") {
+                    got_queue_update = true;
+                    // Verify it includes workflow_status
+                    assert!(text_str.contains("workflow_status"), "queue_update should include workflow_status");
+                }
+            }
+        }
+        assert!(got_queue_update, "should send queue_update even with no active agents");
+    }
+
     #[test]
     fn test_agent_type_str_to_slot_risk() {
         assert_eq!(agent_type_str_to_slot("risk"), Some(AgentSlot::Risk));

@@ -276,17 +276,16 @@ async fn handle_feature_start(
 
     // Check if an engine already exists for this feature
     if let Some(existing) = ENGINES.get(&feature_id) {
-        let has_active = !existing.active_items().is_empty();
         // Reattach the new WS sender to the existing engine
-        info!(feature_id, has_active, "reattaching sender to existing engine on reconnect");
+        info!(feature_id, "reattaching sender to existing engine on reconnect");
         existing.reattach_sender(sender.clone());
 
-        if has_active {
-            // Replay current state to the reconnecting client
-            info!(feature_id, "replaying active agent state to reconnected client");
-            if let Err(e) = existing.replay_state_to_client().await {
-                warn!(feature_id, error = %e, "failed to replay state on reconnect");
-            }
+        // Always replay current state (queue + status) to the reconnecting client,
+        // even when no agents are active — otherwise the frontend hydrates from
+        // a stale cached snapshot and may show the wrong view (e.g. plan-input
+        // instead of agent history).
+        if let Err(e) = existing.replay_state_to_client().await {
+            warn!(feature_id, error = %e, "failed to replay state on reconnect");
         }
 
         drop(existing);
