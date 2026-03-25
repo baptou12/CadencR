@@ -317,28 +317,30 @@ export const AgentPromptBar = forwardRef<
           initialText={initialDraft ?? undefined}
         />
 
-        <ImageAttachmentButton onFilesSelected={addFiles} />
+        <div className="flex shrink-0 items-center gap-1.5 self-end">
+          <ImageAttachmentButton onFilesSelected={addFiles} />
 
-        {isRunning ? (
-          <button
-            type="button"
-            onClick={onStop}
-            aria-label="Stop agent"
-            className="flex size-7 shrink-0 items-center justify-center rounded-md bg-destructive/15 text-destructive transition-colors hover:bg-destructive/25"
-          >
-            <Pause className="size-3.5" />
-          </button>
-        ) : !splitSendActions ? (
-          <button
-            type="button"
-            onClick={handleSend}
-            disabled={!canSend}
-            aria-label="Send message"
-            className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground transition-opacity disabled:opacity-30"
-          >
-            <Send className="size-3.5" />
-          </button>
-        ) : null}
+          {isRunning ? (
+            <button
+              type="button"
+              onClick={onStop}
+              aria-label="Stop agent"
+              className="flex size-7 shrink-0 items-center justify-center rounded-md bg-destructive/15 text-destructive transition-colors hover:bg-destructive/25"
+            >
+              <Pause className="size-3.5" />
+            </button>
+          ) : !splitSendActions ? (
+            <button
+              type="button"
+              onClick={handleSend}
+              disabled={!canSend}
+              aria-label="Send message"
+              className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground transition-opacity disabled:opacity-30"
+            >
+              <Send className="size-3.5" />
+            </button>
+          ) : null}
+        </div>
       </div>
 
       {splitSendActions && !isRunning && (

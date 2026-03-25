@@ -27,12 +27,12 @@ export function KbdShortcut({ keys, size = "default" }: { keys: string[]; size?:
   return (
     <kbd className={
       size === "sm"
-        ? "ml-1 inline-flex items-center gap-px rounded border border-current/20 bg-current/10 px-1 py-px text-[8px] font-medium opacity-60 [&_svg]:!size-2"
-        : "ml-2 inline-flex items-center gap-0.5 rounded border border-current/20 bg-current/10 px-1.5 py-0.5 text-[10px] font-medium opacity-70 [&_svg]:!size-2.5"
+        ? "ml-1 inline-flex items-center gap-px rounded border border-current/20 bg-current/10 px-1 py-px text-[8px] font-medium leading-none opacity-60 [&_svg]:!size-2"
+        : "ml-2 inline-flex items-center gap-0.5 rounded border border-current/20 bg-current/10 px-1.5 py-0.5 text-[10px] font-medium leading-none opacity-70 [&_svg]:!size-2.5"
     }>
       {keys.map((k, i) => {
         const icon = map[k.toLowerCase()];
-        return icon ? <span key={i} className="flex items-center">{icon}</span> : <span key={i} className="translate-y-[0.5px] leading-none">{k}</span>;
+        return icon ? <span key={i} className="flex items-center">{icon}</span> : <span key={i} className="leading-none">{k}</span>;
       })}
     </kbd>
   );

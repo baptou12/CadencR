@@ -463,10 +463,11 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
     !!onPermissionModeToggle ||
     !!onModelChange ||
     showDiffBar ||
-    (todos && todos.length > 0);
+    (todos && todos.length > 0) ||
+    !!claudeSessionId;
 
   const chipClass =
-    "flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors";
+    "flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors";
 
   const metaBar = hasMeta ? (
     <div
@@ -541,6 +542,11 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
 
       {/* Tasks chip — rose */}
       {todos && todos.length > 0 && <AgentTodoList todos={todos} chipClass={chipClass} />}
+
+      {/* Session ID — right-aligned */}
+      {claudeSessionId && (
+        <span className="ml-auto select-all font-mono text-[10px] text-muted-foreground/50">{claudeSessionId}</span>
+      )}
     </div>
   ) : null;
 
@@ -611,13 +617,6 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
         <div className="shrink-0">
           {/* Meta toolbar: diff + todos + model */}
           {metaBar}
-
-          {/* Session ID label */}
-          {claudeSessionId && (
-            <div className="flex justify-end px-3 pb-0.5">
-              <span className="select-all font-mono text-[10px] text-muted-foreground/50">{claudeSessionId}</span>
-            </div>
-          )}
 
           {/* Prompt bar */}
           {promptBar}
