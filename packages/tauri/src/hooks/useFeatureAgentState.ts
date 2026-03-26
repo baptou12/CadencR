@@ -15,6 +15,7 @@ import { useGetFeatureAgentState } from "../api/generated";
 import type { AgentBlockData } from "@/components/AgentBlock";
 import type { AgentType } from "../types/agent-types";
 import type { AgentStatus, TodoItem } from "@/types/agent";
+import { parseAskUserQuestions } from "@/components/AgentQuestionDrawer";
 import type { AgentQuestion } from "@/components/AgentQuestionDrawer";
 import type { PendingPermission } from "@/components/ToolPermissionPrompt";
 
@@ -229,43 +230,10 @@ export function useFeatureAgentState(featureId: number) {
   const afterParam = afterMessageIds ? JSON.stringify(afterMessageIds) : undefined;
   const query = useGetFeatureAgentState(featureId, afterParam, { keepPreviousData: true });
 
-  // Parse question helper — handles both {questions: [...]} and {question: "..."} formats
   const parseQuestions = useCallback((raw: unknown): AgentQuestion[] | null => {
     if (!raw || typeof raw !== "object") return null;
-    const obj = raw as Record<string, unknown>;
-    const questions: AgentQuestion[] = [];
-
-    const normalizeOptions = (opts: unknown): AgentQuestion["options"] => {
-      if (!Array.isArray(opts)) return [];
-      return opts.map((opt) => {
-        if (typeof opt === "string") return { label: opt };
-        if (opt && typeof opt === "object" && "label" in opt) {
-          const o = opt as { label: string; description?: string };
-          return { label: o.label, description: o.description };
-        }
-        return { label: String(opt) };
-      });
-    };
-
-    // Multi-question format: {questions: [{question, options}, ...]}
-    if (Array.isArray(obj.questions)) {
-      for (const q of obj.questions) {
-        const qObj = q as { question: string; options?: unknown[] };
-        questions.push({
-          question: qObj.question,
-          options: normalizeOptions(qObj.options),
-        });
-      }
-    }
-    // Single question format: {question: "...", options: [...]}
-    else if (typeof obj.question === "string") {
-      questions.push({
-        question: obj.question as string,
-        options: normalizeOptions(obj.options),
-      });
-    }
-
-    return questions.length > 0 ? questions : null;
+    const result = parseAskUserQuestions(raw as Record<string, unknown>);
+    return result.length > 0 ? result : null;
   }, []);
 
   // Track which query.data we last processed to guard against React strict mode

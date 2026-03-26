@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@/test-utils";
 import userEvent from "@testing-library/user-event";
-import { AgentQuestionDrawer } from "./AgentQuestionDrawer";
+import { AgentQuestionDrawer, parseAskUserQuestions } from "./AgentQuestionDrawer";
 import type { AgentQuestion } from "./AgentQuestionDrawer";
 
 vi.mock("react-hotkeys-hook", () => ({
@@ -27,7 +27,7 @@ const multiSelectQuestion: AgentQuestion = {
     { label: "Option B" },
     { label: "Option C" },
   ],
-  allowMultiple: true,
+  multiSelect: true,
 };
 
 describe("AgentQuestionDrawer", () => {
@@ -153,5 +153,52 @@ describe("AgentQuestionDrawer", () => {
       />,
     );
     expect(screen.getByText("What is your name?")).toBeInTheDocument();
+  });
+
+  it("shows preview when an option with preview is selected", async () => {
+    const user = userEvent.setup();
+    const questionWithPreview: AgentQuestion = {
+      question: "Pick one",
+      options: [
+        { label: "Alpha", preview: "┌───┐\n│ A │\n└───┘" },
+        { label: "Beta" },
+      ],
+    };
+    render(
+      <AgentQuestionDrawer questions={[questionWithPreview]} onSubmit={onSubmit} open />,
+    );
+    expect(screen.queryByText(/┌───┐/)).toBeNull();
+    const alphaBtn = screen.getAllByRole("button").find((b) => b.textContent?.includes("Alpha"))!;
+    await user.click(alphaBtn);
+    expect(screen.getByText(/┌───┐/)).toBeInTheDocument();
+  });
+});
+
+describe("parseAskUserQuestions", () => {
+  it("parses multiSelect from tool input", () => {
+    const result = parseAskUserQuestions({
+      questions: [
+        {
+          question: "Pick languages",
+          multiSelect: true,
+          options: [{ label: "TypeScript" }, { label: "Rust" }],
+        },
+      ],
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0].multiSelect).toBe(true);
+  });
+
+  it("parses preview from options", () => {
+    const result = parseAskUserQuestions({
+      question: "Pick one",
+      options: [{ label: "A", preview: "diagram" }],
+    });
+    expect(result[0].options?.[0].preview).toBe("diagram");
+  });
+
+  it("defaults multiSelect to false", () => {
+    const result = parseAskUserQuestions({ question: "Hello?" });
+    expect(result[0].multiSelect).toBe(false);
   });
 });

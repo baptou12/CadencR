@@ -10,9 +10,9 @@ export interface AgentQuestion {
   /** The question text */
   question: string;
   /** Pre-defined options the user can choose from */
-  options?: { label: string; description?: string }[];
+  options?: { label: string; description?: string; preview?: string }[];
   /** Whether multiple options can be selected */
-  allowMultiple?: boolean;
+  multiSelect?: boolean;
 }
 
 interface AgentQuestionDrawerProps {
@@ -123,7 +123,7 @@ export function AgentQuestionDrawer({ questions, onSubmit, open, inline, disable
     (option: string) => {
       if (!currentQuestion) return;
 
-      if (currentQuestion.allowMultiple) {
+      if (currentQuestion.multiSelect) {
         setSelectedOptions((prev) => {
           const next = new Set(prev);
           if (next.has(option)) {
@@ -147,7 +147,7 @@ export function AgentQuestionDrawer({ questions, onSubmit, open, inline, disable
     setShowOther((prev) => !prev);
     if (!showOther) {
       // If enabling "Other", deselect options in single-select mode
-      if (!currentQuestion?.allowMultiple) {
+      if (!currentQuestion?.multiSelect) {
         setSelectedOptions(new Set());
       }
     }
@@ -270,6 +270,9 @@ export function AgentQuestionDrawer({ questions, onSubmit, open, inline, disable
 
   const isLastQuestion = currentIndex >= questions.length - 1;
   const hasOptions = currentQuestion.options && currentQuestion.options.length > 0;
+  const selectedPreview = hasOptions
+    ? currentQuestion.options!.filter((o) => selectedOptions.has(o.label) && o.preview).at(-1)?.preview
+    : undefined;
 
   return (
     <div className={cn(
@@ -312,6 +315,13 @@ export function AgentQuestionDrawer({ questions, onSubmit, open, inline, disable
 
       {/* Question text */}
       <p className={cn("text-sm font-medium text-foreground", inline ? "mb-2" : "mb-3")}>{currentQuestion.question}</p>
+
+      {/* Preview for selected option */}
+      {selectedPreview && (
+        <pre className="mb-2 overflow-x-auto rounded-md bg-muted/60 px-3 py-2 font-mono text-[11px] leading-tight text-foreground">
+          {selectedPreview}
+        </pre>
+      )}
 
       {/* Option list */}
       {hasOptions && (
@@ -398,7 +408,7 @@ export function AgentQuestionDrawer({ questions, onSubmit, open, inline, disable
 /** Normalize options array: handle both string[] and {label, description}[] formats */
 function normalizeOptions(
   raw: unknown,
-): { label: string; description?: string }[] | undefined {
+): { label: string; description?: string; preview?: string }[] | undefined {
   if (!Array.isArray(raw)) return undefined;
   return raw.map((item: unknown) => {
     if (typeof item === "string") return { label: item };
@@ -408,6 +418,8 @@ function normalizeOptions(
         label: (obj.label as string) ?? "",
         description:
           typeof obj.description === "string" ? obj.description : undefined,
+        preview:
+          typeof obj.preview === "string" ? obj.preview : undefined,
       };
     }
     return { label: String(item) };
@@ -423,9 +435,7 @@ export function parseAskUserQuestions(
       {
         question: toolInput.question as string,
         options: normalizeOptions(toolInput.options),
-        allowMultiple: typeof toolInput.allowMultiple === "boolean"
-          ? (toolInput.allowMultiple as boolean)
-          : false,
+        multiSelect: toolInput.multiSelect === true,
       },
     ];
   }
@@ -435,9 +445,7 @@ export function parseAskUserQuestions(
     return (toolInput.questions as Record<string, unknown>[]).map((q) => ({
       question: (q.question as string) ?? "",
       options: normalizeOptions(q.options),
-      allowMultiple: typeof q.allowMultiple === "boolean"
-        ? (q.allowMultiple as boolean)
-        : false,
+      multiSelect: q.multiSelect === true,
     }));
   }
 
