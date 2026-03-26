@@ -262,16 +262,34 @@ impl QueueAdvancer {
             agent_manager.send_item_update(*item_id).await;
         }
 
+        let mut db_sid: i64 = 0;
+        let mut cc_sid = String::new();
+
         if let Some(db_session_id) = agent_manager.active_items.get(&slot) {
-            let db_sid = *db_session_id;
+            db_sid = *db_session_id;
             WsSessionPersistence::mark_paused_static(&self.write_pool, db_sid).await;
 
             if let Some(cc_sid_ref) = agent_manager.paused_sessions.get(&slot) {
-                let cc_sid = cc_sid_ref.clone();
+                cc_sid = cc_sid_ref.clone();
                 debug!(slot = %slot, db_session_id = db_sid, cc_session_id = %cc_sid, "persisting claude_session_id to DB for resume");
                 WsSessionPersistence::persist_claude_session_id_static(&self.write_pool, db_sid, &cc_sid).await;
             }
         }
+
+        // Notify frontend that the agent is paused so it can update the UI status
+        let agent_type = slot.agent_type_str().unwrap_or("session").to_string();
+        let envelope = WsEnvelope::new(
+            "workflow",
+            "agent_paused",
+            to_value(WorkflowAgentPausedPayload {
+                feature_id: self.feature_id,
+                agent_slot: slot,
+                session_id: db_sid,
+                agent_type,
+                claude_session_id: cc_sid,
+            }),
+        );
+        let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
     }
 
     /// Called when a queue item errors. Auto-retries if retry_count < max_retries.

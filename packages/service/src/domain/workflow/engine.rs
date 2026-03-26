@@ -1942,6 +1942,49 @@ mod tests {
         assert!(got_queue_update, "should send queue_update even with no active agents");
     }
 
+    #[tokio::test]
+    async fn test_on_item_paused_sends_agent_paused_for_session_slot() {
+        let (engine, mut rx) = test_engine().await;
+
+        // Set up a session agent as active + paused
+        engine.agent_manager.active_items.insert(AgentSlot::Session, 42);
+        engine.agent_manager.paused_sessions.insert(AgentSlot::Session, "cc-session-123".to_string());
+
+        engine.on_item_paused(AgentSlot::Session).await;
+
+        let mut got_agent_paused = false;
+        while let Ok(msg) = rx.try_recv() {
+            if let Message::Text(text) = msg {
+                let text_str: &str = &text;
+                if text_str.contains("agent_paused") && text_str.contains("cc-session-123") {
+                    got_agent_paused = true;
+                }
+            }
+        }
+        assert!(got_agent_paused, "on_item_paused should send agent_paused WS event for session slot");
+    }
+
+    #[tokio::test]
+    async fn test_on_item_paused_sends_agent_paused_for_queue_item() {
+        let (engine, mut rx) = test_engine().await;
+
+        engine.agent_manager.active_items.insert(AgentSlot::QueueItem(7), 99);
+        engine.agent_manager.paused_sessions.insert(AgentSlot::QueueItem(7), "cc-queue-456".to_string());
+
+        engine.on_item_paused(AgentSlot::QueueItem(7)).await;
+
+        let mut got_agent_paused = false;
+        while let Ok(msg) = rx.try_recv() {
+            if let Message::Text(text) = msg {
+                let text_str: &str = &text;
+                if text_str.contains("agent_paused") && text_str.contains("cc-queue-456") {
+                    got_agent_paused = true;
+                }
+            }
+        }
+        assert!(got_agent_paused, "on_item_paused should send agent_paused WS event for queue item slot");
+    }
+
     #[test]
     fn test_agent_type_str_to_slot_risk() {
         assert_eq!(agent_type_str_to_slot("risk"), Some(AgentSlot::Risk));
