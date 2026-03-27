@@ -72,6 +72,57 @@ function removeLeaf(node: SplitNode, leafId: string): SplitNode | null {
   return node;
 }
 
+// ---------------------------------------------------------------------------
+// Spatial navigation helpers
+// ---------------------------------------------------------------------------
+
+export type Direction = "left" | "right" | "up" | "down";
+
+interface PathStep { node: TerminalSplit; childIndex: 0 | 1 }
+
+function directionAxis(dir: Direction): SplitOrientation {
+  return dir === "left" || dir === "right" ? "horizontal" : "vertical";
+}
+
+/** Build the path from root to a leaf (list of split nodes + which child was taken) */
+function findPathToLeaf(node: SplitNode, leafId: string): PathStep[] | null {
+  if (node.type === "leaf") return node.id === leafId ? [] : null;
+  for (const idx of [0, 1] as const) {
+    const result = findPathToLeaf(node.children[idx], leafId);
+    if (result !== null) return [{ node, childIndex: idx }, ...result];
+  }
+  return null;
+}
+
+/** Find the leaf closest to the boundary we're entering from */
+function nearestLeafOnEdge(node: SplitNode, dir: Direction): string {
+  if (node.type === "leaf") return node.id;
+  const axis = directionAxis(dir);
+  if (node.orientation === axis) {
+    // Pick the child closest to the side we came from
+    const pick = dir === "left" || dir === "up" ? 1 : 0;
+    return nearestLeafOnEdge(node.children[pick], dir);
+  }
+  return nearestLeafOnEdge(node.children[0], dir);
+}
+
+/** Find the spatially adjacent leaf in the given direction */
+export function findAdjacentLeaf(root: SplitNode, leafId: string, direction: Direction): string | null {
+  const path = findPathToLeaf(root, leafId);
+  if (!path) return null;
+  const axis = directionAxis(direction);
+  // To move left/up we need to be in children[1]; to move right/down we need to be in children[0]
+  const departingIndex: 0 | 1 = direction === "left" || direction === "up" ? 1 : 0;
+  for (let i = path.length - 1; i >= 0; i--) {
+    const step = path[i];
+    if (step.node.orientation === axis && step.childIndex === departingIndex) {
+      const otherChild = step.node.children[departingIndex === 1 ? 0 : 1];
+      return nearestLeafOnEdge(otherChild, direction);
+    }
+  }
+  return null;
+}
+
 /** Update a leaf's fields by id */
 function updateLeaf(node: SplitNode, leafId: string, updater: (leaf: TerminalLeaf) => TerminalLeaf): SplitNode {
   if (node.type === "leaf") {

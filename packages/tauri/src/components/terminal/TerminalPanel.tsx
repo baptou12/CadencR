@@ -17,6 +17,7 @@ import {
   type SplitOrientation,
   type SplitNode,
   getLeaves,
+  findAdjacentLeaf,
   useTerminalStore,
 } from "@/hooks/useTerminalState";
 import { getActiveFocusZone } from "@/lib/focus-zones";
@@ -161,14 +162,34 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
   useHotkeys("meta+alt+left", (e) => {
     if (getActiveFocusZone() !== "terminal") return;
     e.preventDefault();
-    focusPaneByIndex(activeIndex - 1);
-  }, { enableOnFormTags: true, enableOnContentEditable: true }, [activeIndex, focusPaneByIndex]);
+    if (!root || !resolvedActivePaneId) return;
+    const target = findAdjacentLeaf(root, resolvedActivePaneId, "left");
+    if (target) focusPane(target);
+  }, { enableOnFormTags: true, enableOnContentEditable: true }, [root, resolvedActivePaneId, focusPane]);
 
   useHotkeys("meta+alt+right", (e) => {
     if (getActiveFocusZone() !== "terminal") return;
     e.preventDefault();
-    focusPaneByIndex(activeIndex + 1);
-  }, { enableOnFormTags: true, enableOnContentEditable: true }, [activeIndex, focusPaneByIndex]);
+    if (!root || !resolvedActivePaneId) return;
+    const target = findAdjacentLeaf(root, resolvedActivePaneId, "right");
+    if (target) focusPane(target);
+  }, { enableOnFormTags: true, enableOnContentEditable: true }, [root, resolvedActivePaneId, focusPane]);
+
+  useHotkeys("meta+alt+up", (e) => {
+    if (getActiveFocusZone() !== "terminal") return;
+    e.preventDefault();
+    if (!root || !resolvedActivePaneId) return;
+    const target = findAdjacentLeaf(root, resolvedActivePaneId, "up");
+    if (target) focusPane(target);
+  }, { enableOnFormTags: true, enableOnContentEditable: true }, [root, resolvedActivePaneId, focusPane]);
+
+  useHotkeys("meta+alt+down", (e) => {
+    if (getActiveFocusZone() !== "terminal") return;
+    e.preventDefault();
+    if (!root || !resolvedActivePaneId) return;
+    const target = findAdjacentLeaf(root, resolvedActivePaneId, "down");
+    if (target) focusPane(target);
+  }, { enableOnFormTags: true, enableOnContentEditable: true }, [root, resolvedActivePaneId, focusPane]);
 
   // Use ref for leaves so closePane stays stable
   const leavesRef = useRef(leaves);

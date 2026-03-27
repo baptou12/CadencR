@@ -1,6 +1,9 @@
 import { renderHook, act } from "@testing-library/react";
 import { describe, it, expect, beforeEach } from "vitest";
-import { useTerminalState, useTerminalStore, getLeaves } from "./useTerminalState";
+import {
+  useTerminalState, useTerminalStore, getLeaves, findAdjacentLeaf,
+  type SplitNode, type TerminalLeaf,
+} from "./useTerminalState";
 
 describe("useTerminalState", () => {
   beforeEach(() => {
@@ -141,6 +144,9 @@ describe("useTerminalState", () => {
     }
   });
 
+  // Helper to build leaf nodes for navigation tests
+  const leaf = (id: string): TerminalLeaf => ({ type: "leaf", id });
+
   it("getLeaves returns leaves in DFS order", () => {
     const { result } = renderHook(() => useTerminalState(1));
     act(() => result.current.togglePanel());
@@ -154,5 +160,96 @@ describe("useTerminalState", () => {
     expect(leaves).toHaveLength(3);
     expect(leaves[0].id).toBe(firstId);
     expect(leaves[1].id).toBe(secondId);
+  });
+
+  describe("findAdjacentLeaf", () => {
+    it("returns null for a single leaf (no neighbors)", () => {
+      const root = leaf("A");
+      expect(findAdjacentLeaf(root, "A", "left")).toBeNull();
+      expect(findAdjacentLeaf(root, "A", "right")).toBeNull();
+      expect(findAdjacentLeaf(root, "A", "up")).toBeNull();
+      expect(findAdjacentLeaf(root, "A", "down")).toBeNull();
+    });
+
+    it("navigates left/right in a horizontal split", () => {
+      // [A | B]
+      const root: SplitNode = {
+        type: "split", orientation: "horizontal",
+        children: [leaf("A"), leaf("B")],
+      };
+      expect(findAdjacentLeaf(root, "A", "right")).toBe("B");
+      expect(findAdjacentLeaf(root, "B", "left")).toBe("A");
+      expect(findAdjacentLeaf(root, "A", "left")).toBeNull();
+      expect(findAdjacentLeaf(root, "B", "right")).toBeNull();
+    });
+
+    it("navigates up/down in a vertical split", () => {
+      // [A / B] (top/bottom)
+      const root: SplitNode = {
+        type: "split", orientation: "vertical",
+        children: [leaf("A"), leaf("B")],
+      };
+      expect(findAdjacentLeaf(root, "A", "down")).toBe("B");
+      expect(findAdjacentLeaf(root, "B", "up")).toBe("A");
+      expect(findAdjacentLeaf(root, "A", "up")).toBeNull();
+      expect(findAdjacentLeaf(root, "B", "down")).toBeNull();
+    });
+
+    it("does not navigate across wrong axis", () => {
+      const root: SplitNode = {
+        type: "split", orientation: "horizontal",
+        children: [leaf("A"), leaf("B")],
+      };
+      expect(findAdjacentLeaf(root, "A", "up")).toBeNull();
+      expect(findAdjacentLeaf(root, "A", "down")).toBeNull();
+    });
+
+    it("navigates in mixed layout (horizontal root, vertical right child)", () => {
+      // [A | [B / C]]
+      const root: SplitNode = {
+        type: "split", orientation: "horizontal",
+        children: [
+          leaf("A"),
+          { type: "split", orientation: "vertical", children: [leaf("B"), leaf("C")] },
+        ],
+      };
+      // Left/right across the horizontal split
+      expect(findAdjacentLeaf(root, "A", "right")).toBe("B"); // nearest edge leaf
+      expect(findAdjacentLeaf(root, "B", "left")).toBe("A");
+      expect(findAdjacentLeaf(root, "C", "left")).toBe("A");
+      // Up/down within the vertical split
+      expect(findAdjacentLeaf(root, "B", "down")).toBe("C");
+      expect(findAdjacentLeaf(root, "C", "up")).toBe("B");
+      // No vertical neighbor for A
+      expect(findAdjacentLeaf(root, "A", "up")).toBeNull();
+      expect(findAdjacentLeaf(root, "A", "down")).toBeNull();
+    });
+
+    it("navigates in deeply nested layout", () => {
+      // [[A / B] | [C / D]]
+      const root: SplitNode = {
+        type: "split", orientation: "horizontal",
+        children: [
+          { type: "split", orientation: "vertical", children: [leaf("A"), leaf("B")] },
+          { type: "split", orientation: "vertical", children: [leaf("C"), leaf("D")] },
+        ],
+      };
+      // Horizontal navigation picks nearest edge leaf
+      expect(findAdjacentLeaf(root, "A", "right")).toBe("C");
+      expect(findAdjacentLeaf(root, "B", "right")).toBe("C");
+      expect(findAdjacentLeaf(root, "C", "left")).toBe("A");
+      expect(findAdjacentLeaf(root, "D", "left")).toBe("A");
+      // Vertical within each column
+      expect(findAdjacentLeaf(root, "A", "down")).toBe("B");
+      expect(findAdjacentLeaf(root, "C", "down")).toBe("D");
+    });
+
+    it("returns null for unknown leaf id", () => {
+      const root: SplitNode = {
+        type: "split", orientation: "horizontal",
+        children: [leaf("A"), leaf("B")],
+      };
+      expect(findAdjacentLeaf(root, "Z", "left")).toBeNull();
+    });
   });
 });
