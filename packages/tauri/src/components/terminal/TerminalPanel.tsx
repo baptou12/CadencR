@@ -91,7 +91,7 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
   // Ensure slots exist for current leaves (called during render so portals have targets)
   const activeSlots = leaves.map((leaf) => ({ leaf, slot: getSlot(leaf.id) }));
 
-  // Cleanup removed slots and full unmount cleanup
+  // Remove slots for leaves that no longer exist
   useEffect(() => {
     const activeIds = new Set(leaves.map((l) => l.id));
     for (const [id, el] of [...slotsRef.current]) {
@@ -100,11 +100,15 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
         slotsRef.current.delete(id);
       }
     }
+  }, [leaves]);
+
+  // Clean up all slots on unmount
+  useEffect(() => {
     return () => {
       for (const el of slotsRef.current.values()) el.remove();
       slotsRef.current.clear();
     };
-  }, [leaves]);
+  }, []);
 
   const setPaneRef = useCallback((paneId: string, handle: XTermInstanceHandle | null) => {
     if (handle) paneRefs.current.set(paneId, handle);
