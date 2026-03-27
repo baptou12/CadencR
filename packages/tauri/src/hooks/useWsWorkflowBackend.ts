@@ -260,6 +260,13 @@ export function useWsWorkflowBackend(
     [store.queue, store.activeAgents, store.planAgent, store.prdAgent, store.workflowStatus],
   );
 
+  // Still loading if hydrated but sessions need history (blocks empty, not yet fetched).
+  // This prevents a flash of empty agent cards before conversation blocks arrive.
+  const needsHistory = !isHydrating && sessions.length > 0 && sessions.some(
+    (s) => (s.status === "paused" || s.status === "running") && s.blocks.length === 0,
+  );
+  const isLoading = isHydrating || needsHistory;
+
   const hasAnyAgentOutput = sessions.some((s) => s.blocks.length > 0);
   const noAgentsRunning = !sessions.some((s) => s.status === "running");
   const view = deriveViewState(store.workflowStatus, sessions);
@@ -339,8 +346,8 @@ export function useWsWorkflowBackend(
     // Derived
     hasAnyAgentOutput,
     noAgentsRunning,
-    view: isHydrating ? "loading" as const : view,
-    isLoading: isHydrating,
+    view: isLoading ? "loading" as const : view,
+    isLoading,
 
     // Loading flags (WS actions are fire-and-forget)
     isStartingPlan: false,

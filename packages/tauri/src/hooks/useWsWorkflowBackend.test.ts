@@ -193,6 +193,57 @@ describe("buildSessionEntries", () => {
     expect(sessions[0].hasFileChanges).toBe(false);
   });
 
+  it("sessions with paused/running status and empty blocks indicate history is needed", () => {
+    // After hydration, sessions exist but have no blocks yet (history not loaded).
+    // useWsWorkflowBackend uses this condition to keep showing a loader.
+    const queue = [
+      { id: 10, status: "paused" as const, item_type: "execute", phase_id: null, phase_title: null, order_index: 0, group_index: null, agent_session_id: 88, result: null },
+    ];
+    const agents = new Map<number, AgentSessionState>([
+      [10, makeAgentState({ sessionId: 88, status: "paused", blocks: [] })],
+    ]);
+    const { sessions } = buildSessionEntries(queue, agents, null, null, "paused");
+
+    const needsHistory = sessions.some(
+      (s) => (s.status === "paused" || s.status === "running") && s.blocks.length === 0,
+    );
+    expect(needsHistory).toBe(true);
+  });
+
+  it("sessions with blocks loaded do not indicate history is needed", () => {
+    const queue = [
+      { id: 10, status: "paused" as const, item_type: "execute", phase_id: null, phase_title: null, order_index: 0, group_index: null, agent_session_id: 88, result: null },
+    ];
+    const agents = new Map<number, AgentSessionState>([
+      [10, makeAgentState({
+        sessionId: 88,
+        status: "paused",
+        blocks: [{ id: "1", type: "text", content: "hello" }] as never[],
+      })],
+    ]);
+    const { sessions } = buildSessionEntries(queue, agents, null, null, "paused");
+
+    const needsHistory = sessions.some(
+      (s) => (s.status === "paused" || s.status === "running") && s.blocks.length === 0,
+    );
+    expect(needsHistory).toBe(false);
+  });
+
+  it("completed sessions with empty blocks do not indicate history is needed", () => {
+    const queue = [
+      { id: 10, status: "completed" as const, item_type: "execute", phase_id: null, phase_title: null, order_index: 0, group_index: null, agent_session_id: 88, result: null },
+    ];
+    const agents = new Map<number, AgentSessionState>([
+      [10, makeAgentState({ sessionId: 88, status: "completed", blocks: [] })],
+    ]);
+    const { sessions } = buildSessionEntries(queue, agents, null, null, "completed");
+
+    const needsHistory = sessions.some(
+      (s) => (s.status === "paused" || s.status === "running") && s.blocks.length === 0,
+    );
+    expect(needsHistory).toBe(false);
+  });
+
   it("renders multiple session agents with unique negative keys using agentType from state", () => {
     const agents = new Map<number, AgentSessionState>([
       [-1050, makeAgentState({ sessionId: 50, agentType: "session", status: "completed" })],
