@@ -423,7 +423,7 @@ function TaskAgentBlock({ block, isStreaming, basePath }: { block: AgentBlockDat
       unit="actions"
       className="border-indigo-700 bg-indigo-500/5"
       headerClassName=""
-      toggleClassName="text-indigo-500 hover:text-indigo-300"
+      toggleClassName="ml-auto text-indigo-500 hover:text-indigo-300"
       bodyClassName="border-t border-indigo-800 px-3 py-2 space-y-0.5"
       truncationClassName="text-indigo-800"
       header={<>
@@ -433,7 +433,6 @@ function TaskAgentBlock({ block, isStreaming, basePath }: { block: AgentBlockDat
         {isRunning && (
           <LoaderIcon className="size-3 animate-spin text-indigo-500 shrink-0" />
         )}
-        <span className="ml-auto text-muted-foreground shrink-0">{toolCalls.length} action{toolCalls.length !== 1 ? "s" : ""}</span>
       </>}
     >
       {({ showAll }) => (<>
