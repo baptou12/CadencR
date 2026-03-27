@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
-import { $getSelection, $isRangeSelection, $isTextNode } from "lexical";
+import { $getRoot, $getSelection, $isRangeSelection, $isTextNode } from "lexical";
 import { $createSlashCommandNode } from "../nodes/SlashCommandNode";
 import { SlashCommandPopover } from "@/components/SlashCommandPopover";
 import { useSlashCommand, type SlashCommand } from "@/hooks/useSlashCommand";
@@ -42,7 +42,11 @@ export function SlashCommandPlugin({ commands, isLoading }: SlashCommandPluginPr
         }
 
         const match = getTriggerMatch(node, anchor.offset, "/");
-        if (!match) {
+        // Slash commands only trigger at the very start of the editor
+        const isFirstNode =
+          node.getPreviousSibling() === null &&
+          node.getParent() === $getRoot().getFirstChild();
+        if (!match || match.triggerOffset !== 0 || !isFirstNode) {
           if (s.isOpen) s.close();
           return;
         }

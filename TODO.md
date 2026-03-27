@@ -1,7 +1,6 @@
 ## FIX
-- [ ] Kbd are hard to read
 - [ ] model reset on each app reopen, the last used model in the conversation should be restored
-- [ ] slash commands should only work at the start of the prompt
+- [x] slash commands should only work at the start of the prompt
 
 ## FEAT
 - [ ] Switching tab is slow
@@ -10,7 +9,6 @@
 - [ ] Worktree for standalone sessions
 - [ ] custom UI for our mcp tool calls
 - [ ] Rework diff tool
-- [ ] Rework terminal
 - [ ] Rework command palette
 - [ ] Theming
 - [ ] Notifications
