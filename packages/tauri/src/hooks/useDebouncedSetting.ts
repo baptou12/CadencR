@@ -18,6 +18,9 @@ export function useDebouncedSetting(key: string, debounceMs = 300) {
 
   const setValue = useCallback(
     (value: string) => {
+      // Update cache immediately so UI responds instantly
+      queryClient.setQueryData(getGetWorkspaceSettingQueryKey(key), { value });
+
       if (timerRef.current) clearTimeout(timerRef.current);
       timerRef.current = setTimeout(() => {
         mutation.mutate(
