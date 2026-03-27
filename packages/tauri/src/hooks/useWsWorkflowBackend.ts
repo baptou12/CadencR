@@ -317,6 +317,7 @@ export function useWsWorkflowBackend(
     queue: store.queue,
     autonomyLevel: store.autonomyLevel,
     error: store.error,
+    clearError: store.clearError,
 
     // Action availability (WS workflow manages its own state machine)
     actions: {

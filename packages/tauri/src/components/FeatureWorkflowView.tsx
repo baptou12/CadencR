@@ -6,7 +6,7 @@ import { FeatureTerminalTab } from "@/components/FeatureTerminalTab";
 import { FeatureGitTab } from "@/components/FeatureGitTab";
 import { AGENT_LABELS } from "@/components/AgentSession";
 import { WorkflowAgentGrid } from "@/components/WorkflowAgentGrid";
-import { AlertTriangleIcon, CheckCircle2Icon, Loader2Icon } from "lucide-react";
+import { AlertTriangleIcon, CheckCircle2Icon, Loader2Icon, XIcon } from "lucide-react";
 import { AGENT_ICONS } from "@/components/agent-icons";
 import { Button } from "@/components/ui/button";
 import { QueueSidebar } from "@/components/QueueSidebar";
@@ -360,6 +360,13 @@ export function FeatureWorkflowView({
               <div className="shrink-0 mx-6 mt-4 flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
                 <AlertTriangleIcon className="size-4 shrink-0" />
                 <span className="flex-1">{backend.error}</span>
+                <button
+                  onClick={backend.clearError}
+                  className="shrink-0 rounded p-0.5 hover:bg-destructive/20 transition-colors"
+                  aria-label="Dismiss error"
+                >
+                  <XIcon className="size-3.5" />
+                </button>
               </div>
             )}
 

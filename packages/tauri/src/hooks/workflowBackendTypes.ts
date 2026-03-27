@@ -81,6 +81,7 @@ export interface WorkflowBackend {
   queue: QueueItem[] | null;
   autonomyLevel: AutonomyLevel;
   error: string | null;
+  clearError: () => void;
 
   // -- Derived state --
   hasAnyAgentOutput: boolean;

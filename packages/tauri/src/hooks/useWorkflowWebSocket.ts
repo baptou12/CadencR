@@ -191,6 +191,7 @@ interface WorkflowState {
   markDone: (itemId: number) => void;
   removeAgent: (itemId: number) => void;
   deleteSession: (sessionDbId: number) => void;
+  clearError: () => void;
   populateAgentBlocks: (itemId: number, blocks: AgentBlockData[]) => void;
 }
 
@@ -1100,6 +1101,10 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
 
     selectItem(itemId) {
       set({ selectedItemId: itemId });
+    },
+
+    clearError() {
+      set({ error: null });
     },
 
     setAutonomyLevel(level) {

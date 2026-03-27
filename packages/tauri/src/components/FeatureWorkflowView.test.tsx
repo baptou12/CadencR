@@ -30,6 +30,7 @@ const defaultBackend = {
     queue: null,
     autonomyLevel: 3,
     error: null,
+    clearError: vi.fn(),
     actions: {
       canStartPlan: true,
       canStartPrd: true,
@@ -231,6 +232,7 @@ describe("FeatureWorkflowView", () => {
       ...defaultBackend,
       view: "agents",
       error: null,
+    clearError: vi.fn(),
     });
     render(
       <FeatureWorkflowView
@@ -373,6 +375,35 @@ describe("FeatureWorkflowView", () => {
       expect(deleteSession).not.toHaveBeenCalled();
       // Dialog should be closed
       expect(screen.queryByText(/Remove "Execute" agent/)).not.toBeInTheDocument();
+    });
+  });
+
+  describe("error banner", () => {
+    it("shows error with dismiss button and calls clearError on click", () => {
+      const clearError = vi.fn();
+      mockUseWorkflowBackend.mockReturnValue({
+        ...defaultBackend,
+        error: "Something went wrong",
+        clearError,
+      });
+
+      render(<FeatureWorkflowView featureId={1} projectId={1} feature={mockFeature} featureQuery={{ refetch: vi.fn() }} />);
+
+      expect(screen.getByText("Something went wrong")).toBeInTheDocument();
+      const dismissBtn = screen.getByRole("button", { name: "Dismiss error" });
+      fireEvent.click(dismissBtn);
+      expect(clearError).toHaveBeenCalledOnce();
+    });
+
+    it("does not show error banner when error is null", () => {
+      mockUseWorkflowBackend.mockReturnValue({
+        ...defaultBackend,
+        error: null,
+      });
+
+      render(<FeatureWorkflowView featureId={1} projectId={1} feature={mockFeature} featureQuery={{ refetch: vi.fn() }} />);
+
+      expect(screen.queryByRole("button", { name: "Dismiss error" })).not.toBeInTheDocument();
     });
   });
 });
