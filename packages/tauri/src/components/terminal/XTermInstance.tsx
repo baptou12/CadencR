@@ -241,7 +241,7 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
       <div
         ref={containerRef}
         className="h-full w-full"
-        style={{ backgroundColor: "#1a1b26" }}
+        style={{ backgroundColor: "#1a1b26", paddingLeft: 8, paddingRight: 8 }}
       />
     );
   },
