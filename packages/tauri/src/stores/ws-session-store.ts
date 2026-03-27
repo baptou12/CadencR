@@ -33,6 +33,8 @@ import {
 } from "@/lib/ws-envelope";
 import type { SlashCommand } from "@/hooks/useSlashCommand";
 import { invalidateFeatureQueries } from "@/lib/featureUpdated";
+import { fetchFeatureAgentState } from "@/api/generated";
+import { serverBlocksToAgentBlocks } from "@/hooks/useFeatureAgentState";
 
 export type PermissionMode = "acceptEdits" | "plan";
 
@@ -338,6 +340,14 @@ export interface SessionEntry {
   featureTitle: string | null;
   /** Pending request-response callbacks keyed by envelope id. */
   pendingWsRequests: Map<string, (payload: unknown) => void>;
+  /** Whether older messages exist beyond current window */
+  hasMore: boolean;
+  /** Lowest message ID in the current window */
+  oldestMessageId: number | null;
+  /** Feature ID for loading older messages */
+  featureId: number | null;
+  /** Agent session DB ID for pagination */
+  sessionDbId: number | null;
 }
 
 function createSessionEntry(): SessionEntry {
@@ -364,6 +374,10 @@ function createSessionEntry(): SessionEntry {
     todos: [],
     featureTitle: null,
     pendingWsRequests: new Map(),
+    hasMore: false,
+    oldestMessageId: null,
+    featureId: null,
+    sessionDbId: null,
   };
 }
 
@@ -426,7 +440,15 @@ interface WsSessionStore {
 
   // Persisted state restoration
   markPersistedLoaded: (sessionId: string) => void;
-  setPersistedState: (sessionId: string, blocks: AgentBlockData[], status: AgentStatus) => void;
+  setPersistedState: (sessionId: string, options: {
+    blocks: AgentBlockData[];
+    status: AgentStatus;
+    hasMore?: boolean;
+    oldestMessageId?: number | null;
+    featureId?: number;
+    sessionDbId?: number;
+  }) => void;
+  loadOlderMessages: (sessionId: string) => Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -1154,7 +1176,14 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       set(updateSession(get(), sessionId, { persistedLoaded: true }));
     },
 
-    setPersistedState(sessionId: string, blocks: AgentBlockData[], status: AgentStatus) {
+    setPersistedState(sessionId: string, { blocks, status, hasMore, oldestMessageId, featureId, sessionDbId }: {
+      blocks: AgentBlockData[];
+      status: AgentStatus;
+      hasMore?: boolean;
+      oldestMessageId?: number | null;
+      featureId?: number;
+      sessionDbId?: number;
+    }) {
       // Extract todos from restored blocks (last TodoWrite wins)
       const allBlocks = blocks.flatMap((b) => b.childBlocks ? [b, ...b.childBlocks] : [b]);
       let todos: TodoItem[] | undefined;
@@ -1179,7 +1208,41 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
           break;
         }
       }
-      set(updateSession(get(), sessionId, { blocks, status, persistedLoaded: true, ...(todos ? { todos } : {}) }));
+      set(updateSession(get(), sessionId, {
+        blocks, status, persistedLoaded: true,
+        ...(todos ? { todos } : {}),
+        hasMore: hasMore ?? false,
+        oldestMessageId: oldestMessageId ?? null,
+        featureId: featureId ?? null,
+        sessionDbId: sessionDbId ?? null,
+      }));
+    },
+
+    async loadOlderMessages(sessionId: string) {
+      const session = get().sessions[sessionId];
+      if (!session || !session.hasMore || session.oldestMessageId == null || !session.featureId || !session.sessionDbId) return;
+
+      const beforeParam = JSON.stringify({ [session.sessionDbId]: session.oldestMessageId });
+      const data = await fetchFeatureAgentState(session.featureId, {
+        before: beforeParam,
+        limit: 100,
+      });
+
+      const serverSession = data.sessions.find((s) => s.sessionDbId === session.sessionDbId);
+      if (!serverSession) {
+        set(updateSession(get(), sessionId, { hasMore: false }));
+        return;
+      }
+
+      const olderBlocks = serverBlocksToAgentBlocks(serverSession.blocks as never[]);
+
+      const currentSession = get().sessions[sessionId];
+      if (!currentSession) return;
+      set(updateSession(get(), sessionId, {
+        blocks: [...olderBlocks, ...currentSession.blocks],
+        hasMore: serverSession.hasMore ?? false,
+        oldestMessageId: serverSession.oldestMessageId ?? null,
+      }));
     },
   };
 });

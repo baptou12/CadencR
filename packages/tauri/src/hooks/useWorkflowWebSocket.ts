@@ -80,6 +80,10 @@ export interface AgentSessionState {
   outputTokens: number;
   contextWindow: number;
   hasFileChanges: boolean;
+  /** Whether older messages exist beyond current window */
+  hasMore?: boolean;
+  /** Lowest message ID in the current window */
+  oldestMessageId?: number | null;
 }
 
 export type AutonomyLevel = 1 | 2 | 3;
@@ -192,7 +196,8 @@ interface WorkflowState {
   removeAgent: (itemId: number) => void;
   deleteSession: (sessionDbId: number) => void;
   clearError: () => void;
-  populateAgentBlocks: (itemId: number, blocks: AgentBlockData[]) => void;
+  populateAgentBlocks: (itemId: number, blocks: AgentBlockData[], hasMore?: boolean, oldestMessageId?: number | null) => void;
+  populateOlderBlocks: (itemId: number, blocks: AgentBlockData[], hasMore: boolean, oldestMessageId: number | null) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -1354,12 +1359,24 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
       });
     },
 
-    populateAgentBlocks(itemId, blocks) {
+    populateAgentBlocks(itemId, blocks, hasMore, oldestMessageId) {
       set(state => {
         const agent = resolveAgentByItemId(state, itemId);
         if (!agent || agent.historyLoaded || agent.blocks.length > 0) return state;
-        const hasFileChanges = agent.hasFileChanges || blocksContainFileChange(blocks);
-        return patchAgentByItemId(state, itemId, { blocks, historyLoaded: true, hasFileChanges });
+        const fileChanges = agent.hasFileChanges || blocksContainFileChange(blocks);
+        return patchAgentByItemId(state, itemId, { blocks, historyLoaded: true, hasFileChanges: fileChanges, hasMore: hasMore ?? false, oldestMessageId: oldestMessageId ?? null });
+      });
+    },
+
+    populateOlderBlocks(itemId, olderBlocks, hasMore, oldestMessageId) {
+      set(state => {
+        const agent = resolveAgentByItemId(state, itemId);
+        if (!agent) return state;
+        return patchAgentByItemId(state, itemId, {
+          blocks: [...olderBlocks, ...agent.blocks],
+          hasMore,
+          oldestMessageId,
+        });
       });
     },
   };

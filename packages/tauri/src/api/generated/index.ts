@@ -1371,6 +1371,8 @@ export interface SessionState {
   contextWindow: number;
   wasCompacted: boolean;
   draftPrompt: string | null;
+  hasMore: boolean;
+  oldestMessageId: number | null;
 }
 
 export interface FeatureAgentStateResponse {
@@ -1389,8 +1391,8 @@ export interface DraftResponse {
 // Sessions — query key factories
 // ---------------------------------------------------------------------------
 
-export function getGetFeatureAgentStateQueryKey(featureId: number, after?: string) {
-  return ["sessions", "agentState", featureId, after] as const;
+export function getGetFeatureAgentStateQueryKey(featureId: number, after?: string, limit?: number, before?: string) {
+  return ["sessions", "agentState", featureId, after, limit, before] as const;
 }
 
 export function getGetFeatureTurnStatesQueryKey() {
@@ -1409,16 +1411,34 @@ export function useGetFeatureAgentState(
   featureId: number,
   after?: string,
   options?: Omit<UseQueryOptions<FeatureAgentStateResponse, ErrorType<unknown>>, "queryKey" | "queryFn">,
+  limit?: number,
 ) {
   return useQuery<FeatureAgentStateResponse, ErrorType<unknown>>({
-    queryKey: getGetFeatureAgentStateQueryKey(featureId, after),
+    queryKey: getGetFeatureAgentStateQueryKey(featureId, after, limit),
     queryFn: () =>
       customInstance({
         method: "GET",
         url: `/api/features/${featureId}/agent-state`,
-        params: after ? { after } : undefined,
+        params: {
+          ...(after ? { after } : undefined),
+          ...(limit ? { limit } : undefined),
+        },
       }),
     ...options,
+  });
+}
+
+export function fetchFeatureAgentState(
+  featureId: number,
+  params: { before?: string; limit?: number },
+): Promise<FeatureAgentStateResponse> {
+  return customInstance({
+    method: "GET",
+    url: `/api/features/${featureId}/agent-state`,
+    params: {
+      ...(params.before ? { before: params.before } : undefined),
+      ...(params.limit ? { limit: params.limit } : undefined),
+    },
   });
 }
 

@@ -149,6 +149,9 @@ export interface WorkflowBackend {
   // -- Lazy history loading (WS only) --
   loadAgentHistory?(entry: FeatureSession): void;
 
+  // -- Pagination: load older messages for a session --
+  loadOlderMessages?(sessionDbId: number): Promise<void>;
+
   // -- Queue-specific (optional) --
   skipItem?(itemId: number): void;
   retryItem?(itemId: number): void;

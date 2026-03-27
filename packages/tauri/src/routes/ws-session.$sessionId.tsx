@@ -153,6 +153,8 @@ function WebSocketSessionPage() {
             slashCommandsOverride={slashCommands}
             slashCommandsLoading={slashCommandsLoading}
             todos={session?.todos ?? null}
+            hasMore={ws.hasMore}
+            onLoadOlder={ws.loadOlderMessages}
             className="h-full"
           />
         </div>

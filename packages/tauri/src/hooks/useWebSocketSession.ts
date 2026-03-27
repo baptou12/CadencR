@@ -8,8 +8,8 @@
 import { useEffect } from "react";
 import { DEFAULT_MODEL } from "../shared/models";
 import type { AgentBlockData } from "@/components/AgentBlock";
-import type { AgentBlock } from "@/api/generated";
 import { useGetFeatureAgentState } from "@/api/generated";
+import { serverBlocksToAgentBlocks } from "@/hooks/useFeatureAgentState";
 import {
   useWsSessionStore,
   type PermissionMode,
@@ -32,6 +32,8 @@ export interface UseWebSocketSessionReturn {
   pendingRequestId: string;
   pendingQuestions: AgentQuestion[];
   respondToQuestion: (response: string) => void;
+  hasMore: boolean;
+  loadOlderMessages: () => Promise<void>;
 
   permissionMode: PermissionMode;
   setPermissionMode: (mode: PermissionMode) => void;
@@ -53,27 +55,6 @@ export interface UseWebSocketSessionReturn {
 }
 
 // ---------------------------------------------------------------------------
-// Convert server AgentBlock[] to AgentBlockData[]
-// ---------------------------------------------------------------------------
-
-function serverBlocksToAgentBlocks(blocks: AgentBlock[]): AgentBlockData[] {
-  return blocks.map((b) => ({
-    id: b.id,
-    type: b.type as AgentBlockData["type"],
-    content: b.content,
-    toolName: b.toolName,
-    toolArgs: b.toolArgs,
-    isError: b.isError,
-    toolUseId: b.toolUseId,
-    parentToolUseId: b.parentToolUseId,
-    childBlocks: b.childBlocks ? serverBlocksToAgentBlocks(b.childBlocks) : undefined,
-    sourceToolName: b.sourceToolName,
-    createdAt: b.createdAt,
-    model: b.model,
-  }));
-}
-
-// ---------------------------------------------------------------------------
 // Hook
 // ---------------------------------------------------------------------------
 
@@ -92,7 +73,7 @@ export function useWebSocketSession(sessionId: string, featureId?: number): UseW
   const agentStateQuery = useGetFeatureAgentState(featureId ?? 0, undefined, {
     enabled: !!featureId && !persistedLoaded,
     cacheTime: 0,
-  });
+  }, 100);
 
   useEffect(() => {
     if (persistedLoaded || !featureId || !agentStateQuery.data) return;
@@ -109,7 +90,14 @@ export function useWebSocketSession(sessionId: string, featureId?: number): UseW
     const restoredStatus: AgentStatus =
       s === "paused" || s === "completed" || s === "error" ? s : "idle";
 
-    store.setPersistedState(sessionId, restoredBlocks, restoredStatus);
+    store.setPersistedState(sessionId, {
+      blocks: restoredBlocks,
+      status: restoredStatus,
+      hasMore: lastSession.hasMore,
+      oldestMessageId: lastSession.oldestMessageId,
+      featureId,
+      sessionDbId: lastSession.sessionDbId,
+    });
   }, [featureId, agentStateQuery.data, persistedLoaded, sessionId, store]);
 
   return {
@@ -117,6 +105,8 @@ export function useWebSocketSession(sessionId: string, featureId?: number): UseW
     status: session?.status ?? "idle",
     isConnected: session?.isConnected ?? false,
     sessionId,
+    hasMore: session?.hasMore ?? false,
+    loadOlderMessages: () => store.loadOlderMessages(sessionId),
     pendingPermission: session?.pendingPermission ?? null,
     pendingRequestId: session?.pendingRequestId ?? "",
     pendingQuestions: session?.pendingQuestions ?? [],

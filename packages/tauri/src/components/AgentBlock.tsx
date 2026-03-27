@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, memo, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { ChevronRightIcon, WrenchIcon, BrainIcon, LayersIcon, LoaderIcon, TerminalIcon, CopyIcon, CheckIcon, CircleCheckIcon, CircleXIcon } from "lucide-react";
 import { parseToolCall } from "@/lib/tool-call-parser";
@@ -82,7 +82,7 @@ interface AgentBlockProps {
   basePath?: string;
 }
 
-export function AgentBlock({ block, isStreaming, basePath }: AgentBlockProps) {
+export const AgentBlock = memo(function AgentBlock({ block, isStreaming, basePath }: AgentBlockProps) {
   switch (block.type) {
     case "text":
       return <TextBlock content={block.content} />;
@@ -131,9 +131,9 @@ export function AgentBlock({ block, isStreaming, basePath }: AgentBlockProps) {
     default:
       return null;
   }
-}
+});
 
-function TextBlock({ content }: { content: string }) {
+const TextBlock = memo(function TextBlock({ content }: { content: string }) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(() => {
@@ -167,7 +167,7 @@ function TextBlock({ content }: { content: string }) {
       </div>
     </div>
   );
-}
+});
 
 function PlanBlock({ args, approvalStatus }: { args?: string; approvalStatus?: "approved" | "rejected" }) {
   let plan: string | undefined;
@@ -272,9 +272,10 @@ function ToolCallBlock({ name, args, basePath }: { name: string; args?: string; 
 
 const DEFAULT_BASH_LINES = 10;
 
-function BashOutputBlock({ content, isError }: { content: string; isError?: boolean }) {
-  const lines = content.split("\n");
+const BashOutputBlock = memo(function BashOutputBlock({ content, isError }: { content: string; isError?: boolean }) {
+  const lines = useMemo(() => content.split("\n"), [content]);
   const totalLines = lines.length;
+  const truncatedAnsi = useMemo(() => parseAnsi(lines.slice(-DEFAULT_BASH_LINES).join("\n")), [lines]);
 
   return (
     <CollapsibleBlock
@@ -296,14 +297,14 @@ function BashOutputBlock({ content, isError }: { content: string; isError?: bool
     >
       {({ showAll }) => (
         <pre className="whitespace-pre-wrap">
-          {parseAnsi(showAll ? lines.join("\n") : lines.slice(-DEFAULT_BASH_LINES).join("\n"))}
+          {showAll ? parseAnsi(content) : truncatedAnsi}
         </pre>
       )}
     </CollapsibleBlock>
   );
-}
+});
 
-function ThinkingBlock({ content }: { content: string }) {
+const ThinkingBlock = memo(function ThinkingBlock({ content }: { content: string }) {
   const [expanded, setExpanded] = useState(true);
 
   return (
@@ -329,7 +330,7 @@ function ThinkingBlock({ content }: { content: string }) {
       )}
     </div>
   );
-}
+});
 
 function CompactDivider() {
   return (

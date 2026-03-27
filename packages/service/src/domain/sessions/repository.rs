@@ -318,6 +318,8 @@ pub async fn get_feature_agent_state(
     pool: &SqlitePool,
     feature_id: i64,
     after_message_ids: Option<HashMap<i64, i64>>,
+    limit: Option<i64>,
+    before_message_ids: Option<HashMap<i64, i64>>,
 ) -> Result<FeatureAgentStateResponse, AppError> {
     let sessions = sqlx::query_as::<_, AgentSessionRow>(
         r#"SELECT id, feature_id, agent_type, claude_session_id, status, started_at, ended_at,
@@ -374,21 +376,56 @@ pub async fn get_feature_agent_state(
         }
     }
 
+    let before_map = before_message_ids.unwrap_or_default();
+
     // Batch-fetch messages for full-fetch sessions
     let mut full_messages: HashMap<i64, Vec<AgentMessageRow>> = HashMap::new();
+    // Track whether each session has older messages beyond what was fetched
+    let mut has_more_map: HashMap<i64, bool> = HashMap::new();
     if !full_fetch_ids.is_empty() {
-        let placeholders = full_fetch_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-        let sql = format!(
-            "SELECT id, session_id, content, message_type, tool_name, tool_use_id, parent_tool_use_id, created_at, model FROM agent_messages WHERE session_id IN ({}) ORDER BY id ASC",
-            placeholders
-        );
-        let mut q = sqlx::query_as::<_, AgentMessageRow>(&sql);
-        for sid in &full_fetch_ids {
-            q = q.bind(sid);
-        }
-        let msgs = q.fetch_all(pool).await?;
-        for msg in msgs {
-            full_messages.entry(msg.session_id).or_default().push(msg);
+        if limit.is_some() || !before_map.is_empty() {
+            // Per-session paginated fetch: latest N messages (or before a cursor)
+            let msg_limit = limit.unwrap_or(i64::MAX);
+            for sid in &full_fetch_ids {
+                let mut q = if let Some(&before_id) = before_map.get(sid) {
+                    sqlx::query_as::<_, AgentMessageRow>(
+                        "SELECT id, session_id, content, message_type, tool_name, tool_use_id, parent_tool_use_id, created_at, model FROM agent_messages WHERE session_id = ? AND id < ? ORDER BY id DESC LIMIT ?",
+                    )
+                    .bind(sid)
+                    .bind(before_id)
+                } else {
+                    sqlx::query_as::<_, AgentMessageRow>(
+                        "SELECT id, session_id, content, message_type, tool_name, tool_use_id, parent_tool_use_id, created_at, model FROM agent_messages WHERE session_id = ? ORDER BY id DESC LIMIT ?",
+                    )
+                    .bind(sid)
+                };
+                // Fetch limit+1 to detect has_more
+                q = q.bind(msg_limit + 1);
+                let mut msgs = q.fetch_all(pool).await?;
+                let has_more = msgs.len() as i64 > msg_limit;
+                if has_more {
+                    msgs.truncate(msg_limit as usize);
+                }
+                // Reverse to restore ASC order for block building
+                msgs.reverse();
+                has_more_map.insert(*sid, has_more);
+                full_messages.insert(*sid, msgs);
+            }
+        } else {
+            // Unbounded batch fetch (no limit) — original fast path
+            let placeholders = full_fetch_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+            let sql = format!(
+                "SELECT id, session_id, content, message_type, tool_name, tool_use_id, parent_tool_use_id, created_at, model FROM agent_messages WHERE session_id IN ({}) ORDER BY id ASC",
+                placeholders
+            );
+            let mut q = sqlx::query_as::<_, AgentMessageRow>(&sql);
+            for sid in &full_fetch_ids {
+                q = q.bind(sid);
+            }
+            let msgs = q.fetch_all(pool).await?;
+            for msg in msgs {
+                full_messages.entry(msg.session_id).or_default().push(msg);
+            }
         }
     }
 
@@ -517,6 +554,8 @@ pub async fn get_feature_agent_state(
             context_window: s.context_window.unwrap_or(200000),
             was_compacted: s.was_compacted != 0,
             draft_prompt: s.draft_prompt,
+            has_more: *has_more_map.get(&s.id).unwrap_or(&false),
+            oldest_message_id: msgs.first().map(|m| m.id),
         }
     }).collect();
 
@@ -898,7 +937,7 @@ mod tests {
         let session_id = insert_session(&pool, feature_id, "completed").await;
         insert_message(&pool, session_id, "text", "hello", None, None, None).await;
 
-        let state = get_feature_agent_state(&pool, feature_id, None).await.unwrap();
+        let state = get_feature_agent_state(&pool, feature_id, None, None, None).await.unwrap();
         assert_eq!(state.sessions.len(), 1);
         let s = &state.sessions[0];
         assert_eq!(s.session_db_id, session_id);
@@ -923,7 +962,7 @@ mod tests {
         // Fetch with after_message_ids = {session_id: msg1}
         let mut after = HashMap::new();
         after.insert(session_id, msg1);
-        let state = get_feature_agent_state(&pool, feature_id, Some(after)).await.unwrap();
+        let state = get_feature_agent_state(&pool, feature_id, Some(after), None, None).await.unwrap();
         assert_eq!(state.sessions.len(), 1);
         let s = &state.sessions[0];
         assert!(s.is_incremental);
@@ -936,8 +975,71 @@ mod tests {
     #[tokio::test]
     async fn test_get_feature_agent_state_no_sessions() {
         let pool = setup_test_db().await;
-        let state = get_feature_agent_state(&pool, 9999, None).await.unwrap();
+        let state = get_feature_agent_state(&pool, 9999, None, None, None).await.unwrap();
         assert!(state.sessions.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_get_feature_agent_state_with_limit() {
+        let pool = setup_test_db().await;
+        let fid: (i64,) = sqlx::query_as("INSERT INTO features (title) VALUES ('f') RETURNING id")
+            .fetch_one(&pool).await.unwrap();
+        let feature_id = fid.0;
+        let session_id = insert_session(&pool, feature_id, "completed").await;
+
+        // Insert 5 messages
+        for i in 0..5 {
+            insert_message(&pool, session_id, "text", &format!("msg {}", i), None, None, None).await;
+        }
+
+        // Fetch with limit=3 — should get only the last 3 messages
+        let state = get_feature_agent_state(&pool, feature_id, None, Some(3), None).await.unwrap();
+        let s = &state.sessions[0];
+        assert!(s.has_more, "should indicate more messages exist");
+        assert!(s.oldest_message_id.is_some());
+        // With limit=3 and text merging, blocks may be fewer than 3,
+        // but max_message_id should be the last message
+        assert!(s.max_message_id > 0);
+    }
+
+    #[tokio::test]
+    async fn test_get_feature_agent_state_with_before() {
+        let pool = setup_test_db().await;
+        let fid: (i64,) = sqlx::query_as("INSERT INTO features (title) VALUES ('f') RETURNING id")
+            .fetch_one(&pool).await.unwrap();
+        let feature_id = fid.0;
+        let session_id = insert_session(&pool, feature_id, "completed").await;
+
+        let mut msg_ids = Vec::new();
+        for i in 0..5 {
+            let id = insert_message(&pool, session_id, "tool_call", &format!("{{\"cmd\":\"{}\"}}", i), Some("Bash"), Some(&format!("tu-{}", i)), None).await;
+            msg_ids.push(id);
+        }
+
+        // Fetch messages before msg_ids[3] with limit=2
+        let mut before_map = HashMap::new();
+        before_map.insert(session_id, msg_ids[3]);
+        let state = get_feature_agent_state(&pool, feature_id, None, Some(2), Some(before_map)).await.unwrap();
+        let s = &state.sessions[0];
+        // Should get messages with id < msg_ids[3], limited to 2
+        assert_eq!(s.blocks.len(), 2);
+        assert!(s.has_more, "should have more messages before these");
+    }
+
+    #[tokio::test]
+    async fn test_get_feature_agent_state_no_limit_no_has_more() {
+        let pool = setup_test_db().await;
+        let fid: (i64,) = sqlx::query_as("INSERT INTO features (title) VALUES ('f') RETURNING id")
+            .fetch_one(&pool).await.unwrap();
+        let feature_id = fid.0;
+        let session_id = insert_session(&pool, feature_id, "completed").await;
+
+        insert_message(&pool, session_id, "text", "hello", None, None, None).await;
+
+        // Fetch without limit — has_more should be false
+        let state = get_feature_agent_state(&pool, feature_id, None, None, None).await.unwrap();
+        let s = &state.sessions[0];
+        assert!(!s.has_more);
     }
 
     #[tokio::test]

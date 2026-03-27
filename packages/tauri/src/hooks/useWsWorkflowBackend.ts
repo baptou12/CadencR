@@ -95,6 +95,8 @@ function queueItemToFeatureSession(
     contextWindow: agentState?.contextWindow ?? 200_000,
     wasCompacted: false,
     draftPrompt: null,
+    hasMore: agentState?.hasMore ?? false,
+    oldestMessageId: agentState?.oldestMessageId ?? null,
   };
 }
 
@@ -125,6 +127,8 @@ function agentStateToFeatureSession(
     contextWindow: agentState.contextWindow,
     wasCompacted: false,
     draftPrompt: null,
+    hasMore: agentState.hasMore ?? false,
+    oldestMessageId: agentState.oldestMessageId ?? null,
   };
 }
 
@@ -280,6 +284,7 @@ export function useWsWorkflowBackend(
     customInstance<FeatureAgentStateResponse>({
       url: `/api/features/${featureId}/agent-state`,
       method: "GET",
+      params: { limit: 100 },
     }).then((resp) => {
       // Single API call returns all sessions — distribute blocks to all agents
       for (const session of resp.sessions) {
@@ -289,16 +294,16 @@ export function useWsWorkflowBackend(
         const state = useWorkflowStore.getState();
         for (const [id, a] of state.activeAgents) {
           if (a.sessionId === session.sessionDbId) {
-            storeState.populateAgentBlocks(id, blocks);
+            storeState.populateAgentBlocks(id, blocks, session.hasMore, session.oldestMessageId);
             break;
           }
         }
         // Also check plan/prd slots
         if (state.planAgent?.sessionId === session.sessionDbId) {
-          storeState.populateAgentBlocks(AGENT_TYPE_SYNTHETIC_KEYS.plan, blocks);
+          storeState.populateAgentBlocks(AGENT_TYPE_SYNTHETIC_KEYS.plan, blocks, session.hasMore, session.oldestMessageId);
         }
         if (state.prdAgent?.sessionId === session.sessionDbId) {
-          storeState.populateAgentBlocks(AGENT_TYPE_SYNTHETIC_KEYS.prd, blocks);
+          storeState.populateAgentBlocks(AGENT_TYPE_SYNTHETIC_KEYS.prd, blocks, session.hasMore, session.oldestMessageId);
         }
       }
     }).catch(() => {
@@ -411,6 +416,46 @@ export function useWsWorkflowBackend(
 
     // Lazy history loading
     loadAgentHistory,
+
+    // Pagination: load older messages
+    loadOlderMessages: async (sessionDbId: number) => {
+      const state = useWorkflowStore.getState();
+      // Find the agent with this sessionDbId to get oldestMessageId
+      let agent: AgentSessionState | undefined;
+      let itemId: number | undefined;
+      if (state.planAgent?.sessionId === sessionDbId) {
+        agent = state.planAgent;
+        itemId = AGENT_TYPE_SYNTHETIC_KEYS.plan;
+      } else if (state.prdAgent?.sessionId === sessionDbId) {
+        agent = state.prdAgent;
+        itemId = AGENT_TYPE_SYNTHETIC_KEYS.prd;
+      } else {
+        for (const [id, a] of state.activeAgents) {
+          if (a.sessionId === sessionDbId) {
+            agent = a;
+            itemId = id;
+            break;
+          }
+        }
+      }
+      if (!agent || !agent.hasMore || agent.oldestMessageId == null || itemId == null) return;
+
+      const beforeParam = JSON.stringify({ [sessionDbId]: agent.oldestMessageId });
+      const resp = await customInstance<FeatureAgentStateResponse>({
+        url: `/api/features/${featureId}/agent-state`,
+        method: "GET",
+        params: { before: beforeParam, limit: 100 },
+      });
+
+      const serverSession = resp.sessions.find((s) => s.sessionDbId === sessionDbId);
+      if (!serverSession || serverSession.blocks.length === 0) {
+        state.populateOlderBlocks(itemId, [], false, null);
+        return;
+      }
+
+      const olderBlocks = serverBlocksToAgentBlocks(serverSession.blocks as never[]);
+      state.populateOlderBlocks(itemId, olderBlocks, serverSession.hasMore, serverSession.oldestMessageId);
+    },
 
     // Queue-specific
     skipItem: (itemId) => store.skipItem(itemId),

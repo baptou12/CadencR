@@ -118,6 +118,10 @@ pub struct SessionState {
     pub was_compacted: bool,
     #[serde(rename = "draftPrompt")]
     pub draft_prompt: Option<String>,
+    #[serde(rename = "hasMore")]
+    pub has_more: bool,
+    #[serde(rename = "oldestMessageId")]
+    pub oldest_message_id: Option<i64>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]

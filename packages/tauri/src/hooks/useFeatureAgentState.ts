@@ -11,13 +11,18 @@
  */
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { useGetFeatureAgentState } from "../api/generated";
+import { useGetFeatureAgentState, fetchFeatureAgentState } from "../api/generated";
 import type { AgentBlockData } from "@/components/AgentBlock";
 import type { AgentType } from "../types/agent-types";
 import type { AgentStatus, TodoItem } from "@/types/agent";
 import { parseAskUserQuestions } from "@/components/AgentQuestionDrawer";
 import type { AgentQuestion } from "@/components/AgentQuestionDrawer";
 import type { PendingPermission } from "@/components/ToolPermissionPrompt";
+
+/** Number of messages to fetch per session on initial load */
+const INITIAL_MESSAGE_LIMIT = 100;
+/** Number of messages to fetch when loading older history */
+const OLDER_MESSAGE_LIMIT = 100;
 
 // ---------------------------------------------------------------------------
 // Convert server blocks (plain objects) to AgentBlockData (with IDs)
@@ -66,6 +71,10 @@ interface AccumulatedSession {
   toolUseIdMap: Map<string, { toolName: string; block: AgentBlockData }>;
   /** Cached todos — preserved across incremental updates when server returns null */
   todos: TodoItem[] | null;
+  /** Whether older messages exist beyond the current window */
+  hasMore: boolean;
+  /** Lowest message ID in the current window (cursor for loading older) */
+  oldestMessageId: number | null;
 }
 
 /** Build the toolUseIdMap from a complete block tree (used on full fetch). */
@@ -194,6 +203,8 @@ export interface FeatureSession {
   contextWindow: number;
   wasCompacted: boolean;
   draftPrompt: string | null;
+  hasMore: boolean;
+  oldestMessageId: number | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -228,7 +239,9 @@ export function useFeatureAgentState(featureId: number) {
   }
 
   const afterParam = afterMessageIds ? JSON.stringify(afterMessageIds) : undefined;
-  const query = useGetFeatureAgentState(featureId, afterParam, { keepPreviousData: true });
+  // Only apply limit on initial load (no afterMessageIds yet)
+  const initialLimit = afterMessageIds ? undefined : INITIAL_MESSAGE_LIMIT;
+  const query = useGetFeatureAgentState(featureId, afterParam, { keepPreviousData: true }, initialLimit);
 
   const parseQuestions = useCallback((raw: unknown): AgentQuestion[] | null => {
     if (!raw || typeof raw !== "object") return null;
@@ -273,6 +286,8 @@ export function useFeatureAgentState(featureId: number) {
             maxMessageId: s.maxMessageId,
             toolUseIdMap: buildToolUseIdMap(newBlocks),
             todos: (s.todos as TodoItem[] | null) ?? null,
+            hasMore: s.hasMore ?? false,
+            oldestMessageId: s.oldestMessageId ?? null,
           };
           accMap.set(s.sessionDbId, acc);
         } else {
@@ -335,6 +350,8 @@ export function useFeatureAgentState(featureId: number) {
         contextWindow: s.contextWindow ?? 200000,
         wasCompacted: s.wasCompacted ?? false,
         draftPrompt: (s as unknown as { draftPrompt?: string | null }).draftPrompt ?? null,
+        hasMore: acc?.hasMore ?? s.hasMore ?? false,
+        oldestMessageId: acc?.oldestMessageId ?? s.oldestMessageId ?? null,
       };
     });
   }, [query.data, parseQuestions]);
@@ -347,9 +364,52 @@ export function useFeatureAgentState(featureId: number) {
     }
   }, [query.data]);
 
+  const loadOlderMessages = useCallback(async (sessionDbId: number) => {
+    const acc = accumulatedRef.current.get(sessionDbId);
+    if (!acc || !acc.hasMore || acc.oldestMessageId == null) return;
+
+    const beforeParam = JSON.stringify({ [sessionDbId]: acc.oldestMessageId });
+    const data = await fetchFeatureAgentState(featureId, {
+      before: beforeParam,
+      limit: OLDER_MESSAGE_LIMIT,
+    });
+
+    const serverSession = data.sessions.find((s) => s.sessionDbId === sessionDbId);
+    if (!serverSession) return;
+
+    const olderBlocks = serverBlocksToAgentBlocks(serverSession.blocks as ServerBlock[]);
+    if (olderBlocks.length === 0) {
+      acc.hasMore = false;
+      return;
+    }
+
+    // Register tool_call blocks from older messages so future merges work
+    for (const block of olderBlocks) {
+      if (block.type === "tool_call" && block.toolUseId) {
+        acc.toolUseIdMap.set(block.toolUseId, { toolName: block.toolName ?? "tool", block });
+      }
+      if (block.childBlocks) {
+        for (const child of block.childBlocks) {
+          if (child.type === "tool_call" && child.toolUseId) {
+            acc.toolUseIdMap.set(child.toolUseId, { toolName: child.toolName ?? "tool", block: child });
+          }
+        }
+      }
+    }
+
+    // Prepend older blocks
+    acc.blocks = [...olderBlocks, ...acc.blocks];
+    acc.hasMore = serverSession.hasMore ?? false;
+    acc.oldestMessageId = serverSession.oldestMessageId ?? null;
+
+    // Force re-render
+    setDataVersion((v) => v + 1);
+  }, [featureId]);
+
   return {
     sessions,
     isLoading: query.isLoading,
     refetch: query.refetch,
+    loadOlderMessages,
   };
 }

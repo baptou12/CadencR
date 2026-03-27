@@ -27,6 +27,8 @@ function makeEntry(overrides: Partial<FeatureSession>): FeatureSession {
     contextWindow: 200000,
     wasCompacted: false,
     draftPrompt: null,
+    hasMore: false,
+    oldestMessageId: null,
     ...overrides,
   };
 }

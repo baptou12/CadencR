@@ -146,7 +146,7 @@ describe("ws-session-store", () => {
     // Ensure session exists first
     useWsSessionStore.getState().connect("s1");
     const blocks = [{ id: "b1", type: "text" as const, content: "restored" }];
-    useWsSessionStore.getState().setPersistedState("s1", blocks, "completed");
+    useWsSessionStore.getState().setPersistedState("s1", { blocks, status: "completed" });
     const session = useWsSessionStore.getState().sessions["s1"];
     expect(session.blocks).toEqual(blocks);
     expect(session.status).toBe("completed");
@@ -548,7 +548,7 @@ describe("ws-session-store", () => {
       },
       { id: "b3", type: "text" as const, content: "done" },
     ];
-    useWsSessionStore.getState().setPersistedState("s1", blocks, "completed");
+    useWsSessionStore.getState().setPersistedState("s1", { blocks, status: "completed" });
     const session = useWsSessionStore.getState().sessions["s1"];
     expect(session.todos).toEqual([
       { content: "Restored task", status: "pending", activeForm: "Restoring" },
@@ -574,7 +574,7 @@ describe("ws-session-store", () => {
         ],
       },
     ];
-    useWsSessionStore.getState().setPersistedState("s1", blocks, "completed");
+    useWsSessionStore.getState().setPersistedState("s1", { blocks, status: "completed" });
     const session = useWsSessionStore.getState().sessions["s1"];
     expect(session.todos).toEqual([
       { content: "Child task", status: "completed", activeForm: "Done" },
@@ -584,7 +584,7 @@ describe("ws-session-store", () => {
   it("setPersistedState without TodoWrite blocks leaves todos empty", () => {
     useWsSessionStore.getState().connect("s1");
     const blocks = [{ id: "b1", type: "text" as const, content: "no todos here" }];
-    useWsSessionStore.getState().setPersistedState("s1", blocks, "completed");
+    useWsSessionStore.getState().setPersistedState("s1", { blocks, status: "completed" });
     const session = useWsSessionStore.getState().sessions["s1"];
     expect(session.todos).toEqual([]);
   });

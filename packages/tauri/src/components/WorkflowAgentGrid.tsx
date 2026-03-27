@@ -105,6 +105,8 @@ export function WorkflowAgentGrid({
         planApproveLabel="Approve"
         onPlanApprove={() => backend.approvePlan(entry.subprocessId, entry.sessionDbId)}
         onPlanRequestChanges={(feedback: string) => backend.rejectPlan(feedback, entry.subprocessId, entry.sessionDbId)}
+        hasMore={entry.hasMore}
+        onLoadOlder={backend.loadOlderMessages ? () => backend.loadOlderMessages!(entry.sessionDbId) : undefined}
         className={
           isGridItem
             ? "min-h-0 h-full shrink overflow-hidden"

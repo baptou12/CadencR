@@ -262,6 +262,10 @@ export interface AgentSessionProps {
   slashCommandsOverride?: import("@/hooks/useSlashCommand").SlashCommand[];
   /** Whether the override commands are still loading */
   slashCommandsLoading?: boolean;
+  /** Whether older messages exist beyond current window */
+  hasMore?: boolean;
+  /** Called when user scrolls to top and older messages should be loaded */
+  onLoadOlder?: () => Promise<void>;
 }
 
 /** Handle exposed by AgentSession via forwardRef */
@@ -330,6 +334,8 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
   claudeSessionId,
   slashCommandsOverride,
   slashCommandsLoading,
+  hasMore,
+  onLoadOlder,
 }, ref) {
   const promptBarRef = useRef<AgentPromptBarHandle>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -353,18 +359,31 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
   // re-enabled when the prompt bar is focused.
   const autoScrollRef = useRef(true);
 
-  // Disable autoscroll when user scrolls up, re-enable when scrolled to bottom.
-  // Re-attach when the collapsible panel toggles (scroll container remounts).
+  // Single scroll handler: autoscroll detection + load-older trigger.
+  const loadingOlderRef = useRef(false);
   useEffect(() => {
     const el = scrollContainerRef.current;
     if (!el) return;
     const onScroll = () => {
       const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
       autoScrollRef.current = atBottom;
+
+      if (hasMore && onLoadOlder && !loadingOlderRef.current && el.scrollTop < 800) {
+        loadingOlderRef.current = true;
+        const prevHeight = el.scrollHeight;
+        onLoadOlder().then(() => {
+          requestAnimationFrame(() => {
+            el.scrollTop += el.scrollHeight - prevHeight;
+            loadingOlderRef.current = false;
+          });
+        }).catch(() => {
+          loadingOlderRef.current = false;
+        });
+      }
     };
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => el.removeEventListener("scroll", onScroll);
-  }, [isOpen]);
+  }, [isOpen, hasMore, onLoadOlder]);
 
   // Re-enable autoscroll when prompt bar is focused.
   useEffect(() => {
@@ -563,6 +582,11 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
           <p className="text-sm text-muted-foreground">
             {collapsible ? "No output yet" : "Send a message to start a session with Claude Code."}
           </p>
+        </div>
+      )}
+      {hasMore && (
+        <div className="flex justify-center py-2">
+          <Loader2Icon className="h-4 w-4 animate-spin text-muted-foreground" />
         </div>
       )}
       {blocks.length > 0 && (

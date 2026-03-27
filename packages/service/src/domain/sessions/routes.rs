@@ -13,6 +13,10 @@ use crate::error::AppError;
 pub struct AgentStateParams {
     /// JSON-encoded map of session_id -> last_message_id for incremental fetching
     pub after: Option<String>,
+    /// Max number of messages per session for initial load (default: all)
+    pub limit: Option<i64>,
+    /// JSON-encoded map of session_id -> before_message_id for loading older messages
+    pub before: Option<String>,
 }
 
 #[utoipa::path(get, path = "/api/features/{feature_id}/sessions",
@@ -36,7 +40,10 @@ pub async fn get_feature_agent_state_handler(
     let after_map: Option<HashMap<i64, i64>> = params.after
         .as_deref()
         .and_then(|s| serde_json::from_str(s).ok());
-    Ok(Json(repository::get_feature_agent_state(&state.read_pool, feature_id, after_map).await?))
+    let before_map: Option<HashMap<i64, i64>> = params.before
+        .as_deref()
+        .and_then(|s| serde_json::from_str(s).ok());
+    Ok(Json(repository::get_feature_agent_state(&state.read_pool, feature_id, after_map, params.limit, before_map).await?))
 }
 
 #[utoipa::path(get, path = "/api/sessions/{session_id}/draft",

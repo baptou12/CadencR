@@ -1,3 +1,4 @@
+import { memo, useMemo } from "react";
 import { format, isToday } from "date-fns";
 import { AgentBlock, type AgentBlockData } from "./AgentBlock";
 import { parseUTCDateTime } from "@/lib/date-utils";
@@ -16,10 +17,12 @@ interface AgentStreamProps {
   basePath?: string;
 }
 
-export function AgentStream({ blocks, isStreaming, basePath }: AgentStreamProps) {
+export const AgentStream = memo(function AgentStream({ blocks, isStreaming, basePath }: AgentStreamProps) {
+  const rootBlocks = useMemo(() => blocks.filter((b) => !b.parentToolUseId), [blocks]);
+
   return (
     <div className="space-y-1 p-3">
-      {blocks.filter((b) => !b.parentToolUseId).map((block) => (
+      {rootBlocks.map((block) => (
         <div key={block.id}>
           {(block.type === "text" || block.type === "user_message") && block.createdAt && (
             <div className={`text-xs text-muted-foreground/60 mt-2 mb-0.5 ${block.type === "user_message" ? "text-right" : ""}`}>
@@ -44,4 +47,4 @@ export function AgentStream({ blocks, isStreaming, basePath }: AgentStreamProps)
       )}
     </div>
   );
-}
+});

@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { memo, useMemo } from "react";
 import { Fragment, jsx, jsxs } from "react/jsx-runtime";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -11,6 +11,29 @@ import { useCodeBlockActions } from "@/components/CodeBlockActionsContext";
 import "./dracula-highlight.css";
 
 const lowlight = createLowlight(all);
+
+/** Cache for syntax-highlighted JSX to avoid re-highlighting identical code blocks. */
+const highlightCache = new Map<string, React.ReactNode>();
+const HIGHLIGHT_CACHE_MAX = 200;
+
+function cachedHighlight(lang: string, code: string): React.ReactNode {
+  const key = `${lang}\0${code}`;
+  const cached = highlightCache.get(key);
+  if (cached !== undefined) return cached;
+  try {
+    const tree = lowlight.highlight(lang, code);
+    const result = toJsxRuntime(tree, { Fragment, jsx, jsxs });
+    if (highlightCache.size >= HIGHLIGHT_CACHE_MAX) {
+      // Evict oldest entry
+      const firstKey = highlightCache.keys().next().value;
+      if (firstKey !== undefined) highlightCache.delete(firstKey);
+    }
+    highlightCache.set(key, result);
+    return result;
+  } catch {
+    return null;
+  }
+}
 
 /** Extract plain text from React children (handles nested elements from react-markdown). */
 function extractText(children: React.ReactNode): string {
@@ -53,13 +76,7 @@ function buildComponents(sendToTerminal?: (cmd: string) => void): Components {
         const lang = match?.[1] ?? "text";
         const code = extractText(children).replace(/\n$/, "");
         const isShell = SHELL_LANGUAGES.has(lang);
-        let highlighted: React.ReactNode = children;
-        try {
-          const tree = lowlight.highlight(lang, code);
-          highlighted = toJsxRuntime(tree, { Fragment, jsx, jsxs });
-        } catch {
-          // Unknown language or parse error — fall back to plain text
-        }
+        const highlighted = cachedHighlight(lang, code) ?? children;
         return (
           <div className="my-1 rounded-md border border-border bg-muted/50 overflow-hidden group/codeblock">
             <CodeBlockHeader
@@ -132,7 +149,7 @@ function preprocessContent(raw: string): string {
   return raw.replace(/---PLAN_START---|---PLAN_END---/g, "\n---\n");
 }
 
-export function Markdown({ content, className }: MarkdownProps) {
+export const Markdown = memo(function Markdown({ content, className }: MarkdownProps) {
   const { sendToTerminal } = useCodeBlockActions();
   const components = useMemo(() => buildComponents(sendToTerminal), [sendToTerminal]);
 
@@ -143,4 +160,4 @@ export function Markdown({ content, className }: MarkdownProps) {
       </ReactMarkdown>
     </div>
   );
-}
+});
