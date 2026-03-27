@@ -251,7 +251,7 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
 function createXtermInstance(): Terminal {
   return new Terminal({
     cursorBlink: true,
-    cursorStyle: "bar",
+    cursorStyle: "block",
     cursorWidth: 2,
     fontSize: 13,
     lineHeight: 1.2,
