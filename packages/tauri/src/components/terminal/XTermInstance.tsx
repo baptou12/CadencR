@@ -20,11 +20,15 @@ interface XTermInstanceProps {
   initialCommand?: string;
   /** Called after the initial command has been written so the parent can clear it from state */
   onInitialCommandConsumed?: () => void;
+  /** Called when the terminal receives focus */
+  onTerminalFocus?: () => void;
 }
 
 export interface XTermInstanceHandle {
   /** Focus this terminal instance */
   focus: () => void;
+  /** Blur this terminal instance and stop cursor blink */
+  blur: () => void;
   /** Mark this instance for PTY kill on next unmount */
   markForKill: () => void;
 }
@@ -40,6 +44,7 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
       killOnUnmount = false,
       initialCommand,
       onInitialCommandConsumed,
+      onTerminalFocus,
     },
     ref,
   ) {
@@ -52,13 +57,26 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
     const shouldKillRef = useRef(killOnUnmount);
 
     shouldKillRef.current = killOnUnmount;
+    const onTerminalFocusRef = useRef(onTerminalFocus);
+    onTerminalFocusRef.current = onTerminalFocus;
     const initialCommandRef = useRef(initialCommand);
     initialCommandRef.current = initialCommand;
     const onInitialCommandConsumedRef = useRef(onInitialCommandConsumed);
     onInitialCommandConsumedRef.current = onInitialCommandConsumed;
 
     useImperativeHandle(ref, () => ({
-      focus: () => terminalRef.current?.focus(),
+      focus: () => {
+        const term = terminalRef.current;
+        if (!term) return;
+        term.options.cursorBlink = true;
+        term.focus();
+      },
+      blur: () => {
+        const term = terminalRef.current;
+        if (!term) return;
+        term.options.cursorBlink = false;
+        term.blur();
+      },
       markForKill: () => {
         shouldKillRef.current = true;
       },
@@ -193,6 +211,10 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
       terminalRef.current = terminal;
       fitAddonRef.current = fitAddon;
 
+      // Notify parent when this terminal gets focus (for active pane tracking)
+      const onFocusHandler = () => onTerminalFocusRef.current?.();
+      terminal.textarea?.addEventListener("focus", onFocusHandler);
+
       // User input → WebSocket
       const dataDisposable = terminal.onData((data: string) => {
         if (ptyIdRef.current && !exitedRef.current) {
@@ -224,6 +246,7 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
       return () => {
         mountedRef.current = false;
         resizeObserver.disconnect();
+        terminal.textarea?.removeEventListener("focus", onFocusHandler);
         dataDisposable.dispose();
 
         if (ptyIdRef.current && !exitedRef.current && shouldKillRef.current) {

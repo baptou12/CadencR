@@ -9,15 +9,18 @@ interface FeatureTabBarProps {
   onTabChange: (tab: FeatureTab) => void;
   gitStats?: { insertions: number; deletions: number } | null;
   gitBranch?: string | null;
+  terminalPaneCount?: number;
+  /** Called when CMD+SHIFT+T is pressed — parent handles focus/create logic */
+  onTerminalActivate?: () => void;
 }
 
 const TABS: { id: FeatureTab; label: string; icon: typeof BotIcon; keys: string[] }[] = [
   { id: "agent", label: "Agent", icon: BotIcon, keys: ["cmd", "shift", "A"] },
   { id: "terminal", label: "Terminal", icon: TerminalIcon, keys: ["cmd", "shift", "T"] },
-  { id: "git", label: "Git", icon: GitCompareArrowsIcon, keys: ["cmd", "shift", "D"] },
+  { id: "git", label: "Git", icon: GitCompareArrowsIcon, keys: ["cmd", "shift", "G"] },
 ];
 
-export function FeatureTabBar({ activeTab, onTabChange, gitStats, gitBranch }: FeatureTabBarProps) {
+export function FeatureTabBar({ activeTab, onTabChange, gitStats, gitBranch, terminalPaneCount, onTerminalActivate }: FeatureTabBarProps) {
   useHotkeys(
     "meta+shift+a",
     (e) => { e.preventDefault(); onTabChange("agent"); },
@@ -26,12 +29,16 @@ export function FeatureTabBar({ activeTab, onTabChange, gitStats, gitBranch }: F
 
   useHotkeys(
     "meta+shift+t",
-    (e) => { e.preventDefault(); onTabChange("terminal"); },
+    (e) => {
+      e.preventDefault();
+      onTabChange("terminal");
+      onTerminalActivate?.();
+    },
     { enableOnFormTags: true, enableOnContentEditable: true },
   );
 
   useHotkeys(
-    "meta+shift+d",
+    "meta+shift+g",
     (e) => { e.preventDefault(); onTabChange("git"); },
     { enableOnFormTags: true, enableOnContentEditable: true },
   );
@@ -52,6 +59,9 @@ export function FeatureTabBar({ activeTab, onTabChange, gitStats, gitBranch }: F
         >
           <tab.icon className="size-4" />
           {tab.label}
+          {tab.id === "terminal" && terminalPaneCount != null && terminalPaneCount > 0 && (
+            <span className="text-muted-foreground">({terminalPaneCount})</span>
+          )}
           {tab.id === "git" && gitBranch && (
             <span className="truncate max-w-[120px]">{gitBranch}</span>
           )}

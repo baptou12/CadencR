@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { useGetFeaturePrd, useListProjects, useGetStats } from "@/api/generated";
 import { FeatureTopBar } from "@/components/FeatureTopBar";
 import { FeatureTabBar } from "@/components/FeatureTabBar";
-import { FeatureTerminalTab } from "@/components/FeatureTerminalTab";
+import { FeatureTerminalTab, type FeatureTerminalTabHandle } from "@/components/FeatureTerminalTab";
 import { FeatureGitTab } from "@/components/FeatureGitTab";
 import { AGENT_LABELS } from "@/components/AgentSession";
 import { WorkflowAgentGrid } from "@/components/WorkflowAgentGrid";
@@ -18,7 +18,7 @@ import { WorktreeSetupSection } from "@/components/WorktreeSetupSection";
 import type { FeatureSession } from "@/hooks/useFeatureAgentState";
 import type { ContextUsageState } from "@/types/agent";
 import { useResolvedModel } from "@/hooks/useResolvedModel";
-import { useTerminalStore } from "@/hooks/useTerminalState";
+import { useTerminalStore, getLeaves } from "@/hooks/useTerminalState";
 import { useActiveTab } from "@/hooks/useActiveTab";
 import { useSaveLastOpenedFeature } from "@/hooks/useSaveLastOpenedFeature";
 import { useWorkflowKeyboard } from "@/hooks/useWorkflowKeyboard";
@@ -156,8 +156,16 @@ export function FeatureWorkflowView({
     { refetchInterval: 5 * 60 * 1000 },
   );
 
-  // Terminal send-to-terminal action for code blocks
+  // Terminal state
   const sendToTerminalStore = useTerminalStore((s) => s.sendToTerminal);
+  const terminalPaneCount = useTerminalStore((s) => {
+    const root = s.getFeature(featureId).root;
+    return root ? getLeaves(root).length : 0;
+  });
+  const terminalTabRef = useRef<FeatureTerminalTabHandle>(null);
+  const handleTerminalActivate = useCallback(() => {
+    requestAnimationFrame(() => terminalTabRef.current?.activate());
+  }, []);
   const codeBlockActions = useMemo<CodeBlockActions>(
     () => ({ sendToTerminal: (cmd) => sendToTerminalStore(featureId, cmd) }),
     [sendToTerminalStore, featureId],
@@ -185,10 +193,10 @@ export function FeatureWorkflowView({
     <CodeBlockActionsContext.Provider value={codeBlockActions}>
     <div className="relative flex h-full flex-col">
       <FeatureTopBar featureId={featureId} projectId={projectId} />
-      <FeatureTabBar activeTab={activeTab} onTabChange={setActiveTab} gitStats={gitStats} gitBranch={backend.worktreeBranch} />
+      <FeatureTabBar activeTab={activeTab} onTabChange={setActiveTab} gitStats={gitStats} gitBranch={backend.worktreeBranch} terminalPaneCount={terminalPaneCount} onTerminalActivate={handleTerminalActivate} />
       <div className="relative min-h-0 flex-1 overflow-hidden">
         {/* Terminal tab — stays mounted to preserve PTY */}
-        <FeatureTerminalTab featureId={featureId} projectId={projectId} hidden={activeTab !== "terminal"} />
+        <FeatureTerminalTab ref={terminalTabRef} featureId={featureId} projectId={projectId} hidden={activeTab !== "terminal"} />
 
         {/* Git tab */}
         {activeTab === "git" && (

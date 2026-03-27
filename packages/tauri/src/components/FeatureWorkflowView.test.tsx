@@ -101,8 +101,13 @@ vi.mock("@/hooks/useTerminalState", () => ({
     openPane: vi.fn(),
     closePane: vi.fn(),
   })),
+  getLeaves: vi.fn(() => []),
   useTerminalStore: vi.fn((selector) =>
-    selector({ sendToTerminal: vi.fn(), clearInitialCommand: vi.fn() }),
+    selector({
+      sendToTerminal: vi.fn(),
+      clearInitialCommand: vi.fn(),
+      getFeature: () => ({ root: null, isOpen: false, isMinimized: false }),
+    }),
   ),
 }));
 

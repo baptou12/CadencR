@@ -44,7 +44,7 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
   {
     title: "Feature / Workflow",
     shortcuts: [
-      { keys: ["⌘", "⇧", "D"], description: "Feature diff" },
+      { keys: ["⌘", "⇧", "G"], description: "Git panel" },
       { keys: ["⌘", "⇧", "P"], description: "Feature settings" },
       { keys: ["⌘", "⇧", "B"], description: "Start / continue build" },
       { keys: ["⌘", "⇧", "S"], description: "Start session" },
@@ -57,7 +57,7 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
   {
     title: "Agent / Prompt",
     shortcuts: [
-      { keys: ["⌘", "D"], description: "Agent diff (current agent)" },
+      { keys: ["⌘", "G"], description: "Agent diff (current agent)" },
       { keys: ["⌘", "P"], description: "Cycle model" },
       { keys: ["⌘", "Enter"], description: "Maximize agent" },
       { keys: ["⌘", "⇧", "Z"], description: "Collapse agent" },
@@ -92,7 +92,8 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
     title: "Terminal",
     shortcuts: [
       { keys: ["^", "`"], description: "Toggle terminal" },
-      { keys: ["^", "⇧", "`"], description: "New pane" },
+      { keys: ["⌘", "D"], description: "Split vertical" },
+      { keys: ["⌘", "⇧", "D"], description: "Split horizontal" },
       { keys: ["⌘", "⌥", "←/→"], description: "Switch panes" },
     ],
   },

@@ -64,7 +64,7 @@ function WebSocketSessionPage() {
   const [inlineDiffOpen, setInlineDiffOpen] = useState(false);
   const handleViewDiff = useCallback(() => setInlineDiffOpen(true), []);
   useHotkeys(
-    "meta+d",
+    "meta+g",
     (e) => {
       e.preventDefault();
       setInlineDiffOpen(true);

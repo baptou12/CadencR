@@ -159,7 +159,7 @@ export function useWorkflowKeyboard(
     return null;
   }, [backend.sessionEntries]);
 
-  useHotkeys("meta+d", (e) => {
+  useHotkeys("meta+g", (e) => {
     e.preventDefault();
     if (getFocusedEntry()) onViewDiff();
   }, { enableOnFormTags: true, enableOnContentEditable: true });
