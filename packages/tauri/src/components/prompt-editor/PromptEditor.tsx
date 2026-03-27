@@ -17,6 +17,7 @@ import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext
 import { ListItemNode, ListNode } from "@lexical/list";
 import { HeadingNode, QuoteNode } from "@lexical/rich-text";
 import {
+  $convertToMarkdownString,
   BOLD_ITALIC_STAR,
   BOLD_ITALIC_UNDERSCORE,
   BOLD_STAR,
@@ -141,7 +142,7 @@ const PromptEditorInner = forwardRef<PromptEditorHandle, PromptEditorProps>(
       getText() {
         let text = "";
         editorRef.current?.getEditorState().read(() => {
-          text = $getRoot().getTextContent();
+          text = $convertToMarkdownString(MARKDOWN_TRANSFORMERS);
         });
         return text;
       },
@@ -151,7 +152,7 @@ const PromptEditorInner = forwardRef<PromptEditorHandle, PromptEditorProps>(
       (_editorState: EditorState, editor: LexicalEditor) => {
         if (!onChange) return;
         editor.getEditorState().read(() => {
-          onChange($getRoot().getTextContent());
+          onChange($convertToMarkdownString(MARKDOWN_TRANSFORMERS));
         });
       },
       [onChange],
