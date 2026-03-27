@@ -62,7 +62,7 @@ export const Route = createRootRoute({
 
 function RootLayout() {
   useOperationToasts();
-  const leftWidth = useDebouncedSetting("sidebar_left_width");
+  const leftWidth = useDebouncedSetting("sidebar_left_width", 300, { immediateCache: false });
   const navigate = useNavigate();
   const leftSidebarRef = useRef<HTMLDivElement>(null);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);

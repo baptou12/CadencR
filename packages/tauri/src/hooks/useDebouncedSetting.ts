@@ -10,7 +10,7 @@ import {
  * Returns a debounced setter that persists a value to the settings table,
  * plus the current persisted value (or null if not yet set).
  */
-export function useDebouncedSetting(key: string, debounceMs = 300) {
+export function useDebouncedSetting(key: string, debounceMs = 300, { immediateCache = true } = {}) {
   const query = useGetWorkspaceSetting(key);
   const mutation = useSetWorkspaceSetting();
   const queryClient = useQueryClient();
@@ -18,8 +18,11 @@ export function useDebouncedSetting(key: string, debounceMs = 300) {
 
   const setValue = useCallback(
     (value: string) => {
-      // Update cache immediately so UI responds instantly
-      queryClient.setQueryData(getGetWorkspaceSettingQueryKey(key), { value });
+      // Update cache immediately so UI responds instantly (skip for continuous
+      // updates like drag-resize where re-renders disrupt the interaction)
+      if (immediateCache) {
+        queryClient.setQueryData(getGetWorkspaceSettingQueryKey(key), { value });
+      }
 
       if (timerRef.current) clearTimeout(timerRef.current);
       timerRef.current = setTimeout(() => {
@@ -33,7 +36,7 @@ export function useDebouncedSetting(key: string, debounceMs = 300) {
         );
       }, debounceMs);
     },
-    [key, debounceMs, mutation, queryClient],
+    [key, debounceMs, immediateCache, mutation, queryClient],
   );
 
   return { value: query.data?.value ?? null, setValue, isLoading: query.isLoading };

@@ -12,11 +12,13 @@ vi.mock("../api/generated", () => ({
   getGetWorkspaceSettingQueryKey: vi.fn((key: string) => ["workspace", "settings", key]),
 }));
 
+const mockSetQueryData = vi.fn();
+
 vi.mock("@tanstack/react-query", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@tanstack/react-query")>();
   return {
     ...actual,
-    useQueryClient: vi.fn(() => ({ invalidateQueries: mockInvalidateQueries, setQueryData: vi.fn() })),
+    useQueryClient: vi.fn(() => ({ invalidateQueries: mockInvalidateQueries, setQueryData: mockSetQueryData })),
   };
 });
 
@@ -25,6 +27,7 @@ describe("useDebouncedSetting", () => {
     vi.useFakeTimers();
     mockMutate.mockClear();
     mockInvalidateQueries.mockClear();
+    mockSetQueryData.mockClear();
     mockUseQuery.mockReturnValue({ data: { value: "stored-value" }, isLoading: false });
   });
 
@@ -96,6 +99,35 @@ describe("useDebouncedSetting", () => {
     mockUseQuery.mockReturnValueOnce({ data: null as any, isLoading: false });
     const { result } = renderHook(() => useDebouncedSetting("missing-key"));
     expect(result.current.value).toBeNull();
+  });
+
+  it("updates query cache immediately by default", () => {
+    const { result } = renderHook(() => useDebouncedSetting("my-key"));
+    act(() => {
+      result.current.setValue("new-value");
+    });
+    expect(mockSetQueryData).toHaveBeenCalledWith(
+      ["workspace", "settings", "my-key"],
+      { value: "new-value" },
+    );
+  });
+
+  it("skips immediate cache update when immediateCache is false", () => {
+    const { result } = renderHook(() =>
+      useDebouncedSetting("my-key", 300, { immediateCache: false }),
+    );
+    act(() => {
+      result.current.setValue("new-value");
+    });
+    expect(mockSetQueryData).not.toHaveBeenCalled();
+    // But mutation still fires after debounce
+    act(() => {
+      vi.advanceTimersByTime(300);
+    });
+    expect(mockMutate).toHaveBeenCalledWith(
+      { key: "my-key", value: "new-value" },
+      expect.any(Object),
+    );
   });
 
   it("isLoading reflects query loading state", () => {
