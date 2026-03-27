@@ -3,6 +3,7 @@ import { useHotkeys } from "react-hotkeys-hook";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { KbdShortcut } from "@/components/KbdShortcut";
 import { SendIcon, MessageCircleQuestionIcon, ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 
 /** A single question from an AskUserQuestion tool call */
@@ -340,7 +341,7 @@ export function AgentQuestionDrawer({ questions, onSubmit, open, inline, disable
               onClick={() => handleOptionToggle(option.label)}
             >
               <span className="text-sm font-medium text-foreground">
-                <kbd className="mr-1.5 inline-flex size-5 items-center justify-center rounded border border-border bg-muted text-[10px] text-foreground">{optIdx + 1}</kbd>
+                <KbdShortcut keys={[String(optIdx + 1)]} variant="square" />
                 {option.label}
               </span>
               {option.description && (
@@ -361,7 +362,7 @@ export function AgentQuestionDrawer({ questions, onSubmit, open, inline, disable
             onClick={handleOtherToggle}
           >
             <span className="text-sm font-medium text-foreground">
-              <kbd className="mr-1.5 inline-flex size-5 items-center justify-center rounded border border-border bg-muted text-[10px] text-foreground">{currentQuestion.options!.length + 1}</kbd>
+              <KbdShortcut keys={[String(currentQuestion.options!.length + 1)]} variant="square" />
               Other...
             </span>
           </button>

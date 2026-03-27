@@ -16,7 +16,6 @@ describe("KbdShortcut", () => {
 
   it("renders cmd icon for cmd key", () => {
     const { container } = render(<KbdShortcut keys={["cmd"]} />);
-    // cmd key renders an svg icon, no text
     expect(container.querySelector("svg")).toBeInTheDocument();
   });
 
@@ -34,5 +33,20 @@ describe("KbdShortcut", () => {
   it("renders as kbd element", () => {
     const { container } = render(<KbdShortcut keys={["X"]} />);
     expect(container.querySelector("kbd")).toBeInTheDocument();
+  });
+
+  it("renders square variant", () => {
+    const { container } = render(<KbdShortcut keys={["1"]} variant="square" />);
+    const kbd = container.querySelector("kbd");
+    expect(kbd).toBeInTheDocument();
+    expect(kbd?.className).toContain("size-6");
+    expect(screen.getByText("1")).toBeInTheDocument();
+  });
+
+  it("renders modal variant", () => {
+    const { container } = render(<KbdShortcut keys={["⌘"]} variant="modal" />);
+    const kbd = container.querySelector("kbd");
+    expect(kbd).toBeInTheDocument();
+    expect(kbd?.className).toContain("font-mono");
   });
 });

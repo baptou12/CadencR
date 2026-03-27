@@ -3,6 +3,7 @@ import { useHotkeys } from "react-hotkeys-hook";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { KbdShortcut } from "@/components/KbdShortcut";
 import { ShieldAlertIcon, SendIcon } from "lucide-react";
 
 export interface PendingPermission {
@@ -148,7 +149,7 @@ export function ToolPermissionPrompt({ permission, onDecision, disableShortcuts 
           onClick={handleAllowOnce}
         >
           <span className="text-sm font-medium text-foreground">
-            <kbd className="mr-1.5 inline-flex size-5 items-center justify-center rounded border border-border bg-muted text-[10px] text-foreground">1</kbd>
+            <KbdShortcut keys={["1"]} variant="square" />
             Allow once
           </span>
           <span className="mt-0.5 block text-xs text-muted-foreground">Approve this tool call only</span>
@@ -165,7 +166,7 @@ export function ToolPermissionPrompt({ permission, onDecision, disableShortcuts 
           onClick={handleAllowFuture}
         >
           <span className="text-sm font-medium text-foreground">
-            <kbd className="mr-1.5 inline-flex size-5 items-center justify-center rounded border border-border bg-muted text-[10px] text-foreground">2</kbd>
+            <KbdShortcut keys={["2"]} variant="square" />
             Allow for future use
           </span>
           <span className="mt-0.5 block text-xs text-muted-foreground">
@@ -184,7 +185,7 @@ export function ToolPermissionPrompt({ permission, onDecision, disableShortcuts 
           onClick={handleDeny}
         >
           <span className="text-sm font-medium text-foreground">
-            <kbd className="mr-1.5 inline-flex size-5 items-center justify-center rounded border border-border bg-muted text-[10px] text-foreground">3</kbd>
+            <KbdShortcut keys={["3"]} variant="square" />
             Deny
           </span>
           <span className="mt-0.5 block text-xs text-muted-foreground">Reject this tool call (with optional feedback)</span>
