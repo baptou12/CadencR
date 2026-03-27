@@ -202,11 +202,11 @@ interface WorkflowState {
 export type AgentSlot =
   | { type: "plan" }
   | { type: "prd" }
-  | { type: "session" }
+  | { type: "session"; id: number }
   | { type: "refine" }
-  | { type: "review_fixer" }
-  | { type: "risk" }
-  | { type: "retro" }
+  | { type: "review_fixer"; id: number }
+  | { type: "risk"; id: number }
+  | { type: "retro"; id: number }
   | { type: "queue_item"; id: number };
 
 /** Convert an AgentSlot to a stable string key for use as Map keys. */
@@ -233,11 +233,11 @@ function legacyIdToSlot(id: number): AgentSlot {
   switch (id) {
     case -1: return { type: "plan" };
     case -2: return { type: "prd" };
-    case -3: return { type: "session" };
+    case -3: return { type: "session", id: 0 };
     case -4: return { type: "refine" };
-    case -5: return { type: "review_fixer" };
-    case -6: return { type: "risk" };
-    case -7: return { type: "retro" };
+    case -5: return { type: "review_fixer", id: 0 };
+    case -6: return { type: "risk", id: 0 };
+    case -7: return { type: "retro", id: 0 };
     default: return { type: "queue_item", id };
   }
 }
@@ -324,7 +324,9 @@ function itemIdToSlot(
   if (itemId <= -1000) {
     const agent = state.activeAgents.get(itemId);
     const slotType = agent && AGENT_TYPE_TO_SLOT[agent.agentType];
-    if (slotType) return { type: slotType } as AgentSlot;
+    if (slotType) {
+      return { type: slotType, id: agent.sessionId } as AgentSlot;
+    }
   }
   return legacyIdToSlot(itemId);
 }
@@ -400,6 +402,9 @@ function resolveItemId(
   slot: AgentSlot,
 ): number {
   if (slot.type === "queue_item") return slot.id;
+  if (MULTI_INSTANCE_TYPES.has(slot.type) && "id" in slot && slot.id != null) {
+    return sessionDbKey(slot.id);
+  }
   if (MULTI_INSTANCE_TYPES.has(slot.type)) {
     return resolveActiveKey(state, slot) ?? agentSlotToLegacyId(slot);
   }

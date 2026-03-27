@@ -128,7 +128,7 @@ impl AgentManager {
         system_prompt: &str,
         initial_prompt: &str,
         images: &[ImagePayload],
-        slot: AgentSlot,
+        slot_fn: impl FnOnce(i64) -> AgentSlot,
         permissions: &PermissionRouter,
     ) -> Result<i64, String> {
         info!(
@@ -148,6 +148,8 @@ impl AgentManager {
         .fetch_one(&self.write_pool)
         .await
         .map_err(|e| format!("Failed to create {agent_type_str} agent session: {e}"))?;
+
+        let slot = slot_fn(db_session_id);
 
         // 2. Build MCP config
         let mcp_servers = build_mcp_server_config(agent_type, self.feature_id);
@@ -460,6 +462,24 @@ impl AgentManager {
         if let AgentSlot::QueueItem(item_id) = &slot {
             return self.interrupt_by_pid(*item_id).await;
         }
+        // No query handle — the agent's CLI turn likely already ended.
+        // Check if it's already paused/completed and treat as success.
+        if let Some(db_sid) = self.active_items.get(&slot) {
+            let status: Option<(String,)> = sqlx::query_as(
+                "SELECT status FROM agent_sessions WHERE id = ?",
+            )
+            .bind(*db_sid)
+            .fetch_optional(&self.read_pool)
+            .await
+            .ok()
+            .flatten();
+            if let Some((ref s,)) = status {
+                if s == "paused" || s == "completed" {
+                    info!(slot = %slot, status = %s, "interrupt requested but agent already {s} — treating as success");
+                    return Ok(());
+                }
+            }
+        }
         Err(format!("No query handle for slot {slot}"))
     }
 
@@ -559,7 +579,13 @@ impl AgentManager {
                 system_prompt,
                 text,
                 &imgs,
-                slot,
+                |id| match slot {
+                        AgentSlot::Session(_) => AgentSlot::Session(id),
+                        AgentSlot::Risk(_) => AgentSlot::Risk(id),
+                        AgentSlot::Retro(_) => AgentSlot::Retro(id),
+                        AgentSlot::ReviewFixer(_) => AgentSlot::ReviewFixer(id),
+                        other => other,
+                    },
                 permissions,
             ).await.map(|_| ());
         }

@@ -631,13 +631,15 @@ impl QueueAdvancer {
         .map_err(|e| e.to_string())?;
 
         let mut restored: Vec<(AgentSlot, i64, String, String)> = Vec::new();
-        let mut seen_slots = std::collections::HashSet::new();
+        // Track singleton agent types we've already restored (plan, prd, refine).
+        // Multi-instance types (session, risk, retro, review-fixer) each get a unique
+        // slot via their db_session_id so they never collide.
+        let mut seen_singletons = std::collections::HashSet::new();
         for (db_session_id, agent_type, cc_session_id) in &resumable_sessions {
-            let Some(slot) = agent_type_str_to_slot(agent_type) else {
+            let Some(slot) = agent_type_str_to_slot(agent_type, *db_session_id) else {
                 continue;
             };
-            // Only restore the most recent session per slot
-            if !seen_slots.insert(slot.clone()) {
+            if slot.is_singleton() && !seen_singletons.insert(agent_type.clone()) {
                 continue;
             }
             info!(

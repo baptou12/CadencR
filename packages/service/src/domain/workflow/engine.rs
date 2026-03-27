@@ -17,16 +17,18 @@ pub enum AgentSlot {
     Plan,
     #[serde(rename = "prd")]
     Prd,
+    /// Session agent. Carries the DB agent_session_id so multiple concurrent
+    /// sessions get unique DashMap keys.
     #[serde(rename = "session")]
-    Session,
+    Session(i64),
     #[serde(rename = "refine")]
     Refine,
     #[serde(rename = "review_fixer")]
-    ReviewFixer,
+    ReviewFixer(i64),
     #[serde(rename = "risk")]
-    Risk,
+    Risk(i64),
     #[serde(rename = "retro")]
-    Retro,
+    Retro(i64),
 }
 
 impl AgentSlot {
@@ -35,11 +37,11 @@ impl AgentSlot {
         match self {
             AgentSlot::Plan => -1,
             AgentSlot::Prd => -2,
-            AgentSlot::Session => -3,
+            AgentSlot::Session(_) => -3,
             AgentSlot::Refine => -4,
-            AgentSlot::ReviewFixer => -5,
-            AgentSlot::Risk => -6,
-            AgentSlot::Retro => -7,
+            AgentSlot::ReviewFixer(_) => -5,
+            AgentSlot::Risk(_) => -6,
+            AgentSlot::Retro(_) => -7,
             AgentSlot::QueueItem(id) => *id,
         }
     }
@@ -48,11 +50,11 @@ impl AgentSlot {
         match self {
             AgentSlot::Plan => Some("plan"),
             AgentSlot::Prd => Some("prd"),
-            AgentSlot::Session => Some("session"),
+            AgentSlot::Session(_) => Some("session"),
             AgentSlot::Refine => Some("refine"),
-            AgentSlot::ReviewFixer => Some("review-fixer"),
-            AgentSlot::Risk => Some("risk"),
-            AgentSlot::Retro => Some("retro"),
+            AgentSlot::ReviewFixer(_) => Some("review-fixer"),
+            AgentSlot::Risk(_) => Some("risk"),
+            AgentSlot::Retro(_) => Some("retro"),
             AgentSlot::QueueItem(_) => None,
         }
     }
@@ -61,36 +63,44 @@ impl AgentSlot {
         match self {
             AgentSlot::Plan | AgentSlot::Refine => Some(AgentType::Plan),
             AgentSlot::Prd => Some(AgentType::Prd),
-            AgentSlot::Session => Some(AgentType::Session),
-            AgentSlot::ReviewFixer => Some(AgentType::Execute),
-            AgentSlot::Risk => Some(AgentType::Risk),
-            AgentSlot::Retro => Some(AgentType::Retro),
+            AgentSlot::Session(_) => Some(AgentType::Session),
+            AgentSlot::ReviewFixer(_) => Some(AgentType::Execute),
+            AgentSlot::Risk(_) => Some(AgentType::Risk),
+            AgentSlot::Retro(_) => Some(AgentType::Retro),
             AgentSlot::QueueItem(_) => None,
         }
+    }
+
+    /// Returns true for slot types that allow only one concurrent instance (plan, prd, refine).
+    pub fn is_singleton(&self) -> bool {
+        matches!(self, AgentSlot::Plan | AgentSlot::Prd | AgentSlot::Refine)
     }
 
     pub fn system_prompt(&self) -> Option<&'static str> {
         match self {
             AgentSlot::Plan | AgentSlot::Refine => Some(Prompts::plan()),
             AgentSlot::Prd => Some(Prompts::prd()),
-            AgentSlot::Session => Some(Prompts::session()),
-            AgentSlot::Risk => Some(Prompts::risk()),
-            AgentSlot::Retro => Some(Prompts::retro()),
+            AgentSlot::Session(_) => Some(Prompts::session()),
+            AgentSlot::Risk(_) => Some(Prompts::risk()),
+            AgentSlot::Retro(_) => Some(Prompts::retro()),
             _ => None,
         }
     }
 }
 
 impl From<i64> for AgentSlot {
+    /// Convert a legacy synthetic ID to an AgentSlot.
+    /// Multi-instance types get a placeholder ID of 0 — callers should replace
+    /// with the real db_session_id when available.
     fn from(id: i64) -> Self {
         match id {
             -1 => AgentSlot::Plan,
             -2 => AgentSlot::Prd,
-            -3 => AgentSlot::Session,
+            -3 => AgentSlot::Session(0),
             -4 => AgentSlot::Refine,
-            -5 => AgentSlot::ReviewFixer,
-            -6 => AgentSlot::Risk,
-            -7 => AgentSlot::Retro,
+            -5 => AgentSlot::ReviewFixer(0),
+            -6 => AgentSlot::Risk(0),
+            -7 => AgentSlot::Retro(0),
             other => AgentSlot::QueueItem(other),
         }
     }
@@ -101,11 +111,11 @@ impl std::fmt::Display for AgentSlot {
         match self {
             AgentSlot::Plan => write!(f, "plan"),
             AgentSlot::Prd => write!(f, "prd"),
-            AgentSlot::Session => write!(f, "session"),
+            AgentSlot::Session(id) => write!(f, "session({})", id),
             AgentSlot::Refine => write!(f, "refine"),
-            AgentSlot::ReviewFixer => write!(f, "review_fixer"),
-            AgentSlot::Risk => write!(f, "risk"),
-            AgentSlot::Retro => write!(f, "retro"),
+            AgentSlot::ReviewFixer(id) => write!(f, "review_fixer({})", id),
+            AgentSlot::Risk(id) => write!(f, "risk({})", id),
+            AgentSlot::Retro(id) => write!(f, "retro({})", id),
             AgentSlot::QueueItem(id) => write!(f, "queue_item({})", id),
         }
     }
@@ -180,15 +190,16 @@ impl WsSender {
 }
 
 /// Map an agent type string to an AgentSlot.
-pub fn agent_type_str_to_slot(agent_type: &str) -> Option<AgentSlot> {
+/// `session_id` is used for multi-instance types (session, risk, retro, review-fixer).
+pub fn agent_type_str_to_slot(agent_type: &str, session_id: i64) -> Option<AgentSlot> {
     match agent_type {
         "plan" => Some(AgentSlot::Plan),
         "prd" => Some(AgentSlot::Prd),
-        "session" => Some(AgentSlot::Session),
+        "session" => Some(AgentSlot::Session(session_id)),
         "refine" => Some(AgentSlot::Refine),
-        "review-fixer" | "review_fixer" => Some(AgentSlot::ReviewFixer),
-        "risk" => Some(AgentSlot::Risk),
-        "retro" => Some(AgentSlot::Retro),
+        "review-fixer" | "review_fixer" => Some(AgentSlot::ReviewFixer(session_id)),
+        "risk" => Some(AgentSlot::Risk(session_id)),
+        "retro" => Some(AgentSlot::Retro(session_id)),
         _ => None,
     }
 }
@@ -468,7 +479,7 @@ impl WorkflowEngine {
             Prompts::plan(),
             &enriched_prompt,
             images,
-            AgentSlot::Plan,
+            |_| AgentSlot::Plan,
             &self.permissions,
         ).await
     }
@@ -489,7 +500,7 @@ impl WorkflowEngine {
             Prompts::prd(),
             &enriched_prompt,
             &[],
-            AgentSlot::Prd,
+            |_| AgentSlot::Prd,
             &self.permissions,
         ).await
     }
@@ -533,7 +544,7 @@ impl WorkflowEngine {
             Prompts::session(),
             &enriched_prompt,
             images,
-            AgentSlot::Session,
+            |id| AgentSlot::Session(id),
             &self.permissions,
         ).await
     }
@@ -557,7 +568,7 @@ impl WorkflowEngine {
             Prompts::plan(),
             &refinement_prompt,
             images,
-            AgentSlot::Refine,
+            |_| AgentSlot::Refine,
             &self.permissions,
         ).await
     }
@@ -572,7 +583,7 @@ impl WorkflowEngine {
             system_prompt,
             comments,
             &[],
-            AgentSlot::ReviewFixer,
+            |id| AgentSlot::ReviewFixer(id),
             &self.permissions,
         ).await
     }
@@ -651,7 +662,7 @@ impl WorkflowEngine {
             Prompts::risk(),
             &prompt,
             &[],
-            AgentSlot::Risk,
+            |id| AgentSlot::Risk(id),
             &self.permissions,
         ).await
     }
@@ -688,7 +699,7 @@ impl WorkflowEngine {
             Prompts::retro(),
             &prompt,
             &[],
-            AgentSlot::Retro,
+            |id| AgentSlot::Retro(id),
             &self.permissions,
         ).await
     }
@@ -1251,31 +1262,35 @@ mod tests {
     fn test_agent_slot_agent_type_str() {
         assert_eq!(AgentSlot::Plan.agent_type_str(), Some("plan"));
         assert_eq!(AgentSlot::Prd.agent_type_str(), Some("prd"));
-        assert_eq!(AgentSlot::Session.agent_type_str(), Some("session"));
+        assert_eq!(AgentSlot::Session(1).agent_type_str(), Some("session"));
         assert_eq!(AgentSlot::Refine.agent_type_str(), Some("refine"));
-        assert_eq!(AgentSlot::ReviewFixer.agent_type_str(), Some("review-fixer"));
+        assert_eq!(AgentSlot::ReviewFixer(1).agent_type_str(), Some("review-fixer"));
         assert_eq!(AgentSlot::QueueItem(42).agent_type_str(), None);
     }
 
     #[test]
     fn test_agent_type_str_to_slot_mapping() {
-        assert_eq!(agent_type_str_to_slot("plan"), Some(AgentSlot::Plan));
-        assert_eq!(agent_type_str_to_slot("prd"), Some(AgentSlot::Prd));
-        assert_eq!(agent_type_str_to_slot("session"), Some(AgentSlot::Session));
-        assert_eq!(agent_type_str_to_slot("refine"), Some(AgentSlot::Refine));
-        assert_eq!(agent_type_str_to_slot("review-fixer"), Some(AgentSlot::ReviewFixer));
-        assert_eq!(agent_type_str_to_slot("review_fixer"), Some(AgentSlot::ReviewFixer));
-        assert_eq!(agent_type_str_to_slot("execute"), None);
-        assert_eq!(agent_type_str_to_slot(""), None);
+        assert_eq!(agent_type_str_to_slot("plan", 0), Some(AgentSlot::Plan));
+        assert_eq!(agent_type_str_to_slot("prd", 0), Some(AgentSlot::Prd));
+        assert_eq!(agent_type_str_to_slot("session", 5), Some(AgentSlot::Session(5)));
+        assert_eq!(agent_type_str_to_slot("refine", 0), Some(AgentSlot::Refine));
+        assert_eq!(agent_type_str_to_slot("review-fixer", 3), Some(AgentSlot::ReviewFixer(3)));
+        assert_eq!(agent_type_str_to_slot("review_fixer", 3), Some(AgentSlot::ReviewFixer(3)));
+        assert_eq!(agent_type_str_to_slot("execute", 0), None);
+        assert_eq!(agent_type_str_to_slot("", 0), None);
     }
 
     #[test]
     fn test_agent_slot_roundtrip_via_legacy_id() {
-        for slot in &[AgentSlot::Plan, AgentSlot::Prd, AgentSlot::Session, AgentSlot::Refine, AgentSlot::ReviewFixer] {
+        // Singleton slots roundtrip exactly
+        for slot in &[AgentSlot::Plan, AgentSlot::Prd, AgentSlot::Refine] {
             let id = slot.as_legacy_id();
             let back = AgentSlot::from(id);
             assert_eq!(&back, slot);
         }
+        // Multi-instance slots roundtrip to placeholder id 0
+        assert_eq!(AgentSlot::from(-3), AgentSlot::Session(0));
+        assert_eq!(AgentSlot::from(-5), AgentSlot::ReviewFixer(0));
         assert_eq!(AgentSlot::from(42), AgentSlot::QueueItem(42));
     }
 
@@ -1284,8 +1299,8 @@ mod tests {
         assert!(matches!(AgentSlot::Plan.sdk_agent_type(), Some(AgentType::Plan)));
         assert!(matches!(AgentSlot::Refine.sdk_agent_type(), Some(AgentType::Plan)));
         assert!(matches!(AgentSlot::Prd.sdk_agent_type(), Some(AgentType::Prd)));
-        assert!(matches!(AgentSlot::Session.sdk_agent_type(), Some(AgentType::Session)));
-        assert!(matches!(AgentSlot::ReviewFixer.sdk_agent_type(), Some(AgentType::Execute)));
+        assert!(matches!(AgentSlot::Session(1).sdk_agent_type(), Some(AgentType::Session)));
+        assert!(matches!(AgentSlot::ReviewFixer(1).sdk_agent_type(), Some(AgentType::Execute)));
         assert!(AgentSlot::QueueItem(42).sdk_agent_type().is_none());
     }
 
@@ -1293,16 +1308,60 @@ mod tests {
     fn test_agent_slot_system_prompt() {
         assert!(AgentSlot::Plan.system_prompt().is_some());
         assert!(AgentSlot::Prd.system_prompt().is_some());
-        assert!(AgentSlot::Session.system_prompt().is_some());
+        assert!(AgentSlot::Session(1).system_prompt().is_some());
         assert!(AgentSlot::Refine.system_prompt().is_some());
-        assert!(AgentSlot::ReviewFixer.system_prompt().is_none());
+        assert!(AgentSlot::ReviewFixer(1).system_prompt().is_none());
         assert!(AgentSlot::QueueItem(42).system_prompt().is_none());
     }
 
     #[test]
     fn test_agent_slot_display() {
         assert_eq!(format!("{}", AgentSlot::Plan), "plan");
+        assert_eq!(format!("{}", AgentSlot::Session(42)), "session(42)");
         assert_eq!(format!("{}", AgentSlot::QueueItem(42)), "queue_item(42)");
+    }
+
+    #[test]
+    fn test_agent_slot_is_singleton() {
+        assert!(AgentSlot::Plan.is_singleton());
+        assert!(AgentSlot::Prd.is_singleton());
+        assert!(AgentSlot::Refine.is_singleton());
+        assert!(!AgentSlot::Session(1).is_singleton());
+        assert!(!AgentSlot::Risk(1).is_singleton());
+        assert!(!AgentSlot::Retro(1).is_singleton());
+        assert!(!AgentSlot::ReviewFixer(1).is_singleton());
+        assert!(!AgentSlot::QueueItem(1).is_singleton());
+    }
+
+    #[test]
+    fn test_multi_instance_slots_are_unique_keys() {
+        use std::collections::HashSet;
+        let mut set = HashSet::new();
+        set.insert(AgentSlot::Session(1));
+        set.insert(AgentSlot::Session(2));
+        set.insert(AgentSlot::Session(3));
+        assert_eq!(set.len(), 3, "each Session with different id should be a unique key");
+
+        // Singletons always hash the same regardless
+        set.clear();
+        set.insert(AgentSlot::Plan);
+        set.insert(AgentSlot::Plan);
+        assert_eq!(set.len(), 1);
+    }
+
+    #[test]
+    fn test_agent_slot_serde_roundtrip() {
+        let slot = AgentSlot::Session(42);
+        let json = serde_json::to_value(&slot).unwrap();
+        assert_eq!(json["type"], "session");
+        assert_eq!(json["id"], 42);
+        let back: AgentSlot = serde_json::from_value(json).unwrap();
+        assert_eq!(back, AgentSlot::Session(42));
+
+        // Singleton (no id field)
+        let plan_json = serde_json::to_value(&AgentSlot::Plan).unwrap();
+        assert_eq!(plan_json["type"], "plan");
+        assert!(plan_json.get("id").is_none());
     }
 
     // ── restore_on_reconnect ──
@@ -1783,6 +1842,29 @@ mod tests {
         assert_eq!(*engine.active_items().get(&AgentSlot::Plan).unwrap(), 2);
     }
 
+    #[tokio::test]
+    async fn test_restore_on_reconnect_restores_multiple_session_agents() {
+        let (engine, _rx) = test_engine_with_schema().await;
+
+        // Insert two paused session agents — both should be restored (multi-instance)
+        sqlx::query(
+            "INSERT INTO agent_sessions (id, feature_id, agent_type, status, claude_session_id) VALUES (10, 1, 'session', 'paused', 'cc-session-a')"
+        ).execute(&engine.write_pool).await.unwrap();
+        sqlx::query(
+            "INSERT INTO agent_sessions (id, feature_id, agent_type, status, claude_session_id) VALUES (11, 1, 'session', 'paused', 'cc-session-b')"
+        ).execute(&engine.write_pool).await.unwrap();
+
+        engine.restore_on_reconnect().await.unwrap();
+
+        // Both sessions should be restored with unique slots
+        let slot_a = AgentSlot::Session(10);
+        let slot_b = AgentSlot::Session(11);
+        assert!(engine.agent_manager.paused_sessions.contains_key(&slot_a), "session 10 should be restored");
+        assert!(engine.agent_manager.paused_sessions.contains_key(&slot_b), "session 11 should be restored");
+        assert_eq!(*engine.agent_manager.paused_sessions.get(&slot_a).unwrap(), "cc-session-a");
+        assert_eq!(*engine.agent_manager.paused_sessions.get(&slot_b).unwrap(), "cc-session-b");
+    }
+
     // ── restore_on_reconnect: status filter (only 'paused') ──
 
     #[tokio::test]
@@ -1947,10 +2029,10 @@ mod tests {
         let (engine, mut rx) = test_engine().await;
 
         // Set up a session agent as active + paused
-        engine.agent_manager.active_items.insert(AgentSlot::Session, 42);
-        engine.agent_manager.paused_sessions.insert(AgentSlot::Session, "cc-session-123".to_string());
+        engine.agent_manager.active_items.insert(AgentSlot::Session(42), 42);
+        engine.agent_manager.paused_sessions.insert(AgentSlot::Session(42), "cc-session-123".to_string());
 
-        engine.on_item_paused(AgentSlot::Session).await;
+        engine.on_item_paused(AgentSlot::Session(42)).await;
 
         let mut got_agent_paused = false;
         while let Ok(msg) = rx.try_recv() {
@@ -1987,11 +2069,11 @@ mod tests {
 
     #[test]
     fn test_agent_type_str_to_slot_risk() {
-        assert_eq!(agent_type_str_to_slot("risk"), Some(AgentSlot::Risk));
+        assert_eq!(agent_type_str_to_slot("risk", 1), Some(AgentSlot::Risk(1)));
     }
 
     #[test]
     fn test_agent_type_str_to_slot_retro() {
-        assert_eq!(agent_type_str_to_slot("retro"), Some(AgentSlot::Retro));
+        assert_eq!(agent_type_str_to_slot("retro", 1), Some(AgentSlot::Retro(1)));
     }
 }
