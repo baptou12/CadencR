@@ -18,7 +18,7 @@ import { WorktreeSetupSection } from "@/components/WorktreeSetupSection";
 import type { FeatureSession } from "@/hooks/useFeatureAgentState";
 import type { ContextUsageState } from "@/types/agent";
 import { useResolvedModel } from "@/hooks/useResolvedModel";
-import { useTerminalStore, getLeaves } from "@/hooks/useTerminalState";
+import { useTerminalStore } from "@/hooks/useTerminalState";
 import { useActiveTab } from "@/hooks/useActiveTab";
 import { useSaveLastOpenedFeature } from "@/hooks/useSaveLastOpenedFeature";
 import { useWorkflowKeyboard } from "@/hooks/useWorkflowKeyboard";
@@ -158,10 +158,6 @@ export function FeatureWorkflowView({
 
   // Terminal state
   const sendToTerminalStore = useTerminalStore((s) => s.sendToTerminal);
-  const terminalPaneCount = useTerminalStore((s) => {
-    const root = s.getFeature(featureId).root;
-    return root ? getLeaves(root).length : 0;
-  });
   const terminalTabRef = useRef<FeatureTerminalTabHandle>(null);
   const handleTerminalActivate = useCallback(() => {
     requestAnimationFrame(() => terminalTabRef.current?.activate());
@@ -193,7 +189,7 @@ export function FeatureWorkflowView({
     <CodeBlockActionsContext.Provider value={codeBlockActions}>
     <div className="relative flex h-full flex-col">
       <FeatureTopBar featureId={featureId} projectId={projectId} />
-      <FeatureTabBar activeTab={activeTab} onTabChange={setActiveTab} gitStats={gitStats} gitBranch={backend.worktreeBranch} terminalPaneCount={terminalPaneCount} onTerminalActivate={handleTerminalActivate} />
+      <FeatureTabBar activeTab={activeTab} featureId={featureId} onTabChange={setActiveTab} gitStats={gitStats} gitBranch={backend.worktreeBranch} onTerminalActivate={handleTerminalActivate} />
       <div className="relative min-h-0 flex-1 overflow-hidden">
         {/* Terminal tab — stays mounted to preserve PTY */}
         <FeatureTerminalTab ref={terminalTabRef} featureId={featureId} projectId={projectId} hidden={activeTab !== "terminal"} />

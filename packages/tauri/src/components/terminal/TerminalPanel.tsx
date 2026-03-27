@@ -259,7 +259,7 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
             <SplitSquareHorizontal className="size-3.5" />
           </button>
         </ShortcutTooltip>
-        <ShortcutTooltip label="Split horizontal" keys={["cmd", "shift", "D"]}>
+        <ShortcutTooltip label="Split horizontal" keys={["cmd", "shift", "D"]} alignRight>
           <button
             type="button"
             onClick={() => splitPane(resolvedActivePaneId ?? undefined, "vertical")}
@@ -269,7 +269,7 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
           </button>
         </ShortcutTooltip>
         {leaves.length > 0 && (
-          <ShortcutTooltip label="Close terminal">
+          <ShortcutTooltip label="Close terminal" alignRight>
             <button
               type="button"
               onClick={() => { if (resolvedActivePaneId) closePane(resolvedActivePaneId); }}

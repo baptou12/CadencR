@@ -3,13 +3,14 @@ import { BotIcon, TerminalIcon, GitCompareArrowsIcon } from "lucide-react";
 import { KbdShortcut } from "@/components/KbdShortcut";
 import { cn } from "@/lib/utils";
 import type { FeatureTab } from "@/hooks/useActiveTab";
+import { useTerminalStore, getLeaves } from "@/hooks/useTerminalState";
 
 interface FeatureTabBarProps {
   activeTab: FeatureTab;
+  featureId: number;
   onTabChange: (tab: FeatureTab) => void;
   gitStats?: { insertions: number; deletions: number } | null;
   gitBranch?: string | null;
-  terminalPaneCount?: number;
   /** Called when CMD+SHIFT+T is pressed — parent handles focus/create logic */
   onTerminalActivate?: () => void;
 }
@@ -20,7 +21,9 @@ const TABS: { id: FeatureTab; label: string; icon: typeof BotIcon; keys: string[
   { id: "git", label: "Git", icon: GitCompareArrowsIcon, keys: ["cmd", "shift", "G"] },
 ];
 
-export function FeatureTabBar({ activeTab, onTabChange, gitStats, gitBranch, terminalPaneCount, onTerminalActivate }: FeatureTabBarProps) {
+export function FeatureTabBar({ activeTab, featureId, onTabChange, gitStats, gitBranch, onTerminalActivate }: FeatureTabBarProps) {
+  const terminalRoot = useTerminalStore((s) => s.features[featureId]?.root ?? null);
+  const terminalPaneCount = terminalRoot ? getLeaves(terminalRoot).length : 0;
   useHotkeys(
     "meta+shift+a",
     (e) => { e.preventDefault(); onTabChange("agent"); },
@@ -59,8 +62,8 @@ export function FeatureTabBar({ activeTab, onTabChange, gitStats, gitBranch, ter
         >
           <tab.icon className="size-4" />
           {tab.label}
-          {tab.id === "terminal" && terminalPaneCount != null && terminalPaneCount > 0 && (
-            <span className="text-muted-foreground">({terminalPaneCount})</span>
+          {tab.id === "terminal" && terminalPaneCount != null && terminalPaneCount > 1 && (
+            <span className="opacity-50">({terminalPaneCount})</span>
           )}
           {tab.id === "git" && gitBranch && (
             <span className="truncate max-w-[120px]">{gitBranch}</span>

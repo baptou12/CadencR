@@ -106,7 +106,7 @@ vi.mock("@/hooks/useTerminalState", () => ({
     selector({
       sendToTerminal: vi.fn(),
       clearInitialCommand: vi.fn(),
-      getFeature: () => ({ root: null, isOpen: false, isMinimized: false }),
+      features: {},
     }),
   ),
 }));
