@@ -256,7 +256,7 @@ function createXtermInstance(): Terminal {
     fontSize: 13,
     lineHeight: 1.2,
     fontFamily:
-      "'Fira Code', 'Cascadia Code', 'SF Mono', Menlo, Monaco, 'Courier New', monospace",
+      "'FiraCode Nerd Font', 'Fira Code', 'CaskaydiaCove Nerd Font', 'Cascadia Code', 'SF Mono', Menlo, Monaco, 'Courier New', monospace",
     fontWeight: "400",
     fontWeightBold: "600",
     letterSpacing: 0,
