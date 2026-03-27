@@ -232,6 +232,39 @@ describe("ws-session-store", () => {
     expect(session.currentModelId).toBe(DEFAULT_MODEL);
   });
 
+  it("session.initialized with model updates currentModelId from server", async () => {
+    const store = useWsSessionStore.getState();
+    store.connect("s1");
+    await tick();
+    // Frontend sends settings model on init
+    store.initSession("s1", { model: "opus[1m]" });
+    expect(useWsSessionStore.getState().sessions["s1"].currentModelId).toBe("opus[1m]");
+
+    // Server responds with the stored model from the DB (last used)
+    const ws = MockWebSocket.instances[0];
+    ws.simulateMessage({
+      domain: "session",
+      action: "initialized",
+      payload: { session_id: "42", model: "claude-haiku-4-5-20251001" },
+    });
+    expect(useWsSessionStore.getState().sessions["s1"].currentModelId).toBe("claude-haiku-4-5-20251001");
+  });
+
+  it("session.initialized without model keeps frontend model", async () => {
+    const store = useWsSessionStore.getState();
+    store.connect("s1");
+    await tick();
+    store.initSession("s1", { model: "opus[1m]" });
+
+    const ws = MockWebSocket.instances[0];
+    ws.simulateMessage({
+      domain: "session",
+      action: "initialized",
+      payload: { session_id: "42" },
+    });
+    expect(useWsSessionStore.getState().sessions["s1"].currentModelId).toBe("opus[1m]");
+  });
+
   it("sets hasFileChanges when Write tool_call block is received", async () => {
     const store = useWsSessionStore.getState();
     store.connect("s1");

@@ -592,6 +592,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       case "initialized": {
         const initPayload = envelope.payload as {
           session_id?: string;
+          model?: string;
           input_tokens?: number;
           output_tokens?: number;
           context_window?: number;
@@ -600,6 +601,9 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
           serverSessionId: initPayload.session_id ?? "",
           status: "idle",
         };
+        if (initPayload.model) {
+          updates.currentModelId = initPayload.model;
+        }
         // Restore context usage from DB if available
         if (initPayload.input_tokens != null || initPayload.output_tokens != null) {
           const inputTokens = initPayload.input_tokens ?? 0;

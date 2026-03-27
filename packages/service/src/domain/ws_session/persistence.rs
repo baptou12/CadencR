@@ -76,9 +76,8 @@ impl WsSessionPersistence {
         if let Some((id,)) = existing {
             // Reuse existing session — update status back to running
             if let Err(e) = sqlx::query(
-                "UPDATE agent_sessions SET status = 'paused', model = COALESCE(?, model), permission_mode = COALESCE(?, permission_mode) WHERE id = ?"
+                "UPDATE agent_sessions SET status = 'paused', permission_mode = COALESCE(?, permission_mode) WHERE id = ?"
             )
-            .bind(model)
             .bind(permission_mode)
             .bind(id)
             .execute(&self.write_pool)
@@ -687,7 +686,7 @@ mod tests {
 
         assert_eq!(id1, id2);
 
-        // Verify model was updated
+        // Model should NOT be overwritten — preserves the original "sonnet"
         let row: (String, String) = sqlx::query_as(
             "SELECT model, permission_mode FROM agent_sessions WHERE id = ?",
         )
@@ -695,7 +694,7 @@ mod tests {
         .fetch_one(&pool)
         .await
         .unwrap();
-        assert_eq!(row.0, "opus");
+        assert_eq!(row.0, "sonnet");
         assert_eq!(row.1, "plan");
     }
 

@@ -141,6 +141,8 @@ pub struct SessionUsageUpdatePayload {
 pub struct SessionInitializedPayload {
     pub session_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub input_tokens: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output_tokens: Option<u64>,
@@ -625,7 +627,7 @@ mod tests {
         let _: PermissionRespondPayload = serde_json::from_value(v).unwrap();
 
         // SessionInitializedPayload
-        let p = SessionInitializedPayload { session_id: "s1".into(), input_tokens: None, output_tokens: None, context_window: None };
+        let p = SessionInitializedPayload { session_id: "s1".into(), model: None, input_tokens: None, output_tokens: None, context_window: None };
         let v = serde_json::to_value(&p).unwrap();
         let _: SessionInitializedPayload = serde_json::from_value(v).unwrap();
 

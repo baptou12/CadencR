@@ -63,25 +63,27 @@ pub(super) async fn handle_init(
         }
     };
 
-    // Read session row for claude_session_id (--resume) and token usage restoration.
-    let (resume_session_id, init_input_tokens, init_output_tokens, init_context_window) =
+    // Read session row for claude_session_id (--resume), token usage, and stored model.
+    let (resume_session_id, stored_model, init_input_tokens, init_output_tokens, init_context_window) =
         if let Some(row) = WsSessionPersistence::get_session_row(&app_state.read_pool, db_session_id).await {
             debug!(
                 db_session_id,
                 feature_id,
                 claude_session_id = ?row.claude_session_id,
                 status = %row.status,
+                model = ?row.model,
                 "handle_init: DB row state at init time"
             );
-            (row.claude_session_id, row.input_tokens, row.output_tokens, row.context_window)
+            (row.claude_session_id, row.model, row.input_tokens, row.output_tokens, row.context_window)
         } else {
-            (None, None, None, None)
+            (None, None, None, None, None)
         };
 
-    // Build SDK options
+    // Build SDK options — prefer the model stored in the DB (last used) over the frontend settings model
+    let effective_model = stored_model.clone().or(payload.model.clone());
     let mut options = Options::default();
     options.cwd = std::path::PathBuf::from(&cwd);
-    if let Some(ref model) = payload.model {
+    if let Some(ref model) = effective_model {
         options.model = Some(model.clone());
     }
     if let Some(ref pm) = payload.permission_mode {
@@ -130,6 +132,7 @@ pub(super) async fn handle_init(
         "initialized",
         serde_json::to_value(SessionInitializedPayload {
             session_id: db_session_id.to_string(),
+            model: effective_model,
             input_tokens: init_input_tokens.map(|v| v as u64),
             output_tokens: init_output_tokens.map(|v| v as u64),
             context_window: init_context_window.map(|v| v as u64),
