@@ -45,6 +45,7 @@ import { MentionPlugin } from "./plugins/MentionPlugin";
 import { SlashCommandNode } from "./nodes/SlashCommandNode";
 import { SlashCommandPlugin } from "./plugins/SlashCommandPlugin";
 import { KeyboardShortcutsPlugin } from "./plugins/KeyboardShortcutsPlugin";
+import { setEditorText } from "./editor-utils";
 import type { SlashCommand } from "@/hooks/useSlashCommand";
 
 /** Markdown transformers excluding CODE_BLOCK which requires @lexical/code */
@@ -135,13 +136,7 @@ const PromptEditorInner = forwardRef<PromptEditorHandle, PromptEditorProps>(
         });
       },
       setText(text: string) {
-        editorRef.current?.update(() => {
-          const root = $getRoot();
-          root.clear();
-          const paragraph = $createParagraphNode();
-          paragraph.append($createTextNode(text));
-          root.append(paragraph);
-        });
+        if (editorRef.current) setEditorText(editorRef.current, text);
       },
       getText() {
         let text = "";

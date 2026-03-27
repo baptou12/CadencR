@@ -240,6 +240,8 @@ export interface AgentSessionProps {
   projectId?: number;
   /** Agent session DB ID for draft persistence */
   sessionId?: number;
+  /** WS store key for WS-based history and draft persistence */
+  wsSessionId?: string;
   /** Initial draft text (restored from DB) */
   initialDraft?: string | null;
   /** Active subprocess ID for slash command support in the prompt bar */
@@ -318,6 +320,7 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
   featureId,
   projectId,
   sessionId,
+  wsSessionId,
   initialDraft,
   pendingPermission,
   onPermissionDecision,
@@ -592,6 +595,7 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
       featureId={featureId}
       projectId={projectId}
       sessionId={sessionId}
+      wsSessionId={wsSessionId}
       initialDraft={initialDraft}
       onToggleMaximize={onToggleMaximize}
       noTopPadding={!!hasMeta}

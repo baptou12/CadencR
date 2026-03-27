@@ -1,6 +1,7 @@
 import {
   useState,
   useCallback,
+  useEffect,
   useRef,
   useImperativeHandle,
   forwardRef,
@@ -62,6 +63,8 @@ export interface AgentPromptBarProps {
   featureId?: number;
   projectId?: number;
   sessionId?: number;
+  /** WS store key (e.g. "ws-feature-123") for WS-based history and draft persistence. */
+  wsSessionId?: string;
   initialDraft?: string | null;
   onToggleMaximize?: () => void;
   noTopPadding?: boolean;
@@ -100,6 +103,7 @@ export const AgentPromptBar = forwardRef<
     featureId,
     projectId,
     sessionId,
+    wsSessionId,
     initialDraft,
     onToggleMaximize,
     noTopPadding,
@@ -116,9 +120,19 @@ export const AgentPromptBar = forwardRef<
   textRef.current = text;
   const disabledRef = useRef(disabled);
   disabledRef.current = disabled;
+  // Suppress resetNavigation when editor text changes from history navigation
+  const navigatingHistoryRef = useRef(false);
 
-  const { saveDraft } = usePromptDraft({ sessionId, initialDraft: initialDraft ?? null });
-  const history = usePromptHistory(projectId ?? 0);
+  const { initialDraft: restoredDraft, saveDraft } = usePromptDraft({ sessionId, wsSessionId, initialDraft: initialDraft ?? null });
+
+  // When a draft is restored from DB after mount, set the editor text
+  useEffect(() => {
+    if (restoredDraft && !textRef.current) {
+      setText(restoredDraft);
+      editorRef.current?.setText(restoredDraft);
+    }
+  }, [restoredDraft]);
+  const history = usePromptHistory(projectId ?? 0, wsSessionId);
   const {
     attachments, addFiles, removeAttachment, clearAttachments,
     dragHandlers, isDragging,
@@ -187,6 +201,10 @@ export const AgentPromptBar = forwardRef<
   const handleEditorChange = useCallback(
     (newText: string) => {
       setText(newText);
+      if (navigatingHistoryRef.current) {
+        navigatingHistoryRef.current = false;
+        return;
+      }
       saveDraft(newText);
       history.resetNavigation();
     },
@@ -195,14 +213,18 @@ export const AgentPromptBar = forwardRef<
 
   // History navigation callbacks
   const handleArrowUp = useCallback(() => {
-    if (!projectId) return null;
-    return history.navigateUp(textRef.current);
-  }, [projectId, history]);
+    if (!projectId || !wsSessionId) return null;
+    const result = history.navigateUp(textRef.current);
+    if (result !== null) navigatingHistoryRef.current = true;
+    return result;
+  }, [projectId, wsSessionId, history]);
 
   const handleArrowDown = useCallback(() => {
-    if (!projectId || history.historyIndex < 0) return null;
-    return history.navigateDown();
-  }, [projectId, history]);
+    if (!projectId || !wsSessionId || history.historyIndex < 0) return null;
+    const result = history.navigateDown();
+    if (result !== null) navigatingHistoryRef.current = true;
+    return result;
+  }, [projectId, wsSessionId, history]);
 
   // Keyboard shortcuts via react-hotkeys-hook on wrapper
   const wrapperRef = useRef<HTMLDivElement>(null);

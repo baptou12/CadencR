@@ -27,6 +27,7 @@ import {
   createSessionClear,
   createSessionDelete,
   createCommandsGet,
+  type WsEnvelope,
   type SessionConfig,
   type CommandsListPayload,
 } from "@/lib/ws-envelope";
@@ -335,6 +336,8 @@ export interface SessionEntry {
   todos: TodoItem[];
   /** Live feature title pushed via WS after auto-naming. */
   featureTitle: string | null;
+  /** Pending request-response callbacks keyed by envelope id. */
+  pendingWsRequests: Map<string, (payload: unknown) => void>;
 }
 
 function createSessionEntry(): SessionEntry {
@@ -360,6 +363,7 @@ function createSessionEntry(): SessionEntry {
     slashCommandsLoading: false,
     todos: [],
     featureTitle: null,
+    pendingWsRequests: new Map(),
   };
 }
 
@@ -413,6 +417,9 @@ interface WsSessionStore {
   setPermissionMode: (sessionId: string, mode: PermissionMode) => void;
   approvePlan: (sessionId: string) => void;
   requestPlanChanges: (sessionId: string, feedback: string) => void;
+
+  /** Send a WS envelope and return a promise resolved when the server replies (via ref). */
+  sendRequest: (sessionId: string, envelope: WsEnvelope) => Promise<unknown>;
 
   // Slash commands
   requestSlashCommands: (sessionId: string, cwd: string) => void;
@@ -540,8 +547,19 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
 
   function handleEnvelope(
     sessionId: string,
-    envelope: { domain: string; action: string; payload: unknown },
+    envelope: { domain: string; action: string; ref?: string; payload: unknown },
   ) {
+    // Resolve pending request-response callbacks
+    if (envelope.ref) {
+      const session = get().sessions[sessionId];
+      const cb = session?.pendingWsRequests.get(envelope.ref);
+      if (cb) {
+        session.pendingWsRequests.delete(envelope.ref);
+        cb(envelope.payload);
+        return;
+      }
+    }
+
     // Handle commands domain separately
     if (envelope.domain === "commands") {
       if (envelope.action === "list") {
@@ -853,6 +871,11 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       });
 
       ws.addEventListener("close", () => {
+        const session = get().sessions[sessionId];
+        if (session?.pendingWsRequests.size) {
+          for (const cb of session.pendingWsRequests.values()) cb(null);
+          session.pendingWsRequests.clear();
+        }
         set(updateSession(get(), sessionId, {
           isConnected: false,
           status: getSession(sessionId).status === "running" ? "error" : getSession(sessionId).status,
@@ -894,6 +917,23 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
     },
 
     send: sendRaw,
+
+    sendRequest(sessionId: string, envelope: WsEnvelope): Promise<unknown> {
+      return new Promise((resolve) => {
+        const session = get().sessions[sessionId];
+        if (session) {
+          const timer = setTimeout(() => {
+            session.pendingWsRequests.delete(envelope.id);
+            resolve(null);
+          }, 10_000);
+          session.pendingWsRequests.set(envelope.id, (payload) => {
+            clearTimeout(timer);
+            resolve(payload);
+          });
+        }
+        sendRaw(sessionId, envelope);
+      });
+    },
 
     initSession(sessionId: string, config: SessionConfig) {
       if (config.model) {

@@ -22,11 +22,3 @@ pub async fn get_model_settings(pool: &SqlitePool) -> Result<ModelSettings, AppE
 pub async fn set_model_setting(pool: &SqlitePool, agent_type: &str, model_id: &str) -> Result<(), AppError> {
     repository::set_model_setting(pool, agent_type, model_id).await
 }
-
-pub async fn get_prompt_history(pool: &SqlitePool, project_id: i64) -> Result<Vec<String>, AppError> {
-    repository::get_prompt_history(pool, project_id).await
-}
-
-pub async fn add_prompt_entry(pool: &SqlitePool, project_id: i64, content: &str) -> Result<bool, AppError> {
-    repository::add_prompt_entry(pool, project_id, content).await
-}

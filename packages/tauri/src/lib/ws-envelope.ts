@@ -106,3 +106,19 @@ export function createCommandsGet(cwd: string): WsEnvelope {
 export interface CommandsListPayload {
   commands: Array<{ name: string; description?: string }>;
 }
+
+export function createHistoryGet(projectId: number): WsEnvelope {
+  return createEnvelope("session", "history.get", { project_id: projectId });
+}
+
+export function createHistoryAdd(projectId: number, content: string): WsEnvelope {
+  return createEnvelope("session", "history.add", { project_id: projectId, content });
+}
+
+export function createDraftGet(sessionId: number): WsEnvelope {
+  return createEnvelope("session", "draft.get", { session_id: sessionId });
+}
+
+export function createDraftSave(sessionId: number, draft: string | null): WsEnvelope {
+  return createEnvelope("session", "draft.save", { session_id: sessionId, draft });
+}

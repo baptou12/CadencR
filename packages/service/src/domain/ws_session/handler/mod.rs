@@ -2,6 +2,7 @@ mod app;
 mod commands;
 pub(crate) mod mcp_spawn;
 mod session_control;
+mod session_data;
 mod session_init;
 pub(crate) mod session_prompt;
 pub(crate) mod workflow;
@@ -264,6 +265,10 @@ async fn handle_session_action(
         "destroy" => session_control::handle_destroy(envelope, sender, sdk_sessions, app_state).await,
         "delete" => session_control::handle_delete(envelope, sender, sdk_sessions, app_state).await,
         "clear" => session_control::handle_clear(envelope, sender, sdk_sessions, app_state).await,
+        "history.get" => session_data::handle_history_get(envelope, sender, app_state).await,
+        "history.add" => session_data::handle_history_add(envelope, sender, app_state).await,
+        "draft.get" => session_data::handle_draft_get(envelope, sender, app_state).await,
+        "draft.save" => session_data::handle_draft_save(envelope, sender, app_state).await,
         unknown => {
             let err = WsEnvelope::reply(
                 &envelope.id,

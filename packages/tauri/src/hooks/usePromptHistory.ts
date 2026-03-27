@@ -1,24 +1,25 @@
 /**
  * Hook for per-project prompt history navigation (Up/Down arrow keys).
- * History is shared across all agents in a project and persisted to SQLite.
+ * History is shared across all agents in a project and persisted to SQLite via WebSocket.
  */
 
-import { useState, useCallback, useRef } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import {
-  useGetWorkspacePromptHistory,
-  useAddWorkspacePromptEntry,
-  getGetWorkspacePromptHistoryQueryKey,
-} from "../api/generated";
+import { useState, useCallback, useRef, useEffect } from "react";
+import { useWsSessionStore } from "@/stores/ws-session-store";
+import { createHistoryGet, createHistoryAdd } from "@/lib/ws-envelope";
 
-export function usePromptHistory(projectId: number) {
-  const queryClient = useQueryClient();
-  const historyQuery = useGetWorkspacePromptHistory(projectId);
-  const addEntryMutation = useAddWorkspacePromptEntry();
+interface HistoryResultPayload {
+  entries: string[];
+}
 
-  // Use a ref so callbacks don't recreate when data changes
+export function usePromptHistory(projectId: number, wsSessionId?: string) {
+  const sendRequest = useWsSessionStore((s) => s.sendRequest);
+  const isConnected = useWsSessionStore(
+    (s) => wsSessionId ? s.sessions[wsSessionId]?.isConnected ?? false : false,
+  );
+
+  const [history, setHistory] = useState<string[]>([]);
   const historyRef = useRef<string[]>([]);
-  historyRef.current = historyQuery.data ?? [];
+  historyRef.current = history;
 
   // -1 means "not browsing history"
   const [historyIndex, setHistoryIndex] = useState(-1);
@@ -29,27 +30,34 @@ export function usePromptHistory(projectId: number) {
   const historyIndexRef = useRef(historyIndex);
   historyIndexRef.current = historyIndex;
 
+  // Fetch history when WS connects
+  useEffect(() => {
+    if (!wsSessionId || !projectId || !isConnected) return;
+    void sendRequest(wsSessionId, createHistoryGet(projectId)).then((payload) => {
+      const data = payload as HistoryResultPayload;
+      setHistory(data.entries ?? []);
+    });
+  }, [wsSessionId, projectId, isConnected, sendRequest]);
+
   /**
-   * Called when Up arrow pressed with empty input.
+   * Called when Up arrow pressed on first line.
    * Returns new text to display, or null if already at oldest entry.
    */
   const navigateUp = useCallback(
     (currentText: string): string | null => {
-      const history = historyRef.current;
+      const h = historyRef.current;
       const idx = historyIndexRef.current;
-      if (history.length === 0) return null;
+      if (h.length === 0) return null;
       if (idx === -1) {
-        // Start browsing — save current text
         setTempDraft(currentText);
         setHistoryIndex(0);
-        return history[0] ?? null;
+        return h[0] ?? null;
       }
-      if (idx < history.length - 1) {
+      if (idx < h.length - 1) {
         const next = idx + 1;
         setHistoryIndex(next);
-        return history[next] ?? null;
+        return h[next] ?? null;
       }
-      // Already at oldest entry
       return null;
     },
     [],
@@ -60,50 +68,44 @@ export function usePromptHistory(projectId: number) {
    * Returns new text to display, or null if not browsing.
    */
   const navigateDown = useCallback((): string | null => {
-    const history = historyRef.current;
+    const h = historyRef.current;
     const idx = historyIndexRef.current;
     if (idx === -1) return null;
     if (idx > 0) {
       const prev = idx - 1;
       setHistoryIndex(prev);
-      return history[prev] ?? null;
+      return h[prev] ?? null;
     }
     // Back to current draft
     setHistoryIndex(-1);
     return tempDraftRef.current;
   }, []);
 
-  /**
-   * Adds a new entry to history, invalidates the cache, resets navigation.
-   */
   const addEntry = useCallback(
     (content: string) => {
-      if (!content.trim()) return;
-      addEntryMutation.mutate(
-        { projectId, content },
-        {
-          onSuccess: () => {
-            void queryClient.invalidateQueries({
-              queryKey: getGetWorkspacePromptHistoryQueryKey(projectId),
-            });
-          },
-        },
-      );
+      if (!content.trim() || !wsSessionId || !projectId) return;
+      const trimmed = content.trim();
+      void sendRequest(wsSessionId, createHistoryAdd(projectId, trimmed)).then((payload) => {
+        const data = payload as { added: boolean } | null;
+        if (data?.added) {
+          setHistory((prev) => [trimmed, ...prev].slice(0, 100));
+        }
+      });
       setHistoryIndex(-1);
       setTempDraft("");
     },
-    [projectId, addEntryMutation, queryClient],
+    [wsSessionId, projectId, sendRequest],
   );
 
   /**
    * Resets navigation state when user types, breaking out of history browse.
    */
   const resetNavigation = useCallback(() => {
-    if (historyIndex !== -1) {
+    if (historyIndexRef.current !== -1) {
       setHistoryIndex(-1);
       setTempDraft("");
     }
-  }, [historyIndex]);
+  }, []);
 
   return {
     navigateUp,

@@ -164,7 +164,7 @@ async fn test_openapi_has_20_paths() {
     assert_eq!(resp.status(), 200);
     let body: serde_json::Value = resp.json().await.unwrap();
     let paths = body["paths"].as_object().unwrap();
-    assert!(paths.len() >= 20, "expected >= 20 paths, got {}", paths.len());
+    assert!(paths.len() >= 19, "expected >= 19 paths, got {}", paths.len());
 }
 
 #[tokio::test]

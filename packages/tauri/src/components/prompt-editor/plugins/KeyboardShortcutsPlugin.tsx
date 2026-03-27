@@ -6,17 +6,31 @@ import {
   KEY_ARROW_UP_COMMAND,
   KEY_ARROW_DOWN_COMMAND,
   $getRoot,
-  $createParagraphNode,
-  $createTextNode,
+  $getSelection,
+  $isRangeSelection,
+  type LexicalCommand,
 } from "lexical";
+import { setEditorText } from "../editor-utils";
 
 interface KeyboardShortcutsPluginProps {
-  /** Called when Enter is pressed (no shift). Return true to prevent default. */
   onEnterSend?: () => boolean;
-  /** Called on ArrowUp when editor is empty. Returns text to set, or null. */
   onArrowUp?: () => string | null;
-  /** Called on ArrowDown for history navigation. Returns text to set, or null. */
   onArrowDown?: () => string | null;
+}
+
+/** Check if the cursor is on the edge paragraph (first or last child of root). */
+function isCursorOnEdge(editor: ReturnType<typeof useLexicalComposerContext>[0], edge: "first" | "last"): boolean {
+  let result = false;
+  editor.getEditorState().read(() => {
+    const selection = $getSelection();
+    if (!$isRangeSelection(selection)) return;
+    const topElement = selection.anchor.getNode().getTopLevelElement();
+    if (!topElement) return;
+    const root = $getRoot();
+    const edgeChild = edge === "first" ? root.getFirstChild() : root.getLastChild();
+    result = edgeChild?.getKey() === topElement.getKey();
+  });
+  return result;
 }
 
 /**
@@ -35,7 +49,7 @@ export function KeyboardShortcutsPlugin({
     const unregisterEnter = editor.registerCommand(
       KEY_ENTER_COMMAND,
       (event) => {
-        if (event?.shiftKey) return false; // Let Lexical insert newline
+        if (event?.shiftKey) return false;
         if (!onEnterSend) return false;
         event?.preventDefault();
         return onEnterSend();
@@ -43,50 +57,28 @@ export function KeyboardShortcutsPlugin({
       COMMAND_PRIORITY_NORMAL,
     );
 
-    const unregisterUp = editor.registerCommand(
-      KEY_ARROW_UP_COMMAND,
-      (event) => {
-        if (!onArrowUp || event?.metaKey || event?.altKey) return false;
-        // Only handle when editor is empty
-        let isEmpty = false;
-        editor.getEditorState().read(() => {
-          isEmpty = $getRoot().getTextContent().trim() === "";
-        });
-        if (!isEmpty) return false;
+    function registerArrowHandler(
+      command: LexicalCommand<KeyboardEvent | null>,
+      callback: (() => string | null) | undefined,
+      edge: "first" | "last",
+    ) {
+      return editor.registerCommand(
+        command,
+        (event) => {
+          if (!callback || event?.metaKey || event?.altKey) return false;
+          if (!isCursorOnEdge(editor, edge)) return false;
+          const result = callback();
+          if (result === null) return false;
+          event?.preventDefault();
+          setEditorText(editor, result);
+          return true;
+        },
+        COMMAND_PRIORITY_NORMAL,
+      );
+    }
 
-        const result = onArrowUp();
-        if (result === null) return false;
-        event?.preventDefault();
-        editor.update(() => {
-          const root = $getRoot();
-          root.clear();
-          const p = $createParagraphNode();
-          p.append($createTextNode(result));
-          root.append(p);
-        });
-        return true;
-      },
-      COMMAND_PRIORITY_NORMAL,
-    );
-
-    const unregisterDown = editor.registerCommand(
-      KEY_ARROW_DOWN_COMMAND,
-      (event) => {
-        if (!onArrowDown || event?.metaKey || event?.altKey) return false;
-        const result = onArrowDown();
-        if (result === null) return false;
-        event?.preventDefault();
-        editor.update(() => {
-          const root = $getRoot();
-          root.clear();
-          const p = $createParagraphNode();
-          p.append($createTextNode(result));
-          root.append(p);
-        });
-        return true;
-      },
-      COMMAND_PRIORITY_NORMAL,
-    );
+    const unregisterUp = registerArrowHandler(KEY_ARROW_UP_COMMAND, onArrowUp, "first");
+    const unregisterDown = registerArrowHandler(KEY_ARROW_DOWN_COMMAND, onArrowDown, "last");
 
     return () => {
       unregisterEnter();

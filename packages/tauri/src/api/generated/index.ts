@@ -631,11 +631,6 @@ export interface WorkspaceModelSettings {
   retro: string;
 }
 
-export interface WorkspaceAddPromptEntryResponse {
-  success: boolean;
-  skipped: boolean;
-}
-
 // ---------------------------------------------------------------------------
 // Workspace query key factories
 // ---------------------------------------------------------------------------
@@ -654,10 +649,6 @@ export function getListModelsQueryKey() {
 
 export function getGetWorkspaceModelSettingsQueryKey() {
   return ["workspace", "model-settings"] as const;
-}
-
-export function getGetWorkspacePromptHistoryQueryKey(projectId: number) {
-  return ["workspace", "prompt-history", projectId] as const;
 }
 
 // ---------------------------------------------------------------------------
@@ -705,18 +696,6 @@ export function useGetWorkspaceModelSettings(
   });
 }
 
-export function useGetWorkspacePromptHistory(
-  projectId: number,
-  options?: Omit<UseQueryOptions<string[], ErrorType<unknown>>, "queryKey" | "queryFn">,
-) {
-  return useQuery<string[], ErrorType<unknown>>({
-    queryKey: getGetWorkspacePromptHistoryQueryKey(projectId),
-    queryFn: () =>
-      customInstance({ method: "GET", url: `/api/workspace/prompt-history?project_id=${projectId}` }),
-    ...options,
-  });
-}
-
 // ---------------------------------------------------------------------------
 // Workspace mutation hooks
 // ---------------------------------------------------------------------------
@@ -744,20 +723,6 @@ export function useSetWorkspaceModelSetting(
         method: "PUT",
         url: "/api/workspace/model-settings",
         data: { agent_type: agentType, model_id: modelId },
-      }),
-    ...options,
-  });
-}
-
-export function useAddWorkspacePromptEntry(
-  options?: UseMutationOptions<WorkspaceAddPromptEntryResponse, ErrorType<unknown>, { projectId: number; content: string }>,
-) {
-  return useMutation<WorkspaceAddPromptEntryResponse, ErrorType<unknown>, { projectId: number; content: string }>({
-    mutationFn: ({ projectId, content }) =>
-      customInstance({
-        method: "POST",
-        url: "/api/workspace/prompt-history",
-        data: { project_id: projectId, content },
       }),
     ...options,
   });

@@ -32,17 +32,6 @@ pub struct SetModelSettingRequest {
     pub model_id: String,
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
-pub struct AddPromptEntryRequest {
-    pub project_id: i64,
-    pub content: String,
-}
-
-#[derive(Debug, Deserialize, ToSchema)]
-pub struct GetPromptHistoryParams {
-    pub project_id: i64,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -121,11 +110,4 @@ mod tests {
         assert_eq!(req.model_id, "claude-sonnet-3-5");
     }
 
-    #[test]
-    fn test_add_prompt_entry_request_deserialization() {
-        let json = r#"{"project_id":42,"content":"my prompt"}"#;
-        let req: AddPromptEntryRequest = serde_json::from_str(json).unwrap();
-        assert_eq!(req.project_id, 42);
-        assert_eq!(req.content, "my prompt");
-    }
 }

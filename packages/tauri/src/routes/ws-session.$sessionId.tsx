@@ -113,6 +113,7 @@ function WebSocketSessionPage() {
             agentType="session"
             featureId={featureId}
             projectId={projectId}
+            wsSessionId={sessionId}
             blocks={ws.blocks}
             status={ws.status}
             onSend={(text, images) => {

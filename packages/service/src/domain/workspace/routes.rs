@@ -1,4 +1,4 @@
-use axum::extract::{Json, Path, Query, State};
+use axum::extract::{Json, Path, State};
 use axum::routing::get;
 use axum::Router;
 use serde::Serialize;
@@ -11,12 +11,6 @@ use crate::error::AppError;
 #[derive(Serialize, utoipa::ToSchema)]
 pub struct SettingValueResponse {
     pub value: Option<String>,
-}
-
-#[derive(Serialize, utoipa::ToSchema)]
-pub struct AddPromptEntryResponse {
-    pub success: bool,
-    pub skipped: bool,
 }
 
 #[utoipa::path(get, path = "/api/workspace/settings", responses((status = 200, body = Vec<Setting>)))]
@@ -47,21 +41,9 @@ pub async fn set_model_setting_handler(State(state): State<AppState>, Json(body)
     Ok(Json(SettingValueResponse { value: Some(body.model_id) }))
 }
 
-#[utoipa::path(get, path = "/api/workspace/prompt-history", params(("project_id" = i64, Query,)), responses((status = 200, body = Vec<String>)))]
-pub async fn get_prompt_history_handler(State(state): State<AppState>, Query(params): Query<GetPromptHistoryParams>) -> Result<Json<Vec<String>>, AppError> {
-    Ok(Json(service::get_prompt_history(&state.read_pool, params.project_id).await?))
-}
-
-#[utoipa::path(post, path = "/api/workspace/prompt-history", request_body = AddPromptEntryRequest, responses((status = 200, body = AddPromptEntryResponse)))]
-pub async fn add_prompt_entry_handler(State(state): State<AppState>, Json(body): Json<AddPromptEntryRequest>) -> Result<Json<AddPromptEntryResponse>, AppError> {
-    let inserted = service::add_prompt_entry(&state.write_pool, body.project_id, &body.content).await?;
-    Ok(Json(AddPromptEntryResponse { success: true, skipped: !inserted }))
-}
-
 pub fn workspace_router() -> Router<AppState> {
     Router::new()
         .route("/api/workspace/settings", get(list_settings_handler))
         .route("/api/workspace/settings/{key}", get(get_setting_handler).put(set_setting_handler))
         .route("/api/workspace/model-settings", get(get_model_settings_handler).put(set_model_setting_handler))
-        .route("/api/workspace/prompt-history", get(get_prompt_history_handler).post(add_prompt_entry_handler))
 }
