@@ -113,6 +113,9 @@ export function ProjectFeatures({
         },
       });
     }
+    requestAnimationFrame(() => {
+      window.dispatchEvent(new CustomEvent("cadence:focus-prompt"));
+    });
   };
 
   const renderFeature = (feature: (typeof features)[number]) => {

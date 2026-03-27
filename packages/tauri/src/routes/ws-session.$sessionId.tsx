@@ -88,6 +88,12 @@ function WebSocketSessionPage() {
     requestAnimationFrame(() => {
       agentSessionRef.current?.focusPromptBar();
     });
+  }, [sessionId]);
+
+  useEffect(() => {
+    const handler = () => agentSessionRef.current?.focusPromptBar();
+    window.addEventListener("cadence:focus-prompt", handler);
+    return () => window.removeEventListener("cadence:focus-prompt", handler);
   }, []);
 
   useEffect(() => {

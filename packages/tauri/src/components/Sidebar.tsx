@@ -97,6 +97,9 @@ export function Sidebar() {
           to: "/projects/$projectId/features/$featureId",
           params: { projectId, featureId: id },
         });
+        requestAnimationFrame(() => {
+          window.dispatchEvent(new CustomEvent("cadence:focus-prompt"));
+        });
       } else if (type === "project" && id) {
         // Toggle expand by clicking the project button
         focused.click();

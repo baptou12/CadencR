@@ -46,6 +46,11 @@ function focusZoneByDirection(direction: "left" | "right") {
     ) as HTMLElement | null;
     if (nextEl) {
       nextEl.focus();
+      if (ZONE_ORDER[next] === "main-content") {
+        requestAnimationFrame(() => {
+          window.dispatchEvent(new CustomEvent("cadence:focus-prompt"));
+        });
+      }
       return;
     }
   }

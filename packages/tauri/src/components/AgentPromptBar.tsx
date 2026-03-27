@@ -166,7 +166,7 @@ export const AgentPromptBar = forwardRef<
     onSend(trimmed, getImages());
     setText("");
     editorRef.current?.clear();
-    editorRef.current?.focus();
+    requestAnimationFrame(() => editorRef.current?.focus());
     clearAttachments();
   }, [attachments, onSend, clearAttachments, projectId, history, saveDraft, getImages]);
 
@@ -177,7 +177,7 @@ export const AgentPromptBar = forwardRef<
       action.onClick(trimmed, getImages());
       setText("");
       editorRef.current?.clear();
-      editorRef.current?.focus();
+      requestAnimationFrame(() => editorRef.current?.focus());
       clearAttachments();
       saveDraft(null);
     },
