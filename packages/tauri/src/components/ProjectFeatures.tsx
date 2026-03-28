@@ -3,7 +3,7 @@ import { wsSessionIdFromFeature } from "@/lib/ws-session-id";
 import { useWsSessionStore } from "@/stores/ws-session-store";
 import { useWorkflowStore } from "@/hooks/useWorkflowWebSocket";
 import { useNavigate } from "@tanstack/react-router";
-import { TrashIcon, ArchiveIcon, BotIcon, MessageCircleQuestionIcon, ChevronRightIcon, ChevronDownIcon, PlugIcon } from "lucide-react";
+import { TrashIcon, ArchiveIcon, BotIcon, MessageCircleQuestionIcon, ChevronRightIcon, ChevronDownIcon } from "lucide-react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -129,7 +129,7 @@ export function ProjectFeatures({
         data-nav-type="feature"
         data-nav-id={String(feature.id)}
         data-nav-project-id={String(projectId)}
-        className={`group/feature relative flex min-w-0 cursor-pointer items-center gap-1 overflow-hidden rounded-md py-1.5 pl-3 pr-2 text-sm outline-none hover:bg-accent ${
+        className={`group/feature flex min-w-0 cursor-pointer items-center gap-1 rounded-md py-1.5 pl-3 pr-1.5 text-sm outline-none hover:bg-accent ${
           activeFeatureId === feature.id ? "bg-accent" : ""
         } ${feature.status === "archived" ? "opacity-50" : ""}`}
         onClick={() => {
@@ -152,18 +152,12 @@ export function ProjectFeatures({
           )}
         </div>
 
-        {/* WS indicator */}
-        {(feature.type === "ws-session" || feature.type === "ws-feature") && (
-          <PlugIcon className="size-3 shrink-0 text-emerald-400" />
-        )}
-
         {/* Feature name */}
-        <span className={`min-w-0 truncate flex-1 ${feature.status === "archived" ? "text-muted-foreground" : ""}`}>
+        <span className={`min-w-0 truncate ${feature.status === "archived" ? "text-muted-foreground" : ""}`}>
           {getLiveTitle(feature.id) ?? feature.title}
         </span>
 
-        {/* Right-pinned actions */}
-        <div className="absolute inset-y-0 right-0 flex items-center gap-1 rounded-r-md pr-1.5 pl-6 bg-gradient-to-l from-sidebar from-60% to-transparent group-hover/feature:from-accent group-[.bg-accent]/feature:from-accent">
+        <div className="ml-auto flex shrink-0 items-center gap-1">
           {feature.type !== "ws-session" && (
             <Select
               value={feature.status}

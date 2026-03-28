@@ -3,6 +3,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { useZoom } from "./useZoom";
 
 const mockSetZoom = vi.fn(() => Promise.resolve());
+vi.mock("@tauri-apps/api/core", () => ({
+  isTauri: () => true,
+}));
 vi.mock("@tauri-apps/api/webview", () => ({
   getCurrentWebview: () => ({ setZoom: mockSetZoom }),
 }));

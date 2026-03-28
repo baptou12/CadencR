@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { TerminalIcon, SettingsIcon, BrainCircuitIcon, CpuIcon, PlugIcon } from "lucide-react";
+import { TerminalIcon, SettingsIcon, BrainCircuitIcon, CpuIcon } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useGetFeature, useGetFeaturePlanProgress,
@@ -31,11 +31,10 @@ interface FeatureTopBarProps {
   featureId: number;
   projectId: number;
   mode?: "feature" | "session";
-  isWebSocket?: boolean;
   className?: string;
 }
 
-export function FeatureTopBar({ featureId, projectId, mode = "feature", isWebSocket, className }: FeatureTopBarProps) {
+export function FeatureTopBar({ featureId, projectId, mode = "feature", className }: FeatureTopBarProps) {
   const isSession = mode === "session";
   const [settingsOpen, setSettingsOpen] = useState(false);
   const queryClient = useQueryClient();
@@ -93,13 +92,6 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", isWebSoc
       )}
 
       <h1 className="text-lg font-semibold">{wsTitle ?? feature.title}</h1>
-
-      {isWebSocket && (
-        <Badge variant="secondary" className="bg-teal-500/15 text-teal-300 text-[10px] px-1.5 py-0 inline-flex items-center gap-1">
-          <PlugIcon className="size-3" />
-          WS
-        </Badge>
-      )}
 
       {!isSession && progress && progress.total > 0 && (
         <span className="text-muted-foreground text-sm">

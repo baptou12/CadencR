@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
+import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useDebouncedSetting } from "./useDebouncedSetting";
 
@@ -14,6 +15,7 @@ function clampZoom(level: number): number {
 }
 
 function applyZoom(level: number) {
+  if (!isTauri()) return;
   void getCurrentWebview().setZoom(level / 100);
 }
 

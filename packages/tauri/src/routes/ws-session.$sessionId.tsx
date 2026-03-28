@@ -104,7 +104,7 @@ function WebSocketSessionPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <FeatureTopBar featureId={featureId} projectId={projectId} mode="session" isWebSocket className="shrink-0" />
+      <FeatureTopBar featureId={featureId} projectId={projectId} mode="session" className="shrink-0" />
       <FeatureTabBar activeTab={activeTab} featureId={featureId} onTabChange={setActiveTab} gitStats={gitStats} gitBranch={branchData?.branch} />
       <div className="relative min-h-0 flex-1 overflow-hidden">
         <FeatureTerminalTab featureId={featureId} projectId={projectId} hidden={activeTab !== "terminal"} />

@@ -312,7 +312,7 @@ function RootLayout() {
       <ResizablePanelGroup orientation="horizontal">
         <ResizablePanel
           defaultSize={defaultLeftSize}
-          minSize="240px"
+          minSize="200px"
           maxSize="400px"
           onResize={handleLeftResize}
         >
