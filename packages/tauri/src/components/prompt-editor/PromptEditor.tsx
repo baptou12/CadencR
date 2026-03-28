@@ -6,31 +6,12 @@ import {
   useRef,
 } from "react";
 import { LexicalComposer } from "@lexical/react/LexicalComposer";
-import { RichTextPlugin } from "@lexical/react/LexicalRichTextPlugin";
+import { PlainTextPlugin } from "@lexical/react/LexicalPlainTextPlugin";
 import { ContentEditable } from "@lexical/react/LexicalContentEditable";
 import { LexicalErrorBoundary } from "@lexical/react/LexicalErrorBoundary";
 import { HistoryPlugin } from "@lexical/react/LexicalHistoryPlugin";
 import { OnChangePlugin } from "@lexical/react/LexicalOnChangePlugin";
-import { MarkdownShortcutPlugin } from "@lexical/react/LexicalMarkdownShortcutPlugin";
-import { ListPlugin } from "@lexical/react/LexicalListPlugin";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
-import { ListItemNode, ListNode } from "@lexical/list";
-import { HeadingNode, QuoteNode } from "@lexical/rich-text";
-import {
-  $convertToMarkdownString,
-  BOLD_ITALIC_STAR,
-  BOLD_ITALIC_UNDERSCORE,
-  BOLD_STAR,
-  BOLD_UNDERSCORE,
-  HEADING,
-  INLINE_CODE,
-  ITALIC_STAR,
-  ITALIC_UNDERSCORE,
-  ORDERED_LIST,
-  QUOTE,
-  STRIKETHROUGH,
-  UNORDERED_LIST,
-} from "@lexical/markdown";
 import {
   $createParagraphNode,
   $createTextNode,
@@ -39,7 +20,6 @@ import {
   type LexicalEditor,
 } from "lexical";
 import { cn } from "@/lib/utils";
-import { editorTheme } from "./theme";
 import { toast } from "sonner";
 import { MentionNode } from "./nodes/MentionNode";
 import { MentionPlugin } from "./plugins/MentionPlugin";
@@ -48,22 +28,6 @@ import { SlashCommandPlugin } from "./plugins/SlashCommandPlugin";
 import { KeyboardShortcutsPlugin } from "./plugins/KeyboardShortcutsPlugin";
 import { setEditorText } from "./editor-utils";
 import type { SlashCommand } from "@/hooks/useSlashCommand";
-
-/** Markdown transformers excluding CODE_BLOCK which requires @lexical/code */
-const MARKDOWN_TRANSFORMERS = [
-  HEADING,
-  QUOTE,
-  UNORDERED_LIST,
-  ORDERED_LIST,
-  BOLD_ITALIC_STAR,
-  BOLD_ITALIC_UNDERSCORE,
-  BOLD_STAR,
-  BOLD_UNDERSCORE,
-  ITALIC_STAR,
-  ITALIC_UNDERSCORE,
-  STRIKETHROUGH,
-  INLINE_CODE,
-];
 
 export interface PromptEditorHandle {
   focus: () => void;
@@ -142,7 +106,7 @@ const PromptEditorInner = forwardRef<PromptEditorHandle, PromptEditorProps>(
       getText() {
         let text = "";
         editorRef.current?.getEditorState().read(() => {
-          text = $convertToMarkdownString(MARKDOWN_TRANSFORMERS);
+          text = $getRoot().getTextContent();
         });
         return text;
       },
@@ -152,7 +116,7 @@ const PromptEditorInner = forwardRef<PromptEditorHandle, PromptEditorProps>(
       (_editorState: EditorState, editor: LexicalEditor) => {
         if (!onChange) return;
         editor.getEditorState().read(() => {
-          onChange($convertToMarkdownString(MARKDOWN_TRANSFORMERS));
+          onChange($getRoot().getTextContent());
         });
       },
       [onChange],
@@ -161,7 +125,7 @@ const PromptEditorInner = forwardRef<PromptEditorHandle, PromptEditorProps>(
     return (
       <>
         <EditorRefPlugin editorRef={editorRef} />
-        <RichTextPlugin
+        <PlainTextPlugin
           contentEditable={
             <ContentEditable
               className={cn(
@@ -184,8 +148,6 @@ const PromptEditorInner = forwardRef<PromptEditorHandle, PromptEditorProps>(
           ErrorBoundary={LexicalErrorBoundary}
         />
         <HistoryPlugin />
-        <ListPlugin />
-        <MarkdownShortcutPlugin transformers={MARKDOWN_TRANSFORMERS} />
         <OnChangePlugin onChange={handleChange} />
         <AutoResizePlugin />
         <MentionPlugin files={mentionFiles} />
@@ -200,8 +162,8 @@ export const PromptEditor = forwardRef<PromptEditorHandle, PromptEditorProps>(
   function PromptEditor(props, ref) {
     const initialConfig = {
       namespace: "PromptEditor",
-      theme: editorTheme,
-      nodes: [HeadingNode, QuoteNode, ListNode, ListItemNode, MentionNode, SlashCommandNode],
+      theme: { paragraph: "m-0 leading-[22px]" },
+      nodes: [MentionNode, SlashCommandNode],
       onError(error: Error) {
         toast.error(`Editor error: ${error.message}`);
       },
