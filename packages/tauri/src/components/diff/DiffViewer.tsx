@@ -21,6 +21,7 @@ import {
   type FileContent,
 } from "@/api/generated";
 import { ChevronDown, ChevronRight } from "lucide-react";
+import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { CopyButton } from "./CopyButton";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DiffFileTree, type ChangedFileEntry, type CommitEntry } from "./DiffFileTree";
@@ -520,9 +521,6 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
     return () => window.removeEventListener("keydown", handler, true);
   }, [fileNames, blobShas, viewedFilesSet, featureId, scrollToFileIndex, toggleFile, markViewed, unmarkViewed]);
 
-  const totalAdditions = fileMeta.reduce((sum, { additions }) => sum + additions, 0);
-  const totalDeletions = fileMeta.reduce((sum, { deletions }) => sum + deletions, 0);
-
   const changedFileEntries: ChangedFileEntry[] = useMemo(
     () =>
       fileMeta.map(({ section, displayName, additions, deletions }) => {
@@ -565,94 +563,48 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
 
   if (isLoading) {
     return (
-      <div className="flex h-full items-center justify-center bg-[#282a36] text-[#f8f8f2]">
-        <p className="text-[#6272a4]">Loading diff...</p>
+      <div className="flex h-full items-center justify-center bg-background text-foreground">
+        <p className="text-muted-foreground">Loading diff...</p>
       </div>
     );
   }
 
   if (!rawDiff?.trim()) {
     return (
-      <div className="flex h-full items-center justify-center bg-[#282a36] text-[#f8f8f2]">
-        <p className="text-[#6272a4]">No changes detected</p>
+      <div className="flex h-full items-center justify-center bg-background text-foreground">
+        <p className="text-muted-foreground">No changes detected</p>
       </div>
     );
   }
 
   return (
-    <div className="dracula-diff flex h-full flex-col overflow-hidden bg-[#282a36]">
-      {/* Header bar */}
-      {selectedCommit ? (() => {
+    <div className="dracula-diff flex h-full flex-col overflow-hidden bg-background">
+      {/* Commit header (only when viewing a specific commit) */}
+      {selectedCommit && (() => {
         const commit = commits.find((c) => c.sha === selectedCommit);
         return (
-          <div className="border-b border-[#6272a4] px-4 py-2 text-sm text-[#f8f8f2]">
+          <div className="border-b border-border px-4 py-2 text-sm text-foreground">
             <div className="flex items-center gap-3">
-              <span className="font-mono text-[#bd93f9]">{selectedCommit.slice(0, 7)}</span>
-              <span className="min-w-0 flex-1 text-[#f8f8f2]">{commit?.message}</span>
-              <span className="shrink-0 text-xs text-[#50fa7b]">+{totalAdditions}</span>
-              <span className="shrink-0 text-xs text-[#ff5555]">-{totalDeletions}</span>
-              <span className="shrink-0 text-xs text-[#6272a4]">{fileMeta.length} file{fileMeta.length !== 1 ? "s" : ""}</span>
+              <span className="font-mono text-primary">{selectedCommit.slice(0, 7)}</span>
+              <span className="min-w-0 flex-1 text-foreground">{commit?.message}</span>
               <button
-                className="shrink-0 rounded bg-[#44475a] px-2 py-0.5 text-xs text-[#f8f8f2] hover:bg-[#6272a4]"
+                className="shrink-0 rounded bg-accent px-2 py-0.5 text-xs text-foreground hover:bg-muted-foreground"
                 onClick={() => setSelectedCommit(null)}
               >
                 Working Changes
               </button>
-              <div className="flex items-center gap-2">
-                <button
-                  className={`rounded px-2 py-0.5 text-xs ${diffMode === DiffModeEnum.Split ? "bg-[#44475a] text-[#f8f8f2]" : "text-[#6272a4]"}`}
-                  onClick={() => setDiffMode(DiffModeEnum.Split)}
-                >
-                  Split
-                </button>
-                <button
-                  className={`rounded px-2 py-0.5 text-xs ${diffMode === DiffModeEnum.Unified ? "bg-[#44475a] text-[#f8f8f2]" : "text-[#6272a4]"}`}
-                  onClick={() => setDiffMode(DiffModeEnum.Unified)}
-                >
-                  Unified
-                </button>
-              </div>
             </div>
             {commit?.body && (
-              <p className="mt-1 whitespace-pre-wrap text-xs text-[#6272a4]">{commit.body}</p>
+              <p className="mt-1 whitespace-pre-wrap text-xs text-muted-foreground">{commit.body}</p>
             )}
           </div>
         );
-      })() : (
-        <div className="flex items-center gap-4 border-b border-[#6272a4] px-4 py-2 text-sm text-[#f8f8f2]">
-          <span>{fileMeta.length} file{fileMeta.length !== 1 ? "s" : ""} changed</span>
-          <span className="text-[#50fa7b]">+{totalAdditions}</span>
-          <span className="text-[#ff5555]">-{totalDeletions}</span>
-          <span className="text-[#6272a4]">{viewedFilesSet.size}/{fileMeta.length} viewed</span>
-          <div className="ml-auto flex items-center gap-3">
-            <div className="flex items-center gap-2 text-[10px] text-[#6272a4]">
-              <span><kbd className="rounded bg-[#44475a] px-1 py-0.5 text-[#f8f8f2]">⌃J</kbd> next</span>
-              <span><kbd className="rounded bg-[#44475a] px-1 py-0.5 text-[#f8f8f2]">⌃K</kbd> prev</span>
-              <span><kbd className="rounded bg-[#44475a] px-1 py-0.5 text-[#f8f8f2]">⌃L</kbd> expand</span>
-              <span><kbd className="rounded bg-[#44475a] px-1 py-0.5 text-[#f8f8f2]">⌃H</kbd> viewed</span>
-              <span><kbd className="rounded bg-[#44475a] px-1 py-0.5 text-[#f8f8f2]">⌃D</kbd>/<kbd className="rounded bg-[#44475a] px-1 py-0.5 text-[#f8f8f2]">⌃U</kbd> scroll</span>
-            </div>
-            <div className="h-4 w-px bg-[#6272a4]" />
-            <button
-              className={`rounded px-2 py-0.5 text-xs ${diffMode === DiffModeEnum.Split ? "bg-[#44475a] text-[#f8f8f2]" : "text-[#6272a4]"}`}
-              onClick={() => setDiffMode(DiffModeEnum.Split)}
-            >
-              Split
-            </button>
-            <button
-              className={`rounded px-2 py-0.5 text-xs ${diffMode === DiffModeEnum.Unified ? "bg-[#44475a] text-[#f8f8f2]" : "text-[#6272a4]"}`}
-              onClick={() => setDiffMode(DiffModeEnum.Unified)}
-            >
-              Unified
-            </button>
-          </div>
-        </div>
-      )}
+      })()}
 
       {/* Diff area + file tree */}
-      <div className="flex min-h-0 flex-1">
+      <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
         {/* File tree sidebar */}
-        <div className="w-80 shrink-0 border-r border-[#6272a4] overflow-hidden">
+        <ResizablePanel defaultSize={25} minSize={1} maxSize="300px" className="overflow-hidden">
           <DiffFileTree
             files={changedFileEntries}
             expandedFiles={expandedFiles}
@@ -666,8 +618,10 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
             isOnBaseBranch={isOnBaseBranch}
             onLoadMoreCommits={() => setCommitLimit((l) => l + 20)}
           />
-        </div>
-        <div ref={diffAreaRef} className="flex-1 overflow-y-auto">
+        </ResizablePanel>
+        <ResizableHandle className="bg-accent" />
+        <ResizablePanel defaultSize={75} className="overflow-hidden">
+        <div ref={diffAreaRef} className="h-full overflow-y-auto">
         {fileMeta.map(({ section, displayName, additions, deletions }, fileIndex) => {
           const isCollapsed = collapsedFiles.has(displayName);
           const isFileViewed = viewedFilesSet.has(displayName);
@@ -675,17 +629,17 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
           const isFocused = fileIndex === focusedFileIndex;
 
           return (
-            <div key={displayName} data-file={displayName} className="border-b border-[#6272a4]">
+            <div key={displayName} data-file={displayName} className="border-b border-border">
               {/* File header */}
-              <div className={`group/header sticky top-0 z-10 flex w-full items-center gap-2 bg-[#343746] px-4 py-1.5 text-sm text-[#f8f8f2] hover:bg-[#44475a] ${isFocused ? "ring-1 ring-inset ring-[#bd93f9] bg-[#44475a]" : ""}`}>
+              <div className={`group/header sticky top-0 z-10 flex w-full items-center gap-2 bg-sidebar px-4 py-2.5 text-sm text-foreground hover:bg-accent ${isFocused ? "ring-1 ring-inset ring-primary bg-accent" : ""}`}>
                 <button
                   className="flex items-center gap-2 flex-1 min-w-0 text-left"
                   onClick={() => toggleFile(displayName)}
                 >
                   {isCollapsed ? (
-                    <ChevronRight className="h-4 w-4 shrink-0 text-[#6272a4]" />
+                    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
                   ) : (
-                    <ChevronDown className="h-4 w-4 shrink-0 text-[#6272a4]" />
+                    <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
                   )}
                   <span className="font-mono text-xs truncate">{displayName}</span>
                   <CopyButton text={displayName} hoverClass="opacity-0 group-hover/header:opacity-100" sizeClass="h-3.5 w-3.5" />
@@ -695,7 +649,7 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
                 {/* Viewed checkbox (hidden when viewing a commit) */}
                 {!selectedCommit && (
                   <div
-                    className="flex items-center gap-1.5 text-xs text-[#6272a4] ml-2 shrink-0"
+                    className="flex items-center gap-1.5 text-xs text-muted-foreground ml-2 shrink-0"
                     onClick={(e) => e.stopPropagation()}
                   >
                     <Checkbox
@@ -745,7 +699,34 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
           );
         })}
         </div>
+        </ResizablePanel>
+      </ResizablePanelGroup>
 
+      {/* Bottom bar */}
+      <div className="flex items-center gap-3 border-t border-border px-4 py-1.5 text-[10px] text-muted-foreground">
+        <span><kbd className="rounded bg-accent px-1 py-0.5 text-foreground">⌃J</kbd> next</span>
+        <span><kbd className="rounded bg-accent px-1 py-0.5 text-foreground">⌃K</kbd> prev</span>
+        <span><kbd className="rounded bg-accent px-1 py-0.5 text-foreground">⌃L</kbd> expand</span>
+        <span><kbd className="rounded bg-accent px-1 py-0.5 text-foreground">⌃H</kbd> viewed</span>
+        <span><kbd className="rounded bg-accent px-1 py-0.5 text-foreground">⌃D</kbd>/<kbd className="rounded bg-accent px-1 py-0.5 text-foreground">⌃U</kbd> scroll</span>
+        <div className="ml-auto flex items-center gap-3">
+          <span className="text-xs text-muted-foreground">{viewedFilesSet.size}/{fileMeta.length} viewed</span>
+          <div className="h-4 w-px bg-border" />
+          <div className="flex items-center gap-2">
+            <button
+              className={`rounded px-2 py-0.5 text-xs ${diffMode === DiffModeEnum.Split ? "bg-accent text-foreground" : "text-muted-foreground"}`}
+              onClick={() => setDiffMode(DiffModeEnum.Split)}
+            >
+              Split
+            </button>
+            <button
+              className={`rounded px-2 py-0.5 text-xs ${diffMode === DiffModeEnum.Unified ? "bg-accent text-foreground" : "text-muted-foreground"}`}
+              onClick={() => setDiffMode(DiffModeEnum.Unified)}
+            >
+              Unified
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

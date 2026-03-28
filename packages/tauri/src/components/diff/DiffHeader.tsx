@@ -12,8 +12,8 @@ export interface DiffHeaderProps {
  */
 export function DiffHeader({ fileCount, totalAdditions, totalDeletions, children }: DiffHeaderProps) {
   return (
-    <div className="flex items-center gap-4 border-b border-[#6272a4] px-4 py-2 text-sm text-[#f8f8f2]">
-      <FileText className="h-4 w-4 text-[#6272a4]" />
+    <div className="flex items-center gap-4 border-b border-border px-4 py-2 text-sm text-foreground">
+      <FileText className="h-4 w-4 text-muted-foreground" />
       <span>
         {fileCount} file{fileCount !== 1 ? "s" : ""} changed
       </span>
@@ -38,11 +38,11 @@ export interface FileHeaderProps {
 export function FileHeader({ fileName, additions, deletions, isCollapsed, onToggle }: FileHeaderProps) {
   return (
     <button
-      className="flex w-full items-center gap-2 bg-[#343746] px-4 py-1.5 text-left text-sm text-[#f8f8f2] hover:bg-[#44475a]"
+      className="flex w-full items-center gap-2 bg-secondary px-4 py-1.5 text-left text-sm text-foreground hover:bg-accent"
       onClick={onToggle}
     >
       <svg
-        className={`h-4 w-4 text-[#6272a4] transition-transform ${isCollapsed ? "" : "rotate-90"}`}
+        className={`h-4 w-4 text-muted-foreground transition-transform ${isCollapsed ? "" : "rotate-90"}`}
         viewBox="0 0 24 24"
         fill="none"
         stroke="currentColor"

@@ -52,9 +52,9 @@ describe("DiffFileTree", () => {
         {...defaultCommitProps}
       />,
     );
-    // Selected file row has bg-[#44475a] class
+    // Selected file row has bg-accent class
     const fooBtn = screen.getByTitle("src/foo.ts");
-    expect(fooBtn.closest("div")).toHaveClass("bg-[#44475a]");
+    expect(fooBtn.closest("div")).toHaveClass("bg-accent");
   });
 
   it("calls onSelectFile when file name is clicked", () => {
