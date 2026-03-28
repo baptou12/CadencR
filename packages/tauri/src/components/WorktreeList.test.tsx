@@ -115,7 +115,7 @@ describe("WorktreeList", () => {
     expect(mockDeleteMutate).toHaveBeenCalled();
   });
 
-  it("shows spinner on the specific worktree being deleted", async () => {
+  it("replaces button with spinner while deleting", async () => {
     mockDeleteWorktree.mockImplementation((hookOpts: { onSuccess?: () => void }) => ({
       mutate: (input: unknown, opts: { onSettled?: OnSettledFn }) => {
         mockDeleteMutate(input, opts);
@@ -124,14 +124,17 @@ describe("WorktreeList", () => {
       ...hookOpts,
     }));
 
-    const { user } = render(<WorktreeList projectId={1} />);
+    const { user, container } = render(<WorktreeList projectId={1} />);
     const buttons = screen.getAllByRole("button");
 
     await user.click(buttons[0]);
     await user.click(buttons[0]);
 
-    expect(buttons[0]).toBeDisabled();
-    expect(buttons[1]).not.toBeDisabled();
+    // Button is replaced with a CSS spinner, not disabled
+    const spinner = container.querySelector(".animate-spin");
+    expect(spinner).toBeInTheDocument();
+    // Other buttons remain
+    expect(screen.getAllByRole("button")).toHaveLength(2);
   });
 
   it("allows deleting multiple worktrees concurrently", async () => {
@@ -146,18 +149,20 @@ describe("WorktreeList", () => {
     const { user } = render(<WorktreeList projectId={1} />);
     const buttons = screen.getAllByRole("button");
 
+    // Delete first worktree (double-click)
     await user.click(buttons[0]);
     await user.click(buttons[0]);
 
-    await user.click(buttons[1]);
-    await user.click(buttons[1]);
+    // After first deletion, buttons[0] is gone; second worktree's button is now first
+    const remainingButtons = screen.getAllByRole("button");
+    await user.click(remainingButtons[0]);
+    await user.click(remainingButtons[0]);
 
     expect(mockDeleteMutate).toHaveBeenCalledTimes(2);
-    expect(buttons[0]).toBeDisabled();
-    expect(buttons[1]).toBeDisabled();
+    expect(screen.getAllByRole("button")).toHaveLength(1);
   });
 
-  it("re-enables button after deletion completes (onSettled)", async () => {
+  it("restores button after deletion completes (onSettled)", async () => {
     let capturedOnSettled: OnSettledFn | undefined;
     mockDeleteWorktree.mockImplementation((hookOpts: { onSuccess?: () => void }) => ({
       mutate: (input: unknown, opts: { onSettled?: OnSettledFn }) => {
@@ -173,12 +178,12 @@ describe("WorktreeList", () => {
 
     await user.click(buttons[0]);
     await user.click(buttons[0]);
-    expect(buttons[0]).toBeDisabled();
+    expect(screen.getAllByRole("button")).toHaveLength(2);
 
     capturedOnSettled!();
 
     await waitFor(() => {
-      expect(buttons[0]).not.toBeDisabled();
+      expect(screen.getAllByRole("button")).toHaveLength(3);
     });
   });
 

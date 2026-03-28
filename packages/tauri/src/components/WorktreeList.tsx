@@ -106,22 +106,23 @@ export function WorktreeList({ projectId }: { projectId: number }) {
               )}
             </div>
           </div>
-          <Button
-            variant={confirmPath === wt.path ? "destructive" : "ghost"}
-            size="icon"
-            className="h-6 w-6 shrink-0"
-            onClick={() => handleDelete(wt)}
-            disabled={deletingPaths.has(wt.path)}
-            title={
-              confirmPath === wt.path ? "Click again to confirm" : "Remove worktree"
-            }
-          >
-            {deletingPaths.has(wt.path) ? (
-              <Loader2 className="h-3 w-3 animate-spin" />
-            ) : (
-              <Trash2 className="h-3 w-3" />
-            )}
-          </Button>
+          {deletingPaths.has(wt.path) ? (
+            <div className="flex h-6 w-6 shrink-0 items-center justify-center">
+              <span className="size-3 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
+            </div>
+          ) : (
+            <Button
+              variant={confirmPath === wt.path ? "destructive" : "ghost"}
+              size="icon"
+              className="h-6 w-6 shrink-0"
+              onClick={() => handleDelete(wt)}
+              title={
+                confirmPath === wt.path ? "Click again to confirm" : "Remove worktree"
+              }
+            >
+              <Trash2 className="size-3" />
+            </Button>
+          )}
         </div>
       ))}
     </div>
