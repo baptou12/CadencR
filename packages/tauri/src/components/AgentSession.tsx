@@ -28,7 +28,7 @@ import {
   Zap,
   ClipboardList,
 } from "lucide-react";
-import { KbdShortcut } from "./KbdShortcut";
+import { ShortcutTooltip } from "./ShortcutTooltip";
 import { AgentStream } from "./AgentStream";
 import { AgentPromptBar, type AgentPromptBarHandle } from "./AgentPromptBar";
 import { AgentTodoList } from "./AgentTodoList";
@@ -500,40 +500,42 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
     >
       {/* Mode chip */}
       {onPermissionModeToggle && (
-        <button
-          type="button"
-          onClick={onPermissionModeToggle}
-          title="Toggle permission mode (Shift+Tab)"
-          className={cn(
-            chipClass,
-            permissionMode === "plan"
-              ? "bg-green-500/15 text-green-400 hover:bg-green-500/25"
-              : "bg-blue-500/15 text-blue-400 hover:bg-blue-500/25",
-          )}
-        >
-          {permissionMode === "plan" ? (
-            <ClipboardList className="size-3" />
-          ) : (
-            <Zap className="size-3" />
-          )}
-          {permissionMode === "plan" ? "Plan" : "Auto"}
-          <KbdShortcut keys={["shift", "Tab"]} size="sm" />
-        </button>
+        <ShortcutTooltip label={permissionMode === "plan" ? "Plan mode" : "Auto mode"} keys={["shift", "Tab"]}>
+          <button
+            type="button"
+            onClick={onPermissionModeToggle}
+            title="Toggle permission mode (Shift+Tab)"
+            className={cn(
+              chipClass,
+              permissionMode === "plan"
+                ? "bg-green-500/15 text-green-400 hover:bg-green-500/25"
+                : "bg-blue-500/15 text-blue-400 hover:bg-blue-500/25",
+            )}
+          >
+            {permissionMode === "plan" ? (
+              <ClipboardList className="size-3" />
+            ) : (
+              <Zap className="size-3" />
+            )}
+            {permissionMode === "plan" ? "Plan" : "Auto"}
+          </button>
+        </ShortcutTooltip>
       )}
 
       {/* Model chip — violet */}
       {onModelChange && (
         <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              className={cn(chipClass, "bg-violet-500/15 text-violet-400 hover:bg-violet-500/25")}
-            >
-              {currentModelLabel}
-              <ChevronDownIcon className="size-3" />
-              <KbdShortcut keys={["cmd", "P"]} size="sm" />
-            </button>
-          </DropdownMenuTrigger>
+          <ShortcutTooltip label="Switch model" keys={["cmd", "P"]}>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className={cn(chipClass, "bg-violet-500/15 text-violet-400 hover:bg-violet-500/25")}
+              >
+                {currentModelLabel}
+                <ChevronDownIcon className="size-3" />
+              </button>
+            </DropdownMenuTrigger>
+          </ShortcutTooltip>
           <DropdownMenuContent align="start" className="min-w-[160px]">
             {models.map((m) => (
               <DropdownMenuItem
@@ -551,15 +553,16 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
 
       {/* Review Changes chip — orange */}
       {showDiffBar && (
-        <button
-          type="button"
-          onClick={onViewDiff}
-          className={cn(chipClass, "bg-orange-500/15 text-orange-400 hover:bg-orange-500/25")}
-        >
-          <FileEditIcon className="size-3" />
-          Review Changes
-          <KbdShortcut keys={["cmd", "D"]} size="sm" />
-        </button>
+        <ShortcutTooltip label="Review Changes" keys={["cmd", "D"]}>
+          <button
+            type="button"
+            onClick={onViewDiff}
+            className={cn(chipClass, "bg-orange-500/15 text-orange-400 hover:bg-orange-500/25")}
+          >
+            <FileEditIcon className="size-3" />
+            Review Changes
+          </button>
+        </ShortcutTooltip>
       )}
 
       {/* Tasks chip — rose */}

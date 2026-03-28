@@ -8,7 +8,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { SendIcon, Loader2Icon } from "lucide-react";
-import { KbdShortcut } from "@/components/KbdShortcut";
+import { ShortcutTooltip } from "@/components/ShortcutTooltip";
 import { DiffViewer } from "./DiffViewer";
 import { useListDiffComments, useDeletePendingDiffComments } from "@/api/generated";
 import { useQueryClient } from "@tanstack/react-query";
@@ -92,20 +92,21 @@ export function DiffViewerModal({
 
         {!hideFooter && (
           <DialogFooter className="border-t px-4 py-3">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={pendingComments.length === 0 || sending}
-              onClick={handleSendToAgent}
-            >
-              {sending ? (
-                <Loader2Icon className="mr-2 size-4 animate-spin" />
-              ) : (
-                <SendIcon className="mr-2 size-4" />
-              )}
-              {buttonLabel}
-              <KbdShortcut keys={["cmd", "enter"]} />
-            </Button>
+            <ShortcutTooltip label={buttonLabel} keys={["cmd", "enter"]}>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={pendingComments.length === 0 || sending}
+                onClick={handleSendToAgent}
+              >
+                {sending ? (
+                  <Loader2Icon className="mr-2 size-4 animate-spin" />
+                ) : (
+                  <SendIcon className="mr-2 size-4" />
+                )}
+                {buttonLabel}
+              </Button>
+            </ShortcutTooltip>
           </DialogFooter>
         )}
       </DialogContent>

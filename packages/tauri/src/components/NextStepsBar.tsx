@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Loader2Icon, GitMergeIcon } from "lucide-react";
 import type { AgentStatus } from "@/types/agent";
 import { AGENT_ICONS } from "@/components/agent-icons";
-import { KbdShortcut } from "@/components/KbdShortcut";
+import { ShortcutTooltip } from "@/components/ShortcutTooltip";
 import { MergeArchiveDialog } from "@/components/MergeArchiveDialog";
 import { AgentPromptBar } from "@/components/AgentPromptBar";
 import type { SplitSendAction, AgentPromptBarHandle } from "@/components/AgentPromptBar";
@@ -179,49 +179,52 @@ export function NextStepsBar({
           </div>
           <div className="flex flex-wrap gap-2">
             {canContinueBuild && onContinueBuild && (
-              <Button
-                onClick={onContinueBuild}
-                disabled={isContinuingBuild}
-              >
-                {isContinuingBuild ? (
-                  <Loader2Icon className="mr-2 size-4 animate-spin" />
-                ) : (
-                  <AGENT_ICONS.execute className="mr-2 size-4" />
-                )}
-                {nextStepNumber != null
-                  ? `Continue to Step ${nextStepNumber}`
-                  : "Continue Building"}
-                <KbdShortcut keys={["cmd", "shift", "B"]} />
-              </Button>
+              <ShortcutTooltip label={nextStepNumber != null ? `Continue to Step ${nextStepNumber}` : "Continue Building"} keys={["cmd", "shift", "B"]} above>
+                <Button
+                  onClick={onContinueBuild}
+                  disabled={isContinuingBuild}
+                >
+                  {isContinuingBuild ? (
+                    <Loader2Icon className="mr-2 size-4 animate-spin" />
+                  ) : (
+                    <AGENT_ICONS.execute className="mr-2 size-4" />
+                  )}
+                  {nextStepNumber != null
+                    ? `Continue to Step ${nextStepNumber}`
+                    : "Continue Building"}
+                </Button>
+              </ShortcutTooltip>
             )}
             {canStartBuild && !canContinueBuild && (
-              <Button
-                onClick={onStartBuilding}
-                disabled={isStartingExecute}
-              >
-                {isStartingExecute ? (
-                  <Loader2Icon className="mr-2 size-4 animate-spin" />
-                ) : (
-                  <AGENT_ICONS.execute className="mr-2 size-4" />
-                )}
-                {executeStatus === "error" ? "Retry Build" : "Start Building"}
-                <KbdShortcut keys={["cmd", "shift", "B"]} />
-              </Button>
+              <ShortcutTooltip label={executeStatus === "error" ? "Retry Build" : "Start Building"} keys={["cmd", "shift", "B"]} above>
+                <Button
+                  onClick={onStartBuilding}
+                  disabled={isStartingExecute}
+                >
+                  {isStartingExecute ? (
+                    <Loader2Icon className="mr-2 size-4 animate-spin" />
+                  ) : (
+                    <AGENT_ICONS.execute className="mr-2 size-4" />
+                  )}
+                  {executeStatus === "error" ? "Retry Build" : "Start Building"}
+                </Button>
+              </ShortcutTooltip>
             )}
             {canStartWorkflowSession && onStartWorkflowSession && (
-              <Button
-                variant="outline"
-                onClick={() => setShowSessionPrompt((v) => !v)}
-                disabled={isStartingWorkflowSession}
-              >
-                {isStartingWorkflowSession ? (
-                  <Loader2Icon className="mr-2 size-4 animate-spin" />
-                ) : (
-                  <AGENT_ICONS.session className="mr-2 size-4" />
-                )}
-                Start Session
-                <KbdShortcut keys={["cmd", "shift", "S"]} />
-              </Button>
+              <ShortcutTooltip label="Start Session" keys={["cmd", "shift", "S"]} above>
+                <Button
+                  variant="outline"
+                  onClick={() => setShowSessionPrompt((v) => !v)}
+                  disabled={isStartingWorkflowSession}
+                >
+                  {isStartingWorkflowSession ? (
+                    <Loader2Icon className="mr-2 size-4 animate-spin" />
+                  ) : (
+                    <AGENT_ICONS.session className="mr-2 size-4" />
+                  )}
+                  Start Session
+                </Button>
+              </ShortcutTooltip>
             )}
             {canStartRisk && (
               <Button
@@ -266,14 +269,15 @@ export function NextStepsBar({
               </Button>
             )}
             {canMerge && (
-              <Button
-                variant="outline"
-                onClick={() => setMergeDialogOpen(true)}
-              >
-                <GitMergeIcon className="mr-2 size-4" />
-                Merge &amp; Archive
-                <KbdShortcut keys={["cmd", "shift", "M"]} />
-              </Button>
+              <ShortcutTooltip label="Merge & Archive" keys={["cmd", "shift", "M"]} above>
+                <Button
+                  variant="outline"
+                  onClick={() => setMergeDialogOpen(true)}
+                >
+                  <GitMergeIcon className="mr-2 size-4" />
+                  Merge &amp; Archive
+                </Button>
+              </ShortcutTooltip>
             )}
             {canStartRetro && (
               <Button
