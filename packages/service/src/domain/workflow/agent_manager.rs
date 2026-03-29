@@ -950,6 +950,7 @@ pub fn spawn_workflow_stream_reader(
         let mut needs_session_id_capture = true;
         let mut context_window: u64 = initial_context_window;
         let mut pending_feature_update: Option<Vec<&'static str>> = None;
+        let mut pending_queue_update = false;
 
         loop {
             match message_rx.recv().await {
@@ -1105,6 +1106,7 @@ pub fn spawn_workflow_stream_reader(
                                     }
                                     if name.contains("create_phase") || name.contains("finalize_phases") {
                                         fields.extend_from_slice(&["phases", "progress"]);
+                                        pending_queue_update = true;
                                     } else if name.contains("finalize_plan") {
                                         fields.extend_from_slice(&["plan", "phases", "progress", "status"]);
                                     } else if name.contains("save_plan") || name.contains("create_plan") {
@@ -1120,6 +1122,21 @@ pub fn spawn_workflow_stream_reader(
                             }
                         }
                         SdkMessage::User { .. } => {
+                            if pending_queue_update {
+                                pending_queue_update = false;
+                                if let Ok(items) = repo::get_queue_for_feature(&write_pool, feature_id).await {
+                                    let envelope = WsEnvelope::new(
+                                        "workflow",
+                                        "queue_update",
+                                        to_value(WorkflowQueueUpdatePayload {
+                                            feature_id,
+                                            items,
+                                            workflow_status: None,
+                                        }),
+                                    );
+                                    let _ = sender.send(Message::Text(String::from(envelope).into()));
+                                }
+                            }
                             if let Some(fields) = pending_feature_update.take() {
                                 send_feature_updated_envelope(&sender, feature_id, &fields);
                             }

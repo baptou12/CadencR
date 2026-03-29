@@ -252,11 +252,11 @@ describe("FeatureWorkflowView", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("shows spinner when planning with no agent output", () => {
+  it("shows spinner when agents-active with no agent output", () => {
     mockUseWorkflowBackend.mockReturnValue({
       ...defaultBackend,
-      view: "planning",
-      workflowStatus: "planning",
+      view: "agents-active",
+      workflowStatus: "building",
       hasAnyAgentOutput: false,
       sessionEntries: [],
     });
@@ -272,11 +272,11 @@ describe("FeatureWorkflowView", () => {
     expect(screen.queryByTestId("plan-input-view")).not.toBeInTheDocument();
   });
 
-  it("shows spinner when prd with no agent output", () => {
+  it("does not show spinner when planning with no agent output", () => {
     mockUseWorkflowBackend.mockReturnValue({
       ...defaultBackend,
-      view: "prd",
-      workflowStatus: "prd",
+      view: "planning",
+      workflowStatus: "planning",
       hasAnyAgentOutput: false,
       sessionEntries: [],
     });
@@ -288,7 +288,7 @@ describe("FeatureWorkflowView", () => {
         featureQuery={{ refetch: vi.fn() }}
       />,
     );
-    expect(container.querySelector(".animate-spin")).toBeInTheDocument();
+    expect(container.querySelector(".animate-spin")).not.toBeInTheDocument();
   });
 
   it("does not show spinner on plan-input view", () => {
