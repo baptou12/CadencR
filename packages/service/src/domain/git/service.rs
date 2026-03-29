@@ -340,13 +340,19 @@ pub async fn retry_worktree_setup(
 ) -> Result<SuccessResponse, AppError> {
     let project_path = repository::get_project_path(&state.read_pool, body.project_id).await?;
     let project_name = repository::get_project_name(&state.read_pool, body.project_id).await?;
-    let prefix = repository::get_branch_prefix(&state.read_pool, body.project_id).await?;
 
-    let title = repository::get_feature_title(&state.read_pool, body.feature_id)
-        .await?
-        .unwrap_or_else(|| "feature".to_string());
+    // Reuse stored branch name to avoid creating duplicate worktrees
+    let branch_name = match repository::get_feature_setting(&state.read_pool, body.feature_id, SETTING_WORKTREE_BRANCH).await? {
+        Some(existing) => existing,
+        None => {
+            let prefix = repository::get_branch_prefix(&state.read_pool, body.project_id).await?;
+            let title = repository::get_feature_title(&state.read_pool, body.feature_id)
+                .await?
+                .unwrap_or_else(|| "feature".to_string());
+            commands::build_branch_name(&prefix, &title)
+        }
+    };
 
-    let branch_name = commands::build_branch_name(&prefix, &title);
     let (worktree_path, branch) =
         commands::create_worktree(Path::new(&project_path), &branch_name, &project_name).await?;
 

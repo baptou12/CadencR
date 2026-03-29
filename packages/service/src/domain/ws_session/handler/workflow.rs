@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, LazyLock, Once};
 
@@ -222,6 +223,7 @@ pub async fn handle_workflow_action(
         "continue" => handle_continue(envelope, sender).await,
         "skip_item" => handle_skip_item(envelope, sender).await,
         "retry_item" => handle_retry_item(envelope, sender).await,
+        "retry_worktree_setup" => handle_retry_worktree_setup(envelope, sender, app_state).await,
         "permission.respond" => handle_permission_respond(envelope, sender, app_state).await,
         "prompt.send" => handle_prompt_send(envelope, sender, app_state).await,
         "interrupt" => handle_interrupt(envelope, sender, app_state).await,
@@ -970,6 +972,33 @@ async fn handle_mark_done(envelope: WsEnvelope, sender: &WsSender) {
             send_workflow_error(sender, &envelope.id, "MARK_DONE_FAILED", &format!("Failed to mark done: {e}"));
         }
     }
+}
+
+async fn handle_retry_worktree_setup(
+    envelope: WsEnvelope,
+    sender: &WsSender,
+    app_state: &AppState,
+) {
+    let Some(payload) = parse_payload::<WorkflowContinuePayload>(&envelope, sender) else { return };
+    let feature_id = payload.feature_id;
+
+    let Some(worktree_path) = worktree::get_setting(&app_state.read_pool, feature_id, "worktree_path").await else {
+        warn!(feature_id, "retry_worktree_setup: no worktree path found");
+        return;
+    };
+
+    // Reset status and clear old error/log
+    let _ = worktree::set_setting(&app_state.write_pool, feature_id, "worktree_setup_step", "setup").await;
+    let _ = worktree::set_setting(&app_state.write_pool, feature_id, "worktree_setup_log", "").await;
+
+    // run_setup_commands sends its own WS events (setup_running, setup_output, setup_error, ready)
+    let read_pool = app_state.read_pool.clone();
+    let write_pool = app_state.write_pool.clone();
+    let ws = crate::domain::workflow::engine::WsSender::new(sender.clone());
+    let path = PathBuf::from(worktree_path);
+    tokio::spawn(async move {
+        worktree::run_setup_commands(read_pool, write_pool, feature_id, path, ws).await;
+    });
 }
 
 /// Shared worktree preparation for plan/PRD handlers:

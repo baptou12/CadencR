@@ -91,17 +91,22 @@ pub async fn ensure_worktree(
     .map(|r| r.0)
     .unwrap_or_else(|| "feature/".to_string());
 
-    // 3. Look up feature title
-    let title = sqlx::query_as::<_, (String,)>("SELECT title FROM features WHERE id = ?")
-        .bind(feature_id)
-        .fetch_optional(read_pool)
-        .await
-        .map_err(|e| format!("DB error looking up feature title: {e}"))?
-        .map(|r| r.0)
-        .unwrap_or_else(|| format!("feature-{feature_id}"));
-
-    // 4. Build branch name
-    let branch = build_branch_name(&branch_prefix, &title);
+    // 3. Reuse stored branch name if available, otherwise generate a new one
+    let branch = if let Some(existing_branch) = get_setting(read_pool, feature_id, "worktree_branch").await {
+        existing_branch
+    } else {
+        let title = sqlx::query_as::<_, (String,)>("SELECT title FROM features WHERE id = ?")
+            .bind(feature_id)
+            .fetch_optional(read_pool)
+            .await
+            .map_err(|e| format!("DB error looking up feature title: {e}"))?
+            .map(|r| r.0)
+            .unwrap_or_else(|| format!("feature-{feature_id}"));
+        let name = build_branch_name(&branch_prefix, &title);
+        // Persist immediately so subsequent attempts reuse it
+        let _ = set_setting(write_pool, feature_id, "worktree_branch", &name).await;
+        name
+    };
 
     // 5. Compute worktree path
     let safe_branch = branch.replace('/', "-");
@@ -174,6 +179,24 @@ pub async fn ensure_worktree(
     Ok(worktree_path)
 }
 
+/// Persist setup error state and notify the frontend via WebSocket.
+async fn report_setup_error(
+    write_pool: &SqlitePool,
+    feature_id: i64,
+    log_lines: &tokio::sync::Mutex<Vec<String>>,
+    ws_sender: &WsSender,
+    error: &str,
+) {
+    let _ = set_setting(write_pool, feature_id, "worktree_setup_step", "setup_error").await;
+    let log = log_lines.lock().await.join("\n");
+    let _ = set_setting(write_pool, feature_id, "worktree_setup_log", &log).await;
+    send_envelope(ws_sender, "workflow", "worktree.setup_error", serde_json::json!({
+        "feature_id": feature_id,
+        "error": error,
+        "output": log,
+    }));
+}
+
 /// Run setup commands in the worktree (fire-and-forget via tokio::spawn).
 pub async fn run_setup_commands(
     read_pool: SqlitePool,
@@ -219,9 +242,18 @@ pub async fn run_setup_commands(
     // 4. Parse and run each command, accumulating output log
     let commands: Vec<&str> = commands_str.lines().filter(|l| !l.trim().is_empty()).collect();
     let log_lines = Arc::new(tokio::sync::Mutex::new(Vec::<String>::new()));
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "sh".to_string());
     for cmd in commands {
-        let mut child = match Command::new("sh")
-            .args(["-c", cmd])
+        // Log the command being run
+        let cmd_line = format!("$ {cmd}");
+        log_lines.lock().await.push(cmd_line.clone());
+        send_envelope(&ws_sender, "workflow", "worktree.setup_output", serde_json::json!({
+            "feature_id": feature_id,
+            "line": cmd_line,
+        }));
+
+        let mut child = match Command::new(&shell)
+            .args(["-i", "-c", cmd])
             .current_dir(&worktree_path)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
@@ -230,13 +262,7 @@ pub async fn run_setup_commands(
             Ok(c) => c,
             Err(e) => {
                 let error = format!("Failed to spawn command `{cmd}`: {e}");
-                let _ = set_setting(&write_pool, feature_id, "worktree_setup_step", "setup_error").await;
-                let log = log_lines.lock().await.join("\n");
-                let _ = set_setting(&write_pool, feature_id, "worktree_setup_log", &log).await;
-                send_envelope(&ws_sender, "workflow", "worktree.setup_error", serde_json::json!({
-                    "feature_id": feature_id,
-                    "error": error,
-                }));
+                report_setup_error(&write_pool, feature_id, &log_lines, &ws_sender, &error).await;
                 return;
             }
         };
@@ -286,27 +312,17 @@ pub async fn run_setup_commands(
         if let Some(h) = stderr_handle { let _ = h.await; }
 
         match child.wait().await {
-            Ok(status) if status.success() => {}
+            Ok(status) if status.success() => {
+                log_lines.lock().await.push(String::new());
+            }
             Ok(status) => {
                 let error = format!("Command `{cmd}` exited with status {status}");
-                let _ = set_setting(&write_pool, feature_id, "worktree_setup_step", "setup_error").await;
-                let log = log_lines.lock().await.join("\n");
-                let _ = set_setting(&write_pool, feature_id, "worktree_setup_log", &log).await;
-                send_envelope(&ws_sender, "workflow", "worktree.setup_error", serde_json::json!({
-                    "feature_id": feature_id,
-                    "error": error,
-                }));
+                report_setup_error(&write_pool, feature_id, &log_lines, &ws_sender, &error).await;
                 return;
             }
             Err(e) => {
                 let error = format!("Failed to wait on command `{cmd}`: {e}");
-                let _ = set_setting(&write_pool, feature_id, "worktree_setup_step", "setup_error").await;
-                let log = log_lines.lock().await.join("\n");
-                let _ = set_setting(&write_pool, feature_id, "worktree_setup_log", &log).await;
-                send_envelope(&ws_sender, "workflow", "worktree.setup_error", serde_json::json!({
-                    "feature_id": feature_id,
-                    "error": error,
-                }));
+                report_setup_error(&write_pool, feature_id, &log_lines, &ws_sender, &error).await;
                 return;
             }
         }
@@ -341,7 +357,7 @@ pub async fn get_project_directory(pool: &SqlitePool, project_id: i64) -> Result
 
 // --- DB helpers ---
 
-async fn get_setting(pool: &SqlitePool, feature_id: i64, key: &str) -> Option<String> {
+pub async fn get_setting(pool: &SqlitePool, feature_id: i64, key: &str) -> Option<String> {
     sqlx::query_as::<_, (String,)>(
         "SELECT value FROM feature_settings WHERE feature_id = ? AND key = ?",
     )
@@ -354,7 +370,7 @@ async fn get_setting(pool: &SqlitePool, feature_id: i64, key: &str) -> Option<St
     .map(|r| r.0)
 }
 
-async fn set_setting(pool: &SqlitePool, feature_id: i64, key: &str, value: &str) -> Result<(), String> {
+pub async fn set_setting(pool: &SqlitePool, feature_id: i64, key: &str, value: &str) -> Result<(), String> {
     sqlx::query(
         "INSERT OR REPLACE INTO feature_settings (feature_id, key, value) VALUES (?, ?, ?)",
     )

@@ -240,7 +240,6 @@ export function FeatureWorkflowView({
                   wsWorktreeStatus={backend.worktreeStatus}
                   wsWorktreeBranch={backend.worktreeBranch}
                   wsWorktreeSetupOutput={backend.worktreeSetupOutput}
-                  wsWorktreeError={backend.worktreeError}
                 />
               </div>
             )}

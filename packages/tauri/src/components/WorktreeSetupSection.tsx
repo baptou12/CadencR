@@ -7,8 +7,9 @@ import {
   GitBranchIcon,
   RefreshCwIcon,
 } from "lucide-react";
-import { useRetryWorktreeSetup, useGetFeatureSettings } from "@/api/generated";
+import { useGetFeatureSettings } from "@/api/generated";
 import type { WorktreeStatus } from "@/hooks/useWorkflowWebSocket";
+import { useWorkflowStore } from "@/hooks/useWorkflowWebSocket";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -96,7 +97,6 @@ export function WorktreeSetupSection({
   wsWorktreeStatus,
   wsWorktreeBranch,
   wsWorktreeSetupOutput,
-  wsWorktreeError,
 }: {
   featureId: number;
   projectId: number;
@@ -104,7 +104,6 @@ export function WorktreeSetupSection({
   wsWorktreeStatus?: WorktreeStatus;
   wsWorktreeBranch?: string | null;
   wsWorktreeSetupOutput?: string[];
-  wsWorktreeError?: string | null;
 }) {
   const useWsMode = wsWorktreeStatus != null && wsWorktreeStatus !== "idle";
 
@@ -113,7 +112,7 @@ export function WorktreeSetupSection({
     ? Object.fromEntries(settingsArray.map((s) => [s.key, s.value]))
     : undefined;
 
-  const retryMutation = useRetryWorktreeSetup();
+  const retryWorktreeSetup = useWorkflowStore((s) => s.retryWorktreeSetup);
 
   const step = useWsMode
     ? wsStatusToStep(wsWorktreeStatus!)
@@ -121,9 +120,6 @@ export function WorktreeSetupSection({
   const log = useWsMode
     ? (wsWorktreeSetupOutput ?? []).join("\n")
     : (settings?.worktree_setup_log ?? "");
-  const error = useWsMode
-    ? (wsWorktreeError ?? "")
-    : (settings?.worktree_setup_error ?? "");
   const branch = useWsMode
     ? (wsWorktreeBranch ?? "")
     : (settings?.worktree_branch ?? "");
@@ -141,26 +137,29 @@ export function WorktreeSetupSection({
 
   const currentStep = stepIndex(step);
 
+  // Worktree exists if we have a branch (naming + creation succeeded)
+  const worktreeCreated = !!branch;
+
   // Steps UI data
   const steps = [
     {
       label: "Define name",
-      complete: currentStep >= 1, // >= "named"
+      complete: worktreeCreated || currentStep >= 1,
       active: step === "naming",
       error: false,
     },
     {
       label: "Create worktree",
-      complete: currentStep >= 3, // >= "created"
+      complete: worktreeCreated || currentStep >= 3,
       active: step === "creating",
-      error: isError && (currentStep < 3),
+      error: false, // worktree creation errors are fatal, not retryable here
       detail: branch ? branch : undefined,
     },
     {
       label: "Run setup commands",
-      complete: isDone && currentStep >= 5,
+      complete: isDone,
       active: step === "setup",
-      error: isError && currentStep >= 3,
+      error: isError,
       showLog: true,
     },
   ];
@@ -242,27 +241,14 @@ export function WorktreeSetupSection({
           ))}
 
           {isError && (
-            <div className="flex items-center gap-2 pt-1">
-              {error && (
-                <span className="text-xs text-red-400 truncate flex-1">
-                  {error}
-                </span>
-              )}
+            <div className="pt-1">
               <Button
                 variant="outline"
                 size="sm"
                 className="h-7 gap-1.5"
-                disabled={retryMutation.isLoading}
-                onClick={() =>
-                  retryMutation.mutate({ projectId, featureId })
-                }
+                onClick={retryWorktreeSetup}
               >
-                <RefreshCwIcon
-                  className={cn(
-                    "size-3",
-                    retryMutation.isLoading && "animate-spin",
-                  )}
-                />
+                <RefreshCwIcon className="size-3" />
                 Retry
               </Button>
             </div>

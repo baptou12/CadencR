@@ -182,6 +182,7 @@ interface WorkflowState {
   continueWorkflow: () => void;
   skipItem: (itemId: number) => void;
   retryItem: (itemId: number) => void;
+  retryWorktreeSetup: () => void;
   respondToPermission: (itemId: number, requestId: string, decision: "allow_once" | "allow_future" | "deny") => void;
   respondToQuestion: (itemId: number, response: string) => void;
   sendPromptToAgent: (itemId: number, text: string, images?: Array<{ base64: string; mimeType: string }>) => void;
@@ -1185,6 +1186,11 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
 
     retryItem(itemId) {
       send("retry_item", { item_id: itemId });
+    },
+
+    retryWorktreeSetup() {
+      set({ worktreeStatus: "setup_running", worktreeError: null, worktreeSetupOutput: [] });
+      send("retry_worktree_setup");
     },
 
     respondToPermission(itemId, requestId, decision) {

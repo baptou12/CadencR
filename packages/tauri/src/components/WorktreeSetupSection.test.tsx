@@ -2,14 +2,18 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@/test-utils";
 import { WorktreeSetupSection } from "./WorktreeSetupSection";
 
-const { mockGetSettings, mockRetryMutate } = vi.hoisted(() => ({
+const { mockGetSettings, mockRetryWorktreeSetup } = vi.hoisted(() => ({
   mockGetSettings: vi.fn<() => { data: unknown }>(() => ({ data: null })),
-  mockRetryMutate: vi.fn(),
+  mockRetryWorktreeSetup: vi.fn(),
 }));
 
 vi.mock("@/api/generated", () => ({
   useGetFeatureSettings: mockGetSettings,
-  useRetryWorktreeSetup: vi.fn(() => ({ mutate: mockRetryMutate, isLoading: false })),
+}));
+
+vi.mock("@/hooks/useWorkflowWebSocket", () => ({
+  useWorkflowStore: (selector: (s: Record<string, unknown>) => unknown) =>
+    selector({ retryWorktreeSetup: mockRetryWorktreeSetup }),
 }));
 
 function settingsArray(obj: Record<string, string>) {
@@ -136,6 +140,22 @@ describe("WorktreeSetupSection", () => {
     });
     render(<WorktreeSetupSection featureId={1} projectId={1} />);
     expect(screen.getByText("error")).toBeInTheDocument();
+  });
+
+  it("shows error on 'Run setup commands' step when setup fails", () => {
+    mockGetSettings.mockReturnValue({
+      data: settingsArray({
+        worktree_setup_step: "setup_error",
+        worktree_setup_log: "fnm: command not found",
+        worktree_branch: "feature/my-branch",
+      }),
+    });
+    render(<WorktreeSetupSection featureId={1} projectId={1} />);
+    // Error should show on step 3, not step 2
+    const steps = screen.getAllByText(/Define name|Create worktree|Run setup commands/);
+    expect(steps).toHaveLength(3);
+    // Log output should be visible
+    expect(screen.getByText("fnm: command not found")).toBeInTheDocument();
   });
 
   it("expands on header click to show steps", async () => {
