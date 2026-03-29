@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseToolCall, getToolActivityLabel } from "./tool-call-parser";
+import { parseToolCall, getToolActivityLabel, parseCadenceMcpTool } from "./tool-call-parser";
 
 describe("parseToolCall", () => {
   it("returns undefined for unknown tool", () => {
@@ -100,5 +100,62 @@ describe("getToolActivityLabel", () => {
 
   it("returns 'Running <toolName>' for unknown tools", () => {
     expect(getToolActivityLabel("UnknownTool")).toBe("Running UnknownTool");
+  });
+
+  it("returns prefixed label for Cadence MCP tools", () => {
+    expect(getToolActivityLabel("mcp__cadence-plan__create_phase", JSON.stringify({ title: "Setup DB" })))
+      .toBe("[plan] Creating phase: Setup DB");
+  });
+
+  it("returns prefixed label without detail for Cadence MCP tools", () => {
+    expect(getToolActivityLabel("mcp__cadence-prd__read_prd"))
+      .toBe("[prd] Reading PRD");
+  });
+});
+
+describe("parseCadenceMcpTool", () => {
+  it("returns undefined for non-cadence tool", () => {
+    expect(parseCadenceMcpTool("Read")).toBeUndefined();
+    expect(parseCadenceMcpTool("mcp__chrome-devtools__click")).toBeUndefined();
+  });
+
+  it("parses server and tool from cadence MCP tool name", () => {
+    const result = parseCadenceMcpTool("mcp__cadence-plan__create_phase");
+    expect(result).toBeDefined();
+    expect(result!.server).toBe("plan");
+    expect(result!.tool).toBe("create_phase");
+  });
+
+  it("returns known human-readable label", () => {
+    expect(parseCadenceMcpTool("mcp__cadence-plan__create_phase")!.label).toBe("Creating phase");
+    expect(parseCadenceMcpTool("mcp__cadence-prd__show_prd")!.label).toBe("Showing PRD");
+    expect(parseCadenceMcpTool("mcp__cadence-common__mark_agent_done")!.label).toBe("Marking done");
+  });
+
+  it("title-cases unknown tool names as fallback", () => {
+    expect(parseCadenceMcpTool("mcp__cadence-plan__do_something_new")!.label).toBe("Do Something New");
+  });
+
+  it("extracts title from args as detail", () => {
+    const result = parseCadenceMcpTool("mcp__cadence-plan__create_phase", JSON.stringify({ title: "Setup DB" }));
+    expect(result!.detail).toBe("Setup DB");
+  });
+
+  it("extracts phase_id as detail for read_phase", () => {
+    const result = parseCadenceMcpTool("mcp__cadence-execute__read_phase", JSON.stringify({ phase_id: 42 }));
+    expect(result!.detail).toBe("Phase #42");
+  });
+
+  it("handles missing args gracefully", () => {
+    const result = parseCadenceMcpTool("mcp__cadence-plan__list_phases");
+    expect(result).toBeDefined();
+    expect(result!.detail).toBeUndefined();
+  });
+
+  it("handles malformed JSON args", () => {
+    const result = parseCadenceMcpTool("mcp__cadence-plan__read_plan", "{bad json");
+    expect(result).toBeDefined();
+    expect(result!.label).toBe("Reading plan");
+    expect(result!.detail).toBeUndefined();
   });
 });

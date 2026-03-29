@@ -1,7 +1,8 @@
 import { useState, useCallback, memo, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { ChevronRightIcon, WrenchIcon, BrainIcon, LayersIcon, LoaderIcon, TerminalIcon, CopyIcon, CheckIcon, CircleCheckIcon, CircleXIcon } from "lucide-react";
-import { parseToolCall } from "@/lib/tool-call-parser";
+import { parseToolCall, parseCadenceMcpTool } from "@/lib/tool-call-parser";
+import { CadenceMcpBlock, CompactCadenceMcpBlock } from "@/components/CadenceMcpBlock";
 import { Markdown } from "@/components/Markdown";
 import { InlineDiffBlock } from "@/components/InlineDiffBlock";
 import { ClipboardCheck } from "lucide-react";
@@ -238,6 +239,9 @@ function toRelativePath(filePath: string, basePath?: string): string {
 
 function ToolCallBlock({ name, args, basePath }: { name: string; args?: string; basePath?: string }) {
   const [expanded, setExpanded] = useState(false);
+  const cadenceMcp = parseCadenceMcpTool(name, args);
+  if (cadenceMcp) return <CadenceMcpBlock mcp={cadenceMcp} args={args} />;
+
   const summary = parseToolCall(name, args);
   const detail = summary?.detail && basePath ? toRelativePath(summary.detail, basePath) : summary?.detail;
 
@@ -450,6 +454,8 @@ function CompactBlock({ block, basePath }: { block: AgentBlockData; basePath?: s
     if (block.toolName === "ExitPlanMode" || block.toolName.endsWith("__show_plan")) {
       return <PlanBlock args={block.toolArgs} approvalStatus={block.planApprovalStatus} />;
     }
+    const cadenceMcp = parseCadenceMcpTool(block.toolName, block.toolArgs);
+    if (cadenceMcp) return <CompactCadenceMcpBlock mcp={cadenceMcp} />;
     const summary = parseToolCall(block.toolName, block.toolArgs);
     const detail = summary?.detail && basePath ? toRelativePath(summary.detail, basePath) : summary?.detail;
     return (
