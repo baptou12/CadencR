@@ -8,6 +8,7 @@
 
 import { create } from "zustand";
 import { buildUserMessageContent } from "@/types/agent-types";
+import { getWsUrl } from "@/lib/ws-url";
 import type { AgentBlockData } from "@/components/AgentBlock";
 import type { AgentStatus } from "@/types/agent";
 import type { PendingPermission } from "@/components/ToolPermissionPrompt";
@@ -284,11 +285,6 @@ const REVIEW_FIXER_KEY = AGENT_TYPE_SYNTHETIC_KEYS["review-fixer"]; // -5
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function getWsUrl(): string {
-  const httpUrl = import.meta.env.VITE_API_URL || "http://localhost:5005";
-  return httpUrl.replace(/^http/, "ws") + "/ws";
-}
 
 function createAgentSession(sessionId: number, agentType = "execute"): AgentSessionState {
   return {

@@ -6,11 +6,7 @@
  */
 import { create } from "zustand";
 import { createEnvelope, parseEnvelope } from "@/lib/ws-envelope";
-
-function getWsUrl(): string {
-  const httpUrl = import.meta.env.VITE_API_URL || "http://localhost:5005";
-  return httpUrl.replace(/^http/, "ws") + "/ws";
-}
+import { getWsUrl } from "@/lib/ws-url";
 
 export type TurnState = "claude" | "askUser";
 
