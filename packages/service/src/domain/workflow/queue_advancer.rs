@@ -193,61 +193,65 @@ impl QueueAdvancer {
             }
         }
 
-        // Autonomy-based advancement
-        match self.autonomy_level.load(Ordering::Relaxed) {
-            3 => {
-                if let Err(e) = self.advance(agent_manager, permissions).await {
-                    error!(error = %e, "advance after completion failed");
+        // Autonomy-based advancement and completion check only apply to queue items.
+        // Pre-queue agents (Plan, Prd, Session, Refine, etc.) should not trigger
+        // pause/advance logic — their status is managed by the approval handlers.
+        if matches!(slot, AgentSlot::QueueItem(_)) {
+            match self.autonomy_level.load(Ordering::Relaxed) {
+                3 => {
+                    if let Err(e) = self.advance(agent_manager, permissions).await {
+                        error!(error = %e, "advance after completion failed");
+                    }
                 }
-            }
-            2 => {
-                if let Ok(ready) = repo::unblock_ready_items(&self.write_pool, self.feature_id).await {
-                    if !ready.is_empty() {
-                        let current_group = if let AgentSlot::QueueItem(id) = &slot {
-                            self.get_current_group_index(*id).await
-                        } else {
-                            None
-                        };
-                        let same_group = ready.iter().all(|r| r.group_index == current_group);
-                        if same_group {
-                            let capacity = self.max_parallel.load(Ordering::Relaxed) - agent_manager.active_items.len();
-                            let autonomy = self.autonomy_level.load(Ordering::Relaxed);
-                            for item in ready.into_iter().take(capacity) {
-                                if let Err(e) = agent_manager.start_item(item, self.strategy.as_ref(), autonomy, permissions).await {
-                                    error!(error = %e, "failed to start queue item");
+                2 => {
+                    if let Ok(ready) = repo::unblock_ready_items(&self.write_pool, self.feature_id).await {
+                        if !ready.is_empty() {
+                            let current_group = if let AgentSlot::QueueItem(id) = &slot {
+                                self.get_current_group_index(*id).await
+                            } else {
+                                None
+                            };
+                            let same_group = ready.iter().all(|r| r.group_index == current_group);
+                            if same_group {
+                                let capacity = self.max_parallel.load(Ordering::Relaxed) - agent_manager.active_items.len();
+                                let autonomy = self.autonomy_level.load(Ordering::Relaxed);
+                                for item in ready.into_iter().take(capacity) {
+                                    if let Err(e) = agent_manager.start_item(item, self.strategy.as_ref(), autonomy, permissions).await {
+                                        error!(error = %e, "failed to start queue item");
+                                    }
                                 }
+                            } else {
+                                set_status.set_status(WorkflowStatus::Paused).await;
+                                let envelope = WsEnvelope::new(
+                                    "workflow",
+                                    "paused",
+                                    to_value(WorkflowPausedPayload {
+                                        feature_id: self.feature_id,
+                                        reason: "group_boundary".into(),
+                                    }),
+                                );
+                                let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
                             }
-                        } else {
-                            set_status.set_status(WorkflowStatus::Paused).await;
-                            let envelope = WsEnvelope::new(
-                                "workflow",
-                                "paused",
-                                to_value(WorkflowPausedPayload {
-                                    feature_id: self.feature_id,
-                                    reason: "group_boundary".into(),
-                                }),
-                            );
-                            let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
                         }
                     }
                 }
+                _ => {
+                    set_status.set_status(WorkflowStatus::Paused).await;
+                    let envelope = WsEnvelope::new(
+                        "workflow",
+                        "paused",
+                        to_value(WorkflowPausedPayload {
+                            feature_id: self.feature_id,
+                            reason: "autonomy_pause".into(),
+                        }),
+                    );
+                    let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
+                }
             }
-            _ => {
-                set_status.set_status(WorkflowStatus::Paused).await;
-                let envelope = WsEnvelope::new(
-                    "workflow",
-                    "paused",
-                    to_value(WorkflowPausedPayload {
-                        feature_id: self.feature_id,
-                        reason: "autonomy_pause".into(),
-                    }),
-                );
-                let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
-            }
-        }
 
-        // Check if all items are completed after advancement
-        self.check_workflow_completion(agent_manager, set_status).await;
+            // Check if all items are completed after advancement
+            self.check_workflow_completion(agent_manager, set_status).await;
+        }
     }
 
     /// Called when a queue item is paused (interrupted by user).

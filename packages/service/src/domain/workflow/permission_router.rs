@@ -11,7 +11,7 @@ use async_trait::async_trait;
 use dashmap::DashMap;
 use sqlx::SqlitePool;
 use tokio::sync::mpsc;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use axum::extract::ws::Message;
 use claude_agent_sdk_rs::{CanUseTool, PermissionRequest, PermissionResult};
@@ -196,25 +196,39 @@ impl CanUseTool for WorkflowPermissionBridge {
 
             // Emit the plan content as a synthetic text block
             if is_show_plan {
-                if let Ok(Some(plan_id)) = sqlx::query_scalar::<_, i64>(
+                match sqlx::query_scalar::<_, i64>(
                     "SELECT id FROM plans WHERE feature_id = ? ORDER BY id DESC LIMIT 1",
                 )
                 .bind(self.feature_id)
                 .fetch_optional(&self.read_pool)
                 .await
                 {
-                    let plan_content = self.fetch_plan_content(plan_id).await;
-                    if let Some(content) = plan_content {
-                        let content_env = WsEnvelope::new(
-                            "workflow",
-                            "plan_content",
-                            serde_json::json!({
-                                "agent_slot": self.slot,
-                                "session_id": self.db_session_id,
-                                "content": content,
-                            }),
-                        );
-                        let _ = self.sender.send(Message::Text(String::from(content_env).into()));
+                    Ok(Some(plan_id)) => {
+                        let plan_content = self.fetch_plan_content(plan_id).await;
+                        match plan_content {
+                            Some(content) => {
+                                info!(feature_id = self.feature_id, plan_id, content_len = content.len(), "emitting plan_content");
+                                let content_env = WsEnvelope::new(
+                                    "workflow",
+                                    "plan_content",
+                                    serde_json::json!({
+                                        "agent_slot": self.slot,
+                                        "session_id": self.db_session_id,
+                                        "content": content,
+                                    }),
+                                );
+                                let _ = self.sender.send(Message::Text(String::from(content_env).into()));
+                            }
+                            None => {
+                                warn!(feature_id = self.feature_id, plan_id, "fetch_plan_content returned None");
+                            }
+                        }
+                    }
+                    Ok(None) => {
+                        warn!(feature_id = self.feature_id, "no plan found for feature when emitting plan_content");
+                    }
+                    Err(e) => {
+                        warn!(feature_id = self.feature_id, error = %e, "failed to query plan for plan_content");
                     }
                 }
             }

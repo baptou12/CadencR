@@ -333,7 +333,7 @@ export function useWsWorkflowBackend(
 
     // Action availability (WS workflow manages its own state machine)
     actions: {
-      canStartPlan: store.workflowStatus === "idle",
+      canStartPlan: store.workflowStatus === "idle" || store.workflowStatus === "planning",
       canStartPrd: store.workflowStatus === "idle",
       canStartBuild: store.workflowStatus === "ready_to_build",
       canStartRisk: store.workflowStatus === "ready_to_build" || store.workflowStatus === "building" || store.workflowStatus === "paused" || store.workflowStatus === "completed" || store.workflowStatus === "error",
