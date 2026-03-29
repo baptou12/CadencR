@@ -134,8 +134,8 @@ use crate::domain::features::repository as repo;
 use crate::domain::mcp::servers::AgentType;
 use crate::domain::workflow::agent_manager::AgentManager;
 use crate::domain::workflow::permission_router::PermissionRouter;
-use crate::domain::workflow::prompts::{Prompts, constitution_section};
-use crate::domain::workflow::strategies::feature_build::FeatureBuildStrategy;
+use crate::domain::workflow::prompts::{Prompts, constitution_section, fetch_project_constitution};
+use crate::domain::workflow::strategies::feature_build_session_review;
 use crate::domain::workflow::queue_advancer::{QueueAdvancer, StatusSetter};
 use crate::domain::workflow::status::WorkflowStatus;
 use crate::domain::ws_session::handler::session_prompt::PermissionResponse;
@@ -446,21 +446,16 @@ impl WorkflowEngine {
     /// Fetch the project constitution for this feature and format it as a prompt prefix.
     /// Returns an empty string if no constitution is set.
     async fn fetch_constitution_prefix(&self) -> String {
-        let constitution: Option<String> = sqlx::query_scalar::<_, Option<String>>(
-            "SELECT p.constitution FROM projects p JOIN features f ON f.project_id = p.id WHERE f.id = ?",
-        )
-        .bind(self.feature_id)
-        .fetch_optional(&self.read_pool)
-        .await
-        .unwrap_or(None)
-        .flatten();
-
-        match constitution {
-            Some(c) => {
+        match fetch_project_constitution(&self.read_pool, self.feature_id).await {
+            Ok(Some(c)) => {
                 let s = constitution_section(&c);
                 if s.is_empty() { String::new() } else { format!("{s}\n\n") }
             }
-            None => String::new(),
+            Ok(None) => String::new(),
+            Err(e) => {
+                tracing::error!("Failed to fetch constitution for feature {}: {e}", self.feature_id);
+                String::new()
+            }
         }
     }
 
@@ -529,7 +524,7 @@ impl WorkflowEngine {
     }
 
     pub async fn spawn_session_agent(&self, prompt: &str, images: &[ImagePayload]) -> Result<i64, String> {
-        let enriched_prompt = FeatureBuildStrategy::build_session_prompt(
+        let enriched_prompt = feature_build_session_review::build_session_prompt(
             &self.read_pool,
             self.feature_id,
             prompt,

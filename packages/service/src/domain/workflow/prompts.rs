@@ -68,6 +68,37 @@ pub fn constitution_section(constitution: &str) -> String {
     )
 }
 
+/// Fetch the project constitution for a feature. Shared helper to avoid duplicating
+/// the join query across prompt builders and engine.
+pub async fn fetch_project_constitution(
+    pool: &sqlx::SqlitePool,
+    feature_id: i64,
+) -> Result<Option<String>, String> {
+    sqlx::query_scalar::<_, Option<String>>(
+        "SELECT p.constitution FROM projects p JOIN features f ON f.project_id = p.id WHERE f.id = ?",
+    )
+    .bind(feature_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| format!("Failed to read constitution: {e}"))
+    .map(|opt| opt.flatten().filter(|s| !s.trim().is_empty()))
+}
+
+/// Fetch the project constitution for a feature looked up via plan_id.
+pub async fn fetch_constitution_by_plan(
+    pool: &sqlx::SqlitePool,
+    plan_id: i64,
+) -> Result<Option<String>, String> {
+    sqlx::query_scalar::<_, Option<String>>(
+        "SELECT p.constitution FROM projects p JOIN features f ON f.project_id = p.id JOIN plans pl ON pl.feature_id = f.id WHERE pl.id = ?",
+    )
+    .bind(plan_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| format!("Failed to read constitution: {e}"))
+    .map(|opt| opt.flatten().filter(|s| !s.trim().is_empty()))
+}
+
 /// Build the full system prompt for a phase execution agent.
 /// Combines execute-base + phase details + completion suffix.
 /// `autonomy_level`: 1 = confirm everything, 2 = moderate, 3 = full auto.
