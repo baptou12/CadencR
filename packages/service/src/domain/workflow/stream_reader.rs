@@ -160,10 +160,7 @@ async fn check_mcp_server_connected(
     let server_status = mcp_servers.iter().find(|s| s.name == expected_mcp_server);
     let mcp_ok = server_status.map_or(false, |s| s.status == "connected");
     if !mcp_ok {
-        let status_detail = match server_status {
-            Some(s) => format!("status: {}", s.status),
-            None => "server not found in init".to_string(),
-        };
+        let status_detail = server_status.map_or_else(|| "server not found in init".to_string(), |s| format!("status: {}", s.status));
         let err = format!(
             "MCP server '{}' failed to connect ({}). The agent cannot function without its tools.",
             expected_mcp_server, status_detail
