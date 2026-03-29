@@ -233,6 +233,37 @@ impl CanUseTool for WorkflowPermissionBridge {
                 }
             }
 
+            // Emit the PRD content as a synthetic text block
+            if is_show_prd {
+                match sqlx::query_scalar::<_, String>(
+                    "SELECT prd FROM features WHERE id = ? AND prd IS NOT NULL",
+                )
+                .bind(self.feature_id)
+                .fetch_optional(&self.read_pool)
+                .await
+                {
+                    Ok(Some(prd_content)) => {
+                        info!(feature_id = self.feature_id, content_len = prd_content.len(), "emitting prd_content");
+                        let content_env = WsEnvelope::new(
+                            "workflow",
+                            "prd_content",
+                            serde_json::json!({
+                                "agent_slot": self.slot,
+                                "session_id": self.db_session_id,
+                                "content": prd_content,
+                            }),
+                        );
+                        let _ = self.sender.send(Message::Text(String::from(content_env).into()));
+                    }
+                    Ok(None) => {
+                        warn!(feature_id = self.feature_id, "no PRD found for feature when emitting prd_content");
+                    }
+                    Err(e) => {
+                        warn!(feature_id = self.feature_id, error = %e, "failed to query PRD for prd_content");
+                    }
+                }
+            }
+
             // Also notify that plan/prd data is ready for fetching
             let changed: &[&str] = if is_show_plan { &["plan", "phases", "progress"] } else { &["prd"] };
             send_feature_updated_envelope(&self.sender, self.feature_id, changed);

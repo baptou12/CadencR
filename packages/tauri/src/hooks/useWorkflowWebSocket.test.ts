@@ -1487,7 +1487,7 @@ describe("useWorkflowStore", () => {
       expect(useWorkflowStore.getState().planAgent!.status).toBe("paused");
     });
 
-    it("sets prdAgent to completed when transitioning from prd to planning", () => {
+    it("sets prdAgent back to running when transitioning from prd to planning", () => {
       const ws = connectStore();
       useWorkflowStore.setState({
         prdAgent: makeAgentSession({ status: "paused" }),
@@ -1500,7 +1500,8 @@ describe("useWorkflowStore", () => {
         payload: { previous_status: "prd", status: "planning" },
       });
 
-      expect(useWorkflowStore.getState().prdAgent!.status).toBe("completed");
+      // Agent resumes after approval; item_completed (from mark_agent_done) will set it to completed
+      expect(useWorkflowStore.getState().prdAgent!.status).toBe("running");
       expect(useWorkflowStore.getState().workflowStatus).toBe("planning");
     });
 
@@ -1534,7 +1535,7 @@ describe("useWorkflowStore", () => {
         payload: { previous_status: "prd", status: "planning" },
       });
 
-      // Only paused prdAgents get set to completed
+      // Only paused prdAgents get set back to running
       expect(useWorkflowStore.getState().prdAgent!.status).toBe("running");
     });
   });
@@ -1673,6 +1674,59 @@ describe("useWorkflowStore", () => {
       });
 
       expect(useWorkflowStore.getState().planAgent!.blocks).toHaveLength(0);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // prd_content — live PRD display
+  // -------------------------------------------------------------------------
+
+  describe("prd_content", () => {
+    it("injects tool_call block with __show_prd toolName", () => {
+      const ws = connectStore();
+      useWorkflowStore.setState({ prdAgent: makeAgentSession() });
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "prd_content",
+        payload: { content: "# PRD\n- Requirement 1" },
+      });
+
+      const { prdAgent } = useWorkflowStore.getState();
+      expect(prdAgent!.blocks).toHaveLength(1);
+      expect(prdAgent!.blocks[0]).toMatchObject({
+        type: "tool_call",
+        toolName: "__show_prd",
+      });
+      const args = JSON.parse((prdAgent!.blocks[0] as { toolArgs: string }).toolArgs);
+      expect(args.plan).toBe("# PRD\n- Requirement 1");
+    });
+
+    it("creates prdAgent on the fly if null", () => {
+      const ws = connectStore();
+      useWorkflowStore.setState({ prdAgent: null });
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "prd_content",
+        payload: { content: "PRD text" },
+      });
+
+      expect(useWorkflowStore.getState().prdAgent).not.toBeNull();
+      expect(useWorkflowStore.getState().prdAgent!.blocks).toHaveLength(1);
+    });
+
+    it("ignores prd_content with empty content", () => {
+      const ws = connectStore();
+      useWorkflowStore.setState({ prdAgent: makeAgentSession() });
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "prd_content",
+        payload: { content: "" },
+      });
+
+      expect(useWorkflowStore.getState().prdAgent!.blocks).toHaveLength(0);
     });
   });
 

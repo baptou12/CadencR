@@ -94,7 +94,7 @@ export const AgentBlock = memo(function AgentBlock({ block, isStreaming, basePat
       if ((block.toolName === "Task" || block.toolName === "Agent") && block.childBlocks) {
         return <TaskAgentBlock block={block} isStreaming={isStreaming} basePath={basePath} />;
       }
-      if (block.toolName === "ExitPlanMode" || block.toolName?.endsWith("__show_plan")) {
+      if (block.toolName === "ExitPlanMode" || block.toolName?.endsWith("__show_plan") || block.toolName?.endsWith("__show_prd")) {
         return <PlanBlock args={block.toolArgs} approvalStatus={block.planApprovalStatus} />;
       }
       if (block.toolName === "Write" || block.toolName === "Edit") {
@@ -451,7 +451,7 @@ function TaskAgentBlock({ block, isStreaming, basePath }: { block: AgentBlockDat
 
 function CompactBlock({ block, basePath }: { block: AgentBlockData; basePath?: string }) {
   if (block.type === "tool_call" && block.toolName) {
-    if (block.toolName === "ExitPlanMode" || block.toolName.endsWith("__show_plan")) {
+    if (block.toolName === "ExitPlanMode" || block.toolName.endsWith("__show_plan") || block.toolName.endsWith("__show_prd")) {
       return <PlanBlock args={block.toolArgs} approvalStatus={block.planApprovalStatus} />;
     }
     const cadenceMcp = parseCadenceMcpTool(block.toolName, block.toolArgs);

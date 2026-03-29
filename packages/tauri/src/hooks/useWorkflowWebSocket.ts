@@ -635,10 +635,11 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
 
           // When leaving prd status after prd approval, reset prdAgent status back to "running"
           // (prd_ready sets prdAgent.status to "paused"; transitioning away means approval resolved)
+          // The agent will be marked "completed" by item_completed when it calls mark_agent_done.
           if (previousStatus === "prd" && status === "planning") {
             const prdAgent = get().prdAgent;
             if (prdAgent && prdAgent.status === "paused") {
-              updates.prdAgent = { ...prdAgent, status: "completed" as const };
+              updates.prdAgent = { ...prdAgent, status: "running" as const };
             }
           }
 
@@ -673,22 +674,27 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         }));
         break;
       }
-      case "plan_content": {
-        // Inject the plan as a tool_call block so the existing PlanBlock (blue card)
-        // renders it with markdown. PlanBlock expects toolArgs = JSON { plan: "..." }.
-        const planContent = payload.content as string;
-        if (!planContent) break;
+      case "plan_content":
+      case "prd_content": {
+        // Inject as a tool_call block so PlanBlock (blue card) renders markdown.
+        // PlanBlock expects toolArgs = JSON { plan: "..." }.
+        const content = payload.content as string;
+        if (!content) break;
+        const isPlan = action === "plan_content";
+        const agentKey = isPlan ? "planAgent" : "prdAgent";
+        const toolName = isPlan ? "__show_plan" : "__show_prd";
+        const prefix = isPlan ? "plan" : "prd";
         set(state => {
-          const agent = state.planAgent ?? createAgentSession(0);
+          const agent = state[agentKey] ?? createAgentSession(0);
           const block = {
-            id: `ws-plan-${Date.now()}`,
+            id: `ws-${prefix}-${Date.now()}`,
             type: "tool_call" as const,
             content: "",
-            toolName: "__show_plan",
-            toolArgs: JSON.stringify({ plan: planContent }),
+            toolName,
+            toolArgs: JSON.stringify({ plan: content }),
             createdAt: new Date().toISOString(),
           };
-          return { planAgent: { ...agent, blocks: [...agent.blocks, block] } };
+          return { [agentKey]: { ...agent, blocks: [...agent.blocks, block] } };
         });
         break;
       }
