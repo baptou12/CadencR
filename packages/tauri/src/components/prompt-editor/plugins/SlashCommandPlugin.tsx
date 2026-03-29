@@ -8,8 +8,6 @@ import {
   getTriggerMatch,
   replaceTriggerWithNode,
   usePopoverKeyboardCommands,
-  useCursorRect,
-  CursorPopover,
 } from "./trigger-utils";
 
 interface SlashCommandPluginProps {
@@ -22,8 +20,6 @@ export function SlashCommandPlugin({ commands, isLoading }: SlashCommandPluginPr
   const slash = useSlashCommand(commands);
   const slashRef = useRef(slash);
   slashRef.current = slash;
-  const [cursorRect, updateCursorRect] = useCursorRect();
-
   useEffect(() => {
     return editor.registerUpdateListener(({ editorState }) => {
       editorState.read(() => {
@@ -53,10 +49,9 @@ export function SlashCommandPlugin({ commands, isLoading }: SlashCommandPluginPr
 
         const syntheticText = "/" + match.query;
         s.handleChange(syntheticText, syntheticText.length);
-        updateCursorRect();
       });
     });
-  }, [editor, updateCursorRect]);
+  }, [editor]);
 
   const handleSelect = useCallback(
     (commandName: string) => {
@@ -74,19 +69,17 @@ export function SlashCommandPlugin({ commands, isLoading }: SlashCommandPluginPr
 
   usePopoverKeyboardCommands(editor, slash.isOpen, slashRef, getSelectedValue, handleSelect);
 
-  if (!slash.isOpen || slash.filteredItems.length === 0 || !cursorRect) return null;
+  if (!slash.isOpen || slash.filteredItems.length === 0) return null;
 
   return (
-    <CursorPopover cursorRect={cursorRect}>
-      <SlashCommandPopover
-        open={true}
-        items={slash.filteredItems}
-        selectedIndex={slash.selectedIndex}
-        onSelect={handleSelect}
-        isLoading={isLoading ?? false}
-      >
-        <span />
-      </SlashCommandPopover>
-    </CursorPopover>
+    <SlashCommandPopover
+      open={true}
+      items={slash.filteredItems}
+      selectedIndex={slash.selectedIndex}
+      onSelect={handleSelect}
+      isLoading={isLoading ?? false}
+    >
+      <span />
+    </SlashCommandPopover>
   );
 }

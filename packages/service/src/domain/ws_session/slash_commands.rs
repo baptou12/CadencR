@@ -72,7 +72,9 @@ pub async fn resolve_commands(cwd: &str) -> Vec<SlashCommand> {
         scan_skills_dir(&home_claude.join("skills"), &mut commands, &mut seen);
 
         // Scan installed plugins
-        scan_plugins(&home_claude.join("plugins/marketplaces"), &mut commands, &mut seen);
+        let plugins_dir = home_claude.join("plugins");
+        scan_plugins(&plugins_dir.join("marketplaces"), &mut commands, &mut seen);
+        scan_cached_plugins(&plugins_dir.join("cache"), &mut commands, &mut seen);
     }
 
     commands
@@ -122,9 +124,85 @@ fn scan_plugins(marketplaces_dir: &Path, commands: &mut Vec<SlashCommand>, seen:
 
 /// Scan a single plugin directory for commands/, skills/, and agents/.
 fn scan_plugin(plugin_dir: &Path, commands: &mut Vec<SlashCommand>, seen: &mut HashSet<String>) {
-    scan_commands_dir(&plugin_dir.join("commands"), commands, seen);
-    scan_skills_dir(&plugin_dir.join("skills"), commands, seen);
-    scan_agents_dir(&plugin_dir.join("agents"), commands, seen);
+    scan_plugin_with_prefix(plugin_dir, None, commands, seen);
+}
+
+/// Scan a single plugin directory, optionally prefixing command names with `prefix:`.
+fn scan_plugin_with_prefix(
+    plugin_dir: &Path,
+    prefix: Option<&str>,
+    commands: &mut Vec<SlashCommand>,
+    seen: &mut HashSet<String>,
+) {
+    let mut plugin_cmds: Vec<SlashCommand> = Vec::new();
+    let mut plugin_seen: HashSet<String> = HashSet::new();
+
+    scan_commands_dir(&plugin_dir.join("commands"), &mut plugin_cmds, &mut plugin_seen);
+    scan_skills_dir(&plugin_dir.join("skills"), &mut plugin_cmds, &mut plugin_seen);
+    scan_agents_dir(&plugin_dir.join("agents"), &mut plugin_cmds, &mut plugin_seen);
+
+    for mut cmd in plugin_cmds {
+        if let Some(p) = prefix {
+            cmd.name = format!("{p}:{}", cmd.name);
+        }
+        if !seen.contains(&cmd.name) {
+            seen.insert(cmd.name.clone());
+            commands.push(cmd);
+        }
+    }
+}
+
+/// Scan cached plugins under `~/.claude/plugins/cache/`.
+///
+/// Structure: `cache/<marketplace>/<plugin>/<version>/`
+/// Commands are prefixed with the plugin name (e.g., `superpowers:brainstorming`).
+fn scan_cached_plugins(cache_dir: &Path, commands: &mut Vec<SlashCommand>, seen: &mut HashSet<String>) {
+    let marketplaces = match std::fs::read_dir(cache_dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+
+    for marketplace in marketplaces.flatten() {
+        if !marketplace.path().is_dir() {
+            continue;
+        }
+
+        let plugins = match std::fs::read_dir(marketplace.path()) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+
+        for plugin in plugins.flatten() {
+            let plugin_path = plugin.path();
+            if !plugin_path.is_dir() {
+                continue;
+            }
+
+            let plugin_name = plugin
+                .file_name()
+                .to_str()
+                .unwrap_or_default()
+                .to_string();
+
+            // Find the latest version directory (there's typically only one)
+            let version_dir = match latest_version_dir(&plugin_path) {
+                Some(d) => d,
+                None => continue,
+            };
+
+            scan_plugin_with_prefix(&version_dir, Some(&plugin_name), commands, seen);
+        }
+    }
+}
+
+/// Return the latest (lexicographically greatest) version subdirectory.
+fn latest_version_dir(plugin_dir: &Path) -> Option<std::path::PathBuf> {
+    std::fs::read_dir(plugin_dir)
+        .ok()?
+        .flatten()
+        .filter(|e| e.path().is_dir())
+        .max_by_key(|e| e.file_name())
+        .map(|e| e.path())
 }
 
 /// Scan a `.claude/commands/` directory tree for custom commands (`.md` files).
@@ -496,6 +574,85 @@ mod tests {
         let deploys: Vec<_> = commands.iter().filter(|c| c.name == "deploy").collect();
         assert_eq!(deploys.len(), 1);
         assert_eq!(deploys[0].description.as_deref(), Some("Deploy via command"));
+    }
+
+    #[test]
+    fn scan_cached_plugins_discovers_versioned_plugins() {
+        let tmp = TempDir::new().unwrap();
+
+        // cache/<marketplace>/<plugin>/<version>/skills/my-skill/SKILL.md
+        let skill_dir = tmp
+            .path()
+            .join("my-marketplace/superpowers/5.0.6/skills/brainstorming");
+        fs::create_dir_all(&skill_dir).unwrap();
+        fs::write(
+            skill_dir.join("SKILL.md"),
+            "---\nname: brainstorming\ndescription: Brainstorm ideas\n---\n",
+        )
+        .unwrap();
+
+        // Also add a command
+        let cmd_dir = tmp
+            .path()
+            .join("my-marketplace/superpowers/5.0.6/commands");
+        fs::create_dir_all(&cmd_dir).unwrap();
+        fs::write(
+            cmd_dir.join("write-plan.md"),
+            "---\ndescription: Write a plan\n---\n",
+        )
+        .unwrap();
+
+        let mut commands = vec![];
+        let mut seen = HashSet::new();
+        scan_cached_plugins(tmp.path(), &mut commands, &mut seen);
+
+        assert!(
+            commands.iter().any(|c| c.name == "superpowers:brainstorming"),
+            "missing superpowers:brainstorming"
+        );
+        assert!(
+            commands.iter().any(|c| c.name == "superpowers:write-plan"),
+            "missing superpowers:write-plan"
+        );
+        assert_eq!(commands.len(), 2);
+    }
+
+    #[test]
+    fn scan_cached_plugins_picks_latest_version() {
+        let tmp = TempDir::new().unwrap();
+
+        // Two versions: 1.0.0 has old-cmd, 2.0.0 has new-cmd
+        let old_dir = tmp.path().join("mk/my-plugin/1.0.0/commands");
+        fs::create_dir_all(&old_dir).unwrap();
+        fs::write(old_dir.join("old.md"), "---\ndescription: Old\n---\n").unwrap();
+
+        let new_dir = tmp.path().join("mk/my-plugin/2.0.0/commands");
+        fs::create_dir_all(&new_dir).unwrap();
+        fs::write(new_dir.join("new.md"), "---\ndescription: New\n---\n").unwrap();
+
+        let mut commands = vec![];
+        let mut seen = HashSet::new();
+        scan_cached_plugins(tmp.path(), &mut commands, &mut seen);
+
+        // Should only scan the latest (2.0.0)
+        assert!(commands.iter().any(|c| c.name == "my-plugin:new"));
+        assert!(!commands.iter().any(|c| c.name == "my-plugin:old"));
+    }
+
+    #[test]
+    fn scan_plugin_with_prefix_applies_namespace() {
+        let tmp = TempDir::new().unwrap();
+
+        let cmd_dir = tmp.path().join("commands");
+        fs::create_dir_all(&cmd_dir).unwrap();
+        fs::write(cmd_dir.join("deploy.md"), "---\ndescription: Deploy\n---\n").unwrap();
+
+        let mut commands = vec![];
+        let mut seen = HashSet::new();
+        scan_plugin_with_prefix(tmp.path(), Some("myplugin"), &mut commands, &mut seen);
+
+        assert_eq!(commands.len(), 1);
+        assert_eq!(commands[0].name, "myplugin:deploy");
     }
 
     #[tokio::test]
