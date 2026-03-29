@@ -10,7 +10,6 @@ pub struct Project {
     pub qa_prompt: Option<String>,
     pub agent_autonomy: Option<String>,
     pub parallel_execution: Option<String>,
-    pub constitution: Option<String>,
     pub created_at: String,
 }
 
@@ -66,7 +65,6 @@ mod tests {
             qa_prompt: None,
             agent_autonomy: Some("supervised".to_string()),
             parallel_execution: None,
-            constitution: None,
             created_at: "2024-01-01T00:00:00".to_string(),
         };
         let json = serde_json::to_string(&project).unwrap();

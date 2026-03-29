@@ -2,9 +2,6 @@ use serde_json;
 use sqlx::SqlitePool;
 
 use crate::domain::features::models::Phase;
-use crate::domain::workflow::prompts::{
-    constitution_section, fetch_constitution_by_plan, fetch_project_constitution,
-};
 
 use super::feature_build::PlanContext;
 
@@ -57,16 +54,7 @@ pub async fn build_enriched_execute_prompt(
     .await
     .map_err(|e| format!("Failed to read completed phases: {e}"))?;
 
-    let constitution = fetch_constitution_by_plan(read_pool, phase.plan_id).await?;
-
     let mut sections: Vec<String> = Vec::new();
-
-    if let Some(ref c) = constitution {
-        let s = constitution_section(c);
-        if !s.is_empty() {
-            sections.push(s);
-        }
-    }
 
     if retry_count > 0 {
         sections.push(format!(
@@ -205,11 +193,6 @@ pub async fn build_enriched_qa_prompt(
     .await
     .map_err(|e| format!("Failed to check pending phases: {e}"))?;
 
-    let constitution = fetch_project_constitution(read_pool, feature_id).await?;
-    let constitution_text = constitution
-        .map(|c| constitution_section(&c))
-        .unwrap_or_default();
-
     let mut prd_section = String::new();
     if pending_non_qa.map_or(false, |(cnt,)| cnt == 0) {
         let prd: Option<(Option<String>,)> =
@@ -240,7 +223,7 @@ pub async fn build_enriched_qa_prompt(
     let fix_step = max_step.map_or(phase.step_number + 1, |(s,)| s + 1);
 
     Ok(format!(
-        "{constitution_text}{prd_section}## What was implemented\n\n\
+        "{prd_section}## What was implemented\n\n\
          {completed_summary}\n\n\
          ## QA Testing Procedure\n\n\
          The following procedure describes HOW to validate the implementation (tools, simulators, MCPs, commands, etc.):\n\n\

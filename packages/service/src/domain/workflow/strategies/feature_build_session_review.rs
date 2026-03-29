@@ -1,8 +1,5 @@
 use sqlx::SqlitePool;
 
-use crate::domain::workflow::prompts::{
-    constitution_section, fetch_project_constitution,
-};
 
 use super::feature_build_prompts::format_completed_phase;
 
@@ -13,14 +10,6 @@ pub async fn build_session_prompt(
     user_prompt: &str,
 ) -> Result<String, String> {
     let mut sections: Vec<String> = Vec::new();
-
-    let constitution = fetch_project_constitution(read_pool, feature_id).await?;
-    if let Some(ref c) = constitution {
-        let s = constitution_section(c);
-        if !s.is_empty() {
-            sections.push(s);
-        }
-    }
 
     let plan: Option<(i64, Option<String>)> = sqlx::query_as(
         "SELECT id, summary FROM plans WHERE feature_id = ? ORDER BY id DESC LIMIT 1",
@@ -99,15 +88,7 @@ pub async fn build_enriched_review_prompt(
     .await
     .map_err(|e| format!("Failed to read plan: {e}"))?;
 
-    let constitution = fetch_project_constitution(read_pool, feature_id).await?;
     let mut sections: Vec<String> = Vec::new();
-
-    if let Some(ref c) = constitution {
-        let s = constitution_section(c);
-        if !s.is_empty() {
-            sections.push(s);
-        }
-    }
 
     let prd: Option<(Option<String>,)> =
         sqlx::query_as("SELECT prd FROM features WHERE id = ?")

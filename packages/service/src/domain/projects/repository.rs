@@ -3,15 +3,15 @@ use crate::error::AppError;
 use super::models::{Project, ProjectSetting, ProjectModelSettings};
 
 pub async fn list_projects(pool: &SqlitePool) -> Result<Vec<Project>, AppError> {
-    let rows = sqlx::query_as::<_, (i64, String, String, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>, String)>(
-        "SELECT id, name, path, branch_prefix, qa_prompt, agent_autonomy, parallel_execution, constitution, created_at FROM projects ORDER BY created_at DESC",
+    let rows = sqlx::query_as::<_, (i64, String, String, Option<String>, Option<String>, Option<String>, Option<String>, String)>(
+        "SELECT id, name, path, branch_prefix, qa_prompt, agent_autonomy, parallel_execution, created_at FROM projects ORDER BY created_at DESC",
     )
     .fetch_all(pool)
     .await?;
 
     Ok(rows
         .into_iter()
-        .map(|(id, name, path, branch_prefix, qa_prompt, agent_autonomy, parallel_execution, constitution, created_at)| Project {
+        .map(|(id, name, path, branch_prefix, qa_prompt, agent_autonomy, parallel_execution, created_at)| Project {
             id,
             name,
             path,
@@ -19,7 +19,6 @@ pub async fn list_projects(pool: &SqlitePool) -> Result<Vec<Project>, AppError> 
             qa_prompt,
             agent_autonomy,
             parallel_execution,
-            constitution,
             created_at,
         })
         .collect())
@@ -33,8 +32,8 @@ pub async fn create_project(pool: &SqlitePool, name: &str, path: &str) -> Result
         .await?
         .last_insert_rowid();
 
-    let row = sqlx::query_as::<_, (i64, String, String, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>, String)>(
-        "SELECT id, name, path, branch_prefix, qa_prompt, agent_autonomy, parallel_execution, constitution, created_at FROM projects WHERE id = ?",
+    let row = sqlx::query_as::<_, (i64, String, String, Option<String>, Option<String>, Option<String>, Option<String>, String)>(
+        "SELECT id, name, path, branch_prefix, qa_prompt, agent_autonomy, parallel_execution, created_at FROM projects WHERE id = ?",
     )
     .bind(id)
     .fetch_one(pool)
@@ -48,8 +47,7 @@ pub async fn create_project(pool: &SqlitePool, name: &str, path: &str) -> Result
         qa_prompt: row.4,
         agent_autonomy: row.5,
         parallel_execution: row.6,
-        constitution: row.7,
-        created_at: row.8,
+        created_at: row.7,
     })
 }
 
@@ -167,9 +165,9 @@ pub async fn delete_project(pool: &SqlitePool, id: i64) -> Result<(), AppError> 
 
 pub async fn get_project_settings(pool: &SqlitePool, project_id: i64) -> Result<Vec<ProjectSetting>, AppError> {
     // Read known columns from the projects table
-    let column_row: Option<(Option<String>, Option<String>, Option<String>, Option<String>, Option<String>)> =
+    let column_row: Option<(Option<String>, Option<String>, Option<String>, Option<String>)> =
         sqlx::query_as(
-            "SELECT agent_autonomy, branch_prefix, qa_prompt, parallel_execution, constitution FROM projects WHERE id = ?"
+            "SELECT agent_autonomy, branch_prefix, qa_prompt, parallel_execution FROM projects WHERE id = ?"
         )
         .bind(project_id)
         .fetch_optional(pool)
@@ -177,13 +175,12 @@ pub async fn get_project_settings(pool: &SqlitePool, project_id: i64) -> Result<
 
     let mut settings: Vec<ProjectSetting> = Vec::new();
 
-    if let Some((agent_autonomy, branch_prefix, qa_prompt, parallel_execution, constitution)) = column_row {
+    if let Some((agent_autonomy, branch_prefix, qa_prompt, parallel_execution)) = column_row {
         let column_settings = [
             ("agent_autonomy", agent_autonomy),
             ("branch_prefix", branch_prefix),
             ("qa_prompt", qa_prompt),
             ("parallel_execution", parallel_execution),
-            ("constitution", constitution),
         ];
         for (key, value) in column_settings {
             if value.is_some() {
@@ -207,7 +204,7 @@ pub async fn set_project_setting(pool: &SqlitePool, project_id: i64, key: &str, 
     let real_columns = [
         "model_plan", "model_prd", "model_execute", "model_risk", "model_review",
         "model_session", "model_qa", "agent_autonomy", "branch_prefix", "qa_prompt",
-        "parallel_execution", "constitution",
+        "parallel_execution",
     ];
 
     if real_columns.contains(&key) {
@@ -290,7 +287,6 @@ mod tests {
                 qa_prompt TEXT,
                 agent_autonomy TEXT,
                 parallel_execution TEXT,
-                constitution TEXT,
                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
                 model_plan TEXT,
                 model_prd TEXT,

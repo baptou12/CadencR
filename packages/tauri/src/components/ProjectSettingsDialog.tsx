@@ -53,13 +53,7 @@ export function ProjectSettingsDialog({
   const branchPrefix = settings?.branch_prefix ?? "";
   const agentAutonomy = settings?.agent_autonomy ?? "1";
   const [setupWorktree, setSetupWorktree] = useState(settings?.setup_worktree ?? "");
-  const [constitution, setConstitution] = useState(settings?.constitution ?? "");
   const [qaPrompt, setQaPrompt] = useState(settings?.qa_prompt ?? "");
-  useEffect(() => {
-    if (settings?.constitution != null) {
-      setConstitution(settings.constitution);
-    }
-  }, [settings?.constitution]);
   useEffect(() => {
     if (settings?.qa_prompt != null) {
       setQaPrompt(settings.qa_prompt);
@@ -176,30 +170,6 @@ export function ProjectSettingsDialog({
               </div>
               <p className="text-xs text-muted-foreground">
                 Run multiple agents in parallel within each execution step
-              </p>
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            <h4 className="text-sm font-semibold">Project Constitution</h4>
-
-            <div className="space-y-1">
-              <Textarea
-                placeholder={"e.g. No ORMs — use raw SQL only\nAll components must be accessible (WCAG 2.1 AA)\nNo new dependencies without team approval"}
-                rows={4}
-                value={constitution}
-                onChange={(e) => setConstitution(e.target.value)}
-                onBlur={() =>
-                  setSettingMutation.mutate({
-                    projectId: projectId,
-                    key: "constitution",
-                    value: constitution,
-                  })
-                }
-                className="text-sm"
-              />
-              <p className="text-xs text-muted-foreground">
-                Hard constraints that every agent must respect — these are non-negotiable principles for this project
               </p>
             </div>
           </div>
