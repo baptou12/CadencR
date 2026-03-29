@@ -16,7 +16,8 @@ import {
 } from "@/api/generated";
 import { ModelSelector } from "./ModelSelector";
 import { useFeatureTitle } from "@/hooks/useFeatureTitle";
-import { useWorkflowStore, type AutonomyLevel } from "@/hooks/useWorkflowWebSocket";
+import type { AutonomyLevel } from "@/types/workflow";
+import { useWorkflowStore } from "@/hooks/useWorkflowWebSocket";
 import { startDragging, toggleMaximize } from "@/lib/window-drag";
 import zedLogo from "../../assets/zed-logo.png";
 

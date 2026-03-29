@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@/test-utils";
 import userEvent from "@testing-library/user-event";
 import { QueueSidebar } from "./QueueSidebar";
-import type { QueueItem } from "@/hooks/useWorkflowWebSocket";
+import type { QueueItem } from "@/types/workflow";
 
 // Hoisted mocks so we can control return values per-test
 const { mockGetPlan, mockGetPrd } = vi.hoisted(() => ({

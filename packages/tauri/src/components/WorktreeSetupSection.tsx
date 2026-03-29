@@ -8,7 +8,7 @@ import {
   RefreshCwIcon,
 } from "lucide-react";
 import { useGetFeatureSettings } from "@/api/generated";
-import type { WorktreeStatus } from "@/hooks/useWorkflowWebSocket";
+import type { WorktreeStatus } from "@/types/workflow";
 import { useWorkflowStore } from "@/hooks/useWorkflowWebSocket";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

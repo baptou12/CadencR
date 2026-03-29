@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { findQueueItemId, buildSessionEntries } from "./useWsWorkflowBackend";
 import type { FeatureSession } from "@/hooks/useFeatureAgentState";
-import type { AgentSessionState } from "./useWorkflowWebSocket";
+import type { AgentSessionState } from "@/types/workflow";
 
 function makeEntry(overrides: Partial<FeatureSession>): FeatureSession {
   return {

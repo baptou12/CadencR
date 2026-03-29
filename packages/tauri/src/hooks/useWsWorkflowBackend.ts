@@ -12,15 +12,9 @@ import { serverBlocksToAgentBlocks } from "./useFeatureAgentState";
 import type { AgentType } from "../types/agent-types";
 import type { FeatureAgentStateResponse } from "../api/generated";
 import type { AgentStatus } from "@/types/agent";
-import {
-  useWorkflowStore,
-  AGENT_TYPE_SYNTHETIC_KEYS,
-  resolveAgentByItemId,
-  type QueueItem,
-  type QueueItemStatus,
-  type AgentSessionState,
-  type FeatureSnapshot,
-} from "./useWorkflowWebSocket";
+import type { QueueItem, QueueItemStatus, AgentSessionState, FeatureSnapshot } from "@/types/workflow";
+import { AGENT_TYPE_SYNTHETIC_KEYS } from "@/types/workflow";
+import { useWorkflowStore, resolveAgentByItemId } from "./useWorkflowWebSocket";
 import { customInstance } from "@/api/client";
 import { deriveViewState, type WorkflowBackend } from "./workflowBackendTypes";
 

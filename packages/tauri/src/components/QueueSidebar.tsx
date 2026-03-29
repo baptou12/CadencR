@@ -31,7 +31,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Markdown } from "@/components/Markdown";
 import { useGetFeaturePlan, useGetFeaturePrd } from "@/api/generated";
-import type { QueueItem, QueueItemStatus } from "@/hooks/useWorkflowWebSocket";
+import type { QueueItem, QueueItemStatus } from "@/types/workflow";
 
 // ---------------------------------------------------------------------------
 // Status icon mapping
