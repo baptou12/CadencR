@@ -231,7 +231,7 @@ impl WorkflowStrategy for FeatureBuildStrategy {
         match item.item_type.as_str() {
             "execute" => {
                 let phase = self.read_phase(read_pool, item.phase_id).await?;
-                self.build_enriched_execute_prompt(read_pool, &phase, autonomy_level).await
+                self.build_enriched_execute_prompt(read_pool, &phase, autonomy_level, item.retry_count).await
             }
             "qa" => {
                 let phase = self.read_phase(read_pool, item.phase_id).await?;
@@ -264,6 +264,7 @@ impl FeatureBuildStrategy {
         read_pool: &SqlitePool,
         phase: &Phase,
         autonomy_level: u8,
+        retry_count: i64,
     ) -> Result<String, String> {
         // Fetch plan-level context
         let plan: Option<PlanContext> = sqlx::query_as(
@@ -275,8 +276,8 @@ impl FeatureBuildStrategy {
         .map_err(|e| format!("Failed to read plan: {e}"))?;
 
         // Fetch previously completed phases (lower step numbers)
-        let completed: Vec<(i64, String)> = sqlx::query_as(
-            "SELECT step_number, title FROM phases WHERE plan_id = ? AND status = 'completed' AND step_number < ? ORDER BY step_number, order_index",
+        let completed: Vec<(i64, String, Option<String>, Option<String>)> = sqlx::query_as(
+            "SELECT step_number, title, implementation_notes, deviations FROM phases WHERE plan_id = ? AND status = 'completed' AND step_number < ? ORDER BY step_number, order_index",
         )
         .bind(phase.plan_id)
         .bind(phase.step_number)
@@ -285,6 +286,23 @@ impl FeatureBuildStrategy {
         .map_err(|e| format!("Failed to read completed phases: {e}"))?;
 
         let mut sections: Vec<String> = Vec::new();
+
+        // Inject resume context for retried phases
+        if retry_count > 0 {
+            sections.push(format!(
+                "## ⚠️ Resume Context
+
+This phase was previously attempted ({retry_count} prior attempt(s)). Before starting:
+1. Run `git status` and `git diff` to review any existing changes from the previous attempt
+2. Assess whether the partial changes are salvageable or broken
+3. If changes look correct and complete, verify them and continue to completion
+4. If changes look partial but sound, continue from where the previous attempt left off
+5. Only revert and start fresh if existing changes appear fundamentally broken
+
+Do NOT redo work that was already correctly completed.",
+                retry_count = retry_count,
+            ));
+        }
 
         if let Some(ref p) = plan {
             if let Some(ref s) = p.summary {
@@ -307,7 +325,7 @@ impl FeatureBuildStrategy {
         if !completed.is_empty() {
             let list: String = completed
                 .iter()
-                .map(|(step, title)| format!("- Step {step}: {title}"))
+                .map(|(step, title, notes, devs)| format_completed_phase(*step, title, notes.as_deref(), devs.as_deref()))
                 .collect::<Vec<_>>()
                 .join("\n");
             sections.push(format!(
@@ -381,8 +399,8 @@ impl FeatureBuildStrategy {
         .unwrap_or_else(|| "Run any available tests and verify the implementation works correctly.".to_string());
 
         // Fetch completed phases summary
-        let completed: Vec<(i64, String, Option<String>)> = sqlx::query_as(
-            "SELECT step_number, title, implementation_notes FROM phases WHERE plan_id = ? AND status = 'completed' ORDER BY step_number, order_index",
+        let completed: Vec<(i64, String, Option<String>, Option<String>)> = sqlx::query_as(
+            "SELECT step_number, title, implementation_notes, deviations FROM phases WHERE plan_id = ? AND status = 'completed' ORDER BY step_number, order_index",
         )
         .bind(phase.plan_id)
         .fetch_all(read_pool)
@@ -394,15 +412,7 @@ impl FeatureBuildStrategy {
         } else {
             let list: String = completed
                 .iter()
-                .map(|(step, title, notes)| {
-                    let mut entry = format!("- **Phase (step {step}): {title}**");
-                    if let Some(n) = notes {
-                        if !n.is_empty() {
-                            entry.push_str(&format!("\n  - {n}"));
-                        }
-                    }
-                    entry
-                })
+                .map(|(step, title, notes, devs)| format_completed_phase(*step, title, notes.as_deref(), devs.as_deref()))
                 .collect::<Vec<_>>()
                 .join("\n");
             format!("The following phases have been completed:\n\n{list}")
@@ -522,8 +532,8 @@ impl FeatureBuildStrategy {
 
         // Completed phases
         if plan_id > 0 {
-            let completed: Vec<(i64, String)> = sqlx::query_as(
-                "SELECT step_number, title FROM phases WHERE plan_id = ? AND status = 'completed' ORDER BY step_number, order_index",
+            let completed: Vec<(i64, String, Option<String>, Option<String>)> = sqlx::query_as(
+                "SELECT step_number, title, implementation_notes, deviations FROM phases WHERE plan_id = ? AND status = 'completed' ORDER BY step_number, order_index",
             )
             .bind(plan_id)
             .fetch_all(read_pool)
@@ -533,7 +543,7 @@ impl FeatureBuildStrategy {
             if !completed.is_empty() {
                 let list: String = completed
                     .iter()
-                    .map(|(step, title)| format!("- Step {step}: {title}"))
+                    .map(|(step, title, notes, devs)| format_completed_phase(*step, title, notes.as_deref(), devs.as_deref()))
                     .collect::<Vec<_>>()
                     .join("\n");
                 sections.push(format!(
@@ -555,6 +565,25 @@ impl FeatureBuildStrategy {
 
         Ok(sections.join("\n\n---\n\n"))
     }
+}
+
+/// Format a completed phase entry with optional notes and deviations.
+fn format_completed_phase(step: i64, title: &str, notes: Option<&str>, deviations: Option<&str>) -> String {
+    let has_notes = notes.map_or(false, |n| !n.is_empty());
+    let has_devs = deviations.map_or(false, |d| !d.is_empty());
+
+    if !has_notes && !has_devs {
+        return format!("- Step {step}: {title}");
+    }
+
+    let mut entry = format!("- **Step {step}: {title}**");
+    if has_notes {
+        entry.push_str(&format!("\n  - Notes: {}", notes.unwrap()));
+    }
+    if has_devs {
+        entry.push_str(&format!("\n  - Deviations: {}", deviations.unwrap()));
+    }
+    entry
 }
 
 use crate::domain::features::repository::map_phase_type_to_item_type;
@@ -695,7 +724,7 @@ mod tests {
         let phase: Phase = sqlx::query_as("SELECT * FROM phases WHERE id = 1")
             .fetch_one(&pool).await.unwrap();
         let strategy = FeatureBuildStrategy;
-        let prompt = strategy.build_enriched_execute_prompt(&pool, &phase, 1).await.unwrap();
+        let prompt = strategy.build_enriched_execute_prompt(&pool, &phase, 1, 0).await.unwrap();
         assert!(prompt.contains("User Approval Required"), "autonomy 1 initial prompt should require user approval");
         assert!(!prompt.contains("Auto-Commit"), "autonomy 1 initial prompt should NOT contain Auto-Commit");
     }
@@ -706,7 +735,7 @@ mod tests {
         let phase: Phase = sqlx::query_as("SELECT * FROM phases WHERE id = 1")
             .fetch_one(&pool).await.unwrap();
         let strategy = FeatureBuildStrategy;
-        let prompt = strategy.build_enriched_execute_prompt(&pool, &phase, 3).await.unwrap();
+        let prompt = strategy.build_enriched_execute_prompt(&pool, &phase, 3, 0).await.unwrap();
         assert!(prompt.contains("Auto-Commit"), "autonomy 3 initial prompt should contain Auto-Commit");
         assert!(!prompt.contains("User Approval Required"), "autonomy 3 initial prompt should NOT require approval");
     }
