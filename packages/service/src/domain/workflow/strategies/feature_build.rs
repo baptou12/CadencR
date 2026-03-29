@@ -504,6 +504,98 @@ Do NOT redo work that was already correctly completed.",
         ))
     }
 
+    /// Build an enriched initial prompt for session agents with plan state and constitution.
+    pub async fn build_session_prompt(
+        read_pool: &SqlitePool,
+        feature_id: i64,
+        user_prompt: &str,
+    ) -> Result<String, String> {
+        let mut sections: Vec<String> = Vec::new();
+
+        // Constitution
+        let constitution: Option<String> = sqlx::query_scalar::<_, Option<String>>(
+            "SELECT p.constitution FROM projects p JOIN features f ON f.project_id = p.id WHERE f.id = ?",
+        )
+        .bind(feature_id)
+        .fetch_optional(read_pool)
+        .await
+        .map_err(|e| format!("Failed to read constitution: {e}"))?
+        .flatten();
+
+        if let Some(ref c) = constitution {
+            let s = constitution_section(c);
+            if !s.is_empty() {
+                sections.push(s);
+            }
+        }
+
+        // Plan state
+        let plan: Option<(i64, Option<String>)> = sqlx::query_as(
+            "SELECT id, summary FROM plans WHERE feature_id = ? ORDER BY id DESC LIMIT 1",
+        )
+        .bind(feature_id)
+        .fetch_optional(read_pool)
+        .await
+        .map_err(|e| format!("Failed to read plan: {e}"))?;
+
+        if let Some((plan_id, summary)) = plan {
+            let phases: Vec<(i64, String, String)> = sqlx::query_as(
+                "SELECT step_number, title, status FROM phases WHERE plan_id = ? ORDER BY step_number, order_index",
+            )
+            .bind(plan_id)
+            .fetch_all(read_pool)
+            .await
+            .map_err(|e| format!("Failed to read phases: {e}"))?;
+
+            if !phases.is_empty() {
+                let summary_text = summary
+                    .filter(|s| !s.is_empty())
+                    .map(|s| format!("**Summary:** {s}\n\n"))
+                    .unwrap_or_default();
+
+                let phase_list: String = phases
+                    .iter()
+                    .map(|(step, title, status)| {
+                        let icon = match status.as_str() {
+                            "completed" => "✅ Completed",
+                            "running" => "🔄 Running",
+                            _ => "⏳ Pending",
+                        };
+                        format!("- Step {step}: {title} — {icon}")
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+
+                sections.push(format!(
+                    "## Current Plan State\n{summary_text}**Phases:**\n{phase_list}"
+                ));
+            }
+        }
+
+        // Feature context
+        let feature: Option<(String, Option<String>)> = sqlx::query_as(
+            "SELECT title, prd FROM features WHERE id = ?",
+        )
+        .bind(feature_id)
+        .fetch_optional(read_pool)
+        .await
+        .unwrap_or(None);
+
+        let mut ctx_parts = vec![format!("## Feature Context\n\n**Feature ID:** {feature_id}")];
+        if let Some((title, prd)) = feature {
+            ctx_parts.push(format!("**Title:** {title}"));
+            if let Some(desc) = prd.filter(|s| !s.is_empty()) {
+                ctx_parts.push(format!("**Description:**\n{desc}"));
+            }
+        }
+        sections.push(ctx_parts.join("\n\n"));
+
+        // User prompt
+        sections.push(format!("---\n\n{user_prompt}"));
+
+        Ok(sections.join("\n\n"))
+    }
+
     /// Build an enriched initial prompt for the review agent, matching the legacy
     /// `createReviewConfig()`. Includes PRD, plan summary, context, clarifications,
     /// completed phases, and git diff instructions.
@@ -750,6 +842,12 @@ mod tests {
     async fn test_pool_with_schema() -> SqlitePool {
         let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
         sqlx::query(
+            "CREATE TABLE projects (id INTEGER PRIMARY KEY, constitution TEXT)"
+        ).execute(&pool).await.unwrap();
+        sqlx::query(
+            "CREATE TABLE features (id INTEGER PRIMARY KEY, project_id INTEGER, title TEXT, prd TEXT)"
+        ).execute(&pool).await.unwrap();
+        sqlx::query(
             "CREATE TABLE plans (id INTEGER PRIMARY KEY, feature_id INTEGER, summary TEXT, context TEXT, clarifications TEXT)"
         ).execute(&pool).await.unwrap();
         sqlx::query(
@@ -758,6 +856,10 @@ mod tests {
              prompt TEXT, phase_type TEXT, implementation_notes TEXT, deviations TEXT, \
              order_index INTEGER DEFAULT 0, depends_on TEXT)"
         ).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO projects (id) VALUES (1)")
+            .execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO features (id, project_id, title) VALUES (1, 1, 'Test Feature')")
+            .execute(&pool).await.unwrap();
         sqlx::query("INSERT INTO plans (id, feature_id, summary) VALUES (1, 1, 'test plan')")
             .execute(&pool).await.unwrap();
         sqlx::query(
