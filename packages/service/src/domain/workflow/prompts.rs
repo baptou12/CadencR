@@ -54,6 +54,20 @@ impl Prompts {
     }
 }
 
+/// Build a constitution section for injection into agent prompts.
+/// Returns an empty string if the constitution is empty.
+pub fn constitution_section(constitution: &str) -> String {
+    if constitution.trim().is_empty() {
+        return String::new();
+    }
+    format!(
+        "## Project Constitution\n\
+         The following are hard constraints for this project. You MUST respect these principles — they are non-negotiable.\n\n\
+         {}\n",
+        constitution
+    )
+}
+
 /// Build the full system prompt for a phase execution agent.
 /// Combines execute-base + phase details + completion suffix.
 /// `autonomy_level`: 1 = confirm everything, 2 = moderate, 3 = full auto.

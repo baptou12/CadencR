@@ -134,7 +134,7 @@ use crate::domain::features::repository as repo;
 use crate::domain::mcp::servers::AgentType;
 use crate::domain::workflow::agent_manager::AgentManager;
 use crate::domain::workflow::permission_router::PermissionRouter;
-use crate::domain::workflow::prompts::Prompts;
+use crate::domain::workflow::prompts::{Prompts, constitution_section};
 use crate::domain::workflow::queue_advancer::{QueueAdvancer, StatusSetter};
 use crate::domain::workflow::status::WorkflowStatus;
 use crate::domain::ws_session::handler::session_prompt::PermissionResponse;
@@ -442,6 +442,27 @@ impl WorkflowEngine {
         let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
     }
 
+    /// Fetch the project constitution for this feature and format it as a prompt prefix.
+    /// Returns an empty string if no constitution is set.
+    async fn fetch_constitution_prefix(&self) -> String {
+        let constitution: Option<String> = sqlx::query_scalar::<_, Option<String>>(
+            "SELECT p.constitution FROM projects p JOIN features f ON f.project_id = p.id WHERE f.id = ?",
+        )
+        .bind(self.feature_id)
+        .fetch_optional(&self.read_pool)
+        .await
+        .unwrap_or(None)
+        .flatten();
+
+        match constitution {
+            Some(c) => {
+                let s = constitution_section(&c);
+                if s.is_empty() { String::new() } else { format!("{s}\n\n") }
+            }
+            None => String::new(),
+        }
+    }
+
     // ── Agent spawning (delegates to AgentManager) ──
 
     pub async fn spawn_plan_agent(&self, description: &str, images: &[ImagePayload]) -> Result<i64, String> {
@@ -471,7 +492,8 @@ impl WorkflowEngine {
         let plan_instructions = "Start by exploring the codebase to understand the project structure and existing patterns. \
             Then ask me clarifying questions. Finally, build the phased plan using the tools, call show_plan, and ask for my approval.";
 
-        let enriched_prompt = format!("{preamble}{desc}\n\n{plan_instructions}");
+        let constitution_prefix = self.fetch_constitution_prefix().await;
+        let enriched_prompt = format!("{constitution_prefix}{preamble}{desc}\n\n{plan_instructions}");
 
         self.agent_manager.spawn_pre_queue_agent(
             AgentType::Plan,
@@ -649,8 +671,9 @@ impl WorkflowEngine {
             format!("\n\n**Plan ID: {}** — Use this ID when calling MCP tools like `read_plan`, `list_phases`, `create_phase`, `finalize_phases`, etc.", p.0)
         }).unwrap_or_default();
 
+        let constitution_prefix = self.fetch_constitution_prefix().await;
         let prompt = format!(
-            "Please perform a risk analysis for this feature.\n\n\
+            "{constitution_prefix}Please perform a risk analysis for this feature.\n\n\
              {rich_context}{plan_id_note}\n\n\
              Start by running `git diff main...HEAD` (or the appropriate base branch) to see what code has actually changed. \
              Then explore the codebase to understand the full context and impact of these changes. Generate a comprehensive risk report."
