@@ -2,11 +2,11 @@ import { type AgentSessionHandle, AgentSession, AGENT_LABELS } from "@/component
 import type { FeatureSession } from "@/hooks/useFeatureAgentState";
 import type { ContextUsageState } from "@/types/agent";
 import type { AgentType } from "@/types/agent-types";
-import type { useWorkflowBackend } from "@/hooks/useWorkflowBackend";
+import type { WorkflowBackend } from "@/hooks/workflowBackendTypes";
 import { cn } from "@/lib/utils";
 
 interface WorkflowAgentGridProps {
-  backend: ReturnType<typeof useWorkflowBackend>;
+  backend: WorkflowBackend;
   featureId: number;
   projectId: number;
   openAgent: string | null;

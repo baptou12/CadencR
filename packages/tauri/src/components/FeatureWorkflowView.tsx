@@ -24,7 +24,7 @@ import { useSaveLastOpenedFeature } from "@/hooks/useSaveLastOpenedFeature";
 import { useWorkflowKeyboard } from "@/hooks/useWorkflowKeyboard";
 import { CodeBlockActionsContext, type CodeBlockActions } from "@/components/CodeBlockActionsContext";
 import { cn } from "@/lib/utils";
-import { useWorkflowBackend } from "@/hooks/useWorkflowBackend";
+import { useWsWorkflowBackend } from "@/hooks/useWsWorkflowBackend";
 import { useWorkflowStore } from "@/hooks/useWorkflowWebSocket";
 
 export function FeatureWorkflowView({
@@ -55,10 +55,9 @@ export function FeatureWorkflowView({
   const { data: prdData } = useGetFeaturePrd(featureId);
 
   // ---- Unified backend ----
-  const backend = useWorkflowBackend(
+  const backend = useWsWorkflowBackend(
     featureId,
     projectId,
-    feature?.type ?? "feature",
   );
 
   const contextUsageMap = useMemo(() => {
