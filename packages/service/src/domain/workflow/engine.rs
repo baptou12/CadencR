@@ -23,7 +23,7 @@ pub enum AgentSlot {
     Session(i64),
     #[serde(rename = "refine")]
     Refine,
-    #[serde(rename = "review_fixer")]
+    #[serde(rename = "review-fixer")]
     ReviewFixer(i64),
     #[serde(rename = "risk")]
     Risk(i64),
@@ -1603,6 +1603,33 @@ mod tests {
             }
         }
         assert!(!got_feature_updated, "regular items should NOT send feature.updated");
+    }
+
+    // ── on_item_completed marks agent_sessions as completed ──
+
+    #[tokio::test]
+    async fn test_on_item_completed_marks_agent_session_completed() {
+        let (engine, _rx) = test_engine_with_schema().await;
+
+        sqlx::query("INSERT INTO features (id, project_id, title) VALUES (1, 1, 'test')")
+            .execute(&engine.write_pool).await.unwrap();
+
+        // Create an agent session for the plan agent
+        let session_id: i64 = sqlx::query_scalar(
+            "INSERT INTO agent_sessions (feature_id, agent_type, status) VALUES (1, 'plan', 'running') RETURNING id",
+        )
+        .fetch_one(&engine.write_pool).await.unwrap();
+
+        // Register in active_items so on_item_completed can find the db session id
+        engine.agent_manager.active_items.insert(AgentSlot::Plan, session_id);
+
+        engine.on_item_completed(AgentSlot::Plan, Some("done")).await;
+
+        // Verify agent_sessions row is now completed
+        let status: String = sqlx::query_scalar("SELECT status FROM agent_sessions WHERE id = ?")
+            .bind(session_id)
+            .fetch_one(&engine.write_pool).await.unwrap();
+        assert_eq!(status, "completed", "agent_sessions should be marked completed");
     }
 
     // ── send_feature_updated_envelope helper ──

@@ -40,7 +40,6 @@ function mapItemTypeToAgentType(itemType: string): AgentType {
     case "session":
       return itemType as AgentType;
     case "review-fixer":
-    case "review_fixer":
       return "review-fixer";
     default:
       return "execute";

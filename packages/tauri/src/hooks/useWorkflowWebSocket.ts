@@ -212,7 +212,7 @@ export type AgentSlot =
   | { type: "prd" }
   | { type: "session"; id: number }
   | { type: "refine" }
-  | { type: "review_fixer"; id: number }
+  | { type: "review-fixer"; id: number }
   | { type: "risk"; id: number }
   | { type: "retro"; id: number }
   | { type: "queue_item"; id: number };
@@ -229,7 +229,7 @@ export function agentSlotToLegacyId(slot: AgentSlot): number {
     case "prd": return -2;
     case "session": return -3;
     case "refine": return -4;
-    case "review_fixer": return -5;
+    case "review-fixer": return -5;
     case "risk": return -6;
     case "retro": return -7;
     case "queue_item": return slot.id;
@@ -243,7 +243,7 @@ function legacyIdToSlot(id: number): AgentSlot {
     case -2: return { type: "prd" };
     case -3: return { type: "session", id: 0 };
     case -4: return { type: "refine" };
-    case -5: return { type: "review_fixer", id: 0 };
+    case -5: return { type: "review-fixer", id: 0 };
     case -6: return { type: "risk", id: 0 };
     case -7: return { type: "retro", id: 0 };
     default: return { type: "queue_item", id };
@@ -271,7 +271,6 @@ export const AGENT_TYPE_SYNTHETIC_KEYS: Record<string, number> = {
   session: -3,
   refine: -4,
   "review-fixer": -5,
-  review_fixer: -5,
   risk: -6,
   retro: -7,
 };
@@ -320,8 +319,7 @@ const AGENT_TYPE_TO_SLOT: Record<string, AgentSlot["type"]> = {
   session: "session",
   risk: "risk",
   retro: "retro",
-  "review-fixer": "review_fixer",
-  review_fixer: "review_fixer",
+  "review-fixer": "review-fixer",
 };
 
 /** Converts a dynamic activeAgents key (≤ -1000) back to an AgentSlot by looking up the stored agent type. */
@@ -340,7 +338,7 @@ function itemIdToSlot(
 }
 
 /** Agent types that can have multiple concurrent instances (not singleton slots). */
-const MULTI_INSTANCE_TYPES = new Set(["session", "risk", "retro", "review-fixer", "review_fixer"]);
+const MULTI_INSTANCE_TYPES = new Set(["session", "risk", "retro", "review-fixer"]);
 
 /** Find the activeAgents map key for a multi-instance slot, preferring running/paused agents. */
 function resolveActiveKey(

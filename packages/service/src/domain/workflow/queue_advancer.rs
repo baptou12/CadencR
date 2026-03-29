@@ -149,12 +149,27 @@ impl QueueAdvancer {
 
         info!(feature_id = self.feature_id, slot = %slot, "queue item completed");
 
+        // Grab the db_session_id before cleanup removes it from active_items
+        let db_session_id = agent_manager.active_items.get(&slot).map(|e| *e.value());
+
         agent_manager.cleanup_agent(&slot);
         permissions.cleanup(&slot);
 
         let legacy_id = slot.as_legacy_id();
         if let Err(e) = repo::mark_item_completed(&self.write_pool, legacy_id, result).await {
             error!(slot = %slot, error = %e, "failed to mark item completed");
+        }
+
+        // Also mark the agent_sessions row as completed (mark_item_completed only
+        // updates workflow_queue, which is a no-op for pre-queue agents like plan/prd).
+        if let Some(session_id) = db_session_id {
+            if let Err(e) = sqlx::query("UPDATE agent_sessions SET status = 'completed', ended_at = datetime('now') WHERE id = ?")
+                .bind(session_id)
+                .execute(&self.write_pool)
+                .await
+            {
+                error!(slot = %slot, error = %e, "failed to mark agent_session completed");
+            }
         }
 
         if let AgentSlot::QueueItem(item_id) = &slot {
