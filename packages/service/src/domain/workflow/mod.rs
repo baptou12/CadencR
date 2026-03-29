@@ -1,6 +1,7 @@
 pub mod agent_manager;
 pub mod engine;
 pub mod permission_router;
+pub mod stream_reader;
 pub mod populate;
 pub mod prompts;
 pub mod queue_advancer;
