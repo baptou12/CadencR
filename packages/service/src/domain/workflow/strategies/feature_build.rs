@@ -8,7 +8,7 @@ use crate::domain::features::models::{Phase, QueueItem, WorkflowType};
 use crate::domain::features::repository;
 use crate::domain::mcp::servers::AgentType;
 use crate::domain::workflow::populate::topological_sort;
-use crate::domain::workflow::prompts::{build_execute_prompt, build_qa_prompt, build_review_prompt};
+use crate::domain::workflow::prompts::{build_execute_prompt, build_qa_prompt, build_review_prompt, constitution_section};
 
 use super::WorkflowStrategy;
 
@@ -285,7 +285,25 @@ impl FeatureBuildStrategy {
         .await
         .map_err(|e| format!("Failed to read completed phases: {e}"))?;
 
+        // Fetch project constitution via plan → feature → project
+        let constitution: Option<String> = sqlx::query_scalar::<_, Option<String>>(
+            "SELECT p.constitution FROM projects p JOIN features f ON f.project_id = p.id JOIN plans pl ON pl.feature_id = f.id WHERE pl.id = ?",
+        )
+        .bind(phase.plan_id)
+        .fetch_optional(read_pool)
+        .await
+        .map_err(|e| format!("Failed to read constitution: {e}"))?
+        .flatten();
+
         let mut sections: Vec<String> = Vec::new();
+
+        // Inject constitution as first section
+        if let Some(ref c) = constitution {
+            let s = constitution_section(c);
+            if !s.is_empty() {
+                sections.push(s);
+            }
+        }
 
         // Inject resume context for retried phases
         if retry_count > 0 {
@@ -427,6 +445,18 @@ Do NOT redo work that was already correctly completed.",
         .await
         .map_err(|e| format!("Failed to check pending phases: {e}"))?;
 
+        // Fetch project constitution
+        let constitution: Option<String> = sqlx::query_scalar::<_, Option<String>>(
+            "SELECT p.constitution FROM projects p JOIN features f ON f.project_id = p.id WHERE f.id = ?",
+        )
+        .bind(feature_id)
+        .fetch_optional(read_pool)
+        .await
+        .map_err(|e| format!("Failed to read constitution: {e}"))?
+        .flatten();
+
+        let constitution_text = constitution.map(|c| constitution_section(&c)).unwrap_or_default();
+
         let mut prd_section = String::new();
         if pending_non_qa.map_or(false, |(cnt,)| cnt == 0) {
             let prd: Option<(Option<String>,)> = sqlx::query_as(
@@ -459,7 +489,7 @@ Do NOT redo work that was already correctly completed.",
         let fix_step = max_step.map_or(phase.step_number + 1, |(s,)| s + 1);
 
         Ok(format!(
-            "{prd_section}## What was implemented\n\n\
+            "{constitution_text}{prd_section}## What was implemented\n\n\
              {completed_summary}\n\n\
              ## QA Testing Procedure\n\n\
              The following procedure describes HOW to validate the implementation (tools, simulators, MCPs, commands, etc.):\n\n\
@@ -492,7 +522,25 @@ Do NOT redo work that was already correctly completed.",
         .await
         .map_err(|e| format!("Failed to read plan: {e}"))?;
 
+        // Fetch project constitution
+        let constitution: Option<String> = sqlx::query_scalar::<_, Option<String>>(
+            "SELECT p.constitution FROM projects p JOIN features f ON f.project_id = p.id WHERE f.id = ?",
+        )
+        .bind(feature_id)
+        .fetch_optional(read_pool)
+        .await
+        .map_err(|e| format!("Failed to read constitution: {e}"))?
+        .flatten();
+
         let mut sections: Vec<String> = Vec::new();
+
+        // Inject constitution as first section
+        if let Some(ref c) = constitution {
+            let s = constitution_section(c);
+            if !s.is_empty() {
+                sections.push(s);
+            }
+        }
 
         // PRD
         let prd: Option<(Option<String>,)> = sqlx::query_as(
