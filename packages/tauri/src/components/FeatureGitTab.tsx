@@ -62,7 +62,7 @@ export function FeatureGitTab({ featureId, diffMode = "worktree", onStartReviewF
       </div>
       {pendingComments.length > 0 && (
         <div className="border-t px-4 py-3 flex justify-end">
-          <ShortcutTooltip label={buttonLabel} keys={["cmd", "enter"]}>
+          <ShortcutTooltip label={buttonLabel} keys={["cmd", "enter"]} above>
             <Button
               variant="outline"
               size="sm"
