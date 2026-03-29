@@ -1,4 +1,5 @@
 import { createElement, useState } from "react";
+import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { DEFAULT_MODEL } from "../shared/models";
 import { Button } from "./ui/button";
@@ -66,13 +67,22 @@ export function ModelSelector({ level, projectId, featureId }: ModelSelectorProp
   });
 
   const globalMutation = useSetWorkspaceModelSetting({
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: getGetWorkspaceModelSettingsQueryKey() }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: getGetWorkspaceModelSettingsQueryKey() });
+      toast.success("Settings saved");
+    },
   });
   const projectMutation = useSetProjectModelSetting({
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: getGetProjectModelSettingsQueryKey(projectId ?? 0) }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: getGetProjectModelSettingsQueryKey(projectId ?? 0) });
+      toast.success("Settings saved");
+    },
   });
   const featureMutation = useSetFeatureModelSetting({
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: getGetFeatureModelSettingsQueryKey(featureId ?? 0) }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: getGetFeatureModelSettingsQueryKey(featureId ?? 0) });
+      toast.success("Settings saved");
+    },
   });
 
   const settings =

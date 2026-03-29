@@ -1,8 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import { ModelSelector } from "../components/ModelSelector";
 import { useZoom } from "@/hooks/useZoom";
 import {
@@ -15,12 +16,13 @@ export const Route = createFileRoute("/settings")({
   component: SettingsPage,
 });
 
-function ParallelExecutionCheckbox() {
+function ParallelExecutionToggle() {
   const parallel = useGetWorkspaceSetting("parallel_execution");
   const queryClient = useQueryClient();
   const setParallel = useSetWorkspaceSetting({
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: getGetWorkspaceSettingQueryKey("parallel_execution") });
+      toast.success("Settings saved");
     },
   });
 
@@ -28,7 +30,7 @@ function ParallelExecutionCheckbox() {
 
   return (
     <div className="flex items-center gap-2">
-      <Checkbox
+      <Switch
         id="parallel-execution"
         checked={isChecked}
         onCheckedChange={(checked) =>
@@ -48,6 +50,7 @@ function AgentAutonomySelect() {
   const setAutonomy = useSetWorkspaceSetting({
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: getGetWorkspaceSettingQueryKey("agent_autonomy") });
+      toast.success("Settings saved");
     },
   });
 
@@ -74,14 +77,16 @@ function LanguageInput() {
   const setLanguage = useSetWorkspaceSetting({
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: getGetWorkspaceSettingQueryKey("language") });
+      toast.success("Settings saved");
     },
   });
 
   const [draft, setDraft] = useState(language.data?.value ?? "");
   const committed = language.data?.value ?? "";
+  const isEditing = useRef(false);
 
-  // Sync draft when server data loads
-  if (language.isSuccess && draft === "" && committed !== "") {
+  // Sync draft when server data loads (skip while user is editing)
+  if (language.isSuccess && !isEditing.current && draft === "" && committed !== "") {
     setDraft(committed);
   }
 
@@ -91,8 +96,10 @@ function LanguageInput() {
         className="border rounded px-3 py-1.5 text-sm bg-background w-64"
         placeholder="English (default)"
         value={draft}
+        onFocus={() => { isEditing.current = true; }}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={() => {
+          isEditing.current = false;
           const trimmed = draft.trim();
           if (trimmed !== committed) {
             if (trimmed) {
@@ -126,7 +133,7 @@ function ZoomControl() {
 
 function SettingsPage() {
   return (
-    <div className="p-6 space-y-8">
+    <div className="p-6 space-y-8 overflow-y-auto h-full">
       <h1 className="text-2xl font-bold">Settings</h1>
 
       <section className="space-y-4">
@@ -167,7 +174,7 @@ function SettingsPage() {
             Run multiple agents in parallel within each execution step.
           </p>
         </div>
-        <ParallelExecutionCheckbox />
+        <ParallelExecutionToggle />
       </section>
 
       <section className="space-y-4">

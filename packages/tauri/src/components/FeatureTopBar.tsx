@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useHotkeys } from "react-hotkeys-hook";
 import { Badge } from "@/components/ui/badge";
@@ -74,6 +75,7 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", classNam
   const setFeatureSetting = useSetFeatureSetting({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: getGetFeatureSettingsQueryKey(featureId) });
+      toast.success("Settings saved");
     },
   });
   const worktreeBranch = featureSettings?.worktree_branch;

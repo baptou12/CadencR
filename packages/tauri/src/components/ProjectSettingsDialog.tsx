@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useGetProjectSettings,
@@ -47,6 +48,7 @@ export function ProjectSettingsDialog({
   const setSettingMutation = useSetProjectSetting({
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: getGetProjectSettingsQueryKey(projectId) });
+      toast.success("Settings saved");
     },
   });
 

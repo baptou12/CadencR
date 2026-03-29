@@ -104,20 +104,32 @@ impl AgentManager {
             .flatten()
     }
 
-    /// Resolve the model for a given agent type using the shared settings cascade.
-    async fn resolve_model(&self, agent_type_str: &str) -> String {
-        const DEFAULT_MODEL: &str = crate::api::DEFAULT_MODEL;
-        let db_key = format!("model_{agent_type_str}");
-        let project_id = self.get_project_id().await;
+    /// Resolve a setting using the shared feature → project → global cascade.
+    async fn resolve_setting(&self, key: &str, project_id: Option<i64>, default: Option<&str>) -> Option<String> {
         crate::domain::settings::resolve_setting(
             &self.read_pool,
-            &db_key,
+            key,
             Some(self.feature_id),
             project_id,
-            Some(DEFAULT_MODEL),
+            default,
         )
         .await
-        .unwrap_or_else(|| DEFAULT_MODEL.to_string())
+    }
+
+    /// Resolve the model for a given agent type.
+    async fn resolve_model(&self, agent_type_str: &str, project_id: Option<i64>) -> String {
+        const DEFAULT_MODEL: &str = crate::api::DEFAULT_MODEL;
+        let db_key = format!("model_{agent_type_str}");
+        self.resolve_setting(&db_key, project_id, Some(DEFAULT_MODEL))
+            .await
+            .unwrap_or_else(|| DEFAULT_MODEL.to_string())
+    }
+
+    /// Build the language instruction to append to system prompts.
+    async fn build_language_instruction(&self, project_id: Option<i64>) -> Option<String> {
+        self.resolve_setting("language", project_id, None)
+            .await
+            .map(|l| format!("\n\n## Language\n\nYou MUST respond in {l}."))
     }
 
     /// Shared logic for spawning plan/PRD agents (pre-queue agents).
@@ -178,8 +190,10 @@ impl AgentManager {
             turn_state_tx: self.turn_state_tx.clone(),
         };
 
-        // 5. Resolve model from feature → project → global → default
-        let model = self.resolve_model(agent_type_str).await;
+        // 5. Resolve model and language from feature → project → global cascade
+        let project_id = self.get_project_id().await;
+        let model = self.resolve_model(agent_type_str, project_id).await;
+        let language_instruction = self.build_language_instruction(project_id).await;
         info!(feature_id = self.feature_id, agent_type = agent_type_str, model = %model, "resolved model for pre-queue agent");
 
         // Persist model to agent session
@@ -196,12 +210,12 @@ impl AgentManager {
             permission_mode: Some(PermissionMode::AcceptEdits),
             model: Some(model),
             system_prompt: if system_prompt.is_empty() {
-                None
+                language_instruction
             } else {
                 Some(format!(
                     "{system_prompt}\n\n## MCP Tools\n\n\
                      The MCP tools will auto-resolve plan_id from your feature — you do NOT need to pass plan_id to any tool. \
-                     Just omit it and the correct plan will be used automatically."
+                     Just omit it and the correct plan will be used automatically.{}", language_instruction.as_deref().unwrap_or("")
                 ))
             },
             mcp_servers: Some(mcp_servers),
@@ -354,8 +368,10 @@ impl AgentManager {
             turn_state_tx: self.turn_state_tx.clone(),
         };
 
-        // 7. Resolve model from feature → project → global → default
-        let model = self.resolve_model(&agent_type_str).await;
+        // 7. Resolve model and language from feature → project → global cascade
+        let project_id = self.get_project_id().await;
+        let model = self.resolve_model(&agent_type_str, project_id).await;
+        let language_instruction = self.build_language_instruction(project_id).await;
         info!(feature_id = self.feature_id, agent_type = %agent_type_str, model = %model, "resolved model for queue item");
 
         // Persist model to agent session
@@ -371,7 +387,11 @@ impl AgentManager {
             cwd: cwd.clone(),
             permission_mode: Some(PermissionMode::AcceptEdits),
             model: Some(model),
-            system_prompt: if system_prompt.is_empty() { None } else { Some(system_prompt) },
+            system_prompt: if system_prompt.is_empty() {
+                language_instruction
+            } else {
+                Some(format!("{system_prompt}{}", language_instruction.as_deref().unwrap_or("")))
+            },
             mcp_servers: Some(mcp_servers),
             ..Options::default()
         };
@@ -656,7 +676,8 @@ impl AgentManager {
                 row.map(|(t,)| t).unwrap_or_else(|| "execute".to_string())
             }
         };
-        let model = self.resolve_model(&agent_type_str_for_model).await;
+        let project_id = self.get_project_id().await;
+        let model = self.resolve_model(&agent_type_str_for_model, project_id).await;
         info!(feature_id = self.feature_id, agent_type = %agent_type_str_for_model, model = %model, "resolved model for resumed agent");
 
         // Persist model to agent session
@@ -1290,7 +1311,7 @@ mod tests {
             .execute(&pool).await.unwrap();
 
         let mgr = make_agent_manager(pool, 1);
-        let model = mgr.resolve_model("plan").await;
+        let model = mgr.resolve_model("plan", Some(1)).await;
         assert_eq!(model, "opus[1m]");
     }
 
@@ -1305,7 +1326,7 @@ mod tests {
             .execute(&pool).await.unwrap();
 
         let mgr = make_agent_manager(pool, 1);
-        let model = mgr.resolve_model("plan").await;
+        let model = mgr.resolve_model("plan", Some(1)).await;
         assert_eq!(model, "sonnet");
     }
 
@@ -1320,7 +1341,7 @@ mod tests {
             .execute(&pool).await.unwrap();
 
         let mgr = make_agent_manager(pool, 1);
-        let model = mgr.resolve_model("plan").await;
+        let model = mgr.resolve_model("plan", Some(1)).await;
         assert_eq!(model, "claude-sonnet-4");
     }
 
@@ -1333,7 +1354,7 @@ mod tests {
             .execute(&pool).await.unwrap();
 
         let mgr = make_agent_manager(pool, 1);
-        let model = mgr.resolve_model("plan").await;
+        let model = mgr.resolve_model("plan", Some(1)).await;
         assert_eq!(model, "claude-haiku-3-5");
     }
 
@@ -1346,7 +1367,7 @@ mod tests {
             .execute(&pool).await.unwrap();
 
         let mgr = make_agent_manager(pool, 1);
-        let model = mgr.resolve_model("plan").await;
+        let model = mgr.resolve_model("plan", Some(1)).await;
         // "default" is a regular value, feature level wins
         assert_eq!(model, "default");
     }
@@ -1360,7 +1381,7 @@ mod tests {
             .execute(&pool).await.unwrap();
 
         let mgr = make_agent_manager(pool, 1);
-        let model = mgr.resolve_model("execute").await;
+        let model = mgr.resolve_model("execute", Some(1)).await;
         assert_eq!(model, "claude-sonnet-4");
     }
 
@@ -1375,7 +1396,7 @@ mod tests {
             .execute(&pool).await.unwrap();
 
         let mgr = make_agent_manager(pool, 1);
-        let model = mgr.resolve_model("plan").await;
+        let model = mgr.resolve_model("plan", Some(1)).await;
         // "default" is a regular value from global settings, not a magic keyword
         assert_eq!(model, "default");
     }
@@ -1389,8 +1410,50 @@ mod tests {
             .execute(&pool).await.unwrap();
 
         let mgr = make_agent_manager(pool, 1);
-        assert_eq!(mgr.resolve_model("plan").await, "plan-model");
-        assert_eq!(mgr.resolve_model("execute").await, "exec-model");
-        assert_eq!(mgr.resolve_model("review").await, "opus[1m]");
+        assert_eq!(mgr.resolve_model("plan", Some(1)).await, "plan-model");
+        assert_eq!(mgr.resolve_model("execute", Some(1)).await, "exec-model");
+        assert_eq!(mgr.resolve_model("review", Some(1)).await, "opus[1m]");
+    }
+
+    #[tokio::test]
+    async fn test_build_language_instruction_returns_none_when_unset() {
+        let pool = setup_test_db().await;
+        sqlx::query("INSERT INTO projects (id, name) VALUES (1, 'test')")
+            .execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO features (id, project_id, title) VALUES (1, 1, 'feat')")
+            .execute(&pool).await.unwrap();
+
+        let mgr = make_agent_manager(pool, 1);
+        assert!(mgr.build_language_instruction(Some(1)).await.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_build_language_instruction_returns_instruction_when_set() {
+        let pool = setup_test_db().await;
+        sqlx::query("INSERT INTO projects (id, name) VALUES (1, 'test')")
+            .execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO features (id, project_id, title) VALUES (1, 1, 'feat')")
+            .execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO settings (key, value) VALUES ('language', 'French')")
+            .execute(&pool).await.unwrap();
+
+        let mgr = make_agent_manager(pool, 1);
+        let instruction = mgr.build_language_instruction(Some(1)).await;
+        assert!(instruction.is_some());
+        assert!(instruction.unwrap().contains("French"));
+    }
+
+    #[tokio::test]
+    async fn test_build_language_instruction_empty_string_returns_none() {
+        let pool = setup_test_db().await;
+        sqlx::query("INSERT INTO projects (id, name) VALUES (1, 'test')")
+            .execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO features (id, project_id, title) VALUES (1, 1, 'feat')")
+            .execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO settings (key, value) VALUES ('language', '')")
+            .execute(&pool).await.unwrap();
+
+        let mgr = make_agent_manager(pool, 1);
+        assert!(mgr.build_language_instruction(Some(1)).await.is_none());
     }
 }
