@@ -3,14 +3,14 @@ import { useHotkeys } from "react-hotkeys-hook";
 import { type AgentSessionHandle } from "@/components/AgentSession";
 import { getActiveFocusZone } from "@/lib/focus-zones";
 import type { FeatureSession } from "@/hooks/useFeatureAgentState";
-import type { useWorkflowBackend } from "@/hooks/useWorkflowBackend";
+import type { WorkflowBackend } from "@/hooks/workflowBackendTypes";
 
 /**
  * Manages all keyboard shortcuts and agent focus navigation for the workflow view.
  * Returns refs and state needed by the rendering layer.
  */
 export function useWorkflowKeyboard(
-  backend: ReturnType<typeof useWorkflowBackend>,
+  backend: WorkflowBackend,
   openAgent: string | null,
   setOpenAgent: React.Dispatch<React.SetStateAction<string | null>>,
   onViewDiff: () => void,

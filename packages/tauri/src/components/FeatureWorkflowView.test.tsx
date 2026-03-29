@@ -17,8 +17,8 @@ const { mockUseWorkflowBackend } = vi.hoisted(() => ({
   mockUseWorkflowBackend: vi.fn(),
 }));
 
-vi.mock("@/hooks/useWorkflowBackend", () => ({
-  useWorkflowBackend: mockUseWorkflowBackend,
+vi.mock("@/hooks/useWsWorkflowBackend", () => ({
+  useWsWorkflowBackend: mockUseWorkflowBackend,
 }));
 
 const defaultBackend = {

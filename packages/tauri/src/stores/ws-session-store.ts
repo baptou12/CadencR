@@ -8,6 +8,7 @@
 
 import { create } from "zustand";
 import { buildUserMessageContent } from "@/types/agent-types";
+import { getWsUrl } from "@/lib/ws-url";
 import { DEFAULT_MODEL } from "../shared/models";
 import type { AgentBlockData } from "@/components/AgentBlock";
 import type { AgentStatus, TodoItem } from "@/types/agent";
@@ -399,11 +400,6 @@ function markLastPlanBlock(blocks: AgentBlockData[], status: "approved" | "rejec
 // ---------------------------------------------------------------------------
 // Helper: get WS URL
 // ---------------------------------------------------------------------------
-
-function getWsUrl(): string {
-  const httpUrl = import.meta.env.VITE_API_URL || "http://localhost:5005";
-  return httpUrl.replace(/^http/, "ws") + "/ws";
-}
 
 // ---------------------------------------------------------------------------
 // Store interface
