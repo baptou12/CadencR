@@ -245,6 +245,7 @@ export function FeatureWorkflowView({
             )}
 
             {!backend.hasAnyAgentOutput && backend.sessionEntries.length === 0 &&
+              !backend.isStartingWorkflowSession &&
               view !== "plan-input" && view !== "loading" && (
               <div className="flex-1 flex items-center justify-center">
                 <Loader2Icon className="h-6 w-6 animate-spin text-muted-foreground" />

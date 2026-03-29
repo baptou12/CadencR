@@ -149,6 +149,7 @@ interface WorkflowState {
   // In-flight request flags (not optimistic state — just tracking pending requests)
   startingBuild: boolean;
   continuingBuild: boolean;
+  startingSession: boolean;
 
   /** Live feature title pushed via WS after auto-naming. */
   featureTitle: string | null;
@@ -557,7 +558,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
           // Preserve blocks (e.g. user message) that arrived before this event
           const session = { ...createAgentSession(sessionId), blocks: existing?.blocks ?? [] };
           activeAgents.set(itemId, session);
-          return { queue, activeAgents, selectedItemId: state.selectedItemId ?? itemId };
+          return { queue, activeAgents, selectedItemId: state.selectedItemId ?? itemId, startingSession: false };
         });
         break;
       }
@@ -647,6 +648,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
           if (status === "building" || status === "paused" || status === "error" || status === "completed") {
             updates.startingBuild = false;
             updates.continuingBuild = false;
+            updates.startingSession = false;
           }
 
           set(updates);
@@ -967,7 +969,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         break;
       }
       case "error": {
-        set({ workflowStatus: "error", error: payload.message as string, startingBuild: false, continuingBuild: false });
+        set({ workflowStatus: "error", error: payload.message as string, startingBuild: false, continuingBuild: false, startingSession: false });
         break;
       }
     }
@@ -990,6 +992,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     hydrated: false,
     startingBuild: false,
     continuingBuild: false,
+    startingSession: false,
     slashCommands: [],
     slashCommandsLoading: false,
     worktreeStatus: "idle",
@@ -1311,6 +1314,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     },
 
     startSession(prompt, images) {
+      set({ startingSession: true });
       send("start_session", { prompt, images });
     },
 

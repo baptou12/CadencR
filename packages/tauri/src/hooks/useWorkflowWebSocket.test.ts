@@ -1927,6 +1927,54 @@ describe("useWorkflowStore", () => {
       expect(useWorkflowStore.getState().startingBuild).toBe(false);
       expect(useWorkflowStore.getState().continuingBuild).toBe(false);
     });
+
+    it("startSession sets startingSession flag", () => {
+      const ws = connectStore();
+      expect(useWorkflowStore.getState().startingSession).toBe(false);
+      useWorkflowStore.getState().startSession("do something", undefined);
+      expect(useWorkflowStore.getState().startingSession).toBe(true);
+      const msg = JSON.parse(ws.sent[ws.sent.length - 1]);
+      expect(msg.action).toBe("start_session");
+    });
+
+    it("item_started clears startingSession flag", () => {
+      const ws = connectStore();
+      useWorkflowStore.setState({ startingSession: true });
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "item_started",
+        payload: { agent_slot: { queue_item_id: 10 }, session_id: 42 },
+      });
+
+      expect(useWorkflowStore.getState().startingSession).toBe(false);
+    });
+
+    it("status_changed clears startingSession flag", () => {
+      const ws = connectStore();
+      useWorkflowStore.setState({ startingSession: true });
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "status_changed",
+        payload: { status: "building", previous_status: "ready_to_build" },
+      });
+
+      expect(useWorkflowStore.getState().startingSession).toBe(false);
+    });
+
+    it("workflow error clears startingSession flag", () => {
+      const ws = connectStore();
+      useWorkflowStore.setState({ startingSession: true });
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "error",
+        payload: { message: "Something failed" },
+      });
+
+      expect(useWorkflowStore.getState().startingSession).toBe(false);
+    });
   });
 
   // -------------------------------------------------------------------------
