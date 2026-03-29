@@ -135,6 +135,7 @@ use crate::domain::mcp::servers::AgentType;
 use crate::domain::workflow::agent_manager::AgentManager;
 use crate::domain::workflow::permission_router::PermissionRouter;
 use crate::domain::workflow::prompts::{Prompts, constitution_section};
+use crate::domain::workflow::strategies::feature_build::FeatureBuildStrategy;
 use crate::domain::workflow::queue_advancer::{QueueAdvancer, StatusSetter};
 use crate::domain::workflow::status::WorkflowStatus;
 use crate::domain::ws_session::handler::session_prompt::PermissionResponse;
@@ -528,37 +529,12 @@ impl WorkflowEngine {
     }
 
     pub async fn spawn_session_agent(&self, prompt: &str, images: &[ImagePayload]) -> Result<i64, String> {
-        // Enrich the initial prompt with feature context
-        let feature: Option<(String, Option<String>)> = sqlx::query_as(
-            "SELECT title, prd FROM features WHERE id = ?",
+        let enriched_prompt = FeatureBuildStrategy::build_session_prompt(
+            &self.read_pool,
+            self.feature_id,
+            prompt,
         )
-        .bind(self.feature_id)
-        .fetch_optional(&self.read_pool)
-        .await
-        .unwrap_or(None);
-
-        let plan_summary: Option<(Option<String>,)> = sqlx::query_as(
-            "SELECT summary FROM plans WHERE feature_id = ? ORDER BY id DESC LIMIT 1",
-        )
-        .bind(self.feature_id)
-        .fetch_optional(&self.read_pool)
-        .await
-        .unwrap_or(None);
-
-        let enriched_prompt = {
-            let mut parts = vec![format!("## Feature Context\n\n**Feature ID:** {}", self.feature_id)];
-            if let Some((title, prd)) = feature {
-                parts.push(format!("**Title:** {title}"));
-                if let Some(desc) = prd.filter(|s| !s.is_empty()) {
-                    parts.push(format!("**Description:**\n{desc}"));
-                }
-            }
-            if let Some((Some(summary),)) = plan_summary.filter(|s| s.0.as_ref().is_some_and(|v| !v.is_empty())) {
-                parts.push(format!("**Plan Summary:**\n{summary}"));
-            }
-            parts.push(format!("---\n\n{prompt}"));
-            parts.join("\n\n")
-        };
+        .await?;
 
         self.agent_manager.spawn_pre_queue_agent(
             AgentType::Session,
