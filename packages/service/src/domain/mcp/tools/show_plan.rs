@@ -19,9 +19,9 @@ impl ShowPlanTool {
     }
 
     pub async fn call(&self, plan_id: i64) -> Result<String, String> {
-        // Read and return the plan — approval already handled by canUseTool
         let read_plan = ReadPlanTool::new(Arc::clone(&self.ctx));
         let plan_content = read_plan.call(plan_id).await?;
+
         Ok(format!("Plan approved.\n\n{plan_content}"))
     }
 }
