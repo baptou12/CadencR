@@ -3,8 +3,11 @@ import { render, screen } from "@/test-utils";
 import userEvent from "@testing-library/user-event";
 import { AgentPromptBar } from "./AgentPromptBar";
 
+const hotkeyHandlers = new Map<string, (e: Partial<KeyboardEvent>) => void>();
 vi.mock("react-hotkeys-hook", () => ({
-  useHotkeys: vi.fn(),
+  useHotkeys: vi.fn((key: string, handler: (e: Partial<KeyboardEvent>) => void) => {
+    hotkeyHandlers.set(key, handler);
+  }),
 }));
 
 // Mock all tRPC-using hooks directly to avoid cascading mock complexity
@@ -68,6 +71,7 @@ describe("AgentPromptBar", () => {
   beforeEach(() => {
     onSend.mockClear();
     onStop.mockClear();
+    hotkeyHandlers.clear();
   });
 
   it("renders textarea", () => {
@@ -155,5 +159,31 @@ describe("AgentPromptBar", () => {
       />,
     );
     expect(screen.getByRole("textbox")).toHaveTextContent("Draft text");
+  });
+
+  it("escape calls onStop when focus is inside the prompt bar", () => {
+    render(
+      <AgentPromptBar onSend={onSend} onStop={onStop} status="running" />,
+    );
+    // Focus the textbox (inside the wrapper)
+    screen.getByRole("textbox").focus();
+    const handler = hotkeyHandlers.get("escape");
+    expect(handler).toBeDefined();
+    handler!({ preventDefault: vi.fn() });
+    expect(onStop).toHaveBeenCalled();
+  });
+
+  it("escape does not call onStop when focus is outside the prompt bar", () => {
+    render(
+      <div>
+        <button data-testid="outside">Outside</button>
+        <AgentPromptBar onSend={onSend} onStop={onStop} status="running" />
+      </div>,
+    );
+    screen.getByTestId("outside").focus();
+    const handler = hotkeyHandlers.get("escape");
+    expect(handler).toBeDefined();
+    handler!({ preventDefault: vi.fn() });
+    expect(onStop).not.toHaveBeenCalled();
   });
 });

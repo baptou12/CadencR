@@ -31,6 +31,7 @@ import { FocusRing } from "@/components/FocusRing";
 import { KeyboardShortcutsModal } from "@/components/KeyboardShortcutsModal";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useAppWsStore } from "@/stores/app-ws-store";
+import { useWsSessionStore } from "@/stores/ws-session-store";
 import { useZoomHotkeys } from "@/hooks/useZoom";
 
 const ZONE_ORDER = ["left-sidebar", "main-content", "terminal", "right-sidebar"] as const;
@@ -207,6 +208,24 @@ function RootLayout() {
     window.addEventListener("keydown", handler, true);
     return () => window.removeEventListener("keydown", handler, true);
   }, []);
+
+  // CMD+Escape -> stop all running agents across the app
+  useHotkeys(
+    "meta+escape",
+    (e) => {
+      const store = useWsSessionStore.getState();
+      const sessions = store.sessions;
+      let stopped = false;
+      for (const sessionId of Object.keys(sessions)) {
+        if (sessions[sessionId].status === "running") {
+          store.interrupt(sessionId);
+          stopped = true;
+        }
+      }
+      if (stopped) e.preventDefault();
+    },
+    { enableOnFormTags: true, enableOnContentEditable: true },
+  );
 
   // CMD+K -> open command palette
   useHotkeys(

@@ -255,6 +255,7 @@ export const AgentPromptBar = forwardRef<
 
   useHotkeys("escape", (e) => {
     if (!isRunning) return;
+    if (!wrapperRef.current?.contains(document.activeElement)) return;
     e.preventDefault();
     onStop();
   }, { enableOnFormTags: true, enableOnContentEditable: true });
