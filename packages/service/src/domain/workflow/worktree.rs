@@ -67,6 +67,20 @@ pub async fn ensure_worktree(
     // 1. Check if worktree already exists
     if let Some(existing) = get_setting(read_pool, feature_id, "worktree_path").await {
         if tokio::fs::metadata(&existing).await.is_ok() {
+            let branch = get_setting(read_pool, feature_id, "worktree_branch").await;
+            let status = get_setting(read_pool, feature_id, "worktree_setup_step").await
+                .unwrap_or_else(|| "created".to_string());
+            // Re-send worktree state so the frontend store is populated on reconnect
+            send_envelope(ws_sender, "workflow", "worktree.created", serde_json::json!({
+                "feature_id": feature_id,
+                "path": existing,
+                "branch": branch,
+            }));
+            if status == "ready" {
+                send_envelope(ws_sender, "workflow", "worktree.ready", serde_json::json!({
+                    "feature_id": feature_id,
+                }));
+            }
             return Ok(PathBuf::from(existing));
         }
     }

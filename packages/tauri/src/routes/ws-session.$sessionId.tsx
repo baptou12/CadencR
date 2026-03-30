@@ -12,7 +12,7 @@ import { useWebSocketSession } from "@/hooks/useWebSocketSession";
 import { useResolvedModel } from "@/hooks/useResolvedModel";
 import { useWsSessionStore } from "@/stores/ws-session-store";
 import { useActiveTab } from "@/hooks/useActiveTab";
-import { useGetStats, useGetBranch } from "@/api/generated";
+import { useGetStats, useGetBranch, useGetFeatureSettings } from "@/api/generated";
 import { cn } from "@/lib/utils";
 
 interface WsSessionSearch {
@@ -53,6 +53,9 @@ function WebSocketSessionPage() {
     { projectId },
     { refetchInterval: 10000 },
   );
+  const { data: featureSettingsData } = useGetFeatureSettings(featureId);
+  const worktreeBranch = featureSettingsData?.find(s => s.key === "worktree_branch")?.value;
+  const gitBranch = worktreeBranch ?? branchData?.branch;
 
   const ws = useWebSocketSession(sessionId, featureId);
   const session = useWsSessionStore((s) => s.sessions[sessionId]);
@@ -105,7 +108,7 @@ function WebSocketSessionPage() {
   return (
     <div className="flex h-full flex-col">
       <FeatureTopBar featureId={featureId} projectId={projectId} mode="session" className="shrink-0" />
-      <FeatureTabBar activeTab={activeTab} featureId={featureId} onTabChange={setActiveTab} gitStats={gitStats} gitBranch={branchData?.branch} />
+      <FeatureTabBar activeTab={activeTab} featureId={featureId} onTabChange={setActiveTab} gitStats={gitStats} gitBranch={gitBranch} />
       <div className="relative min-h-0 flex-1 overflow-hidden">
         <FeatureTerminalTab featureId={featureId} projectId={projectId} hidden={activeTab !== "terminal"} />
 

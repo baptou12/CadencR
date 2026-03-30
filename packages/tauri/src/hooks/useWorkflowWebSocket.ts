@@ -122,7 +122,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         ws, featureId, projectId,
         queue: [], activeAgents: new Map(), planAgent: null, prdAgent: null,
         workflowStatus: "idle", pauseReason: null, selectedItemId: null, error: null, hydrated: false, startingBuild: false, continuingBuild: false,
-        worktreeStatus: "idle" as const, worktreePath: null, worktreeBranch: null, worktreeSetupOutput: [], worktreeError: null,
+        worktreeStatus: "idle" as const, worktreePath: null, worktreeSetupOutput: [], worktreeError: null,
         featureTitle: null, slashCommands: [], slashCommandsLoading: false,
       });
 

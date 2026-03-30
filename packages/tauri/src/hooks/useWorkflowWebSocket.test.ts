@@ -1929,6 +1929,14 @@ describe("useWorkflowStore", () => {
       expect(useWorkflowStore.getState().continuingBuild).toBe(false);
     });
 
+    it("connect preserves worktreeBranch across reconnect", () => {
+      connectStore();
+      useWorkflowStore.setState({ worktreeBranch: "feature/my-branch-1234" });
+      // Reconnect — branch should survive
+      connectStore(2, 2);
+      expect(useWorkflowStore.getState().worktreeBranch).toBe("feature/my-branch-1234");
+    });
+
     it("startSession sets startingSession flag", () => {
       const ws = connectStore();
       expect(useWorkflowStore.getState().startingSession).toBe(false);
