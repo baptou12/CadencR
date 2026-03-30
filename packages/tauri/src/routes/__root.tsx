@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   createRootRoute,
   Outlet,
@@ -33,6 +33,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useAppWsStore } from "@/stores/app-ws-store";
 import { useWsSessionStore } from "@/stores/ws-session-store";
 import { useZoomHotkeys } from "@/hooks/useZoom";
+import { initNotificationPermission } from "@/lib/notify-agent-done";
 
 const ZONE_ORDER = ["left-sidebar", "main-content", "terminal", "right-sidebar"] as const;
 
@@ -79,6 +80,9 @@ function RootLayout() {
     useAppWsStore.getState().connect();
     return () => useAppWsStore.getState().disconnect();
   }, []);
+
+  // Initialize native notification permission and window focus tracking
+  useEffect(() => { void initNotificationPermission(); }, []);
 
   // Extract active project ID from the current route
   const routerState = useRouterState();

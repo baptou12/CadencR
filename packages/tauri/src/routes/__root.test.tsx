@@ -33,6 +33,10 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 vi.mock("react-hotkeys-hook", () => ({ useHotkeys: vi.fn() }));
+vi.mock("@tauri-apps/plugin-notification", () => ({
+  isPermissionGranted: vi.fn(() => Promise.resolve(false)),
+  sendNotification: vi.fn(),
+}));
 vi.mock("@tauri-apps/api/webview", () => ({
   getCurrentWebview: () => ({ setZoom: vi.fn(() => Promise.resolve()) }),
 }));

@@ -7,6 +7,8 @@
  */
 
 import { create } from "zustand";
+import { notifyAgentDone } from "@/lib/notify-agent-done";
+import { queryClient } from "@/lib/queryClient";
 import { buildUserMessageContent } from "@/types/agent-types";
 import { getWsUrl } from "@/lib/ws-url";
 import { DEFAULT_MODEL } from "../shared/models";
@@ -860,6 +862,18 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
           const parent = state.toolUseIdToBlock.get(state.parentToolUseId);
           if (parent?.childBlocks) parent.taskComplete = true;
           state.parentToolUseId = null;
+        }
+        // Notify when a running agent finishes its turn
+        const sess = get().sessions[sessionId];
+        if (sess?.status === "running") {
+          let title = sess.featureTitle;
+          if (!title && sess.featureId) {
+            for (const [, data] of queryClient.getQueriesData<{ id: number; title: string }[]>({ queryKey: ["features", "list"] })) {
+              title = data?.find(f => f.id === sess.featureId)?.title ?? null;
+              if (title) break;
+            }
+          }
+          notifyAgentDone({ status: "completed", featureTitle: title ?? "Session" });
         }
         if (state.exitPlanModeDetected) {
           state.exitPlanModeDetected = false;

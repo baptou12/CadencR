@@ -8,6 +8,7 @@
  */
 
 import { invalidateFeatureQueries } from "@/lib/featureUpdated";
+import { notifyAgentDone } from "@/lib/notify-agent-done";
 import { type CommandsListPayload } from "@/lib/ws-envelope";
 import type { SlashCommand } from "@/hooks/useSlashCommand";
 import {
@@ -143,6 +144,7 @@ export function createWorkflowMessageHandler(
       }
       case "item_completed": {
         const slot = parseAgentSlot(payload);
+        notifyAgentDone({ status: "completed", featureTitle: get().featureTitle ?? "Agent" });
         set(state => {
           const itemId = resolveItemId(state, slot);
           const queue = state.queue.map(q =>
@@ -155,6 +157,7 @@ export function createWorkflowMessageHandler(
       case "item_error": {
         const slot = parseAgentSlot(payload);
         const error = payload.error as string;
+        notifyAgentDone({ status: "error", featureTitle: get().featureTitle ?? "Agent" });
         set(state => {
           const itemId = resolveItemId(state, slot);
           const queue = state.queue.map(q =>
