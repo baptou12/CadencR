@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { deriveViewState } from "./workflowBackendTypes";
 import type { FeatureSession } from "./useFeatureAgentState";
-import type { WorkflowStatus } from "./useWorkflowWebSocket";
+import type { WorkflowStatus } from "@/types/workflow";
 
 function makeSession(overrides?: Partial<FeatureSession>): FeatureSession {
   return {

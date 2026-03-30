@@ -10,7 +10,7 @@ import type {
   WorktreeStatus,
   QueueItem,
   AutonomyLevel,
-} from "./useWorkflowWebSocket";
+} from "@/types/workflow";
 import type { ActionAvailability } from "./useFeatureState";
 
 // ---------------------------------------------------------------------------

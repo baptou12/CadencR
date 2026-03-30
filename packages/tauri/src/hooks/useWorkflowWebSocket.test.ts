@@ -4,8 +4,9 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { useWorkflowStore, AGENT_TYPE_SYNTHETIC_KEYS } from "./useWorkflowWebSocket";
-import type { FeatureSnapshot, AgentSessionSummary, AgentSessionState } from "./useWorkflowWebSocket";
+import { useWorkflowStore } from "./useWorkflowWebSocket";
+import { AGENT_TYPE_SYNTHETIC_KEYS } from "@/types/workflow";
+import type { FeatureSnapshot, AgentSessionSummary, AgentSessionState } from "@/types/workflow";
 import type { AgentBlockData } from "@/components/AgentBlock";
 
 // Mock ws-session-store so we can test routing without the full SDK parser.
