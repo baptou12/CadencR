@@ -17,9 +17,9 @@ if [ ! -f "$SERVICE_BIN" ]; then
 fi
 
 if [ ! -f "$SERVICE_BIN" ]; then
-  echo "Error: cadence-service binary not found in target/release or target/debug"
-  echo "Build it first: cargo build -p cadence-service"
-  exit 1
+  echo "cadence-service binary not found — building it..."
+  (cd "$REPO_ROOT" && cargo build --release -p cadence-service)
+  SERVICE_BIN="$REPO_ROOT/target/release/cadence-service"
 fi
 
 mkdir -p "$BINARIES_DIR"

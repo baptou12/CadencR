@@ -144,7 +144,7 @@ export function createWorkflowMessageHandler(
       }
       case "item_completed": {
         const slot = parseAgentSlot(payload);
-        notifyAgentDone({ status: "completed", featureTitle: get().featureTitle ?? "Agent" });
+        notifyAgentDone({ status: "completed", featureTitle: get().featureTitle ?? "Agent", featureId: get().featureId ?? 0, projectId: get().projectId ?? 0, routeType: "workflow" });
         set(state => {
           const itemId = resolveItemId(state, slot);
           const queue = state.queue.map(q =>
@@ -157,7 +157,7 @@ export function createWorkflowMessageHandler(
       case "item_error": {
         const slot = parseAgentSlot(payload);
         const error = payload.error as string;
-        notifyAgentDone({ status: "error", featureTitle: get().featureTitle ?? "Agent" });
+        notifyAgentDone({ status: "error", featureTitle: get().featureTitle ?? "Agent", featureId: get().featureId ?? 0, projectId: get().projectId ?? 0, routeType: "workflow" });
         set(state => {
           const itemId = resolveItemId(state, slot);
           const queue = state.queue.map(q =>

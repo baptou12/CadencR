@@ -33,7 +33,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useAppWsStore } from "@/stores/app-ws-store";
 import { useWsSessionStore } from "@/stores/ws-session-store";
 import { useZoomHotkeys } from "@/hooks/useZoom";
-import { initNotificationPermission } from "@/lib/notify-agent-done";
+import { initNotificationPermission, listenForNotificationClicks } from "@/lib/notify-agent-done";
 
 const ZONE_ORDER = ["left-sidebar", "main-content", "terminal", "right-sidebar"] as const;
 
@@ -66,25 +66,18 @@ function RootLayout() {
   useOperationToasts();
   const leftWidth = useDebouncedSetting("sidebar_left_width", 300, { immediateCache: false });
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const leftSidebarRef = useRef<HTMLDivElement>(null);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
 
-  // Auto-focus left sidebar on mount
-  useEffect(() => {
-    leftSidebarRef.current?.focus();
-  }, []);
-
-  // Connect global app WebSocket for cross-feature events (turn states, etc.)
+  useEffect(() => { leftSidebarRef.current?.focus(); }, []);
   useEffect(() => {
     useAppWsStore.getState().connect();
     return () => useAppWsStore.getState().disconnect();
   }, []);
-
-  // Initialize native notification permission and window focus tracking
   useEffect(() => { void initNotificationPermission(); }, []);
-
-  // Extract active project ID from the current route
+  useEffect(() => listenForNotificationClicks(navigate, queryClient), [navigate, queryClient]);
   const routerState = useRouterState();
   const routeParams = (routerState.location.pathname.match(
     /\/projects\/(\d+)(?:\/features\/(\d+))?/,
@@ -95,14 +88,11 @@ function RootLayout() {
       ? Number(routerState.location.search.projectId)
       : null;
 
-  // Extract active feature ID from the current route (fallback to search params for ws-session)
   const activeFeatureId = routeParams[2]
     ? Number(routeParams[2])
     : routerState.location.search?.featureId
       ? Number(routerState.location.search.featureId)
       : null;
-
-  const queryClient = useQueryClient();
 
   const invalidateFeatures = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ["features", "list"] });

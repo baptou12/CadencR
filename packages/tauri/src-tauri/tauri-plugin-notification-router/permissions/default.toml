@@ -1,0 +1,3 @@
+[default]
+description = "Allows sending notifications with routing data"
+permissions = ["allow-send-notification", "allow-check-permission"]

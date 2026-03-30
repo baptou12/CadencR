@@ -867,13 +867,18 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
         const sess = get().sessions[sessionId];
         if (sess?.status === "running") {
           let title = sess.featureTitle;
-          if (!title && sess.featureId) {
-            for (const [, data] of queryClient.getQueriesData<{ id: number; title: string }[]>({ queryKey: ["features", "list"] })) {
-              title = data?.find(f => f.id === sess.featureId)?.title ?? null;
-              if (title) break;
+          let projectId = 0;
+          if (sess.featureId) {
+            for (const [, data] of queryClient.getQueriesData<{ id: number; title: string; project_id: number }[]>({ queryKey: ["features", "list"] })) {
+              const feature = data?.find(f => f.id === sess.featureId);
+              if (feature) {
+                if (!title) title = feature.title;
+                projectId = feature.project_id;
+                break;
+              }
             }
           }
-          notifyAgentDone({ status: "completed", featureTitle: title ?? "Session" });
+          notifyAgentDone({ status: "completed", featureTitle: title ?? "Session", featureId: sess.featureId ?? 0, projectId, routeType: "session" });
         }
         if (state.exitPlanModeDetected) {
           state.exitPlanModeDetected = false;

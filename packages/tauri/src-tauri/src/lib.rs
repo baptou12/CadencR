@@ -14,7 +14,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_notification_router::init())
         .invoke_handler(tauri::generate_handler![read_file_base64])
         .setup(|app| {
             if cfg!(dev) {

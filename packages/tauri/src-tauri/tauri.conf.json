@@ -34,7 +34,7 @@
     ],
     "macOS": {
       "minimumSystemVersion": "10.15",
-      "signingIdentity": null,
+      "signingIdentity": "Apple Development",
       "entitlements": "entitlements.plist"
     }
   },
