@@ -11,7 +11,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 
 // Must import after mocks are set up
-const { initNotificationPermission, notifyAgentDone } = await import("./notify-agent-done");
+const { initNotificationPermission, notifyAgentDone, notifyAgentNeedsInput } = await import("./notify-agent-done");
 
 const baseOpts = { featureId: 1, projectId: 2, routeType: "workflow" as const };
 
@@ -99,6 +99,48 @@ describe("notifyAgentDone", () => {
     expect(mockInvoke).toHaveBeenCalledWith("plugin:notification-router|send_notification", {
       title: "Agent error",
       body: "Broken Feature",
+      featureId: 1,
+      projectId: 2,
+      routeType: "workflow",
+    });
+  });
+
+  it("uses 'Agent needs input' title for needs_input status", async () => {
+    mockInvoke.mockResolvedValue(true);
+    await initNotificationPermission();
+    mockInvoke.mockClear();
+
+    Object.defineProperty(window, "location", {
+      value: { pathname: "/other" },
+      writable: true,
+    });
+
+    notifyAgentDone({ status: "needs_input", featureTitle: "Waiting Feature", ...baseOpts });
+    expect(mockInvoke).toHaveBeenCalledWith("plugin:notification-router|send_notification", {
+      title: "Agent needs input",
+      body: "Waiting Feature",
+      featureId: 1,
+      projectId: 2,
+      routeType: "workflow",
+    });
+  });
+});
+
+describe("notifyAgentNeedsInput", () => {
+  it("sends a needs_input notification", async () => {
+    mockInvoke.mockResolvedValue(true);
+    await initNotificationPermission();
+    mockInvoke.mockClear();
+
+    Object.defineProperty(window, "location", {
+      value: { pathname: "/other" },
+      writable: true,
+    });
+
+    notifyAgentNeedsInput({ featureTitle: "My Feature", ...baseOpts });
+    expect(mockInvoke).toHaveBeenCalledWith("plugin:notification-router|send_notification", {
+      title: "Agent needs input",
+      body: "My Feature",
       featureId: 1,
       projectId: 2,
       routeType: "workflow",

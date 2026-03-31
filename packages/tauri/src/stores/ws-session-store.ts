@@ -7,7 +7,7 @@
  */
 
 import { create } from "zustand";
-import { notifyAgentDone } from "@/lib/notify-agent-done";
+import { notifyAgentDone, notifyAgentNeedsInput } from "@/lib/notify-agent-done";
 import { queryClient } from "@/lib/queryClient";
 import { buildUserMessageContent } from "@/types/agent-types";
 import { getWsUrl } from "@/lib/ws-url";
@@ -733,6 +733,21 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
           description?: string;
           pattern?: string;
         };
+
+        // Notify user that the agent needs input
+        {
+          const sess = get().sessions[sessionId];
+          if (sess) {
+            let projectId = 0;
+            if (sess.featureId) {
+              for (const [, data] of queryClient.getQueriesData<{ id: number; project_id: number }[]>({ queryKey: ["features", "list"] })) {
+                const feature = data?.find(f => f.id === sess.featureId);
+                if (feature) { projectId = feature.project_id; break; }
+              }
+            }
+            notifyAgentNeedsInput({ featureTitle: sess.featureTitle ?? "Session", featureId: sess.featureId ?? 0, projectId, routeType: "session" });
+          }
+        }
 
         if (p.tool_name === "ExitPlanMode") {
           // Clear the flag so turn_complete doesn't re-trigger the approval bar

@@ -19,34 +19,55 @@ export async function initNotificationPermission(): Promise<void> {
 }
 
 interface NotifyOptions {
-  status: "completed" | "error";
+  status: "completed" | "error" | "needs_input";
   featureTitle: string;
   featureId: number;
   projectId: number;
   routeType: "workflow" | "session";
 }
 
+function isViewingFeature(opts: NotifyOptions): boolean {
+  const pathname = window.location.pathname;
+  if (opts.routeType === "workflow" &&
+      pathname === `/projects/${opts.projectId}/features/${opts.featureId}`) return true;
+  if (opts.routeType === "session" &&
+      pathname === `/ws-session/ws-feature-${opts.featureId}`) return true;
+  return false;
+}
+
+function titleForStatus(status: NotifyOptions["status"]): string {
+  switch (status) {
+    case "completed": return "Agent finished";
+    case "error": return "Agent error";
+    case "needs_input": return "Agent needs input";
+  }
+}
+
 /**
- * Send a native desktop notification when an agent finishes, unless the user
- * is already viewing that feature. Clicking the notification navigates to
- * the relevant route and focuses the prompt.
+ * Send a native desktop notification for agent events (completion, error,
+ * or waiting for user input), unless the user is already viewing that feature.
+ * Clicking the notification navigates to the relevant route and focuses the prompt.
  */
 export function notifyAgentDone(opts: NotifyOptions): void {
   if (!permissionCache) return;
-
-  const pathname = window.location.pathname;
-  if (opts.routeType === "workflow" &&
-      pathname === `/projects/${opts.projectId}/features/${opts.featureId}`) return;
-  if (opts.routeType === "session" &&
-      pathname === `/ws-session/ws-feature-${opts.featureId}`) return;
+  if (isViewingFeature(opts)) return;
 
   void invoke("plugin:notification-router|send_notification", {
-    title: opts.status === "completed" ? "Agent finished" : "Agent error",
+    title: titleForStatus(opts.status),
     body: opts.featureTitle,
     featureId: opts.featureId,
     projectId: opts.projectId,
     routeType: opts.routeType,
   }).catch((e: unknown) => console.warn("[notify] send failed:", e));
+}
+
+/**
+ * Convenience wrapper: notify that an agent is waiting for user input.
+ */
+export function notifyAgentNeedsInput(
+  opts: Omit<NotifyOptions, "status">,
+): void {
+  notifyAgentDone({ ...opts, status: "needs_input" });
 }
 
 interface NotificationClickPayload {

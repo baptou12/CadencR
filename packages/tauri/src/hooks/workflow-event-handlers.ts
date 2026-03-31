@@ -8,7 +8,7 @@
  */
 
 import { invalidateFeatureQueries } from "@/lib/featureUpdated";
-import { notifyAgentDone } from "@/lib/notify-agent-done";
+import { notifyAgentDone, notifyAgentNeedsInput } from "@/lib/notify-agent-done";
 import { type CommandsListPayload } from "@/lib/ws-envelope";
 import type { SlashCommand } from "@/hooks/useSlashCommand";
 import {
@@ -242,6 +242,7 @@ export function createWorkflowMessageHandler(
         break;
       }
       case "plan_ready": {
+        notifyAgentNeedsInput({ featureTitle: get().featureTitle ?? "Agent", featureId: get().featureId ?? 0, projectId: get().projectId ?? 0, routeType: "workflow" });
         set(state => ({
           workflowStatus: "plan_approval",
           planAgent: state.planAgent ? { ...state.planAgent, status: "paused" as const } : state.planAgent,
@@ -271,6 +272,7 @@ export function createWorkflowMessageHandler(
         break;
       }
       case "prd_ready": {
+        notifyAgentNeedsInput({ featureTitle: get().featureTitle ?? "Agent", featureId: get().featureId ?? 0, projectId: get().projectId ?? 0, routeType: "workflow" });
         set(state => ({
           prdAgent: state.prdAgent ? { ...state.prdAgent, status: "paused" as const } : state.prdAgent,
         }));
@@ -319,6 +321,7 @@ export function createWorkflowMessageHandler(
         break;
       }
       case "permission.request": {
+        notifyAgentNeedsInput({ featureTitle: get().featureTitle ?? "Agent", featureId: get().featureId ?? 0, projectId: get().projectId ?? 0, routeType: "workflow" });
         handlePermissionRequest(payload, set);
         break;
       }
