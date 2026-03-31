@@ -89,6 +89,12 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
     ],
   },
   {
+    title: "Editor",
+    shortcuts: [
+      { keys: ["⌘", "⇧", "E"], description: "Editor tab" },
+    ],
+  },
+  {
     title: "Terminal",
     shortcuts: [
       { keys: ["^", "`"], description: "Toggle terminal" },

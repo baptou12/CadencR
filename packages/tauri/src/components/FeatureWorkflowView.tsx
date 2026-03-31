@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo, lazy, Suspense } from "react";
 import { useGetFeaturePrd, useListProjects, useGetStats } from "@/api/generated";
 import { FeatureTopBar } from "@/components/FeatureTopBar";
 import { FeatureTabBar } from "@/components/FeatureTabBar";
@@ -25,6 +25,8 @@ import { useWorkflowKeyboard } from "@/hooks/useWorkflowKeyboard";
 import { CodeBlockActionsContext, type CodeBlockActions } from "@/components/CodeBlockActionsContext";
 import { cn } from "@/lib/utils";
 import { useWsWorkflowBackend } from "@/hooks/useWsWorkflowBackend";
+
+const FeatureEditorTab = lazy(() => import("@/components/editor/FeatureEditorTab"));
 import { useWorkflowStore } from "@/hooks/useWorkflowWebSocket";
 
 export function FeatureWorkflowView({
@@ -192,6 +194,15 @@ export function FeatureWorkflowView({
       <div className="relative min-h-0 flex-1 overflow-hidden">
         {/* Terminal tab — stays mounted to preserve PTY */}
         <FeatureTerminalTab ref={terminalTabRef} featureId={featureId} projectId={projectId} hidden={activeTab !== "terminal"} />
+
+        {/* Editor tab — stays mounted to preserve state */}
+        <div className={cn("h-full", activeTab !== "editor" && "hidden")}>
+          {projectPath && (
+            <Suspense fallback={null}>
+              <FeatureEditorTab featureId={featureId} projectPath={projectPath} />
+            </Suspense>
+          )}
+        </div>
 
         {/* Git tab */}
         {activeTab === "git" && (

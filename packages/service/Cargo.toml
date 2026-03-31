@@ -29,6 +29,7 @@ rmcp = { version = "1", features = ["server", "transport-streamable-http-server"
 dashmap = "6"
 libc = "0.2"
 portable-pty = "0.8"
+ignore = "0.4"
 
 [lints]
 workspace = true
