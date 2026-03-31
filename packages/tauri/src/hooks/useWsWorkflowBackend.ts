@@ -153,9 +153,10 @@ export function buildSessionEntries(
 
   const sessions: FeatureSession[] = [];
 
-  // Add plan/prd sessions first
-  if (planSession) sessions.push(planSession);
-  if (prdSession) sessions.push(prdSession);
+  // Add plan/prd sessions first, ordered by creation (lower sessionDbId = created first)
+  const preSessions = [planSession, prdSession].filter(Boolean) as FeatureSession[];
+  preSessions.sort((a, b) => a.sessionDbId - b.sessionDbId);
+  sessions.push(...preSessions);
 
   // Add queue item sessions (running, completed, error — anything with visible state)
   for (const item of queue) {

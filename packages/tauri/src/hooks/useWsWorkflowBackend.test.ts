@@ -256,4 +256,26 @@ describe("buildSessionEntries", () => {
     expect(sessions.map(s => s.agentType)).toEqual(["session", "session", "risk"]);
     expect(sessions.map(s => s.sessionDbId)).toEqual([50, 51, 52]);
   });
+
+  it("orders plan and prd sessions by sessionId (creation order), not hardcoded order", () => {
+    // PRD created first (lower sessionId), plan created second
+    const planAgent = makeAgentState({ sessionId: 20, status: "completed" });
+    const prdAgent = makeAgentState({ sessionId: 10, status: "completed" });
+    const { sessions } = buildSessionEntries([], new Map(), planAgent, prdAgent, "building");
+
+    expect(sessions).toHaveLength(2);
+    // PRD (sessionId 10) should appear before plan (sessionId 20)
+    expect(sessions[0].agentType).toBe("prd");
+    expect(sessions[1].agentType).toBe("plan");
+  });
+
+  it("orders plan before prd when plan has lower sessionId", () => {
+    const planAgent = makeAgentState({ sessionId: 5, status: "completed" });
+    const prdAgent = makeAgentState({ sessionId: 15, status: "completed" });
+    const { sessions } = buildSessionEntries([], new Map(), planAgent, prdAgent, "building");
+
+    expect(sessions).toHaveLength(2);
+    expect(sessions[0].agentType).toBe("plan");
+    expect(sessions[1].agentType).toBe("prd");
+  });
 });
