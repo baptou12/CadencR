@@ -189,9 +189,8 @@ function updateFeature(
   return { features: { ...state.features, [featureId]: next } };
 }
 
-let paneCounter = 0;
 function nextPaneId(): string {
-  return `editor-pane-${Date.now()}-${++paneCounter}`;
+  return `editor-pane-${crypto.randomUUID()}`;
 }
 
 // ---------------------------------------------------------------------------
