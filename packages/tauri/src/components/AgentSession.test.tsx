@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@/test-utils";
 import userEvent from "@testing-library/user-event";
-import { AgentSession } from "./AgentSession";
+import { AgentSession, shallowEqualSkipFunctions } from "./AgentSession";
+import type { AgentSessionProps } from "./AgentSession";
 import type { AgentBlockData } from "./AgentBlock";
 
 vi.mock("react-hotkeys-hook", () => ({
@@ -322,5 +323,49 @@ describe("AgentSession", () => {
       />,
     );
     expect(screen.getByRole("button", { name: /approve/i })).toBeInTheDocument();
+  });
+});
+
+describe("shallowEqualSkipFunctions", () => {
+  const base: Partial<AgentSessionProps> = {
+    agentType: "execute",
+    status: "running",
+    blocks: [],
+    collapsible: true,
+    featureId: 1,
+    onSend: vi.fn(),
+    onStop: vi.fn(),
+  };
+
+  it("returns true when data props are identical and functions differ", () => {
+    const prev = { ...base, onSend: vi.fn(), onStop: vi.fn() } as AgentSessionProps;
+    const next = { ...base, onSend: vi.fn(), onStop: vi.fn() } as AgentSessionProps;
+    expect(shallowEqualSkipFunctions(prev, next)).toBe(true);
+  });
+
+  it("returns false when a data prop changes", () => {
+    const prev = { ...base } as AgentSessionProps;
+    const next = { ...base, status: "completed" as const } as AgentSessionProps;
+    expect(shallowEqualSkipFunctions(prev, next)).toBe(false);
+  });
+
+  it("returns false when blocks reference changes", () => {
+    const prev = { ...base, blocks: [] } as AgentSessionProps;
+    const next = { ...base, blocks: [] } as AgentSessionProps;
+    expect(shallowEqualSkipFunctions(prev, next)).toBe(false);
+  });
+
+  it("returns true when blocks reference is the same", () => {
+    const blocks: AgentBlockData[] = [];
+    const prev = { ...base, blocks } as AgentSessionProps;
+    const next = { ...base, blocks } as AgentSessionProps;
+    expect(shallowEqualSkipFunctions(prev, next)).toBe(true);
+  });
+
+  it("returns false when a data prop is removed", () => {
+    const prev = { ...base, featureId: 1 } as AgentSessionProps;
+    const next = { ...base } as AgentSessionProps;
+    delete (next as unknown as Record<string, unknown>).featureId;
+    expect(shallowEqualSkipFunctions(prev, next)).toBe(false);
   });
 });

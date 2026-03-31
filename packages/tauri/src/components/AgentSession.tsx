@@ -8,7 +8,7 @@
  * Integrates AgentQuestionDrawer (shown when pendingQuestions is non-empty).
  */
 
-import { useState, useEffect, useCallback, useMemo, createElement, useRef, useImperativeHandle, forwardRef, useLayoutEffect } from "react";
+import { useState, useEffect, useCallback, useMemo, createElement, useRef, useImperativeHandle, forwardRef, useLayoutEffect, memo } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -287,7 +287,29 @@ export interface AgentSessionHandle {
 // Component
 // ---------------------------------------------------------------------------
 
-export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(function AgentSession({
+// Custom comparator: shallow-compare data props, skip function props (they're
+// semantically stable but referentially unstable due to inline closures in the
+// parent grid). This prevents non-streaming agents from re-rendering on every
+// stream chunk from a sibling agent.
+export function shallowEqualSkipFunctions(
+  prev: Readonly<AgentSessionProps>,
+  next: Readonly<AgentSessionProps>,
+): boolean {
+  const keys = Object.keys(next) as (keyof AgentSessionProps)[];
+  for (const key of keys) {
+    if (typeof next[key] === "function") continue;
+    if (!Object.is(prev[key], next[key])) return false;
+  }
+  // Also check that no keys were removed
+  const prevKeys = Object.keys(prev) as (keyof AgentSessionProps)[];
+  for (const key of prevKeys) {
+    if (typeof prev[key] === "function") continue;
+    if (!(key in next)) return false;
+  }
+  return true;
+}
+
+export const AgentSession = memo(forwardRef<AgentSessionHandle, AgentSessionProps>(function AgentSession({
   agentType,
   blocks,
   status,
@@ -811,4 +833,4 @@ export const AgentSession = forwardRef<AgentSessionHandle, AgentSessionProps>(fu
       )}
     </div>
   );
-});
+}), shallowEqualSkipFunctions);
