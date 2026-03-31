@@ -19,7 +19,6 @@ interface TreeNodeProps {
   expandedDirs: Set<string>;
   onToggle: (path: string) => void;
   onOpenFile: (path: string) => void;
-  refreshKey: number;
 }
 
 function TreeNode({
@@ -30,7 +29,6 @@ function TreeNode({
   expandedDirs,
   onToggle,
   onOpenFile,
-  refreshKey: _refreshKey,
 }: TreeNodeProps) {
   const { data: entries, isLoading, isError } = useFileTree(
     { projectPath, dirPath },
@@ -69,7 +67,6 @@ function TreeNode({
           expandedDirs={expandedDirs}
           onToggle={onToggle}
           onOpenFile={onOpenFile}
-          refreshKey={_refreshKey}
         />
       ))}
     </>
@@ -84,10 +81,9 @@ interface EntryRowProps {
   expandedDirs: Set<string>;
   onToggle: (path: string) => void;
   onOpenFile: (path: string) => void;
-  refreshKey: number;
 }
 
-function EntryRow({ entry, depth, projectPath, activeFilePath, expandedDirs, onToggle, onOpenFile, refreshKey }: EntryRowProps) {
+function EntryRow({ entry, depth, projectPath, activeFilePath, expandedDirs, onToggle, onOpenFile }: EntryRowProps) {
   const isExpanded = expandedDirs.has(entry.path);
   const isActive = activeFilePath === entry.path;
 
@@ -110,7 +106,6 @@ function EntryRow({ entry, depth, projectPath, activeFilePath, expandedDirs, onT
           expandedDirs={expandedDirs}
           onToggle={onToggle}
           onOpenFile={onOpenFile}
-          refreshKey={refreshKey}
         />
       )}
     </>
@@ -119,7 +114,6 @@ function EntryRow({ entry, depth, projectPath, activeFilePath, expandedDirs, onT
 
 export default function FileTree({ projectPath, featureId }: FileTreeProps) {
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
-  const [refreshKey, setRefreshKey] = useState(0);
   const { activePaneId, panes, openFile } = useEditorState(featureId);
   const activeFilePath = panes[activePaneId]?.activeFilePath ?? null;
   const { value: maxTabsSetting } = useDebouncedSetting("editor_max_tabs");
@@ -131,7 +125,6 @@ export default function FileTree({ projectPath, featureId }: FileTreeProps) {
   );
 
   const handleRefresh = useCallback(() => {
-    setRefreshKey((k) => k + 1);
     void refetch();
   }, [refetch]);
 
@@ -181,7 +174,6 @@ export default function FileTree({ projectPath, featureId }: FileTreeProps) {
           expandedDirs={expandedDirs}
           onToggle={handleToggle}
           onOpenFile={handleOpenFile}
-          refreshKey={refreshKey}
         />
       </div>
     </div>

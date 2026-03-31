@@ -19,7 +19,6 @@ interface CodeMirrorEditorProps {
   featureId: number;
 }
 
-const MAX_LINES = 10_000;
 const AUTO_SAVE_DELAY_MS = 1500;
 
 function getLanguageName(filePath: string): string {
@@ -41,6 +40,8 @@ export default function CodeMirrorEditor({ filePath, projectPath, paneId, featur
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [autoSavedVisible, setAutoSavedVisible] = useState(false);
   const autoSavedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Store mutateAsync in a ref to avoid stale closures in save callbacks
+  const mutateAsyncRef = useRef<ReturnType<typeof useWriteFile>["mutateAsync"] | null>(null);
 
   const { value: vimModeSetting } = useDebouncedSetting("editor_vim_mode");
   const { value: autoSaveSetting } = useDebouncedSetting("editor_auto_save");
@@ -57,17 +58,22 @@ export default function CodeMirrorEditor({ filePath, projectPath, paneId, featur
 
   const { data, isLoading, error } = useReadFile(
     { projectPath, filePath },
-    { enabled: Boolean(filePath && projectPath) },
+    {
+      enabled: Boolean(filePath && projectPath),
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+    },
   );
 
   const writeFile = useWriteFile();
+  mutateAsyncRef.current = writeFile.mutateAsync;
 
   const saveQuiet = useCallback(async () => {
     const view = viewRef.current;
-    if (!view) return;
+    if (!view || !mutateAsyncRef.current) return;
     const content = view.state.doc.toString();
     try {
-      await writeFile.mutateAsync({ project_path: projectPath, file_path: filePath, content });
+      await mutateAsyncRef.current({ project_path: projectPath, file_path: filePath, content });
       setDirty(featureId, paneId, filePath, false);
       setAutoSavedVisible(true);
       if (autoSavedTimerRef.current) clearTimeout(autoSavedTimerRef.current);
@@ -76,21 +82,21 @@ export default function CodeMirrorEditor({ filePath, projectPath, paneId, featur
       const msg = err instanceof Error ? err.message : "Failed to auto-save file";
       toast.error(msg);
     }
-  }, [writeFile, projectPath, filePath, featureId, paneId, setDirty]);
+  }, [projectPath, filePath, featureId, paneId, setDirty]);
 
   const save = useCallback(async () => {
     const view = viewRef.current;
-    if (!view) return;
+    if (!view || !mutateAsyncRef.current) return;
     const content = view.state.doc.toString();
     try {
-      await writeFile.mutateAsync({ project_path: projectPath, file_path: filePath, content });
+      await mutateAsyncRef.current({ project_path: projectPath, file_path: filePath, content });
       setDirty(featureId, paneId, filePath, false);
       toast.success("File saved");
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to save file";
       toast.error(msg);
     }
-  }, [writeFile, projectPath, filePath, featureId, paneId, setDirty]);
+  }, [projectPath, filePath, featureId, paneId, setDirty]);
 
   // Register save callback so callers outside this component can trigger save
   useEffect(() => {
@@ -107,9 +113,9 @@ export default function CodeMirrorEditor({ filePath, projectPath, paneId, featur
     });
   }, [isVimEnabled]);
 
-  // Build or rebuild the editor when content is loaded
+  // Create the editor once when filePath changes (with empty initial content)
   useEffect(() => {
-    if (!containerRef.current || !data) return;
+    if (!containerRef.current) return;
 
     const langExt = getLanguageExtension(filePath);
     const vimCompartment = vimCompartmentRef.current;
@@ -156,7 +162,7 @@ export default function CodeMirrorEditor({ filePath, projectPath, paneId, featur
       ...(langExt ? [langExt] : []),
     ];
 
-    const state = EditorState.create({ doc: data.content, extensions });
+    const state = EditorState.create({ doc: "", extensions });
     const view = new EditorView({ state, parent: containerRef.current });
     viewRef.current = view;
 
@@ -165,9 +171,24 @@ export default function CodeMirrorEditor({ filePath, projectPath, paneId, featur
       view.destroy();
       viewRef.current = null;
     };
-    // Rebuild only when file changes; save is stable via useCallback
+    // Rebuild only when file changes; save/saveQuiet are stable via useCallback
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, filePath]);
+  }, [filePath]);
+
+  // Update editor content when data loads, without recreating the editor
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || !data) return;
+
+    const currentContent = view.state.doc.toString();
+    if (currentContent !== data.content) {
+      view.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: data.content },
+      });
+      // After initial load, mark as not dirty
+      setDirty(featureId, paneId, filePath, false);
+    }
+  }, [data, filePath, featureId, paneId, setDirty]);
 
   if (isLoading) {
     return (

@@ -19,7 +19,6 @@ interface FileSearchDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-const MAX_RESULTS = 50;
 const STALE_TIME = 30_000;
 
 export default function FileSearchDialog({
@@ -50,7 +49,7 @@ export default function FileSearchDialog({
     onOpenChange(false);
   }
 
-  const files = data?.files.slice(0, MAX_RESULTS) ?? [];
+  const files = data?.files ?? [];
 
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange}>

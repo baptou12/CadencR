@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, forwardRef, useImperativeHandle } from "react";
+import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { useEditorState } from "@/hooks/useEditorState";
 import { useEditorStore } from "@/stores/editor-store";
@@ -53,6 +53,7 @@ const FeatureEditorTab = forwardRef<FeatureEditorTabHandle, FeatureEditorTabProp
 
     const settingKey = `editor_sidebar_visible_${featureId}`;
     const { value: persistedVisible, setValue: persistVisible } = useDebouncedSetting(settingKey);
+    const hasInitializedRef = useRef(false);
 
     /** Collect all dirty tabs across all panes */
     const getDirtyTabs = useCallback(() => {
@@ -120,17 +121,15 @@ const FeatureEditorTab = forwardRef<FeatureEditorTabHandle, FeatureEditorTabProp
       initFeature();
     }, [initFeature]);
 
-    // Sync persisted sidebar visibility on mount (once)
+    // Sync persisted sidebar visibility on first load only
     useEffect(() => {
-      if (persistedVisible !== null) {
-        const shouldBeVisible = persistedVisible === "true";
-        if (shouldBeVisible !== sidebarVisible) {
-          toggleSidebar();
-        }
+      if (hasInitializedRef.current || persistedVisible === null) return;
+      hasInitializedRef.current = true;
+      const shouldBeVisible = persistedVisible === "true";
+      if (shouldBeVisible !== sidebarVisible) {
+        toggleSidebar();
       }
-      // Only run on mount when persisted value first loads
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [persistedVisible]);
+    }, [persistedVisible, sidebarVisible, toggleSidebar]);
 
     function handleToggleSidebar() {
       toggleSidebar();
