@@ -276,7 +276,7 @@ export function FeatureWorkflowView({
                   slashCommandsLoading={slashCommandsLoading}
                 />
 
-                {!maximizedAgent && actions.canStartPlan && backend.noAgentsRunning && (
+                {!maximizedAgent && actions.canStartPlan && backend.noAgentsRunning && !backend.planSession?.resumable && (
                   <div className="shrink-0 flex py-4">
                     <Button
                       size="lg"

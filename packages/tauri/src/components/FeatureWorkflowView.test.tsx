@@ -383,6 +383,39 @@ describe("FeatureWorkflowView", () => {
     });
   });
 
+  describe("Generate Plan button", () => {
+    const agentsView = {
+      view: "agents",
+      sessionEntries: [{ agentType: "execute", sessionDbId: 1, status: "completed", messages: [] }],
+    };
+
+    it("shows Generate Plan when canStartPlan and no paused plan agent", () => {
+      mockUseWorkflowBackend.mockReturnValue({
+        ...defaultBackend,
+        ...agentsView,
+        actions: { ...defaultBackend.actions, canStartPlan: true },
+        planSession: null,
+      });
+      render(
+        <FeatureWorkflowView featureId={1} projectId={1} feature={mockFeature} featureQuery={{ refetch: vi.fn() }} />,
+      );
+      expect(screen.getByRole("button", { name: /Generate Plan/ })).toBeInTheDocument();
+    });
+
+    it("hides Generate Plan when plan agent is resumable (paused)", () => {
+      mockUseWorkflowBackend.mockReturnValue({
+        ...defaultBackend,
+        ...agentsView,
+        actions: { ...defaultBackend.actions, canStartPlan: true },
+        planSession: { resumable: true, status: "paused", sessionDbId: 10 },
+      });
+      render(
+        <FeatureWorkflowView featureId={1} projectId={1} feature={mockFeature} featureQuery={{ refetch: vi.fn() }} />,
+      );
+      expect(screen.queryByRole("button", { name: /Generate Plan/ })).not.toBeInTheDocument();
+    });
+  });
+
   describe("error banner", () => {
     it("shows error with dismiss button and calls clearError on click", () => {
       const clearError = vi.fn();
