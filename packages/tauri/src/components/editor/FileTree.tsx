@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import { useFileTree } from "@/api/generated";
 import { useEditorState } from "@/stores/editor-store";
+import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import FileTreeItem from "./FileTreeItem";
 import type { FileTreeEntry } from "@/api/generated";
 
@@ -114,6 +115,8 @@ export default function FileTree({ projectPath, featureId }: FileTreeProps) {
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
   const { activePaneId, panes, openFile } = useEditorState(featureId);
   const activeFilePath = panes[activePaneId]?.activeFilePath ?? null;
+  const { value: maxTabsSetting } = useDebouncedSetting("editor_max_tabs");
+  const maxTabs = parseInt(maxTabsSetting ?? "10", 10);
 
   const handleToggle = useCallback((path: string) => {
     setExpandedDirs((prev) => {
@@ -129,9 +132,9 @@ export default function FileTree({ projectPath, featureId }: FileTreeProps) {
 
   const handleOpenFile = useCallback(
     (filePath: string) => {
-      openFile(activePaneId, filePath);
+      openFile(activePaneId, filePath, maxTabs);
     },
-    [openFile, activePaneId],
+    [openFile, activePaneId, maxTabs],
   );
 
   return (

@@ -30,6 +30,8 @@ export default function FileSearchDialog({
 }: FileSearchDialogProps) {
   const queryClient = useQueryClient();
   const { activePaneId, openFile } = useEditorState(featureId);
+  const { value: maxTabsSetting } = useDebouncedSetting("editor_max_tabs");
+  const maxTabs = parseInt(maxTabsSetting ?? "10", 10);
 
   const { data, isLoading } = useFileSearch(projectPath, {
     enabled: open,
@@ -44,7 +46,7 @@ export default function FileSearchDialog({
   }, [open, projectPath, queryClient]);
 
   function handleSelect(filePath: string) {
-    openFile(activePaneId ?? "main", filePath);
+    openFile(activePaneId ?? "main", filePath, maxTabs);
     onOpenChange(false);
   }
 
