@@ -1038,13 +1038,16 @@ async fn prepare_worktree(
         engine_sender,
     ).await?;
 
-    // Spawn setup commands (non-blocking)
-    let read_pool = app_state.read_pool.clone();
-    let write_pool = app_state.write_pool.clone();
-    let ws = engine_sender.clone();
-    tokio::spawn(async move {
-        worktree::run_setup_commands(read_pool, write_pool, feature_id, worktree_path, ws).await;
-    });
+    // Spawn setup commands only if they haven't already completed
+    let setup_step = worktree::get_setting(&app_state.read_pool, feature_id, "worktree_setup_step").await;
+    if setup_step.as_deref() != Some("ready") {
+        let read_pool = app_state.read_pool.clone();
+        let write_pool = app_state.write_pool.clone();
+        let ws = engine_sender.clone();
+        tokio::spawn(async move {
+            worktree::run_setup_commands(read_pool, write_pool, feature_id, worktree_path, ws).await;
+        });
+    }
 
     Ok(())
 }
