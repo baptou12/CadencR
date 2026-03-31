@@ -8,13 +8,21 @@ interface EditorPaneProps {
   featureId: number;
   paneId: string;
   projectPath: string;
+  isActive?: boolean;
 }
 
-export default function EditorPane({ featureId, paneId, projectPath }: EditorPaneProps) {
+export default function EditorPane({ featureId, paneId, projectPath, isActive }: EditorPaneProps) {
   const activeFilePath = useEditorStore((s) => s.features[featureId]?.panes[paneId]?.activeFilePath ?? null);
+  const setActivePane = useEditorStore((s) => s.setActivePane);
+
+  function handleFocus() {
+    if (!isActive) {
+      setActivePane(featureId, paneId);
+    }
+  }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full" onFocus={handleFocus}>
       <EditorSubTabs featureId={featureId} paneId={paneId} />
 
       <div className="flex-1 overflow-hidden">

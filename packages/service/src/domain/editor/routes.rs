@@ -168,6 +168,30 @@ pub async fn tree_handler(
 }
 
 // ---------------------------------------------------------------------------
+// Search types & handler
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize, utoipa::IntoParams)]
+pub struct SearchParams {
+    pub project_path: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct FileSearchResponse {
+    pub files: Vec<String>,
+}
+
+#[utoipa::path(get, path = "/api/editor/search",
+    params(SearchParams),
+    responses((status = 200, body = FileSearchResponse)))]
+pub async fn search_handler(
+    Query(params): Query<SearchParams>,
+) -> Result<axum::Json<FileSearchResponse>, AppError> {
+    let files = service::list_all_files(&params.project_path)?;
+    Ok(axum::Json(FileSearchResponse { files }))
+}
+
+// ---------------------------------------------------------------------------
 // Router
 // ---------------------------------------------------------------------------
 
@@ -176,4 +200,5 @@ pub fn editor_router() -> Router<AppState> {
         .route("/api/editor/read", get(read_file_handler))
         .route("/api/editor/write", post(write_file_handler))
         .route("/api/editor/tree", get(tree_handler))
+        .route("/api/editor/search", get(search_handler))
 }

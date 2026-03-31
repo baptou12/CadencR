@@ -92,10 +92,14 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
     title: "Editor",
     shortcuts: [
       { keys: ["⌘", "⇧", "E"], description: "Editor tab" },
+      { keys: ["⌘", "P"], description: "Fuzzy file search" },
       { keys: ["⌘", "S"], description: "Save file" },
       { keys: ["⌘", "W"], description: "Close tab" },
       { keys: ["⌘", "⌥", "["], description: "Previous sub-tab" },
       { keys: ["⌘", "⌥", "]"], description: "Next sub-tab" },
+      { keys: ["⌘", "D"], description: "Split pane vertically" },
+      { keys: ["⌘", "⇧", "D"], description: "Split pane horizontally" },
+      { keys: ["⌘", "⌥", "←/→/↑/↓"], description: "Navigate panes" },
     ],
   },
   {

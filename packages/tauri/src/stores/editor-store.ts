@@ -5,6 +5,9 @@ import { create } from "zustand";
 // Types
 // ---------------------------------------------------------------------------
 
+export type SplitOrientation = "horizontal" | "vertical";
+export type Direction = "left" | "right" | "up" | "down";
+
 export interface EditorTab {
   filePath: string;
   fileName: string;
@@ -18,7 +21,16 @@ export interface EditorPaneState {
   activeFilePath: string | null;
 }
 
+export type EditorLeaf = { type: "leaf"; id: string };
+export type EditorSplit = {
+  type: "split";
+  orientation: SplitOrientation;
+  children: [EditorSplitNode, EditorSplitNode];
+};
+export type EditorSplitNode = EditorLeaf | EditorSplit;
+
 export interface EditorFeatureState {
+  splitTree: EditorSplitNode;
   panes: Record<string, EditorPaneState>;
   activePaneId: string;
   sidebarVisible: boolean;
@@ -28,7 +40,101 @@ export interface EditorFeatureState {
 export const DEFAULT_MAX_TABS = 10;
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Split tree helpers
+// ---------------------------------------------------------------------------
+
+export function getEditorLeaves(node: EditorSplitNode): EditorLeaf[] {
+  if (node.type === "leaf") return [node];
+  return [...getEditorLeaves(node.children[0]), ...getEditorLeaves(node.children[1])];
+}
+
+function splitLeaf(
+  node: EditorSplitNode,
+  leafId: string,
+  orientation: SplitOrientation,
+  newLeaf: EditorLeaf,
+): EditorSplitNode {
+  if (node.type === "leaf") {
+    if (node.id === leafId) {
+      return { type: "split", orientation, children: [node, newLeaf] };
+    }
+    return node;
+  }
+  const [a, b] = node.children;
+  const newA = splitLeaf(a, leafId, orientation, newLeaf);
+  if (newA !== a) return { ...node, children: [newA, b] };
+  const newB = splitLeaf(b, leafId, orientation, newLeaf);
+  if (newB !== b) return { ...node, children: [a, newB] };
+  return node;
+}
+
+function removeLeaf(node: EditorSplitNode, leafId: string): EditorSplitNode | null {
+  if (node.type === "leaf") {
+    return node.id === leafId ? null : node;
+  }
+  const [a, b] = node.children;
+  const newA = removeLeaf(a, leafId);
+  if (newA === null) return b;
+  if (newA !== a) return { ...node, children: [newA, b] };
+  const newB = removeLeaf(b, leafId);
+  if (newB === null) return a;
+  if (newB !== b) return { ...node, children: [a, newB] };
+  return node;
+}
+
+// ---------------------------------------------------------------------------
+// Spatial navigation helpers
+// ---------------------------------------------------------------------------
+
+interface PathStep {
+  node: EditorSplit;
+  childIndex: 0 | 1;
+}
+
+function directionAxis(dir: Direction): SplitOrientation {
+  return dir === "left" || dir === "right" ? "horizontal" : "vertical";
+}
+
+function findPathToLeaf(node: EditorSplitNode, leafId: string): PathStep[] | null {
+  if (node.type === "leaf") return node.id === leafId ? [] : null;
+  for (const idx of [0, 1] as const) {
+    const result = findPathToLeaf(node.children[idx], leafId);
+    if (result !== null) return [{ node, childIndex: idx }, ...result];
+  }
+  return null;
+}
+
+function nearestLeafOnEdge(node: EditorSplitNode, dir: Direction): string {
+  if (node.type === "leaf") return node.id;
+  const axis = directionAxis(dir);
+  if (node.orientation === axis) {
+    const pick = dir === "left" || dir === "up" ? 1 : 0;
+    return nearestLeafOnEdge(node.children[pick], dir);
+  }
+  return nearestLeafOnEdge(node.children[0], dir);
+}
+
+export function findAdjacentEditorLeaf(
+  root: EditorSplitNode,
+  leafId: string,
+  direction: Direction,
+): string | null {
+  const path = findPathToLeaf(root, leafId);
+  if (!path) return null;
+  const axis = directionAxis(direction);
+  const departingIndex: 0 | 1 = direction === "left" || direction === "up" ? 1 : 0;
+  for (let i = path.length - 1; i >= 0; i--) {
+    const step = path[i];
+    if (step.node.orientation === axis && step.childIndex === departingIndex) {
+      const otherChild = step.node.children[departingIndex === 1 ? 0 : 1];
+      return nearestLeafOnEdge(otherChild, direction);
+    }
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Pane state helpers
 // ---------------------------------------------------------------------------
 
 const DEFAULT_PANE_ID = "main";
@@ -38,7 +144,10 @@ const defaultPaneState: EditorPaneState = {
   activeFilePath: null,
 };
 
+const defaultSplitTree: EditorSplitNode = { type: "leaf", id: DEFAULT_PANE_ID };
+
 const defaultFeatureState: EditorFeatureState = {
+  splitTree: defaultSplitTree,
   panes: { [DEFAULT_PANE_ID]: { ...defaultPaneState } },
   activePaneId: DEFAULT_PANE_ID,
   sidebarVisible: true,
@@ -48,8 +157,7 @@ function getFileName(filePath: string): string {
   return filePath.split("/").at(-1) ?? filePath;
 }
 
-/** Compute disambiguated names for all tabs in a pane.
- *  If two tabs share a file name, include the parent directory. */
+/** Compute disambiguated names for all tabs in a pane. */
 function disambiguateTabNames(tabs: EditorTab[]): EditorTab[] {
   const nameCounts = new Map<string, number>();
   for (const t of tabs) {
@@ -82,6 +190,11 @@ function updateFeature(
   return { features: { ...state.features, [featureId]: next } };
 }
 
+let paneCounter = 0;
+function nextPaneId(): string {
+  return `editor-pane-${Date.now()}-${++paneCounter}`;
+}
+
 // ---------------------------------------------------------------------------
 // Store
 // ---------------------------------------------------------------------------
@@ -94,8 +207,17 @@ interface EditorStore {
   closeTab: (featureId: number, paneId: string, filePath: string) => void;
   setActiveFile: (featureId: number, paneId: string, filePath: string) => void;
   setDirty: (featureId: number, paneId: string, filePath: string, isDirty: boolean) => void;
-  setCursorPosition: (featureId: number, paneId: string, filePath: string, pos: { line: number; col: number }) => void;
+  setCursorPosition: (
+    featureId: number,
+    paneId: string,
+    filePath: string,
+    pos: { line: number; col: number },
+  ) => void;
   toggleSidebar: (featureId: number) => void;
+  splitEditorPane: (featureId: number, paneId: string, orientation: SplitOrientation) => void;
+  removeEditorPane: (featureId: number, paneId: string) => void;
+  navigatePane: (featureId: number, direction: Direction) => void;
+  setActivePane: (featureId: number, paneId: string) => void;
 }
 
 export const useEditorStore = create<EditorStore>((set, get) => ({
@@ -103,14 +225,19 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
   initFeature: (featureId) => {
     if (get().features[featureId]) return;
-    set((state) => updateFeature(state, featureId, { ...defaultFeatureState, panes: { [DEFAULT_PANE_ID]: { ...defaultPaneState } } }));
+    set((state) =>
+      updateFeature(state, featureId, {
+        ...defaultFeatureState,
+        splitTree: { type: "leaf", id: DEFAULT_PANE_ID },
+        panes: { [DEFAULT_PANE_ID]: { ...defaultPaneState } },
+      }),
+    );
   },
 
   openFile: (featureId, paneId, filePath, maxTabs = DEFAULT_MAX_TABS) =>
     set((state) => {
       const feature = state.features[featureId] ?? { ...defaultFeatureState };
       const next = updatePane(feature, paneId, (pane) => {
-        // Already open — just focus
         if (pane.tabs.some((t) => t.filePath === filePath)) {
           return { ...pane, activeFilePath: filePath };
         }
@@ -126,13 +253,11 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
         let tabs = [...pane.tabs, newTab];
 
-        // Enforce max tabs: close oldest non-dirty tab if needed
         if (tabs.length > maxTabs) {
           const oldestNonDirtyIdx = tabs.findIndex((t) => !t.isDirty);
           if (oldestNonDirtyIdx !== -1) {
             tabs = tabs.filter((_, i) => i !== oldestNonDirtyIdx);
           }
-          // If all dirty, allow exceeding temporarily
         }
 
         return { tabs: disambiguateTabNames(tabs), activeFilePath: filePath };
@@ -150,7 +275,6 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         const tabs = disambiguateTabNames(pane.tabs.filter((t) => t.filePath !== filePath));
         let activeFilePath = pane.activeFilePath;
         if (activeFilePath === filePath) {
-          // Activate adjacent tab
           activeFilePath = tabs[Math.max(0, idx - 1)]?.filePath ?? tabs[0]?.filePath ?? null;
         }
         return { tabs, activeFilePath };
@@ -194,6 +318,67 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       if (!feature) return state;
       return updateFeature(state, featureId, { ...feature, sidebarVisible: !feature.sidebarVisible });
     }),
+
+  splitEditorPane: (featureId, paneId, orientation) =>
+    set((state) => {
+      const feature = state.features[featureId];
+      if (!feature) return state;
+      const newLeaf: EditorLeaf = { type: "leaf", id: nextPaneId() };
+      const newTree = splitLeaf(feature.splitTree, paneId, orientation, newLeaf);
+      const newPanes = { ...feature.panes, [newLeaf.id]: { ...defaultPaneState } };
+      return updateFeature(state, featureId, {
+        ...feature,
+        splitTree: newTree,
+        panes: newPanes,
+        activePaneId: newLeaf.id,
+      });
+    }),
+
+  removeEditorPane: (featureId, paneId) =>
+    set((state) => {
+      const feature = state.features[featureId];
+      if (!feature) return state;
+
+      // Don't remove the last pane
+      const leaves = getEditorLeaves(feature.splitTree);
+      if (leaves.length <= 1) return state;
+
+      const newTree = removeLeaf(feature.splitTree, paneId);
+      if (!newTree) return state;
+
+      // Clean up pane state
+      const newPanes = { ...feature.panes };
+      delete newPanes[paneId];
+
+      // If active pane was removed, pick the first remaining leaf
+      let newActivePaneId = feature.activePaneId;
+      if (newActivePaneId === paneId) {
+        newActivePaneId = getEditorLeaves(newTree)[0]?.id ?? feature.activePaneId;
+      }
+
+      return updateFeature(state, featureId, {
+        ...feature,
+        splitTree: newTree,
+        panes: newPanes,
+        activePaneId: newActivePaneId,
+      });
+    }),
+
+  navigatePane: (featureId, direction) =>
+    set((state) => {
+      const feature = state.features[featureId];
+      if (!feature) return state;
+      const adjacent = findAdjacentEditorLeaf(feature.splitTree, feature.activePaneId, direction);
+      if (!adjacent) return state;
+      return updateFeature(state, featureId, { ...feature, activePaneId: adjacent });
+    }),
+
+  setActivePane: (featureId, paneId) =>
+    set((state) => {
+      const feature = state.features[featureId];
+      if (!feature) return state;
+      return updateFeature(state, featureId, { ...feature, activePaneId: paneId });
+    }),
 }));
 
 // ---------------------------------------------------------------------------
@@ -206,7 +391,8 @@ export function useEditorState(featureId: number) {
 
   const initFeature = useCallback(() => store.initFeature(featureId), [store, featureId]);
   const openFile = useCallback(
-    (paneId: string, filePath: string, maxTabs?: number) => store.openFile(featureId, paneId, filePath, maxTabs),
+    (paneId: string, filePath: string, maxTabs?: number) =>
+      store.openFile(featureId, paneId, filePath, maxTabs),
     [store, featureId],
   );
   const closeTab = useCallback(
@@ -218,7 +404,8 @@ export function useEditorState(featureId: number) {
     [store, featureId],
   );
   const setDirty = useCallback(
-    (paneId: string, filePath: string, isDirty: boolean) => store.setDirty(featureId, paneId, filePath, isDirty),
+    (paneId: string, filePath: string, isDirty: boolean) =>
+      store.setDirty(featureId, paneId, filePath, isDirty),
     [store, featureId],
   );
   const setCursorPosition = useCallback(
@@ -227,6 +414,36 @@ export function useEditorState(featureId: number) {
     [store, featureId],
   );
   const toggleSidebar = useCallback(() => store.toggleSidebar(featureId), [store, featureId]);
+  const splitEditorPane = useCallback(
+    (paneId: string, orientation: SplitOrientation) =>
+      store.splitEditorPane(featureId, paneId, orientation),
+    [store, featureId],
+  );
+  const removeEditorPane = useCallback(
+    (paneId: string) => store.removeEditorPane(featureId, paneId),
+    [store, featureId],
+  );
+  const navigatePane = useCallback(
+    (direction: Direction) => store.navigatePane(featureId, direction),
+    [store, featureId],
+  );
+  const setActivePane = useCallback(
+    (paneId: string) => store.setActivePane(featureId, paneId),
+    [store, featureId],
+  );
 
-  return { ...state, initFeature, openFile, closeTab, setActiveFile, setDirty, setCursorPosition, toggleSidebar };
+  return {
+    ...state,
+    initFeature,
+    openFile,
+    closeTab,
+    setActiveFile,
+    setDirty,
+    setCursorPosition,
+    toggleSidebar,
+    splitEditorPane,
+    removeEditorPane,
+    navigatePane,
+    setActivePane,
+  };
 }

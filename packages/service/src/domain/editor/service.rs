@@ -80,6 +80,41 @@ pub fn build_gitignore(project_path: &Path) -> Option<ignore::gitignore::Gitigno
     builder.build().ok()
 }
 
+/// Recursively list all files under `project_path`, respecting .gitignore.
+/// Returns relative file paths. Errors if more than 10,000 files are found.
+pub fn list_all_files(project_path: &str) -> Result<Vec<String>, AppError> {
+    let project = std::fs::canonicalize(project_path)
+        .map_err(|e| AppError::BadRequest(format!("Invalid project path: {e}")))?;
+
+    let mut files: Vec<String> = Vec::new();
+
+    for result in ignore::WalkBuilder::new(&project).build() {
+        let entry = result.map_err(|e| AppError::Internal(e.to_string()))?;
+
+        // Skip directories — only collect files
+        if entry.file_type().map(|ft| ft.is_dir()).unwrap_or(true) {
+            continue;
+        }
+
+        let relative = entry
+            .path()
+            .strip_prefix(&project)
+            .map_err(|e| AppError::Internal(e.to_string()))?
+            .to_string_lossy()
+            .to_string();
+
+        files.push(relative);
+
+        if files.len() > 10_000 {
+            return Err(AppError::BadRequest(
+                "Project contains more than 10,000 files".to_string(),
+            ));
+        }
+    }
+
+    Ok(files)
+}
+
 /// Check if a path is matched by the gitignore rules.
 pub fn is_gitignored(
     gitignore: Option<&ignore::gitignore::Gitignore>,

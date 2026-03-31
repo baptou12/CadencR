@@ -1,5 +1,7 @@
-import { useEffect } from "react";
-import { useEditorState } from "@/stores/editor-store";
+import { useEffect, useState } from "react";
+import { useHotkeys } from "react-hotkeys-hook";
+import { useEditorState, useEditorStore } from "@/stores/editor-store";
+import { useActiveTab } from "@/hooks/useActiveTab";
 import { PanelLeft } from "lucide-react";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import {
@@ -7,24 +9,44 @@ import {
   ResizablePanel,
   ResizableHandle,
 } from "@/components/ui/resizable";
-import EditorPane from "./EditorPane";
+import EditorSplitTree from "./EditorSplitTree";
 import FileTree from "./FileTree";
+import FileSearchDialog from "./FileSearchDialog";
 
 interface FeatureEditorTabProps {
   featureId: number;
   projectPath: string;
 }
 
-const MAIN_PANE = "main";
 const SIDEBAR_MIN_SIZE = 10;
 const SIDEBAR_DEFAULT_SIZE = 18;
 const SIDEBAR_MAX_SIZE = 40;
 
 export default function FeatureEditorTab({ featureId, projectPath }: FeatureEditorTabProps) {
-  const { initFeature, activePaneId, sidebarVisible, toggleSidebar } = useEditorState(featureId);
+  const { initFeature, splitTree, activePaneId, sidebarVisible, toggleSidebar } = useEditorState(featureId);
+  const splitEditorPane = useEditorStore((s) => s.splitEditorPane);
+  const navigatePane = useEditorStore((s) => s.navigatePane);
+  const { activeTab } = useActiveTab(featureId);
+  const isEditorActive = activeTab === "editor";
+  const [fileSearchOpen, setFileSearchOpen] = useState(false);
 
   const settingKey = `editor_sidebar_visible_${featureId}`;
   const { value: persistedVisible, setValue: persistVisible } = useDebouncedSetting(settingKey);
+
+  useHotkeys(
+    "meta+p",
+    () => setFileSearchOpen(true),
+    { preventDefault: true },
+    [],
+  );
+
+  // Split pane shortcuts — only active when editor tab is selected
+  useHotkeys("meta+d", (e) => { e.preventDefault(); splitEditorPane(featureId, activePaneId, "vertical"); }, { enabled: isEditorActive });
+  useHotkeys("meta+shift+d", (e) => { e.preventDefault(); splitEditorPane(featureId, activePaneId, "horizontal"); }, { enabled: isEditorActive });
+  useHotkeys("meta+alt+left", (e) => { e.preventDefault(); navigatePane(featureId, "left"); }, { enabled: isEditorActive });
+  useHotkeys("meta+alt+right", (e) => { e.preventDefault(); navigatePane(featureId, "right"); }, { enabled: isEditorActive });
+  useHotkeys("meta+alt+up", (e) => { e.preventDefault(); navigatePane(featureId, "up"); }, { enabled: isEditorActive });
+  useHotkeys("meta+alt+down", (e) => { e.preventDefault(); navigatePane(featureId, "down"); }, { enabled: isEditorActive });
 
   useEffect(() => {
     initFeature();
@@ -49,8 +71,14 @@ export default function FeatureEditorTab({ featureId, projectPath }: FeatureEdit
 
   return (
     <div className="flex h-full">
+      <FileSearchDialog
+        projectPath={projectPath}
+        featureId={featureId}
+        open={fileSearchOpen}
+        onOpenChange={setFileSearchOpen}
+      />
       {sidebarVisible ? (
-        <ResizablePanelGroup orientation="horizontal" className="h-full">
+        <ResizablePanelGroup direction="horizontal" className="h-full">
           <ResizablePanel
             defaultSize={SIDEBAR_DEFAULT_SIZE}
             minSize={SIDEBAR_MIN_SIZE}
@@ -64,7 +92,7 @@ export default function FeatureEditorTab({ featureId, projectPath }: FeatureEdit
           </ResizablePanel>
           <ResizableHandle />
           <ResizablePanel defaultSize={100 - SIDEBAR_DEFAULT_SIZE}>
-            <EditorPane featureId={featureId} paneId={activePaneId ?? MAIN_PANE} projectPath={projectPath} />
+            <EditorSplitTree node={splitTree} featureId={featureId} projectPath={projectPath} />
           </ResizablePanel>
         </ResizablePanelGroup>
       ) : (
@@ -78,7 +106,7 @@ export default function FeatureEditorTab({ featureId, projectPath }: FeatureEdit
           >
             <PanelLeft className="w-4 h-4" />
           </button>
-          <EditorPane featureId={featureId} paneId={activePaneId ?? MAIN_PANE} projectPath={projectPath} />
+          <EditorSplitTree node={splitTree} featureId={featureId} projectPath={projectPath} />
         </div>
       )}
     </div>
