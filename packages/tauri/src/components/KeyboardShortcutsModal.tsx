@@ -92,6 +92,10 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
     title: "Editor",
     shortcuts: [
       { keys: ["⌘", "⇧", "E"], description: "Editor tab" },
+      { keys: ["⌘", "S"], description: "Save file" },
+      { keys: ["⌘", "W"], description: "Close tab" },
+      { keys: ["⌘", "⌥", "["], description: "Previous sub-tab" },
+      { keys: ["⌘", "⌥", "]"], description: "Next sub-tab" },
     ],
   },
   {
