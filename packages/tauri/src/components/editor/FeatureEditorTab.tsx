@@ -103,7 +103,7 @@ const FeatureEditorTab = forwardRef<FeatureEditorTabHandle, FeatureEditorTabProp
     useHotkeys(
       "meta+p",
       () => setFileSearchOpen(true),
-      { preventDefault: true },
+      { preventDefault: true, enabled: isEditorActive },
       [],
     );
 

@@ -73,6 +73,18 @@ pub async fn read_file_handler(
         ));
     }
 
+    // Check file size before reading to prevent memory exhaustion on large files
+    const MAX_FILE_SIZE: u64 = 5 * 1024 * 1024; // 5MB
+    let metadata = std::fs::metadata(&path).map_err(|e| match e.kind() {
+        std::io::ErrorKind::NotFound => AppError::NotFound(format!("File not found: {}", path.display())),
+        _ => AppError::Internal(e.to_string()),
+    })?;
+    if metadata.len() > MAX_FILE_SIZE {
+        return Err(AppError::BadRequest(
+            "File exceeds 5MB size limit".to_string(),
+        ));
+    }
+
     let content = std::fs::read_to_string(&path).map_err(|e| match e.kind() {
         std::io::ErrorKind::NotFound => AppError::NotFound(format!("File not found: {}", path.display())),
         std::io::ErrorKind::PermissionDenied => AppError::BadRequest(format!("Permission denied: {}", path.display())),
