@@ -745,7 +745,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
                 if (feature) { projectId = feature.project_id; break; }
               }
             }
-            notifyAgentNeedsInput({ featureTitle: sess.featureTitle ?? "Session", featureId: sess.featureId ?? 0, projectId, routeType: "session" });
+            notifyAgentNeedsInput({ featureTitle: sess.featureTitle ?? "Session", featureId: sess.featureId ?? 0, projectId, routeType: "session", agentKind: "Session" });
           }
         }
 
@@ -893,7 +893,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
               }
             }
           }
-          notifyAgentDone({ status: "completed", featureTitle: title ?? "Session", featureId: sess.featureId ?? 0, projectId, routeType: "session" });
+          notifyAgentDone({ status: "completed", featureTitle: title ?? "Session", featureId: sess.featureId ?? 0, projectId, routeType: "session", agentKind: "Session" });
         }
         if (state.exitPlanModeDetected) {
           state.exitPlanModeDetected = false;

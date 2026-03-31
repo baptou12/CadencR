@@ -75,10 +75,10 @@ describe("notifyAgentDone", () => {
       writable: true,
     });
 
-    notifyAgentDone({ status: "completed", featureTitle: "My Feature", ...baseOpts });
+    notifyAgentDone({ status: "completed", featureTitle: "My Feature", agentKind: "Execute", agentTitle: "Build login", ...baseOpts });
     expect(mockInvoke).toHaveBeenCalledWith("plugin:notification-router|send_notification", {
       title: "Agent finished",
-      body: "My Feature",
+      body: "My Feature\nExecute: Build login",
       featureId: 1,
       projectId: 2,
       routeType: "workflow",
@@ -95,10 +95,10 @@ describe("notifyAgentDone", () => {
       writable: true,
     });
 
-    notifyAgentDone({ status: "error", featureTitle: "Broken Feature", ...baseOpts });
+    notifyAgentDone({ status: "error", featureTitle: "Broken Feature", agentKind: "Execute", ...baseOpts });
     expect(mockInvoke).toHaveBeenCalledWith("plugin:notification-router|send_notification", {
       title: "Agent error",
-      body: "Broken Feature",
+      body: "Broken Feature\nExecute",
       featureId: 1,
       projectId: 2,
       routeType: "workflow",
@@ -124,6 +124,26 @@ describe("notifyAgentDone", () => {
       routeType: "workflow",
     });
   });
+
+  it("shows only feature title when no agentKind provided", async () => {
+    mockInvoke.mockResolvedValue(true);
+    await initNotificationPermission();
+    mockInvoke.mockClear();
+
+    Object.defineProperty(window, "location", {
+      value: { pathname: "/other" },
+      writable: true,
+    });
+
+    notifyAgentDone({ status: "completed", featureTitle: "My Feature", ...baseOpts });
+    expect(mockInvoke).toHaveBeenCalledWith("plugin:notification-router|send_notification", {
+      title: "Agent finished",
+      body: "My Feature",
+      featureId: 1,
+      projectId: 2,
+      routeType: "workflow",
+    });
+  });
 });
 
 describe("notifyAgentNeedsInput", () => {
@@ -137,10 +157,10 @@ describe("notifyAgentNeedsInput", () => {
       writable: true,
     });
 
-    notifyAgentNeedsInput({ featureTitle: "My Feature", ...baseOpts });
+    notifyAgentNeedsInput({ featureTitle: "My Feature", agentKind: "Plan", ...baseOpts });
     expect(mockInvoke).toHaveBeenCalledWith("plugin:notification-router|send_notification", {
       title: "Agent needs input",
-      body: "My Feature",
+      body: "My Feature\nPlan",
       featureId: 1,
       projectId: 2,
       routeType: "workflow",

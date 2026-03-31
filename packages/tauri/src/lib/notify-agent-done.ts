@@ -24,6 +24,10 @@ interface NotifyOptions {
   featureId: number;
   projectId: number;
   routeType: "workflow" | "session";
+  /** Agent kind label, e.g. "Execute", "Review" */
+  agentKind?: string;
+  /** Agent-specific title, e.g. phase title */
+  agentTitle?: string;
 }
 
 function isViewingFeature(opts: NotifyOptions): boolean {
@@ -52,9 +56,14 @@ export function notifyAgentDone(opts: NotifyOptions): void {
   if (!permissionCache) return;
   if (isViewingFeature(opts)) return;
 
+  const bodyParts = [opts.featureTitle];
+  if (opts.agentKind) {
+    bodyParts.push(opts.agentTitle ? `${opts.agentKind}: ${opts.agentTitle}` : opts.agentKind);
+  }
+
   void invoke("plugin:notification-router|send_notification", {
     title: titleForStatus(opts.status),
-    body: opts.featureTitle,
+    body: bodyParts.join("\n"),
     featureId: opts.featureId,
     projectId: opts.projectId,
     routeType: opts.routeType,
