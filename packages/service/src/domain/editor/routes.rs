@@ -219,7 +219,11 @@ pub struct FileSearchResponse {
 pub async fn search_handler(
     Query(params): Query<SearchParams>,
 ) -> Result<axum::Json<FileSearchResponse>, AppError> {
-    let files = service::list_all_files(&params.project_path)?;
+    let project_path = params.project_path;
+    let files = tokio::task::spawn_blocking(move || service::list_all_files(&project_path))
+        .await
+        .map_err(|e| AppError::Internal(format!("Blocking task failed: {e}")))?
+        ?;
     Ok(axum::Json(FileSearchResponse { files }))
 }
 
