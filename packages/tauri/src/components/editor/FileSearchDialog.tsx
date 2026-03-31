@@ -9,7 +9,7 @@ import {
   CommandEmpty,
 } from "@/components/ui/command";
 import { useFileSearch, getFileSearchQueryKey } from "@/api/generated";
-import { useEditorState } from "@/stores/editor-store";
+import { useEditorState } from "@/hooks/useEditorState";
 import { getFileIcon } from "./file-icons";
 
 interface FileSearchDialogProps {

@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react";
 import { RefreshCw, Loader2 } from "lucide-react";
 import { useFileTree } from "@/api/generated";
-import { useEditorState } from "@/stores/editor-store";
+import { useEditorState } from "@/hooks/useEditorState";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import FileTreeItem from "./FileTreeItem";
 import type { FileTreeEntry } from "@/api/generated";

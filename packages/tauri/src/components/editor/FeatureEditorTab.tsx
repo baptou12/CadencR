@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, forwardRef, useImperativeHandle } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
-import { useEditorState, useEditorStore } from "@/stores/editor-store";
+import { useEditorState } from "@/hooks/useEditorState";
+import { useEditorStore } from "@/stores/editor-store";
 import { useActiveTab } from "@/hooks/useActiveTab";
 import { PanelLeft } from "lucide-react";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";

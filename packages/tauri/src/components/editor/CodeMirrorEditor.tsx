@@ -182,10 +182,9 @@ export default function CodeMirrorEditor({ filePath, projectPath, paneId, featur
 
   if (error) {
     const message = error instanceof Error ? error.message : "Failed to load file";
-    const isTooLarge = data && "line_count" in data && (data as { line_count: number }).line_count > MAX_LINES;
     return (
       <div className="flex items-center justify-center h-full text-destructive text-sm px-6 text-center">
-        {isTooLarge ? `File exceeds ${MAX_LINES.toLocaleString()} lines and cannot be displayed.` : message}
+        {message}
       </div>
     );
   }
