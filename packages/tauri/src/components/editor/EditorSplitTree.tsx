@@ -30,10 +30,10 @@ export default function EditorSplitTree({ node, featureId, projectPath }: Editor
     );
   }
 
-  const direction = node.orientation === "horizontal" ? "horizontal" : "vertical";
+  const orientation = node.orientation === "horizontal" ? "horizontal" : "vertical";
 
   return (
-    <ResizablePanelGroup direction={direction} className="h-full">
+    <ResizablePanelGroup orientation={orientation} className="h-full">
       <ResizablePanel defaultSize={50}>
         <EditorSplitTree node={node.children[0]} featureId={featureId} projectPath={projectPath} />
       </ResizablePanel>

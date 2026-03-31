@@ -9,6 +9,7 @@ import { useEditorStore } from "@/stores/editor-store";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import { cadenceEditorTheme } from "./editor-theme";
 import { getLanguageExtension } from "./language-extensions";
+import { registerSave, unregisterSave } from "./editorSaveRegistry";
 import { toast } from "sonner";
 
 interface CodeMirrorEditorProps {
@@ -19,8 +20,19 @@ interface CodeMirrorEditorProps {
 }
 
 const MAX_LINES = 10_000;
-
 const AUTO_SAVE_DELAY_MS = 1500;
+
+function getLanguageName(filePath: string): string {
+  const ext = filePath.split(".").at(-1)?.toLowerCase() ?? "";
+  const MAP: Record<string, string> = {
+    ts: "TypeScript", tsx: "TSX", js: "JavaScript", jsx: "JSX",
+    json: "JSON", html: "HTML", css: "CSS", rs: "Rust",
+    md: "Markdown", mdx: "MDX", yaml: "YAML", yml: "YAML",
+    toml: "TOML", py: "Python", go: "Go", sql: "SQL",
+    sh: "Shell", bash: "Shell", zsh: "Shell",
+  };
+  return MAP[ext] ?? "Plain Text";
+}
 
 export default function CodeMirrorEditor({ filePath, projectPath, paneId, featureId }: CodeMirrorEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -39,6 +51,9 @@ export default function CodeMirrorEditor({ filePath, projectPath, paneId, featur
 
   const setDirty = useEditorStore((s) => s.setDirty);
   const setCursorPosition = useEditorStore((s) => s.setCursorPosition);
+  const cursorPosition = useEditorStore(
+    (s) => s.features[featureId]?.panes[paneId]?.tabs.find((t) => t.filePath === filePath)?.cursorPosition ?? { line: 1, col: 1 },
+  );
 
   const { data, isLoading, error } = useReadFile(
     { projectPath, filePath },
@@ -76,6 +91,12 @@ export default function CodeMirrorEditor({ filePath, projectPath, paneId, featur
       toast.error(msg);
     }
   }, [writeFile, projectPath, filePath, featureId, paneId, setDirty]);
+
+  // Register save callback so callers outside this component can trigger save
+  useEffect(() => {
+    registerSave(paneId, filePath, save);
+    return () => unregisterSave(paneId, filePath);
+  }, [paneId, filePath, save]);
 
   // Swap vim extension in/out without recreating the editor
   useEffect(() => {
@@ -180,11 +201,34 @@ export default function CodeMirrorEditor({ filePath, projectPath, paneId, featur
   return (
     <div className="h-full flex flex-col relative">
       <div ref={containerRef} className="flex-1 overflow-auto" />
-      {autoSavedVisible && (
-        <div className="absolute bottom-2 right-2 text-xs text-muted-foreground bg-background/80 px-2 py-1 rounded pointer-events-none">
-          Auto-saved
-        </div>
-      )}
+      <StatusBar
+        line={cursorPosition.line}
+        col={cursorPosition.col}
+        language={getLanguageName(filePath)}
+        autoSavedVisible={autoSavedVisible}
+      />
+    </div>
+  );
+}
+
+interface StatusBarProps {
+  line: number;
+  col: number;
+  language: string;
+  autoSavedVisible: boolean;
+}
+
+function StatusBar({ line, col, language, autoSavedVisible }: StatusBarProps) {
+  return (
+    <div className="flex items-center justify-between px-3 py-0.5 border-t border-border bg-card text-xs text-muted-foreground shrink-0">
+      <span>
+        Ln {line}, Col {col}
+      </span>
+      <div className="flex items-center gap-3">
+        {autoSavedVisible && <span>Auto-saved</span>}
+        <span>{language}</span>
+        <span>UTF-8</span>
+      </div>
     </div>
   );
 }
