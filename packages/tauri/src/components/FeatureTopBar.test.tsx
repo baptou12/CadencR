@@ -27,9 +27,6 @@ vi.mock("@/api/generated", () => ({
       created_at: "2024-01-01",
     },
   })),
-  useGetFeaturePlanProgress: vi.fn(() => ({
-    data: { done: 2, total: 5 },
-  })),
   useGetFeatureSettings: vi.fn(() => ({
     data: [{ key: "worktree_branch", value: "feature/my-branch" }],
   })),
@@ -84,11 +81,6 @@ describe("FeatureTopBar", () => {
   it("renders feature status badge", () => {
     render(<FeatureTopBar featureId={1} projectId={1} />);
     expect(screen.getByText("in-progress")).toBeInTheDocument();
-  });
-
-  it("shows phase progress", () => {
-    render(<FeatureTopBar featureId={1} projectId={1} />);
-    expect(screen.getByText("2/5")).toBeInTheDocument();
   });
 
   it("renders in session mode without status badge", () => {

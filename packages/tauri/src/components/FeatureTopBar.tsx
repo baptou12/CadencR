@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { TerminalIcon, SettingsIcon, BrainCircuitIcon, CpuIcon } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  useGetFeature, useGetFeaturePlanProgress,
+  useGetFeature,
   useGetFeatureSettings, getGetFeatureSettingsQueryKey, useSetFeatureSetting,
   useOpenExternalHandler,
 } from "@/api/generated";
@@ -46,7 +46,6 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", classNam
   const { data: feature } = useGetFeature(featureId);
   // Live WS-pushed title from auto-naming (falls back to null).
   const wsTitle = useFeatureTitle(featureId);
-  const { data: progress } = useGetFeaturePlanProgress(featureId, { enabled: !isSession });
   const { data: featureSettingsData } = useGetFeatureSettings(featureId);
   const featureSettingsMap = featureSettingsData ? Object.fromEntries(featureSettingsData.map(s => [s.key, s.value])) : {};
   const featureSettings = { ...featureSettingsMap };
@@ -95,12 +94,6 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", classNam
       )}
 
       <h1 className="text-lg font-semibold">{wsTitle ?? feature.title}</h1>
-
-      {!isSession && progress && progress.total > 0 && (
-        <span className="text-muted-foreground text-sm">
-          {progress.done}/{progress.total}
-        </span>
-      )}
 
       <div className="flex-1" />
 
