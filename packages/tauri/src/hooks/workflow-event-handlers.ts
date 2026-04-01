@@ -26,6 +26,7 @@ import {
   resolveItemId,
   patchAgentByItemId,
   processAgentStream,
+  insertAgentSession,
   handleAgentStream,
   handleAgentPaused,
   handleAgentRunning,
@@ -308,10 +309,14 @@ export function createWorkflowMessageHandler(
         });
         break;
       }
-      case "refine.started":
+      case "refine.started": {
+        // Refine streams via planAgent state; no activeAgents entry needed
+        break;
+      }
       case "risk.started":
       case "retro.started": {
-        // These agents stream via plan_agent_stream / agent_stream; no extra state needed
+        const agentType = action === "risk.started" ? "risk" : "retro";
+        set(state => insertAgentSession(state, payload.session_id as number, agentType));
         break;
       }
       case "agent_paused": {
@@ -349,12 +354,7 @@ export function createWorkflowMessageHandler(
         break;
       }
       case "review_fixer.started": {
-        const rfSessionId = payload.session_id as number;
-        set(state => {
-          const activeAgents = new Map(state.activeAgents);
-          activeAgents.set(sessionDbKey(rfSessionId), createAgentSession(rfSessionId, "review-fixer"));
-          return { activeAgents };
-        });
+        set(state => insertAgentSession(state, payload.session_id as number, "review-fixer"));
         break;
       }
       case "worktree.creating": {

@@ -198,6 +198,19 @@ export function upsertAgentByItemId(
   activeAgents.set(itemId, { ...existing, ...patch });
   return { activeAgents };
 }
+/** Insert a fresh agent session into activeAgents, preserving any blocks that arrived before the .started event. */
+export function insertAgentSession(
+  state: Pick<WorkflowState, "activeAgents">,
+  sessionId: number,
+  agentType: string,
+): { activeAgents: Map<number, AgentSessionState> } {
+  const activeAgents = new Map(state.activeAgents);
+  const key = sessionDbKey(sessionId);
+  const existing = activeAgents.get(key);
+  activeAgents.set(key, { ...createAgentSession(sessionId, agentType), blocks: existing?.blocks ?? [] });
+  return { activeAgents };
+}
+
 // SetFn type (shared with workflow-event-handlers.ts)
 export type SetFn = (
   partial: Partial<WorkflowState> | ((state: WorkflowState) => Partial<WorkflowState>),
