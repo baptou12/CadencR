@@ -14,6 +14,7 @@ vi.mock("@codemirror/view", () => {
     EditorView: MockEditorView,
     lineNumbers: vi.fn(() => []),
     highlightActiveLine: vi.fn(() => []),
+    drawSelection: vi.fn(() => []),
     keymap: { of: vi.fn(() => []) },
   };
 });

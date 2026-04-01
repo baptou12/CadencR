@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from "react";
-import { EditorView, lineNumbers, highlightActiveLine, keymap } from "@codemirror/view";
+import { EditorView, lineNumbers, highlightActiveLine, drawSelection, keymap } from "@codemirror/view";
 import { EditorState, Compartment } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { bracketMatching, indentOnInput } from "@codemirror/language";
@@ -150,6 +150,7 @@ export default function CodeMirrorEditor({ filePath, projectPath, paneId, featur
 
     const extensions = [
       history(),
+      drawSelection(),
       lineNumbers(),
       highlightActiveLine(),
       bracketMatching(),
