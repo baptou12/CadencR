@@ -1,9 +1,9 @@
 import { useCallback } from "react";
 import { useDebouncedSetting } from "./useDebouncedSetting";
 
-export type FeatureTab = "agent" | "terminal" | "git";
+export type FeatureTab = "agent" | "terminal" | "git" | "editor";
 
-const VALID_TABS = new Set<FeatureTab>(["agent", "terminal", "git"]);
+const VALID_TABS = new Set<FeatureTab>(["agent", "terminal", "git", "editor"]);
 
 export function useActiveTab(featureId: number) {
   const setting = useDebouncedSetting(`active_tab_${featureId}`);

@@ -1,7 +1,8 @@
-import { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo, lazy, Suspense } from "react";
 import { useGetFeaturePrd, useListProjects, useGetStats } from "@/api/generated";
 import { FeatureTopBar } from "@/components/FeatureTopBar";
 import { FeatureTabBar } from "@/components/FeatureTabBar";
+import type { FeatureTab } from "@/hooks/useActiveTab";
 import { FeatureTerminalTab, type FeatureTerminalTabHandle } from "@/components/FeatureTerminalTab";
 import { FeatureGitTab } from "@/components/FeatureGitTab";
 import { AGENT_LABELS } from "@/components/AgentSession";
@@ -25,6 +26,9 @@ import { useWorkflowKeyboard } from "@/hooks/useWorkflowKeyboard";
 import { CodeBlockActionsContext, type CodeBlockActions } from "@/components/CodeBlockActionsContext";
 import { cn } from "@/lib/utils";
 import { useWsWorkflowBackend } from "@/hooks/useWsWorkflowBackend";
+
+const FeatureEditorTab = lazy(() => import("@/components/editor/FeatureEditorTab"));
+import type { FeatureEditorTabHandle } from "@/components/editor/FeatureEditorTab";
 import { useWorkflowStore } from "@/hooks/useWorkflowWebSocket";
 
 export function FeatureWorkflowView({
@@ -148,6 +152,15 @@ export function FeatureWorkflowView({
   // Tab state
   const { activeTab, setActiveTab } = useActiveTab(featureId);
   useSaveLastOpenedFeature(projectId, featureId, activeTab);
+  const editorTabRef = useRef<FeatureEditorTabHandle>(null);
+
+  const handleTabChange = useCallback((tab: FeatureTab) => {
+    if (activeTab === "editor" && tab !== "editor" && editorTabRef.current) {
+      editorTabRef.current.requestLeave(() => setActiveTab(tab));
+    } else {
+      setActiveTab(tab);
+    }
+  }, [activeTab, setActiveTab]);
 
   // Git stats for tab bar badge
   const { data: gitStats } = useGetStats(
@@ -188,10 +201,19 @@ export function FeatureWorkflowView({
     <CodeBlockActionsContext.Provider value={codeBlockActions}>
     <div className="relative flex h-full flex-col">
       <FeatureTopBar featureId={featureId} projectId={projectId} />
-      <FeatureTabBar activeTab={activeTab} featureId={featureId} onTabChange={setActiveTab} gitStats={gitStats} gitBranch={backend.worktreeBranch} onTerminalActivate={handleTerminalActivate} />
+      <FeatureTabBar activeTab={activeTab} featureId={featureId} onTabChange={handleTabChange} gitStats={gitStats} gitBranch={backend.worktreeBranch} onTerminalActivate={handleTerminalActivate} />
       <div className="relative min-h-0 flex-1 overflow-hidden">
         {/* Terminal tab — stays mounted to preserve PTY */}
         <FeatureTerminalTab ref={terminalTabRef} featureId={featureId} projectId={projectId} hidden={activeTab !== "terminal"} />
+
+        {/* Editor tab — stays mounted to preserve state */}
+        <div className={cn("h-full", activeTab !== "editor" && "hidden")}>
+          {projectPath && (
+            <Suspense fallback={null}>
+              <FeatureEditorTab ref={editorTabRef} featureId={featureId} projectPath={projectPath} />
+            </Suspense>
+          )}
+        </div>
 
         {/* Git tab */}
         {activeTab === "git" && (

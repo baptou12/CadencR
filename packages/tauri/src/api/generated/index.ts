@@ -1525,3 +1525,109 @@ export function useGetUsageHandler(
     ...options?.query,
   });
 }
+
+// ---------------------------------------------------------------------------
+// Editor — file read/write/tree
+// ---------------------------------------------------------------------------
+
+export interface FileReadResponse {
+  content: string;
+  line_count: number;
+}
+
+export interface FileWriteRequest {
+  project_path: string;
+  file_path: string;
+  content: string;
+}
+
+export interface FileWriteResponse {
+  success: boolean;
+}
+
+export interface FileTreeEntry {
+  name: string;
+  path: string;
+  is_dir: boolean;
+  is_gitignored: boolean;
+}
+
+export interface ReadFileParams {
+  projectPath: string;
+  filePath: string;
+}
+
+export interface FileTreeParams {
+  projectPath: string;
+  dirPath: string;
+}
+
+export function getReadFileQueryKey(params: ReadFileParams) {
+  return ["editor", "read", params] as const;
+}
+
+export function getFileTreeQueryKey(params: FileTreeParams) {
+  return ["editor", "tree", params] as const;
+}
+
+export function useReadFile(
+  params: ReadFileParams,
+  options?: Omit<UseQueryOptions<FileReadResponse, ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<FileReadResponse, ErrorType<unknown>>({
+    queryKey: getReadFileQueryKey(params),
+    queryFn: () =>
+      customInstance({ method: "GET", url: `/api/editor/read${qs(toSnakeParams(params))}` }),
+    ...options,
+  });
+}
+
+export function useFileTree(
+  params: FileTreeParams,
+  options?: Omit<UseQueryOptions<FileTreeEntry[], ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<FileTreeEntry[], ErrorType<unknown>>({
+    queryKey: getFileTreeQueryKey(params),
+    queryFn: () =>
+      customInstance({ method: "GET", url: `/api/editor/tree${qs(toSnakeParams(params))}` }),
+    ...options,
+  });
+}
+
+export interface FileSearchResponse {
+  files: string[];
+}
+
+export interface FileSearchParams {
+  projectPath: string;
+}
+
+export function getFileSearchQueryKey(projectPath: string) {
+  return ["editor", "search", projectPath] as const;
+}
+
+export function useFileSearch(
+  projectPath: string,
+  options?: Omit<UseQueryOptions<FileSearchResponse, ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<FileSearchResponse, ErrorType<unknown>>({
+    queryKey: getFileSearchQueryKey(projectPath),
+    queryFn: () =>
+      customInstance({ method: "GET", url: `/api/editor/search?project_path=${encodeURIComponent(projectPath)}` }),
+    ...options,
+  });
+}
+
+export function useWriteFile(
+  options?: UseMutationOptions<FileWriteResponse, ErrorType<unknown>, FileWriteRequest>,
+) {
+  return useMutation<FileWriteResponse, ErrorType<unknown>, FileWriteRequest>({
+    mutationFn: (params) =>
+      customInstance({
+        method: "POST",
+        url: "/api/editor/write",
+        data: params,
+      }),
+    ...options,
+  });
+}

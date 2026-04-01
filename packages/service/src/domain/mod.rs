@@ -11,3 +11,4 @@ pub mod ws_session;
 pub mod mcp;
 pub mod settings;
 pub mod workflow;
+pub mod editor;

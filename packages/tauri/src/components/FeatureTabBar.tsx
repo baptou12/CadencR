@@ -1,5 +1,5 @@
 import { useHotkeys } from "react-hotkeys-hook";
-import { BotIcon, TerminalIcon, GitCompareArrowsIcon } from "lucide-react";
+import { BotIcon, TerminalIcon, GitCompareArrowsIcon, CodeIcon } from "lucide-react";
 import { ShortcutTooltip } from "@/components/ShortcutTooltip";
 import { cn } from "@/lib/utils";
 import type { FeatureTab } from "@/hooks/useActiveTab";
@@ -19,6 +19,7 @@ const TABS: { id: FeatureTab; label: string; icon: typeof BotIcon; keys: string[
   { id: "agent", label: "Agent", icon: BotIcon, keys: ["cmd", "shift", "A"] },
   { id: "terminal", label: "Terminal", icon: TerminalIcon, keys: ["cmd", "shift", "T"] },
   { id: "git", label: "Git", icon: GitCompareArrowsIcon, keys: ["cmd", "shift", "G"] },
+  { id: "editor", label: "Editor", icon: CodeIcon, keys: ["cmd", "shift", "E"] },
 ];
 
 export function FeatureTabBar({ activeTab, featureId, onTabChange, gitStats, gitBranch, onTerminalActivate }: FeatureTabBarProps) {
@@ -43,6 +44,12 @@ export function FeatureTabBar({ activeTab, featureId, onTabChange, gitStats, git
   useHotkeys(
     "meta+shift+g",
     (e) => { e.preventDefault(); onTabChange("git"); },
+    { enableOnFormTags: true, enableOnContentEditable: true },
+  );
+
+  useHotkeys(
+    "meta+shift+e",
+    (e) => { e.preventDefault(); onTabChange("editor"); },
     { enableOnFormTags: true, enableOnContentEditable: true },
   );
 
