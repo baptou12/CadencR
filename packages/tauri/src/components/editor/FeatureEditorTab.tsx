@@ -35,9 +35,9 @@ export interface FeatureEditorTabHandle {
   requestLeave: (proceed: () => void) => void;
 }
 
-const SIDEBAR_MIN_SIZE = 10;
-const SIDEBAR_DEFAULT_SIZE = 18;
-const SIDEBAR_MAX_SIZE = 40;
+const SIDEBAR_MIN_SIZE = "120px";
+const SIDEBAR_DEFAULT_SIZE = "220px";
+const SIDEBAR_MAX_SIZE = "500px";
 
 const FeatureEditorTab = forwardRef<FeatureEditorTabHandle, FeatureEditorTabProps>(
   function FeatureEditorTab({ featureId, projectPath }, ref) {
@@ -170,7 +170,7 @@ const FeatureEditorTab = forwardRef<FeatureEditorTabHandle, FeatureEditorTabProp
         </Dialog>
 
         {sidebarVisible ? (
-          <ResizablePanelGroup orientation="horizontal" className="h-full">
+          <ResizablePanelGroup id="editor-sidebar" orientation="horizontal" className="h-full">
             <ResizablePanel
               defaultSize={SIDEBAR_DEFAULT_SIZE}
               minSize={SIDEBAR_MIN_SIZE}
@@ -183,7 +183,7 @@ const FeatureEditorTab = forwardRef<FeatureEditorTabHandle, FeatureEditorTabProp
               </div>
             </ResizablePanel>
             <ResizableHandle />
-            <ResizablePanel defaultSize={100 - SIDEBAR_DEFAULT_SIZE}>
+            <ResizablePanel>
               <EditorSplitTree node={splitTree} featureId={featureId} projectPath={projectPath} />
             </ResizablePanel>
           </ResizablePanelGroup>

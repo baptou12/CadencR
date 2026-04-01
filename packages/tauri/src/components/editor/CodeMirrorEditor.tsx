@@ -190,36 +190,22 @@ export default function CodeMirrorEditor({ filePath, projectPath, paneId, featur
     }
   }, [data, filePath, featureId, paneId, setDirty]);
 
-  if (isLoading) {
-    return (
-      <div className="flex flex-col gap-2 p-4 h-full animate-pulse">
-        <div className="h-4 w-3/4 rounded bg-muted" />
-        <div className="h-4 w-1/2 rounded bg-muted" />
-        <div className="h-4 w-5/6 rounded bg-muted" />
-        <div className="h-4 w-2/3 rounded bg-muted" />
-      </div>
-    );
-  }
-
-  if (error) {
-    const message = error instanceof Error ? error.message : "Failed to load file";
-    return (
-      <div className="flex items-center justify-center h-full text-destructive text-sm px-6 text-center">
-        {message}
-      </div>
-    );
-  }
-
-  if (!data) {
-    return (
-      <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-        Select a file to open
-      </div>
-    );
-  }
+  const overlay = isLoading ? (
+    <div className="absolute inset-0 flex flex-col gap-2 p-4 animate-pulse z-10 bg-background">
+      <div className="h-4 w-3/4 rounded bg-muted" />
+      <div className="h-4 w-1/2 rounded bg-muted" />
+      <div className="h-4 w-5/6 rounded bg-muted" />
+      <div className="h-4 w-2/3 rounded bg-muted" />
+    </div>
+  ) : error ? (
+    <div className="absolute inset-0 flex items-center justify-center z-10 bg-background text-destructive text-sm px-6 text-center">
+      {error instanceof Error ? error.message : "Failed to load file"}
+    </div>
+  ) : null;
 
   return (
     <div className="h-full flex flex-col relative">
+      {overlay}
       <div ref={containerRef} className="flex-1 overflow-auto" />
       <StatusBar
         line={cursorPosition.line}
