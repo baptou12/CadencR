@@ -404,6 +404,15 @@ export const AgentSession = memo(forwardRef<AgentSessionHandle, AgentSessionProp
       }
     };
     el.addEventListener("scroll", onScroll, { passive: true });
+
+    // If the content is too short to scroll, trigger load-older immediately.
+    if (hasMore && onLoadOlder && !loadingOlderRef.current && el.scrollHeight <= el.clientHeight) {
+      loadingOlderRef.current = true;
+      onLoadOlder().finally(() => {
+        requestAnimationFrame(() => { loadingOlderRef.current = false; });
+      });
+    }
+
     return () => el.removeEventListener("scroll", onScroll);
   }, [isOpen, hasMore, onLoadOlder]);
 

@@ -822,6 +822,55 @@ describe("useWorkflowStore", () => {
       expect(useWorkflowStore.getState().activeAgents.get(5)!.blocks).toEqual([{ type: "text", content: "live" }]);
     });
 
+    it("sets pagination metadata even when blocks already exist", () => {
+      useWorkflowStore.getState().hydrateFromSnapshot({
+        workflow_status: "building",
+        queue: [{ id: 5, item_type: "execute", phase_id: null, phase_title: null, status: "running", order_index: 0, group_index: null, agent_session_id: 30, result: null }],
+        agent_sessions: [{ id: 30, agent_type: "execute", status: "running", queue_item_id: 5, claude_session_id: null, input_tokens: 0, output_tokens: 0, context_window: 0 }],
+        plan: null,
+        worktree: null,
+        autonomy_level: 3,
+      });
+
+      // Simulate WS streaming blocks arriving before history fetch
+      useWorkflowStore.setState((state) => {
+        const activeAgents = new Map(state.activeAgents);
+        const agent = activeAgents.get(5)!;
+        activeAgents.set(5, { ...agent, blocks: [{ type: "text", content: "live" }] as never[] });
+        return { activeAgents };
+      });
+
+      // populateAgentBlocks should still set hasMore/oldestMessageId
+      useWorkflowStore.getState().populateAgentBlocks(5, fakeBlocks as never[], true, 42);
+
+      const agent = useWorkflowStore.getState().activeAgents.get(5)!;
+      expect(agent.blocks).toEqual([{ type: "text", content: "live" }]); // blocks unchanged
+      expect(agent.hasMore).toBe(true);
+      expect(agent.oldestMessageId).toBe(42);
+      expect(agent.historyLoaded).toBe(true);
+    });
+
+    it("skips state update when pagination metadata unchanged", () => {
+      useWorkflowStore.getState().hydrateFromSnapshot({
+        workflow_status: "building",
+        queue: [{ id: 5, item_type: "execute", phase_id: null, phase_title: null, status: "running", order_index: 0, group_index: null, agent_session_id: 30, result: null }],
+        agent_sessions: [{ id: 30, agent_type: "execute", status: "running", queue_item_id: 5, claude_session_id: null, input_tokens: 0, output_tokens: 0, context_window: 0 }],
+        plan: null,
+        worktree: null,
+        autonomy_level: 3,
+      });
+
+      // First populate sets metadata
+      useWorkflowStore.getState().populateAgentBlocks(5, fakeBlocks as never[], true, 42);
+      const stateAfterFirst = useWorkflowStore.getState();
+
+      // Second populate with same metadata — should be no-op (same reference)
+      useWorkflowStore.getState().populateAgentBlocks(5, fakeBlocks as never[], true, 42);
+      const stateAfterSecond = useWorkflowStore.getState();
+
+      expect(stateAfterSecond.activeAgents).toBe(stateAfterFirst.activeAgents);
+    });
+
     it("is a no-op when agent does not exist", () => {
       const before = useWorkflowStore.getState();
       useWorkflowStore.getState().populateAgentBlocks(999, fakeBlocks as never[]);

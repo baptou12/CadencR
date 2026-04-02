@@ -131,9 +131,7 @@ impl AgentManager {
             .map(|r| *r)
             .ok_or_else(|| format!("No active session for slot {slot}"))?;
 
-        let agent_type = slot.sdk_agent_type().unwrap_or(AgentType::Execute);
-
-        // Resolve agent_type_str for model lookup
+        // Resolve agent_type_str — prefer the slot, fall back to DB
         let agent_type_str = match slot.agent_type_str() {
             Some(s) => s.to_string(),
             None => {
@@ -148,6 +146,10 @@ impl AgentManager {
                 row.map(|(t,)| t).unwrap_or_else(|| "execute".to_string())
             }
         };
+
+        // Derive AgentType from the resolved string so queue items (review, qa, etc.)
+        // get the correct MCP server, not a hardcoded Execute fallback.
+        let agent_type = agent_type_str.parse::<AgentType>().unwrap_or(AgentType::Execute);
 
         // Build spawn context with --resume
         let ctx = self.build_spawn_context(

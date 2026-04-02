@@ -368,7 +368,21 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     populateAgentBlocks(itemId, blocks, hasMore, oldestMessageId) {
       set(state => {
         const agent = resolveAgentByItemId(state, itemId);
-        if (!agent || agent.historyLoaded || agent.blocks.length > 0) return state;
+        if (!agent) return state;
+        if (agent.historyLoaded || agent.blocks.length > 0) {
+          // Blocks already present (e.g. from WS streaming) — still update
+          // pagination metadata so load-older works.
+          const nextHasMore = hasMore ?? agent.hasMore ?? false;
+          const nextOldest = oldestMessageId ?? agent.oldestMessageId ?? null;
+          if (agent.historyLoaded && nextHasMore === agent.hasMore && nextOldest === agent.oldestMessageId) {
+            return state;
+          }
+          return patchAgentByItemId(state, itemId, {
+            historyLoaded: true,
+            hasMore: nextHasMore,
+            oldestMessageId: nextOldest,
+          });
+        }
         const fileChanges = agent.hasFileChanges || blocksContainFileChange(blocks);
         return patchAgentByItemId(state, itemId, { blocks, historyLoaded: true, hasFileChanges: fileChanges, hasMore: hasMore ?? false, oldestMessageId: oldestMessageId ?? null });
       });
