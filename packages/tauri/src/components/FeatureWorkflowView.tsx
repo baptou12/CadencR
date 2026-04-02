@@ -26,6 +26,7 @@ import { useWorkflowKeyboard } from "@/hooks/useWorkflowKeyboard";
 import { CodeBlockActionsContext, type CodeBlockActions } from "@/components/CodeBlockActionsContext";
 import { cn } from "@/lib/utils";
 import { useWsWorkflowBackend } from "@/hooks/useWsWorkflowBackend";
+import type { FeatureStatus } from "@/hooks/useFeatureState";
 
 const FeatureEditorTab = lazy(() => import("@/components/editor/FeatureEditorTab"));
 import type { FeatureEditorTabHandle } from "@/components/editor/FeatureEditorTab";
@@ -62,6 +63,7 @@ export function FeatureWorkflowView({
   const backend = useWsWorkflowBackend(
     featureId,
     projectId,
+    feature?.status as FeatureStatus | undefined,
   );
 
   const contextUsageMap = useMemo(() => {

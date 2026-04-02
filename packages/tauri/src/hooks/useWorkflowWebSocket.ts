@@ -64,7 +64,7 @@ export {
 };
 
 export const useWorkflowStore = create<WorkflowState>((set, get) => {
-  function send(action: string, payload: Record<string, unknown> = {}) {
+  function send(action: string, payload: Record<string, unknown> = {}): boolean {
     const { ws, featureId } = get();
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({
@@ -73,7 +73,9 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         action,
         payload: { feature_id: featureId, ...payload },
       }));
+      return true;
     }
+    return false;
   }
 
   const handleMessage = createWorkflowMessageHandler(set, get);
@@ -310,7 +312,9 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
 
     startSession(prompt, images) {
       set({ startingSession: true });
-      send("start_session", { prompt, images });
+      if (!send("start_session", { prompt, images })) {
+        set({ startingSession: false, error: "Not connected — cannot start session" });
+      }
     },
 
     startRefine(description, images) {

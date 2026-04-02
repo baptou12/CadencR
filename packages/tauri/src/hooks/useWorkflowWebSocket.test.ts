@@ -1831,6 +1831,59 @@ describe("useWorkflowStore", () => {
       expect(agent!.blocks[0]).toMatchObject({ type: "user_message", content: "Hello" });
     });
 
+    it("session.started merges placeholder and existing agent blocks", () => {
+      const ws = connectStore();
+      const agents = new Map();
+      // Placeholder at SESSION_KEY with user message
+      agents.set(-3, makeAgentSession({
+        blocks: [{ type: "user_message", content: "Hello" }],
+      }));
+      // Existing agent at sessionDbKey(77) from agent_user_message arriving first
+      agents.set(-1077, makeAgentSession({
+        sessionId: 77,
+        blocks: [{ type: "text", content: "stream output" }],
+      }));
+      useWorkflowStore.setState({ activeAgents: agents, startingSession: true });
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "session.started",
+        payload: { feature_id: 1, session_id: 77 },
+      });
+
+      expect(useWorkflowStore.getState().activeAgents.has(-3)).toBe(false);
+      const agent = useWorkflowStore.getState().activeAgents.get(-1077);
+      expect(agent).toBeDefined();
+      expect(agent!.blocks).toHaveLength(2);
+      expect(agent!.blocks[0]).toMatchObject({ type: "user_message", content: "Hello" });
+      expect(agent!.blocks[1]).toMatchObject({ type: "text", content: "stream output" });
+    });
+
+    it("session.started clears startingSession flag", () => {
+      const ws = connectStore();
+      useWorkflowStore.setState({ startingSession: true });
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "session.started",
+        payload: { feature_id: 1, session_id: 88 },
+      });
+
+      expect(useWorkflowStore.getState().startingSession).toBe(false);
+    });
+
+    it("startSession clears flag and sets error when WS is disconnected", () => {
+      connectStore();
+      // Close the WS to simulate disconnect
+      const ws = MockWebSocket.instances[MockWebSocket.instances.length - 1];
+      ws.readyState = WebSocket.CLOSED;
+
+      useWorkflowStore.getState().startSession("test", undefined);
+
+      expect(useWorkflowStore.getState().startingSession).toBe(false);
+      expect(useWorkflowStore.getState().error).toContain("Not connected");
+    });
+
     it("queue_update before item_started populates queue so agent is matched", () => {
       const ws = connectStore();
 

@@ -17,6 +17,7 @@ import { AGENT_TYPE_SYNTHETIC_KEYS } from "@/types/workflow";
 import { useWorkflowStore, resolveAgentByItemId } from "./useWorkflowWebSocket";
 import { customInstance } from "@/api/client";
 import { deriveViewState, type WorkflowBackend } from "./workflowBackendTypes";
+import type { FeatureStatus } from "./useFeatureState";
 
 // ---------------------------------------------------------------------------
 // Mappers
@@ -209,6 +210,7 @@ export function findQueueItemId(
 export function useWsWorkflowBackend(
   featureId: number,
   projectId: number,
+  featureStatus?: FeatureStatus,
   enabled = true,
 ): WorkflowBackend {
   const store = useWorkflowStore();
@@ -325,17 +327,22 @@ export function useWsWorkflowBackend(
     error: store.error,
     clearError: store.clearError,
 
-    // Action availability (WS workflow manages its own state machine)
-    actions: {
-      canStartPlan: store.workflowStatus === "idle" || store.workflowStatus === "planning",
-      canStartPrd: store.workflowStatus === "idle",
-      canStartBuild: store.workflowStatus === "ready_to_build",
-      canStartRisk: store.workflowStatus === "ready_to_build" || store.workflowStatus === "building" || store.workflowStatus === "paused" || store.workflowStatus === "completed" || store.workflowStatus === "error",
-      canStartReview: false,
-      canStartWorkflowSession: store.workflowStatus === "ready_to_build" || store.workflowStatus === "building" || store.workflowStatus === "paused" || store.workflowStatus === "completed" || store.workflowStatus === "error",
-      canStartRefine: store.workflowStatus === "ready_to_build" || store.workflowStatus === "building" || store.workflowStatus === "paused" || store.workflowStatus === "completed" || store.workflowStatus === "error",
-      canStartRetro: store.workflowStatus === "completed",
-    },
+    // Action availability — archived features only allow retro.
+    actions: (() => {
+      const notArchived = featureStatus !== "archived";
+      const ws = store.workflowStatus;
+      const hasActiveWorkflow = ws === "ready_to_build" || ws === "building" || ws === "paused" || ws === "completed" || ws === "error";
+      return {
+        canStartPlan: notArchived && (ws === "idle" || ws === "planning"),
+        canStartPrd: notArchived && ws === "idle",
+        canStartBuild: notArchived && ws === "ready_to_build",
+        canStartRisk: notArchived && hasActiveWorkflow,
+        canStartReview: false,
+        canStartWorkflowSession: notArchived && hasActiveWorkflow,
+        canStartRefine: notArchived && hasActiveWorkflow,
+        canStartRetro: ws === "completed",
+      };
+    })(),
 
     // Derived
     hasAnyAgentOutput,

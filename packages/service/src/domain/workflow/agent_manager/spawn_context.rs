@@ -30,8 +30,9 @@ impl AgentManager {
         .await
         .ok()?;
         if let Some(Some(wt_path)) = wt_row.map(|(v,)| v) {
-            if !wt_path.is_empty() {
-                return Some(PathBuf::from(wt_path));
+            let p = PathBuf::from(&wt_path);
+            if !wt_path.is_empty() && p.is_dir() {
+                return Some(p);
             }
         }
         let row: Option<(Option<String>,)> = sqlx::query_as(

@@ -303,9 +303,14 @@ export function createWorkflowMessageHandler(
           const activeAgents = new Map(state.activeAgents);
           const placeholder = activeAgents.get(SESSION_KEY);
           if (placeholder) activeAgents.delete(SESSION_KEY);
-          const session = { ...createAgentSession(startedSessionId, "session"), blocks: placeholder?.blocks ?? [] };
+          const existing = activeAgents.get(sessionDbKey(startedSessionId));
+          const session = {
+            ...(existing ?? createAgentSession(startedSessionId, "session")),
+            sessionId: startedSessionId,
+            blocks: [...(placeholder?.blocks ?? []), ...(existing?.blocks ?? [])],
+          };
           activeAgents.set(sessionDbKey(startedSessionId), session);
-          return { activeAgents };
+          return { activeAgents, startingSession: false };
         });
         break;
       }

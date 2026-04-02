@@ -87,6 +87,25 @@ impl AgentManager {
         slot_fn: impl FnOnce(i64) -> AgentSlot,
         permissions: &PermissionRouter,
     ) -> Result<i64, String> {
+        self.spawn_pre_queue_agent_with_display(
+            agent_type, agent_type_str, system_prompt,
+            initial_prompt, None, images, slot_fn, permissions,
+        ).await
+    }
+
+    /// Like `spawn_pre_queue_agent`, but accepts an optional display message
+    /// to persist and show in the UI instead of the (potentially enriched) initial_prompt.
+    pub async fn spawn_pre_queue_agent_with_display(
+        &self,
+        agent_type: AgentType,
+        agent_type_str: &str,
+        system_prompt: &str,
+        initial_prompt: &str,
+        user_display_message: Option<&str>,
+        images: &[ImagePayload],
+        slot_fn: impl FnOnce(i64) -> AgentSlot,
+        permissions: &PermissionRouter,
+    ) -> Result<i64, String> {
         info!(feature_id = self.feature_id, agent_type = agent_type_str, "spawning pre-queue agent");
 
         // 1. Create agent session in DB
@@ -110,13 +129,14 @@ impl AgentManager {
         ).await?;
 
         // 3. Persist the initial user prompt and send it to the frontend
+        let display_msg = user_display_message.unwrap_or(initial_prompt);
         {
             let p = WsSessionPersistence::with_session_id(
                 self.write_pool.clone(), self.feature_id, Some(db_session_id),
             );
-            p.persist_user_message(initial_prompt).await;
+            p.persist_user_message(display_msg).await;
         }
-        self.send_user_message_event(slot.clone(), db_session_id, initial_prompt);
+        self.send_user_message_event(slot.clone(), db_session_id, display_msg);
 
         let content_value = build_content_value(initial_prompt, images);
 

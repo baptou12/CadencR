@@ -514,11 +514,12 @@ impl WorkflowEngine {
         )
         .await?;
 
-        self.agent_manager.spawn_pre_queue_agent(
+        self.agent_manager.spawn_pre_queue_agent_with_display(
             AgentType::Session,
             "session",
             Prompts::session(),
             &enriched_prompt,
+            Some(prompt),
             images,
             |id| AgentSlot::Session(id),
             &self.permissions,
