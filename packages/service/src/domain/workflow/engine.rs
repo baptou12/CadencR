@@ -264,6 +264,7 @@ impl WorkflowEngine {
             read_pool.clone(),
             write_pool.clone(),
             ws_sender.clone(),
+            agent_manager.turn_state_tx.clone(),
         )
         .await;
         let permissions = PermissionRouter::new();

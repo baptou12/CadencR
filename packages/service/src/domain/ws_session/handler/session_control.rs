@@ -301,12 +301,15 @@ pub(super) async fn handle_destroy(
         }
     };
 
+    let feature_id = handle.feature_id;
+
     // Close active subprocess if running
     if let QueryState::Active { query, .. } = handle.state {
         persist_and_close_query(&query, &app_state.write_pool, db_session_id).await;
     }
 
     WsSessionPersistence::mark_completed_static(&app_state.write_pool, db_session_id).await;
+    WsSessionPersistence::broadcast_turn_state(&app_state.turn_state_tx, feature_id, "none");
 
     let reply = WsEnvelope::reply(
         &envelope.id,

@@ -196,8 +196,10 @@ impl AgentManager {
                     ctx.expected_mcp_server, message_rx, self.ws_sender.clone(),
                     self.write_pool.clone(), self.active_items.clone(),
                     self.queries.clone(), Some(ctx.model.as_str()),
+                    self.turn_state_tx.clone(),
                 );
 
+                WsSessionPersistence::broadcast_turn_state(&self.turn_state_tx, self.feature_id, "claude");
                 info!(slot = %slot, "agent resumed successfully");
                 Ok(())
             }

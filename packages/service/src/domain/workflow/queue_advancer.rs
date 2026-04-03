@@ -33,6 +33,7 @@ pub struct QueueAdvancer {
     pub read_pool: SqlitePool,
     pub write_pool: SqlitePool,
     pub ws_sender: WsSender,
+    pub turn_state_tx: tokio::sync::broadcast::Sender<crate::app_state::TurnStateEvent>,
 }
 
 impl QueueAdvancer {
@@ -43,6 +44,7 @@ impl QueueAdvancer {
         read_pool: SqlitePool,
         write_pool: SqlitePool,
         ws_sender: WsSender,
+        turn_state_tx: tokio::sync::broadcast::Sender<crate::app_state::TurnStateEvent>,
     ) -> Self {
         let strategy = strategies::get_strategy(&workflow_type)
             .expect("QueueAdvancer::new called with unsupported workflow type");
@@ -86,6 +88,7 @@ impl QueueAdvancer {
             read_pool,
             write_pool,
             ws_sender,
+            turn_state_tx,
         }
     }
 
@@ -154,6 +157,11 @@ impl QueueAdvancer {
 
         agent_manager.cleanup_agent(&slot);
         permissions.cleanup(&slot);
+
+        // Broadcast "none" if no other agents are active (advance may override with "claude")
+        if agent_manager.active_items.is_empty() {
+            WsSessionPersistence::broadcast_turn_state(&self.turn_state_tx, self.feature_id, "none");
+        }
 
         let legacy_id = slot.as_legacy_id();
         if let Err(e) = repo::mark_item_completed(&self.write_pool, legacy_id, result).await {
@@ -309,6 +317,11 @@ impl QueueAdvancer {
             }),
         );
         let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
+
+        // Broadcast "none" if this was the last active agent
+        if agent_manager.active_items.len() <= 1 {
+            WsSessionPersistence::broadcast_turn_state(&self.turn_state_tx, self.feature_id, "none");
+        }
     }
 
     /// Called when a queue item errors. Auto-retries if retry_count < max_retries.
@@ -397,6 +410,7 @@ impl QueueAdvancer {
         let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
 
         if agent_manager.active_items.is_empty() {
+            WsSessionPersistence::broadcast_turn_state(&self.turn_state_tx, self.feature_id, "none");
             set_status.set_status(WorkflowStatus::Error).await;
         }
     }

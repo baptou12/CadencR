@@ -157,7 +157,10 @@ impl AgentManager {
                     ctx.expected_mcp_server, message_rx, self.ws_sender.clone(),
                     self.write_pool.clone(), self.active_items.clone(),
                     self.queries.clone(), Some(ctx.model.as_str()),
+                    self.turn_state_tx.clone(),
                 );
+
+                WsSessionPersistence::broadcast_turn_state(&self.turn_state_tx, self.feature_id, "claude");
 
                 let envelope = WsEnvelope::new(
                     "workflow", "agent_started",
@@ -175,6 +178,7 @@ impl AgentManager {
             Err(e) => {
                 error!(feature_id = self.feature_id, agent_type = agent_type_str, error = %e, "failed to spawn pre-queue agent");
                 let _ = WsSessionPersistence::mark_paused_static(&self.write_pool, db_session_id).await;
+                WsSessionPersistence::broadcast_turn_state(&self.turn_state_tx, self.feature_id, "none");
                 Err(format!("SDK spawn failed for {agent_type_str}: {e}"))
             }
         }
@@ -266,7 +270,10 @@ impl AgentManager {
                     ctx.expected_mcp_server, message_rx, self.ws_sender.clone(),
                     self.write_pool.clone(), self.active_items.clone(),
                     self.queries.clone(), Some(ctx.model.as_str()),
+                    self.turn_state_tx.clone(),
                 );
+
+                WsSessionPersistence::broadcast_turn_state(&self.turn_state_tx, self.feature_id, "claude");
 
                 let envelope = WsEnvelope::new(
                     "workflow", "item_started",

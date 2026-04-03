@@ -8,6 +8,8 @@ import { create } from "zustand";
 import { createEnvelope, parseEnvelope } from "@/lib/ws-envelope";
 import { queryClient } from "@/lib/queryClient";
 import { getWsUrl } from "@/lib/ws-url";
+import { notifyAgentDone, notifyAgentNeedsInput } from "@/lib/notify-agent-done";
+import type { Feature } from "@/api/generated";
 
 export type TurnState = "claude" | "askUser";
 
@@ -17,6 +19,14 @@ interface AppWsState {
   featureTurnStates: Record<number, TurnState>;
   connect: () => void;
   disconnect: () => void;
+}
+
+function lookupFeature(featureId: number): Feature | undefined {
+  for (const [, data] of queryClient.getQueriesData<Feature[]>({ queryKey: ["features", "list"] })) {
+    const feature = data?.find(f => f.id === featureId);
+    if (feature) return feature;
+  }
+  return undefined;
 }
 
 const RECONNECT_BASE_MS = 1000;
@@ -57,6 +67,7 @@ export const useAppWsStore = create<AppWsState>((set, get) => {
     } else if (action === "turn_states.update") {
       const featureId = payload.feature_id as number;
       const turn = payload.turn as string;
+      const prevTurn = get().featureTurnStates[featureId];
       set((state) => {
         const next = { ...state.featureTurnStates };
         if (turn === "claude" || turn === "askUser") {
@@ -66,6 +77,18 @@ export const useAppWsStore = create<AppWsState>((set, get) => {
         }
         return { featureTurnStates: next };
       });
+
+      // Trigger notifications on turn transitions
+      const feature = lookupFeature(featureId);
+      if (feature) {
+        const routeType = feature.type === "ws-session" ? "session" as const : "workflow" as const;
+        const opts = { featureTitle: feature.title, featureId, projectId: feature.project_id, routeType };
+        if (turn === "askUser") {
+          notifyAgentNeedsInput(opts);
+        } else if (turn === "none" && prevTurn === "claude") {
+          notifyAgentDone({ ...opts, status: "completed" });
+        }
+      }
     }
   }
 

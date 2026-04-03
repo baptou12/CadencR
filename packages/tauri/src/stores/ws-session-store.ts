@@ -7,8 +7,6 @@
  */
 
 import { create } from "zustand";
-import { notifyAgentDone, notifyAgentNeedsInput } from "@/lib/notify-agent-done";
-import { queryClient } from "@/lib/queryClient";
 import { buildUserMessageContent } from "@/types/agent-types";
 import { getWsUrl } from "@/lib/ws-url";
 import { DEFAULT_MODEL } from "../shared/models";
@@ -734,21 +732,6 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
           pattern?: string;
         };
 
-        // Notify user that the agent needs input
-        {
-          const sess = get().sessions[sessionId];
-          if (sess) {
-            let projectId = 0;
-            if (sess.featureId) {
-              for (const [, data] of queryClient.getQueriesData<{ id: number; project_id: number }[]>({ queryKey: ["features", "list"] })) {
-                const feature = data?.find(f => f.id === sess.featureId);
-                if (feature) { projectId = feature.project_id; break; }
-              }
-            }
-            notifyAgentNeedsInput({ featureTitle: sess.featureTitle ?? "Session", featureId: sess.featureId ?? 0, projectId, routeType: "session", agentKind: "Session" });
-          }
-        }
-
         if (p.tool_name === "ExitPlanMode") {
           // Clear the flag so turn_complete doesn't re-trigger the approval bar
           const session = getSession(sessionId);
@@ -877,23 +860,6 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
           const parent = state.toolUseIdToBlock.get(state.parentToolUseId);
           if (parent?.childBlocks) parent.taskComplete = true;
           state.parentToolUseId = null;
-        }
-        // Notify when a running agent finishes its turn
-        const sess = get().sessions[sessionId];
-        if (sess?.status === "running") {
-          let title = sess.featureTitle;
-          let projectId = 0;
-          if (sess.featureId) {
-            for (const [, data] of queryClient.getQueriesData<{ id: number; title: string; project_id: number }[]>({ queryKey: ["features", "list"] })) {
-              const feature = data?.find(f => f.id === sess.featureId);
-              if (feature) {
-                if (!title) title = feature.title;
-                projectId = feature.project_id;
-                break;
-              }
-            }
-          }
-          notifyAgentDone({ status: "completed", featureTitle: title ?? "Session", featureId: sess.featureId ?? 0, projectId, routeType: "session", agentKind: "Session" });
         }
         if (state.exitPlanModeDetected) {
           state.exitPlanModeDetected = false;

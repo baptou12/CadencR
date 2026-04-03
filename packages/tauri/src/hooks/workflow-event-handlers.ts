@@ -8,7 +8,6 @@
  */
 
 import { invalidateFeatureQueries } from "@/lib/featureUpdated";
-import { notifyAgentDone, notifyAgentNeedsInput } from "@/lib/notify-agent-done";
 import { type CommandsListPayload } from "@/lib/ws-envelope";
 import type { SlashCommand } from "@/hooks/useSlashCommand";
 import {
@@ -54,22 +53,6 @@ export {
   resolveMultiInstanceKey,
   FILE_CHANGE_TOOLS,
 } from "@/hooks/agent-event-handlers";
-
-const ITEM_TYPE_LABELS: Record<string, string> = {
-  plan: "Plan",
-  prd: "PRD",
-  execute: "Execute",
-  review: "Review",
-  risk: "Risk",
-  qa: "QA",
-  retro: "Retro",
-  "review-fixer": "Review Fixer",
-};
-
-function formatItemType(itemType: string | undefined): string | undefined {
-  if (!itemType) return undefined;
-  return ITEM_TYPE_LABELS[itemType] ?? itemType;
-}
 
 // ---------------------------------------------------------------------------
 // Message handler factory
@@ -162,8 +145,6 @@ export function createWorkflowMessageHandler(
       case "item_completed": {
         const slot = parseAgentSlot(payload);
         const itemId = resolveItemId(get(), slot);
-        const queueItem = get().queue.find(q => q.id === itemId);
-        notifyAgentDone({ status: "completed", featureTitle: get().featureTitle ?? "Feature", featureId: get().featureId ?? 0, projectId: get().projectId ?? 0, routeType: "workflow", agentKind: formatItemType(queueItem?.item_type), agentTitle: queueItem?.phase_title ?? undefined });
         set(state => {
           const queue = state.queue.map(q =>
             q.id === itemId ? { ...q, status: "completed" as const } : q,
@@ -176,8 +157,6 @@ export function createWorkflowMessageHandler(
         const slot = parseAgentSlot(payload);
         const error = payload.error as string;
         const errItemId = resolveItemId(get(), slot);
-        const errQueueItem = get().queue.find(q => q.id === errItemId);
-        notifyAgentDone({ status: "error", featureTitle: get().featureTitle ?? "Feature", featureId: get().featureId ?? 0, projectId: get().projectId ?? 0, routeType: "workflow", agentKind: formatItemType(errQueueItem?.item_type), agentTitle: errQueueItem?.phase_title ?? undefined });
         set(state => {
           const queue = state.queue.map(q =>
             q.id === errItemId ? { ...q, status: "error" as const, result: error } : q,
@@ -261,7 +240,6 @@ export function createWorkflowMessageHandler(
         break;
       }
       case "plan_ready": {
-        notifyAgentNeedsInput({ featureTitle: get().featureTitle ?? "Feature", featureId: get().featureId ?? 0, projectId: get().projectId ?? 0, routeType: "workflow", agentKind: "Plan" });
         set(state => ({
           workflowStatus: "plan_approval",
           planAgent: state.planAgent ? { ...state.planAgent, status: "paused" as const } : state.planAgent,
@@ -291,7 +269,6 @@ export function createWorkflowMessageHandler(
         break;
       }
       case "prd_ready": {
-        notifyAgentNeedsInput({ featureTitle: get().featureTitle ?? "Feature", featureId: get().featureId ?? 0, projectId: get().projectId ?? 0, routeType: "workflow", agentKind: "PRD" });
         set(state => ({
           prdAgent: state.prdAgent ? { ...state.prdAgent, status: "paused" as const } : state.prdAgent,
         }));
@@ -349,8 +326,6 @@ export function createWorkflowMessageHandler(
         break;
       }
       case "permission.request": {
-        const runningItem = get().queue.find(q => q.status === "running");
-        notifyAgentNeedsInput({ featureTitle: get().featureTitle ?? "Feature", featureId: get().featureId ?? 0, projectId: get().projectId ?? 0, routeType: "workflow", agentKind: formatItemType(runningItem?.item_type), agentTitle: runningItem?.phase_title ?? undefined });
         handlePermissionRequest(payload, set);
         break;
       }

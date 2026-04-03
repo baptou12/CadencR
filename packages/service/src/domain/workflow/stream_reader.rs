@@ -32,6 +32,7 @@ pub fn spawn_workflow_stream_reader(
     active_items: Arc<DashMap<AgentSlot, i64>>,
     queries: Arc<DashMap<AgentSlot, Arc<tokio::sync::Mutex<Query>>>>,
     model: Option<&str>,
+    turn_state_tx: tokio::sync::broadcast::Sender<crate::app_state::TurnStateEvent>,
 ) {
     let initial_context_window = model
         .map(|m| crate::domain::usage::context_window_for_model(m))
@@ -142,7 +143,7 @@ pub fn spawn_workflow_stream_reader(
         }
 
         // Post-stream cleanup
-        post_stream_cleanup(slot, db_session_id, feature_id, completed_ok, agent_done_called, error_msg, &write_pool, &active_items, &queries).await;
+        post_stream_cleanup(slot, db_session_id, feature_id, completed_ok, agent_done_called, error_msg, &write_pool, &active_items, &queries, &turn_state_tx).await;
     });
 }
 
@@ -370,6 +371,7 @@ async fn post_stream_cleanup(
     write_pool: &SqlitePool,
     active_items: &Arc<DashMap<AgentSlot, i64>>,
     queries: &Arc<DashMap<AgentSlot, Arc<tokio::sync::Mutex<Query>>>>,
+    turn_state_tx: &tokio::sync::broadcast::Sender<crate::app_state::TurnStateEvent>,
 ) {
     info!(slot = %slot, db_session_id, "workflow stream reader ended — cleaning up query handle");
     queries.remove(&slot);
@@ -401,6 +403,12 @@ async fn post_stream_cleanup(
             if let Err(e) = repo::mark_item_error(write_pool, legacy_id, Some(&err)).await {
                 error!(slot = %slot, error = %e, "failed to mark item error (no engine)");
             }
+            // No engine to dispatch callback — broadcast directly
+            WsSessionPersistence::broadcast_turn_state(turn_state_tx, feature_id, "none");
         }
+    } else {
+        // Safety net: no engine callback dispatched (e.g. WS sender closed early)
+        warn!(slot = %slot, "stream ended without dispatching any engine callback");
+        WsSessionPersistence::broadcast_turn_state(turn_state_tx, feature_id, "none");
     }
 }

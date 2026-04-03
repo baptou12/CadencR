@@ -127,6 +127,7 @@ impl AgentManager {
                 .await;
             }
         }
+        WsSessionPersistence::broadcast_turn_state(&self.turn_state_tx, self.feature_id, "none");
         info!(feature_id = self.feature_id, "pause_all: all agents paused");
     }
 
@@ -168,6 +169,10 @@ impl AgentManager {
             }),
         );
         let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
+
+        if self.active_items.is_empty() {
+            WsSessionPersistence::broadcast_turn_state(&self.turn_state_tx, self.feature_id, "none");
+        }
 
         Ok(())
     }
