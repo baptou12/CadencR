@@ -228,6 +228,8 @@ export interface AgentSessionProps {
   onPlanApprove?: () => void;
   /** Called when user requests changes to the plan */
   onPlanRequestChanges?: (feedback: string) => void;
+  /** Called when user rejects the plan and stops the agent */
+  onPlanReject?: () => void;
   /** Context usage data for this session */
   contextUsage?: ContextUsageState | null;
   /** Current model ID for the session (used for inline model switcher) */
@@ -340,6 +342,7 @@ export const AgentSession = memo(forwardRef<AgentSessionHandle, AgentSessionProp
   planApprovalError,
   onPlanApprove,
   onPlanRequestChanges,
+  onPlanReject,
   contextUsage,
   currentModelId,
   onModelChange,
@@ -649,6 +652,7 @@ export const AgentSession = memo(forwardRef<AgentSessionHandle, AgentSessionProp
       planApprovalError={planApprovalError}
       onPlanApprove={onPlanApprove}
       onPlanRequestChanges={onPlanRequestChanges}
+      onPlanReject={onPlanReject}
       onCycleModel={onModelChange ? handleCycleModel : undefined}
       featureId={featureId}
       projectId={projectId}

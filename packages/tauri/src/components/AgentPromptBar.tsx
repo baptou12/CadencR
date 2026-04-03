@@ -59,6 +59,7 @@ export interface AgentPromptBarProps {
   planApprovalError?: string | null;
   onPlanApprove?: () => void;
   onPlanRequestChanges?: (feedback: string) => void;
+  onPlanReject?: () => void;
   onCycleModel?: () => void;
   featureId?: number;
   projectId?: number;
@@ -99,6 +100,7 @@ export const AgentPromptBar = forwardRef<
     planApprovalError,
     onPlanApprove,
     onPlanRequestChanges,
+    onPlanReject,
     onCycleModel,
     featureId,
     projectId,
@@ -281,6 +283,7 @@ export const AgentPromptBar = forwardRef<
           approveLabel={planApproveLabel}
           onApprove={onPlanApprove}
           onRequestChanges={onPlanRequestChanges}
+          onReject={onPlanReject}
           error={planApprovalError}
         />
       </div>

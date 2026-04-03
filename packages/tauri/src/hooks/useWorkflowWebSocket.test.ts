@@ -1497,6 +1497,19 @@ describe("useWorkflowStore", () => {
       expect(planAgent!.blocks[0]).toMatchObject({ type: "user_message", content: expect.stringContaining("Plan") });
       expect(planAgent!.blocks[0]).toMatchObject({ content: expect.stringContaining("needs more detail") });
     });
+
+    it("rejectPlan with empty feedback skips user_message block", () => {
+      connectStore();
+      useWorkflowStore.setState({
+        planAgent: makeAgentSession({ status: "paused" }),
+        workflowStatus: "plan_approval",
+      });
+
+      useWorkflowStore.getState().rejectPlan("", "req-3");
+
+      const { planAgent } = useWorkflowStore.getState();
+      expect(planAgent!.blocks).toHaveLength(0);
+    });
   });
 
   // -------------------------------------------------------------------------

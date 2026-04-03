@@ -56,6 +56,29 @@ describe("PlanApprovalBar", () => {
     expect(onRequestChanges).toHaveBeenCalledWith("Need more tests");
   });
 
+  it("renders reject & stop button when onReject is provided", () => {
+    render(
+      <PlanApprovalBar onApprove={vi.fn()} onRequestChanges={vi.fn()} onReject={vi.fn()} />
+    );
+    expect(screen.getByRole("button", { name: /reject & stop/i })).toBeInTheDocument();
+  });
+
+  it("does not render reject & stop button when onReject is not provided", () => {
+    render(
+      <PlanApprovalBar onApprove={vi.fn()} onRequestChanges={vi.fn()} />
+    );
+    expect(screen.queryByRole("button", { name: /reject & stop/i })).not.toBeInTheDocument();
+  });
+
+  it("calls onReject when reject & stop clicked", async () => {
+    const onReject = vi.fn();
+    const { user } = render(
+      <PlanApprovalBar onApprove={vi.fn()} onRequestChanges={vi.fn()} onReject={onReject} />
+    );
+    await user.click(screen.getByRole("button", { name: /reject & stop/i }));
+    expect(onReject).toHaveBeenCalledOnce();
+  });
+
   it("shows allowed prompts when provided", () => {
     render(
       <PlanApprovalBar

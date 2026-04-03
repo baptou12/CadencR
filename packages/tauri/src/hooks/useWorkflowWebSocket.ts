@@ -205,6 +205,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         const agentKey = isPrd ? "prdAgent" : "planAgent";
         const agent = state[agentKey];
         if (!agent) return {};
+        if (!feedback) return {};
         const label = isPrd ? "PRD" : "Plan";
         const block = {
           id: `ws-user-${Date.now()}`,

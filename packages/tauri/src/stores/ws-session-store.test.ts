@@ -781,6 +781,21 @@ describe("ws-session-store", () => {
       expect(planBlock?.planApprovalStatus).toBe("rejected");
     });
 
+    it("requestPlanChanges with empty feedback skips user message block", async () => {
+      const { ws } = await setupWithInit();
+      streamExitPlanMode(ws);
+      sendPlanPermissionRequest(ws);
+
+      useWsSessionStore.getState().requestPlanChanges("s1", "");
+
+      const session = useWsSessionStore.getState().sessions["s1"];
+      const userMsgs = session.blocks.filter((b) => b.type === "user_message");
+      expect(userMsgs).toHaveLength(0);
+
+      const planBlock = session.blocks.find((b) => b.toolName === "ExitPlanMode");
+      expect(planBlock?.planApprovalStatus).toBe("rejected");
+    });
+
     it("turn_complete after gate-based approval does not re-trigger approval bar", async () => {
       const { ws } = await setupWithInit();
       streamExitPlanMode(ws);

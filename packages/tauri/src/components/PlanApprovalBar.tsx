@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useGlobalShortcut } from "@/hooks/useGlobalShortcut";
-import { ClipboardCheck, Play, MessageSquare, Send, AlertTriangle } from "lucide-react";
+import { ClipboardCheck, Play, MessageSquare, Send, AlertTriangle, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { KbdShortcut } from "@/components/KbdShortcut";
@@ -10,6 +10,7 @@ interface PlanApprovalBarProps {
   approveLabel?: string;
   onApprove: () => void;
   onRequestChanges: (feedback: string) => void;
+  onReject?: () => void;
   error?: string | null;
 }
 
@@ -18,6 +19,7 @@ export function PlanApprovalBar({
   approveLabel,
   onApprove,
   onRequestChanges,
+  onReject,
   error,
 }: PlanApprovalBarProps) {
   const [showFeedback, setShowFeedback] = useState(false);
@@ -32,6 +34,12 @@ export function PlanApprovalBar({
     e.preventDefault();
     setShowFeedback(true);
   }, { enabled: !showFeedback });
+
+  useGlobalShortcut("escape", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onReject!();
+  }, { enabled: !showFeedback && !!onReject });
 
   const handleSendFeedback = () => {
     const trimmed = feedback.trim();
@@ -118,6 +126,18 @@ export function PlanApprovalBar({
             Request Changes
             <KbdShortcut keys={["cmd", "2"]} />
           </Button>
+          {onReject && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onReject}
+              className="gap-1.5 text-muted-foreground"
+            >
+              <X className="size-3.5" />
+              Reject & Stop
+              <KbdShortcut keys={["esc"]} />
+            </Button>
+          )}
         </div>
       )}
     </div>

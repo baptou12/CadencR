@@ -1130,16 +1130,18 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       // Mark the last plan block as rejected and append feedback as user message
       const blocksWithStatus = markLastPlanBlock(session.blocks, "rejected");
       session.streamingState.counter += 1;
-      const blocksWithFeedback = [
-        ...blocksWithStatus,
-        {
-          id: `ws-user-${session.streamingState.counter}`,
-          type: "user_message" as const,
-          content: feedback,
-          isError: false,
-          createdAt: new Date().toISOString(),
-        },
-      ];
+      const blocksWithFeedback = feedback
+        ? [
+            ...blocksWithStatus,
+            {
+              id: `ws-user-${session.streamingState.counter}`,
+              type: "user_message" as const,
+              content: feedback,
+              isError: false,
+              createdAt: new Date().toISOString(),
+            },
+          ]
+        : blocksWithStatus;
       if (session.pendingRequestId) {
         // Gate-based rejection: deny the blocked ExitPlanMode permission request with feedback
         sendRaw(sessionId, createPermissionRespond(session.serverSessionId, session.pendingRequestId, "deny", undefined, feedback));

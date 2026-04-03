@@ -170,6 +170,10 @@ function WebSocketSessionPage() {
             pendingPlanApproval={ws.pendingPlanApproval}
             onPlanApprove={ws.approvePlan}
             onPlanRequestChanges={ws.requestPlanChanges}
+            onPlanReject={() => {
+              ws.requestPlanChanges("");
+              ws.interrupt();
+            }}
             contextUsage={ws.contextUsage}
             currentModelId={ws.currentModelId}
             onModelChange={ws.setModel}
