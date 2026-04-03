@@ -120,6 +120,7 @@ async fn start_test_server() -> TestServer {
     let pool = setup_test_db(&db_path_str, &repo_path_str).await;
 
     let (turn_state_tx, _) = tokio::sync::broadcast::channel(64);
+    let (file_change_tx, _) = tokio::sync::broadcast::channel(16);
     let state = AppState {
         read_pool: pool.clone(),
         write_pool: pool,
@@ -127,6 +128,8 @@ async fn start_test_server() -> TestServer {
         agent_timeout_minutes: 30,
         turn_state_tx,
         pty_manager: cadence_service::domain::terminal::service::PtyManager::new(),
+        file_change_tx,
+        file_watcher: cadence_service::domain::editor::watcher::new_shared(),
     };
 
     let app = api::build_router(state)

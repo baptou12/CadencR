@@ -53,6 +53,7 @@ async fn main() -> anyhow::Result<()> {
             .await;
 
             let (turn_state_tx, _) = tokio::sync::broadcast::channel(64);
+            let (file_change_tx, _) = tokio::sync::broadcast::channel(16);
 
             let state = AppState {
                 read_pool,
@@ -61,6 +62,8 @@ async fn main() -> anyhow::Result<()> {
                 agent_timeout_minutes: AppState::agent_timeout_minutes_from_env(),
                 turn_state_tx,
                 pty_manager: domain::terminal::service::PtyManager::new(),
+                file_change_tx,
+                file_watcher: domain::editor::watcher::new_shared(),
             };
 
             let app = api::build_router(state).layer(CorsLayer::permissive());

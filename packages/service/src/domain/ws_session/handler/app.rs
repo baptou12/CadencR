@@ -13,6 +13,7 @@ pub(super) async fn handle_app_action(
 ) {
     match envelope.action.as_str() {
         "subscribe.turn_states" => handle_subscribe_turn_states(envelope, sender, app_state).await,
+        "subscribe.file_watcher" => handle_subscribe_file_watcher(envelope, sender, app_state).await,
         unknown => {
             debug!(action = %unknown, "unknown app action, ignoring");
         }
@@ -73,6 +74,76 @@ async fn handle_subscribe_turn_states(
                         serde_json::json!({ "states": states }),
                     );
                     if sender.send(Message::Text(String::from(snapshot).into())).is_err() {
+                        break;
+                    }
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                    break;
+                }
+            }
+        }
+    });
+}
+
+/// Subscribe the client to file-system change events for a project directory.
+/// Starts the watcher if not already watching the same path.
+async fn handle_subscribe_file_watcher(
+    envelope: WsEnvelope,
+    sender: &WsSender,
+    app_state: &AppState,
+) {
+    let project_path = match envelope.payload.get("project_path").and_then(|v| v.as_str()) {
+        Some(p) => p.to_string(),
+        None => {
+            super::send_error(sender, &envelope.id, "BAD_REQUEST", "missing project_path");
+            return;
+        }
+    };
+
+    // Start or replace the file watcher
+    {
+        let mut watcher = app_state.file_watcher.lock().unwrap();
+        if let Err(e) = watcher.start(&project_path, app_state.file_change_tx.clone()) {
+            warn!(error = %e, "failed to start file watcher");
+            super::send_error(sender, &envelope.id, "WATCHER_ERROR", &e);
+            return;
+        }
+    }
+
+    // ACK subscription
+    let ack = WsEnvelope::reply(
+        &envelope.id,
+        "app",
+        "file_watcher.subscribed",
+        serde_json::json!({}),
+    );
+    let _ = sender.send(Message::Text(String::from(ack).into()));
+
+    // Forward file change events to this WS client
+    let mut rx = app_state.file_change_tx.subscribe();
+    let sender = sender.clone();
+
+    tokio::spawn(async move {
+        loop {
+            match rx.recv().await {
+                Ok(event) => {
+                    let update = WsEnvelope::new(
+                        "editor",
+                        "file_tree.changed",
+                        serde_json::json!({ "project_path": event.project_path }),
+                    );
+                    if sender.send(Message::Text(String::from(update).into())).is_err() {
+                        break;
+                    }
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                    // Just send one notification — the frontend will refetch anyway
+                    let update = WsEnvelope::new(
+                        "editor",
+                        "file_tree.changed",
+                        serde_json::json!({}),
+                    );
+                    if sender.send(Message::Text(String::from(update).into())).is_err() {
                         break;
                     }
                 }

@@ -1,6 +1,7 @@
 use sqlx::SqlitePool;
 use tokio::sync::broadcast;
 
+use crate::domain::editor::watcher::{FileChangeEvent, SharedFileWatcher};
 use crate::domain::terminal::service::PtyManager;
 
 /// A turn-state change for a single feature, broadcast to all connected clients.
@@ -27,6 +28,10 @@ pub struct AppState {
     pub turn_state_tx: broadcast::Sender<TurnStateEvent>,
     /// PTY lifecycle manager for terminal sessions.
     pub pty_manager: PtyManager,
+    /// Broadcast channel for file-system change events.
+    pub file_change_tx: broadcast::Sender<FileChangeEvent>,
+    /// Shared file watcher (one project at a time).
+    pub file_watcher: SharedFileWatcher,
 }
 
 impl AppState {
@@ -50,6 +55,7 @@ impl AppState {
     #[cfg(test)]
     pub fn with_pool(pool: SqlitePool) -> Self {
         let (turn_state_tx, _) = broadcast::channel(64);
+        let (file_change_tx, _) = broadcast::channel(16);
         Self {
             read_pool: pool.clone(),
             write_pool: pool,
@@ -57,6 +63,8 @@ impl AppState {
             agent_timeout_minutes: 30,
             turn_state_tx,
             pty_manager: PtyManager::new(),
+            file_change_tx,
+            file_watcher: crate::domain::editor::watcher::new_shared(),
         }
     }
 }

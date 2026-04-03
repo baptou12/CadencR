@@ -6,6 +6,7 @@
  */
 import { create } from "zustand";
 import { createEnvelope, parseEnvelope } from "@/lib/ws-envelope";
+import { queryClient } from "@/lib/queryClient";
 import { getWsUrl } from "@/lib/ws-url";
 
 export type TurnState = "claude" | "askUser";
@@ -35,6 +36,13 @@ export const useAppWsStore = create<AppWsState>((set, get) => {
   }
 
   function handleEnvelope(domain: string, action: string, payload: Record<string, unknown>) {
+    // File tree change events from the file watcher
+    if (domain === "editor" && action === "file_tree.changed") {
+      void queryClient.invalidateQueries({ queryKey: ["editor", "tree"] });
+      void queryClient.invalidateQueries({ queryKey: ["editor", "search"] });
+      return;
+    }
+
     if (domain !== "app") return;
 
     if (action === "turn_states.snapshot") {
