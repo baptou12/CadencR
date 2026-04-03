@@ -76,12 +76,6 @@ impl AgentManager {
             .unwrap_or_else(|| DEFAULT_MODEL.to_string())
     }
 
-    /// Build the language instruction to append to system prompts.
-    pub(super) async fn build_language_instruction(&self, project_id: Option<i64>) -> Option<String> {
-        self.resolve_setting("language", project_id, None)
-            .await
-            .map(|l| format!("\n\n## Language\n\nYou MUST respond in {l}."))
-    }
 
     /// Build a SpawnContext with all the shared setup: MCP config, CWD, permission
     /// bridge, model resolution, language instruction, and Options construction.
@@ -124,10 +118,9 @@ impl AgentManager {
             turn_state_tx: self.turn_state_tx.clone(),
         };
 
-        // Model + language
+        // Model
         let project_id = self.get_project_id().await;
         let model = self.resolve_model(agent_type_str, project_id).await;
-        let language_instruction = self.build_language_instruction(project_id).await;
         info!(feature_id = self.feature_id, agent_type = agent_type_str, model = %model, "resolved model");
 
         let _ = sqlx::query("UPDATE agent_sessions SET model = ? WHERE id = ?")
@@ -136,7 +129,7 @@ impl AgentManager {
             .execute(&self.write_pool)
             .await;
 
-        // Build system prompt with optional MCP instructions and language
+        // Build system prompt with optional MCP instructions
         let full_system_prompt = match system_prompt {
             Some(sp) if !sp.is_empty() => {
                 let mcp_suffix = if include_mcp_instructions {
@@ -146,12 +139,9 @@ impl AgentManager {
                 } else {
                     ""
                 };
-                Some(format!(
-                    "{sp}{mcp_suffix}{}",
-                    language_instruction.as_deref().unwrap_or("")
-                ))
+                Some(format!("{sp}{mcp_suffix}"))
             }
-            _ => language_instruction,
+            _ => None,
         };
 
         let mut options = Options {

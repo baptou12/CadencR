@@ -1,5 +1,4 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -72,51 +71,6 @@ function AgentAutonomySelect() {
   );
 }
 
-function LanguageInput() {
-  const language = useGetWorkspaceSetting("language");
-  const queryClient = useQueryClient();
-  const setLanguage = useSetWorkspaceSetting({
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: getGetWorkspaceSettingQueryKey("language") });
-      toast.success("Settings saved");
-    },
-  });
-
-  const [draft, setDraft] = useState(language.data?.value ?? "");
-  const committed = language.data?.value ?? "";
-  const isEditing = useRef(false);
-
-  // Sync draft when server data loads (skip while user is editing)
-  if (language.isSuccess && !isEditing.current && draft === "" && committed !== "") {
-    setDraft(committed);
-  }
-
-  return (
-    <div className="flex items-center gap-2">
-      <input
-        className="border rounded px-3 py-1.5 text-sm bg-background w-64"
-        placeholder="English (default)"
-        value={draft}
-        onFocus={() => { isEditing.current = true; }}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={() => {
-          isEditing.current = false;
-          const trimmed = draft.trim();
-          if (trimmed !== committed) {
-            if (trimmed) {
-              setLanguage.mutate({ key: "language", value: trimmed });
-            } else {
-              setLanguage.mutate({ key: "language", value: "" });
-            }
-          }
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-        }}
-      />
-    </div>
-  );
-}
 
 function ZoomControl() {
   const { zoomLevel, zoomIn, zoomOut, resetZoom } = useZoom();
@@ -178,15 +132,6 @@ function SettingsPage() {
         <ParallelExecutionToggle />
       </section>
 
-      <section className="space-y-4">
-        <div>
-          <h2 className="text-lg font-semibold">Language</h2>
-          <p className="text-sm text-muted-foreground">
-            Set the language Claude uses when responding. Leave blank for English.
-          </p>
-        </div>
-        <LanguageInput />
-      </section>
 
       <section className="space-y-4">
         <div>

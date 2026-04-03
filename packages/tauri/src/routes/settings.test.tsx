@@ -72,9 +72,4 @@ describe("SettingsPage route", () => {
     expect(screen.getByRole("combobox")).toBeInTheDocument();
   });
 
-  it("renders language section", () => {
-    render(<SettingsPage />);
-    expect(screen.getByText("Language")).toBeInTheDocument();
-    expect(screen.getByPlaceholderText("English (default)")).toBeInTheDocument();
-  });
 });
