@@ -48,6 +48,7 @@ vi.mock("../api/generated", () => ({
   useUpdateFeatureStatus: vi.fn(() => ({ mutate: vi.fn() })),
   getListFeaturesQueryKey: vi.fn((id: number) => ["features", "list", id]),
   useGetFeatureEmpty: vi.fn(() => ({ data: { empty: false } })),
+  useSetProjectSetting: vi.fn(() => ({ mutate: vi.fn() })),
 }));
 
 vi.mock("@/stores/ws-session-store", () => ({
@@ -63,6 +64,13 @@ vi.mock("@/hooks/useWorkflowWebSocket", () => ({
 }));
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
+
+vi.mock("@/hooks/useProjectColor", () => ({
+  ProjectColorDot: ({ projectId }: { projectId: number }) => {
+    const React = require("react");
+    return React.createElement("span", { "data-testid": `color-dot-${projectId}` });
+  },
+}));
 
 // Mock ProjectSettingsDialog
 vi.mock("./ProjectSettingsDialog", () => ({
@@ -86,6 +94,18 @@ describe("ProjectTree", () => {
     );
     expect(screen.getByText("Alpha Project")).toBeInTheDocument();
     expect(screen.getByText("Beta Project")).toBeInTheDocument();
+  });
+
+  it("renders color dots for each project", () => {
+    render(
+      <ProjectTree
+        activeProjectId={null}
+        activeFeatureId={null}
+        onSelectFeature={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId("color-dot-1")).toBeInTheDocument();
+    expect(screen.getByTestId("color-dot-2")).toBeInTheDocument();
   });
 
   it("renders Projects heading", () => {

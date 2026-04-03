@@ -50,6 +50,11 @@ vi.mock("../api/generated", () => ({
   getGetFeaturePlanProgressQueryKey: (id: number) => ["features", "planProgress", id],
   getGetFeatureSettingsQueryKey: (id: number) => ["features", "settings", id],
   useGetFeatureEmpty: vi.fn(() => ({ data: { empty: false } })),
+  useSetProjectSetting: vi.fn(() => ({ mutate: vi.fn() })),
+}));
+
+vi.mock("@/hooks/useProjectColor", () => ({
+  ProjectColorDot: () => null,
 }));
 
 // Mock ProjectSettingsDialog

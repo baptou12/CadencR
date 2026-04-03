@@ -50,6 +50,13 @@ vi.mock("@/hooks/useWorkflowWebSocket", () => ({
   useWorkflowStore: vi.fn(() => mockSetAutonomyLevel),
 }));
 
+vi.mock("@/hooks/useProjectColor", () => ({
+  ProjectColorDot: ({ projectId }: { projectId: number }) => {
+    const React = require("react");
+    return React.createElement("span", { "data-testid": `color-dot-${projectId}` });
+  },
+}));
+
 // Mock DiffViewerModal
 vi.mock("./diff/DiffViewerModal", () => ({
   DiffViewerModal: ({ open }: { open: boolean }) => {

@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/select";
 import { ModelSelector } from "./ModelSelector";
 import { WorktreeList } from "./WorktreeList";
+import { DEFAULT_PROJECT_COLOR } from "@/lib/project-colors";
 
 export function ProjectSettingsDialog({
   projectId,
@@ -54,8 +55,14 @@ export function ProjectSettingsDialog({
 
   const branchPrefix = settings?.branch_prefix ?? "";
   const agentAutonomy = settings?.agent_autonomy ?? "1";
+  const [colorInput, setColorInput] = useState(settings?.color ?? "");
   const [setupWorktree, setSetupWorktree] = useState(settings?.setup_worktree ?? "");
   const [qaPrompt, setQaPrompt] = useState(settings?.qa_prompt ?? "");
+  useEffect(() => {
+    if (settings?.color != null) {
+      setColorInput(settings.color);
+    }
+  }, [settings?.color]);
   useEffect(() => {
     if (settings?.qa_prompt != null) {
       setQaPrompt(settings.qa_prompt);
@@ -74,6 +81,32 @@ export function ProjectSettingsDialog({
           <DialogTitle>Project Settings: {projectName}</DialogTitle>
         </DialogHeader>
         <div className="space-y-5 overflow-y-auto flex-1 pr-1">
+          <div className="space-y-3">
+            <h4 className="text-sm font-semibold">Project Color</h4>
+            <div className="flex items-center gap-3">
+              <span
+                className="size-6 shrink-0 rounded-full border border-border"
+                style={{ backgroundColor: `#${colorInput || DEFAULT_PROJECT_COLOR}` }}
+              />
+              <Input
+                placeholder="e.g. 3b82f6"
+                value={colorInput}
+                onChange={(e) => setColorInput(e.target.value.replace(/[^0-9a-fA-F]/g, "").slice(0, 6))}
+                onBlur={() =>
+                  setSettingMutation.mutate({
+                    projectId,
+                    key: "color",
+                    value: colorInput,
+                  })
+                }
+                className="h-8 text-sm w-32 font-mono"
+              />
+              <p className="text-xs text-muted-foreground">
+                Hex color code (no #)
+              </p>
+            </div>
+          </div>
+
           <div className="space-y-3">
             <div>
               <h4 className="text-sm font-semibold">Model Configuration</h4>

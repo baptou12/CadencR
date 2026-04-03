@@ -14,6 +14,7 @@ import {
   useDeleteProject,
   getListProjectsQueryKey,
   useCreateFeature,
+  useSetProjectSetting,
   getListFeaturesQueryKey,
 } from "../api/generated";
 import { Button } from "@/components/ui/button";
@@ -25,6 +26,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { wsSessionIdFromFeature } from "@/lib/ws-session-id";
+import { ProjectColorDot } from "@/hooks/useProjectColor";
+import { PROJECT_COLORS } from "@/lib/project-colors";
 import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
 import { ProjectFeatures } from "./ProjectFeatures";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -50,8 +53,11 @@ export function ProjectTree({
   const featureTurnStates = useAppWsStore((s) => s.featureTurnStates);
 
   const [isSelectingFolder, setIsSelectingFolder] = useState(false);
+  const setProjectSetting = useSetProjectSetting();
   const createProjectMutation = useCreateProject({
-    onSuccess: () => {
+    onSuccess: (project) => {
+      const color = PROJECT_COLORS[project.id % PROJECT_COLORS.length];
+      setProjectSetting.mutate({ projectId: project.id, key: "color", value: color });
       void queryClient.invalidateQueries({
         queryKey: getListProjectsQueryKey(),
       });
@@ -180,6 +186,7 @@ export function ProjectTree({
                   ) : (
                     <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
                   )}
+                  <ProjectColorDot projectId={project.id} />
                   <span className="min-w-0 truncate">{project.name}</span>
 
                   <div className="ml-auto flex shrink-0 items-center gap-0.5 opacity-0 group-hover/project:opacity-100">

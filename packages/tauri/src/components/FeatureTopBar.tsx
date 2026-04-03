@@ -19,6 +19,7 @@ import { useFeatureTitle } from "@/hooks/useFeatureTitle";
 import type { AutonomyLevel } from "@/types/workflow";
 import { useWorkflowStore } from "@/hooks/useWorkflowWebSocket";
 import { startDragging, toggleMaximize } from "@/lib/window-drag";
+import { ProjectColorDot } from "@/hooks/useProjectColor";
 import zedLogo from "../../assets/zed-logo.png";
 
 const STATUS_COLORS: Record<string, string> = {
@@ -93,6 +94,7 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", classNam
         </Badge>
       )}
 
+      <ProjectColorDot projectId={projectId} className="size-2.5" />
       <h1 className="text-lg font-semibold">{wsTitle ?? feature.title}</h1>
 
       <div className="flex-1" />
