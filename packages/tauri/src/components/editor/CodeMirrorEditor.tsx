@@ -91,7 +91,6 @@ export default function CodeMirrorEditor({ filePath, projectPath, paneId, featur
     try {
       await mutateAsyncRef.current({ project_path: projectPath, file_path: filePath, content });
       setDirty(featureId, paneId, filePath, false);
-      toast.success("File saved");
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to save file";
       toast.error(msg);
