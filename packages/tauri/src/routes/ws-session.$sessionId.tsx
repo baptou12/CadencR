@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, lazy, Suspense } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { AgentSession, type AgentSessionHandle } from "@/components/AgentSession";
 import { DiffViewerModal } from "@/components/diff/DiffViewerModal";
@@ -12,8 +12,11 @@ import { useWebSocketSession } from "@/hooks/useWebSocketSession";
 import { useResolvedModel } from "@/hooks/useResolvedModel";
 import { useWsSessionStore } from "@/stores/ws-session-store";
 import { useActiveTab } from "@/hooks/useActiveTab";
-import { useGetStats, useGetBranch, useGetFeatureSettings } from "@/api/generated";
+import { useGetStats, useGetBranch, useGetFeatureSettings, useListProjects } from "@/api/generated";
 import { cn } from "@/lib/utils";
+import type { FeatureEditorTabHandle } from "@/components/editor/FeatureEditorTab";
+
+const FeatureEditorTab = lazy(() => import("@/components/editor/FeatureEditorTab"));
 
 interface WsSessionSearch {
   cwd: string;
@@ -45,6 +48,9 @@ function WebSocketSessionPage() {
 
   const { activeTab, setActiveTab } = useActiveTab(featureId);
   useSaveLastOpenedFeature(projectId, featureId, activeTab);
+  const editorTabRef = useRef<FeatureEditorTabHandle>(null);
+  const projectsQuery = useListProjects();
+  const projectPath = projectsQuery.data?.find((p) => p.id === projectId)?.path;
   const { data: gitStats } = useGetStats(
     { featureId, mode: "worktree" },
     { refetchInterval: 5 * 60 * 1000 },
@@ -62,6 +68,14 @@ function WebSocketSessionPage() {
   const initializedRef = useRef<string | null>(null);
   const { resolveModel } = useResolvedModel(featureId, projectId);
   const resolvedModelId = resolveModel("session");
+
+  const handleTabChange = useCallback((tab: import("@/hooks/useActiveTab").FeatureTab) => {
+    if (activeTab === "editor" && tab !== "editor" && editorTabRef.current) {
+      editorTabRef.current.requestLeave(() => setActiveTab(tab));
+    } else {
+      setActiveTab(tab);
+    }
+  }, [activeTab, setActiveTab]);
 
   const agentSessionRef = useRef<AgentSessionHandle>(null);
   const [inlineDiffOpen, setInlineDiffOpen] = useState(false);
@@ -108,9 +122,18 @@ function WebSocketSessionPage() {
   return (
     <div className="flex h-full flex-col">
       <FeatureTopBar featureId={featureId} projectId={projectId} mode="session" className="shrink-0" />
-      <FeatureTabBar activeTab={activeTab} featureId={featureId} onTabChange={setActiveTab} gitStats={gitStats} gitBranch={gitBranch} />
+      <FeatureTabBar activeTab={activeTab} featureId={featureId} onTabChange={handleTabChange} gitStats={gitStats} gitBranch={gitBranch} />
       <div className="relative min-h-0 flex-1 overflow-hidden">
         <FeatureTerminalTab featureId={featureId} projectId={projectId} hidden={activeTab !== "terminal"} />
+
+        {/* Editor tab — stays mounted to preserve state */}
+        <div className={cn("h-full", activeTab !== "editor" && "hidden")}>
+          {projectPath && (
+            <Suspense fallback={null}>
+              <FeatureEditorTab ref={editorTabRef} featureId={featureId} projectPath={projectPath} />
+            </Suspense>
+          )}
+        </div>
 
         {activeTab === "git" && (
           <FeatureGitTab featureId={featureId} diffMode="worktree" />
