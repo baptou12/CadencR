@@ -4,6 +4,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { QueryClient } from "@tanstack/react-query";
 import { useWsSessionStore } from "@/stores/ws-session-store";
 import { useEditorStore } from "@/stores/editor-store";
+import { useGlobalShortcut } from "@/hooks/useGlobalShortcut";
 
 export interface RunningAgentInfo {
   sessionId: string;
@@ -73,26 +74,21 @@ export function useAppClose(queryClient: QueryClient) {
     return () => { void unlisten.then((fn) => fn()); };
   }, [requestClose]);
 
-  // CMD+Q → close app. CMD+W → close app (only when no editor buffers;
-  // EditorSubTabs owns CMD+W when buffers exist).
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (!e.metaKey) return;
-      if (e.key === "q") {
-        e.preventDefault();
-        requestClose();
-      } else if (e.key === "w") {
-        const hasBuffers = Object.values(useEditorStore.getState().features).some((f) =>
-          Object.values(f.panes).some((p) => p.tabs.length > 0),
-        );
-        if (hasBuffers) return; // EditorSubTabs handles it
-        e.preventDefault();
-        requestClose();
-      }
-    };
-    window.addEventListener("keydown", handler, true);
-    return () => window.removeEventListener("keydown", handler, true);
-  }, [requestClose]);
+  // CMD+Q → close app
+  useGlobalShortcut("meta+q", (e) => {
+    e.preventDefault();
+    requestClose();
+  });
+
+  // CMD+W → close app (only when no editor buffers; EditorSubTabs owns CMD+W when buffers exist)
+  useGlobalShortcut("meta+w", (e) => {
+    const hasBuffers = Object.values(useEditorStore.getState().features).some((f) =>
+      Object.values(f.panes).some((p) => p.tabs.length > 0),
+    );
+    if (hasBuffers) return;
+    e.preventDefault();
+    requestClose();
+  });
 
   return {
     showConfirm,

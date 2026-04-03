@@ -166,6 +166,7 @@ export default function CodeMirrorEditor({ filePath, projectPath, paneId, featur
     const state = EditorState.create({ doc: "", extensions });
     const view = new EditorView({ state, parent: containerRef.current });
     viewRef.current = view;
+    view.focus();
 
     return () => {
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);

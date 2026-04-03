@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useGlobalShortcut } from "@/hooks/useGlobalShortcut";
 import {
   createRootRoute,
   Outlet,
@@ -171,17 +172,10 @@ function RootLayout() {
   );
 
   // CMD+? -> open keyboard shortcuts help modal
-  // Use native keydown because react-hotkeys-hook doesn't reliably catch meta+shift+/ on macOS
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.metaKey && (e.key === "?" || (e.shiftKey && e.key === "/"))) {
-        e.preventDefault();
-        setShortcutsHelpOpen((prev) => !prev);
-      }
-    };
-    window.addEventListener("keydown", handler, true);
-    return () => window.removeEventListener("keydown", handler, true);
-  }, []);
+  useGlobalShortcut("meta+shift+?", (e) => {
+    e.preventDefault();
+    setShortcutsHelpOpen((prev) => !prev);
+  });
 
   // CMD+Escape -> stop all running agents across the app
   useHotkeys(

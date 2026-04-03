@@ -1,4 +1,5 @@
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback } from "react";
+import { useGlobalShortcut } from "@/hooks/useGlobalShortcut";
 import { Button } from "@/components/ui/button";
 import { SendIcon, Loader2Icon } from "lucide-react";
 import { ShortcutTooltip } from "@/components/ShortcutTooltip";
@@ -44,16 +45,10 @@ export function FeatureGitTab({ featureId, diffMode = "worktree", onStartReviewF
     }
   }, [pendingComments, sending, featureId, deletePending, queryClient, onStartReviewFixer]);
 
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.metaKey && e.key === "Enter") {
-        e.preventDefault();
-        void handleSendToAgent();
-      }
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [handleSendToAgent]);
+  useGlobalShortcut("meta+enter", (e) => {
+    e.preventDefault();
+    void handleSendToAgent();
+  });
 
   return (
     <div className="flex h-full flex-col">

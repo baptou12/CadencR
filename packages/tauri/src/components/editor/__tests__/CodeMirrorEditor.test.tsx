@@ -8,6 +8,7 @@ vi.mock("@codemirror/view", () => {
     static updateListener = { of: vi.fn(() => []) };
     destroy = vi.fn();
     dispatch = vi.fn();
+    focus = vi.fn();
     state = { doc: { toString: () => "", length: 0 }, selection: { main: { head: 0 } } };
   }
   return {

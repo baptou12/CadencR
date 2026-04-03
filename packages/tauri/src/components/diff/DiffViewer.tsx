@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useRef, useEffect, type RefObject } from "react";
+import { useGlobalShortcut } from "@/hooks/useGlobalShortcut";
 import { DiffView, DiffFile, DiffModeEnum, SplitSide } from "@git-diff-view/react";
 import { getDiffViewHighlighter, type DiffHighlighter } from "@git-diff-view/shiki";
 import "@git-diff-view/react/styles/diff-view.css";
@@ -462,64 +463,62 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
     });
   }, []);
 
-  // Keyboard shortcuts: Ctrl+J (next), Ctrl+K (prev), Ctrl+E (toggle expand), Ctrl+H (toggle viewed)
+  // Vim-style diff navigation: Ctrl+J/K/L/D/U/H
   const focusedFileIndexRef = useRef(focusedFileIndex);
   focusedFileIndexRef.current = focusedFileIndex;
 
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (!e.ctrlKey || e.metaKey || e.altKey) return;
-      const idx = focusedFileIndexRef.current;
+  useGlobalShortcut("ctrl+j", (e) => {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    const next = Math.min(focusedFileIndexRef.current + 1, fileNames.length - 1);
+    setFocusedFileIndex(next);
+    scrollToFileIndex(next);
+  });
 
-      if (e.code === "KeyJ") {
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        const next = Math.min(idx + 1, fileNames.length - 1);
-        setFocusedFileIndex(next);
-        scrollToFileIndex(next);
-      } else if (e.code === "KeyK") {
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        const next = Math.max(idx - 1, 0);
-        setFocusedFileIndex(next);
-        scrollToFileIndex(next);
-      } else if (e.code === "KeyL") {
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        if (idx >= 0 && idx < fileNames.length) {
-          toggleFile(fileNames[idx]);
-        }
-      } else if (e.code === "KeyD") {
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        if (diffAreaRef.current) {
-          diffAreaRef.current.scrollBy({ top: diffAreaRef.current.clientHeight / 2, behavior: "smooth" });
-        }
-      } else if (e.code === "KeyU") {
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        if (diffAreaRef.current) {
-          diffAreaRef.current.scrollBy({ top: -diffAreaRef.current.clientHeight / 2, behavior: "smooth" });
-        }
-      } else if (e.code === "KeyH") {
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        if (idx >= 0 && idx < fileNames.length) {
-          const name = fileNames[idx];
-          const sha = (blobShas as Record<string, string>)[name] ?? "";
-          if (viewedFilesSet.has(name)) {
-            unmarkViewed.mutate({ featureId, filePath: name });
-          } else {
-            markViewed.mutate({ featureId, filePath: name, blobSha: sha });
-            setCollapsedFiles((p) => new Set([...p, name]));
-          }
-        }
+  useGlobalShortcut("ctrl+k", (e) => {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    const next = Math.max(focusedFileIndexRef.current - 1, 0);
+    setFocusedFileIndex(next);
+    scrollToFileIndex(next);
+  });
+
+  useGlobalShortcut("ctrl+l", (e) => {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    const idx = focusedFileIndexRef.current;
+    if (idx >= 0 && idx < fileNames.length) {
+      toggleFile(fileNames[idx]);
+    }
+  });
+
+  useGlobalShortcut("ctrl+d", (e) => {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    diffAreaRef.current?.scrollBy({ top: diffAreaRef.current.clientHeight / 2, behavior: "smooth" });
+  });
+
+  useGlobalShortcut("ctrl+u", (e) => {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    diffAreaRef.current?.scrollBy({ top: -diffAreaRef.current.clientHeight / 2, behavior: "smooth" });
+  });
+
+  useGlobalShortcut("ctrl+h", (e) => {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    const idx = focusedFileIndexRef.current;
+    if (idx >= 0 && idx < fileNames.length) {
+      const name = fileNames[idx];
+      const sha = (blobShas as Record<string, string>)[name] ?? "";
+      if (viewedFilesSet.has(name)) {
+        unmarkViewed.mutate({ featureId, filePath: name });
+      } else {
+        markViewed.mutate({ featureId, filePath: name, blobSha: sha });
+        setCollapsedFiles((p) => new Set([...p, name]));
       }
-    };
-
-    window.addEventListener("keydown", handler, true);
-    return () => window.removeEventListener("keydown", handler, true);
-  }, [fileNames, blobShas, viewedFilesSet, featureId, scrollToFileIndex, toggleFile, markViewed, unmarkViewed]);
+    }
+  });
 
   const changedFileEntries: ChangedFileEntry[] = useMemo(
     () =>

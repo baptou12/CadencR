@@ -1,4 +1,5 @@
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useCallback } from "react";
+import { useGlobalShortcut } from "@/hooks/useGlobalShortcut";
 import {
   Dialog,
   DialogContent,
@@ -64,17 +65,10 @@ export function DiffViewerModal({
     }
   }, [pendingComments, sending, featureId, deletePending, queryClient, onOpenChange, onStartReviewFixer]);
 
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.metaKey && e.key === "Enter") {
-        e.preventDefault();
-        void handleSendToAgent();
-      }
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [open, handleSendToAgent]);
+  useGlobalShortcut("meta+enter", (e) => {
+    e.preventDefault();
+    void handleSendToAgent();
+  }, { enabled: open });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

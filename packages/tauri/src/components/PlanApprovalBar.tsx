@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { useGlobalShortcut } from "@/hooks/useGlobalShortcut";
 import { ClipboardCheck, Play, MessageSquare, Send, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -22,22 +23,15 @@ export function PlanApprovalBar({
   const [showFeedback, setShowFeedback] = useState(false);
   const [feedback, setFeedback] = useState("");
 
-  useEffect(() => {
-    if (showFeedback) return;
-    const handler = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey)) return;
+  useGlobalShortcut("meta+1", (e) => {
+    e.preventDefault();
+    onApprove();
+  }, { enabled: !showFeedback });
 
-      if (e.key === "1") {
-        e.preventDefault();
-        onApprove();
-      } else if (e.key === "2") {
-        e.preventDefault();
-        setShowFeedback(true);
-      }
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [showFeedback, onApprove]);
+  useGlobalShortcut("meta+2", (e) => {
+    e.preventDefault();
+    setShowFeedback(true);
+  }, { enabled: !showFeedback });
 
   const handleSendFeedback = () => {
     const trimmed = feedback.trim();

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
+import { useGlobalShortcut } from "@/hooks/useGlobalShortcut";
 import { useEditorState } from "@/hooks/useEditorState";
 import { useEditorStore } from "@/stores/editor-store";
 import { useActiveTab } from "@/hooks/useActiveTab";
@@ -102,12 +103,10 @@ const FeatureEditorTab = forwardRef<FeatureEditorTabHandle, FeatureEditorTabProp
       setPendingProceed(null);
     }
 
-    useHotkeys(
-      "meta+p",
-      () => setFileSearchOpen(true),
-      { preventDefault: true, enabled: isEditorActive },
-      [],
-    );
+    useGlobalShortcut("meta+p", (e) => {
+      e.preventDefault();
+      setFileSearchOpen(true);
+    }, { enabled: isEditorActive });
 
     // Split pane shortcuts — only active when editor tab is selected
     useHotkeys("meta+d", (e) => { e.preventDefault(); splitEditorPane(featureId, activePaneId, "vertical"); }, { enabled: isEditorActive });

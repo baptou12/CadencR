@@ -1,4 +1,5 @@
 import { useState, useRef, useMemo, useEffect } from "react";
+import { useGlobalShortcut } from "@/hooks/useGlobalShortcut";
 import { GitMergeIcon, Loader2Icon, MessageSquareIcon, PencilIcon, HistoryIcon } from "lucide-react";
 import { MergeArchiveDialog } from "@/components/MergeArchiveDialog";
 import { AgentPromptBar } from "@/components/AgentPromptBar";
@@ -50,16 +51,10 @@ export function WorkflowActionsBar({
   }, [showRefinePrompt]);
 
   // CMD+SHIFT+M: open merge dialog
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.metaKey && e.shiftKey && e.key.toLowerCase() === "m" && canMerge) {
-        e.preventDefault();
-        setMergeDialogOpen(true);
-      }
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [canMerge]);
+  useGlobalShortcut("meta+shift+m", (e) => {
+    e.preventDefault();
+    setMergeDialogOpen(true);
+  }, { enabled: canMerge });
 
   const sessionSplitActions: SplitSendAction[] = useMemo(
     () => [
