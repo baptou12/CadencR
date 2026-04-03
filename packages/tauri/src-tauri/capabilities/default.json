@@ -14,7 +14,10 @@
     "core:window:allow-start-dragging",
     "core:window:allow-toggle-maximize",
     "core:window:allow-is-maximized",
+    "core:window:allow-close",
+    "core:window:allow-destroy",
     "core:webview:allow-set-webview-zoom",
-    "notification-router:default"
+    "notification-router:default",
+    "mcp-bridge:default"
   ]
 }

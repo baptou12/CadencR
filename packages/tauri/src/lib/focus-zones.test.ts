@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach } from "vitest";
-import { getActiveFocusZone } from "./focus-zones";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { getActiveFocusZone, focusZoneByDirection } from "./focus-zones";
 
 describe("getActiveFocusZone", () => {
   beforeEach(() => {
@@ -54,5 +54,69 @@ describe("getActiveFocusZone", () => {
     }
     // After blurring, activeElement is body with no data-focus-zone
     expect(getActiveFocusZone()).toBeNull();
+  });
+});
+
+describe("focusZoneByDirection", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  function createZones(...names: string[]) {
+    for (const name of names) {
+      const el = document.createElement("div");
+      el.setAttribute("data-focus-zone", name);
+      el.setAttribute("tabindex", "0");
+      document.body.appendChild(el);
+    }
+  }
+
+  it("focuses the next zone to the right", () => {
+    createZones("left-sidebar", "main-content");
+    const sidebar = document.querySelector('[data-focus-zone="left-sidebar"]') as HTMLElement;
+    sidebar.focus();
+    focusZoneByDirection("right");
+    expect(document.activeElement?.getAttribute("data-focus-zone")).toBe("main-content");
+  });
+
+  it("focuses the previous zone to the left", () => {
+    createZones("left-sidebar", "main-content");
+    const main = document.querySelector('[data-focus-zone="main-content"]') as HTMLElement;
+    main.focus();
+    focusZoneByDirection("left");
+    expect(document.activeElement?.getAttribute("data-focus-zone")).toBe("left-sidebar");
+  });
+
+  it("does not wrap around at the edges", () => {
+    createZones("left-sidebar", "main-content");
+    const sidebar = document.querySelector('[data-focus-zone="left-sidebar"]') as HTMLElement;
+    sidebar.focus();
+    focusZoneByDirection("left");
+    expect(document.activeElement?.getAttribute("data-focus-zone")).toBe("left-sidebar");
+  });
+
+  it("skips zones not present in the DOM", () => {
+    // left-sidebar and terminal exist, but main-content is missing
+    createZones("left-sidebar", "terminal");
+    const sidebar = document.querySelector('[data-focus-zone="left-sidebar"]') as HTMLElement;
+    sidebar.focus();
+    focusZoneByDirection("right");
+    expect(document.activeElement?.getAttribute("data-focus-zone")).toBe("terminal");
+  });
+
+  it("dispatches cadence:focus-prompt when focusing main-content", () => {
+    createZones("left-sidebar", "main-content");
+    const sidebar = document.querySelector('[data-focus-zone="left-sidebar"]') as HTMLElement;
+    sidebar.focus();
+    const handler = vi.fn();
+    window.addEventListener("cadence:focus-prompt", handler);
+    focusZoneByDirection("right");
+    // Event dispatched via requestAnimationFrame — flush it
+    vi.useFakeTimers();
+    vi.runAllTimers();
+    vi.useRealTimers();
+    // Note: jsdom doesn't run rAF callbacks, so we verify the zone was focused
+    expect(document.activeElement?.getAttribute("data-focus-zone")).toBe("main-content");
+    window.removeEventListener("cadence:focus-prompt", handler);
   });
 });

@@ -43,6 +43,13 @@ vi.mock("@tauri-apps/api/event", () => ({
 vi.mock("@tauri-apps/api/webview", () => ({
   getCurrentWebview: () => ({ setZoom: vi.fn(() => Promise.resolve()) }),
 }));
+vi.mock("@tauri-apps/api/window", () => ({
+  getCurrentWindow: () => ({
+    onCloseRequested: vi.fn(() => Promise.resolve(() => {})),
+    close: vi.fn(() => Promise.resolve()),
+    destroy: vi.fn(() => Promise.resolve()),
+  }),
+}));
 vi.mock("@/hooks/useDebouncedSetting", () => ({
   useDebouncedSetting: vi.fn(() => ({ value: "256", setValue: vi.fn() })),
 }));

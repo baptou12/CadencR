@@ -25,7 +25,7 @@ import {
   type Feature,
 } from "@/api/generated";
 import { customInstance } from "@/api/client";
-import { getActiveFocusZone } from "@/lib/focus-zones";
+import { focusZoneByDirection } from "@/lib/focus-zones";
 import { CommandPalette } from "@/components/CommandPalette";
 import { FocusRing } from "@/components/FocusRing";
 import { KeyboardShortcutsModal } from "@/components/KeyboardShortcutsModal";
@@ -34,29 +34,7 @@ import { useAppWsStore } from "@/stores/app-ws-store";
 import { useWsSessionStore } from "@/stores/ws-session-store";
 import { useZoomHotkeys } from "@/hooks/useZoom";
 import { initNotificationPermission, listenForNotificationClicks } from "@/lib/notify-agent-done";
-
-const ZONE_ORDER = ["left-sidebar", "main-content", "terminal", "right-sidebar"] as const;
-
-function focusZoneByDirection(direction: "left" | "right") {
-  const currentZone = getActiveFocusZone();
-  const currentIndex = currentZone ? ZONE_ORDER.indexOf(currentZone as (typeof ZONE_ORDER)[number]) : -1;
-  const step = direction === "right" ? 1 : -1;
-  // Move in the given direction, skipping zones not in the DOM. No wrapping.
-  for (let next = currentIndex + step; next >= 0 && next < ZONE_ORDER.length; next += step) {
-    const nextEl = document.querySelector(
-      `[data-focus-zone="${ZONE_ORDER[next]}"]`,
-    ) as HTMLElement | null;
-    if (nextEl) {
-      nextEl.focus();
-      if (ZONE_ORDER[next] === "main-content") {
-        requestAnimationFrame(() => {
-          window.dispatchEvent(new CustomEvent("cadence:focus-prompt"));
-        });
-      }
-      return;
-    }
-  }
-}
+import { useAppClose } from "@/hooks/useAppClose";
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -179,6 +157,8 @@ function RootLayout() {
   const [confirmAction, setConfirmAction] = useState<"archive" | "delete" | null>(null);
 
   useZoomHotkeys();
+
+  const appClose = useAppClose(queryClient);
 
   // CMD+, -> navigate to settings
   useHotkeys(
@@ -394,6 +374,21 @@ function RootLayout() {
           }
         }}
       />
+      <ConfirmDialog
+        open={appClose.showConfirm}
+        onOpenChange={appClose.setShowConfirm}
+        title="Quit Cadence?"
+        description="The following agents are still running. They will be stopped and can be resumed next time you open the app."
+        confirmText="Quit"
+        variant="destructive"
+        onConfirm={appClose.confirmAndClose}
+      >
+        <ul className="text-sm text-muted-foreground space-y-1 py-2">
+          {appClose.runningAgents.map((agent) => (
+            <li key={agent.sessionId}>{agent.label}</li>
+          ))}
+        </ul>
+      </ConfirmDialog>
     </div>
   );
 }

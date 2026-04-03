@@ -10,6 +10,7 @@
     "beforeBuildCommand": "bash src-tauri/scripts/copy-sidecar.sh && pnpm vite build"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
         "title": "",

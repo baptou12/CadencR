@@ -2,6 +2,7 @@ mod sidecar;
 
 use base64::Engine;
 use tauri::Manager;
+use tauri::menu::{Menu, Submenu, MenuItem, PredefinedMenuItem, AboutMetadataBuilder};
 
 #[tauri::command]
 fn read_file_base64(path: String) -> Result<String, String> {
@@ -11,11 +12,45 @@ fn read_file_base64(path: String) -> Result<String, String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_notification_router::init())
+        .plugin(tauri_plugin_notification_router::init());
+
+    #[cfg(debug_assertions)]
+    {
+        builder = builder.plugin(tauri_plugin_mcp_bridge::init());
+    }
+
+    builder
         .invoke_handler(tauri::generate_handler![read_file_base64])
+        .menu(|handle| {
+            // Custom menu that omits CMD+W (Close Window) so the frontend controls it
+            let app_menu = Submenu::with_items(handle, "Cadence", true, &[
+                &PredefinedMenuItem::about(handle, Some("About Cadence"), Some(AboutMetadataBuilder::new().build()))?,
+                &PredefinedMenuItem::separator(handle)?,
+                &PredefinedMenuItem::hide(handle, None)?,
+                &PredefinedMenuItem::hide_others(handle, None)?,
+                &PredefinedMenuItem::show_all(handle, None)?,
+                &PredefinedMenuItem::separator(handle)?,
+                &PredefinedMenuItem::quit(handle, None)?,
+            ])?;
+            let edit_menu = Submenu::with_items(handle, "Edit", true, &[
+                &PredefinedMenuItem::undo(handle, None)?,
+                &PredefinedMenuItem::redo(handle, None)?,
+                &PredefinedMenuItem::separator(handle)?,
+                &PredefinedMenuItem::cut(handle, None)?,
+                &PredefinedMenuItem::copy(handle, None)?,
+                &PredefinedMenuItem::paste(handle, None)?,
+                &PredefinedMenuItem::select_all(handle, None)?,
+            ])?;
+            let window_menu = Submenu::with_items(handle, "Window", true, &[
+                &PredefinedMenuItem::minimize(handle, None)?,
+                &MenuItem::new(handle, "Zoom", true, None::<&str>)?,
+                &PredefinedMenuItem::fullscreen(handle, None)?,
+            ])?;
+            Menu::with_items(handle, &[&app_menu, &edit_menu, &window_menu])
+        })
         .setup(|app| {
             if cfg!(dev) {
                 log::info!("Dev mode: skipping sidecar spawn (run cadence-service manually)");

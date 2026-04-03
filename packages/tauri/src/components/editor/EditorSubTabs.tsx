@@ -91,6 +91,7 @@ export default function EditorSubTabs({ featureId, paneId }: EditorSubTabsProps)
     [tabs, activeFilePath, featureId, paneId],
   );
 
+  // CMD+W: close active buffer (works even when CodeMirror has focus)
   useHotkeys(
     "meta+w",
     () => {
@@ -98,7 +99,7 @@ export default function EditorSubTabs({ featureId, paneId }: EditorSubTabsProps)
       const tab = tabs.find((t) => t.filePath === activeFilePath);
       if (tab) requestClose(tab.filePath, tab.fileName, tab.isDirty);
     },
-    { preventDefault: true },
+    { preventDefault: true, enableOnContentEditable: true, enableOnFormTags: true },
     [tabs, activeFilePath, featureId, paneId],
   );
 
