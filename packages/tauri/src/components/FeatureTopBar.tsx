@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { TerminalIcon, SettingsIcon, BrainCircuitIcon, CpuIcon } from "lucide-react";
+import { TerminalIcon, SettingsIcon, BrainCircuitIcon, CpuIcon, PanelLeft, Settings } from "lucide-react";
+import { Link } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useGetFeature,
@@ -20,6 +21,8 @@ import type { AutonomyLevel } from "@/types/workflow";
 import { useWorkflowStore } from "@/hooks/useWorkflowWebSocket";
 import { startDragging, toggleMaximize } from "@/lib/window-drag";
 import { ProjectColorDot } from "@/hooks/useProjectColor";
+import { useSidebarCollapsed } from "@/components/SidebarContext";
+import logoSvg from "@/logo.svg";
 import zedLogo from "../../assets/zed-logo.png";
 
 const STATUS_COLORS: Record<string, string> = {
@@ -39,6 +42,7 @@ interface FeatureTopBarProps {
 
 export function FeatureTopBar({ featureId, projectId, mode = "feature", className }: FeatureTopBarProps) {
   const isSession = mode === "session";
+  const { collapsed: sidebarCollapsed, setCollapsed: setSidebarCollapsed } = useSidebarCollapsed();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const queryClient = useQueryClient();
   const setAutonomyLevel = useWorkflowStore((s) => s.setAutonomyLevel);
@@ -85,6 +89,40 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", classNam
 
   return (
     <div onMouseDown={startDragging} onDoubleClick={toggleMaximize} className={cn("flex items-center gap-3 border-b border-border px-6 py-3", className)}>
+      {sidebarCollapsed && (
+        <>
+          <div className="group/logo flex items-center gap-0.5 shrink-0 -ml-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7 shrink-0 opacity-0 group-hover/logo:opacity-100 transition-opacity"
+              title="Expand sidebar (⌘B)"
+              onClick={() => setSidebarCollapsed(false)}
+            >
+              <PanelLeft className="size-4" />
+            </Button>
+            <img src={logoSvg} alt="Cadence" className="size-9 shrink-0 -translate-y-px" />
+            <span
+              className="text-xl font-bold uppercase tracking-widest leading-none"
+              style={{ fontFamily: "'Avenir Next', 'Montserrat', 'Helvetica Neue', sans-serif" }}
+            >
+              Cadence
+            </span>
+            {import.meta.env.DEV && (
+              <span className="ml-1 self-start text-[9px] font-semibold uppercase tracking-wider px-1 py-px rounded bg-orange-500/20 text-orange-400 leading-none">
+                dev
+              </span>
+            )}
+            <Link to="/settings" className="ml-1 opacity-0 group-hover/logo:opacity-100 transition-opacity">
+              <Button variant="ghost" size="icon" className="size-7">
+                <Settings className="size-4" />
+                <span className="sr-only">Settings</span>
+              </Button>
+            </Link>
+          </div>
+          <div className="mx-1 h-5 w-px bg-border" />
+        </>
+      )}
       {!isSession && (
         <Badge
           variant="secondary"

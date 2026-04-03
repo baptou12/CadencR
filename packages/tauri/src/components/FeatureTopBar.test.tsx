@@ -13,6 +13,15 @@ vi.mock("react-hotkeys-hook", () => ({
   useHotkeys: vi.fn(),
 }));
 
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({ children, to }: { children: unknown; to: string }) => {
+    const React = require("react");
+    return React.createElement("a", { href: to }, children);
+  },
+}));
+
+vi.mock("@/logo.svg", () => ({ default: "logo.svg" }));
+
 const mockOpenTerminal = vi.fn();
 const mockSetFeatureSetting = vi.fn();
 
@@ -73,11 +82,20 @@ vi.mock("./ModelSelector", () => ({
   },
 }));
 
+const mockSetCollapsed = vi.fn();
+let mockSidebarCollapsed = false;
+
+vi.mock("@/components/SidebarContext", () => ({
+  useSidebarCollapsed: () => ({ collapsed: mockSidebarCollapsed, setCollapsed: mockSetCollapsed }),
+}));
+
 describe("FeatureTopBar", () => {
   beforeEach(() => {
     mockOpenTerminal.mockClear();
     mockSetFeatureSetting.mockClear();
     mockSetAutonomyLevel.mockClear();
+    mockSetCollapsed.mockClear();
+    mockSidebarCollapsed = false;
   });
 
   it("renders feature title", () => {
@@ -104,6 +122,39 @@ describe("FeatureTopBar", () => {
     render(<FeatureTopBar featureId={1} projectId={1} />);
     // Git stats (3 commits) should be visible somewhere
     expect(screen.getByText("My Test Feature")).toBeInTheDocument();
+  });
+
+  it("does not show logo when sidebar is expanded", () => {
+    render(<FeatureTopBar featureId={1} projectId={1} />);
+    expect(screen.queryByText("Cadence")).not.toBeInTheDocument();
+  });
+
+  it("shows logo and app name when sidebar is collapsed", () => {
+    mockSidebarCollapsed = true;
+    render(<FeatureTopBar featureId={1} projectId={1} />);
+    expect(screen.getByText("Cadence")).toBeInTheDocument();
+    expect(screen.getByAltText("Cadence")).toBeInTheDocument();
+  });
+
+  it("shows expand button when sidebar is collapsed", () => {
+    mockSidebarCollapsed = true;
+    render(<FeatureTopBar featureId={1} projectId={1} />);
+    expect(screen.getByTitle("Expand sidebar (⌘B)")).toBeInTheDocument();
+  });
+
+  it("shows settings link when sidebar is collapsed", () => {
+    mockSidebarCollapsed = true;
+    render(<FeatureTopBar featureId={1} projectId={1} />);
+    expect(screen.getByText("Settings")).toBeInTheDocument();
+  });
+
+  it("calls setCollapsed(false) when expand button is clicked", async () => {
+    mockSidebarCollapsed = true;
+    const { default: userEvent } = await import("@testing-library/user-event");
+    const user = userEvent.setup();
+    render(<FeatureTopBar featureId={1} projectId={1} />);
+    await user.click(screen.getByTitle("Expand sidebar (⌘B)"));
+    expect(mockSetCollapsed).toHaveBeenCalledWith(false);
   });
 
 });

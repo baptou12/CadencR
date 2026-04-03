@@ -70,9 +70,16 @@ vi.mock("./UsageIndicator", () => ({
   },
 }));
 
+const mockSetCollapsed = vi.fn();
+
+vi.mock("@/components/SidebarContext", () => ({
+  useSidebarCollapsed: () => ({ collapsed: false, setCollapsed: mockSetCollapsed }),
+}));
+
 describe("Sidebar", () => {
   beforeEach(() => {
     mockNavigate.mockClear();
+    mockSetCollapsed.mockClear();
     mockLocation = { pathname: "/" };
   });
 
@@ -89,6 +96,19 @@ describe("Sidebar", () => {
   it("renders settings link", () => {
     render(<Sidebar />);
     expect(screen.getByRole("link")).toBeInTheDocument();
+  });
+
+  it("renders collapse sidebar button", () => {
+    render(<Sidebar />);
+    expect(screen.getByTitle("Collapse sidebar (⌘B)")).toBeInTheDocument();
+  });
+
+  it("calls setCollapsed when collapse button is clicked", async () => {
+    const { default: userEvent } = await import("@testing-library/user-event");
+    const user = userEvent.setup();
+    render(<Sidebar />);
+    await user.click(screen.getByTitle("Collapse sidebar (⌘B)"));
+    expect(mockSetCollapsed).toHaveBeenCalledWith(true);
   });
 
   it("renders ProjectTree with projects", () => {

@@ -36,6 +36,7 @@ import { useWsSessionStore } from "@/stores/ws-session-store";
 import { useZoomHotkeys } from "@/hooks/useZoom";
 import { initNotificationPermission, listenForNotificationClicks } from "@/lib/notify-agent-done";
 import { useAppClose } from "@/hooks/useAppClose";
+import { SidebarContext } from "@/components/SidebarContext";
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -49,6 +50,12 @@ function RootLayout() {
   const leftSidebarRef = useRef<HTMLDivElement>(null);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
+  const sidebarCollapsed = useDebouncedSetting("sidebar_collapsed", 0);
+  const isSidebarCollapsed = sidebarCollapsed.value === "true";
+  const setSidebarCollapsed = useCallback(
+    (collapsed: boolean) => sidebarCollapsed.setValue(collapsed ? "true" : "false"),
+    [sidebarCollapsed],
+  );
 
   useEffect(() => { leftSidebarRef.current?.focus(); }, []);
   useEffect(() => {
@@ -160,6 +167,16 @@ function RootLayout() {
   useZoomHotkeys();
 
   const appClose = useAppClose(queryClient);
+
+  // CMD+B -> toggle sidebar
+  useHotkeys(
+    "meta+b",
+    (e) => {
+      e.preventDefault();
+      setSidebarCollapsed(!isSidebarCollapsed);
+    },
+    { enableOnFormTags: true, enableOnContentEditable: true },
+  );
 
   // CMD+, -> navigate to settings
   useHotkeys(
@@ -295,31 +312,36 @@ function RootLayout() {
   const defaultLeftSize = leftWidth.value ? `${leftWidth.value}px` : "256px";
 
   return (
+    <SidebarContext.Provider value={{ collapsed: isSidebarCollapsed, setCollapsed: setSidebarCollapsed }}>
     <div className="flex h-screen">
       <ResizablePanelGroup orientation="horizontal">
-        <ResizablePanel
-          defaultSize={defaultLeftSize}
-          minSize="200px"
-          maxSize="400px"
-          onResize={handleLeftResize}
-        >
-          <div
-            ref={leftSidebarRef}
-            data-focus-zone="left-sidebar"
-            tabIndex={0}
-            className="h-full outline-none"
-            onFocus={(e) => {
-              // When the wrapper itself gets focus via keyboard (not click), move to the first nav item
-              if (e.target === e.currentTarget && !e.currentTarget.matches(":active")) {
-                const firstItem = e.currentTarget.querySelector("[data-nav-item]") as HTMLElement | null;
-                if (firstItem) firstItem.focus();
-              }
-            }}
-          >
-            <Sidebar />
-          </div>
-        </ResizablePanel>
-        <ResizableHandle className="cursor-col-resize" />
+        {!isSidebarCollapsed && (
+          <>
+            <ResizablePanel
+              defaultSize={defaultLeftSize}
+              minSize="200px"
+              maxSize="400px"
+              onResize={handleLeftResize}
+            >
+              <div
+                ref={leftSidebarRef}
+                data-focus-zone="left-sidebar"
+                tabIndex={0}
+                className="h-full outline-none"
+                onFocus={(e) => {
+                  // When the wrapper itself gets focus via keyboard (not click), move to the first nav item
+                  if (e.target === e.currentTarget && !e.currentTarget.matches(":active")) {
+                    const firstItem = e.currentTarget.querySelector("[data-nav-item]") as HTMLElement | null;
+                    if (firstItem) firstItem.focus();
+                  }
+                }}
+              >
+                <Sidebar />
+              </div>
+            </ResizablePanel>
+            <ResizableHandle className="cursor-col-resize" />
+          </>
+        )}
         <ResizablePanel>
           <main
             data-focus-zone="main-content"
@@ -384,5 +406,6 @@ function RootLayout() {
         </ul>
       </ConfirmDialog>
     </div>
+    </SidebarContext.Provider>
   );
 }

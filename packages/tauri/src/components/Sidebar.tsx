@@ -1,15 +1,17 @@
 import { useRef, useState } from "react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useHotkeys } from "react-hotkeys-hook";
-import { Settings } from "lucide-react";
+import { Settings, PanelLeftClose } from "lucide-react";
 import logoSvg from "@/logo.svg";
 import { Button } from "@/components/ui/button";
 import { ProjectTree } from "@/components/ProjectTree";
 import { getActiveFocusZone } from "@/lib/focus-zones";
 import { UsageIndicator } from "@/components/UsageIndicator";
 import { startDragging, toggleMaximize } from "@/lib/window-drag";
+import { useSidebarCollapsed } from "@/components/SidebarContext";
 
 export function Sidebar() {
+  const { setCollapsed } = useSidebarCollapsed();
   const navigate = useNavigate();
   const sidebarRef = useRef<HTMLElement>(null);
   const [selectedFeatureId, setSelectedFeatureId] = useState<number | null>(
@@ -137,7 +139,7 @@ export function Sidebar() {
           )}
         </div>
         <div
-          className="absolute right-4 inset-y-0 flex items-center opacity-0 group-hover:opacity-100 transition-opacity"
+          className="absolute right-4 inset-y-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
         >
           <Link to="/settings">
             <Button variant="ghost" size="icon" className="size-7">
@@ -145,6 +147,16 @@ export function Sidebar() {
               <span className="sr-only">Settings</span>
             </Button>
           </Link>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-7"
+            title="Collapse sidebar (⌘B)"
+            onClick={() => setCollapsed(true)}
+          >
+            <PanelLeftClose className="size-4" />
+            <span className="sr-only">Collapse sidebar</span>
+          </Button>
         </div>
       </div>
 
