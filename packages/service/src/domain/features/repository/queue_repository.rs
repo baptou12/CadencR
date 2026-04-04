@@ -44,6 +44,31 @@ pub async fn insert_queue_item_with_retries(
     Ok(result.last_insert_rowid())
 }
 
+#[allow(dead_code)]
+pub async fn insert_queue_item_with_config(
+    pool: &SqlitePool,
+    feature_id: i64,
+    workflow_type: &str,
+    item_type: &str,
+    status: &str,
+    order_index: i64,
+    config: Option<&str>,
+) -> Result<i64, AppError> {
+    let result = sqlx::query(
+        r#"INSERT INTO workflow_queue (feature_id, workflow_type, item_type, status, order_index, config, max_retries)
+           VALUES (?, ?, ?, ?, ?, ?, 1)"#,
+    )
+    .bind(feature_id)
+    .bind(workflow_type)
+    .bind(item_type)
+    .bind(status)
+    .bind(order_index)
+    .bind(config)
+    .execute(pool)
+    .await?;
+    Ok(result.last_insert_rowid())
+}
+
 pub async fn insert_dependency(
     pool: &SqlitePool,
     queue_item_id: i64,
