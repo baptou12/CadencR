@@ -132,4 +132,30 @@ describe("WorkflowEditor", () => {
     await user.click(screen.getByText("Cancel"));
     expect(onCancel).toHaveBeenCalledOnce();
   });
+
+  it("does not show fork button when not a preset", () => {
+    mockEditor.isPreset = false;
+    render(<WorkflowEditor onSave={vi.fn()} onCancel={vi.fn()} onFork={vi.fn()} />);
+    expect(screen.queryByText("Fork & Customize")).not.toBeInTheDocument();
+  });
+
+  it("shows fork button when preset and onFork provided", () => {
+    mockEditor.isPreset = true;
+    render(<WorkflowEditor onSave={vi.fn()} onCancel={vi.fn()} onFork={vi.fn()} />);
+    expect(screen.getByText("Fork & Customize")).toBeInTheDocument();
+  });
+
+  it("calls onFork when fork button clicked", async () => {
+    mockEditor.isPreset = true;
+    const onFork = vi.fn();
+    const { user } = render(<WorkflowEditor onSave={vi.fn()} onCancel={vi.fn()} onFork={onFork} />);
+    await user.click(screen.getByText("Fork & Customize"));
+    expect(onFork).toHaveBeenCalledOnce();
+  });
+
+  it("hides fork button when preset but onFork not provided", () => {
+    mockEditor.isPreset = true;
+    render(<WorkflowEditor onSave={vi.fn()} onCancel={vi.fn()} />);
+    expect(screen.queryByText("Fork & Customize")).not.toBeInTheDocument();
+  });
 });

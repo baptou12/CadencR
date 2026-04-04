@@ -59,6 +59,7 @@ export function WorkflowLibraryTab() {
           forkFromId={editor.mode === "fork" ? editor.forkFromId : undefined}
           onSave={handleEditorSave}
           onCancel={handleEditorCancel}
+          onFork={editor.mode === "view" ? () => setEditor({ mode: "fork", forkFromId: editor.definitionId }) : undefined}
         />
       </div>
     );

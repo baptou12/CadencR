@@ -1,4 +1,4 @@
-import { Loader2 } from "lucide-react";
+import { GitFork, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { WorkflowDefinition } from "@/api/generated";
@@ -11,9 +11,10 @@ export interface WorkflowEditorProps {
   forkFromId?: number;
   onSave: (definition: WorkflowDefinition) => void;
   onCancel: () => void;
+  onFork?: () => void;
 }
 
-export function WorkflowEditor({ definitionId, forkFromId, onSave, onCancel }: WorkflowEditorProps) {
+export function WorkflowEditor({ definitionId, forkFromId, onSave, onCancel, onFork }: WorkflowEditorProps) {
   const editor = useWorkflowEditor({ definitionId, forkFromId, onSave });
 
   if (editor.isLoading) {
@@ -54,9 +55,17 @@ export function WorkflowEditor({ definitionId, forkFromId, onSave, onCancel }: W
           className="h-8 text-sm max-w-lg"
         />
         {editor.isPreset && (
-          <p className="text-xs text-amber-500">
-            This is a preset workflow. Fork it to customize.
-          </p>
+          <div className="flex items-center gap-3">
+            <p className="text-xs text-amber-500">
+              This is a preset workflow. Fork it to customize.
+            </p>
+            {onFork && (
+              <Button size="sm" variant="outline" onClick={onFork}>
+                <GitFork className="size-3.5 mr-1" />
+                Fork & Customize
+              </Button>
+            )}
+          </div>
         )}
       </div>
 
