@@ -1,9 +1,11 @@
+import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { ModelSelector } from "../components/ModelSelector";
+import { WorkflowLibraryTab } from "@/components/workflow/WorkflowLibraryTab";
 import { useZoom } from "@/hooks/useZoom";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import {
@@ -15,6 +17,89 @@ import {
 export const Route = createFileRoute("/settings")({
   component: SettingsPage,
 });
+
+type Tab = "general" | "workflows";
+
+function SettingsPage() {
+  const [activeTab, setActiveTab] = useState<Tab>("general");
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex items-center gap-1 border-b border-border px-6 pt-6 pb-0">
+        <h1 className="text-2xl font-bold mr-6">Settings</h1>
+        <TabButton active={activeTab === "general"} onClick={() => setActiveTab("general")}>
+          General
+        </TabButton>
+        <TabButton active={activeTab === "workflows"} onClick={() => setActiveTab("workflows")}>
+          Workflow Library
+        </TabButton>
+      </div>
+
+      {activeTab === "general" ? <GeneralTab /> : <WorkflowLibraryTab />}
+    </div>
+  );
+}
+
+function TabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+        active
+          ? "border-primary text-foreground"
+          : "border-transparent text-muted-foreground hover:text-foreground"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function GeneralTab() {
+  return (
+    <div className="p-6 space-y-8 overflow-y-auto h-full">
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-lg font-semibold">Zoom</h2>
+          <p className="text-sm text-muted-foreground">Adjust the global UI zoom level.</p>
+        </div>
+        <ZoomControl />
+      </section>
+
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-lg font-semibold">Model Configuration</h2>
+          <p className="text-sm text-muted-foreground">Choose which Claude model to use for each agent type.</p>
+        </div>
+        <ModelSelector level="global" />
+      </section>
+
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-lg font-semibold">Agent Autonomy</h2>
+          <p className="text-sm text-muted-foreground">Controls how much automation the execute agent uses when building features.</p>
+        </div>
+        <AgentAutonomySelect />
+      </section>
+
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-lg font-semibold">Parallel Execution</h2>
+          <p className="text-sm text-muted-foreground">Run multiple agents in parallel within each execution step.</p>
+        </div>
+        <ParallelExecutionToggle />
+      </section>
+
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-lg font-semibold">Editor</h2>
+          <p className="text-sm text-muted-foreground">Configure the built-in code editor.</p>
+        </div>
+        <EditorSettings />
+      </section>
+    </div>
+  );
+}
 
 function ParallelExecutionToggle() {
   const parallel = useGetWorkspaceSetting("parallel_execution");
@@ -60,9 +145,7 @@ function AgentAutonomySelect() {
     <select
       className="border rounded px-3 py-1.5 text-sm bg-background"
       value={currentValue}
-      onChange={(e) =>
-        setAutonomy.mutate({ key: "agent_autonomy", value: e.target.value })
-      }
+      onChange={(e) => setAutonomy.mutate({ key: "agent_autonomy", value: e.target.value })}
     >
       <option value="1">Low — ask before commit</option>
       <option value="2">Medium — manual continue</option>
@@ -70,7 +153,6 @@ function AgentAutonomySelect() {
     </select>
   );
 }
-
 
 function ZoomControl() {
   const { zoomLevel, zoomIn, zoomOut, resetZoom } = useZoom();
@@ -82,67 +164,6 @@ function ZoomControl() {
       <Button variant="outline" size="sm" onClick={zoomIn}>+</Button>
       <Button variant="ghost" size="sm" onClick={resetZoom}>Reset</Button>
       <span className="text-xs text-muted-foreground ml-2">⌘+ / ⌘− / ⌘0</span>
-    </div>
-  );
-}
-
-function SettingsPage() {
-  return (
-    <div className="p-6 space-y-8 overflow-y-auto h-full">
-      <h1 className="text-2xl font-bold">Settings</h1>
-
-      <section className="space-y-4">
-        <div>
-          <h2 className="text-lg font-semibold">Zoom</h2>
-          <p className="text-sm text-muted-foreground">
-            Adjust the global UI zoom level.
-          </p>
-        </div>
-        <ZoomControl />
-      </section>
-
-      <section className="space-y-4">
-        <div>
-          <h2 className="text-lg font-semibold">Model Configuration</h2>
-          <p className="text-sm text-muted-foreground">
-            Choose which Claude model to use for each agent type.
-          </p>
-        </div>
-        <ModelSelector level="global" />
-      </section>
-
-      <section className="space-y-4">
-        <div>
-          <h2 className="text-lg font-semibold">Agent Autonomy</h2>
-          <p className="text-sm text-muted-foreground">
-            Controls how much automation the execute agent uses when building
-            features.
-          </p>
-        </div>
-        <AgentAutonomySelect />
-      </section>
-
-      <section className="space-y-4">
-        <div>
-          <h2 className="text-lg font-semibold">Parallel Execution</h2>
-          <p className="text-sm text-muted-foreground">
-            Run multiple agents in parallel within each execution step.
-          </p>
-        </div>
-        <ParallelExecutionToggle />
-      </section>
-
-
-      <section className="space-y-4">
-        <div>
-          <h2 className="text-lg font-semibold">Editor</h2>
-          <p className="text-sm text-muted-foreground">
-            Configure the built-in code editor.
-          </p>
-        </div>
-        <EditorSettings />
-      </section>
-
     </div>
   );
 }
@@ -166,9 +187,7 @@ function EditorSettings() {
           checked={isVimEnabled}
           onCheckedChange={(checked) => vimMode.setValue(checked ? "true" : "false")}
         />
-        <label htmlFor="editor-vim-mode" className="text-sm cursor-pointer">
-          Vim mode
-        </label>
+        <label htmlFor="editor-vim-mode" className="text-sm cursor-pointer">Vim mode</label>
       </div>
 
       <div className="flex flex-col gap-1">
@@ -178,13 +197,9 @@ function EditorSettings() {
             checked={isAutoSaveEnabled}
             onCheckedChange={(checked) => autoSave.setValue(checked ? "true" : "false")}
           />
-          <label htmlFor="editor-auto-save" className="text-sm cursor-pointer">
-            Auto-save
-          </label>
+          <label htmlFor="editor-auto-save" className="text-sm cursor-pointer">Auto-save</label>
         </div>
-        <p className="text-xs text-muted-foreground ml-9">
-          Automatically save files after a short delay.
-        </p>
+        <p className="text-xs text-muted-foreground ml-9">Automatically save files after a short delay.</p>
       </div>
 
       <div className="flex flex-col gap-2">

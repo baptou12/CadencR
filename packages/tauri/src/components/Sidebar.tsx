@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useHotkeys } from "react-hotkeys-hook";
-import { Settings, PanelLeftClose, Workflow } from "lucide-react";
+import { Settings, PanelLeftClose } from "lucide-react";
 import logoSvg from "@/logo.svg";
 import { Button } from "@/components/ui/button";
 import { ProjectTree } from "@/components/ProjectTree";
@@ -141,12 +141,6 @@ export function Sidebar() {
         <div
           className="absolute right-4 inset-y-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
         >
-          <Link to="/workflows">
-            <Button variant="ghost" size="icon" className="size-7">
-              <Workflow className="size-4" />
-              <span className="sr-only">Workflows</span>
-            </Button>
-          </Link>
           <Link to="/settings">
             <Button variant="ghost" size="icon" className="size-7">
               <Settings className="size-4" />
