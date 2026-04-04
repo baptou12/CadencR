@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { X } from "lucide-react";
+import { useGlobalShortcut } from "@/hooks/useGlobalShortcut";
 import { cn } from "@/lib/utils";
 import { useEditorStore } from "@/stores/editor-store";
 import { saveFile } from "./editorSaveRegistry";
@@ -66,30 +67,22 @@ export default function EditorSubTabs({ featureId, paneId }: EditorSubTabsProps)
     }
   }
 
-  // Next/prev tab navigation
-  useHotkeys(
-    "meta+alt+]",
-    () => {
-      if (!tabs.length) return;
-      const idx = tabs.findIndex((t) => t.filePath === activeFilePath);
-      const next = tabs[(idx + 1) % tabs.length];
-      if (next) setActiveFile(featureId, paneId, next.filePath);
-    },
-    { preventDefault: true },
-    [tabs, activeFilePath, featureId, paneId],
-  );
+  // Next/prev tab navigation (capture-phase so it works with CodeMirror focused)
+  useGlobalShortcut("meta+shift+]", (e) => {
+    if (!tabs.length) return;
+    e.preventDefault();
+    const idx = tabs.findIndex((t) => t.filePath === activeFilePath);
+    const next = tabs[(idx + 1) % tabs.length];
+    if (next) setActiveFile(featureId, paneId, next.filePath);
+  });
 
-  useHotkeys(
-    "meta+alt+[",
-    () => {
-      if (!tabs.length) return;
-      const idx = tabs.findIndex((t) => t.filePath === activeFilePath);
-      const prev = tabs[(idx - 1 + tabs.length) % tabs.length];
-      if (prev) setActiveFile(featureId, paneId, prev.filePath);
-    },
-    { preventDefault: true },
-    [tabs, activeFilePath, featureId, paneId],
-  );
+  useGlobalShortcut("meta+shift+[", (e) => {
+    if (!tabs.length) return;
+    e.preventDefault();
+    const idx = tabs.findIndex((t) => t.filePath === activeFilePath);
+    const prev = tabs[(idx - 1 + tabs.length) % tabs.length];
+    if (prev) setActiveFile(featureId, paneId, prev.filePath);
+  });
 
   // CMD+W: close active buffer (works even when CodeMirror has focus)
   useHotkeys(

@@ -36,6 +36,12 @@ function matchesShortcut(e: KeyboardEvent, parsed: ParsedShortcut): boolean {
     return e.code === `Key${parsed.key.toUpperCase()}`;
   }
 
+  // Bracket keys — shift changes e.key to { / }, so match via e.code
+  const codeByKey: Record<string, string> = { "[": "BracketLeft", "]": "BracketRight" };
+  if (codeByKey[parsed.key]) {
+    return e.code === codeByKey[parsed.key];
+  }
+
   return e.key.toLowerCase() === parsed.key.toLowerCase();
 }
 

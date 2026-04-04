@@ -80,6 +80,25 @@ describe("useGlobalShortcut", () => {
     expect(callback).toHaveBeenCalledOnce();
   });
 
+  it("handles meta+shift+] via e.code (shift turns ] into })", () => {
+    renderHook(() => useGlobalShortcut("meta+shift+]", callback));
+    // On macOS, Shift+] produces e.key === "}" but e.code stays "BracketRight"
+    fireKey("}", { metaKey: true, shiftKey: true, code: "BracketRight" });
+    expect(callback).toHaveBeenCalledOnce();
+  });
+
+  it("handles meta+shift+[ via e.code (shift turns [ into {)", () => {
+    renderHook(() => useGlobalShortcut("meta+shift+[", callback));
+    fireKey("{", { metaKey: true, shiftKey: true, code: "BracketLeft" });
+    expect(callback).toHaveBeenCalledOnce();
+  });
+
+  it("does not fire bracket shortcut without shift", () => {
+    renderHook(() => useGlobalShortcut("meta+shift+]", callback));
+    fireKey("]", { metaKey: true, code: "BracketRight" });
+    expect(callback).not.toHaveBeenCalled();
+  });
+
   it("does not fire when enabled is false", () => {
     renderHook(() => useGlobalShortcut("meta+p", callback, { enabled: false }));
     fireKey("p", { metaKey: true, code: "KeyP" });
