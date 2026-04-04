@@ -9,11 +9,6 @@ const mockNavigate = vi.fn();
 const mockMutate = vi.fn();
 let mockIsLoading = false;
 
-vi.mock("@tanstack/react-router", () => ({
-  createFileRoute: () => () => ({}),
-  useNavigate: () => mockNavigate,
-}));
-
 vi.mock("@/api/generated", () => ({
   useCreateFeature: (opts: { onSuccess?: (f: { id: number }) => void }) => ({
     mutate: (body: unknown) => {
@@ -24,7 +19,6 @@ vi.mock("@/api/generated", () => ({
   }),
 }));
 
-// Minimal PresetPicker stub that calls onSelect when clicked
 vi.mock("@/components/workflow/PresetPicker", () => ({
   PresetPicker: ({ onSelect }: { onSelect: (id: number | null) => void }) => (
     <div>
@@ -34,36 +28,9 @@ vi.mock("@/components/workflow/PresetPicker", () => ({
   ),
 }));
 
-// We need to provide Route.useParams — patch the module's Route export
-vi.mock("./new-workflow", async (importOriginal) => {
-  const mod = await importOriginal<Record<string, unknown>>();
-  return {
-    ...mod,
-    Route: {
-      useParams: () => ({ projectId: "2" }),
-    },
-  };
-});
-
-// Import the component directly (not the route)
-// We need to re-export the component for testing
-// Actually, let's just import the file and override Route
-import { render as rtlRender } from "@testing-library/react";
-
-// Since the component is not exported, we test via the module
-// Let's take a different approach: import and render
-
-// The component uses Route.useParams, which we've mocked above
-// But NewWorkflowPage is not exported. Let's check...
-// It's the `component` in createFileRoute. Since we mock createFileRoute to return () => ({}),
-// we need a different approach.
-
-// Alternative: just test the rendered output by importing and rendering the default export
-// Actually, let's re-mock createFileRoute to capture the component.
-
 let CapturedComponent: React.ComponentType | null = null;
 
-vi.mock("@tanstack/react-router", async () => ({
+vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (opts: { component: React.ComponentType }) => {
     CapturedComponent = opts.component;
     return { useParams: () => ({ projectId: "2" }) };
@@ -71,7 +38,7 @@ vi.mock("@tanstack/react-router", async () => ({
   useNavigate: () => mockNavigate,
 }));
 
-// Force module re-evaluation
+// Force module evaluation to capture the component
 await import("./new-workflow");
 
 describe("NewWorkflowPage", () => {
@@ -103,7 +70,6 @@ describe("NewWorkflowPage", () => {
     const { user } = renderPage();
     await user.click(screen.getByText("Pick Workflow"));
     expect(screen.getByRole("heading", { name: "Start Workflow" })).toBeInTheDocument();
-    // Click back arrow
     const backButtons = screen.getAllByRole("button");
     const backBtn = backButtons.find((b) => !b.textContent?.includes("Start") && !b.textContent?.includes("Pick"));
     await user.click(backBtn!);
