@@ -49,6 +49,7 @@ export default function ArtifactEditor({ featureId, phaseSlug, paneId, filePath 
   const { data: artifact, isLoading, error } = useGetFeatureArtifact(featureId, phaseSlug, {
     enabled: Boolean(featureId && phaseSlug),
     refetchOnWindowFocus: false,
+    staleTime: 5 * 60 * 1000,
   });
 
   const updateArtifact = useUpdateFeatureArtifact();
@@ -130,6 +131,7 @@ export default function ArtifactEditor({ featureId, phaseSlug, paneId, filePath 
 
     return () => {
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+      if (autoSavedTimerRef.current) clearTimeout(autoSavedTimerRef.current);
       view.destroy();
       viewRef.current = null;
     };
