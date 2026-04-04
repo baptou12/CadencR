@@ -2,7 +2,7 @@ use sqlx::SqlitePool;
 
 use crate::error::AppError;
 use super::models::{
-    CreateWorkflowDefinition, CreateWorkflowPhase, WorkflowArtifact,
+    CreateWorkflowDefinition, CreateWorkflowPhase, GateType, WorkflowArtifact,
     WorkflowDefinition, WorkflowPhase,
 };
 use super::{artifact_repository, repository};
@@ -86,6 +86,11 @@ pub async fn update_phase(
     input_phase_slugs: Option<&Vec<String>>,
     model_override: Option<&str>,
 ) -> Result<WorkflowPhase, AppError> {
+    if let Some(gt) = gate_type {
+        gt.parse::<GateType>().map_err(|_| {
+            AppError::BadRequest("Invalid gate_type: must be 'auto', 'approval', or 'manual'".into())
+        })?;
+    }
     let definition_id = repository::get_phase_definition_id(pool, phase_id).await?;
     let def = get_definition(pool, definition_id).await?;
     if def.is_preset {
