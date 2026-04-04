@@ -224,6 +224,15 @@ pub async fn handle_workflow_action(
         return;
     }
 
+    // Custom-only actions: reject if feature does NOT use a custom workflow definition
+    let is_custom_only = matches!(
+        envelope.action.as_str(),
+        "phase_approval" | "phase_trigger" | "feature_start_custom"
+    );
+    if is_custom_only && workflow_custom::guard_custom_action(&envelope, sender, &app_state.read_pool).await {
+        return;
+    }
+
     match envelope.action.as_str() {
         "feature.start" => handle_feature_start(envelope, sender, app_state).await,
         "start_plan" => handle_start_plan(envelope, sender, app_state).await,
@@ -1419,6 +1428,81 @@ mod tests {
             result,
             "*First question?*\n\n**First answer**\n\n\n\n*Second question?*\n\n**Second answer**"
         );
+    }
+
+    // --- Guard isolation tests ---
+
+    async fn setup_guard_test_db() -> (sqlx::SqlitePool, i64, i64) {
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        sqlx::query(
+            "CREATE TABLE features (id INTEGER PRIMARY KEY, project_id INTEGER, title TEXT, type TEXT, workflow_definition_id INTEGER)"
+        ).execute(&pool).await.unwrap();
+        // Legacy feature (no workflow_definition_id)
+        let legacy_id: i64 = sqlx::query("INSERT INTO features (project_id, title, type) VALUES (1, 'Legacy', 'ws-feature')")
+            .execute(&pool).await.unwrap().last_insert_rowid();
+        // Custom workflow feature
+        let custom_id: i64 = sqlx::query("INSERT INTO features (project_id, title, type, workflow_definition_id) VALUES (1, 'Custom', 'ws-feature', 42)")
+            .execute(&pool).await.unwrap().last_insert_rowid();
+        (pool, legacy_id, custom_id)
+    }
+
+    #[tokio::test]
+    async fn test_custom_action_rejected_on_legacy_feature() {
+        let (pool, legacy_id, _custom_id) = setup_guard_test_db().await;
+        let (tx, mut rx) = make_sender();
+        let sdk_sessions: SdkSessions = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
+        let app_state = AppState::with_pool(pool);
+
+        let envelope = make_envelope("phase_approval", serde_json::json!({
+            "feature_id": legacy_id,
+            "phase_slug": "design",
+            "approved": true
+        }));
+        handle_workflow_action(envelope, &tx, &sdk_sessions, &app_state).await;
+
+        let env = recv_envelope(&mut rx);
+        assert_eq!(env.action, "error");
+        let payload: SessionErrorPayload = serde_json::from_value(env.payload).unwrap();
+        assert_eq!(payload.code, "WRONG_WORKFLOW_TYPE");
+    }
+
+    #[tokio::test]
+    async fn test_legacy_action_rejected_on_custom_feature() {
+        let (pool, _legacy_id, custom_id) = setup_guard_test_db().await;
+        let (tx, mut rx) = make_sender();
+        let sdk_sessions: SdkSessions = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
+        let app_state = AppState::with_pool(pool);
+
+        let envelope = make_envelope("start_plan", serde_json::json!({
+            "feature_id": custom_id,
+            "description": "test",
+            "images": []
+        }));
+        handle_workflow_action(envelope, &tx, &sdk_sessions, &app_state).await;
+
+        let env = recv_envelope(&mut rx);
+        assert_eq!(env.action, "error");
+        let payload: SessionErrorPayload = serde_json::from_value(env.payload).unwrap();
+        assert_eq!(payload.code, "WRONG_WORKFLOW_TYPE");
+    }
+
+    #[tokio::test]
+    async fn test_phase_trigger_rejected_on_legacy_feature() {
+        let (pool, legacy_id, _custom_id) = setup_guard_test_db().await;
+        let (tx, mut rx) = make_sender();
+        let sdk_sessions: SdkSessions = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
+        let app_state = AppState::with_pool(pool);
+
+        let envelope = make_envelope("phase_trigger", serde_json::json!({
+            "feature_id": legacy_id,
+            "phase_slug": "design"
+        }));
+        handle_workflow_action(envelope, &tx, &sdk_sessions, &app_state).await;
+
+        let env = recv_envelope(&mut rx);
+        assert_eq!(env.action, "error");
+        let payload: SessionErrorPayload = serde_json::from_value(env.payload).unwrap();
+        assert_eq!(payload.code, "WRONG_WORKFLOW_TYPE");
     }
 
     #[test]

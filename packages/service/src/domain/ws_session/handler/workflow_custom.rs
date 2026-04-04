@@ -33,6 +33,35 @@ pub(super) async fn is_custom_workflow_feature(feature_id: i64, read_pool: &sqlx
     }
 }
 
+/// Guard that rejects custom-only actions on legacy (non-custom) workflow features.
+/// Returns true if the action should be blocked (i.e. feature is NOT a custom workflow).
+pub(super) async fn guard_custom_action(
+    envelope: &WsEnvelope,
+    sender: &WsSender,
+    read_pool: &sqlx::SqlitePool,
+) -> bool {
+    let feature_id = envelope.payload.get("feature_id").and_then(|v| v.as_i64());
+    let Some(feature_id) = feature_id else {
+        return false;
+    };
+    match is_custom_workflow_feature(feature_id, read_pool).await {
+        Ok(false) => {
+            send_workflow_error(
+                sender,
+                &envelope.id,
+                "WRONG_WORKFLOW_TYPE",
+                "This action is only available for custom workflow features",
+            );
+            true
+        }
+        Ok(true) => false,
+        Err(e) => {
+            send_workflow_error(sender, &envelope.id, "GUARD_ERROR", &e);
+            true
+        }
+    }
+}
+
 /// Guard that rejects legacy actions on custom workflow features.
 /// Returns true if the action should be blocked (i.e. feature is custom workflow).
 pub(super) async fn guard_legacy_action(
