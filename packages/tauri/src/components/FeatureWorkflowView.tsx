@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useMemo, lazy, Suspense } from "react";
+import { useEditorStore } from "@/stores/editor-store";
 import { useGetFeaturePrd, useListProjects, useGetStats } from "@/api/generated";
 import { FeatureTopBar } from "@/components/FeatureTopBar";
 import { FeatureTabBar } from "@/components/FeatureTabBar";
@@ -30,6 +31,10 @@ import type { FeatureStatus } from "@/hooks/useFeatureState";
 const FeatureEditorTab = lazy(() => import("@/components/editor/FeatureEditorTab"));
 import type { FeatureEditorTabHandle } from "@/components/editor/FeatureEditorTab";
 import { useWorkflowStore } from "@/hooks/useWorkflowWebSocket";
+import { WorkflowQueueSidebar } from "@/components/workflow/WorkflowQueueSidebar";
+import { PhaseApprovalBar } from "@/components/workflow/PhaseApprovalBar";
+import { WorkflowInputBar } from "@/components/workflow/WorkflowInputBar";
+import { useGetWorkflowDefinition } from "@/api/generated";
 
 export function FeatureWorkflowView({
   featureId,
@@ -47,6 +52,7 @@ export function FeatureWorkflowView({
         type: string;
         project_id: number;
         created_at: string;
+        workflow_definition_id?: number | null;
       }
     | undefined;
   featureQuery: { refetch: () => unknown };
@@ -57,6 +63,10 @@ export function FeatureWorkflowView({
   descriptionRef.current = description;
 
   const { data: prdData } = useGetFeaturePrd(featureId);
+  const { data: workflowDefinition } = useGetWorkflowDefinition(
+    feature?.workflow_definition_id ?? 0,
+    { enabled: !!feature?.workflow_definition_id },
+  );
 
   // ---- Unified backend ----
   const backend = useWsWorkflowBackend(
@@ -84,6 +94,11 @@ export function FeatureWorkflowView({
   // Slash commands
   const projectsQuery = useListProjects();
   const projectPath = projectsQuery.data?.find((p) => p.id === projectId)?.path;
+  const isCustomWorkflow = !!feature?.workflow_definition_id;
+  const pendingApproval = useWorkflowStore((s) => s.pendingApproval);
+  const approvePhase = useWorkflowStore((s) => s.approvePhase);
+  const startCustomWorkflow = useWorkflowStore((s) => s.startCustomWorkflow);
+  const phaseStates = useWorkflowStore((s) => s.phaseStates);
   const slashCommands = useWorkflowStore((s) => s.slashCommands);
   const slashCommandsLoading = useWorkflowStore((s) => s.slashCommandsLoading);
   const requestSlashCommands = useWorkflowStore((s) => s.requestSlashCommands);
@@ -100,6 +115,31 @@ export function FeatureWorkflowView({
     featureId,
     projectId,
   );
+
+  const [isStartingCustom, setIsStartingCustom] = useState(false);
+
+  const handleStartCustomWorkflow = useCallback(
+    (description: string) => {
+      if (!feature?.workflow_definition_id || !feature.title) return;
+      setIsStartingCustom(true);
+      startCustomWorkflow(featureId, projectId, feature.title, feature.workflow_definition_id, description);
+      // Reset after a short delay — backend will update state via WS
+      setTimeout(() => setIsStartingCustom(false), 2000);
+    },
+    [feature, featureId, projectId, startCustomWorkflow],
+  );
+
+  // Derive custom workflow phase info for manual gate messaging
+  const readyManualPhase = useMemo(() => {
+    if (!isCustomWorkflow) return null;
+    for (const [slug, state] of phaseStates) {
+      if (state.status === "ready") {
+        const phase = workflowDefinition?.phases?.find((p) => p.slug === slug);
+        if (phase?.gate_type === "manual") return phase;
+      }
+    }
+    return null;
+  }, [isCustomWorkflow, phaseStates, workflowDefinition?.phases]);
 
   const [deleteTarget, setDeleteTarget] = useState<FeatureSession | null>(null);
 
@@ -139,7 +179,7 @@ export function FeatureWorkflowView({
     setInlineDiffOpen(true);
   }, []);
 
-  const { agentRefs, setAgentRef, sessionPromptTrigger } = useWorkflowKeyboard(
+  const { agentRefs: _agentRefs, setAgentRef, sessionPromptTrigger } = useWorkflowKeyboard(
     backend, openAgent, setOpenAgent, handleViewDiffForAgent,
   );
 
@@ -152,6 +192,14 @@ export function FeatureWorkflowView({
 
   // Tab state
   const { activeTab, setActiveTab } = useActiveTab(featureId);
+
+  // Open artifact in editor tab
+  const openArtifact = useEditorStore((s) => s.openArtifact);
+  const editorActivePaneId = useEditorStore((s) => s.features[featureId]?.activePaneId ?? "main");
+  const handleViewArtifact = useCallback((phaseSlug: string) => {
+    openArtifact(featureId, editorActivePaneId, phaseSlug);
+    setActiveTab("editor");
+  }, [featureId, openArtifact, editorActivePaneId, setActiveTab]);
   useSaveLastOpenedFeature(projectId, featureId, activeTab);
   const editorTabRef = useRef<FeatureEditorTabHandle>(null);
 
@@ -235,7 +283,7 @@ export function FeatureWorkflowView({
               </div>
             )}
 
-            {view === "plan-input" && (
+            {view === "plan-input" && !isCustomWorkflow && (
               <div className="flex-1 flex items-center justify-center overflow-auto p-6">
                 <PlanInputView
                   onStartPlanning={(text, images) => {
@@ -254,6 +302,16 @@ export function FeatureWorkflowView({
               </div>
             )}
 
+            {/* Custom workflow: manual gate ready message */}
+            {isCustomWorkflow && readyManualPhase && backend.noAgentsRunning && backend.sessionEntries.length === 0 && (
+              <div className="flex-1 flex items-center justify-center">
+                <div className="text-center space-y-2">
+                  <p className="text-sm text-muted-foreground">
+                    Phase &apos;{readyManualPhase.name}&apos; is ready. Click Start to begin.
+                  </p>
+                </div>
+              </div>
+            )}
 
             {!backend.hasAnyAgentOutput && backend.sessionEntries.length === 0 &&
               !backend.isStartingWorkflowSession &&
@@ -387,17 +445,48 @@ export function FeatureWorkflowView({
 
           </div>
 
-          <QueueSidebar
-            queue={backend.queue ?? []}
-            featureId={featureId}
-            selectedItemId={backend.selectedItemId ?? null}
-            onSelectItem={backend.selectItem ?? (() => {})}
-            onRetryItem={backend.retryItem}
-            onSkipItem={backend.skipItem}
-          />
+          {feature?.workflow_definition_id ? (
+            <WorkflowQueueSidebar
+              workflowDefinitionId={feature.workflow_definition_id}
+              onViewArtifact={handleViewArtifact}
+            />
+          ) : (
+            <QueueSidebar
+              queue={backend.queue ?? []}
+              featureId={featureId}
+              selectedItemId={backend.selectedItemId ?? null}
+              onSelectItem={backend.selectItem ?? (() => {})}
+              onRetryItem={backend.retryItem}
+              onSkipItem={backend.skipItem}
+            />
+          )}
         </div>
       </div>
       </div>
+
+      {/* Phase approval bar for custom workflow phases */}
+      {pendingApproval && (() => {
+        const phaseName = workflowDefinition?.phases?.find(
+          (p) => p.slug === pendingApproval.phaseSlug,
+        )?.name ?? pendingApproval.phaseSlug;
+        return (
+          <PhaseApprovalBar
+            phaseName={phaseName}
+            artifactContent={pendingApproval.artifactContent}
+            onApprove={() => approvePhase(pendingApproval.phaseSlug, true)}
+            onReject={(fb) => approvePhase(pendingApproval.phaseSlug, false, fb)}
+          />
+        );
+      })()}
+
+      {/* Custom workflow input bar — shown when no phases have started yet */}
+      {isCustomWorkflow && view === "plan-input" && !pendingApproval && workflowDefinition && (
+        <WorkflowInputBar
+          onStart={handleStartCustomWorkflow}
+          isStarting={isStartingCustom}
+          workflowName={workflowDefinition.name}
+        />
+      )}
 
       {/* Per-agent diff modal (CMD+D) — separate from Git tab */}
       <DiffViewerModal

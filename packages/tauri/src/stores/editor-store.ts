@@ -13,6 +13,9 @@ export interface EditorTab {
   disambiguatedName: string;
   isDirty: boolean;
   cursorPosition: { line: number; col: number };
+  isArtifact?: boolean;
+  artifactFeatureId?: number;
+  artifactPhaseSlug?: string;
 }
 
 export interface EditorPaneState {
@@ -216,6 +219,7 @@ interface EditorStore {
   removeEditorPane: (featureId: number, paneId: string) => void;
   navigatePane: (featureId: number, direction: Direction) => void;
   setActivePane: (featureId: number, paneId: string) => void;
+  openArtifact: (featureId: number, paneId: string, phaseSlug: string, maxTabs?: number) => void;
 }
 
 export const useEditorStore = create<EditorStore>((set, get) => ({
@@ -376,6 +380,37 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       const feature = state.features[featureId];
       if (!feature) return state;
       return updateFeature(state, featureId, { ...feature, activePaneId: paneId });
+    }),
+
+  openArtifact: (featureId, paneId, phaseSlug, maxTabs = DEFAULT_MAX_TABS) =>
+    set((state) => {
+      const filePath = `artifact://${featureId}/${phaseSlug}`;
+      const displayName = `${phaseSlug} (Artifact)`;
+      const feature = state.features[featureId] ?? { ...defaultFeatureState };
+      const next = updatePane(feature, paneId, (pane) => {
+        if (pane.tabs.some((t) => t.filePath === filePath)) {
+          return { ...pane, activeFilePath: filePath };
+        }
+        const newTab: EditorTab = {
+          filePath,
+          fileName: displayName,
+          disambiguatedName: displayName,
+          isDirty: false,
+          cursorPosition: { line: 1, col: 1 },
+          isArtifact: true,
+          artifactFeatureId: featureId,
+          artifactPhaseSlug: phaseSlug,
+        };
+        let tabs = [...pane.tabs, newTab];
+        if (tabs.length > maxTabs) {
+          const oldestNonDirtyIdx = tabs.findIndex((t) => !t.isDirty);
+          if (oldestNonDirtyIdx !== -1) {
+            tabs = tabs.filter((_, i) => i !== oldestNonDirtyIdx);
+          }
+        }
+        return { tabs: disambiguateTabNames(tabs), activeFilePath: filePath };
+      });
+      return updateFeature(state, featureId, next);
     }),
 }));
 

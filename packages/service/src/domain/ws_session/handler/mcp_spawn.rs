@@ -27,6 +27,8 @@ use crate::domain::mcp::servers::{mcp_server_name, AgentType};
 pub fn build_mcp_server_config(
     agent_type: AgentType,
     feature_id: i64,
+    phase_slug: Option<&str>,
+    input_phase_slugs: Option<&[String]>,
 ) -> HashMap<String, McpServerConfig> {
     let server_name = mcp_server_name(agent_type);
 
@@ -57,6 +59,18 @@ pub fn build_mcp_server_config(
     if let Ok(db_path) = env::var("CADENCE_DB_PATH") {
         mcp_args.insert(0, db_path);
         mcp_args.insert(0, "--db-path".to_string());
+    }
+
+    // Pass workflow-specific args for the cadence-workflow MCP server
+    if let Some(slug) = phase_slug {
+        mcp_args.push("--phase-slug".to_string());
+        mcp_args.push(slug.to_string());
+    }
+    if let Some(slugs) = input_phase_slugs {
+        if !slugs.is_empty() {
+            mcp_args.push("--input-phase-slugs".to_string());
+            mcp_args.push(slugs.join(","));
+        }
     }
 
     info!(

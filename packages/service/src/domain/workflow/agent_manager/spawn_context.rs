@@ -92,8 +92,11 @@ impl AgentManager {
         resume_session_id: Option<&str>,
         include_mcp_instructions: bool,
         permissions: &PermissionRouter,
+        phase_slug: Option<&str>,
+        input_phase_slugs: Option<&[String]>,
+        model_override: Option<&str>,
     ) -> Result<SpawnContext, String> {
-        let mcp_servers = build_mcp_server_config(agent_type, self.feature_id);
+        let mcp_servers = build_mcp_server_config(agent_type, self.feature_id, phase_slug, input_phase_slugs);
         let expected_mcp_server = mcp_server_name(agent_type).to_string();
 
         let cwd = self.get_feature_cwd().await.ok_or_else(|| {
@@ -118,9 +121,12 @@ impl AgentManager {
             turn_state_tx: self.turn_state_tx.clone(),
         };
 
-        // Model
+        // Model — prefer explicit override (e.g. from workflow phase definition)
         let project_id = self.get_project_id().await;
-        let model = self.resolve_model(agent_type_str, project_id).await;
+        let model = match model_override.filter(|s| !s.is_empty()) {
+            Some(m) => m.to_string(),
+            None => self.resolve_model(agent_type_str, project_id).await,
+        };
         info!(feature_id = self.feature_id, agent_type = agent_type_str, model = %model, "resolved model");
 
         let _ = sqlx::query("UPDATE agent_sessions SET model = ? WHERE id = ?")

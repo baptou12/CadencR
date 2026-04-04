@@ -54,7 +54,9 @@ mod tests {
                 model_retro TEXT,
                 agent_autonomy TEXT,
                 parallel_execution TEXT,
-                created_at TEXT DEFAULT (datetime('now'))
+                created_at TEXT DEFAULT (datetime('now')),
+                workflow_definition_id INTEGER,
+                workflow_status TEXT
             )"#,
         )
         .execute(&pool)
@@ -201,9 +203,9 @@ mod tests {
         let proj1 = create_test_project(&pool).await;
         let proj2 = create_test_project(&pool).await;
 
-        create_feature(&pool, proj1, "Feature A", "ws-feature").await.unwrap();
-        create_feature(&pool, proj1, "Feature B", "ws-feature").await.unwrap();
-        create_feature(&pool, proj2, "Feature C", "ws-feature").await.unwrap();
+        create_feature(&pool, proj1, "Feature A", "ws-feature", None).await.unwrap();
+        create_feature(&pool, proj1, "Feature B", "ws-feature", None).await.unwrap();
+        create_feature(&pool, proj2, "Feature C", "ws-feature", None).await.unwrap();
 
         let features = list_by_project(&pool, proj1).await.unwrap();
         assert_eq!(features.len(), 2);
@@ -213,7 +215,7 @@ mod tests {
     async fn test_get_by_id() {
         let pool = setup_test_db().await;
         let proj = create_test_project(&pool).await;
-        let id = create_feature(&pool, proj, "My Feature", "ws-feature").await.unwrap();
+        let id = create_feature(&pool, proj, "My Feature", "ws-feature", None).await.unwrap();
 
         let feature = get_by_id(&pool, id).await.unwrap().unwrap();
         assert_eq!(feature.title, "My Feature");
@@ -231,7 +233,7 @@ mod tests {
     async fn test_create_feature() {
         let pool = setup_test_db().await;
         let proj = create_test_project(&pool).await;
-        let id = create_feature(&pool, proj, "New Feature", "ws-session").await.unwrap();
+        let id = create_feature(&pool, proj, "New Feature", "ws-session", None).await.unwrap();
 
         let feature = get_by_id(&pool, id).await.unwrap().unwrap();
         assert_eq!(feature.title, "New Feature");
@@ -243,9 +245,9 @@ mod tests {
         let pool = setup_test_db().await;
         let proj = create_test_project(&pool).await;
 
-        create_feature(&pool, proj, "Session 1", "ws-session").await.unwrap();
-        create_feature(&pool, proj, "Session 3", "ws-session").await.unwrap();
-        create_feature(&pool, proj, "Not a session", "ws-feature").await.unwrap();
+        create_feature(&pool, proj, "Session 1", "ws-session", None).await.unwrap();
+        create_feature(&pool, proj, "Session 3", "ws-session", None).await.unwrap();
+        create_feature(&pool, proj, "Not a session", "ws-feature", None).await.unwrap();
 
         let max = get_max_session_num(&pool, proj).await.unwrap();
         assert_eq!(max, 3);
@@ -255,7 +257,7 @@ mod tests {
     async fn test_get_max_session_num_no_sessions() {
         let pool = setup_test_db().await;
         let proj = create_test_project(&pool).await;
-        create_feature(&pool, proj, "Not a session", "ws-feature").await.unwrap();
+        create_feature(&pool, proj, "Not a session", "ws-feature", None).await.unwrap();
 
         let max = get_max_session_num(&pool, proj).await.unwrap();
         assert_eq!(max, 0);
@@ -265,7 +267,7 @@ mod tests {
     async fn test_update_status() {
         let pool = setup_test_db().await;
         let proj = create_test_project(&pool).await;
-        let id = create_feature(&pool, proj, "My Feature", "ws-feature").await.unwrap();
+        let id = create_feature(&pool, proj, "My Feature", "ws-feature", None).await.unwrap();
 
         update_status(&pool, id, "archived").await.unwrap();
         let feature = get_by_id(&pool, id).await.unwrap().unwrap();
@@ -276,7 +278,7 @@ mod tests {
     async fn test_update_title() {
         let pool = setup_test_db().await;
         let proj = create_test_project(&pool).await;
-        let id = create_feature(&pool, proj, "Old Title", "ws-feature").await.unwrap();
+        let id = create_feature(&pool, proj, "Old Title", "ws-feature", None).await.unwrap();
 
         update_title(&pool, id, "New Title").await.unwrap();
         let feature = get_by_id(&pool, id).await.unwrap().unwrap();
@@ -287,7 +289,7 @@ mod tests {
     async fn test_is_empty_true() {
         let pool = setup_test_db().await;
         let proj = create_test_project(&pool).await;
-        let id = create_feature(&pool, proj, "Empty Feature", "ws-feature").await.unwrap();
+        let id = create_feature(&pool, proj, "Empty Feature", "ws-feature", None).await.unwrap();
 
         let empty = is_empty(&pool, id).await.unwrap();
         assert!(empty);
@@ -297,7 +299,7 @@ mod tests {
     async fn test_is_empty_false_has_messages() {
         let pool = setup_test_db().await;
         let proj = create_test_project(&pool).await;
-        let id = create_feature(&pool, proj, "Session Feature", "ws-session").await.unwrap();
+        let id = create_feature(&pool, proj, "Session Feature", "ws-session", None).await.unwrap();
 
         // Insert an agent_session and agent_message
         let sess_result = sqlx::query(
@@ -323,7 +325,7 @@ mod tests {
     async fn test_is_empty_false_has_prd() {
         let pool = setup_test_db().await;
         let proj = create_test_project(&pool).await;
-        let id = create_feature(&pool, proj, "Feature With PRD", "ws-feature").await.unwrap();
+        let id = create_feature(&pool, proj, "Feature With PRD", "ws-feature", None).await.unwrap();
 
         sqlx::query("UPDATE features SET prd = 'some content' WHERE id = ?")
             .bind(id)
@@ -339,7 +341,7 @@ mod tests {
     async fn test_get_plan_with_phases() {
         let pool = setup_test_db().await;
         let proj = create_test_project(&pool).await;
-        let fid = create_feature(&pool, proj, "Feature", "ws-feature").await.unwrap();
+        let fid = create_feature(&pool, proj, "Feature", "ws-feature", None).await.unwrap();
 
         let plan_res = sqlx::query("INSERT INTO plans (feature_id, title, status) VALUES (?, 'Plan', 'active')")
             .bind(fid)
@@ -370,7 +372,7 @@ mod tests {
     async fn test_get_plan_with_phases_no_plan() {
         let pool = setup_test_db().await;
         let proj = create_test_project(&pool).await;
-        let fid = create_feature(&pool, proj, "Feature", "ws-feature").await.unwrap();
+        let fid = create_feature(&pool, proj, "Feature", "ws-feature", None).await.unwrap();
 
         let result = get_plan_with_phases(&pool, fid).await.unwrap();
         assert!(result.is_none());
@@ -380,7 +382,7 @@ mod tests {
     async fn test_get_plan_progress() {
         let pool = setup_test_db().await;
         let proj = create_test_project(&pool).await;
-        let fid = create_feature(&pool, proj, "Feature", "ws-feature").await.unwrap();
+        let fid = create_feature(&pool, proj, "Feature", "ws-feature", None).await.unwrap();
 
         let plan_res = sqlx::query("INSERT INTO plans (feature_id, title, status) VALUES (?, 'Plan', 'active')")
             .bind(fid)
@@ -405,7 +407,7 @@ mod tests {
     async fn test_reset_phase() {
         let pool = setup_test_db().await;
         let proj = create_test_project(&pool).await;
-        let fid = create_feature(&pool, proj, "Feature", "ws-feature").await.unwrap();
+        let fid = create_feature(&pool, proj, "Feature", "ws-feature", None).await.unwrap();
 
         let plan_res = sqlx::query("INSERT INTO plans (feature_id, title, status) VALUES (?, 'Plan', 'active')")
             .bind(fid).execute(&pool).await.unwrap();
@@ -467,7 +469,7 @@ mod tests {
     async fn test_reset_phase_invalid_status() {
         let pool = setup_test_db().await;
         let proj = create_test_project(&pool).await;
-        let fid = create_feature(&pool, proj, "Feature", "ws-feature").await.unwrap();
+        let fid = create_feature(&pool, proj, "Feature", "ws-feature", None).await.unwrap();
 
         let plan_res = sqlx::query("INSERT INTO plans (feature_id, title, status) VALUES (?, 'Plan', 'active')")
             .bind(fid).execute(&pool).await.unwrap();
@@ -490,7 +492,7 @@ mod tests {
     async fn test_override_phase_status() {
         let pool = setup_test_db().await;
         let proj = create_test_project(&pool).await;
-        let fid = create_feature(&pool, proj, "Feature", "ws-feature").await.unwrap();
+        let fid = create_feature(&pool, proj, "Feature", "ws-feature", None).await.unwrap();
 
         let plan_res = sqlx::query("INSERT INTO plans (feature_id, title, status) VALUES (?, 'Plan', 'active')")
             .bind(fid).execute(&pool).await.unwrap();
@@ -519,7 +521,7 @@ mod tests {
     async fn test_get_set_feature_settings() {
         let pool = setup_test_db().await;
         let proj = create_test_project(&pool).await;
-        let fid = create_feature(&pool, proj, "Feature", "ws-feature").await.unwrap();
+        let fid = create_feature(&pool, proj, "Feature", "ws-feature", None).await.unwrap();
 
         // Set a key-value setting (non-column)
         set_feature_setting(&pool, fid, "instructions", "do this").await.unwrap();
@@ -541,7 +543,7 @@ mod tests {
     async fn test_get_set_feature_model_settings() {
         let pool = setup_test_db().await;
         let proj = create_test_project(&pool).await;
-        let fid = create_feature(&pool, proj, "Feature", "ws-feature").await.unwrap();
+        let fid = create_feature(&pool, proj, "Feature", "ws-feature", None).await.unwrap();
 
         set_feature_model_setting(&pool, fid, "plan", "claude-3-opus").await.unwrap();
         set_feature_model_setting(&pool, fid, "session", "claude-3-haiku").await.unwrap();
@@ -555,7 +557,7 @@ mod tests {
     async fn test_resolve_working_dir_with_worktree() {
         let pool = setup_test_db().await;
         let proj = create_test_project(&pool).await;
-        let fid = create_feature(&pool, proj, "Feature", "ws-feature").await.unwrap();
+        let fid = create_feature(&pool, proj, "Feature", "ws-feature", None).await.unwrap();
 
         sqlx::query(
             "INSERT INTO feature_settings (feature_id, key, value) VALUES (?, 'worktree_path', '/tmp/wt')"
@@ -580,7 +582,7 @@ mod tests {
             .unwrap();
         let proj = proj_res.last_insert_rowid();
 
-        let fid = create_feature(&pool, proj, "Feature", "ws-feature").await.unwrap();
+        let fid = create_feature(&pool, proj, "Feature", "ws-feature", None).await.unwrap();
 
         let dir = resolve_working_dir(&pool, fid, proj).await.unwrap();
         assert_eq!(dir, Some("/tmp/proj".to_string()));
@@ -590,7 +592,7 @@ mod tests {
     async fn test_delete_feature_cascade() {
         let pool = setup_test_db().await;
         let proj = create_test_project(&pool).await;
-        let fid = create_feature(&pool, proj, "Feature", "ws-feature").await.unwrap();
+        let fid = create_feature(&pool, proj, "Feature", "ws-feature", None).await.unwrap();
 
         // Create plan and phase
         let plan_res = sqlx::query("INSERT INTO plans (feature_id, title, status) VALUES (?, 'Plan', 'active')")
@@ -669,7 +671,7 @@ mod tests {
     async fn test_set_feature_model_setting_invalid_type() {
         let pool = setup_test_db().await;
         let proj = create_test_project(&pool).await;
-        let fid = create_feature(&pool, proj, "Feature", "ws-feature").await.unwrap();
+        let fid = create_feature(&pool, proj, "Feature", "ws-feature", None).await.unwrap();
 
         let result = set_feature_model_setting(&pool, fid, "invalid_type", "model").await;
         assert!(matches!(result, Err(crate::error::AppError::BadRequest(_))));
@@ -693,7 +695,7 @@ mod tests {
     async fn test_reset_phase_next_phase_completed() {
         let pool = setup_test_db().await;
         let proj = create_test_project(&pool).await;
-        let fid = create_feature(&pool, proj, "Feature", "ws-feature").await.unwrap();
+        let fid = create_feature(&pool, proj, "Feature", "ws-feature", None).await.unwrap();
 
         let plan_res = sqlx::query("INSERT INTO plans (feature_id, title, status) VALUES (?, 'Plan', 'active')")
             .bind(fid).execute(&pool).await.unwrap();
@@ -712,7 +714,7 @@ mod tests {
     async fn test_is_empty_false_active_session() {
         let pool = setup_test_db().await;
         let proj = create_test_project(&pool).await;
-        let fid = create_feature(&pool, proj, "Feature", "ws-feature").await.unwrap();
+        let fid = create_feature(&pool, proj, "Feature", "ws-feature", None).await.unwrap();
 
         sqlx::query("INSERT INTO agent_sessions (feature_id, title, status) VALUES (?, 'sess', 'running')")
             .bind(fid).execute(&pool).await.unwrap();
@@ -732,7 +734,7 @@ mod tests {
     async fn test_is_empty_false_has_plan() {
         let pool = setup_test_db().await;
         let proj = create_test_project(&pool).await;
-        let fid = create_feature(&pool, proj, "Feature", "ws-feature").await.unwrap();
+        let fid = create_feature(&pool, proj, "Feature", "ws-feature", None).await.unwrap();
 
         sqlx::query("INSERT INTO plans (feature_id, title, status) VALUES (?, 'Plan', 'active')")
             .bind(fid).execute(&pool).await.unwrap();
@@ -745,7 +747,7 @@ mod tests {
     async fn test_get_prd() {
         let pool = setup_test_db().await;
         let proj = create_test_project(&pool).await;
-        let fid = create_feature(&pool, proj, "Feature", "ws-feature").await.unwrap();
+        let fid = create_feature(&pool, proj, "Feature", "ws-feature", None).await.unwrap();
 
         // No PRD initially
         let prd = get_prd(&pool, fid).await.unwrap();
@@ -763,7 +765,7 @@ mod tests {
     async fn test_get_plan_progress_no_plan() {
         let pool = setup_test_db().await;
         let proj = create_test_project(&pool).await;
-        let fid = create_feature(&pool, proj, "Feature", "ws-feature").await.unwrap();
+        let fid = create_feature(&pool, proj, "Feature", "ws-feature", None).await.unwrap();
 
         let progress = get_plan_progress(&pool, fid).await.unwrap();
         assert_eq!(progress.total, 0);
@@ -776,7 +778,7 @@ mod tests {
         let proj_res = sqlx::query("INSERT INTO projects (name, path) VALUES ('Proj', '/tmp/proj')")
             .execute(&pool).await.unwrap();
         let proj = proj_res.last_insert_rowid();
-        let fid = create_feature(&pool, proj, "Session", "ws-session").await.unwrap();
+        let fid = create_feature(&pool, proj, "Session", "ws-session", None).await.unwrap();
 
         // Session type with worktree_path should use the worktree path
         sqlx::query("INSERT INTO feature_settings (feature_id, key, value) VALUES (?, 'worktree_path', '/tmp/wt')")
@@ -821,7 +823,7 @@ mod tests {
     async fn test_insert_and_get_queue_item() {
         let pool = setup_test_db_with_queue().await;
         let proj = create_test_project(&pool).await;
-        let fid = create_feature(&pool, proj, "Feature", "ws-feature").await.unwrap();
+        let fid = create_feature(&pool, proj, "Feature", "ws-feature", None).await.unwrap();
 
         let item_id = insert_queue_item(&pool, fid, "feature_build", "prd", None, "ready", 0, None)
             .await
@@ -847,7 +849,7 @@ mod tests {
     async fn test_insert_queue_item_with_phase() {
         let pool = setup_test_db_with_queue().await;
         let proj = create_test_project(&pool).await;
-        let fid = create_feature(&pool, proj, "Feature", "ws-feature").await.unwrap();
+        let fid = create_feature(&pool, proj, "Feature", "ws-feature", None).await.unwrap();
 
         let item_id = insert_queue_item(&pool, fid, "feature_build", "execute", Some(42), "blocked", 1, Some(0))
             .await
@@ -863,7 +865,7 @@ mod tests {
     async fn test_get_queue_for_feature() {
         let pool = setup_test_db_with_queue().await;
         let proj = create_test_project(&pool).await;
-        let fid = create_feature(&pool, proj, "Feature", "ws-feature").await.unwrap();
+        let fid = create_feature(&pool, proj, "Feature", "ws-feature", None).await.unwrap();
 
         insert_queue_item(&pool, fid, "feature_build", "prd", None, "ready", 0, None).await.unwrap();
         insert_queue_item(&pool, fid, "feature_build", "plan", None, "blocked", 1, None).await.unwrap();
@@ -881,7 +883,7 @@ mod tests {
     async fn test_get_queue_for_feature_includes_phase_title() {
         let pool = setup_test_db_with_queue().await;
         let proj = create_test_project(&pool).await;
-        let fid = create_feature(&pool, proj, "Feature", "ws-feature").await.unwrap();
+        let fid = create_feature(&pool, proj, "Feature", "ws-feature", None).await.unwrap();
 
         // Create a plan and phase
         let plan_id = sqlx::query("INSERT INTO plans (feature_id, title) VALUES (?, 'Test Plan')")
@@ -903,7 +905,7 @@ mod tests {
     async fn test_get_queue_for_feature_empty() {
         let pool = setup_test_db_with_queue().await;
         let proj = create_test_project(&pool).await;
-        let fid = create_feature(&pool, proj, "Feature", "ws-feature").await.unwrap();
+        let fid = create_feature(&pool, proj, "Feature", "ws-feature", None).await.unwrap();
 
         let items = get_queue_for_feature(&pool, fid).await.unwrap();
         assert!(items.is_empty());
@@ -913,7 +915,7 @@ mod tests {
     async fn test_get_ready_items() {
         let pool = setup_test_db_with_queue().await;
         let proj = create_test_project(&pool).await;
-        let fid = create_feature(&pool, proj, "Feature", "ws-feature").await.unwrap();
+        let fid = create_feature(&pool, proj, "Feature", "ws-feature", None).await.unwrap();
 
         insert_queue_item(&pool, fid, "feature_build", "prd", None, "ready", 0, None).await.unwrap();
         insert_queue_item(&pool, fid, "feature_build", "plan", None, "blocked", 1, None).await.unwrap();
@@ -928,7 +930,7 @@ mod tests {
     async fn test_mark_item_running() {
         let pool = setup_test_db_with_queue().await;
         let proj = create_test_project(&pool).await;
-        let fid = create_feature(&pool, proj, "Feature", "ws-feature").await.unwrap();
+        let fid = create_feature(&pool, proj, "Feature", "ws-feature", None).await.unwrap();
 
         let item_id = insert_queue_item(&pool, fid, "feature_build", "prd", None, "ready", 0, None).await.unwrap();
         mark_item_running(&pool, item_id).await.unwrap();
@@ -942,7 +944,7 @@ mod tests {
     async fn test_mark_item_completed() {
         let pool = setup_test_db_with_queue().await;
         let proj = create_test_project(&pool).await;
-        let fid = create_feature(&pool, proj, "Feature", "ws-feature").await.unwrap();
+        let fid = create_feature(&pool, proj, "Feature", "ws-feature", None).await.unwrap();
 
         let item_id = insert_queue_item(&pool, fid, "feature_build", "prd", None, "running", 0, None).await.unwrap();
         mark_item_completed(&pool, item_id, Some(r#"{"ok": true}"#)).await.unwrap();
@@ -957,7 +959,7 @@ mod tests {
     async fn test_mark_item_completed_no_result() {
         let pool = setup_test_db_with_queue().await;
         let proj = create_test_project(&pool).await;
-        let fid = create_feature(&pool, proj, "Feature", "ws-feature").await.unwrap();
+        let fid = create_feature(&pool, proj, "Feature", "ws-feature", None).await.unwrap();
 
         let item_id = insert_queue_item(&pool, fid, "feature_build", "prd", None, "running", 0, None).await.unwrap();
         mark_item_completed(&pool, item_id, None).await.unwrap();
@@ -971,7 +973,7 @@ mod tests {
     async fn test_mark_item_error() {
         let pool = setup_test_db_with_queue().await;
         let proj = create_test_project(&pool).await;
-        let fid = create_feature(&pool, proj, "Feature", "ws-feature").await.unwrap();
+        let fid = create_feature(&pool, proj, "Feature", "ws-feature", None).await.unwrap();
 
         let item_id = insert_queue_item(&pool, fid, "feature_build", "prd", None, "running", 0, None).await.unwrap();
         mark_item_error(&pool, item_id, Some(r#"{"error": "failed"}"#)).await.unwrap();
@@ -986,7 +988,7 @@ mod tests {
     async fn test_mark_item_skipped() {
         let pool = setup_test_db_with_queue().await;
         let proj = create_test_project(&pool).await;
-        let fid = create_feature(&pool, proj, "Feature", "ws-feature").await.unwrap();
+        let fid = create_feature(&pool, proj, "Feature", "ws-feature", None).await.unwrap();
 
         let item_id = insert_queue_item(&pool, fid, "feature_build", "prd", None, "blocked", 0, None).await.unwrap();
         mark_item_skipped(&pool, item_id).await.unwrap();
@@ -1000,7 +1002,7 @@ mod tests {
     async fn test_update_item_pid() {
         let pool = setup_test_db_with_queue().await;
         let proj = create_test_project(&pool).await;
-        let fid = create_feature(&pool, proj, "Feature", "ws-feature").await.unwrap();
+        let fid = create_feature(&pool, proj, "Feature", "ws-feature", None).await.unwrap();
 
         let item_id = insert_queue_item(&pool, fid, "feature_build", "prd", None, "running", 0, None).await.unwrap();
         update_item_pid(&pool, item_id, 12345).await.unwrap();
@@ -1013,7 +1015,7 @@ mod tests {
     async fn test_insert_dependency_and_unblock() {
         let pool = setup_test_db_with_queue().await;
         let proj = create_test_project(&pool).await;
-        let fid = create_feature(&pool, proj, "Feature", "ws-feature").await.unwrap();
+        let fid = create_feature(&pool, proj, "Feature", "ws-feature", None).await.unwrap();
 
         let item1 = insert_queue_item(&pool, fid, "feature_build", "prd", None, "ready", 0, None).await.unwrap();
         let item2 = insert_queue_item(&pool, fid, "feature_build", "plan", None, "blocked", 1, None).await.unwrap();
@@ -1039,7 +1041,7 @@ mod tests {
     async fn test_unblock_with_skipped_dependency() {
         let pool = setup_test_db_with_queue().await;
         let proj = create_test_project(&pool).await;
-        let fid = create_feature(&pool, proj, "Feature", "ws-feature").await.unwrap();
+        let fid = create_feature(&pool, proj, "Feature", "ws-feature", None).await.unwrap();
 
         let item1 = insert_queue_item(&pool, fid, "feature_build", "prd", None, "ready", 0, None).await.unwrap();
         let item2 = insert_queue_item(&pool, fid, "feature_build", "plan", None, "blocked", 1, None).await.unwrap();
@@ -1055,7 +1057,7 @@ mod tests {
     async fn test_unblock_multiple_dependencies() {
         let pool = setup_test_db_with_queue().await;
         let proj = create_test_project(&pool).await;
-        let fid = create_feature(&pool, proj, "Feature", "ws-feature").await.unwrap();
+        let fid = create_feature(&pool, proj, "Feature", "ws-feature", None).await.unwrap();
 
         let item1 = insert_queue_item(&pool, fid, "feature_build", "prd", None, "completed", 0, None).await.unwrap();
         let item2 = insert_queue_item(&pool, fid, "feature_build", "plan", None, "running", 1, None).await.unwrap();
@@ -1080,7 +1082,7 @@ mod tests {
     async fn test_clear_queue_for_feature() {
         let pool = setup_test_db_with_queue().await;
         let proj = create_test_project(&pool).await;
-        let fid = create_feature(&pool, proj, "Feature", "ws-feature").await.unwrap();
+        let fid = create_feature(&pool, proj, "Feature", "ws-feature", None).await.unwrap();
 
         let item1 = insert_queue_item(&pool, fid, "feature_build", "prd", None, "ready", 0, None).await.unwrap();
         let item2 = insert_queue_item(&pool, fid, "feature_build", "plan", None, "blocked", 1, None).await.unwrap();
@@ -1101,8 +1103,8 @@ mod tests {
     async fn test_clear_queue_isolates_features() {
         let pool = setup_test_db_with_queue().await;
         let proj = create_test_project(&pool).await;
-        let fid1 = create_feature(&pool, proj, "Feature 1", "ws-feature").await.unwrap();
-        let fid2 = create_feature(&pool, proj, "Feature 2", "ws-feature").await.unwrap();
+        let fid1 = create_feature(&pool, proj, "Feature 1", "ws-feature", None).await.unwrap();
+        let fid2 = create_feature(&pool, proj, "Feature 2", "ws-feature", None).await.unwrap();
 
         insert_queue_item(&pool, fid1, "feature_build", "prd", None, "ready", 0, None).await.unwrap();
         insert_queue_item(&pool, fid2, "feature_build", "prd", None, "ready", 0, None).await.unwrap();
@@ -1120,7 +1122,7 @@ mod tests {
     async fn test_is_empty_session_no_messages() {
         let pool = setup_test_db().await;
         let proj = create_test_project(&pool).await;
-        let fid = create_feature(&pool, proj, "Session", "ws-session").await.unwrap();
+        let fid = create_feature(&pool, proj, "Session", "ws-session", None).await.unwrap();
 
         // Session with no messages should be empty
         sqlx::query("INSERT INTO agent_sessions (feature_id, title, status) VALUES (?, 'sess', 'idle')")
@@ -1134,7 +1136,7 @@ mod tests {
     async fn test_is_empty_ws_session_paused_no_messages() {
         let pool = setup_test_db().await;
         let proj = create_test_project(&pool).await;
-        let fid = create_feature(&pool, proj, "Session", "ws-session").await.unwrap();
+        let fid = create_feature(&pool, proj, "Session", "ws-session", None).await.unwrap();
 
         // A paused ws-session with no messages should still be empty
         sqlx::query("INSERT INTO agent_sessions (feature_id, title, status) VALUES (?, 'sess', 'paused')")
@@ -1148,7 +1150,7 @@ mod tests {
     async fn test_set_feature_setting_upsert() {
         let pool = setup_test_db().await;
         let proj = create_test_project(&pool).await;
-        let fid = create_feature(&pool, proj, "Feature", "ws-feature").await.unwrap();
+        let fid = create_feature(&pool, proj, "Feature", "ws-feature", None).await.unwrap();
 
         set_feature_setting(&pool, fid, "custom_key", "value1").await.unwrap();
         set_feature_setting(&pool, fid, "custom_key", "value2").await.unwrap();
@@ -1177,7 +1179,7 @@ mod tests {
         ).execute(&pool).await.unwrap();
         sqlx::query("PRAGMA foreign_keys = ON").execute(&pool).await.unwrap();
         let proj = create_test_project(&pool).await;
-        let fid = create_feature(&pool, proj, "Feature", "ws-feature").await.unwrap();
+        let fid = create_feature(&pool, proj, "Feature", "ws-feature", None).await.unwrap();
 
         // Create plan + phase
         let plan_id = sqlx::query("INSERT INTO plans (feature_id, title, status) VALUES (?, 'Plan', 'active')")
@@ -1217,7 +1219,7 @@ mod tests {
         let pool = setup_test_db().await;
         sqlx::query("PRAGMA foreign_keys = ON").execute(&pool).await.unwrap();
         let proj = create_test_project(&pool).await;
-        let fid = create_feature(&pool, proj, "Empty Feature", "ws-feature").await.unwrap();
+        let fid = create_feature(&pool, proj, "Empty Feature", "ws-feature", None).await.unwrap();
 
         delete_feature(&pool, fid).await.unwrap();
 
@@ -1240,7 +1242,7 @@ mod tests {
     async fn test_insert_draft_queue_item() {
         let pool = setup_test_db_with_queue().await;
         let proj = create_test_project(&pool).await;
-        let fid = create_feature(&pool, proj, "Feature", "ws-feature").await.unwrap();
+        let fid = create_feature(&pool, proj, "Feature", "ws-feature", None).await.unwrap();
 
         let item_id = insert_queue_item(&pool, fid, "feature_build", "execute", Some(1), "draft", 0, Some(0))
             .await
@@ -1256,7 +1258,7 @@ mod tests {
     async fn test_draft_items_not_returned_by_get_ready_items() {
         let pool = setup_test_db_with_queue().await;
         let proj = create_test_project(&pool).await;
-        let fid = create_feature(&pool, proj, "Feature", "ws-feature").await.unwrap();
+        let fid = create_feature(&pool, proj, "Feature", "ws-feature", None).await.unwrap();
 
         insert_queue_item(&pool, fid, "feature_build", "execute", Some(1), "draft", 0, Some(0))
             .await
@@ -1274,7 +1276,7 @@ mod tests {
     async fn test_upgrade_draft_items_to_ready() {
         let pool = setup_test_db_with_queue().await;
         let proj = create_test_project(&pool).await;
-        let fid = create_feature(&pool, proj, "Feature", "ws-feature").await.unwrap();
+        let fid = create_feature(&pool, proj, "Feature", "ws-feature", None).await.unwrap();
 
         let id1 = insert_queue_item(&pool, fid, "feature_build", "execute", Some(1), "draft", 0, Some(0))
             .await.unwrap();
@@ -1303,7 +1305,7 @@ mod tests {
     async fn test_clear_queue_removes_draft_items() {
         let pool = setup_test_db_with_queue().await;
         let proj = create_test_project(&pool).await;
-        let fid = create_feature(&pool, proj, "Feature", "ws-feature").await.unwrap();
+        let fid = create_feature(&pool, proj, "Feature", "ws-feature", None).await.unwrap();
 
         insert_queue_item(&pool, fid, "feature_build", "execute", Some(1), "draft", 0, Some(0))
             .await.unwrap();
@@ -1320,7 +1322,7 @@ mod tests {
     async fn test_unblock_does_not_affect_draft_items() {
         let pool = setup_test_db_with_queue().await;
         let proj = create_test_project(&pool).await;
-        let fid = create_feature(&pool, proj, "Feature", "ws-feature").await.unwrap();
+        let fid = create_feature(&pool, proj, "Feature", "ws-feature", None).await.unwrap();
 
         let draft_id = insert_queue_item(&pool, fid, "feature_build", "execute", Some(1), "draft", 0, Some(0))
             .await.unwrap();

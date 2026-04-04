@@ -6,6 +6,7 @@ pub mod retro;
 pub mod review;
 pub mod risk;
 pub mod session;
+pub mod workflow;
 
 use std::sync::Arc;
 
@@ -16,6 +17,7 @@ use super::context::McpContext;
 use self::{
     execute::ExecuteServer, plan::PlanServer, prd::PrdServer, qa::QaServer,
     retro::RetroServer, review::ReviewServer, risk::RiskServer, session::SessionServer,
+    workflow::WorkflowServer,
 };
 
 /// Agent types that can be served
@@ -29,6 +31,7 @@ pub enum AgentType {
     Risk,
     Retro,
     Session,
+    Workflow,
 }
 
 impl std::str::FromStr for AgentType {
@@ -44,6 +47,7 @@ impl std::str::FromStr for AgentType {
             "risk" => Ok(Self::Risk),
             "retro" => Ok(Self::Retro),
             "session" => Ok(Self::Session),
+            "workflow" => Ok(Self::Workflow),
             other => Err(format!("Unknown agent type: {other}")),
         }
     }
@@ -60,6 +64,7 @@ pub enum McpServer {
     Risk(RiskServer),
     Retro(RetroServer),
     Session(SessionServer),
+    Workflow(WorkflowServer),
 }
 
 /// Create the appropriate MCP server for the given agent type.
@@ -73,6 +78,7 @@ pub fn create_mcp_server(agent_type: AgentType, ctx: Arc<McpContext>) -> McpServ
         AgentType::Risk => McpServer::Risk(RiskServer::new(ctx)),
         AgentType::Retro => McpServer::Retro(RetroServer::new(ctx)),
         AgentType::Session => McpServer::Session(SessionServer::new(ctx)),
+        AgentType::Workflow => McpServer::Workflow(WorkflowServer::new(ctx)),
     }
 }
 
@@ -87,6 +93,7 @@ pub fn mcp_server_name(agent_type: AgentType) -> &'static str {
         AgentType::Risk => "cadence-risk",
         AgentType::Retro => "cadence-retro",
         AgentType::Session => "cadence-session",
+        AgentType::Workflow => "cadence-workflow",
     }
 }
 

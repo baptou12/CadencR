@@ -3,7 +3,7 @@ use sqlx::SqlitePool;
 /// Columns that exist on both `features` and `projects` tables.
 const SHARED_COLUMNS: &[&str] = &[
     "model_plan", "model_prd", "model_execute", "model_risk", "model_review",
-    "model_review-fixer", "model_session", "model_qa", "model_retro",
+    "model_review-fixer", "model_session", "model_qa", "model_retro", "model_workflow",
     "agent_autonomy", "parallel_execution",
 ];
 
@@ -81,7 +81,8 @@ mod tests {
                 parallel_execution TEXT,
                 model_plan TEXT, model_prd TEXT, model_execute TEXT,
                 model_risk TEXT, model_review TEXT, "model_review-fixer" TEXT,
-                model_session TEXT, model_qa TEXT, model_retro TEXT
+                model_session TEXT, model_qa TEXT, model_retro TEXT,
+                model_workflow TEXT
             )"#,
         ).execute(&pool).await.unwrap();
         sqlx::query(
@@ -95,7 +96,8 @@ mod tests {
                 qa_prompt TEXT,
                 model_plan TEXT, model_prd TEXT, model_execute TEXT,
                 model_risk TEXT, model_review TEXT,
-                model_session TEXT, model_qa TEXT, model_retro TEXT
+                model_session TEXT, model_qa TEXT, model_retro TEXT,
+                model_workflow TEXT
             )"#,
         ).execute(&pool).await.unwrap();
         sqlx::query(

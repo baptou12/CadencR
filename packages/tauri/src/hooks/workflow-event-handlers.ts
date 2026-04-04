@@ -10,6 +10,7 @@
 import { invalidateFeatureQueries } from "@/lib/featureUpdated";
 import { type CommandsListPayload } from "@/lib/ws-envelope";
 import type { SlashCommand } from "@/hooks/useSlashCommand";
+import { queryClient } from "@/lib/queryClient";
 import {
   type WorkflowState,
   type WorkflowStatus,
@@ -373,6 +374,72 @@ export function createWorkflowMessageHandler(
         set({
           worktreeStatus: "setup_error",
           worktreeError: (payload.error ?? payload.message ?? "") as string,
+        });
+        break;
+      }
+      case "phase_started": {
+        const slug = payload.phase_slug as string;
+        const sessionId = payload.session_id as number;
+        set(state => {
+          const phaseStates = new Map(state.phaseStates);
+          phaseStates.set(slug, {
+            slug,
+            status: "running",
+            agentSessionId: sessionId,
+            artifactPreview: phaseStates.get(slug)?.artifactPreview ?? null,
+          });
+          // Create an activeAgent entry so existing agent streaming UI works
+          const activeAgents = new Map(state.activeAgents);
+          const agentKey = sessionId;
+          if (!activeAgents.has(agentKey)) {
+            activeAgents.set(agentKey, createAgentSession(sessionId, slug));
+          }
+          return { phaseStates, activeAgents };
+        });
+        break;
+      }
+      case "phase_completed": {
+        const slug = payload.phase_slug as string;
+        const preview = (payload.artifact_preview as string) ?? null;
+        const featureId = get().featureId;
+        set(state => {
+          const phaseStates = new Map(state.phaseStates);
+          phaseStates.set(slug, {
+            slug,
+            status: "completed",
+            agentSessionId: phaseStates.get(slug)?.agentSessionId ?? null,
+            artifactPreview: preview,
+          });
+          return { phaseStates };
+        });
+        if (featureId) {
+          void queryClient.invalidateQueries({ queryKey: ["workflow-artifact", featureId, slug] });
+        }
+        break;
+      }
+      case "artifact_updated": {
+        const slug = payload.phase_slug as string;
+        const featureId = get().featureId;
+        if (featureId) {
+          void queryClient.invalidateQueries({ queryKey: ["workflow-artifact", featureId, slug] });
+        }
+        break;
+      }
+      case "approval_requested": {
+        const slug = payload.phase_slug as string;
+        const content = payload.artifact_content as string;
+        set(state => {
+          const phaseStates = new Map(state.phaseStates);
+          phaseStates.set(slug, {
+            slug,
+            status: "pending_approval",
+            agentSessionId: phaseStates.get(slug)?.agentSessionId ?? null,
+            artifactPreview: phaseStates.get(slug)?.artifactPreview ?? null,
+          });
+          return {
+            phaseStates,
+            pendingApproval: { phaseSlug: slug, artifactContent: content },
+          };
         });
         break;
       }

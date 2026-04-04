@@ -44,6 +44,33 @@ pub async fn insert_queue_item_with_retries(
     Ok(result.last_insert_rowid())
 }
 
+#[allow(dead_code)]
+pub async fn insert_queue_item_with_config(
+    pool: &SqlitePool,
+    feature_id: i64,
+    workflow_type: &str,
+    item_type: &str,
+    status: &str,
+    order_index: i64,
+    group_index: Option<i64>,
+    config: Option<&str>,
+) -> Result<i64, AppError> {
+    let result = sqlx::query(
+        r#"INSERT INTO workflow_queue (feature_id, workflow_type, item_type, status, order_index, group_index, config, max_retries)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 1)"#,
+    )
+    .bind(feature_id)
+    .bind(workflow_type)
+    .bind(item_type)
+    .bind(status)
+    .bind(order_index)
+    .bind(group_index)
+    .bind(config)
+    .execute(pool)
+    .await?;
+    Ok(result.last_insert_rowid())
+}
+
 pub async fn insert_dependency(
     pool: &SqlitePool,
     queue_item_id: i64,
@@ -186,6 +213,43 @@ pub fn map_phase_type_to_item_type(phase_type: Option<&str>) -> &'static str {
         Some("qa") => "qa",
         _ => "execute",
     }
+}
+
+#[allow(dead_code)]
+pub async fn mark_item_pending_approval(pool: &SqlitePool, item_id: i64) -> Result<(), AppError> {
+    sqlx::query("UPDATE workflow_queue SET status = 'pending_approval', ended_at = datetime('now') WHERE id = ?")
+        .bind(item_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+#[allow(dead_code)]
+pub async fn get_queue_item_by_slug(
+    pool: &SqlitePool,
+    feature_id: i64,
+    phase_slug: &str,
+    status: &str,
+) -> Result<Option<QueueItem>, AppError> {
+    let item = sqlx::query_as::<_, QueueItem>(
+        "SELECT * FROM workflow_queue WHERE feature_id = ? AND item_type = ? AND status = ? LIMIT 1",
+    )
+    .bind(feature_id)
+    .bind(phase_slug)
+    .bind(status)
+    .fetch_optional(pool)
+    .await?;
+    Ok(item)
+}
+
+#[allow(dead_code)]
+pub async fn update_item_config(pool: &SqlitePool, item_id: i64, config: &str) -> Result<(), AppError> {
+    sqlx::query("UPDATE workflow_queue SET config = ? WHERE id = ?")
+        .bind(config)
+        .bind(item_id)
+        .execute(pool)
+        .await?;
+    Ok(())
 }
 
 pub async fn clear_queue_for_feature(pool: &SqlitePool, feature_id: i64) -> Result<(), AppError> {

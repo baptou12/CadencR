@@ -24,13 +24,22 @@ async fn main() -> anyhow::Result<()> {
         Some(Command::McpServe {
             agent_type,
             feature_id,
+            phase_slug,
+            input_phase_slugs,
         }) => {
             let db_path = config
                 .db_path
                 .clone()
                 .expect("--db-path or CADENCE_DB_PATH env var required for mcp-serve");
 
-            domain::mcp::stdio::run_mcp_stdio(&db_path, agent_type, *feature_id).await?;
+            domain::mcp::stdio::run_mcp_stdio(
+                &db_path,
+                agent_type,
+                *feature_id,
+                phase_slug.clone(),
+                input_phase_slugs.clone(),
+            )
+            .await?;
         }
         None => {
 
@@ -44,6 +53,7 @@ async fn main() -> anyhow::Result<()> {
 
             let write_pool = db::create_write_pool(&db_path).await?;
             shared::migrate::run_migrations(&write_pool).await?;
+            domain::ws_workflow::presets::seed_presets(&write_pool).await?;
             let read_pool = db::create_read_pool(&db_path).await?;
 
             // Mark any sessions left as 'running' from a previous crash as 'paused'

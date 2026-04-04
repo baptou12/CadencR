@@ -9,10 +9,10 @@ vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => mockNavigate,
 }));
 
-const mockCreateProject = vi.fn();
+const _mockCreateProject = vi.fn();
 const mockCreateFeature = vi.fn();
-const mockCreateSession = vi.fn();
-const mockInvalidate = vi.fn();
+const _mockCreateSession = vi.fn();
+const _mockInvalidate = vi.fn();
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 

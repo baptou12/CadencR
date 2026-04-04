@@ -16,13 +16,14 @@ use crate::domain::ws_session::auto_name;
 use crate::domain::ws_session::persistence::WsSessionPersistence;
 use crate::domain::ws_session::protocol::*;
 use super::{SdkSessions, WsSender};
+use super::workflow_custom;
 
 /// Global engine registry: one engine per feature_id at a time.
-static ENGINES: LazyLock<DashMap<i64, Arc<WorkflowEngine>>> = LazyLock::new(DashMap::new);
+pub(super) static ENGINES: LazyLock<DashMap<i64, Arc<WorkflowEngine>>> = LazyLock::new(DashMap::new);
 static BACKGROUND_INIT: Once = Once::new();
 
 /// Spawn global background tasks (runs once): engine eviction + timeout checker.
-fn ensure_background_tasks(timeout_minutes: u64) {
+pub(super) fn ensure_background_tasks(timeout_minutes: u64) {
     BACKGROUND_INIT.call_once(move || {
         // Eviction task: remove idle engines every 5 min
         tokio::spawn(async {
@@ -144,7 +145,7 @@ pub async fn pause_all_engines() {
     }
 }
 
-fn send_workflow_error(sender: &WsSender, ref_id: &str, code: &str, message: &str) {
+pub(super) fn send_workflow_error(sender: &WsSender, ref_id: &str, code: &str, message: &str) {
     let err = WsEnvelope::reply(
         ref_id,
         "workflow",
@@ -164,7 +165,7 @@ pub fn get_engine(feature_id: i64) -> Option<Arc<WorkflowEngine>> {
 
 /// Parse a workflow payload and look up the engine in one step.
 /// Sends an error envelope and returns `None` on failure.
-fn parse_and_get_engine<T: DeserializeOwned + HasFeatureId>(
+pub(super) fn parse_and_get_engine<T: DeserializeOwned + HasFeatureId>(
     envelope: &WsEnvelope,
     sender: &WsSender,
 ) -> Option<(T, Arc<WorkflowEngine>)> {
@@ -187,7 +188,7 @@ fn parse_and_get_engine<T: DeserializeOwned + HasFeatureId>(
 
 /// Parse a workflow payload without requiring an engine.
 /// Sends an error envelope and returns `None` on failure.
-fn parse_payload<T: DeserializeOwned>(
+pub(super) fn parse_payload<T: DeserializeOwned>(
     envelope: &WsEnvelope,
     sender: &WsSender,
 ) -> Option<T> {
@@ -201,7 +202,7 @@ fn parse_payload<T: DeserializeOwned>(
 }
 
 /// Helper to serialize a typed payload to serde_json::Value.
-fn to_value<T: serde::Serialize>(v: T) -> serde_json::Value {
+pub(super) fn to_value<T: serde::Serialize>(v: T) -> serde_json::Value {
     serde_json::to_value(v).unwrap()
 }
 
@@ -212,6 +213,17 @@ pub async fn handle_workflow_action(
     _sdk_sessions: &SdkSessions,
     app_state: &AppState,
 ) {
+    // Legacy-only actions: reject if feature uses a custom workflow definition
+    let is_legacy_only = matches!(
+        envelope.action.as_str(),
+        "start_plan" | "start_prd" | "plan.approved" | "plan.rejected"
+            | "prd.approved" | "prd.rejected" | "populate_queue" | "start_build"
+            | "start_refine" | "start_review_fixer" | "start_risk" | "start_retro"
+    );
+    if is_legacy_only && workflow_custom::guard_legacy_action(&envelope, sender, &app_state.read_pool).await {
+        return;
+    }
+
     match envelope.action.as_str() {
         "feature.start" => handle_feature_start(envelope, sender, app_state).await,
         "start_plan" => handle_start_plan(envelope, sender, app_state).await,
@@ -235,6 +247,9 @@ pub async fn handle_workflow_action(
         "start_risk" => handle_start_risk(envelope, sender).await,
         "start_retro" => handle_start_retro(envelope, sender).await,
         "mark_done" => handle_mark_done(envelope, sender).await,
+        "phase_approval" => workflow_custom::handle_phase_approval(envelope, sender, app_state).await,
+        "phase_trigger" => workflow_custom::handle_phase_trigger(envelope, sender, app_state).await,
+        "feature_start_custom" => workflow_custom::handle_feature_start_custom(envelope, sender, app_state).await,
         unknown => {
             send_workflow_error(&sender, &envelope.id, "UNKNOWN_ACTION", &format!("Unknown workflow action: {unknown}"));
         }
@@ -294,7 +309,7 @@ async fn handle_feature_start(
         ensure_background_tasks(app_state.agent_timeout_minutes);
     } else {
         // No existing engine — create fresh and restore from DB
-        let engine = Arc::new(WorkflowEngine::new(
+        let engine = match WorkflowEngine::new(
             feature_id,
             workflow_type.clone(),
             app_state.read_pool.clone(),
@@ -303,7 +318,15 @@ async fn handle_feature_start(
             app_state.max_parallel_agents,
             app_state.turn_state_tx.clone(),
         )
-        .await);
+        .await
+        {
+            Ok(e) => Arc::new(e),
+            Err(e) => {
+                tracing::error!(feature_id, error = %e, "failed to create workflow engine");
+                send_workflow_error(sender, &envelope.id, "ENGINE_ERROR", &e);
+                return;
+            }
+        };
 
         if is_workflow_feature {
             if let Err(e) = engine.restore_on_reconnect().await {
@@ -505,7 +528,7 @@ async fn handle_populate_queue(envelope: WsEnvelope, sender: &WsSender, app_stat
     let Some((payload, engine)) = parse_and_get_engine::<WorkflowPopulateQueuePayload>(&envelope, sender) else { return };
 
     let feature_id = payload.feature_id;
-    let strategy = match crate::domain::workflow::strategies::get_strategy(&engine.workflow_type) {
+    let strategy = match workflow_custom::resolve_strategy(&engine.workflow_type, feature_id, &app_state.read_pool).await {
         Ok(s) => s,
         Err(e) => {
             send_workflow_error(sender, &envelope.id, "STRATEGY_ERROR", &e);
@@ -542,7 +565,7 @@ async fn handle_start_build(envelope: WsEnvelope, sender: &WsSender, app_state: 
 
     if item_count == 0 {
         info!(feature_id = payload.feature_id, "start_build: queue empty, populating first");
-        let strategy = match crate::domain::workflow::strategies::get_strategy(&engine.workflow_type) {
+        let strategy = match workflow_custom::resolve_strategy(&engine.workflow_type, payload.feature_id, &app_state.read_pool).await {
             Ok(s) => s,
             Err(e) => {
                 send_workflow_error(sender, &envelope.id, "STRATEGY_ERROR", &e);

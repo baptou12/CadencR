@@ -258,7 +258,7 @@ export function useWsWorkflowBackend(
 
   // Still loading if hydrated but sessions need history (blocks empty, not yet fetched).
   // This prevents a flash of empty agent cards before conversation blocks arrive.
-  const needsHistory = !isHydrating && sessions.length > 0 && sessions.some(
+  const needsHistory = !isHydrating && sessions.some(
     (s) => (s.status === "paused" || s.status === "running") && s.blocks.length === 0,
   );
   const isLoading = isHydrating || needsHistory;

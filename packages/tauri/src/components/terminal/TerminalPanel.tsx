@@ -95,7 +95,7 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
   // Remove slots for leaves that no longer exist
   useEffect(() => {
     const activeIds = new Set(leaves.map((l) => l.id));
-    for (const [id, el] of [...slotsRef.current]) {
+    for (const [id, el] of slotsRef.current) {
       if (!activeIds.has(id)) {
         el.remove();
         slotsRef.current.delete(id);

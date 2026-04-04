@@ -15,6 +15,24 @@ import type { SlashCommand } from "@/hooks/useSlashCommand";
 // Types
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Workflow Phase types (custom workflow engine)
+// ---------------------------------------------------------------------------
+
+export type PhaseStatus = "pending" | "blocked" | "ready" | "running" | "completed" | "pending_approval" | "error";
+
+export interface PhaseState {
+  slug: string;
+  status: PhaseStatus;
+  agentSessionId: number | null;
+  artifactPreview: string | null;
+}
+
+export interface PendingApproval {
+  phaseSlug: string;
+  artifactContent: string;
+}
+
 export type WorkflowStatus =
   | "idle"
   | "planning"
@@ -143,6 +161,11 @@ export interface WorkflowState {
   /** Live feature title pushed via WS after auto-naming. */
   featureTitle: string | null;
 
+  // Custom workflow phase state
+  workflowDefinitionId: number | null;
+  phaseStates: Map<string, PhaseState>;
+  pendingApproval: PendingApproval | null;
+
   // Slash commands
   slashCommands: SlashCommand[];
   slashCommandsLoading: boolean;
@@ -187,6 +210,12 @@ export interface WorkflowState {
   removeAgent: (itemId: number) => void;
   deleteSession: (sessionDbId: number) => void;
   clearError: () => void;
+
+  // Custom workflow actions
+  approvePhase: (phaseSlug: string, approved: boolean, feedback?: string) => void;
+  triggerPhase: (phaseSlug: string) => void;
+  startCustomWorkflow: (featureId: number, projectId: number, title: string, workflowDefinitionId: number, description?: string) => void;
+
   populateAgentBlocks: (itemId: number, blocks: AgentBlockData[], hasMore?: boolean, oldestMessageId?: number | null) => void;
   populateOlderBlocks: (itemId: number, blocks: AgentBlockData[], hasMore: boolean, oldestMessageId: number | null) => void;
 }

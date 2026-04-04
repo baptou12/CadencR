@@ -15,6 +15,7 @@ pub enum AppError {
     NotFound(String),
     BadRequest(String),
     Internal(String),
+    Conflict(String),
 }
 
 impl std::fmt::Display for AppError {
@@ -25,6 +26,7 @@ impl std::fmt::Display for AppError {
             AppError::NotFound(msg) => write!(f, "Not found: {msg}"),
             AppError::BadRequest(msg) => write!(f, "Bad request: {msg}"),
             AppError::Internal(msg) => write!(f, "Internal error: {msg}"),
+            AppError::Conflict(msg) => write!(f, "Conflict: {msg}"),
         }
     }
 }
@@ -39,6 +41,7 @@ impl IntoResponse for AppError {
             AppError::NotFound(_) => (StatusCode::NOT_FOUND, "NOT_FOUND"),
             AppError::BadRequest(_) => (StatusCode::BAD_REQUEST, "BAD_REQUEST"),
             AppError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR"),
+            AppError::Conflict(_) => (StatusCode::CONFLICT, "CONFLICT"),
         };
 
         if status.is_server_error() {
