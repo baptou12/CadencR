@@ -165,24 +165,29 @@ export function WorktreeSetupSection({
   ];
 
   return (
-    <div className="mb-2 flex flex-col rounded-lg border border-border bg-background">
-      {/* Header */}
+    <div className="flex flex-col border-b border-border bg-background">
+      {/* Header — compact inline row */}
       <div
-        className="flex cursor-pointer items-center gap-2 px-3 py-2 hover:bg-muted/50"
+        className="flex cursor-pointer items-center gap-2 px-6 py-1.5 hover:bg-muted/70"
         onClick={() => setUserToggle((prev) => !(prev ?? isOpen))}
       >
         <ChevronRightIcon
           className={cn(
-            "size-4 text-muted-foreground transition-transform duration-200",
+            "size-3.5 text-foreground/40 transition-transform duration-200",
             isOpen && "rotate-90",
           )}
         />
-        <GitBranchIcon className="size-4 text-muted-foreground" />
-        <span className="text-sm font-medium">Worktree Setup</span>
+        <GitBranchIcon className="size-3.5 text-foreground/50" />
+        <span className="text-xs font-medium text-foreground/70">Worktree Setup</span>
+        {branch && (
+          <span className="text-xs font-mono text-muted-foreground truncate max-w-[200px]">
+            {branch}
+          </span>
+        )}
         <Badge
           variant="secondary"
           className={cn(
-            "gap-1 text-xs",
+            "gap-1 text-[10px] px-1.5 py-0",
             isDone && "bg-green-500/15 text-green-400",
             isRunning && "bg-blue-500/15 text-blue-400",
             isError && "bg-red-500/15 text-red-400",
@@ -190,28 +195,28 @@ export function WorktreeSetupSection({
         >
           {isDone && (
             <>
-              <CheckCircle2Icon className="size-3" />
-              done
+              <CheckCircle2Icon className="size-2.5" />
+              ready
             </>
           )}
           {isRunning && (
             <>
-              <Loader2Icon className="size-3 animate-spin" />
+              <Loader2Icon className="size-2.5 animate-spin" />
               running
             </>
           )}
           {isError && (
             <>
-              <AlertCircleIcon className="size-3" />
+              <AlertCircleIcon className="size-2.5" />
               error
             </>
           )}
         </Badge>
       </div>
 
-      {/* Body */}
+      {/* Expanded details */}
       {isOpen && (
-        <div className="space-y-2 border-t border-border px-4 py-3">
+        <div className="space-y-1.5 border-t border-border/50 px-6 py-2">
           {steps.map((s, i) => (
             <div key={i} className="flex items-start gap-2">
               <div className="mt-0.5">
@@ -223,12 +228,12 @@ export function WorktreeSetupSection({
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-muted-foreground">
+                  <span className="text-[10px] text-muted-foreground">
                     {i + 1}.
                   </span>
-                  <span className="text-sm">{s.label}</span>
+                  <span className="text-xs">{s.label}</span>
                   {s.detail && (
-                    <span className="text-xs text-muted-foreground font-mono truncate">
+                    <span className="text-[10px] text-muted-foreground font-mono truncate">
                       {s.detail}
                     </span>
                   )}
@@ -241,11 +246,11 @@ export function WorktreeSetupSection({
           ))}
 
           {isError && (
-            <div className="pt-1">
+            <div className="pt-0.5">
               <Button
                 variant="outline"
                 size="sm"
-                className="h-7 gap-1.5"
+                className="h-6 gap-1.5 text-xs"
                 onClick={retryWorktreeSetup}
               >
                 <RefreshCwIcon className="size-3" />

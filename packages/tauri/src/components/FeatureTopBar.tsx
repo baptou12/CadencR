@@ -17,8 +17,9 @@ import {
 } from "@/api/generated";
 import { ModelSelector } from "./ModelSelector";
 import { useFeatureTitle } from "@/hooks/useFeatureTitle";
-import type { AutonomyLevel } from "@/types/workflow";
+import type { AutonomyLevel, WorktreeStatus } from "@/types/workflow";
 import { useWorkflowStore } from "@/hooks/useWorkflowWebSocket";
+import { WorktreeSetupSection } from "./WorktreeSetupSection";
 import { startDragging, toggleMaximize } from "@/lib/window-drag";
 import { ProjectColorDot } from "@/hooks/useProjectColor";
 import { useSidebarCollapsed } from "@/components/SidebarContext";
@@ -38,9 +39,12 @@ interface FeatureTopBarProps {
   projectId: number;
   mode?: "feature" | "session";
   className?: string;
+  wsWorktreeStatus?: WorktreeStatus;
+  wsWorktreeBranch?: string | null;
+  wsWorktreeSetupOutput?: string[];
 }
 
-export function FeatureTopBar({ featureId, projectId, mode = "feature", className }: FeatureTopBarProps) {
+export function FeatureTopBar({ featureId, projectId, mode = "feature", className, wsWorktreeStatus, wsWorktreeBranch, wsWorktreeSetupOutput }: FeatureTopBarProps) {
   const isSession = mode === "session";
   const { collapsed: sidebarCollapsed, setCollapsed: setSidebarCollapsed } = useSidebarCollapsed();
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -88,6 +92,7 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", classNam
   if (!feature) return null;
 
   return (
+    <>
     <div onMouseDown={startDragging} onDoubleClick={toggleMaximize} className={cn("flex items-center gap-3 border-b border-border px-6 py-3", className)}>
       {sidebarCollapsed && (
         <>
@@ -237,5 +242,13 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", classNam
       </Popover>
 
     </div>
+    <WorktreeSetupSection
+      featureId={featureId}
+      projectId={projectId}
+      wsWorktreeStatus={wsWorktreeStatus}
+      wsWorktreeBranch={wsWorktreeBranch}
+      wsWorktreeSetupOutput={wsWorktreeSetupOutput}
+    />
+    </>
   );
 }

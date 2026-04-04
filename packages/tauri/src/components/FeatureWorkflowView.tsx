@@ -15,7 +15,6 @@ import { PlanInputView } from "@/components/PlanInputView";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { NextStepsBar } from "@/components/NextStepsBar";
 import { DiffViewerModal } from "@/components/diff/DiffViewerModal";
-import { WorktreeSetupSection } from "@/components/WorktreeSetupSection";
 import type { FeatureSession } from "@/hooks/useFeatureAgentState";
 import type { ContextUsageState } from "@/types/agent";
 import { useResolvedModel } from "@/hooks/useResolvedModel";
@@ -202,7 +201,7 @@ export function FeatureWorkflowView({
   return (
     <CodeBlockActionsContext.Provider value={codeBlockActions}>
     <div className="relative flex h-full flex-col">
-      <FeatureTopBar featureId={featureId} projectId={projectId} />
+      <FeatureTopBar featureId={featureId} projectId={projectId} wsWorktreeStatus={backend.worktreeStatus} wsWorktreeBranch={backend.worktreeBranch} wsWorktreeSetupOutput={backend.worktreeSetupOutput} />
       <FeatureTabBar activeTab={activeTab} featureId={featureId} onTabChange={handleTabChange} gitStats={gitStats} gitBranch={backend.worktreeBranch} onTerminalActivate={handleTerminalActivate} />
       <div className="relative min-h-0 flex-1 overflow-hidden">
         {/* Terminal tab — stays mounted to preserve PTY */}
@@ -255,17 +254,6 @@ export function FeatureWorkflowView({
               </div>
             )}
 
-            {view !== "plan-input" && view !== "loading" && !maximizedAgent && (
-              <div className="shrink-0 px-6 pt-6">
-                <WorktreeSetupSection
-                  featureId={featureId}
-                  projectId={projectId}
-                  wsWorktreeStatus={backend.worktreeStatus}
-                  wsWorktreeBranch={backend.worktreeBranch}
-                  wsWorktreeSetupOutput={backend.worktreeSetupOutput}
-                />
-              </div>
-            )}
 
             {!backend.hasAnyAgentOutput && backend.sessionEntries.length === 0 &&
               !backend.isStartingWorkflowSession &&

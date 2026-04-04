@@ -42,7 +42,7 @@ describe("WorktreeSetupSection", () => {
     expect(screen.getByText("Worktree Setup")).toBeInTheDocument();
   });
 
-  it("shows done badge when step is done", () => {
+  it("shows ready badge when step is done", () => {
     mockGetSettings.mockReturnValue({
       data: settingsArray({
         worktree_setup_step: "done",
@@ -52,7 +52,7 @@ describe("WorktreeSetupSection", () => {
       }),
     });
     render(<WorktreeSetupSection featureId={1} projectId={1} />);
-    expect(screen.getByText("done")).toBeInTheDocument();
+    expect(screen.getByText("ready")).toBeInTheDocument();
   });
 
   it("shows error badge when step is error", () => {
@@ -112,7 +112,7 @@ describe("WorktreeSetupSection", () => {
       }),
     });
     render(<WorktreeSetupSection featureId={1} projectId={1} />);
-    expect(screen.getByText("done")).toBeInTheDocument();
+    expect(screen.getByText("ready")).toBeInTheDocument();
     expect(screen.queryByText("running")).not.toBeInTheDocument();
   });
 
