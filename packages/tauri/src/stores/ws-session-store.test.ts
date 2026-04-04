@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { DEFAULT_MODEL } from "../shared/models";
-import { useWsSessionStore } from "./ws-session-store";
+import { useWsSessionStore, applyMutations, createStreamingState } from "./ws-session-store";
 
 // --- Mock WebSocket ---
 
@@ -950,6 +950,53 @@ describe("ws-session-store", () => {
       const retryMsg = sent.find((m) => m.action === "retry_worktree_setup");
       expect(retryMsg).toBeDefined();
       expect(retryMsg.payload.feature_id).toBeNull();
+    });
+  });
+
+  describe("applyMutations – toolArgs during streaming", () => {
+    it("preserves toolArgs when content is partial JSON", () => {
+      const validArgs = JSON.stringify({ description: "Find files", prompt: "search" });
+      const existing = [
+        { id: "b1", type: "tool_call" as const, content: validArgs, toolName: "Agent", toolArgs: validArgs },
+      ];
+      const streamState = createStreamingState();
+      // Simulate a streaming delta that makes content partial JSON
+      const result = applyMutations(existing, [
+        { action: "replace", block: { id: "b1", type: "tool_call", content: '{"description": "Fi', toolName: "Agent" } },
+      ], streamState);
+      // toolArgs should still hold the previous valid value
+      expect(result[0].toolArgs).toBe(validArgs);
+    });
+
+    it("updates toolArgs when content becomes valid JSON", () => {
+      const existing = [
+        { id: "b1", type: "tool_call" as const, content: "", toolName: "Agent", toolArgs: "" },
+      ];
+      const streamState = createStreamingState();
+      const newArgs = JSON.stringify({ description: "Run tests" });
+      const result = applyMutations(existing, [
+        { action: "replace", block: { id: "b1", type: "tool_call", content: newArgs, toolName: "Agent" } },
+      ], streamState);
+      expect(result[0].toolArgs).toBe(newArgs);
+    });
+
+    it("preserves child block toolArgs when content is partial JSON", () => {
+      const validArgs = JSON.stringify({ description: "Explore code" });
+      const parent = {
+        id: "p1", type: "tool_call" as const, content: "{}", toolName: "Agent",
+        toolUseId: "tu1",
+        childBlocks: [
+          { id: "c1", type: "tool_call" as const, content: validArgs, toolName: "Read", toolArgs: validArgs },
+        ],
+      };
+      const streamState = createStreamingState();
+      streamState.toolUseIdToBlock.set("tu1", parent);
+      // Update targets child block (not found in root, so falls through to child search)
+      const result = applyMutations([], [
+        { action: "replace", block: { id: "c1", type: "tool_call", content: '{"desc', toolName: "Read" } },
+      ], streamState);
+      const updatedChild = streamState.toolUseIdToBlock.get("tu1")!.childBlocks![0];
+      expect(updatedChild.toolArgs).toBe(validArgs);
     });
   });
 });

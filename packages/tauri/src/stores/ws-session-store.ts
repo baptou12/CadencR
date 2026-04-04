@@ -539,7 +539,7 @@ export function applyMutations(
         ? mut.block.content
         : existing.content + mut.block.content;
       if (existing.type === "tool_call") {
-        existing.toolArgs = existing.content;
+        try { JSON.parse(existing.content); existing.toolArgs = existing.content; } catch { /* keep previous toolArgs until JSON is complete */ }
       }
       result[idx] = existing;
     } else {
@@ -552,7 +552,7 @@ export function applyMutations(
           ? mut.block.content
           : child.content + mut.block.content;
         if (child.type === "tool_call") {
-          child.toolArgs = child.content;
+          try { JSON.parse(child.content); child.toolArgs = child.content; } catch { /* keep previous toolArgs until JSON is complete */ }
         }
         parentBlock.childBlocks[childIdx] = child;
         break;
