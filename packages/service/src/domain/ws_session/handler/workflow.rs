@@ -1195,6 +1195,13 @@ async fn handle_feature_start_custom(
     ENGINES.insert(feature_id, engine);
     ensure_background_tasks(app_state.agent_timeout_minutes);
 
+    // Start the first ready phase(s)
+    if let Some(engine) = ENGINES.get(&feature_id) {
+        if let Err(e) = engine.queue.advance(&engine.agent_manager, &engine.permissions).await {
+            tracing::error!(feature_id, error = %e, "failed to auto-advance after custom workflow start");
+        }
+    }
+
     let ack = WsEnvelope::reply(&envelope.id, "workflow", "acknowledged", to_value(WorkflowAcknowledgedPayload {
         feature_id,
         action: "feature_start_custom".into(),

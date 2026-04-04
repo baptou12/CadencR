@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use sqlx::SqlitePool;
 
 use crate::error::AppError;
@@ -50,11 +51,44 @@ pub async fn list_workflow_definitions(pool: &SqlitePool) -> Result<Vec<Workflow
     .await
     .map_err(|e| AppError::DatabaseError(e.to_string()))?;
 
-    let mut defs = Vec::with_capacity(rows.len());
-    for row in rows {
-        defs.push(build_definition(pool, row).await?);
+    if rows.is_empty() {
+        return Ok(vec![]);
     }
-    Ok(defs)
+
+    let ids: Vec<i64> = rows.iter().map(|r| r.0).collect();
+    let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+    let query = format!(
+        "SELECT id, workflow_definition_id, name, slug, order_index, gate_type, \
+         system_prompt_template, command_prompt_template, artifact_template, \
+         input_phase_slugs, model_override \
+         FROM workflow_phases WHERE workflow_definition_id IN ({}) ORDER BY order_index",
+        placeholders
+    );
+
+    let mut q = sqlx::query_as::<_, (i64, i64, String, String, i32, String, String, String, String, String, String)>(&query);
+    for id in &ids {
+        q = q.bind(id);
+    }
+    let phase_rows = q.fetch_all(pool).await.map_err(|e| AppError::DatabaseError(e.to_string()))?;
+
+    let mut phases_map: HashMap<i64, Vec<WorkflowPhase>> = HashMap::new();
+    for r in phase_rows {
+        let input_phase_slugs: Vec<String> = serde_json::from_str(&r.9).unwrap_or_default();
+        phases_map.entry(r.1).or_default().push(WorkflowPhase {
+            id: r.0, workflow_definition_id: r.1, name: r.2, slug: r.3,
+            order_index: r.4, gate_type: r.5, system_prompt_template: r.6,
+            command_prompt_template: r.7, artifact_template: r.8,
+            input_phase_slugs, model_override: r.10,
+        });
+    }
+
+    Ok(rows.into_iter().map(|row| {
+        WorkflowDefinition {
+            id: row.0, name: row.1, slug: row.2, description: row.3,
+            is_preset: row.4, phases: phases_map.remove(&row.0).unwrap_or_default(),
+            created_at: row.5, updated_at: row.6,
+        }
+    }).collect())
 }
 
 pub async fn get_workflow_definition(pool: &SqlitePool, id: i64) -> Result<Option<WorkflowDefinition>, AppError> {
@@ -267,34 +301,51 @@ pub async fn update_workflow_phase(
     input_phase_slugs: Option<&Vec<String>>,
     model_override: Option<&str>,
 ) -> Result<WorkflowPhase, AppError> {
+    // Build a single dynamic UPDATE with all provided fields
+    let mut set_clauses: Vec<String> = Vec::new();
+    let mut values: Vec<String> = Vec::new();
+
     if let Some(v) = name {
-        sqlx::query("UPDATE workflow_phases SET name = ? WHERE id = ?").bind(v).bind(phase_id)
-            .execute(pool).await.map_err(|e| AppError::DatabaseError(e.to_string()))?;
+        set_clauses.push("name = ?".into());
+        values.push(v.to_string());
     }
     if let Some(v) = gate_type {
-        sqlx::query("UPDATE workflow_phases SET gate_type = ? WHERE id = ?").bind(v).bind(phase_id)
-            .execute(pool).await.map_err(|e| AppError::DatabaseError(e.to_string()))?;
+        set_clauses.push("gate_type = ?".into());
+        values.push(v.to_string());
     }
     if let Some(v) = system_prompt_template {
-        sqlx::query("UPDATE workflow_phases SET system_prompt_template = ? WHERE id = ?").bind(v).bind(phase_id)
-            .execute(pool).await.map_err(|e| AppError::DatabaseError(e.to_string()))?;
+        set_clauses.push("system_prompt_template = ?".into());
+        values.push(v.to_string());
     }
     if let Some(v) = command_prompt_template {
-        sqlx::query("UPDATE workflow_phases SET command_prompt_template = ? WHERE id = ?").bind(v).bind(phase_id)
-            .execute(pool).await.map_err(|e| AppError::DatabaseError(e.to_string()))?;
+        set_clauses.push("command_prompt_template = ?".into());
+        values.push(v.to_string());
     }
     if let Some(v) = artifact_template {
-        sqlx::query("UPDATE workflow_phases SET artifact_template = ? WHERE id = ?").bind(v).bind(phase_id)
-            .execute(pool).await.map_err(|e| AppError::DatabaseError(e.to_string()))?;
+        set_clauses.push("artifact_template = ?".into());
+        values.push(v.to_string());
     }
     if let Some(v) = input_phase_slugs {
+        set_clauses.push("input_phase_slugs = ?".into());
         let json = serde_json::to_string(v).map_err(|e| AppError::Internal(e.to_string()))?;
-        sqlx::query("UPDATE workflow_phases SET input_phase_slugs = ? WHERE id = ?").bind(&json).bind(phase_id)
-            .execute(pool).await.map_err(|e| AppError::DatabaseError(e.to_string()))?;
+        values.push(json);
     }
     if let Some(v) = model_override {
-        sqlx::query("UPDATE workflow_phases SET model_override = ? WHERE id = ?").bind(v).bind(phase_id)
-            .execute(pool).await.map_err(|e| AppError::DatabaseError(e.to_string()))?;
+        set_clauses.push("model_override = ?".into());
+        values.push(v.to_string());
+    }
+
+    if !set_clauses.is_empty() {
+        let sql = format!(
+            "UPDATE workflow_phases SET {} WHERE id = ?",
+            set_clauses.join(", ")
+        );
+        let mut q = sqlx::query(&sql);
+        for val in &values {
+            q = q.bind(val);
+        }
+        q = q.bind(phase_id);
+        q.execute(pool).await.map_err(|e| AppError::DatabaseError(e.to_string()))?;
     }
 
     let row = sqlx::query_as::<_, (i64, i64, String, String, i32, String, String, String, String, String, String)>(
