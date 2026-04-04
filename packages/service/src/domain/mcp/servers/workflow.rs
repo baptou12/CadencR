@@ -174,7 +174,17 @@ impl ServerHandler for WorkflowServer {
                 },
                 "read_prior_artifacts" => self.read_prior_artifacts().await,
                 "update_artifact" => match require_str(&args, "content") {
-                    Ok(v) => self.create_artifact(v).await,
+                    Ok(v) => {
+                        let phase_slug = match self.require_phase_slug() {
+                            Ok(s) => s,
+                            Err(e) => return Ok(error_result(&e)),
+                        };
+                        match ws_repo::get_artifact(&self.ctx.read_pool, self.ctx.feature_id, &phase_slug).await {
+                            Ok(Some(_)) => self.create_artifact(v).await,
+                            Ok(None) => Err(format!("No artifact exists for phase '{phase_slug}'. Use create_artifact first.")),
+                            Err(e) => Err(e.to_string()),
+                        }
+                    }
                     Err(e) => Err(e),
                 },
                 "request_approval" => {
