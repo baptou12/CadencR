@@ -1,5 +1,5 @@
-/// Three-layer prompt templates for the BMAD preset.
-/// Follows BMAD persona patterns: identity, style, principles.
+// Three-layer prompt templates for the BMAD preset.
+// Follows BMAD persona patterns: identity, style, principles.
 
 // ── Analysis ──
 

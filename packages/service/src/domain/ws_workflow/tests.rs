@@ -4,7 +4,7 @@ mod repository_tests {
     use sqlx::sqlite::SqlitePoolOptions;
 
     use crate::domain::ws_workflow::models::*;
-    use crate::domain::ws_workflow::repository;
+    use crate::domain::ws_workflow::{artifact_repository, repository};
     use crate::domain::ws_workflow::presets;
 
     async fn setup_pool() -> SqlitePool {
@@ -210,14 +210,14 @@ mod repository_tests {
         let pool = setup_pool().await;
 
         // Create
-        let a1 = repository::upsert_artifact(&pool, 1, "plan", "initial content", None)
+        let a1 = artifact_repository::upsert_artifact(&pool, 1, "plan", "initial content", None)
             .await
             .unwrap();
         assert_eq!(a1.content, "initial content");
         assert_eq!(a1.phase_slug, "plan");
 
         // Overwrite
-        let a2 = repository::upsert_artifact(&pool, 1, "plan", "updated content", Some(42))
+        let a2 = artifact_repository::upsert_artifact(&pool, 1, "plan", "updated content", Some(42))
             .await
             .unwrap();
         assert_eq!(a2.content, "updated content");
@@ -229,13 +229,13 @@ mod repository_tests {
     async fn test_get_artifacts_for_feature() {
         let pool = setup_pool().await;
 
-        repository::upsert_artifact(&pool, 1, "plan", "plan content", None).await.unwrap();
-        repository::upsert_artifact(&pool, 1, "prd", "prd content", None).await.unwrap();
-        repository::upsert_artifact(&pool, 1, "build", "build content", None).await.unwrap();
+        artifact_repository::upsert_artifact(&pool, 1, "plan", "plan content", None).await.unwrap();
+        artifact_repository::upsert_artifact(&pool, 1, "prd", "prd content", None).await.unwrap();
+        artifact_repository::upsert_artifact(&pool, 1, "build", "build content", None).await.unwrap();
         // Different feature
-        repository::upsert_artifact(&pool, 2, "plan", "other", None).await.unwrap();
+        artifact_repository::upsert_artifact(&pool, 2, "plan", "other", None).await.unwrap();
 
-        let artifacts = repository::get_artifacts_for_feature(&pool, 1).await.unwrap();
+        let artifacts = artifact_repository::get_artifacts_for_feature(&pool, 1).await.unwrap();
         assert_eq!(artifacts.len(), 3);
     }
 

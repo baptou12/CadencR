@@ -5,7 +5,7 @@ use super::models::{
     CreateWorkflowDefinition, CreateWorkflowPhase, WorkflowArtifact,
     WorkflowDefinition, WorkflowPhase,
 };
-use super::repository;
+use super::{artifact_repository, repository};
 
 pub async fn list_definitions(pool: &SqlitePool) -> Result<Vec<WorkflowDefinition>, AppError> {
     repository::list_workflow_definitions(pool).await
@@ -67,6 +67,7 @@ pub async fn add_phase(
     repository::create_workflow_phase(pool, definition_id, phase).await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn update_phase(
     pool: &SqlitePool,
     phase_id: i64,
@@ -100,7 +101,7 @@ pub async fn list_artifacts(
     pool: &SqlitePool,
     feature_id: i64,
 ) -> Result<Vec<WorkflowArtifact>, AppError> {
-    repository::get_artifacts_for_feature(pool, feature_id).await
+    artifact_repository::get_artifacts_for_feature(pool, feature_id).await
 }
 
 pub async fn get_artifact(
@@ -108,7 +109,7 @@ pub async fn get_artifact(
     feature_id: i64,
     phase_slug: &str,
 ) -> Result<WorkflowArtifact, AppError> {
-    repository::get_artifact(pool, feature_id, phase_slug)
+    artifact_repository::get_artifact(pool, feature_id, phase_slug)
         .await?
         .ok_or_else(|| AppError::NotFound("Artifact not found".into()))
 }
@@ -119,5 +120,5 @@ pub async fn update_artifact(
     phase_slug: &str,
     content: &str,
 ) -> Result<WorkflowArtifact, AppError> {
-    repository::upsert_artifact(pool, feature_id, phase_slug, content, None).await
+    artifact_repository::upsert_artifact(pool, feature_id, phase_slug, content, None).await
 }

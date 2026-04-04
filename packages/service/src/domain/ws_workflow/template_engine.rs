@@ -5,7 +5,7 @@ use sqlx::SqlitePool;
 
 use crate::error::AppError;
 use super::models::{WorkflowDefinition, WorkflowPhase};
-use super::repository;
+use super::artifact_repository;
 
 pub struct TemplateContext {
     pub feature_title: String,
@@ -79,14 +79,14 @@ pub async fn build_template_context(
     // Collect prior artifacts from input_phase_slugs
     let mut prior_parts = Vec::new();
     for slug in &phase.input_phase_slugs {
-        if let Some(artifact) = repository::get_artifact(pool, feature_id, slug).await? {
+        if let Some(artifact) = artifact_repository::get_artifact(pool, feature_id, slug).await? {
             prior_parts.push(format!("## {}\n\n{}", slug, artifact.content));
         }
     }
     let prior_artifacts = prior_parts.join("\n\n---\n\n");
 
     // Build phase_artifacts map for all artifacts on this feature
-    let all_artifacts = repository::get_artifacts_for_feature(pool, feature_id).await?;
+    let all_artifacts = artifact_repository::get_artifacts_for_feature(pool, feature_id).await?;
     let phase_artifacts: HashMap<String, String> = all_artifacts
         .into_iter()
         .map(|a| (a.phase_slug, a.content))

@@ -1,4 +1,6 @@
 #[allow(dead_code)]
+pub mod artifact_repository;
+#[allow(dead_code)]
 pub mod models;
 pub mod presets;
 #[allow(dead_code)]

@@ -1,5 +1,5 @@
-/// Three-layer prompt templates for the OpenSpec preset.
-/// Based on proposal/specs/design/tasks artifact schemas.
+// Three-layer prompt templates for the OpenSpec preset.
+// Based on proposal/specs/design/tasks artifact schemas.
 
 // ── Propose ──
 

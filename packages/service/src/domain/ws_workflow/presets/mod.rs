@@ -7,6 +7,7 @@ use crate::error::AppError;
 use super::models::{CreateWorkflowDefinition, CreateWorkflowPhase, GateType};
 use super::repository;
 
+#[allow(clippy::too_many_arguments)]
 fn phase(
     order: i32,
     name: &str,

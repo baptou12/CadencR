@@ -1,5 +1,5 @@
-/// Three-layer prompt templates for the Speckit preset.
-/// Each phase has: system_prompt, command_prompt, artifact_template.
+// Three-layer prompt templates for the Speckit preset.
+// Each phase has: system_prompt, command_prompt, artifact_template.
 
 // ── Constitution ──
 

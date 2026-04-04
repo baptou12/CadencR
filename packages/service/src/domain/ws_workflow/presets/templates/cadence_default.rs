@@ -1,5 +1,5 @@
-/// Three-layer prompt templates for the Cadence Default preset.
-/// Mirrors the existing Plan → PRD → Build behavior.
+// Three-layer prompt templates for the Cadence Default preset.
+// Mirrors the existing Plan → PRD → Build behavior.
 
 // ── Plan ──
 

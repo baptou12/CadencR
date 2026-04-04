@@ -13,7 +13,7 @@ use serde_json::json;
 
 use crate::domain::mcp::context::McpContext;
 use crate::domain::mcp::tools::helpers::{error_result, require_str, text_result};
-use crate::domain::ws_workflow::repository as ws_repo;
+use crate::domain::ws_workflow::artifact_repository as ws_repo;
 
 use super::{make_tool, server_info};
 
@@ -125,6 +125,7 @@ impl WorkflowServer {
     }
 }
 
+#[allow(clippy::manual_async_fn)]
 impl ServerHandler for WorkflowServer {
     fn get_info(&self) -> ServerInfo {
         server_info("cadence-workflow")
