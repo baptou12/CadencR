@@ -30,6 +30,7 @@ import type { FeatureStatus } from "@/hooks/useFeatureState";
 const FeatureEditorTab = lazy(() => import("@/components/editor/FeatureEditorTab"));
 import type { FeatureEditorTabHandle } from "@/components/editor/FeatureEditorTab";
 import { useWorkflowStore } from "@/hooks/useWorkflowWebSocket";
+import { CustomWorkflowPlaceholder } from "@/components/CustomWorkflowPlaceholder";
 
 export function FeatureWorkflowView({
   featureId,
@@ -47,6 +48,7 @@ export function FeatureWorkflowView({
         type: string;
         project_id: number;
         created_at: string;
+        workflow_definition_id?: number | null;
       }
     | undefined;
   featureQuery: { refetch: () => unknown };
@@ -139,7 +141,7 @@ export function FeatureWorkflowView({
     setInlineDiffOpen(true);
   }, []);
 
-  const { agentRefs, setAgentRef, sessionPromptTrigger } = useWorkflowKeyboard(
+  const { agentRefs: _agentRefs, setAgentRef, sessionPromptTrigger } = useWorkflowKeyboard(
     backend, openAgent, setOpenAgent, handleViewDiffForAgent,
   );
 
@@ -197,6 +199,16 @@ export function FeatureWorkflowView({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionCount, loadAgentHistory, featureId]);
+
+  if (feature?.workflow_definition_id) {
+    return (
+      <CustomWorkflowPlaceholder
+        featureId={featureId}
+        projectId={projectId}
+        workflowDefinitionId={feature.workflow_definition_id}
+      />
+    );
+  }
 
   return (
     <CodeBlockActionsContext.Provider value={codeBlockActions}>
