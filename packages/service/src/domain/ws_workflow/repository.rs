@@ -378,6 +378,17 @@ pub async fn delete_workflow_phase(pool: &SqlitePool, phase_id: i64) -> Result<(
     Ok(())
 }
 
+pub async fn get_phase_definition_id(pool: &SqlitePool, phase_id: i64) -> Result<i64, AppError> {
+    sqlx::query_scalar::<_, i64>(
+        "SELECT workflow_definition_id FROM workflow_phases WHERE id = ?"
+    )
+    .bind(phase_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| AppError::DatabaseError(e.to_string()))?
+    .ok_or_else(|| AppError::NotFound("Workflow phase not found".into()))
+}
+
 pub async fn reorder_phases(
     pool: &SqlitePool,
     definition_id: i64,

@@ -277,6 +277,38 @@ mod repository_tests {
     }
 
     #[tokio::test]
+    async fn test_preset_phase_mutations_blocked() {
+        let pool = setup_pool().await;
+        let mut input = make_definition(
+            "Preset WF",
+            "preset-wf",
+            vec![make_phase(0, "Phase1", "phase1", GateType::Auto)],
+        );
+        input.is_preset = true;
+        let def = repository::create_workflow_definition(&pool, input).await.unwrap();
+        let phase_id = def.phases[0].id;
+
+        // add_phase should fail
+        let new_phase = make_phase(1, "Phase2", "phase2", GateType::Auto);
+        let add_result = crate::domain::ws_workflow::service::add_phase(&pool, def.id, &new_phase).await;
+        assert!(add_result.is_err());
+
+        // update_phase should fail
+        let update_result = crate::domain::ws_workflow::service::update_phase(
+            &pool, phase_id, Some("New Name"), None, None, None, None, None, None,
+        ).await;
+        assert!(update_result.is_err());
+
+        // delete_phase should fail
+        let delete_result = crate::domain::ws_workflow::service::delete_phase(&pool, phase_id).await;
+        assert!(delete_result.is_err());
+
+        // reorder_phases should fail
+        let reorder_result = crate::domain::ws_workflow::service::reorder_phases(&pool, def.id, &[phase_id]).await;
+        assert!(reorder_result.is_err());
+    }
+
+    #[tokio::test]
     async fn test_upsert_artifact() {
         let pool = setup_pool().await;
 
