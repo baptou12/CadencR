@@ -21,6 +21,9 @@ pub async fn create_definition(
     pool: &SqlitePool,
     input: CreateWorkflowDefinition,
 ) -> Result<WorkflowDefinition, AppError> {
+    if input.phases.is_empty() {
+        return Err(AppError::BadRequest("A workflow must have at least 1 phase".into()));
+    }
     repository::create_workflow_definition(pool, input).await
 }
 
@@ -64,6 +67,10 @@ pub async fn add_phase(
     definition_id: i64,
     phase: &CreateWorkflowPhase,
 ) -> Result<WorkflowPhase, AppError> {
+    let def = get_definition(pool, definition_id).await?;
+    if def.is_preset {
+        return Err(AppError::Conflict("Cannot modify phases of a preset workflow definition".into()));
+    }
     repository::create_workflow_phase(pool, definition_id, phase).await
 }
 
@@ -79,6 +86,11 @@ pub async fn update_phase(
     input_phase_slugs: Option<&Vec<String>>,
     model_override: Option<&str>,
 ) -> Result<WorkflowPhase, AppError> {
+    let definition_id = repository::get_phase_definition_id(pool, phase_id).await?;
+    let def = get_definition(pool, definition_id).await?;
+    if def.is_preset {
+        return Err(AppError::Conflict("Cannot modify phases of a preset workflow definition".into()));
+    }
     repository::update_workflow_phase(
         pool, phase_id, name, gate_type, system_prompt_template,
         command_prompt_template, artifact_template, input_phase_slugs, model_override,
@@ -86,6 +98,11 @@ pub async fn update_phase(
 }
 
 pub async fn delete_phase(pool: &SqlitePool, phase_id: i64) -> Result<(), AppError> {
+    let definition_id = repository::get_phase_definition_id(pool, phase_id).await?;
+    let def = get_definition(pool, definition_id).await?;
+    if def.is_preset {
+        return Err(AppError::Conflict("Cannot modify phases of a preset workflow definition".into()));
+    }
     repository::delete_workflow_phase(pool, phase_id).await
 }
 
@@ -94,6 +111,10 @@ pub async fn reorder_phases(
     definition_id: i64,
     phase_ids: &[i64],
 ) -> Result<(), AppError> {
+    let def = get_definition(pool, definition_id).await?;
+    if def.is_preset {
+        return Err(AppError::Conflict("Cannot modify phases of a preset workflow definition".into()));
+    }
     repository::reorder_phases(pool, definition_id, phase_ids).await
 }
 
