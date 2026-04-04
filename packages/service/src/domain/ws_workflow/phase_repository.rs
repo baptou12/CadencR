@@ -158,6 +158,7 @@ pub async fn reorder_phases(
     definition_id: i64,
     phase_ids_in_order: &[i64],
 ) -> Result<(), AppError> {
+    let mut tx = pool.begin().await.map_err(|e| AppError::DatabaseError(e.to_string()))?;
     for (idx, phase_id) in phase_ids_in_order.iter().enumerate() {
         sqlx::query(
             "UPDATE workflow_phases SET order_index = ? WHERE id = ? AND workflow_definition_id = ?"
@@ -165,9 +166,10 @@ pub async fn reorder_phases(
         .bind(idx as i32)
         .bind(phase_id)
         .bind(definition_id)
-        .execute(pool)
+        .execute(&mut *tx)
         .await
         .map_err(|e| AppError::DatabaseError(e.to_string()))?;
     }
+    tx.commit().await.map_err(|e| AppError::DatabaseError(e.to_string()))?;
     Ok(())
 }
