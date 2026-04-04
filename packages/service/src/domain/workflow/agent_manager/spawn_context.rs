@@ -93,7 +93,7 @@ impl AgentManager {
         include_mcp_instructions: bool,
         permissions: &PermissionRouter,
     ) -> Result<SpawnContext, String> {
-        let mcp_servers = build_mcp_server_config(agent_type, self.feature_id);
+        let mcp_servers = build_mcp_server_config(agent_type, self.feature_id, None, None);
         let expected_mcp_server = mcp_server_name(agent_type).to_string();
 
         let cwd = self.get_feature_cwd().await.ok_or_else(|| {

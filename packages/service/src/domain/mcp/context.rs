@@ -9,6 +9,10 @@ pub struct McpContext {
     pub feature_id: i64,
     /// Channel to signal agent completion
     pub done_sender: tokio::sync::Mutex<Option<oneshot::Sender<Option<String>>>>,
+    /// Current phase slug (workflow agents only)
+    pub phase_slug: Option<String>,
+    /// Input phase slugs whose artifacts this phase depends on (workflow agents only)
+    pub input_phase_slugs: Option<Vec<String>>,
 }
 
 impl McpContext {
@@ -17,12 +21,16 @@ impl McpContext {
         write_pool: SqlitePool,
         feature_id: i64,
         done_sender: oneshot::Sender<Option<String>>,
+        phase_slug: Option<String>,
+        input_phase_slugs: Option<Vec<String>>,
     ) -> Arc<Self> {
         Arc::new(Self {
             read_pool,
             write_pool,
             feature_id,
             done_sender: tokio::sync::Mutex::new(Some(done_sender)),
+            phase_slug,
+            input_phase_slugs,
         })
     }
 }

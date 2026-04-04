@@ -25,6 +25,8 @@ pub async fn run_mcp_stdio(
     db_path: &str,
     agent_type_str: &str,
     feature_id: i64,
+    phase_slug: Option<String>,
+    input_phase_slugs: Option<Vec<String>>,
 ) -> anyhow::Result<()> {
     let agent_type: super::servers::AgentType = agent_type_str
         .parse()
@@ -32,7 +34,7 @@ pub async fn run_mcp_stdio(
 
     info!(
         agent_type = agent_type_str,
-        feature_id, "starting MCP stdio server"
+        feature_id, ?phase_slug, "starting MCP stdio server"
     );
 
     let write_pool = db::create_write_pool(db_path).await?;
@@ -41,7 +43,9 @@ pub async fn run_mcp_stdio(
     // The done_sender is used by mark_agent_done/mark_phase_done tools.
     // We drop the receiver since we use .waiting() to keep the server alive.
     let (done_tx, _done_rx) = oneshot::channel();
-    let ctx = McpContext::new(read_pool, write_pool, feature_id, done_tx);
+    let ctx = McpContext::new(
+        read_pool, write_pool, feature_id, done_tx, phase_slug, input_phase_slugs,
+    );
 
     let server = super::servers::create_mcp_server(agent_type, ctx);
     let stdio = rmcp::transport::io::stdio();
@@ -58,6 +62,7 @@ pub async fn run_mcp_stdio(
         McpServer::Risk(s) => s.serve(stdio).await?.waiting().await,
         McpServer::Retro(s) => s.serve(stdio).await?.waiting().await,
         McpServer::Session(s) => s.serve(stdio).await?.waiting().await,
+        McpServer::Workflow(s) => s.serve(stdio).await?.waiting().await,
     };
 
     info!(?quit_reason, "MCP stdio server shutting down");

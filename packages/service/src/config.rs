@@ -19,12 +19,20 @@ pub struct Config {
 pub enum Command {
     /// Run as an MCP stdio server for a specific agent type
     McpServe {
-        /// Agent type to serve (plan, prd, execute, qa, review, risk, retro, session)
+        /// Agent type to serve (plan, prd, execute, qa, review, risk, retro, session, workflow)
         #[arg(long)]
         agent_type: String,
 
         /// Feature ID for context
         #[arg(long)]
         feature_id: i64,
+
+        /// Current phase slug (workflow agents only)
+        #[arg(long)]
+        phase_slug: Option<String>,
+
+        /// Comma-separated input phase slugs (workflow agents only)
+        #[arg(long, value_delimiter = ',')]
+        input_phase_slugs: Option<Vec<String>>,
     },
 }
