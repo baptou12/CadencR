@@ -32,7 +32,9 @@ const cadenceTheme = EditorView.theme(
       backgroundColor: PALETTE.bg,
       height: "100%",
       fontSize: "13px",
-      fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
+    },
+    ".cm-scroller": {
+      fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
     },
     ".cm-content": { caretColor: PALETTE.cursor },
     ".cm-cursor, .cm-dropCursor": { borderLeftColor: PALETTE.cursor },
