@@ -1846,7 +1846,7 @@ export function useForkWorkflowDefinition(
       customInstance({
         method: "POST",
         url: `/api/workflow-definitions/${params.id}/fork`,
-        data: { name: params.name, slug: params.slug },
+        data: { new_name: params.name, new_slug: params.slug },
       }),
     ...options,
   });

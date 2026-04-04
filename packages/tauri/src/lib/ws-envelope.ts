@@ -135,7 +135,7 @@ export function createPhaseApproval(
   approved: boolean,
   feedback?: string,
 ): WsEnvelope {
-  return createEnvelope("workflow", "phase.approval", {
+  return createEnvelope("workflow", "phase_approval", {
     feature_id: featureId,
     phase_slug: phaseSlug,
     approved,
@@ -144,7 +144,7 @@ export function createPhaseApproval(
 }
 
 export function createPhaseTrigger(featureId: number, phaseSlug: string): WsEnvelope {
-  return createEnvelope("workflow", "phase.trigger", {
+  return createEnvelope("workflow", "phase_trigger", {
     feature_id: featureId,
     phase_slug: phaseSlug,
   });
@@ -157,7 +157,7 @@ export function createCustomWorkflowStart(
   workflowDefinitionId: number,
   description?: string,
 ): WsEnvelope {
-  return createEnvelope("workflow", "custom_workflow.start", {
+  return createEnvelope("workflow", "feature_start_custom", {
     feature_id: featureId,
     project_id: projectId,
     title,
