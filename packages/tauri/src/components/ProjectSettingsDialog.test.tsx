@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@/test-utils";
 import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
 
-const { mockGetSettings, mockSetSetting } = vi.hoisted(() => ({
+const { mockGetSettings: _mockGetSettings, mockSetSetting: _mockSetSetting } = vi.hoisted(() => ({
   mockGetSettings: vi.fn(() => ({
     data: {
       branch_prefix: "feature/",

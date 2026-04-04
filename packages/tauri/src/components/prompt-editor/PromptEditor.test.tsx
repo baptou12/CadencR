@@ -1,6 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, act } from "@/test-utils";
-import userEvent from "@testing-library/user-event";
 import { PromptEditor, type PromptEditorHandle } from "./PromptEditor";
 import { createRef } from "react";
 

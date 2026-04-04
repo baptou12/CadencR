@@ -93,7 +93,7 @@ function dbStepToSetupStep(raw: string | undefined): SetupStep | null {
 
 export function WorktreeSetupSection({
   featureId,
-  projectId,
+  projectId: _projectId,
   wsWorktreeStatus,
   wsWorktreeBranch,
   wsWorktreeSetupOutput,
