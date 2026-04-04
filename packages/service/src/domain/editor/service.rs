@@ -1,6 +1,16 @@
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
+
+use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
+use nucleo_matcher::{Config, Matcher, Utf32Str};
 
 use crate::error::AppError;
+
+/// A file match result with path and matched character positions.
+pub struct FileMatch {
+    pub path: String,
+    pub positions: Vec<u32>,
+}
 
 /// Validate that `file_path` (relative) resolved under `project_path` stays
 /// within the project directory.  Returns the canonical absolute path.
@@ -80,18 +90,15 @@ pub fn build_gitignore(project_path: &Path) -> Option<ignore::gitignore::Gitigno
     builder.build().ok()
 }
 
-/// Recursively list all files under `project_path`, respecting .gitignore.
-/// Returns relative file paths. Errors if more than 10,000 files are found.
-pub fn list_all_files(project_path: &str) -> Result<Vec<String>, AppError> {
+/// Return the `limit` most recently modified files under `project_path`.
+pub fn recent_files(project_path: &str, limit: usize) -> Result<Vec<String>, AppError> {
     let project = std::fs::canonicalize(project_path)
         .map_err(|e| AppError::BadRequest(format!("Invalid project path: {e}")))?;
 
-    let mut files: Vec<String> = Vec::new();
+    let mut entries: Vec<(String, SystemTime)> = Vec::new();
 
     for result in ignore::WalkBuilder::new(&project).build() {
         let entry = result.map_err(|e| AppError::Internal(e.to_string()))?;
-
-        // Skip directories — only collect files
         if entry.file_type().map(|ft| ft.is_dir()).unwrap_or(true) {
             continue;
         }
@@ -103,16 +110,64 @@ pub fn list_all_files(project_path: &str) -> Result<Vec<String>, AppError> {
             .to_string_lossy()
             .to_string();
 
-        files.push(relative);
+        let mtime = entry
+            .metadata()
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .unwrap_or(SystemTime::UNIX_EPOCH);
 
-        if files.len() > 10_000 {
-            return Err(AppError::BadRequest(
-                "Project contains more than 10,000 files".to_string(),
-            ));
+        entries.push((relative, mtime));
+    }
+
+    entries.sort_by(|a, b| b.1.cmp(&a.1));
+    entries.truncate(limit);
+
+    Ok(entries.into_iter().map(|(path, _)| path).collect())
+}
+
+/// Fuzzy-search files under `project_path` matching `query`.
+/// Returns up to `limit` results sorted by match score, with match positions.
+pub fn fuzzy_search_files(
+    project_path: &str,
+    query: &str,
+    limit: usize,
+) -> Result<Vec<FileMatch>, AppError> {
+    let project = std::fs::canonicalize(project_path)
+        .map_err(|e| AppError::BadRequest(format!("Invalid project path: {e}")))?;
+
+    let pattern = Pattern::parse(query, CaseMatching::Smart, Normalization::Smart);
+    let mut matcher = Matcher::new(Config::DEFAULT);
+    let mut scored: Vec<(String, u32, Vec<u32>)> = Vec::new();
+    let mut buf = Vec::new();
+
+    for result in ignore::WalkBuilder::new(&project).build() {
+        let entry = result.map_err(|e| AppError::Internal(e.to_string()))?;
+        if entry.file_type().map(|ft| ft.is_dir()).unwrap_or(true) {
+            continue;
+        }
+
+        let relative = entry
+            .path()
+            .strip_prefix(&project)
+            .map_err(|e| AppError::Internal(e.to_string()))?
+            .to_string_lossy()
+            .to_string();
+
+        let haystack = Utf32Str::new(&relative, &mut buf);
+        let mut indices = Vec::new();
+
+        if let Some(score) = pattern.indices(haystack, &mut matcher, &mut indices) {
+            scored.push((relative, score, indices));
         }
     }
 
-    Ok(files)
+    scored.sort_by(|a, b| b.1.cmp(&a.1));
+    scored.truncate(limit);
+
+    Ok(scored
+        .into_iter()
+        .map(|(path, _, positions)| FileMatch { path, positions })
+        .collect())
 }
 
 /// Check if a path is matched by the gitignore rules.

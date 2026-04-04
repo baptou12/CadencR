@@ -27,10 +27,15 @@ function Command({
   )
 }
 
+interface CommandDialogProps extends React.ComponentProps<typeof Dialog> {
+  commandProps?: Partial<React.ComponentProps<typeof CommandPrimitive>>;
+}
+
 function CommandDialog({
   children,
+  commandProps,
   ...props
-}: React.ComponentProps<typeof Dialog>) {
+}: CommandDialogProps) {
   return (
     <Dialog {...props}>
       <DialogContent
@@ -38,7 +43,7 @@ function CommandDialog({
         showCloseButton={false}
       >
         <DialogTitle className="sr-only">Command palette</DialogTitle>
-        <Command className="[&_[cmdk-group-heading]]:text-muted-foreground [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group]]:px-2 [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-input-wrapper]_svg]:size-5 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-3 [&_[cmdk-item]_svg]:size-5">
+        <Command className="[&_[cmdk-group-heading]]:text-muted-foreground [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group]]:px-2 [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-input-wrapper]_svg]:size-5 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-3 [&_[cmdk-item]_svg]:size-5" {...commandProps}>
           {children}
         </Command>
       </DialogContent>

@@ -206,11 +206,18 @@ pub async fn tree_handler(
 #[derive(Debug, Deserialize, utoipa::IntoParams)]
 pub struct SearchParams {
     pub project_path: String,
+    pub query: Option<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct FileMatchResult {
+    pub path: String,
+    pub positions: Vec<u32>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct FileSearchResponse {
-    pub files: Vec<String>,
+    pub files: Vec<FileMatchResult>,
 }
 
 #[utoipa::path(get, path = "/api/editor/search",
@@ -220,10 +227,27 @@ pub async fn search_handler(
     Query(params): Query<SearchParams>,
 ) -> Result<axum::Json<FileSearchResponse>, AppError> {
     let project_path = params.project_path;
-    let files = tokio::task::spawn_blocking(move || service::list_all_files(&project_path))
-        .await
-        .map_err(|e| AppError::Internal(format!("Blocking task failed: {e}")))?
-        ?;
+    let query = params.query.unwrap_or_default();
+
+    let files: Vec<FileMatchResult> = tokio::task::spawn_blocking(move || -> Result<Vec<FileMatchResult>, AppError> {
+        if query.is_empty() {
+            let paths = service::recent_files(&project_path, 20)?;
+            Ok(paths
+                .into_iter()
+                .map(|path| FileMatchResult { path, positions: vec![] })
+                .collect())
+        } else {
+            let matches = service::fuzzy_search_files(&project_path, &query, 50)?;
+            Ok(matches
+                .into_iter()
+                .map(|m| FileMatchResult { path: m.path, positions: m.positions })
+                .collect())
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("Blocking task failed: {e}")))?
+    ?;
+
     Ok(axum::Json(FileSearchResponse { files }))
 }
 

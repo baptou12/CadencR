@@ -1594,26 +1594,34 @@ export function useFileTree(
   });
 }
 
+export interface FileMatchResult {
+  path: string;
+  positions: number[];
+}
+
 export interface FileSearchResponse {
-  files: string[];
+  files: FileMatchResult[];
 }
 
 export interface FileSearchParams {
   projectPath: string;
+  query?: string;
 }
 
-export function getFileSearchQueryKey(projectPath: string) {
-  return ["editor", "search", projectPath] as const;
+export function getFileSearchQueryKey(projectPath: string, query?: string) {
+  return ["editor", "search", projectPath, query ?? ""] as const;
 }
 
 export function useFileSearch(
   projectPath: string,
+  query?: string,
   options?: Omit<UseQueryOptions<FileSearchResponse, ErrorType<unknown>>, "queryKey" | "queryFn">,
 ) {
+  const queryParam = query ? `&query=${encodeURIComponent(query)}` : "";
   return useQuery<FileSearchResponse, ErrorType<unknown>>({
-    queryKey: getFileSearchQueryKey(projectPath),
+    queryKey: getFileSearchQueryKey(projectPath, query),
     queryFn: () =>
-      customInstance({ method: "GET", url: `/api/editor/search?project_path=${encodeURIComponent(projectPath)}` }),
+      customInstance({ method: "GET", url: `/api/editor/search?project_path=${encodeURIComponent(projectPath)}${queryParam}` }),
     ...options,
   });
 }
