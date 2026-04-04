@@ -124,3 +124,44 @@ export function createDraftGet(sessionId: number): WsEnvelope {
 export function createDraftSave(sessionId: number, draft: string | null): WsEnvelope {
   return createEnvelope("session", "draft.save", { session_id: sessionId, draft });
 }
+
+// ---------------------------------------------------------------------------
+// Custom workflow phase envelopes
+// ---------------------------------------------------------------------------
+
+export function createPhaseApproval(
+  featureId: number,
+  phaseSlug: string,
+  approved: boolean,
+  feedback?: string,
+): WsEnvelope {
+  return createEnvelope("workflow", "phase.approval", {
+    feature_id: featureId,
+    phase_slug: phaseSlug,
+    approved,
+    ...(feedback ? { feedback } : {}),
+  });
+}
+
+export function createPhaseTrigger(featureId: number, phaseSlug: string): WsEnvelope {
+  return createEnvelope("workflow", "phase.trigger", {
+    feature_id: featureId,
+    phase_slug: phaseSlug,
+  });
+}
+
+export function createCustomWorkflowStart(
+  featureId: number,
+  projectId: number,
+  title: string,
+  workflowDefinitionId: number,
+  description?: string,
+): WsEnvelope {
+  return createEnvelope("workflow", "custom_workflow.start", {
+    feature_id: featureId,
+    project_id: projectId,
+    title,
+    workflow_definition_id: workflowDefinitionId,
+    ...(description ? { description } : {}),
+  });
+}

@@ -8,7 +8,7 @@
 
 import { create } from "zustand";
 import { getWsUrl } from "@/lib/ws-url";
-import { createCommandsGet } from "@/lib/ws-envelope";
+import { createCommandsGet, createPhaseApproval, createPhaseTrigger, createCustomWorkflowStart } from "@/lib/ws-envelope";
 import {
   createWorkflowMessageHandler,
   itemIdToSlot,
@@ -34,6 +34,8 @@ import {
   type WorktreeSnapshot,
   type FeatureSnapshot,
   type WorkflowState,
+  type PhaseState,
+  type PendingApproval,
   type AgentSlot,
   agentSlotKey,
   agentSlotToLegacyId,
@@ -56,6 +58,8 @@ export type {
   FeatureSnapshot,
   WorkflowState,
   AgentSlot,
+  PhaseState,
+  PendingApproval,
 };
 export {
   agentSlotKey,
@@ -106,6 +110,9 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     worktreeSetupOutput: [],
     worktreeError: null,
     featureTitle: null,
+    workflowDefinitionId: null,
+    phaseStates: new Map(),
+    pendingApproval: null,
 
     requestSlashCommands(cwd: string) {
       const { ws, slashCommands, slashCommandsLoading } = get();
@@ -126,6 +133,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         workflowStatus: "idle", pauseReason: null, selectedItemId: null, error: null, hydrated: false, startingBuild: false, continuingBuild: false,
         worktreeStatus: "idle" as const, worktreePath: null, worktreeSetupOutput: [], worktreeError: null,
         featureTitle: null, slashCommands: [], slashCommandsLoading: false,
+        workflowDefinitionId: null, phaseStates: new Map(), pendingApproval: null,
       });
 
       ws.addEventListener("open", () => {
@@ -160,6 +168,25 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
 
     clearError() {
       set({ error: null });
+    },
+
+    approvePhase(phaseSlug, approved, feedback) {
+      const { ws, featureId } = get();
+      if (!ws || ws.readyState !== WebSocket.OPEN || !featureId) return;
+      ws.send(JSON.stringify(createPhaseApproval(featureId, phaseSlug, approved, feedback)));
+    },
+
+    triggerPhase(phaseSlug) {
+      const { ws, featureId } = get();
+      if (!ws || ws.readyState !== WebSocket.OPEN || !featureId) return;
+      ws.send(JSON.stringify(createPhaseTrigger(featureId, phaseSlug)));
+    },
+
+    startCustomWorkflow(featureId, projectId, title, workflowDefinitionId, description) {
+      const { ws } = get();
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      ws.send(JSON.stringify(createCustomWorkflowStart(featureId, projectId, title, workflowDefinitionId, description)));
+      set({ workflowDefinitionId });
     },
 
     setAutonomyLevel(level) {
