@@ -183,12 +183,6 @@ pub async fn delete_workflow_definition(pool: &SqlitePool, id: i64) -> Result<()
         ));
     }
 
-    sqlx::query("DELETE FROM workflow_phases WHERE workflow_definition_id = ?")
-        .bind(id)
-        .execute(pool)
-        .await
-        .map_err(|e| AppError::DatabaseError(e.to_string()))?;
-
     sqlx::query("DELETE FROM workflow_definitions WHERE id = ?")
         .bind(id)
         .execute(pool)

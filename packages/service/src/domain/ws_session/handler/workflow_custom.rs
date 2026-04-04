@@ -76,7 +76,7 @@ pub(super) async fn resolve_strategy(
             .bind(feature_id)
             .fetch_optional(read_pool)
             .await
-            .ok()
+            .map_err(|e| format!("Failed to resolve workflow definition: {e}"))?
             .flatten();
             match wd_id {
                 Some(id) => Ok(crate::domain::workflow::strategies::get_custom_strategy(id)),
