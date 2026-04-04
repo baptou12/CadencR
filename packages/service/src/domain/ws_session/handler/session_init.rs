@@ -7,6 +7,7 @@ use tracing::{debug, info};
 use claude_agent_sdk_rs::Options;
 
 use crate::app_state::AppState;
+use crate::domain::workflow::worktree;
 use super::super::permissions;
 use super::super::persistence::WsSessionPersistence;
 use super::super::protocol::*;
@@ -82,7 +83,15 @@ pub(super) async fn handle_init(
     // Build SDK options — prefer the model stored in the DB (last used) over the frontend settings model
     let effective_model = stored_model.clone().or(payload.model.clone());
     let mut options = Options::default();
-    options.cwd = std::path::PathBuf::from(&cwd);
+    // If the feature has a worktree, use its path as cwd (critical for --resume)
+    let effective_cwd = match worktree::get_setting(&app_state.read_pool, feature_id, "worktree_path").await {
+        Some(wt_path) if std::path::Path::new(&wt_path).exists() => {
+            info!(feature_id, worktree_path = %wt_path, "using worktree path as cwd");
+            wt_path
+        }
+        _ => cwd,
+    };
+    options.cwd = std::path::PathBuf::from(&effective_cwd);
     if let Some(ref model) = effective_model {
         options.model = Some(model.clone());
     }

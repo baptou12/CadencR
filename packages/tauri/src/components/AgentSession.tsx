@@ -27,6 +27,7 @@ import {
   Minimize2Icon,
   Zap,
   ClipboardList,
+  GitBranchIcon,
 } from "lucide-react";
 import { ShortcutTooltip } from "./ShortcutTooltip";
 import { AgentStream } from "./AgentStream";
@@ -268,6 +269,10 @@ export interface AgentSessionProps {
   hasMore?: boolean;
   /** Called when user scrolls to top and older messages should be loaded */
   onLoadOlder?: () => Promise<void>;
+  /** Whether "use worktree" is toggled on (shown as chip before first message) */
+  useWorktree?: boolean;
+  /** Called when user toggles the "use worktree" chip */
+  onToggleWorktree?: () => void;
 }
 
 /** Handle exposed by AgentSession via forwardRef */
@@ -361,6 +366,8 @@ export const AgentSession = memo(forwardRef<AgentSessionHandle, AgentSessionProp
   slashCommandsLoading,
   hasMore,
   onLoadOlder,
+  useWorktree,
+  onToggleWorktree,
 }, ref) {
   const promptBarRef = useRef<AgentPromptBarHandle>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -515,12 +522,14 @@ export const AgentSession = memo(forwardRef<AgentSessionHandle, AgentSessionProp
   }, [currentModelId, onModelChange, models]);
 
   // ---- Chip row (mode → model → review changes → tasks) ----
+  const showWorktreeChip = !!onToggleWorktree && blocks.length === 0 && status === "idle";
   const hasMeta =
     !!onPermissionModeToggle ||
     !!onModelChange ||
     showDiffBar ||
     (todos && todos.length > 0) ||
-    !!claudeSessionId;
+    !!claudeSessionId ||
+    showWorktreeChip;
 
   const chipClass =
     "flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors";
@@ -554,6 +563,24 @@ export const AgentSession = memo(forwardRef<AgentSessionHandle, AgentSessionProp
             {permissionMode === "plan" ? "Plan" : "Auto"}
           </button>
         </ShortcutTooltip>
+      )}
+
+      {/* Worktree chip — cyan, only before first message */}
+      {showWorktreeChip && (
+        <button
+          type="button"
+          onClick={onToggleWorktree}
+          className={cn(
+            chipClass,
+            useWorktree
+              ? "bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30"
+              : "bg-muted/50 text-muted-foreground hover:bg-muted/80",
+          )}
+        >
+          <GitBranchIcon className="size-3" />
+          Use worktree
+          {useWorktree && <CheckIcon className="size-3" />}
+        </button>
       )}
 
       {/* Model chip — violet */}

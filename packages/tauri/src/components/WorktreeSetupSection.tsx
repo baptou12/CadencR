@@ -97,6 +97,7 @@ export function WorktreeSetupSection({
   wsWorktreeStatus,
   wsWorktreeBranch,
   wsWorktreeSetupOutput,
+  onRetrySetup,
 }: {
   featureId: number;
   projectId: number;
@@ -104,6 +105,8 @@ export function WorktreeSetupSection({
   wsWorktreeStatus?: WorktreeStatus;
   wsWorktreeBranch?: string | null;
   wsWorktreeSetupOutput?: string[];
+  /** Override retry handler (used by ws-session). Falls back to workflow store. */
+  onRetrySetup?: () => void;
 }) {
   const useWsMode = wsWorktreeStatus != null && wsWorktreeStatus !== "idle";
 
@@ -112,7 +115,8 @@ export function WorktreeSetupSection({
     ? Object.fromEntries(settingsArray.map((s) => [s.key, s.value]))
     : undefined;
 
-  const retryWorktreeSetup = useWorkflowStore((s) => s.retryWorktreeSetup);
+  const workflowRetry = useWorkflowStore((s) => s.retryWorktreeSetup);
+  const retryWorktreeSetup = onRetrySetup ?? workflowRetry;
 
   const step = useWsMode
     ? wsStatusToStep(wsWorktreeStatus!)

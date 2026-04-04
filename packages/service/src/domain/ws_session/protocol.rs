@@ -100,6 +100,7 @@ pub struct PromptSendPayload {
     pub text: String,
     #[serde(default)]
     pub images: Vec<ImagePayload>,
+    pub use_worktree: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -617,7 +618,7 @@ mod tests {
         let _: SessionInitPayload = serde_json::from_value(v).unwrap();
 
         // PromptSendPayload
-        let p = PromptSendPayload { session_id: "s1".into(), text: "hello".into(), images: vec![] };
+        let p = PromptSendPayload { session_id: "s1".into(), text: "hello".into(), images: vec![], use_worktree: None };
         let v = serde_json::to_value(&p).unwrap();
         let _: PromptSendPayload = serde_json::from_value(v).unwrap();
 

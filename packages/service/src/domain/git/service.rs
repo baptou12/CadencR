@@ -18,25 +18,23 @@ const SETTING_WORKTREE_BRANCH: &str = "worktree_branch";
 // ---------------------------------------------------------------------------
 
 /// Resolve the git directory for a feature.
-/// Non-session features use worktree_path if available, otherwise project path.
+/// Uses worktree_path if available, otherwise project path.
 pub async fn resolve_feature_git_path(
     state: &AppState,
     feature_id: i64,
 ) -> Result<Option<String>, AppError> {
-    let row = repository::get_feature_type_and_project(&state.read_pool, feature_id).await?;
-
-    let (project_id, feature_type) = match row {
-        Some(r) => r,
-        None => return Ok(None),
-    };
-
-    if feature_type != "ws-session" {
-        let wt = repository::get_feature_setting(&state.read_pool, feature_id, SETTING_WORKTREE_PATH).await?;
-        if let Some(path) = wt {
-            return Ok(Some(path));
-        }
+    // Check worktree path first (applies to all feature types)
+    let wt = repository::get_feature_setting(&state.read_pool, feature_id, SETTING_WORKTREE_PATH).await?;
+    if let Some(path) = wt {
+        return Ok(Some(path));
     }
 
+    // Fall back to project path
+    let row = repository::get_feature_type_and_project(&state.read_pool, feature_id).await?;
+    let project_id = match row {
+        Some((pid, _)) => pid,
+        None => return Ok(None),
+    };
     match repository::get_project_path(&state.read_pool, project_id).await {
         Ok(p) => Ok(Some(p)),
         Err(_) => Ok(None),

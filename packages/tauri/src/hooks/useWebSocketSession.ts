@@ -46,7 +46,7 @@ export interface UseWebSocketSessionReturn {
   claudeSessionId: string;
   hasFileChanges: boolean;
   setModel: (modelId: string) => void;
-  sendPrompt: (text: string, images?: Array<{ base64: string; mimeType: string }>) => void;
+  sendPrompt: (text: string, images?: Array<{ base64: string; mimeType: string }>, useWorktree?: boolean) => void;
   respondToPermission: (requestId: string, granted: boolean) => void;
   interrupt: () => void;
   destroy: () => void;
@@ -117,7 +117,7 @@ export function useWebSocketSession(sessionId: string, featureId?: number): UseW
     claudeSessionId: session?.claudeSessionId ?? "",
     hasFileChanges: session?.hasFileChanges ?? false,
 
-    sendPrompt: (text: string, images?: Array<{ base64: string; mimeType: string }>) => store.sendPrompt(sessionId, text, images),
+    sendPrompt: (text: string, images?: Array<{ base64: string; mimeType: string }>, useWorktree?: boolean) => store.sendPrompt(sessionId, text, images, useWorktree),
     respondToPermission: (requestId: string, granted: boolean) => store.respondToPermission(sessionId, requestId, granted),
     respondToQuestion: (response: string) => store.respondToQuestion(sessionId, response),
     interrupt: () => store.interrupt(sessionId),

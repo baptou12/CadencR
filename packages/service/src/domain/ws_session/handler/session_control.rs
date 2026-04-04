@@ -1,9 +1,13 @@
+use std::path::PathBuf;
+
 use axum::extract::ws::Message;
 use tracing::{error, info};
 
 use claude_agent_sdk_rs::Options;
 
 use crate::app_state::AppState;
+use crate::domain::workflow::worktree;
+use crate::domain::workflow::engine::WsSender as WorkflowWsSender;
 use super::super::persistence::WsSessionPersistence;
 use super::super::protocol::*;
 use super::{
@@ -458,4 +462,40 @@ pub(super) async fn handle_clear(
         }),
     );
     let _ = sender.send(Message::Text(String::from(reply).into()));
+}
+
+/// Handle session.retry_worktree_setup: re-run setup commands for an existing worktree.
+pub(super) async fn handle_retry_worktree_setup(
+    envelope: WsEnvelope,
+    sender: &WsSender,
+    app_state: &AppState,
+) {
+    let payload: serde_json::Value = envelope.payload;
+    let feature_id = match payload.get("feature_id").and_then(|v| v.as_i64()) {
+        Some(fid) => fid,
+        None => {
+            send_error(sender, &envelope.id, "MISSING_FEATURE_ID", "feature_id is required");
+            return;
+        }
+    };
+
+    let wt_path_str = match worktree::get_setting(&app_state.read_pool, feature_id, "worktree_path").await {
+        Some(p) => p,
+        None => {
+            send_error(sender, &envelope.id, "NO_WORKTREE", "No worktree found for this feature");
+            return;
+        }
+    };
+
+    // Reset setup step
+    let _ = worktree::set_setting(&app_state.write_pool, feature_id, "worktree_setup_step", "setup").await;
+    let _ = worktree::set_setting(&app_state.write_pool, feature_id, "worktree_setup_log", "").await;
+
+    let rp = app_state.read_pool.clone();
+    let wp = app_state.write_pool.clone();
+    let ws = WorkflowWsSender::new(sender.clone());
+    let path = PathBuf::from(wt_path_str);
+    tokio::spawn(async move {
+        worktree::run_setup_commands(rp, wp, feature_id, path, ws).await;
+    });
 }

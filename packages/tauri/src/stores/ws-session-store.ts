@@ -18,6 +18,7 @@ import type { AgentQuestion } from "@/components/AgentQuestionDrawer";
 import { parseAskUserQuestions } from "@/components/AgentQuestionDrawer";
 import {
   parseEnvelope,
+  createEnvelope,
   createSessionInit,
   createPromptSend,
   createPermissionRespond,
@@ -33,6 +34,7 @@ import {
   type CommandsListPayload,
 } from "@/lib/ws-envelope";
 import type { SlashCommand } from "@/hooks/useSlashCommand";
+import type { WorktreeStatus } from "@/types/workflow";
 import { invalidateFeatureQueries } from "@/lib/featureUpdated";
 import { fetchFeatureAgentState } from "@/api/generated";
 import { serverBlocksToAgentBlocks } from "@/hooks/useFeatureAgentState";
@@ -341,6 +343,12 @@ export interface SessionEntry {
   featureTitle: string | null;
   /** Pending request-response callbacks keyed by envelope id. */
   pendingWsRequests: Map<string, (payload: unknown) => void>;
+  // Worktree state (populated via workflow domain WS events)
+  worktreeStatus: WorktreeStatus;
+  worktreePath: string | null;
+  worktreeBranch: string | null;
+  worktreeSetupOutput: string[];
+  worktreeError: string | null;
   /** Whether older messages exist beyond current window */
   hasMore: boolean;
   /** Lowest message ID in the current window */
@@ -375,6 +383,11 @@ function createSessionEntry(): SessionEntry {
     todos: [],
     featureTitle: null,
     pendingWsRequests: new Map(),
+    worktreeStatus: "idle",
+    worktreePath: null,
+    worktreeBranch: null,
+    worktreeSetupOutput: [],
+    worktreeError: null,
     hasMore: false,
     oldestMessageId: null,
     featureId: null,
@@ -416,7 +429,7 @@ interface WsSessionStore {
   // Actions
   send: (sessionId: string, data: unknown) => void;
   initSession: (sessionId: string, config: SessionConfig) => void;
-  sendPrompt: (sessionId: string, text: string, images?: Array<{ base64: string; mimeType: string }>) => void;
+  sendPrompt: (sessionId: string, text: string, images?: Array<{ base64: string; mimeType: string }>, useWorktree?: boolean) => void;
   respondToPermission: (sessionId: string, requestId: string, granted: boolean) => void;
   respondToQuestion: (sessionId: string, response: string) => void;
   interrupt: (sessionId: string) => void;
@@ -430,6 +443,9 @@ interface WsSessionStore {
 
   /** Send a WS envelope and return a promise resolved when the server replies (via ref). */
   sendRequest: (sessionId: string, envelope: WsEnvelope) => Promise<unknown>;
+
+  // Worktree
+  retryWorktreeSetup: (sessionId: string) => void;
 
   // Slash commands
   requestSlashCommands: (sessionId: string, cwd: string) => void;
@@ -556,6 +572,45 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
     return get().sessions[sessionId] ?? createSessionEntry();
   }
 
+  function handleWorktreeEvent(sessionId: string, action: string, payload: Record<string, unknown>) {
+    switch (action) {
+      case "worktree.creating":
+        set(updateSession(get(), sessionId, {
+          worktreeStatus: "creating",
+          worktreeBranch: (payload.branch as string) ?? null,
+          worktreePath: (payload.path as string) ?? null,
+          worktreeError: null,
+        }));
+        break;
+      case "worktree.created":
+        set(updateSession(get(), sessionId, {
+          worktreeStatus: "created",
+          worktreeBranch: (payload.branch as string) ?? null,
+          worktreePath: (payload.path as string) ?? null,
+        }));
+        break;
+      case "worktree.setup_running":
+        set(updateSession(get(), sessionId, { worktreeStatus: "setup_running" }));
+        break;
+      case "worktree.setup_output": {
+        const session = getSession(sessionId);
+        set(updateSession(get(), sessionId, {
+          worktreeSetupOutput: [...session.worktreeSetupOutput, payload.line as string],
+        }));
+        break;
+      }
+      case "worktree.ready":
+        set(updateSession(get(), sessionId, { worktreeStatus: "ready" }));
+        break;
+      case "worktree.setup_error":
+        set(updateSession(get(), sessionId, {
+          worktreeStatus: "setup_error",
+          worktreeError: (payload.error as string) ?? (payload.message as string) ?? null,
+        }));
+        break;
+    }
+  }
+
   function sendRaw(sessionId: string, data: unknown) {
     const session = getSession(sessionId);
     if (session.ws && session.ws.readyState === WebSocket.OPEN) {
@@ -598,6 +653,12 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
     if (envelope.domain === "feature" && envelope.action === "updated") {
       const p = envelope.payload as { feature_id?: number; changed?: string[] };
       if (p.feature_id) invalidateFeatureQueries(p.feature_id, p.changed ?? []);
+      return;
+    }
+
+    // Handle workflow domain events (worktree progress)
+    if (envelope.domain === "workflow") {
+      handleWorktreeEvent(sessionId, envelope.action, envelope.payload as Record<string, unknown>);
       return;
     }
 
@@ -964,9 +1025,9 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       sendRaw(sessionId, createSessionInit(config));
     },
 
-    sendPrompt(sessionId: string, text: string, images?: Array<{ base64: string; mimeType: string }>) {
+    sendPrompt(sessionId: string, text: string, images?: Array<{ base64: string; mimeType: string }>, useWorktree?: boolean) {
       const session = getSession(sessionId);
-      sendRaw(sessionId, createPromptSend(session.serverSessionId, text, images));
+      sendRaw(sessionId, createPromptSend(session.serverSessionId, text, images, useWorktree));
 
       const content = buildUserMessageContent(text, images);
 
@@ -1160,6 +1221,14 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
           status: "running",
         }));
       }
+    },
+
+    retryWorktreeSetup(sessionId: string) {
+      const session = getSession(sessionId);
+      sendRaw(sessionId, createEnvelope("session", "retry_worktree_setup", {
+        session_id: session.serverSessionId,
+        feature_id: session.featureId,
+      }));
     },
 
     requestSlashCommands(sessionId: string, cwd: string) {

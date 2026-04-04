@@ -12,6 +12,8 @@ use claude_agent_sdk_rs::{
 };
 
 use crate::app_state::AppState;
+use crate::domain::workflow::worktree;
+use crate::domain::workflow::engine::WsSender as WorkflowWsSender;
 use super::super::permissions::{self, ResolvedPermission};
 use super::super::persistence::WsSessionPersistence;
 use super::super::protocol::*;
@@ -443,10 +445,9 @@ pub(super) async fn handle_prompt_send(
         QueryState::Pending(_) => {
             // First prompt (or respawn after model change) — take the stored options and spawn.
             let spawned_model = handle.desired_model.clone();
-            let config = handle.config.clone();
+            let mut config = handle.config.clone();
             let session_cache = handle.session_cache.clone();
             let allowed_patterns = handle.allowed_patterns.clone();
-            let worktree_path = handle.config.canonical_cwd.clone();
             let feature_id = handle.feature_id;
             let mut options = match std::mem::replace(
                 &mut handle.state,
@@ -466,6 +467,8 @@ pub(super) async fn handle_prompt_send(
                 }
             }
 
+            let initial_canonical_cwd = handle.config.canonical_cwd.clone();
+
             // Drop lock before spawning (async).
             drop(sessions);
 
@@ -475,6 +478,67 @@ pub(super) async fn handle_prompt_send(
             {
                 let p = WsSessionPersistence::with_session_id(write_pool.clone(), feature_id, Some(db_session_id));
                 p.persist_user_message(&persist_content).await;
+            }
+
+            // Worktree creation (blocking) — must complete before CLI spawn
+            let mut worktree_path = initial_canonical_cwd;
+            let mut allowed_patterns = allowed_patterns;
+            let use_worktree = payload.use_worktree.unwrap_or(false);
+            if use_worktree {
+                // 1. Synchronous auto-name (need title for branch name)
+                if super::super::auto_name::has_default_title(&write_pool, feature_id).await {
+                    let result = super::super::auto_name::auto_name_feature(
+                        write_pool.clone(),
+                        feature_id,
+                        payload.text.clone(),
+                        config.cwd.to_string_lossy().to_string(),
+                        None,
+                        sender.clone(),
+                    ).await;
+                    info!(feature_id, name = ?result, "auto-named feature for worktree");
+                }
+
+                // 2. Create worktree
+                let wf_sender = WorkflowWsSender::new(sender.clone());
+                match worktree::get_project_id_for_feature(&app_state.read_pool, feature_id).await {
+                    Ok(project_id) => {
+                        match worktree::ensure_worktree(
+                            &app_state.read_pool,
+                            &write_pool,
+                            feature_id,
+                            project_id,
+                            &wf_sender,
+                        ).await {
+                            Ok(wt_path) => {
+                                info!(feature_id, path = %wt_path.display(), "worktree created for session");
+                                // 3. Fire-and-forget setup commands
+                                let setup_step = worktree::get_setting(&app_state.read_pool, feature_id, "worktree_setup_step").await;
+                                if setup_step.as_deref() != Some("ready") {
+                                    let rp = app_state.read_pool.clone();
+                                    let wp = write_pool.clone();
+                                    let ws2 = WorkflowWsSender::new(sender.clone());
+                                    let p = wt_path.clone();
+                                    tokio::spawn(async move {
+                                        worktree::run_setup_commands(rp, wp, feature_id, p, ws2).await;
+                                    });
+                                }
+                                // 4. Override cwd to worktree path
+                                options.cwd = wt_path.clone();
+                                let canonical = permissions::canonicalize_worktree(&wt_path);
+                                worktree_path = canonical.clone();
+                                config.cwd = wt_path;
+                                config.canonical_cwd = canonical;
+                                allowed_patterns = Arc::new(permissions::load_allowed_patterns(&config.cwd));
+                            }
+                            Err(e) => {
+                                error!(feature_id, error = %e, "worktree creation failed, proceeding with original cwd");
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        error!(feature_id, error = %e, "could not look up project_id for worktree, proceeding with original cwd");
+                    }
+                }
             }
 
             // Set up permission bridge
@@ -513,8 +577,8 @@ pub(super) async fn handle_prompt_send(
                         spawned_model.as_deref(),
                     );
 
-                    // Fire-and-forget auto-naming for first prompt
-                    {
+                    // Fire-and-forget auto-naming for first prompt (skip if worktree already named synchronously)
+                    if !use_worktree {
                         let write_pool = app_state.write_pool.clone();
                         let cwd = config.cwd.to_string_lossy().to_string();
                         let prompt_text = payload.text.clone();

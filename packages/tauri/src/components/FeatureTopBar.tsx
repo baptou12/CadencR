@@ -42,9 +42,10 @@ interface FeatureTopBarProps {
   wsWorktreeStatus?: WorktreeStatus;
   wsWorktreeBranch?: string | null;
   wsWorktreeSetupOutput?: string[];
+  onRetryWorktreeSetup?: () => void;
 }
 
-export function FeatureTopBar({ featureId, projectId, mode = "feature", className, wsWorktreeStatus, wsWorktreeBranch, wsWorktreeSetupOutput }: FeatureTopBarProps) {
+export function FeatureTopBar({ featureId, projectId, mode = "feature", className, wsWorktreeStatus, wsWorktreeBranch, wsWorktreeSetupOutput, onRetryWorktreeSetup }: FeatureTopBarProps) {
   const isSession = mode === "session";
   const { collapsed: sidebarCollapsed, setCollapsed: setSidebarCollapsed } = useSidebarCollapsed();
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -248,6 +249,7 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", classNam
       wsWorktreeStatus={wsWorktreeStatus}
       wsWorktreeBranch={wsWorktreeBranch}
       wsWorktreeSetupOutput={wsWorktreeSetupOutput}
+      onRetrySetup={onRetryWorktreeSetup}
     />
     </>
   );

@@ -51,11 +51,13 @@ export function createPromptSend(
   sessionId: string,
   text: string,
   images?: Array<{ base64: string; mimeType: string }>,
+  useWorktree?: boolean,
 ): WsEnvelope {
   return createEnvelope("session", "prompt.send", {
     session_id: sessionId,
     text,
     ...(images && images.length > 0 ? { images } : {}),
+    ...(useWorktree ? { use_worktree: true } : {}),
   });
 }
 

@@ -269,6 +269,9 @@ async fn handle_session_action(
         "history.add" => session_data::handle_history_add(envelope, sender, app_state).await,
         "draft.get" => session_data::handle_draft_get(envelope, sender, app_state).await,
         "draft.save" => session_data::handle_draft_save(envelope, sender, app_state).await,
+        "retry_worktree_setup" => {
+            session_control::handle_retry_worktree_setup(envelope, sender, app_state).await
+        }
         unknown => {
             let err = WsEnvelope::reply(
                 &envelope.id,

@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useRef, useState, lazy, Suspense } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { AgentSession, type AgentSessionHandle } from "@/components/AgentSession";
 import { DiffViewerModal } from "@/components/diff/DiffViewerModal";
@@ -60,14 +60,22 @@ function WebSocketSessionPage() {
     { refetchInterval: 10000 },
   );
   const { data: featureSettingsData } = useGetFeatureSettings(featureId);
-  const worktreeBranch = featureSettingsData?.find(s => s.key === "worktree_branch")?.value;
-  const gitBranch = worktreeBranch ?? branchData?.branch;
+  const featureSettings = useMemo(
+    () => Object.fromEntries((featureSettingsData ?? []).map(s => [s.key, s.value])),
+    [featureSettingsData],
+  );
+  const liveWorktreeBranch = useWsSessionStore((s) => s.sessions[sessionId]?.worktreeBranch);
+  const gitBranch = liveWorktreeBranch ?? featureSettings.worktree_branch ?? branchData?.branch;
 
   const ws = useWebSocketSession(sessionId, featureId);
   const session = useWsSessionStore((s) => s.sessions[sessionId]);
+  const [useWorktree, setUseWorktree] = useState(false);
   const initializedRef = useRef<string | null>(null);
   const { resolveModel } = useResolvedModel(featureId, projectId);
   const resolvedModelId = resolveModel("session");
+
+  // Use worktree path as effective cwd once available (live WS → DB settings → project cwd)
+  const effectiveCwd = session?.worktreePath ?? featureSettings.worktree_path ?? cwd;
 
   const handleTabChange = useCallback((tab: import("@/hooks/useActiveTab").FeatureTab) => {
     if (activeTab === "editor" && tab !== "editor" && editorTabRef.current) {
@@ -92,6 +100,8 @@ function WebSocketSessionPage() {
   const slashCommands = session?.slashCommands ?? [];
   const slashCommandsLoading = session?.slashCommandsLoading ?? false;
   const requestSlashCommands = useWsSessionStore((s) => s.requestSlashCommands);
+  const retryWorktreeSetup = useWsSessionStore((s) => s.retryWorktreeSetup);
+  const handleRetryWorktreeSetup = useCallback(() => retryWorktreeSetup(sessionId), [retryWorktreeSetup, sessionId]);
 
   const { isConnected, initSession } = ws;
   useEffect(() => {
@@ -114,23 +124,32 @@ function WebSocketSessionPage() {
   }, []);
 
   useEffect(() => {
-    if (session?.serverSessionId && cwd) {
-      requestSlashCommands(sessionId, cwd);
+    if (session?.serverSessionId && effectiveCwd) {
+      requestSlashCommands(sessionId, effectiveCwd);
     }
-  }, [session?.serverSessionId, cwd, sessionId, requestSlashCommands]);
+  }, [session?.serverSessionId, effectiveCwd, sessionId, requestSlashCommands]);
 
   return (
     <div className="flex h-full flex-col">
-      <FeatureTopBar featureId={featureId} projectId={projectId} mode="session" className="shrink-0" />
+      <FeatureTopBar
+        featureId={featureId}
+        projectId={projectId}
+        mode="session"
+        className="shrink-0"
+        wsWorktreeStatus={session?.worktreeStatus}
+        wsWorktreeBranch={session?.worktreeBranch}
+        wsWorktreeSetupOutput={session?.worktreeSetupOutput}
+        onRetryWorktreeSetup={handleRetryWorktreeSetup}
+      />
       <FeatureTabBar activeTab={activeTab} featureId={featureId} onTabChange={handleTabChange} gitStats={gitStats} gitBranch={gitBranch} />
       <div className="relative min-h-0 flex-1 overflow-hidden">
         <FeatureTerminalTab featureId={featureId} projectId={projectId} hidden={activeTab !== "terminal"} />
 
         {/* Editor tab — stays mounted to preserve state */}
         <div className={cn("h-full", activeTab !== "editor" && "hidden")}>
-          {projectPath && (
+          {(effectiveCwd ?? projectPath) && (
             <Suspense fallback={null}>
-              <FeatureEditorTab ref={editorTabRef} featureId={featureId} projectPath={projectPath} />
+              <FeatureEditorTab ref={editorTabRef} featureId={featureId} projectPath={(effectiveCwd ?? projectPath) as string} />
             </Suspense>
           )}
         </div>
@@ -153,7 +172,9 @@ function WebSocketSessionPage() {
                 ws.clearSession();
                 return;
               }
-              ws.sendPrompt(text, images);
+              // Pass useWorktree only on first prompt (blocks empty)
+              const isFirstPrompt = (session?.blocks.length ?? 0) === 0;
+              ws.sendPrompt(text, images, isFirstPrompt && useWorktree ? true : undefined);
             }}
             onStop={ws.interrupt}
             pendingPermission={ws.pendingPermission}
@@ -185,6 +206,8 @@ function WebSocketSessionPage() {
             todos={session?.todos ?? null}
             hasMore={ws.hasMore}
             onLoadOlder={ws.loadOlderMessages}
+            useWorktree={useWorktree}
+            onToggleWorktree={() => setUseWorktree((v) => !v)}
             className="h-full"
           />
         </div>

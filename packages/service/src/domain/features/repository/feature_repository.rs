@@ -140,17 +140,16 @@ pub async fn resolve_working_dir(pool: &SqlitePool, feature_id: i64, project_id:
             .fetch_optional(pool)
             .await?;
 
-    if let Some((ftype,)) = feature_row {
-        if ftype != "ws-session" {
-            let setting: Option<(String,)> = sqlx::query_as(
-                "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
-            )
-            .bind(feature_id)
-            .fetch_optional(pool)
-            .await?;
-            if let Some((path,)) = setting {
-                return Ok(Some(path));
-            }
+    if feature_row.is_some() {
+        // Check worktree path for all feature types (ws-feature and ws-session)
+        let setting: Option<(String,)> = sqlx::query_as(
+            "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
+        )
+        .bind(feature_id)
+        .fetch_optional(pool)
+        .await?;
+        if let Some((path,)) = setting {
+            return Ok(Some(path));
         }
     }
 

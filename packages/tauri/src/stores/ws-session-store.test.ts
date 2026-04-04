@@ -869,4 +869,87 @@ describe("ws-session-store", () => {
       expect(session.streamingState.enterPlanModeDetected).toBe(false);
     });
   });
+
+  describe("worktree events", () => {
+    it("handles worktree.creating event from workflow domain", async () => {
+      useWsSessionStore.getState().connect("s1");
+      await tick();
+      const ws = getWs();
+      ws.simulateMessage({
+        domain: "workflow",
+        action: "worktree.creating",
+        payload: { branch: "feature/test-abc", path: "/tmp/wt" },
+      });
+      const session = useWsSessionStore.getState().sessions["s1"];
+      expect(session.worktreeStatus).toBe("creating");
+      expect(session.worktreeBranch).toBe("feature/test-abc");
+      expect(session.worktreePath).toBe("/tmp/wt");
+    });
+
+    it("handles worktree.created event", async () => {
+      useWsSessionStore.getState().connect("s1");
+      await tick();
+      const ws = getWs();
+      ws.simulateMessage({
+        domain: "workflow",
+        action: "worktree.created",
+        payload: { branch: "feature/test-abc", path: "/tmp/wt" },
+      });
+      const session = useWsSessionStore.getState().sessions["s1"];
+      expect(session.worktreeStatus).toBe("created");
+    });
+
+    it("handles worktree.setup_output appending lines", async () => {
+      useWsSessionStore.getState().connect("s1");
+      await tick();
+      const ws = getWs();
+      ws.simulateMessage({ domain: "workflow", action: "worktree.setup_running", payload: {} });
+      ws.simulateMessage({ domain: "workflow", action: "worktree.setup_output", payload: { line: "Installing deps..." } });
+      ws.simulateMessage({ domain: "workflow", action: "worktree.setup_output", payload: { line: "Done." } });
+      const session = useWsSessionStore.getState().sessions["s1"];
+      expect(session.worktreeStatus).toBe("setup_running");
+      expect(session.worktreeSetupOutput).toEqual(["Installing deps...", "Done."]);
+    });
+
+    it("handles worktree.ready event", async () => {
+      useWsSessionStore.getState().connect("s1");
+      await tick();
+      getWs().simulateMessage({ domain: "workflow", action: "worktree.ready", payload: {} });
+      expect(useWsSessionStore.getState().sessions["s1"].worktreeStatus).toBe("ready");
+    });
+
+    it("handles worktree.setup_error event", async () => {
+      useWsSessionStore.getState().connect("s1");
+      await tick();
+      getWs().simulateMessage({
+        domain: "workflow",
+        action: "worktree.setup_error",
+        payload: { error: "pnpm install failed" },
+      });
+      const session = useWsSessionStore.getState().sessions["s1"];
+      expect(session.worktreeStatus).toBe("setup_error");
+      expect(session.worktreeError).toBe("pnpm install failed");
+    });
+
+    it("retryWorktreeSetup sends envelope without optimistic update", async () => {
+      useWsSessionStore.getState().connect("s1");
+      await tick();
+      const ws = getWs();
+      // Initialize session
+      ws.simulateMessage({
+        domain: "session",
+        action: "initialized",
+        payload: { session_id: "db-1" },
+      });
+      const store = useWsSessionStore.getState();
+      store.retryWorktreeSetup("s1");
+      // Should NOT optimistically set status
+      expect(useWsSessionStore.getState().sessions["s1"].worktreeStatus).toBe("idle");
+      // Should have sent the envelope
+      const sent = ws.sent.map((s) => JSON.parse(s));
+      const retryMsg = sent.find((m) => m.action === "retry_worktree_setup");
+      expect(retryMsg).toBeDefined();
+      expect(retryMsg.payload.feature_id).toBeNull();
+    });
+  });
 });

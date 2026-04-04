@@ -771,19 +771,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_resolve_working_dir_session_type_skips_worktree() {
+    async fn test_resolve_working_dir_session_type_uses_worktree() {
         let pool = setup_test_db().await;
         let proj_res = sqlx::query("INSERT INTO projects (name, path) VALUES ('Proj', '/tmp/proj')")
             .execute(&pool).await.unwrap();
         let proj = proj_res.last_insert_rowid();
         let fid = create_feature(&pool, proj, "Session", "ws-session").await.unwrap();
 
-        // Even with worktree_path set, session type should fall through to project path
+        // Session type with worktree_path should use the worktree path
         sqlx::query("INSERT INTO feature_settings (feature_id, key, value) VALUES (?, 'worktree_path', '/tmp/wt')")
             .bind(fid).execute(&pool).await.unwrap();
 
         let dir = resolve_working_dir(&pool, fid, proj).await.unwrap();
-        assert_eq!(dir, Some("/tmp/proj".to_string()));
+        assert_eq!(dir, Some("/tmp/wt".to_string()));
     }
 
     // ── Workflow Queue Tests ─────────────────────────────────────────
