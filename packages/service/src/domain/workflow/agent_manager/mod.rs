@@ -204,7 +204,7 @@ impl AgentManager {
         self.send_item_update(item_id).await;
 
         // 2. Delegate to strategy
-        let agent_type = strategy.agent_type_for_item(&item.item_type)?;
+        let agent_type = strategy.agent_type_for_item(&item.item_type, item.config.as_deref())?;
         let system_prompt = strategy.build_system_prompt(&self.read_pool, &item, autonomy).await?;
         let feature_title = self.get_feature_title().await.unwrap_or_default();
         let initial_prompt = strategy

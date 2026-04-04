@@ -1055,10 +1055,10 @@ mod tests {
     async fn test_strategy_agent_type_mapping() {
         let (engine, _rx) = test_engine().await;
 
-        assert!(matches!(engine.queue.strategy.agent_type_for_item("execute"), Ok(AgentType::Execute)));
-        assert!(matches!(engine.queue.strategy.agent_type_for_item("qa"), Ok(AgentType::Qa)));
-        assert!(matches!(engine.queue.strategy.agent_type_for_item("review"), Ok(AgentType::Review)));
-        assert!(engine.queue.strategy.agent_type_for_item("bogus").is_err());
+        assert!(matches!(engine.queue.strategy.agent_type_for_item("execute", None), Ok(AgentType::Execute)));
+        assert!(matches!(engine.queue.strategy.agent_type_for_item("qa", None), Ok(AgentType::Qa)));
+        assert!(matches!(engine.queue.strategy.agent_type_for_item("review", None), Ok(AgentType::Review)));
+        assert!(engine.queue.strategy.agent_type_for_item("bogus", None).is_err());
     }
 
     // ── 12. Autonomy level atomic updates ──

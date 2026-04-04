@@ -338,17 +338,22 @@ mod strategy_tests {
     use crate::domain::workflow::strategies::WorkflowStrategy;
 
     #[test]
-    fn test_agent_type_for_item() {
+    fn test_agent_type_for_item_from_config() {
         let strategy = CustomWorkflowStrategy { workflow_definition_id: 1 };
 
-        // Implementation-type phases → Execute
-        assert!(matches!(strategy.agent_type_for_item("implement"), Ok(AgentType::Execute)));
-        assert!(matches!(strategy.agent_type_for_item("build"), Ok(AgentType::Execute)));
-        assert!(matches!(strategy.agent_type_for_item("apply"), Ok(AgentType::Execute)));
+        // Config-driven: explicit agent_type in config takes precedence
+        let exec_config = r#"{"agent_type": "execute"}"#;
+        let wf_config = r#"{"agent_type": "workflow"}"#;
 
-        // Other phases → Workflow
-        assert!(matches!(strategy.agent_type_for_item("plan"), Ok(AgentType::Workflow)));
-        assert!(matches!(strategy.agent_type_for_item("prd"), Ok(AgentType::Workflow)));
-        assert!(matches!(strategy.agent_type_for_item("analyze"), Ok(AgentType::Workflow)));
+        assert!(matches!(strategy.agent_type_for_item("plan", Some(exec_config)), Ok(AgentType::Execute)));
+        assert!(matches!(strategy.agent_type_for_item("build", Some(wf_config)), Ok(AgentType::Workflow)));
+
+        // Fallback: no config uses heuristic
+        assert!(matches!(strategy.agent_type_for_item("implement", None), Ok(AgentType::Execute)));
+        assert!(matches!(strategy.agent_type_for_item("build", None), Ok(AgentType::Execute)));
+        assert!(matches!(strategy.agent_type_for_item("apply", None), Ok(AgentType::Execute)));
+        assert!(matches!(strategy.agent_type_for_item("plan", None), Ok(AgentType::Workflow)));
+        assert!(matches!(strategy.agent_type_for_item("prd", None), Ok(AgentType::Workflow)));
+        assert!(matches!(strategy.agent_type_for_item("analyze", None), Ok(AgentType::Workflow)));
     }
 }

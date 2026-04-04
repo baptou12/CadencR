@@ -49,7 +49,15 @@ impl WorkflowStrategy for CustomWorkflowStrategy {
                 "blocked"
             };
 
+            let lower_slug = phase.slug.to_lowercase();
+            let agent_type = if lower_slug.contains("implement") || lower_slug.contains("build") || lower_slug.contains("apply") {
+                "execute"
+            } else {
+                "workflow"
+            };
+
             let config = json!({
+                "agent_type": agent_type,
                 "gate_type": phase.gate_type,
                 "system_prompt_template": phase.system_prompt_template,
                 "command_prompt_template": phase.command_prompt_template,
@@ -93,7 +101,20 @@ impl WorkflowStrategy for CustomWorkflowStrategy {
             .map_err(|e| e.to_string())
     }
 
-    fn agent_type_for_item(&self, item_type: &str) -> Result<AgentType, String> {
+    fn agent_type_for_item(&self, item_type: &str, config: Option<&str>) -> Result<AgentType, String> {
+        // Read agent_type from config JSON if available
+        if let Some(cfg) = config {
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(cfg) {
+                if let Some(at) = parsed.get("agent_type").and_then(|v| v.as_str()) {
+                    return match at {
+                        "execute" => Ok(AgentType::Execute),
+                        _ => Ok(AgentType::Workflow),
+                    };
+                }
+            }
+        }
+
+        // Fallback: heuristic based on slug (for legacy items without agent_type in config)
         let lower = item_type.to_lowercase();
         if lower.contains("implement") || lower.contains("build") || lower.contains("apply") {
             Ok(AgentType::Execute)

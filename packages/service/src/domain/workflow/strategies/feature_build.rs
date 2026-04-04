@@ -182,7 +182,7 @@ impl WorkflowStrategy for FeatureBuildStrategy {
         Ok(items)
     }
 
-    fn agent_type_for_item(&self, item_type: &str) -> Result<AgentType, String> {
+    fn agent_type_for_item(&self, item_type: &str, _config: Option<&str>) -> Result<AgentType, String> {
         match item_type {
             "execute" => Ok(AgentType::Execute),
             "qa" => Ok(AgentType::Qa),

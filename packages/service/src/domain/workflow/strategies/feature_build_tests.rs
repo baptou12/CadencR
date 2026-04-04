@@ -44,12 +44,12 @@ fn parse_depends_on_whitespace_handling() {
 #[test]
 fn test_agent_type_mapping() {
     let strategy = FeatureBuildStrategy;
-    assert!(matches!(strategy.agent_type_for_item("execute"), Ok(AgentType::Execute)));
-    assert!(matches!(strategy.agent_type_for_item("qa"), Ok(AgentType::Qa)));
-    assert!(matches!(strategy.agent_type_for_item("review"), Ok(AgentType::Review)));
-    assert!(matches!(strategy.agent_type_for_item("risk"), Ok(AgentType::Risk)));
-    assert!(matches!(strategy.agent_type_for_item("retro"), Ok(AgentType::Retro)));
-    assert!(strategy.agent_type_for_item("unknown").is_err());
+    assert!(matches!(strategy.agent_type_for_item("execute", None), Ok(AgentType::Execute)));
+    assert!(matches!(strategy.agent_type_for_item("qa", None), Ok(AgentType::Qa)));
+    assert!(matches!(strategy.agent_type_for_item("review", None), Ok(AgentType::Review)));
+    assert!(matches!(strategy.agent_type_for_item("risk", None), Ok(AgentType::Risk)));
+    assert!(matches!(strategy.agent_type_for_item("retro", None), Ok(AgentType::Retro)));
+    assert!(strategy.agent_type_for_item("unknown", None).is_err());
 }
 
 // ── Prompt autonomy tests ──
