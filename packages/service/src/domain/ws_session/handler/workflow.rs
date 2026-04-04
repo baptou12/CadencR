@@ -382,7 +382,7 @@ async fn handle_feature_start(
         ensure_background_tasks(app_state.agent_timeout_minutes);
     } else {
         // No existing engine — create fresh and restore from DB
-        let engine = Arc::new(WorkflowEngine::new(
+        let engine = match WorkflowEngine::new(
             feature_id,
             workflow_type.clone(),
             app_state.read_pool.clone(),
@@ -391,7 +391,15 @@ async fn handle_feature_start(
             app_state.max_parallel_agents,
             app_state.turn_state_tx.clone(),
         )
-        .await);
+        .await
+        {
+            Ok(e) => Arc::new(e),
+            Err(e) => {
+                tracing::error!(feature_id, error = %e, "failed to create workflow engine");
+                send_workflow_error(sender, &envelope.id, "ENGINE_ERROR", &e);
+                return;
+            }
+        };
 
         if is_workflow_feature {
             if let Err(e) = engine.restore_on_reconnect().await {
@@ -1166,7 +1174,7 @@ async fn handle_feature_start_custom(
 
     // Create engine with Custom workflow type — QueueAdvancer will resolve
     // the CustomWorkflowStrategy from the feature's workflow_definition_id.
-    let engine = Arc::new(WorkflowEngine::new(
+    let engine = match WorkflowEngine::new(
         feature_id,
         WorkflowType::Custom,
         app_state.read_pool.clone(),
@@ -1175,7 +1183,15 @@ async fn handle_feature_start_custom(
         app_state.max_parallel_agents,
         app_state.turn_state_tx.clone(),
     )
-    .await);
+    .await
+    {
+        Ok(e) => Arc::new(e),
+        Err(e) => {
+            tracing::error!(feature_id, error = %e, "failed to create custom workflow engine");
+            send_workflow_error(sender, &envelope.id, "ENGINE_ERROR", &e);
+            return;
+        }
+    };
 
     // Populate the queue using CustomWorkflowStrategy
     let strategy = crate::domain::workflow::strategies::get_custom_strategy(workflow_definition_id);

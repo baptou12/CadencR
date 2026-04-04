@@ -244,7 +244,7 @@ impl WorkflowEngine {
         raw_sender: mpsc::UnboundedSender<Message>,
         max_parallel: usize,
         turn_state_tx: tokio::sync::broadcast::Sender<crate::app_state::TurnStateEvent>,
-    ) -> Self {
+    ) -> Result<Self, String> {
         let now_secs = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -266,10 +266,10 @@ impl WorkflowEngine {
             ws_sender.clone(),
             agent_manager.turn_state_tx.clone(),
         )
-        .await;
+        .await?;
         let permissions = PermissionRouter::new();
 
-        Self {
+        Ok(Self {
             feature_id,
             workflow_type,
             agent_manager,
@@ -279,7 +279,7 @@ impl WorkflowEngine {
             read_pool,
             write_pool,
             ws_sender,
-        }
+        })
     }
 
     /// Reattach a new raw WS sender to this engine (on reconnect).
@@ -853,7 +853,8 @@ mod tests {
             2,
             turn_state_tx,
         )
-        .await;
+        .await
+        .expect("test engine creation failed");
         (engine, rx)
     }
 
@@ -1094,7 +1095,7 @@ mod tests {
 
         let (tx, _rx) = mpsc::unbounded_channel();
         let (turn_state_tx, _) = tokio::sync::broadcast::channel(64);
-        let engine = WorkflowEngine::new(1, WorkflowType::FeatureBuild, pool.clone(), pool, tx, 2, turn_state_tx).await;
+        let engine = WorkflowEngine::new(1, WorkflowType::FeatureBuild, pool.clone(), pool, tx, 2, turn_state_tx).await.expect("test engine creation failed");
 
         assert_eq!(engine.autonomy_level().load(Ordering::Relaxed), 3);
     }
@@ -1117,7 +1118,7 @@ mod tests {
 
         let (tx, _rx) = mpsc::unbounded_channel();
         let (turn_state_tx, _) = tokio::sync::broadcast::channel(64);
-        let engine = WorkflowEngine::new(1, WorkflowType::FeatureBuild, pool.clone(), pool, tx, 2, turn_state_tx).await;
+        let engine = WorkflowEngine::new(1, WorkflowType::FeatureBuild, pool.clone(), pool, tx, 2, turn_state_tx).await.expect("test engine creation failed");
 
         assert_eq!(engine.autonomy_level().load(Ordering::Relaxed), 2);
     }
@@ -1419,7 +1420,8 @@ mod tests {
             2,
             turn_state_tx,
         )
-        .await;
+        .await
+        .expect("test engine creation failed");
         (engine, rx)
     }
 
