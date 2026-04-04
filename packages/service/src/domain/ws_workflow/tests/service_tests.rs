@@ -40,6 +40,7 @@ mod service_tests {
                 artifact_template TEXT NOT NULL DEFAULT '', \
                 input_phase_slugs TEXT DEFAULT '[]', \
                 model_override TEXT DEFAULT '', \
+                agent_type TEXT NOT NULL DEFAULT '', \
                 UNIQUE(workflow_definition_id, slug), \
                 UNIQUE(workflow_definition_id, order_index))"
         )
