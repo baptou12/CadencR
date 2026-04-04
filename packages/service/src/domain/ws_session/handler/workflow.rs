@@ -235,6 +235,9 @@ pub async fn handle_workflow_action(
         "start_risk" => handle_start_risk(envelope, sender).await,
         "start_retro" => handle_start_retro(envelope, sender).await,
         "mark_done" => handle_mark_done(envelope, sender).await,
+        "phase_approval" => handle_phase_approval(envelope, sender, app_state).await,
+        "phase_trigger" => handle_phase_trigger(envelope, sender, app_state).await,
+        "feature_start_custom" => handle_feature_start_custom(envelope, sender, app_state).await,
         unknown => {
             send_workflow_error(&sender, &envelope.id, "UNKNOWN_ACTION", &format!("Unknown workflow action: {unknown}"));
         }
@@ -972,6 +975,101 @@ async fn handle_mark_done(envelope: WsEnvelope, sender: &WsSender) {
             send_workflow_error(sender, &envelope.id, "MARK_DONE_FAILED", &format!("Failed to mark done: {e}"));
         }
     }
+}
+
+async fn handle_phase_approval(
+    envelope: WsEnvelope,
+    sender: &WsSender,
+    _app_state: &AppState,
+) {
+    let Some((payload, engine)) = parse_and_get_engine::<WorkflowPhaseApprovalPayload>(&envelope, sender) else { return };
+
+    info!(
+        feature_id = payload.feature_id,
+        phase_slug = %payload.phase_slug,
+        approved = payload.approved,
+        "phase approval received"
+    );
+
+    match engine.queue.approve_phase(
+        &payload.phase_slug,
+        payload.approved,
+        payload.feedback.as_deref(),
+        &engine.agent_manager,
+        &engine.permissions,
+        engine.as_ref(),
+    ).await {
+        Ok(()) => {
+            let ack = WsEnvelope::reply(&envelope.id, "workflow", "acknowledged", to_value(WorkflowAcknowledgedPayload {
+                feature_id: payload.feature_id,
+                action: "phase_approval".into(),
+            }));
+            let _ = sender.send(Message::Text(String::from(ack).into()));
+        }
+        Err(e) => {
+            send_workflow_error(sender, &envelope.id, "PHASE_APPROVAL_FAILED", &format!("Failed: {e}"));
+        }
+    }
+}
+
+async fn handle_phase_trigger(
+    envelope: WsEnvelope,
+    sender: &WsSender,
+    _app_state: &AppState,
+) {
+    let Some((payload, engine)) = parse_and_get_engine::<WorkflowPhaseTriggerPayload>(&envelope, sender) else { return };
+
+    info!(feature_id = payload.feature_id, phase_slug = %payload.phase_slug, "manual phase trigger");
+
+    match engine.queue.trigger_manual_phase(
+        &payload.phase_slug,
+        &engine.agent_manager,
+        &engine.permissions,
+    ).await {
+        Ok(()) => {
+            let ack = WsEnvelope::reply(&envelope.id, "workflow", "acknowledged", to_value(WorkflowAcknowledgedPayload {
+                feature_id: payload.feature_id,
+                action: "phase_trigger".into(),
+            }));
+            let _ = sender.send(Message::Text(String::from(ack).into()));
+        }
+        Err(e) => {
+            send_workflow_error(sender, &envelope.id, "PHASE_TRIGGER_FAILED", &format!("Failed to trigger phase: {e}"));
+        }
+    }
+}
+
+async fn handle_feature_start_custom(
+    envelope: WsEnvelope,
+    sender: &WsSender,
+    app_state: &AppState,
+) {
+    let Some(payload) = parse_payload::<WorkflowFeatureStartCustomPayload>(&envelope, sender) else { return };
+
+    info!(
+        feature_id = payload.feature_id,
+        workflow_definition_id = payload.workflow_definition_id,
+        "starting feature with custom workflow"
+    );
+
+    // Set workflow_definition_id on the feature
+    if let Err(e) = sqlx::query("UPDATE features SET workflow_definition_id = ? WHERE id = ?")
+        .bind(payload.workflow_definition_id)
+        .bind(payload.feature_id)
+        .execute(&app_state.write_pool)
+        .await
+    {
+        send_workflow_error(sender, &envelope.id, "DB_ERROR", &format!("Failed to set workflow definition: {e}"));
+        return;
+    }
+
+    // TODO: Create WorkflowEngine with CustomWorkflowStrategy, populate queue, start first phase(s)
+    // This will be implemented when CustomWorkflowStrategy is available from a later phase.
+    let ack = WsEnvelope::reply(&envelope.id, "workflow", "acknowledged", to_value(WorkflowAcknowledgedPayload {
+        feature_id: payload.feature_id,
+        action: "feature_start_custom".into(),
+    }));
+    let _ = sender.send(Message::Text(String::from(ack).into()));
 }
 
 async fn handle_retry_worktree_setup(
