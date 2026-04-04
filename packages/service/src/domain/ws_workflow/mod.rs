@@ -2,6 +2,8 @@
 pub mod artifact_repository;
 #[allow(dead_code)]
 pub mod models;
+#[allow(dead_code)]
+pub mod phase_repository;
 pub mod presets;
 #[allow(dead_code)]
 pub mod repository;

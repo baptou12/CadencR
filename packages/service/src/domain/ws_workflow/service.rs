@@ -5,7 +5,7 @@ use super::models::{
     CreateWorkflowDefinition, CreateWorkflowPhase, GateType, WorkflowArtifact,
     WorkflowDefinition, WorkflowPhase,
 };
-use super::{artifact_repository, repository};
+use super::{artifact_repository, phase_repository, repository};
 
 pub async fn list_definitions(pool: &SqlitePool) -> Result<Vec<WorkflowDefinition>, AppError> {
     repository::list_workflow_definitions(pool).await
@@ -72,7 +72,7 @@ pub async fn add_phase(
     if def.is_preset {
         return Err(AppError::Conflict("Cannot modify phases of a preset workflow definition".into()));
     }
-    repository::create_workflow_phase(pool, definition_id, phase).await
+    phase_repository::create_workflow_phase(pool, definition_id, phase).await
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -93,24 +93,24 @@ pub async fn update_phase(
             AppError::BadRequest("Invalid gate_type: must be 'auto', 'approval', or 'manual'".into())
         })?;
     }
-    let definition_id = repository::get_phase_definition_id(pool, phase_id).await?;
+    let definition_id = phase_repository::get_phase_definition_id(pool, phase_id).await?;
     let def = get_definition(pool, definition_id).await?;
     if def.is_preset {
         return Err(AppError::Conflict("Cannot modify phases of a preset workflow definition".into()));
     }
-    repository::update_workflow_phase(
+    phase_repository::update_workflow_phase(
         pool, phase_id, name, gate_type, system_prompt_template,
         command_prompt_template, artifact_template, input_phase_slugs, model_override, agent_type,
     ).await
 }
 
 pub async fn delete_phase(pool: &SqlitePool, phase_id: i64) -> Result<(), AppError> {
-    let definition_id = repository::get_phase_definition_id(pool, phase_id).await?;
+    let definition_id = phase_repository::get_phase_definition_id(pool, phase_id).await?;
     let def = get_definition(pool, definition_id).await?;
     if def.is_preset {
         return Err(AppError::Conflict("Cannot modify phases of a preset workflow definition".into()));
     }
-    repository::delete_workflow_phase(pool, phase_id).await
+    phase_repository::delete_workflow_phase(pool, phase_id).await
 }
 
 pub async fn reorder_phases(
@@ -122,7 +122,7 @@ pub async fn reorder_phases(
     if def.is_preset {
         return Err(AppError::Conflict("Cannot modify phases of a preset workflow definition".into()));
     }
-    repository::reorder_phases(pool, definition_id, phase_ids).await
+    phase_repository::reorder_phases(pool, definition_id, phase_ids).await
 }
 
 pub async fn list_artifacts(
