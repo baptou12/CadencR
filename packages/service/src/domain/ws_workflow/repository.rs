@@ -7,6 +7,13 @@ use super::models::{
     WorkflowDefinition, WorkflowPhase,
 };
 
+fn parse_phase_slugs(json: &str, phase_name: &str) -> Vec<String> {
+    serde_json::from_str(json).unwrap_or_else(|e| {
+        tracing::warn!("Malformed input_phase_slugs JSON for phase {}: {}", phase_name, e);
+        vec![]
+    })
+}
+
 async fn load_phases(pool: &SqlitePool, definition_id: i64) -> Result<Vec<WorkflowPhase>, AppError> {
     let rows = sqlx::query_as::<_, (i64, i64, String, String, i32, String, String, String, String, String, String)>(
         "SELECT id, workflow_definition_id, name, slug, order_index, gate_type, \
@@ -20,7 +27,7 @@ async fn load_phases(pool: &SqlitePool, definition_id: i64) -> Result<Vec<Workfl
     .map_err(|e| AppError::DatabaseError(e.to_string()))?;
 
     Ok(rows.into_iter().map(|r| {
-        let input_phase_slugs: Vec<String> = serde_json::from_str(&r.9).unwrap_or_default();
+        let input_phase_slugs = parse_phase_slugs(&r.9, &r.2);
         WorkflowPhase {
             id: r.0, workflow_definition_id: r.1, name: r.2, slug: r.3,
             order_index: r.4, gate_type: r.5, system_prompt_template: r.6,
@@ -73,7 +80,7 @@ pub async fn list_workflow_definitions(pool: &SqlitePool) -> Result<Vec<Workflow
 
     let mut phases_map: HashMap<i64, Vec<WorkflowPhase>> = HashMap::new();
     for r in phase_rows {
-        let input_phase_slugs: Vec<String> = serde_json::from_str(&r.9).unwrap_or_default();
+        let input_phase_slugs = parse_phase_slugs(&r.9, &r.2);
         phases_map.entry(r.1).or_default().push(WorkflowPhase {
             id: r.0, workflow_definition_id: r.1, name: r.2, slug: r.3,
             order_index: r.4, gate_type: r.5, system_prompt_template: r.6,
@@ -271,9 +278,6 @@ pub async fn create_workflow_phase(
     phase: &CreateWorkflowPhase,
 ) -> Result<WorkflowPhase, AppError> {
     let id = insert_phase(pool, definition_id, phase).await?;
-    let slugs_json = serde_json::to_string(&phase.input_phase_slugs)
-        .map_err(|e| AppError::Internal(e.to_string()))?;
-
     Ok(WorkflowPhase {
         id,
         workflow_definition_id: definition_id,
@@ -284,7 +288,7 @@ pub async fn create_workflow_phase(
         system_prompt_template: phase.system_prompt_template.clone(),
         command_prompt_template: phase.command_prompt_template.clone(),
         artifact_template: phase.artifact_template.clone(),
-        input_phase_slugs: serde_json::from_str(&slugs_json).unwrap_or_default(),
+        input_phase_slugs: phase.input_phase_slugs.clone(),
         model_override: phase.model_override.clone(),
     })
 }
@@ -305,34 +309,20 @@ pub async fn update_workflow_phase(
     let mut set_clauses: Vec<String> = Vec::new();
     let mut values: Vec<String> = Vec::new();
 
-    if let Some(v) = name {
-        set_clauses.push("name = ?".into());
-        values.push(v.to_string());
-    }
-    if let Some(v) = gate_type {
-        set_clauses.push("gate_type = ?".into());
-        values.push(v.to_string());
-    }
-    if let Some(v) = system_prompt_template {
-        set_clauses.push("system_prompt_template = ?".into());
-        values.push(v.to_string());
-    }
-    if let Some(v) = command_prompt_template {
-        set_clauses.push("command_prompt_template = ?".into());
-        values.push(v.to_string());
-    }
-    if let Some(v) = artifact_template {
-        set_clauses.push("artifact_template = ?".into());
-        values.push(v.to_string());
+    let simple: &[(&str, Option<&str>)] = &[
+        ("name = ?", name),
+        ("gate_type = ?", gate_type),
+        ("system_prompt_template = ?", system_prompt_template),
+        ("command_prompt_template = ?", command_prompt_template),
+        ("artifact_template = ?", artifact_template),
+        ("model_override = ?", model_override),
+    ];
+    for (clause, val) in simple {
+        if let Some(v) = val { set_clauses.push((*clause).into()); values.push(v.to_string()); }
     }
     if let Some(v) = input_phase_slugs {
         set_clauses.push("input_phase_slugs = ?".into());
-        let json = serde_json::to_string(v).map_err(|e| AppError::Internal(e.to_string()))?;
-        values.push(json);
-    }
-    if let Some(v) = model_override {
-        set_clauses.push("model_override = ?".into());
-        values.push(v.to_string());
+        values.push(serde_json::to_string(v).map_err(|e| AppError::Internal(e.to_string()))?);
     }
 
     if !set_clauses.is_empty() {
@@ -360,12 +350,12 @@ pub async fn update_workflow_phase(
     .map_err(|e| AppError::DatabaseError(e.to_string()))?
     .ok_or_else(|| AppError::NotFound("Workflow phase not found".into()))?;
 
+    let input_phase_slugs = parse_phase_slugs(&row.9, &row.2);
     Ok(WorkflowPhase {
         id: row.0, workflow_definition_id: row.1, name: row.2, slug: row.3,
         order_index: row.4, gate_type: row.5, system_prompt_template: row.6,
         command_prompt_template: row.7, artifact_template: row.8,
-        input_phase_slugs: serde_json::from_str(&row.9).unwrap_or_default(),
-        model_override: row.10,
+        input_phase_slugs, model_override: row.10,
     })
 }
 
