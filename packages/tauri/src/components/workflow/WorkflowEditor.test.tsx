@@ -25,19 +25,18 @@ const makePhase = (overrides: Partial<WorkflowPhase> = {}): WorkflowPhase => ({
 const mockEditor = {
   isLoading: false,
   name: "My Workflow",
-  slug: "my-workflow",
   description: "A test workflow",
   isPreset: false,
+  isEditing: false,
   phases: [
     makePhase({ id: 1, name: "Research", slug: "research", order_index: 0 }),
     makePhase({ id: 2, name: "Build", slug: "build", order_index: 1, gate_type: "approval" }),
   ],
   selectedPhaseId: null as number | null,
   selectedPhase: null as WorkflowPhase | null,
-  activeTab: "system" as const,
+  activeTab: "settings" as string,
   isMutating: false,
   handleNameChange: vi.fn(),
-  handleSlugChange: vi.fn(),
   setDescription: vi.fn(),
   setSelectedPhaseId: vi.fn(),
   setActiveTab: vi.fn(),
@@ -88,6 +87,8 @@ describe("WorkflowEditor", () => {
       makePhase({ id: 2, name: "Build", slug: "build", order_index: 1, gate_type: "approval" }),
     ];
     mockEditor.isLoading = false;
+    mockEditor.isPreset = false;
+    mockEditor.isEditing = false;
     mockEditor.selectedPhase = null;
   });
 

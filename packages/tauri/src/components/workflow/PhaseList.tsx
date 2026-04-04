@@ -5,26 +5,18 @@ import type { WorkflowPhase } from "@/api/generated";
 import { PhaseEditorCard } from "./PhaseEditorCard";
 import { PhaseDependencyBadges } from "./PhaseDependencyBadges";
 
-interface PhaseInfo {
-  id: number;
-  slug: string;
-  name: string;
-}
-
 interface PhaseListProps {
   phases: WorkflowPhase[];
   selectedPhaseId: number | null;
   isPreset: boolean;
   onSelect: (id: number) => void;
-  onUpdate: (id: number, updates: Partial<Omit<WorkflowPhase, "id" | "workflow_definition_id">>) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
   onReorder: (phaseIds: number[]) => Promise<void>;
   onAdd: () => Promise<void>;
-  allPhaseSlugs: PhaseInfo[];
 }
 
 export function PhaseList({
-  phases, selectedPhaseId, isPreset, onSelect, onUpdate, onDelete, onReorder, onAdd, allPhaseSlugs,
+  phases, selectedPhaseId, isPreset, onSelect, onDelete, onReorder, onAdd,
 }: PhaseListProps) {
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [overIdx, setOverIdx] = useState<number | null>(null);
@@ -97,10 +89,6 @@ export function PhaseList({
       </div>
       {phases.map((phase, idx) => {
         const isDimmed = hoveredPhaseId != null && !relatedIds.has(phase.id);
-        // Only allow selecting phases that come before this one (lower index = lower order)
-        const precedingPhaseSlugs = allPhaseSlugs.filter(
-          (p) => phases.findIndex((ph) => ph.id === p.id) < idx,
-        );
         // Resolve input phase names for badges
         const inputPhases = (phase.input_phase_slugs ?? [])
           .map((slug) => slugToPhase.get(slug))
@@ -128,9 +116,7 @@ export function PhaseList({
               isPreset={isPreset}
               isDragging={dragIdx === idx}
               onSelect={() => onSelect(phase.id)}
-              onUpdate={(updates) => onUpdate(phase.id, updates)}
               onDelete={() => onDelete(phase.id)}
-              allPhaseSlugs={precedingPhaseSlugs}
             />
             {inputPhases.length > 0 && (
               <PhaseDependencyBadges

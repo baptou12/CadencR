@@ -1,6 +1,7 @@
 import { GitFork, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import type { WorkflowDefinition } from "@/api/generated";
 import { PhaseList } from "./PhaseList";
 import { TemplateEditorPanel } from "./TemplateEditorPanel";
@@ -28,44 +29,63 @@ export function WorkflowEditor({ definitionId, forkFromId, onSave, onCancel, onF
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="shrink-0 border-b border-border p-4 space-y-3">
-        <div className="flex items-center gap-3">
-          <Input
-            value={editor.name}
-            onChange={(e) => editor.handleNameChange(e.target.value)}
-            placeholder="Workflow name"
-            disabled={editor.isPreset}
-            className="text-lg font-semibold h-9 max-w-md"
-          />
-          <div className="flex items-center gap-1 text-xs text-muted-foreground">
-            <span>slug:</span>
-            <Input
-              value={editor.slug}
-              onChange={(e) => editor.handleSlugChange(e.target.value)}
-              disabled={editor.isPreset}
-              className="h-6 text-xs w-40 font-mono"
-            />
-          </div>
-        </div>
-        <Input
-          value={editor.description}
-          onChange={(e) => editor.setDescription(e.target.value)}
-          placeholder="Description (optional)"
-          disabled={editor.isPreset}
-          className="h-8 text-sm max-w-lg"
-        />
-        {editor.isPreset && (
-          <div className="flex items-center gap-3">
-            <p className="text-xs text-amber-500">
-              This is a preset workflow. Fork it to customize.
-            </p>
+      <div className="shrink-0 border-b border-border p-5 space-y-4">
+        {editor.isPreset ? (
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold">{editor.name}</h2>
+              {editor.description && (
+                <p className="text-sm text-muted-foreground mt-0.5">{editor.description}</p>
+              )}
+            </div>
             {onFork && (
-              <Button size="sm" variant="outline" onClick={onFork}>
+              <Button size="sm" onClick={onFork}>
                 <GitFork className="size-3.5 mr-1" />
                 Fork & Customize
               </Button>
             )}
           </div>
+        ) : (
+          <>
+            <div>
+              <h2 className="text-lg font-semibold">
+                {forkFromId ? "Fork Workflow" : definitionId ? "Edit Workflow" : "New Workflow"}
+              </h2>
+              <p className="text-sm text-muted-foreground mt-0.5">
+                A workflow defines the sequence of phases an AI agent follows to complete a feature.
+                Each phase has its own system prompt, command template, and artifact output.
+              </p>
+            </div>
+            <div className="space-y-3 max-w-lg">
+              <div className="space-y-1.5">
+                <label htmlFor="wf-name" className="text-sm font-medium">
+                  Name <span className="text-destructive">*</span>
+                </label>
+                <Input
+                  id="wf-name"
+                  value={editor.name}
+                  onChange={(e) => editor.handleNameChange(e.target.value)}
+                  placeholder="e.g. Design → Implement → Review"
+                />
+                <p className="text-xs text-muted-foreground">
+                  A short, descriptive name for this workflow.
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <label htmlFor="wf-desc" className="text-sm font-medium">
+                  Description
+                </label>
+                <Textarea
+                  id="wf-desc"
+                  value={editor.description}
+                  onChange={(e) => editor.setDescription(e.target.value)}
+                  placeholder="Describe when to use this workflow and what makes it different..."
+                  rows={2}
+                  className="resize-none"
+                />
+              </div>
+            </div>
+          </>
         )}
       </div>
 
@@ -78,11 +98,9 @@ export function WorkflowEditor({ definitionId, forkFromId, onSave, onCancel, onF
             selectedPhaseId={editor.selectedPhaseId}
             isPreset={editor.isPreset}
             onSelect={editor.setSelectedPhaseId}
-            onUpdate={editor.handleUpdatePhase}
             onDelete={editor.handleDeletePhase}
             onReorder={editor.handleReorder}
             onAdd={editor.handleAddPhase}
-            allPhaseSlugs={editor.phases.map((p) => ({ id: p.id, slug: p.slug, name: p.name }))}
           />
         </div>
 
@@ -95,6 +113,9 @@ export function WorkflowEditor({ definitionId, forkFromId, onSave, onCancel, onF
               onTabChange={editor.setActiveTab}
               onUpdate={(updates) => editor.handleUpdatePhase(editor.selectedPhase!.id, updates)}
               isPreset={editor.isPreset}
+              allPrecedingPhases={editor.phases
+                .filter((p) => p.order_index < editor.selectedPhase!.order_index)
+                .map((p) => ({ id: p.id, slug: p.slug, name: p.name }))}
             />
           ) : (
             <div className="flex items-center justify-center h-full text-sm text-muted-foreground">

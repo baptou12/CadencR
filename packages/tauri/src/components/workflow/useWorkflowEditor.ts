@@ -22,7 +22,7 @@ function slugify(name: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
-export type TemplateTab = "system" | "command" | "artifact";
+export type TemplateTab = "settings" | "system" | "command" | "artifact";
 
 interface UseWorkflowEditorOptions {
   definitionId?: number;
@@ -34,17 +34,23 @@ export function useWorkflowEditor({ definitionId, forkFromId, onSave }: UseWorkf
   const queryClient = useQueryClient();
 
   const sourceId = definitionId ?? forkFromId;
-  const { data: sourceDefinition, isLoading } = useGetWorkflowDefinition(sourceId ?? 0, {
+  const { data: sourceDefinition, isLoading: isSourceLoading } = useGetWorkflowDefinition(sourceId ?? 0, {
     enabled: sourceId != null && sourceId > 0,
   });
+  const isLoading = sourceId != null && sourceId > 0 && isSourceLoading;
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [slug, setSlug] = useState("");
-  const [slugManual, setSlugManual] = useState(false);
   const [selectedPhaseId, setSelectedPhaseId] = useState<number | null>(null);
-  const [activeTab, setActiveTab] = useState<TemplateTab>("system");
+  const [activeTab, setActiveTab] = useState<TemplateTab>("settings");
   const [initialized, setInitialized] = useState(false);
+  // Tracks the id of a definition auto-created during "Add phase" in create mode
+  const [autoCreatedId, setAutoCreatedId] = useState<number | null>(null);
+
+  const { data: autoCreatedDefinition } = useGetWorkflowDefinition(autoCreatedId ?? 0, {
+    enabled: autoCreatedId != null,
+  });
 
   // Sync from loaded definition once
   if (sourceDefinition && !initialized) {
@@ -54,17 +60,14 @@ export function useWorkflowEditor({ definitionId, forkFromId, onSave }: UseWorkf
     setInitialized(true);
   }
 
-  const isPreset = sourceDefinition?.is_preset === true && !forkFromId;
-  const isEditing = definitionId != null;
+  const activeDefinition = autoCreatedDefinition ?? sourceDefinition;
+  const isPreset = activeDefinition?.is_preset === true && !forkFromId;
+  const effectiveDefinitionId = definitionId ?? autoCreatedId;
+  const isEditing = effectiveDefinitionId != null;
 
   const handleNameChange = useCallback((newName: string) => {
     setName(newName);
-    if (!slugManual) setSlug(slugify(newName));
-  }, [slugManual]);
-
-  const handleSlugChange = useCallback((newSlug: string) => {
-    setSlugManual(true);
-    setSlug(newSlug);
+    setSlug(slugify(newName));
   }, []);
 
   // Mutations
@@ -78,15 +81,15 @@ export function useWorkflowEditor({ definitionId, forkFromId, onSave }: UseWorkf
 
   const invalidate = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: getListWorkflowDefinitionsQueryKey() });
-    if (definitionId) {
-      void queryClient.invalidateQueries({ queryKey: getGetWorkflowDefinitionQueryKey(definitionId) });
+    if (effectiveDefinitionId) {
+      void queryClient.invalidateQueries({ queryKey: getGetWorkflowDefinitionQueryKey(effectiveDefinitionId) });
     }
-  }, [queryClient, definitionId]);
+  }, [queryClient, effectiveDefinitionId]);
 
   const phases = useMemo(() => {
-    if (!sourceDefinition) return [];
-    return [...sourceDefinition.phases].sort((a, b) => a.order_index - b.order_index);
-  }, [sourceDefinition]);
+    if (!activeDefinition) return [];
+    return [...activeDefinition.phases].sort((a, b) => a.order_index - b.order_index);
+  }, [activeDefinition]);
 
   const selectedPhase = useMemo(
     () => phases.find((p) => p.id === selectedPhaseId) ?? null,
@@ -104,9 +107,9 @@ export function useWorkflowEditor({ definitionId, forkFromId, onSave }: UseWorkf
         const forked = await forkDef.mutateAsync({ id: forkFromId, name, slug });
         invalidate();
         onSave(forked);
-      } else if (isEditing && definitionId) {
+      } else if (isEditing && effectiveDefinitionId) {
         const updated = await updateDef.mutateAsync({
-          id: definitionId,
+          id: effectiveDefinitionId,
           data: { name, slug, description: description || undefined },
         });
         invalidate();
@@ -124,75 +127,97 @@ export function useWorkflowEditor({ definitionId, forkFromId, onSave }: UseWorkf
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to save workflow");
     }
-  }, [name, slug, description, forkFromId, isEditing, definitionId, sourceDefinition, forkDef, updateDef, createDef, invalidate, onSave]);
+  }, [name, slug, description, forkFromId, isEditing, effectiveDefinitionId, sourceDefinition, forkDef, updateDef, createDef, invalidate, onSave]);
 
   const handleAddPhase = useCallback(async () => {
-    if (!definitionId) return;
+    const defId = effectiveDefinitionId;
     const order = phases.length;
     const phaseName = `Phase ${order + 1}`;
+    const newPhase = {
+      name: phaseName,
+      slug: slugify(phaseName),
+      order_index: order,
+      gate_type: "auto" as const,
+      system_prompt_template: "",
+      command_prompt_template: "",
+      artifact_template: "",
+      input_phase_slugs: [],
+      model_override: "",
+      agent_type: "workflow" as const,
+    };
+
+    // In create mode, auto-save the definition with the first phase included (backend requires ≥1 phase)
+    if (!defId) {
+      if (!name.trim()) {
+        toast.error("Please enter a workflow name before adding phases");
+        return;
+      }
+      try {
+        const created = await createDef.mutateAsync({
+          name,
+          slug: slug || slugify(name),
+          description: description || undefined,
+          phases: [newPhase],
+        });
+        setAutoCreatedId(created.id);
+        invalidate();
+        const firstPhase = created.phases[0];
+        if (firstPhase) setSelectedPhaseId(firstPhase.id);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to create workflow");
+      }
+      return;
+    }
+
     try {
-      const created = await createPhase.mutateAsync({
-        definitionId,
-        phase: {
-          name: phaseName,
-          slug: slugify(phaseName),
-          order_index: order,
-          gate_type: "auto",
-          system_prompt_template: "",
-          command_prompt_template: "",
-          artifact_template: "",
-          input_phase_slugs: [],
-          model_override: "",
-          agent_type: "workflow",
-        },
-      });
+      const created = await createPhase.mutateAsync({ definitionId: defId, phase: newPhase });
       invalidate();
       setSelectedPhaseId(created.id);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to add phase");
     }
-  }, [definitionId, phases.length, createPhase, invalidate]);
+  }, [effectiveDefinitionId, name, slug, description, phases.length, createDef, createPhase, invalidate]);
 
   const handleUpdatePhase = useCallback(async (
     phaseId: number,
     updates: Partial<Omit<WorkflowPhase, "id" | "workflow_definition_id">>,
   ) => {
-    if (!definitionId) return;
+    if (!effectiveDefinitionId) return;
     try {
-      await updatePhase.mutateAsync({ definitionId, phaseId, phase: updates });
+      await updatePhase.mutateAsync({ definitionId: effectiveDefinitionId, phaseId, phase: updates });
       invalidate();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to update phase");
     }
-  }, [definitionId, updatePhase, invalidate]);
+  }, [effectiveDefinitionId, updatePhase, invalidate]);
 
   const handleDeletePhase = useCallback(async (phaseId: number) => {
-    if (!definitionId) return;
+    if (!effectiveDefinitionId) return;
     try {
-      await deletePhase.mutateAsync({ definitionId, phaseId });
+      await deletePhase.mutateAsync({ definitionId: effectiveDefinitionId, phaseId });
       invalidate();
       if (selectedPhaseId === phaseId) setSelectedPhaseId(null);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to delete phase");
     }
-  }, [definitionId, deletePhase, invalidate, selectedPhaseId]);
+  }, [effectiveDefinitionId, deletePhase, invalidate, selectedPhaseId]);
 
   const handleReorder = useCallback(async (phaseIds: number[]) => {
-    if (!definitionId) return;
+    if (!effectiveDefinitionId) return;
     try {
-      await reorderPhases.mutateAsync({ definitionId, phase_ids: phaseIds });
+      await reorderPhases.mutateAsync({ definitionId: effectiveDefinitionId, phase_ids: phaseIds });
       invalidate();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to reorder phases");
     }
-  }, [definitionId, reorderPhases, invalidate]);
+  }, [effectiveDefinitionId, reorderPhases, invalidate]);
 
   return {
     // State
-    name, description, slug, isPreset, isEditing, isLoading, isMutating,
+    name, description, isPreset, isEditing, isLoading, isMutating,
     phases, selectedPhaseId, selectedPhase, activeTab,
     // Setters
-    handleNameChange, handleSlugChange, setDescription,
+    handleNameChange, setDescription,
     setSelectedPhaseId, setActiveTab,
     // Actions
     handleSave, handleAddPhase, handleUpdatePhase, handleDeletePhase, handleReorder,
