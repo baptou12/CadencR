@@ -31,9 +31,9 @@ import type { FeatureStatus } from "@/hooks/useFeatureState";
 const FeatureEditorTab = lazy(() => import("@/components/editor/FeatureEditorTab"));
 import type { FeatureEditorTabHandle } from "@/components/editor/FeatureEditorTab";
 import { useWorkflowStore } from "@/hooks/useWorkflowWebSocket";
-import { CustomWorkflowPlaceholder } from "@/components/CustomWorkflowPlaceholder";
 import { WorkflowQueueSidebar } from "@/components/workflow/WorkflowQueueSidebar";
 import { PhaseApprovalBar } from "@/components/workflow/PhaseApprovalBar";
+import { WorkflowInputBar } from "@/components/workflow/WorkflowInputBar";
 import { useGetWorkflowDefinition } from "@/api/generated";
 
 export function FeatureWorkflowView({
@@ -94,8 +94,11 @@ export function FeatureWorkflowView({
   // Slash commands
   const projectsQuery = useListProjects();
   const projectPath = projectsQuery.data?.find((p) => p.id === projectId)?.path;
+  const isCustomWorkflow = !!feature?.workflow_definition_id;
   const pendingApproval = useWorkflowStore((s) => s.pendingApproval);
   const approvePhase = useWorkflowStore((s) => s.approvePhase);
+  const startCustomWorkflow = useWorkflowStore((s) => s.startCustomWorkflow);
+  const phaseStates = useWorkflowStore((s) => s.phaseStates);
   const slashCommands = useWorkflowStore((s) => s.slashCommands);
   const slashCommandsLoading = useWorkflowStore((s) => s.slashCommandsLoading);
   const requestSlashCommands = useWorkflowStore((s) => s.requestSlashCommands);
@@ -112,6 +115,31 @@ export function FeatureWorkflowView({
     featureId,
     projectId,
   );
+
+  const [isStartingCustom, setIsStartingCustom] = useState(false);
+
+  const handleStartCustomWorkflow = useCallback(
+    (description: string) => {
+      if (!feature?.workflow_definition_id || !feature.title) return;
+      setIsStartingCustom(true);
+      startCustomWorkflow(featureId, projectId, feature.title, feature.workflow_definition_id, description);
+      // Reset after a short delay — backend will update state via WS
+      setTimeout(() => setIsStartingCustom(false), 2000);
+    },
+    [feature, featureId, projectId, startCustomWorkflow],
+  );
+
+  // Derive custom workflow phase info for manual gate messaging
+  const readyManualPhase = useMemo(() => {
+    if (!isCustomWorkflow) return null;
+    for (const [slug, state] of phaseStates) {
+      if (state.status === "ready") {
+        const phase = workflowDefinition?.phases?.find((p) => p.slug === slug);
+        if (phase?.gate_type === "manual") return phase;
+      }
+    }
+    return null;
+  }, [isCustomWorkflow, phaseStates, workflowDefinition?.phases]);
 
   const [deleteTarget, setDeleteTarget] = useState<FeatureSession | null>(null);
 
@@ -255,7 +283,7 @@ export function FeatureWorkflowView({
               </div>
             )}
 
-            {view === "plan-input" && (
+            {view === "plan-input" && !isCustomWorkflow && (
               <div className="flex-1 flex items-center justify-center overflow-auto p-6">
                 <PlanInputView
                   onStartPlanning={(text, images) => {
@@ -274,6 +302,16 @@ export function FeatureWorkflowView({
               </div>
             )}
 
+            {/* Custom workflow: manual gate ready message */}
+            {isCustomWorkflow && readyManualPhase && backend.noAgentsRunning && backend.sessionEntries.length === 0 && (
+              <div className="flex-1 flex items-center justify-center">
+                <div className="text-center space-y-2">
+                  <p className="text-sm text-muted-foreground">
+                    Phase &apos;{readyManualPhase.name}&apos; is ready. Click Start to begin.
+                  </p>
+                </div>
+              </div>
+            )}
 
             {!backend.hasAnyAgentOutput && backend.sessionEntries.length === 0 &&
               !backend.isStartingWorkflowSession &&
@@ -440,6 +478,15 @@ export function FeatureWorkflowView({
           />
         );
       })()}
+
+      {/* Custom workflow input bar — shown when no phases have started yet */}
+      {isCustomWorkflow && view === "plan-input" && !pendingApproval && workflowDefinition && (
+        <WorkflowInputBar
+          onStart={handleStartCustomWorkflow}
+          isStarting={isStartingCustom}
+          workflowName={workflowDefinition.name}
+        />
+      )}
 
       {/* Per-agent diff modal (CMD+D) — separate from Git tab */}
       <DiffViewerModal
