@@ -1639,3 +1639,282 @@ export function useWriteFile(
     ...options,
   });
 }
+
+// ---------------------------------------------------------------------------
+// Workflow Definition types
+// ---------------------------------------------------------------------------
+
+export interface WorkflowPhase {
+  id: number;
+  workflow_definition_id: number;
+  name: string;
+  slug: string;
+  order_index: number;
+  gate_type: "auto" | "approval" | "manual";
+  system_prompt_template: string;
+  command_prompt_template: string;
+  artifact_template: string;
+  input_phase_slugs: string[];
+  model_override: string;
+}
+
+export interface WorkflowDefinition {
+  id: number;
+  name: string;
+  slug: string;
+  description: string | null;
+  is_preset: boolean;
+  phases: WorkflowPhase[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WorkflowArtifact {
+  id: number;
+  feature_id: number;
+  phase_slug: string;
+  content: string;
+  agent_session_id: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateWorkflowDefinition {
+  name: string;
+  slug: string;
+  description?: string;
+  phases: Omit<WorkflowPhase, "id" | "workflow_definition_id">[];
+}
+
+export interface UpdateWorkflowDefinition {
+  name?: string;
+  slug?: string;
+  description?: string;
+}
+
+export interface CreateWorkflowPhaseParams {
+  definitionId: number;
+  phase: Omit<WorkflowPhase, "id" | "workflow_definition_id">;
+}
+
+export interface UpdateWorkflowPhaseParams {
+  definitionId: number;
+  phaseId: number;
+  phase: Partial<Omit<WorkflowPhase, "id" | "workflow_definition_id">>;
+}
+
+export interface DeleteWorkflowPhaseParams {
+  definitionId: number;
+  phaseId: number;
+}
+
+export interface ReorderWorkflowPhasesParams {
+  definitionId: number;
+  phase_ids: number[];
+}
+
+export interface UpdateFeatureArtifactParams {
+  featureId: number;
+  phaseSlug: string;
+  content: string;
+}
+
+// ---------------------------------------------------------------------------
+// Workflow query key factories
+// ---------------------------------------------------------------------------
+
+export function getListWorkflowDefinitionsQueryKey() {
+  return ["workflow", "definitions"] as const;
+}
+
+export function getGetWorkflowDefinitionQueryKey(id: number) {
+  return ["workflow", "definitions", id] as const;
+}
+
+export function getGetFeatureArtifactsQueryKey(featureId: number) {
+  return ["workflow", "artifacts", featureId] as const;
+}
+
+export function getGetFeatureArtifactQueryKey(featureId: number, phaseSlug: string) {
+  return ["workflow", "artifacts", featureId, phaseSlug] as const;
+}
+
+// ---------------------------------------------------------------------------
+// Workflow query hooks
+// ---------------------------------------------------------------------------
+
+export function useListWorkflowDefinitions(
+  options?: Omit<UseQueryOptions<WorkflowDefinition[], ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<WorkflowDefinition[], ErrorType<unknown>>({
+    queryKey: getListWorkflowDefinitionsQueryKey(),
+    queryFn: () =>
+      customInstance({ method: "GET", url: "/api/workflow-definitions" }),
+    ...options,
+  });
+}
+
+export function useGetWorkflowDefinition(
+  id: number,
+  options?: Omit<UseQueryOptions<WorkflowDefinition, ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<WorkflowDefinition, ErrorType<unknown>>({
+    queryKey: getGetWorkflowDefinitionQueryKey(id),
+    queryFn: () =>
+      customInstance({ method: "GET", url: `/api/workflow-definitions/${id}` }),
+    ...options,
+  });
+}
+
+export function useGetFeatureArtifacts(
+  featureId: number,
+  options?: Omit<UseQueryOptions<WorkflowArtifact[], ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<WorkflowArtifact[], ErrorType<unknown>>({
+    queryKey: getGetFeatureArtifactsQueryKey(featureId),
+    queryFn: () =>
+      customInstance({ method: "GET", url: `/api/features/${featureId}/artifacts` }),
+    ...options,
+  });
+}
+
+export function useGetFeatureArtifact(
+  featureId: number,
+  phaseSlug: string,
+  options?: Omit<UseQueryOptions<WorkflowArtifact, ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<WorkflowArtifact, ErrorType<unknown>>({
+    queryKey: getGetFeatureArtifactQueryKey(featureId, phaseSlug),
+    queryFn: () =>
+      customInstance({ method: "GET", url: `/api/features/${featureId}/artifacts/${phaseSlug}` }),
+    ...options,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Workflow mutation hooks
+// ---------------------------------------------------------------------------
+
+export function useCreateWorkflowDefinition(
+  options?: UseMutationOptions<WorkflowDefinition, ErrorType<unknown>, CreateWorkflowDefinition>,
+) {
+  return useMutation<WorkflowDefinition, ErrorType<unknown>, CreateWorkflowDefinition>({
+    mutationFn: (params) =>
+      customInstance({
+        method: "POST",
+        url: "/api/workflow-definitions",
+        data: params,
+      }),
+    ...options,
+  });
+}
+
+export function useUpdateWorkflowDefinition(
+  options?: UseMutationOptions<WorkflowDefinition, ErrorType<unknown>, { id: number; data: UpdateWorkflowDefinition }>,
+) {
+  return useMutation<WorkflowDefinition, ErrorType<unknown>, { id: number; data: UpdateWorkflowDefinition }>({
+    mutationFn: (params) =>
+      customInstance({
+        method: "PUT",
+        url: `/api/workflow-definitions/${params.id}`,
+        data: params.data,
+      }),
+    ...options,
+  });
+}
+
+export function useDeleteWorkflowDefinition(
+  options?: UseMutationOptions<SuccessResponse, ErrorType<unknown>, number>,
+) {
+  return useMutation<SuccessResponse, ErrorType<unknown>, number>({
+    mutationFn: (id) =>
+      customInstance({
+        method: "DELETE",
+        url: `/api/workflow-definitions/${id}`,
+      }),
+    ...options,
+  });
+}
+
+export function useForkWorkflowDefinition(
+  options?: UseMutationOptions<WorkflowDefinition, ErrorType<unknown>, { id: number; name: string; slug: string }>,
+) {
+  return useMutation<WorkflowDefinition, ErrorType<unknown>, { id: number; name: string; slug: string }>({
+    mutationFn: (params) =>
+      customInstance({
+        method: "POST",
+        url: `/api/workflow-definitions/${params.id}/fork`,
+        data: { name: params.name, slug: params.slug },
+      }),
+    ...options,
+  });
+}
+
+export function useCreateWorkflowPhase(
+  options?: UseMutationOptions<WorkflowPhase, ErrorType<unknown>, CreateWorkflowPhaseParams>,
+) {
+  return useMutation<WorkflowPhase, ErrorType<unknown>, CreateWorkflowPhaseParams>({
+    mutationFn: (params) =>
+      customInstance({
+        method: "POST",
+        url: `/api/workflow-definitions/${params.definitionId}/phases`,
+        data: params.phase,
+      }),
+    ...options,
+  });
+}
+
+export function useUpdateWorkflowPhase(
+  options?: UseMutationOptions<WorkflowPhase, ErrorType<unknown>, UpdateWorkflowPhaseParams>,
+) {
+  return useMutation<WorkflowPhase, ErrorType<unknown>, UpdateWorkflowPhaseParams>({
+    mutationFn: (params) =>
+      customInstance({
+        method: "PUT",
+        url: `/api/workflow-definitions/${params.definitionId}/phases/${params.phaseId}`,
+        data: params.phase,
+      }),
+    ...options,
+  });
+}
+
+export function useDeleteWorkflowPhase(
+  options?: UseMutationOptions<SuccessResponse, ErrorType<unknown>, DeleteWorkflowPhaseParams>,
+) {
+  return useMutation<SuccessResponse, ErrorType<unknown>, DeleteWorkflowPhaseParams>({
+    mutationFn: (params) =>
+      customInstance({
+        method: "DELETE",
+        url: `/api/workflow-definitions/${params.definitionId}/phases/${params.phaseId}`,
+      }),
+    ...options,
+  });
+}
+
+export function useReorderWorkflowPhases(
+  options?: UseMutationOptions<SuccessResponse, ErrorType<unknown>, ReorderWorkflowPhasesParams>,
+) {
+  return useMutation<SuccessResponse, ErrorType<unknown>, ReorderWorkflowPhasesParams>({
+    mutationFn: (params) =>
+      customInstance({
+        method: "PUT",
+        url: `/api/workflow-definitions/${params.definitionId}/phases/reorder`,
+        data: { phase_ids: params.phase_ids },
+      }),
+    ...options,
+  });
+}
+
+export function useUpdateFeatureArtifact(
+  options?: UseMutationOptions<WorkflowArtifact, ErrorType<unknown>, UpdateFeatureArtifactParams>,
+) {
+  return useMutation<WorkflowArtifact, ErrorType<unknown>, UpdateFeatureArtifactParams>({
+    mutationFn: (params) =>
+      customInstance({
+        method: "PUT",
+        url: `/api/features/${params.featureId}/artifacts/${params.phaseSlug}`,
+        data: { content: params.content },
+      }),
+    ...options,
+  });
+}
