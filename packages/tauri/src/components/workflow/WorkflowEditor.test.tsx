@@ -18,6 +18,7 @@ const makePhase = (overrides: Partial<WorkflowPhase> = {}): WorkflowPhase => ({
   artifact_template: "",
   input_phase_slugs: [],
   model_override: "",
+  agent_type: "workflow",
   ...overrides,
 });
 

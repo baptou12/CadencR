@@ -85,6 +85,7 @@ pub async fn update_phase(
     artifact_template: Option<&str>,
     input_phase_slugs: Option<&Vec<String>>,
     model_override: Option<&str>,
+    agent_type: Option<&str>,
 ) -> Result<WorkflowPhase, AppError> {
     if let Some(gt) = gate_type {
         gt.parse::<GateType>().map_err(|_| {
@@ -98,7 +99,7 @@ pub async fn update_phase(
     }
     repository::update_workflow_phase(
         pool, phase_id, name, gate_type, system_prompt_template,
-        command_prompt_template, artifact_template, input_phase_slugs, model_override,
+        command_prompt_template, artifact_template, input_phase_slugs, model_override, agent_type,
     ).await
 }
 

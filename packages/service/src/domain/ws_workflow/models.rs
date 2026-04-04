@@ -29,6 +29,7 @@ pub struct WorkflowPhase {
     #[serde(default)]
     pub input_phase_slugs: Vec<String>,
     pub model_override: String,
+    pub agent_type: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -93,4 +94,5 @@ pub struct CreateWorkflowPhase {
     pub artifact_template: String,
     pub input_phase_slugs: Vec<String>,
     pub model_override: String,
+    pub agent_type: String,
 }

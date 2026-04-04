@@ -48,6 +48,12 @@ pub struct CreatePhaseRequest {
     pub input_phase_slugs: Vec<String>,
     #[serde(default)]
     pub model_override: String,
+    #[serde(default = "default_agent_type")]
+    pub agent_type: String,
+}
+
+fn default_agent_type() -> String {
+    "workflow".to_string()
 }
 
 #[derive(Debug, Deserialize)]
@@ -61,6 +67,7 @@ pub struct UpdatePhaseRequest {
     pub artifact_template: Option<String>,
     pub input_phase_slugs: Option<Vec<String>>,
     pub model_override: Option<String>,
+    pub agent_type: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -85,6 +92,7 @@ impl From<CreatePhaseRequest> for CreateWorkflowPhase {
             artifact_template: r.artifact_template,
             input_phase_slugs: r.input_phase_slugs,
             model_override: r.model_override,
+            agent_type: r.agent_type,
         }
     }
 }
@@ -176,6 +184,7 @@ async fn update_phase(
         body.artifact_template.as_deref(),
         body.input_phase_slugs.as_ref(),
         body.model_override.as_deref(),
+        body.agent_type.as_deref(),
     ).await?;
     Ok(Json(result))
 }

@@ -172,6 +172,21 @@ export function PhaseEditorCard({
               </SelectContent>
             </Select>
           </div>
+          <div>
+            <label className="text-[10px] text-muted-foreground">Agent Type</label>
+            <Select
+              value={phase.agent_type}
+              onValueChange={(v) => onUpdate({ agent_type: v as WorkflowPhase["agent_type"] })}
+            >
+              <SelectTrigger className="h-6 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="workflow">Workflow (planning/analysis)</SelectItem>
+                <SelectItem value="execute">Execute (implementation)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           {allPhaseSlugs.length > 0 && (
             <div>
               <label className="text-[10px] text-muted-foreground">Input Phases</label>

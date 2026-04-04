@@ -15,10 +15,10 @@ fn parse_phase_slugs(json: &str, phase_name: &str) -> Vec<String> {
 }
 
 async fn load_phases(pool: &SqlitePool, definition_id: i64) -> Result<Vec<WorkflowPhase>, AppError> {
-    let rows = sqlx::query_as::<_, (i64, i64, String, String, i32, String, String, String, String, String, String)>(
+    let rows = sqlx::query_as::<_, (i64, i64, String, String, i32, String, String, String, String, String, String, String)>(
         "SELECT id, workflow_definition_id, name, slug, order_index, gate_type, \
          system_prompt_template, command_prompt_template, artifact_template, \
-         input_phase_slugs, model_override \
+         input_phase_slugs, model_override, agent_type \
          FROM workflow_phases WHERE workflow_definition_id = ? ORDER BY order_index"
     )
     .bind(definition_id)
@@ -32,7 +32,7 @@ async fn load_phases(pool: &SqlitePool, definition_id: i64) -> Result<Vec<Workfl
             id: r.0, workflow_definition_id: r.1, name: r.2, slug: r.3,
             order_index: r.4, gate_type: r.5, system_prompt_template: r.6,
             command_prompt_template: r.7, artifact_template: r.8,
-            input_phase_slugs, model_override: r.10,
+            input_phase_slugs, model_override: r.10, agent_type: r.11,
         }
     }).collect())
 }
@@ -67,12 +67,12 @@ pub async fn list_workflow_definitions(pool: &SqlitePool) -> Result<Vec<Workflow
     let query = format!(
         "SELECT id, workflow_definition_id, name, slug, order_index, gate_type, \
          system_prompt_template, command_prompt_template, artifact_template, \
-         input_phase_slugs, model_override \
+         input_phase_slugs, model_override, agent_type \
          FROM workflow_phases WHERE workflow_definition_id IN ({}) ORDER BY order_index",
         placeholders
     );
 
-    let mut q = sqlx::query_as::<_, (i64, i64, String, String, i32, String, String, String, String, String, String)>(&query);
+    let mut q = sqlx::query_as::<_, (i64, i64, String, String, i32, String, String, String, String, String, String, String)>(&query);
     for id in &ids {
         q = q.bind(id);
     }
@@ -85,7 +85,7 @@ pub async fn list_workflow_definitions(pool: &SqlitePool) -> Result<Vec<Workflow
             id: r.0, workflow_definition_id: r.1, name: r.2, slug: r.3,
             order_index: r.4, gate_type: r.5, system_prompt_template: r.6,
             command_prompt_template: r.7, artifact_template: r.8,
-            input_phase_slugs, model_override: r.10,
+            input_phase_slugs, model_override: r.10, agent_type: r.11,
         });
     }
 
@@ -165,8 +165,8 @@ async fn insert_phase(
         "INSERT INTO workflow_phases \
          (workflow_definition_id, name, slug, order_index, gate_type, \
           system_prompt_template, command_prompt_template, artifact_template, \
-          input_phase_slugs, model_override) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+          input_phase_slugs, model_override, agent_type) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     )
     .bind(definition_id)
     .bind(&phase.name)
@@ -178,6 +178,7 @@ async fn insert_phase(
     .bind(&phase.artifact_template)
     .bind(&slugs_json)
     .bind(&phase.model_override)
+    .bind(&phase.agent_type)
     .execute(pool)
     .await
     .map_err(|e| AppError::DatabaseError(e.to_string()))?
@@ -260,6 +261,7 @@ pub async fn fork_workflow_definition(
             artifact_template: p.artifact_template,
             input_phase_slugs: p.input_phase_slugs,
             model_override: p.model_override,
+            agent_type: p.agent_type,
         }
     }).collect();
 
@@ -290,6 +292,7 @@ pub async fn create_workflow_phase(
         artifact_template: phase.artifact_template.clone(),
         input_phase_slugs: phase.input_phase_slugs.clone(),
         model_override: phase.model_override.clone(),
+        agent_type: phase.agent_type.clone(),
     })
 }
 
@@ -304,6 +307,7 @@ pub async fn update_workflow_phase(
     artifact_template: Option<&str>,
     input_phase_slugs: Option<&Vec<String>>,
     model_override: Option<&str>,
+    agent_type: Option<&str>,
 ) -> Result<WorkflowPhase, AppError> {
     // Build a single dynamic UPDATE with all provided fields
     let mut set_clauses: Vec<String> = Vec::new();
@@ -316,6 +320,7 @@ pub async fn update_workflow_phase(
         ("command_prompt_template = ?", command_prompt_template),
         ("artifact_template = ?", artifact_template),
         ("model_override = ?", model_override),
+        ("agent_type = ?", agent_type),
     ];
     for (clause, val) in simple {
         if let Some(v) = val { set_clauses.push((*clause).into()); values.push(v.to_string()); }
@@ -338,10 +343,10 @@ pub async fn update_workflow_phase(
         q.execute(pool).await.map_err(|e| AppError::DatabaseError(e.to_string()))?;
     }
 
-    let row = sqlx::query_as::<_, (i64, i64, String, String, i32, String, String, String, String, String, String)>(
+    let row = sqlx::query_as::<_, (i64, i64, String, String, i32, String, String, String, String, String, String, String)>(
         "SELECT id, workflow_definition_id, name, slug, order_index, gate_type, \
          system_prompt_template, command_prompt_template, artifact_template, \
-         input_phase_slugs, model_override \
+         input_phase_slugs, model_override, agent_type \
          FROM workflow_phases WHERE id = ?"
     )
     .bind(phase_id)
@@ -355,7 +360,7 @@ pub async fn update_workflow_phase(
         id: row.0, workflow_definition_id: row.1, name: row.2, slug: row.3,
         order_index: row.4, gate_type: row.5, system_prompt_template: row.6,
         command_prompt_template: row.7, artifact_template: row.8,
-        input_phase_slugs, model_override: row.10,
+        input_phase_slugs, model_override: row.10, agent_type: row.11,
     })
 }
 

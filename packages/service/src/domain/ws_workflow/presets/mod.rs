@@ -18,6 +18,35 @@ fn phase(
     command_prompt: &str,
     artifact: &str,
 ) -> CreateWorkflowPhase {
+    phase_with_agent_type(order, name, slug, gate, inputs, system_prompt, command_prompt, artifact, "workflow")
+}
+
+#[allow(clippy::too_many_arguments)]
+fn execute_phase(
+    order: i32,
+    name: &str,
+    slug: &str,
+    gate: GateType,
+    inputs: &[&str],
+    system_prompt: &str,
+    command_prompt: &str,
+    artifact: &str,
+) -> CreateWorkflowPhase {
+    phase_with_agent_type(order, name, slug, gate, inputs, system_prompt, command_prompt, artifact, "execute")
+}
+
+#[allow(clippy::too_many_arguments)]
+fn phase_with_agent_type(
+    order: i32,
+    name: &str,
+    slug: &str,
+    gate: GateType,
+    inputs: &[&str],
+    system_prompt: &str,
+    command_prompt: &str,
+    artifact: &str,
+    agent_type: &str,
+) -> CreateWorkflowPhase {
     CreateWorkflowPhase {
         name: name.to_string(),
         slug: slug.to_string(),
@@ -28,6 +57,7 @@ fn phase(
         artifact_template: artifact.to_string(),
         input_phase_slugs: inputs.iter().map(|s| s.to_string()).collect(),
         model_override: String::new(),
+        agent_type: agent_type.to_string(),
     }
 }
 
@@ -67,7 +97,7 @@ pub fn get_preset_definitions() -> Vec<CreateWorkflowDefinition> {
                     sk::PLAN_SYSTEM, sk::PLAN_COMMAND, sk::PLAN_ARTIFACT),
                 phase(3, "Tasks", "tasks", Auto, &["plan"],
                     sk::TASKS_SYSTEM, sk::TASKS_COMMAND, sk::TASKS_ARTIFACT),
-                phase(4, "Implement", "implement", Auto, &["tasks"],
+                execute_phase(4, "Implement", "implement", Auto, &["tasks"],
                     sk::IMPLEMENT_SYSTEM, sk::IMPLEMENT_COMMAND, sk::IMPLEMENT_ARTIFACT),
                 phase(5, "Analyze", "analyze", Approval, &["specify", "implement"],
                     sk::ANALYZE_SYSTEM, sk::ANALYZE_COMMAND, sk::ANALYZE_ARTIFACT),
@@ -84,7 +114,7 @@ pub fn get_preset_definitions() -> Vec<CreateWorkflowDefinition> {
                     bm::PLANNING_SYSTEM, bm::PLANNING_COMMAND, bm::PLANNING_ARTIFACT),
                 phase(2, "Solutioning", "solutioning", Approval, &["analysis", "planning"],
                     bm::SOLUTIONING_SYSTEM, bm::SOLUTIONING_COMMAND, bm::SOLUTIONING_ARTIFACT),
-                phase(3, "Implementation", "implementation", Auto, &["solutioning"],
+                execute_phase(3, "Implementation", "implementation", Auto, &["solutioning"],
                     bm::IMPLEMENTATION_SYSTEM, bm::IMPLEMENTATION_COMMAND, bm::IMPLEMENTATION_ARTIFACT),
             ],
         ),
@@ -95,7 +125,7 @@ pub fn get_preset_definitions() -> Vec<CreateWorkflowDefinition> {
             vec![
                 phase(0, "Propose", "propose", Approval, &[],
                     os::PROPOSE_SYSTEM, os::PROPOSE_COMMAND, os::PROPOSE_ARTIFACT),
-                phase(1, "Apply", "apply", Auto, &["propose"],
+                execute_phase(1, "Apply", "apply", Auto, &["propose"],
                     os::APPLY_SYSTEM, os::APPLY_COMMAND, os::APPLY_ARTIFACT),
                 phase(2, "Archive", "archive", Auto, &["apply"],
                     os::ARCHIVE_SYSTEM, os::ARCHIVE_COMMAND, os::ARCHIVE_ARTIFACT),
@@ -110,7 +140,7 @@ pub fn get_preset_definitions() -> Vec<CreateWorkflowDefinition> {
                     cd::PLAN_SYSTEM, cd::PLAN_COMMAND, cd::PLAN_ARTIFACT),
                 phase(1, "PRD", "prd", Approval, &["plan"],
                     cd::PRD_SYSTEM, cd::PRD_COMMAND, cd::PRD_ARTIFACT),
-                phase(2, "Build", "build", Auto, &["prd"],
+                execute_phase(2, "Build", "build", Auto, &["prd"],
                     cd::BUILD_SYSTEM, cd::BUILD_COMMAND, cd::BUILD_ARTIFACT),
             ],
         ),

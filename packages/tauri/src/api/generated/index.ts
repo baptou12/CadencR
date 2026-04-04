@@ -1657,6 +1657,7 @@ export interface WorkflowPhase {
   artifact_template: string;
   input_phase_slugs: string[];
   model_override: string;
+  agent_type: "workflow" | "execute";
 }
 
 export interface WorkflowDefinition {

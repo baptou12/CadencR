@@ -143,6 +143,7 @@ export function useWorkflowEditor({ definitionId, forkFromId, onSave }: UseWorkf
           artifact_template: "",
           input_phase_slugs: [],
           model_override: "",
+          agent_type: "workflow",
         },
       });
       invalidate();
