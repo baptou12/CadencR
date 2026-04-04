@@ -3,6 +3,7 @@ import { useEditorStore } from "@/stores/editor-store";
 import EditorSubTabs from "./EditorSubTabs";
 
 const CodeMirrorEditor = lazy(() => import("./CodeMirrorEditor"));
+const ArtifactEditor = lazy(() => import("@/components/workflow/ArtifactEditor"));
 
 interface EditorPaneProps {
   featureId: number;
@@ -13,6 +14,7 @@ interface EditorPaneProps {
 
 export default function EditorPane({ featureId, paneId, projectPath, isActive }: EditorPaneProps) {
   const activeFilePath = useEditorStore((s) => s.features[featureId]?.panes[paneId]?.activeFilePath ?? null);
+  const activeTab = useEditorStore((s) => s.features[featureId]?.panes[paneId]?.tabs.find((t) => t.filePath === activeFilePath));
   const setActivePane = useEditorStore((s) => s.setActivePane);
 
   function handleFocus() {
@@ -21,21 +23,31 @@ export default function EditorPane({ featureId, paneId, projectPath, isActive }:
     }
   }
 
+  const suspenseFallback = (
+    <div className="flex flex-col gap-2 p-4 animate-pulse">
+      <div className="h-4 w-3/4 rounded bg-muted" />
+      <div className="h-4 w-1/2 rounded bg-muted" />
+      <div className="h-4 w-5/6 rounded bg-muted" />
+    </div>
+  );
+
   return (
     <div className="flex flex-col h-full" onFocus={handleFocus}>
       <EditorSubTabs featureId={featureId} paneId={paneId} />
 
       <div className="flex-1 overflow-hidden">
-        {activeFilePath ? (
-          <Suspense
-            fallback={
-              <div className="flex flex-col gap-2 p-4 animate-pulse">
-                <div className="h-4 w-3/4 rounded bg-muted" />
-                <div className="h-4 w-1/2 rounded bg-muted" />
-                <div className="h-4 w-5/6 rounded bg-muted" />
-              </div>
-            }
-          >
+        {activeFilePath && activeTab?.isArtifact && activeTab.artifactFeatureId != null && activeTab.artifactPhaseSlug ? (
+          <Suspense fallback={suspenseFallback}>
+            <ArtifactEditor
+              key={activeFilePath}
+              featureId={activeTab.artifactFeatureId}
+              phaseSlug={activeTab.artifactPhaseSlug}
+              paneId={paneId}
+              filePath={activeFilePath}
+            />
+          </Suspense>
+        ) : activeFilePath ? (
+          <Suspense fallback={suspenseFallback}>
             <CodeMirrorEditor
               key={activeFilePath}
               filePath={activeFilePath}

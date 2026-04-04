@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useMemo, lazy, Suspense } from "react";
+import { useEditorStore } from "@/stores/editor-store";
 import { useGetFeaturePrd, useListProjects, useGetStats } from "@/api/generated";
 import { FeatureTopBar } from "@/components/FeatureTopBar";
 import { FeatureTabBar } from "@/components/FeatureTabBar";
@@ -163,6 +164,14 @@ export function FeatureWorkflowView({
 
   // Tab state
   const { activeTab, setActiveTab } = useActiveTab(featureId);
+
+  // Open artifact in editor tab
+  const openArtifact = useEditorStore((s) => s.openArtifact);
+  const editorActivePaneId = useEditorStore((s) => s.features[featureId]?.activePaneId ?? "main");
+  const handleViewArtifact = useCallback((phaseSlug: string) => {
+    openArtifact(featureId, editorActivePaneId, phaseSlug);
+    setActiveTab("editor");
+  }, [featureId, openArtifact, editorActivePaneId, setActiveTab]);
   useSaveLastOpenedFeature(projectId, featureId, activeTab);
   const editorTabRef = useRef<FeatureEditorTabHandle>(null);
 
@@ -401,6 +410,7 @@ export function FeatureWorkflowView({
           {feature?.workflow_definition_id ? (
             <WorkflowQueueSidebar
               workflowDefinitionId={feature.workflow_definition_id}
+              onViewArtifact={handleViewArtifact}
             />
           ) : (
             <QueueSidebar
