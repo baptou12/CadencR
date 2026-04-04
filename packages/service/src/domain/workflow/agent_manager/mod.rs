@@ -126,6 +126,7 @@ impl AgentManager {
         let ctx = self.build_spawn_context(
             slot.clone(), db_session_id, agent_type, agent_type_str,
             Some(system_prompt), None, true, permissions,
+            None, None, None,
         ).await?;
 
         // 3. Persist the initial user prompt and send it to the frontend
@@ -231,10 +232,29 @@ impl AgentManager {
             .map_err(|e| format!("Failed to link session to queue item: {e}"))?;
 
         // 4. Build spawn context (MCP, CWD, permissions, model, options)
+        // Extract workflow-specific config from the queue item's config JSON
+        let config_json: Option<serde_json::Value> = item.config.as_deref()
+            .and_then(|c| serde_json::from_str(c).ok());
+        let phase_slug_owned = config_json.as_ref()
+            .and_then(|c| c.get("phase_slug"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let input_phase_slugs_owned: Option<Vec<String>> = config_json.as_ref()
+            .and_then(|c| c.get("input_phase_slugs"))
+            .and_then(|v| serde_json::from_value(v.clone()).ok());
+        let model_override_owned = config_json.as_ref()
+            .and_then(|c| c.get("model_override"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        let include_mcp = matches!(agent_type, AgentType::Workflow);
         let slot = AgentSlot::QueueItem(item_id);
         let ctx = self.build_spawn_context(
             slot.clone(), db_session_id, agent_type, &agent_type_str,
-            Some(system_prompt.as_str()), None, false, permissions,
+            Some(system_prompt.as_str()), None, include_mcp, permissions,
+            phase_slug_owned.as_deref(),
+            input_phase_slugs_owned.as_deref(),
+            model_override_owned.as_deref(),
         ).await?;
 
         // 5. Persist the initial user prompt and send it to the frontend

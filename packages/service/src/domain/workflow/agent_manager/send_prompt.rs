@@ -155,6 +155,7 @@ impl AgentManager {
         let ctx = self.build_spawn_context(
             slot.clone(), db_session_id, agent_type, &agent_type_str,
             None, Some(cc_session_id), false, permissions,
+            None, None, None,
         ).await?;
 
         let content_value = if prompt.is_empty() && images.is_empty() {

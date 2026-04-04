@@ -213,6 +213,43 @@ pub fn map_phase_type_to_item_type(phase_type: Option<&str>) -> &'static str {
     }
 }
 
+#[allow(dead_code)]
+pub async fn mark_item_pending_approval(pool: &SqlitePool, item_id: i64) -> Result<(), AppError> {
+    sqlx::query("UPDATE workflow_queue SET status = 'pending_approval', ended_at = datetime('now') WHERE id = ?")
+        .bind(item_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+#[allow(dead_code)]
+pub async fn get_queue_item_by_slug(
+    pool: &SqlitePool,
+    feature_id: i64,
+    phase_slug: &str,
+    status: &str,
+) -> Result<Option<QueueItem>, AppError> {
+    let item = sqlx::query_as::<_, QueueItem>(
+        "SELECT * FROM workflow_queue WHERE feature_id = ? AND item_type = ? AND status = ? LIMIT 1",
+    )
+    .bind(feature_id)
+    .bind(phase_slug)
+    .bind(status)
+    .fetch_optional(pool)
+    .await?;
+    Ok(item)
+}
+
+#[allow(dead_code)]
+pub async fn update_item_config(pool: &SqlitePool, item_id: i64, config: &str) -> Result<(), AppError> {
+    sqlx::query("UPDATE workflow_queue SET config = ? WHERE id = ?")
+        .bind(config)
+        .bind(item_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 pub async fn clear_queue_for_feature(pool: &SqlitePool, feature_id: i64) -> Result<(), AppError> {
     // Dependencies cascade on delete, but delete explicitly for clarity
     sqlx::query(

@@ -461,6 +461,36 @@ pub struct WorkflowPausedPayload {
     pub reason: String,
 }
 
+#[allow(dead_code)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowPhaseStartedPayload {
+    pub feature_id: i64,
+    pub phase_slug: String,
+    pub agent_session_id: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowPhaseCompletedPayload {
+    pub feature_id: i64,
+    pub phase_slug: String,
+    pub artifact_preview: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowApprovalRequestedPayload {
+    pub feature_id: i64,
+    pub phase_slug: String,
+    pub artifact_content: Option<String>,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowArtifactUpdatedPayload {
+    pub feature_id: i64,
+    pub phase_slug: String,
+    pub content: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowStatusChangedPayload {
     pub feature_id: i64,
