@@ -205,6 +205,32 @@ fn to_value<T: serde::Serialize>(v: T) -> serde_json::Value {
     serde_json::to_value(v).unwrap()
 }
 
+/// Resolve the correct workflow strategy for a feature, handling both legacy
+/// (FeatureBuild) and custom workflow types.
+async fn resolve_strategy(
+    workflow_type: &WorkflowType,
+    feature_id: i64,
+    read_pool: &sqlx::SqlitePool,
+) -> Result<Box<dyn crate::domain::workflow::strategies::WorkflowStrategy>, String> {
+    match workflow_type {
+        WorkflowType::Custom => {
+            let wd_id: Option<i64> = sqlx::query_scalar(
+                "SELECT workflow_definition_id FROM features WHERE id = ?",
+            )
+            .bind(feature_id)
+            .fetch_optional(read_pool)
+            .await
+            .ok()
+            .flatten();
+            match wd_id {
+                Some(id) => Ok(crate::domain::workflow::strategies::get_custom_strategy(id)),
+                None => Err("Custom workflow feature missing workflow_definition_id".into()),
+            }
+        }
+        _ => crate::domain::workflow::strategies::get_strategy(workflow_type),
+    }
+}
+
 /// Handle workflow domain actions.
 pub async fn handle_workflow_action(
     envelope: WsEnvelope,
@@ -508,7 +534,7 @@ async fn handle_populate_queue(envelope: WsEnvelope, sender: &WsSender, app_stat
     let Some((payload, engine)) = parse_and_get_engine::<WorkflowPopulateQueuePayload>(&envelope, sender) else { return };
 
     let feature_id = payload.feature_id;
-    let strategy = match crate::domain::workflow::strategies::get_strategy(&engine.workflow_type) {
+    let strategy = match resolve_strategy(&engine.workflow_type, feature_id, &app_state.read_pool).await {
         Ok(s) => s,
         Err(e) => {
             send_workflow_error(sender, &envelope.id, "STRATEGY_ERROR", &e);
@@ -545,7 +571,7 @@ async fn handle_start_build(envelope: WsEnvelope, sender: &WsSender, app_state: 
 
     if item_count == 0 {
         info!(feature_id = payload.feature_id, "start_build: queue empty, populating first");
-        let strategy = match crate::domain::workflow::strategies::get_strategy(&engine.workflow_type) {
+        let strategy = match resolve_strategy(&engine.workflow_type, payload.feature_id, &app_state.read_pool).await {
             Ok(s) => s,
             Err(e) => {
                 send_workflow_error(sender, &envelope.id, "STRATEGY_ERROR", &e);
@@ -1063,10 +1089,42 @@ async fn handle_feature_start_custom(
         return;
     }
 
-    // TODO: Create WorkflowEngine with CustomWorkflowStrategy, populate queue, start first phase(s)
-    // This will be implemented when CustomWorkflowStrategy is available from a later phase.
+    let feature_id = payload.feature_id;
+    let workflow_definition_id = payload.workflow_definition_id;
+
+    // Create engine with Custom workflow type — QueueAdvancer will resolve
+    // the CustomWorkflowStrategy from the feature's workflow_definition_id.
+    let engine = Arc::new(WorkflowEngine::new(
+        feature_id,
+        WorkflowType::Custom,
+        app_state.read_pool.clone(),
+        app_state.write_pool.clone(),
+        sender.clone(),
+        app_state.max_parallel_agents,
+        app_state.turn_state_tx.clone(),
+    )
+    .await);
+
+    // Populate the queue using CustomWorkflowStrategy
+    let strategy = crate::domain::workflow::strategies::get_custom_strategy(workflow_definition_id);
+    match strategy
+        .populate_queue(&app_state.write_pool, &app_state.read_pool, feature_id, None)
+        .await
+    {
+        Ok(items) => {
+            info!(feature_id, item_count = items.len(), "custom workflow queue populated");
+        }
+        Err(e) => {
+            send_workflow_error(sender, &envelope.id, "POPULATE_FAILED", &format!("Failed to populate custom workflow queue: {e}"));
+            return;
+        }
+    }
+
+    ENGINES.insert(feature_id, engine);
+    ensure_background_tasks(app_state.agent_timeout_minutes);
+
     let ack = WsEnvelope::reply(&envelope.id, "workflow", "acknowledged", to_value(WorkflowAcknowledgedPayload {
-        feature_id: payload.feature_id,
+        feature_id,
         action: "feature_start_custom".into(),
     }));
     let _ = sender.send(Message::Text(String::from(ack).into()));

@@ -889,6 +889,7 @@ export interface Feature {
   agent_autonomy: string | null;
   parallel_execution: number | null;
   created_at: string;
+  workflow_definition_id: number | null;
 }
 
 export interface Phase {
@@ -1093,9 +1094,9 @@ export function useGetFeatureWorkingDir(
 // ---------------------------------------------------------------------------
 
 export function useCreateFeature(
-  options?: UseMutationOptions<{ id: number }, ErrorType<unknown>, { project_id: number; title?: string; type?: string }>,
+  options?: UseMutationOptions<{ id: number }, ErrorType<unknown>, { project_id: number; title?: string; type?: string; workflow_definition_id?: number | null }>,
 ) {
-  return useMutation<{ id: number }, ErrorType<unknown>, { project_id: number; title?: string; type?: string }>({
+  return useMutation<{ id: number }, ErrorType<unknown>, { project_id: number; title?: string; type?: string; workflow_definition_id?: number | null }>({
     mutationFn: (body) => customInstance({ method: "POST", url: "/api/features", data: body }),
     ...options,
   });

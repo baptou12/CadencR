@@ -10,7 +10,8 @@ pub async fn list_by_project(pool: &SqlitePool, project_id: i64) -> Result<Vec<F
            model_plan, model_prd, model_execute, model_risk, model_review,
            "model_review-fixer" as model_review_fixer, model_session, model_qa, model_retro,
            agent_autonomy, parallel_execution,
-           COALESCE(created_at, datetime('now')) as created_at
+           COALESCE(created_at, datetime('now')) as created_at,
+           workflow_definition_id
            FROM features WHERE project_id = ? ORDER BY created_at DESC"#,
     )
     .bind(project_id)
@@ -26,7 +27,8 @@ pub async fn get_by_id(pool: &SqlitePool, id: i64) -> Result<Option<Feature>, Ap
            model_plan, model_prd, model_execute, model_risk, model_review,
            "model_review-fixer" as model_review_fixer, model_session, model_qa, model_retro,
            agent_autonomy, parallel_execution,
-           COALESCE(created_at, datetime('now')) as created_at
+           COALESCE(created_at, datetime('now')) as created_at,
+           workflow_definition_id
            FROM features WHERE id = ?"#,
     )
     .bind(id)
@@ -40,13 +42,15 @@ pub async fn create_feature(
     project_id: i64,
     title: &str,
     type_: &str,
+    workflow_definition_id: Option<i64>,
 ) -> Result<i64, AppError> {
     let result = sqlx::query(
-        "INSERT INTO features (project_id, title, type) VALUES (?, ?, ?)",
+        "INSERT INTO features (project_id, title, type, workflow_definition_id) VALUES (?, ?, ?, ?)",
     )
     .bind(project_id)
     .bind(title)
     .bind(type_)
+    .bind(workflow_definition_id)
     .execute(pool)
     .await?;
     Ok(result.last_insert_rowid())

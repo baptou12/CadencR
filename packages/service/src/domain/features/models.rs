@@ -25,6 +25,7 @@ pub struct Feature {
     pub agent_autonomy: Option<String>,
     pub parallel_execution: Option<String>,
     pub created_at: String,
+    pub workflow_definition_id: Option<i64>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -33,6 +34,7 @@ pub struct CreateFeatureRequest {
     pub title: Option<String>,
     #[serde(rename = "type")]
     pub type_: Option<String>,
+    pub workflow_definition_id: Option<i64>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -292,6 +294,7 @@ mod tests {
             agent_autonomy: Some("full".to_string()),
             parallel_execution: Some("true".to_string()),
             created_at: "2024-01-01T00:00:00".to_string(),
+            workflow_definition_id: None,
         };
 
         let json = serde_json::to_string(&feature).unwrap();

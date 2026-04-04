@@ -46,9 +46,6 @@ impl QueueAdvancer {
         ws_sender: WsSender,
         turn_state_tx: tokio::sync::broadcast::Sender<crate::app_state::TurnStateEvent>,
     ) -> Self {
-        let strategy = strategies::get_strategy(&workflow_type)
-            .expect("QueueAdvancer::new called with unsupported workflow type");
-
         let project_id = sqlx::query_scalar::<_, i64>(
             "SELECT project_id FROM features WHERE id = ?",
         )
@@ -57,6 +54,26 @@ impl QueueAdvancer {
         .await
         .ok()
         .flatten();
+
+        // Select strategy based on workflow type: Custom workflows look up
+        // the workflow_definition_id from the feature row.
+        let strategy: Box<dyn WorkflowStrategy> = match &workflow_type {
+            WorkflowType::Custom => {
+                let wd_id: Option<i64> = sqlx::query_scalar(
+                    "SELECT workflow_definition_id FROM features WHERE id = ?",
+                )
+                .bind(feature_id)
+                .fetch_optional(&read_pool)
+                .await
+                .ok()
+                .flatten();
+                strategies::get_custom_strategy(
+                    wd_id.expect("Custom workflow feature must have workflow_definition_id"),
+                )
+            }
+            _ => strategies::get_strategy(&workflow_type)
+                .expect("QueueAdvancer::new called with unsupported workflow type"),
+        };
 
         let autonomy = resolve_setting(
             &read_pool,
