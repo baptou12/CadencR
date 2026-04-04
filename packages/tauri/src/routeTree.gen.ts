@@ -13,6 +13,7 @@ import { Route as WorkflowsRouteImport } from './routes/workflows'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as WsSessionSessionIdRouteImport } from './routes/ws-session.$sessionId'
+import { Route as ProjectsProjectIdNewWorkflowRouteImport } from './routes/projects/$projectId/new-workflow'
 import { Route as ProjectsProjectIdFeaturesFeatureIdRouteImport } from './routes/projects/$projectId/features/$featureId'
 
 const WorkflowsRoute = WorkflowsRouteImport.update({
@@ -35,6 +36,12 @@ const WsSessionSessionIdRoute = WsSessionSessionIdRouteImport.update({
   path: '/ws-session/$sessionId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProjectsProjectIdNewWorkflowRoute =
+  ProjectsProjectIdNewWorkflowRouteImport.update({
+    id: '/projects/$projectId/new-workflow',
+    path: '/projects/$projectId/new-workflow',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ProjectsProjectIdFeaturesFeatureIdRoute =
   ProjectsProjectIdFeaturesFeatureIdRouteImport.update({
     id: '/projects/$projectId/features/$featureId',
@@ -47,6 +54,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof SettingsRoute
   '/workflows': typeof WorkflowsRoute
   '/ws-session/$sessionId': typeof WsSessionSessionIdRoute
+  '/projects/$projectId/new-workflow': typeof ProjectsProjectIdNewWorkflowRoute
   '/projects/$projectId/features/$featureId': typeof ProjectsProjectIdFeaturesFeatureIdRoute
 }
 export interface FileRoutesByTo {
@@ -54,6 +62,7 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsRoute
   '/workflows': typeof WorkflowsRoute
   '/ws-session/$sessionId': typeof WsSessionSessionIdRoute
+  '/projects/$projectId/new-workflow': typeof ProjectsProjectIdNewWorkflowRoute
   '/projects/$projectId/features/$featureId': typeof ProjectsProjectIdFeaturesFeatureIdRoute
 }
 export interface FileRoutesById {
@@ -62,6 +71,7 @@ export interface FileRoutesById {
   '/settings': typeof SettingsRoute
   '/workflows': typeof WorkflowsRoute
   '/ws-session/$sessionId': typeof WsSessionSessionIdRoute
+  '/projects/$projectId/new-workflow': typeof ProjectsProjectIdNewWorkflowRoute
   '/projects/$projectId/features/$featureId': typeof ProjectsProjectIdFeaturesFeatureIdRoute
 }
 export interface FileRouteTypes {
@@ -71,6 +81,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/workflows'
     | '/ws-session/$sessionId'
+    | '/projects/$projectId/new-workflow'
     | '/projects/$projectId/features/$featureId'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -78,6 +89,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/workflows'
     | '/ws-session/$sessionId'
+    | '/projects/$projectId/new-workflow'
     | '/projects/$projectId/features/$featureId'
   id:
     | '__root__'
@@ -85,6 +97,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/workflows'
     | '/ws-session/$sessionId'
+    | '/projects/$projectId/new-workflow'
     | '/projects/$projectId/features/$featureId'
   fileRoutesById: FileRoutesById
 }
@@ -93,6 +106,7 @@ export interface RootRouteChildren {
   SettingsRoute: typeof SettingsRoute
   WorkflowsRoute: typeof WorkflowsRoute
   WsSessionSessionIdRoute: typeof WsSessionSessionIdRoute
+  ProjectsProjectIdNewWorkflowRoute: typeof ProjectsProjectIdNewWorkflowRoute
   ProjectsProjectIdFeaturesFeatureIdRoute: typeof ProjectsProjectIdFeaturesFeatureIdRoute
 }
 
@@ -126,6 +140,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WsSessionSessionIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/projects/$projectId/new-workflow': {
+      id: '/projects/$projectId/new-workflow'
+      path: '/projects/$projectId/new-workflow'
+      fullPath: '/projects/$projectId/new-workflow'
+      preLoaderRoute: typeof ProjectsProjectIdNewWorkflowRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/projects/$projectId/features/$featureId': {
       id: '/projects/$projectId/features/$featureId'
       path: '/projects/$projectId/features/$featureId'
@@ -141,6 +162,7 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsRoute: SettingsRoute,
   WorkflowsRoute: WorkflowsRoute,
   WsSessionSessionIdRoute: WsSessionSessionIdRoute,
+  ProjectsProjectIdNewWorkflowRoute: ProjectsProjectIdNewWorkflowRoute,
   ProjectsProjectIdFeaturesFeatureIdRoute:
     ProjectsProjectIdFeaturesFeatureIdRoute,
 }
