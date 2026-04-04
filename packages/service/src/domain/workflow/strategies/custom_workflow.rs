@@ -65,6 +65,7 @@ impl WorkflowStrategy for CustomWorkflowStrategy {
                 &phase.slug,
                 status,
                 phase.order_index as i64,
+                Some(phase.order_index as i64),
                 Some(&config.to_string()),
             )
             .await

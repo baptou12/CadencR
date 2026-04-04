@@ -52,17 +52,19 @@ pub async fn insert_queue_item_with_config(
     item_type: &str,
     status: &str,
     order_index: i64,
+    group_index: Option<i64>,
     config: Option<&str>,
 ) -> Result<i64, AppError> {
     let result = sqlx::query(
-        r#"INSERT INTO workflow_queue (feature_id, workflow_type, item_type, status, order_index, config, max_retries)
-           VALUES (?, ?, ?, ?, ?, ?, 1)"#,
+        r#"INSERT INTO workflow_queue (feature_id, workflow_type, item_type, status, order_index, group_index, config, max_retries)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 1)"#,
     )
     .bind(feature_id)
     .bind(workflow_type)
     .bind(item_type)
     .bind(status)
     .bind(order_index)
+    .bind(group_index)
     .bind(config)
     .execute(pool)
     .await?;
