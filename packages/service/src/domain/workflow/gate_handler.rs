@@ -8,6 +8,7 @@ use axum::extract::ws::Message;
 use tracing::error;
 
 use crate::domain::features::repository as repo;
+use crate::domain::ws_workflow::artifact_repository;
 use crate::domain::workflow::agent_manager::AgentManager;
 use crate::domain::workflow::engine::AgentSlot;
 use crate::domain::workflow::permission_router::PermissionRouter;
@@ -168,16 +169,11 @@ impl QueueAdvancer {
             _ => return (String::new(), None),
         };
         let phase_slug = item.item_type.clone();
-        let artifact: Option<(String,)> = sqlx::query_as(
-            "SELECT content FROM workflow_artifacts WHERE feature_id = ? AND phase_slug = ?",
-        )
-        .bind(self.feature_id)
-        .bind(&phase_slug)
-        .fetch_optional(&self.read_pool)
-        .await
-        .ok()
-        .flatten();
-        let content = artifact.map(|(c,)| c);
+        let content = artifact_repository::get_artifact(&self.read_pool, self.feature_id, &phase_slug)
+            .await
+            .ok()
+            .flatten()
+            .map(|a| a.content);
         (phase_slug, content)
     }
 

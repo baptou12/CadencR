@@ -16,13 +16,14 @@ use crate::domain::ws_session::auto_name;
 use crate::domain::ws_session::persistence::WsSessionPersistence;
 use crate::domain::ws_session::protocol::*;
 use super::{SdkSessions, WsSender};
+use super::workflow_custom;
 
 /// Global engine registry: one engine per feature_id at a time.
-static ENGINES: LazyLock<DashMap<i64, Arc<WorkflowEngine>>> = LazyLock::new(DashMap::new);
+pub(super) static ENGINES: LazyLock<DashMap<i64, Arc<WorkflowEngine>>> = LazyLock::new(DashMap::new);
 static BACKGROUND_INIT: Once = Once::new();
 
 /// Spawn global background tasks (runs once): engine eviction + timeout checker.
-fn ensure_background_tasks(timeout_minutes: u64) {
+pub(super) fn ensure_background_tasks(timeout_minutes: u64) {
     BACKGROUND_INIT.call_once(move || {
         // Eviction task: remove idle engines every 5 min
         tokio::spawn(async {
@@ -144,7 +145,7 @@ pub async fn pause_all_engines() {
     }
 }
 
-fn send_workflow_error(sender: &WsSender, ref_id: &str, code: &str, message: &str) {
+pub(super) fn send_workflow_error(sender: &WsSender, ref_id: &str, code: &str, message: &str) {
     let err = WsEnvelope::reply(
         ref_id,
         "workflow",
@@ -164,7 +165,7 @@ pub fn get_engine(feature_id: i64) -> Option<Arc<WorkflowEngine>> {
 
 /// Parse a workflow payload and look up the engine in one step.
 /// Sends an error envelope and returns `None` on failure.
-fn parse_and_get_engine<T: DeserializeOwned + HasFeatureId>(
+pub(super) fn parse_and_get_engine<T: DeserializeOwned + HasFeatureId>(
     envelope: &WsEnvelope,
     sender: &WsSender,
 ) -> Option<(T, Arc<WorkflowEngine>)> {
@@ -187,7 +188,7 @@ fn parse_and_get_engine<T: DeserializeOwned + HasFeatureId>(
 
 /// Parse a workflow payload without requiring an engine.
 /// Sends an error envelope and returns `None` on failure.
-fn parse_payload<T: DeserializeOwned>(
+pub(super) fn parse_payload<T: DeserializeOwned>(
     envelope: &WsEnvelope,
     sender: &WsSender,
 ) -> Option<T> {
@@ -200,83 +201,9 @@ fn parse_payload<T: DeserializeOwned>(
     }
 }
 
-/// Check if a feature uses a custom workflow definition.
-/// Returns true if the feature has a workflow_definition_id (i.e. is a custom workflow feature).
-async fn is_custom_workflow_feature(feature_id: i64, read_pool: &sqlx::SqlitePool) -> Result<bool, String> {
-    let row: Option<(Option<i64>,)> = sqlx::query_as(
-        "SELECT workflow_definition_id FROM features WHERE id = ?"
-    )
-    .bind(feature_id)
-    .fetch_optional(read_pool)
-    .await
-    .map_err(|e| format!("Failed to check feature workflow type: {e}"))?;
-
-    match row {
-        Some((wd_id,)) => Ok(wd_id.is_some()),
-        None => Err(format!("Feature {feature_id} not found")),
-    }
-}
-
-/// Guard that rejects legacy actions on custom workflow features.
-/// Extracts feature_id from the payload and checks workflow_definition_id.
-/// Returns true if the action should be blocked (i.e. feature is custom workflow).
-async fn guard_legacy_action(
-    envelope: &WsEnvelope,
-    sender: &WsSender,
-    read_pool: &sqlx::SqlitePool,
-) -> bool {
-    let feature_id = envelope.payload.get("feature_id").and_then(|v| v.as_i64());
-    let Some(feature_id) = feature_id else {
-        // If no feature_id in payload, let the handler deal with validation
-        return false;
-    };
-    match is_custom_workflow_feature(feature_id, read_pool).await {
-        Ok(true) => {
-            send_workflow_error(
-                sender,
-                &envelope.id,
-                "WRONG_WORKFLOW_TYPE",
-                "Use workflow.* actions for custom workflow features",
-            );
-            true
-        }
-        Ok(false) => false,
-        Err(e) => {
-            send_workflow_error(sender, &envelope.id, "GUARD_ERROR", &e);
-            true
-        }
-    }
-}
-
 /// Helper to serialize a typed payload to serde_json::Value.
-fn to_value<T: serde::Serialize>(v: T) -> serde_json::Value {
+pub(super) fn to_value<T: serde::Serialize>(v: T) -> serde_json::Value {
     serde_json::to_value(v).unwrap()
-}
-
-/// Resolve the correct workflow strategy for a feature, handling both legacy
-/// (FeatureBuild) and custom workflow types.
-async fn resolve_strategy(
-    workflow_type: &WorkflowType,
-    feature_id: i64,
-    read_pool: &sqlx::SqlitePool,
-) -> Result<Box<dyn crate::domain::workflow::strategies::WorkflowStrategy>, String> {
-    match workflow_type {
-        WorkflowType::Custom => {
-            let wd_id: Option<i64> = sqlx::query_scalar(
-                "SELECT workflow_definition_id FROM features WHERE id = ?",
-            )
-            .bind(feature_id)
-            .fetch_optional(read_pool)
-            .await
-            .ok()
-            .flatten();
-            match wd_id {
-                Some(id) => Ok(crate::domain::workflow::strategies::get_custom_strategy(id)),
-                None => Err("Custom workflow feature missing workflow_definition_id".into()),
-            }
-        }
-        _ => crate::domain::workflow::strategies::get_strategy(workflow_type),
-    }
 }
 
 /// Handle workflow domain actions.
@@ -293,7 +220,7 @@ pub async fn handle_workflow_action(
             | "prd.approved" | "prd.rejected" | "populate_queue" | "start_build"
             | "start_refine" | "start_review_fixer" | "start_risk" | "start_retro"
     );
-    if is_legacy_only && guard_legacy_action(&envelope, sender, &app_state.read_pool).await {
+    if is_legacy_only && workflow_custom::guard_legacy_action(&envelope, sender, &app_state.read_pool).await {
         return;
     }
 
@@ -320,9 +247,9 @@ pub async fn handle_workflow_action(
         "start_risk" => handle_start_risk(envelope, sender).await,
         "start_retro" => handle_start_retro(envelope, sender).await,
         "mark_done" => handle_mark_done(envelope, sender).await,
-        "phase_approval" => handle_phase_approval(envelope, sender, app_state).await,
-        "phase_trigger" => handle_phase_trigger(envelope, sender, app_state).await,
-        "feature_start_custom" => handle_feature_start_custom(envelope, sender, app_state).await,
+        "phase_approval" => workflow_custom::handle_phase_approval(envelope, sender, app_state).await,
+        "phase_trigger" => workflow_custom::handle_phase_trigger(envelope, sender, app_state).await,
+        "feature_start_custom" => workflow_custom::handle_feature_start_custom(envelope, sender, app_state).await,
         unknown => {
             send_workflow_error(&sender, &envelope.id, "UNKNOWN_ACTION", &format!("Unknown workflow action: {unknown}"));
         }
@@ -601,7 +528,7 @@ async fn handle_populate_queue(envelope: WsEnvelope, sender: &WsSender, app_stat
     let Some((payload, engine)) = parse_and_get_engine::<WorkflowPopulateQueuePayload>(&envelope, sender) else { return };
 
     let feature_id = payload.feature_id;
-    let strategy = match resolve_strategy(&engine.workflow_type, feature_id, &app_state.read_pool).await {
+    let strategy = match workflow_custom::resolve_strategy(&engine.workflow_type, feature_id, &app_state.read_pool).await {
         Ok(s) => s,
         Err(e) => {
             send_workflow_error(sender, &envelope.id, "STRATEGY_ERROR", &e);
@@ -638,7 +565,7 @@ async fn handle_start_build(envelope: WsEnvelope, sender: &WsSender, app_state: 
 
     if item_count == 0 {
         info!(feature_id = payload.feature_id, "start_build: queue empty, populating first");
-        let strategy = match resolve_strategy(&engine.workflow_type, payload.feature_id, &app_state.read_pool).await {
+        let strategy = match workflow_custom::resolve_strategy(&engine.workflow_type, payload.feature_id, &app_state.read_pool).await {
             Ok(s) => s,
             Err(e) => {
                 send_workflow_error(sender, &envelope.id, "STRATEGY_ERROR", &e);
@@ -1068,161 +995,6 @@ async fn handle_mark_done(envelope: WsEnvelope, sender: &WsSender) {
             send_workflow_error(sender, &envelope.id, "MARK_DONE_FAILED", &format!("Failed to mark done: {e}"));
         }
     }
-}
-
-async fn handle_phase_approval(
-    envelope: WsEnvelope,
-    sender: &WsSender,
-    _app_state: &AppState,
-) {
-    let Some((payload, engine)) = parse_and_get_engine::<WorkflowPhaseApprovalPayload>(&envelope, sender) else { return };
-
-    info!(
-        feature_id = payload.feature_id,
-        phase_slug = %payload.phase_slug,
-        approved = payload.approved,
-        "phase approval received"
-    );
-
-    match engine.queue.approve_phase(
-        &payload.phase_slug,
-        payload.approved,
-        payload.feedback.as_deref(),
-        &engine.agent_manager,
-        &engine.permissions,
-        engine.as_ref(),
-    ).await {
-        Ok(()) => {
-            let ack = WsEnvelope::reply(&envelope.id, "workflow", "acknowledged", to_value(WorkflowAcknowledgedPayload {
-                feature_id: payload.feature_id,
-                action: "phase_approval".into(),
-            }));
-            let _ = sender.send(Message::Text(String::from(ack).into()));
-        }
-        Err(e) => {
-            send_workflow_error(sender, &envelope.id, "PHASE_APPROVAL_FAILED", &format!("Failed: {e}"));
-        }
-    }
-}
-
-async fn handle_phase_trigger(
-    envelope: WsEnvelope,
-    sender: &WsSender,
-    _app_state: &AppState,
-) {
-    let Some((payload, engine)) = parse_and_get_engine::<WorkflowPhaseTriggerPayload>(&envelope, sender) else { return };
-
-    info!(feature_id = payload.feature_id, phase_slug = %payload.phase_slug, "manual phase trigger");
-
-    match engine.queue.trigger_manual_phase(
-        &payload.phase_slug,
-        &engine.agent_manager,
-        &engine.permissions,
-    ).await {
-        Ok(()) => {
-            let ack = WsEnvelope::reply(&envelope.id, "workflow", "acknowledged", to_value(WorkflowAcknowledgedPayload {
-                feature_id: payload.feature_id,
-                action: "phase_trigger".into(),
-            }));
-            let _ = sender.send(Message::Text(String::from(ack).into()));
-        }
-        Err(e) => {
-            send_workflow_error(sender, &envelope.id, "PHASE_TRIGGER_FAILED", &format!("Failed to trigger phase: {e}"));
-        }
-    }
-}
-
-async fn handle_feature_start_custom(
-    envelope: WsEnvelope,
-    sender: &WsSender,
-    app_state: &AppState,
-) {
-    let Some(payload) = parse_payload::<WorkflowFeatureStartCustomPayload>(&envelope, sender) else { return };
-
-    let feature_id = payload.feature_id;
-    let workflow_definition_id = payload.workflow_definition_id;
-
-    // Verify the feature exists and doesn't already have a custom workflow
-    match is_custom_workflow_feature(feature_id, &app_state.read_pool).await {
-        Ok(true) => {
-            send_workflow_error(sender, &envelope.id, "ALREADY_CUSTOM", "Feature already has a custom workflow definition");
-            return;
-        }
-        Err(e) => {
-            send_workflow_error(sender, &envelope.id, "NOT_FOUND", &e);
-            return;
-        }
-        Ok(false) => {} // Good — legacy feature being upgraded to custom
-    }
-
-    info!(
-        feature_id,
-        workflow_definition_id,
-        "starting feature with custom workflow"
-    );
-
-    // Set workflow_definition_id on the feature
-    if let Err(e) = sqlx::query("UPDATE features SET workflow_definition_id = ? WHERE id = ?")
-        .bind(workflow_definition_id)
-        .bind(feature_id)
-        .execute(&app_state.write_pool)
-        .await
-    {
-        send_workflow_error(sender, &envelope.id, "DB_ERROR", &format!("Failed to set workflow definition: {e}"));
-        return;
-    }
-
-    // Create engine with Custom workflow type — QueueAdvancer will resolve
-    // the CustomWorkflowStrategy from the feature's workflow_definition_id.
-    let engine = match WorkflowEngine::new(
-        feature_id,
-        WorkflowType::Custom,
-        app_state.read_pool.clone(),
-        app_state.write_pool.clone(),
-        sender.clone(),
-        app_state.max_parallel_agents,
-        app_state.turn_state_tx.clone(),
-    )
-    .await
-    {
-        Ok(e) => Arc::new(e),
-        Err(e) => {
-            tracing::error!(feature_id, error = %e, "failed to create custom workflow engine");
-            send_workflow_error(sender, &envelope.id, "ENGINE_ERROR", &e);
-            return;
-        }
-    };
-
-    // Populate the queue using CustomWorkflowStrategy
-    let strategy = crate::domain::workflow::strategies::get_custom_strategy(workflow_definition_id);
-    match strategy
-        .populate_queue(&app_state.write_pool, &app_state.read_pool, feature_id, None)
-        .await
-    {
-        Ok(items) => {
-            info!(feature_id, item_count = items.len(), "custom workflow queue populated");
-        }
-        Err(e) => {
-            send_workflow_error(sender, &envelope.id, "POPULATE_FAILED", &format!("Failed to populate custom workflow queue: {e}"));
-            return;
-        }
-    }
-
-    ENGINES.insert(feature_id, engine);
-    ensure_background_tasks(app_state.agent_timeout_minutes);
-
-    // Start the first ready phase(s)
-    if let Some(engine) = ENGINES.get(&feature_id) {
-        if let Err(e) = engine.queue.advance(&engine.agent_manager, &engine.permissions).await {
-            tracing::error!(feature_id, error = %e, "failed to auto-advance after custom workflow start");
-        }
-    }
-
-    let ack = WsEnvelope::reply(&envelope.id, "workflow", "acknowledged", to_value(WorkflowAcknowledgedPayload {
-        feature_id,
-        action: "feature_start_custom".into(),
-    }));
-    let _ = sender.send(Message::Text(String::from(ack).into()));
 }
 
 async fn handle_retry_worktree_setup(

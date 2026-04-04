@@ -6,6 +6,7 @@ mod session_data;
 mod session_init;
 pub(crate) mod session_prompt;
 pub(crate) mod workflow;
+pub(super) mod workflow_custom;
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;

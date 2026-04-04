@@ -278,6 +278,20 @@ pub async fn set_workflow_status(
     Ok(new_status)
 }
 
+/// Set the workflow_definition_id on a feature (used when starting a custom workflow).
+pub async fn set_workflow_definition_id(
+    pool: &SqlitePool,
+    feature_id: i64,
+    workflow_definition_id: i64,
+) -> Result<(), AppError> {
+    sqlx::query("UPDATE features SET workflow_definition_id = ? WHERE id = ?")
+        .bind(workflow_definition_id)
+        .bind(feature_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 /// Force-set workflow status without transition validation.
 /// Used for recovery/reconnect scenarios where the DB state may be stale.
 pub async fn force_workflow_status(
