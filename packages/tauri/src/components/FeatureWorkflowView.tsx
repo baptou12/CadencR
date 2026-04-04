@@ -32,6 +32,8 @@ import type { FeatureEditorTabHandle } from "@/components/editor/FeatureEditorTa
 import { useWorkflowStore } from "@/hooks/useWorkflowWebSocket";
 import { CustomWorkflowPlaceholder } from "@/components/CustomWorkflowPlaceholder";
 import { WorkflowQueueSidebar } from "@/components/workflow/WorkflowQueueSidebar";
+import { PhaseApprovalBar } from "@/components/workflow/PhaseApprovalBar";
+import { useGetWorkflowDefinition } from "@/api/generated";
 
 export function FeatureWorkflowView({
   featureId,
@@ -60,6 +62,10 @@ export function FeatureWorkflowView({
   descriptionRef.current = description;
 
   const { data: prdData } = useGetFeaturePrd(featureId);
+  const { data: workflowDefinition } = useGetWorkflowDefinition(
+    feature?.workflow_definition_id ?? 0,
+    { enabled: !!feature?.workflow_definition_id },
+  );
 
   // ---- Unified backend ----
   const backend = useWsWorkflowBackend(
@@ -87,6 +93,8 @@ export function FeatureWorkflowView({
   // Slash commands
   const projectsQuery = useListProjects();
   const projectPath = projectsQuery.data?.find((p) => p.id === projectId)?.path;
+  const pendingApproval = useWorkflowStore((s) => s.pendingApproval);
+  const approvePhase = useWorkflowStore((s) => s.approvePhase);
   const slashCommands = useWorkflowStore((s) => s.slashCommands);
   const slashCommandsLoading = useWorkflowStore((s) => s.slashCommandsLoading);
   const requestSlashCommands = useWorkflowStore((s) => s.requestSlashCommands);
@@ -407,6 +415,21 @@ export function FeatureWorkflowView({
         </div>
       </div>
       </div>
+
+      {/* Phase approval bar for custom workflow phases */}
+      {pendingApproval && (() => {
+        const phaseName = workflowDefinition?.phases?.find(
+          (p) => p.slug === pendingApproval.phaseSlug,
+        )?.name ?? pendingApproval.phaseSlug;
+        return (
+          <PhaseApprovalBar
+            phaseName={phaseName}
+            artifactContent={pendingApproval.artifactContent}
+            onApprove={() => approvePhase(pendingApproval.phaseSlug, true)}
+            onReject={(fb) => approvePhase(pendingApproval.phaseSlug, false, fb)}
+          />
+        );
+      })()}
 
       {/* Per-agent diff modal (CMD+D) — separate from Git tab */}
       <DiffViewerModal
