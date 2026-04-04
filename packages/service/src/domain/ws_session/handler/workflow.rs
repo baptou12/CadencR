@@ -200,6 +200,54 @@ fn parse_payload<T: DeserializeOwned>(
     }
 }
 
+/// Check if a feature uses a custom workflow definition.
+/// Returns true if the feature has a workflow_definition_id (i.e. is a custom workflow feature).
+async fn is_custom_workflow_feature(feature_id: i64, read_pool: &sqlx::SqlitePool) -> Result<bool, String> {
+    let row: Option<(Option<i64>,)> = sqlx::query_as(
+        "SELECT workflow_definition_id FROM features WHERE id = ?"
+    )
+    .bind(feature_id)
+    .fetch_optional(read_pool)
+    .await
+    .map_err(|e| format!("Failed to check feature workflow type: {e}"))?;
+
+    match row {
+        Some((wd_id,)) => Ok(wd_id.is_some()),
+        None => Err(format!("Feature {feature_id} not found")),
+    }
+}
+
+/// Guard that rejects legacy actions on custom workflow features.
+/// Extracts feature_id from the payload and checks workflow_definition_id.
+/// Returns true if the action should be blocked (i.e. feature is custom workflow).
+async fn guard_legacy_action(
+    envelope: &WsEnvelope,
+    sender: &WsSender,
+    read_pool: &sqlx::SqlitePool,
+) -> bool {
+    let feature_id = envelope.payload.get("feature_id").and_then(|v| v.as_i64());
+    let Some(feature_id) = feature_id else {
+        // If no feature_id in payload, let the handler deal with validation
+        return false;
+    };
+    match is_custom_workflow_feature(feature_id, read_pool).await {
+        Ok(true) => {
+            send_workflow_error(
+                sender,
+                &envelope.id,
+                "WRONG_WORKFLOW_TYPE",
+                "Use workflow.* actions for custom workflow features",
+            );
+            true
+        }
+        Ok(false) => false,
+        Err(e) => {
+            send_workflow_error(sender, &envelope.id, "GUARD_ERROR", &e);
+            true
+        }
+    }
+}
+
 /// Helper to serialize a typed payload to serde_json::Value.
 fn to_value<T: serde::Serialize>(v: T) -> serde_json::Value {
     serde_json::to_value(v).unwrap()
@@ -238,6 +286,17 @@ pub async fn handle_workflow_action(
     _sdk_sessions: &SdkSessions,
     app_state: &AppState,
 ) {
+    // Legacy-only actions: reject if feature uses a custom workflow definition
+    let is_legacy_only = matches!(
+        envelope.action.as_str(),
+        "start_plan" | "start_prd" | "plan.approved" | "plan.rejected"
+            | "prd.approved" | "prd.rejected" | "populate_queue" | "start_build"
+            | "start_refine" | "start_review_fixer" | "start_risk" | "start_retro"
+    );
+    if is_legacy_only && guard_legacy_action(&envelope, sender, &app_state.read_pool).await {
+        return;
+    }
+
     match envelope.action.as_str() {
         "feature.start" => handle_feature_start(envelope, sender, app_state).await,
         "start_plan" => handle_start_plan(envelope, sender, app_state).await,
@@ -1072,25 +1131,38 @@ async fn handle_feature_start_custom(
 ) {
     let Some(payload) = parse_payload::<WorkflowFeatureStartCustomPayload>(&envelope, sender) else { return };
 
+    let feature_id = payload.feature_id;
+    let workflow_definition_id = payload.workflow_definition_id;
+
+    // Verify the feature exists and doesn't already have a custom workflow
+    match is_custom_workflow_feature(feature_id, &app_state.read_pool).await {
+        Ok(true) => {
+            send_workflow_error(sender, &envelope.id, "ALREADY_CUSTOM", "Feature already has a custom workflow definition");
+            return;
+        }
+        Err(e) => {
+            send_workflow_error(sender, &envelope.id, "NOT_FOUND", &e);
+            return;
+        }
+        Ok(false) => {} // Good — legacy feature being upgraded to custom
+    }
+
     info!(
-        feature_id = payload.feature_id,
-        workflow_definition_id = payload.workflow_definition_id,
+        feature_id,
+        workflow_definition_id,
         "starting feature with custom workflow"
     );
 
     // Set workflow_definition_id on the feature
     if let Err(e) = sqlx::query("UPDATE features SET workflow_definition_id = ? WHERE id = ?")
-        .bind(payload.workflow_definition_id)
-        .bind(payload.feature_id)
+        .bind(workflow_definition_id)
+        .bind(feature_id)
         .execute(&app_state.write_pool)
         .await
     {
         send_workflow_error(sender, &envelope.id, "DB_ERROR", &format!("Failed to set workflow definition: {e}"));
         return;
     }
-
-    let feature_id = payload.feature_id;
-    let workflow_definition_id = payload.workflow_definition_id;
 
     // Create engine with Custom workflow type — QueueAdvancer will resolve
     // the CustomWorkflowStrategy from the feature's workflow_definition_id.

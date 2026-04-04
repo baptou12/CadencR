@@ -31,6 +31,7 @@ const FeatureEditorTab = lazy(() => import("@/components/editor/FeatureEditorTab
 import type { FeatureEditorTabHandle } from "@/components/editor/FeatureEditorTab";
 import { useWorkflowStore } from "@/hooks/useWorkflowWebSocket";
 import { CustomWorkflowPlaceholder } from "@/components/CustomWorkflowPlaceholder";
+import { WorkflowQueueSidebar } from "@/components/workflow/WorkflowQueueSidebar";
 
 export function FeatureWorkflowView({
   featureId,
@@ -199,16 +200,6 @@ export function FeatureWorkflowView({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionCount, loadAgentHistory, featureId]);
-
-  if (feature?.workflow_definition_id) {
-    return (
-      <CustomWorkflowPlaceholder
-        featureId={featureId}
-        projectId={projectId}
-        workflowDefinitionId={feature.workflow_definition_id}
-      />
-    );
-  }
 
   return (
     <CodeBlockActionsContext.Provider value={codeBlockActions}>
@@ -399,14 +390,20 @@ export function FeatureWorkflowView({
 
           </div>
 
-          <QueueSidebar
-            queue={backend.queue ?? []}
-            featureId={featureId}
-            selectedItemId={backend.selectedItemId ?? null}
-            onSelectItem={backend.selectItem ?? (() => {})}
-            onRetryItem={backend.retryItem}
-            onSkipItem={backend.skipItem}
-          />
+          {feature?.workflow_definition_id ? (
+            <WorkflowQueueSidebar
+              workflowDefinitionId={feature.workflow_definition_id}
+            />
+          ) : (
+            <QueueSidebar
+              queue={backend.queue ?? []}
+              featureId={featureId}
+              selectedItemId={backend.selectedItemId ?? null}
+              onSelectItem={backend.selectItem ?? (() => {})}
+              onRetryItem={backend.retryItem}
+              onSkipItem={backend.skipItem}
+            />
+          )}
         </div>
       </div>
       </div>
