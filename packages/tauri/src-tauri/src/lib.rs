@@ -18,9 +18,7 @@ pub fn run() {
         .plugin(tauri_plugin_notification_router::init());
 
     #[cfg(debug_assertions)]
-    {
-        builder = builder.plugin(tauri_plugin_mcp_bridge::init());
-    }
+    let builder = builder.plugin(tauri_plugin_mcp_bridge::init());
 
     builder
         .invoke_handler(tauri::generate_handler![read_file_base64])
