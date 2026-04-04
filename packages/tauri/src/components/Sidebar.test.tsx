@@ -95,7 +95,9 @@ describe("Sidebar", () => {
 
   it("renders settings link", () => {
     render(<Sidebar />);
-    expect(screen.getByRole("link")).toBeInTheDocument();
+    const links = screen.getAllByRole("link");
+    expect(links.length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText("Settings")).toBeInTheDocument();
   });
 
   it("renders collapse sidebar button", () => {

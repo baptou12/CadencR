@@ -9,11 +9,17 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as WorkflowsRouteImport } from './routes/workflows'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as WsSessionSessionIdRouteImport } from './routes/ws-session.$sessionId'
 import { Route as ProjectsProjectIdFeaturesFeatureIdRouteImport } from './routes/projects/$projectId/features/$featureId'
 
+const WorkflowsRoute = WorkflowsRouteImport.update({
+  id: '/workflows',
+  path: '/workflows',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -39,12 +45,14 @@ const ProjectsProjectIdFeaturesFeatureIdRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/settings': typeof SettingsRoute
+  '/workflows': typeof WorkflowsRoute
   '/ws-session/$sessionId': typeof WsSessionSessionIdRoute
   '/projects/$projectId/features/$featureId': typeof ProjectsProjectIdFeaturesFeatureIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/settings': typeof SettingsRoute
+  '/workflows': typeof WorkflowsRoute
   '/ws-session/$sessionId': typeof WsSessionSessionIdRoute
   '/projects/$projectId/features/$featureId': typeof ProjectsProjectIdFeaturesFeatureIdRoute
 }
@@ -52,6 +60,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/settings': typeof SettingsRoute
+  '/workflows': typeof WorkflowsRoute
   '/ws-session/$sessionId': typeof WsSessionSessionIdRoute
   '/projects/$projectId/features/$featureId': typeof ProjectsProjectIdFeaturesFeatureIdRoute
 }
@@ -60,18 +69,21 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/settings'
+    | '/workflows'
     | '/ws-session/$sessionId'
     | '/projects/$projectId/features/$featureId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/settings'
+    | '/workflows'
     | '/ws-session/$sessionId'
     | '/projects/$projectId/features/$featureId'
   id:
     | '__root__'
     | '/'
     | '/settings'
+    | '/workflows'
     | '/ws-session/$sessionId'
     | '/projects/$projectId/features/$featureId'
   fileRoutesById: FileRoutesById
@@ -79,12 +91,20 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   SettingsRoute: typeof SettingsRoute
+  WorkflowsRoute: typeof WorkflowsRoute
   WsSessionSessionIdRoute: typeof WsSessionSessionIdRoute
   ProjectsProjectIdFeaturesFeatureIdRoute: typeof ProjectsProjectIdFeaturesFeatureIdRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/workflows': {
+      id: '/workflows'
+      path: '/workflows'
+      fullPath: '/workflows'
+      preLoaderRoute: typeof WorkflowsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/settings': {
       id: '/settings'
       path: '/settings'
@@ -119,6 +139,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   SettingsRoute: SettingsRoute,
+  WorkflowsRoute: WorkflowsRoute,
   WsSessionSessionIdRoute: WsSessionSessionIdRoute,
   ProjectsProjectIdFeaturesFeatureIdRoute:
     ProjectsProjectIdFeaturesFeatureIdRoute,

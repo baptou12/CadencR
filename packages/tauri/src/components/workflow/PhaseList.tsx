@@ -1,8 +1,9 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { WorkflowPhase } from "@/api/generated";
 import { PhaseEditorCard } from "./PhaseEditorCard";
+import { PhaseDependencyBadges } from "./PhaseDependencyBadges";
 
 interface PhaseInfo {
   id: number;
@@ -27,7 +28,32 @@ export function PhaseList({
 }: PhaseListProps) {
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [overIdx, setOverIdx] = useState<number | null>(null);
+  const [hoveredPhaseId, setHoveredPhaseId] = useState<number | null>(null);
   const dragIdRef = useRef<number | null>(null);
+
+  // Build slug→phase lookup and dependency sets for highlighting
+  const { slugToPhase, relatedIds } = useMemo(() => {
+    const lookup = new Map<string, WorkflowPhase>();
+    for (const p of phases) lookup.set(p.slug, p);
+
+    const related = new Set<number>();
+    if (hoveredPhaseId != null) {
+      const hovered = phases.find((p) => p.id === hoveredPhaseId);
+      if (hovered) {
+        related.add(hovered.id);
+        // Upstream: phases this one depends on
+        for (const slug of hovered.input_phase_slugs ?? []) {
+          const up = lookup.get(slug);
+          if (up) related.add(up.id);
+        }
+        // Downstream: phases that depend on this one
+        for (const p of phases) {
+          if (p.input_phase_slugs?.includes(hovered.slug)) related.add(p.id);
+        }
+      }
+    }
+    return { slugToPhase: lookup, relatedIds: related };
+  }, [phases, hoveredPhaseId]);
 
   const handleDragStart = useCallback((e: React.DragEvent, idx: number) => {
     dragIdRef.current = phases[idx].id;
@@ -69,32 +95,52 @@ export function PhaseList({
       <div className="text-xs font-medium text-muted-foreground px-2 py-1">
         Phases ({phases.length})
       </div>
-      {phases.map((phase, idx) => (
-        <div
-          key={phase.id}
-          draggable={!isPreset}
-          onDragStart={(e) => handleDragStart(e, idx)}
-          onDragOver={(e) => handleDragOver(e, idx)}
-          onDrop={(e) => handleDrop(e, idx)}
-          onDragEnd={handleDragEnd}
-          className={
-            dragIdx !== null && overIdx === idx && dragIdx !== idx
-              ? "border-t-2 border-purple-500"
-              : ""
-          }
-        >
-          <PhaseEditorCard
-            phase={phase}
-            isSelected={phase.id === selectedPhaseId}
-            isPreset={isPreset}
-            isDragging={dragIdx === idx}
-            onSelect={() => onSelect(phase.id)}
-            onUpdate={(updates) => onUpdate(phase.id, updates)}
-            onDelete={() => onDelete(phase.id)}
-            allPhaseSlugs={allPhaseSlugs.filter((p) => p.id !== phase.id)}
-          />
-        </div>
-      ))}
+      {phases.map((phase, idx) => {
+        const isDimmed = hoveredPhaseId != null && !relatedIds.has(phase.id);
+        // Only allow selecting phases that come before this one (lower index = lower order)
+        const precedingPhaseSlugs = allPhaseSlugs.filter(
+          (p) => phases.findIndex((ph) => ph.id === p.id) < idx,
+        );
+        // Resolve input phase names for badges
+        const inputPhases = (phase.input_phase_slugs ?? [])
+          .map((slug) => slugToPhase.get(slug))
+          .filter((p): p is WorkflowPhase => p != null);
+
+        return (
+          <div
+            key={phase.id}
+            draggable={!isPreset}
+            onDragStart={(e) => handleDragStart(e, idx)}
+            onDragOver={(e) => handleDragOver(e, idx)}
+            onDrop={(e) => handleDrop(e, idx)}
+            onDragEnd={handleDragEnd}
+            onMouseEnter={() => setHoveredPhaseId(phase.id)}
+            onMouseLeave={() => setHoveredPhaseId(null)}
+            className={`transition-opacity ${isDimmed ? "opacity-40" : ""} ${
+              dragIdx !== null && overIdx === idx && dragIdx !== idx
+                ? "border-t-2 border-purple-500"
+                : ""
+            }`}
+          >
+            <PhaseEditorCard
+              phase={phase}
+              isSelected={phase.id === selectedPhaseId}
+              isPreset={isPreset}
+              isDragging={dragIdx === idx}
+              onSelect={() => onSelect(phase.id)}
+              onUpdate={(updates) => onUpdate(phase.id, updates)}
+              onDelete={() => onDelete(phase.id)}
+              allPhaseSlugs={precedingPhaseSlugs}
+            />
+            {inputPhases.length > 0 && (
+              <PhaseDependencyBadges
+                inputPhases={inputPhases}
+                onClickPhase={onSelect}
+              />
+            )}
+          </div>
+        );
+      })}
       {!isPreset && (
         <Button
           variant="ghost"
