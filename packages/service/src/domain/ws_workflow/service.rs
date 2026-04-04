@@ -38,7 +38,8 @@ pub async fn update_definition(
     if def.is_preset {
         return Err(AppError::Conflict("Cannot modify a preset workflow definition".into()));
     }
-    repository::update_workflow_definition(write_pool, id, name, description).await
+    repository::update_workflow_definition(write_pool, id, name, description).await?;
+    get_definition(read_pool, id).await
 }
 
 pub async fn delete_definition(

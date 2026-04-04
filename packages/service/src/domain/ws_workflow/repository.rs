@@ -192,7 +192,7 @@ pub async fn update_workflow_definition(
     id: i64,
     name: &str,
     description: Option<&str>,
-) -> Result<WorkflowDefinition, AppError> {
+) -> Result<(), AppError> {
     sqlx::query(
         "UPDATE workflow_definitions SET name = ?, description = ?, updated_at = datetime('now') WHERE id = ?"
     )
@@ -203,9 +203,7 @@ pub async fn update_workflow_definition(
     .await
     .map_err(|e| AppError::DatabaseError(e.to_string()))?;
 
-    get_workflow_definition(pool, id)
-        .await?
-        .ok_or_else(|| AppError::NotFound("Workflow definition not found".into()))
+    Ok(())
 }
 
 pub async fn delete_workflow_definition(pool: &SqlitePool, id: i64) -> Result<(), AppError> {

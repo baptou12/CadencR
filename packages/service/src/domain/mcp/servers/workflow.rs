@@ -37,7 +37,7 @@ impl WorkflowServer {
         )
         .await
         .map_err(|e| e.to_string())?;
-        let preview = &content[..content.len().min(200)];
+        let preview: String = content.chars().take(200).collect();
         Ok(format!("Artifact created for phase '{phase_slug}'.\n\nPreview:\n{preview}"))
     }
 
