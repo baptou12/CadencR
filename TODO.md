@@ -7,10 +7,10 @@
 - [ ] [editor] META+SHIFT+F to search for a string in the file
 - [ ] [workflow] Commit detection
 - [ ] [workflow] template variable autocompletion
+- [ ] [workflow] during onboarding, the back button next to "workflow" text is useless
+- [~] [workflow] presets should be markdown file, not hardocded strings in the code
+- [ ] [workflow] Review openspec and bmad prompts and workflows
 - [ ] [workflow] dependencies vizualization
-- [ ] [workflow] auto-name
-- [ ] [workflow] worktree
-- [ ] [workflow] better onboarding
 - [ ] [workflow] cadence phase ordering (prd -> plan -> execute -> review -> execute -> done)
 - [ ] [global] Rework command palette
 - [ ] [global] Theming

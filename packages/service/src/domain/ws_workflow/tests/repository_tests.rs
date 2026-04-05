@@ -310,4 +310,89 @@ mod repository_tests {
         assert_eq!(cadence.phases.len(), 3);
         assert_eq!(cadence.phases[2].gate_type, "auto");
     }
+
+    #[tokio::test]
+    async fn test_preset_prompts_loaded_from_markdown() {
+        let pool = setup_pool().await;
+        presets::seed_presets(&pool).await.unwrap();
+
+        let all = repository::list_workflow_definitions(&pool).await.unwrap();
+
+        // Every phase of every preset should have non-empty prompts (loaded from .md files)
+        for def in all.iter().filter(|d| d.is_preset) {
+            for phase in &def.phases {
+                assert!(!phase.system_prompt_template.is_empty(),
+                    "{}:{} system_prompt is empty", def.slug, phase.slug);
+                assert!(!phase.command_prompt_template.is_empty(),
+                    "{}:{} command_prompt is empty", def.slug, phase.slug);
+                assert!(!phase.artifact_template.is_empty(),
+                    "{}:{} artifact_template is empty", def.slug, phase.slug);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_preset_descriptions_contain_version() {
+        let defs = presets::get_preset_definitions();
+
+        let speckit = defs.iter().find(|d| d.slug == "speckit").unwrap();
+        assert!(speckit.description.as_ref().unwrap().contains("Spec-Kit v"));
+
+        let bmad = defs.iter().find(|d| d.slug == "bmad").unwrap();
+        assert!(bmad.description.as_ref().unwrap().contains("BMAD Method v"));
+
+        let openspec = defs.iter().find(|d| d.slug == "openspec").unwrap();
+        assert!(openspec.description.as_ref().unwrap().contains("OpenSpec v"));
+    }
+
+    #[tokio::test]
+    async fn test_seed_updates_prompt_content() {
+        use crate::domain::ws_workflow::phase_repository;
+
+        let pool = setup_pool().await;
+        presets::seed_presets(&pool).await.unwrap();
+
+        // Manually overwrite a phase's prompt to simulate stale content
+        let all = repository::list_workflow_definitions(&pool).await.unwrap();
+        let bmad = all.iter().find(|d| d.slug == "bmad").unwrap();
+        let analysis = bmad.phases.iter().find(|p| p.slug == "analysis").unwrap();
+        phase_repository::update_workflow_phase(
+            &pool, analysis.id,
+            None, None, Some("stale system prompt"), None, None, None, None, None,
+        ).await.unwrap();
+
+        // Re-seed should restore the correct prompt
+        presets::seed_presets(&pool).await.unwrap();
+
+        let all = repository::list_workflow_definitions(&pool).await.unwrap();
+        let bmad = all.iter().find(|d| d.slug == "bmad").unwrap();
+        let analysis = bmad.phases.iter().find(|p| p.slug == "analysis").unwrap();
+        assert_ne!(analysis.system_prompt_template, "stale system prompt");
+        assert!(analysis.system_prompt_template.contains("BMAD Analyst"));
+    }
+
+    #[tokio::test]
+    async fn test_seed_preserves_user_model_override() {
+        use crate::domain::ws_workflow::phase_repository;
+
+        let pool = setup_pool().await;
+        presets::seed_presets(&pool).await.unwrap();
+
+        // User overrides model on a phase
+        let all = repository::list_workflow_definitions(&pool).await.unwrap();
+        let speckit = all.iter().find(|d| d.slug == "speckit").unwrap();
+        let specify = speckit.phases.iter().find(|p| p.slug == "specify").unwrap();
+        phase_repository::update_workflow_phase(
+            &pool, specify.id,
+            None, None, None, None, None, None, Some("haiku"), None,
+        ).await.unwrap();
+
+        // Re-seed should preserve the user's model choice
+        presets::seed_presets(&pool).await.unwrap();
+
+        let all = repository::list_workflow_definitions(&pool).await.unwrap();
+        let speckit = all.iter().find(|d| d.slug == "speckit").unwrap();
+        let specify = speckit.phases.iter().find(|p| p.slug == "specify").unwrap();
+        assert_eq!(specify.model_override, "haiku");
+    }
 }

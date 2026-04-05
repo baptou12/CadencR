@@ -99,7 +99,7 @@ pub fn get_preset_definitions() -> Vec<CreateWorkflowDefinition> {
         preset(
             "Speckit",
             "speckit",
-            "Speckit-style workflow: specify, plan, tasks, implement, analyze",
+            &format!("Speckit-style workflow: specify, plan, tasks, implement, analyze (Spec-Kit v{})", sk::VERSION),
             vec![
                 phase(0, "Specify", "specify", Approval, &[],
                     sk::SPECIFY_SYSTEM, sk::SPECIFY_COMMAND, sk::SPECIFY_ARTIFACT),
@@ -116,7 +116,7 @@ pub fn get_preset_definitions() -> Vec<CreateWorkflowDefinition> {
         preset(
             "BMAD",
             "bmad",
-            "BMAD-style workflow: analysis, planning, solutioning, implementation",
+            &format!("BMAD-style workflow: analysis, planning, solutioning, implementation (BMAD Method v{})", bm::VERSION),
             vec![
                 phase(0, "Analysis", "analysis", Approval, &[],
                     bm::ANALYSIS_SYSTEM, bm::ANALYSIS_COMMAND, bm::ANALYSIS_ARTIFACT),
@@ -131,7 +131,7 @@ pub fn get_preset_definitions() -> Vec<CreateWorkflowDefinition> {
         preset(
             "OpenSpec",
             "openspec",
-            "OpenSpec-style workflow: propose, apply, archive",
+            &format!("OpenSpec-style workflow: propose, apply, archive (OpenSpec v{})", os::VERSION),
             vec![
                 phase(0, "Propose", "propose", Approval, &[],
                     os::PROPOSE_SYSTEM, os::PROPOSE_COMMAND, os::PROPOSE_ARTIFACT),
@@ -144,7 +144,7 @@ pub fn get_preset_definitions() -> Vec<CreateWorkflowDefinition> {
         preset(
             "Cadence",
             "cadence-default",
-            "Default Cadence workflow: PRD, plan, build",
+            "Default Cadence workflow: plan, PRD, build",
             vec![
                 phase(0, "PRD", "prd", Approval, &[],
                     cd::PRD_SYSTEM, cd::PRD_COMMAND, cd::PRD_ARTIFACT),
@@ -179,16 +179,40 @@ pub async fn seed_presets(pool: &SqlitePool) -> Result<(), AppError> {
                 repository::create_workflow_definition(pool, def.clone()).await?;
             }
             Some(ex) => {
-                // Backfill empty model_override with defaults
-                for existing_phase in &ex.phases {
-                    if existing_phase.model_override.is_empty() {
-                        let default = default_model_for_agent_type(&existing_phase.agent_type);
+                // Update definition metadata if changed
+                if ex.name != def.name || ex.description.as_deref() != def.description.as_deref() {
+                    repository::update_workflow_definition(
+                        pool, ex.id, &def.name, def.description.as_deref(),
+                    ).await?;
+                }
+                // Update phase prompts, matching by slug for safety
+                for expected in &def.phases {
+                    let Some(existing_phase) = ex.phases.iter().find(|p| p.slug == expected.slug) else {
+                        continue;
+                    };
+                    let model = if existing_phase.model_override.is_empty() {
+                        Some(default_model_for_agent_type(&existing_phase.agent_type))
+                    } else {
+                        None
+                    };
+                    let prompts_changed =
+                        existing_phase.system_prompt_template != expected.system_prompt_template
+                        || existing_phase.command_prompt_template != expected.command_prompt_template
+                        || existing_phase.artifact_template != expected.artifact_template
+                        || existing_phase.name != expected.name
+                        || model.is_some();
+                    if prompts_changed {
                         super::phase_repository::update_workflow_phase(
                             pool,
                             existing_phase.id,
-                            None, None, None, None, None, None,
-                            Some(default),
-                            None,
+                            Some(&expected.name),
+                            None, // preserve gate_type
+                            Some(&expected.system_prompt_template),
+                            Some(&expected.command_prompt_template),
+                            Some(&expected.artifact_template),
+                            None, // preserve input_phase_slugs
+                            model,
+                            None, // preserve agent_type
                         ).await?;
                     }
                 }
