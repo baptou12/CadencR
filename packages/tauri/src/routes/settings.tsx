@@ -26,7 +26,7 @@ function SettingsPage() {
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center gap-1 border-b border-border px-6 pt-6 pb-0">
-        <h1 className="text-2xl font-bold mr-6">Settings</h1>
+        <h1 className="text-2xl font-bold mr-6 pb-2">Settings</h1>
         <TabButton active={activeTab === "general"} onClick={() => setActiveTab("general")}>
           General
         </TabButton>

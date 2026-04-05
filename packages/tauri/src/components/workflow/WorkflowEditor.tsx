@@ -1,4 +1,4 @@
-import { GitFork, Loader2 } from "lucide-react";
+import { ArrowLeft, GitFork, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -32,11 +32,16 @@ export function WorkflowEditor({ definitionId, forkFromId, onSave, onCancel, onF
       <div className="shrink-0 border-b border-border p-5 space-y-4">
         {editor.isPreset ? (
           <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-lg font-semibold">{editor.name}</h2>
-              {editor.description && (
-                <p className="text-sm text-muted-foreground mt-0.5">{editor.description}</p>
-              )}
+            <div className="flex items-center gap-3">
+              <Button variant="ghost" size="icon" className="size-8" onClick={onCancel}>
+                <ArrowLeft className="size-4" />
+              </Button>
+              <div>
+                <h2 className="text-lg font-semibold">{editor.name}</h2>
+                {editor.description && (
+                  <p className="text-sm text-muted-foreground mt-0.5">{editor.description}</p>
+                )}
+              </div>
             </div>
             {onFork && (
               <Button size="sm" onClick={onFork}>
@@ -47,15 +52,18 @@ export function WorkflowEditor({ definitionId, forkFromId, onSave, onCancel, onF
           </div>
         ) : (
           <>
-            <div>
+            <div className="flex items-center gap-3">
+              <Button variant="ghost" size="icon" className="size-8" onClick={onCancel}>
+                <ArrowLeft className="size-4" />
+              </Button>
               <h2 className="text-lg font-semibold">
                 {forkFromId ? "Fork Workflow" : definitionId ? "Edit Workflow" : "New Workflow"}
               </h2>
-              <p className="text-sm text-muted-foreground mt-0.5">
-                A workflow defines the sequence of phases an AI agent follows to complete a feature.
-                Each phase has its own system prompt, command template, and artifact output.
-              </p>
             </div>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              A workflow defines the sequence of phases an AI agent follows to complete a feature.
+              Each phase has its own system prompt, command template, and artifact output.
+            </p>
             <div className="space-y-3 max-w-lg">
               <div className="space-y-1.5">
                 <label htmlFor="wf-name" className="text-sm font-medium">
