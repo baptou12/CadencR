@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@/test-utils";
 import CodeMirrorEditor from "../CodeMirrorEditor";
 
-// Mock CodeMirror to avoid DOM measurement issues in jsdom
+// Mock CodeMirror view — only EditorView is imported directly by CodeMirrorEditor now
 vi.mock("@codemirror/view", () => {
   class MockEditorView {
     static updateListener = { of: vi.fn(() => []) };
@@ -20,34 +20,18 @@ vi.mock("@codemirror/view", () => {
   };
 });
 
-vi.mock("@codemirror/state", () => {
-  class MockCompartment {
-    of() { return []; }
-    reconfigure() { return []; }
-  }
-  return {
-    EditorState: { create: vi.fn(() => ({})) },
-    Compartment: MockCompartment,
-  };
-});
-
-vi.mock("@codemirror/commands", () => ({
-  defaultKeymap: [],
-  history: vi.fn(() => []),
-  historyKeymap: [],
-}));
-
-vi.mock("@codemirror/language", () => ({
-  bracketMatching: vi.fn(() => []),
-  indentOnInput: vi.fn(() => []),
-}));
-
-vi.mock("@replit/codemirror-vim", () => ({
-  vim: vi.fn(() => []),
-}));
-
-vi.mock("../editor-theme", () => ({
-  cadenceEditorTheme: [],
+// Mock BaseCodeMirrorEditor to render a simple div with the className
+vi.mock("../BaseCodeMirrorEditor", () => ({
+  default: ({ className, editorViewRef }: { className?: string; editorViewRef?: React.MutableRefObject<unknown> }) => {
+    if (editorViewRef) {
+      editorViewRef.current = {
+        state: { doc: { toString: () => "", length: 0 } },
+        dispatch: vi.fn(),
+        destroy: vi.fn(),
+      };
+    }
+    return <div className={className} data-testid="base-editor" />;
+  },
 }));
 
 vi.mock("../language-extensions", () => ({
