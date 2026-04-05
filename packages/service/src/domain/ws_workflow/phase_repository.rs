@@ -22,8 +22,8 @@ pub(super) async fn insert_phase(
         "INSERT INTO workflow_phases \
          (workflow_definition_id, name, slug, order_index, gate_type, \
           system_prompt_template, command_prompt_template, artifact_template, \
-          input_phase_slugs, model_override, agent_type, decompose_from) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+          input_phase_slugs, model_override, agent_type, decompose_from, artifact_types) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     )
     .bind(definition_id)
     .bind(&phase.name)
@@ -37,6 +37,7 @@ pub(super) async fn insert_phase(
     .bind(&phase.model_override)
     .bind(&phase.agent_type)
     .bind(&phase.decompose_from)
+    .bind(serde_json::to_string(&phase.artifact_types).map_err(|e| AppError::Internal(e.to_string()))?)
     .execute(pool)
     .await
     .map_err(|e| AppError::DatabaseError(e.to_string()))?
@@ -65,6 +66,7 @@ pub async fn create_workflow_phase(
         model_override: phase.model_override.clone(),
         agent_type: phase.agent_type.clone(),
         decompose_from: phase.decompose_from.clone(),
+        artifact_types: phase.artifact_types.clone(),
     })
 }
 
@@ -80,6 +82,7 @@ pub async fn update_workflow_phase(
     input_phase_slugs: Option<&Vec<String>>,
     model_override: Option<&str>,
     agent_type: Option<&str>,
+    artifact_types: Option<&Vec<String>>,
 ) -> Result<WorkflowPhase, AppError> {
     let mut set_clauses: Vec<String> = Vec::new();
     let mut values: Vec<String> = Vec::new();
@@ -96,9 +99,11 @@ pub async fn update_workflow_phase(
     for (clause, val) in simple {
         if let Some(v) = val { set_clauses.push((*clause).into()); values.push(v.to_string()); }
     }
-    if let Some(v) = input_phase_slugs {
-        set_clauses.push("input_phase_slugs = ?".into());
-        values.push(serde_json::to_string(v).map_err(|e| AppError::Internal(e.to_string()))?);
+    for (col, vec_val) in [("input_phase_slugs", input_phase_slugs), ("artifact_types", artifact_types)] {
+        if let Some(v) = vec_val {
+            set_clauses.push(format!("{col} = ?"));
+            values.push(serde_json::to_string(v).map_err(|e| AppError::Internal(e.to_string()))?);
+        }
     }
 
     if !set_clauses.is_empty() {
@@ -114,10 +119,10 @@ pub async fn update_workflow_phase(
         q.execute(pool).await.map_err(|e| AppError::DatabaseError(e.to_string()))?;
     }
 
-    let row = sqlx::query_as::<_, (i64, i64, String, String, i32, String, String, String, String, String, String, String, String)>(
+    let row = sqlx::query_as::<_, (i64, i64, String, String, i32, String, String, String, String, String, String, String, String, String)>(
         "SELECT id, workflow_definition_id, name, slug, order_index, gate_type, \
          system_prompt_template, command_prompt_template, artifact_template, \
-         input_phase_slugs, model_override, agent_type, decompose_from \
+         input_phase_slugs, model_override, agent_type, decompose_from, artifact_types \
          FROM workflow_phases WHERE id = ?"
     )
     .bind(phase_id)
@@ -127,12 +132,13 @@ pub async fn update_workflow_phase(
     .ok_or_else(|| AppError::NotFound("Workflow phase not found".into()))?;
 
     let input_phase_slugs = parse_phase_slugs(&row.9, &row.2);
+    let artifact_types = parse_phase_slugs(&row.13, &row.2);
     Ok(WorkflowPhase {
         id: row.0, workflow_definition_id: row.1, name: row.2, slug: row.3,
         order_index: row.4, gate_type: row.5, system_prompt_template: row.6,
         command_prompt_template: row.7, artifact_template: row.8,
         input_phase_slugs, model_override: row.10, agent_type: row.11,
-        decompose_from: row.12,
+        decompose_from: row.12, artifact_types,
     })
 }
 

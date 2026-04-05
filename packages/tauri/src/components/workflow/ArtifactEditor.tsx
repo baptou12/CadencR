@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback, useState, useMemo } from "react";
 import { EditorView } from "@codemirror/view";
 import { markdown } from "@codemirror/lang-markdown";
-import { useGetFeatureArtifact, useUpdateFeatureArtifact } from "@/api/generated";
+import { DEFAULT_ARTIFACT_TYPE, useGetFeatureArtifact, useGetTypedArtifact, useUpdateFeatureArtifact, useUpdateTypedArtifact } from "@/api/generated";
 import { useEditorStore } from "@/stores/editor-store";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import { useWorkflowStore } from "@/hooks/useWorkflowWebSocket";
@@ -15,12 +15,14 @@ interface ArtifactEditorProps {
   phaseSlug: string;
   paneId: string;
   filePath: string;
+  artifactType?: string;
 }
 
 const AUTO_SAVE_DELAY_MS = 500;
 const MARKDOWN_LANG = markdown();
 
-export default function ArtifactEditor({ featureId, phaseSlug, paneId, filePath }: ArtifactEditorProps) {
+export default function ArtifactEditor({ featureId, phaseSlug, paneId, filePath, artifactType }: ArtifactEditorProps) {
+  const isTyped = Boolean(artifactType && artifactType !== DEFAULT_ARTIFACT_TYPE);
   const viewRef = useRef<EditorView | null>(null);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [autoSavedVisible, setAutoSavedVisible] = useState(false);
@@ -40,22 +42,31 @@ export default function ArtifactEditor({ featureId, phaseSlug, paneId, filePath 
   const phaseStatus = useWorkflowStore((s) => s.phaseStates.get(phaseSlug)?.status);
   const isReadOnly = phaseStatus === "running";
 
-  const { data: artifact, isLoading, error } = useGetFeatureArtifact(featureId, phaseSlug, {
-    enabled: Boolean(featureId && phaseSlug),
+  const defaultQuery = useGetFeatureArtifact(featureId, phaseSlug, {
+    enabled: Boolean(featureId && phaseSlug && !isTyped),
     refetchOnWindowFocus: false,
     staleTime: 5 * 60 * 1000,
   });
+  const typedQuery = useGetTypedArtifact(featureId, phaseSlug, artifactType ?? DEFAULT_ARTIFACT_TYPE, {
+    enabled: Boolean(featureId && phaseSlug && isTyped),
+    refetchOnWindowFocus: false,
+    staleTime: 5 * 60 * 1000,
+  });
+  const { data: artifact, isLoading, error } = isTyped ? typedQuery : defaultQuery;
 
-  const updateArtifact = useUpdateFeatureArtifact();
-  const mutateAsyncRef = useRef(updateArtifact.mutateAsync);
-  mutateAsyncRef.current = updateArtifact.mutateAsync;
+  const defaultMutation = useUpdateFeatureArtifact();
+  const typedMutation = useUpdateTypedArtifact();
 
   const saveContent = useCallback(async () => {
     const view = viewRef.current;
-    if (!view || !mutateAsyncRef.current) return;
+    if (!view) return;
     const content = view.state.doc.toString();
     try {
-      await mutateAsyncRef.current({ featureId, phaseSlug, content });
+      if (isTyped) {
+        await typedMutation.mutateAsync({ featureId, phaseSlug, artifactType: artifactType!, content });
+      } else {
+        await defaultMutation.mutateAsync({ featureId, phaseSlug, content });
+      }
       setDirty(featureId, paneId, filePath, false);
       hasPendingEditsRef.current = false;
       localContentRef.current = content;
@@ -66,7 +77,7 @@ export default function ArtifactEditor({ featureId, phaseSlug, paneId, filePath 
       const msg = err instanceof Error ? err.message : "Failed to save artifact";
       toast.error(msg);
     }
-  }, [featureId, phaseSlug, paneId, filePath, setDirty]);
+  }, [featureId, phaseSlug, paneId, filePath, setDirty, isTyped, artifactType]);
 
   const handleSave = useCallback(() => { void saveContent(); }, [saveContent]);
 
@@ -145,7 +156,7 @@ export default function ArtifactEditor({ featureId, phaseSlug, paneId, filePath 
       {/* Header */}
       <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-card shrink-0">
         <FileTextIcon className="size-3.5 text-muted-foreground" />
-        <span className="text-xs font-medium text-foreground truncate">{phaseSlug}</span>
+        <span className="text-xs font-medium text-foreground truncate">{isTyped ? `${phaseSlug}/${artifactType}` : phaseSlug}</span>
         <Badge variant="outline" className="text-[9px] px-1 py-0">Artifact</Badge>
         {isReadOnly && <Badge variant="outline" className="text-[9px] px-1 py-0 text-yellow-400">Read-only</Badge>}
         {artifact?.updated_at && (

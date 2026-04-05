@@ -315,6 +315,31 @@ function PhaseSettingsPanel({ phase, isPreset, onUpdate, allPrecedingPhases }: P
           </div>
         </div>
       )}
+
+      {/* Artifact Types */}
+      <div className="space-y-1.5">
+        <label htmlFor="artifact-types" className="text-sm font-medium">
+          Artifact Types
+        </label>
+        <Input
+          id="artifact-types"
+          value={(phase.artifact_types ?? []).join(", ")}
+          onChange={(e) => {
+            const types = e.target.value
+              .split(",")
+              .map((s) => s.trim())
+              .filter(Boolean);
+            onUpdate({ artifact_types: types });
+          }}
+          placeholder="e.g. proposal, specs, design, tasks"
+          disabled={isPreset}
+        />
+        <p className="text-xs text-muted-foreground">
+          Comma-separated list of artifact types this phase produces.
+          Leave empty for a single default artifact. When set, the agent will be instructed
+          to call create_artifact once per type.
+        </p>
+      </div>
     </div>
   );
 }

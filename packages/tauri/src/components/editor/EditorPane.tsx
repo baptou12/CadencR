@@ -44,6 +44,7 @@ export default function EditorPane({ featureId, paneId, projectPath, isActive }:
               phaseSlug={activeTab.artifactPhaseSlug}
               paneId={paneId}
               filePath={activeFilePath}
+              artifactType={activeTab.artifactType}
             />
           </Suspense>
         ) : activeFilePath ? (

@@ -76,21 +76,35 @@ pub async fn build_template_context(
 
     let (project_name, project_path) = project;
 
-    // Collect prior artifacts from input_phase_slugs
+    // Load all artifacts for this feature once, then derive both prior_artifacts and phase_artifacts map.
+    let all_artifacts = artifact_repository::get_artifacts_for_feature(pool, feature_id).await?;
+
+    // Group artifacts by phase_slug for lookup
+    let mut by_slug: HashMap<String, Vec<&super::models::WorkflowArtifact>> = HashMap::new();
+    for a in &all_artifacts {
+        by_slug.entry(a.phase_slug.clone()).or_default().push(a);
+    }
+
+    // Build prior_artifacts from input_phase_slugs
     let mut prior_parts = Vec::new();
     for slug in &phase.input_phase_slugs {
-        if let Some(artifact) = artifact_repository::get_artifact(pool, feature_id, slug).await? {
-            prior_parts.push(format!("## {}\n\n{}", slug, artifact.content));
+        if let Some(phase_arts) = by_slug.get(slug.as_str()) {
+            let owned: Vec<super::models::WorkflowArtifact> = phase_arts.iter().map(|a| (*a).clone()).collect();
+            if let Some(formatted) = artifact_repository::format_artifacts(&owned, Some(slug)) {
+                prior_parts.push(formatted);
+            }
         }
     }
     let prior_artifacts = prior_parts.join("\n\n---\n\n");
 
-    // Build phase_artifacts map for all artifacts on this feature
-    let all_artifacts = artifact_repository::get_artifacts_for_feature(pool, feature_id).await?;
-    let phase_artifacts: HashMap<String, String> = all_artifacts
-        .into_iter()
-        .map(|a| (a.phase_slug, a.content))
-        .collect();
+    // Build phase_artifacts map: "slug" → default content, "slug/type" → typed content.
+    let mut phase_artifacts: HashMap<String, String> = HashMap::new();
+    for a in &all_artifacts {
+        phase_artifacts.insert(format!("{}/{}", a.phase_slug, a.artifact_type), a.content.clone());
+        if a.artifact_type == super::models::DEFAULT_ARTIFACT_TYPE || !phase_artifacts.contains_key(&a.phase_slug) {
+            phase_artifacts.insert(a.phase_slug.clone(), a.content.clone());
+        }
+    }
 
     Ok(TemplateContext {
         feature_title,
@@ -150,5 +164,20 @@ mod tests {
         let ctx = test_ctx();
         let result = interpolate("{{artifact:missing}}", &ctx);
         assert_eq!(result, "{{artifact:missing}}");
+    }
+
+    #[test]
+    fn test_interpolate_typed_artifact() {
+        let mut ctx = test_ctx();
+        ctx.phase_artifacts.insert("propose/specs".to_string(), "Specs content".to_string());
+        ctx.phase_artifacts.insert("propose/design".to_string(), "Design content".to_string());
+
+        let result = interpolate("Specs: {{artifact:propose/specs}}, Design: {{artifact:propose/design}}", &ctx);
+        assert_eq!(result, "Specs: Specs content, Design: Design content");
+
+        // Plain slug still works for default
+        ctx.phase_artifacts.insert("propose".to_string(), "Default propose content".to_string());
+        let result = interpolate("{{artifact:propose}}", &ctx);
+        assert_eq!(result, "Default propose content");
     }
 }

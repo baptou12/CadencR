@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { DEFAULT_ARTIFACT_TYPE } from "@/api/generated";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -16,6 +17,7 @@ export interface EditorTab {
   isArtifact?: boolean;
   artifactFeatureId?: number;
   artifactPhaseSlug?: string;
+  artifactType?: string;
 }
 
 export interface EditorPaneState {
@@ -219,7 +221,8 @@ interface EditorStore {
   removeEditorPane: (featureId: number, paneId: string) => void;
   navigatePane: (featureId: number, direction: Direction) => void;
   setActivePane: (featureId: number, paneId: string) => void;
-  openArtifact: (featureId: number, paneId: string, phaseSlug: string, maxTabs?: number) => void;
+  openArtifact: (featureId: number, paneId: string, phaseSlug: string, maxTabs?: number, artifactType?: string) => void;
+  openPhaseArtifacts: (featureId: number, paneId: string, phaseSlug: string, artifactTypes: string[], maxTabs?: number) => void;
 }
 
 export const useEditorStore = create<EditorStore>((set, get) => ({
@@ -382,10 +385,13 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       return updateFeature(state, featureId, { ...feature, activePaneId: paneId });
     }),
 
-  openArtifact: (featureId, paneId, phaseSlug, maxTabs = DEFAULT_MAX_TABS) =>
+  openArtifact: (featureId, paneId, phaseSlug, maxTabs = DEFAULT_MAX_TABS, artifactType) =>
     set((state) => {
-      const filePath = `artifact://${featureId}/${phaseSlug}`;
-      const displayName = `${phaseSlug} (Artifact)`;
+      const typeSuffix = artifactType && artifactType !== DEFAULT_ARTIFACT_TYPE ? `/${artifactType}` : "";
+      const filePath = `artifact://${featureId}/${phaseSlug}${typeSuffix}`;
+      const displayName = artifactType && artifactType !== DEFAULT_ARTIFACT_TYPE
+        ? `${phaseSlug}/${artifactType} (Artifact)`
+        : `${phaseSlug} (Artifact)`;
       const feature = state.features[featureId] ?? { ...defaultFeatureState };
       const next = updatePane(feature, paneId, (pane) => {
         if (pane.tabs.some((t) => t.filePath === filePath)) {
@@ -400,6 +406,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
           isArtifact: true,
           artifactFeatureId: featureId,
           artifactPhaseSlug: phaseSlug,
+          artifactType,
         };
         let tabs = [...pane.tabs, newTab];
         if (tabs.length > maxTabs) {
@@ -412,5 +419,16 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       });
       return updateFeature(state, featureId, next);
     }),
+
+  openPhaseArtifacts: (featureId, paneId, phaseSlug, artifactTypes, maxTabs = DEFAULT_MAX_TABS) => {
+    const { openArtifact } = get();
+    for (const at of artifactTypes) {
+      openArtifact(featureId, paneId, phaseSlug, maxTabs, at);
+    }
+    // Re-activate the first type (openArtifact leaves the last one active)
+    if (artifactTypes.length > 1) {
+      openArtifact(featureId, paneId, phaseSlug, maxTabs, artifactTypes[0]);
+    }
+  },
 }));
 

@@ -1658,6 +1658,7 @@ export interface WorkflowPhase {
   input_phase_slugs: string[];
   model_override: string;
   agent_type: "workflow" | "execute";
+  artifact_types: string[];
 }
 
 export interface WorkflowDefinition {
@@ -1671,10 +1672,13 @@ export interface WorkflowDefinition {
   updated_at: string;
 }
 
+export const DEFAULT_ARTIFACT_TYPE = "default";
+
 export interface WorkflowArtifact {
   id: number;
   feature_id: number;
   phase_slug: string;
+  artifact_type: string;
   content: string;
   agent_session_id: number | null;
   created_at: string;
@@ -1721,6 +1725,13 @@ export interface UpdateFeatureArtifactParams {
   content: string;
 }
 
+export interface UpdateTypedArtifactParams {
+  featureId: number;
+  phaseSlug: string;
+  artifactType: string;
+  content: string;
+}
+
 // ---------------------------------------------------------------------------
 // Workflow query key factories
 // ---------------------------------------------------------------------------
@@ -1739,6 +1750,14 @@ export function getGetFeatureArtifactsQueryKey(featureId: number) {
 
 export function getGetFeatureArtifactQueryKey(featureId: number, phaseSlug: string) {
   return ["workflow", "artifacts", featureId, phaseSlug] as const;
+}
+
+export function getGetPhaseArtifactsQueryKey(featureId: number, phaseSlug: string) {
+  return ["workflow", "artifacts", featureId, phaseSlug, "types"] as const;
+}
+
+export function getGetTypedArtifactQueryKey(featureId: number, phaseSlug: string, artifactType: string) {
+  return ["workflow", "artifacts", featureId, phaseSlug, "types", artifactType] as const;
 }
 
 // ---------------------------------------------------------------------------
@@ -1789,6 +1808,33 @@ export function useGetFeatureArtifact(
     queryKey: getGetFeatureArtifactQueryKey(featureId, phaseSlug),
     queryFn: () =>
       customInstance({ method: "GET", url: `/api/features/${featureId}/artifacts/${phaseSlug}` }),
+    ...options,
+  });
+}
+
+export function useGetPhaseArtifacts(
+  featureId: number,
+  phaseSlug: string,
+  options?: Omit<UseQueryOptions<WorkflowArtifact[], ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<WorkflowArtifact[], ErrorType<unknown>>({
+    queryKey: getGetPhaseArtifactsQueryKey(featureId, phaseSlug),
+    queryFn: () =>
+      customInstance({ method: "GET", url: `/api/features/${featureId}/artifacts/${phaseSlug}/types` }),
+    ...options,
+  });
+}
+
+export function useGetTypedArtifact(
+  featureId: number,
+  phaseSlug: string,
+  artifactType: string,
+  options?: Omit<UseQueryOptions<WorkflowArtifact, ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<WorkflowArtifact, ErrorType<unknown>>({
+    queryKey: getGetTypedArtifactQueryKey(featureId, phaseSlug, artifactType),
+    queryFn: () =>
+      customInstance({ method: "GET", url: `/api/features/${featureId}/artifacts/${phaseSlug}/types/${artifactType}` }),
     ...options,
   });
 }
@@ -1915,6 +1961,20 @@ export function useUpdateFeatureArtifact(
       customInstance({
         method: "PUT",
         url: `/api/features/${params.featureId}/artifacts/${params.phaseSlug}`,
+        data: { content: params.content },
+      }),
+    ...options,
+  });
+}
+
+export function useUpdateTypedArtifact(
+  options?: UseMutationOptions<WorkflowArtifact, ErrorType<unknown>, UpdateTypedArtifactParams>,
+) {
+  return useMutation<WorkflowArtifact, ErrorType<unknown>, UpdateTypedArtifactParams>({
+    mutationFn: (params) =>
+      customInstance({
+        method: "PUT",
+        url: `/api/features/${params.featureId}/artifacts/${params.phaseSlug}/types/${params.artifactType}`,
         data: { content: params.content },
       }),
     ...options,

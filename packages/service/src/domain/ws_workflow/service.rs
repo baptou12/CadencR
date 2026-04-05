@@ -87,6 +87,7 @@ pub async fn update_phase(
     input_phase_slugs: Option<&Vec<String>>,
     model_override: Option<&str>,
     agent_type: Option<&str>,
+    artifact_types: Option<&Vec<String>>,
 ) -> Result<WorkflowPhase, AppError> {
     if let Some(gt) = gate_type {
         gt.parse::<GateType>().map_err(|_| {
@@ -104,7 +105,8 @@ pub async fn update_phase(
             && command_prompt_template.is_none()
             && artifact_template.is_none()
             && input_phase_slugs.is_none()
-            && agent_type.is_none();
+            && agent_type.is_none()
+            && artifact_types.is_none();
         if !only_model {
             return Err(AppError::Conflict("Cannot modify phases of a preset workflow definition".into()));
         }
@@ -112,6 +114,7 @@ pub async fn update_phase(
     phase_repository::update_workflow_phase(
         pool, phase_id, name, gate_type, system_prompt_template,
         command_prompt_template, artifact_template, input_phase_slugs, model_override, agent_type,
+        artifact_types,
     ).await
 }
 
@@ -159,5 +162,34 @@ pub async fn update_artifact(
     phase_slug: &str,
     content: &str,
 ) -> Result<WorkflowArtifact, AppError> {
-    artifact_repository::upsert_artifact(pool, feature_id, phase_slug, content, None).await
+    artifact_repository::upsert_artifact(pool, feature_id, phase_slug, super::models::DEFAULT_ARTIFACT_TYPE, content, None).await
+}
+
+pub async fn get_typed_artifact(
+    pool: &SqlitePool,
+    feature_id: i64,
+    phase_slug: &str,
+    artifact_type: &str,
+) -> Result<WorkflowArtifact, AppError> {
+    artifact_repository::get_typed_artifact(pool, feature_id, phase_slug, artifact_type)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Artifact not found".into()))
+}
+
+pub async fn get_phase_artifacts(
+    pool: &SqlitePool,
+    feature_id: i64,
+    phase_slug: &str,
+) -> Result<Vec<WorkflowArtifact>, AppError> {
+    artifact_repository::get_phase_artifacts(pool, feature_id, phase_slug).await
+}
+
+pub async fn update_typed_artifact(
+    pool: &SqlitePool,
+    feature_id: i64,
+    phase_slug: &str,
+    artifact_type: &str,
+    content: &str,
+) -> Result<WorkflowArtifact, AppError> {
+    artifact_repository::upsert_artifact(pool, feature_id, phase_slug, artifact_type, content, None).await
 }

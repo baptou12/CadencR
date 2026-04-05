@@ -14,6 +14,7 @@ use serde_json::json;
 use crate::domain::mcp::context::McpContext;
 use crate::domain::mcp::tools::helpers::{error_result, require_str, text_result};
 use crate::domain::ws_workflow::artifact_repository as ws_repo;
+use crate::domain::ws_workflow::models::DEFAULT_ARTIFACT_TYPE;
 use crate::domain::ws_workflow::task_repository;
 
 use super::{make_tool, server_info};
@@ -27,32 +28,43 @@ impl WorkflowServer {
         Self { ctx }
     }
 
-    async fn create_artifact(&self, content: &str) -> Result<String, String> {
+    async fn create_artifact(&self, content: &str, artifact_type: &str) -> Result<String, String> {
         let phase_slug = self.require_phase_slug()?;
         ws_repo::upsert_artifact(
             &self.ctx.write_pool,
             self.ctx.feature_id,
             &phase_slug,
+            artifact_type,
             content,
             None,
         )
         .await
         .map_err(|e| e.to_string())?;
         let preview: String = content.chars().take(200).collect();
-        Ok(format!("Artifact created for phase '{phase_slug}'.\n\nPreview:\n{preview}"))
+        let type_label = if artifact_type == DEFAULT_ARTIFACT_TYPE { String::new() } else { format!(" (type: {artifact_type})") };
+        Ok(format!("Artifact created for phase '{phase_slug}'{type_label}.\n\nPreview:\n{preview}"))
     }
 
-    async fn read_artifact(&self, phase_slug: &str) -> Result<String, String> {
-        let artifact = ws_repo::get_artifact(
-            &self.ctx.read_pool,
-            self.ctx.feature_id,
-            phase_slug,
-        )
-        .await
-        .map_err(|e| e.to_string())?;
-        match artifact {
-            Some(a) => Ok(a.content),
-            None => Ok(format!("No artifact found for phase '{phase_slug}'")),
+    async fn read_artifact(&self, phase_slug: &str, artifact_type: Option<&str>) -> Result<String, String> {
+        match artifact_type {
+            Some(at) => {
+                let artifact = ws_repo::get_typed_artifact(
+                    &self.ctx.read_pool, self.ctx.feature_id, phase_slug, at,
+                ).await.map_err(|e| e.to_string())?;
+                match artifact {
+                    Some(a) => Ok(a.content),
+                    None => Ok(format!("No artifact found for phase '{phase_slug}' type '{at}'")),
+                }
+            }
+            None => {
+                let artifacts = ws_repo::get_phase_artifacts(
+                    &self.ctx.read_pool, self.ctx.feature_id, phase_slug,
+                ).await.map_err(|e| e.to_string())?;
+                match ws_repo::format_artifacts(&artifacts, None) {
+                    Some(content) => Ok(content),
+                    None => Ok(format!("No artifact found for phase '{phase_slug}'")),
+                }
+            }
         }
     }
 
@@ -65,16 +77,16 @@ impl WorkflowServer {
         }
         let mut parts = Vec::new();
         for slug in slugs {
-            let artifact = ws_repo::get_artifact(
+            let artifacts = ws_repo::get_phase_artifacts(
                 &self.ctx.read_pool,
                 self.ctx.feature_id,
                 slug,
             )
             .await
             .map_err(|e| e.to_string())?;
-            match artifact {
-                Some(a) => parts.push(format!("## Phase: {slug}\n\n{}", a.content)),
+            match ws_repo::format_artifacts(&artifacts, Some(slug)) {
                 None => parts.push(format!("## Phase: {slug}\n\n(no artifact)")),
+                Some(content) => parts.push(content),
             }
         }
         Ok(parts.join("\n\n---\n\n"))
@@ -237,23 +249,30 @@ impl ServerHandler for WorkflowServer {
 
             let result = match request.name.as_ref() {
                 "create_artifact" => match require_str(&args, "content") {
-                    Ok(v) => self.create_artifact(v).await,
+                    Ok(v) => {
+                        let artifact_type = args["artifact_type"].as_str().unwrap_or(DEFAULT_ARTIFACT_TYPE);
+                        self.create_artifact(v, artifact_type).await
+                    }
                     Err(e) => Err(e),
                 },
                 "read_artifact" => match require_str(&args, "phase_slug") {
-                    Ok(v) => self.read_artifact(v).await,
+                    Ok(v) => {
+                        let artifact_type = args["artifact_type"].as_str();
+                        self.read_artifact(v, artifact_type).await
+                    }
                     Err(e) => Err(e),
                 },
                 "read_prior_artifacts" => self.read_prior_artifacts().await,
                 "update_artifact" => match require_str(&args, "content") {
                     Ok(v) => {
+                        let artifact_type = args["artifact_type"].as_str().unwrap_or(DEFAULT_ARTIFACT_TYPE);
                         let phase_slug = match self.require_phase_slug() {
                             Ok(s) => s,
                             Err(e) => return Ok(error_result(&e)),
                         };
-                        match ws_repo::get_artifact(&self.ctx.read_pool, self.ctx.feature_id, &phase_slug).await {
-                            Ok(Some(_)) => self.create_artifact(v).await,
-                            Ok(None) => Err(format!("No artifact exists for phase '{phase_slug}'. Use create_artifact first.")),
+                        match ws_repo::get_typed_artifact(&self.ctx.read_pool, self.ctx.feature_id, &phase_slug, artifact_type).await {
+                            Ok(Some(_)) => self.create_artifact(v, artifact_type).await,
+                            Ok(None) => Err(format!("No artifact exists for phase '{phase_slug}' type '{artifact_type}'. Use create_artifact first.")),
                             Err(e) => Err(e.to_string()),
                         }
                     }
@@ -297,11 +316,12 @@ impl ServerHandler for WorkflowServer {
 fn tool_create_artifact() -> rmcp::model::Tool {
     make_tool(
         "create_artifact",
-        "Create or overwrite the artifact for the current phase",
+        "Create or overwrite an artifact for the current phase. Use artifact_type to create multiple named artifacts per phase.",
         json!({
             "type": "object",
             "properties": {
-                "content": { "type": "string", "description": "The artifact content" }
+                "content": { "type": "string", "description": "The artifact content" },
+                "artifact_type": { "type": "string", "description": "Artifact type identifier. Defaults to 'default' for single-artifact phases. Use distinct types (e.g. 'proposal', 'specs') for multi-artifact phases." }
             },
             "required": ["content"]
         }),
@@ -311,11 +331,12 @@ fn tool_create_artifact() -> rmcp::model::Tool {
 fn tool_read_artifact() -> rmcp::model::Tool {
     make_tool(
         "read_artifact",
-        "Read a specific phase's artifact",
+        "Read a specific phase's artifact. If artifact_type is omitted, returns all artifacts for the phase.",
         json!({
             "type": "object",
             "properties": {
-                "phase_slug": { "type": "string", "description": "The phase slug to read artifact from" }
+                "phase_slug": { "type": "string", "description": "The phase slug to read artifact from" },
+                "artifact_type": { "type": "string", "description": "Optional: specific artifact type to read" }
             },
             "required": ["phase_slug"]
         }),
@@ -333,7 +354,8 @@ fn tool_update_artifact() -> rmcp::model::Tool {
         json!({
             "type": "object",
             "properties": {
-                "content": { "type": "string", "description": "The updated artifact content" }
+                "content": { "type": "string", "description": "The updated artifact content" },
+                "artifact_type": { "type": "string", "description": "Artifact type to update. Defaults to 'default'." }
             },
             "required": ["content"]
         }),

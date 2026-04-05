@@ -9,10 +9,10 @@ use super::models::{
 use super::phase_repository::{insert_phase, parse_phase_slugs};
 
 async fn load_phases(pool: &SqlitePool, definition_id: i64) -> Result<Vec<WorkflowPhase>, AppError> {
-    let rows = sqlx::query_as::<_, (i64, i64, String, String, i32, String, String, String, String, String, String, String, String)>(
+    let rows = sqlx::query_as::<_, (i64, i64, String, String, i32, String, String, String, String, String, String, String, String, String)>(
         "SELECT id, workflow_definition_id, name, slug, order_index, gate_type, \
          system_prompt_template, command_prompt_template, artifact_template, \
-         input_phase_slugs, model_override, agent_type, decompose_from \
+         input_phase_slugs, model_override, agent_type, decompose_from, artifact_types \
          FROM workflow_phases WHERE workflow_definition_id = ? ORDER BY order_index"
     )
     .bind(definition_id)
@@ -22,12 +22,13 @@ async fn load_phases(pool: &SqlitePool, definition_id: i64) -> Result<Vec<Workfl
 
     Ok(rows.into_iter().map(|r| {
         let input_phase_slugs = parse_phase_slugs(&r.9, &r.2);
+        let artifact_types = parse_phase_slugs(&r.13, &r.2);
         WorkflowPhase {
             id: r.0, workflow_definition_id: r.1, name: r.2, slug: r.3,
             order_index: r.4, gate_type: r.5, system_prompt_template: r.6,
             command_prompt_template: r.7, artifact_template: r.8,
             input_phase_slugs, model_override: r.10, agent_type: r.11,
-            decompose_from: r.12,
+            decompose_from: r.12, artifact_types,
         }
     }).collect())
 }
@@ -62,12 +63,12 @@ pub async fn list_workflow_definitions(pool: &SqlitePool) -> Result<Vec<Workflow
     let query = format!(
         "SELECT id, workflow_definition_id, name, slug, order_index, gate_type, \
          system_prompt_template, command_prompt_template, artifact_template, \
-         input_phase_slugs, model_override, agent_type, decompose_from \
+         input_phase_slugs, model_override, agent_type, decompose_from, artifact_types \
          FROM workflow_phases WHERE workflow_definition_id IN ({}) ORDER BY order_index",
         placeholders
     );
 
-    let mut q = sqlx::query_as::<_, (i64, i64, String, String, i32, String, String, String, String, String, String, String, String)>(&query);
+    let mut q = sqlx::query_as::<_, (i64, i64, String, String, i32, String, String, String, String, String, String, String, String, String)>(&query);
     for id in &ids {
         q = q.bind(id);
     }
@@ -76,12 +77,13 @@ pub async fn list_workflow_definitions(pool: &SqlitePool) -> Result<Vec<Workflow
     let mut phases_map: HashMap<i64, Vec<WorkflowPhase>> = HashMap::new();
     for r in phase_rows {
         let input_phase_slugs = parse_phase_slugs(&r.9, &r.2);
+        let artifact_types = parse_phase_slugs(&r.13, &r.2);
         phases_map.entry(r.1).or_default().push(WorkflowPhase {
             id: r.0, workflow_definition_id: r.1, name: r.2, slug: r.3,
             order_index: r.4, gate_type: r.5, system_prompt_template: r.6,
             command_prompt_template: r.7, artifact_template: r.8,
             input_phase_slugs, model_override: r.10, agent_type: r.11,
-            decompose_from: r.12,
+            decompose_from: r.12, artifact_types,
         });
     }
 
@@ -217,6 +219,7 @@ pub async fn fork_workflow_definition(
             model_override: p.model_override,
             agent_type: p.agent_type,
             decompose_from: p.decompose_from,
+            artifact_types: p.artifact_types,
         }
     }).collect();
 

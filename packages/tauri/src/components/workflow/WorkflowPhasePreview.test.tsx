@@ -15,6 +15,7 @@ function makePhase(overrides: Partial<WorkflowPhase> & { name: string; order_ind
     input_phase_slugs: [],
     model_override: "",
     agent_type: "workflow" as const,
+    artifact_types: [],
     ...overrides,
   };
 }

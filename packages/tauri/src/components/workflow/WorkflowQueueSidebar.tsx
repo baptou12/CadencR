@@ -52,7 +52,7 @@ const GATE_CONFIG: Record<string, { icon: React.ReactNode; label: string }> = {
 
 interface WorkflowQueueSidebarProps {
   workflowDefinitionId: number;
-  onViewArtifact?: (phaseSlug: string) => void;
+  onViewArtifact?: (phaseSlug: string, artifactTypes?: string[]) => void;
   onScrollToAgent?: (sessionId: number) => void;
   className?: string;
 }
@@ -151,7 +151,7 @@ export function WorkflowQueueSidebar({
                 hasMultipleInputs={hasMultipleInputs.has(phase.slug)}
                 onApprove={() => approvePhase(phase.slug, true)}
                 onTrigger={() => triggerPhase(phase.slug)}
-                onViewArtifact={onViewArtifact ? () => onViewArtifact(phase.slug) : undefined}
+                onViewArtifact={onViewArtifact ? () => onViewArtifact(phase.slug, phase.artifact_types?.length ? phase.artifact_types : undefined) : undefined}
                 onScrollToAgent={onScrollToAgent}
               />
               {isDecomposed && tasks.map((task, taskIdx) => (

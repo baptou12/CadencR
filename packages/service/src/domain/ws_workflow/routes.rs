@@ -50,6 +50,8 @@ pub struct CreatePhaseRequest {
     pub model_override: String,
     #[serde(default = "default_agent_type")]
     pub agent_type: String,
+    #[serde(default)]
+    pub artifact_types: Vec<String>,
 }
 
 fn default_agent_type() -> String {
@@ -68,6 +70,7 @@ pub struct UpdatePhaseRequest {
     pub input_phase_slugs: Option<Vec<String>>,
     pub model_override: Option<String>,
     pub agent_type: Option<String>,
+    pub artifact_types: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -94,6 +97,7 @@ impl From<CreatePhaseRequest> for CreateWorkflowPhase {
             model_override: r.model_override,
             agent_type: r.agent_type,
             decompose_from: String::new(),
+            artifact_types: r.artifact_types,
         }
     }
 }
@@ -186,6 +190,7 @@ async fn update_phase(
         body.input_phase_slugs.as_ref(),
         body.model_override.as_deref(),
         body.agent_type.as_deref(),
+        body.artifact_types.as_ref(),
     ).await?;
     Ok(Json(result))
 }
@@ -231,6 +236,28 @@ async fn update_artifact(
     Ok(Json(service::update_artifact(&state.write_pool, feature_id, &phase_slug, &body.content).await?))
 }
 
+async fn list_phase_artifacts(
+    State(state): State<AppState>,
+    Path((feature_id, phase_slug)): Path<(i64, String)>,
+) -> Result<impl IntoResponse, AppError> {
+    Ok(Json(service::get_phase_artifacts(&state.read_pool, feature_id, &phase_slug).await?))
+}
+
+async fn get_typed_artifact(
+    State(state): State<AppState>,
+    Path((feature_id, phase_slug, artifact_type)): Path<(i64, String, String)>,
+) -> Result<impl IntoResponse, AppError> {
+    Ok(Json(service::get_typed_artifact(&state.read_pool, feature_id, &phase_slug, &artifact_type).await?))
+}
+
+async fn update_typed_artifact(
+    State(state): State<AppState>,
+    Path((feature_id, phase_slug, artifact_type)): Path<(i64, String, String)>,
+    Json(body): Json<UpdateArtifactRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    Ok(Json(service::update_typed_artifact(&state.write_pool, feature_id, &phase_slug, &artifact_type, &body.content).await?))
+}
+
 // --- Router ---
 
 pub fn ws_workflow_router() -> Router<AppState> {
@@ -246,4 +273,6 @@ pub fn ws_workflow_router() -> Router<AppState> {
         // Artifacts
         .route("/api/features/{feature_id}/artifacts", get(list_artifacts))
         .route("/api/features/{feature_id}/artifacts/{phase_slug}", get(get_artifact).put(update_artifact))
+        .route("/api/features/{feature_id}/artifacts/{phase_slug}/types", get(list_phase_artifacts))
+        .route("/api/features/{feature_id}/artifacts/{phase_slug}/types/{artifact_type}", get(get_typed_artifact).put(update_typed_artifact))
 }

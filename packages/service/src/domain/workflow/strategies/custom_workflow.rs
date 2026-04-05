@@ -202,6 +202,19 @@ impl WorkflowStrategy for CustomWorkflowStrategy {
             }
         }
 
+        // Multi-artifact instruction: tell the agent which artifact types to create
+        if !phase.artifact_types.is_empty() {
+            let types_list = phase.artifact_types.join(", ");
+            prompt.push_str(&format!(
+                "\n\n## Multiple Artifacts Required\n\n\
+                 This phase produces multiple artifacts. Call `create_artifact` once for each type, \
+                 passing the `artifact_type` parameter:\n\n\
+                 Required artifact types: {types_list}\n\n\
+                 Example: create_artifact(content=\"...\", artifact_type=\"{example}\")",
+                example = phase.artifact_types[0],
+            ));
+        }
+
         Ok(prompt)
     }
 }

@@ -176,17 +176,17 @@ impl QueueAdvancer {
     }
 
     /// Get the phase slug and artifact content for a queue item.
+    /// For multi-artifact phases, concatenates all artifacts with type headers.
     pub(crate) async fn get_phase_artifact_info(&self, item_id: i64) -> (String, Option<String>) {
         let item = match repo::get_queue_item(&self.read_pool, item_id).await {
             Ok(Some(item)) => item,
             _ => return (String::new(), None),
         };
         let phase_slug = item.item_type.clone();
-        let content = artifact_repository::get_artifact(&self.read_pool, self.feature_id, &phase_slug)
+        let artifacts = artifact_repository::get_phase_artifacts(&self.read_pool, self.feature_id, &phase_slug)
             .await
-            .ok()
-            .flatten()
-            .map(|a| a.content);
+            .unwrap_or_default();
+        let content = artifact_repository::format_artifacts(&artifacts, None);
         (phase_slug, content)
     }
 

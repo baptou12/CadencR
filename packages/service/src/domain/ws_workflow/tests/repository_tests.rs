@@ -43,6 +43,7 @@ mod repository_tests {
                 model_override TEXT DEFAULT '', \
                 agent_type TEXT NOT NULL DEFAULT '', \
                 decompose_from TEXT NOT NULL DEFAULT '', \
+                artifact_types TEXT NOT NULL DEFAULT '[]', \
                 UNIQUE(workflow_definition_id, slug), \
                 UNIQUE(workflow_definition_id, order_index))"
         )
@@ -55,11 +56,12 @@ mod repository_tests {
                 id INTEGER PRIMARY KEY, \
                 feature_id INTEGER NOT NULL, \
                 phase_slug TEXT NOT NULL, \
+                artifact_type TEXT NOT NULL DEFAULT 'default', \
                 content TEXT NOT NULL DEFAULT '', \
                 agent_session_id INTEGER, \
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, \
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, \
-                UNIQUE(feature_id, phase_slug))"
+                UNIQUE(feature_id, phase_slug, artifact_type))"
         )
         .execute(&pool)
         .await
@@ -94,6 +96,7 @@ mod repository_tests {
             model_override: String::new(),
             agent_type: String::new(),
             decompose_from: String::new(),
+            artifact_types: vec![],
         }
     }
 
@@ -228,7 +231,7 @@ mod repository_tests {
 
         // update_phase should fail
         let update_result = crate::domain::ws_workflow::service::update_phase(
-            &pool, phase_id, Some("New Name"), None, None, None, None, None, None, None,
+            &pool, phase_id, Some("New Name"), None, None, None, None, None, None, None, None,
         ).await;
         assert!(update_result.is_err());
 
@@ -246,14 +249,14 @@ mod repository_tests {
         let pool = setup_pool().await;
 
         // Create
-        let a1 = artifact_repository::upsert_artifact(&pool, 1, "plan", "initial content", None)
+        let a1 = artifact_repository::upsert_artifact(&pool, 1, "plan", "default", "initial content", None)
             .await
             .unwrap();
         assert_eq!(a1.content, "initial content");
         assert_eq!(a1.phase_slug, "plan");
 
         // Overwrite
-        let a2 = artifact_repository::upsert_artifact(&pool, 1, "plan", "updated content", Some(42))
+        let a2 = artifact_repository::upsert_artifact(&pool, 1, "plan", "default", "updated content", Some(42))
             .await
             .unwrap();
         assert_eq!(a2.content, "updated content");
@@ -265,14 +268,96 @@ mod repository_tests {
     async fn test_get_artifacts_for_feature() {
         let pool = setup_pool().await;
 
-        artifact_repository::upsert_artifact(&pool, 1, "plan", "plan content", None).await.unwrap();
-        artifact_repository::upsert_artifact(&pool, 1, "prd", "prd content", None).await.unwrap();
-        artifact_repository::upsert_artifact(&pool, 1, "build", "build content", None).await.unwrap();
+        artifact_repository::upsert_artifact(&pool, 1, "plan", "default", "plan content", None).await.unwrap();
+        artifact_repository::upsert_artifact(&pool, 1, "prd", "default", "prd content", None).await.unwrap();
+        artifact_repository::upsert_artifact(&pool, 1, "build", "default", "build content", None).await.unwrap();
         // Different feature
-        artifact_repository::upsert_artifact(&pool, 2, "plan", "other", None).await.unwrap();
+        artifact_repository::upsert_artifact(&pool, 2, "plan", "default", "other", None).await.unwrap();
 
         let artifacts = artifact_repository::get_artifacts_for_feature(&pool, 1).await.unwrap();
         assert_eq!(artifacts.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_typed_artifacts() {
+        let pool = setup_pool().await;
+
+        // Create multiple typed artifacts for same phase
+        let a1 = artifact_repository::upsert_artifact(&pool, 1, "propose", "proposal", "proposal content", None).await.unwrap();
+        let a2 = artifact_repository::upsert_artifact(&pool, 1, "propose", "specs", "specs content", None).await.unwrap();
+        assert_ne!(a1.id, a2.id);
+        assert_eq!(a1.artifact_type, "proposal");
+        assert_eq!(a2.artifact_type, "specs");
+
+        // get_typed_artifact returns specific type
+        let fetched = artifact_repository::get_typed_artifact(&pool, 1, "propose", "specs").await.unwrap().unwrap();
+        assert_eq!(fetched.content, "specs content");
+
+        // get_artifact returns only default type
+        let default = artifact_repository::get_artifact(&pool, 1, "propose").await.unwrap();
+        assert!(default.is_none()); // no "default" type exists
+
+        // Create a default artifact too
+        artifact_repository::upsert_artifact(&pool, 1, "propose", "default", "default content", None).await.unwrap();
+        let default = artifact_repository::get_artifact(&pool, 1, "propose").await.unwrap().unwrap();
+        assert_eq!(default.content, "default content");
+
+        // get_phase_artifacts returns all types for a phase
+        let all = artifact_repository::get_phase_artifacts(&pool, 1, "propose").await.unwrap();
+        assert_eq!(all.len(), 3);
+
+        // Upsert overwrites same (phase_slug, artifact_type) pair
+        artifact_repository::upsert_artifact(&pool, 1, "propose", "specs", "updated specs", None).await.unwrap();
+        let updated = artifact_repository::get_typed_artifact(&pool, 1, "propose", "specs").await.unwrap().unwrap();
+        assert_eq!(updated.content, "updated specs");
+        assert_eq!(updated.id, a2.id); // same row
+    }
+
+    #[test]
+    fn test_format_artifacts_empty() {
+        assert_eq!(artifact_repository::format_artifacts(&[], None), None);
+    }
+
+    #[test]
+    fn test_format_artifacts_single_default() {
+        use crate::domain::ws_workflow::models::WorkflowArtifact;
+        let artifacts = vec![WorkflowArtifact {
+            id: 1, feature_id: 1, phase_slug: "plan".into(),
+            artifact_type: "default".into(), content: "plan content".into(),
+            agent_session_id: None, created_at: String::new(), updated_at: String::new(),
+        }];
+        // Without prefix: just content
+        assert_eq!(artifact_repository::format_artifacts(&artifacts, None), Some("plan content".into()));
+        // With prefix: header + content
+        let with_prefix = artifact_repository::format_artifacts(&artifacts, Some("plan")).unwrap();
+        assert!(with_prefix.starts_with("## plan\n\n"));
+        assert!(with_prefix.contains("plan content"));
+    }
+
+    #[test]
+    fn test_format_artifacts_multiple_typed() {
+        use crate::domain::ws_workflow::models::WorkflowArtifact;
+        let artifacts = vec![
+            WorkflowArtifact {
+                id: 1, feature_id: 1, phase_slug: "propose".into(),
+                artifact_type: "proposal".into(), content: "proposal text".into(),
+                agent_session_id: None, created_at: String::new(), updated_at: String::new(),
+            },
+            WorkflowArtifact {
+                id: 2, feature_id: 1, phase_slug: "propose".into(),
+                artifact_type: "specs".into(), content: "specs text".into(),
+                agent_session_id: None, created_at: String::new(), updated_at: String::new(),
+            },
+        ];
+        let result = artifact_repository::format_artifacts(&artifacts, None).unwrap();
+        assert!(result.contains("## proposal"));
+        assert!(result.contains("## specs"));
+        assert!(result.contains("---"));
+
+        // With prefix
+        let result = artifact_repository::format_artifacts(&artifacts, Some("Phase: propose")).unwrap();
+        assert!(result.contains("## Phase: propose / proposal"));
+        assert!(result.contains("## Phase: propose / specs"));
     }
 
     #[tokio::test]
@@ -358,7 +443,7 @@ mod repository_tests {
         let analysis = bmad.phases.iter().find(|p| p.slug == "analysis").unwrap();
         phase_repository::update_workflow_phase(
             &pool, analysis.id,
-            None, None, Some("stale system prompt"), None, None, None, None, None,
+            None, None, Some("stale system prompt"), None, None, None, None, None, None,
         ).await.unwrap();
 
         // Re-seed should restore the correct prompt
@@ -384,7 +469,7 @@ mod repository_tests {
         let specify = speckit.phases.iter().find(|p| p.slug == "specify").unwrap();
         phase_repository::update_workflow_phase(
             &pool, specify.id,
-            None, None, None, None, None, None, Some("haiku"), None,
+            None, None, None, None, None, None, Some("haiku"), None, None,
         ).await.unwrap();
 
         // Re-seed should preserve the user's model choice

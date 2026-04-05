@@ -8,12 +8,16 @@
 - [ ] [workflow] Commit detection
 - [ ] [workflow] during onboarding, the back button next to "workflow" text is useless
 - [ ] [workflow] dependencies vizualization
+- [ ] [global] Rework command palette
+- [ ] [global] Theming
+- [ ] [global] custom commands + custom schedules
+- [ ] [global] remote workspaces
 - [ ] [workflow] cadence phase ordering (prd -> plan -> execute -> review -> execute -> done)
 
 ### Framework parity gaps
 Capabilities needed to fully support BMAD, Speckit, and OpenSpec workflows natively.
 
-- [ ] [workflow] multi-artifact output per phase
+- [~] [workflow] multi-artifact output per phase
   OpenSpec `propose` creates 4 artifacts (proposal, specs, design, tasks) in one step. Currently a phase produces exactly one artifact. Needs a way to output multiple typed artifacts from a single phase execution.
 - [ ] [workflow] phase iteration/refinement loops
   Speckit `specify` iterates up to 3 times to refine the spec until quality checks pass. Currently phases run once. Needs a loop-until-satisfied mechanism with a configurable max iteration count.
@@ -29,7 +33,3 @@ Capabilities needed to fully support BMAD, Speckit, and OpenSpec workflows nativ
   OpenSpec archive compares change-level specs with project-level specs and prompts for sync. Needs a concept of project-level specs (persistent across features) vs feature-level artifacts (scoped to one workflow).
 - [ ] [workflow] per-preset extension hooks
   BMAD and Speckit support before/after hooks per phase via config files (e.g., `.specify/extensions.yml`). Needs a hook system in the workflow definition that runs user-defined actions before or after phase execution.
-- [ ] [global] Rework command palette
-- [ ] [global] Theming
-- [ ] [global] custom commands + custom schedules
-- [ ] [global] remote workspaces

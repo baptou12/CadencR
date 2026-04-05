@@ -52,6 +52,7 @@ fn phase_with_agent_type(
         model_override: default_model_for_agent_type(agent_type).to_string(),
         agent_type: agent_type.to_string(),
         decompose_from: String::new(),
+        artifact_types: vec![],
     }
 }
 
@@ -213,6 +214,7 @@ pub async fn seed_presets(pool: &SqlitePool) -> Result<(), AppError> {
                             None, // preserve input_phase_slugs
                             model,
                             None, // preserve agent_type
+                            None, // preserve artifact_types
                         ).await?;
                     }
                 }

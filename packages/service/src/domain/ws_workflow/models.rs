@@ -33,6 +33,9 @@ pub struct WorkflowPhase {
     #[sqlx(default)]
     #[serde(default)]
     pub decompose_from: String,
+    #[sqlx(default)]
+    #[serde(default)]
+    pub artifact_types: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -85,10 +88,19 @@ pub struct WorkflowArtifact {
     pub id: i64,
     pub feature_id: i64,
     pub phase_slug: String,
+    #[sqlx(default)]
+    #[serde(default = "default_artifact_type")]
+    pub artifact_type: String,
     pub content: String,
     pub agent_session_id: Option<i64>,
     pub created_at: String,
     pub updated_at: String,
+}
+
+pub const DEFAULT_ARTIFACT_TYPE: &str = "default";
+
+fn default_artifact_type() -> String {
+    DEFAULT_ARTIFACT_TYPE.to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -114,4 +126,6 @@ pub struct CreateWorkflowPhase {
     pub agent_type: String,
     #[serde(default)]
     pub decompose_from: String,
+    #[serde(default)]
+    pub artifact_types: Vec<String>,
 }

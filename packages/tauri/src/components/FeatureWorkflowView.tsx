@@ -267,11 +267,16 @@ export function FeatureWorkflowView({
 
   // Open artifact in editor tab
   const openArtifact = useEditorStore((s) => s.openArtifact);
+  const openPhaseArtifacts = useEditorStore((s) => s.openPhaseArtifacts);
   const editorActivePaneId = useEditorStore((s) => s.features[featureId]?.activePaneId ?? "main");
-  const handleViewArtifact = useCallback((phaseSlug: string) => {
-    openArtifact(featureId, editorActivePaneId, phaseSlug);
+  const handleViewArtifact = useCallback((phaseSlug: string, artifactTypes?: string[]) => {
+    if (artifactTypes && artifactTypes.length > 0) {
+      openPhaseArtifacts(featureId, editorActivePaneId, phaseSlug, artifactTypes);
+    } else {
+      openArtifact(featureId, editorActivePaneId, phaseSlug);
+    }
     setActiveTab("editor");
-  }, [featureId, openArtifact, editorActivePaneId, setActiveTab]);
+  }, [featureId, openArtifact, openPhaseArtifacts, editorActivePaneId, setActiveTab]);
   useSaveLastOpenedFeature(projectId, featureId, activeTab);
   const editorTabRef = useRef<FeatureEditorTabHandle>(null);
 
