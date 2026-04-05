@@ -1,44 +1,39 @@
-Analyze the artifacts for '{{feature_title}}' for cross-artifact consistency before implementation.
+Analyze the artifacts for '{{feature_title}}' for post-implementation consistency — verify the implementation matches the specification and plan.
 
 **STRICTLY READ-ONLY: Do not modify any artifacts.**
 
 Load these artifacts:
 {{artifact:specify}}
-{{artifact:plan}}
-{{artifact:tasks}}
+{{artifact:implement}}
 
 ## Analysis Passes
 
-Execute five focused detection passes across all three artifacts:
+Execute five focused detection passes comparing the implementation against the specification:
 
-### Pass 1 — Duplication
-- Near-duplicate requirements across spec and plan
-- Redundant phrasing that could be consolidated
-- Overlapping task descriptions
+### Pass 1 — Spec Compliance
+- Functional requirements (FR-xxx) not addressed in implementation
+- Implementation behavior that contradicts spec requirements
+- Acceptance criteria that cannot be verified from implementation output
 
-### Pass 2 — Ambiguity
-- Vague terms without metrics ("fast", "scalable", "secure", "user-friendly")
-- Unresolved `[NEEDS CLARIFICATION]` markers that should have been resolved
-- Requirements missing concrete thresholds or acceptance criteria
+### Pass 2 — Scope Drift
+- Implementation features not traced to any requirement
+- Over-engineering beyond what was specified
+- Missing requirements that were deferred without documentation
 
-### Pass 3 — Underspecification
-- Requirements missing objects (who, what, where)
-- Success criteria that are not actually measurable
-- Acceptance scenarios missing Given/When/Then completeness
-- Edge cases mentioned in spec but not covered in tasks
+### Pass 3 — Quality Gaps
+- Error handling paths mentioned in spec but missing from implementation
+- Edge cases specified but not covered
+- Non-functional requirements (performance, security) not addressed
 
-### Pass 4 — Coverage Gaps
-- Functional requirements (FR-xxx) with no corresponding tasks
-- Tasks with no corresponding requirement (orphan tasks)
-- Entities in the data model with no creation/migration tasks
-- Interface contracts with no implementation tasks
-- User stories with incomplete task coverage
+### Pass 4 — Consistency
+- Terminology drift between spec and implementation
+- Naming conventions that diverge from the specification
+- Interface contracts implemented differently than specified
 
-### Pass 5 — Inconsistency
-- Conflicting statements between spec and plan (e.g., spec says X, plan designs Y)
-- Task descriptions that contradict the plan's architecture decisions
-- Terminology drift (same concept called different names across artifacts)
-- Priority mismatches (P1 story tasks ordered after P2 tasks)
+### Pass 5 — Completeness
+- Partial implementations (started but not finished)
+- TODO/FIXME markers left in implementation
+- Integration points mentioned in spec but not connected
 
 ## Severity Classification
 

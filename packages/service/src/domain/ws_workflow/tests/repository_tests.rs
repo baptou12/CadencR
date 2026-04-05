@@ -380,8 +380,18 @@ mod repository_tests {
         let all = repository::list_workflow_definitions(&pool).await.unwrap();
 
         let speckit = all.iter().find(|d| d.slug == "speckit").unwrap();
-        assert_eq!(speckit.phases.len(), 5);
+        assert_eq!(speckit.phases.len(), 6);
         assert_eq!(speckit.phases[0].gate_type, "approval");
+
+        // Pre-analyze appears before implement, post-analyze after
+        let pre_analyze = speckit.phases.iter().find(|p| p.slug == "pre-analyze").unwrap();
+        let implement = speckit.phases.iter().find(|p| p.slug == "implement").unwrap();
+        let post_analyze = speckit.phases.iter().find(|p| p.slug == "analyze").unwrap();
+        assert!(pre_analyze.order_index < implement.order_index);
+        assert!(implement.order_index < post_analyze.order_index);
+        // Both analyze phases share the display name
+        assert_eq!(pre_analyze.name, "Analyze");
+        assert_eq!(post_analyze.name, "Analyze");
 
         let bmad = all.iter().find(|d| d.slug == "bmad").unwrap();
         assert_eq!(bmad.phases.len(), 4);

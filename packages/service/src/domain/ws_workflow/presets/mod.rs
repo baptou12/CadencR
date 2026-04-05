@@ -100,7 +100,7 @@ pub fn get_preset_definitions() -> Vec<CreateWorkflowDefinition> {
         preset(
             "Speckit",
             "speckit",
-            &format!("Speckit-style workflow: specify, plan, tasks, implement, analyze (Spec-Kit v{})", sk::VERSION),
+            &format!("Speckit-style workflow: specify, plan, tasks, analyze, implement, analyze (Spec-Kit v{})", sk::VERSION),
             vec![
                 phase(0, "Specify", "specify", Approval, &[],
                     sk::SPECIFY_SYSTEM, sk::SPECIFY_COMMAND, sk::SPECIFY_ARTIFACT),
@@ -108,9 +108,11 @@ pub fn get_preset_definitions() -> Vec<CreateWorkflowDefinition> {
                     sk::PLAN_SYSTEM, sk::PLAN_COMMAND, sk::PLAN_ARTIFACT),
                 phase(2, "Tasks", "tasks", Auto, &["plan"],
                     sk::TASKS_SYSTEM, sk::TASKS_COMMAND, sk::TASKS_ARTIFACT),
-                decomposable_execute_phase(3, "Implement", "implement", Auto, &["tasks"], "tasks",
+                phase(3, "Analyze", "pre-analyze", Approval, &["specify", "plan", "tasks"],
+                    sk::PRE_ANALYZE_SYSTEM, sk::PRE_ANALYZE_COMMAND, sk::PRE_ANALYZE_ARTIFACT),
+                decomposable_execute_phase(4, "Implement", "implement", Auto, &["tasks"], "tasks",
                     sk::IMPLEMENT_SYSTEM, sk::IMPLEMENT_COMMAND, sk::IMPLEMENT_ARTIFACT),
-                phase(4, "Analyze", "analyze", Approval, &["specify", "implement"],
+                phase(5, "Analyze", "analyze", Approval, &["specify", "implement"],
                     sk::ANALYZE_SYSTEM, sk::ANALYZE_COMMAND, sk::ANALYZE_ARTIFACT),
             ],
         ),
