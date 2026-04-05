@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { cn } from "./utils";
+import { cn, slugify } from "./utils";
 
 describe("cn", () => {
   it("merges basic class strings", () => {
@@ -38,5 +38,23 @@ describe("cn", () => {
 
   it("handles object syntax", () => {
     expect(cn({ foo: true, bar: false, baz: true })).toBe("foo baz");
+  });
+});
+
+describe("slugify", () => {
+  it("lowercases and hyphenates", () => {
+    expect(slugify("Code Review")).toBe("code-review");
+  });
+
+  it("strips leading/trailing hyphens", () => {
+    expect(slugify("--hello--")).toBe("hello");
+  });
+
+  it("collapses non-alphanumeric runs into single hyphen", () => {
+    expect(slugify("foo & bar!")).toBe("foo-bar");
+  });
+
+  it("handles empty string", () => {
+    expect(slugify("")).toBe("");
   });
 });

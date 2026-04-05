@@ -6,10 +6,10 @@
 - [ ] [workflow] Merging strategies
 - [ ] [editor] META+SHIFT+F to search for a string in the file
 - [ ] [workflow] Commit detection
-- [ ] [workflow] template variable autocompletion
 - [ ] [workflow] during onboarding, the back button next to "workflow" text is useless
 - [ ] [workflow] dependencies vizualization
 - [ ] [workflow] cadence phase ordering (prd -> plan -> execute -> review -> execute -> done)
+
 ### Framework parity gaps
 Capabilities needed to fully support BMAD, Speckit, and OpenSpec workflows natively.
 

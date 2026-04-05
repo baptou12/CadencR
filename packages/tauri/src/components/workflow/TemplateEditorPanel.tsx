@@ -2,6 +2,8 @@ import { useState, useMemo, useCallback, useRef } from "react";
 import { markdown } from "@codemirror/lang-markdown";
 import { Eye, EyeOff } from "lucide-react";
 import BaseCodeMirrorEditor from "@/components/editor/BaseCodeMirrorEditor";
+import { templateAutocompletion } from "@/components/editor/template-completions";
+import { Markdown } from "@/components/Markdown";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { cn } from "@/lib/utils";
+import { cn, slugify } from "@/lib/utils";
 
 import { useListModels } from "@/api/generated";
 import type { WorkflowPhase } from "@/api/generated";
@@ -58,13 +60,29 @@ function interpolatePreview(template: string): string {
   return result;
 }
 
+/** Approximate token count (~4 chars per token for English text). */
+function estimateTokens(charCount: number): number {
+  return Math.ceil(charCount / 4);
+}
+
 export function TemplateEditorPanel({
   phase, activeTab, onTabChange, onUpdate, isPreset, allPrecedingPhases,
 }: TemplateEditorPanelProps) {
-  const [showPreview, setShowPreview] = useState(false);
+  const [showPreview, setShowPreview] = useState(isPreset);
   const isSettingsTab = activeTab === ("settings" as TemplateTab);
   const activeField = TABS.find((t) => t.key === activeTab)?.field ?? "system_prompt_template";
   const content = String(phase[activeField] ?? "");
+  const editorKey = `${phase.id}-${activeTab}`;
+
+  const [liveCharCount, setLiveCharCount] = useState<number | null>(null);
+  const charCount = liveCharCount ?? content.length;
+
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleEditorChange = useCallback((value: string) => {
+    setLiveCharCount(value.length);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => onUpdate({ [activeField]: value }), 500);
+  }, [activeField, onUpdate]);
 
   return (
     <div className="flex flex-col h-full">
@@ -99,17 +117,19 @@ export function TemplateEditorPanel({
         {!isSettingsTab && (
           <>
             <div className="flex-1" />
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 text-xs gap-1"
-              onClick={() => setShowPreview((p) => !p)}
-            >
-              {showPreview ? <EyeOff className="size-3" /> : <Eye className="size-3" />}
-              {showPreview ? "Editor" : "Preview"}
-            </Button>
+            {!isPreset && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 text-xs gap-1"
+                onClick={() => setShowPreview((p) => !p)}
+              >
+                {showPreview ? <EyeOff className="size-3" /> : <Eye className="size-3" />}
+                {showPreview ? "Editor" : "Preview"}
+              </Button>
+            )}
             <span className="text-[10px] text-muted-foreground ml-2">
-              {content.length} chars
+              ~{estimateTokens(charCount)} tokens ({charCount} chars)
             </span>
           </>
         )}
@@ -124,23 +144,26 @@ export function TemplateEditorPanel({
             onUpdate={onUpdate}
             allPrecedingPhases={allPrecedingPhases}
           />
-        ) : showPreview ? (
+        ) : showPreview || isPreset ? (
           <PreviewPanel content={content} />
         ) : (
-          <TemplateCodeEditor
-            key={`${phase.id}-${activeTab}`}
-            content={content}
-            readOnly={isPreset}
-            onChange={(value) => onUpdate({ [activeField]: value })}
-          />
+          <div className="flex flex-col h-full">
+            <p className="shrink-0 px-3 py-1.5 text-[10px] text-muted-foreground border-b border-border">
+              {"Type {{ to insert template variables"}
+            </p>
+            <div className="flex-1 min-h-0">
+              <TemplateCodeEditor
+                key={editorKey}
+                content={content}
+                onChange={handleEditorChange}
+                precedingPhases={allPrecedingPhases}
+              />
+            </div>
+          </div>
         )}
       </div>
     </div>
   );
-}
-
-function slugify(name: string): string {
-  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 }
 
 interface PhaseSettingsPanelProps {
@@ -300,38 +323,35 @@ function PreviewPanel({ content }: { content: string }) {
   const preview = useMemo(() => interpolatePreview(content), [content]);
   return (
     <div className="h-full overflow-auto p-4">
-      <pre className="text-xs text-foreground whitespace-pre-wrap font-mono">{preview}</pre>
+      <Markdown content={preview} />
     </div>
   );
 }
 
 interface TemplateCodeEditorProps {
   content: string;
-  readOnly: boolean;
   onChange: (value: string) => void;
+  precedingPhases: PhaseInfo[];
 }
 
 const MARKDOWN_LANG = markdown();
 
-function TemplateCodeEditor({ content, readOnly, onChange }: TemplateCodeEditorProps) {
+function TemplateCodeEditor({ content, onChange, precedingPhases }: TemplateCodeEditorProps) {
   const { value: vimModeSetting } = useDebouncedSetting("editor_vim_mode");
   const isVimEnabled = (vimModeSetting ?? "false") === "true";
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const onChangeRef = useRef(onChange);
-  onChangeRef.current = onChange;
 
-  const handleChange = useCallback((value: string) => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => onChangeRef.current(value), 500);
-  }, []);
+  const extraExtensions = useMemo(
+    () => [templateAutocompletion(precedingPhases)],
+    [precedingPhases],
+  );
 
   return (
     <BaseCodeMirrorEditor
       initialContent={content}
       language={MARKDOWN_LANG}
-      readOnly={readOnly}
       vimMode={isVimEnabled}
-      onChange={handleChange}
+      onChange={onChange}
+      extraExtensions={extraExtensions}
     />
   );
 }

@@ -14,13 +14,7 @@ import {
   getGetWorkflowDefinitionQueryKey,
   getListWorkflowDefinitionsQueryKey,
 } from "@/api/generated";
-
-function slugify(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
+import { slugify } from "@/lib/utils";
 
 export type TemplateTab = "settings" | "system" | "command" | "artifact";
 
