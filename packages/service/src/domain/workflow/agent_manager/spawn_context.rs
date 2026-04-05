@@ -102,6 +102,7 @@ impl AgentManager {
         let cwd = self.get_feature_cwd().await.ok_or_else(|| {
             format!("No working directory found for feature {}. Was ensure_worktree called?", self.feature_id)
         })?;
+        info!(feature_id = self.feature_id, agent_type = agent_type_str, cwd = %cwd.display(), "agent spawn CWD resolved");
 
         // Permission bridge
         let (perm_tx, perm_rx) = mpsc::channel::<PermissionResponse>(16);

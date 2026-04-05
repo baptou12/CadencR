@@ -64,6 +64,15 @@ pub async fn ensure_worktree(
     project_id: i64,
     ws_sender: &WsSender,
 ) -> Result<PathBuf, String> {
+    // 0. If user opted out of worktree, return the project directory directly
+    if get_setting(read_pool, feature_id, "skip_worktree").await.as_deref() == Some("true") {
+        let project_dir = get_project_directory(read_pool, project_id).await?;
+        send_envelope(ws_sender, "workflow", "worktree.ready", serde_json::json!({
+            "feature_id": feature_id,
+        }));
+        return Ok(PathBuf::from(project_dir));
+    }
+
     // 1. Check if worktree already exists
     if let Some(existing) = get_setting(read_pool, feature_id, "worktree_path").await {
         if tokio::fs::metadata(&existing).await.is_ok() {

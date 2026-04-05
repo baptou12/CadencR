@@ -182,10 +182,10 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
       ws.send(JSON.stringify(createPhaseTrigger(featureId, phaseSlug)));
     },
 
-    startCustomWorkflow(featureId, projectId, title, workflowDefinitionId, description) {
+    startCustomWorkflow(featureId, projectId, title, workflowDefinitionId, description, useWorktree) {
       const { ws } = get();
       if (!ws || ws.readyState !== WebSocket.OPEN) return;
-      ws.send(JSON.stringify(createCustomWorkflowStart(featureId, projectId, title, workflowDefinitionId, description)));
+      ws.send(JSON.stringify(createCustomWorkflowStart(featureId, projectId, title, workflowDefinitionId, description, useWorktree)));
       set({ workflowDefinitionId });
     },
 

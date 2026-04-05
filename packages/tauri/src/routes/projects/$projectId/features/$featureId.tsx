@@ -3,14 +3,24 @@ import { useGetFeature, useListProjects } from "@/api/generated";
 import { FeatureWorkflowView } from "@/components/FeatureWorkflowView";
 import { wsSessionIdFromFeature } from "@/lib/ws-session-id";
 
+interface FeatureSearch {
+  initialDescription?: string;
+  useWorktree?: boolean;
+}
+
 export const Route = createFileRoute(
   "/projects/$projectId/features/$featureId",
 )({
   component: FeaturePage,
+  validateSearch: (search: Record<string, unknown>): FeatureSearch => ({
+    initialDescription: typeof search.initialDescription === "string" ? search.initialDescription : undefined,
+    useWorktree: typeof search.useWorktree === "boolean" ? search.useWorktree : undefined,
+  }),
 });
 
 function FeaturePage() {
   const { featureId, projectId } = Route.useParams();
+  const { initialDescription, useWorktree } = Route.useSearch();
   const numericFeatureId = Number(featureId);
   const numericProjectId = Number(projectId);
 
@@ -36,6 +46,8 @@ function FeaturePage() {
       projectId={numericProjectId}
       feature={feature}
       featureQuery={featureQuery}
+      initialDescription={initialDescription}
+      initialUseWorktree={useWorktree}
     />
   );
 }

@@ -8,6 +8,9 @@
 - [ ] [workflow] Commit detection
 - [ ] [workflow] template variable autocompletion
 - [ ] [workflow] dependencies vizualization
+- [ ] [workflow] auto-name
+- [ ] [workflow] worktree
+- [ ] [workflow] better onboarding
 - [ ] [workflow] cadence phase ordering (prd -> plan -> execute -> review -> execute -> done)
 - [ ] [global] Rework command palette
 - [ ] [global] Theming

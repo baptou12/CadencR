@@ -214,7 +214,7 @@ export interface WorkflowState {
   // Custom workflow actions
   approvePhase: (phaseSlug: string, approved: boolean, feedback?: string) => void;
   triggerPhase: (phaseSlug: string) => void;
-  startCustomWorkflow: (featureId: number, projectId: number, title: string, workflowDefinitionId: number, description?: string) => void;
+  startCustomWorkflow: (featureId: number, projectId: number, title: string, workflowDefinitionId: number, description?: string, useWorktree?: boolean) => void;
 
   populateAgentBlocks: (itemId: number, blocks: AgentBlockData[], hasMore?: boolean, oldestMessageId?: number | null) => void;
   populateOlderBlocks: (itemId: number, blocks: AgentBlockData[], hasMore: boolean, oldestMessageId: number | null) => void;

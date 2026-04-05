@@ -41,6 +41,8 @@ export function FeatureWorkflowView({
   projectId,
   feature,
   featureQuery: _featureQuery,
+  initialDescription,
+  initialUseWorktree,
 }: {
   featureId: number;
   projectId: number;
@@ -56,6 +58,8 @@ export function FeatureWorkflowView({
       }
     | undefined;
   featureQuery: { refetch: () => unknown };
+  initialDescription?: string;
+  initialUseWorktree?: boolean;
 }) {
   const [openAgent, setOpenAgent] = useState<string | null>(null);
   const [description, setDescription] = useState("");
@@ -186,6 +190,22 @@ export function FeatureWorkflowView({
   const view = backend.view;
   const actions = backend.actions;
 
+  // Auto-start workflow when navigated from new-workflow page with a description
+  const autoStartedRef = useRef(false);
+  const { startPlan } = backend;
+  useEffect(() => {
+    if (autoStartedRef.current || !initialDescription || !wsReady || !feature) return;
+    if (isCustomWorkflow && feature.workflow_definition_id) {
+      autoStartedRef.current = true;
+      setIsStartingCustom(true);
+      startCustomWorkflow(featureId, projectId, feature.title, feature.workflow_definition_id, initialDescription, initialUseWorktree);
+      setTimeout(() => setIsStartingCustom(false), 2000);
+    } else if (!isCustomWorkflow && view === "plan-input") {
+      autoStartedRef.current = true;
+      startPlan(initialDescription);
+    }
+  }, [initialDescription, initialUseWorktree, wsReady, isCustomWorkflow, feature, featureId, projectId, startCustomWorkflow, view, startPlan]);
+
   const agentsWithQuestions = backend.sessionEntries.filter(
     (e) => e.pendingQuestions && e.pendingQuestions.length > 0,
   ).length;
@@ -299,6 +319,16 @@ export function FeatureWorkflowView({
                   isStartingPlan={backend.isStartingPlan}
                   isStartingPrd={backend.isStartingPrd}
                 />
+              </div>
+            )}
+
+            {/* Auto-start loading — shown while auto-naming and worktree setup are in progress */}
+            {initialDescription && isCustomWorkflow && view === "plan-input" && (
+              <div className="flex-1 flex items-center justify-center">
+                <div className="flex flex-col items-center gap-3">
+                  <Loader2Icon className="h-6 w-6 animate-spin text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground">Setting up workflow...</p>
+                </div>
               </div>
             )}
 
@@ -479,8 +509,8 @@ export function FeatureWorkflowView({
         );
       })()}
 
-      {/* Custom workflow input bar — shown when no phases have started yet */}
-      {isCustomWorkflow && view === "plan-input" && !pendingApproval && workflowDefinition && (
+      {/* Custom workflow input bar — shown when no phases have started yet (hidden during auto-start) */}
+      {isCustomWorkflow && view === "plan-input" && !pendingApproval && workflowDefinition && !initialDescription && (
         <WorkflowInputBar
           onStart={handleStartCustomWorkflow}
           isStarting={isStartingCustom}

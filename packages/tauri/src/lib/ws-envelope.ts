@@ -156,6 +156,7 @@ export function createCustomWorkflowStart(
   title: string,
   workflowDefinitionId: number,
   description?: string,
+  useWorktree?: boolean,
 ): WsEnvelope {
   return createEnvelope("workflow", "feature_start_custom", {
     feature_id: featureId,
@@ -163,5 +164,6 @@ export function createCustomWorkflowStart(
     title,
     workflow_definition_id: workflowDefinitionId,
     ...(description ? { description } : {}),
+    ...(useWorktree !== undefined ? { use_worktree: useWorktree } : {}),
   });
 }

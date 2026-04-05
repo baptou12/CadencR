@@ -28,6 +28,51 @@ vi.mock("@/components/workflow/PresetPicker", () => ({
   ),
 }));
 
+vi.mock("@/components/prompt-editor/PromptEditor", () => {
+  const { forwardRef, useImperativeHandle } = require("react");
+  return {
+    PromptEditor: forwardRef(function MockPromptEditor(
+      { onChange, onEnterSend, disabled, placeholder }: {
+        onChange?: (t: string) => void;
+        onEnterSend?: () => boolean;
+        disabled?: boolean;
+        placeholder?: string;
+      },
+      ref: unknown,
+    ) {
+      useImperativeHandle(ref, () => ({ focus: vi.fn(), clear: vi.fn(), setText: vi.fn(), getText: () => "" }));
+      return (
+        <textarea
+          data-testid="prompt-editor"
+          disabled={disabled}
+          placeholder={placeholder}
+          onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => onChange?.(e.target.value)}
+          onKeyDown={(e: React.KeyboardEvent) => { if (e.key === "Enter" && !e.shiftKey) onEnterSend?.(); }}
+        />
+      );
+    }),
+  };
+});
+
+vi.mock("@/components/ImageAttachmentButton", () => ({
+  ImageAttachmentButton: () => null,
+}));
+
+vi.mock("@/components/ImageAttachmentPreview", () => ({
+  ImageAttachmentPreview: () => null,
+}));
+
+vi.mock("@/hooks/useImageAttachments", () => ({
+  useImageAttachments: () => ({
+    attachments: [],
+    addFiles: vi.fn(),
+    removeAttachment: vi.fn(),
+    clearAttachments: vi.fn(),
+    dragHandlers: {},
+    isDragging: false,
+  }),
+}));
+
 let CapturedComponent: React.ComponentType | null = null;
 
 vi.mock("@tanstack/react-router", () => ({
@@ -53,58 +98,72 @@ describe("NewWorkflowPage", () => {
     return render(<CapturedComponent />);
   }
 
-  it("shows workflow picker initially", () => {
+  it("shows workflow picker and prompt on same page", () => {
     renderPage();
-    expect(screen.getByText("Choose a Workflow")).toBeInTheDocument();
+    expect(screen.getByText("New Workflow")).toBeInTheDocument();
     expect(screen.getByText("Pick Workflow")).toBeInTheDocument();
+    expect(screen.getByTestId("prompt-editor")).toBeInTheDocument();
   });
 
-  it("shows title form after picking a workflow", async () => {
-    const { user } = renderPage();
-    await user.click(screen.getByText("Pick Workflow"));
-    expect(screen.getByRole("heading", { name: "Start Workflow" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Feature Title")).toBeInTheDocument();
+  it("send button is disabled until workflow is selected", () => {
+    renderPage();
+    const sendBtn = screen.getByRole("button", { name: /send/i });
+    expect(sendBtn).toBeDisabled();
   });
 
-  it("back button returns to picker from form", async () => {
-    const { user } = renderPage();
-    await user.click(screen.getByText("Pick Workflow"));
-    expect(screen.getByRole("heading", { name: "Start Workflow" })).toBeInTheDocument();
-    const backButtons = screen.getAllByRole("button");
-    const backBtn = backButtons.find((b) => !b.textContent?.includes("Start") && !b.textContent?.includes("Pick"));
-    await user.click(backBtn!);
-    expect(screen.getByText("Choose a Workflow")).toBeInTheDocument();
+  it("prompt is disabled until workflow is selected", () => {
+    renderPage();
+    expect(screen.getByTestId("prompt-editor")).toBeDisabled();
   });
 
-  it("start button is disabled when title is empty", async () => {
+  it("enables prompt after selecting a workflow", async () => {
     const { user } = renderPage();
     await user.click(screen.getByText("Pick Workflow"));
-    const startBtn = screen.getByRole("button", { name: /start workflow/i });
-    expect(startBtn).toBeDisabled();
+    expect(screen.getByTestId("prompt-editor")).not.toBeDisabled();
   });
 
-  it("creates feature with correct params on submit", async () => {
+  it("worktree toggle is checked by default", () => {
+    renderPage();
+    expect(screen.getByText("Use worktree")).toBeInTheDocument();
+  });
+
+  it("creates feature with correct params on send", async () => {
     const { user } = renderPage();
     await user.click(screen.getByText("Pick Workflow"));
-    const input = screen.getByLabelText("Feature Title");
-    await user.type(input, "My Feature");
-    await user.click(screen.getByRole("button", { name: /start workflow/i }));
+    const editor = screen.getByTestId("prompt-editor");
+    await user.type(editor, "Build a login page");
+    await user.click(screen.getByRole("button", { name: /send/i }));
     expect(mockMutate).toHaveBeenCalledWith({
       project_id: 2,
-      title: "My Feature",
       type: "ws-feature",
       workflow_definition_id: 5,
     });
   });
 
-  it("navigates to feature on success", async () => {
+  it("navigates to feature with description on success", async () => {
     const { user } = renderPage();
     await user.click(screen.getByText("Pick Workflow"));
-    await user.type(screen.getByLabelText("Feature Title"), "Test");
-    await user.click(screen.getByRole("button", { name: /start workflow/i }));
-    expect(mockNavigate).toHaveBeenCalledWith({
-      to: "/projects/$projectId/features/$featureId",
-      params: { projectId: "2", featureId: "99" },
+    const editor = screen.getByTestId("prompt-editor");
+    await user.type(editor, "Build a login page");
+    await user.click(screen.getByRole("button", { name: /send/i }));
+    expect(mockNavigate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: "/projects/$projectId/features/$featureId",
+        params: { projectId: "2", featureId: "99" },
+        search: expect.objectContaining({ initialDescription: "Build a login page", useWorktree: true }),
+      }),
+    );
+  });
+
+  it("passes null workflow_definition_id for classic", async () => {
+    const { user } = renderPage();
+    await user.click(screen.getByText("Pick Legacy"));
+    const editor = screen.getByTestId("prompt-editor");
+    await user.type(editor, "Something");
+    await user.click(screen.getByRole("button", { name: /send/i }));
+    expect(mockMutate).toHaveBeenCalledWith({
+      project_id: 2,
+      type: "ws-feature",
     });
   });
 });

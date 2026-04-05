@@ -380,6 +380,7 @@ pub struct WorkflowFeatureStartCustomPayload {
     pub title: String,
     pub workflow_definition_id: i64,
     pub description: Option<String>,
+    pub use_worktree: Option<bool>,
 }
 
 // HasFeatureId impls for all workflow C→S payloads

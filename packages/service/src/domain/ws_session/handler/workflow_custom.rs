@@ -12,6 +12,9 @@ use crate::app_state::AppState;
 use crate::domain::features::models::WorkflowType;
 use crate::domain::features::repository as features_repo;
 use crate::domain::workflow::engine::WorkflowEngine;
+use crate::domain::workflow::engine::WsSender as EngineWsSender;
+use crate::domain::workflow::worktree;
+use crate::domain::ws_session::auto_name;
 use crate::domain::ws_session::protocol::*;
 use super::WsSender;
 use super::workflow::{ENGINES, ensure_background_tasks, send_workflow_error, parse_and_get_engine, parse_payload, to_value};
@@ -233,7 +236,68 @@ pub(super) async fn handle_feature_start_custom(
         }
     }
 
+    // Store worktree preference (default true for backwards compatibility)
+    let use_worktree = payload.use_worktree.unwrap_or(true);
+    if !use_worktree {
+        let _ = worktree::set_setting(
+            &app_state.write_pool, feature_id, "skip_worktree", "true",
+        ).await;
+    }
+
     info!(feature_id, workflow_definition_id, "starting feature with custom workflow");
+
+    // Resolve project info once (used by both auto-naming and worktree setup)
+    let project_id_resolved = worktree::get_project_id_for_feature(&app_state.read_pool, feature_id).await.ok();
+
+    // Auto-name the feature if it still has a default title (needed for worktree branch name)
+    if auto_name::has_default_title(&app_state.read_pool, feature_id).await {
+        let description_text = payload.description.as_deref().unwrap_or_default();
+        if !description_text.is_empty() {
+            info!(feature_id, "auto-naming feature before custom workflow start");
+            let project_dir = match project_id_resolved {
+                Some(pid) => worktree::get_project_directory(&app_state.read_pool, pid).await.unwrap_or_default(),
+                None => String::new(),
+            };
+            let _ = auto_name::auto_name_feature(
+                app_state.write_pool.clone(),
+                feature_id,
+                description_text.to_string(),
+                project_dir,
+                None,
+                sender.clone(),
+            ).await;
+        }
+    }
+
+    // Prepare worktree if enabled (blocking — must complete before agents start)
+    if use_worktree {
+        if let Some(proj_id) = project_id_resolved {
+            let engine_ws = EngineWsSender::new(sender.clone());
+            match worktree::ensure_worktree(
+                &app_state.read_pool,
+                &app_state.write_pool,
+                feature_id,
+                proj_id,
+                &engine_ws,
+            ).await {
+                Ok(wt_path) => {
+                    info!(feature_id, path = %wt_path.display(), "worktree ready for custom workflow");
+                    let setup_step = worktree::get_setting(&app_state.read_pool, feature_id, "worktree_setup_step").await;
+                    if setup_step.as_deref() != Some("ready") {
+                        let rp = app_state.read_pool.clone();
+                        let wp = app_state.write_pool.clone();
+                        let ws = engine_ws.clone();
+                        tokio::spawn(async move {
+                            worktree::run_setup_commands(rp, wp, feature_id, wt_path, ws).await;
+                        });
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(feature_id, error = %e, "worktree creation failed for custom workflow (continuing anyway)");
+                }
+            }
+        }
+    }
 
     // Create engine with Custom workflow type
     let engine = match WorkflowEngine::new(

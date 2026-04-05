@@ -389,13 +389,7 @@ export function createWorkflowMessageHandler(
             agentSessionId: sessionId,
             artifactPreview: phaseStates.get(slug)?.artifactPreview ?? null,
           });
-          // Create an activeAgent entry so existing agent streaming UI works
-          const activeAgents = new Map(state.activeAgents);
-          const agentKey = sessionId;
-          if (!activeAgents.has(agentKey)) {
-            activeAgents.set(agentKey, createAgentSession(sessionId, slug));
-          }
-          return { phaseStates, activeAgents };
+          return { phaseStates };
         });
         break;
       }
