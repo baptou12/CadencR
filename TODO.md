@@ -5,10 +5,11 @@
 - [ ] [agent] handle background agents
 - [ ] [workflow] Merging strategies
 - [ ] [editor] META+SHIFT+F to search for a string in the file
-- [ ] [editor] meta+p should not show all files, 20 most recent files, then string search done in the backend
 - [ ] [workflow] Commit detection
-- [ ] [workflow] ws-worklow
+- [ ] [workflow] template variable autocompletion
+- [ ] [workflow] dependencies vizualization
+- [ ] [workflow] cadence phase ordering (prd -> plan -> execute -> review -> execute -> done)
 - [ ] [global] Rework command palette
 - [ ] [global] Theming
 - [ ] [global] custom commands + custom schedules
-- [ ] [global] remote workfspaces
+- [ ] [global] remote workspaces

@@ -278,4 +278,19 @@ describe("buildSessionEntries", () => {
     expect(sessions[0].agentType).toBe("plan");
     expect(sessions[1].agentType).toBe("prd");
   });
+
+  it("passes custom workflow phase slugs as agentType without mapping to execute", () => {
+    const queue = [
+      { id: 10, status: "running" as const, item_type: "specify", phase_id: 1, phase_title: "Specify", order_index: 0, group_index: 0, agent_session_id: 99, result: null },
+      { id: 11, status: "blocked" as const, item_type: "analyze", phase_id: 2, phase_title: "Analyze", order_index: 1, group_index: 0, agent_session_id: null, result: null },
+    ];
+    const agents = new Map<number, AgentSessionState>([
+      [10, makeAgentState({ sessionId: 99, status: "running", agentType: "specify" })],
+    ]);
+    const { sessions } = buildSessionEntries(queue, agents, null, null, "building");
+
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0].agentType).toBe("specify");
+    expect(sessions[0].phaseTitle).toBe("Specify");
+  });
 });

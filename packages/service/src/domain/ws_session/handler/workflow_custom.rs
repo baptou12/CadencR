@@ -219,6 +219,20 @@ pub(super) async fn handle_feature_start_custom(
         Some(Some(_)) => {} // Already has the same workflow_definition_id — proceed
     }
 
+    // Store the user's description in the feature's prd field so templates can use {{feature_description}}
+    if let Some(ref description) = payload.description {
+        if !description.is_empty() {
+            if let Err(e) = sqlx::query("UPDATE features SET prd = ? WHERE id = ?")
+                .bind(description)
+                .bind(feature_id)
+                .execute(&app_state.write_pool)
+                .await
+            {
+                tracing::warn!(feature_id, error = %e, "failed to store feature description");
+            }
+        }
+    }
+
     info!(feature_id, workflow_definition_id, "starting feature with custom workflow");
 
     // Create engine with Custom workflow type
@@ -249,6 +263,18 @@ pub(super) async fn handle_feature_start_custom(
     {
         Ok(items) => {
             info!(feature_id, item_count = items.len(), "custom workflow queue populated");
+
+            // Send queue_update so the frontend store has the queue items for rendering
+            let envelope = WsEnvelope::new(
+                "workflow",
+                "queue_update",
+                to_value(WorkflowQueueUpdatePayload {
+                    feature_id,
+                    items,
+                    workflow_status: None,
+                }),
+            );
+            let _ = sender.send(Message::Text(String::from(envelope).into()));
         }
         Err(e) => {
             send_workflow_error(sender, &envelope.id, "POPULATE_FAILED", &format!("Failed to populate custom workflow queue: {e}"));

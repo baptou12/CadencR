@@ -137,7 +137,8 @@ export function createWorkflowMessageHandler(
           );
           const activeAgents = new Map(state.activeAgents);
           const existing = activeAgents.get(itemId);
-          const session = { ...createAgentSession(sessionId), blocks: existing?.blocks ?? [] };
+          const itemType = (payload.item_type as string) ?? "execute";
+          const session = { ...createAgentSession(sessionId, itemType), blocks: existing?.blocks ?? [] };
           activeAgents.set(itemId, session);
           return { queue, activeAgents, selectedItemId: state.selectedItemId ?? itemId, startingSession: false };
         });

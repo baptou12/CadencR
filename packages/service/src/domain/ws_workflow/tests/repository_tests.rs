@@ -295,8 +295,8 @@ mod repository_tests {
         let all = repository::list_workflow_definitions(&pool).await.unwrap();
 
         let speckit = all.iter().find(|d| d.slug == "speckit").unwrap();
-        assert_eq!(speckit.phases.len(), 6);
-        assert_eq!(speckit.phases[0].gate_type, "manual");
+        assert_eq!(speckit.phases.len(), 5);
+        assert_eq!(speckit.phases[0].gate_type, "approval");
 
         let bmad = all.iter().find(|d| d.slug == "bmad").unwrap();
         assert_eq!(bmad.phases.len(), 4);

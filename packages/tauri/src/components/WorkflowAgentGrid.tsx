@@ -3,7 +3,7 @@ import type { FeatureSession } from "@/hooks/useFeatureAgentState";
 import type { ContextUsageState } from "@/types/agent";
 import type { AgentType } from "@/types/agent-types";
 import type { WorkflowBackend } from "@/hooks/workflowBackendTypes";
-import { cn } from "@/lib/utils";
+import { capitalize, cn } from "@/lib/utils";
 
 interface WorkflowAgentGridProps {
   backend: WorkflowBackend;
@@ -43,10 +43,12 @@ export function WorkflowAgentGrid({
   slashCommandsLoading,
 }: WorkflowAgentGridProps) {
   const renderAgent = (entry: FeatureSession, index: number, isGridItem: boolean) => {
-    const label =
-      (entry.agentType === "execute" || entry.agentType === "qa") && entry.phaseTitle
-        ? `${AGENT_LABELS[entry.agentType] ?? entry.agentType} - ${entry.phaseTitle}`
-        : (AGENT_LABELS[entry.agentType] ?? entry.agentType);
+    const knownLabel = AGENT_LABELS[entry.agentType as AgentType];
+    const label = knownLabel
+      ? ((entry.agentType === "execute" || entry.agentType === "qa") && entry.phaseTitle
+          ? `${knownLabel} - ${entry.phaseTitle}`
+          : knownLabel)
+      : capitalize(entry.agentType);
     const sessionKey = `${entry.agentType}-${entry.sessionDbId}`;
     const questions = entry.pendingQuestions ?? [];
     const isThisMaximized = maximizedAgent === sessionKey;

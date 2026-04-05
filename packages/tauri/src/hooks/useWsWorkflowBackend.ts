@@ -23,24 +23,6 @@ import type { FeatureStatus } from "./useFeatureState";
 // Mappers
 // ---------------------------------------------------------------------------
 
-function mapItemTypeToAgentType(itemType: string): AgentType {
-  switch (itemType) {
-    case "execute":
-    case "plan":
-    case "prd":
-    case "qa":
-    case "review":
-    case "risk":
-    case "retro":
-    case "session":
-      return itemType as AgentType;
-    case "review-fixer":
-      return "review-fixer";
-    default:
-      return "execute";
-  }
-}
-
 function mapQueueStatusToAgentStatus(
   queueStatus: QueueItemStatus,
   agentStatus: AgentStatus | undefined,
@@ -68,7 +50,7 @@ function queueItemToFeatureSession(
 ): FeatureSession {
   return {
     sessionDbId: agentState?.sessionId ?? item.agent_session_id ?? -item.id,
-    agentType: mapItemTypeToAgentType(item.item_type),
+    agentType: item.item_type as AgentType,
     status: mapQueueStatusToAgentStatus(item.status, agentState?.status),
     blocks: agentState?.blocks ?? [],
     pendingPermission: agentState?.pendingPermission ?? null,

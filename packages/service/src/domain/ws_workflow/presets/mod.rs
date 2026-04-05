@@ -92,19 +92,17 @@ pub fn get_preset_definitions() -> Vec<CreateWorkflowDefinition> {
         preset(
             "Speckit",
             "speckit",
-            "Speckit-style workflow: constitution, specify, plan, tasks, implement, analyze",
+            "Speckit-style workflow: specify, plan, tasks, implement, analyze",
             vec![
-                phase(0, "Constitution", "constitution", Manual, &[],
-                    sk::CONSTITUTION_SYSTEM, sk::CONSTITUTION_COMMAND, sk::CONSTITUTION_ARTIFACT),
-                phase(1, "Specify", "specify", Approval, &["constitution"],
+                phase(0, "Specify", "specify", Approval, &[],
                     sk::SPECIFY_SYSTEM, sk::SPECIFY_COMMAND, sk::SPECIFY_ARTIFACT),
-                phase(2, "Plan", "plan", Approval, &["constitution", "specify"],
+                phase(1, "Plan", "plan", Approval, &["specify"],
                     sk::PLAN_SYSTEM, sk::PLAN_COMMAND, sk::PLAN_ARTIFACT),
-                phase(3, "Tasks", "tasks", Auto, &["plan"],
+                phase(2, "Tasks", "tasks", Auto, &["plan"],
                     sk::TASKS_SYSTEM, sk::TASKS_COMMAND, sk::TASKS_ARTIFACT),
-                decomposable_execute_phase(4, "Implement", "implement", Auto, &["tasks"], "tasks",
+                decomposable_execute_phase(3, "Implement", "implement", Auto, &["tasks"], "tasks",
                     sk::IMPLEMENT_SYSTEM, sk::IMPLEMENT_COMMAND, sk::IMPLEMENT_ARTIFACT),
-                phase(5, "Analyze", "analyze", Approval, &["specify", "implement"],
+                phase(4, "Analyze", "analyze", Approval, &["specify", "implement"],
                     sk::ANALYZE_SYSTEM, sk::ANALYZE_COMMAND, sk::ANALYZE_ARTIFACT),
             ],
         ),
@@ -152,14 +150,28 @@ pub fn get_preset_definitions() -> Vec<CreateWorkflowDefinition> {
     ]
 }
 
-/// Idempotently seed preset workflow definitions. Skips any preset whose slug
-/// already exists in the database.
+/// Idempotently seed preset workflow definitions.
+/// Re-creates a preset if its phase count has changed (e.g., Constitution removed from Speckit).
 pub async fn seed_presets(pool: &SqlitePool) -> Result<(), AppError> {
     for def in get_preset_definitions() {
+        let expected_phases = def.phases.len();
         let existing = repository::get_workflow_definition_by_slug(pool, &def.slug).await?;
-        if existing.is_none() {
-            repository::create_workflow_definition(pool, def.clone()).await?;
-            info!("Seeded preset workflow: {}", def.slug);
+        match existing {
+            None => {
+                repository::create_workflow_definition(pool, def.clone()).await?;
+                info!("Seeded preset workflow: {}", def.slug);
+            }
+            Some(ex) if ex.phases.len() != expected_phases => {
+                info!(
+                    slug = %def.slug,
+                    old_phases = ex.phases.len(),
+                    new_phases = expected_phases,
+                    "Re-seeding preset (phase count changed)"
+                );
+                repository::delete_workflow_definition(pool, ex.id).await?;
+                repository::create_workflow_definition(pool, def.clone()).await?;
+            }
+            _ => {} // Up to date
         }
     }
     Ok(())

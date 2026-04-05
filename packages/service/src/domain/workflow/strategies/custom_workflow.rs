@@ -166,9 +166,24 @@ impl WorkflowStrategy for CustomWorkflowStrategy {
         let mut prompt = template_engine::interpolate(&phase.command_prompt_template, &ctx);
 
         if !phase.artifact_template.is_empty() {
-            let interpolated_template = template_engine::interpolate(&phase.artifact_template, &ctx);
-            prompt.push_str("\n\n## Expected Output Format\n\n");
-            prompt.push_str(&interpolated_template);
+            let interpolated = template_engine::interpolate(&phase.artifact_template, &ctx);
+            // Strip HTML comment placeholders — they're authoring hints, not prompt content
+            let cleaned = interpolated
+                .lines()
+                .filter(|line| {
+                    let t = line.trim();
+                    !(t.starts_with("<!--") && t.ends_with("-->"))
+                })
+                .fold(String::new(), |mut acc, line| {
+                    if !acc.is_empty() { acc.push('\n'); }
+                    acc.push_str(line);
+                    acc
+                });
+            let cleaned = cleaned.trim();
+            if !cleaned.is_empty() {
+                prompt.push_str("\n\n## Expected Output Format\n\n");
+                prompt.push_str(cleaned);
+            }
         }
 
         Ok(prompt)

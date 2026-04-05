@@ -159,7 +159,7 @@ export function ModelSelector({ level, projectId, featureId }: ModelSelectorProp
           <div key={agentType} className="flex items-center gap-3">
             <label className="flex w-24 shrink-0 items-center gap-1.5 text-xs font-medium text-muted-foreground">
               {createElement(AGENT_ICONS[agentType], { className: "size-3.5" })}
-              {AGENT_LABELS[agentType]}
+              {AGENT_LABELS[agentType] ?? agentType}
             </label>
             <Popover open={openFor === agentType} onOpenChange={(open) => setOpenFor(open ? agentType : null)}>
               <PopoverTrigger asChild>

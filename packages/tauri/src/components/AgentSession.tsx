@@ -11,7 +11,7 @@
 import { useState, useEffect, useCallback, useMemo, createElement, useRef, useImperativeHandle, forwardRef, useLayoutEffect, memo } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { capitalize, cn } from "@/lib/utils";
 import {
   Loader2Icon,
   CheckCircleIcon,
@@ -57,7 +57,7 @@ import { useGetFeatureWorkingDir, useListModels } from "../api/generated";
 export type { AgentStatus } from "@/types/agent";
 import type { AgentStatus } from "@/types/agent";
 
-export const AGENT_LABELS: Record<AgentType, string> = {
+export const AGENT_LABELS: Partial<Record<AgentType, string>> = {
   plan: "Plan",
   prd: "PRD",
   execute: "Execute",
@@ -492,7 +492,7 @@ export const AgentSession = memo(forwardRef<AgentSessionHandle, AgentSessionProp
   const isIdle = status === "idle" && blocks.length === 0;
   const badge = STATUS_BADGE[status];
   const IconComponent = icon ?? AGENT_ICONS[agentType] ?? Loader2Icon;
-  const displayLabel = label ?? AGENT_LABELS[agentType] ?? agentType;
+  const displayLabel = label ?? AGENT_LABELS[agentType] ?? capitalize(agentType);
 
   // Determine whether the prompt bar should be shown
   const shouldShowPromptBar = (() => {
