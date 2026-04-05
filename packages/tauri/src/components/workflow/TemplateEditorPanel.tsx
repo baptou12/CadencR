@@ -1,10 +1,8 @@
-import { useEffect, useRef, useState, useMemo, useCallback } from "react";
-import { EditorView, lineNumbers, highlightActiveLine, drawSelection, keymap } from "@codemirror/view";
-import { EditorState } from "@codemirror/state";
-import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
-import { bracketMatching, indentOnInput } from "@codemirror/language";
+import { useState, useMemo, useCallback, useRef } from "react";
 import { markdown } from "@codemirror/lang-markdown";
 import { Eye, EyeOff } from "lucide-react";
+import BaseCodeMirrorEditor from "@/components/editor/BaseCodeMirrorEditor";
+import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -16,7 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { cadenceEditorTheme } from "@/components/editor/editor-theme";
+
 import { useListModels } from "@/api/generated";
 import type { WorkflowPhase } from "@/api/generated";
 import type { TemplateTab } from "./useWorkflowEditor";
@@ -307,50 +305,27 @@ interface TemplateCodeEditorProps {
   onChange: (value: string) => void;
 }
 
+const MARKDOWN_LANG = markdown();
+
 function TemplateCodeEditor({ content, readOnly, onChange }: TemplateCodeEditorProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const viewRef = useRef<EditorView | null>(null);
+  const { value: vimModeSetting } = useDebouncedSetting("editor_vim_mode");
+  const isVimEnabled = (vimModeSetting ?? "false") === "true";
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
-    if (!containerRef.current) return;
-
-    const updateListener = EditorView.updateListener.of((update) => {
-      if (update.docChanged) {
-        const value = update.state.doc.toString();
-        if (debounceRef.current) clearTimeout(debounceRef.current);
-        debounceRef.current = setTimeout(() => onChangeRef.current(value), 500);
-      }
-    });
-
-    const extensions = [
-      history(),
-      drawSelection(),
-      lineNumbers(),
-      highlightActiveLine(),
-      bracketMatching(),
-      indentOnInput(),
-      keymap.of([...defaultKeymap, ...historyKeymap]),
-      markdown(),
-      updateListener,
-      ...cadenceEditorTheme,
-      ...(readOnly ? [EditorState.readOnly.of(true)] : []),
-    ];
-
-    const state = EditorState.create({ doc: content, extensions });
-    const view = new EditorView({ state, parent: containerRef.current });
-    viewRef.current = view;
-
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-      view.destroy();
-      viewRef.current = null;
-    };
-    // Recreate when key changes (phase.id + activeTab via key prop)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  const handleChange = useCallback((value: string) => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => onChangeRef.current(value), 500);
   }, []);
 
-  return <div ref={containerRef} className="h-full overflow-auto" />;
+  return (
+    <BaseCodeMirrorEditor
+      initialContent={content}
+      language={MARKDOWN_LANG}
+      readOnly={readOnly}
+      vimMode={isVimEnabled}
+      onChange={handleChange}
+    />
+  );
 }
