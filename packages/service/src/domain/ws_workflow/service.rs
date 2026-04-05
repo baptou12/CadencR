@@ -96,7 +96,18 @@ pub async fn update_phase(
     let definition_id = phase_repository::get_phase_definition_id(pool, phase_id).await?;
     let def = get_definition(pool, definition_id).await?;
     if def.is_preset {
-        return Err(AppError::Conflict("Cannot modify phases of a preset workflow definition".into()));
+        // Presets only allow changing model_override
+        let only_model = model_override.is_some()
+            && name.is_none()
+            && gate_type.is_none()
+            && system_prompt_template.is_none()
+            && command_prompt_template.is_none()
+            && artifact_template.is_none()
+            && input_phase_slugs.is_none()
+            && agent_type.is_none();
+        if !only_model {
+            return Err(AppError::Conflict("Cannot modify phases of a preset workflow definition".into()));
+        }
     }
     phase_repository::update_workflow_phase(
         pool, phase_id, name, gate_type, system_prompt_template,

@@ -7,6 +7,13 @@ use crate::error::AppError;
 use super::models::{CreateWorkflowDefinition, CreateWorkflowPhase, GateType};
 use super::repository;
 
+fn default_model_for_agent_type(agent_type: &str) -> &str {
+    match agent_type {
+        "execute" => "sonnet",
+        _ => "opus",
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn phase(
     order: i32,
@@ -42,7 +49,7 @@ fn phase_with_agent_type(
         command_prompt_template: command_prompt.to_string(),
         artifact_template: artifact.to_string(),
         input_phase_slugs: inputs.iter().map(|s| s.to_string()).collect(),
-        model_override: String::new(),
+        model_override: default_model_for_agent_type(agent_type).to_string(),
         agent_type: agent_type.to_string(),
         decompose_from: String::new(),
     }
@@ -171,7 +178,21 @@ pub async fn seed_presets(pool: &SqlitePool) -> Result<(), AppError> {
                 repository::delete_workflow_definition(pool, ex.id).await?;
                 repository::create_workflow_definition(pool, def.clone()).await?;
             }
-            _ => {} // Up to date
+            Some(ex) => {
+                // Backfill empty model_override with defaults
+                for existing_phase in &ex.phases {
+                    if existing_phase.model_override.is_empty() {
+                        let default = default_model_for_agent_type(&existing_phase.agent_type);
+                        super::phase_repository::update_workflow_phase(
+                            pool,
+                            existing_phase.id,
+                            None, None, None, None, None, None,
+                            Some(default),
+                            None,
+                        ).await?;
+                    }
+                }
+            }
         }
     }
     Ok(())

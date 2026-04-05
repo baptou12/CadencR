@@ -6,6 +6,7 @@ use sqlx::SqlitePool;
 
 use crate::domain::features::models::{QueueItem, WorkflowType};
 use crate::domain::features::repository;
+use crate::domain::git::repository as git_repository;
 use crate::domain::mcp::servers::AgentType;
 use crate::domain::ws_workflow::{service as ws_service, template_engine};
 use crate::domain::workflow::prompts::build_execute_prompt;
@@ -40,6 +41,16 @@ impl WorkflowStrategy for CustomWorkflowStrategy {
             .await
             .map_err(|e| e.to_string())?;
 
+        // Load feature-level per-phase model overrides
+        let phase_model_overrides: HashMap<String, String> =
+            git_repository::get_feature_settings_by_prefix(read_pool, feature_id, "model_phase_")
+                .await
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(k, v)| (k.strip_prefix("model_phase_").unwrap_or(&k).to_string(), v))
+                .filter(|(_, v)| !v.is_empty())
+                .collect();
+
         // Insert queue items for each phase, tracking slug -> queue_item_id
         let mut slug_to_id: HashMap<String, i64> = HashMap::new();
 
@@ -52,6 +63,11 @@ impl WorkflowStrategy for CustomWorkflowStrategy {
 
             let agent_type = phase.agent_type.as_str();
 
+            let effective_model = phase_model_overrides
+                .get(&phase.slug)
+                .cloned()
+                .unwrap_or_else(|| phase.model_override.clone());
+
             let mut config = json!({
                 "agent_type": agent_type,
                 "gate_type": phase.gate_type,
@@ -59,7 +75,7 @@ impl WorkflowStrategy for CustomWorkflowStrategy {
                 "command_prompt_template": phase.command_prompt_template,
                 "artifact_template": phase.artifact_template,
                 "input_phase_slugs": phase.input_phase_slugs,
-                "model_override": phase.model_override,
+                "model_override": effective_model,
             });
 
             if !phase.decompose_from.is_empty() {

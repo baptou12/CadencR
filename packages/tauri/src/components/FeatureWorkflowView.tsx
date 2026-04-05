@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useMemo, lazy, Suspense } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useEditorStore } from "@/stores/editor-store";
 import { useGetFeaturePrd, useListProjects, useGetStats } from "@/api/generated";
 import { FeatureTopBar } from "@/components/FeatureTopBar";
@@ -19,6 +20,8 @@ import { DiffViewerModal } from "@/components/diff/DiffViewerModal";
 import type { FeatureSession } from "@/hooks/useFeatureAgentState";
 import type { ContextUsageState } from "@/types/agent";
 import { useResolvedModel } from "@/hooks/useResolvedModel";
+import type { AgentType } from "@/types/agent-types";
+import { phaseModelKey } from "@/shared/models";
 import { useTerminalStore } from "@/hooks/useTerminalState";
 import { useActiveTab } from "@/hooks/useActiveTab";
 import { useSaveLastOpenedFeature } from "@/hooks/useSaveLastOpenedFeature";
@@ -34,7 +37,12 @@ import { useWorkflowStore } from "@/hooks/useWorkflowWebSocket";
 import { WorkflowQueueSidebar } from "@/components/workflow/WorkflowQueueSidebar";
 import { PhaseApprovalBar } from "@/components/workflow/PhaseApprovalBar";
 import { WorkflowInputBar } from "@/components/workflow/WorkflowInputBar";
-import { useGetWorkflowDefinition } from "@/api/generated";
+import {
+  useGetWorkflowDefinition,
+  useGetFeatureSettings,
+  getGetFeatureSettingsQueryKey,
+  useSetFeatureSetting,
+} from "@/api/generated";
 
 export function FeatureWorkflowView({
   featureId,
@@ -118,6 +126,50 @@ export function FeatureWorkflowView({
   const { resolveModel, handleModelChange } = useResolvedModel(
     featureId,
     projectId,
+  );
+
+  // --- Phase-aware model resolution for ws-workflow ---
+  const queryClient = useQueryClient();
+  const { data: featureSettingsData } = useGetFeatureSettings(featureId);
+  const phaseSettingsMap = useMemo(() => {
+    if (!featureSettingsData) return {};
+    return Object.fromEntries(featureSettingsData.map((s) => [s.key, s.value]));
+  }, [featureSettingsData]);
+
+  const phasesBySlug = useMemo(() => {
+    if (!workflowDefinition) return new Map<string, { model_override: string }>();
+    return new Map(workflowDefinition.phases.map((p) => [p.slug, p]));
+  }, [workflowDefinition]);
+
+  const setPhaseModelSetting = useSetFeatureSetting({
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: getGetFeatureSettingsQueryKey(featureId) }),
+  });
+
+  // Merged model resolver: phase override → definition default → agent-type cascade
+  const resolveModelForAgent = useCallback(
+    (agentType: AgentType): string => {
+      if (isCustomWorkflow) {
+        const phase = phasesBySlug.get(agentType);
+        if (phase) {
+          const featureVal = phaseSettingsMap[phaseModelKey(agentType)];
+          if (featureVal) return featureVal;
+          if (phase.model_override) return phase.model_override;
+        }
+      }
+      return resolveModel(agentType);
+    },
+    [isCustomWorkflow, phasesBySlug, phaseSettingsMap, resolveModel],
+  );
+
+  const handleModelChangeForAgent = useCallback(
+    (agentType: AgentType, modelId: string) => {
+      if (isCustomWorkflow && phasesBySlug.has(agentType)) {
+        setPhaseModelSetting.mutate({ featureId, key: phaseModelKey(agentType), value: modelId });
+      } else {
+        handleModelChange(agentType, modelId);
+      }
+    },
+    [isCustomWorkflow, phasesBySlug, featureId, setPhaseModelSetting, handleModelChange],
   );
 
   const [isStartingCustom, setIsStartingCustom] = useState(false);
@@ -368,8 +420,8 @@ export function FeatureWorkflowView({
                   setAgentRef={setAgentRef}
                   agentsWithQuestions={agentsWithQuestions}
                   contextUsageMap={contextUsageMap}
-                  resolveModel={resolveModel}
-                  handleModelChange={handleModelChange}
+                  resolveModel={resolveModelForAgent}
+                  handleModelChange={handleModelChangeForAgent}
                   handleDeleteAgent={handleDeleteAgent}
                   onViewDiff={handleViewDiffForAgent}
                   slashCommands={slashCommands}

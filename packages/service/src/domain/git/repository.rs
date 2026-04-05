@@ -75,6 +75,22 @@ pub async fn set_feature_setting(
     Ok(())
 }
 
+/// Get all feature_settings whose key starts with a given prefix.
+pub async fn get_feature_settings_by_prefix(
+    pool: &SqlitePool,
+    feature_id: i64,
+    prefix: &str,
+) -> Result<Vec<(String, String)>, AppError> {
+    let pattern = format!("{}%", prefix);
+    let rows: Vec<(String, String)> =
+        sqlx::query_as("SELECT key, value FROM feature_settings WHERE feature_id = ? AND key LIKE ?")
+            .bind(feature_id)
+            .bind(&pattern)
+            .fetch_all(pool)
+            .await?;
+    Ok(rows)
+}
+
 /// Delete a feature_settings value.
 pub async fn delete_feature_setting(
     pool: &SqlitePool,
@@ -227,6 +243,30 @@ mod tests {
         let pool = setup_test_db().await;
         let val = get_feature_setting(&pool, 999, "nonexistent").await.unwrap();
         assert_eq!(val, None);
+    }
+
+    #[tokio::test]
+    async fn test_get_feature_settings_by_prefix() {
+        let pool = setup_test_db().await;
+        sqlx::query("INSERT INTO features (id, project_id, title) VALUES (1, 1, 'feat')")
+            .execute(&pool).await.unwrap();
+
+        set_feature_setting(&pool, 1, "model_phase_plan", "sonnet").await.unwrap();
+        set_feature_setting(&pool, 1, "model_phase_execute", "haiku").await.unwrap();
+        set_feature_setting(&pool, 1, "worktree_branch", "feature/test").await.unwrap();
+
+        let results = get_feature_settings_by_prefix(&pool, 1, "model_phase_").await.unwrap();
+        assert_eq!(results.len(), 2);
+        let map: std::collections::HashMap<_, _> = results.into_iter().collect();
+        assert_eq!(map.get("model_phase_plan").unwrap(), "sonnet");
+        assert_eq!(map.get("model_phase_execute").unwrap(), "haiku");
+    }
+
+    #[tokio::test]
+    async fn test_get_feature_settings_by_prefix_empty() {
+        let pool = setup_test_db().await;
+        let results = get_feature_settings_by_prefix(&pool, 999, "model_phase_").await.unwrap();
+        assert!(results.is_empty());
     }
 
 }

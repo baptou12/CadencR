@@ -16,6 +16,7 @@ import {
   useOpenExternalHandler,
 } from "@/api/generated";
 import { ModelSelector } from "./ModelSelector";
+import { WorkflowModelSelector } from "./WorkflowModelSelector";
 import { useFeatureTitle } from "@/hooks/useFeatureTitle";
 import type { AutonomyLevel, WorktreeStatus } from "@/types/workflow";
 import { useWorkflowStore } from "@/hooks/useWorkflowWebSocket";
@@ -176,7 +177,11 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", classNam
             {/* Model Selection */}
             <div className="space-y-2">
               <h4 className="text-sm font-semibold">Model Configuration</h4>
-              <ModelSelector level="feature" featureId={featureId} projectId={projectId} />
+              {feature?.workflow_definition_id ? (
+                <WorkflowModelSelector featureId={featureId} workflowDefinitionId={feature.workflow_definition_id} />
+              ) : (
+                <ModelSelector level="feature" featureId={featureId} projectId={projectId} />
+              )}
             </div>
 
             {!isSession && (

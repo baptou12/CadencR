@@ -236,17 +236,20 @@ function PhaseSettingsPanel({ phase, isPreset, onUpdate, allPrecedingPhases }: P
 
       {/* Model Override */}
       <div className="space-y-1.5">
-        <label className="text-sm font-medium">Model Override</label>
+        <label className="text-sm font-medium">
+          Model {isPreset && <span className="text-destructive">*</span>}
+        </label>
         <Select
           value={phase.model_override || "__none__"}
           onValueChange={(v) => onUpdate({ model_override: v === "__none__" ? "" : v })}
-          disabled={isPreset}
         >
           <SelectTrigger>
-            <SelectValue placeholder="Default" />
+            <SelectValue placeholder={isPreset ? "Select a model" : "Default"} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="__none__">Default (use project setting)</SelectItem>
+            {!isPreset && (
+              <SelectItem value="__none__">Default (use project setting)</SelectItem>
+            )}
             {models?.map((m) => (
               <SelectItem key={m.id} value={m.id}>
                 {m.label}
@@ -255,7 +258,10 @@ function PhaseSettingsPanel({ phase, isPreset, onUpdate, allPrecedingPhases }: P
           </SelectContent>
         </Select>
         <p className="text-xs text-muted-foreground">
-          Use a specific model for this phase. Leave on default to use your project-level model setting.
+          {isPreset
+            ? "Choose the default model for this phase. Users can override this per-feature."
+            : "Use a specific model for this phase. Leave on default to use your project-level model setting."
+          }
         </p>
       </div>
 
