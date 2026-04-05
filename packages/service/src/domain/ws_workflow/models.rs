@@ -30,6 +30,23 @@ pub struct WorkflowPhase {
     pub input_phase_slugs: Vec<String>,
     pub model_override: String,
     pub agent_type: String,
+    #[sqlx(default)]
+    #[serde(default)]
+    pub decompose_from: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowTask {
+    pub id: i64,
+    pub feature_id: i64,
+    pub source_phase_slug: String,
+    pub title: String,
+    pub description: String,
+    pub commit_message: String,
+    pub order_index: i32,
+    pub parallel_group: i32,
+    pub depends_on: Vec<String>,
+    pub status: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -95,4 +112,6 @@ pub struct CreateWorkflowPhase {
     pub input_phase_slugs: Vec<String>,
     pub model_override: String,
     pub agent_type: String,
+    #[serde(default)]
+    pub decompose_from: String,
 }

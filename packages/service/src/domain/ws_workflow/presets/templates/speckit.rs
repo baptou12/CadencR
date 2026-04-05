@@ -187,7 +187,19 @@ Break the plan into concrete, implementable tasks. For each task:
 - Define the done criteria
 
 Order tasks so dependencies come first. Group related tasks where parallel execution \
-is possible. Aim for tasks that take 15-60 minutes each.";
+is possible. Aim for tasks that take 15-60 minutes each.
+
+## Task Registration
+
+After analyzing the plan and creating your artifact, register each task using the \
+`create_task` tool. For each task provide:
+- **title**: Short, action-oriented name (e.g., 'Add user authentication middleware')
+- **description**: Exactly what to implement — files, functions, components
+- **commit_message**: Conventional commit (e.g., 'feat: add auth middleware')
+- **depends_on**: Titles of tasks this depends on (if any)
+- **parallel_group**: Tasks with the same group number can run in parallel
+
+When all tasks are registered, call `finalize_tasks` to proceed to implementation.";
 
 pub const TASKS_ARTIFACT: &str = "\
 # Task List: {{feature_title}}

@@ -14,6 +14,7 @@ use serde_json::json;
 use crate::domain::mcp::context::McpContext;
 use crate::domain::mcp::tools::helpers::{error_result, require_str, text_result};
 use crate::domain::ws_workflow::artifact_repository as ws_repo;
+use crate::domain::ws_workflow::task_repository;
 
 use super::{make_tool, server_info};
 
@@ -117,6 +118,75 @@ impl WorkflowServer {
         }
     }
 
+    async fn create_task(
+        &self,
+        title: &str,
+        description: &str,
+        commit_message: Option<&str>,
+        depends_on: Vec<String>,
+        parallel_group: Option<i32>,
+    ) -> Result<String, String> {
+        let phase_slug = self.require_phase_slug()?;
+        let count = task_repository::count_tasks(
+            &self.ctx.read_pool,
+            self.ctx.feature_id,
+            &phase_slug,
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+
+        let order = count as i32;
+        let group = parallel_group.unwrap_or(order);
+
+        task_repository::insert_task(
+            &self.ctx.write_pool,
+            self.ctx.feature_id,
+            &phase_slug,
+            title,
+            description,
+            commit_message.unwrap_or(""),
+            order,
+            group,
+            &depends_on,
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+
+        Ok(format!(
+            "Task #{} created: '{}' (group {})",
+            order + 1,
+            title,
+            group
+        ))
+    }
+
+    async fn finalize_tasks(&self) -> Result<String, String> {
+        let phase_slug = self.require_phase_slug()?;
+
+        let count = task_repository::count_tasks(
+            &self.ctx.read_pool,
+            self.ctx.feature_id,
+            &phase_slug,
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+
+        if count == 0 {
+            return Err("No tasks to finalize. Use create_task first.".to_string());
+        }
+
+        task_repository::finalize_tasks(
+            &self.ctx.write_pool,
+            self.ctx.feature_id,
+            &phase_slug,
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+
+        // Signal phase completion — the gate handler will trigger expansion
+        self.send_done(Some(format!("{count} tasks finalized"))).await
+    }
+
     fn require_phase_slug(&self) -> Result<String, String> {
         self.ctx
             .phase_slug
@@ -146,6 +216,8 @@ impl ServerHandler for WorkflowServer {
                 tool_request_approval(),
                 tool_mark_phase_complete(),
                 tool_read_project_context(),
+                tool_create_task(),
+                tool_finalize_tasks(),
             ],
             next_cursor: None,
         }))
@@ -193,6 +265,22 @@ impl ServerHandler for WorkflowServer {
                 }
                 "mark_phase_complete" => self.send_done(None).await,
                 "read_project_context" => self.read_project_context().await,
+                "create_task" => {
+                    match require_str(&args, "title") {
+                        Ok(title) => {
+                            let description = args["description"].as_str().unwrap_or("");
+                            let commit_message = args["commit_message"].as_str();
+                            let depends_on: Vec<String> = args["depends_on"]
+                                .as_array()
+                                .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                                .unwrap_or_default();
+                            let parallel_group = args["parallel_group"].as_i64().map(|v| v as i32);
+                            self.create_task(title, description, commit_message, depends_on, parallel_group).await
+                        }
+                        Err(e) => Err(e),
+                    }
+                }
+                "finalize_tasks" => self.finalize_tasks().await,
                 other => Err(format!("Unknown tool: {other}")),
             };
 
@@ -235,11 +323,7 @@ fn tool_read_artifact() -> rmcp::model::Tool {
 }
 
 fn tool_read_prior_artifacts() -> rmcp::model::Tool {
-    make_tool(
-        "read_prior_artifacts",
-        "Read all artifacts from input phases",
-        json!({ "type": "object", "properties": {} }),
-    )
+    make_tool("read_prior_artifacts", "Read all artifacts from input phases", json!({ "type": "object", "properties": {} }))
 }
 
 fn tool_update_artifact() -> rmcp::model::Tool {
@@ -270,17 +354,38 @@ fn tool_request_approval() -> rmcp::model::Tool {
 }
 
 fn tool_mark_phase_complete() -> rmcp::model::Tool {
-    make_tool(
-        "mark_phase_complete",
-        "Mark phase as done (for auto-gate phases)",
-        json!({ "type": "object", "properties": {} }),
-    )
+    make_tool("mark_phase_complete", "Mark phase as done (for auto-gate phases)", json!({ "type": "object", "properties": {} }))
 }
 
 fn tool_read_project_context() -> rmcp::model::Tool {
+    make_tool("read_project_context", "Read project-level context", json!({ "type": "object", "properties": {} }))
+}
+
+fn tool_create_task() -> rmcp::model::Tool {
     make_tool(
-        "read_project_context",
-        "Read project-level context (project name, path, feature title, description)",
-        json!({ "type": "object", "properties": {} }),
+        "create_task",
+        "Register an implementation task. Call this for each task, then call finalize_tasks when done.",
+        json!({
+            "type": "object",
+            "properties": {
+                "title": { "type": "string", "description": "Short descriptive task name" },
+                "description": { "type": "string", "description": "What needs to be implemented" },
+                "commit_message": { "type": "string", "description": "Conventional commit message for this task" },
+                "depends_on": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Titles of tasks this depends on"
+                },
+                "parallel_group": {
+                    "type": "integer",
+                    "description": "Group number — tasks in the same group can run in parallel"
+                }
+            },
+            "required": ["title", "description"]
+        }),
     )
+}
+
+fn tool_finalize_tasks() -> rmcp::model::Tool {
+    make_tool("finalize_tasks", "Finalize all registered tasks. Expands them into individual execute agents.", json!({ "type": "object", "properties": {} }))
 }

@@ -10,6 +10,8 @@ pub mod repository;
 pub mod routes;
 pub mod service;
 #[allow(dead_code)]
+pub mod task_repository;
+#[allow(dead_code)]
 pub mod template_engine;
 
 #[cfg(test)]

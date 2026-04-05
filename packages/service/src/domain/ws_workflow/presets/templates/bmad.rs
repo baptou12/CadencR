@@ -173,7 +173,19 @@ existing architecture. Document:
 - API design (endpoints, request/response contracts)
 - Key implementation patterns and code structure
 - Migration and rollback strategy
-- Performance and scalability considerations";
+- Performance and scalability considerations
+
+## Task Registration
+
+After producing the architecture document, decompose the implementation into concrete \
+tasks using the `create_task` tool. For each task:
+- **title**: Clear name (e.g., 'Create user table migration')
+- **description**: What to implement — files, schemas, patterns
+- **commit_message**: Conventional commit message
+- **depends_on**: Titles of prerequisite tasks
+- **parallel_group**: Group number for parallel execution
+
+Call `finalize_tasks` when all tasks are registered.";
 
 pub const SOLUTIONING_ARTIFACT: &str = "\
 # Architecture Document: {{feature_title}}

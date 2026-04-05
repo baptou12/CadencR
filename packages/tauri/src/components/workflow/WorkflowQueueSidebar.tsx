@@ -23,7 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useGetWorkflowDefinition } from "@/api/generated";
 import { useWorkflowStore } from "@/hooks/useWorkflowWebSocket";
-import type { PhaseStatus } from "@/types/workflow";
+import type { PhaseStatus, QueueItem } from "@/types/workflow";
 import type { WorkflowPhase } from "@/api/generated";
 
 // ---------------------------------------------------------------------------
@@ -65,6 +65,7 @@ export function WorkflowQueueSidebar({
 }: WorkflowQueueSidebarProps) {
   const { data: definition, isLoading } = useGetWorkflowDefinition(workflowDefinitionId);
   const phaseStates = useWorkflowStore((s) => s.phaseStates);
+  const queue = useWorkflowStore((s) => s.queue);
   const approvePhase = useWorkflowStore((s) => s.approvePhase);
   const triggerPhase = useWorkflowStore((s) => s.triggerPhase);
 
@@ -72,6 +73,23 @@ export function WorkflowQueueSidebar({
     () => definition?.phases ? [...definition.phases].sort((a, b) => a.order_index - b.order_index) : [],
     [definition?.phases],
   );
+
+  // Detect decomposed task items in the queue (item_type contains ":")
+  const decomposedTasks = useMemo(() => {
+    const grouped = new Map<string, typeof queue>();
+    for (const item of queue) {
+      if (item.item_type.includes(":")) {
+        const parentSlug = item.item_type.split(":")[0];
+        if (!grouped.has(parentSlug)) grouped.set(parentSlug, []);
+        grouped.get(parentSlug)!.push(item);
+      }
+    }
+    // Sort sub-tasks by order_index within each group
+    for (const tasks of grouped.values()) {
+      tasks.sort((a, b) => a.order_index - b.order_index);
+    }
+    return grouped;
+  }, [queue]);
 
   // Build dependency map for connector rendering
   const hasMultipleInputs = useMemo(() => {
@@ -118,21 +136,35 @@ export function WorkflowQueueSidebar({
 
       {/* Phase pipeline */}
       <div className="flex-1 overflow-y-auto p-2">
-        {sortedPhases.map((phase, index) => (
-          <PhaseCard
-            key={phase.slug}
-            phase={phase}
-            status={phaseStates.get(phase.slug)?.status ?? "pending"}
-            artifactPreview={phaseStates.get(phase.slug)?.artifactPreview ?? null}
-            agentSessionId={phaseStates.get(phase.slug)?.agentSessionId ?? null}
-            isLast={index === sortedPhases.length - 1}
-            hasMultipleInputs={hasMultipleInputs.has(phase.slug)}
-            onApprove={() => approvePhase(phase.slug, true)}
-            onTrigger={() => triggerPhase(phase.slug)}
-            onViewArtifact={onViewArtifact ? () => onViewArtifact(phase.slug) : undefined}
-            onScrollToAgent={onScrollToAgent}
-          />
-        ))}
+        {sortedPhases.map((phase, index) => {
+          const tasks = decomposedTasks.get(phase.slug);
+          const isDecomposed = tasks && tasks.length > 0;
+
+          return (
+            <div key={phase.slug}>
+              <PhaseCard
+                phase={phase}
+                status={phaseStates.get(phase.slug)?.status ?? "pending"}
+                artifactPreview={phaseStates.get(phase.slug)?.artifactPreview ?? null}
+                agentSessionId={phaseStates.get(phase.slug)?.agentSessionId ?? null}
+                isLast={!isDecomposed && index === sortedPhases.length - 1}
+                hasMultipleInputs={hasMultipleInputs.has(phase.slug)}
+                onApprove={() => approvePhase(phase.slug, true)}
+                onTrigger={() => triggerPhase(phase.slug)}
+                onViewArtifact={onViewArtifact ? () => onViewArtifact(phase.slug) : undefined}
+                onScrollToAgent={onScrollToAgent}
+              />
+              {isDecomposed && tasks.map((task, taskIdx) => (
+                <TaskCard
+                  key={task.id}
+                  task={task}
+                  isLast={taskIdx === tasks.length - 1 && index === sortedPhases.length - 1}
+                  onScrollToAgent={onScrollToAgent}
+                />
+              ))}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -250,6 +282,63 @@ function PhaseCard({
             <RotateCcwIcon className="size-3" /> Retry
           </Button>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Task card (decomposed sub-item)
+// ---------------------------------------------------------------------------
+
+interface TaskCardProps {
+  task: QueueItem;
+  isLast: boolean;
+  onScrollToAgent?: (sessionId: number) => void;
+}
+
+function TaskCard({ task, isLast, onScrollToAgent }: TaskCardProps) {
+  const status = task.status as PhaseStatus;
+  const config = STATUS_CONFIG[status] ?? STATUS_CONFIG.pending;
+
+  // Parse task title from config JSON or phase_title
+  let taskTitle = task.phase_title ?? task.item_type;
+  if (!task.phase_title) {
+    // item_type is "implement:001" — show the index
+    const parts = task.item_type.split(":");
+    taskTitle = `Task ${Number.parseInt(parts[1] ?? "0", 10) + 1}`;
+  }
+
+  return (
+    <div className="relative flex">
+      {/* Indented connector */}
+      <div className="flex w-6 shrink-0 flex-col items-center pl-2">
+        <div className={cn("size-3.5 rounded-full border flex items-center justify-center", statusBorderColor(status))}>
+          <span className={cn(config.className, "scale-75")}>{config.icon}</span>
+        </div>
+        {!isLast && <div className="w-0.5 flex-1 min-h-2 bg-gray-700/50" />}
+      </div>
+
+      {/* Card */}
+      <div className="flex-1 min-w-0 pb-1.5 pl-1.5">
+        <div className={cn(
+          "rounded border border-gray-800/60 px-2 py-1.5 text-left",
+          status === "running" && "border-blue-500/30 bg-blue-500/5",
+          status === "error" && "border-red-500/30",
+        )}>
+          <div className="flex items-center gap-1">
+            <span className="min-w-0 truncate text-[10px] font-medium text-gray-300">{taskTitle}</span>
+          </div>
+          {status === "running" && task.agent_session_id != null && onScrollToAgent && (
+            <button
+              type="button"
+              onClick={() => onScrollToAgent(task.agent_session_id!)}
+              className="mt-0.5 text-[9px] text-blue-400 hover:underline"
+            >
+              View output →
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

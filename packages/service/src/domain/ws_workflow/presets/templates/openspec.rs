@@ -31,7 +31,19 @@ produce a proposal covering:
 - Prerequisites and dependencies
 
 The proposal should give reviewers enough information to approve or reject the change \
-with confidence.";
+with confidence.
+
+## Task Registration
+
+After creating the proposal artifact, decompose the implementation into tasks using \
+the `create_task` tool. For each task:
+- **title**: Action-oriented name
+- **description**: What changes to make
+- **commit_message**: Conventional commit message
+- **depends_on**: Titles of prerequisite tasks
+- **parallel_group**: Group number for parallel execution
+
+Call `finalize_tasks` when all tasks are registered.";
 
 pub const PROPOSE_ARTIFACT: &str = "\
 # Proposal: {{feature_title}}

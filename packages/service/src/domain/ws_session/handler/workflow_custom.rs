@@ -188,26 +188,38 @@ pub(super) async fn handle_feature_start_custom(
     let feature_id = payload.feature_id;
     let workflow_definition_id = payload.workflow_definition_id;
 
-    // Verify the feature exists and doesn't already have a custom workflow
-    match is_custom_workflow_feature(feature_id, &app_state.read_pool).await {
-        Ok(true) => {
-            send_workflow_error(sender, &envelope.id, "ALREADY_CUSTOM", "Feature already has a custom workflow definition");
+    // Verify the feature exists. If it already has this workflow definition, skip the set step.
+    // If it has a *different* workflow definition, reject (can't change workflow once set).
+    let existing_wd_id: Option<Option<i64>> = sqlx::query_as(
+        "SELECT workflow_definition_id FROM features WHERE id = ?"
+    )
+    .bind(feature_id)
+    .fetch_optional(&app_state.read_pool)
+    .await
+    .ok()
+    .flatten()
+    .map(|(v,): (Option<i64>,)| v);
+
+    match existing_wd_id {
+        None => {
+            send_workflow_error(sender, &envelope.id, "NOT_FOUND", &format!("Feature {feature_id} not found"));
             return;
         }
-        Err(e) => {
-            send_workflow_error(sender, &envelope.id, "NOT_FOUND", &e);
+        Some(Some(existing_id)) if existing_id != workflow_definition_id => {
+            send_workflow_error(sender, &envelope.id, "ALREADY_CUSTOM", "Feature already has a different workflow definition");
             return;
         }
-        Ok(false) => {} // Good — legacy feature being upgraded to custom
+        Some(None) => {
+            // Legacy feature — set the workflow definition
+            if let Err(e) = features_repo::set_workflow_definition_id(&app_state.write_pool, feature_id, workflow_definition_id).await {
+                send_workflow_error(sender, &envelope.id, "DB_ERROR", &format!("Failed to set workflow definition: {e}"));
+                return;
+            }
+        }
+        Some(Some(_)) => {} // Already has the same workflow_definition_id — proceed
     }
 
     info!(feature_id, workflow_definition_id, "starting feature with custom workflow");
-
-    // Set workflow_definition_id on the feature via repository
-    if let Err(e) = features_repo::set_workflow_definition_id(&app_state.write_pool, feature_id, workflow_definition_id).await {
-        send_workflow_error(sender, &envelope.id, "DB_ERROR", &format!("Failed to set workflow definition: {e}"));
-        return;
-    }
 
     // Create engine with Custom workflow type
     let engine = match WorkflowEngine::new(

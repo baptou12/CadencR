@@ -9,4 +9,5 @@ pub mod queue_advancer;
 pub mod reconnect;
 pub mod status;
 pub mod strategies;
+pub mod task_expander;
 pub mod worktree;

@@ -52,6 +52,7 @@ vi.mock("@/hooks/useWorkflowWebSocket", () => ({
   useWorkflowStore: (selector: (s: Record<string, unknown>) => unknown) =>
     selector({
       phaseStates: mockPhaseStates,
+      queue: [],
       approvePhase: mockApprovePhase,
       triggerPhase: mockTriggerPhase,
     }),

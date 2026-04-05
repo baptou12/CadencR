@@ -8,6 +8,7 @@ use crate::domain::features::models::{QueueItem, WorkflowType};
 use crate::domain::features::repository;
 use crate::domain::mcp::servers::AgentType;
 use crate::domain::ws_workflow::{service as ws_service, template_engine};
+use crate::domain::workflow::prompts::build_execute_prompt;
 
 use super::WorkflowStrategy;
 
@@ -51,7 +52,7 @@ impl WorkflowStrategy for CustomWorkflowStrategy {
 
             let agent_type = phase.agent_type.as_str();
 
-            let config = json!({
+            let mut config = json!({
                 "agent_type": agent_type,
                 "gate_type": phase.gate_type,
                 "system_prompt_template": phase.system_prompt_template,
@@ -60,6 +61,10 @@ impl WorkflowStrategy for CustomWorkflowStrategy {
                 "input_phase_slugs": phase.input_phase_slugs,
                 "model_override": phase.model_override,
             });
+
+            if !phase.decompose_from.is_empty() {
+                config["decompose_from"] = json!(phase.decompose_from);
+            }
 
             let item_id = repository::insert_queue_item_with_config(
                 write_pool,
@@ -118,6 +123,11 @@ impl WorkflowStrategy for CustomWorkflowStrategy {
         item: &QueueItem,
         _autonomy_level: u8,
     ) -> Result<String, String> {
+        // Decomposed task items have item_type like "implement:001"
+        if is_decomposed_item(item) {
+            return Ok(String::new()); // Execute agents use the default system prompt
+        }
+
         let (phase, definition) = load_phase_from_item(read_pool, item, self.workflow_definition_id).await?;
         let ctx = template_engine::build_template_context(
             read_pool,
@@ -136,8 +146,13 @@ impl WorkflowStrategy for CustomWorkflowStrategy {
         read_pool: &SqlitePool,
         item: &QueueItem,
         _feature_title: &str,
-        _autonomy_level: u8,
+        autonomy_level: u8,
     ) -> Result<String, String> {
+        // Decomposed task items: build execute prompt from phase row
+        if is_decomposed_item(item) {
+            return build_decomposed_prompt(read_pool, item, autonomy_level).await;
+        }
+
         let (phase, definition) = load_phase_from_item(read_pool, item, self.workflow_definition_id).await?;
         let ctx = template_engine::build_template_context(
             read_pool,
@@ -158,6 +173,38 @@ impl WorkflowStrategy for CustomWorkflowStrategy {
 
         Ok(prompt)
     }
+}
+
+fn is_decomposed_item(item: &QueueItem) -> bool {
+    item.config
+        .as_deref()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+        .and_then(|c| c.get("decomposed")?.as_bool())
+        .unwrap_or(false)
+}
+
+async fn build_decomposed_prompt(
+    read_pool: &SqlitePool,
+    item: &QueueItem,
+    autonomy_level: u8,
+) -> Result<String, String> {
+    // Load the synthetic phase linked via phase_id
+    let phase_id = item.phase_id.ok_or("Decomposed item missing phase_id")?;
+    let phase = sqlx::query_as::<_, (String, Option<String>, Option<String>)>(
+        "SELECT title, prompt, commit_message FROM phases WHERE id = ?",
+    )
+    .bind(phase_id)
+    .fetch_optional(read_pool)
+    .await
+    .map_err(|e| e.to_string())?
+    .ok_or_else(|| format!("Phase {phase_id} not found for decomposed item"))?;
+
+    Ok(build_execute_prompt(
+        &phase.0,
+        phase.1.as_deref().unwrap_or(""),
+        phase.2.as_deref().unwrap_or(""),
+        autonomy_level,
+    ))
 }
 
 /// Load the WorkflowPhase matching item.item_type (slug) from the definition.

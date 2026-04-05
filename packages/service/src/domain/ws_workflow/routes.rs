@@ -93,6 +93,7 @@ impl From<CreatePhaseRequest> for CreateWorkflowPhase {
             input_phase_slugs: r.input_phase_slugs,
             model_override: r.model_override,
             agent_type: r.agent_type,
+            decompose_from: String::new(),
         }
     }
 }

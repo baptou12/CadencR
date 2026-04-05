@@ -22,8 +22,8 @@ pub(super) async fn insert_phase(
         "INSERT INTO workflow_phases \
          (workflow_definition_id, name, slug, order_index, gate_type, \
           system_prompt_template, command_prompt_template, artifact_template, \
-          input_phase_slugs, model_override, agent_type) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+          input_phase_slugs, model_override, agent_type, decompose_from) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     )
     .bind(definition_id)
     .bind(&phase.name)
@@ -36,6 +36,7 @@ pub(super) async fn insert_phase(
     .bind(&slugs_json)
     .bind(&phase.model_override)
     .bind(&phase.agent_type)
+    .bind(&phase.decompose_from)
     .execute(pool)
     .await
     .map_err(|e| AppError::DatabaseError(e.to_string()))?
@@ -63,6 +64,7 @@ pub async fn create_workflow_phase(
         input_phase_slugs: phase.input_phase_slugs.clone(),
         model_override: phase.model_override.clone(),
         agent_type: phase.agent_type.clone(),
+        decompose_from: phase.decompose_from.clone(),
     })
 }
 
@@ -112,10 +114,10 @@ pub async fn update_workflow_phase(
         q.execute(pool).await.map_err(|e| AppError::DatabaseError(e.to_string()))?;
     }
 
-    let row = sqlx::query_as::<_, (i64, i64, String, String, i32, String, String, String, String, String, String, String)>(
+    let row = sqlx::query_as::<_, (i64, i64, String, String, i32, String, String, String, String, String, String, String, String)>(
         "SELECT id, workflow_definition_id, name, slug, order_index, gate_type, \
          system_prompt_template, command_prompt_template, artifact_template, \
-         input_phase_slugs, model_override, agent_type \
+         input_phase_slugs, model_override, agent_type, decompose_from \
          FROM workflow_phases WHERE id = ?"
     )
     .bind(phase_id)
@@ -130,6 +132,7 @@ pub async fn update_workflow_phase(
         order_index: row.4, gate_type: row.5, system_prompt_template: row.6,
         command_prompt_template: row.7, artifact_template: row.8,
         input_phase_slugs, model_override: row.10, agent_type: row.11,
+        decompose_from: row.12,
     })
 }
 

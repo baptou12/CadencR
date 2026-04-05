@@ -14,6 +14,7 @@ use crate::domain::workflow::engine::AgentSlot;
 use crate::domain::workflow::permission_router::PermissionRouter;
 use crate::domain::workflow::queue_advancer::{QueueAdvancer, StatusSetter};
 use crate::domain::workflow::status::WorkflowStatus;
+use crate::domain::workflow::task_expander;
 use crate::domain::ws_session::protocol::*;
 
 use super::engine::to_value;
@@ -92,6 +93,18 @@ impl QueueAdvancer {
         if let AgentSlot::QueueItem(item_id) = slot {
             let (phase_slug, artifact_preview) = self.get_phase_artifact_info(*item_id).await;
             if !phase_slug.is_empty() {
+                // Check if this phase triggers task expansion of a downstream execute phase
+                if let Err(e) = task_expander::maybe_expand_downstream(
+                    &self.write_pool,
+                    &self.read_pool,
+                    self.feature_id,
+                    &phase_slug,
+                )
+                .await
+                {
+                    error!(error = %e, phase = %phase_slug, "task expansion failed");
+                }
+
                 let envelope = WsEnvelope::new(
                     "workflow",
                     "phase_completed",
@@ -203,6 +216,15 @@ impl QueueAdvancer {
                 .await
                 .map_err(|e| e.to_string())?;
             agent_manager.send_item_update(item.id).await;
+
+            // Check if approval triggers task expansion of a downstream execute phase
+            let _ = task_expander::maybe_expand_downstream(
+                &self.write_pool,
+                &self.read_pool,
+                self.feature_id,
+                phase_slug,
+            )
+            .await;
 
             repo::unblock_ready_items(&self.write_pool, self.feature_id)
                 .await

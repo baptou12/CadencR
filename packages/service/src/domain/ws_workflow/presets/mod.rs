@@ -22,20 +22,6 @@ fn phase(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn execute_phase(
-    order: i32,
-    name: &str,
-    slug: &str,
-    gate: GateType,
-    inputs: &[&str],
-    system_prompt: &str,
-    command_prompt: &str,
-    artifact: &str,
-) -> CreateWorkflowPhase {
-    phase_with_agent_type(order, name, slug, gate, inputs, system_prompt, command_prompt, artifact, "execute")
-}
-
-#[allow(clippy::too_many_arguments)]
 fn phase_with_agent_type(
     order: i32,
     name: &str,
@@ -58,7 +44,26 @@ fn phase_with_agent_type(
         input_phase_slugs: inputs.iter().map(|s| s.to_string()).collect(),
         model_override: String::new(),
         agent_type: agent_type.to_string(),
+        decompose_from: String::new(),
     }
+}
+
+/// Create an execute phase that decomposes from a specific upstream phase's tasks.
+#[allow(clippy::too_many_arguments)]
+fn decomposable_execute_phase(
+    order: i32,
+    name: &str,
+    slug: &str,
+    gate: GateType,
+    inputs: &[&str],
+    decompose_from: &str,
+    system_prompt: &str,
+    command_prompt: &str,
+    artifact: &str,
+) -> CreateWorkflowPhase {
+    let mut phase = phase_with_agent_type(order, name, slug, gate, inputs, system_prompt, command_prompt, artifact, "execute");
+    phase.decompose_from = decompose_from.to_string();
+    phase
 }
 
 fn preset(
@@ -97,7 +102,7 @@ pub fn get_preset_definitions() -> Vec<CreateWorkflowDefinition> {
                     sk::PLAN_SYSTEM, sk::PLAN_COMMAND, sk::PLAN_ARTIFACT),
                 phase(3, "Tasks", "tasks", Auto, &["plan"],
                     sk::TASKS_SYSTEM, sk::TASKS_COMMAND, sk::TASKS_ARTIFACT),
-                execute_phase(4, "Implement", "implement", Auto, &["tasks"],
+                decomposable_execute_phase(4, "Implement", "implement", Auto, &["tasks"], "tasks",
                     sk::IMPLEMENT_SYSTEM, sk::IMPLEMENT_COMMAND, sk::IMPLEMENT_ARTIFACT),
                 phase(5, "Analyze", "analyze", Approval, &["specify", "implement"],
                     sk::ANALYZE_SYSTEM, sk::ANALYZE_COMMAND, sk::ANALYZE_ARTIFACT),
@@ -114,7 +119,7 @@ pub fn get_preset_definitions() -> Vec<CreateWorkflowDefinition> {
                     bm::PLANNING_SYSTEM, bm::PLANNING_COMMAND, bm::PLANNING_ARTIFACT),
                 phase(2, "Solutioning", "solutioning", Approval, &["analysis", "planning"],
                     bm::SOLUTIONING_SYSTEM, bm::SOLUTIONING_COMMAND, bm::SOLUTIONING_ARTIFACT),
-                execute_phase(3, "Implementation", "implementation", Auto, &["solutioning"],
+                decomposable_execute_phase(3, "Implementation", "implementation", Auto, &["solutioning"], "solutioning",
                     bm::IMPLEMENTATION_SYSTEM, bm::IMPLEMENTATION_COMMAND, bm::IMPLEMENTATION_ARTIFACT),
             ],
         ),
@@ -125,7 +130,7 @@ pub fn get_preset_definitions() -> Vec<CreateWorkflowDefinition> {
             vec![
                 phase(0, "Propose", "propose", Approval, &[],
                     os::PROPOSE_SYSTEM, os::PROPOSE_COMMAND, os::PROPOSE_ARTIFACT),
-                execute_phase(1, "Apply", "apply", Auto, &["propose"],
+                decomposable_execute_phase(1, "Apply", "apply", Auto, &["propose"], "propose",
                     os::APPLY_SYSTEM, os::APPLY_COMMAND, os::APPLY_ARTIFACT),
                 phase(2, "Archive", "archive", Auto, &["apply"],
                     os::ARCHIVE_SYSTEM, os::ARCHIVE_COMMAND, os::ARCHIVE_ARTIFACT),
@@ -140,7 +145,7 @@ pub fn get_preset_definitions() -> Vec<CreateWorkflowDefinition> {
                     cd::PRD_SYSTEM, cd::PRD_COMMAND, cd::PRD_ARTIFACT),
                 phase(1, "Plan", "plan", Approval, &["prd"],
                     cd::PLAN_SYSTEM, cd::PLAN_COMMAND, cd::PLAN_ARTIFACT),
-                execute_phase(2, "Build", "build", Auto, &["plan"],
+                decomposable_execute_phase(2, "Build", "build", Auto, &["plan"], "plan",
                     cd::BUILD_SYSTEM, cd::BUILD_COMMAND, cd::BUILD_ARTIFACT),
             ],
         ),
