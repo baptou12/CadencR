@@ -21,10 +21,7 @@ impl QueueAdvancer {
         info!(feature_id = self.feature_id, slot = %slot, "queue item paused (interrupted)");
 
         if let AgentSlot::QueueItem(item_id) = &slot {
-            let _ = sqlx::query("UPDATE workflow_queue SET status = 'paused' WHERE id = ?")
-                .bind(item_id)
-                .execute(&self.write_pool)
-                .await;
+            let _ = repo::mark_item_paused(&self.write_pool, *item_id).await;
             agent_manager.send_item_update(*item_id).await;
         }
 
@@ -85,27 +82,16 @@ impl QueueAdvancer {
         .await
         .map_err(|e| format!("Failed to read phases: {e}"))?;
 
-        let existing_phase_ids: Vec<(Option<i64>,)> = sqlx::query_as(
-            "SELECT phase_id FROM workflow_queue WHERE feature_id = ? AND phase_id IS NOT NULL",
-        )
-        .bind(self.feature_id)
-        .fetch_all(&self.read_pool)
-        .await
-        .map_err(|e| format!("Failed to read queue: {e}"))?;
-
-        let existing: std::collections::HashSet<i64> = existing_phase_ids
+        let existing: std::collections::HashSet<i64> = repo::get_existing_phase_ids(&self.read_pool, self.feature_id)
+            .await
+            .map_err(|e| format!("Failed to read queue: {e}"))?
             .into_iter()
-            .filter_map(|(id,)| id)
             .collect();
 
         // Upgrade any draft queue items to ready (placeholders from create_phase)
-        sqlx::query(
-            "UPDATE workflow_queue SET status = 'ready' WHERE feature_id = ? AND status = 'draft'",
-        )
-        .bind(self.feature_id)
-        .execute(&self.write_pool)
-        .await
-        .map_err(|e| format!("Failed to upgrade draft items: {e}"))?;
+        repo::upgrade_draft_to_ready(&self.write_pool, self.feature_id)
+            .await
+            .map_err(|e| format!("Failed to upgrade draft items: {e}"))?;
 
         let new_phases: Vec<_> = all_phases
             .iter()
@@ -123,21 +109,13 @@ impl QueueAdvancer {
             "review created fix phases, adding to queue"
         );
 
-        let max_order: i64 = sqlx::query_scalar(
-            "SELECT COALESCE(MAX(order_index), 0) FROM workflow_queue WHERE feature_id = ?",
-        )
-        .bind(self.feature_id)
-        .fetch_one(&self.read_pool)
-        .await
-        .map_err(|e| format!("Failed to get max order: {e}"))?;
+        let max_order = repo::get_max_order_index(&self.read_pool, self.feature_id)
+            .await
+            .map_err(|e| format!("Failed to get max order: {e}"))?;
 
-        let max_group: i64 = sqlx::query_scalar(
-            "SELECT COALESCE(MAX(group_index), 0) FROM workflow_queue WHERE feature_id = ?",
-        )
-        .bind(self.feature_id)
-        .fetch_one(&self.read_pool)
-        .await
-        .map_err(|e| format!("Failed to get max group: {e}"))?;
+        let max_group = repo::get_max_group_index(&self.read_pool, self.feature_id)
+            .await
+            .map_err(|e| format!("Failed to get max group: {e}"))?;
 
         let workflow_type_str = self.workflow_type.as_str();
 
@@ -173,16 +151,11 @@ impl QueueAdvancer {
         .await
         .map_err(|e| format!("Failed to insert follow-up review: {e}"))?;
 
-        let new_fix_ids: Vec<(i64,)> = sqlx::query_as(
-            "SELECT id FROM workflow_queue WHERE feature_id = ? AND order_index > ? AND item_type = 'execute' ORDER BY order_index",
-        )
-        .bind(self.feature_id)
-        .bind(max_order)
-        .fetch_all(&self.read_pool)
-        .await
-        .map_err(|e| format!("Failed to read new fix items: {e}"))?;
+        let new_fix_ids = repo::get_fix_item_ids_after_order(&self.read_pool, self.feature_id, max_order)
+            .await
+            .map_err(|e| format!("Failed to read new fix items: {e}"))?;
 
-        for (fix_id,) in new_fix_ids {
+        for fix_id in new_fix_ids {
             let _ = repo::insert_dependency(&self.write_pool, review_id, fix_id).await;
         }
 
@@ -255,16 +228,9 @@ impl QueueAdvancer {
         }
 
         // Restore paused queue items
-        let paused_queue_items: Vec<(i64, Option<i64>, Option<String>)> = sqlx::query_as(
-            "SELECT wq.id, wq.agent_session_id, ags.claude_session_id \
-             FROM workflow_queue wq \
-             LEFT JOIN agent_sessions ags ON ags.id = wq.agent_session_id \
-             WHERE wq.feature_id = ? AND wq.status = 'paused'",
-        )
-        .bind(self.feature_id)
-        .fetch_all(&self.read_pool)
-        .await
-        .map_err(|e| e.to_string())?;
+        let paused_queue_items = repo::get_paused_queue_items(&self.read_pool, self.feature_id)
+            .await
+            .map_err(|e| e.to_string())?;
 
         for (item_id, agent_session_id, cc_session_id) in &paused_queue_items {
             let slot = AgentSlot::QueueItem(*item_id);
@@ -286,13 +252,9 @@ impl QueueAdvancer {
         .await;
 
         // Mark stale running queue items as error
-        sqlx::query(
-            "UPDATE workflow_queue SET status = 'error', result = 'Stale after reconnect', ended_at = datetime('now'), pid = NULL WHERE feature_id = ? AND status = 'running'",
-        )
-        .bind(self.feature_id)
-        .execute(&self.write_pool)
-        .await
-        .map_err(|e| e.to_string())?;
+        repo::mark_stale_running_as_error(&self.write_pool, self.feature_id)
+            .await
+            .map_err(|e| e.to_string())?;
 
         // Send full queue update
         let all_items = repo::get_queue_for_feature(&self.read_pool, self.feature_id)

@@ -1,11 +1,13 @@
 mod feature_repository;
 mod plan_repository;
+mod queue_queries;
 mod queue_repository;
 mod settings_repository;
 mod snapshot;
 
 pub use feature_repository::*;
 pub use plan_repository::*;
+pub use queue_queries::*;
 pub use queue_repository::*;
 pub use settings_repository::*;
 pub use snapshot::*;

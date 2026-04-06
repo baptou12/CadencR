@@ -341,9 +341,7 @@ impl QueueAdvancer {
     ) -> Result<(), String> {
         info!(feature_id = self.feature_id, item_id, "retrying queue item");
 
-        sqlx::query("UPDATE workflow_queue SET status = 'ready', started_at = NULL, ended_at = NULL, result = NULL WHERE id = ?")
-            .bind(item_id)
-            .execute(&self.write_pool)
+        repo::reset_item_for_retry(&self.write_pool, item_id)
             .await
             .map_err(|e| format!("Failed to reset item for retry: {e}"))?;
 
@@ -383,13 +381,7 @@ impl QueueAdvancer {
 
     /// Get the group_index for a completed item (for autonomy level 2 checks).
     pub(crate) async fn get_current_group_index(&self, item_id: i64) -> Option<i64> {
-        let row: Option<(Option<i64>,)> =
-            sqlx::query_as("SELECT group_index FROM workflow_queue WHERE id = ?")
-                .bind(item_id)
-                .fetch_optional(&self.read_pool)
-                .await
-                .ok()?;
-        row.and_then(|(g,)| g)
+        repo::get_group_index(&self.read_pool, item_id).await.ok()?
     }
 }
 

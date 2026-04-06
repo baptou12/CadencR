@@ -119,12 +119,7 @@ impl AgentManager {
             }
             // Also mark queue items as paused in workflow_queue
             if let AgentSlot::QueueItem(item_id) = &slot {
-                let _ = sqlx::query(
-                    "UPDATE workflow_queue SET status = 'paused', ended_at = datetime('now') WHERE id = ? AND status = 'running'",
-                )
-                .bind(*item_id)
-                .execute(&self.write_pool)
-                .await;
+                let _ = repo::mark_running_item_paused(&self.write_pool, *item_id).await;
             }
         }
         WsSessionPersistence::broadcast_turn_state(&self.turn_state_tx, self.feature_id, "none");

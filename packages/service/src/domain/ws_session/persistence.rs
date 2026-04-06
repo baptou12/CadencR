@@ -519,8 +519,7 @@ impl WsSessionPersistence {
         }
 
         // Delete in dependency order
-        let _ = sqlx::query("UPDATE workflow_queue SET agent_session_id = NULL WHERE agent_session_id = ?")
-            .bind(session_id).execute(pool).await;
+        let _ = crate::domain::features::repository::clear_agent_session(pool, session_id).await;
         let _ = sqlx::query("DELETE FROM session_claude_ids WHERE session_id = ?")
             .bind(session_id).execute(pool).await;
         let _ = sqlx::query("DELETE FROM agent_messages WHERE session_id = ?")

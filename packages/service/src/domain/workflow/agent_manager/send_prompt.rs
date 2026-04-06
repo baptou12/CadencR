@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use tracing::{error, info, warn};
 
+use crate::domain::features::repository as repo;
 use crate::domain::mcp::servers::AgentType;
 
 use crate::domain::workflow::engine::AgentSlot;
@@ -91,17 +92,10 @@ impl AgentManager {
 
         // Fallback for queue items: look up claude_session_id via workflow_queue.agent_session_id
         if let AgentSlot::QueueItem(item_id) = &slot {
-            let row: Option<(i64, Option<String>)> = sqlx::query_as(
-                "SELECT ags.id, ags.claude_session_id FROM agent_sessions ags \
-                 INNER JOIN workflow_queue wq ON wq.agent_session_id = ags.id \
-                 WHERE wq.id = ? AND ags.status IN ('running', 'paused') \
-                 LIMIT 1",
-            )
-            .bind(*item_id)
-            .fetch_optional(&self.read_pool)
-            .await
-            .ok()
-            .flatten();
+            let row = repo::get_session_for_queue_item(&self.read_pool, *item_id)
+                .await
+                .ok()
+                .flatten();
 
             if let Some((db_session_id, Some(ref cc_session_id))) = row {
                 if !cc_session_id.is_empty() {
@@ -180,10 +174,7 @@ impl AgentManager {
                 self.queries.insert(slot.clone(), query_handle);
 
                 if let AgentSlot::QueueItem(item_id) = &slot {
-                    let _ = sqlx::query("UPDATE workflow_queue SET status = 'running' WHERE id = ?")
-                        .bind(item_id)
-                        .execute(&self.write_pool)
-                        .await;
+                    let _ = repo::mark_item_running_only(&self.write_pool, *item_id).await;
                     self.send_item_update(*item_id).await;
                 }
 

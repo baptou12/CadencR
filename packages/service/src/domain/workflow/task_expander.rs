@@ -162,10 +162,7 @@ async fn expand_phase(
         .map_err(|e| e.to_string())?;
 
         // Link queue item to synthetic phase
-        sqlx::query("UPDATE workflow_queue SET phase_id = ? WHERE id = ?")
-            .bind(phase_id)
-            .bind(queue_id)
-            .execute(pool)
+        repo::set_item_phase(pool, queue_id, phase_id)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -237,9 +234,7 @@ async fn delete_placeholder(pool: &SqlitePool, item_id: i64) -> Result<(), Strin
         .await
         .map_err(|e| e.to_string())?;
 
-    sqlx::query("DELETE FROM workflow_queue WHERE id = ?")
-        .bind(item_id)
-        .execute(pool)
+    repo::delete_item(pool, item_id)
         .await
         .map_err(|e| e.to_string())?;
 

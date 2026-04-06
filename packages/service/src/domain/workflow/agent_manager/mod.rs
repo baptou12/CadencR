@@ -224,10 +224,7 @@ impl AgentManager {
         .await
         .map_err(|e| format!("Failed to create agent session: {e}"))?;
 
-        sqlx::query("UPDATE workflow_queue SET agent_session_id = ? WHERE id = ?")
-            .bind(db_session_id)
-            .bind(item_id)
-            .execute(&self.write_pool)
+        repo::set_item_agent_session(&self.write_pool, item_id, db_session_id)
             .await
             .map_err(|e| format!("Failed to link session to queue item: {e}"))?;
 

@@ -57,33 +57,21 @@ impl CreatePhaseTool {
 
         // Insert a draft queue item so the phase appears in the sidebar immediately
         let feature_id = self.ctx.feature_id;
-        let max_queue_order: Option<i64> = sqlx::query_scalar(
-            "SELECT MAX(order_index) FROM workflow_queue WHERE feature_id = ?",
-        )
-        .bind(feature_id)
-        .fetch_one(&self.ctx.write_pool)
-        .await
-        .unwrap_or(None);
+        let max_queue_order = repo::get_max_order_index_nullable(&self.ctx.write_pool, feature_id)
+            .await
+            .unwrap_or(None);
 
         let queue_order = max_queue_order.map(|v| v + 1).unwrap_or(0);
 
-        let max_group: Option<i64> = sqlx::query_scalar(
-            "SELECT MAX(group_index) FROM workflow_queue WHERE feature_id = ?",
-        )
-        .bind(feature_id)
-        .fetch_one(&self.ctx.write_pool)
-        .await
-        .unwrap_or(None);
+        let max_group = repo::get_max_group_index_nullable(&self.ctx.write_pool, feature_id)
+            .await
+            .unwrap_or(None);
 
         let group = max_group.map(|v| v + 1).unwrap_or(0);
 
-        let workflow_type: Option<String> = sqlx::query_scalar(
-            "SELECT workflow_type FROM workflow_queue WHERE feature_id = ? LIMIT 1",
-        )
-        .bind(feature_id)
-        .fetch_optional(&self.ctx.read_pool)
-        .await
-        .unwrap_or(None);
+        let workflow_type = repo::get_workflow_type_for_feature(&self.ctx.read_pool, feature_id)
+            .await
+            .unwrap_or(None);
 
         let wf_type = workflow_type.as_deref().unwrap_or("feature_build");
         let item_type = repo::map_phase_type_to_item_type(Some(&phase_type));
