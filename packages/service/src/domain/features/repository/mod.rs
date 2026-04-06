@@ -179,7 +179,9 @@ mod tests {
                 phase_id INTEGER,
                 status TEXT NOT NULL DEFAULT 'pending',
                 order_index INTEGER NOT NULL DEFAULT 0,
-                agent_session_id INTEGER
+                agent_session_id INTEGER,
+                iteration_count INTEGER NOT NULL DEFAULT 0,
+                iteration_history TEXT
             )"#,
         )
         .execute(&pool)
@@ -1174,7 +1176,9 @@ mod tests {
                 phase_id INTEGER REFERENCES phases(id),
                 status TEXT NOT NULL DEFAULT 'pending',
                 order_index INTEGER NOT NULL DEFAULT 0,
-                agent_session_id INTEGER REFERENCES agent_sessions(id)
+                agent_session_id INTEGER REFERENCES agent_sessions(id),
+                iteration_count INTEGER NOT NULL DEFAULT 0,
+                iteration_history TEXT
             )"#,
         ).execute(&pool).await.unwrap();
         sqlx::query("PRAGMA foreign_keys = ON").execute(&pool).await.unwrap();

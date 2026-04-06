@@ -35,7 +35,7 @@ mod repository_tests {
                 name TEXT NOT NULL, \
                 slug TEXT NOT NULL, \
                 order_index INTEGER NOT NULL, \
-                gate_type TEXT NOT NULL CHECK(gate_type IN ('auto', 'approval', 'manual')), \
+                gate_type TEXT NOT NULL CHECK(gate_type IN ('auto', 'approval', 'manual', 'iterate')), \
                 system_prompt_template TEXT NOT NULL DEFAULT '', \
                 command_prompt_template TEXT NOT NULL DEFAULT '', \
                 artifact_template TEXT NOT NULL DEFAULT '', \
@@ -44,6 +44,7 @@ mod repository_tests {
                 agent_type TEXT NOT NULL DEFAULT '', \
                 decompose_from TEXT NOT NULL DEFAULT '', \
                 artifact_types TEXT NOT NULL DEFAULT '[]', \
+                max_iterations INTEGER NOT NULL DEFAULT 1, \
                 UNIQUE(workflow_definition_id, slug), \
                 UNIQUE(workflow_definition_id, order_index))"
         )
@@ -97,6 +98,7 @@ mod repository_tests {
             agent_type: String::new(),
             decompose_from: String::new(),
             artifact_types: vec![],
+            max_iterations: 1,
         }
     }
 
@@ -231,7 +233,7 @@ mod repository_tests {
 
         // update_phase should fail
         let update_result = crate::domain::ws_workflow::service::update_phase(
-            &pool, phase_id, Some("New Name"), None, None, None, None, None, None, None, None,
+            &pool, phase_id, Some("New Name"), None, None, None, None, None, None, None, None, None,
         ).await;
         assert!(update_result.is_err());
 
@@ -381,7 +383,7 @@ mod repository_tests {
 
         let speckit = all.iter().find(|d| d.slug == "speckit").unwrap();
         assert_eq!(speckit.phases.len(), 6);
-        assert_eq!(speckit.phases[0].gate_type, "approval");
+        assert_eq!(speckit.phases[0].gate_type, "auto");
 
         // Pre-analyze appears before implement, post-analyze after
         let pre_analyze = speckit.phases.iter().find(|p| p.slug == "pre-analyze").unwrap();
@@ -453,7 +455,7 @@ mod repository_tests {
         let analysis = bmad.phases.iter().find(|p| p.slug == "analysis").unwrap();
         phase_repository::update_workflow_phase(
             &pool, analysis.id,
-            None, None, Some("stale system prompt"), None, None, None, None, None, None,
+            None, None, Some("stale system prompt"), None, None, None, None, None, None, None,
         ).await.unwrap();
 
         // Re-seed should restore the correct prompt
@@ -479,7 +481,7 @@ mod repository_tests {
         let specify = speckit.phases.iter().find(|p| p.slug == "specify").unwrap();
         phase_repository::update_workflow_phase(
             &pool, specify.id,
-            None, None, None, None, None, None, Some("haiku"), None, None,
+            None, None, None, None, None, None, Some("haiku"), None, None, None,
         ).await.unwrap();
 
         // Re-seed should preserve the user's model choice

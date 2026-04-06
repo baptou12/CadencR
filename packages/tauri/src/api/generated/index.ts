@@ -1651,7 +1651,7 @@ export interface WorkflowPhase {
   name: string;
   slug: string;
   order_index: number;
-  gate_type: "auto" | "approval" | "manual";
+  gate_type: "auto" | "approval" | "manual" | "iterate";
   system_prompt_template: string;
   command_prompt_template: string;
   artifact_template: string;
@@ -1659,6 +1659,7 @@ export interface WorkflowPhase {
   model_override: string;
   agent_type: "workflow" | "execute";
   artifact_types: string[];
+  max_iterations: number;
 }
 
 export interface WorkflowDefinition {

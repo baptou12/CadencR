@@ -231,9 +231,28 @@ function PhaseSettingsPanel({ phase, isPreset, onUpdate, allPrecedingPhases }: P
           Controls how this phase transitions to the next.
           <strong> Auto</strong> proceeds immediately,
           <strong> Approval</strong> waits for your review,
-          <strong> Manual</strong> pauses for you to run it yourself.
+          <strong> Manual</strong> pauses for you to run it yourself,
+          <strong> Iterate</strong> re-runs until quality criteria are met.
         </p>
       </div>
+
+      {/* Max Iterations (only for iterate gate) */}
+      {phase.gate_type === "iterate" && (
+        <div className="space-y-1.5">
+          <label className="text-sm font-medium">Max Iterations</label>
+          <Input
+            type="number"
+            min={1}
+            max={10}
+            value={phase.max_iterations}
+            onChange={(e) => onUpdate({ max_iterations: Math.max(1, Math.min(10, Number(e.target.value))) })}
+            disabled={isPreset}
+          />
+          <p className="text-xs text-muted-foreground">
+            Phase re-runs up to this many times until the agent calls mark_satisfied.
+          </p>
+        </div>
+      )}
 
       {/* Agent Type */}
       <div className="space-y-1.5">

@@ -5,7 +5,7 @@
 use std::sync::atomic::Ordering;
 
 use axum::extract::ws::Message;
-use tracing::error;
+use tracing::{error, info};
 
 use crate::domain::features::repository as repo;
 use crate::domain::ws_workflow::artifact_repository;
@@ -172,6 +172,101 @@ impl QueueAdvancer {
                 );
                 let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
             }
+        }
+    }
+
+    /// Handle iterate gate: re-run phase until mark_satisfied is called or max iterations reached.
+    pub(crate) async fn handle_iterate_gate(
+        &self,
+        slot: &AgentSlot,
+        agent_manager: &AgentManager,
+        permissions: &PermissionRouter,
+        set_status: &dyn StatusSetter,
+    ) {
+        let item_id = match slot {
+            AgentSlot::QueueItem(id) => *id,
+            _ => return,
+        };
+
+        let item = match repo::get_queue_item(&self.read_pool, item_id).await {
+            Ok(Some(item)) => item,
+            _ => {
+                error!(item_id, "iterate gate: failed to load queue item");
+                return;
+            }
+        };
+
+        let config: serde_json::Value = item.config.as_deref()
+            .and_then(|s| serde_json::from_str(s).ok())
+            .unwrap_or_default();
+        let max_iterations = config.get("max_iterations")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(1);
+
+        let new_count = match repo::increment_iteration_count(&self.write_pool, item_id).await {
+            Ok(c) => c,
+            Err(e) => {
+                error!(item_id, error = %e, "failed to increment iteration count");
+                self.handle_auto_gate(slot, agent_manager, permissions, set_status).await;
+                return;
+            }
+        };
+
+        let result_text = item.result.clone().unwrap_or_default();
+        let mut history: Vec<serde_json::Value> = item.iteration_history.as_deref()
+            .and_then(|s| serde_json::from_str(s).ok())
+            .unwrap_or_default();
+        history.push(serde_json::json!({
+            "iteration": new_count,
+            "result_preview": &result_text[..result_text.len().min(500)],
+        }));
+        let _ = repo::update_iteration_history(
+            &self.write_pool, item_id, &serde_json::to_string(&history).unwrap_or_default(),
+        ).await;
+
+        let satisfied = config.get("satisfied").and_then(|v| v.as_bool()).unwrap_or(false);
+        let done = satisfied || new_count >= max_iterations;
+
+        info!(
+            item_id, iteration = new_count, max_iterations, satisfied, done,
+            "iterate gate check"
+        );
+
+        if done {
+            self.handle_auto_gate(slot, agent_manager, permissions, set_status).await;
+            return;
+        }
+
+        let mut new_config = config.clone();
+        let truncated_result: String = result_text.chars().take(4000).collect();
+        new_config["previous_iteration_result"] = serde_json::Value::String(truncated_result);
+        new_config["current_iteration"] = serde_json::json!(new_count);
+        if let Some(obj) = new_config.as_object_mut() {
+            obj.remove("satisfied");
+        }
+        let _ = repo::update_item_config(&self.write_pool, item_id, &new_config.to_string()).await;
+
+        if let Err(e) = repo::mark_item_ready(&self.write_pool, item_id).await {
+            error!(item_id, error = %e, "failed to reset item for iteration");
+            return;
+        }
+
+        let envelope = WsEnvelope::new(
+            "workflow",
+            "item_iterating",
+            to_value(WorkflowItemIteratingPayload {
+                feature_id: self.feature_id,
+                queue_item_id: item_id,
+                iteration_count: new_count,
+                max_iterations,
+            }),
+        );
+        let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
+
+        agent_manager.send_item_update(item_id).await;
+
+        if let Err(e) = self.advance(agent_manager, permissions).await {
+            error!(error = %e, "advance after iteration reset failed");
         }
     }
 

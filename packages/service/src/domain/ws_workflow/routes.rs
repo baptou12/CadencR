@@ -52,6 +52,8 @@ pub struct CreatePhaseRequest {
     pub agent_type: String,
     #[serde(default)]
     pub artifact_types: Vec<String>,
+    #[serde(default = "crate::domain::ws_workflow::models::default_max_iterations")]
+    pub max_iterations: i32,
 }
 
 fn default_agent_type() -> String {
@@ -71,6 +73,7 @@ pub struct UpdatePhaseRequest {
     pub model_override: Option<String>,
     pub agent_type: Option<String>,
     pub artifact_types: Option<Vec<String>>,
+    pub max_iterations: Option<i32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -98,6 +101,7 @@ impl From<CreatePhaseRequest> for CreateWorkflowPhase {
             agent_type: r.agent_type,
             decompose_from: String::new(),
             artifact_types: r.artifact_types,
+            max_iterations: r.max_iterations,
         }
     }
 }
@@ -191,6 +195,7 @@ async fn update_phase(
         body.model_override.as_deref(),
         body.agent_type.as_deref(),
         body.artifact_types.as_ref(),
+        body.max_iterations,
     ).await?;
     Ok(Json(result))
 }

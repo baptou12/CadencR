@@ -139,6 +139,7 @@ export function useWorkflowEditor({ definitionId, forkFromId, onSave }: UseWorkf
       model_override: "",
       agent_type: "workflow" as const,
       artifact_types: [],
+      max_iterations: 1,
     };
 
     // In create mode, auto-save the definition with the first phase included (backend requires ≥1 phase)

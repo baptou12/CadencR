@@ -186,6 +186,10 @@ pub struct QueueItem {
     pub max_retries: i64,
     pub retry_count: i64,
     #[sqlx(default)]
+    pub iteration_count: i64,
+    #[sqlx(default)]
+    pub iteration_history: Option<String>,
+    #[sqlx(default)]
     pub phase_title: Option<String>,
 }
 
@@ -541,6 +545,8 @@ mod tests {
             pid: Some(12345),
             max_retries: 1,
             retry_count: 0,
+            iteration_count: 0,
+            iteration_history: None,
             phase_title: None,
         };
 
@@ -582,6 +588,8 @@ mod tests {
             pid: None,
             max_retries: 1,
             retry_count: 0,
+            iteration_count: 0,
+            iteration_history: None,
             phase_title: None,
         };
 

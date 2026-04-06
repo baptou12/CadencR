@@ -39,6 +39,15 @@ pub fn spawn_workflow_stream_reader(
         .unwrap_or(crate::api::DEFAULT_CONTEXT_WINDOW);
     tokio::spawn(async move {
         debug!(slot = %slot, db_session_id, "workflow stream reader started");
+
+        // Cache phase_slug once to avoid repeated DB lookups for artifact notifications
+        let phase_slug: Option<String> = if let AgentSlot::QueueItem(item_id) = &slot {
+            repo::get_queue_item(&write_pool, *item_id).await
+                .ok().flatten().map(|qi| qi.item_type)
+        } else {
+            None
+        };
+
         let mut persistence = WsSessionPersistence::with_session_id(
             write_pool.clone(),
             feature_id,
@@ -111,7 +120,7 @@ pub fn spawn_workflow_stream_reader(
                     }
 
                     // Live-refresh: detect plan/phase-modifying tool calls
-                    handle_live_refresh(&sdk_msg, &slot, feature_id, &sender, &write_pool, &mut agent_done_called, &mut pending_feature_update, &mut pending_queue_update).await;
+                    handle_live_refresh(&sdk_msg, feature_id, phase_slug.as_deref(), &sender, &write_pool, &mut agent_done_called, &mut pending_feature_update, &mut pending_queue_update).await;
                 }
                 Some(Err(e)) => {
                     error!(slot = %slot, error = %e, "workflow SDK stream error");
@@ -267,11 +276,18 @@ async fn build_stream_envelope(
     }
 }
 
+fn is_completion_tool(name: &str) -> bool {
+    name.contains("mark_agent_done")
+        || name.contains("mark_phase_done")
+        || name.contains("mark_phase_complete")
+        || name.contains("request_approval")
+}
+
 /// Detect plan/phase-modifying tool calls and send live-refresh updates.
 async fn handle_live_refresh(
     sdk_msg: &SdkMessage,
-    _slot: &AgentSlot,
     feature_id: i64,
+    phase_slug: Option<&str>,
     sender: &WsSender,
     write_pool: &SqlitePool,
     agent_done_called: &mut bool,
@@ -284,7 +300,7 @@ async fn handle_live_refresh(
             let mut fields: Vec<&'static str> = Vec::new();
             for block in &message.content {
                 if let ContentBlock::ToolUse { name, .. } = block {
-                    if name.contains("mark_agent_done") || name.contains("mark_phase_done") {
+                    if is_completion_tool(name) {
                         *agent_done_called = true;
                     }
                     if name.contains("create_phase") || name.contains("finalize_phases") {
@@ -315,9 +331,20 @@ async fn handle_live_refresh(
         }
         SdkMessage::ToolUseSummary { ref data, .. } => {
             if let Some(tool_name) = data.get("tool_name").and_then(|v| v.as_str()) {
-                if tool_name.contains("mark_agent_done") || tool_name.contains("mark_phase_done") {
+                if is_completion_tool(tool_name) {
                     *agent_done_called = true;
                 }
+                if tool_name.contains("create_artifact") || tool_name.contains("update_artifact") {
+                    if let Some(slug) = phase_slug {
+                        let envelope = crate::domain::ws_session::protocol::WsEnvelope::new(
+                            "workflow",
+                            "artifact_updated",
+                            serde_json::json!({ "feature_id": feature_id, "phase_slug": slug }),
+                        );
+                        let _ = sender.send(axum::extract::ws::Message::Text(String::from(envelope).into()));
+                    }
+                }
+
                 let changed: Option<&[&str]> = match tool_name {
                     t if t.contains("create_phase") || t.contains("finalize_phases") => {
                         send_queue_update(sender, write_pool, feature_id).await;
@@ -410,5 +437,21 @@ async fn post_stream_cleanup(
         // Safety net: no engine callback dispatched (e.g. WS sender closed early)
         warn!(slot = %slot, "stream ended without dispatching any engine callback");
         WsSessionPersistence::broadcast_turn_state(turn_state_tx, feature_id, "none");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_completion_tool() {
+        assert!(is_completion_tool("mark_agent_done"));
+        assert!(is_completion_tool("mark_phase_done"));
+        assert!(is_completion_tool("mark_phase_complete"));
+        assert!(is_completion_tool("request_approval"));
+        assert!(is_completion_tool("mcp__cadence_workflow__mark_phase_complete"));
+        assert!(!is_completion_tool("create_artifact"));
+        assert!(!is_completion_tool("read_project_context"));
     }
 }

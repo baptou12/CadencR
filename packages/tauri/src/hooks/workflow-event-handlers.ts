@@ -127,6 +127,18 @@ export function createWorkflowMessageHandler(
         }));
         break;
       }
+      case "item_iterating": {
+        const itemId = payload.queue_item_id as number;
+        const iterCount = payload.iteration_count as number;
+        set(state => ({
+          queue: state.queue.map(q =>
+            q.id === itemId
+              ? { ...q, iteration_count: iterCount }
+              : q,
+          ),
+        }));
+        break;
+      }
       case "item_started": {
         const slot = parseAgentSlot(payload);
         const itemId = agentSlotToLegacyId(slot);

@@ -233,6 +233,9 @@ impl QueueAdvancer {
                 Some("manual") => {
                     self.handle_manual_gate(agent_manager).await;
                 }
+                Some("iterate") => {
+                    self.handle_iterate_gate(&slot, agent_manager, permissions, set_status).await;
+                }
                 _ => {
                     self.handle_auto_gate(&slot, agent_manager, permissions, set_status).await;
                 }

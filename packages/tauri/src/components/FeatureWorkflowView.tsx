@@ -451,6 +451,21 @@ export function FeatureWorkflowView({
                   </div>
                 )}
 
+                {/* Phase approval bar for custom workflow phases */}
+                {!maximizedAgent && pendingApproval && (() => {
+                  const phaseName = workflowDefinition?.phases?.find(
+                    (p) => p.slug === pendingApproval.phaseSlug,
+                  )?.name ?? pendingApproval.phaseSlug;
+                  return (
+                    <PhaseApprovalBar
+                      phaseName={phaseName}
+                      artifactContent={pendingApproval.artifactContent}
+                      onApprove={() => approvePhase(pendingApproval.phaseSlug, true)}
+                      onReject={(fb) => approvePhase(pendingApproval.phaseSlug, false, fb)}
+                    />
+                  );
+                })()}
+
                 {!maximizedAgent && (
                   <div className="shrink-0">
                     <NextStepsBar
@@ -551,20 +566,6 @@ export function FeatureWorkflowView({
       </div>
       </div>
 
-      {/* Phase approval bar for custom workflow phases */}
-      {pendingApproval && (() => {
-        const phaseName = workflowDefinition?.phases?.find(
-          (p) => p.slug === pendingApproval.phaseSlug,
-        )?.name ?? pendingApproval.phaseSlug;
-        return (
-          <PhaseApprovalBar
-            phaseName={phaseName}
-            artifactContent={pendingApproval.artifactContent}
-            onApprove={() => approvePhase(pendingApproval.phaseSlug, true)}
-            onReject={(fb) => approvePhase(pendingApproval.phaseSlug, false, fb)}
-          />
-        );
-      })()}
 
       {/* Custom workflow input bar — shown when no phases have started yet (hidden during auto-start) */}
       {isCustomWorkflow && view === "plan-input" && !pendingApproval && workflowDefinition && !initialDescription && (

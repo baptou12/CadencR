@@ -199,6 +199,30 @@ impl WorkflowServer {
         self.send_done(Some(format!("{count} tasks finalized"))).await
     }
 
+    async fn mark_satisfied(&self) -> Result<String, String> {
+        use crate::domain::features::repository as repo;
+
+        let phase_slug = self.require_phase_slug()?;
+
+        let item = repo::get_queue_item_by_slug(
+            &self.ctx.read_pool, self.ctx.feature_id, &phase_slug, "running",
+        )
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("No running queue item for phase '{phase_slug}'"))?;
+
+        let mut config: serde_json::Value = item.config.as_deref()
+            .and_then(|s| serde_json::from_str(s).ok())
+            .unwrap_or_else(|| json!({}));
+        config["satisfied"] = json!(true);
+
+        repo::update_item_config(&self.ctx.write_pool, item.id, &config.to_string())
+            .await
+            .map_err(|e| e.to_string())?;
+
+        Ok(format!("Phase '{phase_slug}' marked as satisfied. Call mark_phase_complete to finish."))
+    }
+
     fn require_phase_slug(&self) -> Result<String, String> {
         self.ctx
             .phase_slug
@@ -230,6 +254,7 @@ impl ServerHandler for WorkflowServer {
                 tool_read_project_context(),
                 tool_create_task(),
                 tool_finalize_tasks(),
+                tool_mark_satisfied(),
             ],
             next_cursor: None,
         }))
@@ -300,6 +325,7 @@ impl ServerHandler for WorkflowServer {
                     }
                 }
                 "finalize_tasks" => self.finalize_tasks().await,
+                "mark_satisfied" => self.mark_satisfied().await,
                 other => Err(format!("Unknown tool: {other}")),
             };
 
@@ -410,4 +436,13 @@ fn tool_create_task() -> rmcp::model::Tool {
 
 fn tool_finalize_tasks() -> rmcp::model::Tool {
     make_tool("finalize_tasks", "Finalize all registered tasks. Expands them into individual execute agents.", json!({ "type": "object", "properties": {} }))
+}
+
+fn tool_mark_satisfied() -> rmcp::model::Tool {
+    make_tool(
+        "mark_satisfied",
+        "Signal that the current iteration's output meets quality criteria. For iterate-gate phases, \
+         calling this prevents re-running the phase. Call this BEFORE mark_phase_complete when satisfied.",
+        json!({ "type": "object", "properties": {} }),
+    )
 }

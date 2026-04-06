@@ -10,6 +10,7 @@ import {
   MessageSquare,
   FlaskConical,
   ClipboardList,
+  RefreshCw,
 } from "lucide-react";
 import type { WorkflowPhase } from "@/api/generated";
 import { cn } from "@/lib/utils";
@@ -38,6 +39,7 @@ const GATE_ICONS: Record<WorkflowPhase["gate_type"], PhaseIconDef> = {
   auto: { icon: ArrowRight, className: "size-3 text-foreground/50" },
   approval: { icon: Shield, className: "size-3 text-amber-500" },
   manual: { icon: Hand, className: "size-3 text-blue-500" },
+  iterate: { icon: RefreshCw, className: "size-3 text-green-500" },
 };
 
 function resolvePhaseIcon(phase: WorkflowPhase): PhaseIconDef {

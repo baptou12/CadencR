@@ -14,7 +14,7 @@ const mockDefinitions: WorkflowDefinition[] = [
     description: "The default workflow",
     is_preset: true,
     phases: [
-      { id: 1, workflow_definition_id: 1, name: "Plan", slug: "plan", order_index: 0, gate_type: "auto", system_prompt_template: "", command_prompt_template: "", artifact_template: "", input_phase_slugs: [], model_override: "", agent_type: "workflow" as const, artifact_types: [] },
+      { id: 1, workflow_definition_id: 1, name: "Plan", slug: "plan", order_index: 0, gate_type: "auto", system_prompt_template: "", command_prompt_template: "", artifact_template: "", input_phase_slugs: [], model_override: "", agent_type: "workflow" as const, artifact_types: [], max_iterations: 1 },
     ],
     created_at: "2025-01-01",
     updated_at: "2025-01-01",
@@ -26,8 +26,8 @@ const mockDefinitions: WorkflowDefinition[] = [
     description: "Speckit workflow",
     is_preset: true,
     phases: [
-      { id: 2, workflow_definition_id: 2, name: "Spec", slug: "spec", order_index: 0, gate_type: "approval", system_prompt_template: "", command_prompt_template: "", artifact_template: "", input_phase_slugs: [], model_override: "", agent_type: "workflow" as const, artifact_types: [] },
-      { id: 3, workflow_definition_id: 2, name: "Build", slug: "build", order_index: 1, gate_type: "auto", system_prompt_template: "", command_prompt_template: "", artifact_template: "", input_phase_slugs: ["spec"], model_override: "", agent_type: "workflow" as const, artifact_types: [] },
+      { id: 2, workflow_definition_id: 2, name: "Spec", slug: "spec", order_index: 0, gate_type: "approval", system_prompt_template: "", command_prompt_template: "", artifact_template: "", input_phase_slugs: [], model_override: "", agent_type: "workflow" as const, artifact_types: [], max_iterations: 1 },
+      { id: 3, workflow_definition_id: 2, name: "Build", slug: "build", order_index: 1, gate_type: "auto", system_prompt_template: "", command_prompt_template: "", artifact_template: "", input_phase_slugs: ["spec"], model_override: "", agent_type: "workflow" as const, artifact_types: [], max_iterations: 1 },
     ],
     created_at: "2025-01-01",
     updated_at: "2025-01-01",

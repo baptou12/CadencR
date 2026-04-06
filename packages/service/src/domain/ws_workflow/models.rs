@@ -36,6 +36,13 @@ pub struct WorkflowPhase {
     #[sqlx(default)]
     #[serde(default)]
     pub artifact_types: Vec<String>,
+    #[sqlx(default)]
+    #[serde(default = "default_max_iterations")]
+    pub max_iterations: i32,
+}
+
+pub(crate) fn default_max_iterations() -> i32 {
+    1
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -58,6 +65,7 @@ pub enum GateType {
     Auto,
     Approval,
     Manual,
+    Iterate,
 }
 
 impl fmt::Display for GateType {
@@ -66,6 +74,7 @@ impl fmt::Display for GateType {
             GateType::Auto => write!(f, "auto"),
             GateType::Approval => write!(f, "approval"),
             GateType::Manual => write!(f, "manual"),
+            GateType::Iterate => write!(f, "iterate"),
         }
     }
 }
@@ -78,6 +87,7 @@ impl FromStr for GateType {
             "auto" => Ok(GateType::Auto),
             "approval" => Ok(GateType::Approval),
             "manual" => Ok(GateType::Manual),
+            "iterate" => Ok(GateType::Iterate),
             _ => Err(format!("Invalid gate type: {}", s)),
         }
     }
@@ -128,4 +138,6 @@ pub struct CreateWorkflowPhase {
     pub decompose_from: String,
     #[serde(default)]
     pub artifact_types: Vec<String>,
+    #[serde(default = "default_max_iterations")]
+    pub max_iterations: i32,
 }

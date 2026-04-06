@@ -197,6 +197,25 @@ pub async fn increment_retry_count(pool: &SqlitePool, item_id: i64) -> Result<i6
     Ok(row.0)
 }
 
+pub async fn increment_iteration_count(pool: &SqlitePool, item_id: i64) -> Result<i64, AppError> {
+    let row: (i64,) = sqlx::query_as(
+        "UPDATE workflow_queue SET iteration_count = iteration_count + 1 WHERE id = ? RETURNING iteration_count",
+    )
+    .bind(item_id)
+    .fetch_one(pool)
+    .await?;
+    Ok(row.0)
+}
+
+pub async fn update_iteration_history(pool: &SqlitePool, item_id: i64, history: &str) -> Result<(), AppError> {
+    sqlx::query("UPDATE workflow_queue SET iteration_history = ? WHERE id = ?")
+        .bind(history)
+        .bind(item_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 pub async fn mark_item_ready(pool: &SqlitePool, item_id: i64) -> Result<(), AppError> {
     sqlx::query("UPDATE workflow_queue SET status = 'ready', started_at = NULL, ended_at = NULL WHERE id = ?")
         .bind(item_id)

@@ -12,4 +12,4 @@ You have access to the project at {{project_path}}. Explore the codebase to unde
 4. Use a maximum of 3 clarification markers, prioritized by: scope impact > security/privacy > UX > technical
 5. Write user scenarios as independently testable, prioritized journeys
 6. Generate measurable, technology-agnostic success criteria
-7. Validate spec completeness and iterate if needed (up to 3 refinement passes)
+7. Self-validate the specification against a quality checklist before saving (up to 3 iterations)

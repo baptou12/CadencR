@@ -44,6 +44,7 @@ const GATE_CONFIG: Record<string, { icon: React.ReactNode; label: string }> = {
   auto: { icon: <ZapIcon className="size-3" />, label: "Auto" },
   approval: { icon: <ShieldIcon className="size-3" />, label: "Approval" },
   manual: { icon: <PointerIcon className="size-3" />, label: "Manual" },
+  iterate: { icon: <RotateCcwIcon className="size-3" />, label: "Iterate" },
 };
 
 // ---------------------------------------------------------------------------
@@ -100,6 +101,15 @@ export function WorkflowQueueSidebar({
     return set;
   }, [sortedPhases]);
 
+  // Map phase slugs to queue items for iteration state
+  const queueBySlug = useMemo(() => {
+    const map = new Map<string, (typeof queue)[number]>();
+    for (const item of queue) {
+      if (!item.item_type.includes(":")) map.set(item.item_type, item);
+    }
+    return map;
+  }, [queue]);
+
   if (isLoading) {
     return (
       <div className={cn("flex h-full w-72 shrink-0 items-center justify-center", className)}>
@@ -144,12 +154,12 @@ export function WorkflowQueueSidebar({
             <div key={phase.slug}>
               <PhaseCard
                 phase={phase}
+                item={queueBySlug.get(phase.slug)}
                 status={phaseStates.get(phase.slug)?.status ?? "pending"}
                 artifactPreview={phaseStates.get(phase.slug)?.artifactPreview ?? null}
                 agentSessionId={phaseStates.get(phase.slug)?.agentSessionId ?? null}
                 isLast={!isDecomposed && index === sortedPhases.length - 1}
                 hasMultipleInputs={hasMultipleInputs.has(phase.slug)}
-                onApprove={() => approvePhase(phase.slug, true)}
                 onTrigger={() => triggerPhase(phase.slug)}
                 onViewArtifact={onViewArtifact ? () => onViewArtifact(phase.slug, phase.artifact_types?.length ? phase.artifact_types : undefined) : undefined}
                 onScrollToAgent={onScrollToAgent}
@@ -176,12 +186,12 @@ export function WorkflowQueueSidebar({
 
 interface PhaseCardProps {
   phase: WorkflowPhase;
+  item?: QueueItem;
   status: PhaseStatus;
   artifactPreview: string | null;
   agentSessionId: number | null;
   isLast: boolean;
   hasMultipleInputs: boolean;
-  onApprove: () => void;
   onTrigger: () => void;
   onViewArtifact?: () => void;
   onScrollToAgent?: (sessionId: number) => void;
@@ -189,12 +199,12 @@ interface PhaseCardProps {
 
 function PhaseCard({
   phase,
+  item,
   status,
   artifactPreview,
   agentSessionId,
   isLast,
   hasMultipleInputs,
-  onApprove,
   onTrigger,
   onViewArtifact,
   onScrollToAgent,
@@ -222,14 +232,14 @@ function PhaseCard({
         <button
           type="button"
           onClick={() => {
-            if (status === "completed" && onViewArtifact) onViewArtifact();
+            if ((status === "completed" || status === "pending_approval") && onViewArtifact) onViewArtifact();
           }}
           className={cn(
             "w-full rounded-md border border-gray-800 px-2.5 py-2 text-left transition-colors",
             "hover:bg-gray-800/40",
             status === "running" && "border-blue-500/40 bg-blue-500/5",
             status === "error" && "border-red-500/40",
-            status === "completed" && onViewArtifact && "cursor-pointer",
+            (status === "completed" || status === "pending_approval") && onViewArtifact && "cursor-pointer",
           )}
         >
           {/* Name + badges row */}
@@ -238,6 +248,11 @@ function PhaseCard({
             {gate && (
               <Badge variant="outline" className="shrink-0 gap-0.5 px-1 py-0 text-[9px]">
                 {gate.icon} {gate.label}
+              </Badge>
+            )}
+            {(item?.iteration_count ?? 0) > 0 && (
+              <Badge variant="outline" className="shrink-0 gap-0.5 px-1 py-0 text-[9px] text-green-400 border-green-500/40">
+                Iter {item?.iteration_count}/{phase.max_iterations}
               </Badge>
             )}
             {phase.model_override && (
@@ -267,11 +282,6 @@ function PhaseCard({
         </button>
 
         {/* Action buttons */}
-        {status === "pending_approval" && (
-          <Button size="sm" variant="outline" className="mt-1 h-6 text-[10px] gap-1" onClick={onApprove}>
-            <ShieldAlertIcon className="size-3" /> Review & Approve
-          </Button>
-        )}
         {status === "ready" && phase.gate_type === "manual" && (
           <Button size="sm" variant="outline" className="mt-1 h-6 text-[10px] gap-1" onClick={onTrigger}>
             <PlayIcon className="size-3" /> Start Phase

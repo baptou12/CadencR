@@ -8,6 +8,8 @@
 - [ ] [workflow] Commit detection
 - [ ] [workflow] during onboarding, the back button next to "workflow" text is useless
 - [ ] [workflow] dependencies vizualization
+- [ ] [workflow] agents are reading from the main worktree instead of the created one
+- [ ] [workflow] agents are completely restarting on page refresh
 - [ ] [global] Rework command palette
 - [ ] [global] Theming
 - [ ] [global] custom commands + custom schedules
@@ -17,11 +19,11 @@
 ### Framework parity gaps
 Capabilities needed to fully support BMAD, Speckit, and OpenSpec workflows natively.
 
-- [~] [workflow] multi-artifact output per phase
+- [x] [workflow] multi-artifact output per phase
   OpenSpec `propose` creates 4 artifacts (proposal, specs, design, tasks) in one step. Currently a phase produces exactly one artifact. Needs a way to output multiple typed artifacts from a single phase execution.
-- [ ] [workflow] phase iteration/refinement loops
+- [~] [workflow] phase iteration/refinement loops
   Speckit `specify` iterates up to 3 times to refine the spec until quality checks pass. Currently phases run once. Needs a loop-until-satisfied mechanism with a configurable max iteration count.
-- [ ] [workflow] flexible analyze phase ordering
+- [x] [workflow] flexible analyze phase ordering
   Speckit runs `analyze` BEFORE `implement` as a pre-implementation quality gate (cross-artifact consistency check). Currently phase order is fixed per preset. Either make order configurable per-workflow, or allow a phase to appear both before and after another.
 - [ ] [workflow] add checklist phase
   Speckit generates domain-specific "unit tests for requirements" — a checklist that validates spec completeness before implementation. New phase type, could be a built-in Speckit phase or a generic reusable phase.
@@ -33,3 +35,4 @@ Capabilities needed to fully support BMAD, Speckit, and OpenSpec workflows nativ
   OpenSpec archive compares change-level specs with project-level specs and prompts for sync. Needs a concept of project-level specs (persistent across features) vs feature-level artifacts (scoped to one workflow).
 - [ ] [workflow] per-preset extension hooks
   BMAD and Speckit support before/after hooks per phase via config files (e.g., `.specify/extensions.yml`). Needs a hook system in the workflow definition that runs user-defined actions before or after phase execution.
+

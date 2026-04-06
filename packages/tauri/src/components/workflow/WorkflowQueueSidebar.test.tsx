@@ -20,7 +20,7 @@ const makePhase = (overrides: Partial<WorkflowPhase> = {}): WorkflowPhase => ({
   input_phase_slugs: [],
   model_override: "",
   agent_type: "workflow",
-  artifact_types: [],
+  artifact_types: [], max_iterations: 1,
   ...overrides,
 });
 
@@ -86,12 +86,6 @@ describe("WorkflowQueueSidebar", () => {
     expect(screen.getByText("Manual")).toBeInTheDocument();
   });
 
-  it("shows approval button for pending_approval phases", () => {
-    mockPhaseStates.set("review", { status: "pending_approval", artifactPreview: null, agentSessionId: null });
-    render(<WorkflowQueueSidebar workflowDefinitionId={1} />);
-    expect(screen.getByText("Review & Approve")).toBeInTheDocument();
-  });
-
   it("shows start button for ready manual-gate phases", () => {
     mockPhaseStates.set("execute", { status: "ready", artifactPreview: null, agentSessionId: null });
     render(<WorkflowQueueSidebar workflowDefinitionId={1} />);
@@ -102,13 +96,6 @@ describe("WorkflowQueueSidebar", () => {
     mockPhaseStates.set("planning", { status: "ready", artifactPreview: null, agentSessionId: null });
     render(<WorkflowQueueSidebar workflowDefinitionId={1} />);
     expect(screen.queryByText("Start Phase")).not.toBeInTheDocument();
-  });
-
-  it("calls approvePhase when approval button clicked", async () => {
-    mockPhaseStates.set("review", { status: "pending_approval", artifactPreview: null, agentSessionId: null });
-    const { user } = render(<WorkflowQueueSidebar workflowDefinitionId={1} />);
-    await user.click(screen.getByText("Review & Approve"));
-    expect(mockApprovePhase).toHaveBeenCalledWith("review", true);
   });
 
   it("calls triggerPhase when start button clicked", async () => {

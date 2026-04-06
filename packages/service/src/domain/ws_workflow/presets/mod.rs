@@ -53,6 +53,7 @@ fn phase_with_agent_type(
         agent_type: agent_type.to_string(),
         decompose_from: String::new(),
         artifact_types: vec![],
+        max_iterations: 1,
     }
 }
 
@@ -102,9 +103,9 @@ pub fn get_preset_definitions() -> Vec<CreateWorkflowDefinition> {
             "speckit",
             &format!("Speckit-style workflow: specify, plan, tasks, analyze, implement, analyze (Spec-Kit v{})", sk::VERSION),
             vec![
-                phase(0, "Specify", "specify", Approval, &[],
+                phase(0, "Specify", "specify", Auto, &[],
                     sk::SPECIFY_SYSTEM, sk::SPECIFY_COMMAND, sk::SPECIFY_ARTIFACT),
-                phase(1, "Plan", "plan", Approval, &["specify"],
+                phase(1, "Plan", "plan", Auto, &["specify"],
                     sk::PLAN_SYSTEM, sk::PLAN_COMMAND, sk::PLAN_ARTIFACT),
                 phase(2, "Tasks", "tasks", Auto, &["plan"],
                     sk::TASKS_SYSTEM, sk::TASKS_COMMAND, sk::TASKS_ARTIFACT),
@@ -178,8 +179,16 @@ pub async fn seed_presets(pool: &SqlitePool) -> Result<(), AppError> {
                     new_phases = expected_phases,
                     "Re-seeding preset (phase count changed)"
                 );
-                repository::delete_workflow_definition(pool, ex.id).await?;
-                repository::create_workflow_definition(pool, def.clone()).await?;
+                match repository::delete_workflow_definition(pool, ex.id).await {
+                    Ok(()) => {
+                        repository::create_workflow_definition(pool, def.clone()).await?;
+                    }
+                    Err(_) => {
+                        // Features reference this definition — sync phases in-place instead
+                        info!(slug = %def.slug, "In-use preset: syncing phases in-place");
+                        sync_preset_phases(pool, &ex, &def).await?;
+                    }
+                }
             }
             Some(ex) => {
                 // Update definition metadata if changed
@@ -198,18 +207,21 @@ pub async fn seed_presets(pool: &SqlitePool) -> Result<(), AppError> {
                     } else {
                         None
                     };
+                    let expected_gate = format!("{}", expected.gate_type);
+                    let gate_changed = existing_phase.gate_type != expected_gate;
                     let prompts_changed =
                         existing_phase.system_prompt_template != expected.system_prompt_template
                         || existing_phase.command_prompt_template != expected.command_prompt_template
                         || existing_phase.artifact_template != expected.artifact_template
                         || existing_phase.name != expected.name
+                        || gate_changed
                         || model.is_some();
                     if prompts_changed {
                         super::phase_repository::update_workflow_phase(
                             pool,
                             existing_phase.id,
                             Some(&expected.name),
-                            None, // preserve gate_type
+                            if gate_changed { Some(&expected_gate) } else { None },
                             Some(&expected.system_prompt_template),
                             Some(&expected.command_prompt_template),
                             Some(&expected.artifact_template),
@@ -217,11 +229,65 @@ pub async fn seed_presets(pool: &SqlitePool) -> Result<(), AppError> {
                             model,
                             None, // preserve agent_type
                             None, // preserve artifact_types
+                            None, // preserve max_iterations
                         ).await?;
                     }
                 }
             }
         }
     }
+    Ok(())
+}
+
+/// Sync phases in-place when a preset can't be deleted (features reference it).
+/// Adds missing phases, removes extra ones, and fixes ordering.
+async fn sync_preset_phases(
+    pool: &SqlitePool,
+    existing: &super::models::WorkflowDefinition,
+    expected: &super::models::CreateWorkflowDefinition,
+) -> Result<(), AppError> {
+    let existing_slugs: std::collections::HashSet<&str> =
+        existing.phases.iter().map(|p| p.slug.as_str()).collect();
+    let expected_slugs: std::collections::HashSet<&str> =
+        expected.phases.iter().map(|p| p.slug.as_str()).collect();
+
+    // Remove extra phases first
+    for phase in &existing.phases {
+        if !expected_slugs.contains(phase.slug.as_str()) {
+            info!(slug = %phase.slug, "Removing extra preset phase");
+            super::phase_repository::delete_workflow_phase(pool, phase.id).await?;
+        }
+    }
+
+    // Shift all existing order_index values high to avoid UNIQUE conflicts during insert
+    sqlx::query(
+        "UPDATE workflow_phases SET order_index = order_index + 1000 WHERE workflow_definition_id = ?",
+    )
+    .bind(existing.id)
+    .execute(pool)
+    .await
+    .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+
+    // Add missing phases
+    for phase in &expected.phases {
+        if !existing_slugs.contains(phase.slug.as_str()) {
+            info!(slug = %phase.slug, "Adding missing preset phase");
+            super::phase_repository::insert_phase(pool, existing.id, phase).await?;
+        }
+    }
+
+    // Fix ordering: set all phases to their expected order_index
+    for phase in &expected.phases {
+        sqlx::query(
+            "UPDATE workflow_phases SET order_index = ? WHERE workflow_definition_id = ? AND slug = ?",
+        )
+        .bind(phase.order_index)
+        .bind(existing.id)
+        .bind(&phase.slug)
+        .execute(pool)
+        .await
+        .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+    }
+
     Ok(())
 }

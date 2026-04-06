@@ -1144,6 +1144,8 @@ mod tests {
             pid: None,
             max_retries: 1,
             retry_count: 0,
+            iteration_count: 0,
+            iteration_history: None,
             phase_title: None,
         }
     }
@@ -1385,7 +1387,9 @@ mod tests {
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 started_at DATETIME, ended_at DATETIME, pid INTEGER,
                 max_retries INTEGER NOT NULL DEFAULT 1,
-                retry_count INTEGER NOT NULL DEFAULT 0
+                retry_count INTEGER NOT NULL DEFAULT 0,
+                iteration_count INTEGER NOT NULL DEFAULT 0,
+                iteration_history TEXT
             )"#,
         ).execute(&pool).await.unwrap();
         sqlx::query(

@@ -71,11 +71,13 @@ impl WorkflowStrategy for CustomWorkflowStrategy {
             let mut config = json!({
                 "agent_type": agent_type,
                 "gate_type": phase.gate_type,
+                "phase_slug": phase.slug,
                 "system_prompt_template": phase.system_prompt_template,
                 "command_prompt_template": phase.command_prompt_template,
                 "artifact_template": phase.artifact_template,
                 "input_phase_slugs": phase.input_phase_slugs,
                 "model_override": effective_model,
+                "max_iterations": phase.max_iterations,
             });
 
             if !phase.decompose_from.is_empty() {
@@ -154,7 +156,21 @@ impl WorkflowStrategy for CustomWorkflowStrategy {
         .await
         .map_err(|e| e.to_string())?;
 
-        Ok(template_engine::interpolate(&phase.system_prompt_template, &ctx))
+        let mut system = template_engine::interpolate(&phase.system_prompt_template, &ctx);
+
+        system.push_str(&format!(
+            "\n\n## Context\n\n\
+             - Feature ID: {feature_id}\n\
+             - Phase: {phase_slug} (id: {phase_id})\n\
+             - Workflow: {workflow_name} (id: {workflow_id})",
+            feature_id = item.feature_id,
+            phase_slug = phase.slug,
+            phase_id = phase.id,
+            workflow_name = definition.name,
+            workflow_id = definition.id,
+        ));
+
+        Ok(system)
     }
 
     async fn build_initial_prompt(
@@ -215,6 +231,28 @@ impl WorkflowStrategy for CustomWorkflowStrategy {
             ));
         }
 
+        let config: serde_json::Value = item.config.as_deref()
+            .and_then(|s| serde_json::from_str(s).ok())
+            .unwrap_or_default();
+        if let Some(prev_result) = config.get("previous_iteration_result").and_then(|v| v.as_str()) {
+            let current = config.get("current_iteration").and_then(|v| v.as_i64()).unwrap_or(1);
+            let max = config.get("max_iterations").and_then(|v| v.as_i64()).unwrap_or(1);
+            prompt.push_str(&format!(
+                "\n\n## Iteration {current}/{max}\n\n\
+                 Your previous output for this phase is below. Review it, improve quality, \
+                 and address any gaps.\n\n\
+                 <previous_output>\n{prev_result}\n</previous_output>\n\n\
+                 If your output now fully meets the quality criteria, call the `mark_satisfied` tool \
+                 before calling `mark_phase_complete`. If not yet satisfied, just call \
+                 `mark_phase_complete` and the phase will re-run.",
+                current = current + 1,
+                max = max,
+                prev_result = prev_result,
+            ));
+        }
+
+        prompt.push_str(completion_instructions(&phase.gate_type));
+
         Ok(prompt)
     }
 }
@@ -251,6 +289,26 @@ async fn build_decomposed_prompt(
     ))
 }
 
+const COMPLETION_APPROVAL: &str = "\n\n## Completion\n\n\
+    When you are done, save your output by calling `create_artifact` with the full content, \
+    then call `request_approval` to submit for review.";
+
+const COMPLETION_ITERATE: &str = "\n\n## Completion\n\n\
+    When you are done, save your output by calling `create_artifact` with the full content, \
+    then call `mark_phase_complete` to finish this iteration.";
+
+const COMPLETION_DEFAULT: &str = "\n\n## Completion\n\n\
+    When you are done, save your output by calling `create_artifact` with the full content, \
+    then call `mark_phase_complete` to finish this phase.";
+
+fn completion_instructions(gate_type: &str) -> &'static str {
+    match gate_type {
+        "approval" => COMPLETION_APPROVAL,
+        "iterate" => COMPLETION_ITERATE,
+        _ => COMPLETION_DEFAULT,
+    }
+}
+
 /// Load the WorkflowPhase matching item.item_type (slug) from the definition.
 #[allow(dead_code)]
 async fn load_phase_from_item(
@@ -270,4 +328,21 @@ async fn load_phase_from_item(
         .clone();
 
     Ok((phase, definition))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn completion_instructions_varies_by_gate_type() {
+        assert!(completion_instructions("approval").contains("request_approval"));
+        assert!(completion_instructions("iterate").contains("mark_phase_complete"));
+        assert!(completion_instructions("auto").contains("mark_phase_complete"));
+        assert!(completion_instructions("manual").contains("mark_phase_complete"));
+        // All include create_artifact
+        for gate in &["approval", "iterate", "auto", "manual"] {
+            assert!(completion_instructions(gate).contains("create_artifact"));
+        }
+    }
 }

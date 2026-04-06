@@ -34,13 +34,16 @@ mod service_tests {
                 name TEXT NOT NULL, \
                 slug TEXT NOT NULL, \
                 order_index INTEGER NOT NULL, \
-                gate_type TEXT NOT NULL CHECK(gate_type IN ('auto', 'approval', 'manual')), \
+                gate_type TEXT NOT NULL CHECK(gate_type IN ('auto', 'approval', 'manual', 'iterate')), \
                 system_prompt_template TEXT NOT NULL DEFAULT '', \
                 command_prompt_template TEXT NOT NULL DEFAULT '', \
                 artifact_template TEXT NOT NULL DEFAULT '', \
                 input_phase_slugs TEXT DEFAULT '[]', \
                 model_override TEXT DEFAULT '', \
                 agent_type TEXT NOT NULL DEFAULT '', \
+                decompose_from TEXT NOT NULL DEFAULT '', \
+                artifact_types TEXT NOT NULL DEFAULT '[]', \
+                max_iterations INTEGER NOT NULL DEFAULT 1, \
                 UNIQUE(workflow_definition_id, slug), \
                 UNIQUE(workflow_definition_id, order_index))"
         )

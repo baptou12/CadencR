@@ -88,10 +88,11 @@ pub async fn update_phase(
     model_override: Option<&str>,
     agent_type: Option<&str>,
     artifact_types: Option<&Vec<String>>,
+    max_iterations: Option<i32>,
 ) -> Result<WorkflowPhase, AppError> {
     if let Some(gt) = gate_type {
         gt.parse::<GateType>().map_err(|_| {
-            AppError::BadRequest("Invalid gate_type: must be 'auto', 'approval', or 'manual'".into())
+            AppError::BadRequest("Invalid gate_type: must be 'auto', 'approval', 'manual', or 'iterate'".into())
         })?;
     }
     let definition_id = phase_repository::get_phase_definition_id(pool, phase_id).await?;
@@ -114,7 +115,7 @@ pub async fn update_phase(
     phase_repository::update_workflow_phase(
         pool, phase_id, name, gate_type, system_prompt_template,
         command_prompt_template, artifact_template, input_phase_slugs, model_override, agent_type,
-        artifact_types,
+        artifact_types, max_iterations,
     ).await
 }
 

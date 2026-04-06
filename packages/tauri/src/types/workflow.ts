@@ -67,6 +67,8 @@ export interface QueueItem {
   result: string | null;
   max_retries?: number;
   retry_count?: number;
+  iteration_count?: number;
+  iteration_history?: string | null;
 }
 
 export interface AgentSessionState {

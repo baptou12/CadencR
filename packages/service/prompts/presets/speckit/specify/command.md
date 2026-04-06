@@ -48,13 +48,35 @@ Success criteria must be:
 - **User-focused**: Framed from user/business perspective
 - **Verifiable**: Testable without implementation knowledge
 
-### Step 8: Quality Validation
-Review the specification for completeness:
-- All mandatory sections are filled (User Scenarios, Requirements, Success Criteria, Assumptions)
-- Requirements are unambiguous and testable
-- No more than 3 clarification markers
-- User stories are independently testable
-- Success criteria are measurable
-- If gaps exist, iterate (up to 3 refinement passes)
+### Step 8: Specification Quality Validation
+
+After writing the specification, validate it against this quality checklist:
+
+**Content Quality:**
+- No implementation details (languages, frameworks, APIs)
+- Focused on user value and business needs
+- Written for non-technical stakeholders
+- All mandatory sections completed
+
+**Requirement Completeness:**
+- Requirements are testable and unambiguous
+- Success criteria are measurable and technology-agnostic
+- All acceptance scenarios are defined
+- Edge cases are identified
+- Scope is clearly bounded
+- Dependencies and assumptions identified
+
+**Feature Readiness:**
+- All functional requirements have clear acceptance criteria
+- User scenarios cover primary flows
+- No implementation details leak into specification
+
+**Handle Validation Results:**
+
+- **If all items pass**: Proceed to save the artifact.
+
+- **If items fail**: List the failing items, update the specification to address each issue, and re-validate. Repeat up to 3 iterations. If still failing after 3 iterations, document remaining issues and proceed.
+
+- **If [NEEDS CLARIFICATION] markers remain**: Keep only the 3 most critical (by scope/security/UX impact) and make informed guesses for the rest.
 
 Produce a specification that fully defines what must be built, without prescribing how.

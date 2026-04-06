@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { ArrowRight, GripVertical, Hand, Shield, Trash2 } from "lucide-react";
+import { ArrowRight, GripVertical, Hand, RefreshCw, Shield, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { WorkflowPhase } from "@/api/generated";
 import { cn } from "@/lib/utils";
@@ -8,6 +8,7 @@ export const GATE_OPTIONS: { value: WorkflowPhase["gate_type"]; label: string; i
   { value: "auto", label: "Auto", icon: <ArrowRight className="size-3" /> },
   { value: "approval", label: "Approval", icon: <Shield className="size-3 text-amber-500" /> },
   { value: "manual", label: "Manual", icon: <Hand className="size-3 text-blue-500" /> },
+  { value: "iterate", label: "Iterate", icon: <RefreshCw className="size-3 text-green-500" /> },
 ];
 
 interface PhaseEditorCardProps {
