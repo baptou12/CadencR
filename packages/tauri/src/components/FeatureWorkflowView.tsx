@@ -305,24 +305,6 @@ export function FeatureWorkflowView({
     [sendToTerminalStore, featureId],
   );
 
-  // Auto-load conversation history for agents that are already open (paused/running)
-  // but have empty blocks — e.g. after app restart.
-  const sessionCount = backend.sessionEntries.length;
-  const { loadAgentHistory } = backend;
-  useEffect(() => {
-    if (!loadAgentHistory || sessionCount === 0) return;
-    for (const entry of backend.sessionEntries) {
-      if (
-        (entry.status === "paused" || entry.status === "running") &&
-        entry.blocks.length === 0
-      ) {
-        loadAgentHistory(entry);
-        break;
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionCount, loadAgentHistory, featureId]);
-
   return (
     <CodeBlockActionsContext.Provider value={codeBlockActions}>
     <div className="relative flex h-full flex-col">

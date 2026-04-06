@@ -10,6 +10,7 @@ import type { AgentStatus } from "@/types/agent";
 import type { QueueItem, AgentSessionState, FeatureSnapshot } from "@/types/workflow";
 import { PLAN_KEY, PRD_KEY } from "@/types/workflow";
 import { useWorkflowStore } from "./useWorkflowWebSocket";
+import { useGetFeatureAgentState } from "@/api/generated";
 import { customInstance } from "@/api/client";
 import { deriveViewState, type WorkflowBackend } from "./workflowBackendTypes";
 import type { FeatureStatus } from "./useFeatureState";
@@ -151,6 +152,12 @@ export function useWsWorkflowBackend(
     retry: 1,
   });
 
+  // Eagerly load agent blocks from REST (like ws-feature does) — runs in parallel with snapshot
+  const agentStateQuery = useGetFeatureAgentState(featureId, undefined, {
+    enabled: enabled && !store.hydrated,
+    staleTime: Infinity,
+  }, 100);
+
   useEffect(() => {
     if (!enabled) return;
     store.connect(featureId, projectId);
@@ -158,13 +165,17 @@ export function useWsWorkflowBackend(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [featureId, projectId, enabled]);
 
+  // Wait for BOTH snapshot AND agent-state before hydrating — prevents race conditions
   const hydrated = store.hydrated;
   useEffect(() => {
-    if (snapshot && !hydrated) {
+    if (snapshot && agentStateQuery.data && !hydrated) {
+      store.hydrateFromSnapshot(snapshot, agentStateQuery.data);
+    } else if (snapshot && agentStateQuery.isError && !hydrated) {
+      // If agent-state fetch fails, hydrate without blocks (fallback to lazy loading)
       store.hydrateFromSnapshot(snapshot);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [snapshot, hydrated]);
+  }, [snapshot, agentStateQuery.data, agentStateQuery.isError, hydrated]);
 
   const isHydrating = enabled && !store.hydrated;
 
@@ -173,10 +184,7 @@ export function useWsWorkflowBackend(
     [store.queue, store.agents, store.workflowStatus],
   );
 
-  const needsHistory = !isHydrating && sessions.some(
-    (s) => (s.status === "paused" || s.status === "running") && s.blocks.length === 0,
-  );
-  const isLoading = isHydrating || needsHistory;
+  const isLoading = isHydrating;
 
   const hasAnyAgentOutput = sessions.some((s) => s.blocks.length > 0);
   const noAgentsRunning = !sessions.some((s) => s.status === "running");

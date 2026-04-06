@@ -8,6 +8,9 @@
 import { buildUserMessageContent } from "@/types/agent-types";
 import { createStreamingState } from "@/stores/ws-session-store";
 import type { AgentQuestion } from "@/components/AgentQuestionDrawer";
+import type { AgentBlockData } from "@/components/AgentBlock";
+import type { FeatureAgentStateResponse } from "@/api/generated";
+import { serverBlocksToAgentBlocks } from "@/hooks/useFeatureAgentState";
 import {
   type WorkflowState,
   type AgentSessionState,
@@ -18,7 +21,6 @@ import {
   PRD_KEY,
 } from "@/types/workflow";
 import {
-  MULTI_INSTANCE_TYPES,
   patchAgent,
 } from "@/hooks/agent-event-handlers";
 
@@ -29,31 +31,27 @@ import {
 export function hydrateFromSnapshotPatch(
   state: WorkflowState,
   snapshot: FeatureSnapshot,
+  agentStateResp?: FeatureAgentStateResponse,
 ): Partial<WorkflowState> {
   const hasWsQueue = state.queue.length > 0;
+
+  // Build a lookup of REST-loaded blocks keyed by session DB id
+  const restBlocks = new Map<number, { blocks: AgentBlockData[]; hasMore: boolean; oldestMessageId: number | null }>();
+  if (agentStateResp) {
+    for (const s of agentStateResp.sessions) {
+      if (s.blocks.length === 0) continue;
+      restBlocks.set(s.sessionDbId, {
+        blocks: serverBlocksToAgentBlocks(s.blocks),
+        hasMore: s.hasMore,
+        oldestMessageId: s.oldestMessageId,
+      });
+    }
+  }
 
   const agents = new Map(state.agents);
 
   for (const session of snapshot.agent_sessions) {
     const agentType = session.agent_type ?? "execute";
-
-    const agentState: AgentSessionState = {
-      sessionId: session.id,
-      agentType,
-      blocks: [],
-      streamingState: createStreamingState(),
-      status: (session.status as AgentSessionState["status"]) ?? "idle",
-      pendingPermission: null,
-      pendingQuestions: [],
-      pendingQuestionToolInput: {},
-      pendingQuestionRequestId: "",
-      historyLoaded: false,
-      claudeSessionId: session.claude_session_id ?? null,
-      inputTokens: session.input_tokens ?? 0,
-      outputTokens: session.output_tokens ?? 0,
-      contextWindow: session.context_window || 200_000,
-      hasFileChanges: false,
-    };
 
     let key: string;
     if (agentType === "plan" || agentType === "refine") {
@@ -62,13 +60,50 @@ export function hydrateFromSnapshotPatch(
       key = PRD_KEY;
     } else if (session.queue_item_id != null) {
       key = `qi:${session.queue_item_id}`;
-    } else if (MULTI_INSTANCE_TYPES.has(agentType)) {
-      key = `${agentType}:${session.id}`;
     } else {
       key = `${agentType}:${session.id}`;
     }
 
-    if (!agents.has(key)) agents.set(key, agentState);
+    const rest = restBlocks.get(session.id);
+    const existing = agents.get(key);
+
+    if (existing) {
+      // WS events already created this agent — merge REST blocks if available,
+      // otherwise preserve existing agent as-is (it may have live streaming data)
+      if (rest) {
+        agents.set(key, {
+          ...existing,
+          blocks: rest.blocks,
+          historyLoaded: true,
+          hasMore: rest.hasMore,
+          oldestMessageId: rest.oldestMessageId,
+          claudeSessionId: existing.claudeSessionId ?? session.claude_session_id ?? null,
+          inputTokens: session.input_tokens ?? existing.inputTokens,
+          outputTokens: session.output_tokens ?? existing.outputTokens,
+          contextWindow: session.context_window || existing.contextWindow,
+        });
+      }
+    } else {
+      agents.set(key, {
+        sessionId: session.id,
+        agentType,
+        blocks: rest?.blocks ?? [],
+        streamingState: createStreamingState(),
+        status: (session.status as AgentSessionState["status"]) ?? "idle",
+        pendingPermission: null,
+        pendingQuestions: [],
+        pendingQuestionToolInput: {},
+        pendingQuestionRequestId: "",
+        historyLoaded: rest != null,
+        hasMore: rest?.hasMore ?? false,
+        oldestMessageId: rest?.oldestMessageId ?? null,
+        claudeSessionId: session.claude_session_id ?? null,
+        inputTokens: session.input_tokens ?? 0,
+        outputTokens: session.output_tokens ?? 0,
+        contextWindow: session.context_window || 200_000,
+        hasFileChanges: false,
+      });
+    }
   }
 
   const patch: Partial<WorkflowState> = {

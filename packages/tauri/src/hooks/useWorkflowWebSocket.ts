@@ -128,10 +128,10 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
       set({ ws: null });
     },
 
-    hydrateFromSnapshot(snapshot) {
+    hydrateFromSnapshot(snapshot, agentState) {
       const state = get();
       if (state.hydrated) return;
-      set(hydrateFromSnapshotPatch(state, snapshot));
+      set(hydrateFromSnapshotPatch(state, snapshot, agentState));
     },
 
     selectItem(itemId) {

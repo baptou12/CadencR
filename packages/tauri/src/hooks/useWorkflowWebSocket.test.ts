@@ -703,6 +703,53 @@ describe("useWorkflowStore", () => {
       expect(state.worktreePath).toBeNull();
       expect(state.worktreeBranch).toBeNull();
     });
+    it("merges REST blocks from agentState into hydrated agents", () => {
+      const agentState = {
+        sessions: [{
+          sessionDbId: 10,
+          agentType: "plan",
+          status: "paused",
+          subprocessId: null,
+          model: null,
+          blocks: [{ id: "b1", type: "text", content: "hello from REST", childBlocks: [] }],
+          maxMessageId: 1,
+          isIncremental: false,
+          pendingQuestions: null,
+          hasFileChanges: false,
+          resumable: true,
+          claudeSessionId: null,
+          runId: null,
+          phaseId: null,
+          pendingPermission: null,
+          inputTokens: 10,
+          outputTokens: 20,
+          contextWindow: 200000,
+          wasCompacted: false,
+          draftPrompt: null,
+          hasMore: false,
+          oldestMessageId: 1,
+        }],
+      };
+
+      useWorkflowStore.getState().hydrateFromSnapshot(
+        makeSnapshot({ agent_sessions: [makeSessionSummary({ id: 10, agent_type: "plan", status: "paused" })] }),
+        agentState as never,
+      );
+
+      const plan = getAgent(PLAN_KEY)!;
+      expect(plan.historyLoaded).toBe(true);
+      expect(plan.blocks.length).toBe(1);
+      expect(plan.blocks[0].content).toBe("hello from REST");
+    });
+
+    it("sets historyLoaded false when no agentState provided", () => {
+      useWorkflowStore.getState().hydrateFromSnapshot(
+        makeSnapshot({ agent_sessions: [makeSessionSummary({ id: 10, agent_type: "plan", status: "paused" })] }),
+      );
+
+      expect(getAgent(PLAN_KEY)!.historyLoaded).toBe(false);
+      expect(getAgent(PLAN_KEY)!.blocks).toEqual([]);
+    });
   });
 
   // -------------------------------------------------------------------------

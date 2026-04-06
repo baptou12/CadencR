@@ -185,16 +185,6 @@ pub async fn get_paused_queue_items(
     Ok(rows)
 }
 
-pub async fn mark_stale_running_as_error(pool: &SqlitePool, feature_id: i64) -> Result<(), AppError> {
-    sqlx::query(
-        "UPDATE workflow_queue SET status = 'error', result = 'Stale after reconnect', ended_at = datetime('now'), pid = NULL WHERE feature_id = ? AND status = 'running'",
-    )
-    .bind(feature_id)
-    .execute(pool)
-    .await?;
-    Ok(())
-}
-
 pub async fn get_session_for_queue_item(
     pool: &SqlitePool,
     item_id: i64,

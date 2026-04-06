@@ -38,7 +38,13 @@ impl AgentManager {
         // Slow path: agent was paused, resume by spawning new process
         if let Some((_, cc_session_id)) = self.paused_sessions.remove(&slot) {
             info!(slot = %slot, cc_session_id = %cc_session_id, "resuming paused agent with --resume");
-            return self.resume_item(slot, &cc_session_id, text, &imgs, permissions).await;
+            match self.resume_item(slot.clone(), &cc_session_id, text, &imgs, permissions).await {
+                Ok(()) => return Ok(()),
+                Err(e) => {
+                    warn!(slot = %slot, error = %e, "resume failed, will try fresh spawn fallback");
+                    // Fall through to fresh spawn paths below
+                }
+            }
         }
 
         // Fallback: check DB for a claude_session_id we can resume with
@@ -60,11 +66,18 @@ impl AgentManager {
                     let cc_sid = cc_session_id.clone();
                     info!(slot = %slot, db_session_id, cc_session_id = %cc_sid, "DB fallback: resuming paused agent with --resume");
                     self.active_items.insert(slot.clone(), db_session_id);
-                    return self.resume_item(slot, &cc_sid, text, &imgs, permissions).await;
+                    match self.resume_item(slot.clone(), &cc_sid, text, &imgs, permissions).await {
+                        Ok(()) => return Ok(()),
+                        Err(e) => {
+                            warn!(slot = %slot, error = %e, "DB resume failed, falling through to fresh spawn");
+                            // Mark the stale session as completed so fresh spawn creates a new one
+                            WsSessionPersistence::mark_completed_static(&self.write_pool, db_session_id).await;
+                        }
+                    }
                 }
             }
 
-            // No claude_session_id at all — restart the agent fresh
+            // No claude_session_id or resume failed — restart the agent fresh
             if let Some((db_session_id, _)) = row {
                 info!(slot = %slot, db_session_id, "no claude_session_id — restarting agent fresh");
                 WsSessionPersistence::mark_completed_static(&self.write_pool, db_session_id).await;
@@ -102,7 +115,15 @@ impl AgentManager {
                     let cc_sid = cc_session_id.clone();
                     info!(slot = %slot, db_session_id, cc_session_id = %cc_sid, "DB fallback: resuming paused queue item with --resume");
                     self.active_items.insert(slot.clone(), db_session_id);
-                    return self.resume_item(slot, &cc_sid, text, &imgs, permissions).await;
+                    match self.resume_item(slot.clone(), &cc_sid, text, &imgs, permissions).await {
+                        Ok(()) => return Ok(()),
+                        Err(e) => {
+                            warn!(slot = %slot, error = %e, "queue item resume failed");
+                            // Mark stale session so retry can start fresh
+                            WsSessionPersistence::mark_completed_static(&self.write_pool, db_session_id).await;
+                            return Err(format!("Resume failed for queue item: {e}"));
+                        }
+                    }
                 }
             }
         }
@@ -187,7 +208,8 @@ impl AgentManager {
                     slot.clone(), db_session_id, self.feature_id,
                     ctx.expected_mcp_server, message_rx, self.ws_sender.clone(),
                     self.write_pool.clone(), self.active_items.clone(),
-                    self.queries.clone(), Some(ctx.model.as_str()),
+                    self.queries.clone(), self.paused_sessions.clone(),
+                    Some(ctx.model.as_str()),
                     self.turn_state_tx.clone(),
                 );
 

@@ -157,7 +157,8 @@ impl AgentManager {
                     slot.clone(), db_session_id, self.feature_id,
                     ctx.expected_mcp_server, message_rx, self.ws_sender.clone(),
                     self.write_pool.clone(), self.active_items.clone(),
-                    self.queries.clone(), Some(ctx.model.as_str()),
+                    self.queries.clone(), self.paused_sessions.clone(),
+                    Some(ctx.model.as_str()),
                     self.turn_state_tx.clone(),
                 );
 
@@ -178,7 +179,7 @@ impl AgentManager {
             }
             Err(e) => {
                 error!(feature_id = self.feature_id, agent_type = agent_type_str, error = %e, "failed to spawn pre-queue agent");
-                let _ = WsSessionPersistence::mark_paused_static(&self.write_pool, db_session_id).await;
+                WsSessionPersistence::mark_error_static(&self.write_pool, db_session_id).await;
                 WsSessionPersistence::broadcast_turn_state(&self.turn_state_tx, self.feature_id, "none");
                 Err(format!("SDK spawn failed for {agent_type_str}: {e}"))
             }
@@ -286,7 +287,8 @@ impl AgentManager {
                     slot.clone(), db_session_id, self.feature_id,
                     ctx.expected_mcp_server, message_rx, self.ws_sender.clone(),
                     self.write_pool.clone(), self.active_items.clone(),
-                    self.queries.clone(), Some(ctx.model.as_str()),
+                    self.queries.clone(), self.paused_sessions.clone(),
+                    Some(ctx.model.as_str()),
                     self.turn_state_tx.clone(),
                 );
 
@@ -307,6 +309,11 @@ impl AgentManager {
             }
             Err(e) => {
                 error!(item_id, error = %e, "failed to spawn agent for queue item");
+                // Clean up DB state: mark session as error, reset queue item
+                WsSessionPersistence::mark_error_static(&self.write_pool, db_session_id).await;
+                let _ = repo::mark_item_error(&self.write_pool, item_id, Some(&format!("SDK spawn failed: {e}"))).await;
+                self.send_item_update(item_id).await;
+                WsSessionPersistence::broadcast_turn_state(&self.turn_state_tx, self.feature_id, "none");
                 Err(format!("SDK spawn failed: {e}"))
             }
         }

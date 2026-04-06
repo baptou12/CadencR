@@ -192,11 +192,12 @@ impl QueueAdvancer {
     pub async fn restore_on_reconnect(&self, agent_manager: &AgentManager) -> Result<(), String> {
         info!(feature_id = self.feature_id, "restoring workflow state on reconnect");
 
-        // Restore paused pre-queue agents from DB.
+        // Restore paused and stale running pre-queue agents from DB.
+        // Running agents with a claude_session_id are treated as paused (process is gone after restart).
         let resumable_sessions: Vec<(i64, String, String)> = sqlx::query_as(
             "SELECT id, agent_type, claude_session_id FROM agent_sessions \
              WHERE feature_id = ? AND claude_session_id IS NOT NULL \
-             AND status = 'paused' \
+             AND status IN ('paused', 'running') \
              ORDER BY id DESC",
         )
         .bind(self.feature_id)
@@ -251,10 +252,40 @@ impl QueueAdvancer {
         .execute(&self.write_pool)
         .await;
 
-        // Mark stale running queue items as error
-        repo::mark_stale_running_as_error(&self.write_pool, self.feature_id)
-            .await
-            .map_err(|e| e.to_string())?;
+        // Recover stale running queue items: pause those with a claude_session_id, error the rest
+        let stale_running: Vec<(i64, Option<i64>, Option<String>)> = sqlx::query_as(
+            "SELECT wq.id, wq.agent_session_id, ags.claude_session_id \
+             FROM workflow_queue wq \
+             LEFT JOIN agent_sessions ags ON ags.id = wq.agent_session_id \
+             WHERE wq.feature_id = ? AND wq.status = 'running'",
+        )
+        .bind(self.feature_id)
+        .fetch_all(&self.read_pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        // recovered_stale collects items that were recovered as paused for frontend notification
+        let mut recovered_stale: Vec<(AgentSlot, i64, String)> = Vec::new();
+        for (item_id, agent_session_id, cc_session_id) in &stale_running {
+            if let Some(ref sid) = cc_session_id {
+                if !sid.is_empty() {
+                    info!(feature_id = self.feature_id, item_id, "recovering stale running queue item as paused");
+                    let _ = repo::mark_item_paused(&self.write_pool, *item_id).await;
+                    let slot = AgentSlot::QueueItem(*item_id);
+                    agent_manager.paused_sessions.insert(slot.clone(), sid.clone());
+                    if let Some(db_sid) = agent_session_id {
+                        agent_manager.active_items.insert(slot.clone(), *db_sid);
+                        WsSessionPersistence::mark_paused_static(&self.write_pool, *db_sid).await;
+                    }
+                    recovered_stale.push((slot, agent_session_id.unwrap_or(0), sid.clone()));
+                    continue;
+                }
+            }
+            let _ = repo::mark_item_error(&self.write_pool, *item_id, Some("Stale after reconnect")).await;
+            if let Some(db_sid) = agent_session_id {
+                WsSessionPersistence::mark_error_static(&self.write_pool, *db_sid).await;
+            }
+        }
 
         // Send full queue update
         let all_items = repo::get_queue_for_feature(&self.read_pool, self.feature_id)
@@ -293,24 +324,30 @@ impl QueueAdvancer {
             let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
         }
 
-        // Notify frontend about restored paused queue items
-        for (item_id, _agent_session_id, cc_session_id) in &paused_queue_items {
-            if let Some(ref sid) = cc_session_id {
+        // Notify frontend about restored paused queue items + recovered stale running items
+        let queue_paused_envelopes: Vec<_> = paused_queue_items.iter()
+            .filter_map(|(item_id, _, cc_session_id)| {
+                let sid = cc_session_id.as_ref()?;
                 let slot = AgentSlot::QueueItem(*item_id);
                 let db_sid = agent_manager.active_items.get(&slot).map(|e| *e.value()).unwrap_or(0);
-                let envelope = WsEnvelope::new(
-                    "workflow",
-                    "agent_paused",
-                    to_value(WorkflowAgentPausedPayload {
-                        feature_id: self.feature_id,
-                        agent_slot: slot,
-                        session_id: db_sid,
-                        agent_type: "execute".to_string(),
-                        claude_session_id: sid.clone(),
-                    }),
-                );
-                let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
-            }
+                Some((slot, db_sid, sid.clone()))
+            })
+            .chain(recovered_stale.iter().map(|(slot, db_sid, cc_sid)| (slot.clone(), *db_sid, cc_sid.clone())))
+            .collect();
+
+        for (slot, db_sid, cc_sid) in queue_paused_envelopes {
+            let envelope = WsEnvelope::new(
+                "workflow",
+                "agent_paused",
+                to_value(WorkflowAgentPausedPayload {
+                    feature_id: self.feature_id,
+                    agent_slot: slot.clone(),
+                    session_id: db_sid,
+                    agent_type: slot.agent_type_str().unwrap_or("execute").to_string(),
+                    claude_session_id: cc_sid,
+                }),
+            );
+            let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
         }
 
         Ok(())

@@ -10,6 +10,7 @@ import type { PendingPermission } from "@/components/ToolPermissionPrompt";
 import type { AgentQuestion } from "@/components/AgentQuestionDrawer";
 import type { StreamingState } from "@/stores/ws-session-store";
 import type { SlashCommand } from "@/hooks/useSlashCommand";
+import type { FeatureAgentStateResponse } from "@/api/generated";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -184,7 +185,7 @@ export interface WorkflowState {
   selectItem: (itemId: number | null) => void;
   setAutonomyLevel: (level: AutonomyLevel) => void;
   setParallelExecution: (enabled: boolean) => void;
-  hydrateFromSnapshot: (snapshot: FeatureSnapshot) => void;
+  hydrateFromSnapshot: (snapshot: FeatureSnapshot, agentState?: FeatureAgentStateResponse) => void;
 
   // Outgoing messages
   startPlan: (description: string, images?: Array<{ base64: string; mimeType: string }>) => void;

@@ -161,7 +161,8 @@ async fn test_restore_on_reconnect_only_restores_paused_status() {
 
     engine.restore_on_reconnect().await.unwrap();
 
-    assert!(!engine.agent_manager.paused_sessions.contains_key(&AgentSlot::Plan), "running session should not be restored");
+    // Running sessions with claude_session_id are now recovered as paused for resume
+    assert!(engine.agent_manager.paused_sessions.contains_key(&AgentSlot::Plan), "running session with claude_session_id should be recovered as paused");
     assert!(engine.agent_manager.paused_sessions.contains_key(&AgentSlot::Prd), "paused session should be restored");
 }
 

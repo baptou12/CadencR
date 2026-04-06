@@ -137,7 +137,7 @@ pub async fn build_stream_envelope(
     }
 }
 
-/// Post-stream cleanup: remove query handle and dispatch engine callbacks.
+/// Post-stream cleanup: remove query handle, clean paused state, and dispatch engine callbacks.
 pub async fn post_stream_cleanup(
     slot: AgentSlot,
     db_session_id: i64,
@@ -145,15 +145,29 @@ pub async fn post_stream_cleanup(
     completed_ok: bool,
     agent_done_called: bool,
     error_msg: Option<String>,
+    ws_detached: bool,
     write_pool: &SqlitePool,
     active_items: &Arc<DashMap<AgentSlot, i64>>,
     queries: &Arc<DashMap<AgentSlot, Arc<tokio::sync::Mutex<Query>>>>,
+    paused_sessions: &Arc<DashMap<AgentSlot, String>>,
     turn_state_tx: &tokio::sync::broadcast::Sender<crate::app_state::TurnStateEvent>,
 ) {
-    info!(slot = %slot, db_session_id, "workflow stream reader ended — cleaning up query handle");
+    info!(slot = %slot, db_session_id, ws_detached, "workflow stream reader ended — cleaning up");
     queries.remove(&slot);
 
-    debug!(slot = %slot, completed_ok, agent_done_called, has_error = error_msg.is_some(), "stream reader post-loop: dispatching callbacks");
+    // WS detach: agent was interrupted for clean resume. Session ID is already
+    // in paused_sessions and DB. Keep it there so replay_state_to_client reports
+    // the agent as paused and auto-resume can pick it up.
+    if ws_detached {
+        info!(slot = %slot, "stream reader exited due to WS detach — agent ready for resume on reconnect");
+        WsSessionPersistence::broadcast_turn_state(turn_state_tx, feature_id, "none");
+        return;
+    }
+
+    // Normal exit paths — clean up paused_sessions
+    paused_sessions.remove(&slot);
+
+    debug!(slot = %slot, completed_ok, agent_done_called, has_error = error_msg.is_some(), "dispatching callbacks");
 
     if completed_ok && agent_done_called {
         handle_completed(&slot, feature_id, write_pool, active_items).await;
@@ -162,8 +176,8 @@ pub async fn post_stream_cleanup(
     } else if let Some(err) = error_msg {
         handle_error(&slot, feature_id, &err, write_pool, active_items, turn_state_tx).await;
     } else {
-        warn!(slot = %slot, "stream ended without dispatching any engine callback");
-        WsSessionPersistence::broadcast_turn_state(turn_state_tx, feature_id, "none");
+        info!(slot = %slot, "stream ended without result — treating as paused for reconnect");
+        handle_paused(&slot, feature_id, db_session_id, write_pool).await;
     }
 }
 

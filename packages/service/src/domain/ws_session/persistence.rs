@@ -381,6 +381,19 @@ impl WsSessionPersistence {
         }
     }
 
+    /// Mark a session as error.
+    pub async fn mark_error_static(pool: &SqlitePool, session_id: i64) {
+        let now = chrono::Utc::now().to_rfc3339();
+        if let Err(e) = sqlx::query("UPDATE agent_sessions SET status = 'error', ended_at = ? WHERE id = ?")
+            .bind(&now)
+            .bind(session_id)
+            .execute(pool)
+            .await
+        {
+            error!(error = %e, session_db_id = session_id, "failed to mark session error");
+        }
+    }
+
     /// Update the model on a session row.
     pub async fn update_model_static(pool: &SqlitePool, session_id: i64, model: &str) {
         if let Err(e) = sqlx::query("UPDATE agent_sessions SET model = ? WHERE id = ?")

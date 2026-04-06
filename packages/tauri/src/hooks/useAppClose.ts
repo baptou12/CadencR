@@ -3,6 +3,7 @@ import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { QueryClient } from "@tanstack/react-query";
 import { useWsSessionStore } from "@/stores/ws-session-store";
+import { useWorkflowStore } from "@/hooks/useWorkflowWebSocket";
 import { useEditorStore } from "@/stores/editor-store";
 import { useGlobalShortcut } from "@/hooks/useGlobalShortcut";
 
@@ -21,8 +22,10 @@ function lookupFeatureTitle(featureId: number | null, queryClient: QueryClient):
 }
 
 function getRunningAgents(queryClient: QueryClient): RunningAgentInfo[] {
-  const sessions = useWsSessionStore.getState().sessions;
   const agents: RunningAgentInfo[] = [];
+
+  // Check ws-session / ws-feature agents
+  const sessions = useWsSessionStore.getState().sessions;
   for (const [sessionId, session] of Object.entries(sessions)) {
     if (session.status !== "running") continue;
     const title = session.featureTitle
@@ -34,6 +37,22 @@ function getRunningAgents(queryClient: QueryClient): RunningAgentInfo[] {
       label: isFeature ? `${title} - agent` : title,
     });
   }
+
+  // Check ws-workflow agents
+  const wfState = useWorkflowStore.getState();
+  if (wfState.featureId) {
+    for (const [slotKey, agent] of wfState.agents) {
+      if (agent.status !== "running") continue;
+      const title = wfState.featureTitle
+        ?? lookupFeatureTitle(wfState.featureId, queryClient)
+        ?? "Workflow";
+      agents.push({
+        sessionId: `wf:${wfState.featureId}:${slotKey}`,
+        label: `${title} - ${agent.agentType}`,
+      });
+    }
+  }
+
   return agents;
 }
 
@@ -52,10 +71,15 @@ export function useAppClose(queryClient: QueryClient) {
   }, [queryClient]);
 
   const confirmAndClose = useCallback(() => {
-    const store = useWsSessionStore.getState();
+    const wsStore = useWsSessionStore.getState();
+    const wfStore = useWorkflowStore.getState();
     for (const { sessionId } of runningAgents) {
-      if (store.sessions[sessionId]?.status === "running") {
-        store.interrupt(sessionId);
+      if (sessionId.startsWith("wf:")) {
+        // Workflow agent — extract slotKey and interrupt via workflow store
+        const slotKey = sessionId.split(":").slice(2).join(":");
+        wfStore.interruptItem(slotKey);
+      } else if (wsStore.sessions[sessionId]?.status === "running") {
+        wsStore.interrupt(sessionId);
       }
     }
     setShowConfirm(false);

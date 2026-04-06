@@ -5,10 +5,10 @@
 - [ ] [agent] handle background agents
 - [ ] [workflow] Merging strategies
 - [ ] [editor] META+SHIFT+F to search for a string in the file
+- [ ] [agent] improve sub-agents to use the existing agent UI in ws-workflow + capture agent description + get more informations from the CLI (whole output) + agent done
 - [ ] [workflow] Commit detection
 - [ ] [workflow] during onboarding, the back button next to "workflow" text is useless
 - [ ] [workflow] dependencies vizualization
-- [ ] [workflow] agents are reading from the main worktree instead of the created one
 - [ ] [workflow] agents are completely restarting on page refresh
 - [ ] [global] Rework command palette
 - [ ] [global] Theming
@@ -21,7 +21,7 @@ Capabilities needed to fully support BMAD, Speckit, and OpenSpec workflows nativ
 
 - [x] [workflow] multi-artifact output per phase
   OpenSpec `propose` creates 4 artifacts (proposal, specs, design, tasks) in one step. Currently a phase produces exactly one artifact. Needs a way to output multiple typed artifacts from a single phase execution.
-- [~] [workflow] phase iteration/refinement loops
+- [x] [workflow] phase iteration/refinement loops
   Speckit `specify` iterates up to 3 times to refine the spec until quality checks pass. Currently phases run once. Needs a loop-until-satisfied mechanism with a configurable max iteration count.
 - [x] [workflow] flexible analyze phase ordering
   Speckit runs `analyze` BEFORE `implement` as a pre-implementation quality gate (cross-artifact consistency check). Currently phase order is fixed per preset. Either make order configurable per-workflow, or allow a phase to appear both before and after another.

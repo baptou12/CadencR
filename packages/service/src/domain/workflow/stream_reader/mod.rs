@@ -12,7 +12,7 @@ use std::sync::Arc;
 use dashmap::DashMap;
 use sqlx::SqlitePool;
 use tokio::sync::mpsc;
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 
 use axum::extract::ws::Message;
 use claude_agent_sdk_rs::{Query, SdkError, SdkMessage, SystemMessage};
@@ -37,6 +37,7 @@ pub fn spawn_workflow_stream_reader(
     write_pool: SqlitePool,
     active_items: Arc<DashMap<AgentSlot, i64>>,
     queries: Arc<DashMap<AgentSlot, Arc<tokio::sync::Mutex<Query>>>>,
+    paused_sessions: Arc<DashMap<AgentSlot, String>>,
     model: Option<&str>,
     turn_state_tx: tokio::sync::broadcast::Sender<crate::app_state::TurnStateEvent>,
 ) {
@@ -65,13 +66,35 @@ pub fn spawn_workflow_stream_reader(
         let mut completed_ok = false;
         let mut agent_done_called = false;
         let mut error_msg: Option<String> = None;
+        let mut ws_detached = false;
         let mut needs_session_id_capture = true;
         let mut context_window: u64 = initial_context_window;
         let mut pending_feature_update: Option<Vec<&'static str>> = None;
         let mut pending_queue_update = false;
 
         loop {
-            match message_rx.recv().await {
+            // Use a short timeout on recv so we can periodically check if
+            // the WS sender was detached (page refresh / disconnect).
+            let recv_result = tokio::time::timeout(
+                std::time::Duration::from_millis(500),
+                message_rx.recv(),
+            ).await;
+
+            // Check if WS was detached — interrupt agent for clean resume on reconnect.
+            if !sender.is_attached() {
+                info!(slot = %slot, "WS sender detached — interrupting agent for clean resume on reconnect");
+                interrupt_and_pause(&slot, db_session_id, &queries, &paused_sessions, &write_pool).await;
+                ws_detached = true;
+                break;
+            }
+
+            // Timeout — loop back and check sender again
+            let msg = match recv_result {
+                Ok(msg) => msg,
+                Err(_) => continue,
+            };
+
+            match msg {
                 Some(Ok(sdk_msg)) => {
                     capture_session_id(&sdk_msg, &mut needs_session_id_capture, &slot, db_session_id, &sender, &write_pool).await;
 
@@ -94,7 +117,9 @@ pub fn spawn_workflow_stream_reader(
                     let envelope = build_stream_envelope(&sdk_msg, &slot, db_session_id, &mut completed_ok, &mut agent_done_called, &write_pool).await;
 
                     if sender.send(Message::Text(String::from(envelope).into())).is_err() {
-                        warn!(slot = %slot, "WS sender closed, stopping workflow stream reader");
+                        info!(slot = %slot, "WS sender channel error — interrupting agent for clean resume");
+                        interrupt_and_pause(&slot, db_session_id, &queries, &paused_sessions, &write_pool).await;
+                        ws_detached = true;
                         break;
                     }
 
@@ -119,8 +144,27 @@ pub fn spawn_workflow_stream_reader(
             }
         }
 
-        post_stream_cleanup(slot, db_session_id, feature_id, completed_ok, agent_done_called, error_msg, &write_pool, &active_items, &queries, &turn_state_tx).await;
+        post_stream_cleanup(slot, db_session_id, feature_id, completed_ok, agent_done_called, error_msg, ws_detached, &write_pool, &active_items, &queries, &paused_sessions, &turn_state_tx).await;
     });
+}
+
+/// Interrupt the agent and persist paused state for clean resume on reconnect.
+async fn interrupt_and_pause(
+    slot: &AgentSlot,
+    db_session_id: i64,
+    queries: &Arc<DashMap<AgentSlot, Arc<tokio::sync::Mutex<Query>>>>,
+    paused_sessions: &Arc<DashMap<AgentSlot, String>>,
+    write_pool: &SqlitePool,
+) {
+    if let Some(query_arc) = queries.get(slot) {
+        let q = query_arc.lock().await;
+        if let Some(cc_sid) = q.session_id().await {
+            paused_sessions.insert(slot.clone(), cc_sid.clone());
+            WsSessionPersistence::persist_claude_session_id_static(write_pool, db_session_id, &cc_sid).await;
+        }
+        let _ = q.interrupt().await;
+    }
+    WsSessionPersistence::mark_paused_static(write_pool, db_session_id).await;
 }
 
 /// Handle an SDK stream error: log, mark paused, and send error envelope.

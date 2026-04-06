@@ -12,6 +12,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useGetFeatureAgentState, fetchFeatureAgentState } from "../api/generated";
+import type { AgentBlock } from "../api/generated";
 import type { AgentBlockData } from "@/components/AgentBlock";
 import type { AgentType } from "../types/agent-types";
 import type { AgentStatus, TodoItem } from "@/types/agent";
@@ -28,22 +29,7 @@ const OLDER_MESSAGE_LIMIT = 100;
 // Convert server blocks (plain objects) to AgentBlockData (with IDs)
 // ---------------------------------------------------------------------------
 
-interface ServerBlock {
-  id: string;
-  type: string;
-  content: string;
-  toolName?: string;
-  toolArgs?: string;
-  isError?: boolean;
-  toolUseId?: string;
-  parentToolUseId?: string | null;
-  childBlocks?: ServerBlock[];
-  sourceToolName?: string;
-  createdAt?: string;
-  model?: string;
-}
-
-export function serverBlocksToAgentBlocks(serverBlocks: ServerBlock[]): AgentBlockData[] {
+export function serverBlocksToAgentBlocks(serverBlocks: AgentBlock[]): AgentBlockData[] {
   return serverBlocks.map((sb) => ({
     id: sb.id,
     type: sb.type as AgentBlockData["type"],
@@ -276,7 +262,7 @@ export function useFeatureAgentState(featureId: number) {
       }
 
       for (const s of serverSessions) {
-        const newBlocks = serverBlocksToAgentBlocks(s.blocks as ServerBlock[]);
+        const newBlocks = serverBlocksToAgentBlocks(s.blocks);
         let acc = accMap.get(s.sessionDbId);
 
         if (!s.isIncremental || !acc) {
@@ -333,7 +319,7 @@ export function useFeatureAgentState(featureId: number) {
         status,
         subprocessId: s.subprocessId,
         model: s.model,
-        blocks: acc?.blocks ?? serverBlocksToAgentBlocks(s.blocks as ServerBlock[]),
+        blocks: acc?.blocks ?? serverBlocksToAgentBlocks(s.blocks),
         pendingQuestions: parseQuestions(s.pendingQuestions),
         hasFileChanges: s.hasFileChanges,
         resumable: s.resumable,
@@ -377,7 +363,7 @@ export function useFeatureAgentState(featureId: number) {
     const serverSession = data.sessions.find((s) => s.sessionDbId === sessionDbId);
     if (!serverSession) return;
 
-    const olderBlocks = serverBlocksToAgentBlocks(serverSession.blocks as ServerBlock[]);
+    const olderBlocks = serverBlocksToAgentBlocks(serverSession.blocks);
     if (olderBlocks.length === 0) {
       acc.hasMore = false;
       return;

@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use sqlx::SqlitePool;
 use tokio::sync::mpsc;
-use tracing::info;
+use tracing::{info, warn};
 
 use axum::extract::ws::Message;
 
@@ -199,6 +199,24 @@ impl WorkflowEngine {
                     );
                     let _ = self.ws_sender.send(Message::Text(String::from(perm_env).into()));
                 }
+            }
+        }
+
+        // 3. Auto-resume agents that were paused by WS disconnect.
+        // They have entries in paused_sessions + active_items but no running Query.
+        let auto_resume_slots: Vec<(AgentSlot, String)> = self.agent_manager.paused_sessions.iter()
+            .filter(|entry| {
+                let slot = entry.key();
+                !self.agent_manager.queries.contains_key(slot)
+                    && self.agent_manager.active_items.contains_key(slot)
+            })
+            .map(|entry| (entry.key().clone(), entry.value().clone()))
+            .collect();
+
+        for (slot, _cc_sid) in auto_resume_slots {
+            info!(feature_id = self.feature_id, slot = %slot, "auto-resuming agent after WS reconnect");
+            if let Err(e) = self.send_prompt(slot.clone(), "", None).await {
+                warn!(feature_id = self.feature_id, slot = %slot, error = %e, "failed to auto-resume agent");
             }
         }
 
