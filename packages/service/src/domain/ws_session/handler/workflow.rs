@@ -201,10 +201,7 @@ pub(super) fn parse_payload<T: DeserializeOwned>(
     }
 }
 
-/// Helper to serialize a typed payload to serde_json::Value.
-pub(super) fn to_value<T: serde::Serialize>(v: T) -> serde_json::Value {
-    serde_json::to_value(v).unwrap()
-}
+pub(super) use crate::domain::workflow::engine::to_value;
 
 /// Handle workflow domain actions.
 pub async fn handle_workflow_action(
@@ -382,24 +379,38 @@ async fn handle_feature_start(
     let _ = sender.send(Message::Text(String::from(resp).into()));
 }
 
-async fn handle_start_plan(envelope: WsEnvelope, sender: &WsSender, app_state: &AppState) {
-    let Some((payload, engine)) = parse_and_get_engine::<WorkflowStartPlanPayload>(&envelope, sender) else { return };
-    let feature_id = payload.feature_id;
+/// Generic handler for agent spawns that require worktree prep and a status transition.
+/// Sets `active_status` before spawning and reverts to `Idle` on failure.
+async fn handle_start_agent_with_worktree<T, F, Fut>(
+    envelope: WsEnvelope,
+    sender: &WsSender,
+    app_state: &AppState,
+    active_status: WorkflowStatus,
+    agent_name: &str,
+    reply_action: &str,
+    get_description: fn(&T) -> &str,
+    spawn_fn: F,
+) where
+    T: DeserializeOwned + HasFeatureId,
+    F: FnOnce(T, Arc<WorkflowEngine>) -> Fut,
+    Fut: std::future::Future<Output = Result<i64, String>>,
+{
+    let Some((payload, engine)) = parse_and_get_engine::<T>(&envelope, sender) else { return };
+    let feature_id = payload.feature_id();
+    let description = get_description(&payload).to_string();
 
-    // Immediately transition so the frontend leaves plan-input view
-    engine.set_status(WorkflowStatus::Planning).await;
+    engine.set_status(active_status).await;
 
-    // Auto-name if needed, ensure worktree exists
-    if let Err(e) = prepare_worktree(feature_id, &payload.description, &engine.ws_sender, app_state).await {
+    if let Err(e) = prepare_worktree(feature_id, &description, &engine.ws_sender, app_state).await {
         engine.set_status(WorkflowStatus::Idle).await;
         send_workflow_error(sender, &envelope.id, "WORKTREE_FAILED", &e);
         return;
     }
 
-    info!(feature_id, "spawning plan agent");
-    match engine.spawn_plan_agent(&payload.description, &payload.images.unwrap_or_default()).await {
+    info!(feature_id, "spawning {agent_name} agent");
+    match spawn_fn(payload, engine.clone()).await {
         Ok(session_id) => {
-            let ack = WsEnvelope::reply(&envelope.id, "workflow", "plan.started", to_value(WorkflowFeatureIdSessionPayload {
+            let ack = WsEnvelope::reply(&envelope.id, "workflow", reply_action, to_value(WorkflowFeatureIdSessionPayload {
                 feature_id,
                 session_id,
             }));
@@ -407,39 +418,27 @@ async fn handle_start_plan(envelope: WsEnvelope, sender: &WsSender, app_state: &
         }
         Err(e) => {
             engine.set_status(WorkflowStatus::Idle).await;
-            send_workflow_error(sender, &envelope.id, "SPAWN_FAILED", &format!("Failed to spawn plan agent: {e}"));
+            send_workflow_error(sender, &envelope.id, "SPAWN_FAILED", &format!("Failed to spawn {agent_name}: {e}"));
         }
     }
 }
 
+async fn handle_start_plan(envelope: WsEnvelope, sender: &WsSender, app_state: &AppState) {
+    handle_start_agent_with_worktree::<WorkflowStartPlanPayload, _, _>(
+        envelope, sender, app_state,
+        WorkflowStatus::Planning, "plan", "plan.started",
+        |p| &p.description,
+        |p, engine| async move { engine.spawn_plan_agent(&p.description, &p.images.unwrap_or_default()).await },
+    ).await;
+}
+
 async fn handle_start_prd(envelope: WsEnvelope, sender: &WsSender, app_state: &AppState) {
-    let Some((payload, engine)) = parse_and_get_engine::<WorkflowStartPrdPayload>(&envelope, sender) else { return };
-    let feature_id = payload.feature_id;
-
-    // Immediately transition so the frontend leaves plan-input view
-    engine.set_status(WorkflowStatus::Prd).await;
-
-    // Auto-name if needed, ensure worktree exists
-    if let Err(e) = prepare_worktree(feature_id, &payload.description, &engine.ws_sender, app_state).await {
-        engine.set_status(WorkflowStatus::Idle).await;
-        send_workflow_error(sender, &envelope.id, "WORKTREE_FAILED", &e);
-        return;
-    }
-
-    info!(feature_id, "spawning PRD agent");
-    match engine.spawn_prd_agent(&payload.description).await {
-        Ok(session_id) => {
-            let ack = WsEnvelope::reply(&envelope.id, "workflow", "prd.started", to_value(WorkflowFeatureIdSessionPayload {
-                feature_id,
-                session_id,
-            }));
-            let _ = sender.send(Message::Text(String::from(ack).into()));
-        }
-        Err(e) => {
-            engine.set_status(WorkflowStatus::Idle).await;
-            send_workflow_error(sender, &envelope.id, "SPAWN_FAILED", &format!("Failed to spawn PRD agent: {e}"));
-        }
-    }
+    handle_start_agent_with_worktree::<WorkflowStartPrdPayload, _, _>(
+        envelope, sender, app_state,
+        WorkflowStatus::Prd, "PRD", "prd.started",
+        |p| &p.description,
+        |p, engine| async move { engine.spawn_prd_agent(&p.description).await },
+    ).await;
 }
 
 async fn handle_plan_approval(envelope: WsEnvelope, sender: &WsSender) {
@@ -898,94 +897,70 @@ async fn handle_set_parallel(envelope: WsEnvelope, sender: &WsSender, app_state:
     let _ = sender.send(Message::Text(String::from(ack).into()));
 }
 
-async fn handle_start_session(envelope: WsEnvelope, sender: &WsSender) {
-    let Some((payload, engine)) = parse_and_get_engine::<WorkflowStartSessionPayload>(&envelope, sender) else { return };
+/// Generic handler for simple agent spawn actions (no worktree prep, no status transition).
+/// Parses the payload, spawns via the closure, and sends the `{reply_action}` ack or error.
+async fn handle_start_agent<T, F, Fut>(
+    envelope: WsEnvelope,
+    sender: &WsSender,
+    agent_name: &str,
+    reply_action: &str,
+    spawn_fn: F,
+) where
+    T: DeserializeOwned + HasFeatureId,
+    F: FnOnce(T, Arc<WorkflowEngine>) -> Fut,
+    Fut: std::future::Future<Output = Result<i64, String>>,
+{
+    let Some((payload, engine)) = parse_and_get_engine::<T>(&envelope, sender) else { return };
+    let feature_id = payload.feature_id();
 
-    info!(feature_id = payload.feature_id, "spawning session agent");
-    match engine.spawn_session_agent(&payload.prompt, &payload.images.unwrap_or_default()).await {
+    info!(feature_id, "spawning {agent_name} agent");
+    match spawn_fn(payload, engine).await {
         Ok(session_id) => {
-            let ack = WsEnvelope::reply(&envelope.id, "workflow", "session.started", to_value(WorkflowFeatureIdSessionPayload {
-                feature_id: payload.feature_id,
+            let ack = WsEnvelope::reply(&envelope.id, "workflow", reply_action, to_value(WorkflowFeatureIdSessionPayload {
+                feature_id,
                 session_id,
             }));
             let _ = sender.send(Message::Text(String::from(ack).into()));
         }
         Err(e) => {
-            send_workflow_error(sender, &envelope.id, "SPAWN_FAILED", &format!("Failed to spawn session agent: {e}"));
+            send_workflow_error(sender, &envelope.id, "SPAWN_FAILED", &format!("Failed to spawn {agent_name}: {e}"));
         }
     }
+}
+
+async fn handle_start_session(envelope: WsEnvelope, sender: &WsSender) {
+    handle_start_agent::<WorkflowStartSessionPayload, _, _>(
+        envelope, sender, "session", "session.started",
+        |p, engine| async move { engine.spawn_session_agent(&p.prompt, &p.images.unwrap_or_default()).await },
+    ).await;
 }
 
 async fn handle_start_refine(envelope: WsEnvelope, sender: &WsSender) {
-    let Some((payload, engine)) = parse_and_get_engine::<WorkflowStartRefinePayload>(&envelope, sender) else { return };
-
-    info!(feature_id = payload.feature_id, "spawning refine plan agent");
-    match engine.spawn_refine_agent(&payload.description, &payload.images.unwrap_or_default()).await {
-        Ok(session_id) => {
-            let ack = WsEnvelope::reply(&envelope.id, "workflow", "refine.started", to_value(WorkflowFeatureIdSessionPayload {
-                feature_id: payload.feature_id,
-                session_id,
-            }));
-            let _ = sender.send(Message::Text(String::from(ack).into()));
-        }
-        Err(e) => {
-            send_workflow_error(sender, &envelope.id, "SPAWN_FAILED", &format!("Failed to spawn refine agent: {e}"));
-        }
-    }
+    handle_start_agent::<WorkflowStartRefinePayload, _, _>(
+        envelope, sender, "refine", "refine.started",
+        |p, engine| async move { engine.spawn_refine_agent(&p.description, &p.images.unwrap_or_default()).await },
+    ).await;
 }
 
 async fn handle_start_review_fixer(envelope: WsEnvelope, sender: &WsSender) {
-    let Some((payload, engine)) = parse_and_get_engine::<WorkflowStartReviewFixerPayload>(&envelope, sender) else { return };
-
-    info!(feature_id = payload.feature_id, "spawning review fixer agent");
-    match engine.spawn_review_fixer_agent(&payload.comments).await {
-        Ok(session_id) => {
-            let ack = WsEnvelope::reply(&envelope.id, "workflow", "review_fixer.started", to_value(WorkflowFeatureIdSessionPayload {
-                feature_id: payload.feature_id,
-                session_id,
-            }));
-            let _ = sender.send(Message::Text(String::from(ack).into()));
-        }
-        Err(e) => {
-            send_workflow_error(sender, &envelope.id, "SPAWN_FAILED", &format!("Failed to spawn review fixer: {e}"));
-        }
-    }
+    handle_start_agent::<WorkflowStartReviewFixerPayload, _, _>(
+        envelope, sender, "review fixer", "review_fixer.started",
+        |p, engine| async move { engine.spawn_review_fixer_agent(&p.comments).await },
+    ).await;
 }
 
 async fn handle_start_risk(envelope: WsEnvelope, sender: &WsSender) {
-    let Some((payload, engine)) = parse_and_get_engine::<WorkflowStartRiskPayload>(&envelope, sender) else { return };
-
-    info!(feature_id = payload.feature_id, "spawning risk agent");
-    match engine.spawn_risk_agent().await {
-        Ok(session_id) => {
-            let ack = WsEnvelope::reply(&envelope.id, "workflow", "risk.started", to_value(WorkflowFeatureIdSessionPayload {
-                feature_id: payload.feature_id,
-                session_id,
-            }));
-            let _ = sender.send(Message::Text(String::from(ack).into()));
-        }
-        Err(e) => {
-            send_workflow_error(sender, &envelope.id, "SPAWN_FAILED", &format!("Failed to spawn risk agent: {e}"));
-        }
-    }
+    handle_start_agent::<WorkflowStartRiskPayload, _, _>(
+        envelope, sender, "risk", "risk.started",
+        |_p, engine| async move { engine.spawn_risk_agent().await },
+    ).await;
 }
 
 async fn handle_start_retro(envelope: WsEnvelope, sender: &WsSender) {
-    let Some((payload, engine)) = parse_and_get_engine::<WorkflowStartRetroPayload>(&envelope, sender) else { return };
-
-    info!(feature_id = payload.feature_id, "spawning retro agent");
-    match engine.spawn_retro_agent().await {
-        Ok(session_id) => {
-            let ack = WsEnvelope::reply(&envelope.id, "workflow", "retro.started", to_value(WorkflowFeatureIdSessionPayload {
-                feature_id: payload.feature_id,
-                session_id,
-            }));
-            let _ = sender.send(Message::Text(String::from(ack).into()));
-        }
-        Err(e) => {
-            send_workflow_error(sender, &envelope.id, "SPAWN_FAILED", &format!("Failed to spawn retro agent: {e}"));
-        }
-    }
+    handle_start_agent::<WorkflowStartRetroPayload, _, _>(
+        envelope, sender, "retro", "retro.started",
+        |_p, engine| async move { engine.spawn_retro_agent().await },
+    ).await;
 }
 
 async fn handle_mark_done(envelope: WsEnvelope, sender: &WsSender) {
