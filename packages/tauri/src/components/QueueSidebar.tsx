@@ -322,7 +322,7 @@ function QueueItemRow({ item, phase, isSelected, onClick, onRetry, onSkip }: {
   onRetry?: () => void;
   onSkip?: () => void;
 }) {
-  const config = STATUS_CONFIG[item.status];
+  const config = STATUS_CONFIG[item.status] ?? STATUS_CONFIG.pending;
   const typeLabel = TYPE_LABELS[item.item_type] ?? item.item_type;
   const title = phase?.title ?? item.phase_title;
   const isError = item.status === "error";

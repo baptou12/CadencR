@@ -265,6 +265,18 @@ describe("QueueSidebar", () => {
   });
 
   // -----------------------------------------------------------------------
+  // Unknown status fallback
+  // -----------------------------------------------------------------------
+
+  it("renders without crashing when item has an unknown status", () => {
+    const queue: QueueItem[] = [
+      makeItem({ id: 1, item_type: "execute", phase_title: "Mystery", status: "unknown_status" as QueueItem["status"], order_index: 0 }),
+    ];
+    render(<QueueSidebar {...defaultProps} queue={queue} />);
+    expect(screen.getByText("Mystery")).toBeInTheDocument();
+  });
+
+  // -----------------------------------------------------------------------
   // PRD button
   // -----------------------------------------------------------------------
 
