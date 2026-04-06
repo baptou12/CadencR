@@ -54,13 +54,8 @@ pub async fn run_mcp_stdio(
     // waiting() keeps the server alive processing tool calls until the
     // transport closes (client disconnects or stdin EOF).
     let quit_reason = match server {
+        McpServer::Composable(s) => s.serve(stdio).await?.waiting().await,
         McpServer::Plan(s) => s.serve(stdio).await?.waiting().await,
-        McpServer::Prd(s) => s.serve(stdio).await?.waiting().await,
-        McpServer::Execute(s) => s.serve(stdio).await?.waiting().await,
-        McpServer::Qa(s) => s.serve(stdio).await?.waiting().await,
-        McpServer::Review(s) => s.serve(stdio).await?.waiting().await,
-        McpServer::Risk(s) => s.serve(stdio).await?.waiting().await,
-        McpServer::Retro(s) => s.serve(stdio).await?.waiting().await,
         McpServer::Session(s) => s.serve(stdio).await?.waiting().await,
         McpServer::Workflow(s) => s.serve(stdio).await?.waiting().await,
     };

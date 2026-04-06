@@ -1,11 +1,7 @@
-pub mod execute;
+pub mod composable;
 pub mod plan;
-pub mod prd;
-pub mod qa;
-pub mod retro;
-pub mod review;
-pub mod risk;
 pub mod session;
+pub mod tool_handlers;
 pub mod workflow;
 
 use std::sync::Arc;
@@ -15,8 +11,7 @@ use serde_json::json;
 
 use super::context::McpContext;
 use self::{
-    execute::ExecuteServer, plan::PlanServer, prd::PrdServer, qa::QaServer,
-    retro::RetroServer, review::ReviewServer, risk::RiskServer, session::SessionServer,
+    composable::ComposableServer, plan::PlanServer, session::SessionServer,
     workflow::WorkflowServer,
 };
 
@@ -56,29 +51,63 @@ impl std::str::FromStr for AgentType {
 /// A type-erased MCP server wrapper that can hold any agent server type.
 /// Needed because `ServerHandler` is not dyn-compatible (requires `Self: Sized`).
 pub enum McpServer {
+    Composable(ComposableServer),
     Plan(PlanServer),
-    Prd(PrdServer),
-    Execute(ExecuteServer),
-    Qa(QaServer),
-    Review(ReviewServer),
-    Risk(RiskServer),
-    Retro(RetroServer),
     Session(SessionServer),
     Workflow(WorkflowServer),
 }
 
 /// Create the appropriate MCP server for the given agent type.
 pub fn create_mcp_server(agent_type: AgentType, ctx: Arc<McpContext>) -> McpServer {
+    use tool_handlers as th;
+
     match agent_type {
         AgentType::Plan => McpServer::Plan(PlanServer::new(ctx)),
-        AgentType::Prd => McpServer::Prd(PrdServer::new(ctx)),
-        AgentType::Execute => McpServer::Execute(ExecuteServer::new(ctx)),
-        AgentType::Qa => McpServer::Qa(QaServer::new(ctx)),
-        AgentType::Review => McpServer::Review(ReviewServer::new(ctx)),
-        AgentType::Risk => McpServer::Risk(RiskServer::new(ctx)),
-        AgentType::Retro => McpServer::Retro(RetroServer::new(ctx)),
         AgentType::Session => McpServer::Session(SessionServer::new(ctx)),
         AgentType::Workflow => McpServer::Workflow(WorkflowServer::new(ctx)),
+        AgentType::Prd => McpServer::Composable(ComposableServer::new(
+            "cadence-prd",
+            vec![th::create_prd(&ctx), th::edit_prd(&ctx), th::show_prd(&ctx), th::mark_agent_done(&ctx)],
+        )),
+        AgentType::Execute => McpServer::Composable(ComposableServer::new(
+            "cadence-execute",
+            vec![
+                th::read_plan(&ctx), th::list_phases(&ctx), th::read_phase(&ctx),
+                th::mark_agent_done(&ctx), th::mark_phase_done(&ctx),
+            ],
+        )),
+        AgentType::Review => McpServer::Composable(ComposableServer::new(
+            "cadence-review",
+            vec![
+                th::read_plan(&ctx), th::list_phases(&ctx), th::read_phase(&ctx),
+                th::create_phase(&ctx), th::update_phase(&ctx), th::remove_phase(&ctx),
+                th::mark_agent_done(&ctx), th::finalize_phases(&ctx),
+            ],
+        )),
+        AgentType::Risk => McpServer::Composable(ComposableServer::new(
+            "cadence-risk",
+            vec![
+                th::read_plan(&ctx), th::list_phases(&ctx), th::read_phase(&ctx),
+                th::create_phase(&ctx), th::update_phase(&ctx), th::remove_phase(&ctx),
+                th::mark_agent_done(&ctx), th::finalize_phases(&ctx),
+            ],
+        )),
+        AgentType::Qa => McpServer::Composable(ComposableServer::new(
+            "cadence-qa",
+            vec![
+                th::read_plan(&ctx), th::list_phases(&ctx), th::read_phase(&ctx),
+                th::create_phase(&ctx), th::update_phase(&ctx), th::remove_phase(&ctx),
+                th::mark_phase_done(&ctx), th::mark_agent_done(&ctx), th::finalize_phases(&ctx),
+            ],
+        )),
+        AgentType::Retro => McpServer::Composable(ComposableServer::new(
+            "cadence-retro",
+            vec![
+                th::read_plan(&ctx), th::list_phases(&ctx), th::read_phase(&ctx),
+                th::read_prd(&ctx), th::list_conversations(&ctx), th::read_conversation(&ctx),
+                th::mark_agent_done(&ctx),
+            ],
+        )),
     }
 }
 
