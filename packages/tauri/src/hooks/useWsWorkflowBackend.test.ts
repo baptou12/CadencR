@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { findQueueItemId, buildSessionEntries } from "./useWsWorkflowBackend";
+import { findSlotKey, buildSessionEntries } from "./useWsWorkflowBackend";
 import type { FeatureSession } from "@/hooks/useFeatureAgentState";
 import type { AgentSessionState } from "@/types/workflow";
 
@@ -33,34 +33,34 @@ function makeEntry(overrides: Partial<FeatureSession>): FeatureSession {
   };
 }
 
-describe("findQueueItemId", () => {
-  it("returns -1 for plan agents", () => {
+describe("findSlotKey", () => {
+  it("returns plan key for plan agents", () => {
     const entry = makeEntry({ agentType: "plan", sessionDbId: 1754 });
-    expect(findQueueItemId(entry, [], new Map())).toBe(-1);
+    expect(findSlotKey(entry, [], new Map())).toBe("plan");
   });
 
-  it("returns -2 for prd agents", () => {
+  it("returns prd key for prd agents", () => {
     const entry = makeEntry({ agentType: "prd", sessionDbId: 42 });
-    expect(findQueueItemId(entry, [], new Map())).toBe(-2);
+    expect(findSlotKey(entry, [], new Map())).toBe("prd");
   });
 
-  it("finds item ID from activeAgents by sessionId", () => {
+  it("finds slot key from agents by sessionId", () => {
     const entry = makeEntry({ sessionDbId: 100 });
-    const activeAgents = new Map<number, AgentSessionState>([
-      [5, { sessionId: 100, blocks: [], streamingState: {} as never, status: "running", pendingPermission: null, agentType: "execute", pendingQuestions: [], pendingQuestionToolInput: {}, pendingQuestionRequestId: "", historyLoaded: false, claudeSessionId: null, inputTokens: 0, outputTokens: 0, contextWindow: 0, hasFileChanges: false }],
+    const agents = new Map<string, AgentSessionState>([
+      ["qi:5", { sessionId: 100, blocks: [], streamingState: {} as never, status: "running", pendingPermission: null, agentType: "execute", pendingQuestions: [], pendingQuestionToolInput: {}, pendingQuestionRequestId: "", historyLoaded: false, claudeSessionId: null, inputTokens: 0, outputTokens: 0, contextWindow: 0, hasFileChanges: false }],
     ]);
-    expect(findQueueItemId(entry, [], activeAgents)).toBe(5);
+    expect(findSlotKey(entry, [], agents)).toBe("qi:5");
   });
 
-  it("finds item ID from queue by agent_session_id", () => {
+  it("finds slot key from queue by agent_session_id", () => {
     const entry = makeEntry({ sessionDbId: 200 });
     const queue = [{ id: 10, agent_session_id: 200 }] as never[];
-    expect(findQueueItemId(entry, queue, new Map())).toBe(10);
+    expect(findSlotKey(entry, queue, new Map())).toBe("qi:10");
   });
 
-  it("falls back to sessionDbId when no match found", () => {
+  it("falls back to session:sessionDbId when no match found", () => {
     const entry = makeEntry({ sessionDbId: 300 });
-    expect(findQueueItemId(entry, [], new Map())).toBe(300);
+    expect(findSlotKey(entry, [], new Map())).toBe("session:300");
   });
 });
 
@@ -88,7 +88,8 @@ function makeAgentState(overrides?: Partial<AgentSessionState>): AgentSessionSta
 describe("buildSessionEntries", () => {
   it("sets pendingPlanApproval on planSession when workflowStatus is plan_approval", () => {
     const planAgent = makeAgentState({ sessionId: 10, status: "paused" });
-    const { planSession } = buildSessionEntries([], new Map(), planAgent, null, "plan_approval");
+    const agents = new Map<string, AgentSessionState>([["plan", planAgent]]);
+    const { planSession } = buildSessionEntries([], agents, "plan_approval");
 
     expect(planSession).not.toBeNull();
     expect(planSession!.pendingPlanApproval).toEqual({});
@@ -96,7 +97,8 @@ describe("buildSessionEntries", () => {
 
   it("does not set pendingPlanApproval on planSession when workflowStatus is not plan_approval", () => {
     const planAgent = makeAgentState({ sessionId: 10, status: "paused" });
-    const { planSession } = buildSessionEntries([], new Map(), planAgent, null, "planning");
+    const agents = new Map<string, AgentSessionState>([["plan", planAgent]]);
+    const { planSession } = buildSessionEntries([], agents, "planning");
 
     expect(planSession).not.toBeNull();
     expect(planSession!.pendingPlanApproval).toBeNull();
@@ -104,7 +106,8 @@ describe("buildSessionEntries", () => {
 
   it("sets pendingPlanApproval on prdSession when workflowStatus is prd and prdAgent is paused", () => {
     const prdAgent = makeAgentState({ sessionId: 20, status: "paused" });
-    const { prdSession } = buildSessionEntries([], new Map(), null, prdAgent, "prd");
+    const agents = new Map<string, AgentSessionState>([["prd", prdAgent]]);
+    const { prdSession } = buildSessionEntries([], agents, "prd");
 
     expect(prdSession).not.toBeNull();
     expect(prdSession!.pendingPlanApproval).toEqual({});
@@ -112,7 +115,8 @@ describe("buildSessionEntries", () => {
 
   it("does not set pendingPlanApproval on prdSession when prdAgent is not paused", () => {
     const prdAgent = makeAgentState({ sessionId: 20, status: "running" });
-    const { prdSession } = buildSessionEntries([], new Map(), null, prdAgent, "prd");
+    const agents = new Map<string, AgentSessionState>([["prd", prdAgent]]);
+    const { prdSession } = buildSessionEntries([], agents, "prd");
 
     expect(prdSession).not.toBeNull();
     expect(prdSession!.pendingPlanApproval).toBeNull();
@@ -120,20 +124,21 @@ describe("buildSessionEntries", () => {
 
   it("does not set pendingPlanApproval on prdSession when workflowStatus is not prd", () => {
     const prdAgent = makeAgentState({ sessionId: 20, status: "paused" });
-    const { prdSession } = buildSessionEntries([], new Map(), null, prdAgent, "planning");
+    const agents = new Map<string, AgentSessionState>([["prd", prdAgent]]);
+    const { prdSession } = buildSessionEntries([], agents, "planning");
 
     expect(prdSession).not.toBeNull();
     expect(prdSession!.pendingPlanApproval).toBeNull();
   });
 
-  it("includes running queue item with matching activeAgent in sessions", () => {
+  it("includes running queue item with matching agent in sessions", () => {
     const queue = [
       { id: 10, status: "running" as const, item_type: "execute", phase_id: 1, phase_title: "Phase 1", order_index: 0, group_index: 0, agent_session_id: 88, result: null },
     ];
-    const agents = new Map<number, AgentSessionState>([
-      [10, makeAgentState({ sessionId: 88, status: "running" })],
+    const agents = new Map<string, AgentSessionState>([
+      ["qi:10", makeAgentState({ sessionId: 88, status: "running" })],
     ]);
-    const { sessions } = buildSessionEntries(queue, agents, null, null, "building");
+    const { sessions } = buildSessionEntries(queue, agents, "building");
 
     expect(sessions).toHaveLength(1);
     expect(sessions[0].sessionDbId).toBe(88);
@@ -142,17 +147,14 @@ describe("buildSessionEntries", () => {
   });
 
   it("queue_update before item_started: agent appears in sessions after both arrive", () => {
-    // Simulates the fix where queue_update is sent before advance/item_started
-    // so the frontend has the queue item when item_started arrives.
     const queue = [
       { id: 10, status: "running" as const, item_type: "execute", phase_id: 1, phase_title: "Setup", order_index: 0, group_index: 0, agent_session_id: 42, result: null },
     ];
-    const agents = new Map<number, AgentSessionState>([
-      [10, makeAgentState({ sessionId: 42, status: "running" })],
+    const agents = new Map<string, AgentSessionState>([
+      ["qi:10", makeAgentState({ sessionId: 42, status: "running" })],
     ]);
-    const { sessions } = buildSessionEntries(queue, agents, null, null, "building");
+    const { sessions } = buildSessionEntries(queue, agents, "building");
 
-    // The agent should appear because its queue item exists and has a matching activeAgent
     const setupSession = sessions.find((s) => s.phaseTitle === "Setup");
     expect(setupSession).toBeDefined();
     expect(setupSession!.sessionDbId).toBe(42);
@@ -162,10 +164,10 @@ describe("buildSessionEntries", () => {
     const queue = [
       { id: 10, status: "completed" as const, item_type: "execute", phase_id: null, phase_title: null, order_index: 0, group_index: null, agent_session_id: 88, result: null },
     ];
-    const agents = new Map<number, AgentSessionState>([
-      [10, makeAgentState({ sessionId: 88, status: "completed", hasFileChanges: true })],
+    const agents = new Map<string, AgentSessionState>([
+      ["qi:10", makeAgentState({ sessionId: 88, status: "completed", hasFileChanges: true })],
     ]);
-    const { sessions } = buildSessionEntries(queue, agents, null, null, "building");
+    const { sessions } = buildSessionEntries(queue, agents, "building");
 
     expect(sessions).toHaveLength(1);
     expect(sessions[0].hasFileChanges).toBe(true);
@@ -175,10 +177,10 @@ describe("buildSessionEntries", () => {
     const queue = [
       { id: 11, status: "completed" as const, item_type: "execute", phase_id: null, phase_title: null, order_index: 0, group_index: null, agent_session_id: 89, result: null },
     ];
-    const agents = new Map<number, AgentSessionState>([
-      [11, makeAgentState({ sessionId: 89, status: "completed", hasFileChanges: false })],
+    const agents = new Map<string, AgentSessionState>([
+      ["qi:11", makeAgentState({ sessionId: 89, status: "completed", hasFileChanges: false })],
     ]);
-    const { sessions } = buildSessionEntries(queue, agents, null, null, "building");
+    const { sessions } = buildSessionEntries(queue, agents, "building");
 
     expect(sessions[0].hasFileChanges).toBe(false);
   });
@@ -187,22 +189,20 @@ describe("buildSessionEntries", () => {
     const queue = [
       { id: 12, status: "completed" as const, item_type: "execute", phase_id: null, phase_title: null, order_index: 0, group_index: null, agent_session_id: 90, result: null },
     ];
-    const { sessions } = buildSessionEntries(queue, new Map(), null, null, "building");
+    const { sessions } = buildSessionEntries(queue, new Map(), "building");
 
     expect(sessions).toHaveLength(1);
     expect(sessions[0].hasFileChanges).toBe(false);
   });
 
   it("sessions with paused/running status and empty blocks indicate history is needed", () => {
-    // After hydration, sessions exist but have no blocks yet (history not loaded).
-    // useWsWorkflowBackend uses this condition to keep showing a loader.
     const queue = [
       { id: 10, status: "paused" as const, item_type: "execute", phase_id: null, phase_title: null, order_index: 0, group_index: null, agent_session_id: 88, result: null },
     ];
-    const agents = new Map<number, AgentSessionState>([
-      [10, makeAgentState({ sessionId: 88, status: "paused", blocks: [] })],
+    const agents = new Map<string, AgentSessionState>([
+      ["qi:10", makeAgentState({ sessionId: 88, status: "paused", blocks: [] })],
     ]);
-    const { sessions } = buildSessionEntries(queue, agents, null, null, "paused");
+    const { sessions } = buildSessionEntries(queue, agents, "paused");
 
     const needsHistory = sessions.some(
       (s) => (s.status === "paused" || s.status === "running") && s.blocks.length === 0,
@@ -214,14 +214,14 @@ describe("buildSessionEntries", () => {
     const queue = [
       { id: 10, status: "paused" as const, item_type: "execute", phase_id: null, phase_title: null, order_index: 0, group_index: null, agent_session_id: 88, result: null },
     ];
-    const agents = new Map<number, AgentSessionState>([
-      [10, makeAgentState({
+    const agents = new Map<string, AgentSessionState>([
+      ["qi:10", makeAgentState({
         sessionId: 88,
         status: "paused",
         blocks: [{ id: "1", type: "text", content: "hello" }] as never[],
       })],
     ]);
-    const { sessions } = buildSessionEntries(queue, agents, null, null, "paused");
+    const { sessions } = buildSessionEntries(queue, agents, "paused");
 
     const needsHistory = sessions.some(
       (s) => (s.status === "paused" || s.status === "running") && s.blocks.length === 0,
@@ -233,10 +233,10 @@ describe("buildSessionEntries", () => {
     const queue = [
       { id: 10, status: "completed" as const, item_type: "execute", phase_id: null, phase_title: null, order_index: 0, group_index: null, agent_session_id: 88, result: null },
     ];
-    const agents = new Map<number, AgentSessionState>([
-      [10, makeAgentState({ sessionId: 88, status: "completed", blocks: [] })],
+    const agents = new Map<string, AgentSessionState>([
+      ["qi:10", makeAgentState({ sessionId: 88, status: "completed", blocks: [] })],
     ]);
-    const { sessions } = buildSessionEntries(queue, agents, null, null, "completed");
+    const { sessions } = buildSessionEntries(queue, agents, "completed");
 
     const needsHistory = sessions.some(
       (s) => (s.status === "paused" || s.status === "running") && s.blocks.length === 0,
@@ -244,13 +244,13 @@ describe("buildSessionEntries", () => {
     expect(needsHistory).toBe(false);
   });
 
-  it("renders multiple session agents with unique negative keys using agentType from state", () => {
-    const agents = new Map<number, AgentSessionState>([
-      [-1050, makeAgentState({ sessionId: 50, agentType: "session", status: "completed" })],
-      [-1051, makeAgentState({ sessionId: 51, agentType: "session", status: "paused" })],
-      [-1052, makeAgentState({ sessionId: 52, agentType: "risk", status: "completed" })],
+  it("renders multiple session agents with unique keys using agentType from state", () => {
+    const agents = new Map<string, AgentSessionState>([
+      ["session:50", makeAgentState({ sessionId: 50, agentType: "session", status: "completed" })],
+      ["session:51", makeAgentState({ sessionId: 51, agentType: "session", status: "paused" })],
+      ["risk:52", makeAgentState({ sessionId: 52, agentType: "risk", status: "completed" })],
     ]);
-    const { sessions } = buildSessionEntries([], agents, null, null, "building");
+    const { sessions } = buildSessionEntries([], agents, "building");
 
     expect(sessions).toHaveLength(3);
     expect(sessions.map(s => s.agentType)).toEqual(["session", "session", "risk"]);
@@ -258,21 +258,23 @@ describe("buildSessionEntries", () => {
   });
 
   it("orders plan and prd sessions by sessionId (creation order), not hardcoded order", () => {
-    // PRD created first (lower sessionId), plan created second
-    const planAgent = makeAgentState({ sessionId: 20, status: "completed" });
-    const prdAgent = makeAgentState({ sessionId: 10, status: "completed" });
-    const { sessions } = buildSessionEntries([], new Map(), planAgent, prdAgent, "building");
+    const agents = new Map<string, AgentSessionState>([
+      ["plan", makeAgentState({ sessionId: 20, status: "completed" })],
+      ["prd", makeAgentState({ sessionId: 10, status: "completed" })],
+    ]);
+    const { sessions } = buildSessionEntries([], agents, "building");
 
     expect(sessions).toHaveLength(2);
-    // PRD (sessionId 10) should appear before plan (sessionId 20)
     expect(sessions[0].agentType).toBe("prd");
     expect(sessions[1].agentType).toBe("plan");
   });
 
   it("orders plan before prd when plan has lower sessionId", () => {
-    const planAgent = makeAgentState({ sessionId: 5, status: "completed" });
-    const prdAgent = makeAgentState({ sessionId: 15, status: "completed" });
-    const { sessions } = buildSessionEntries([], new Map(), planAgent, prdAgent, "building");
+    const agents = new Map<string, AgentSessionState>([
+      ["plan", makeAgentState({ sessionId: 5, status: "completed" })],
+      ["prd", makeAgentState({ sessionId: 15, status: "completed" })],
+    ]);
+    const { sessions } = buildSessionEntries([], agents, "building");
 
     expect(sessions).toHaveLength(2);
     expect(sessions[0].agentType).toBe("plan");
@@ -284,10 +286,10 @@ describe("buildSessionEntries", () => {
       { id: 10, status: "running" as const, item_type: "specify", phase_id: 1, phase_title: "Specify", order_index: 0, group_index: 0, agent_session_id: 99, result: null },
       { id: 11, status: "blocked" as const, item_type: "analyze", phase_id: 2, phase_title: "Analyze", order_index: 1, group_index: 0, agent_session_id: null, result: null },
     ];
-    const agents = new Map<number, AgentSessionState>([
-      [10, makeAgentState({ sessionId: 99, status: "running", agentType: "specify" })],
+    const agents = new Map<string, AgentSessionState>([
+      ["qi:10", makeAgentState({ sessionId: 99, status: "running", agentType: "specify" })],
     ]);
-    const { sessions } = buildSessionEntries(queue, agents, null, null, "building");
+    const { sessions } = buildSessionEntries(queue, agents, "building");
 
     expect(sessions).toHaveLength(1);
     expect(sessions[0].agentType).toBe("specify");

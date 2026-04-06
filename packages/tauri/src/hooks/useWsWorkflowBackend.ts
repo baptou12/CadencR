@@ -1,9 +1,4 @@
-/**
- * WebSocket workflow backend adapter.
- *
- * Implements WorkflowBackend by wrapping the Zustand useWorkflowStore,
- * mapping queue items + active agent sessions into FeatureSession[].
- */
+/** WebSocket workflow backend adapter — maps Zustand store state into FeatureSession[]. */
 
 import { useEffect, useMemo, useCallback, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -12,9 +7,9 @@ import { serverBlocksToAgentBlocks } from "./useFeatureAgentState";
 import type { AgentType } from "../types/agent-types";
 import type { FeatureAgentStateResponse } from "../api/generated";
 import type { AgentStatus } from "@/types/agent";
-import type { QueueItem, QueueItemStatus, AgentSessionState, FeatureSnapshot } from "@/types/workflow";
-import { AGENT_TYPE_SYNTHETIC_KEYS } from "@/types/workflow";
-import { useWorkflowStore, resolveAgentByItemId } from "./useWorkflowWebSocket";
+import type { QueueItem, AgentSessionState, FeatureSnapshot } from "@/types/workflow";
+import { PLAN_KEY, PRD_KEY } from "@/types/workflow";
+import { useWorkflowStore } from "./useWorkflowWebSocket";
 import { customInstance } from "@/api/client";
 import { deriveViewState, type WorkflowBackend } from "./workflowBackendTypes";
 import type { FeatureStatus } from "./useFeatureState";
@@ -23,88 +18,38 @@ import type { FeatureStatus } from "./useFeatureState";
 // Mappers
 // ---------------------------------------------------------------------------
 
-function mapQueueStatusToAgentStatus(
-  queueStatus: QueueItemStatus,
-  agentStatus: AgentStatus | undefined,
-): AgentStatus {
-  switch (queueStatus) {
-    case "running":
-      return agentStatus ?? "running";
-    case "completed":
-      return "completed";
-    case "error":
-      return "error";
-    case "paused":
-      return "paused";
-    case "skipped":
-      return "completed";
-    default:
-      // pending, blocked, ready
-      return "idle";
-  }
-}
+const QUEUE_STATUS_MAP: Record<string, AgentStatus> = {
+  running: "running", completed: "completed", error: "error", paused: "paused", skipped: "completed",
+};
 
-function queueItemToFeatureSession(
-  item: QueueItem,
-  agentState: AgentSessionState | undefined,
-): FeatureSession {
-  return {
-    sessionDbId: agentState?.sessionId ?? item.agent_session_id ?? -item.id,
-    agentType: item.item_type as AgentType,
-    status: mapQueueStatusToAgentStatus(item.status, agentState?.status),
-    blocks: agentState?.blocks ?? [],
-    pendingPermission: agentState?.pendingPermission ?? null,
-    pendingQuestions: agentState?.pendingQuestions?.length ? agentState.pendingQuestions : null,
-    hasFileChanges: agentState?.hasFileChanges ?? false,
-    resumable: item.status === "paused" || agentState?.status === "paused",
-    phaseId: item.phase_id,
-    phaseTitle: item.phase_title,
-    subprocessId: null,
-    model: null,
-    claudeSessionId: agentState?.claudeSessionId ?? null,
-    runId: null,
-    todos: null,
-    permissionMode: "acceptEdits",
-    pendingPlanApproval: null,
-    inputTokens: agentState?.inputTokens ?? 0,
-    outputTokens: agentState?.outputTokens ?? 0,
-    contextWindow: agentState?.contextWindow ?? 200_000,
-    wasCompacted: false,
-    draftPrompt: null,
-    hasMore: agentState?.hasMore ?? false,
-    oldestMessageId: agentState?.oldestMessageId ?? null,
-  };
-}
-
-function agentStateToFeatureSession(
-  agentState: AgentSessionState,
+function toFeatureSession(
+  agent: AgentSessionState | undefined,
   agentType: AgentType,
+  item?: QueueItem,
 ): FeatureSession {
+  const status = item
+    ? (QUEUE_STATUS_MAP[item.status] ?? agent?.status ?? "idle") as AgentStatus
+    : (agent?.status ?? "idle");
   return {
-    sessionDbId: agentState.sessionId,
+    sessionDbId: agent?.sessionId ?? item?.agent_session_id ?? (item ? -item.id : 0),
     agentType,
-    status: agentState.status,
-    blocks: agentState.blocks,
-    pendingPermission: agentState.pendingPermission,
-    pendingQuestions: agentState?.pendingQuestions?.length ? agentState.pendingQuestions : null,
-    hasFileChanges: agentState.hasFileChanges,
-    resumable: agentState.status === "paused",
-    phaseId: null,
-    phaseTitle: null,
-    subprocessId: null,
-    model: null,
-    claudeSessionId: agentState.claudeSessionId ?? null,
-    runId: null,
-    todos: null,
-    permissionMode: "acceptEdits",
-    pendingPlanApproval: null,
-    inputTokens: agentState.inputTokens,
-    outputTokens: agentState.outputTokens,
-    contextWindow: agentState.contextWindow,
-    wasCompacted: false,
-    draftPrompt: null,
-    hasMore: agentState.hasMore ?? false,
-    oldestMessageId: agentState.oldestMessageId ?? null,
+    status: item?.status === "running" ? (agent?.status ?? "running") : status,
+    blocks: agent?.blocks ?? [],
+    pendingPermission: agent?.pendingPermission ?? null,
+    pendingQuestions: agent?.pendingQuestions?.length ? agent.pendingQuestions : null,
+    hasFileChanges: agent?.hasFileChanges ?? false,
+    resumable: item?.status === "paused" || agent?.status === "paused",
+    phaseId: item?.phase_id ?? null,
+    phaseTitle: item?.phase_title ?? null,
+    subprocessId: null, model: null, runId: null, todos: null,
+    claudeSessionId: agent?.claudeSessionId ?? null,
+    permissionMode: "acceptEdits", pendingPlanApproval: null,
+    inputTokens: agent?.inputTokens ?? 0,
+    outputTokens: agent?.outputTokens ?? 0,
+    contextWindow: agent?.contextWindow ?? 200_000,
+    wasCompacted: false, draftPrompt: null,
+    hasMore: agent?.hasMore ?? false,
+    oldestMessageId: agent?.oldestMessageId ?? null,
   };
 }
 
@@ -114,22 +59,19 @@ function agentStateToFeatureSession(
 
 export function buildSessionEntries(
   queue: QueueItem[],
-  activeAgents: Map<number, AgentSessionState>,
-  planAgent: AgentSessionState | null,
-  prdAgent: AgentSessionState | null,
+  agents: Map<string, AgentSessionState>,
   workflowStatus?: string,
 ): { sessions: FeatureSession[]; planSession: FeatureSession | null; prdSession: FeatureSession | null } {
-  const planSession = planAgent ? agentStateToFeatureSession(planAgent, "plan") : null;
-  const prdSession = prdAgent ? agentStateToFeatureSession(prdAgent, "prd") : null;
+  const planAgent = agents.get(PLAN_KEY) ?? null;
+  const prdAgent = agents.get(PRD_KEY) ?? null;
 
-  // When the workflow is in plan_approval state, set pendingPlanApproval on the
-  // plan agent session so the approval bar renders in the AgentPromptBar.
+  const planSession = planAgent ? toFeatureSession(planAgent, "plan") : null;
+  const prdSession = prdAgent ? toFeatureSession(prdAgent, "prd") : null;
+
   if (workflowStatus === "plan_approval" && planSession) {
     planSession.pendingPlanApproval = {};
   }
 
-  // When the PRD agent is paused (prd_ready fired) and workflow is in "prd" state,
-  // set pendingPlanApproval on the PRD session so the approval bar renders.
   if (workflowStatus === "prd" && prdSession && prdAgent?.status === "paused") {
     prdSession.pendingPlanApproval = {};
   }
@@ -141,48 +83,47 @@ export function buildSessionEntries(
   preSessions.sort((a, b) => a.sessionDbId - b.sessionDbId);
   sessions.push(...preSessions);
 
-  // Add queue item sessions (running, completed, error — anything with visible state)
+  // Add queue item sessions
   for (const item of queue) {
-    const agentState = activeAgents.get(item.id);
+    const agentState = agents.get(`qi:${item.id}`);
     if (item.status === "running" || item.status === "completed" || item.status === "error" || item.status === "paused" || agentState) {
-      sessions.push(queueItemToFeatureSession(item, agentState));
+      sessions.push(toFeatureSession(agentState, item.item_type as AgentType, item));
     }
   }
 
-  // Add agents not tied to queue items (negative synthetic keys; plan/prd handled above)
-  for (const [key, agent] of activeAgents) {
-    if (key < 0) {
-      sessions.push(agentStateToFeatureSession(agent, agent.agentType as AgentType));
-    }
+  // Add agents not tied to queue items or plan/prd (session, risk, retro, review-fixer)
+  for (const [key, agent] of agents) {
+    if (key === PLAN_KEY || key === PRD_KEY) continue;
+    if (key.startsWith("qi:")) continue;
+    sessions.push(toFeatureSession(agent, agent.agentType as AgentType));
   }
 
   return { sessions, planSession, prdSession };
 }
 
 // ---------------------------------------------------------------------------
-// Find queue item ID from a FeatureSession (reverse lookup)
+// Find slot key from a FeatureSession (reverse lookup)
 // ---------------------------------------------------------------------------
 
-export function findQueueItemId(
+export function findSlotKey(
   entry: FeatureSession,
   queue: QueueItem[],
-  activeAgents: Map<number, AgentSessionState>,
-): number {
-  // Pre-queue agents use fixed synthetic IDs on the backend
-  if (entry.agentType === "plan") return -1;
-  if (entry.agentType === "prd") return -2;
+  agents: Map<string, AgentSessionState>,
+): string {
+  if (entry.agentType === "plan") return PLAN_KEY;
+  if (entry.agentType === "prd") return PRD_KEY;
 
-  // Check activeAgents for matching sessionId
-  for (const [itemId, agent] of activeAgents) {
-    if (agent.sessionId === entry.sessionDbId) return itemId;
+  // Check agents for matching sessionId
+  for (const [slotKey, agent] of agents) {
+    if (agent.sessionId === entry.sessionDbId) return slotKey;
   }
   // Check queue for matching agent_session_id
   for (const item of queue) {
-    if (item.agent_session_id === entry.sessionDbId) return item.id;
+    if (item.agent_session_id === entry.sessionDbId) return `qi:${item.id}`;
   }
-  // Fallback: negative sessionDbId means -item.id was used
-  if (entry.sessionDbId < 0) return -entry.sessionDbId;
-  return entry.sessionDbId;
+  // Fallback
+  if (entry.sessionDbId < 0) return `qi:${-entry.sessionDbId}`;
+  return `session:${entry.sessionDbId}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -198,7 +139,6 @@ export function useWsWorkflowBackend(
   const store = useWorkflowStore();
   const queryClient = useQueryClient();
 
-  // Fetch snapshot in parallel with WS connect
   const { data: snapshot } = useQuery<FeatureSnapshot>({
     queryKey: ["feature-snapshot", featureId],
     queryFn: () =>
@@ -207,7 +147,7 @@ export function useWsWorkflowBackend(
         method: "GET",
       }),
     enabled,
-    staleTime: Infinity, // Only fetch once
+    staleTime: Infinity,
     retry: 1,
   });
 
@@ -218,11 +158,6 @@ export function useWsWorkflowBackend(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [featureId, projectId, enabled]);
 
-  // Hydrate store from snapshot when it arrives.
-  // We also depend on `store.hydrated` so that when the component remounts
-  // (navigating back to the same feature) and `connect()` has reset
-  // `hydrated` to false, we re-hydrate from the cached snapshot even though
-  // the snapshot reference hasn't changed (staleTime: Infinity).
   const hydrated = store.hydrated;
   useEffect(() => {
     if (snapshot && !hydrated) {
@@ -234,12 +169,10 @@ export function useWsWorkflowBackend(
   const isHydrating = enabled && !store.hydrated;
 
   const { sessions, planSession, prdSession } = useMemo(
-    () => buildSessionEntries(store.queue, store.activeAgents, store.planAgent, store.prdAgent, store.workflowStatus),
-    [store.queue, store.activeAgents, store.planAgent, store.prdAgent, store.workflowStatus],
+    () => buildSessionEntries(store.queue, store.agents, store.workflowStatus),
+    [store.queue, store.agents, store.workflowStatus],
   );
 
-  // Still loading if hydrated but sessions need history (blocks empty, not yet fetched).
-  // This prevents a flash of empty agent cards before conversation blocks arrive.
   const needsHistory = !isHydrating && sessions.some(
     (s) => (s.status === "paused" || s.status === "running") && s.blocks.length === 0,
   );
@@ -249,19 +182,15 @@ export function useWsWorkflowBackend(
   const noAgentsRunning = !sessions.some((s) => s.status === "running");
   const view = deriveViewState(store.workflowStatus, sessions);
 
-  // In-flight guard: prevents duplicate API calls while a fetch is pending
   const historyFetchInFlight = useRef(false);
 
   const loadAgentHistory = useCallback((entry: FeatureSession) => {
     if (entry.sessionDbId <= 0) return;
     if (historyFetchInFlight.current) return;
 
-    // Skip if the agent already exists in the store and has history/blocks.
-    // The agent may not be in activeAgents yet (queue_update arrives before
-    // agent.started), so a missing agent must NOT block the fetch.
     const storeState = useWorkflowStore.getState();
-    const itemId = findQueueItemId(entry, storeState.queue, storeState.activeAgents);
-    const agent = resolveAgentByItemId(storeState, itemId);
+    const slotKey = findSlotKey(entry, storeState.queue, storeState.agents);
+    const agent = storeState.agents.get(slotKey);
     if (agent && (agent.historyLoaded || agent.blocks.length > 0)) return;
 
     historyFetchInFlight.current = true;
@@ -271,24 +200,16 @@ export function useWsWorkflowBackend(
       method: "GET",
       params: { limit: 100 },
     }).then((resp) => {
-      // Single API call returns all sessions — distribute blocks to all agents
       for (const session of resp.sessions) {
         if (session.blocks.length === 0) continue;
         const blocks = serverBlocksToAgentBlocks(session.blocks as never[]);
-        // Find the item ID for this session
         const state = useWorkflowStore.getState();
-        for (const [id, a] of state.activeAgents) {
+        // Find the slot key for this session
+        for (const [key, a] of state.agents) {
           if (a.sessionId === session.sessionDbId) {
-            storeState.populateAgentBlocks(id, blocks, session.hasMore, session.oldestMessageId);
+            storeState.populateAgentBlocks(key, blocks, session.hasMore, session.oldestMessageId);
             break;
           }
-        }
-        // Also check plan/prd slots
-        if (state.planAgent?.sessionId === session.sessionDbId) {
-          storeState.populateAgentBlocks(AGENT_TYPE_SYNTHETIC_KEYS.plan, blocks, session.hasMore, session.oldestMessageId);
-        }
-        if (state.prdAgent?.sessionId === session.sessionDbId) {
-          storeState.populateAgentBlocks(AGENT_TYPE_SYNTHETIC_KEYS.prd, blocks, session.hasMore, session.oldestMessageId);
         }
       }
     }).catch(() => {
@@ -299,7 +220,6 @@ export function useWsWorkflowBackend(
   }, [featureId]);
 
   return {
-    // Read state
     workflowStatus: store.workflowStatus,
     sessionEntries: sessions,
     planSession,
@@ -309,7 +229,6 @@ export function useWsWorkflowBackend(
     error: store.error,
     clearError: store.clearError,
 
-    // Action availability — archived features only allow retro.
     actions: (() => {
       const notArchived = featureStatus !== "archived";
       const ws = store.workflowStatus;
@@ -326,13 +245,11 @@ export function useWsWorkflowBackend(
       };
     })(),
 
-    // Derived
     hasAnyAgentOutput,
     noAgentsRunning,
     view: isLoading ? "loading" as const : view,
     isLoading,
 
-    // Loading flags (WS actions are fire-and-forget)
     isStartingPlan: false,
     isStartingPrd: false,
     isStartingExecute: store.startingBuild,
@@ -347,7 +264,6 @@ export function useWsWorkflowBackend(
     executeStatus: "idle" as const,
     planApprovalError: null,
 
-    // Commands
     startPlan: (description, images) => store.startPlan(description, images),
     startPrd: (description, images) => store.startPrd(description, images),
     approvePlan: (_subprocessId, _sessionDbId, requestId) => store.approvePlan(requestId ?? undefined),
@@ -355,27 +271,26 @@ export function useWsWorkflowBackend(
     startBuilding: () => store.startBuild(),
     continueWorkflow: () => store.continueWorkflow(),
     sendToAgent: (entry, message, images) => {
-      const itemId = findQueueItemId(entry, store.queue, store.activeAgents);
-      store.sendPromptToAgent(itemId, message, images);
+      const slotKey = findSlotKey(entry, store.queue, store.agents);
+      store.sendPromptToAgent(slotKey, message, images);
     },
     stopAgent: (entry) => {
-      const itemId = findQueueItemId(entry, store.queue, store.activeAgents);
-      store.interruptItem(itemId);
+      const slotKey = findSlotKey(entry, store.queue, store.agents);
+      store.interruptItem(slotKey);
     },
-    // In WS workflow, stop and interrupt are the same (SIGINT → pause)
     interruptAgent: (entry) => {
-      const itemId = findQueueItemId(entry, store.queue, store.activeAgents);
-      store.interruptItem(itemId);
+      const slotKey = findSlotKey(entry, store.queue, store.agents);
+      store.interruptItem(slotKey);
     },
     submitPermission: (entry, decision, _feedback) => {
-      const itemId = findQueueItemId(entry, store.queue, store.activeAgents);
+      const slotKey = findSlotKey(entry, store.queue, store.agents);
       const requestId = entry.pendingPermission?.requestId ?? "";
       const mapped = decision === "allow" ? "allow_once" : decision === "deny" ? "deny" : "allow_once";
-      store.respondToPermission(itemId, requestId, mapped as "allow_once" | "allow_future" | "deny");
+      store.respondToPermission(slotKey, requestId, mapped as "allow_once" | "allow_future" | "deny");
     },
     submitAnswers: (entry, response) => {
-      const itemId = findQueueItemId(entry, store.queue, store.activeAgents);
-      store.respondToQuestion(itemId, response);
+      const slotKey = findSlotKey(entry, store.queue, store.agents);
+      store.respondToQuestion(slotKey, response);
     },
     startSession: (prompt, images) => store.startSession(prompt, images?.map(i => ({ base64: i, mimeType: "image/png" }))),
     startRefine: (description, images) => store.startRefine(description, images?.map(i => ({ base64: i, mimeType: "image/png" }))),
@@ -384,14 +299,13 @@ export function useWsWorkflowBackend(
     startRetro: () => store.startRetro(),
     startReviewFixer: (comments) => store.startReviewFixer(comments),
     markDone: (sessionDbId) => {
-      // Find the queue item for this session and mark it done
-      for (const [itemId, agent] of store.activeAgents) {
+      for (const [slotKey, agent] of store.agents) {
         if (agent.sessionId === sessionDbId) {
-          store.markDone(itemId);
+          store.markDone(slotKey);
           return;
         }
       }
-      store.markDone(sessionDbId);
+      store.markDone(`session:${sessionDbId}`);
     },
     deleteSession: (sessionDbId) => {
       store.deleteSession(sessionDbId);
@@ -400,35 +314,24 @@ export function useWsWorkflowBackend(
     handleResume: (_agentType, sessionDbId) => {
       const entry = sessions.find(s => s.sessionDbId === sessionDbId);
       if (!entry) return;
-      const itemId = findQueueItemId(entry, store.queue, store.activeAgents);
-      store.resumeItem(itemId);
+      const slotKey = findSlotKey(entry, store.queue, store.agents);
+      store.resumeItem(slotKey);
     },
 
-    // Lazy history loading
     loadAgentHistory,
 
-    // Pagination: load older messages
     loadOlderMessages: async (sessionDbId: number) => {
       const state = useWorkflowStore.getState();
-      // Find the agent with this sessionDbId to get oldestMessageId
       let agent: AgentSessionState | undefined;
-      let itemId: number | undefined;
-      if (state.planAgent?.sessionId === sessionDbId) {
-        agent = state.planAgent;
-        itemId = AGENT_TYPE_SYNTHETIC_KEYS.plan;
-      } else if (state.prdAgent?.sessionId === sessionDbId) {
-        agent = state.prdAgent;
-        itemId = AGENT_TYPE_SYNTHETIC_KEYS.prd;
-      } else {
-        for (const [id, a] of state.activeAgents) {
-          if (a.sessionId === sessionDbId) {
-            agent = a;
-            itemId = id;
-            break;
-          }
+      let slotKey: string | undefined;
+      for (const [key, a] of state.agents) {
+        if (a.sessionId === sessionDbId) {
+          agent = a;
+          slotKey = key;
+          break;
         }
       }
-      if (!agent || !agent.hasMore || agent.oldestMessageId == null || itemId == null) return;
+      if (!agent || !agent.hasMore || agent.oldestMessageId == null || slotKey == null) return;
 
       const beforeParam = JSON.stringify({ [sessionDbId]: agent.oldestMessageId });
       const resp = await customInstance<FeatureAgentStateResponse>({
@@ -439,15 +342,14 @@ export function useWsWorkflowBackend(
 
       const serverSession = resp.sessions.find((s) => s.sessionDbId === sessionDbId);
       if (!serverSession || serverSession.blocks.length === 0) {
-        state.populateOlderBlocks(itemId, [], false, null);
+        state.populateOlderBlocks(slotKey, [], false, null);
         return;
       }
 
       const olderBlocks = serverBlocksToAgentBlocks(serverSession.blocks as never[]);
-      state.populateOlderBlocks(itemId, olderBlocks, serverSession.hasMore, serverSession.oldestMessageId);
+      state.populateOlderBlocks(slotKey, olderBlocks, serverSession.hasMore, serverSession.oldestMessageId);
     },
 
-    // Queue-specific
     skipItem: (itemId) => store.skipItem(itemId),
     retryItem: (itemId) => store.retryItem(itemId),
     setAutonomyLevel: (level) => store.setAutonomyLevel(level),
@@ -455,7 +357,6 @@ export function useWsWorkflowBackend(
     selectItem: (itemId) => store.selectItem(itemId),
     selectedItemId: store.selectedItemId,
 
-    // Worktree state
     worktreeStatus: store.worktreeStatus,
     worktreePath: store.worktreePath,
     worktreeBranch: store.worktreeBranch,

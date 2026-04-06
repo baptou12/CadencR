@@ -145,9 +145,7 @@ export interface WorkflowState {
 
   // Workflow state
   queue: QueueItem[];
-  activeAgents: Map<number, AgentSessionState>; // queue_item_id → session state
-  planAgent: AgentSessionState | null;
-  prdAgent: AgentSessionState | null;
+  agents: Map<string, AgentSessionState>; // agentSlotKey → session state
   workflowStatus: WorkflowStatus;
   pauseReason: string | null;
   autonomyLevel: AutonomyLevel;
@@ -198,18 +196,18 @@ export interface WorkflowState {
   skipItem: (itemId: number) => void;
   retryItem: (itemId: number) => void;
   retryWorktreeSetup: () => void;
-  respondToPermission: (itemId: number, requestId: string, decision: "allow_once" | "allow_future" | "deny") => void;
-  respondToQuestion: (itemId: number, response: string) => void;
-  sendPromptToAgent: (itemId: number, text: string, images?: Array<{ base64: string; mimeType: string }>) => void;
-  interruptItem: (itemId: number) => void;
-  resumeItem: (itemId: number) => void;
+  respondToPermission: (slotKey: string, requestId: string, decision: "allow_once" | "allow_future" | "deny") => void;
+  respondToQuestion: (slotKey: string, response: string) => void;
+  sendPromptToAgent: (slotKey: string, text: string, images?: Array<{ base64: string; mimeType: string }>) => void;
+  interruptItem: (slotKey: string) => void;
+  resumeItem: (slotKey: string) => void;
   startSession: (prompt: string, images?: Array<{ base64: string; mimeType: string }>) => void;
   startRefine: (description: string, images?: Array<{ base64: string; mimeType: string }>) => void;
   startReviewFixer: (comments: string) => void;
   startRisk: () => void;
   startRetro: () => void;
-  markDone: (itemId: number) => void;
-  removeAgent: (itemId: number) => void;
+  markDone: (slotKey: string) => void;
+  removeAgent: (slotKey: string) => void;
   deleteSession: (sessionDbId: number) => void;
   clearError: () => void;
 
@@ -218,8 +216,8 @@ export interface WorkflowState {
   triggerPhase: (phaseSlug: string) => void;
   startCustomWorkflow: (featureId: number, projectId: number, title: string, workflowDefinitionId: number, description?: string, useWorktree?: boolean) => void;
 
-  populateAgentBlocks: (itemId: number, blocks: AgentBlockData[], hasMore?: boolean, oldestMessageId?: number | null) => void;
-  populateOlderBlocks: (itemId: number, blocks: AgentBlockData[], hasMore: boolean, oldestMessageId: number | null) => void;
+  populateAgentBlocks: (slotKey: string, blocks: AgentBlockData[], hasMore?: boolean, oldestMessageId?: number | null) => void;
+  populateOlderBlocks: (slotKey: string, blocks: AgentBlockData[], hasMore: boolean, oldestMessageId: number | null) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -239,35 +237,9 @@ export type AgentSlot =
 
 /** Convert an AgentSlot to a stable string key for use as Map keys. */
 export function agentSlotKey(slot: AgentSlot): string {
-  return slot.type === "queue_item" ? `qi:${slot.id}` : slot.type;
-}
-
-/** Convert an AgentSlot to the legacy numeric ID (for backward compat). */
-export function agentSlotToLegacyId(slot: AgentSlot): number {
-  switch (slot.type) {
-    case "plan": return -1;
-    case "prd": return -2;
-    case "session": return -3;
-    case "refine": return -4;
-    case "review-fixer": return -5;
-    case "risk": return -6;
-    case "retro": return -7;
-    case "queue_item": return slot.id;
-  }
-}
-
-/** Convert a legacy numeric ID to an AgentSlot. */
-export function legacyIdToSlot(id: number): AgentSlot {
-  switch (id) {
-    case -1: return { type: "plan" };
-    case -2: return { type: "prd" };
-    case -3: return { type: "session", id: 0 };
-    case -4: return { type: "refine" };
-    case -5: return { type: "review-fixer", id: 0 };
-    case -6: return { type: "risk", id: 0 };
-    case -7: return { type: "retro", id: 0 };
-    default: return { type: "queue_item", id };
-  }
+  if (slot.type === "queue_item") return `qi:${slot.id}`;
+  if ("id" in slot && slot.id != null) return `${slot.type}:${slot.id}`;
+  return slot.type;
 }
 
 /** Parse an agent_slot from a WS payload. Falls back to queue_item_id for backward compat. */
@@ -280,23 +252,40 @@ export function parseAgentSlot(payload: Record<string, unknown>): AgentSlot {
   return legacyIdToSlot(id);
 }
 
+/** Convert a legacy numeric ID to an AgentSlot (for backward compat with old WS payloads). */
+function legacyIdToSlot(id: number): AgentSlot {
+  switch (id) {
+    case -1: return { type: "plan" };
+    case -2: return { type: "prd" };
+    case -3: return { type: "session", id: 0 };
+    case -4: return { type: "refine" };
+    case -5: return { type: "review-fixer", id: 0 };
+    case -6: return { type: "risk", id: 0 };
+    case -7: return { type: "retro", id: 0 };
+    default: return { type: "queue_item", id };
+  }
+}
+
 // ---------------------------------------------------------------------------
-// Constants
+// String key constants for the unified agents Map
 // ---------------------------------------------------------------------------
 
-/** @deprecated Use AgentSlot instead. Maps agent_type strings to synthetic queue-item IDs used by the WS protocol. */
-export const AGENT_TYPE_SYNTHETIC_KEYS: Record<string, number> = {
-  plan: -1,
-  prd: -2,
-  session: -3,
-  refine: -4,
-  "review-fixer": -5,
-  risk: -6,
-  retro: -7,
-};
+export const PLAN_KEY = "plan";
+export const PRD_KEY = "prd";
+export const SESSION_PLACEHOLDER_KEY = "session";
 
-/** Shorthand constants for the most-used synthetic keys. */
-export const PLAN_KEY = AGENT_TYPE_SYNTHETIC_KEYS.plan;       // -1
-export const PRD_KEY = AGENT_TYPE_SYNTHETIC_KEYS.prd;         // -2
-export const SESSION_KEY = AGENT_TYPE_SYNTHETIC_KEYS.session;  // -3
-export const REVIEW_FIXER_KEY = AGENT_TYPE_SYNTHETIC_KEYS["review-fixer"]; // -5
+/** Convert a string slot key back to an AgentSlot for WS payloads. */
+export function slotKeyToAgentSlot(slotKey: string): AgentSlot {
+  if (slotKey === "plan") return { type: "plan" };
+  if (slotKey === "prd") return { type: "prd" };
+  if (slotKey === "refine") return { type: "refine" };
+  if (slotKey === "session") return { type: "session", id: 0 };
+  if (slotKey.startsWith("qi:")) return { type: "queue_item", id: parseInt(slotKey.slice(3), 10) };
+  const colonIdx = slotKey.indexOf(":");
+  if (colonIdx !== -1) {
+    const type = slotKey.slice(0, colonIdx);
+    const id = parseInt(slotKey.slice(colonIdx + 1), 10);
+    return { type, id } as AgentSlot;
+  }
+  return { type: slotKey } as AgentSlot;
+}

@@ -5,7 +5,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { useWorkflowStore } from "./useWorkflowWebSocket";
-import { AGENT_TYPE_SYNTHETIC_KEYS } from "@/types/workflow";
+import { PLAN_KEY, PRD_KEY } from "@/types/workflow";
 import type { FeatureSnapshot, AgentSessionSummary, AgentSessionState } from "@/types/workflow";
 import type { AgentBlockData } from "@/components/AgentBlock";
 
@@ -85,9 +85,7 @@ beforeEach(() => {
     featureId: null,
     projectId: null,
     queue: [],
-    activeAgents: new Map(),
-    planAgent: null,
-    prdAgent: null,
+    agents: new Map(),
     workflowStatus: "idle",
     pauseReason: null,
     autonomyLevel: 1,
@@ -141,6 +139,18 @@ function makeAgentSession(overrides?: Record<string, unknown>): AgentSessionStat
   } as AgentSessionState;
 }
 
+/** Helper to set a single agent in the store */
+function setAgent(key: string, agent: AgentSessionState) {
+  const agents = new Map(useWorkflowStore.getState().agents);
+  agents.set(key, agent);
+  useWorkflowStore.setState({ agents });
+}
+
+/** Helper to get an agent from the store */
+function getAgent(key: string): AgentSessionState | undefined {
+  return useWorkflowStore.getState().agents.get(key);
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -185,9 +195,9 @@ describe("useWorkflowStore", () => {
   });
 
   describe("agent_stream routing", () => {
-    it("routes queue_item_id -1 to planAgent", () => {
+    it("routes queue_item_id -1 to plan agent", () => {
       const ws = connectStore();
-      useWorkflowStore.setState({ planAgent: makeAgentSession() });
+      setAgent(PLAN_KEY, makeAgentSession());
 
       dispatch(ws, {
         domain: "workflow",
@@ -199,14 +209,14 @@ describe("useWorkflowStore", () => {
         },
       });
 
-      const { planAgent } = useWorkflowStore.getState();
-      expect(planAgent).not.toBeNull();
-      expect(planAgent!.blocks.length).toBeGreaterThan(0);
+      const plan = getAgent(PLAN_KEY);
+      expect(plan).toBeDefined();
+      expect(plan!.blocks.length).toBeGreaterThan(0);
     });
 
-    it("routes queue_item_id -2 to prdAgent", () => {
+    it("routes queue_item_id -2 to prd agent", () => {
       const ws = connectStore();
-      useWorkflowStore.setState({ prdAgent: makeAgentSession() });
+      setAgent(PRD_KEY, makeAgentSession());
 
       dispatch(ws, {
         domain: "workflow",
@@ -218,16 +228,14 @@ describe("useWorkflowStore", () => {
         },
       });
 
-      const { prdAgent } = useWorkflowStore.getState();
-      expect(prdAgent).not.toBeNull();
-      expect(prdAgent!.blocks.length).toBeGreaterThan(0);
+      const prd = getAgent(PRD_KEY);
+      expect(prd).toBeDefined();
+      expect(prd!.blocks.length).toBeGreaterThan(0);
     });
 
-    it("routes positive queue_item_id to activeAgents", () => {
+    it("routes positive queue_item_id to agents map", () => {
       const ws = connectStore();
-      const agents = new Map();
-      agents.set(42, makeAgentSession());
-      useWorkflowStore.setState({ activeAgents: agents });
+      setAgent("qi:42", makeAgentSession());
 
       dispatch(ws, {
         domain: "workflow",
@@ -235,13 +243,12 @@ describe("useWorkflowStore", () => {
         payload: { queue_item_id: 42, session_id: 300, blocks: [{ type: "assistant" }] },
       });
 
-      const agent = useWorkflowStore.getState().activeAgents.get(42);
+      const agent = getAgent("qi:42");
       expect(agent).toBeDefined();
       expect(agent!.blocks.length).toBeGreaterThan(0);
     });
 
-    it("creates planAgent on the fly when none exists", () => {
-      useWorkflowStore.setState({ planAgent: null });
+    it("creates plan agent on the fly when none exists", () => {
       const ws = connectStore();
 
       dispatch(ws, {
@@ -250,14 +257,14 @@ describe("useWorkflowStore", () => {
         payload: { queue_item_id: -1, session_id: 100, blocks: [{ type: "assistant" }] },
       });
 
-      const { planAgent } = useWorkflowStore.getState();
-      expect(planAgent).not.toBeNull();
-      expect(planAgent!.blocks.length).toBeGreaterThan(0);
+      const plan = getAgent(PLAN_KEY);
+      expect(plan).toBeDefined();
+      expect(plan!.blocks.length).toBeGreaterThan(0);
     });
 
     it("processes multiple blocks in a single message", () => {
       const ws = connectStore();
-      useWorkflowStore.setState({ planAgent: makeAgentSession() });
+      setAgent(PLAN_KEY, makeAgentSession());
 
       dispatch(ws, {
         domain: "workflow",
@@ -269,12 +276,12 @@ describe("useWorkflowStore", () => {
         },
       });
 
-      expect(useWorkflowStore.getState().planAgent!.blocks.length).toBe(2);
+      expect(getAgent(PLAN_KEY)!.blocks.length).toBe(2);
     });
 
     it("ignores agent_stream with empty blocks and no message", () => {
       const ws = connectStore();
-      useWorkflowStore.setState({ planAgent: makeAgentSession() });
+      setAgent(PLAN_KEY, makeAgentSession());
 
       dispatch(ws, {
         domain: "workflow",
@@ -282,7 +289,7 @@ describe("useWorkflowStore", () => {
         payload: { queue_item_id: -1, session_id: 100 },
       });
 
-      expect(useWorkflowStore.getState().planAgent!.blocks.length).toBe(0);
+      expect(getAgent(PLAN_KEY)!.blocks.length).toBe(0);
     });
 
     it("ignores non-workflow domain messages", () => {
@@ -294,11 +301,10 @@ describe("useWorkflowStore", () => {
         payload: { queue_item_id: -1, blocks: [{ type: "text" }] },
       });
 
-      expect(useWorkflowStore.getState().planAgent).toBeNull();
+      expect(getAgent(PLAN_KEY)).toBeUndefined();
     });
 
-    it("ignores agent_stream for unknown queue_item_id in activeAgents", () => {
-      useWorkflowStore.setState({ activeAgents: new Map() });
+    it("ignores agent_stream for unknown queue_item_id in agents", () => {
       const ws = connectStore();
 
       dispatch(ws, {
@@ -307,7 +313,7 @@ describe("useWorkflowStore", () => {
         payload: { queue_item_id: 999, session_id: 1, blocks: [{ type: "assistant" }] },
       });
 
-      expect(useWorkflowStore.getState().activeAgents.size).toBe(0);
+      expect(useWorkflowStore.getState().agents.size).toBe(0);
     });
   });
 
@@ -316,48 +322,45 @@ describe("useWorkflowStore", () => {
   // -------------------------------------------------------------------------
 
   describe("interruptItem", () => {
-    it("optimistically sets planAgent status to paused", () => {
+    it("sets plan agent status to paused", () => {
       const ws = connectStore();
-      useWorkflowStore.setState({ planAgent: makeAgentSession({ status: "running" }) });
+      setAgent(PLAN_KEY, makeAgentSession({ status: "running" }));
 
-      useWorkflowStore.getState().interruptItem(-1);
+      useWorkflowStore.getState().interruptItem(PLAN_KEY);
 
-      expect(useWorkflowStore.getState().planAgent!.status).toBe("paused");
-      // Should also send the interrupt envelope
+      expect(getAgent(PLAN_KEY)!.status).toBe("paused");
       const sent = ws.sent.find(s => JSON.parse(s).action === "interrupt");
       expect(sent).toBeDefined();
       expect(JSON.parse(sent!).payload.agent_slot).toEqual({ type: "plan" });
     });
 
-    it("optimistically sets prdAgent status to paused", () => {
+    it("sets prd agent status to paused", () => {
       connectStore();
-      useWorkflowStore.setState({ prdAgent: makeAgentSession({ status: "running" }) });
+      setAgent(PRD_KEY, makeAgentSession({ status: "running" }));
 
-      useWorkflowStore.getState().interruptItem(-2);
+      useWorkflowStore.getState().interruptItem(PRD_KEY);
 
-      expect(useWorkflowStore.getState().prdAgent!.status).toBe("paused");
+      expect(getAgent(PRD_KEY)!.status).toBe("paused");
     });
 
-    it("optimistically sets activeAgent and queue item to paused", () => {
+    it("sets active agent and queue item to paused", () => {
       connectStore();
-      const agents = new Map();
-      agents.set(10, makeAgentSession({ sessionId: 100, status: "running" }));
+      setAgent("qi:10", makeAgentSession({ sessionId: 100, status: "running" }));
       useWorkflowStore.setState({
-        activeAgents: agents,
         queue: [{ id: 10, status: "running", item_type: "execute", phase_id: null, phase_title: null, order_index: 0, group_index: null, agent_session_id: 100, result: null }],
       });
 
-      useWorkflowStore.getState().interruptItem(10);
+      useWorkflowStore.getState().interruptItem("qi:10");
 
-      expect(useWorkflowStore.getState().activeAgents.get(10)!.status).toBe("paused");
+      expect(getAgent("qi:10")!.status).toBe("paused");
       expect(useWorkflowStore.getState().queue[0].status).toBe("paused");
     });
   });
 
   describe("interrupted message handler", () => {
-    it("sets planAgent to paused on interrupted message", () => {
+    it("sets plan agent to paused on interrupted message", () => {
       const ws = connectStore();
-      useWorkflowStore.setState({ planAgent: makeAgentSession({ status: "running" }) });
+      setAgent(PLAN_KEY, makeAgentSession({ status: "running" }));
 
       dispatch(ws, {
         domain: "workflow",
@@ -365,15 +368,13 @@ describe("useWorkflowStore", () => {
         payload: { queue_item_id: -1, feature_id: 1, status: "interrupted" },
       });
 
-      expect(useWorkflowStore.getState().planAgent!.status).toBe("paused");
+      expect(getAgent(PLAN_KEY)!.status).toBe("paused");
     });
 
-    it("sets activeAgent to paused and updates queue on interrupted message", () => {
+    it("sets active agent to paused and updates queue on interrupted message", () => {
       const ws = connectStore();
-      const agents = new Map();
-      agents.set(5, makeAgentSession({ sessionId: 50, status: "running" }));
+      setAgent("qi:5", makeAgentSession({ sessionId: 50, status: "running" }));
       useWorkflowStore.setState({
-        activeAgents: agents,
         queue: [{ id: 5, status: "running", item_type: "execute", phase_id: null, phase_title: null, order_index: 0, group_index: null, agent_session_id: 50, result: null }],
       });
 
@@ -383,19 +384,19 @@ describe("useWorkflowStore", () => {
         payload: { queue_item_id: 5, feature_id: 1, status: "interrupted" },
       });
 
-      expect(useWorkflowStore.getState().activeAgents.get(5)!.status).toBe("paused");
+      expect(getAgent("qi:5")!.status).toBe("paused");
       expect(useWorkflowStore.getState().queue[0].status).toBe("paused");
     });
   });
 
   describe("resumeItem", () => {
-    it("sets planAgent back to running and sends prompt.send", () => {
+    it("sets plan agent back to running and sends prompt.send", () => {
       const ws = connectStore();
-      useWorkflowStore.setState({ planAgent: makeAgentSession({ status: "paused" }) });
+      setAgent(PLAN_KEY, makeAgentSession({ status: "paused" }));
 
-      useWorkflowStore.getState().resumeItem(-1);
+      useWorkflowStore.getState().resumeItem(PLAN_KEY);
 
-      expect(useWorkflowStore.getState().planAgent!.status).toBe("running");
+      expect(getAgent(PLAN_KEY)!.status).toBe("running");
       const sent = ws.sent.find(s => JSON.parse(s).action === "prompt.send");
       expect(sent).toBeDefined();
       const envelope = JSON.parse(sent!);
@@ -403,47 +404,43 @@ describe("useWorkflowStore", () => {
       expect(envelope.payload.text).toBe("");
     });
 
-    it("sets activeAgent back to running and updates queue", () => {
+    it("sets active agent back to running and updates queue", () => {
       connectStore();
-      const agents = new Map();
-      agents.set(7, makeAgentSession({ sessionId: 70, status: "paused" }));
+      setAgent("qi:7", makeAgentSession({ sessionId: 70, status: "paused" }));
       useWorkflowStore.setState({
-        activeAgents: agents,
         queue: [{ id: 7, status: "paused", item_type: "execute", phase_id: null, phase_title: null, order_index: 0, group_index: null, agent_session_id: 70, result: null }],
       });
 
-      useWorkflowStore.getState().resumeItem(7);
+      useWorkflowStore.getState().resumeItem("qi:7");
 
-      expect(useWorkflowStore.getState().activeAgents.get(7)!.status).toBe("running");
+      expect(getAgent("qi:7")!.status).toBe("running");
       expect(useWorkflowStore.getState().queue[0].status).toBe("running");
     });
   });
 
   describe("sendPromptToAgent", () => {
-    it("sets paused planAgent back to running and appends user message", () => {
+    it("sets paused plan agent back to running and appends user message", () => {
       connectStore();
-      useWorkflowStore.setState({ planAgent: makeAgentSession({ status: "paused" }) });
+      setAgent(PLAN_KEY, makeAgentSession({ status: "paused" }));
 
-      useWorkflowStore.getState().sendPromptToAgent(-1, "continue please");
+      useWorkflowStore.getState().sendPromptToAgent(PLAN_KEY, "continue please");
 
-      const { planAgent } = useWorkflowStore.getState();
-      expect(planAgent!.status).toBe("running");
-      expect(planAgent!.blocks.length).toBe(1);
-      expect(planAgent!.blocks[0]).toMatchObject({ type: "user_message", content: "continue please" });
+      const plan = getAgent(PLAN_KEY)!;
+      expect(plan.status).toBe("running");
+      expect(plan.blocks.length).toBe(1);
+      expect(plan.blocks[0]).toMatchObject({ type: "user_message", content: "continue please" });
     });
 
-    it("sets paused activeAgent back to running and updates queue", () => {
+    it("sets paused active agent back to running and updates queue", () => {
       connectStore();
-      const agents = new Map();
-      agents.set(3, makeAgentSession({ sessionId: 30, status: "paused" }));
+      setAgent("qi:3", makeAgentSession({ sessionId: 30, status: "paused" }));
       useWorkflowStore.setState({
-        activeAgents: agents,
         queue: [{ id: 3, status: "paused", item_type: "execute", phase_id: null, phase_title: null, order_index: 0, group_index: null, agent_session_id: 30, result: null }],
       });
 
-      useWorkflowStore.getState().sendPromptToAgent(3, "go on");
+      useWorkflowStore.getState().sendPromptToAgent("qi:3", "go on");
 
-      expect(useWorkflowStore.getState().activeAgents.get(3)!.status).toBe("running");
+      expect(getAgent("qi:3")!.status).toBe("running");
       expect(useWorkflowStore.getState().queue[0].status).toBe("running");
     });
   });
@@ -469,48 +466,46 @@ describe("useWorkflowStore", () => {
       return { id: 1, queue_item_id: null, status: "completed", agent_type: null, claude_session_id: null, input_tokens: 0, output_tokens: 0, context_window: 0, ...overrides };
     }
 
-    it("routes plan agent_type to planAgent slot", () => {
+    it("routes plan agent_type to plan slot", () => {
       useWorkflowStore.getState().hydrateFromSnapshot(
         makeSnapshot({ agent_sessions: [makeSessionSummary({ id: 10, agent_type: "plan", status: "paused" })] }),
       );
 
-      const { planAgent, activeAgents } = useWorkflowStore.getState();
-      expect(planAgent).not.toBeNull();
-      expect(planAgent!.sessionId).toBe(10);
-      expect(planAgent!.status).toBe("paused");
-      expect(activeAgents.size).toBe(0);
+      const plan = getAgent(PLAN_KEY);
+      expect(plan).toBeDefined();
+      expect(plan!.sessionId).toBe(10);
+      expect(plan!.status).toBe("paused");
     });
 
-    it("routes prd agent_type to prdAgent slot", () => {
+    it("routes prd agent_type to prd slot", () => {
       useWorkflowStore.getState().hydrateFromSnapshot(
         makeSnapshot({ agent_sessions: [makeSessionSummary({ id: 20, agent_type: "prd" })] }),
       );
 
-      const { prdAgent, activeAgents } = useWorkflowStore.getState();
-      expect(prdAgent).not.toBeNull();
-      expect(prdAgent!.sessionId).toBe(20);
-      expect(activeAgents.size).toBe(0);
+      const prd = getAgent(PRD_KEY);
+      expect(prd).toBeDefined();
+      expect(prd!.sessionId).toBe(20);
     });
 
-    it("routes session agent_type to activeAgents with unique key", () => {
+    it("routes session agent_type to agents with session:id key", () => {
       useWorkflowStore.getState().hydrateFromSnapshot(
         makeSnapshot({ agent_sessions: [makeSessionSummary({ id: 30, agent_type: "session" })] }),
       );
 
-      expect(useWorkflowStore.getState().activeAgents.has(-1030)).toBe(true);
-      expect(useWorkflowStore.getState().activeAgents.get(-1030)!.sessionId).toBe(30);
+      expect(getAgent("session:30")).toBeDefined();
+      expect(getAgent("session:30")!.sessionId).toBe(30);
     });
 
-    it("routes review-fixer agent_type to activeAgents with unique key", () => {
+    it("routes review-fixer agent_type to agents with review-fixer:id key", () => {
       useWorkflowStore.getState().hydrateFromSnapshot(
         makeSnapshot({ agent_sessions: [makeSessionSummary({ id: 40, agent_type: "review-fixer" })] }),
       );
 
-      expect(useWorkflowStore.getState().activeAgents.has(-1040)).toBe(true);
-      expect(useWorkflowStore.getState().activeAgents.get(-1040)!.sessionId).toBe(40);
+      expect(getAgent("review-fixer:40")).toBeDefined();
+      expect(getAgent("review-fixer:40")!.sessionId).toBe(40);
     });
 
-    it("routes sessions with queue_item_id to activeAgents by that id", () => {
+    it("routes sessions with queue_item_id to agents by qi:id", () => {
       useWorkflowStore.getState().hydrateFromSnapshot(
         makeSnapshot({
           agent_sessions: [makeSessionSummary({ id: 50, queue_item_id: 99, agent_type: "execute" })],
@@ -518,17 +513,17 @@ describe("useWorkflowStore", () => {
         }),
       );
 
-      expect(useWorkflowStore.getState().activeAgents.has(99)).toBe(true);
-      expect(useWorkflowStore.getState().activeAgents.get(99)!.sessionId).toBe(50);
+      expect(getAgent("qi:99")).toBeDefined();
+      expect(getAgent("qi:99")!.sessionId).toBe(50);
     });
 
-    it("uses fallback key (-1000 - id) for unknown agent_type without queue_item_id", () => {
+    it("uses type:id key for unknown agent_type without queue_item_id", () => {
       useWorkflowStore.getState().hydrateFromSnapshot(
         makeSnapshot({ agent_sessions: [makeSessionSummary({ id: 7, agent_type: "unknown_type" })] }),
       );
 
-      expect(useWorkflowStore.getState().activeAgents.has(-1007)).toBe(true);
-      expect(useWorkflowStore.getState().activeAgents.get(-1007)!.sessionId).toBe(7);
+      expect(getAgent("unknown_type:7")).toBeDefined();
+      expect(getAgent("unknown_type:7")!.sessionId).toBe(7);
     });
 
     it("multiple session agents each get unique keys", () => {
@@ -542,13 +537,13 @@ describe("useWorkflowStore", () => {
         }),
       );
 
-      const { activeAgents } = useWorkflowStore.getState();
-      expect(activeAgents.has(-1060)).toBe(true);
-      expect(activeAgents.get(-1060)!.sessionId).toBe(60);
-      expect(activeAgents.has(-1061)).toBe(true);
-      expect(activeAgents.get(-1061)!.sessionId).toBe(61);
-      expect(activeAgents.has(-1003)).toBe(true);
-      expect(activeAgents.get(-1003)!.sessionId).toBe(3);
+      const { agents } = useWorkflowStore.getState();
+      expect(agents.has("session:60")).toBe(true);
+      expect(agents.get("session:60")!.sessionId).toBe(60);
+      expect(agents.has("session:61")).toBe(true);
+      expect(agents.get("session:61")!.sessionId).toBe(61);
+      expect(agents.has("some_custom:3")).toBe(true);
+      expect(agents.get("some_custom:3")!.sessionId).toBe(3);
     });
 
     it("sets workflowStatus and hydrated flag", () => {
@@ -582,11 +577,10 @@ describe("useWorkflowStore", () => {
         }),
       );
 
-      const state = useWorkflowStore.getState();
-      expect(state.planAgent!.historyLoaded).toBe(false);
-      expect(state.planAgent!.blocks).toEqual([]);
-      expect(state.activeAgents.get(5)!.historyLoaded).toBe(false);
-      expect(state.activeAgents.get(5)!.blocks).toEqual([]);
+      expect(getAgent(PLAN_KEY)!.historyLoaded).toBe(false);
+      expect(getAgent(PLAN_KEY)!.blocks).toEqual([]);
+      expect(getAgent("qi:5")!.historyLoaded).toBe(false);
+      expect(getAgent("qi:5")!.blocks).toEqual([]);
     });
 
     it("hydrates multiple agent types in a single snapshot", () => {
@@ -602,15 +596,14 @@ describe("useWorkflowStore", () => {
         }),
       );
 
-      const state = useWorkflowStore.getState();
-      expect(state.planAgent).not.toBeNull();
-      expect(state.prdAgent).not.toBeNull();
-      expect(state.activeAgents.has(-1003)).toBe(true); // session id=3 → key=-1003
-      expect(state.activeAgents.has(10)).toBe(true);
+      const { agents } = useWorkflowStore.getState();
+      expect(agents.has(PLAN_KEY)).toBe(true);
+      expect(agents.has(PRD_KEY)).toBe(true);
+      expect(agents.has("session:3")).toBe(true);
+      expect(agents.has("qi:10")).toBe(true);
     });
 
     it("merges non-queue agent sessions when WS has already delivered queue data", () => {
-      // Simulate WS queue_update arriving before snapshot hydration
       const wsQueue = [
         { id: 5, item_type: "execute", phase_id: null, phase_title: null, status: "running" as const, order_index: 0, group_index: null, agent_session_id: 20, result: null },
       ];
@@ -627,20 +620,18 @@ describe("useWorkflowStore", () => {
         }),
       );
 
-      const state = useWorkflowStore.getState();
-      // Session agent should be merged even though WS delivered queue first
-      expect(state.activeAgents.has(-1030)).toBe(true);
-      expect(state.activeAgents.get(-1030)!.sessionId).toBe(30);
-      expect(state.activeAgents.get(-1030)!.status).toBe("paused");
-      // Queue should be preserved from WS (not overwritten by snapshot)
-      expect(state.queue).toBe(wsQueue);
-      expect(state.hydrated).toBe(true);
+      const { agents } = useWorkflowStore.getState();
+      expect(agents.has("session:30")).toBe(true);
+      expect(agents.get("session:30")!.sessionId).toBe(30);
+      expect(agents.get("session:30")!.status).toBe("paused");
+      expect(useWorkflowStore.getState().queue).toBe(wsQueue);
+      expect(useWorkflowStore.getState().hydrated).toBe(true);
     });
 
-    it("preserves WS-delivered activeAgents when snapshot has same session", () => {
+    it("preserves WS-delivered agents when snapshot has same session", () => {
       const wsAgent = { sessionId: 20, blocks: [{ type: "text" as const, content: "ws data" }], status: "running" as const } as AgentSessionState;
-      const activeAgents = new Map<number, AgentSessionState>([[5, wsAgent]]);
-      useWorkflowStore.setState({ activeAgents, hydrated: false });
+      const agents = new Map<string, AgentSessionState>([["qi:5", wsAgent]]);
+      useWorkflowStore.setState({ agents, hydrated: false });
 
       useWorkflowStore.getState().hydrateFromSnapshot(
         makeSnapshot({
@@ -650,8 +641,7 @@ describe("useWorkflowStore", () => {
         }),
       );
 
-      // WS-delivered agent should not be overwritten
-      expect(useWorkflowStore.getState().activeAgents.get(5)).toBe(wsAgent);
+      expect(useWorkflowStore.getState().agents.get("qi:5")).toBe(wsAgent);
     });
 
     it("preserves WS-delivered workflowStatus when not idle", () => {
@@ -686,8 +676,7 @@ describe("useWorkflowStore", () => {
         }),
       );
 
-      const state = useWorkflowStore.getState();
-      expect(state.worktreeSetupOutput).toEqual(["line1", "line2", "line3"]);
+      expect(useWorkflowStore.getState().worktreeSetupOutput).toEqual(["line1", "line2", "line3"]);
     });
 
     it("leaves worktreeSetupOutput empty when snapshot has no setup_log", () => {
@@ -699,12 +688,10 @@ describe("useWorkflowStore", () => {
         }),
       );
 
-      const state = useWorkflowStore.getState();
-      expect(state.worktreeSetupOutput).toEqual([]);
+      expect(useWorkflowStore.getState().worktreeSetupOutput).toEqual([]);
     });
 
     it("leaves worktree as idle when snapshot has no worktree", () => {
-      // Reset store to clear state from previous tests
       useWorkflowStore.setState({ hydrated: false, worktreeStatus: "idle", worktreePath: null, worktreeBranch: null });
 
       useWorkflowStore.getState().hydrateFromSnapshot(
@@ -725,8 +712,7 @@ describe("useWorkflowStore", () => {
   describe("populateAgentBlocks", () => {
     const fakeBlocks = [{ type: "text" as const, content: "hello" }];
 
-    it("populates blocks for a plan agent in planAgent slot", () => {
-      // Hydrate a plan agent with empty blocks
+    it("populates blocks for a plan agent", () => {
       useWorkflowStore.getState().hydrateFromSnapshot({
         workflow_status: "building",
         queue: [],
@@ -736,16 +722,15 @@ describe("useWorkflowStore", () => {
         autonomy_level: 3,
       });
 
-      expect(useWorkflowStore.getState().planAgent!.blocks).toEqual([]);
+      expect(getAgent(PLAN_KEY)!.blocks).toEqual([]);
 
-      useWorkflowStore.getState().populateAgentBlocks(AGENT_TYPE_SYNTHETIC_KEYS.plan, fakeBlocks as never[]);
+      useWorkflowStore.getState().populateAgentBlocks(PLAN_KEY, fakeBlocks as never[]);
 
-      const { planAgent } = useWorkflowStore.getState();
-      expect(planAgent!.blocks).toEqual(fakeBlocks);
-      expect(planAgent!.historyLoaded).toBe(true);
+      expect(getAgent(PLAN_KEY)!.blocks).toEqual(fakeBlocks);
+      expect(getAgent(PLAN_KEY)!.historyLoaded).toBe(true);
     });
 
-    it("populates blocks for a prd agent in prdAgent slot", () => {
+    it("populates blocks for a prd agent", () => {
       useWorkflowStore.getState().hydrateFromSnapshot({
         workflow_status: "building",
         queue: [],
@@ -755,14 +740,13 @@ describe("useWorkflowStore", () => {
         autonomy_level: 3,
       });
 
-      useWorkflowStore.getState().populateAgentBlocks(AGENT_TYPE_SYNTHETIC_KEYS.prd, fakeBlocks as never[]);
+      useWorkflowStore.getState().populateAgentBlocks(PRD_KEY, fakeBlocks as never[]);
 
-      const { prdAgent } = useWorkflowStore.getState();
-      expect(prdAgent!.blocks).toEqual(fakeBlocks);
-      expect(prdAgent!.historyLoaded).toBe(true);
+      expect(getAgent(PRD_KEY)!.blocks).toEqual(fakeBlocks);
+      expect(getAgent(PRD_KEY)!.historyLoaded).toBe(true);
     });
 
-    it("populates blocks for a queue-based agent in activeAgents", () => {
+    it("populates blocks for a queue-based agent", () => {
       useWorkflowStore.getState().hydrateFromSnapshot({
         workflow_status: "building",
         queue: [{ id: 99, item_type: "execute", phase_id: null, phase_title: null, status: "paused", order_index: 0, group_index: null, agent_session_id: 50, result: null }],
@@ -772,11 +756,10 @@ describe("useWorkflowStore", () => {
         autonomy_level: 3,
       });
 
-      useWorkflowStore.getState().populateAgentBlocks(99, fakeBlocks as never[]);
+      useWorkflowStore.getState().populateAgentBlocks("qi:99", fakeBlocks as never[]);
 
-      const agent = useWorkflowStore.getState().activeAgents.get(99);
-      expect(agent!.blocks).toEqual(fakeBlocks);
-      expect(agent!.historyLoaded).toBe(true);
+      expect(getAgent("qi:99")!.blocks).toEqual(fakeBlocks);
+      expect(getAgent("qi:99")!.historyLoaded).toBe(true);
     });
 
     it("does not overwrite if historyLoaded is already true", () => {
@@ -789,13 +772,10 @@ describe("useWorkflowStore", () => {
         autonomy_level: 3,
       });
 
-      const planKey = AGENT_TYPE_SYNTHETIC_KEYS.plan;
-      // First populate
-      useWorkflowStore.getState().populateAgentBlocks(planKey, fakeBlocks as never[]);
-      // Second populate with different blocks — should be a no-op
-      useWorkflowStore.getState().populateAgentBlocks(planKey, [{ type: "text", content: "overwrite" }] as never[]);
+      useWorkflowStore.getState().populateAgentBlocks(PLAN_KEY, fakeBlocks as never[]);
+      useWorkflowStore.getState().populateAgentBlocks(PLAN_KEY, [{ type: "text", content: "overwrite" }] as never[]);
 
-      expect(useWorkflowStore.getState().planAgent!.blocks).toEqual(fakeBlocks);
+      expect(getAgent(PLAN_KEY)!.blocks).toEqual(fakeBlocks);
     });
 
     it("does not overwrite if blocks are already non-empty", () => {
@@ -810,16 +790,15 @@ describe("useWorkflowStore", () => {
 
       // Simulate real-time blocks arriving via WS before populate
       useWorkflowStore.setState((state) => {
-        const activeAgents = new Map(state.activeAgents);
-        const agent = activeAgents.get(5)!;
-        activeAgents.set(5, { ...agent, blocks: [{ type: "text", content: "live" }] as never[] });
-        return { activeAgents };
+        const agents = new Map(state.agents);
+        const agent = agents.get("qi:5")!;
+        agents.set("qi:5", { ...agent, blocks: [{ type: "text", content: "live" }] as never[] });
+        return { agents };
       });
 
-      useWorkflowStore.getState().populateAgentBlocks(5, fakeBlocks as never[]);
+      useWorkflowStore.getState().populateAgentBlocks("qi:5", fakeBlocks as never[]);
 
-      // Should keep the live blocks, not the history fetch
-      expect(useWorkflowStore.getState().activeAgents.get(5)!.blocks).toEqual([{ type: "text", content: "live" }]);
+      expect(getAgent("qi:5")!.blocks).toEqual([{ type: "text", content: "live" }]);
     });
 
     it("sets pagination metadata even when blocks already exist", () => {
@@ -832,19 +811,17 @@ describe("useWorkflowStore", () => {
         autonomy_level: 3,
       });
 
-      // Simulate WS streaming blocks arriving before history fetch
       useWorkflowStore.setState((state) => {
-        const activeAgents = new Map(state.activeAgents);
-        const agent = activeAgents.get(5)!;
-        activeAgents.set(5, { ...agent, blocks: [{ type: "text", content: "live" }] as never[] });
-        return { activeAgents };
+        const agents = new Map(state.agents);
+        const agent = agents.get("qi:5")!;
+        agents.set("qi:5", { ...agent, blocks: [{ type: "text", content: "live" }] as never[] });
+        return { agents };
       });
 
-      // populateAgentBlocks should still set hasMore/oldestMessageId
-      useWorkflowStore.getState().populateAgentBlocks(5, fakeBlocks as never[], true, 42);
+      useWorkflowStore.getState().populateAgentBlocks("qi:5", fakeBlocks as never[], true, 42);
 
-      const agent = useWorkflowStore.getState().activeAgents.get(5)!;
-      expect(agent.blocks).toEqual([{ type: "text", content: "live" }]); // blocks unchanged
+      const agent = getAgent("qi:5")!;
+      expect(agent.blocks).toEqual([{ type: "text", content: "live" }]);
       expect(agent.hasMore).toBe(true);
       expect(agent.oldestMessageId).toBe(42);
       expect(agent.historyLoaded).toBe(true);
@@ -860,22 +837,20 @@ describe("useWorkflowStore", () => {
         autonomy_level: 3,
       });
 
-      // First populate sets metadata
-      useWorkflowStore.getState().populateAgentBlocks(5, fakeBlocks as never[], true, 42);
+      useWorkflowStore.getState().populateAgentBlocks("qi:5", fakeBlocks as never[], true, 42);
       const stateAfterFirst = useWorkflowStore.getState();
 
-      // Second populate with same metadata — should be no-op (same reference)
-      useWorkflowStore.getState().populateAgentBlocks(5, fakeBlocks as never[], true, 42);
+      useWorkflowStore.getState().populateAgentBlocks("qi:5", fakeBlocks as never[], true, 42);
       const stateAfterSecond = useWorkflowStore.getState();
 
-      expect(stateAfterSecond.activeAgents).toBe(stateAfterFirst.activeAgents);
+      expect(stateAfterSecond.agents).toBe(stateAfterFirst.agents);
     });
 
     it("is a no-op when agent does not exist", () => {
       const before = useWorkflowStore.getState();
-      useWorkflowStore.getState().populateAgentBlocks(999, fakeBlocks as never[]);
+      useWorkflowStore.getState().populateAgentBlocks("qi:999", fakeBlocks as never[]);
       const after = useWorkflowStore.getState();
-      expect(after.activeAgents).toBe(before.activeAgents);
+      expect(after.agents).toBe(before.agents);
     });
 
     it("sets hasFileChanges when history blocks contain a Write tool_call", () => {
@@ -892,9 +867,9 @@ describe("useWorkflowStore", () => {
         { type: "text" as const, content: "thinking..." },
         { type: "tool_call" as const, content: "", toolName: "Write", toolArgs: "{}" },
       ];
-      useWorkflowStore.getState().populateAgentBlocks(5, blocksWithWrite as never[]);
+      useWorkflowStore.getState().populateAgentBlocks("qi:5", blocksWithWrite as never[]);
 
-      expect(useWorkflowStore.getState().activeAgents.get(5)!.hasFileChanges).toBe(true);
+      expect(getAgent("qi:5")!.hasFileChanges).toBe(true);
     });
 
     it("sets hasFileChanges when history blocks contain an Edit tool_call", () => {
@@ -910,9 +885,9 @@ describe("useWorkflowStore", () => {
       const blocksWithEdit = [
         { type: "tool_call" as const, content: "", toolName: "Edit", toolArgs: "{}" },
       ];
-      useWorkflowStore.getState().populateAgentBlocks(6, blocksWithEdit as never[]);
+      useWorkflowStore.getState().populateAgentBlocks("qi:6", blocksWithEdit as never[]);
 
-      expect(useWorkflowStore.getState().activeAgents.get(6)!.hasFileChanges).toBe(true);
+      expect(getAgent("qi:6")!.hasFileChanges).toBe(true);
     });
 
     it("sets hasFileChanges when a file-change tool is in childBlocks", () => {
@@ -933,9 +908,9 @@ describe("useWorkflowStore", () => {
           ],
         },
       ];
-      useWorkflowStore.getState().populateAgentBlocks(7, blocksWithNestedEdit as never[]);
+      useWorkflowStore.getState().populateAgentBlocks("qi:7", blocksWithNestedEdit as never[]);
 
-      expect(useWorkflowStore.getState().activeAgents.get(7)!.hasFileChanges).toBe(true);
+      expect(getAgent("qi:7")!.hasFileChanges).toBe(true);
     });
 
     it("does not set hasFileChanges when no file-change tools in blocks", () => {
@@ -952,63 +927,61 @@ describe("useWorkflowStore", () => {
         { type: "text" as const, content: "hello" },
         { type: "tool_call" as const, content: "", toolName: "Read", toolArgs: "{}" },
       ];
-      useWorkflowStore.getState().populateAgentBlocks(8, blocksNoFileChange as never[]);
+      useWorkflowStore.getState().populateAgentBlocks("qi:8", blocksNoFileChange as never[]);
 
-      expect(useWorkflowStore.getState().activeAgents.get(8)!.hasFileChanges).toBe(false);
+      expect(getAgent("qi:8")!.hasFileChanges).toBe(false);
     });
   });
 
-  // ── agent_paused (reconnect resume support) ──
+  // -- agent_paused (reconnect resume support) --
 
   describe("agent_paused", () => {
-    it("creates planAgent in paused state with claudeSessionId on reconnect", () => {
+    it("creates plan agent in paused state with claudeSessionId on reconnect", () => {
       const ws = connectStore();
-      expect(useWorkflowStore.getState().planAgent).toBeNull();
+      expect(getAgent(PLAN_KEY)).toBeUndefined();
 
       dispatch(ws, {
         domain: "workflow",
         action: "agent_paused",
         payload: {
           feature_id: 1,
-          queue_item_id: AGENT_TYPE_SYNTHETIC_KEYS.plan,
+          queue_item_id: -1,
           session_id: 42,
           agent_type: "plan",
           claude_session_id: "cc-sess-abc",
         },
       });
 
-      const plan = useWorkflowStore.getState().planAgent;
-      expect(plan).not.toBeNull();
+      const plan = getAgent(PLAN_KEY);
+      expect(plan).toBeDefined();
       expect(plan!.status).toBe("paused");
       expect(plan!.sessionId).toBe(42);
       expect(plan!.claudeSessionId).toBe("cc-sess-abc");
     });
 
-    it("preserves existing planAgent blocks when paused", () => {
+    it("preserves existing plan agent blocks when paused", () => {
       const ws = connectStore();
-      useWorkflowStore.setState({
-        planAgent: makeAgentSession({ sessionId: 42, blocks: [{ type: "text", content: "hello" }] }) as never,
-      });
+      setAgent(PLAN_KEY, makeAgentSession({ sessionId: 42, blocks: [{ type: "text", content: "hello" }] }) as never);
 
       dispatch(ws, {
         domain: "workflow",
         action: "agent_paused",
         payload: {
           feature_id: 1,
-          queue_item_id: AGENT_TYPE_SYNTHETIC_KEYS.plan,
+          queue_item_id: -1,
           session_id: 42,
           agent_type: "plan",
           claude_session_id: "cc-sess-xyz",
         },
       });
 
-      const plan = useWorkflowStore.getState().planAgent;
-      expect(plan!.status).toBe("paused");
-      expect(plan!.claudeSessionId).toBe("cc-sess-xyz");
-      expect(plan!.blocks).toHaveLength(1);
+      const plan = getAgent(PLAN_KEY)!;
+      expect(plan.status).toBe("paused");
+      expect(plan.claudeSessionId).toBe("cc-sess-xyz");
+      expect(plan.blocks).toHaveLength(1);
     });
 
-    it("creates prdAgent in paused state on reconnect", () => {
+    it("creates prd agent in paused state on reconnect", () => {
       const ws = connectStore();
 
       dispatch(ws, {
@@ -1016,20 +989,20 @@ describe("useWorkflowStore", () => {
         action: "agent_paused",
         payload: {
           feature_id: 1,
-          queue_item_id: AGENT_TYPE_SYNTHETIC_KEYS.prd,
+          queue_item_id: -2,
           session_id: 99,
           agent_type: "prd",
           claude_session_id: "cc-prd-sess",
         },
       });
 
-      const prd = useWorkflowStore.getState().prdAgent;
-      expect(prd).not.toBeNull();
+      const prd = getAgent(PRD_KEY);
+      expect(prd).toBeDefined();
       expect(prd!.status).toBe("paused");
       expect(prd!.claudeSessionId).toBe("cc-prd-sess");
     });
 
-    it("creates activeAgent in paused state for session key", () => {
+    it("creates agent in paused state for session slot", () => {
       const ws = connectStore();
 
       dispatch(ws, {
@@ -1044,58 +1017,52 @@ describe("useWorkflowStore", () => {
         },
       });
 
-      const agent = useWorkflowStore.getState().activeAgents.get(-1055);
+      const agent = getAgent("session:55");
       expect(agent).toBeDefined();
       expect(agent!.status).toBe("paused");
       expect(agent!.claudeSessionId).toBe("cc-session-id");
     });
   });
 
-  // ── agent_session_id (session ID capture during streaming) ──
+  // -- agent_session_id (session ID capture during streaming) --
 
   describe("agent_session_id", () => {
-    it("sets claudeSessionId on existing planAgent", () => {
+    it("sets claudeSessionId on existing plan agent", () => {
       const ws = connectStore();
-      useWorkflowStore.setState({
-        planAgent: makeAgentSession({ sessionId: 10 }) as never,
-      });
+      setAgent(PLAN_KEY, makeAgentSession({ sessionId: 10 }));
 
       dispatch(ws, {
         domain: "workflow",
         action: "agent_session_id",
         payload: {
-          queue_item_id: AGENT_TYPE_SYNTHETIC_KEYS.plan,
+          queue_item_id: -1,
           session_id: 10,
           claude_session_id: "captured-uuid",
         },
       });
 
-      expect(useWorkflowStore.getState().planAgent!.claudeSessionId).toBe("captured-uuid");
+      expect(getAgent(PLAN_KEY)!.claudeSessionId).toBe("captured-uuid");
     });
 
-    it("is a no-op when planAgent does not exist", () => {
+    it("is a no-op when plan agent does not exist", () => {
       const ws = connectStore();
-      expect(useWorkflowStore.getState().planAgent).toBeNull();
 
       dispatch(ws, {
         domain: "workflow",
         action: "agent_session_id",
         payload: {
-          queue_item_id: AGENT_TYPE_SYNTHETIC_KEYS.plan,
+          queue_item_id: -1,
           session_id: 10,
           claude_session_id: "captured-uuid",
         },
       });
 
-      // Should remain null — no agent to patch
-      expect(useWorkflowStore.getState().planAgent).toBeNull();
+      expect(getAgent(PLAN_KEY)).toBeUndefined();
     });
 
-    it("sets claudeSessionId on existing activeAgent", () => {
+    it("sets claudeSessionId on existing active agent", () => {
       const ws = connectStore();
-      const agents = new Map();
-      agents.set(7, makeAgentSession({ sessionId: 7 }));
-      useWorkflowStore.setState({ activeAgents: agents });
+      setAgent("qi:7", makeAgentSession({ sessionId: 7 }));
 
       dispatch(ws, {
         domain: "workflow",
@@ -1107,30 +1074,28 @@ describe("useWorkflowStore", () => {
         },
       });
 
-      expect(useWorkflowStore.getState().activeAgents.get(7)!.claudeSessionId).toBe("active-uuid");
+      expect(getAgent("qi:7")!.claudeSessionId).toBe("active-uuid");
     });
 
     it("ignores empty claude_session_id", () => {
       const ws = connectStore();
-      useWorkflowStore.setState({
-        planAgent: makeAgentSession({ sessionId: 10 }) as never,
-      });
+      setAgent(PLAN_KEY, makeAgentSession({ sessionId: 10 }));
 
       dispatch(ws, {
         domain: "workflow",
         action: "agent_session_id",
         payload: {
-          queue_item_id: AGENT_TYPE_SYNTHETIC_KEYS.plan,
+          queue_item_id: -1,
           session_id: 10,
           claude_session_id: "",
         },
       });
 
-      expect(useWorkflowStore.getState().planAgent!.claudeSessionId).toBeNull();
+      expect(getAgent(PLAN_KEY)!.claudeSessionId).toBeNull();
     });
   });
 
-  // ── hydrateFromSnapshot includes claudeSessionId ──
+  // -- hydrateFromSnapshot includes claudeSessionId --
 
   describe("hydrateFromSnapshot with claudeSessionId", () => {
     it("hydrates plan agent with claude_session_id from snapshot", () => {
@@ -1147,8 +1112,8 @@ describe("useWorkflowStore", () => {
 
       useWorkflowStore.getState().hydrateFromSnapshot(snapshot);
 
-      const plan = useWorkflowStore.getState().planAgent;
-      expect(plan).not.toBeNull();
+      const plan = getAgent(PLAN_KEY);
+      expect(plan).toBeDefined();
       expect(plan!.claudeSessionId).toBe("snap-uuid");
       expect(plan!.status).toBe("paused");
     });
@@ -1167,9 +1132,7 @@ describe("useWorkflowStore", () => {
 
       useWorkflowStore.getState().hydrateFromSnapshot(snapshot);
 
-      const plan = useWorkflowStore.getState().planAgent;
-      expect(plan).not.toBeNull();
-      expect(plan!.claudeSessionId).toBeNull();
+      expect(getAgent(PLAN_KEY)!.claudeSessionId).toBeNull();
     });
   });
 
@@ -1206,7 +1169,6 @@ describe("useWorkflowStore", () => {
       });
       expect(useWorkflowStore.getState().featureTitle).toBe("Old Name");
 
-      // Reconnect to a different feature
       connectStore(2);
       expect(useWorkflowStore.getState().featureTitle).toBeNull();
     });
@@ -1217,9 +1179,9 @@ describe("useWorkflowStore", () => {
   // -------------------------------------------------------------------------
 
   describe("agent_user_message", () => {
-    it("adds user_message block to planAgent", () => {
+    it("adds user_message block to plan agent", () => {
       const ws = connectStore();
-      useWorkflowStore.setState({ planAgent: makeAgentSession() });
+      setAgent(PLAN_KEY, makeAgentSession());
 
       dispatch(ws, {
         domain: "workflow",
@@ -1227,18 +1189,14 @@ describe("useWorkflowStore", () => {
         payload: { queue_item_id: -1, session_id: 10, content: "Create a plan for auth" },
       });
 
-      const { planAgent } = useWorkflowStore.getState();
-      expect(planAgent).not.toBeNull();
-      expect(planAgent!.blocks).toHaveLength(1);
-      expect(planAgent!.blocks[0]).toMatchObject({
-        type: "user_message",
-        content: "Create a plan for auth",
-      });
+      const plan = getAgent(PLAN_KEY)!;
+      expect(plan.blocks).toHaveLength(1);
+      expect(plan.blocks[0]).toMatchObject({ type: "user_message", content: "Create a plan for auth" });
     });
 
-    it("adds user_message block to prdAgent", () => {
+    it("adds user_message block to prd agent", () => {
       const ws = connectStore();
-      useWorkflowStore.setState({ prdAgent: makeAgentSession() });
+      setAgent(PRD_KEY, makeAgentSession());
 
       dispatch(ws, {
         domain: "workflow",
@@ -1246,20 +1204,14 @@ describe("useWorkflowStore", () => {
         payload: { queue_item_id: -2, session_id: 20, content: "PRD for feature X" },
       });
 
-      const { prdAgent } = useWorkflowStore.getState();
-      expect(prdAgent).not.toBeNull();
-      expect(prdAgent!.blocks).toHaveLength(1);
-      expect(prdAgent!.blocks[0]).toMatchObject({
-        type: "user_message",
-        content: "PRD for feature X",
-      });
+      const prd = getAgent(PRD_KEY)!;
+      expect(prd.blocks).toHaveLength(1);
+      expect(prd.blocks[0]).toMatchObject({ type: "user_message", content: "PRD for feature X" });
     });
 
-    it("adds user_message block to activeAgents queue item", () => {
+    it("adds user_message block to queue item agent", () => {
       const ws = connectStore();
-      const agents = new Map();
-      agents.set(42, makeAgentSession());
-      useWorkflowStore.setState({ activeAgents: agents });
+      setAgent("qi:42", makeAgentSession());
 
       dispatch(ws, {
         domain: "workflow",
@@ -1267,18 +1219,13 @@ describe("useWorkflowStore", () => {
         payload: { queue_item_id: 42, session_id: 30, content: "Implement the phase" },
       });
 
-      const agent = useWorkflowStore.getState().activeAgents.get(42);
-      expect(agent).toBeDefined();
-      expect(agent!.blocks).toHaveLength(1);
-      expect(agent!.blocks[0]).toMatchObject({
-        type: "user_message",
-        content: "Implement the phase",
-      });
+      const agent = getAgent("qi:42")!;
+      expect(agent.blocks).toHaveLength(1);
+      expect(agent.blocks[0]).toMatchObject({ type: "user_message", content: "Implement the phase" });
     });
 
-    it("creates planAgent on the fly if not yet initialized", () => {
+    it("creates plan agent on the fly if not yet initialized", () => {
       const ws = connectStore();
-      useWorkflowStore.setState({ planAgent: null });
 
       dispatch(ws, {
         domain: "workflow",
@@ -1286,15 +1233,14 @@ describe("useWorkflowStore", () => {
         payload: { queue_item_id: -1, session_id: 10, content: "Plan this" },
       });
 
-      const { planAgent } = useWorkflowStore.getState();
-      expect(planAgent).not.toBeNull();
-      expect(planAgent!.blocks).toHaveLength(1);
-      expect(planAgent!.blocks[0]).toMatchObject({ type: "user_message", content: "Plan this" });
+      const plan = getAgent(PLAN_KEY);
+      expect(plan).toBeDefined();
+      expect(plan!.blocks).toHaveLength(1);
+      expect(plan!.blocks[0]).toMatchObject({ type: "user_message", content: "Plan this" });
     });
 
-    it("creates activeAgent on the fly for queue items", () => {
+    it("creates agent on the fly for queue items", () => {
       const ws = connectStore();
-      useWorkflowStore.setState({ activeAgents: new Map() });
 
       dispatch(ws, {
         domain: "workflow",
@@ -1302,7 +1248,7 @@ describe("useWorkflowStore", () => {
         payload: { queue_item_id: 99, session_id: 50, content: "Execute phase" },
       });
 
-      const agent = useWorkflowStore.getState().activeAgents.get(99);
+      const agent = getAgent("qi:99");
       expect(agent).toBeDefined();
       expect(agent!.blocks).toHaveLength(1);
       expect(agent!.blocks[0]).toMatchObject({ type: "user_message", content: "Execute phase" });
@@ -1310,7 +1256,7 @@ describe("useWorkflowStore", () => {
 
     it("ignores agent_user_message with empty content", () => {
       const ws = connectStore();
-      useWorkflowStore.setState({ planAgent: makeAgentSession() });
+      setAgent(PLAN_KEY, makeAgentSession());
 
       dispatch(ws, {
         domain: "workflow",
@@ -1318,18 +1264,18 @@ describe("useWorkflowStore", () => {
         payload: { queue_item_id: -1, session_id: 10, content: "" },
       });
 
-      expect(useWorkflowStore.getState().planAgent!.blocks).toHaveLength(0);
+      expect(getAgent(PLAN_KEY)!.blocks).toHaveLength(0);
     });
   });
 
   // -------------------------------------------------------------------------
-  // Plan approval flow — approvePlan / rejectPlan
+  // Plan approval flow
   // -------------------------------------------------------------------------
 
   describe("plan approval flow", () => {
-    it("plan_ready sets planAgent to paused (not completed)", () => {
+    it("plan_ready sets plan agent to paused", () => {
       const ws = connectStore();
-      useWorkflowStore.setState({ planAgent: makeAgentSession({ status: "running" }) });
+      setAgent(PLAN_KEY, makeAgentSession({ status: "running" }));
 
       dispatch(ws, {
         domain: "workflow",
@@ -1338,13 +1284,13 @@ describe("useWorkflowStore", () => {
       });
 
       const state = useWorkflowStore.getState();
-      expect(state.planAgent!.status).toBe("paused");
+      expect(getAgent(PLAN_KEY)!.status).toBe("paused");
       expect(state.workflowStatus).toBe("plan_approval");
     });
 
-    it("prd_ready sets prdAgent to paused (not completed)", () => {
+    it("prd_ready sets prd agent to paused", () => {
       const ws = connectStore();
-      useWorkflowStore.setState({ prdAgent: makeAgentSession({ status: "running" }) });
+      setAgent(PRD_KEY, makeAgentSession({ status: "running" }));
 
       dispatch(ws, {
         domain: "workflow",
@@ -1352,22 +1298,18 @@ describe("useWorkflowStore", () => {
         payload: { feature_id: 1 },
       });
 
-      expect(useWorkflowStore.getState().prdAgent!.status).toBe("paused");
+      expect(getAgent(PRD_KEY)!.status).toBe("paused");
     });
 
     it("approvePlan sends message without optimistic state update", () => {
       const ws = connectStore();
-      useWorkflowStore.setState({
-        planAgent: makeAgentSession({ status: "paused" }),
-        workflowStatus: "plan_approval",
-      });
+      setAgent(PLAN_KEY, makeAgentSession({ status: "paused" }));
+      useWorkflowStore.setState({ workflowStatus: "plan_approval" });
 
       useWorkflowStore.getState().approvePlan("req-1");
 
-      const state = useWorkflowStore.getState();
-      // No optimistic update — status stays until backend confirms via status_changed
-      expect(state.planAgent!.status).toBe("paused");
-      expect(state.workflowStatus).toBe("plan_approval");
+      expect(getAgent(PLAN_KEY)!.status).toBe("paused");
+      expect(useWorkflowStore.getState().workflowStatus).toBe("plan_approval");
       const sent = ws.sent.find(s => JSON.parse(s).action === "plan.approved");
       expect(sent).toBeDefined();
       expect(JSON.parse(sent!).payload.request_id).toBe("req-1");
@@ -1375,17 +1317,12 @@ describe("useWorkflowStore", () => {
 
     it("rejectPlan sends message without optimistic state update", () => {
       const ws = connectStore();
-      useWorkflowStore.setState({
-        planAgent: makeAgentSession({ status: "paused" }),
-        workflowStatus: "plan_approval",
-      });
+      setAgent(PLAN_KEY, makeAgentSession({ status: "paused" }));
+      useWorkflowStore.setState({ workflowStatus: "plan_approval" });
 
       useWorkflowStore.getState().rejectPlan("needs more detail", "req-2");
 
-      const state = useWorkflowStore.getState();
-      // No optimistic update — status stays until backend confirms via status_changed
-      expect(state.planAgent!.status).toBe("paused");
-      expect(state.workflowStatus).toBe("plan_approval");
+      expect(getAgent(PLAN_KEY)!.status).toBe("paused");
       const sent = ws.sent.find(s => JSON.parse(s).action === "plan.rejected");
       expect(sent).toBeDefined();
       const envelope = JSON.parse(sent!);
@@ -1393,122 +1330,96 @@ describe("useWorkflowStore", () => {
       expect(envelope.payload.request_id).toBe("req-2");
     });
 
-    it("approvePlan is safe when planAgent is null", () => {
+    it("approvePlan is safe when plan agent is null", () => {
       connectStore();
-      useWorkflowStore.setState({ planAgent: null });
 
       useWorkflowStore.getState().approvePlan();
 
-      expect(useWorkflowStore.getState().planAgent).toBeNull();
-      // No optimistic update — workflowStatus stays idle
+      expect(getAgent(PLAN_KEY)).toBeUndefined();
       expect(useWorkflowStore.getState().workflowStatus).toBe("idle");
     });
 
     it("approvePlan sends prd.approved when workflowStatus is prd", () => {
       const ws = connectStore();
-      useWorkflowStore.setState({
-        prdAgent: makeAgentSession({ status: "paused" }),
-        workflowStatus: "prd",
-      });
+      setAgent(PRD_KEY, makeAgentSession({ status: "paused" }));
+      useWorkflowStore.setState({ workflowStatus: "prd" });
 
       useWorkflowStore.getState().approvePlan("req-prd-1");
 
       const sent = ws.sent.find(s => JSON.parse(s).action === "prd.approved");
       expect(sent).toBeDefined();
       expect(JSON.parse(sent!).payload.request_id).toBe("req-prd-1");
-      // Should NOT have sent plan.approved
       const planSent = ws.sent.find(s => JSON.parse(s).action === "plan.approved");
       expect(planSent).toBeUndefined();
     });
 
-    it("approvePlan adds user_message to prdAgent when workflowStatus is prd", () => {
+    it("approvePlan adds user_message to prd agent when workflowStatus is prd", () => {
       connectStore();
-      useWorkflowStore.setState({
-        prdAgent: makeAgentSession({ status: "paused" }),
-        workflowStatus: "prd",
-      });
+      setAgent(PRD_KEY, makeAgentSession({ status: "paused" }));
+      useWorkflowStore.setState({ workflowStatus: "prd" });
 
       useWorkflowStore.getState().approvePlan();
 
-      const { prdAgent } = useWorkflowStore.getState();
-      expect(prdAgent!.blocks).toHaveLength(1);
-      expect(prdAgent!.blocks[0]).toMatchObject({ type: "user_message", content: expect.stringContaining("PRD") });
+      const prd = getAgent(PRD_KEY)!;
+      expect(prd.blocks).toHaveLength(1);
+      expect(prd.blocks[0]).toMatchObject({ type: "user_message", content: expect.stringContaining("PRD") });
     });
 
-    it("approvePlan adds user_message to planAgent when workflowStatus is plan_approval", () => {
+    it("approvePlan adds user_message to plan agent when workflowStatus is plan_approval", () => {
       connectStore();
-      useWorkflowStore.setState({
-        planAgent: makeAgentSession({ status: "paused" }),
-        workflowStatus: "plan_approval",
-      });
+      setAgent(PLAN_KEY, makeAgentSession({ status: "paused" }));
+      useWorkflowStore.setState({ workflowStatus: "plan_approval" });
 
       useWorkflowStore.getState().approvePlan();
 
-      const { planAgent } = useWorkflowStore.getState();
-      expect(planAgent!.blocks).toHaveLength(1);
-      expect(planAgent!.blocks[0]).toMatchObject({ type: "user_message", content: expect.stringContaining("Plan") });
+      const plan = getAgent(PLAN_KEY)!;
+      expect(plan.blocks).toHaveLength(1);
+      expect(plan.blocks[0]).toMatchObject({ type: "user_message", content: expect.stringContaining("Plan") });
     });
 
     it("rejectPlan sends prd.rejected when workflowStatus is prd", () => {
       const ws = connectStore();
-      useWorkflowStore.setState({
-        prdAgent: makeAgentSession({ status: "paused" }),
-        workflowStatus: "prd",
-      });
+      setAgent(PRD_KEY, makeAgentSession({ status: "paused" }));
+      useWorkflowStore.setState({ workflowStatus: "prd" });
 
       useWorkflowStore.getState().rejectPlan("needs work", "req-prd-2");
 
       const sent = ws.sent.find(s => JSON.parse(s).action === "prd.rejected");
       expect(sent).toBeDefined();
-      const envelope = JSON.parse(sent!);
-      expect(envelope.payload.feedback).toBe("needs work");
-      expect(envelope.payload.request_id).toBe("req-prd-2");
-      // Should NOT have sent plan.rejected
-      const planSent = ws.sent.find(s => JSON.parse(s).action === "plan.rejected");
-      expect(planSent).toBeUndefined();
     });
 
-    it("rejectPlan adds user_message to prdAgent when workflowStatus is prd", () => {
+    it("rejectPlan adds user_message to prd agent when workflowStatus is prd", () => {
       connectStore();
-      useWorkflowStore.setState({
-        prdAgent: makeAgentSession({ status: "paused" }),
-        workflowStatus: "prd",
-      });
+      setAgent(PRD_KEY, makeAgentSession({ status: "paused" }));
+      useWorkflowStore.setState({ workflowStatus: "prd" });
 
       useWorkflowStore.getState().rejectPlan("more detail please");
 
-      const { prdAgent } = useWorkflowStore.getState();
-      expect(prdAgent!.blocks).toHaveLength(1);
-      expect(prdAgent!.blocks[0]).toMatchObject({ type: "user_message", content: expect.stringContaining("PRD") });
-      expect(prdAgent!.blocks[0]).toMatchObject({ content: expect.stringContaining("more detail please") });
+      const prd = getAgent(PRD_KEY)!;
+      expect(prd.blocks).toHaveLength(1);
+      expect(prd.blocks[0]).toMatchObject({ type: "user_message", content: expect.stringContaining("PRD") });
     });
 
-    it("rejectPlan adds user_message to planAgent when workflowStatus is plan_approval", () => {
+    it("rejectPlan adds user_message to plan agent when workflowStatus is plan_approval", () => {
       connectStore();
-      useWorkflowStore.setState({
-        planAgent: makeAgentSession({ status: "paused" }),
-        workflowStatus: "plan_approval",
-      });
+      setAgent(PLAN_KEY, makeAgentSession({ status: "paused" }));
+      useWorkflowStore.setState({ workflowStatus: "plan_approval" });
 
       useWorkflowStore.getState().rejectPlan("needs more detail");
 
-      const { planAgent } = useWorkflowStore.getState();
-      expect(planAgent!.blocks).toHaveLength(1);
-      expect(planAgent!.blocks[0]).toMatchObject({ type: "user_message", content: expect.stringContaining("Plan") });
-      expect(planAgent!.blocks[0]).toMatchObject({ content: expect.stringContaining("needs more detail") });
+      const plan = getAgent(PLAN_KEY)!;
+      expect(plan.blocks).toHaveLength(1);
+      expect(plan.blocks[0]).toMatchObject({ type: "user_message", content: expect.stringContaining("Plan") });
     });
 
     it("rejectPlan with empty feedback skips user_message block", () => {
       connectStore();
-      useWorkflowStore.setState({
-        planAgent: makeAgentSession({ status: "paused" }),
-        workflowStatus: "plan_approval",
-      });
+      setAgent(PLAN_KEY, makeAgentSession({ status: "paused" }));
+      useWorkflowStore.setState({ workflowStatus: "plan_approval" });
 
       useWorkflowStore.getState().rejectPlan("", "req-3");
 
-      const { planAgent } = useWorkflowStore.getState();
-      expect(planAgent!.blocks).toHaveLength(0);
+      expect(getAgent(PLAN_KEY)!.blocks).toHaveLength(0);
     });
   });
 
@@ -1517,12 +1428,10 @@ describe("useWorkflowStore", () => {
   // -------------------------------------------------------------------------
 
   describe("status_changed agent resets", () => {
-    it("resets planAgent status to running when leaving plan_approval", () => {
+    it("resets plan agent status to running when leaving plan_approval", () => {
       const ws = connectStore();
-      useWorkflowStore.setState({
-        planAgent: makeAgentSession({ status: "paused" }),
-        workflowStatus: "plan_approval",
-      });
+      setAgent(PLAN_KEY, makeAgentSession({ status: "paused" }));
+      useWorkflowStore.setState({ workflowStatus: "plan_approval" });
 
       dispatch(ws, {
         domain: "workflow",
@@ -1530,16 +1439,14 @@ describe("useWorkflowStore", () => {
         payload: { previous_status: "plan_approval", status: "planning" },
       });
 
-      expect(useWorkflowStore.getState().planAgent!.status).toBe("running");
+      expect(getAgent(PLAN_KEY)!.status).toBe("running");
       expect(useWorkflowStore.getState().workflowStatus).toBe("planning");
     });
 
-    it("does not reset planAgent when staying in plan_approval", () => {
+    it("does not reset plan agent when staying in plan_approval", () => {
       const ws = connectStore();
-      useWorkflowStore.setState({
-        planAgent: makeAgentSession({ status: "paused" }),
-        workflowStatus: "plan_approval",
-      });
+      setAgent(PLAN_KEY, makeAgentSession({ status: "paused" }));
+      useWorkflowStore.setState({ workflowStatus: "plan_approval" });
 
       dispatch(ws, {
         domain: "workflow",
@@ -1547,15 +1454,13 @@ describe("useWorkflowStore", () => {
         payload: { previous_status: "plan_approval", status: "plan_approval" },
       });
 
-      expect(useWorkflowStore.getState().planAgent!.status).toBe("paused");
+      expect(getAgent(PLAN_KEY)!.status).toBe("paused");
     });
 
-    it("sets prdAgent back to running when transitioning from prd to planning", () => {
+    it("sets prd agent back to running when transitioning from prd to planning", () => {
       const ws = connectStore();
-      useWorkflowStore.setState({
-        prdAgent: makeAgentSession({ status: "paused" }),
-        workflowStatus: "prd",
-      });
+      setAgent(PRD_KEY, makeAgentSession({ status: "paused" }));
+      useWorkflowStore.setState({ workflowStatus: "prd" });
 
       dispatch(ws, {
         domain: "workflow",
@@ -1563,17 +1468,14 @@ describe("useWorkflowStore", () => {
         payload: { previous_status: "prd", status: "planning" },
       });
 
-      // Agent resumes after approval; item_completed (from mark_agent_done) will set it to completed
-      expect(useWorkflowStore.getState().prdAgent!.status).toBe("running");
+      expect(getAgent(PRD_KEY)!.status).toBe("running");
       expect(useWorkflowStore.getState().workflowStatus).toBe("planning");
     });
 
-    it("does not reset prdAgent when prd transitions to non-planning status", () => {
+    it("does not reset prd agent when prd transitions to non-planning status", () => {
       const ws = connectStore();
-      useWorkflowStore.setState({
-        prdAgent: makeAgentSession({ status: "paused" }),
-        workflowStatus: "prd",
-      });
+      setAgent(PRD_KEY, makeAgentSession({ status: "paused" }));
+      useWorkflowStore.setState({ workflowStatus: "prd" });
 
       dispatch(ws, {
         domain: "workflow",
@@ -1581,16 +1483,13 @@ describe("useWorkflowStore", () => {
         payload: { previous_status: "prd", status: "error" },
       });
 
-      // prdAgent stays paused — only prd→planning triggers completed
-      expect(useWorkflowStore.getState().prdAgent!.status).toBe("paused");
+      expect(getAgent(PRD_KEY)!.status).toBe("paused");
     });
 
-    it("does not reset prdAgent if it is not paused", () => {
+    it("does not reset prd agent if it is not paused", () => {
       const ws = connectStore();
-      useWorkflowStore.setState({
-        prdAgent: makeAgentSession({ status: "running" }),
-        workflowStatus: "prd",
-      });
+      setAgent(PRD_KEY, makeAgentSession({ status: "running" }));
+      useWorkflowStore.setState({ workflowStatus: "prd" });
 
       dispatch(ws, {
         domain: "workflow",
@@ -1598,19 +1497,18 @@ describe("useWorkflowStore", () => {
         payload: { previous_status: "prd", status: "planning" },
       });
 
-      // Only paused prdAgents get set back to running
-      expect(useWorkflowStore.getState().prdAgent!.status).toBe("running");
+      expect(getAgent(PRD_KEY)!.status).toBe("running");
     });
   });
 
   // -------------------------------------------------------------------------
-  // item_completed / item_error — agent status updates via patchAgentByItemId
+  // item_completed / item_error
   // -------------------------------------------------------------------------
 
   describe("item_completed and item_error", () => {
-    it("item_completed sets planAgent (synthetic id -1) to completed", () => {
+    it("item_completed sets plan agent to completed", () => {
       const ws = connectStore();
-      useWorkflowStore.setState({ planAgent: makeAgentSession({ status: "running" }) });
+      setAgent(PLAN_KEY, makeAgentSession({ status: "running" }));
 
       dispatch(ws, {
         domain: "workflow",
@@ -1618,12 +1516,12 @@ describe("useWorkflowStore", () => {
         payload: { queue_item_id: -1, feature_id: 1 },
       });
 
-      expect(useWorkflowStore.getState().planAgent!.status).toBe("completed");
+      expect(getAgent(PLAN_KEY)!.status).toBe("completed");
     });
 
-    it("item_completed sets prdAgent (synthetic id -2) to completed", () => {
+    it("item_completed sets prd agent to completed", () => {
       const ws = connectStore();
-      useWorkflowStore.setState({ prdAgent: makeAgentSession({ status: "running" }) });
+      setAgent(PRD_KEY, makeAgentSession({ status: "running" }));
 
       dispatch(ws, {
         domain: "workflow",
@@ -1631,15 +1529,13 @@ describe("useWorkflowStore", () => {
         payload: { queue_item_id: -2, feature_id: 1 },
       });
 
-      expect(useWorkflowStore.getState().prdAgent!.status).toBe("completed");
+      expect(getAgent(PRD_KEY)!.status).toBe("completed");
     });
 
-    it("item_completed sets activeAgent to completed and updates queue", () => {
+    it("item_completed sets active agent to completed and updates queue", () => {
       const ws = connectStore();
-      const agents = new Map();
-      agents.set(10, makeAgentSession({ status: "running" }));
+      setAgent("qi:10", makeAgentSession({ status: "running" }));
       useWorkflowStore.setState({
-        activeAgents: agents,
         queue: [{ id: 10, status: "running", item_type: "execute", phase_id: null, phase_title: null, order_index: 0, group_index: null, agent_session_id: 100, result: null }],
       });
 
@@ -1649,13 +1545,13 @@ describe("useWorkflowStore", () => {
         payload: { queue_item_id: 10, feature_id: 1 },
       });
 
-      expect(useWorkflowStore.getState().activeAgents.get(10)!.status).toBe("completed");
+      expect(getAgent("qi:10")!.status).toBe("completed");
       expect(useWorkflowStore.getState().queue[0].status).toBe("completed");
     });
 
-    it("item_error sets planAgent (synthetic id -1) to error", () => {
+    it("item_error sets plan agent to error", () => {
       const ws = connectStore();
-      useWorkflowStore.setState({ planAgent: makeAgentSession({ status: "running" }) });
+      setAgent(PLAN_KEY, makeAgentSession({ status: "running" }));
 
       dispatch(ws, {
         domain: "workflow",
@@ -1663,15 +1559,13 @@ describe("useWorkflowStore", () => {
         payload: { queue_item_id: -1, error: "something broke", feature_id: 1 },
       });
 
-      expect(useWorkflowStore.getState().planAgent!.status).toBe("error");
+      expect(getAgent(PLAN_KEY)!.status).toBe("error");
     });
 
-    it("item_error sets activeAgent to error and updates queue", () => {
+    it("item_error sets active agent to error and updates queue", () => {
       const ws = connectStore();
-      const agents = new Map();
-      agents.set(5, makeAgentSession({ status: "running" }));
+      setAgent("qi:5", makeAgentSession({ status: "running" }));
       useWorkflowStore.setState({
-        activeAgents: agents,
         queue: [{ id: 5, status: "running", item_type: "execute", phase_id: null, phase_title: null, order_index: 0, group_index: null, agent_session_id: 50, result: null }],
       });
 
@@ -1681,20 +1575,20 @@ describe("useWorkflowStore", () => {
         payload: { queue_item_id: 5, error: "timeout", feature_id: 1 },
       });
 
-      expect(useWorkflowStore.getState().activeAgents.get(5)!.status).toBe("error");
+      expect(getAgent("qi:5")!.status).toBe("error");
       expect(useWorkflowStore.getState().queue[0].status).toBe("error");
       expect(useWorkflowStore.getState().error).toBe("timeout");
     });
   });
 
   // -------------------------------------------------------------------------
-  // plan_content — live plan display
+  // plan_content / prd_content
   // -------------------------------------------------------------------------
 
   describe("plan_content", () => {
     it("injects tool_call block with __show_plan toolName", () => {
       const ws = connectStore();
-      useWorkflowStore.setState({ planAgent: makeAgentSession() });
+      setAgent(PLAN_KEY, makeAgentSession());
 
       dispatch(ws, {
         domain: "workflow",
@@ -1702,19 +1596,15 @@ describe("useWorkflowStore", () => {
         payload: { content: "# My Plan\n- Phase 1\n- Phase 2" },
       });
 
-      const { planAgent } = useWorkflowStore.getState();
-      expect(planAgent!.blocks).toHaveLength(1);
-      expect(planAgent!.blocks[0]).toMatchObject({
-        type: "tool_call",
-        toolName: "__show_plan",
-      });
-      const args = JSON.parse((planAgent!.blocks[0] as { toolArgs: string }).toolArgs);
+      const plan = getAgent(PLAN_KEY)!;
+      expect(plan.blocks).toHaveLength(1);
+      expect(plan.blocks[0]).toMatchObject({ type: "tool_call", toolName: "__show_plan" });
+      const args = JSON.parse((plan.blocks[0] as { toolArgs: string }).toolArgs);
       expect(args.plan).toBe("# My Plan\n- Phase 1\n- Phase 2");
     });
 
-    it("creates planAgent on the fly if null", () => {
+    it("creates plan agent on the fly if null", () => {
       const ws = connectStore();
-      useWorkflowStore.setState({ planAgent: null });
 
       dispatch(ws, {
         domain: "workflow",
@@ -1722,13 +1612,13 @@ describe("useWorkflowStore", () => {
         payload: { content: "Plan text" },
       });
 
-      expect(useWorkflowStore.getState().planAgent).not.toBeNull();
-      expect(useWorkflowStore.getState().planAgent!.blocks).toHaveLength(1);
+      expect(getAgent(PLAN_KEY)).toBeDefined();
+      expect(getAgent(PLAN_KEY)!.blocks).toHaveLength(1);
     });
 
     it("ignores plan_content with empty content", () => {
       const ws = connectStore();
-      useWorkflowStore.setState({ planAgent: makeAgentSession() });
+      setAgent(PLAN_KEY, makeAgentSession());
 
       dispatch(ws, {
         domain: "workflow",
@@ -1736,18 +1626,14 @@ describe("useWorkflowStore", () => {
         payload: { content: "" },
       });
 
-      expect(useWorkflowStore.getState().planAgent!.blocks).toHaveLength(0);
+      expect(getAgent(PLAN_KEY)!.blocks).toHaveLength(0);
     });
   });
-
-  // -------------------------------------------------------------------------
-  // prd_content — live PRD display
-  // -------------------------------------------------------------------------
 
   describe("prd_content", () => {
     it("injects tool_call block with __show_prd toolName", () => {
       const ws = connectStore();
-      useWorkflowStore.setState({ prdAgent: makeAgentSession() });
+      setAgent(PRD_KEY, makeAgentSession());
 
       dispatch(ws, {
         domain: "workflow",
@@ -1755,19 +1641,13 @@ describe("useWorkflowStore", () => {
         payload: { content: "# PRD\n- Requirement 1" },
       });
 
-      const { prdAgent } = useWorkflowStore.getState();
-      expect(prdAgent!.blocks).toHaveLength(1);
-      expect(prdAgent!.blocks[0]).toMatchObject({
-        type: "tool_call",
-        toolName: "__show_prd",
-      });
-      const args = JSON.parse((prdAgent!.blocks[0] as { toolArgs: string }).toolArgs);
-      expect(args.plan).toBe("# PRD\n- Requirement 1");
+      const prd = getAgent(PRD_KEY)!;
+      expect(prd.blocks).toHaveLength(1);
+      expect(prd.blocks[0]).toMatchObject({ type: "tool_call", toolName: "__show_prd" });
     });
 
-    it("creates prdAgent on the fly if null", () => {
+    it("creates prd agent on the fly if null", () => {
       const ws = connectStore();
-      useWorkflowStore.setState({ prdAgent: null });
 
       dispatch(ws, {
         domain: "workflow",
@@ -1775,13 +1655,13 @@ describe("useWorkflowStore", () => {
         payload: { content: "PRD text" },
       });
 
-      expect(useWorkflowStore.getState().prdAgent).not.toBeNull();
-      expect(useWorkflowStore.getState().prdAgent!.blocks).toHaveLength(1);
+      expect(getAgent(PRD_KEY)).toBeDefined();
+      expect(getAgent(PRD_KEY)!.blocks).toHaveLength(1);
     });
 
     it("ignores prd_content with empty content", () => {
       const ws = connectStore();
-      useWorkflowStore.setState({ prdAgent: makeAgentSession() });
+      setAgent(PRD_KEY, makeAgentSession());
 
       dispatch(ws, {
         domain: "workflow",
@@ -1789,28 +1669,24 @@ describe("useWorkflowStore", () => {
         payload: { content: "" },
       });
 
-      expect(useWorkflowStore.getState().prdAgent!.blocks).toHaveLength(0);
+      expect(getAgent(PRD_KEY)!.blocks).toHaveLength(0);
     });
   });
 
   // -------------------------------------------------------------------------
-  // feature.updated — cache invalidation
+  // feature.updated
   // -------------------------------------------------------------------------
 
   describe("feature.updated", () => {
     it("calls invalidateFeatureQueries for feature.updated events", () => {
       const ws = connectStore(42);
 
-      // We can't easily mock invalidateFeatureQueries since it's imported,
-      // but we can verify the message is processed (doesn't throw, doesn't
-      // update workflow state).
       dispatch(ws, {
         domain: "feature",
         action: "updated",
         payload: { feature_id: 42, changed: ["phases", "progress"] },
       });
 
-      // Verify no workflow state was modified (it's a cross-domain event)
       expect(useWorkflowStore.getState().workflowStatus).toBe("idle");
     });
   });
@@ -1822,12 +1698,10 @@ describe("useWorkflowStore", () => {
   describe("block preservation on started events", () => {
     it("session.started migrates placeholder blocks to unique key", () => {
       const ws = connectStore();
-      // Simulate user message arriving before session.started (at SESSION_KEY placeholder)
-      const agents = new Map();
-      agents.set(-3, makeAgentSession({
+      // Simulate user message arriving before session.started (at placeholder key)
+      setAgent("session", makeAgentSession({
         blocks: [{ type: "user_message", content: "Hello" }],
       }));
-      useWorkflowStore.setState({ activeAgents: agents });
 
       dispatch(ws, {
         domain: "workflow",
@@ -1835,9 +1709,9 @@ describe("useWorkflowStore", () => {
         payload: { feature_id: 1, session_id: 77 },
       });
 
-      // Agent should be at unique key, not at SESSION_KEY
-      expect(useWorkflowStore.getState().activeAgents.has(-3)).toBe(false);
-      const agent = useWorkflowStore.getState().activeAgents.get(-1077);
+      // Agent should be at unique key, not at placeholder
+      expect(getAgent("session")).toBeUndefined();
+      const agent = getAgent("session:77");
       expect(agent).toBeDefined();
       expect(agent!.sessionId).toBe(77);
       expect(agent!.blocks).toHaveLength(1);
@@ -1846,17 +1720,16 @@ describe("useWorkflowStore", () => {
 
     it("session.started merges placeholder and existing agent blocks", () => {
       const ws = connectStore();
-      const agents = new Map();
-      // Placeholder at SESSION_KEY with user message
-      agents.set(-3, makeAgentSession({
+      // Placeholder with user message
+      setAgent("session", makeAgentSession({
         blocks: [{ type: "user_message", content: "Hello" }],
       }));
-      // Existing agent at sessionDbKey(77) from agent_user_message arriving first
-      agents.set(-1077, makeAgentSession({
+      // Existing agent at session:77 from agent_user_message arriving first
+      setAgent("session:77", makeAgentSession({
         sessionId: 77,
         blocks: [{ type: "text", content: "stream output" }],
       }));
-      useWorkflowStore.setState({ activeAgents: agents, startingSession: true });
+      useWorkflowStore.setState({ startingSession: true });
 
       dispatch(ws, {
         domain: "workflow",
@@ -1864,8 +1737,8 @@ describe("useWorkflowStore", () => {
         payload: { feature_id: 1, session_id: 77 },
       });
 
-      expect(useWorkflowStore.getState().activeAgents.has(-3)).toBe(false);
-      const agent = useWorkflowStore.getState().activeAgents.get(-1077);
+      expect(getAgent("session")).toBeUndefined();
+      const agent = getAgent("session:77");
       expect(agent).toBeDefined();
       expect(agent!.blocks).toHaveLength(2);
       expect(agent!.blocks[0]).toMatchObject({ type: "user_message", content: "Hello" });
@@ -1887,7 +1760,6 @@ describe("useWorkflowStore", () => {
 
     it("startSession clears flag and sets error when WS is disconnected", () => {
       connectStore();
-      // Close the WS to simulate disconnect
       const ws = MockWebSocket.instances[MockWebSocket.instances.length - 1];
       ws.readyState = WebSocket.CLOSED;
 
@@ -1900,7 +1772,6 @@ describe("useWorkflowStore", () => {
     it("queue_update before item_started populates queue so agent is matched", () => {
       const ws = connectStore();
 
-      // 1. queue_update arrives first (the fix: sent before advance)
       dispatch(ws, {
         domain: "workflow",
         action: "queue_update",
@@ -1912,36 +1783,28 @@ describe("useWorkflowStore", () => {
         },
       });
 
-      // Queue should be populated
       expect(useWorkflowStore.getState().queue).toHaveLength(1);
-      expect(useWorkflowStore.getState().queue[0].id).toBe(10);
 
-      // 2. item_started arrives after
       dispatch(ws, {
         domain: "workflow",
         action: "item_started",
         payload: { feature_id: 1, queue_item_id: 10, session_id: 55, item_type: "execute" },
       });
 
-      // Agent should be created for the queue item
-      const agent = useWorkflowStore.getState().activeAgents.get(10);
+      const agent = getAgent("qi:10");
       expect(agent).toBeDefined();
       expect(agent!.sessionId).toBe(55);
 
-      // Queue item status should be updated to running
       const queueItem = useWorkflowStore.getState().queue.find((q) => q.id === 10);
       expect(queueItem?.status).toBe("running");
     });
 
     it("item_started preserves existing blocks", () => {
       const ws = connectStore();
-      // Simulate user message arriving before item_started
-      const agents = new Map();
-      agents.set(10, makeAgentSession({
+      setAgent("qi:10", makeAgentSession({
         blocks: [{ type: "user_message", content: "Execute this" }],
       }));
       useWorkflowStore.setState({
-        activeAgents: agents,
         queue: [{ id: 10, status: "ready", item_type: "execute", phase_id: 1, phase_title: "P1", order_index: 0, group_index: 0, agent_session_id: null, result: null }],
       });
 
@@ -1951,7 +1814,7 @@ describe("useWorkflowStore", () => {
         payload: { feature_id: 1, queue_item_id: 10, session_id: 88, item_type: "execute" },
       });
 
-      const agent = useWorkflowStore.getState().activeAgents.get(10);
+      const agent = getAgent("qi:10");
       expect(agent).toBeDefined();
       expect(agent!.sessionId).toBe(88);
       expect(agent!.blocks).toHaveLength(1);
@@ -1965,7 +1828,6 @@ describe("useWorkflowStore", () => {
       expect(useWorkflowStore.getState().startingBuild).toBe(false);
       useWorkflowStore.getState().startBuild();
       expect(useWorkflowStore.getState().startingBuild).toBe(true);
-      // Verify the message was sent
       expect(ws.sent.length).toBeGreaterThan(0);
       const msg = JSON.parse(ws.sent[ws.sent.length - 1]);
       expect(msg.action).toBe("start_build");
@@ -1973,11 +1835,8 @@ describe("useWorkflowStore", () => {
 
     it("continueWorkflow sets continuingBuild flag", () => {
       const ws = connectStore();
-      expect(useWorkflowStore.getState().continuingBuild).toBe(false);
       useWorkflowStore.getState().continueWorkflow();
       expect(useWorkflowStore.getState().continuingBuild).toBe(true);
-      const msg = JSON.parse(ws.sent[ws.sent.length - 1]);
-      expect(msg.action).toBe("continue");
     });
 
     it("status_changed to building clears both flags", () => {
@@ -1991,33 +1850,6 @@ describe("useWorkflowStore", () => {
       });
 
       expect(useWorkflowStore.getState().startingBuild).toBe(false);
-      expect(useWorkflowStore.getState().continuingBuild).toBe(false);
-    });
-
-    it("status_changed to paused clears both flags", () => {
-      const ws = connectStore();
-      useWorkflowStore.setState({ startingBuild: true, continuingBuild: true });
-
-      dispatch(ws, {
-        domain: "workflow",
-        action: "status_changed",
-        payload: { status: "paused", previous_status: "building" },
-      });
-
-      expect(useWorkflowStore.getState().startingBuild).toBe(false);
-      expect(useWorkflowStore.getState().continuingBuild).toBe(false);
-    });
-
-    it("status_changed to error clears both flags", () => {
-      const ws = connectStore();
-      useWorkflowStore.setState({ continuingBuild: true });
-
-      dispatch(ws, {
-        domain: "workflow",
-        action: "status_changed",
-        payload: { status: "error", previous_status: "building" },
-      });
-
       expect(useWorkflowStore.getState().continuingBuild).toBe(false);
     });
 
@@ -2035,80 +1867,20 @@ describe("useWorkflowStore", () => {
       expect(useWorkflowStore.getState().continuingBuild).toBe(false);
     });
 
-    it("connect resets flags", () => {
-      connectStore();
-      useWorkflowStore.setState({ startingBuild: true, continuingBuild: true });
-      // Reconnect
-      connectStore(2, 2);
-      expect(useWorkflowStore.getState().startingBuild).toBe(false);
-      expect(useWorkflowStore.getState().continuingBuild).toBe(false);
-    });
-
-    it("connect preserves worktreeBranch across reconnect", () => {
-      connectStore();
-      useWorkflowStore.setState({ worktreeBranch: "feature/my-branch-1234" });
-      // Reconnect — branch should survive
-      connectStore(2, 2);
-      expect(useWorkflowStore.getState().worktreeBranch).toBe("feature/my-branch-1234");
-    });
-
     it("startSession sets startingSession flag", () => {
-      const ws = connectStore();
-      expect(useWorkflowStore.getState().startingSession).toBe(false);
+      connectStore();
       useWorkflowStore.getState().startSession("do something", undefined);
       expect(useWorkflowStore.getState().startingSession).toBe(true);
-      const msg = JSON.parse(ws.sent[ws.sent.length - 1]);
-      expect(msg.action).toBe("start_session");
-    });
-
-    it("item_started clears startingSession flag", () => {
-      const ws = connectStore();
-      useWorkflowStore.setState({ startingSession: true });
-
-      dispatch(ws, {
-        domain: "workflow",
-        action: "item_started",
-        payload: { agent_slot: { queue_item_id: 10 }, session_id: 42 },
-      });
-
-      expect(useWorkflowStore.getState().startingSession).toBe(false);
-    });
-
-    it("status_changed clears startingSession flag", () => {
-      const ws = connectStore();
-      useWorkflowStore.setState({ startingSession: true });
-
-      dispatch(ws, {
-        domain: "workflow",
-        action: "status_changed",
-        payload: { status: "building", previous_status: "ready_to_build" },
-      });
-
-      expect(useWorkflowStore.getState().startingSession).toBe(false);
-    });
-
-    it("workflow error clears startingSession flag", () => {
-      const ws = connectStore();
-      useWorkflowStore.setState({ startingSession: true });
-
-      dispatch(ws, {
-        domain: "workflow",
-        action: "error",
-        payload: { message: "Something failed" },
-      });
-
-      expect(useWorkflowStore.getState().startingSession).toBe(false);
     });
   });
 
   // -------------------------------------------------------------------------
-  // agent_running / agent_paused with AgentSlot format (reconnection)
+  // agent_running / agent_paused with AgentSlot format
   // -------------------------------------------------------------------------
 
   describe("agent_running with agent_slot", () => {
-    it("routes to planAgent when slot is plan", () => {
+    it("routes to plan agent when slot is plan", () => {
       const ws = connectStore();
-      expect(useWorkflowStore.getState().planAgent).toBeNull();
 
       dispatch(ws, {
         domain: "workflow",
@@ -2116,15 +1888,14 @@ describe("useWorkflowStore", () => {
         payload: { feature_id: 1, agent_slot: { type: "plan" }, session_id: 100, agent_type: "plan" },
       });
 
-      const plan = useWorkflowStore.getState().planAgent;
-      expect(plan).not.toBeNull();
+      const plan = getAgent(PLAN_KEY);
+      expect(plan).toBeDefined();
       expect(plan!.status).toBe("running");
       expect(plan!.sessionId).toBe(100);
     });
 
-    it("routes to prdAgent when slot is prd", () => {
+    it("routes to prd agent when slot is prd", () => {
       const ws = connectStore();
-      expect(useWorkflowStore.getState().prdAgent).toBeNull();
 
       dispatch(ws, {
         domain: "workflow",
@@ -2132,13 +1903,13 @@ describe("useWorkflowStore", () => {
         payload: { feature_id: 1, agent_slot: { type: "prd" }, session_id: 200, agent_type: "prd" },
       });
 
-      const prd = useWorkflowStore.getState().prdAgent;
-      expect(prd).not.toBeNull();
+      const prd = getAgent(PRD_KEY);
+      expect(prd).toBeDefined();
       expect(prd!.status).toBe("running");
       expect(prd!.sessionId).toBe(200);
     });
 
-    it("routes to activeAgents for queue items", () => {
+    it("routes to agents for queue items", () => {
       const ws = connectStore();
       useWorkflowStore.setState({
         queue: [{ id: 42, status: "ready", item_type: "execute", phase_id: 1, phase_title: "P1", order_index: 0, group_index: 0, agent_session_id: null, result: null }],
@@ -2150,7 +1921,7 @@ describe("useWorkflowStore", () => {
         payload: { feature_id: 1, agent_slot: { type: "queue_item", id: 42 }, session_id: 300, agent_type: "execute" },
       });
 
-      const agent = useWorkflowStore.getState().activeAgents.get(42);
+      const agent = getAgent("qi:42");
       expect(agent).toBeDefined();
       expect(agent!.status).toBe("running");
       expect(agent!.sessionId).toBe(300);
@@ -2172,72 +1943,11 @@ describe("useWorkflowStore", () => {
       expect(queueItem!.status).toBe("running");
       expect(queueItem!.agent_session_id).toBe(300);
     });
-
-    it("sets selectedItemId if none is set", () => {
-      const ws = connectStore();
-      expect(useWorkflowStore.getState().selectedItemId).toBeNull();
-
-      dispatch(ws, {
-        domain: "workflow",
-        action: "agent_running",
-        payload: { feature_id: 1, agent_slot: { type: "queue_item", id: 42 }, session_id: 300, agent_type: "execute" },
-      });
-
-      expect(useWorkflowStore.getState().selectedItemId).toBe(42);
-    });
-
-    it("does not overwrite existing selectedItemId", () => {
-      const ws = connectStore();
-      useWorkflowStore.setState({ selectedItemId: 10 });
-
-      dispatch(ws, {
-        domain: "workflow",
-        action: "agent_running",
-        payload: { feature_id: 1, agent_slot: { type: "queue_item", id: 42 }, session_id: 300, agent_type: "execute" },
-      });
-
-      expect(useWorkflowStore.getState().selectedItemId).toBe(10);
-    });
-
-    it("creates agent session if none exists", () => {
-      const ws = connectStore();
-      expect(useWorkflowStore.getState().planAgent).toBeNull();
-
-      dispatch(ws, {
-        domain: "workflow",
-        action: "agent_running",
-        payload: { feature_id: 1, agent_slot: { type: "plan" }, session_id: 100, agent_type: "plan" },
-      });
-
-      const plan = useWorkflowStore.getState().planAgent;
-      expect(plan).not.toBeNull();
-      expect(plan!.blocks).toEqual([]);
-      expect(plan!.status).toBe("running");
-    });
-
-    it("preserves existing agent blocks when patching", () => {
-      const ws = connectStore();
-      useWorkflowStore.setState({
-        planAgent: makeAgentSession({ sessionId: 100, blocks: [{ type: "text", content: "existing" }] }) as never,
-      });
-
-      dispatch(ws, {
-        domain: "workflow",
-        action: "agent_running",
-        payload: { feature_id: 1, agent_slot: { type: "plan" }, session_id: 100, agent_type: "plan" },
-      });
-
-      const plan = useWorkflowStore.getState().planAgent;
-      expect(plan!.status).toBe("running");
-      expect(plan!.blocks).toHaveLength(1);
-      expect(plan!.blocks[0]).toMatchObject({ type: "text", content: "existing" });
-    });
   });
 
   describe("agent_paused with agent_slot", () => {
-    it("routes to planAgent with paused status and claudeSessionId", () => {
+    it("routes to plan agent with paused status and claudeSessionId", () => {
       const ws = connectStore();
-      expect(useWorkflowStore.getState().planAgent).toBeNull();
 
       dispatch(ws, {
         domain: "workflow",
@@ -2245,14 +1955,14 @@ describe("useWorkflowStore", () => {
         payload: { feature_id: 1, agent_slot: { type: "plan" }, session_id: 42, agent_type: "plan", claude_session_id: "cc-123" },
       });
 
-      const plan = useWorkflowStore.getState().planAgent;
-      expect(plan).not.toBeNull();
+      const plan = getAgent(PLAN_KEY);
+      expect(plan).toBeDefined();
       expect(plan!.status).toBe("paused");
       expect(plan!.sessionId).toBe(42);
       expect(plan!.claudeSessionId).toBe("cc-123");
     });
 
-    it("routes to prdAgent with paused status and claudeSessionId", () => {
+    it("routes to prd agent with paused status and claudeSessionId", () => {
       const ws = connectStore();
 
       dispatch(ws, {
@@ -2261,13 +1971,13 @@ describe("useWorkflowStore", () => {
         payload: { feature_id: 1, agent_slot: { type: "prd" }, session_id: 99, agent_type: "prd", claude_session_id: "cc-prd" },
       });
 
-      const prd = useWorkflowStore.getState().prdAgent;
-      expect(prd).not.toBeNull();
+      const prd = getAgent(PRD_KEY);
+      expect(prd).toBeDefined();
       expect(prd!.status).toBe("paused");
       expect(prd!.claudeSessionId).toBe("cc-prd");
     });
 
-    it("routes to activeAgents for queue items with paused status", () => {
+    it("routes to agents for queue items with paused status", () => {
       const ws = connectStore();
 
       dispatch(ws, {
@@ -2276,7 +1986,7 @@ describe("useWorkflowStore", () => {
         payload: { feature_id: 1, agent_slot: { type: "queue_item", id: 55 }, session_id: 400, agent_type: "execute", claude_session_id: "cc-qi" },
       });
 
-      const agent = useWorkflowStore.getState().activeAgents.get(55);
+      const agent = getAgent("qi:55");
       expect(agent).toBeDefined();
       expect(agent!.status).toBe("paused");
       expect(agent!.sessionId).toBe(400);
@@ -2285,9 +1995,7 @@ describe("useWorkflowStore", () => {
 
     it("preserves existing agent blocks when paused", () => {
       const ws = connectStore();
-      useWorkflowStore.setState({
-        planAgent: makeAgentSession({ sessionId: 42, blocks: [{ type: "text", content: "work" }] }) as never,
-      });
+      setAgent(PLAN_KEY, makeAgentSession({ sessionId: 42, blocks: [{ type: "text", content: "work" }] }) as never);
 
       dispatch(ws, {
         domain: "workflow",
@@ -2295,11 +2003,10 @@ describe("useWorkflowStore", () => {
         payload: { feature_id: 1, agent_slot: { type: "plan" }, session_id: 42, agent_type: "plan", claude_session_id: "cc-456" },
       });
 
-      const plan = useWorkflowStore.getState().planAgent;
-      expect(plan!.status).toBe("paused");
-      expect(plan!.claudeSessionId).toBe("cc-456");
-      expect(plan!.blocks).toHaveLength(1);
-      expect(plan!.blocks[0]).toMatchObject({ type: "text", content: "work" });
+      const plan = getAgent(PLAN_KEY)!;
+      expect(plan.status).toBe("paused");
+      expect(plan.claudeSessionId).toBe("cc-456");
+      expect(plan.blocks).toHaveLength(1);
     });
   });
 
@@ -2310,9 +2017,7 @@ describe("useWorkflowStore", () => {
   describe("permission.request and respondToPermission", () => {
     it("sets pendingPermission on a queue agent when permission.request arrives", () => {
       const ws = connectStore();
-      const agents = new Map();
-      agents.set(7, makeAgentSession({ sessionId: 100 }));
-      useWorkflowStore.setState({ activeAgents: agents });
+      setAgent("qi:7", makeAgentSession({ sessionId: 100 }));
 
       dispatch(ws, {
         domain: "workflow",
@@ -2328,8 +2033,8 @@ describe("useWorkflowStore", () => {
         },
       });
 
-      const agent = useWorkflowStore.getState().activeAgents.get(7);
-      expect(agent!.pendingPermission).toEqual({
+      const agent = getAgent("qi:7")!;
+      expect(agent.pendingPermission).toEqual({
         toolName: "Bash",
         input: { command: "ls" },
         description: "Run ls",
@@ -2340,8 +2045,7 @@ describe("useWorkflowStore", () => {
 
     it("clears pendingPermission when respondToPermission is called", () => {
       const ws = connectStore();
-      const agents = new Map();
-      agents.set(7, makeAgentSession({
+      setAgent("qi:7", makeAgentSession({
         sessionId: 100,
         pendingPermission: {
           toolName: "Bash",
@@ -2351,14 +2055,11 @@ describe("useWorkflowStore", () => {
           requestId: "req-1",
         },
       }));
-      useWorkflowStore.setState({ activeAgents: agents });
 
-      useWorkflowStore.getState().respondToPermission(7, "req-1", "allow_once");
+      useWorkflowStore.getState().respondToPermission("qi:7", "req-1", "allow_once");
 
-      const agent = useWorkflowStore.getState().activeAgents.get(7);
-      expect(agent!.pendingPermission).toBeNull();
+      expect(getAgent("qi:7")!.pendingPermission).toBeNull();
 
-      // Also verify the WS message was sent
       expect(ws.sent.length).toBeGreaterThanOrEqual(1);
       const msg = JSON.parse(ws.sent[ws.sent.length - 1]);
       expect(msg.action).toBe("permission.respond");

@@ -1,63 +1,19 @@
-/**
- * WS event handler for workflow-domain messages.
- *
- * All handleMessage logic extracted from useWorkflowWebSocket so the store
- * file can focus on state shape and actions.
- *
- * Agent-specific helpers and handlers live in agent-event-handlers.ts.
- */
+/** WS event handler for workflow-domain messages. Agent helpers live in agent-event-handlers.ts. */
 
 import { invalidateFeatureQueries } from "@/lib/featureUpdated";
 import { type CommandsListPayload } from "@/lib/ws-envelope";
 import type { SlashCommand } from "@/hooks/useSlashCommand";
 import { queryClient } from "@/lib/queryClient";
 import {
-  type WorkflowState,
-  type WorkflowStatus,
-  type QueueItemStatus,
-  parseAgentSlot,
-  agentSlotToLegacyId,
-  SESSION_KEY,
+  type WorkflowState, type WorkflowStatus, type QueueItemStatus,
+  parseAgentSlot, agentSlotKey, PLAN_KEY, PRD_KEY, SESSION_PLACEHOLDER_KEY,
 } from "@/types/workflow";
 import {
-  type SetFn,
-  createAgentSession,
-  sessionDbKey,
-  resolveItemId,
-  patchAgentByItemId,
-  processAgentStream,
-  insertAgentSession,
-  handleAgentStream,
-  handleAgentPaused,
-  handleAgentRunning,
-  handleAgentSessionId,
-  handleAgentUserMessage,
-  handleUsageUpdate,
-  handlePermissionRequest,
+  type SetFn, createAgentSession, resolveSlotKey,
+  patchAgent, processAgentStream, insertAgentSession,
+  handleAgentStream, handleAgentPaused, handleAgentRunning, handleAgentSessionId,
+  handleAgentUserMessage, handleUsageUpdate, handlePermissionRequest,
 } from "@/hooks/agent-event-handlers";
-
-// Re-export helpers for backward compatibility (useWorkflowWebSocket.ts imports these)
-export {
-  createAgentSession,
-  sessionDbKey,
-  resolveItemId,
-  patchAgentByItemId,
-  processAgentStream,
-} from "@/hooks/agent-event-handlers";
-export {
-  itemIdToSlot,
-  MULTI_INSTANCE_TYPES,
-  resolveAgentByItemId,
-  blocksContainFileChange,
-  resolveActiveKey,
-  upsertAgentByItemId,
-  resolveMultiInstanceKey,
-  FILE_CHANGE_TOOLS,
-} from "@/hooks/agent-event-handlers";
-
-// ---------------------------------------------------------------------------
-// Message handler factory
-// ---------------------------------------------------------------------------
 
 export function createWorkflowMessageHandler(
   set: SetFn,
@@ -141,41 +97,50 @@ export function createWorkflowMessageHandler(
       }
       case "item_started": {
         const slot = parseAgentSlot(payload);
-        const itemId = agentSlotToLegacyId(slot);
+        const key = agentSlotKey(slot);
         const sessionId = payload.session_id as number;
         set(state => {
-          const queue = state.queue.map(q =>
-            q.id === itemId ? { ...q, status: "running" as const, agent_session_id: sessionId } : q,
-          );
-          const activeAgents = new Map(state.activeAgents);
-          const existing = activeAgents.get(itemId);
+          const itemId = slot.type === "queue_item" ? slot.id : null;
+          const queue = itemId != null
+            ? state.queue.map(q =>
+                q.id === itemId ? { ...q, status: "running" as const, agent_session_id: sessionId } : q,
+              )
+            : state.queue;
+          const agents = new Map(state.agents);
+          const existing = agents.get(key);
           const itemType = (payload.item_type as string) ?? "execute";
           const session = { ...createAgentSession(sessionId, itemType), blocks: existing?.blocks ?? [] };
-          activeAgents.set(itemId, session);
-          return { queue, activeAgents, selectedItemId: state.selectedItemId ?? itemId, startingSession: false };
+          agents.set(key, session);
+          return { queue, agents, selectedItemId: state.selectedItemId ?? itemId, startingSession: false };
         });
         break;
       }
       case "item_completed": {
         const slot = parseAgentSlot(payload);
-        const itemId = resolveItemId(get(), slot);
         set(state => {
-          const queue = state.queue.map(q =>
-            q.id === itemId ? { ...q, status: "completed" as const } : q,
-          );
-          return { queue, ...patchAgentByItemId(state, itemId, { status: "completed" }) };
+          const key = resolveSlotKey(state.agents, slot);
+          const itemId = slot.type === "queue_item" ? slot.id : null;
+          const queue = itemId != null
+            ? state.queue.map(q =>
+                q.id === itemId ? { ...q, status: "completed" as const } : q,
+              )
+            : state.queue;
+          return { queue, ...patchAgent(state, key, { status: "completed" }) };
         });
         break;
       }
       case "item_error": {
         const slot = parseAgentSlot(payload);
         const error = payload.error as string;
-        const errItemId = resolveItemId(get(), slot);
         set(state => {
-          const queue = state.queue.map(q =>
-            q.id === errItemId ? { ...q, status: "error" as const, result: error } : q,
-          );
-          return { queue, error, ...patchAgentByItemId(state, errItemId, { status: "error" }) };
+          const key = resolveSlotKey(state.agents, slot);
+          const itemId = slot.type === "queue_item" ? slot.id : null;
+          const queue = itemId != null
+            ? state.queue.map(q =>
+                q.id === itemId ? { ...q, status: "error" as const, result: error } : q,
+              )
+            : state.queue;
+          return { queue, error, ...patchAgent(state, key, { status: "error" }) };
         });
         break;
       }
@@ -183,22 +148,21 @@ export function createWorkflowMessageHandler(
         const itemId = payload.queue_item_id as number;
         const retryCount = payload.retry_count as number;
         const maxRetries = payload.max_retries as number;
-        set(state => {
-          const queue = state.queue.map(q =>
+        set(state => ({
+          queue: state.queue.map(q =>
             q.id === itemId ? { ...q, status: "ready" as const, retry_count: retryCount, max_retries: maxRetries } : q,
-          );
-          return { queue };
-        });
+          ),
+        }));
         break;
       }
       case "interrupted": {
         const slot = parseAgentSlot(payload);
         set(state => {
-          const itemId = resolveItemId(state, slot);
-          const agentPatch = patchAgentByItemId(state, itemId, { status: "paused" });
-          if (itemId > 0) {
+          const key = resolveSlotKey(state.agents, slot);
+          const agentPatch = patchAgent(state, key, { status: "paused" });
+          if (slot.type === "queue_item") {
             const queue = state.queue.map(q =>
-              q.id === itemId ? { ...q, status: "paused" as const } : q,
+              q.id === slot.id ? { ...q, status: "paused" as const } : q,
             );
             return { ...agentPatch, queue };
           }
@@ -219,16 +183,20 @@ export function createWorkflowMessageHandler(
           const updates: Partial<WorkflowState> = { workflowStatus: status };
 
           if (previousStatus === "plan_approval" && status !== "plan_approval") {
-            const planAgent = get().planAgent;
+            const planAgent = get().agents.get(PLAN_KEY);
             if (planAgent) {
-              updates.planAgent = { ...planAgent, status: "running" as const };
+              const agents = new Map(get().agents);
+              agents.set(PLAN_KEY, { ...planAgent, status: "running" as const });
+              updates.agents = agents;
             }
           }
 
           if (previousStatus === "prd" && status === "planning") {
-            const prdAgent = get().prdAgent;
+            const prdAgent = get().agents.get(PRD_KEY);
             if (prdAgent && prdAgent.status === "paused") {
-              updates.prdAgent = { ...prdAgent, status: "running" as const };
+              const agents = updates.agents ? updates.agents : new Map(get().agents);
+              agents.set(PRD_KEY, { ...prdAgent, status: "running" as const });
+              updates.agents = agents;
             }
           }
 
@@ -244,20 +212,25 @@ export function createWorkflowMessageHandler(
       }
       case "plan_agent_stream":
       case "prd_agent_stream": {
-        const key = action === "plan_agent_stream" ? "planAgent" : "prdAgent";
+        const key = action === "plan_agent_stream" ? PLAN_KEY : PRD_KEY;
         const msg = payload.message as Record<string, unknown>;
         if (!msg) break;
         set(state => {
-          const agent = state[key as "planAgent" | "prdAgent"] ?? createAgentSession(0);
-          return { [key]: processAgentStream(agent, msg) };
+          const agent = state.agents.get(key) ?? createAgentSession(0);
+          const agents = new Map(state.agents);
+          agents.set(key, processAgentStream(agent, msg));
+          return { agents };
         });
         break;
       }
       case "plan_ready": {
-        set(state => ({
-          workflowStatus: "plan_approval",
-          planAgent: state.planAgent ? { ...state.planAgent, status: "paused" as const } : state.planAgent,
-        }));
+        set(state => {
+          const planAgent = state.agents.get(PLAN_KEY);
+          if (!planAgent) return { workflowStatus: "plan_approval" as const };
+          const agents = new Map(state.agents);
+          agents.set(PLAN_KEY, { ...planAgent, status: "paused" as const });
+          return { workflowStatus: "plan_approval" as const, agents };
+        });
         break;
       }
       case "plan_content":
@@ -265,11 +238,11 @@ export function createWorkflowMessageHandler(
         const content = payload.content as string;
         if (!content) break;
         const isPlan = action === "plan_content";
-        const agentKey = isPlan ? "planAgent" : "prdAgent";
+        const key = isPlan ? PLAN_KEY : PRD_KEY;
         const toolName = isPlan ? "__show_plan" : "__show_prd";
         const prefix = isPlan ? "plan" : "prd";
         set(state => {
-          const agent = state[agentKey as "planAgent" | "prdAgent"] ?? createAgentSession(0);
+          const agent = state.agents.get(key) ?? createAgentSession(0);
           const block = {
             id: `ws-${prefix}-${Date.now()}`,
             type: "tool_call" as const,
@@ -278,176 +251,112 @@ export function createWorkflowMessageHandler(
             toolArgs: JSON.stringify({ plan: content }),
             createdAt: new Date().toISOString(),
           };
-          return { [agentKey]: { ...agent, blocks: [...agent.blocks, block] } };
+          const agents = new Map(state.agents);
+          agents.set(key, { ...agent, blocks: [...agent.blocks, block] });
+          return { agents };
         });
         break;
       }
       case "prd_ready": {
-        set(state => ({
-          prdAgent: state.prdAgent ? { ...state.prdAgent, status: "paused" as const } : state.prdAgent,
-        }));
+        set(state => {
+          const prdAgent = state.agents.get(PRD_KEY);
+          if (!prdAgent) return {};
+          const agents = new Map(state.agents);
+          agents.set(PRD_KEY, { ...prdAgent, status: "paused" as const });
+          return { agents };
+        });
         break;
       }
       case "session.started": {
         const startedSessionId = payload.session_id as number;
+        const targetKey = `session:${startedSessionId}`;
         set(state => {
-          const activeAgents = new Map(state.activeAgents);
-          const placeholder = activeAgents.get(SESSION_KEY);
-          if (placeholder) activeAgents.delete(SESSION_KEY);
-          const existing = activeAgents.get(sessionDbKey(startedSessionId));
+          const agents = new Map(state.agents);
+          const placeholder = agents.get(SESSION_PLACEHOLDER_KEY);
+          if (placeholder) agents.delete(SESSION_PLACEHOLDER_KEY);
+          const existing = agents.get(targetKey);
           const session = {
             ...(existing ?? createAgentSession(startedSessionId, "session")),
             sessionId: startedSessionId,
             blocks: [...(placeholder?.blocks ?? []), ...(existing?.blocks ?? [])],
           };
-          activeAgents.set(sessionDbKey(startedSessionId), session);
-          return { activeAgents, startingSession: false };
+          agents.set(targetKey, session);
+          return { agents, startingSession: false };
         });
         break;
       }
       case "refine.started": {
-        // Refine streams via planAgent state; no activeAgents entry needed
+        // Refine streams via plan agent state; no separate entry needed
         break;
       }
       case "risk.started":
       case "retro.started": {
         const agentType = action === "risk.started" ? "risk" : "retro";
-        set(state => insertAgentSession(state, payload.session_id as number, agentType));
+        const sessionId = payload.session_id as number;
+        const key = `${agentType}:${sessionId}`;
+        set(state => insertAgentSession(state, key, sessionId, agentType));
         break;
       }
-      case "agent_paused": {
-        handleAgentPaused(payload, set);
-        break;
-      }
-      case "agent_running": {
-        handleAgentRunning(payload, set);
-        break;
-      }
-      case "agent_session_id": {
-        handleAgentSessionId(payload, set);
-        break;
-      }
-      case "agent_user_message": {
-        handleAgentUserMessage(payload, set);
-        break;
-      }
-      case "agent_stream": {
-        handleAgentStream(payload, set);
-        break;
-      }
-      case "usage_update": {
-        handleUsageUpdate(payload, set);
-        break;
-      }
-      case "permission.request": {
-        handlePermissionRequest(payload, set);
-        break;
-      }
-      case "review_verdict": {
-        // Informational — queue_update will follow with new items
-        break;
-      }
+      case "agent_paused": handleAgentPaused(payload, set); break;
+      case "agent_running": handleAgentRunning(payload, set); break;
+      case "agent_session_id": handleAgentSessionId(payload, set); break;
+      case "agent_user_message": handleAgentUserMessage(payload, set); break;
+      case "agent_stream": handleAgentStream(payload, set); break;
+      case "usage_update": handleUsageUpdate(payload, set); break;
+      case "permission.request": handlePermissionRequest(payload, set); break;
+      case "review_verdict": break;
       case "review_fixer.started": {
-        set(state => insertAgentSession(state, payload.session_id as number, "review-fixer"));
+        const sessionId = payload.session_id as number;
+        const key = `review-fixer:${sessionId}`;
+        set(state => insertAgentSession(state, key, sessionId, "review-fixer"));
         break;
       }
-      case "worktree.creating": {
-        set({
-          worktreeStatus: "creating",
-          worktreeBranch: (payload.branch as string) ?? null,
-          worktreePath: (payload.path as string) ?? null,
-          worktreeError: null,
-        });
+      case "worktree.creating":
+        set({ worktreeStatus: "creating", worktreeBranch: (payload.branch as string) ?? null, worktreePath: (payload.path as string) ?? null, worktreeError: null });
         break;
-      }
-      case "worktree.created": {
-        set({
-          worktreeStatus: "created",
-          worktreePath: (payload.path as string) ?? null,
-          worktreeBranch: (payload.branch as string) ?? null,
-        });
+      case "worktree.created":
+        set({ worktreeStatus: "created", worktreePath: (payload.path as string) ?? null, worktreeBranch: (payload.branch as string) ?? null });
         break;
-      }
-      case "worktree.setup_running": {
+      case "worktree.setup_running":
         set({ worktreeStatus: "setup_running" });
         break;
-      }
       case "worktree.setup_output": {
         const line = payload.line as string;
-        if (line != null) {
-          set(state => ({ worktreeSetupOutput: [...state.worktreeSetupOutput, line] }));
-        }
+        if (line != null) set(state => ({ worktreeSetupOutput: [...state.worktreeSetupOutput, line] }));
         break;
       }
-      case "worktree.ready": {
+      case "worktree.ready":
         set({ worktreeStatus: "ready" });
         break;
-      }
-      case "worktree.setup_error": {
-        set({
-          worktreeStatus: "setup_error",
-          worktreeError: (payload.error ?? payload.message ?? "") as string,
-        });
+      case "worktree.setup_error":
+        set({ worktreeStatus: "setup_error", worktreeError: (payload.error ?? payload.message ?? "") as string });
         break;
-      }
-      case "phase_started": {
+      case "phase_started":
+      case "phase_completed":
+      case "approval_requested": {
         const slug = payload.phase_slug as string;
-        const sessionId = payload.session_id as number;
+        const status = action === "phase_started" ? "running" : action === "phase_completed" ? "completed" : "pending_approval";
         set(state => {
           const phaseStates = new Map(state.phaseStates);
+          const prev = phaseStates.get(slug);
           phaseStates.set(slug, {
-            slug,
-            status: "running",
-            agentSessionId: sessionId,
-            artifactPreview: phaseStates.get(slug)?.artifactPreview ?? null,
+            slug, status,
+            agentSessionId: action === "phase_started" ? (payload.session_id as number) : (prev?.agentSessionId ?? null),
+            artifactPreview: action === "phase_completed" ? ((payload.artifact_preview as string) ?? null) : (prev?.artifactPreview ?? null),
           });
-          return { phaseStates };
+          const extra = action === "approval_requested"
+            ? { pendingApproval: { phaseSlug: slug, artifactContent: payload.artifact_content as string } }
+            : {};
+          return { phaseStates, ...extra };
         });
-        break;
-      }
-      case "phase_completed": {
-        const slug = payload.phase_slug as string;
-        const preview = (payload.artifact_preview as string) ?? null;
-        const featureId = get().featureId;
-        set(state => {
-          const phaseStates = new Map(state.phaseStates);
-          phaseStates.set(slug, {
-            slug,
-            status: "completed",
-            agentSessionId: phaseStates.get(slug)?.agentSessionId ?? null,
-            artifactPreview: preview,
-          });
-          return { phaseStates };
-        });
-        if (featureId) {
-          void queryClient.invalidateQueries({ queryKey: ["workflow-artifact", featureId, slug] });
+        if (action === "phase_completed" && get().featureId) {
+          void queryClient.invalidateQueries({ queryKey: ["workflow-artifact", get().featureId, slug] });
         }
         break;
       }
       case "artifact_updated": {
-        const slug = payload.phase_slug as string;
         const featureId = get().featureId;
-        if (featureId) {
-          void queryClient.invalidateQueries({ queryKey: ["workflow-artifact", featureId, slug] });
-        }
-        break;
-      }
-      case "approval_requested": {
-        const slug = payload.phase_slug as string;
-        const content = payload.artifact_content as string;
-        set(state => {
-          const phaseStates = new Map(state.phaseStates);
-          phaseStates.set(slug, {
-            slug,
-            status: "pending_approval",
-            agentSessionId: phaseStates.get(slug)?.agentSessionId ?? null,
-            artifactPreview: phaseStates.get(slug)?.artifactPreview ?? null,
-          });
-          return {
-            phaseStates,
-            pendingApproval: { phaseSlug: slug, artifactContent: content },
-          };
-        });
+        if (featureId) void queryClient.invalidateQueries({ queryKey: ["workflow-artifact", featureId, payload.phase_slug as string] });
         break;
       }
       case "completed": {

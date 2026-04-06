@@ -1,22 +1,10 @@
-/**
- * Zustand store for workflow-specific WebSocket state.
- *
- * Manages the queue, active agent sessions, and workflow lifecycle.
- * Reuses processSdkMessage / applyMutations from ws-session-store for
- * all SDK message parsing — no duplication.
- */
+/** Zustand store for workflow-specific WebSocket state. Agents in a single Map<string, AgentSessionState>. */
 
 import { create } from "zustand";
 import { getWsUrl } from "@/lib/ws-url";
 import { createCommandsGet, createPhaseApproval, createPhaseTrigger, createCustomWorkflowStart } from "@/lib/ws-envelope";
-import {
-  createWorkflowMessageHandler,
-  itemIdToSlot,
-  resolveAgentByItemId,
-  patchAgentByItemId,
-  blocksContainFileChange,
-} from "@/hooks/workflow-event-handlers";
-export { resolveAgentByItemId } from "@/hooks/workflow-event-handlers";
+import { createWorkflowMessageHandler } from "@/hooks/workflow-event-handlers";
+export { resolveAgent } from "@/hooks/agent-event-handlers";
 import {
   hydrateFromSnapshotPatch,
   computeSendPromptPatch,
@@ -38,34 +26,20 @@ import {
   type PendingApproval,
   type AgentSlot,
   agentSlotKey,
-  agentSlotToLegacyId,
-  AGENT_TYPE_SYNTHETIC_KEYS,
+  slotKeyToAgentSlot,
   PLAN_KEY,
   PRD_KEY,
+  SESSION_PLACEHOLDER_KEY,
 } from "@/types/workflow";
 
-// Re-export types and constants for backward compatibility
+import { patchAgent, resolveAgent, blocksContainFileChange } from "@/hooks/agent-event-handlers";
+// Re-exports
 export type {
-  WorkflowStatus,
-  QueueItemStatus,
-  QueueItem,
-  AgentSessionState,
-  AutonomyLevel,
-  WorktreeStatus,
-  AgentSessionSummary,
-  PlanSnapshot,
-  WorktreeSnapshot,
-  FeatureSnapshot,
-  WorkflowState,
-  AgentSlot,
-  PhaseState,
-  PendingApproval,
+  WorkflowStatus, QueueItemStatus, QueueItem, AgentSessionState, AutonomyLevel,
+  WorktreeStatus, AgentSessionSummary, PlanSnapshot, WorktreeSnapshot,
+  FeatureSnapshot, WorkflowState, AgentSlot, PhaseState, PendingApproval,
 };
-export {
-  agentSlotKey,
-  agentSlotToLegacyId,
-  AGENT_TYPE_SYNTHETIC_KEYS,
-};
+export { agentSlotKey, PLAN_KEY, PRD_KEY, SESSION_PLACEHOLDER_KEY };
 
 export const useWorkflowStore = create<WorkflowState>((set, get) => {
   function send(action: string, payload: Record<string, unknown> = {}): boolean {
@@ -90,9 +64,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     featureId: null,
     projectId: null,
     queue: [],
-    activeAgents: new Map(),
-    planAgent: null,
-    prdAgent: null,
+    agents: new Map(),
     workflowStatus: "idle",
     pauseReason: null,
     autonomyLevel: 1,
@@ -129,7 +101,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
       const ws = new WebSocket(getWsUrl());
       set({
         ws, featureId, projectId,
-        queue: [], activeAgents: new Map(), planAgent: null, prdAgent: null,
+        queue: [], agents: new Map(),
         workflowStatus: "idle", pauseReason: null, selectedItemId: null, error: null, hydrated: false, startingBuild: false, continuingBuild: false,
         worktreeStatus: "idle" as const, worktreePath: null, worktreeSetupOutput: [], worktreeError: null,
         featureTitle: null, slashCommands: [], slashCommandsLoading: false,
@@ -210,8 +182,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
       const isPrd = get().workflowStatus === "prd";
       send(isPrd ? "prd.approved" : "plan.approved", { approved: true, request_id: requestId });
       set(state => {
-        const agentKey = isPrd ? "prdAgent" : "planAgent";
-        const agent = state[agentKey];
+        const agentKey = isPrd ? PRD_KEY : PLAN_KEY;
+        const agent = state.agents.get(agentKey);
         if (!agent) return {};
         const label = isPrd ? "PRD" : "Plan";
         const block = {
@@ -221,7 +193,9 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
           isError: false,
           createdAt: new Date().toISOString(),
         };
-        return { [agentKey]: { ...agent, blocks: [...agent.blocks, block] } };
+        const agents = new Map(state.agents);
+        agents.set(agentKey, { ...agent, blocks: [...agent.blocks, block] });
+        return { agents };
       });
     },
 
@@ -229,8 +203,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
       const isPrd = get().workflowStatus === "prd";
       send(isPrd ? "prd.rejected" : "plan.rejected", { approved: false, feedback, request_id: requestId });
       set(state => {
-        const agentKey = isPrd ? "prdAgent" : "planAgent";
-        const agent = state[agentKey];
+        const agentKey = isPrd ? PRD_KEY : PLAN_KEY;
+        const agent = state.agents.get(agentKey);
         if (!agent) return {};
         if (!feedback) return {};
         const label = isPrd ? "PRD" : "Plan";
@@ -241,7 +215,9 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
           isError: false,
           createdAt: new Date().toISOString(),
         };
-        return { [agentKey]: { ...agent, blocks: [...agent.blocks, block] } };
+        const agents = new Map(state.agents);
+        agents.set(agentKey, { ...agent, blocks: [...agent.blocks, block] });
+        return { agents };
       });
     },
 
@@ -268,23 +244,19 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
       send("retry_worktree_setup");
     },
 
-    respondToPermission(itemId, requestId, decision) {
-      send("permission.respond", { agent_slot: itemIdToSlot(get(), itemId), request_id: requestId, decision });
-      set(state => patchAgentByItemId(state, itemId, { pendingPermission: null }));
+    respondToPermission(slotKey, requestId, decision) {
+      send("permission.respond", { agent_slot: slotKeyToAgentSlot(slotKey), request_id: requestId, decision });
+      set(state => patchAgent(state, slotKey, { pendingPermission: null }));
     },
 
-    respondToQuestion(itemId, response) {
+    respondToQuestion(slotKey, response) {
       const state = get();
-      let agent: AgentSessionState | null = null;
-      if (itemId === PLAN_KEY) agent = state.planAgent;
-      else if (itemId === PRD_KEY) agent = state.prdAgent;
-      else agent = state.activeAgents.get(itemId) ?? null;
-
+      const agent = state.agents.get(slotKey);
       if (!agent) return;
 
       const updatedInput = { ...agent.pendingQuestionToolInput, answers: { "0": response } };
       send("permission.respond", {
-        agent_slot: itemIdToSlot(get(), itemId),
+        agent_slot: slotKeyToAgentSlot(slotKey),
         request_id: agent.pendingQuestionRequestId,
         decision: "allow_once",
         updated_input: updatedInput,
@@ -292,50 +264,47 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
 
       const clearPatch = computeRespondToQuestionClearPatch();
       set(state => {
-        if (itemId === PLAN_KEY && state.planAgent) {
-          return { planAgent: { ...state.planAgent, ...clearPatch } };
-        }
-        if (itemId === PRD_KEY && state.prdAgent) {
-          return { prdAgent: { ...state.prdAgent, ...clearPatch } };
-        }
-        const activeAgents = new Map(state.activeAgents);
-        const a = activeAgents.get(itemId);
-        if (a) activeAgents.set(itemId, { ...a, ...clearPatch });
-        return { activeAgents };
+        const a = state.agents.get(slotKey);
+        if (!a) return {};
+        const agents = new Map(state.agents);
+        agents.set(slotKey, { ...a, ...clearPatch });
+        return { agents };
       });
     },
 
-    sendPromptToAgent(itemId, text, images) {
-      set(state => computeSendPromptPatch(state, itemId, text, images));
-      send("prompt.send", { agent_slot: itemIdToSlot(get(), itemId), text, images });
+    sendPromptToAgent(slotKey, text, images) {
+      set(state => computeSendPromptPatch(state, slotKey, text, images));
+      send("prompt.send", { agent_slot: slotKeyToAgentSlot(slotKey), text, images });
     },
 
-    interruptItem(itemId) {
+    interruptItem(slotKey) {
       set(state => {
-        const agentPatch = patchAgentByItemId(state, itemId, { status: "paused" });
-        if (itemId > 0) {
+        const agentPatch = patchAgent(state, slotKey, { status: "paused" });
+        if (slotKey.startsWith("qi:")) {
+          const queueItemId = parseInt(slotKey.slice(3), 10);
           const queue = state.queue.map(q =>
-            q.id === itemId && q.status === "running" ? { ...q, status: "paused" as const } : q,
+            q.id === queueItemId && q.status === "running" ? { ...q, status: "paused" as const } : q,
           );
           return { ...agentPatch, queue };
         }
         return agentPatch;
       });
-      send("interrupt", { agent_slot: itemIdToSlot(get(), itemId) });
+      send("interrupt", { agent_slot: slotKeyToAgentSlot(slotKey) });
     },
 
-    resumeItem(itemId) {
+    resumeItem(slotKey) {
       set(state => {
-        const agentPatch = patchAgentByItemId(state, itemId, { status: "running" });
-        if (itemId > 0) {
+        const agentPatch = patchAgent(state, slotKey, { status: "running" });
+        if (slotKey.startsWith("qi:")) {
+          const queueItemId = parseInt(slotKey.slice(3), 10);
           const queue = state.queue.map(q =>
-            q.id === itemId && q.status === "paused" ? { ...q, status: "running" as const } : q,
+            q.id === queueItemId && q.status === "paused" ? { ...q, status: "running" as const } : q,
           );
           return { ...agentPatch, queue };
         }
         return agentPatch;
       });
-      send("prompt.send", { agent_slot: itemIdToSlot(get(), itemId), text: "", images: null });
+      send("prompt.send", { agent_slot: slotKeyToAgentSlot(slotKey), text: "", images: null });
     },
 
     startSession(prompt, images) {
@@ -361,15 +330,15 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
       send("start_retro", {});
     },
 
-    markDone(itemId) {
-      send("mark_done", { agent_slot: itemIdToSlot(get(), itemId) });
+    markDone(slotKey) {
+      send("mark_done", { agent_slot: slotKeyToAgentSlot(slotKey) });
     },
 
-    removeAgent(itemId) {
+    removeAgent(slotKey) {
       set(state => {
-        const activeAgents = new Map(state.activeAgents);
-        activeAgents.delete(itemId);
-        return { activeAgents };
+        const agents = new Map(state.agents);
+        agents.delete(slotKey);
+        return { agents };
       });
     },
 
@@ -384,47 +353,43 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         }));
       }
       set(state => {
-        if (state.planAgent?.sessionId === sessionDbId) return { planAgent: null };
-        if (state.prdAgent?.sessionId === sessionDbId) return { prdAgent: null };
-        const activeAgents = new Map(state.activeAgents);
-        for (const [itemId, agent] of activeAgents) {
+        const agents = new Map(state.agents);
+        for (const [key, agent] of agents) {
           if (agent.sessionId === sessionDbId) {
-            activeAgents.delete(itemId);
-            return { activeAgents };
+            agents.delete(key);
+            return { agents };
           }
         }
         return {};
       });
     },
 
-    populateAgentBlocks(itemId, blocks, hasMore, oldestMessageId) {
+    populateAgentBlocks(slotKey, blocks, hasMore, oldestMessageId) {
       set(state => {
-        const agent = resolveAgentByItemId(state, itemId);
+        const agent = state.agents.get(slotKey);
         if (!agent) return state;
         if (agent.historyLoaded || agent.blocks.length > 0) {
-          // Blocks already present (e.g. from WS streaming) — still update
-          // pagination metadata so load-older works.
           const nextHasMore = hasMore ?? agent.hasMore ?? false;
           const nextOldest = oldestMessageId ?? agent.oldestMessageId ?? null;
           if (agent.historyLoaded && nextHasMore === agent.hasMore && nextOldest === agent.oldestMessageId) {
             return state;
           }
-          return patchAgentByItemId(state, itemId, {
+          return patchAgent(state, slotKey, {
             historyLoaded: true,
             hasMore: nextHasMore,
             oldestMessageId: nextOldest,
           });
         }
         const fileChanges = agent.hasFileChanges || blocksContainFileChange(blocks);
-        return patchAgentByItemId(state, itemId, { blocks, historyLoaded: true, hasFileChanges: fileChanges, hasMore: hasMore ?? false, oldestMessageId: oldestMessageId ?? null });
+        return patchAgent(state, slotKey, { blocks, historyLoaded: true, hasFileChanges: fileChanges, hasMore: hasMore ?? false, oldestMessageId: oldestMessageId ?? null });
       });
     },
 
-    populateOlderBlocks(itemId, olderBlocks, hasMore, oldestMessageId) {
+    populateOlderBlocks(slotKey, olderBlocks, hasMore, oldestMessageId) {
       set(state => {
-        const agent = resolveAgentByItemId(state, itemId);
+        const agent = state.agents.get(slotKey);
         if (!agent) return state;
-        return patchAgentByItemId(state, itemId, {
+        return patchAgent(state, slotKey, {
           blocks: [...olderBlocks, ...agent.blocks],
           hasMore,
           oldestMessageId,

@@ -1,7 +1,6 @@
 /**
  * Pure state-computation helpers for the workflow Zustand store.
  *
- * Extracted from useWorkflowWebSocket.ts to keep the store file under 400 lines.
  * Each function takes the current state (and optional snapshot/args) and returns
  * a partial state patch — no side effects.
  */
@@ -15,31 +14,25 @@ import {
   type AutonomyLevel,
   type WorktreeStatus,
   type FeatureSnapshot,
-  AGENT_TYPE_SYNTHETIC_KEYS,
+  PLAN_KEY,
+  PRD_KEY,
 } from "@/types/workflow";
 import {
   MULTI_INSTANCE_TYPES,
-  sessionDbKey,
-  patchAgentByItemId,
+  patchAgent,
 } from "@/hooks/agent-event-handlers";
 
 // ---------------------------------------------------------------------------
 // hydrateFromSnapshot
 // ---------------------------------------------------------------------------
 
-/**
- * Compute the state patch from a feature snapshot during initial hydration.
- * Returns a partial WorkflowState — call `set(hydrateFromSnapshotPatch(get(), snapshot))`.
- */
 export function hydrateFromSnapshotPatch(
   state: WorkflowState,
   snapshot: FeatureSnapshot,
 ): Partial<WorkflowState> {
   const hasWsQueue = state.queue.length > 0;
 
-  const activeAgents = new Map(state.activeAgents);
-  let planAgent: AgentSessionState | null = state.planAgent;
-  let prdAgent: AgentSessionState | null = state.prdAgent;
+  const agents = new Map(state.agents);
 
   for (const session of snapshot.agent_sessions) {
     const agentType = session.agent_type ?? "execute";
@@ -62,15 +55,20 @@ export function hydrateFromSnapshotPatch(
       hasFileChanges: false,
     };
 
+    let key: string;
     if (agentType === "plan" || agentType === "refine") {
-      if (!planAgent) planAgent = agentState;
+      key = PLAN_KEY;
     } else if (agentType === "prd") {
-      if (!prdAgent) prdAgent = agentState;
+      key = PRD_KEY;
+    } else if (session.queue_item_id != null) {
+      key = `qi:${session.queue_item_id}`;
+    } else if (MULTI_INSTANCE_TYPES.has(agentType)) {
+      key = `${agentType}:${session.id}`;
     } else {
-      const key = session.queue_item_id
-        ?? (MULTI_INSTANCE_TYPES.has(agentType) ? sessionDbKey(session.id) : (AGENT_TYPE_SYNTHETIC_KEYS[agentType] ?? sessionDbKey(session.id)));
-      if (!activeAgents.has(key)) activeAgents.set(key, agentState);
+      key = `${agentType}:${session.id}`;
     }
+
+    if (!agents.has(key)) agents.set(key, agentState);
   }
 
   const patch: Partial<WorkflowState> = {
@@ -78,9 +76,7 @@ export function hydrateFromSnapshotPatch(
     workflowStatus: hasWsQueue && state.workflowStatus !== "idle"
       ? state.workflowStatus : snapshot.workflow_status,
     autonomyLevel: (snapshot.autonomy_level as AutonomyLevel) ?? 1,
-    activeAgents,
-    planAgent,
-    prdAgent,
+    agents,
     hydrated: true,
   };
 
@@ -100,13 +96,9 @@ export function hydrateFromSnapshotPatch(
 // sendPromptToAgent state patch
 // ---------------------------------------------------------------------------
 
-/**
- * Compute the optimistic state patch when sending a prompt to an agent.
- * Adds a user message block and sets agent status to running.
- */
 export function computeSendPromptPatch(
   state: WorkflowState,
-  itemId: number,
+  slotKey: string,
   text: string,
   images: unknown,
 ): Partial<WorkflowState> {
@@ -119,19 +111,19 @@ export function computeSendPromptPatch(
     createdAt: new Date().toISOString(),
   };
 
-  const currentAgent = itemId === -1 ? state.planAgent
-    : itemId === -2 ? state.prdAgent
-    : state.activeAgents.get(itemId);
+  const currentAgent = state.agents.get(slotKey);
   if (!currentAgent) return {};
 
-  const agentPatch = patchAgentByItemId(state, itemId, {
+  const agentPatch = patchAgent(state, slotKey, {
     status: "running",
     blocks: [...currentAgent.blocks, userBlock],
   });
 
-  if (itemId > 0) {
+  // If this is a queue item, also update the queue status
+  if (slotKey.startsWith("qi:")) {
+    const queueItemId = parseInt(slotKey.slice(3), 10);
     const queue = state.queue.map(q =>
-      q.id === itemId && q.status === "paused" ? { ...q, status: "running" as const } : q,
+      q.id === queueItemId && q.status === "paused" ? { ...q, status: "running" as const } : q,
     );
     return { ...agentPatch, queue };
   }
@@ -142,7 +134,6 @@ export function computeSendPromptPatch(
 // respondToQuestion helpers
 // ---------------------------------------------------------------------------
 
-/** Build the WS payload and compute the clear-questions state patch for respondToQuestion. */
 export function computeRespondToQuestionClearPatch(): Partial<AgentSessionState> {
   return {
     pendingQuestions: [] as AgentQuestion[],
