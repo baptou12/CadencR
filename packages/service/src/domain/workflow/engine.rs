@@ -4,220 +4,29 @@
 //! - `QueueAdvancer`: queue state management (advance, complete, error, skip, retry)
 //! - `PermissionRouter`: permission channel management and approval gate bridge
 
-use serde::{Deserialize, Serialize};
-
-/// Discriminated union replacing synthetic negative queue_item_id constants.
-/// Pre-queue agents get named variants; real queue items carry their DB id.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
-#[serde(tag = "type", content = "id")]
-pub enum AgentSlot {
-    #[serde(rename = "queue_item")]
-    QueueItem(i64),
-    #[serde(rename = "plan")]
-    Plan,
-    #[serde(rename = "prd")]
-    Prd,
-    /// Session agent. Carries the DB agent_session_id so multiple concurrent
-    /// sessions get unique DashMap keys.
-    #[serde(rename = "session")]
-    Session(i64),
-    #[serde(rename = "refine")]
-    Refine,
-    #[serde(rename = "review-fixer")]
-    ReviewFixer(i64),
-    #[serde(rename = "risk")]
-    Risk(i64),
-    #[serde(rename = "retro")]
-    Retro(i64),
-}
-
-impl AgentSlot {
-    /// Backward-compat: map to the legacy synthetic negative IDs.
-    pub fn as_legacy_id(&self) -> i64 {
-        match self {
-            AgentSlot::Plan => -1,
-            AgentSlot::Prd => -2,
-            AgentSlot::Session(_) => -3,
-            AgentSlot::Refine => -4,
-            AgentSlot::ReviewFixer(_) => -5,
-            AgentSlot::Risk(_) => -6,
-            AgentSlot::Retro(_) => -7,
-            AgentSlot::QueueItem(id) => *id,
-        }
-    }
-
-    pub fn agent_type_str(&self) -> Option<&'static str> {
-        match self {
-            AgentSlot::Plan => Some("plan"),
-            AgentSlot::Prd => Some("prd"),
-            AgentSlot::Session(_) => Some("session"),
-            AgentSlot::Refine => Some("refine"),
-            AgentSlot::ReviewFixer(_) => Some("review-fixer"),
-            AgentSlot::Risk(_) => Some("risk"),
-            AgentSlot::Retro(_) => Some("retro"),
-            AgentSlot::QueueItem(_) => None,
-        }
-    }
-
-    pub fn sdk_agent_type(&self) -> Option<AgentType> {
-        match self {
-            AgentSlot::Plan | AgentSlot::Refine => Some(AgentType::Plan),
-            AgentSlot::Prd => Some(AgentType::Prd),
-            AgentSlot::Session(_) => Some(AgentType::Session),
-            AgentSlot::ReviewFixer(_) => Some(AgentType::Execute),
-            AgentSlot::Risk(_) => Some(AgentType::Risk),
-            AgentSlot::Retro(_) => Some(AgentType::Retro),
-            AgentSlot::QueueItem(_) => None,
-        }
-    }
-
-    /// Returns true for slot types that allow only one concurrent instance (plan, prd, refine).
-    pub fn is_singleton(&self) -> bool {
-        matches!(self, AgentSlot::Plan | AgentSlot::Prd | AgentSlot::Refine)
-    }
-
-    pub fn system_prompt(&self) -> Option<&'static str> {
-        match self {
-            AgentSlot::Plan | AgentSlot::Refine => Some(Prompts::plan()),
-            AgentSlot::Prd => Some(Prompts::prd()),
-            AgentSlot::Session(_) => Some(Prompts::session()),
-            AgentSlot::Risk(_) => Some(Prompts::risk()),
-            AgentSlot::Retro(_) => Some(Prompts::retro()),
-            _ => None,
-        }
-    }
-}
-
-impl From<i64> for AgentSlot {
-    /// Convert a legacy synthetic ID to an AgentSlot.
-    /// Multi-instance types get a placeholder ID of 0 — callers should replace
-    /// with the real db_session_id when available.
-    fn from(id: i64) -> Self {
-        match id {
-            -1 => AgentSlot::Plan,
-            -2 => AgentSlot::Prd,
-            -3 => AgentSlot::Session(0),
-            -4 => AgentSlot::Refine,
-            -5 => AgentSlot::ReviewFixer(0),
-            -6 => AgentSlot::Risk(0),
-            -7 => AgentSlot::Retro(0),
-            other => AgentSlot::QueueItem(other),
-        }
-    }
-}
-
-impl std::fmt::Display for AgentSlot {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            AgentSlot::Plan => write!(f, "plan"),
-            AgentSlot::Prd => write!(f, "prd"),
-            AgentSlot::Session(id) => write!(f, "session({})", id),
-            AgentSlot::Refine => write!(f, "refine"),
-            AgentSlot::ReviewFixer(id) => write!(f, "review_fixer({})", id),
-            AgentSlot::Risk(id) => write!(f, "risk({})", id),
-            AgentSlot::Retro(id) => write!(f, "retro({})", id),
-            AgentSlot::QueueItem(id) => write!(f, "queue_item({})", id),
-        }
-    }
-}
+pub use super::agent_slot::*;
+pub use super::ws_sender::*;
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use sqlx::SqlitePool;
 use tokio::sync::mpsc;
-use tracing::{info, warn};
+use tracing::info;
 
 use axum::extract::ws::Message;
 
 use crate::domain::features::models::WorkflowType;
 use crate::domain::features::repository as repo;
-use crate::domain::mcp::servers::AgentType;
 use crate::domain::workflow::agent_manager::AgentManager;
 use crate::domain::workflow::permission_router::PermissionRouter;
-use crate::domain::workflow::prompts::Prompts;
-use crate::domain::workflow::strategies::feature_build_session_review;
 use crate::domain::workflow::queue_advancer::{QueueAdvancer, StatusSetter};
 use crate::domain::workflow::status::WorkflowStatus;
 use crate::domain::ws_session::handler::session_prompt::PermissionResponse;
 use crate::domain::ws_session::protocol::*;
 
-/// WebSocket sender that can be detached (on WS disconnect) and reattached
-/// (on reconnect) without dropping the engine. Messages sent while detached
-/// are silently dropped.
-#[derive(Clone)]
-pub struct WsSender {
-    inner: std::sync::Arc<std::sync::Mutex<Option<mpsc::UnboundedSender<Message>>>>,
-}
-
-impl WsSender {
-    pub fn new(tx: mpsc::UnboundedSender<Message>) -> Self {
-        Self {
-            inner: std::sync::Arc::new(std::sync::Mutex::new(Some(tx))),
-        }
-    }
-
-    /// Send a message. Returns Ok if sent or if detached (silently drops).
-    pub fn send(&self, msg: Message) -> Result<(), mpsc::error::SendError<Message>> {
-        let guard = self.inner.lock().unwrap();
-        if let Some(ref tx) = *guard {
-            tx.send(msg)
-        } else {
-            Ok(()) // detached — silently drop
-        }
-    }
-
-    /// Detach the underlying sender (on WS disconnect). Messages will be dropped.
-    pub fn detach(&self) {
-        let mut guard = self.inner.lock().unwrap();
-        *guard = None;
-    }
-
-    /// Reattach a new underlying sender (on WS reconnect).
-    pub fn reattach(&self, tx: mpsc::UnboundedSender<Message>) {
-        let mut guard = self.inner.lock().unwrap();
-        *guard = Some(tx);
-    }
-
-    /// Check if a sender is currently attached.
-    pub fn is_attached(&self) -> bool {
-        self.inner.lock().unwrap().is_some()
-    }
-
-    /// Get a clone of the raw underlying sender (for interop with code that
-    /// still takes `mpsc::UnboundedSender<Message>`).  Returns None if detached.
-    pub fn raw_clone(&self) -> Option<mpsc::UnboundedSender<Message>> {
-        self.inner.lock().unwrap().clone()
-    }
-}
-
-/// Map an agent type string to an AgentSlot.
-/// `session_id` is used for multi-instance types (session, risk, retro, review-fixer).
-pub fn agent_type_str_to_slot(agent_type: &str, session_id: i64) -> Option<AgentSlot> {
-    match agent_type {
-        "plan" => Some(AgentSlot::Plan),
-        "prd" => Some(AgentSlot::Prd),
-        "session" => Some(AgentSlot::Session(session_id)),
-        "refine" => Some(AgentSlot::Refine),
-        "review-fixer" | "review_fixer" => Some(AgentSlot::ReviewFixer(session_id)),
-        "risk" => Some(AgentSlot::Risk(session_id)),
-        "retro" => Some(AgentSlot::Retro(session_id)),
-        _ => None,
-    }
-}
-
 /// Helper to serialize a typed payload to serde_json::Value.
 pub fn to_value<T: serde::Serialize>(v: T) -> serde_json::Value {
     serde_json::to_value(v).unwrap()
-}
-
-/// Send a `feature.updated` envelope over the given WebSocket sender.
-pub fn send_feature_updated_envelope(sender: &WsSender, feature_id: i64, changed: &[&str]) {
-    let payload = FeatureUpdatedPayload {
-        feature_id,
-        changed: changed.iter().map(|s| s.to_string()).collect(),
-    };
-    let envelope = WsEnvelope::new("feature", "updated", to_value(payload));
-    let _ = sender.send(Message::Text(String::from(envelope).into()));
 }
 
 /// Thin orchestrator that composes AgentManager, QueueAdvancer, and PermissionRouter.
@@ -336,7 +145,6 @@ impl WorkflowEngine {
             let is_paused = self.agent_manager.paused_sessions.contains_key(&slot);
 
             if is_running {
-                // Agent process is alive — tell client it's running
                 let agent_type = slot.agent_type_str().unwrap_or("execute").to_string();
                 let envelope = WsEnvelope::new(
                     "workflow",
@@ -350,7 +158,6 @@ impl WorkflowEngine {
                 );
                 let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
             } else if is_paused {
-                // Agent is paused with a resume session
                 if let Some(cc_sid) = self.agent_manager.paused_sessions.get(&slot) {
                     let agent_type = slot.agent_type_str().unwrap_or("execute").to_string();
                     let envelope = WsEnvelope::new(
@@ -427,7 +234,7 @@ impl WorkflowEngine {
                 info!(feature_id = self.feature_id, from = %current, to = %new_status, "workflow status changed");
             }
             Err(e) => {
-                warn!(feature_id = self.feature_id, from = %current, to = %new_status, error = %e, "invalid transition, force-setting");
+                tracing::warn!(feature_id = self.feature_id, from = %current, to = %new_status, error = %e, "invalid transition, force-setting");
                 let _ = repo::force_workflow_status(&self.write_pool, self.feature_id, new_status).await;
             }
         }
@@ -442,312 +249,6 @@ impl WorkflowEngine {
             }),
         );
         let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
-    }
-
-    // ── Agent spawning (delegates to AgentManager) ──
-
-    pub async fn spawn_plan_agent(&self, description: &str, images: &[ImagePayload]) -> Result<i64, String> {
-        self.set_status(WorkflowStatus::Planning).await;
-        let prd: Option<String> = sqlx::query_scalar::<_, Option<String>>(
-            "SELECT prd FROM features WHERE id = ?",
-        )
-        .bind(self.feature_id)
-        .fetch_optional(&self.read_pool)
-        .await
-        .map_err(|e| format!("Failed to read feature PRD: {e}"))?
-        .flatten();
-
-        let (preamble, desc) = if let Some(ref prd_content) = prd {
-            if !prd_content.is_empty() {
-                (
-                    "Please create a detailed implementation plan based on the following Product Requirements Document (PRD):\n\n",
-                    prd_content.as_str(),
-                )
-            } else {
-                ("Please create a detailed implementation plan for the following feature:\n\n", description)
-            }
-        } else {
-            ("Please create a detailed implementation plan for the following feature:\n\n", description)
-        };
-
-        let plan_instructions = "Start by exploring the codebase to understand the project structure and existing patterns. \
-            Then ask me clarifying questions. Finally, build the phased plan using the tools, call show_plan, and ask for my approval.";
-
-        let enriched_prompt = format!("{preamble}{desc}\n\n{plan_instructions}");
-
-        self.agent_manager.spawn_pre_queue_agent(
-            AgentType::Plan,
-            "plan",
-            Prompts::plan(),
-            &enriched_prompt,
-            images,
-            |_| AgentSlot::Plan,
-            &self.permissions,
-        ).await
-    }
-
-    pub async fn spawn_prd_agent(&self, description: &str) -> Result<i64, String> {
-        self.set_status(WorkflowStatus::Prd).await;
-        let prd_instructions = "Use the MCP tools to build the PRD. Call create_prd to store the initial PRD content, \
-            then call show_prd to present it for approval. If rejected, use edit_prd for targeted changes \
-            (or create_prd for full rewrites), then call show_prd again. Once approved, call mark_agent_done.";
-
-        let enriched_prompt = format!(
-            "Please create a comprehensive PRD for the following feature:\n\n{description}\n\n{prd_instructions}"
-        );
-
-        self.agent_manager.spawn_pre_queue_agent(
-            AgentType::Prd,
-            "prd",
-            Prompts::prd(),
-            &enriched_prompt,
-            &[],
-            |_| AgentSlot::Prd,
-            &self.permissions,
-        ).await
-    }
-
-    pub async fn spawn_session_agent(&self, prompt: &str, images: &[ImagePayload]) -> Result<i64, String> {
-        let enriched_prompt = feature_build_session_review::build_session_prompt(
-            &self.read_pool,
-            self.feature_id,
-            prompt,
-        )
-        .await?;
-
-        self.agent_manager.spawn_pre_queue_agent_with_display(
-            AgentType::Session,
-            "session",
-            Prompts::session(),
-            &enriched_prompt,
-            Some(prompt),
-            images,
-            |id| AgentSlot::Session(id),
-            &self.permissions,
-        ).await
-    }
-
-    pub async fn spawn_refine_agent(&self, description: &str, images: &[ImagePayload]) -> Result<i64, String> {
-        let refinement_prompt = match self.build_refine_context(description).await {
-            Ok(prompt) => prompt,
-            Err(e) => {
-                warn!(feature_id = self.feature_id, error = %e, "failed to build refine context, using simple prompt");
-                format!(
-                    "The user wants to refine the existing plan.\n\n\
-                     User's refinement request:\n{description}\n\n\
-                     Please update the plan accordingly — add, modify, or remove phases as needed."
-                )
-            }
-        };
-
-        self.agent_manager.spawn_pre_queue_agent(
-            AgentType::Plan,
-            "plan",
-            Prompts::plan(),
-            &refinement_prompt,
-            images,
-            |_| AgentSlot::Refine,
-            &self.permissions,
-        ).await
-    }
-
-    pub async fn spawn_review_fixer_agent(&self, comments: &str) -> Result<i64, String> {
-        let system_prompt = "You are a code review fixer. The user has reviewed a diff and provided comments. \
-            Fix the issues described in the comments. Make minimal, focused changes.";
-
-        self.agent_manager.spawn_pre_queue_agent(
-            AgentType::Execute,
-            "review-fixer",
-            system_prompt,
-            comments,
-            &[],
-            |id| AgentSlot::ReviewFixer(id),
-            &self.permissions,
-        ).await
-    }
-
-    pub async fn spawn_risk_agent(&self) -> Result<i64, String> {
-        // Query feature title
-        let feature: Option<(String,)> = sqlx::query_as(
-            "SELECT title FROM features WHERE id = ?",
-        )
-        .bind(self.feature_id)
-        .fetch_optional(&self.read_pool)
-        .await
-        .map_err(|e| format!("DB error querying feature: {e}"))?;
-
-        let feature_title = feature.map(|f| f.0).unwrap_or_else(|| format!("#{}", self.feature_id));
-
-        // Query plan
-        let plan: Option<(i64, Option<String>, Option<String>, Option<String>)> = sqlx::query_as(
-            "SELECT id, summary, context, raw_markdown FROM plans WHERE feature_id = ? ORDER BY id DESC LIMIT 1",
-        )
-        .bind(self.feature_id)
-        .fetch_optional(&self.read_pool)
-        .await
-        .map_err(|e| format!("DB error querying plan: {e}"))?;
-
-        // Query phases if plan exists
-        let phases: Vec<(i32, String, String)> = if let Some(ref p) = plan {
-            sqlx::query_as(
-                "SELECT step_number, title, status FROM phases WHERE plan_id = ? ORDER BY step_number, order_index",
-            )
-            .bind(p.0)
-            .fetch_all(&self.read_pool)
-            .await
-            .unwrap_or_default()
-        } else {
-            vec![]
-        };
-
-        // Build rich context string
-        let mut context_parts = vec![format!("## Feature: {feature_title}")];
-        if let Some(ref p) = plan {
-            if let Some(ref summary) = p.1 {
-                context_parts.push(format!("**Plan Summary:** {summary}"));
-            }
-            if let Some(ref ctx) = p.2 {
-                context_parts.push(format!("**Codebase Context:** {ctx}"));
-            }
-        }
-        if !phases.is_empty() {
-            context_parts.push("\n## Phases:".to_string());
-            for (step, title, status) in &phases {
-                context_parts.push(format!("{step}. {title} — {status}"));
-            }
-        }
-        if let Some(ref p) = plan {
-            if let Some(ref md) = p.3 {
-                context_parts.push(format!("\n## Full Plan\n{md}"));
-            }
-        }
-        let rich_context = context_parts.join("\n");
-
-        let plan_id_note = plan.as_ref().map(|p| {
-            format!("\n\n**Plan ID: {}** — Use this ID when calling MCP tools like `read_plan`, `list_phases`, `create_phase`, `finalize_phases`, etc.", p.0)
-        }).unwrap_or_default();
-
-        let prompt = format!(
-            "Please perform a risk analysis for this feature.\n\n\
-             {rich_context}{plan_id_note}\n\n\
-             Start by running `git diff main...HEAD` (or the appropriate base branch) to see what code has actually changed. \
-             Then explore the codebase to understand the full context and impact of these changes. Generate a comprehensive risk report."
-        );
-
-        self.agent_manager.spawn_pre_queue_agent(
-            AgentType::Risk,
-            "risk",
-            Prompts::risk(),
-            &prompt,
-            &[],
-            |id| AgentSlot::Risk(id),
-            &self.permissions,
-        ).await
-    }
-
-    pub async fn spawn_retro_agent(&self) -> Result<i64, String> {
-        // Query plan ID for hint
-        let plan: Option<(i64,)> = sqlx::query_as(
-            "SELECT id FROM plans WHERE feature_id = ? ORDER BY id DESC LIMIT 1",
-        )
-        .bind(self.feature_id)
-        .fetch_optional(&self.read_pool)
-        .await
-        .map_err(|e| format!("DB error querying plan: {e}"))?;
-
-        let plan_hint = match plan {
-            Some(p) => format!(
-                "The plan ID for this feature is **{}**. Use this when calling `read_plan` and `list_phases`.",
-                p.0
-            ),
-            None => "No plan was found for this feature — skip plan/phase reading and focus on PRD and conversations.".to_string(),
-        };
-
-        let prompt = format!(
-            "Please produce a retrospective report for feature ID {}.\n\n\
-             {plan_hint}\n\n\
-             Use the available MCP tools to read the PRD, plan, phases, and agent conversation history, \
-             then write the retrospective report in chat. When finished, call `mark_agent_done`.",
-            self.feature_id
-        );
-
-        self.agent_manager.spawn_pre_queue_agent(
-            AgentType::Retro,
-            "retro",
-            Prompts::retro(),
-            &prompt,
-            &[],
-            |id| AgentSlot::Retro(id),
-            &self.permissions,
-        ).await
-    }
-
-    /// Build a rich refinement context matching the legacy `buildRefineContext()`.
-    async fn build_refine_context(&self, description: &str) -> Result<String, String> {
-        let plan: Option<(i64, Option<String>, Option<String>)> = sqlx::query_as(
-            "SELECT id, summary, context FROM plans WHERE feature_id = ? ORDER BY id DESC LIMIT 1",
-        )
-        .bind(self.feature_id)
-        .fetch_optional(&self.read_pool)
-        .await
-        .map_err(|e| format!("Failed to fetch plan: {e}"))?;
-
-        let (plan_id, summary, context) = plan.ok_or("No plan found for this feature — cannot refine without an existing plan.")?;
-
-        let phases: Vec<(i64, String, String, Option<String>, Option<String>)> = sqlx::query_as(
-            "SELECT step_number, title, status, implementation_notes, phase_type FROM phases \
-             WHERE plan_id = ? ORDER BY step_number, order_index",
-        )
-        .bind(plan_id)
-        .fetch_all(&self.read_pool)
-        .await
-        .map_err(|e| format!("Failed to fetch phases: {e}"))?;
-
-        let max_step = phases.iter().map(|(s, _, _, _, _)| *s).max().unwrap_or(0);
-
-        let mut parts: Vec<String> = Vec::new();
-        if let Some(ref s) = summary {
-            if !s.is_empty() {
-                parts.push(format!("**Plan Summary:** {s}"));
-            }
-        }
-        if let Some(ref c) = context {
-            if !c.is_empty() {
-                parts.push(format!("**Codebase Context:** {c}"));
-            }
-        }
-
-        if !phases.is_empty() {
-            parts.push("\n## Existing Phases:".to_string());
-            for (step, title, status, notes, phase_type) in &phases {
-                let mut line = format!("Step {step}. [{}] {title}", status.to_uppercase());
-                if let Some(pt) = phase_type {
-                    line.push_str(&format!(" ({pt})"));
-                }
-                if let Some(n) = notes {
-                    if !n.is_empty() {
-                        line.push_str(&format!("\n   Notes: {n}"));
-                    }
-                }
-                parts.push(line);
-            }
-        }
-
-        let refine_instructions = format!(
-            "\n## Refinement Instructions\n\
-             This is a REFINEMENT of an existing plan (Plan ID: {plan_id}). The phases listed above already exist.\n\
-             - Do NOT recreate or duplicate completed phases.\n\
-             - Add NEW phases to extend the plan based on the user's request below.\n\
-             - Use step numbers starting from {}.\n\
-             - You may also update or remove existing DRAFT or PENDING phases if needed.\n\
-             - After building the new phases, call show_plan for approval, then finalize_plan.",
-            max_step + 1,
-        );
-
-        Ok(format!(
-            "{}\n{refine_instructions}\n\n## User's Refinement Request\n{description}",
-            parts.join("\n"),
-        ))
     }
 
     // ── Queue operations (delegates to QueueAdvancer) ──
@@ -833,6 +334,8 @@ impl StatusSetter for WorkflowEngine {
 mod tests {
     use super::*;
     use std::sync::atomic::Ordering;
+
+    use crate::domain::mcp::servers::AgentType;
 
     /// Helper: create in-memory SQLite pool for tests.
     async fn test_pool() -> SqlitePool {
@@ -947,16 +450,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_interrupted_flag_cleared_before_resume() {
-        // Simulates the bug: interrupt sets the flag, resume must clear it
-        // so that mark_agent_done isn't misinterpreted as a pause.
         let (engine, _rx) = test_engine().await;
         let slot = AgentSlot::QueueItem(99);
 
-        // Simulate interrupt setting the flag
         engine.agent_manager.interrupted_items.insert(slot.clone());
         assert!(engine.agent_manager.interrupted_items.contains(&slot));
 
-        // Simulate what resume_item now does: clear the flag
         engine.agent_manager.interrupted_items.remove(&slot);
         assert!(!engine.agent_manager.interrupted_items.contains(&slot));
     }
@@ -1263,13 +762,11 @@ mod tests {
 
     #[test]
     fn test_agent_slot_roundtrip_via_legacy_id() {
-        // Singleton slots roundtrip exactly
         for slot in &[AgentSlot::Plan, AgentSlot::Prd, AgentSlot::Refine] {
             let id = slot.as_legacy_id();
             let back = AgentSlot::from(id);
             assert_eq!(&back, slot);
         }
-        // Multi-instance slots roundtrip to placeholder id 0
         assert_eq!(AgentSlot::from(-3), AgentSlot::Session(0));
         assert_eq!(AgentSlot::from(-5), AgentSlot::ReviewFixer(0));
         assert_eq!(AgentSlot::from(42), AgentSlot::QueueItem(42));
@@ -1323,7 +820,6 @@ mod tests {
         set.insert(AgentSlot::Session(3));
         assert_eq!(set.len(), 3, "each Session with different id should be a unique key");
 
-        // Singletons always hash the same regardless
         set.clear();
         set.insert(AgentSlot::Plan);
         set.insert(AgentSlot::Plan);
@@ -1339,7 +835,6 @@ mod tests {
         let back: AgentSlot = serde_json::from_value(json).unwrap();
         assert_eq!(back, AgentSlot::Session(42));
 
-        // Singleton (no id field)
         let plan_json = serde_json::to_value(&AgentSlot::Plan).unwrap();
         assert_eq!(plan_json["type"], "plan");
         assert!(plan_json.get("id").is_none());
@@ -1622,18 +1117,15 @@ mod tests {
         sqlx::query("INSERT INTO features (id, project_id, title) VALUES (1, 1, 'test')")
             .execute(&engine.write_pool).await.unwrap();
 
-        // Create an agent session for the plan agent
         let session_id: i64 = sqlx::query_scalar(
             "INSERT INTO agent_sessions (feature_id, agent_type, status) VALUES (1, 'plan', 'running') RETURNING id",
         )
         .fetch_one(&engine.write_pool).await.unwrap();
 
-        // Register in active_items so on_item_completed can find the db session id
         engine.agent_manager.active_items.insert(AgentSlot::Plan, session_id);
 
         engine.on_item_completed(AgentSlot::Plan, Some("done")).await;
 
-        // Verify agent_sessions row is now completed
         let status: String = sqlx::query_scalar("SELECT status FROM agent_sessions WHERE id = ?")
             .bind(session_id)
             .fetch_one(&engine.write_pool).await.unwrap();
@@ -1726,7 +1218,6 @@ mod tests {
 
         let cloned = ws.raw_clone();
         assert!(cloned.is_some());
-        // Verify the cloned sender can actually send
         let (tx2, mut rx2) = mpsc::unbounded_channel();
         ws.reattach(tx2);
         let cloned2 = ws.raw_clone().unwrap();
@@ -1775,7 +1266,6 @@ mod tests {
         sqlx::query("INSERT INTO features (id, project_id, title, status) VALUES (1, 1, 'test', 'in-progress')")
             .execute(&engine.write_pool).await.unwrap();
 
-        // Add a paused agent (active_items + paused_sessions, no query handle)
         engine.agent_manager.active_items.insert(AgentSlot::Prd, 20);
         engine.agent_manager.paused_sessions.insert(AgentSlot::Prd, "cc-pause-789".to_string());
 
@@ -1802,12 +1292,10 @@ mod tests {
     async fn test_restore_on_reconnect_restores_paused_queue_items_with_session() {
         let (engine, mut rx) = test_engine_with_schema().await;
 
-        // Insert an agent_session for the queue item
         sqlx::query(
             "INSERT INTO agent_sessions (id, feature_id, agent_type, status, claude_session_id) VALUES (50, 1, 'execute', 'paused', 'cc-queue-456')"
         ).execute(&engine.write_pool).await.unwrap();
 
-        // Insert a paused queue item linked to that session
         sqlx::query(
             "INSERT INTO workflow_queue (id, feature_id, item_type, status, order_index, agent_session_id) VALUES (7, 1, 'execute', 'paused', 0, 50)"
         ).execute(&engine.write_pool).await.unwrap();
@@ -1838,7 +1326,6 @@ mod tests {
     async fn test_restore_on_reconnect_deduplicates_by_slot() {
         let (engine, _rx) = test_engine_with_schema().await;
 
-        // Insert two paused plan sessions — only the most recent (highest id) should be restored
         sqlx::query(
             "INSERT INTO agent_sessions (id, feature_id, agent_type, status, claude_session_id) VALUES (1, 1, 'plan', 'paused', 'old-session')"
         ).execute(&engine.write_pool).await.unwrap();
@@ -1848,7 +1335,6 @@ mod tests {
 
         engine.restore_on_reconnect().await.unwrap();
 
-        // Only one Plan slot should be restored, with the newest session (id=2, ORDER BY id DESC)
         assert_eq!(*engine.agent_manager.paused_sessions.get(&AgentSlot::Plan).unwrap(), "new-session");
         assert_eq!(*engine.active_items().get(&AgentSlot::Plan).unwrap(), 2);
     }
@@ -1857,7 +1343,6 @@ mod tests {
     async fn test_restore_on_reconnect_restores_multiple_session_agents() {
         let (engine, _rx) = test_engine_with_schema().await;
 
-        // Insert two paused session agents — both should be restored (multi-instance)
         sqlx::query(
             "INSERT INTO agent_sessions (id, feature_id, agent_type, status, claude_session_id) VALUES (10, 1, 'session', 'paused', 'cc-session-a')"
         ).execute(&engine.write_pool).await.unwrap();
@@ -1867,7 +1352,6 @@ mod tests {
 
         engine.restore_on_reconnect().await.unwrap();
 
-        // Both sessions should be restored with unique slots
         let slot_a = AgentSlot::Session(10);
         let slot_b = AgentSlot::Session(11);
         assert!(engine.agent_manager.paused_sessions.contains_key(&slot_a), "session 10 should be restored");
@@ -1882,12 +1366,10 @@ mod tests {
     async fn test_restore_on_reconnect_only_restores_paused_status() {
         let (engine, _rx) = test_engine_with_schema().await;
 
-        // A 'running' session with claude_session_id should NOT be restored
         sqlx::query(
             "INSERT INTO agent_sessions (id, feature_id, agent_type, status, claude_session_id) VALUES (1, 1, 'plan', 'running', 'running-session')"
         ).execute(&engine.write_pool).await.unwrap();
 
-        // A 'paused' session should be restored
         sqlx::query(
             "INSERT INTO agent_sessions (id, feature_id, agent_type, status, claude_session_id) VALUES (2, 1, 'prd', 'paused', 'paused-session')"
         ).execute(&engine.write_pool).await.unwrap();
@@ -1925,7 +1407,6 @@ mod tests {
         sqlx::query("INSERT INTO features (id, project_id, title, status) VALUES (1, 1, 'test', 'in-progress')")
             .execute(&engine.write_pool).await.unwrap();
 
-        // Insert an agent_session with pending_questions
         let pq = serde_json::json!({
             "tool_name": "AskUserQuestion",
             "tool_input": {"question": "Which database?"},
@@ -1938,7 +1419,6 @@ mod tests {
         .bind(pq.to_string())
         .execute(&engine.write_pool).await.unwrap();
 
-        // Add as paused agent (testable without mocking Query)
         engine.agent_manager.active_items.insert(AgentSlot::Plan, 30);
         engine.agent_manager.paused_sessions.insert(AgentSlot::Plan, "cc-session-xyz".to_string());
 
@@ -1964,7 +1444,6 @@ mod tests {
         assert!(got_agent_paused, "should send agent_paused");
         assert!(got_permission_request, "should replay permission.request for pending question");
 
-        // Verify payload contents
         let payload = permission_payload.expect("permission.request should be valid JSON");
         let p = &payload["payload"];
         assert_eq!(p["tool_name"].as_str().unwrap(), "AskUserQuestion");
@@ -1979,7 +1458,6 @@ mod tests {
         sqlx::query("INSERT INTO features (id, project_id, title, status) VALUES (1, 1, 'test', 'in-progress')")
             .execute(&engine.write_pool).await.unwrap();
 
-        // Insert agent_session WITHOUT pending_questions
         sqlx::query(
             "INSERT INTO agent_sessions (id, feature_id, agent_type, status) VALUES (31, 1, 'prd', 'running')"
         ).execute(&engine.write_pool).await.unwrap();
@@ -2008,15 +1486,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_replay_state_sends_queue_update_with_no_active_agents() {
-        // Regression: replay_state_to_client must send queue + status even when
-        // no agents are active, so the frontend gets the correct workflow state
-        // on reconnect (instead of falling back to a stale cached snapshot).
         let (engine, mut rx) = test_engine_with_schema().await;
 
         sqlx::query("INSERT INTO features (id, project_id, title, status) VALUES (1, 1, 'test', 'in-progress')")
             .execute(&engine.write_pool).await.unwrap();
 
-        // No active agents — active_items is empty
         assert!(engine.agent_manager.active_items.is_empty());
 
         engine.replay_state_to_client().await.unwrap();
@@ -2027,7 +1501,6 @@ mod tests {
                 let text_str: &str = &text;
                 if text_str.contains("queue_update") {
                     got_queue_update = true;
-                    // Verify it includes workflow_status
                     assert!(text_str.contains("workflow_status"), "queue_update should include workflow_status");
                 }
             }
@@ -2039,7 +1512,6 @@ mod tests {
     async fn test_on_item_paused_sends_agent_paused_for_session_slot() {
         let (engine, mut rx) = test_engine().await;
 
-        // Set up a session agent as active + paused
         engine.agent_manager.active_items.insert(AgentSlot::Session(42), 42);
         engine.agent_manager.paused_sessions.insert(AgentSlot::Session(42), "cc-session-123".to_string());
 
