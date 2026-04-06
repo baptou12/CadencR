@@ -1,3 +1,4 @@
+pub mod permission_bridge;
 pub mod git;
 pub mod projects;
 pub mod features;
