@@ -136,19 +136,21 @@ impl AgentManager {
             .execute(&self.write_pool)
             .await;
 
-        // Build system prompt with optional MCP instructions
+        // Build system prompt with CWD hint + optional MCP instructions
+        let cwd_hint = format!(
+            "IMPORTANT: Your working directory is {}. All file operations, git commands, and tool calls MUST use this directory. Do NOT navigate to or operate in any other directory.",
+            cwd.display()
+        );
+        let mcp_suffix = if include_mcp_instructions {
+            "\n\n## MCP Tools\n\n\
+             The MCP tools will auto-resolve plan_id from your feature — you do NOT need to pass plan_id to any tool. \
+             Just omit it and the correct plan will be used automatically."
+        } else {
+            ""
+        };
         let full_system_prompt = match system_prompt {
-            Some(sp) if !sp.is_empty() => {
-                let mcp_suffix = if include_mcp_instructions {
-                    "\n\n## MCP Tools\n\n\
-                     The MCP tools will auto-resolve plan_id from your feature — you do NOT need to pass plan_id to any tool. \
-                     Just omit it and the correct plan will be used automatically."
-                } else {
-                    ""
-                };
-                Some(format!("{sp}{mcp_suffix}"))
-            }
-            _ => None,
+            Some(sp) if !sp.is_empty() => Some(format!("{cwd_hint}\n\n{sp}{mcp_suffix}")),
+            _ => Some(cwd_hint),
         };
 
         let mut options = Options {
