@@ -10,7 +10,8 @@
     "lint": "oxlint src/",
     "lint:fix": "oxlint --fix src/",
     "test": "vitest run",
-    "ts-check": "tsc --noEmit"
+    "ts-check": "tsc --noEmit",
+    "knip": "knip"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.1",

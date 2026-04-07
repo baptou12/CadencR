@@ -1,14 +1,11 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "entry": [
-    "src/main.tsx",
     "src/App.tsx",
-    "src/routeTree.gen.ts",
     "src/routes/**/*.tsx"
   ],
   "project": ["src/**/*.{ts,tsx}"],
-  "ignore": ["src/routeTree.gen.ts"],
-  "ignoreBinaries": ["tauri", "oxlint", "vitest", "tsc"],
+  "ignoreBinaries": ["tauri", "oxlint", "vitest", "tsc", "knip"],
   "ignoreDependencies": [
     "@tauri-apps/cli",
     "autoprefixer",

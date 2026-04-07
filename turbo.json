@@ -30,6 +30,9 @@
       "dependsOn": ["^build"],
       "outputs": []
     },
+    "knip": {
+      "outputs": []
+    },
     "format:check": {
       "outputs": []
     },

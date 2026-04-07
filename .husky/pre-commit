@@ -1,1 +1,1 @@
-pnpm turbo run lint ts-check test
+pnpm turbo run lint ts-check test knip
