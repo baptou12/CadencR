@@ -7,7 +7,7 @@ import { PhaseList } from "./PhaseList";
 import { TemplateEditorPanel } from "./TemplateEditorPanel";
 import { useWorkflowEditor } from "./useWorkflowEditor";
 
-export interface WorkflowEditorProps {
+interface WorkflowEditorProps {
   definitionId?: number;
   forkFromId?: number;
   onSave: (definition: WorkflowDefinition) => void;

@@ -168,5 +168,4 @@ export {
   CommandItem,
   CommandList,
   CommandSeparator,
-  CommandShortcut,
 }

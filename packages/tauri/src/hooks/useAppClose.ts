@@ -7,7 +7,7 @@ import { useWorkflowStore } from "@/hooks/useWorkflowWebSocket";
 import { useEditorStore } from "@/stores/editor-store";
 import { useGlobalShortcut } from "@/hooks/useGlobalShortcut";
 
-export interface RunningAgentInfo {
+interface RunningAgentInfo {
   sessionId: string;
   label: string;
 }

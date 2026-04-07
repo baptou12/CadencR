@@ -6,7 +6,7 @@ import "@git-diff-view/react/styles/diff-view.css";
 import "./diff/dracula-diff.css";
 import { langFromPath } from "@/lib/parse-unified-diff";
 
-export interface InlineDiffBlockProps {
+interface InlineDiffBlockProps {
   filePath: string;
   oldContent: string;
   newContent: string;

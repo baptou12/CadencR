@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { Search, ChevronUp, ChevronDown, X } from "lucide-react";
 
-export interface DiffSearchProps {
+interface DiffSearchProps {
   /** Container element to search within */
   containerRef: React.RefObject<HTMLElement | null>;
 }

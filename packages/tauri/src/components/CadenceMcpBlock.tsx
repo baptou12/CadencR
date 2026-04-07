@@ -44,16 +44,3 @@ export function CadenceMcpBlock({ mcp, args }: { mcp: CadenceMcpTool; args?: str
     </div>
   );
 }
-
-/** Compact inline Cadence MCP tool call (used inside Task/Agent blocks). */
-export function CompactCadenceMcpBlock({ mcp }: { mcp: CadenceMcpTool }) {
-  return (
-    <div className="flex items-center gap-1.5 text-xs text-muted-foreground py-0.5">
-      <span className="shrink-0 rounded bg-primary/20 px-1 py-px text-[9px] font-semibold uppercase tracking-wide text-primary">
-        {mcp.server}
-      </span>
-      <span className="shrink-0 whitespace-nowrap font-medium text-primary/80">{mcp.label}</span>
-      {mcp.detail && <span className="truncate text-primary/50">{mcp.detail}</span>}
-    </div>
-  );
-}

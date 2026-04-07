@@ -36,7 +36,7 @@ export interface SplitSendAction {
   kbdShortcut?: string[];
 }
 
-export interface AgentPromptBarProps {
+interface AgentPromptBarProps {
   onSend: (
     message: string,
     images?: Array<{ base64: string; mimeType: string }>,

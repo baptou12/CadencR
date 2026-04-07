@@ -4,7 +4,7 @@ import { AgentPromptBar } from "@/components/AgentPromptBar";
 import type { SplitSendAction } from "@/components/AgentPromptBar";
 import { useMemo } from "react";
 
-export interface PlanInputImage {
+interface PlanInputImage {
   base64: string;
   mimeType: string;
 }

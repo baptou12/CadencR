@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { format } from "date-fns";
-import { Pencil, Trash2, X } from "lucide-react";
+import { Pencil, Trash2 } from "lucide-react";
 import { parseUTCDateTime } from "@/lib/date-utils";
 
 export interface DiffComment {
@@ -199,17 +199,3 @@ export function CommentExtendLine({
   );
 }
 
-/**
- * Close button overlay for the widget area (used in renderWidgetLine).
- */
-export function WidgetCloseButton({ onClose }: { onClose: () => void }) {
-  return (
-    <button
-      className="absolute right-2 top-2 rounded p-0.5 text-[#6272a4] hover:bg-[#44475a] hover:text-[#f8f8f2]"
-      onClick={onClose}
-      title="Close"
-    >
-      <X className="h-4 w-4" />
-    </button>
-  );
-}

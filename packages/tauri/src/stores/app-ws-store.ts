@@ -11,7 +11,7 @@ import { getWsUrl } from "@/lib/ws-url";
 import { notifyAgentDone, notifyAgentNeedsInput } from "@/lib/notify-agent-done";
 import type { Feature } from "@/api/generated";
 
-export type TurnState = "claude" | "askUser";
+type TurnState = "claude" | "askUser";
 
 interface AppWsState {
   ws: WebSocket | null;

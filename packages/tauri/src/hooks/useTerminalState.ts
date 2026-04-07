@@ -25,7 +25,7 @@ export interface TerminalSplit {
 export type SplitNode = TerminalLeaf | TerminalSplit;
 
 /** Flat pane info exposed to callers that don't need the tree structure */
-export interface TerminalPane {
+interface TerminalPane {
   id: string;
   ptyId?: string;
   initialCommand?: string;
@@ -76,7 +76,7 @@ function removeLeaf(node: SplitNode, leafId: string): SplitNode | null {
 // Spatial navigation helpers
 // ---------------------------------------------------------------------------
 
-export type Direction = "left" | "right" | "up" | "down";
+type Direction = "left" | "right" | "up" | "down";
 
 interface PathStep { node: TerminalSplit; childIndex: 0 | 1 }
 

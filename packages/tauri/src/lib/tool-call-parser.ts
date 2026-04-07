@@ -5,7 +5,7 @@
  * Add new tool parsers by extending the `toolParsers` map.
  */
 
-export interface ToolSummary {
+interface ToolSummary {
   /** Short label like "Running subtask" */
   label: string;
   /** Detail string like "Find agent output parsing files" */

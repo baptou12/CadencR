@@ -47,7 +47,7 @@ export interface UseTerminalWebSocketOptions {
   onError: (message: string) => void;
 }
 
-export interface UseTerminalWebSocketReturn {
+interface UseTerminalWebSocketReturn {
   /** Initiate the WebSocket connection. Call after terminal is fitted to pass accurate dimensions. */
   connect: (cols: number, rows: number) => void;
   write: (data: string) => void;

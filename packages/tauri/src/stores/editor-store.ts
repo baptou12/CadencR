@@ -8,7 +8,7 @@ import { DEFAULT_ARTIFACT_TYPE } from "@/api/generated";
 export type SplitOrientation = "horizontal" | "vertical";
 export type Direction = "left" | "right" | "up" | "down";
 
-export interface EditorTab {
+interface EditorTab {
   filePath: string;
   fileName: string;
   disambiguatedName: string;
@@ -20,7 +20,7 @@ export interface EditorTab {
   artifactType?: string;
 }
 
-export interface EditorPaneState {
+interface EditorPaneState {
   tabs: EditorTab[];
   activeFilePath: string | null;
 }
@@ -33,7 +33,7 @@ export type EditorSplit = {
 };
 export type EditorSplitNode = EditorLeaf | EditorSplit;
 
-export interface EditorFeatureState {
+interface EditorFeatureState {
   splitTree: EditorSplitNode;
   panes: Record<string, EditorPaneState>;
   activePaneId: string;
@@ -47,7 +47,7 @@ export const DEFAULT_MAX_TABS = 10;
 // Split tree helpers
 // ---------------------------------------------------------------------------
 
-export function getEditorLeaves(node: EditorSplitNode): EditorLeaf[] {
+function getEditorLeaves(node: EditorSplitNode): EditorLeaf[] {
   if (node.type === "leaf") return [node];
   return [...getEditorLeaves(node.children[0]), ...getEditorLeaves(node.children[1])];
 }
@@ -118,7 +118,7 @@ function nearestLeafOnEdge(node: EditorSplitNode, dir: Direction): string {
   return nearestLeafOnEdge(node.children[0], dir);
 }
 
-export function findAdjacentEditorLeaf(
+function findAdjacentEditorLeaf(
   root: EditorSplitNode,
   leafId: string,
   direction: Direction,

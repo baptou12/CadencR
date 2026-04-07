@@ -16,7 +16,7 @@ import {
 } from "lexical";
 
 /** Result of matching a trigger character (e.g. `@` or `/`) before the cursor. */
-export interface TriggerMatch {
+interface TriggerMatch {
   query: string;
   triggerOffset: number;
 }

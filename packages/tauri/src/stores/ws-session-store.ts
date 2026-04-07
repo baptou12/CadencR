@@ -75,7 +75,7 @@ export function createStreamingState(): StreamingState {
   };
 }
 
-export type BlockMutation = { action: "append" | "update" | "replace"; block: AgentBlockData };
+type BlockMutation = { action: "append" | "update" | "replace"; block: AgentBlockData };
 
 export function processSdkMessage(
   msg: Record<string, unknown>,
@@ -321,7 +321,7 @@ export function processSdkMessage(
 // Per-session state
 // ---------------------------------------------------------------------------
 
-export interface SessionEntry {
+interface SessionEntry {
   ws: WebSocket | null;
   isConnected: boolean;
   serverSessionId: string;

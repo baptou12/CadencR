@@ -4,6 +4,7 @@
  *
  * Shared between DiffViewer (multi-file git diffs) and InlineDiffBlock (single-file inline diffs).
  */
+/** @public - used via import() type in DiffViewer.tsx */
 export interface FileDiffSection {
   oldFileName: string;
   newFileName: string;

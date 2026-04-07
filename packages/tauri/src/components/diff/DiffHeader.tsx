@@ -1,6 +1,6 @@
 import { FileText } from "lucide-react";
 
-export interface DiffHeaderProps {
+interface DiffHeaderProps {
   fileCount: number;
   totalAdditions: number;
   totalDeletions: number;
@@ -24,7 +24,7 @@ export function DiffHeader({ fileCount, totalAdditions, totalDeletions, children
   );
 }
 
-export interface FileHeaderProps {
+interface FileHeaderProps {
   fileName: string;
   additions: number;
   deletions: number;

@@ -6,7 +6,7 @@ import { bracketMatching, indentOnInput } from "@codemirror/language";
 import { vim } from "@replit/codemirror-vim";
 import { cadenceEditorTheme } from "./editor-theme";
 
-export interface BaseCodeMirrorEditorProps {
+interface BaseCodeMirrorEditorProps {
   /** Initial document content (only used on mount) */
   initialContent?: string;
   /** CodeMirror language extension (e.g. markdown(), getLanguageExtension()) */

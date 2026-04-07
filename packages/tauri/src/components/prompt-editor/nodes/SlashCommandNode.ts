@@ -9,7 +9,7 @@ import {
   type Spread,
 } from "lexical";
 
-export type SerializedSlashCommandNode = Spread<
+type SerializedSlashCommandNode = Spread<
   { commandName: string },
   SerializedTextNode
 >;
@@ -92,6 +92,6 @@ export function $createSlashCommandNode(commandName: string): SlashCommandNode {
   return node;
 }
 
-export function $isSlashCommandNode(node: LexicalNode): node is SlashCommandNode {
+function $isSlashCommandNode(node: LexicalNode): node is SlashCommandNode {
   return node instanceof SlashCommandNode;
 }

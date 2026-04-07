@@ -1,0 +1,27 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "src/main.tsx",
+    "src/App.tsx",
+    "src/routeTree.gen.ts",
+    "src/routes/**/*.tsx"
+  ],
+  "project": ["src/**/*.{ts,tsx}"],
+  "ignore": ["src/routeTree.gen.ts"],
+  "ignoreBinaries": ["tauri", "oxlint", "vitest", "tsc"],
+  "ignoreDependencies": [
+    "@tauri-apps/cli",
+    "autoprefixer",
+    "postcss",
+    "oxlint",
+    "tailwindcss"
+  ],
+  "tags": ["+@public"],
+  "vitest": {
+    "entry": [
+      "src/**/*.test.{ts,tsx}",
+      "src/test-utils.tsx",
+      "src/test-fixtures.ts"
+    ]
+  }
+}

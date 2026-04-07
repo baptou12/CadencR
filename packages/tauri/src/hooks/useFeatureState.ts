@@ -10,14 +10,14 @@ export type FeatureStatus =
   | "archived";
 
 /** Which top-level view the feature page should render */
-export type FeatureView =
+type FeatureView =
   | "plan-input" // draft, no agents running — show description textarea + Plan/PRD buttons
   | "planning" // plan or prd agent is active/has output
   | "ready-to-build" // planned, no agents active — show Build/Risk/Review buttons
   | "agents-active" // one or more of execute/risk/review agents have output
   | "done"; // feature is done — show summary
 
-export interface AgentVisibility {
+interface AgentVisibility {
   showPlanAgent: boolean;
   showPrdAgent: boolean;
   showExecuteAgent: boolean;
@@ -36,7 +36,7 @@ export interface ActionAvailability {
   canStartRetro: boolean;
 }
 
-export interface FeatureStateResult {
+interface FeatureStateResult {
   view: FeatureView;
   agents: AgentVisibility;
   actions: ActionAvailability;

@@ -1,6 +1,6 @@
 import { CircleIcon, Loader2, CheckCircle2, XCircle, PencilLine } from "lucide-react";
 
-export interface PhaseStatusConfig {
+interface PhaseStatusConfig {
   icon: React.ElementType;
   className: string;
   badgeClassName: string;

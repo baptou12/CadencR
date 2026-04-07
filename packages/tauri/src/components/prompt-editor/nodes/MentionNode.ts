@@ -9,7 +9,7 @@ import {
   type Spread,
 } from "lexical";
 
-export type SerializedMentionNode = Spread<
+type SerializedMentionNode = Spread<
   { mentionPath: string },
   SerializedTextNode
 >;
@@ -96,6 +96,6 @@ export function $createMentionNode(
   return node;
 }
 
-export function $isMentionNode(node: LexicalNode): node is MentionNode {
+function $isMentionNode(node: LexicalNode): node is MentionNode {
   return node instanceof MentionNode;
 }

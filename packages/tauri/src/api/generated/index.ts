@@ -13,32 +13,24 @@ import { customInstance, type ErrorType } from "../client";
 // Types — match the Rust models (snake_case JSON)
 // ---------------------------------------------------------------------------
 
-export interface ModelInfo {
+interface ModelInfo {
   id: string;
   label: string;
   context_window: number;
 }
 
-export interface BranchResponse {
+interface BranchResponse {
   branch: string | null;
 }
 
-export interface GitStats {
+interface GitStats {
   files_changed: number;
   insertions: number;
   deletions: number;
 }
 
-export interface DiffResponse {
+interface DiffResponse {
   diff: string;
-}
-
-export interface ChangedFile {
-  file: string;
-  status: string;
-  old_file?: string;
-  additions: number;
-  deletions: number;
 }
 
 export interface FileContent {
@@ -46,13 +38,13 @@ export interface FileContent {
   new_content: string | null;
 }
 
-export interface FileContentBatchItem {
+interface FileContentBatchItem {
   file_path: string;
   old_content: string | null;
   new_content: string | null;
 }
 
-export interface CommitLogEntry {
+interface CommitLogEntry {
   sha: string;
   short_sha: string;
   message: string;
@@ -62,24 +54,17 @@ export interface CommitLogEntry {
   is_pushed: boolean;
 }
 
-export interface CommitLogResponse {
+interface CommitLogResponse {
   commits: CommitLogEntry[];
   is_on_base_branch: boolean;
 }
 
-export interface FileBlobSha {
+interface FileBlobSha {
   file_path: string;
   sha: string;
 }
 
-export interface WorktreeInfo {
-  path: string;
-  branch: string;
-  head: string;
-  is_bare: boolean;
-}
-
-export interface ProjectWorktreeInfo {
+interface ProjectWorktreeInfo {
   path: string;
   branch: string;
   head: string;
@@ -88,63 +73,47 @@ export interface ProjectWorktreeInfo {
   feature_status: string | null;
 }
 
-export interface MergeConflictResult {
+interface MergeConflictResult {
   has_conflicts: boolean;
   conflict_files: string[];
 }
 
-export interface MergeResult {
+interface MergeResult {
   success: boolean;
   error?: string;
 }
 
-export interface OriginalBranchResponse {
-  original_branch: string;
-  worktree_branch: string;
-}
-
-export interface SuccessResponse {
+interface SuccessResponse {
   success: boolean;
   error?: string;
 }
 
-export interface HasUncommittedChangesResponse {
+interface HasUncommittedChangesResponse {
   has_changes: boolean;
-}
-
-export interface CreateWorktreeResponse {
-  worktree_path: string;
-  branch: string;
 }
 
 // ---------------------------------------------------------------------------
 // Request param types
 // ---------------------------------------------------------------------------
 
-export interface GetBranchParams {
+interface GetBranchParams {
   projectId: number;
 }
 
-export interface GetStatsParams {
+interface GetStatsParams {
   featureId: number;
   mode?: string;
   targetBranch?: string;
 }
 
-export interface GetDiffParams {
+interface GetDiffParams {
   featureId: number;
   mode: string;
   commitSha?: string;
   targetBranch?: string;
 }
 
-export interface GetChangedFilesParams {
-  featureId: number;
-  mode: string;
-  targetBranch?: string;
-}
-
-export interface GetFileContentParams {
+interface GetFileContentParams {
   featureId: number;
   filePath: string;
   mode: string;
@@ -152,7 +121,7 @@ export interface GetFileContentParams {
   targetBranch?: string;
 }
 
-export interface GetFileContentBatchParams {
+interface GetFileContentBatchParams {
   featureId: number;
   filePaths: string[];
   mode: string;
@@ -160,75 +129,49 @@ export interface GetFileContentBatchParams {
   targetBranch?: string;
 }
 
-export interface GetCommitLogParams {
+interface GetCommitLogParams {
   featureId: number;
   limit?: number;
 }
 
-export interface GetFileBlobShasParams {
+interface GetFileBlobShasParams {
   featureId: number;
 }
 
-export interface ListFilesParams {
+interface ListFilesParams {
   featureId: number;
 }
 
-export interface WorktreeInfoParams {
+interface DeleteWorktreeParams {
   projectId: number;
   featureId: number;
 }
 
-export interface CreateWorktreeParams {
-  projectId: number;
-  featureId: number;
-  featureTitle: string;
-}
-
-export interface RemoveWorktreeParams {
-  projectId: number;
-  featureId: number;
-}
-
-export interface DeleteWorktreeParams {
-  projectId: number;
-  featureId: number;
-}
-
-export interface RetryWorktreeParams {
-  projectId: number;
-  featureId: number;
-}
-
-export interface ListProjectWorktreesParams {
+interface ListProjectWorktreesParams {
   projectId: number;
 }
 
-export interface RemoveOrphanWorktreeParams {
+interface RemoveOrphanWorktreeParams {
   projectId: number;
   worktreePath: string;
 }
 
-export interface GetOriginalBranchParams {
+interface CheckMergeConflictsParams {
   projectId: number;
   featureId: number;
 }
 
-export interface CheckMergeConflictsParams {
+interface MergeFeatureBranchParams {
   projectId: number;
   featureId: number;
 }
 
-export interface MergeFeatureBranchParams {
+interface DeleteFeatureBranchParams {
   projectId: number;
   featureId: number;
 }
 
-export interface DeleteFeatureBranchParams {
-  projectId: number;
-  featureId: number;
-}
-
-export interface HasUncommittedChangesParams {
+interface HasUncommittedChangesParams {
   projectId: number;
   featureId: number;
 }
@@ -256,59 +199,47 @@ function qs(params: Record<string, string>): string {
 // Query key factories
 // ---------------------------------------------------------------------------
 
-export function getGetBranchQueryKey(params: GetBranchParams) {
+function getGetBranchQueryKey(params: GetBranchParams) {
   return ["git", "branch", params] as const;
 }
 
-export function getGetStatsQueryKey(params: GetStatsParams) {
+function getGetStatsQueryKey(params: GetStatsParams) {
   return ["git", "stats", params] as const;
 }
 
-export function getGetDiffQueryKey(params: GetDiffParams) {
+function getGetDiffQueryKey(params: GetDiffParams) {
   return ["git", "diff", params] as const;
-}
-
-export function getGetChangedFilesQueryKey(params: GetChangedFilesParams) {
-  return ["git", "changed-files", params] as const;
 }
 
 export function getGetFileContentQueryKey(params: GetFileContentParams) {
   return ["git", "file-content", params] as const;
 }
 
-export function getGetFileContentBatchQueryKey(params: GetFileContentBatchParams) {
+function getGetFileContentBatchQueryKey(params: GetFileContentBatchParams) {
   return ["git", "file-content-batch", params] as const;
 }
 
-export function getGetCommitLogQueryKey(params: GetCommitLogParams) {
+function getGetCommitLogQueryKey(params: GetCommitLogParams) {
   return ["git", "commit-log", params] as const;
 }
 
-export function getGetFileBlobShasQueryKey(params: GetFileBlobShasParams) {
+function getGetFileBlobShasQueryKey(params: GetFileBlobShasParams) {
   return ["git", "file-blob-shas", params] as const;
 }
 
-export function getListFilesQueryKey(params: ListFilesParams) {
+function getListFilesQueryKey(params: ListFilesParams) {
   return ["git", "files", params] as const;
-}
-
-export function getGetWorktreeInfoQueryKey(params: WorktreeInfoParams) {
-  return ["git", "worktree-info", params] as const;
 }
 
 export function getListProjectWorktreesQueryKey(params: ListProjectWorktreesParams) {
   return ["git", "worktrees", params] as const;
 }
 
-export function getGetOriginalBranchQueryKey(params: GetOriginalBranchParams) {
-  return ["git", "original-branch", params] as const;
-}
-
-export function getCheckMergeConflictsQueryKey(params: CheckMergeConflictsParams) {
+function getCheckMergeConflictsQueryKey(params: CheckMergeConflictsParams) {
   return ["git", "merge-conflicts", params] as const;
 }
 
-export function getHasUncommittedChangesQueryKey(params: HasUncommittedChangesParams) {
+function getHasUncommittedChangesQueryKey(params: HasUncommittedChangesParams) {
   return ["git", "has-uncommitted-changes", params] as const;
 }
 
@@ -348,18 +279,6 @@ export function useGetDiff(
     queryKey: getGetDiffQueryKey(params),
     queryFn: () =>
       customInstance({ method: "GET", url: `/api/git/diff${qs(toSnakeParams(params))}` }),
-    ...options,
-  });
-}
-
-export function useGetChangedFiles(
-  params: GetChangedFilesParams,
-  options?: Omit<UseQueryOptions<ChangedFile[], ErrorType<unknown>>, "queryKey" | "queryFn">,
-) {
-  return useQuery<ChangedFile[], ErrorType<unknown>>({
-    queryKey: getGetChangedFilesQueryKey(params),
-    queryFn: () =>
-      customInstance({ method: "GET", url: `/api/git/changed-files${qs(toSnakeParams(params))}` }),
     ...options,
   });
 }
@@ -434,18 +353,6 @@ export function useListFiles(
   });
 }
 
-export function useGetWorktreeInfo(
-  params: WorktreeInfoParams,
-  options?: Omit<UseQueryOptions<WorktreeInfo | null, ErrorType<unknown>>, "queryKey" | "queryFn">,
-) {
-  return useQuery<WorktreeInfo | null, ErrorType<unknown>>({
-    queryKey: getGetWorktreeInfoQueryKey(params),
-    queryFn: () =>
-      customInstance({ method: "GET", url: `/api/git/worktree/info${qs(toSnakeParams(params))}` }),
-    ...options,
-  });
-}
-
 export function useListProjectWorktrees(
   params: ListProjectWorktreesParams,
   options?: Omit<UseQueryOptions<ProjectWorktreeInfo[], ErrorType<unknown>>, "queryKey" | "queryFn">,
@@ -454,18 +361,6 @@ export function useListProjectWorktrees(
     queryKey: getListProjectWorktreesQueryKey(params),
     queryFn: () =>
       customInstance({ method: "GET", url: `/api/git/worktrees${qs(toSnakeParams(params))}` }),
-    ...options,
-  });
-}
-
-export function useGetOriginalBranch(
-  params: GetOriginalBranchParams,
-  options?: Omit<UseQueryOptions<OriginalBranchResponse, ErrorType<unknown>>, "queryKey" | "queryFn">,
-) {
-  return useQuery<OriginalBranchResponse, ErrorType<unknown>>({
-    queryKey: getGetOriginalBranchQueryKey(params),
-    queryFn: () =>
-      customInstance({ method: "GET", url: `/api/git/original-branch${qs(toSnakeParams(params))}` }),
     ...options,
   });
 }
@@ -498,37 +393,6 @@ export function useHasUncommittedChanges(
 // Mutation hooks
 // ---------------------------------------------------------------------------
 
-export function useCreateWorktree(
-  options?: UseMutationOptions<CreateWorktreeResponse, ErrorType<unknown>, CreateWorktreeParams>,
-) {
-  return useMutation<CreateWorktreeResponse, ErrorType<unknown>, CreateWorktreeParams>({
-    mutationFn: (params) =>
-      customInstance({
-        method: "POST",
-        url: "/api/git/worktree",
-        data: {
-          project_id: params.projectId,
-          feature_id: params.featureId,
-          feature_title: params.featureTitle,
-        },
-      }),
-    ...options,
-  });
-}
-
-export function useRemoveWorktree(
-  options?: UseMutationOptions<SuccessResponse, ErrorType<unknown>, RemoveWorktreeParams>,
-) {
-  return useMutation<SuccessResponse, ErrorType<unknown>, RemoveWorktreeParams>({
-    mutationFn: (params) =>
-      customInstance({
-        method: "DELETE",
-        url: `/api/git/worktree${qs(toSnakeParams(params))}`,
-      }),
-    ...options,
-  });
-}
-
 export function useDeleteWorktree(
   options?: UseMutationOptions<SuccessResponse, ErrorType<unknown>, DeleteWorktreeParams>,
 ) {
@@ -537,23 +401,6 @@ export function useDeleteWorktree(
       customInstance({
         method: "DELETE",
         url: `/api/git/worktree/safe${qs(toSnakeParams(params))}`,
-      }),
-    ...options,
-  });
-}
-
-export function useRetryWorktreeSetup(
-  options?: UseMutationOptions<SuccessResponse, ErrorType<unknown>, RetryWorktreeParams>,
-) {
-  return useMutation<SuccessResponse, ErrorType<unknown>, RetryWorktreeParams>({
-    mutationFn: (params) =>
-      customInstance({
-        method: "POST",
-        url: "/api/git/worktree/retry",
-        data: {
-          project_id: params.projectId,
-          feature_id: params.featureId,
-        },
       }),
     ...options,
   });
@@ -610,16 +457,11 @@ export function useDeleteFeatureBranch(
 // Workspace types
 // ---------------------------------------------------------------------------
 
-export interface WorkspaceSetting {
-  key: string;
+interface WorkspaceSettingValueResponse {
   value: string | null;
 }
 
-export interface WorkspaceSettingValueResponse {
-  value: string | null;
-}
-
-export interface WorkspaceModelSettings {
+interface WorkspaceModelSettings {
   plan: string;
   prd: string;
   execute: string;
@@ -635,15 +477,11 @@ export interface WorkspaceModelSettings {
 // Workspace query key factories
 // ---------------------------------------------------------------------------
 
-export function getListWorkspaceSettingsQueryKey() {
-  return ["workspace", "settings"] as const;
-}
-
 export function getGetWorkspaceSettingQueryKey(key: string) {
   return ["workspace", "settings", key] as const;
 }
 
-export function getListModelsQueryKey() {
+function getListModelsQueryKey() {
   return ["models"] as const;
 }
 
@@ -661,16 +499,6 @@ export function useListModels(
   return useQuery<ModelInfo[], ErrorType<unknown>>({
     queryKey: getListModelsQueryKey(),
     queryFn: () => customInstance({ method: "GET", url: "/api/models" }),
-    ...options,
-  });
-}
-
-export function useListWorkspaceSettings(
-  options?: Omit<UseQueryOptions<WorkspaceSetting[], ErrorType<unknown>>, "queryKey" | "queryFn">,
-) {
-  return useQuery<WorkspaceSetting[], ErrorType<unknown>>({
-    queryKey: getListWorkspaceSettingsQueryKey(),
-    queryFn: () => customInstance({ method: "GET", url: "/api/workspace/settings" }),
     ...options,
   });
 }
@@ -743,12 +571,12 @@ export interface Project {
   created_at: string;
 }
 
-export interface ProjectSetting {
+interface ProjectSetting {
   key: string;
   value: string | null;
 }
 
-export interface ProjectModelSettings {
+interface ProjectModelSettings {
   plan: string;
   prd: string;
   execute: string;
@@ -892,7 +720,7 @@ export interface Feature {
   workflow_definition_id: number | null;
 }
 
-export interface Phase {
+interface Phase {
   id: number;
   plan_id: number;
   step_number: number;
@@ -907,7 +735,7 @@ export interface Phase {
   order_index: number | null;
 }
 
-export interface Plan {
+interface Plan {
   id: number;
   feature_id: number;
   title: string | null;
@@ -919,21 +747,16 @@ export interface Plan {
   created_at: string;
 }
 
-export interface PlanWithPhases extends Plan {
+interface PlanWithPhases extends Plan {
   phases: Phase[];
 }
 
-export interface PlanProgress {
-  total: number;
-  done: number;
-}
-
-export interface FeatureSetting {
+interface FeatureSetting {
   key: string;
   value: string;
 }
 
-export interface FeatureModelSettings {
+interface FeatureModelSettings {
   plan: string;
   prd: string;
   execute: string;
@@ -961,7 +784,7 @@ export function getGetFeaturePrdQueryKey(id: number) {
   return ["features", "prd", id] as const;
 }
 
-export function getGetFeatureEmptyQueryKey(id: number) {
+function getGetFeatureEmptyQueryKey(id: number) {
   return ["features", "empty", id] as const;
 }
 
@@ -981,7 +804,7 @@ export function getGetFeatureModelSettingsQueryKey(id: number) {
   return ["features", "modelSettings", id] as const;
 }
 
-export function getGetFeatureWorkingDirQueryKey(id: number, projectId: number) {
+function getGetFeatureWorkingDirQueryKey(id: number, projectId: number) {
   return ["features", "workingDir", id, projectId] as const;
 }
 
@@ -1040,17 +863,6 @@ export function useGetFeaturePlan(
   return useQuery<PlanWithPhases | null, ErrorType<unknown>>({
     queryKey: getGetFeaturePlanQueryKey(id),
     queryFn: () => customInstance({ method: "GET", url: `/api/features/${id}/plan` }),
-    ...options,
-  });
-}
-
-export function useGetFeaturePlanProgress(
-  id: number,
-  options?: Omit<UseQueryOptions<PlanProgress, ErrorType<unknown>>, "queryKey" | "queryFn">,
-) {
-  return useQuery<PlanProgress, ErrorType<unknown>>({
-    queryKey: getGetFeaturePlanProgressQueryKey(id),
-    queryFn: () => customInstance({ method: "GET", url: `/api/features/${id}/plan/progress` }),
     ...options,
   });
 }
@@ -1121,36 +933,6 @@ export function useUpdateFeatureStatus(
   });
 }
 
-export function useUpdateFeatureTitle(
-  options?: UseMutationOptions<{ success: boolean }, ErrorType<unknown>, { id: number; title: string }>,
-) {
-  return useMutation<{ success: boolean }, ErrorType<unknown>, { id: number; title: string }>({
-    mutationFn: ({ id, title }) =>
-      customInstance({ method: "PUT", url: `/api/features/${id}/title`, data: { title } }),
-    ...options,
-  });
-}
-
-export function useResetPhase(
-  options?: UseMutationOptions<{ success: boolean }, ErrorType<unknown>, { phaseId: number }>,
-) {
-  return useMutation<{ success: boolean }, ErrorType<unknown>, { phaseId: number }>({
-    mutationFn: ({ phaseId }) =>
-      customInstance({ method: "PUT", url: `/api/phases/${phaseId}/reset`, data: {} }),
-    ...options,
-  });
-}
-
-export function useOverridePhaseStatus(
-  options?: UseMutationOptions<{ success: boolean }, ErrorType<unknown>, { phaseId: number; status: string }>,
-) {
-  return useMutation<{ success: boolean }, ErrorType<unknown>, { phaseId: number; status: string }>({
-    mutationFn: ({ phaseId, status }) =>
-      customInstance({ method: "PUT", url: `/api/phases/${phaseId}/status`, data: { status } }),
-    ...options,
-  });
-}
-
 export function useSetFeatureSetting(
   options?: UseMutationOptions<{ success: boolean }, ErrorType<unknown>, { featureId: number; key: string; value: string }>,
 ) {
@@ -1179,7 +961,7 @@ export function useSetFeatureModelSetting(
 // Diff Comments
 // ---------------------------------------------------------------------------
 
-export interface DiffComment {
+interface DiffComment {
   id: number;
   feature_id: number;
   file_path: string;
@@ -1190,30 +972,12 @@ export interface DiffComment {
   created_at: string;
 }
 
-export interface CreateDiffCommentRequest {
-  feature_id: number;
-  file_path: string;
-  line_number: number;
-  side: string;
-  content: string;
-}
-
-export interface UpdateDiffCommentRequest {
-  content: string;
-}
-
-export interface DiffViewedFile {
+interface DiffViewedFile {
   id: number;
   feature_id: number;
   file_path: string;
   blob_sha: string;
   viewed_at: string;
-}
-
-export interface MarkViewedRequest {
-  feature_id: number;
-  file_path: string;
-  blob_sha: string;
 }
 
 export function useListDiffComments(
@@ -1253,16 +1017,6 @@ export function useDeleteDiffComment(
   return useMutation<{ success: boolean }, ErrorType<unknown>, { id: number }>({
     mutationFn: ({ id }) =>
       customInstance({ method: "DELETE", url: `/api/diff-comments/${id}` }),
-    ...options,
-  });
-}
-
-export function useMarkDiffCommentsSent(
-  options?: UseMutationOptions<{ updated: number }, ErrorType<unknown>, { featureId: number }>,
-) {
-  return useMutation<{ updated: number }, ErrorType<unknown>, { featureId: number }>({
-    mutationFn: ({ featureId }) =>
-      customInstance({ method: "PUT", url: `/api/features/${featureId}/diff-comments/sent` }),
     ...options,
   });
 }
@@ -1312,16 +1066,6 @@ export function useUnmarkDiffViewed(
         url: `/api/features/${featureId}/diff-viewed/file`,
         params: { file_path: filePath },
       }),
-    ...options,
-  });
-}
-
-export function useClearAllDiffViewed(
-  options?: UseMutationOptions<{ deleted: number }, ErrorType<unknown>, { featureId: number }>,
-) {
-  return useMutation<{ deleted: number }, ErrorType<unknown>, { featureId: number }>({
-    mutationFn: ({ featureId }) =>
-      customInstance({ method: "DELETE", url: `/api/features/${featureId}/diff-viewed/files` }),
     ...options,
   });
 }
@@ -1380,11 +1124,7 @@ export interface FeatureAgentStateResponse {
   sessions: SessionState[];
 }
 
-export interface TurnStatesResponse {
-  states: Record<string, string>;
-}
-
-export interface DraftResponse {
+interface DraftResponse {
   draftPrompt: string | null;
 }
 
@@ -1392,15 +1132,11 @@ export interface DraftResponse {
 // Sessions — query key factories
 // ---------------------------------------------------------------------------
 
-export function getGetFeatureAgentStateQueryKey(featureId: number, after?: string, limit?: number, before?: string) {
+function getGetFeatureAgentStateQueryKey(featureId: number, after?: string, limit?: number, before?: string) {
   return ["sessions", "agentState", featureId, after, limit, before] as const;
 }
 
-export function getGetFeatureTurnStatesQueryKey() {
-  return ["sessions", "turnStates"] as const;
-}
-
-export function getGetSessionDraftQueryKey(sessionId: number) {
+function getGetSessionDraftQueryKey(sessionId: number) {
   return ["sessions", "draft", sessionId] as const;
 }
 
@@ -1443,16 +1179,6 @@ export function fetchFeatureAgentState(
   });
 }
 
-export function useGetFeatureTurnStates(
-  options?: Omit<UseQueryOptions<TurnStatesResponse, ErrorType<unknown>>, "queryKey" | "queryFn">,
-) {
-  return useQuery<TurnStatesResponse, ErrorType<unknown>>({
-    queryKey: getGetFeatureTurnStatesQueryKey(),
-    queryFn: () => customInstance({ method: "GET", url: "/api/sessions/turn-states" }),
-    ...options,
-  });
-}
-
 export function useGetSessionDraft(
   sessionId: number,
   options?: Omit<UseQueryOptions<DraftResponse, ErrorType<unknown>>, "queryKey" | "queryFn">,
@@ -1474,13 +1200,13 @@ export function useSaveSessionDraft(
   });
 }
 
-export type ExternalApp = "terminal" | "zed";
+type ExternalApp = "terminal" | "zed";
 
-export interface OpenExternalRequest {
+interface OpenExternalRequest {
   app: ExternalApp;
 }
 
-export interface OpenExternalResponse {
+interface OpenExternalResponse {
   success: boolean;
 }
 
@@ -1498,14 +1224,14 @@ export function useOpenExternalHandler(
 // Usage
 // ---------------------------------------------------------------------------
 
-export interface UsageBucket {
+interface UsageBucket {
   utilization: number;
   resets_at: string | null;
 }
 
-export type UsageStatus = "success" | "cached" | "rate_limited" | "error";
+type UsageStatus = "success" | "cached" | "rate_limited" | "error";
 
-export interface UsageResponse {
+interface UsageResponse {
   five_hour: UsageBucket | null;
   seven_day: UsageBucket | null;
   seven_day_sonnet: UsageBucket | null;
@@ -1515,7 +1241,7 @@ export interface UsageResponse {
   updated_at: number;
 }
 
-export const getGetUsageHandlerQueryKey = () => ["getUsageHandler"] as const;
+const getGetUsageHandlerQueryKey = () => ["getUsageHandler"] as const;
 
 export function useGetUsageHandler(
   options?: { query?: Omit<UseQueryOptions<UsageResponse, ErrorType<unknown>>, "queryKey" | "queryFn"> },
@@ -1531,18 +1257,18 @@ export function useGetUsageHandler(
 // Editor — file read/write/tree
 // ---------------------------------------------------------------------------
 
-export interface FileReadResponse {
+interface FileReadResponse {
   content: string;
   line_count: number;
 }
 
-export interface FileWriteRequest {
+interface FileWriteRequest {
   project_path: string;
   file_path: string;
   content: string;
 }
 
-export interface FileWriteResponse {
+interface FileWriteResponse {
   success: boolean;
 }
 
@@ -1553,21 +1279,21 @@ export interface FileTreeEntry {
   is_gitignored: boolean;
 }
 
-export interface ReadFileParams {
+interface ReadFileParams {
   projectPath: string;
   filePath: string;
 }
 
-export interface FileTreeParams {
+interface FileTreeParams {
   projectPath: string;
   dirPath: string;
 }
 
-export function getReadFileQueryKey(params: ReadFileParams) {
+function getReadFileQueryKey(params: ReadFileParams) {
   return ["editor", "read", params] as const;
 }
 
-export function getFileTreeQueryKey(params: FileTreeParams) {
+function getFileTreeQueryKey(params: FileTreeParams) {
   return ["editor", "tree", params] as const;
 }
 
@@ -1600,16 +1326,11 @@ export interface FileMatchResult {
   positions: number[];
 }
 
-export interface FileSearchResponse {
+interface FileSearchResponse {
   files: FileMatchResult[];
 }
 
-export interface FileSearchParams {
-  projectPath: string;
-  query?: string;
-}
-
-export function getFileSearchQueryKey(projectPath: string, query?: string) {
+function getFileSearchQueryKey(projectPath: string, query?: string) {
   return ["editor", "search", projectPath, query ?? ""] as const;
 }
 
@@ -1675,7 +1396,7 @@ export interface WorkflowDefinition {
 
 export const DEFAULT_ARTIFACT_TYPE = "default";
 
-export interface WorkflowArtifact {
+interface WorkflowArtifact {
   id: number;
   feature_id: number;
   phase_slug: string;
@@ -1686,47 +1407,47 @@ export interface WorkflowArtifact {
   updated_at: string;
 }
 
-export interface CreateWorkflowDefinition {
+interface CreateWorkflowDefinition {
   name: string;
   slug: string;
   description?: string;
   phases: Omit<WorkflowPhase, "id" | "workflow_definition_id">[];
 }
 
-export interface UpdateWorkflowDefinition {
+interface UpdateWorkflowDefinition {
   name?: string;
   slug?: string;
   description?: string;
 }
 
-export interface CreateWorkflowPhaseParams {
+interface CreateWorkflowPhaseParams {
   definitionId: number;
   phase: Omit<WorkflowPhase, "id" | "workflow_definition_id">;
 }
 
-export interface UpdateWorkflowPhaseParams {
+interface UpdateWorkflowPhaseParams {
   definitionId: number;
   phaseId: number;
   phase: Partial<Omit<WorkflowPhase, "id" | "workflow_definition_id">>;
 }
 
-export interface DeleteWorkflowPhaseParams {
+interface DeleteWorkflowPhaseParams {
   definitionId: number;
   phaseId: number;
 }
 
-export interface ReorderWorkflowPhasesParams {
+interface ReorderWorkflowPhasesParams {
   definitionId: number;
   phase_ids: number[];
 }
 
-export interface UpdateFeatureArtifactParams {
+interface UpdateFeatureArtifactParams {
   featureId: number;
   phaseSlug: string;
   content: string;
 }
 
-export interface UpdateTypedArtifactParams {
+interface UpdateTypedArtifactParams {
   featureId: number;
   phaseSlug: string;
   artifactType: string;
@@ -1745,19 +1466,11 @@ export function getGetWorkflowDefinitionQueryKey(id: number) {
   return ["workflow", "definitions", id] as const;
 }
 
-export function getGetFeatureArtifactsQueryKey(featureId: number) {
-  return ["workflow", "artifacts", featureId] as const;
-}
-
-export function getGetFeatureArtifactQueryKey(featureId: number, phaseSlug: string) {
+function getGetFeatureArtifactQueryKey(featureId: number, phaseSlug: string) {
   return ["workflow", "artifacts", featureId, phaseSlug] as const;
 }
 
-export function getGetPhaseArtifactsQueryKey(featureId: number, phaseSlug: string) {
-  return ["workflow", "artifacts", featureId, phaseSlug, "types"] as const;
-}
-
-export function getGetTypedArtifactQueryKey(featureId: number, phaseSlug: string, artifactType: string) {
+function getGetTypedArtifactQueryKey(featureId: number, phaseSlug: string, artifactType: string) {
   return ["workflow", "artifacts", featureId, phaseSlug, "types", artifactType] as const;
 }
 
@@ -1788,18 +1501,6 @@ export function useGetWorkflowDefinition(
   });
 }
 
-export function useGetFeatureArtifacts(
-  featureId: number,
-  options?: Omit<UseQueryOptions<WorkflowArtifact[], ErrorType<unknown>>, "queryKey" | "queryFn">,
-) {
-  return useQuery<WorkflowArtifact[], ErrorType<unknown>>({
-    queryKey: getGetFeatureArtifactsQueryKey(featureId),
-    queryFn: () =>
-      customInstance({ method: "GET", url: `/api/features/${featureId}/artifacts` }),
-    ...options,
-  });
-}
-
 export function useGetFeatureArtifact(
   featureId: number,
   phaseSlug: string,
@@ -1809,19 +1510,6 @@ export function useGetFeatureArtifact(
     queryKey: getGetFeatureArtifactQueryKey(featureId, phaseSlug),
     queryFn: () =>
       customInstance({ method: "GET", url: `/api/features/${featureId}/artifacts/${phaseSlug}` }),
-    ...options,
-  });
-}
-
-export function useGetPhaseArtifacts(
-  featureId: number,
-  phaseSlug: string,
-  options?: Omit<UseQueryOptions<WorkflowArtifact[], ErrorType<unknown>>, "queryKey" | "queryFn">,
-) {
-  return useQuery<WorkflowArtifact[], ErrorType<unknown>>({
-    queryKey: getGetPhaseArtifactsQueryKey(featureId, phaseSlug),
-    queryFn: () =>
-      customInstance({ method: "GET", url: `/api/features/${featureId}/artifacts/${phaseSlug}/types` }),
     ...options,
   });
 }

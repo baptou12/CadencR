@@ -48,10 +48,10 @@ export function createAgentSession(sessionId: number, agentType = "execute"): Ag
 // -- Slot key helpers --
 
 /** Agent types that can have multiple concurrent instances. */
-export const MULTI_INSTANCE_TYPES = new Set(["session", "risk", "retro", "review-fixer"]);
+const MULTI_INSTANCE_TYPES = new Set(["session", "risk", "retro", "review-fixer"]);
 
 /** Compute the agents Map key for an incoming WS event's slot + session_id. */
-export function slotKeyForEvent(slot: AgentSlot, sessionId?: number): string {
+function slotKeyForEvent(slot: AgentSlot, sessionId?: number): string {
   if (slot.type === "queue_item") return agentSlotKey(slot);
   if (MULTI_INSTANCE_TYPES.has(slot.type) && sessionId != null) {
     return `${slot.type}:${sessionId}`;
@@ -83,7 +83,7 @@ export function resolveSlotKey(
 
 // -- Block / stream helpers --
 
-export const FILE_CHANGE_TOOLS = new Set(["Write", "Edit", "NotebookEdit"]);
+const FILE_CHANGE_TOOLS = new Set(["Write", "Edit", "NotebookEdit"]);
 
 export function blocksContainFileChange(blocks: AgentBlockData[]): boolean {
   for (const b of blocks) {
@@ -109,7 +109,7 @@ export function processAgentStream(
 // -- Agent state routing helpers (unified) --
 
 /** Resolve an agent from the agents Map by slot key. */
-export function resolveAgent(
+function resolveAgent(
   agents: Map<string, AgentSessionState>,
   slotKey: string,
 ): AgentSessionState | null {
@@ -130,7 +130,7 @@ export function patchAgent(
 }
 
 /** Like patchAgent but creates the agent if it doesn't exist. */
-export function upsertAgent(
+function upsertAgent(
   state: Pick<WorkflowState, "agents">,
   slotKey: string,
   sessionId: number,

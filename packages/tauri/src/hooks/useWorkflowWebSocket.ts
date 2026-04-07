@@ -4,42 +4,19 @@ import { create } from "zustand";
 import { getWsUrl } from "@/lib/ws-url";
 import { createCommandsGet, createPhaseApproval, createPhaseTrigger, createCustomWorkflowStart } from "@/lib/ws-envelope";
 import { createWorkflowMessageHandler } from "@/hooks/workflow-event-handlers";
-export { resolveAgent } from "@/hooks/agent-event-handlers";
 import {
   hydrateFromSnapshotPatch,
   computeSendPromptPatch,
   computeRespondToQuestionClearPatch,
 } from "@/hooks/workflow-store-helpers";
 import {
-  type WorkflowStatus,
-  type QueueItemStatus,
-  type QueueItem,
-  type AgentSessionState,
-  type AutonomyLevel,
-  type WorktreeStatus,
-  type AgentSessionSummary,
-  type PlanSnapshot,
-  type WorktreeSnapshot,
-  type FeatureSnapshot,
   type WorkflowState,
-  type PhaseState,
-  type PendingApproval,
-  type AgentSlot,
-  agentSlotKey,
   slotKeyToAgentSlot,
   PLAN_KEY,
   PRD_KEY,
-  SESSION_PLACEHOLDER_KEY,
 } from "@/types/workflow";
 
-import { patchAgent, resolveAgent, blocksContainFileChange } from "@/hooks/agent-event-handlers";
-// Re-exports
-export type {
-  WorkflowStatus, QueueItemStatus, QueueItem, AgentSessionState, AutonomyLevel,
-  WorktreeStatus, AgentSessionSummary, PlanSnapshot, WorktreeSnapshot,
-  FeatureSnapshot, WorkflowState, AgentSlot, PhaseState, PendingApproval,
-};
-export { agentSlotKey, PLAN_KEY, PRD_KEY, SESSION_PLACEHOLDER_KEY };
+import { patchAgent, blocksContainFileChange } from "@/hooks/agent-event-handlers";
 
 export const useWorkflowStore = create<WorkflowState>((set, get) => {
   function send(action: string, payload: Record<string, unknown> = {}): boolean {

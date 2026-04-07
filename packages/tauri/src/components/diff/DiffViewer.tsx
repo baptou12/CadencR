@@ -234,7 +234,7 @@ function DiffFileBlock({
   );
 }
 
-export interface DiffViewerProps {
+interface DiffViewerProps {
   featureId: number;
   mode: "worktree" | "branch";
   targetBranch?: string;

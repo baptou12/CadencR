@@ -15,7 +15,7 @@ export type AgentType =
   | (string & {});  // Custom workflow phase slugs (e.g. "specify", "analyze")
 
 /** Image payload sent with prompts to agents. */
-export interface ImagePayload {
+interface ImagePayload {
   base64: string;
   mimeType: string;
 }
@@ -32,7 +32,7 @@ export function buildUserMessageContent(text: string, images?: ImagePayload[]): 
   ]);
 }
 
-export interface AgentEvent {
+interface AgentEvent {
   type: string;
   featureId?: number;
   sessionDbId?: number;

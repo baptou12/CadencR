@@ -21,9 +21,7 @@ import type { AgentQuestion } from "@/components/AgentQuestionDrawer";
 import type { SessionConfig } from "@/lib/ws-envelope";
 import type { ContextUsageState } from "@/types/agent";
 
-export type { PermissionMode, PendingPlanApproval };
-
-export interface UseWebSocketSessionReturn {
+interface UseWebSocketSessionReturn {
   blocks: AgentBlockData[];
   status: AgentStatus;
   isConnected: boolean;
