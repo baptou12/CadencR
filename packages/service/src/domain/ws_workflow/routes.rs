@@ -63,7 +63,7 @@ fn default_agent_type() -> String {
 #[derive(Debug, Deserialize)]
 pub struct UpdatePhaseRequest {
     pub name: Option<String>,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // deserialized from JSON but not read by handler
     pub slug: Option<String>,
     pub gate_type: Option<String>,
     pub system_prompt_template: Option<String>,

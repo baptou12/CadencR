@@ -66,7 +66,6 @@ pub fn get_strategy(workflow_type: &WorkflowType) -> Result<Box<dyn WorkflowStra
 }
 
 /// Create a CustomWorkflowStrategy for a specific workflow definition.
-#[allow(dead_code)]
 pub fn get_custom_strategy(workflow_definition_id: i64) -> Box<dyn WorkflowStrategy> {
     Box::new(CustomWorkflowStrategy { workflow_definition_id })
 }

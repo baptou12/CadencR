@@ -13,7 +13,6 @@ use crate::domain::workflow::prompts::build_execute_prompt;
 
 use super::WorkflowStrategy;
 
-#[allow(dead_code)]
 pub struct CustomWorkflowStrategy {
     pub workflow_definition_id: i64,
 }
@@ -310,7 +309,6 @@ fn completion_instructions(gate_type: &str) -> &'static str {
 }
 
 /// Load the WorkflowPhase matching item.item_type (slug) from the definition.
-#[allow(dead_code)]
 async fn load_phase_from_item(
     read_pool: &SqlitePool,
     item: &QueueItem,

@@ -81,31 +81,6 @@ pub async fn delete_item(pool: &SqlitePool, item_id: i64) -> Result<(), AppError
     Ok(())
 }
 
-#[allow(dead_code)]
-pub async fn get_stale_running_items(
-    pool: &SqlitePool,
-    feature_id: i64,
-    timeout_interval: &str,
-) -> Result<Vec<i64>, AppError> {
-    let rows: Vec<(i64,)> = sqlx::query_as(
-        "SELECT id FROM workflow_queue WHERE feature_id = ? AND status = 'running' AND started_at < datetime('now', ?)",
-    )
-    .bind(feature_id)
-    .bind(timeout_interval)
-    .fetch_all(pool)
-    .await?;
-    Ok(rows.into_iter().map(|(id,)| id).collect())
-}
-
-#[allow(dead_code)]
-pub async fn count_items_for_feature(pool: &SqlitePool, feature_id: i64) -> Result<i64, AppError> {
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM workflow_queue WHERE feature_id = ?")
-        .bind(feature_id)
-        .fetch_one(pool)
-        .await?;
-    Ok(count)
-}
-
 pub async fn get_max_order_index(pool: &SqlitePool, feature_id: i64) -> Result<i64, AppError> {
     let val: i64 = sqlx::query_scalar(
         "SELECT COALESCE(MAX(order_index), 0) FROM workflow_queue WHERE feature_id = ?",

@@ -558,13 +558,13 @@ impl WsSessionPersistence {
     }
 
     /// Store the Claude CLI session ID so future app restarts can --resume.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub async fn persist_claude_session_id(&self, claude_session_id: &str) {
         let Some(session_id) = self.session_db_id else { return };
         Self::persist_claude_session_id_static(&self.write_pool, session_id, claude_session_id).await;
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub async fn mark_completed(&self) {
         let Some(session_id) = self.session_db_id else { return };
         Self::mark_completed_static(&self.write_pool, session_id).await;
@@ -572,9 +572,7 @@ impl WsSessionPersistence {
 
     /// Look up the most recent claude_session_id for a feature across both
     /// `agent_sessions` and the `session_claude_ids` archive table.
-    /// (The Electron stop-session flow NULLs claude_session_id and archives it
-    /// to session_claude_ids, so we check both sources in a single query.)
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub async fn get_latest_claude_session_id(pool: &SqlitePool, feature_id: i64) -> Option<String> {
         let row: Option<(String,)> = sqlx::query_as(
             r#"SELECT claude_session_id FROM (

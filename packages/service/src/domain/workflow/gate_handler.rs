@@ -286,7 +286,6 @@ impl QueueAdvancer {
     }
 
     /// Approve or reject a phase that's pending approval.
-    #[allow(dead_code)]
     pub async fn approve_phase(
         &self,
         phase_slug: &str,
@@ -348,7 +347,6 @@ impl QueueAdvancer {
     }
 
     /// Trigger a manual phase that's in "ready" state.
-    #[allow(dead_code)]
     pub async fn trigger_manual_phase(
         &self,
         phase_slug: &str,

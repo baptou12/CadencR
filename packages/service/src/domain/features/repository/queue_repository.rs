@@ -44,7 +44,6 @@ pub async fn insert_queue_item_with_retries(
     Ok(result.last_insert_rowid())
 }
 
-#[allow(dead_code)]
 pub async fn insert_queue_item_with_config(
     pool: &SqlitePool,
     feature_id: i64,
@@ -234,7 +233,6 @@ pub fn map_phase_type_to_item_type(phase_type: Option<&str>) -> &'static str {
     }
 }
 
-#[allow(dead_code)]
 pub async fn mark_item_pending_approval(pool: &SqlitePool, item_id: i64) -> Result<(), AppError> {
     sqlx::query("UPDATE workflow_queue SET status = 'pending_approval', ended_at = datetime('now') WHERE id = ?")
         .bind(item_id)
@@ -243,7 +241,6 @@ pub async fn mark_item_pending_approval(pool: &SqlitePool, item_id: i64) -> Resu
     Ok(())
 }
 
-#[allow(dead_code)]
 pub async fn get_queue_item_by_slug(
     pool: &SqlitePool,
     feature_id: i64,
@@ -261,7 +258,6 @@ pub async fn get_queue_item_by_slug(
     Ok(item)
 }
 
-#[allow(dead_code)]
 pub async fn update_item_config(pool: &SqlitePool, item_id: i64, config: &str) -> Result<(), AppError> {
     sqlx::query("UPDATE workflow_queue SET config = ? WHERE id = ?")
         .bind(config)

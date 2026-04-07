@@ -26,7 +26,6 @@ use super::{
 };
 
 pub struct PlanServer {
-    #[allow(dead_code)]
     ctx: Arc<McpContext>,
     read_plan: ReadPlanTool,
     list_phases: ListPhasesTool,

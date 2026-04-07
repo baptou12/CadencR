@@ -119,6 +119,7 @@ pub async fn upsert_artifact(
         .ok_or_else(|| AppError::Internal("Failed to read back upserted artifact".into()))
 }
 
+#[allow(dead_code)]
 pub async fn get_feature_workflow_definition_id(
     pool: &SqlitePool,
     feature_id: i64,
