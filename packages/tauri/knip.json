@@ -14,7 +14,8 @@
     "autoprefixer",
     "postcss",
     "oxlint",
-    "tailwindcss"
+    "tailwindcss",
+    "@vitest/coverage-v8"
   ],
   "tags": ["+@public"],
   "vitest": {
