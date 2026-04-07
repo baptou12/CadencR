@@ -589,6 +589,23 @@ describe("ws-session-store", () => {
     expect(session.todos).toEqual([]);
   });
 
+  it("setPersistedState does not overwrite existing streaming blocks", () => {
+    useWsSessionStore.getState().connect("s1");
+    // Simulate streaming blocks already present
+    const store = useWsSessionStore.getState();
+    store.sessions["s1"] = { ...store.sessions["s1"], blocks: [{ id: "live-1", type: "text" as never, content: "streaming" }] };
+
+    // Now call setPersistedState with different blocks (stale DB data)
+    useWsSessionStore.getState().setPersistedState("s1", {
+      blocks: [{ id: "db-1", type: "text" as const, content: "stale" }],
+      status: "completed",
+    });
+    const session = useWsSessionStore.getState().sessions["s1"];
+    // Should keep the streaming blocks, not replace with stale DB blocks
+    expect(session.blocks[0].id).toBe("live-1");
+    expect(session.persistedLoaded).toBe(true);
+  });
+
   it("handles concurrent sessions independently", async () => {
     const store = useWsSessionStore.getState();
     store.connect("a");

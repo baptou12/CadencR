@@ -284,7 +284,11 @@ export function processSdkMessage(
 
         const matchingBlock = state.toolUseIdToBlock.get(toolUseId);
         const sourceToolName = matchingBlock?.toolName ?? "unknown";
-        const parentId = matchingBlock?.parentToolUseId ?? parentToolUseId;
+        // For Agent/Task tool_results, nest inside the agent block itself
+        const isSubagentResult = sourceToolName === "Agent" || sourceToolName === "Task";
+        const parentId = isSubagentResult
+          ? toolUseId
+          : (matchingBlock?.parentToolUseId ?? parentToolUseId);
 
         state.counter += 1;
         results.push({
@@ -503,7 +507,7 @@ export function applyMutations(
         if (parentBlock?.childBlocks) {
           parentBlock.childBlocks = [...parentBlock.childBlocks, mut.block];
           dirtyParents.add(parentId);
-          if (mut.block.toolUseId) {
+          if (mut.block.toolUseId && !streamState.toolUseIdToBlock.has(mut.block.toolUseId)) {
             streamState.toolUseIdToBlock.set(mut.block.toolUseId, mut.block);
           }
           continue;
@@ -524,6 +528,23 @@ export function applyMutations(
     }
   }
 
+  /** After parsing tool_call JSON, sync toolArgs/content back to the canonical
+   *  entry in toolUseIdToBlock so downstream replace_parent mutations stay current. */
+  function syncToolUseMap(block: AgentBlockData): void {
+    if (block.type !== "tool_call") return;
+    try {
+      JSON.parse(block.content);
+      block.toolArgs = block.content;
+      if (block.toolUseId) {
+        const canonical = streamState.toolUseIdToBlock.get(block.toolUseId);
+        if (canonical && canonical !== block) {
+          canonical.toolArgs = block.toolArgs;
+          canonical.content = block.content;
+        }
+      }
+    } catch { /* keep previous toolArgs until JSON is complete */ }
+  }
+
   const result = [...prevBlocks, ...rootAppends];
 
   for (const mut of rootUpdates) {
@@ -538,9 +559,7 @@ export function applyMutations(
       existing.content = mut.action === "replace"
         ? mut.block.content
         : existing.content + mut.block.content;
-      if (existing.type === "tool_call") {
-        try { JSON.parse(existing.content); existing.toolArgs = existing.content; } catch { /* keep previous toolArgs until JSON is complete */ }
-      }
+      syncToolUseMap(existing);
       result[idx] = existing;
     } else {
       for (const parentBlock of streamState.toolUseIdToBlock.values()) {
@@ -551,9 +570,7 @@ export function applyMutations(
         child.content = mut.action === "replace"
           ? mut.block.content
           : child.content + mut.block.content;
-        if (child.type === "tool_call") {
-          try { JSON.parse(child.content); child.toolArgs = child.content; } catch { /* keep previous toolArgs until JSON is complete */ }
-        }
+        syncToolUseMap(child);
         parentBlock.childBlocks[childIdx] = child;
         break;
       }
@@ -1251,6 +1268,19 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       featureId?: number;
       sessionDbId?: number;
     }) {
+      // Don't overwrite streaming blocks with stale DB data.
+      const existing = get().sessions[sessionId];
+      if (existing && existing.blocks.length > 0) {
+        // Session already has streaming data — just mark as loaded without replacing blocks
+        set(updateSession(get(), sessionId, {
+          persistedLoaded: true,
+          hasMore: hasMore ?? false,
+          oldestMessageId: oldestMessageId ?? null,
+          featureId: featureId ?? null,
+          sessionDbId: sessionDbId ?? null,
+        }));
+        return;
+      }
       // Extract todos from restored blocks (last TodoWrite wins)
       const allBlocks = blocks.flatMap((b) => b.childBlocks ? [b, ...b.childBlocks] : [b]);
       let todos: TodoItem[] | undefined;

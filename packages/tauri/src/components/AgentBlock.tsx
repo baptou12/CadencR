@@ -1,8 +1,8 @@
-import { useState, useCallback, memo, useMemo } from "react";
+import { useState, useCallback, useRef, useEffect, memo, useMemo } from "react";
 import { cn } from "@/lib/utils";
-import { ChevronRightIcon, WrenchIcon, BrainIcon, LayersIcon, LoaderIcon, TerminalIcon, CopyIcon, CheckIcon, CircleCheckIcon, CircleXIcon } from "lucide-react";
+import { ChevronRightIcon, WrenchIcon, BrainIcon, LayersIcon, Loader2Icon, TerminalIcon, CopyIcon, CheckIcon, CircleCheckIcon, CircleXIcon } from "lucide-react";
 import { parseToolCall, parseCadenceMcpTool } from "@/lib/tool-call-parser";
-import { CadenceMcpBlock, CompactCadenceMcpBlock } from "@/components/CadenceMcpBlock";
+import { CadenceMcpBlock } from "@/components/CadenceMcpBlock";
 import { Markdown } from "@/components/Markdown";
 import { InlineDiffBlock } from "@/components/InlineDiffBlock";
 import { ClipboardCheck } from "lucide-react";
@@ -115,8 +115,11 @@ export const AgentBlock = memo(function AgentBlock({ block, isStreaming, basePat
       }
       return <ToolCallBlock name={block.toolName ?? "unknown"} args={block.toolArgs} basePath={basePath} />;
     case "tool_result":
-      if (block.sourceToolName === "Bash") {
+      if (block.sourceToolName === "Bash" && !block.parentToolUseId) {
         return <BashOutputBlock content={block.content} isError={block.isError} />;
+      }
+      if (block.sourceToolName === "Agent" || block.sourceToolName === "Task") {
+        return <AgentResultBlock content={block.content} />;
       }
       // Only show output for tools with custom blocks (Bash above).
       // Hide generic tool results (Grep, Read, Glob, etc.) to reduce noise.
@@ -133,6 +136,23 @@ export const AgentBlock = memo(function AgentBlock({ block, isStreaming, basePat
       return null;
   }
 });
+
+/** Render the final text output from an Agent/Task tool_result (JSON content blocks). */
+function AgentResultBlock({ content }: { content: string }) {
+  const text = useMemo(() => {
+    try {
+      const blocks = JSON.parse(content) as Array<{ type?: string; text?: string }>;
+      return blocks
+        .filter((b) => b.type === "text" || (!b.type && typeof b.text === "string"))
+        .map((b) => b.text ?? "")
+        .join("\n");
+    } catch {
+      return content;
+    }
+  }, [content]);
+  if (!text) return null;
+  return <TextBlock content={text} />;
+}
 
 const TextBlock = memo(function TextBlock({ content }: { content: string }) {
   const [copied, setCopied] = useState(false);
@@ -404,11 +424,9 @@ function UserMessageBlock({ content }: { content: string }) {
   );
 }
 
-const DEFAULT_VISIBLE_CHILDREN = 5;
-
 function TaskAgentBlock({ block, isStreaming, basePath }: { block: AgentBlockData; isStreaming?: boolean; basePath?: string }) {
-  const toolCalls = (block.childBlocks ?? []).filter((c) => c.type === "tool_call");
-  const isRunning = !block.taskComplete && !!isStreaming;
+  const children = block.childBlocks ?? [];
+  const isRunning = !!isStreaming && !block.taskComplete;
 
   // Parse description from args
   let description = "Subtask";
@@ -421,84 +439,45 @@ function TaskAgentBlock({ block, isStreaming, basePath }: { block: AgentBlockDat
     }
   }
 
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const stickToBottom = useRef(true);
+
+  useEffect(() => {
+    if (stickToBottom.current && scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [children.length]);
+
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 16;
+    stickToBottom.current = atBottom;
+  }, []);
+
   return (
-    <CollapsibleBlock
-      totalCount={toolCalls.length}
-      visibleCount={DEFAULT_VISIBLE_CHILDREN}
-      unit="actions"
-      className="border-indigo-700 bg-indigo-500/5"
-      headerClassName=""
-      toggleClassName="ml-auto text-indigo-500 hover:text-indigo-300"
-      bodyClassName="border-t border-indigo-800 px-3 py-2 space-y-0.5"
-      truncationClassName="text-indigo-800"
-      header={<>
-        <LayersIcon className="size-3 text-indigo-400" />
-        <span className="font-medium text-indigo-300">{block.toolName}</span>
-        <span className="truncate text-muted-foreground">{description}</span>
+    <div className="my-1 rounded-md border border-border bg-black/30 overflow-hidden">
+      <div className="flex items-center gap-2 px-3 py-2 text-xs border-b border-border">
+        <LayersIcon className="size-3.5 text-muted-foreground shrink-0" />
+        <span className="font-medium text-foreground">{block.toolName}</span>
+        <span className="truncate text-muted-foreground text-xs">{description}</span>
         {isRunning && (
-          <LoaderIcon className="size-3 animate-spin text-indigo-500 shrink-0" />
+          <Loader2Icon className="size-3 animate-spin text-muted-foreground shrink-0 ml-auto" />
         )}
-      </>}
-    >
-      {({ showAll }) => (<>
-        {(showAll ? toolCalls : toolCalls.slice(-DEFAULT_VISIBLE_CHILDREN)).map((child) => (
-          <CompactBlock key={child.id} block={child} basePath={basePath} />
+      </div>
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="px-3 py-2 space-y-0.5 max-h-[20vh] overflow-y-auto"
+      >
+        {children.map((child) => (
+          <AgentBlock key={child.id} block={child} isStreaming={isStreaming} basePath={basePath} />
         ))}
-      </>)}
-    </CollapsibleBlock>
+      </div>
+    </div>
   );
 }
 
-function CompactBlock({ block, basePath }: { block: AgentBlockData; basePath?: string }) {
-  if (block.type === "tool_call" && block.toolName) {
-    if (block.toolName === "ExitPlanMode" || block.toolName.endsWith("__show_plan") || block.toolName.endsWith("__show_prd")) {
-      return <PlanBlock args={block.toolArgs} approvalStatus={block.planApprovalStatus} />;
-    }
-    const cadenceMcp = parseCadenceMcpTool(block.toolName, block.toolArgs);
-    if (cadenceMcp) return <CompactCadenceMcpBlock mcp={cadenceMcp} />;
-    const summary = parseToolCall(block.toolName, block.toolArgs);
-    const detail = summary?.detail && basePath ? toRelativePath(summary.detail, basePath) : summary?.detail;
-    return (
-      <div className="flex items-center gap-1.5 text-xs text-muted-foreground py-0.5">
-        <WrenchIcon className="size-2.5 text-blue-500 shrink-0" />
-        <span className="font-medium text-foreground/70">{block.toolName}</span>
-        {detail && <span className="truncate">{detail}</span>}
-      </div>
-    );
-  }
-  if (block.type === "text" && block.content) {
-    const preview = block.content.length > 120 ? block.content.slice(0, 120) + "..." : block.content;
-    return (
-      <div className="text-xs text-muted-foreground py-0.5 truncate">{preview}</div>
-    );
-  }
-  if (block.type === "thinking" && block.content) {
-    const preview = block.content.length > 120 ? block.content.slice(0, 120) + "..." : block.content;
-    return (
-      <div className="flex items-center gap-1.5 text-xs text-muted-foreground py-0.5">
-        <BrainIcon className="size-2.5 text-purple-500 shrink-0" />
-        <span className="truncate">{preview}</span>
-      </div>
-    );
-  }
-  if (block.type === "tool_result") {
-    if (block.sourceToolName === "Bash") {
-      const lines = block.content.split("\n");
-      const lastLine = lines[lines.length - 1] || lines[lines.length - 2] || "";
-      return (
-        <div className={cn(
-          "text-xs py-0.5 truncate font-mono",
-          block.isError ? "text-red-500" : "text-zinc-500"
-        )}>
-          {parseAnsi(lastLine)}
-        </div>
-      );
-    }
-    // Hide generic tool results in compact view too
-    return null;
-  }
-  return null;
-}
 
 function formatJson(str: string): string {
   try {

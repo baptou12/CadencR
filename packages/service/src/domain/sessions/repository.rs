@@ -197,7 +197,14 @@ pub fn build_blocks(messages: &[AgentMessageRow]) -> Vec<AgentBlock> {
                     has_child_slots: false,
                     child_indices: Vec::new(),
                 });
-                if let Some(pidx) = parent_idx {
+                // Nest under parent_tool_use_id if available, otherwise under the
+                // matching Agent/Task tool_call (tool_result shares tool_use_id).
+                let nest_idx = parent_idx.or_else(|| {
+                    msg.tool_use_id.as_deref()
+                        .and_then(|tuid| tool_use_id_map.get(tuid).copied())
+                        .filter(|&idx| all[idx].has_child_slots)
+                });
+                if let Some(pidx) = nest_idx {
                     all[pidx].child_indices.push(new_idx);
                 } else {
                     root_indices.push(new_idx);
@@ -296,6 +303,62 @@ pub fn build_blocks(messages: &[AgentMessageRow]) -> Vec<AgentBlock> {
     }
 
     root_indices.iter().map(|&idx| convert_block(idx, &all)).collect()
+}
+
+// ---- Helpers ----
+
+/// Fetch parent Agent/Task tool_call rows that are referenced by children in the
+/// given message page but not already present. This lets `build_blocks` correctly
+/// nest sub-agent children even when pagination splits parent from children.
+async fn fetch_missing_parents(
+    pool: &SqlitePool,
+    session_id: i64,
+    msgs: &[AgentMessageRow],
+) -> Result<Vec<AgentMessageRow>, AppError> {
+    use std::collections::HashSet;
+
+    // Collect tool_use_ids of tool_call rows in this page
+    let tool_call_tuids: HashSet<&str> = msgs.iter()
+        .filter(|m| m.message_type == "tool_call")
+        .filter_map(|m| m.tool_use_id.as_deref())
+        .collect();
+
+    let mut missing_tool_use_ids: HashSet<&str> = HashSet::new();
+
+    for m in msgs {
+        // Children whose parent_tool_use_id references a tool_call not in this page
+        if let Some(ptuid) = m.parent_tool_use_id.as_deref() {
+            if !tool_call_tuids.contains(ptuid) {
+                missing_tool_use_ids.insert(ptuid);
+            }
+        // tool_results whose tool_use_id has no matching tool_call in this page
+        // (build_blocks nests these via tool_use_id fallback)
+        } else if m.message_type == "tool_result" || m.message_type == "tool_error" {
+            if let Some(tuid) = m.tool_use_id.as_deref() {
+                if !tool_call_tuids.contains(tuid) {
+                    missing_tool_use_ids.insert(tuid);
+                }
+            }
+        }
+    }
+
+    let missing: Vec<&str> = missing_tool_use_ids.into_iter().collect();
+
+    if missing.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let placeholders = missing.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+    let sql = format!(
+        "SELECT id, session_id, content, message_type, tool_name, tool_use_id, parent_tool_use_id, created_at, model \
+         FROM agent_messages WHERE session_id = ? AND message_type = 'tool_call' AND tool_use_id IN ({}) ORDER BY id ASC",
+        placeholders
+    );
+    let mut q = sqlx::query_as::<_, AgentMessageRow>(&sql).bind(session_id);
+    for tuid in &missing {
+        q = q.bind(tuid);
+    }
+    Ok(q.fetch_all(pool).await?)
 }
 
 // ---- Repository functions ----
@@ -408,6 +471,17 @@ pub async fn get_feature_agent_state(
                 }
                 // Reverse to restore ASC order for block building
                 msgs.reverse();
+
+                // Fetch parent Agent/Task tool_call rows referenced by children
+                // in this page but not already present, so build_blocks can nest them.
+                let parent_msgs = fetch_missing_parents(pool, *sid, &msgs).await?;
+                if !parent_msgs.is_empty() {
+                    // Merge parents at the front (they have lower IDs)
+                    let mut merged = parent_msgs;
+                    merged.append(&mut msgs);
+                    msgs = merged;
+                }
+
                 has_more_map.insert(*sid, has_more);
                 full_messages.insert(*sid, msgs);
             }
@@ -898,6 +972,30 @@ mod tests {
         assert_eq!(blocks[0].type_, "text");
         assert_eq!(blocks[1].type_, "user_message");
         assert_eq!(blocks[2].type_, "text");
+    }
+
+    #[test]
+    fn test_build_blocks_tool_result_nests_under_agent_via_tool_use_id() {
+        // Agent tool_result has parent_tool_use_id=None but shares tool_use_id with Agent tool_call.
+        // build_blocks should nest it as a child of the Agent block.
+        let msgs = vec![
+            make_message_full(1, 1, "tool_call", "{\"prompt\":\"explore\"}", Some("Agent"), Some("tu-agent"), None),
+            // Sub-agent child messages
+            make_message_full(2, 1, "tool_call", "{\"command\":\"ls\"}", Some("Bash"), Some("tu-bash"), Some("tu-agent")),
+            make_message_full(3, 1, "tool_result", "file.txt", None, Some("tu-bash"), Some("tu-agent")),
+            // Agent tool_result: same tool_use_id as Agent, no parent_tool_use_id
+            make_message_full(4, 1, "tool_result", "[{\"text\":\"Done\"}]", None, Some("tu-agent"), None),
+        ];
+        let blocks = build_blocks(&msgs);
+        // Only the Agent block at root level
+        assert_eq!(blocks.len(), 1, "Agent tool_result should not be a root block");
+        let agent = &blocks[0];
+        assert_eq!(agent.type_, "tool_call");
+        let children = agent.child_blocks.as_ref().unwrap();
+        assert_eq!(children.len(), 3, "Agent should have 3 children: Bash call, Bash result, Agent result");
+        assert_eq!(children[2].type_, "tool_result");
+        assert_eq!(children[2].source_tool_name.as_deref(), Some("Agent"));
+        assert_eq!(children[2].content, "[{\"text\":\"Done\"}]");
     }
 
     // ---- Repository query tests ----

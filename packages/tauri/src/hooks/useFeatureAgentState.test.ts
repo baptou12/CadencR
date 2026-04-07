@@ -1,6 +1,6 @@
 import { renderHook, act } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { useFeatureAgentState } from "./useFeatureAgentState";
+import { useFeatureAgentState, serverBlocksToAgentBlocks } from "./useFeatureAgentState";
 
 const mockRefetch = vi.fn();
 const mockUseQuery = vi.fn();
@@ -38,6 +38,19 @@ function makeSession(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
 }
+
+describe("serverBlocksToAgentBlocks", () => {
+  it("sets taskComplete on Agent/Task tool_call blocks", () => {
+    const blocks = serverBlocksToAgentBlocks([
+      { id: "1", type: "tool_call", content: "{}", toolName: "Agent", toolUseId: "tu-1" },
+      { id: "2", type: "text", content: "hello" },
+      { id: "3", type: "tool_call", content: "{}", toolName: "Bash", toolUseId: "tu-2" },
+    ] as never[]);
+    expect(blocks[0].taskComplete).toBe(true);
+    expect(blocks[1].taskComplete).toBeUndefined();
+    expect(blocks[2].taskComplete).toBeUndefined();
+  });
+});
 
 describe("useFeatureAgentState", () => {
   beforeEach(() => {

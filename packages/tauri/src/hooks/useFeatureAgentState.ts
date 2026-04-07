@@ -30,20 +30,25 @@ const OLDER_MESSAGE_LIMIT = 100;
 // ---------------------------------------------------------------------------
 
 export function serverBlocksToAgentBlocks(serverBlocks: AgentBlock[]): AgentBlockData[] {
-  return serverBlocks.map((sb) => ({
-    id: sb.id,
-    type: sb.type as AgentBlockData["type"],
-    content: sb.content,
-    toolName: sb.toolName,
-    toolArgs: sb.toolArgs,
-    isError: sb.isError,
-    toolUseId: sb.toolUseId,
-    parentToolUseId: sb.parentToolUseId,
-    childBlocks: sb.childBlocks ? serverBlocksToAgentBlocks(sb.childBlocks) : undefined,
-    sourceToolName: sb.sourceToolName,
-    createdAt: sb.createdAt,
-    model: sb.model,
-  }));
+  return serverBlocks.map((sb) => {
+    const isSubagent = sb.type === "tool_call" && (sb.toolName === "Task" || sb.toolName === "Agent");
+    return {
+      id: sb.id,
+      type: sb.type as AgentBlockData["type"],
+      content: sb.content,
+      toolName: sb.toolName,
+      toolArgs: sb.toolArgs,
+      isError: sb.isError,
+      toolUseId: sb.toolUseId,
+      parentToolUseId: sb.parentToolUseId,
+      childBlocks: sb.childBlocks ? serverBlocksToAgentBlocks(sb.childBlocks) : undefined,
+      sourceToolName: sb.sourceToolName,
+      createdAt: sb.createdAt,
+      model: sb.model,
+      // DB-loaded sub-agents are always complete (streaming state handles the active one)
+      ...(isSubagent ? { taskComplete: true } : {}),
+    };
+  });
 }
 
 // ---------------------------------------------------------------------------
