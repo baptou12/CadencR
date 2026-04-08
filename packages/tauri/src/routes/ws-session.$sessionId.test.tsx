@@ -54,7 +54,7 @@ vi.mock("@/components/FeatureGitTab", () => ({
   FeatureGitTab: () => <div data-testid="git-tab" />,
 }));
 
-vi.mock("@/components/AgentSession", () => ({
+vi.mock("@/components/agent-session", () => ({
   AgentSession: vi.fn(() => <div data-testid="agent-session" />),
 }));
 

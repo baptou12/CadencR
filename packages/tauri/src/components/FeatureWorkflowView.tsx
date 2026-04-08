@@ -7,7 +7,7 @@ import { FeatureTabBar } from "@/components/FeatureTabBar";
 import type { FeatureTab } from "@/hooks/useActiveTab";
 import { FeatureTerminalTab, type FeatureTerminalTabHandle } from "@/components/FeatureTerminalTab";
 import { FeatureGitTab } from "@/components/FeatureGitTab";
-import { AGENT_LABELS } from "@/components/AgentSession";
+import { AGENT_LABELS } from "@/components/agent-session";
 import { WorkflowAgentGrid } from "@/components/WorkflowAgentGrid";
 import { AlertTriangleIcon, CheckCircle2Icon, Loader2Icon, XIcon } from "lucide-react";
 import { AGENT_ICONS } from "@/components/agent-icons";

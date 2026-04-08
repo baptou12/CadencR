@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
-import { AgentSession, type AgentSessionHandle } from "@/components/AgentSession";
+import { AgentSession, type AgentSessionHandle } from "@/components/agent-session";
 import { DiffViewerModal } from "@/components/diff/DiffViewerModal";
 import { FeatureTopBar } from "@/components/FeatureTopBar";
 import { FeatureTabBar } from "@/components/FeatureTabBar";

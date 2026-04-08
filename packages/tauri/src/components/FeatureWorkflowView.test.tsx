@@ -149,7 +149,7 @@ const { MockAgentSession } = vi.hoisted(() => ({
   MockAgentSession: vi.fn(() => null),
 }));
 
-vi.mock("@/components/AgentSession", () => ({
+vi.mock("@/components/agent-session", () => ({
   AgentSession: MockAgentSession,
   AGENT_LABELS: {
     plan: "Plan",

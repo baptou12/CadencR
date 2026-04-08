@@ -1,4 +1,4 @@
-import { type AgentSessionHandle, AgentSession, AGENT_LABELS } from "@/components/AgentSession";
+import { type AgentSessionHandle, AgentSession, AGENT_LABELS } from "@/components/agent-session";
 import type { FeatureSession } from "@/hooks/useFeatureAgentState";
 import type { ContextUsageState } from "@/types/agent";
 import type { AgentType } from "@/types/agent-types";

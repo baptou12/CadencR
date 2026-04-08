@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@/test-utils";
 import userEvent from "@testing-library/user-event";
-import { AgentSession, shallowEqualSkipFunctions } from "./AgentSession";
-import type { AgentSessionProps } from "./AgentSession";
+import { AgentSession, shallowEqualSkipFunctions } from "./agent-session";
+import type { AgentSessionProps } from "./agent-session";
 import type { AgentBlockData } from "./AgentBlock";
 
 vi.mock("react-hotkeys-hook", () => ({

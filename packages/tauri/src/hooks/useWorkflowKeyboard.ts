@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
-import { type AgentSessionHandle } from "@/components/AgentSession";
+import { type AgentSessionHandle } from "@/components/agent-session";
 import { getActiveFocusZone } from "@/lib/focus-zones";
 import type { FeatureSession } from "@/hooks/useFeatureAgentState";
 import type { WorkflowBackend } from "@/hooks/workflowBackendTypes";
