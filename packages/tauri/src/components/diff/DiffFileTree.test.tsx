@@ -108,6 +108,28 @@ describe("DiffFileTree", () => {
     expect(screen.queryByText("bar.ts")).not.toBeInTheDocument();
   });
 
+  it("renders commit dates correctly for git date format", () => {
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    const dateStr = twoHoursAgo.toISOString().replace("T", " ").replace(/\.\d+Z$/, " +0000");
+
+    render(
+      <DiffFileTree
+        files={mockFiles}
+        expandedFiles={new Set()}
+        selectedFile={null}
+        onToggleExpand={vi.fn()}
+        onSelectFile={vi.fn()}
+        selectedCommit={null}
+        onSelectCommit={vi.fn()}
+        commits={[{
+          sha: "abc123", shortSha: "abc123", message: "test commit",
+          body: "", author: "tester", date: dateStr, isPushed: false,
+        }]}
+      />,
+    );
+    expect(screen.getByText(/2h ago/)).toBeInTheDocument();
+  });
+
   it("renders directory structure for nested paths", () => {
     render(
       <DiffFileTree

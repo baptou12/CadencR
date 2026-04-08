@@ -89,4 +89,56 @@ const cadenceHighlightStyle = HighlightStyle.define([
   { tag: t.invalid, color: PALETTE.red },
 ]);
 
+const cadenceDiffTheme = EditorView.theme(
+  {
+    // Unified merge view: deleted lines shown above current text
+    ".cm-mergeView & .cm-deletedChunk": {
+      backgroundColor: `${PALETTE.red}15`,
+    },
+    ".cm-mergeView & .cm-insertedLine": {
+      backgroundColor: `${PALETTE.green}15`,
+    },
+    ".cm-mergeView & .cm-deletedLine": {
+      backgroundColor: `${PALETTE.red}15`,
+    },
+    ".cm-mergeView & .cm-changedLine .cm-deletedText": {
+      backgroundColor: `${PALETTE.red}30`,
+      textDecoration: "none",
+    },
+    ".cm-mergeView & .cm-changedLine .cm-insertedText": {
+      backgroundColor: `${PALETTE.green}30`,
+      textDecoration: "none",
+    },
+    // Override CodeMirror's default 2px bottom gradient underline on changed text
+    "&.cm-merge-b .cm-changedText, &.cm-merge-a .cm-changedText": {
+      background: "none",
+    },
+    // Change gutter markers
+    ".cm-mergeView & .cm-changeGutter": {
+      width: "3px",
+      paddingLeft: "0",
+    },
+    // Merge controls (accept/reject buttons) — hidden in read-only mode
+    ".cm-mergeView & .cm-merge-revert": {
+      display: "none",
+    },
+    // Side-by-side MergeView
+    ".cm-mergeView": {
+      height: "100%",
+    },
+    ".cm-mergeView .cm-mergeViewEditor": {
+      height: "100%",
+    },
+  },
+  { dark: true },
+);
+
+export const DIFF_PALETTE = PALETTE;
+
 export const cadenceEditorTheme: Extension[] = [cadenceTheme, syntaxHighlighting(cadenceHighlightStyle)];
+
+export const cadenceDiffExtensions: Extension[] = [
+  cadenceTheme,
+  syntaxHighlighting(cadenceHighlightStyle),
+  cadenceDiffTheme,
+];

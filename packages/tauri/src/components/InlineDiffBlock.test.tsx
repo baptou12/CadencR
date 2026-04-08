@@ -2,28 +2,10 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@/test-utils";
 import { InlineDiffBlock } from "./InlineDiffBlock";
 
-// Mock @git-diff-view/react to avoid canvas/DOM issues in jsdom
-vi.mock("@git-diff-view/react", () => ({
-  DiffFile: {
-    createInstance: vi.fn(() => ({
-      initTheme: vi.fn(),
-      initRaw: vi.fn(),
-      initSyntax: vi.fn(),
-      buildSplitDiffLines: vi.fn(),
-      buildUnifiedDiffLines: vi.fn(),
-      additionLength: 1,
-      deletionLength: 1,
-    })),
-  },
-  DiffView: vi.fn(({ diffFile }: { diffFile: unknown }) => (
-    diffFile ? <div data-testid="diff-view">diff content</div> : null
-  )),
-  DiffModeEnum: { Unified: "unified" },
-  highlighter: {},
-}));
-
-vi.mock("@git-diff-view/lowlight", () => ({
-  highlighter: {},
+// Mock CodeMirror-based ReadOnlyDiffView to avoid DOM issues in jsdom
+vi.mock("@/components/editor/ReadOnlyDiffView", () => ({
+  ReadOnlyDiffView: ({ oldContent, newContent }: { oldContent: string; newContent: string }) =>
+    oldContent !== newContent ? <div data-testid="diff-view">diff content</div> : null,
 }));
 
 describe("InlineDiffBlock", () => {
@@ -58,5 +40,29 @@ describe("InlineDiffBlock", () => {
       />
     );
     expect(screen.getByTestId("diff-view")).toBeInTheDocument();
+  });
+
+  it("displays addition and deletion counts", () => {
+    render(
+      <InlineDiffBlock
+        filePath="test.ts"
+        oldContent={"a\nb\nc\n"}
+        newContent={"a\nx\ny\nc\n"}
+      />
+    );
+    expect(screen.getByText("+2")).toBeInTheDocument();
+    expect(screen.getByText("-1")).toBeInTheDocument();
+  });
+
+  it("strips basePath from displayed file path", () => {
+    render(
+      <InlineDiffBlock
+        filePath="/home/user/project/src/foo.ts"
+        oldContent="old"
+        newContent="new"
+        basePath="/home/user/project"
+      />
+    );
+    expect(screen.getByText("src/foo.ts")).toBeInTheDocument();
   });
 });

@@ -1,10 +1,5 @@
-import { useMemo, useState, useEffect } from "react";
-import { createTwoFilesPatch } from "diff";
-import { DiffView, DiffFile, DiffModeEnum } from "@git-diff-view/react";
-import { getDiffViewHighlighter, type DiffHighlighter } from "@git-diff-view/shiki";
-import "@git-diff-view/react/styles/diff-view.css";
-import "./diff/dracula-diff.css";
-import { langFromPath } from "@/lib/parse-unified-diff";
+import { useMemo } from "react";
+import { ReadOnlyDiffView } from "@/components/editor/ReadOnlyDiffView";
 
 interface InlineDiffBlockProps {
   filePath: string;
@@ -14,61 +9,43 @@ interface InlineDiffBlockProps {
   basePath?: string;
 }
 
+/** Count added/removed lines by simple line-by-line comparison. */
+function countLineChanges(oldContent: string, newContent: string): { additions: number; deletions: number } {
+  const oldLines = oldContent.split("\n");
+  const newLines = newContent.split("\n");
+  const oldSet = new Map<string, number>();
+  for (const line of oldLines) {
+    oldSet.set(line, (oldSet.get(line) ?? 0) + 1);
+  }
+  for (const line of newLines) {
+    const count = oldSet.get(line);
+    if (count && count > 0) {
+      oldSet.set(line, count - 1);
+    }
+  }
+  // Lines remaining in oldSet are deletions
+  let deletions = 0;
+  for (const count of oldSet.values()) {
+    deletions += count;
+  }
+  // Simple heuristic: additions = newLines.length - (oldLines.length - deletions)
+  const additions = newLines.length - (oldLines.length - deletions);
+  return { additions: Math.max(0, additions), deletions };
+}
+
 /**
  * Compact inline diff block for displaying file changes during agent execution.
- * Uses @git-diff-view/react in unified mode with the Dracula theme.
+ * Uses CodeMirror in read-only unified mode with the Cadence theme.
  */
 export function InlineDiffBlock({ filePath, oldContent, newContent, basePath }: InlineDiffBlockProps) {
-  // Show relative path when file is inside the base path (resolved cwd)
   const displayPath = useMemo(() => {
     if (!basePath || !filePath.startsWith(basePath)) return filePath;
     return filePath.slice(basePath.endsWith("/") ? basePath.length : basePath.length + 1);
   }, [filePath, basePath]);
-  const [shikiHighlighter, setShikiHighlighter] = useState<DiffHighlighter | null>(null);
 
-  useEffect(() => {
-    getDiffViewHighlighter().then((h) => setShikiHighlighter(h));
-  }, []);
+  const stats = useMemo(() => countLineChanges(oldContent, newContent), [oldContent, newContent]);
 
-  const diffFile = useMemo(() => {
-    if (oldContent === newContent) return null;
-
-    // Generate unified diff from old and new content
-    const patch = createTwoFilesPatch(filePath, filePath, oldContent, newContent);
-
-    // Verify the patch has actual hunks
-    if (!patch.includes("@@")) return null;
-
-    const lang = langFromPath(filePath);
-    try {
-      const file = DiffFile.createInstance({
-        oldFile: {
-          fileName: filePath,
-          fileLang: lang,
-          content: "",
-        },
-        newFile: {
-          fileName: filePath,
-          fileLang: lang,
-          content: "",
-        },
-        hunks: [patch],
-      });
-      file.initTheme("dark");
-      file.initRaw();
-      if (shikiHighlighter) {
-        file.initSyntax({ registerHighlighter: shikiHighlighter });
-      }
-      file.buildSplitDiffLines();
-      file.buildUnifiedDiffLines();
-      return file;
-    } catch {
-      return null;
-    }
-  }, [filePath, oldContent, newContent, shikiHighlighter]);
-
-  // Edge case: identical content
-  if (oldContent === newContent || !diffFile) {
+  if (oldContent === newContent) {
     return (
       <div className="rounded-lg border border-[#6272a4] bg-[#282a36] px-3 py-2 text-xs text-[#6272a4]">
         No changes
@@ -76,11 +53,10 @@ export function InlineDiffBlock({ filePath, oldContent, newContent, basePath }: 
     );
   }
 
-  const additions = diffFile.additionLength;
-  const deletions = diffFile.deletionLength;
+  const { additions, deletions } = stats;
 
   return (
-    <div className="dracula-diff overflow-hidden rounded-lg border border-[#6272a4] bg-[#282a36]">
+    <div className="overflow-hidden rounded-lg border border-[#6272a4] bg-[#282a36]">
       {/* Compact file header */}
       <div className="flex items-center gap-2 border-b border-[#6272a4] bg-[color-mix(in_srgb,var(--drac-cyan)_15%,#282a36)] px-3 py-1 text-xs">
         <span className="flex-1 truncate font-mono text-[#f8f8f2]" title={filePath}>{displayPath}</span>
@@ -89,14 +65,12 @@ export function InlineDiffBlock({ filePath, oldContent, newContent, basePath }: 
       </div>
 
       {/* Diff content */}
-      <DiffView
-        diffFile={diffFile}
-        diffViewMode={DiffModeEnum.Unified}
-        diffViewWrap={true}
-        diffViewTheme="dark"
-        diffViewFontSize={13}
-        diffViewHighlight={true}
-        registerHighlighter={shikiHighlighter ?? undefined}
+      <ReadOnlyDiffView
+        oldContent={oldContent}
+        newContent={newContent}
+        filePath={filePath}
+        mode="unified"
+        className="max-h-[500px] overflow-auto"
       />
     </div>
   );

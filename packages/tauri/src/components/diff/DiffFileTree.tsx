@@ -30,7 +30,11 @@ function AutoScrollText({ text, className }: { text: string; className?: string 
 
 function formatRelativeDate(dateStr: string): string {
   const now = Date.now();
-  const then = new Date(dateStr).getTime();
+  // Git dates like "2026-04-08 22:27:55 +0200" need the space before tz replaced with "T" or parsed as-is.
+  // Replace the space between date and time with "T" for ISO compat, and remove space before tz offset.
+  const normalized = dateStr.replace(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}) ([+-]\d{4})$/, "$1T$2$3");
+  const then = new Date(normalized).getTime();
+  if (Number.isNaN(then)) return dateStr;
   const diffSec = Math.floor((now - then) / 1000);
   if (diffSec < 60) return "just now";
   const diffMin = Math.floor(diffSec / 60);

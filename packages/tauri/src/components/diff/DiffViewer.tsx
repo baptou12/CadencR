@@ -1,238 +1,14 @@
-import { useState, useMemo, useCallback, useRef, useEffect, type RefObject } from "react";
-import { useGlobalShortcut } from "@/hooks/useGlobalShortcut";
-import { DiffView, DiffFile, DiffModeEnum, SplitSide } from "@git-diff-view/react";
-import { getDiffViewHighlighter, type DiffHighlighter } from "@git-diff-view/shiki";
-import "@git-diff-view/react/styles/diff-view.css";
-import "./dracula-diff.css";
-import { useQueryClient } from "@tanstack/react-query";
-import {
-  useGetFileContent,
-  useGetFileBlobShas,
-  useGetCommitLog,
-  useGetDiff,
-  useGetFileContentBatch,
-  getGetFileContentQueryKey,
-  useListDiffViewed,
-  useMarkDiffViewed,
-  useUnmarkDiffViewed,
-  useListDiffComments,
-  useCreateDiffComment,
-  useUpdateDiffComment,
-  useDeleteDiffComment,
-  type FileContent,
-} from "@/api/generated";
+import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { CopyButton } from "./CopyButton";
 import { Checkbox } from "@/components/ui/checkbox";
-import { DiffFileTree, type ChangedFileEntry, type CommitEntry } from "./DiffFileTree";
-import {
-  CommentWidgetLine,
-  CommentExtendLine,
-  type DiffComment,
-} from "./DiffCommentWidget";
-import { parseUnifiedDiff, langFromPath, countHunkStats } from "@/lib/parse-unified-diff";
-
-// Pre-warm the shiki highlighter at module load time so it's ready (or nearly
-// ready) by the time the user opens the diff viewer for the first time.
-// getDiffViewHighlighter caches internally — subsequent calls return the same
-// singleton, so this is safe to call at import time.
-const shikiPromise = getDiffViewHighlighter();
-
-function useNearViewport(ref: RefObject<HTMLElement | null>): boolean {
-  const [isNearViewport, setIsNearViewport] = useState(false);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0]?.isIntersecting) {
-          setIsNearViewport(true);
-          observer.disconnect();
-        }
-      },
-      { rootMargin: "500px" },
-    );
-
-    observer.observe(el);
-    return () => observer.disconnect();
-    // ref is stable — intentionally run once on mount
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  return isNearViewport;
-}
-
-interface DiffFileBlockProps {
-  section: import("@/lib/parse-unified-diff").FileDiffSection;
-  featureId: number;
-  mode: "worktree" | "branch";
-  targetBranch?: string;
-  commitSha?: string;
-  diffMode: DiffModeEnum;
-  shikiHighlighter: DiffHighlighter | null;
-  displayName: string;
-  isCollapsed: boolean;
-  buildExtendData: (filePath: string) => { oldFile: Record<string, { data: DiffComment[] }>; newFile: Record<string, { data: DiffComment[] }> };
-  activeWidget: { filePath: string; lineNumber: number; side: SplitSide } | null;
-  setActiveWidget: (w: { filePath: string; lineNumber: number; side: SplitSide } | null) => void;
-  getCommentsForLine: (filePath: string, lineNumber: number, side: "old" | "new") => DiffComment[];
-  createComment: { mutate: (args: { featureId: number; filePath: string; lineNumber: number; side: "old" | "new"; content: string }) => void };
-  updateComment: { mutate: (args: { id: number; content: string }) => void };
-  deleteComment: { mutate: (args: { id: number }) => void };
-}
-
-function DiffFileBlock({
-  section,
-  featureId,
-  mode,
-  targetBranch,
-  commitSha,
-  diffMode,
-  shikiHighlighter,
-  displayName,
-  isCollapsed,
-  buildExtendData,
-  activeWidget,
-  setActiveWidget,
-  getCommentsForLine,
-  createComment,
-  updateComment,
-  deleteComment,
-}: DiffFileBlockProps) {
-  const filePath = section.newFileName !== "/dev/null" ? section.newFileName : section.oldFileName;
-
-  const sentinelRef = useRef<HTMLDivElement>(null);
-  const isNearViewport = useNearViewport(sentinelRef);
-
-  // Only fire the tRPC query and build the DiffFile when the block is both
-  // near the viewport and not collapsed — avoids work for off-screen files.
-  const shouldRender = isNearViewport && !isCollapsed;
-
-  const { data: fileContent } = useGetFileContent(
-    { featureId, filePath, mode, targetBranch, commitSha },
-    { enabled: shouldRender },
-  );
-
-  // Build the DiffFile without syntax highlighting so the diff paints
-  // immediately. Only build lines for the active diff mode (split or unified)
-  // — building both doubles the construction cost for no benefit.
-  const diffFile = useMemo(() => {
-    if (!shouldRender) return null;
-    const lang = langFromPath(filePath);
-    const oldContent = fileContent?.old_content ?? "";
-    const newContent = fileContent?.new_content ?? "";
-    try {
-      const file = DiffFile.createInstance({
-        oldFile: { fileName: section.oldFileName, fileLang: lang, content: oldContent },
-        newFile: { fileName: section.newFileName, fileLang: lang, content: newContent },
-        hunks: section.hunks,
-      });
-      file.initTheme("dark");
-      file.initRaw();
-      if (diffMode === DiffModeEnum.Unified) {
-        file.buildUnifiedDiffLines();
-      } else {
-        file.buildSplitDiffLines();
-      }
-      return file;
-    } catch {
-      return null;
-    }
-  }, [shouldRender, section, filePath, fileContent, diffMode]);
-
-  // Apply syntax highlighting after the initial unstyled paint so the diff is
-  // interactive immediately. DiffView subscribes to the DiffFile via
-  // useSyncExternalStore, so notifyAll() triggers a re-render with tokens.
-  useEffect(() => {
-    if (!diffFile || !shikiHighlighter) return;
-    diffFile.initSyntax({ registerHighlighter: shikiHighlighter });
-    diffFile.notifyAll();
-  }, [diffFile, shikiHighlighter]);
-
-  // Not yet near the viewport — render a sentinel placeholder so the
-  // IntersectionObserver can detect when the file scrolls into range.
-  // 200px is a rough estimate of a collapsed file header + a small diff.
-  // The 500px rootMargin on the observer fires early enough that any layout
-  // shift from this estimate being off is not visible to the user.
-  if (!isNearViewport) {
-    return <div ref={sentinelRef} style={{ minHeight: "200px" }} />;
-  }
-
-  if (isCollapsed || !diffFile) return null;
-
-  return (
-    <DiffView
-      diffFile={diffFile}
-      diffViewMode={diffMode}
-      diffViewWrap={true}
-      diffViewTheme="dark"
-      diffViewFontSize={13}
-      diffViewHighlight={true}
-      registerHighlighter={shikiHighlighter ?? undefined}
-      diffViewAddWidget={true}
-      extendData={buildExtendData(displayName)}
-      renderExtendLine={({ side, data, lineNumber }) => {
-        const lineComments = data as DiffComment[] | undefined;
-        if (!lineComments || lineComments.length === 0) return null;
-        if (
-          activeWidget &&
-          activeWidget.filePath === displayName &&
-          activeWidget.lineNumber === lineNumber &&
-          activeWidget.side === side
-        ) {
-          return null;
-        }
-        return (
-          <CommentExtendLine
-            comments={lineComments}
-            onEdit={(id, content) => updateComment.mutate({ id, content })}
-            onDelete={(id) => deleteComment.mutate({ id })}
-          />
-        );
-      }}
-      onAddWidgetClick={(lineNumber, side) => {
-        setActiveWidget({ filePath: displayName, lineNumber, side });
-      }}
-      renderWidgetLine={({ lineNumber, side, onClose }) => {
-        if (
-          !activeWidget ||
-          activeWidget.filePath !== displayName ||
-          activeWidget.lineNumber !== lineNumber ||
-          activeWidget.side !== side
-        ) {
-          return null;
-        }
-        const sideStr = side === SplitSide.old ? "old" : "new";
-        const lineComments = getCommentsForLine(displayName, lineNumber, sideStr);
-        return (
-          <CommentWidgetLine
-            comments={lineComments}
-            onClose={() => {
-              setActiveWidget(null);
-              onClose();
-            }}
-            onSubmit={(content) => {
-              createComment.mutate({
-                featureId,
-                filePath: displayName,
-                lineNumber,
-                side: sideStr,
-                content,
-              });
-              setActiveWidget(null);
-              onClose();
-            }}
-            onEdit={(id, content) => updateComment.mutate({ id, content })}
-            onDelete={(id) => deleteComment.mutate({ id })}
-          />
-        );
-      }}
-    />
-  );
-}
+import { DiffFileTree, type ChangedFileEntry } from "./DiffFileTree";
+import { DiffFileBlock } from "./DiffFileBlock";
+import { useDiffData } from "./useDiffData";
+import { useDiffKeyboard } from "./useDiffKeyboard";
+import type { CommentCallbacks, CommentLineData, ActiveWidget } from "./diff-comment-decorations";
+import type { DiffComment } from "./DiffCommentWidget";
 
 interface DiffViewerProps {
   featureId: number;
@@ -241,206 +17,58 @@ interface DiffViewerProps {
 }
 
 export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
-  const [diffMode, setDiffMode] = useState<DiffModeEnum>(DiffModeEnum.Unified);
+  const [diffMode, setDiffMode] = useState<"unified" | "split">("unified");
   const [collapsedFiles, setCollapsedFiles] = useState<Set<string>>(new Set());
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
-  const [shikiHighlighter, setShikiHighlighter] = useState<DiffHighlighter | null>(null);
-  const [selectedCommit, setSelectedCommit] = useState<string | null>(null);
-
-  useEffect(() => {
-    shikiPromise.then((h) => setShikiHighlighter(h));
-  }, []);
-
-  const { data: viewedList = [] } = useListDiffViewed(featureId);
-  const { data: blobShasList = [] } = useGetFileBlobShas({ featureId });
-  const blobShas: Record<string, string> = useMemo(() => {
-    const map: Record<string, string> = {};
-    for (const item of blobShasList) {
-      if (item.sha) map[item.file_path] = item.sha;
-    }
-    return map;
-  }, [blobShasList]);
-  const [commitLimit, setCommitLimit] = useState(20);
-  const { data: commitData } = useGetCommitLog(
-    { featureId, limit: commitLimit },
-    { keepPreviousData: true },
-  );
-  const commits = useMemo(() =>
-    (commitData?.commits ?? []).map((c) => ({
-      sha: c.sha,
-      shortSha: c.short_sha,
-      message: c.message,
-      body: c.body,
-      author: c.author,
-      date: c.date,
-      isPushed: c.is_pushed,
-    })) as CommitEntry[],
-    [commitData],
-  );
-  const isOnBaseBranch = commitData?.is_on_base_branch ?? true;
-
-  const viewedFilesSet = useMemo(() => {
-    const set = new Set<string>();
-    for (const v of viewedList) {
-      const currentSha = (blobShas as Record<string, string>)[v.file_path];
-      // If we have a current SHA and it doesn't match, the file changed since viewed — skip it.
-      // If there's no current SHA (e.g. branch mode, committed files), trust the DB record.
-      if (currentSha && currentSha !== v.blob_sha) {
-        continue;
-      }
-      set.add(v.file_path);
-    }
-    return set;
-  }, [viewedList, blobShas]);
-
-  // Auto-collapse viewed files on initial load
-  const hasInitializedCollapse = useRef(false);
-  useEffect(() => {
-    if (!hasInitializedCollapse.current && viewedFilesSet.size > 0) {
-      hasInitializedCollapse.current = true;
-      setCollapsedFiles((prev) => new Set([...prev, ...viewedFilesSet]));
-    }
-  }, [viewedFilesSet]);
-
   const [focusedFileIndex, setFocusedFileIndex] = useState(-1);
-
-  const [activeWidget, setActiveWidget] = useState<{
-    filePath: string;
-    lineNumber: number;
-    side: SplitSide;
-  } | null>(null);
+  const [activeCommentWidget, setActiveCommentWidget] = useState<{ filePath: string; lineNumber: number } | null>(null);
   const diffAreaRef = useRef<HTMLDivElement>(null);
 
-  const { data: diffResponse, isLoading } = useGetDiff({
-    featureId,
-    mode,
-    targetBranch,
-    commitSha: selectedCommit ?? undefined,
-  });
-  const rawDiff = diffResponse?.diff;
+  const data = useDiffData(featureId, mode, targetBranch);
 
-  const queryClient = useQueryClient();
-
-  const markViewed = useMarkDiffViewed({
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["diff-viewed", featureId] }),
-  });
-  const unmarkViewed = useUnmarkDiffViewed({
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["diff-viewed", featureId] }),
-  });
-
-  const { data: comments = [] } = useListDiffComments(featureId);
-
-  const createComment = useCreateDiffComment({
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["diff-comments", featureId] }),
-  });
-  const updateComment = useUpdateDiffComment({
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["diff-comments", featureId] }),
-  });
-  const deleteComment = useDeleteDiffComment({
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["diff-comments", featureId] }),
-  });
-
-  const commentsByFileAndLine = useMemo(() => {
-    const map = new Map<string, DiffComment[]>();
-    for (const c of comments) {
-      const key = `${c.file_path}:${c.line_number}:${c.side}`;
-      const arr = map.get(key) ?? [];
-      arr.push(c as DiffComment);
-      map.set(key, arr);
+  // Build per-file comment line data
+  const commentLinesByFile = useMemo(() => {
+    const map = new Map<string, CommentLineData[]>();
+    for (const c of data.comments as DiffComment[]) {
+      const lines = map.get(c.file_path) ?? [];
+      const existing = lines.find((l) => l.lineNumber === c.line_number);
+      if (existing) {
+        existing.comments.push(c);
+      } else {
+        lines.push({ lineNumber: c.line_number, comments: [c] });
+      }
+      map.set(c.file_path, lines);
     }
     return map;
-  }, [comments]);
+  }, [data.comments]);
 
-  const getCommentsForLine = useCallback(
-    (filePath: string, lineNumber: number, side: "old" | "new") => {
-      return commentsByFileAndLine.get(`${filePath}:${lineNumber}:${side}`) ?? [];
+  const callbacksRef = useRef<{ activeWidget: typeof activeCommentWidget; data: typeof data }>({ activeWidget: activeCommentWidget, data });
+  callbacksRef.current = { activeWidget: activeCommentWidget, data };
+
+  const stableCallbacks = useMemo<CommentCallbacks>(() => ({
+    onSubmit: (lineNumber: number, content: string) => {
+      const { activeWidget, data: d } = callbacksRef.current;
+      if (!activeWidget || !content) { return; }
+      d.createComment.mutate({ featureId, filePath: activeWidget.filePath, lineNumber, side: "new" as const, content });
+      setActiveCommentWidget(null);
     },
-    [commentsByFileAndLine],
-  );
+    onClose: () => setActiveCommentWidget(null),
+    onEdit: (id: number, content: string) => callbacksRef.current.data.updateComment.mutate({ id, content }),
+    onDelete: (id: number) => callbacksRef.current.data.deleteComment.mutate({ id }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [featureId]);
 
-  const buildExtendData = useCallback(
-    (filePath: string) => {
-      const oldFile: Record<string, { data: DiffComment[] }> = {};
-      const newFile: Record<string, { data: DiffComment[] }> = {};
-      for (const c of comments) {
-        if (c.file_path !== filePath) continue;
-        const target = c.side === "old" ? oldFile : newFile;
-        const key = String(c.line_number);
-        if (!target[key]) {
-          target[key] = { data: [] };
-        }
-        target[key].data.push(c as DiffComment);
-      }
-      return { oldFile, newFile };
-    },
-    [comments],
-  );
-
-  const fileSections = useMemo(() => parseUnifiedDiff(rawDiff ?? ""), [rawDiff]);
-
-  const fileNames = useMemo(
-    () =>
-      fileSections.map((section) =>
-        section.newFileName !== "/dev/null" ? section.newFileName : section.oldFileName,
-      ),
-    [fileSections],
-  );
-
-  // Batch prefetch all file contents in a single call, then seed
-  // individual per-file cache keys so DiffFileBlock queries resolve instantly.
-  const { data: batchFileContentList } = useGetFileContentBatch(
-    {
-      featureId,
-      filePaths: fileNames,
-      mode,
-      targetBranch,
-      commitSha: selectedCommit ?? undefined,
-    },
-    { enabled: fileNames.length > 0 },
-  );
-
-  // Seed the per-file cache one file per animation frame so the browser stays
-  // responsive.  Seeding all files at once causes every visible DiffFileBlock
-  // to rebuild its DiffFile synchronously in a single React render, blocking
-  // interaction for hundreds of milliseconds.
+  // Auto-collapse viewed files on initial load
   useEffect(() => {
-    if (!batchFileContentList) return;
-    const items = batchFileContentList;
-    let i = 0;
-    let rafId: number;
-
-    function seedNext() {
-      if (i >= items.length) return;
-      const item = items[i++];
-      const key = getGetFileContentQueryKey({
-        featureId,
-        filePath: item.file_path,
-        mode,
-        targetBranch,
-        commitSha: selectedCommit ?? undefined,
-      });
-      queryClient.setQueryData(key, {
-        old_content: item.old_content,
-        new_content: item.new_content,
-      } as FileContent);
-      rafId = requestAnimationFrame(seedNext);
+    if (!data.hasInitializedCollapse.current && data.viewedFilesSet.size > 0) {
+      data.hasInitializedCollapse.current = true;
+      setCollapsedFiles((prev) => new Set([...prev, ...data.viewedFilesSet]));
     }
-
-    rafId = requestAnimationFrame(seedNext);
-    return () => cancelAnimationFrame(rafId);
-  }, [batchFileContentList, featureId, mode, targetBranch, selectedCommit, queryClient]);
-
-  const fileMeta = useMemo(() => {
-    return fileSections.map((section) => {
-      const displayName = section.newFileName !== "/dev/null" ? section.newFileName : section.oldFileName;
-      const { additions, deletions } = countHunkStats(section.hunks);
-      return { section, displayName, additions, deletions };
-    });
-  }, [fileSections]);
+  }, [data.viewedFilesSet, data.hasInitializedCollapse]);
 
   const scrollToFileIndex = useCallback(
     (index: number) => {
-      const name = fileNames[index];
+      const name = data.fileNames[index];
       if (!name) return;
       setSelectedFile(name);
       requestAnimationFrame(() => {
@@ -448,90 +76,40 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
         el?.scrollIntoView({ behavior: "smooth", block: "start" });
       });
     },
-    [fileNames],
+    [data.fileNames],
   );
 
   const toggleFile = useCallback((fileName: string) => {
     setCollapsedFiles((prev) => {
       const next = new Set(prev);
-      if (next.has(fileName)) {
-        next.delete(fileName);
-      } else {
-        next.add(fileName);
-      }
+      if (next.has(fileName)) next.delete(fileName);
+      else next.add(fileName);
       return next;
     });
   }, []);
 
-  // Vim-style diff navigation: Ctrl+J/K/L/D/U/H
-  const focusedFileIndexRef = useRef(focusedFileIndex);
-  focusedFileIndexRef.current = focusedFileIndex;
-
-  useGlobalShortcut("ctrl+j", (e) => {
-    e.preventDefault();
-    e.stopImmediatePropagation();
-    const next = Math.min(focusedFileIndexRef.current + 1, fileNames.length - 1);
-    setFocusedFileIndex(next);
-    scrollToFileIndex(next);
-  });
-
-  useGlobalShortcut("ctrl+k", (e) => {
-    e.preventDefault();
-    e.stopImmediatePropagation();
-    const next = Math.max(focusedFileIndexRef.current - 1, 0);
-    setFocusedFileIndex(next);
-    scrollToFileIndex(next);
-  });
-
-  useGlobalShortcut("ctrl+l", (e) => {
-    e.preventDefault();
-    e.stopImmediatePropagation();
-    const idx = focusedFileIndexRef.current;
-    if (idx >= 0 && idx < fileNames.length) {
-      toggleFile(fileNames[idx]);
-    }
-  });
-
-  useGlobalShortcut("ctrl+d", (e) => {
-    e.preventDefault();
-    e.stopImmediatePropagation();
-    diffAreaRef.current?.scrollBy({ top: diffAreaRef.current.clientHeight / 2, behavior: "smooth" });
-  });
-
-  useGlobalShortcut("ctrl+u", (e) => {
-    e.preventDefault();
-    e.stopImmediatePropagation();
-    diffAreaRef.current?.scrollBy({ top: -diffAreaRef.current.clientHeight / 2, behavior: "smooth" });
-  });
-
-  useGlobalShortcut("ctrl+h", (e) => {
-    e.preventDefault();
-    e.stopImmediatePropagation();
-    const idx = focusedFileIndexRef.current;
-    if (idx >= 0 && idx < fileNames.length) {
-      const name = fileNames[idx];
-      const sha = (blobShas as Record<string, string>)[name] ?? "";
-      if (viewedFilesSet.has(name)) {
-        unmarkViewed.mutate({ featureId, filePath: name });
-      } else {
-        markViewed.mutate({ featureId, filePath: name, blobSha: sha });
-        setCollapsedFiles((p) => new Set([...p, name]));
-      }
-    }
+  useDiffKeyboard({
+    fileNames: data.fileNames,
+    focusedFileIndex,
+    setFocusedFileIndex,
+    scrollToFileIndex,
+    toggleFile,
+    blobShas: data.blobShas,
+    viewedFilesSet: data.viewedFilesSet,
+    markViewed: data.markViewed,
+    unmarkViewed: data.unmarkViewed,
+    featureId,
+    diffAreaRef,
+    setCollapsedFiles,
   });
 
   const changedFileEntries: ChangedFileEntry[] = useMemo(
     () =>
-      fileMeta.map(({ section, displayName, additions, deletions }) => {
+      data.fileMeta.map(({ section, displayName, additions, deletions }) => {
         const status = section.oldFileName === "/dev/null" ? "A" : section.newFileName === "/dev/null" ? "D" : "M";
-        return {
-          file: displayName,
-          status,
-          additions,
-          deletions,
-        };
+        return { file: displayName, status, additions, deletions };
       }),
-    [fileMeta],
+    [data.fileMeta],
   );
 
   const expandedFiles = useMemo(() => {
@@ -542,25 +120,20 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
     return set;
   }, [changedFileEntries, collapsedFiles]);
 
-  const handleSelectFile = useCallback(
-    (filePath: string) => {
-      setSelectedFile(filePath);
-      // Ensure the file is expanded
-      setCollapsedFiles((prev) => {
-        const next = new Set(prev);
-        next.delete(filePath);
-        return next;
-      });
-      // Scroll to the file in the diff area
-      requestAnimationFrame(() => {
-        const el = diffAreaRef.current?.querySelector(`[data-file="${CSS.escape(filePath)}"]`);
-        el?.scrollIntoView({ behavior: "smooth", block: "start" });
-      });
-    },
-    [],
-  );
+  const handleSelectFile = useCallback((filePath: string) => {
+    setSelectedFile(filePath);
+    setCollapsedFiles((prev) => {
+      const next = new Set(prev);
+      next.delete(filePath);
+      return next;
+    });
+    requestAnimationFrame(() => {
+      const el = diffAreaRef.current?.querySelector(`[data-file="${CSS.escape(filePath)}"]`);
+      el?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }, []);
 
-  if (isLoading) {
+  if (data.isLoading) {
     return (
       <div className="flex h-full items-center justify-center bg-background text-foreground">
         <p className="text-muted-foreground">Loading diff...</p>
@@ -568,7 +141,7 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
     );
   }
 
-  if (!rawDiff?.trim()) {
+  if (!data.rawDiff?.trim()) {
     return (
       <div className="flex h-full items-center justify-center bg-background text-foreground">
         <p className="text-muted-foreground">No changes detected</p>
@@ -577,18 +150,18 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
   }
 
   return (
-    <div className="dracula-diff flex h-full flex-col overflow-hidden bg-background">
-      {/* Commit header (only when viewing a specific commit) */}
-      {selectedCommit && (() => {
-        const commit = commits.find((c) => c.sha === selectedCommit);
+    <div className="flex h-full flex-col overflow-hidden bg-background">
+      {/* Commit header */}
+      {data.selectedCommit && (() => {
+        const commit = data.commits.find((c) => c.sha === data.selectedCommit);
         return (
           <div className="border-b border-border px-4 py-2 text-sm text-foreground">
             <div className="flex items-center gap-3">
-              <span className="font-mono text-primary">{selectedCommit.slice(0, 7)}</span>
+              <span className="font-mono text-primary">{data.selectedCommit.slice(0, 7)}</span>
               <span className="min-w-0 flex-1 text-foreground">{commit?.message}</span>
               <button
                 className="shrink-0 rounded bg-accent px-2 py-0.5 text-xs text-foreground hover:bg-muted-foreground"
-                onClick={() => setSelectedCommit(null)}
+                onClick={() => data.setSelectedCommit(null)}
               >
                 Working Changes
               </button>
@@ -602,102 +175,69 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
 
       {/* Diff area + file tree */}
       <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
-        {/* File tree sidebar */}
         <ResizablePanel defaultSize={25} minSize={1} maxSize="300px" className="overflow-hidden">
           <DiffFileTree
             files={changedFileEntries}
             expandedFiles={expandedFiles}
             selectedFile={selectedFile}
-            viewedFiles={viewedFilesSet}
+            viewedFiles={data.viewedFilesSet}
             onToggleExpand={toggleFile}
             onSelectFile={handleSelectFile}
-            commits={commits}
-            selectedCommit={selectedCommit}
-            onSelectCommit={setSelectedCommit}
-            isOnBaseBranch={isOnBaseBranch}
-            onLoadMoreCommits={() => setCommitLimit((l) => l + 20)}
+            commits={data.commits}
+            selectedCommit={data.selectedCommit}
+            onSelectCommit={data.setSelectedCommit}
+            isOnBaseBranch={data.isOnBaseBranch}
+            onLoadMoreCommits={() => data.setCommitLimit((l) => l + 20)}
           />
         </ResizablePanel>
         <ResizableHandle className="bg-accent" />
         <ResizablePanel defaultSize={75} className="overflow-hidden">
-        <div ref={diffAreaRef} className="h-full overflow-y-auto">
-        {fileMeta.map(({ section, displayName, additions, deletions }, fileIndex) => {
-          const isCollapsed = collapsedFiles.has(displayName);
-          const isFileViewed = viewedFilesSet.has(displayName);
-          const currentBlobSha = (blobShas as Record<string, string>)[displayName] ?? "";
-          const isFocused = fileIndex === focusedFileIndex;
+          <div ref={diffAreaRef} className="h-full overflow-y-auto">
+            {data.fileMeta.map(({ section, displayName, additions, deletions }, fileIndex) => {
+              const isCollapsed = collapsedFiles.has(displayName);
+              const isFileViewed = data.viewedFilesSet.has(displayName);
+              const currentBlobSha = data.blobShas[displayName] ?? "";
+              const isFocused = fileIndex === focusedFileIndex;
 
-          return (
-            <div key={displayName} data-file={displayName} className="border-b border-border">
-              {/* File header */}
-              <div className={`group/header sticky top-0 z-10 flex w-full items-center gap-2 bg-sidebar px-4 py-2.5 text-sm text-foreground hover:bg-accent ${isFocused ? "ring-1 ring-inset ring-primary bg-accent" : ""}`}>
-                <button
-                  className="flex items-center gap-2 flex-1 min-w-0 text-left"
-                  onClick={() => toggleFile(displayName)}
-                >
-                  {isCollapsed ? (
-                    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  ) : (
-                    <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  )}
-                  <span className="font-mono text-xs truncate">{displayName}</span>
-                  <CopyButton text={displayName} hoverClass="opacity-0 group-hover/header:opacity-100" sizeClass="h-3.5 w-3.5" />
-                </button>
-                <span className="text-xs text-[#50fa7b] shrink-0">+{additions}</span>
-                <span className="text-xs text-[#ff5555] shrink-0">-{deletions}</span>
-                {/* Viewed checkbox (hidden when viewing a commit) */}
-                {!selectedCommit && (
-                  <div
-                    className="flex items-center gap-1.5 text-xs text-muted-foreground ml-2 shrink-0"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <Checkbox
-                      checked={isFileViewed}
-                      onCheckedChange={(checked) => {
-                        if (checked) {
-                          markViewed.mutate({ featureId, filePath: displayName, blobSha: currentBlobSha });
-                          setCollapsedFiles((prev) => new Set([...prev, displayName]));
-                        } else {
-                          unmarkViewed.mutate({ featureId, filePath: displayName });
-                        }
-                      }}
-                      className="h-3.5 w-3.5 cursor-pointer"
-                    />
-                    <span className="cursor-pointer select-none" onClick={() => {
-                      if (isFileViewed) {
-                        unmarkViewed.mutate({ featureId, filePath: displayName });
-                      } else {
-                        markViewed.mutate({ featureId, filePath: displayName, blobSha: currentBlobSha });
-                        setCollapsedFiles((prev) => new Set([...prev, displayName]));
-                      }
-                    }}>Viewed</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Diff content */}
-              <DiffFileBlock
-                section={section}
-                featureId={featureId}
-                mode={mode}
-                targetBranch={targetBranch}
-                commitSha={selectedCommit ?? undefined}
-                diffMode={diffMode}
-                shikiHighlighter={shikiHighlighter}
-                displayName={displayName}
-                isCollapsed={isCollapsed}
-                buildExtendData={buildExtendData}
-                activeWidget={activeWidget}
-                setActiveWidget={setActiveWidget}
-                getCommentsForLine={getCommentsForLine}
-                createComment={createComment}
-                updateComment={updateComment}
-                deleteComment={deleteComment}
-              />
-            </div>
-          );
-        })}
-        </div>
+              return (
+                <div key={displayName} data-file={displayName} className="border-b border-border">
+                  <FileHeader
+                    displayName={displayName}
+                    additions={additions}
+                    deletions={deletions}
+                    isCollapsed={isCollapsed}
+                    isFocused={isFocused}
+                    isFileViewed={isFileViewed}
+                    showViewedCheckbox={!data.selectedCommit}
+                    onToggle={() => toggleFile(displayName)}
+                    onMarkViewed={() => {
+                      data.markViewed.mutate({ featureId, filePath: displayName, blobSha: currentBlobSha });
+                      setCollapsedFiles((prev) => new Set([...prev, displayName]));
+                    }}
+                    onUnmarkViewed={() => data.unmarkViewed.mutate({ featureId, filePath: displayName })}
+                  />
+                  <DiffFileBlock
+                    section={section}
+                    featureId={featureId}
+                    mode={mode}
+                    targetBranch={targetBranch}
+                    commitSha={data.selectedCommit ?? undefined}
+                    diffMode={diffMode}
+                    displayName={displayName}
+                    isCollapsed={isCollapsed}
+                    commentLines={commentLinesByFile.get(displayName)}
+                    activeWidget={
+                      activeCommentWidget?.filePath === displayName
+                        ? { lineNumber: activeCommentWidget.lineNumber }
+                        : null
+                    }
+                    commentCallbacks={stableCallbacks}
+                    onAddComment={(lineNumber) => setActiveCommentWidget({ filePath: displayName, lineNumber })}
+                  />
+                </div>
+              );
+            })}
+          </div>
         </ResizablePanel>
       </ResizablePanelGroup>
 
@@ -709,24 +249,86 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
         <span><kbd className="rounded bg-accent px-1 py-0.5 text-foreground">⌃H</kbd> viewed</span>
         <span><kbd className="rounded bg-accent px-1 py-0.5 text-foreground">⌃D</kbd>/<kbd className="rounded bg-accent px-1 py-0.5 text-foreground">⌃U</kbd> scroll</span>
         <div className="ml-auto flex items-center gap-3">
-          <span className="text-xs text-muted-foreground">{viewedFilesSet.size}/{fileMeta.length} viewed</span>
+          <span className="text-xs text-muted-foreground">{data.viewedFilesSet.size}/{data.fileMeta.length} viewed</span>
           <div className="h-4 w-px bg-border" />
           <div className="flex items-center gap-2">
             <button
-              className={`rounded px-2 py-0.5 text-xs ${diffMode === DiffModeEnum.Split ? "bg-accent text-foreground" : "text-muted-foreground"}`}
-              onClick={() => setDiffMode(DiffModeEnum.Split)}
+              className={`rounded px-2 py-0.5 text-xs ${diffMode === "split" ? "bg-accent text-foreground" : "text-muted-foreground"}`}
+              onClick={() => setDiffMode("split")}
             >
               Split
             </button>
             <button
-              className={`rounded px-2 py-0.5 text-xs ${diffMode === DiffModeEnum.Unified ? "bg-accent text-foreground" : "text-muted-foreground"}`}
-              onClick={() => setDiffMode(DiffModeEnum.Unified)}
+              className={`rounded px-2 py-0.5 text-xs ${diffMode === "unified" ? "bg-accent text-foreground" : "text-muted-foreground"}`}
+              onClick={() => setDiffMode("unified")}
             >
               Unified
             </button>
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Sticky file header row with collapse toggle, stats, and viewed checkbox. */
+function FileHeader({
+  displayName,
+  additions,
+  deletions,
+  isCollapsed,
+  isFocused,
+  isFileViewed,
+  showViewedCheckbox,
+  onToggle,
+  onMarkViewed,
+  onUnmarkViewed,
+}: {
+  displayName: string;
+  additions: number;
+  deletions: number;
+  isCollapsed: boolean;
+  isFocused: boolean;
+  isFileViewed: boolean;
+  showViewedCheckbox: boolean;
+  onToggle: () => void;
+  onMarkViewed: () => void;
+  onUnmarkViewed: () => void;
+}) {
+  return (
+    <div className={`group/header sticky top-0 z-10 flex w-full items-center gap-2 bg-sidebar px-4 py-2.5 text-sm text-foreground hover:bg-accent ${isFocused ? "ring-1 ring-inset ring-primary bg-accent" : ""}`}>
+      <button className="flex items-center gap-2 flex-1 min-w-0 text-left" onClick={onToggle}>
+        {isCollapsed ? (
+          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+        ) : (
+          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+        )}
+        <span className="font-mono text-xs truncate">{displayName}</span>
+        <CopyButton text={displayName} hoverClass="opacity-0 group-hover/header:opacity-100" sizeClass="h-3.5 w-3.5" />
+      </button>
+      <span className="text-xs text-[#50fa7b] shrink-0">+{additions}</span>
+      <span className="text-xs text-[#ff5555] shrink-0">-{deletions}</span>
+      {showViewedCheckbox && (
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground ml-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+          <Checkbox
+            checked={isFileViewed}
+            onCheckedChange={(checked) => {
+              if (checked) onMarkViewed();
+              else onUnmarkViewed();
+            }}
+            className="h-3.5 w-3.5 cursor-pointer"
+          />
+          <span
+            className="cursor-pointer select-none"
+            onClick={() => {
+              if (isFileViewed) onUnmarkViewed();
+              else onMarkViewed();
+            }}
+          >
+            Viewed
+          </span>
+        </div>
+      )}
     </div>
   );
 }

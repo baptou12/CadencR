@@ -31,27 +31,10 @@ vi.mock("@tanstack/react-query", async () => {
   };
 });
 
-// Mock @git-diff-view/react
-vi.mock("@git-diff-view/react", () => ({
-  DiffView: () => <div data-testid="diff-view">DiffView</div>,
-  DiffFile: {
-    createInstance: vi.fn(() => ({
-      initTheme: vi.fn(),
-      initRaw: vi.fn(),
-      initSyntax: vi.fn(),
-      buildSplitDiffLines: vi.fn(),
-      buildUnifiedDiffLines: vi.fn(),
-      additionLength: 5,
-      deletionLength: 2,
-    })),
-  },
-  DiffModeEnum: { Unified: "unified", Split: "split" },
-  SplitSide: { old: "old", new: "new" },
+// Mock CodeMirror-based ReadOnlyDiffView
+vi.mock("@/components/editor/ReadOnlyDiffView", () => ({
+  ReadOnlyDiffView: () => <div data-testid="diff-view">DiffView</div>,
 }));
-
-vi.mock("@git-diff-view/lowlight", () => ({ highlighter: {} }));
-vi.mock("@git-diff-view/react/styles/diff-view.css", () => ({}));
-vi.mock("./dracula-diff.css", () => ({}));
 
 import { DiffViewer } from "./DiffViewer";
 
