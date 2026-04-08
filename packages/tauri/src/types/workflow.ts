@@ -129,6 +129,12 @@ export interface WorktreeSnapshot {
   setup_log?: string;
 }
 
+export interface SnapshotPhaseState {
+  slug: string;
+  status: PhaseStatus;
+  artifact_preview: string | null;
+}
+
 export interface FeatureSnapshot {
   workflow_status: WorkflowStatus;
   queue: QueueItem[];
@@ -136,6 +142,7 @@ export interface FeatureSnapshot {
   plan: PlanSnapshot | null;
   worktree: WorktreeSnapshot | null;
   autonomy_level: number;
+  phase_states?: SnapshotPhaseState[];
 }
 
 export interface WorkflowState {

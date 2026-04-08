@@ -47,6 +47,9 @@ const mockTriggerPhase = vi.fn();
 
 vi.mock("@/api/generated", () => ({
   useGetWorkflowDefinition: () => ({ data: mockDefinition, isLoading: false }),
+  useListPhaseArtifacts: () => ({ data: [], isLoading: false }),
+  useGetFeatureArtifact: () => ({ data: undefined, isLoading: false }),
+  DEFAULT_ARTIFACT_TYPE: "default",
 }));
 
 vi.mock("@/hooks/useWorkflowWebSocket", () => ({
@@ -68,19 +71,19 @@ describe("WorkflowQueueSidebar", () => {
   });
 
   it("renders phase names", () => {
-    render(<WorkflowQueueSidebar workflowDefinitionId={1} />);
+    render(<WorkflowQueueSidebar workflowDefinitionId={1} featureId={1} />);
     expect(screen.getByText("Planning")).toBeInTheDocument();
     expect(screen.getByText("Review")).toBeInTheDocument();
     expect(screen.getByText("Execute")).toBeInTheDocument();
   });
 
   it("renders workflow name in header", () => {
-    render(<WorkflowQueueSidebar workflowDefinitionId={1} />);
+    render(<WorkflowQueueSidebar workflowDefinitionId={1} featureId={1} />);
     expect(screen.getByText("Test Workflow")).toBeInTheDocument();
   });
 
   it("shows gate type badges", () => {
-    render(<WorkflowQueueSidebar workflowDefinitionId={1} />);
+    render(<WorkflowQueueSidebar workflowDefinitionId={1} featureId={1} />);
     expect(screen.getByText("Auto")).toBeInTheDocument();
     expect(screen.getByText("Approval")).toBeInTheDocument();
     expect(screen.getByText("Manual")).toBeInTheDocument();
@@ -88,20 +91,45 @@ describe("WorkflowQueueSidebar", () => {
 
   it("shows start button for ready manual-gate phases", () => {
     mockPhaseStates.set("execute", { status: "ready", artifactPreview: null, agentSessionId: null });
-    render(<WorkflowQueueSidebar workflowDefinitionId={1} />);
+    render(<WorkflowQueueSidebar workflowDefinitionId={1} featureId={1} />);
     expect(screen.getByText("Start Phase")).toBeInTheDocument();
   });
 
   it("does not show start button for ready auto-gate phases", () => {
     mockPhaseStates.set("planning", { status: "ready", artifactPreview: null, agentSessionId: null });
-    render(<WorkflowQueueSidebar workflowDefinitionId={1} />);
+    render(<WorkflowQueueSidebar workflowDefinitionId={1} featureId={1} />);
     expect(screen.queryByText("Start Phase")).not.toBeInTheDocument();
   });
 
   it("calls triggerPhase when start button clicked", async () => {
     mockPhaseStates.set("execute", { status: "ready", artifactPreview: null, agentSessionId: null });
-    const { user } = render(<WorkflowQueueSidebar workflowDefinitionId={1} />);
+    const { user } = render(<WorkflowQueueSidebar workflowDefinitionId={1} featureId={1} />);
     await user.click(screen.getByText("Start Phase"));
     expect(mockTriggerPhase).toHaveBeenCalledWith("execute");
+  });
+
+  it("shows first-line artifact preview for completed phase, stripping markdown heading prefix", () => {
+    mockPhaseStates.set("planning", {
+      status: "completed",
+      artifactPreview: "# My Plan Title\nSome details here\nMore details",
+      agentSessionId: null,
+    });
+    render(<WorkflowQueueSidebar workflowDefinitionId={1} featureId={1} />);
+    expect(screen.getByText("My Plan Title")).toBeInTheDocument();
+    expect(screen.queryByText("Some details here")).not.toBeInTheDocument();
+  });
+
+  it("opens artifact modal when completed phase card is clicked", async () => {
+    mockPhaseStates.set("planning", {
+      status: "completed",
+      artifactPreview: "# Plan",
+      agentSessionId: null,
+    });
+    const { user } = render(<WorkflowQueueSidebar workflowDefinitionId={1} featureId={1} />);
+    // Click the Planning phase card button
+    const planningCard = screen.getAllByRole("button").find(b => b.textContent?.includes("Planning"));
+    expect(planningCard).toBeTruthy();
+    await user.click(planningCard!);
+    expect(screen.getByText("Planning — Artifacts")).toBeInTheDocument();
   });
 });

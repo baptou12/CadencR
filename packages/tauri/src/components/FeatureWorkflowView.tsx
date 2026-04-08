@@ -532,6 +532,7 @@ export function FeatureWorkflowView({
           {feature?.workflow_definition_id ? (
             <WorkflowQueueSidebar
               workflowDefinitionId={feature.workflow_definition_id}
+              featureId={featureId}
               onViewArtifact={handleViewArtifact}
             />
           ) : (

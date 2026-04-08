@@ -84,6 +84,15 @@ async fn setup_test_db(db_path: &str, repo_path: &str) -> SqlitePool {
         agent_count INTEGER DEFAULT 1
     )"#).execute(&pool).await.unwrap();
 
+    sqlx::query(r#"CREATE TABLE IF NOT EXISTS workflow_artifacts (
+        id INTEGER PRIMARY KEY, feature_id INTEGER NOT NULL,
+        phase_slug TEXT NOT NULL, artifact_type TEXT NOT NULL DEFAULT 'default',
+        content TEXT NOT NULL DEFAULT '', agent_session_id INTEGER,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(feature_id, phase_slug, artifact_type)
+    )"#).execute(&pool).await.unwrap();
+
     sqlx::query("INSERT INTO projects (id, name, path) VALUES (1, 'test-project', ?)")
         .bind(repo_path)
         .execute(&pool).await.unwrap();
@@ -323,4 +332,44 @@ async fn test_snapshot_includes_completed_plan_agent() {
         .collect();
     assert!(statuses.contains(&"completed"), "completed plan agent must be included");
     assert!(statuses.contains(&"running"), "running plan agent must be included");
+}
+
+#[tokio::test]
+async fn test_snapshot_includes_phase_states_from_artifacts() {
+    let server = start_test_server().await;
+
+    let tmp_dir_path = format!("{}", server._tmp_dir.path().display());
+    let db_path = format!("{}/test.db", tmp_dir_path);
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect(&format!("sqlite:{db_path}"))
+        .await
+        .unwrap();
+
+    // Insert two workflow artifacts for different phases
+    sqlx::query("INSERT INTO workflow_artifacts (feature_id, phase_slug, artifact_type, content) VALUES (1, 'specify', 'default', '# Spec Title\nContent here')")
+        .execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO workflow_artifacts (feature_id, phase_slug, artifact_type, content) VALUES (1, 'plan', 'default', '# Plan Title\nPlan content')")
+        .execute(&pool).await.unwrap();
+
+    pool.close().await;
+
+    let resp = server.client.get(format!("{}/api/features/1/snapshot", server.base_url))
+        .send().await.unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+
+    let phase_states = body["phase_states"].as_array().expect("phase_states should be present");
+    assert_eq!(phase_states.len(), 2, "should have 2 phase states");
+
+    let slugs: Vec<&str> = phase_states.iter()
+        .map(|p| p["slug"].as_str().unwrap())
+        .collect();
+    assert!(slugs.contains(&"specify"), "specify phase should be in phase_states");
+    assert!(slugs.contains(&"plan"), "plan phase should be in phase_states");
+
+    for ps in phase_states {
+        assert_eq!(ps["status"].as_str().unwrap(), "completed", "all phases with artifacts should be completed");
+        assert!(ps["artifact_preview"].as_str().is_some(), "artifact_preview should be present");
+    }
 }

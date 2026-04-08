@@ -91,6 +91,19 @@ pub async fn get_feature_snapshot(
         .unwrap_or(crate::domain::workflow::status::WorkflowStatus::Idle)
         .to_string();
 
+    // 6. Phase states from workflow_artifacts (phases with artifacts = completed)
+    let phase_states: Vec<SnapshotPhaseState> = sqlx::query_as::<_, SnapshotPhaseState>(
+        r#"SELECT phase_slug as slug, 'completed' as status,
+                  substr(content, 1, 200) as artifact_preview
+           FROM workflow_artifacts
+           WHERE feature_id = ?
+           GROUP BY phase_slug
+           ORDER BY created_at"#,
+    )
+    .bind(feature_id)
+    .fetch_all(pool)
+    .await?;
+
     Ok(FeatureSnapshotResponse {
         workflow_status,
         queue,
@@ -98,5 +111,6 @@ pub async fn get_feature_snapshot(
         plan: plan_snapshot,
         worktree,
         autonomy_level,
+        phase_states,
     })
 }

@@ -1514,6 +1514,19 @@ export function useGetFeatureArtifact(
   });
 }
 
+export function useListPhaseArtifacts(
+  featureId: number,
+  phaseSlug: string,
+  options?: Omit<UseQueryOptions<WorkflowArtifact[], ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<WorkflowArtifact[], ErrorType<unknown>>({
+    queryKey: ["workflow", "artifacts", featureId, phaseSlug, "types"] as const,
+    queryFn: () =>
+      customInstance({ method: "GET", url: `/api/features/${featureId}/artifacts/${phaseSlug}/types` }),
+    ...options,
+  });
+}
+
 export function useGetTypedArtifact(
   featureId: number,
   phaseSlug: string,

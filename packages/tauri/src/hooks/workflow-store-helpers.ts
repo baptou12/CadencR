@@ -16,6 +16,7 @@ import {
   type AgentSessionState,
   type AutonomyLevel,
   type WorktreeStatus,
+  type PhaseState,
   type FeatureSnapshot,
   PLAN_KEY,
   PRD_KEY,
@@ -106,12 +107,27 @@ export function hydrateFromSnapshotPatch(
     }
   }
 
+  // Hydrate phase states from snapshot (only if not already populated by WS events)
+  let phaseStates = state.phaseStates;
+  if (phaseStates.size === 0 && snapshot.phase_states?.length) {
+    phaseStates = new Map<string, PhaseState>();
+    for (const ps of snapshot.phase_states) {
+      phaseStates.set(ps.slug, {
+        slug: ps.slug,
+        status: ps.status,
+        agentSessionId: null,
+        artifactPreview: ps.artifact_preview ?? null,
+      });
+    }
+  }
+
   const patch: Partial<WorkflowState> = {
     queue: hasWsQueue ? state.queue : snapshot.queue,
     workflowStatus: hasWsQueue && state.workflowStatus !== "idle"
       ? state.workflowStatus : snapshot.workflow_status,
     autonomyLevel: (snapshot.autonomy_level as AutonomyLevel) ?? 1,
     agents,
+    phaseStates,
     hydrated: true,
   };
 

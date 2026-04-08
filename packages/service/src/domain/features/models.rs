@@ -261,6 +261,13 @@ pub struct WorktreeSnapshot {
     pub setup_log: Option<String>,
 }
 
+#[derive(Debug, Serialize, sqlx::FromRow, ToSchema)]
+pub struct SnapshotPhaseState {
+    pub slug: String,
+    pub status: String,
+    pub artifact_preview: Option<String>,
+}
+
 #[derive(Debug, Serialize, ToSchema)]
 pub struct FeatureSnapshotResponse {
     pub workflow_status: String,
@@ -269,6 +276,8 @@ pub struct FeatureSnapshotResponse {
     pub plan: Option<PlanSnapshot>,
     pub worktree: Option<WorktreeSnapshot>,
     pub autonomy_level: u8,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub phase_states: Vec<SnapshotPhaseState>,
 }
 
 #[cfg(test)]

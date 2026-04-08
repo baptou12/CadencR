@@ -3,8 +3,9 @@
  * Shows phase cards with gate status, dependency connectors, and action buttons.
  */
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
+import { PhaseArtifactModal } from "@/components/workflow/PhaseArtifactModal";
 import {
   CheckCircle2Icon,
   CircleIcon,
@@ -53,6 +54,7 @@ const GATE_CONFIG: Record<string, { icon: React.ReactNode; label: string }> = {
 
 interface WorkflowQueueSidebarProps {
   workflowDefinitionId: number;
+  featureId: number;
   onViewArtifact?: (phaseSlug: string, artifactTypes?: string[]) => void;
   onScrollToAgent?: (sessionId: number) => void;
   className?: string;
@@ -60,6 +62,7 @@ interface WorkflowQueueSidebarProps {
 
 export function WorkflowQueueSidebar({
   workflowDefinitionId,
+  featureId,
   onViewArtifact,
   onScrollToAgent,
   className,
@@ -69,6 +72,8 @@ export function WorkflowQueueSidebar({
   const queue = useWorkflowStore((s) => s.queue);
   const approvePhase = useWorkflowStore((s) => s.approvePhase);
   const triggerPhase = useWorkflowStore((s) => s.triggerPhase);
+
+  const [modalPhase, setModalPhase] = useState<WorkflowPhase | null>(null);
 
   const sortedPhases = useMemo(
     () => definition?.phases ? [...definition.phases].sort((a, b) => a.order_index - b.order_index) : [],
@@ -161,7 +166,7 @@ export function WorkflowQueueSidebar({
                 isLast={!isDecomposed && index === sortedPhases.length - 1}
                 hasMultipleInputs={hasMultipleInputs.has(phase.slug)}
                 onTrigger={() => triggerPhase(phase.slug)}
-                onViewArtifact={onViewArtifact ? () => onViewArtifact(phase.slug, phase.artifact_types?.length ? phase.artifact_types : undefined) : undefined}
+                onViewArtifact={() => setModalPhase(phase)}
                 onScrollToAgent={onScrollToAgent}
               />
               {isDecomposed && tasks.map((task, taskIdx) => (
@@ -176,6 +181,16 @@ export function WorkflowQueueSidebar({
           );
         })}
       </div>
+
+      {modalPhase && (
+        <PhaseArtifactModal
+          open={!!modalPhase}
+          onOpenChange={(open) => { if (!open) setModalPhase(null); }}
+          featureId={featureId}
+          phase={modalPhase}
+          onOpenInEditor={(slug, types) => onViewArtifact?.(slug, types)}
+        />
+      )}
     </div>
   );
 }
@@ -232,7 +247,9 @@ function PhaseCard({
         <button
           type="button"
           onClick={() => {
-            if ((status === "completed" || status === "pending_approval") && onViewArtifact) onViewArtifact();
+            if ((status === "completed" || status === "pending_approval") && onViewArtifact) {
+              onViewArtifact();
+            }
           }}
           className={cn(
             "w-full rounded-md border border-gray-800 px-2.5 py-2 text-left transition-colors",
@@ -273,12 +290,15 @@ function PhaseCard({
             </button>
           )}
 
-          {/* Completed: artifact preview */}
-          {status === "completed" && artifactPreview && (
-            <p className="mt-1 line-clamp-2 text-[10px] text-muted-foreground font-mono">
-              {artifactPreview}
-            </p>
-          )}
+          {/* Completed: artifact preview — show first non-empty line only */}
+          {status === "completed" && artifactPreview && (() => {
+            const firstLine = artifactPreview.split("\n").map(l => l.replace(/^#+\s*/, "").trim()).find(l => l.length > 0);
+            return firstLine ? (
+              <p className="mt-1 truncate text-[10px] text-muted-foreground">
+                {firstLine}
+              </p>
+            ) : null;
+          })()}
         </button>
 
         {/* Action buttons */}
