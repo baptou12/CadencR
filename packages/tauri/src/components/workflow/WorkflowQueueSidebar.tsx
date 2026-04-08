@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ProgressBar } from "@/components/ui/progress-bar";
 import { useGetWorkflowDefinition } from "@/api/generated";
 import { useWorkflowStore } from "@/hooks/useWorkflowWebSocket";
 import type { PhaseStatus, QueueItem } from "@/types/workflow";
@@ -134,19 +135,7 @@ export function WorkflowQueueSidebar({
       {/* Header */}
       <div className="border-b border-gray-800 px-3 py-2.5">
         <h3 className="truncate text-sm font-semibold text-foreground">{definition.name}</h3>
-        {sortedPhases.length > 0 && (
-          <div className="mt-1.5 flex items-center gap-2">
-            <div className="flex-1 h-1.5 rounded-full bg-gray-800 overflow-hidden">
-              <div
-                className="h-full rounded-full bg-green-500 transition-all duration-300"
-                style={{ width: `${(completedCount / sortedPhases.length) * 100}%` }}
-              />
-            </div>
-            <span className="text-[10px] tabular-nums text-muted-foreground shrink-0">
-              {completedCount}/{sortedPhases.length}
-            </span>
-          </div>
-        )}
+        <ProgressBar completed={completedCount} total={sortedPhases.length} className="mt-1.5" />
       </div>
 
       {/* Phase pipeline */}

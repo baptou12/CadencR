@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
+import { ProgressBar } from "@/components/ui/progress-bar";
 import { Markdown } from "@/components/Markdown";
 import { useGetFeaturePlan, useGetFeaturePrd } from "@/api/generated";
 import type { QueueItem, QueueItemStatus } from "@/types/workflow";
@@ -182,19 +183,7 @@ export function QueueSidebar({ queue, featureId, selectedItemId, onSelectItem, o
               <span className="text-xs font-medium text-foreground">PRD</span>
             </button>
           )}
-          {totalCount > 0 && (
-            <div className="flex items-center gap-2">
-              <div className="flex-1 h-1.5 rounded-full bg-gray-800 overflow-hidden">
-                <div
-                  className="h-full rounded-full bg-green-500 transition-all duration-300"
-                  style={{ width: `${totalCount > 0 ? (completedCount / totalCount) * 100 : 0}%` }}
-                />
-              </div>
-              <span className="text-[10px] tabular-nums text-muted-foreground shrink-0">
-                {completedCount}/{totalCount}
-              </span>
-            </div>
-          )}
+          <ProgressBar completed={completedCount} total={totalCount} />
         </div>
 
         {/* Queue items grouped by step */}
