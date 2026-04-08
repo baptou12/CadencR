@@ -9,6 +9,7 @@ import type { PendingPermission } from "@/components/ToolPermissionPrompt";
 import type { AgentQuestion } from "@/components/AgentQuestionDrawer";
 import type { SlashCommand } from "@/hooks/useSlashCommand";
 import type { WorktreeStatus } from "@/types/workflow";
+import type { WsConnection } from "@/lib/ws-connection";
 import type { WsEnvelope, SessionConfig } from "@/lib/ws-envelope";
 import type { StreamingState } from "./ws-message-processing";
 import { createStreamingState } from "./ws-message-processing";
@@ -25,7 +26,7 @@ export interface PendingPlanApproval {
 // ---------------------------------------------------------------------------
 
 export interface SessionEntry {
-  ws: WebSocket | null;
+  conn: WsConnection | null;
   isConnected: boolean;
   serverSessionId: string;
   streamingState: StreamingState;
@@ -60,7 +61,7 @@ export interface SessionEntry {
 
 export function createSessionEntry(): SessionEntry {
   return {
-    ws: null,
+    conn: null,
     isConnected: false,
     serverSessionId: "",
     claudeSessionId: "",

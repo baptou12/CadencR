@@ -4,6 +4,7 @@
  * Extracted from useWorkflowWebSocket to keep the store file focused on state management.
  */
 
+import type { WsConnection } from "@/lib/ws-connection";
 import type { AgentBlockData } from "@/components/AgentBlock";
 import type { AgentStatus } from "@/types/agent";
 import type { PendingPermission } from "@/components/ToolPermissionPrompt";
@@ -147,7 +148,7 @@ export interface FeatureSnapshot {
 
 export interface WorkflowState {
   // Connection
-  ws: WebSocket | null;
+  conn: WsConnection | null;
   featureId: number | null;
   projectId: number | null;
 

@@ -167,7 +167,7 @@ function handleSessionAction(
       break;
     case "deleted": {
       const del = ctx.get().sessions[sessionId];
-      if (del?.ws) del.ws.close();
+      if (del?.conn) del.conn.close();
       const { [sessionId]: _, ...rest } = ctx.get().sessions;
       ctx.set({ sessions: rest });
       break;

@@ -2,6 +2,7 @@
 
 import { create } from "zustand";
 import { getWsUrl } from "@/lib/ws-url";
+import { createWsConnection } from "@/lib/ws-connection";
 import { createCommandsGet, createPhaseApproval, createPhaseTrigger, createCustomWorkflowStart } from "@/lib/ws-envelope";
 import { createWorkflowMessageHandler } from "@/hooks/workflow-event-handlers";
 import {
@@ -20,24 +21,21 @@ import { patchAgent, blocksContainFileChange } from "@/hooks/agent-event-handler
 
 export const useWorkflowStore = create<WorkflowState>((set, get) => {
   function send(action: string, payload: Record<string, unknown> = {}): boolean {
-    const { ws, featureId } = get();
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({
-        id: crypto.randomUUID(),
-        domain: "workflow",
-        action,
-        payload: { feature_id: featureId, ...payload },
-      }));
-      return true;
-    }
-    return false;
+    const { conn, featureId } = get();
+    if (!conn) return false;
+    return conn.sendJson({
+      id: crypto.randomUUID(),
+      domain: "workflow",
+      action,
+      payload: { feature_id: featureId, ...payload },
+    });
   }
 
   const handleMessage = createWorkflowMessageHandler(set, get);
 
   return {
     // Initial state
-    ws: null,
+    conn: null,
     featureId: null,
     projectId: null,
     queue: [],
@@ -64,45 +62,45 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     pendingApproval: null,
 
     requestSlashCommands(cwd: string) {
-      const { ws, slashCommands, slashCommandsLoading } = get();
+      const { conn, slashCommands, slashCommandsLoading } = get();
       if (slashCommands.length > 0 || slashCommandsLoading) return;
-      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      if (!conn?.isOpen()) return;
       set({ slashCommandsLoading: true });
-      ws.send(JSON.stringify(createCommandsGet(cwd)));
+      conn.sendJson(createCommandsGet(cwd));
     },
 
     connect(featureId, projectId) {
-      const prev = get().ws;
-      if (prev) prev.close();
+      get().conn?.close();
 
-      const ws = new WebSocket(getWsUrl());
+      const conn = createWsConnection({
+        url: getWsUrl(),
+        onOpen: () => {
+          conn.sendJson({
+            id: crypto.randomUUID(),
+            domain: "workflow",
+            action: "feature.start",
+            payload: { feature_id: featureId, project_id: projectId },
+          });
+        },
+        onMessage: (data) => handleMessage({ data } as MessageEvent),
+        onClose: () => {
+          if (get().conn === conn) set({ conn: null });
+        },
+      });
+
       set({
-        ws, featureId, projectId,
+        conn, featureId, projectId,
         queue: [], agents: new Map(),
         workflowStatus: "idle", pauseReason: null, selectedItemId: null, error: null, hydrated: false, startingBuild: false, continuingBuild: false,
         worktreeStatus: "idle" as const, worktreePath: null, worktreeSetupOutput: [], worktreeError: null,
         featureTitle: null, slashCommands: [], slashCommandsLoading: false,
         workflowDefinitionId: null, phaseStates: new Map(), pendingApproval: null,
       });
-
-      ws.addEventListener("open", () => {
-        ws.send(JSON.stringify({
-          id: crypto.randomUUID(),
-          domain: "workflow",
-          action: "feature.start",
-          payload: { feature_id: featureId, project_id: projectId },
-        }));
-      });
-      ws.addEventListener("message", handleMessage);
-      ws.addEventListener("close", () => {
-        if (get().ws === ws) set({ ws: null });
-      });
     },
 
     disconnect() {
-      const { ws } = get();
-      if (ws) ws.close();
-      set({ ws: null });
+      get().conn?.close();
+      set({ conn: null });
     },
 
     hydrateFromSnapshot(snapshot, agentState) {
@@ -120,21 +118,21 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     },
 
     approvePhase(phaseSlug, approved, feedback) {
-      const { ws, featureId } = get();
-      if (!ws || ws.readyState !== WebSocket.OPEN || !featureId) return;
-      ws.send(JSON.stringify(createPhaseApproval(featureId, phaseSlug, approved, feedback)));
+      const { conn, featureId } = get();
+      if (!conn?.isOpen() || !featureId) return;
+      conn.sendJson(createPhaseApproval(featureId, phaseSlug, approved, feedback));
     },
 
     triggerPhase(phaseSlug) {
-      const { ws, featureId } = get();
-      if (!ws || ws.readyState !== WebSocket.OPEN || !featureId) return;
-      ws.send(JSON.stringify(createPhaseTrigger(featureId, phaseSlug)));
+      const { conn, featureId } = get();
+      if (!conn?.isOpen() || !featureId) return;
+      conn.sendJson(createPhaseTrigger(featureId, phaseSlug));
     },
 
     startCustomWorkflow(featureId, projectId, title, workflowDefinitionId, description, useWorktree) {
-      const { ws } = get();
-      if (!ws || ws.readyState !== WebSocket.OPEN) return;
-      ws.send(JSON.stringify(createCustomWorkflowStart(featureId, projectId, title, workflowDefinitionId, description, useWorktree)));
+      const { conn } = get();
+      if (!conn?.isOpen()) return;
+      conn.sendJson(createCustomWorkflowStart(featureId, projectId, title, workflowDefinitionId, description, useWorktree));
       set({ workflowDefinitionId });
     },
 
@@ -320,15 +318,13 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     },
 
     deleteSession(sessionDbId: number) {
-      const { ws } = get();
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({
-          id: crypto.randomUUID(),
-          domain: "session",
-          action: "delete",
-          payload: { session_id: String(sessionDbId) },
-        }));
-      }
+      const { conn } = get();
+      conn?.sendJson({
+        id: crypto.randomUUID(),
+        domain: "session",
+        action: "delete",
+        payload: { session_id: String(sessionDbId) },
+      });
       set(state => {
         const agents = new Map(state.agents);
         for (const [key, agent] of agents) {

@@ -62,7 +62,7 @@ beforeEach(() => {
   MockWebSocket.instances = [];
   globalThis.WebSocket = MockWebSocket as unknown as typeof WebSocket;
   useWorkflowStore.setState({
-    ws: null,
+    conn: null,
     featureId: null,
     projectId: null,
     queue: [],

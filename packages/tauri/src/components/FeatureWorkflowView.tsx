@@ -114,7 +114,7 @@ export function FeatureWorkflowView({
   const slashCommands = useWorkflowStore((s) => s.slashCommands);
   const slashCommandsLoading = useWorkflowStore((s) => s.slashCommandsLoading);
   const requestSlashCommands = useWorkflowStore((s) => s.requestSlashCommands);
-  const wsReady = useWorkflowStore((s) => s.ws?.readyState === WebSocket.OPEN);
+  const wsReady = useWorkflowStore((s) => s.conn?.isOpen() ?? false);
 
   useEffect(() => {
     if (wsReady && projectPath) {

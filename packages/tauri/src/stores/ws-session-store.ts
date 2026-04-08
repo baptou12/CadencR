@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { buildUserMessageContent } from "@/types/agent-types";
 import { getWsUrl } from "@/lib/ws-url";
+import { createWsConnection } from "@/lib/ws-connection";
 import {
   parseEnvelope,
   createEnvelope,
@@ -42,10 +43,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
     return get().sessions[sessionId] ?? createSessionEntry();
   }
   function sendRaw(sessionId: string, data: unknown): void {
-    const session = getSession(sessionId);
-    if (session.ws && session.ws.readyState === WebSocket.OPEN) {
-      session.ws.send(JSON.stringify(data));
-    }
+    getSession(sessionId).conn?.sendJson(data);
   }
   const ctx: StoreAccessors = { get, set, getSession };
 
@@ -54,58 +52,56 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
 
     connect(sessionId: string) {
       const existing = get().sessions[sessionId];
-      if (existing?.ws && (existing.ws.readyState === WebSocket.OPEN || existing.ws.readyState === WebSocket.CONNECTING)) {
+      if (existing?.conn && (existing.conn.isOpen() || existing.conn.isConnecting())) {
         return;
       }
 
       const entry = existing ?? createSessionEntry();
-      const ws = new WebSocket(getWsUrl());
-
-      ws.addEventListener("open", () => {
-        set(updateSession(get(), sessionId, { isConnected: true }));
-      });
-
-      ws.addEventListener("close", () => {
-        const session = get().sessions[sessionId];
-        if (session?.pendingWsRequests.size) {
-          for (const cb of session.pendingWsRequests.values()) cb(null);
-          session.pendingWsRequests.clear();
-        }
-        set(updateSession(get(), sessionId, {
-          isConnected: false,
-          status: getSession(sessionId).status === "running" ? "error" : getSession(sessionId).status,
-        }));
-      });
-
-      ws.addEventListener("error", () => {
-        set(updateSession(get(), sessionId, { isConnected: false, status: "error" }));
-      });
-
-      ws.addEventListener("message", (event) => {
-        try {
-          const envelope = parseEnvelope(event.data as string);
-          handleEnvelope(ctx, sessionId, envelope);
-        } catch {
-          // Ignore unparseable messages
-        }
+      const conn = createWsConnection({
+        url: getWsUrl(),
+        onOpen: () => {
+          set(updateSession(get(), sessionId, { isConnected: true }));
+        },
+        onClose: () => {
+          const session = get().sessions[sessionId];
+          if (session?.pendingWsRequests.size) {
+            for (const cb of session.pendingWsRequests.values()) cb(null);
+            session.pendingWsRequests.clear();
+          }
+          set(updateSession(get(), sessionId, {
+            isConnected: false,
+            status: getSession(sessionId).status === "running" ? "error" : getSession(sessionId).status,
+          }));
+        },
+        onError: () => {
+          set(updateSession(get(), sessionId, { isConnected: false, status: "error" }));
+        },
+        onMessage: (data) => {
+          try {
+            const envelope = parseEnvelope(data);
+            handleEnvelope(ctx, sessionId, envelope);
+          } catch {
+            // Ignore unparseable messages
+          }
+        },
       });
 
       set({
         sessions: {
           ...get().sessions,
-          [sessionId]: { ...entry, ws, streamingState: existing?.streamingState ?? entry.streamingState },
+          [sessionId]: { ...entry, conn, streamingState: existing?.streamingState ?? entry.streamingState },
         },
       });
     },
 
     disconnect(sessionId: string) {
       const session = get().sessions[sessionId];
-      if (!session?.ws) return;
+      if (!session?.conn) return;
 
-      if (session.ws.readyState === WebSocket.OPEN && session.serverSessionId) {
-        session.ws.send(JSON.stringify(createDestroy(session.serverSessionId)));
+      if (session.serverSessionId) {
+        session.conn.sendJson(createDestroy(session.serverSessionId));
       }
-      session.ws.close();
+      session.conn.close();
 
       const { [sessionId]: _, ...rest } = get().sessions;
       set({ sessions: rest });
@@ -221,15 +217,15 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
 
     destroy(sessionId: string) {
       const session = get().sessions[sessionId];
-      if (!session?.ws) return;
+      if (!session?.conn) return;
 
-      if (session.ws.readyState === WebSocket.OPEN && session.serverSessionId) {
-        session.ws.send(JSON.stringify(createDestroy(session.serverSessionId)));
+      if (session.serverSessionId) {
+        session.conn.sendJson(createDestroy(session.serverSessionId));
       }
-      session.ws.close();
+      session.conn.close();
 
       set(updateSession(get(), sessionId, {
-        ws: null,
+        conn: null,
         isConnected: false,
         status: "completed",
       }));

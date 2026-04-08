@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { toast } from "sonner";
+import { createWsConnection, type WsConnection } from "@/lib/ws-connection";
 
 // -- Message types matching Rust backend protocol --
 
@@ -77,101 +78,79 @@ function buildWsUrl(
   return `${wsUrl}/api/terminal/ws?${params.toString()}`;
 }
 
-function sendJson(ws: WebSocket | null, msg: Record<string, unknown>): void {
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify(msg));
-  }
-}
-
 export function useTerminalWebSocket(
   options: UseTerminalWebSocketOptions,
 ): UseTerminalWebSocketReturn {
   const [isConnected, setIsConnected] = useState(false);
-  const wsRef = useRef<WebSocket | null>(null);
+  const connRef = useRef<WsConnection | null>(null);
   const optionsRef = useRef(options);
   optionsRef.current = options;
-  const cleanupRef = useRef<(() => void) | null>(null);
 
   // Clean up WebSocket on unmount
   useEffect(() => {
     return () => {
-      cleanupRef.current?.();
+      connRef.current?.close(1000, "unmount");
     };
   }, []);
 
   const connect = useCallback((cols: number, rows: number) => {
     // Tear down previous connection if any
-    cleanupRef.current?.();
+    connRef.current?.close(1000, "reconnect");
 
-    const url = buildWsUrl(optionsRef.current, cols, rows);
-    const ws = new WebSocket(url);
-    wsRef.current = ws;
-    let intentionalClose = false;
-
-    ws.onopen = () => {
-      setIsConnected(true);
-    };
-
-    ws.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data) as TerminalMessage;
-        const cb = optionsRef.current;
-        switch (msg.type) {
-          case "data":
-            cb.onData(msg.data);
-            break;
-          case "ready":
-            cb.onReady(msg.pty_id);
-            break;
-          case "exit":
-            cb.onExit(msg.code);
-            break;
-          case "reconnected":
-            cb.onReconnected(msg.scrollback, msg.alive);
-            break;
-          case "error":
-            cb.onError(msg.message);
-            break;
+    const conn = createWsConnection({
+      url: buildWsUrl(optionsRef.current, cols, rows),
+      onOpen: () => setIsConnected(true),
+      onMessage: (data) => {
+        try {
+          const msg = JSON.parse(data) as TerminalMessage;
+          const cb = optionsRef.current;
+          switch (msg.type) {
+            case "data":
+              cb.onData(msg.data);
+              break;
+            case "ready":
+              cb.onReady(msg.pty_id);
+              break;
+            case "exit":
+              cb.onExit(msg.code);
+              break;
+            case "reconnected":
+              cb.onReconnected(msg.scrollback, msg.alive);
+              break;
+            case "error":
+              cb.onError(msg.message);
+              break;
+          }
+        } catch {
+          optionsRef.current.onError("Failed to parse terminal message");
         }
-      } catch {
-        optionsRef.current.onError("Failed to parse terminal message");
-      }
-    };
+      },
+      onError: (intentional) => {
+        if (!intentional) toast.error("Terminal WebSocket connection failed");
+      },
+      onClose: (intentional) => {
+        setIsConnected(false);
+        if (!intentional) {
+          optionsRef.current.onError(
+            "Connection lost. Terminal may still be running — reopen to reconnect.",
+          );
+        }
+      },
+    });
 
-    ws.onerror = () => {
-      if (!intentionalClose) {
-        toast.error("Terminal WebSocket connection failed");
-      }
-    };
-
-    ws.onclose = () => {
-      setIsConnected(false);
-      if (!intentionalClose) {
-        optionsRef.current.onError(
-          "Connection lost. Terminal may still be running — reopen to reconnect.",
-        );
-      }
-    };
-
-    cleanupRef.current = () => {
-      intentionalClose = true;
-      wsRef.current = null;
-      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
-        ws.close(1000, "unmount");
-      }
-    };
+    connRef.current = conn;
   }, []);
 
   const write = useCallback((data: string) => {
-    sendJson(wsRef.current, { type: "write", data });
+    connRef.current?.sendJson({ type: "write", data });
   }, []);
 
   const resize = useCallback((cols: number, rows: number) => {
-    sendJson(wsRef.current, { type: "resize", cols, rows });
+    connRef.current?.sendJson({ type: "resize", cols, rows });
   }, []);
 
   const kill = useCallback(() => {
-    sendJson(wsRef.current, { type: "kill" });
+    connRef.current?.sendJson({ type: "kill" });
   }, []);
 
   return { connect, write, resize, kill, isConnected };

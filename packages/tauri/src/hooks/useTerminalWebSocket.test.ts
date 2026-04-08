@@ -22,14 +22,19 @@ class MockWebSocket {
   readyState = MockWebSocket.CONNECTING;
   sent: string[] = [];
 
-  onopen: ((e: unknown) => void) | null = null;
-  onmessage: ((e: unknown) => void) | null = null;
-  onerror: ((e: unknown) => void) | null = null;
-  onclose: ((e: unknown) => void) | null = null;
+  private listeners: Record<string, Array<(e: unknown) => void>> = {};
 
   constructor(url: string) {
     this.url = url;
     MockWebSocket.instances.push(this);
+  }
+
+  addEventListener(type: string, handler: (e: unknown) => void) {
+    (this.listeners[type] ??= []).push(handler);
+  }
+
+  private emit(type: string, event: unknown) {
+    for (const fn of this.listeners[type] ?? []) fn(event);
   }
 
   send(data: string) {
@@ -38,26 +43,30 @@ class MockWebSocket {
 
   close(code?: number, _reason?: string) {
     this.readyState = MockWebSocket.CLOSED;
-    this.onclose?.({ code: code ?? 1000 });
+    this.emit("close", { code: code ?? 1000 });
   }
 
   // Test helpers
   simulateOpen() {
     this.readyState = MockWebSocket.OPEN;
-    this.onopen?.({});
+    this.emit("open", {});
   }
 
   simulateMessage(data: unknown) {
-    this.onmessage?.({ data: JSON.stringify(data) });
+    this.emit("message", { data: JSON.stringify(data) });
+  }
+
+  simulateRawMessage(raw: string) {
+    this.emit("message", { data: raw });
   }
 
   simulateClose(code = 1006) {
     this.readyState = MockWebSocket.CLOSED;
-    this.onclose?.({ code });
+    this.emit("close", { code });
   }
 
   simulateError() {
-    this.onerror?.({});
+    this.emit("error", {});
   }
 }
 
@@ -211,7 +220,7 @@ describe("useTerminalWebSocket", () => {
       const { unmount } = renderAndConnect();
       const ws = lastWs();
       unmount();
-      act(() => ws.onerror?.({}));
+      act(() => ws.simulateError());
 
       expect(toast.error).not.toHaveBeenCalled();
     });
@@ -274,7 +283,7 @@ describe("useTerminalWebSocket", () => {
     const onError = vi.fn();
     renderAndConnect({ onError });
     act(() => lastWs().simulateOpen());
-    act(() => lastWs().onmessage?.({ data: "not json" }));
+    act(() => lastWs().simulateRawMessage("not json"));
     expect(onError).toHaveBeenCalledWith("Failed to parse terminal message");
   });
 
