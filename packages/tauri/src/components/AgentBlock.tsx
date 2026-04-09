@@ -1,11 +1,13 @@
-import { useState, useCallback, useRef, useEffect, memo, useMemo } from "react";
-import { cn } from "@/lib/utils";
-import { ChevronRightIcon, WrenchIcon, BrainIcon, LayersIcon, Loader2Icon, TerminalIcon, CopyIcon, CheckIcon, CircleCheckIcon, CircleXIcon } from "lucide-react";
+import { useState, useCallback, memo, useMemo } from "react";
+import { cn, toRelativePath } from "@/lib/utils";
+import { ChevronRightIcon, WrenchIcon, BrainIcon, Loader2Icon, TerminalIcon, CopyIcon, CheckIcon } from "lucide-react";
 import { parseToolCall, parseCadenceMcpTool } from "@/lib/tool-call-parser";
 import { CadenceMcpBlock } from "@/components/CadenceMcpBlock";
 import { Markdown } from "@/components/Markdown";
 import { InlineDiffBlock } from "@/components/InlineDiffBlock";
-import { ClipboardCheck } from "lucide-react";
+import { UserMessageBlock } from "@/components/UserMessageBlock";
+import { TaskAgentBlock } from "@/components/TaskAgentBlock";
+import { PlanBlock } from "@/components/PlanBlock";
 import { CollapsibleBlock } from "@/components/ui/collapsible-block";
 import { parseAnsi } from "@/lib/ansi-to-html";
 import { CodeBlockHeader } from "@/components/CodeBlockHeader";
@@ -42,6 +44,15 @@ function diffFromToolArgs(
 
 /** Block types that the agent stream can produce */
 export type BlockType = "text" | "code" | "tool_call" | "tool_result" | "thinking" | "user_message" | "compact_divider" | "clear_divider";
+
+/** Build a lookup map from toolUseId → tool_result block. */
+export function buildToolResultMap(blocks: AgentBlockData[]): Map<string, AgentBlockData> {
+  const map = new Map<string, AgentBlockData>();
+  for (const b of blocks) {
+    if (b.type === "tool_result" && b.toolUseId) map.set(b.toolUseId, b);
+  }
+  return map;
+}
 
 export interface AgentBlockData {
   id: string;
@@ -81,15 +92,17 @@ interface AgentBlockProps {
   isStreaming?: boolean;
   /** Base path to strip from file paths in diffs */
   basePath?: string;
+  /** Map of toolUseId → tool_result block for inlining results into tool_call blocks */
+  toolResultMap?: Map<string, AgentBlockData>;
 }
 
-export const AgentBlock = memo(function AgentBlock({ block, isStreaming, basePath }: AgentBlockProps) {
+export const AgentBlock = memo(function AgentBlock({ block, isStreaming, basePath, toolResultMap }: AgentBlockProps) {
   switch (block.type) {
     case "text":
       return <TextBlock content={block.content} />;
     case "code":
       return <CodeBlock content={block.content} language={block.language} />;
-    case "tool_call":
+    case "tool_call": {
       if (block.toolName === "TodoWrite") return null;
       if ((block.toolName === "Task" || block.toolName === "Agent") && block.childBlocks) {
         return <TaskAgentBlock block={block} isStreaming={isStreaming} basePath={basePath} />;
@@ -97,33 +110,50 @@ export const AgentBlock = memo(function AgentBlock({ block, isStreaming, basePat
       if (block.toolName === "ExitPlanMode" || block.toolName?.endsWith("__show_plan") || block.toolName?.endsWith("__show_prd")) {
         return <PlanBlock args={block.toolArgs} approvalStatus={block.planApprovalStatus} />;
       }
+      // Bash: unified block with command header + output body
+      if (block.toolName === "Bash") {
+        const result = block.toolUseId ? toolResultMap?.get(block.toolUseId) : undefined;
+        const summary = parseToolCall("Bash", block.toolArgs);
+        return (
+          <BashBlock
+            command={summary?.detail}
+            content={result?.content}
+            isError={result?.isError}
+          />
+        );
+      }
+      // Edit/Write: unified diff block (no separate ToolCallBlock header)
       if (block.toolName === "Write" || block.toolName === "Edit") {
         const diff = diffFromToolArgs(block.toolName, block.toolArgs);
         if (diff && !diff.filePath.includes("/.claude/plans/")) {
           return (
-            <div>
-              <ToolCallBlock name={block.toolName} args={block.toolArgs} basePath={basePath} />
-              <InlineDiffBlock
-                filePath={diff.filePath}
-                oldContent={diff.oldContent}
-                newContent={diff.newContent}
-                basePath={basePath}
-              />
-            </div>
+            <InlineDiffBlock
+              filePath={diff.filePath}
+              oldContent={diff.oldContent}
+              newContent={diff.newContent}
+              basePath={basePath}
+              toolName={block.toolName}
+            />
           );
         }
       }
       return <ToolCallBlock name={block.toolName ?? "unknown"} args={block.toolArgs} basePath={basePath} />;
-    case "tool_result":
-      if (block.sourceToolName === "Bash" && !block.parentToolUseId) {
-        return <BashOutputBlock content={block.content} isError={block.isError} />;
+    }
+    case "tool_result": {
+      // Bash results are inlined into the tool_call block — skip standalone rendering
+      if (block.sourceToolName === "Bash") {
+        return null;
+      }
+      // Edit/Write results are already shown via the diff — skip
+      if (block.sourceToolName === "Edit" || block.sourceToolName === "Write") {
+        return null;
       }
       if (block.sourceToolName === "Agent" || block.sourceToolName === "Task") {
         return <AgentResultBlock content={block.content} />;
       }
-      // Only show output for tools with custom blocks (Bash above).
       // Hide generic tool results (Grep, Read, Glob, etc.) to reduce noise.
       return null;
+    }
     case "thinking":
       return <ThinkingBlock content={block.content} />;
     case "user_message":
@@ -190,44 +220,6 @@ const TextBlock = memo(function TextBlock({ content }: { content: string }) {
   );
 });
 
-function PlanBlock({ args, approvalStatus }: { args?: string; approvalStatus?: "approved" | "rejected" }) {
-  let plan: string | undefined;
-  if (args) {
-    try {
-      const parsed = JSON.parse(args) as Record<string, unknown>;
-      if (typeof parsed.plan === "string") plan = parsed.plan;
-    } catch {
-      // partial JSON during streaming
-    }
-  }
-
-  if (!plan) return null;
-
-  return (
-    <div className="my-2 rounded-md border border-blue-800 bg-blue-500/5">
-      <div className="flex items-center gap-2 border-b border-blue-800 px-3 py-1.5 text-xs">
-        <ClipboardCheck className="size-3 text-blue-400" />
-        <span className="font-medium text-blue-300">Plan</span>
-      </div>
-      <div className="px-3 py-2">
-        <Markdown content={plan} />
-      </div>
-      {approvalStatus && (
-        <div className={cn(
-          "flex items-center gap-1.5 border-t px-3 py-1.5 text-xs font-medium",
-          approvalStatus === "approved"
-            ? "border-green-800/50 text-green-400"
-            : "border-red-800/50 text-red-400",
-        )}>
-          {approvalStatus === "approved"
-            ? <><CircleCheckIcon className="size-3" /> Approved</>
-            : <><CircleXIcon className="size-3" /> Rejected</>}
-        </div>
-      )}
-    </div>
-  );
-}
-
 const SHELL_LANGUAGES = new Set(["bash", "sh", "zsh", "shell", "console", "terminal"]);
 
 function CodeBlock({ content, language }: { content: string; language?: string }) {
@@ -249,12 +241,6 @@ function CodeBlock({ content, language }: { content: string; language?: string }
       </pre>
     </div>
   );
-}
-
-/** Strip the project base path prefix to show a relative path. */
-function toRelativePath(filePath: string, basePath?: string): string {
-  if (!basePath || !filePath.startsWith(basePath)) return filePath;
-  return filePath.slice(basePath.endsWith("/") ? basePath.length : basePath.length + 1);
 }
 
 function ToolCallBlock({ name, args, basePath }: { name: string; args?: string; basePath?: string }) {
@@ -296,10 +282,21 @@ function ToolCallBlock({ name, args, basePath }: { name: string; args?: string; 
 
 const DEFAULT_BASH_LINES = 10;
 
-const BashOutputBlock = memo(function BashOutputBlock({ content, isError }: { content: string; isError?: boolean }) {
-  const lines = useMemo(() => content.split("\n"), [content]);
+/** Insert line breaks before shell operators for readability. */
+function formatShellCommand(cmd: string): string {
+  return cmd.replace(/\s+(&&|\|\||[;&|])\s*/g, "\n  $1 ");
+}
+
+/** Unified Bash block: command header + output body, appears at tool_call time. */
+const BashBlock = memo(function BashBlock({ command, content, isError }: { command?: string; content?: string; isError?: boolean }) {
+  const lines = content?.split("\n") ?? [];
   const totalLines = lines.length;
-  const truncatedAnsi = useMemo(() => parseAnsi(lines.slice(-DEFAULT_BASH_LINES).join("\n")), [lines]);
+  const truncatedAnsi = useMemo(
+    () => parseAnsi((content?.split("\n") ?? []).slice(-DEFAULT_BASH_LINES).join("\n")),
+    [content],
+  );
+  const hasOutput = !!content;
+  const formattedCommand = useMemo(() => command ? formatShellCommand(command) : undefined, [command]);
 
   return (
     <CollapsibleBlock
@@ -315,15 +312,23 @@ const BashOutputBlock = memo(function BashOutputBlock({ content, isError }: { co
       )}
       truncationClassName="text-zinc-600"
       header={<>
-        <TerminalIcon className="size-3" />
-        <span>Output ({totalLines} line{totalLines !== 1 ? "s" : ""})</span>
+        <TerminalIcon className="size-3 shrink-0" />
+        <span className="font-medium text-zinc-300">Bash</span>
+        <pre className="font-mono whitespace-pre-wrap break-all">{formattedCommand ?? "Running command…"}</pre>
       </>}
     >
-      {({ showAll }) => (
-        <pre className="whitespace-pre-wrap">
-          {showAll ? parseAnsi(content) : truncatedAnsi}
-        </pre>
-      )}
+      {({ showAll }) =>
+        hasOutput ? (
+          <pre className="whitespace-pre-wrap">
+            {showAll ? parseAnsi(content) : truncatedAnsi}
+          </pre>
+        ) : (
+          <div className="flex items-center gap-2 text-xs text-zinc-500">
+            <Loader2Icon className="size-3 animate-spin" />
+            <span>Running…</span>
+          </div>
+        )
+      }
     </CollapsibleBlock>
   );
 });
@@ -380,104 +385,6 @@ function ClearDivider({ previousSessionId }: { previousSessionId?: string }) {
     </div>
   );
 }
-
-function UserMessageBlock({ content }: { content: string }) {
-  // Content may be a JSON-stringified array of content blocks (text + image)
-  // when the user attached images to the message.
-  let textContent = content;
-  let imageBlocks: Array<{ source: { media_type: string; data: string } }> = [];
-
-  if (content.startsWith("[")) {
-    try {
-      const parsed = JSON.parse(content) as Array<{ type: string; text?: string; source?: { media_type: string; data: string } }>;
-      if (Array.isArray(parsed)) {
-        const texts: string[] = [];
-        for (const block of parsed) {
-          if (block.type === "text" && block.text) texts.push(block.text);
-          else if (block.type === "image" && block.source) imageBlocks.push({ source: block.source });
-        }
-        textContent = texts.join("\n");
-      }
-    } catch {
-      // Not JSON — render as plain text
-    }
-  }
-
-  return (
-    <div className="my-1 flex justify-end">
-      <div className="rounded-md border border-primary/30 bg-primary/10 px-3 py-1.5 text-sm max-w-[80%]">
-        <Markdown content={textContent} className="user-message-markdown" />
-        {imageBlocks.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-2">
-            {imageBlocks.map((img, i) => (
-              <img
-                key={i}
-                src={`data:${img.source.media_type};base64,${img.source.data}`}
-                alt={`Attachment ${i + 1}`}
-                className="max-h-48 max-w-full rounded border border-border"
-              />
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function TaskAgentBlock({ block, isStreaming, basePath }: { block: AgentBlockData; isStreaming?: boolean; basePath?: string }) {
-  const children = block.childBlocks ?? [];
-  const isRunning = !!isStreaming && !block.taskComplete;
-
-  // Parse description from args
-  let description = "Subtask";
-  if (block.toolArgs) {
-    try {
-      const args = JSON.parse(block.toolArgs) as Record<string, unknown>;
-      if (typeof args.description === "string") description = args.description;
-    } catch {
-      // partial JSON during streaming
-    }
-  }
-
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const stickToBottom = useRef(true);
-
-  useEffect(() => {
-    if (stickToBottom.current && scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [children.length]);
-
-  const handleScroll = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 16;
-    stickToBottom.current = atBottom;
-  }, []);
-
-  return (
-    <div className="my-1 rounded-md border border-border bg-black/30 overflow-hidden">
-      <div className="flex items-center gap-2 px-3 py-2 text-xs border-b border-border">
-        <LayersIcon className="size-3.5 text-muted-foreground shrink-0" />
-        <span className="font-medium text-foreground">{block.toolName}</span>
-        <span className="truncate text-muted-foreground text-xs">{description}</span>
-        {isRunning && (
-          <Loader2Icon className="size-3 animate-spin text-muted-foreground shrink-0 ml-auto" />
-        )}
-      </div>
-      <div
-        ref={scrollRef}
-        onScroll={handleScroll}
-        className="px-3 py-2 space-y-0.5 max-h-[20vh] overflow-y-auto"
-      >
-        {children.map((child) => (
-          <AgentBlock key={child.id} block={child} isStreaming={isStreaming} basePath={basePath} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
 
 function formatJson(str: string): string {
   try {

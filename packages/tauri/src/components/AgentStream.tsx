@@ -1,6 +1,6 @@
 import { memo, useMemo } from "react";
 import { format, isToday } from "date-fns";
-import { AgentBlock, type AgentBlockData } from "./AgentBlock";
+import { AgentBlock, type AgentBlockData, buildToolResultMap } from "./AgentBlock";
 import { parseUTCDateTime } from "@/lib/date-utils";
 
 function formatTimestamp(iso: string): string {
@@ -20,6 +20,8 @@ interface AgentStreamProps {
 export const AgentStream = memo(function AgentStream({ blocks, isStreaming, basePath }: AgentStreamProps) {
   const rootBlocks = useMemo(() => blocks.filter((b) => !b.parentToolUseId), [blocks]);
 
+  const toolResultMap = useMemo(() => buildToolResultMap(blocks), [blocks]);
+
   return (
     <div className="space-y-1 p-3">
       {rootBlocks.map((block) => (
@@ -37,6 +39,7 @@ export const AgentStream = memo(function AgentStream({ blocks, isStreaming, base
             block={block}
             isStreaming={isStreaming}
             basePath={basePath}
+            toolResultMap={toolResultMap}
           />
         </div>
       ))}

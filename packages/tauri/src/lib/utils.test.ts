@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { cn, slugify } from "./utils";
+import { cn, slugify, toRelativePath } from "./utils";
 
 describe("cn", () => {
   it("merges basic class strings", () => {
@@ -56,5 +56,23 @@ describe("slugify", () => {
 
   it("handles empty string", () => {
     expect(slugify("")).toBe("");
+  });
+});
+
+describe("toRelativePath", () => {
+  it("strips base path prefix", () => {
+    expect(toRelativePath("/home/user/project/src/foo.ts", "/home/user/project")).toBe("src/foo.ts");
+  });
+
+  it("strips base path with trailing slash", () => {
+    expect(toRelativePath("/home/user/project/src/foo.ts", "/home/user/project/")).toBe("src/foo.ts");
+  });
+
+  it("returns full path when basePath is undefined", () => {
+    expect(toRelativePath("/home/user/project/src/foo.ts")).toBe("/home/user/project/src/foo.ts");
+  });
+
+  it("returns full path when it does not start with basePath", () => {
+    expect(toRelativePath("/other/path/foo.ts", "/home/user/project")).toBe("/other/path/foo.ts");
   });
 });

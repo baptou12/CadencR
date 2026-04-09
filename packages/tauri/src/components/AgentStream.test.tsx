@@ -4,11 +4,15 @@ import { AgentStream } from "./AgentStream";
 import type { AgentBlockData } from "./AgentBlock";
 
 // Mock AgentBlock to keep tests focused on AgentStream behavior
-vi.mock("./AgentBlock", () => ({
-  AgentBlock: ({ block }: { block: AgentBlockData }) => (
-    <div data-testid={`block-${block.id}`}>{block.content}</div>
-  ),
-}));
+vi.mock("./AgentBlock", async () => {
+  const actual = await vi.importActual<typeof import("./AgentBlock")>("./AgentBlock");
+  return {
+    ...actual,
+    AgentBlock: ({ block }: { block: AgentBlockData }) => (
+      <div data-testid={`block-${block.id}`}>{block.content}</div>
+    ),
+  };
+});
 
 function makeBlock(id: string, content: string, type: AgentBlockData["type"] = "text"): AgentBlockData {
   return { id, type, content };

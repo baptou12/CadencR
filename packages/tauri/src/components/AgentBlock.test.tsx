@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@/test-utils";
 import userEvent from "@testing-library/user-event";
-import { AgentBlock } from "./AgentBlock";
+import { AgentBlock, buildToolResultMap } from "./AgentBlock";
 import type { AgentBlockData } from "./AgentBlock";
 
 // Mock InlineDiffBlock to avoid complex diff rendering
@@ -65,7 +65,7 @@ describe("AgentBlock", () => {
   });
 
   describe("tool_call block", () => {
-    it("renders a tool call button", () => {
+    it("renders a Bash tool call with command", () => {
       render(
         <AgentBlock
           block={makeBlock({
@@ -75,23 +75,24 @@ describe("AgentBlock", () => {
           })}
         />,
       );
-      expect(screen.getByText("Bash")).toBeInTheDocument();
+      expect(screen.getByText("ls -la")).toBeInTheDocument();
     });
 
-    it("expands tool args on click", async () => {
+    it("renders a generic tool call button", async () => {
       const user = userEvent.setup();
       render(
         <AgentBlock
           block={makeBlock({
             type: "tool_call",
-            toolName: "Bash",
-            toolArgs: JSON.stringify({ command: "ls -la" }),
+            toolName: "Grep",
+            toolArgs: JSON.stringify({ pattern: "foo" }),
           })}
         />,
       );
+      expect(screen.getByText("Grep")).toBeInTheDocument();
       const buttons = screen.getAllByRole("button");
       await user.click(buttons[0]);
-      expect(screen.getAllByText(/ls -la/).length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/foo/).length).toBeGreaterThan(0);
     });
 
     it("returns null for TodoWrite tool", () => {
@@ -185,8 +186,8 @@ describe("AgentBlock", () => {
       expect(container.firstChild).toBeNull();
     });
 
-    it("renders Bash output", () => {
-      render(
+    it("returns null for Bash tool_result (inlined into tool_call)", () => {
+      const { container } = render(
         <AgentBlock
           block={makeBlock({
             type: "tool_result",
@@ -195,49 +196,79 @@ describe("AgentBlock", () => {
           })}
         />,
       );
-      expect(screen.getByText(/Output/)).toBeInTheDocument();
+      expect(container.firstChild).toBeNull();
     });
 
-    it("renders colored spans for ANSI input in Bash output", () => {
+    it("renders Bash output inlined via toolResultMap", () => {
+      const toolUseId = "tu-1";
+      const resultMap = new Map([
+        [toolUseId, makeBlock({ type: "tool_result", content: "line1\nline2", sourceToolName: "Bash", toolUseId })],
+      ]);
+      render(
+        <AgentBlock
+          block={makeBlock({ type: "tool_call", toolName: "Bash", toolArgs: JSON.stringify({ command: "ls" }), toolUseId })}
+          toolResultMap={resultMap}
+        />,
+      );
+      expect(screen.getByText("ls")).toBeInTheDocument();
+      expect(screen.getByText(/line1/)).toBeInTheDocument();
+    });
+
+    it("returns null for Edit tool_result (inlined into tool_call)", () => {
       const { container } = render(
         <AgentBlock
-          block={makeBlock({
-            type: "tool_result",
-            content: "\x1b[31mred text\x1b[0m",
-            sourceToolName: "Bash",
-          })}
+          block={makeBlock({ type: "tool_result", content: "ok", sourceToolName: "Edit" })}
         />,
       );
-      const spans = container.querySelectorAll("span[style]");
-      expect(spans.length).toBeGreaterThan(0);
+      expect(container.firstChild).toBeNull();
     });
 
-    it("renders plain text Bash output without extra spans", () => {
-      render(
+    it("returns null for Write tool_result (inlined into tool_call)", () => {
+      const { container } = render(
         <AgentBlock
-          block={makeBlock({
-            type: "tool_result",
-            content: "plain output",
-            sourceToolName: "Bash",
-          })}
+          block={makeBlock({ type: "tool_result", content: "ok", sourceToolName: "Write" })}
         />,
       );
-      expect(screen.getByText("plain output")).toBeInTheDocument();
+      expect(container.firstChild).toBeNull();
+    });
+  });
+
+  describe("Bash tool_call", () => {
+    it("shows Bash label in header", () => {
+      render(
+        <AgentBlock
+          block={makeBlock({ type: "tool_call", toolName: "Bash", toolArgs: JSON.stringify({ command: "echo hi" }) })}
+        />,
+      );
+      expect(screen.getByText("Bash")).toBeInTheDocument();
     });
 
-    it("renders error Bash output content", () => {
+    it("shows running indicator when no result available", () => {
       render(
         <AgentBlock
-          block={makeBlock({
-            type: "tool_result",
-            content: "error occurred",
-            sourceToolName: "Bash",
-            isError: true,
-          })}
+          block={makeBlock({ type: "tool_call", toolName: "Bash", toolArgs: JSON.stringify({ command: "sleep 10" }), toolUseId: "tu-2" })}
+          toolResultMap={new Map()}
         />,
       );
-      // Content should still be rendered (plain text, no ANSI)
-      expect(screen.getByText("error occurred")).toBeInTheDocument();
+      expect(screen.getByText("Running…")).toBeInTheDocument();
+    });
+  });
+
+  describe("buildToolResultMap", () => {
+    it("builds a map of toolUseId to tool_result blocks", () => {
+      const blocks = [
+        makeBlock({ type: "tool_call", toolName: "Bash", toolUseId: "tu-1" }),
+        makeBlock({ id: "r1", type: "tool_result", content: "out", toolUseId: "tu-1", sourceToolName: "Bash" }),
+        makeBlock({ type: "text", content: "hello" }),
+      ];
+      const map = buildToolResultMap(blocks);
+      expect(map.size).toBe(1);
+      expect(map.get("tu-1")?.content).toBe("out");
+    });
+
+    it("returns empty map when no tool_results exist", () => {
+      const map = buildToolResultMap([makeBlock({ type: "text", content: "hi" })]);
+      expect(map.size).toBe(0);
     });
   });
 });
