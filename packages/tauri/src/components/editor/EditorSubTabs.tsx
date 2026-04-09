@@ -3,6 +3,7 @@ import { useHotkeys } from "react-hotkeys-hook";
 import { X } from "lucide-react";
 import { useGlobalShortcut } from "@/hooks/useGlobalShortcut";
 import { cn } from "@/lib/utils";
+import { FileSymbolIcon } from "./file-icons";
 import { useEditorStore } from "@/stores/editor-store";
 import { saveFile } from "./editorSaveRegistry";
 import {
@@ -115,6 +116,7 @@ export default function EditorSubTabs({ featureId, paneId }: EditorSubTabsProps)
               )}
               onClick={() => setActiveFile(featureId, paneId, tab.filePath)}
             >
+              <FileSymbolIcon fileName={tab.fileName} className="shrink-0 flex items-center" />
               <span>{tab.disambiguatedName}</span>
               <span
                 role="button"

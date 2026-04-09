@@ -1,6 +1,6 @@
-import { ChevronRight, ChevronDown, Folder, FolderOpen } from "lucide-react";
+import { ChevronRight, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { getFileIcon } from "./file-icons";
+import { FileSymbolIcon, FolderSymbolIcon } from "./file-icons";
 import type { FileTreeEntry } from "@/api/generated";
 
 interface FileTreeItemProps {
@@ -20,12 +20,6 @@ export default function FileTreeItem({
   onToggle,
   onOpenFile,
 }: FileTreeItemProps) {
-  const Icon = entry.is_dir
-    ? isExpanded
-      ? FolderOpen
-      : Folder
-    : getFileIcon(entry.name);
-
   function handleClick() {
     if (entry.is_dir) {
       onToggle(entry.path);
@@ -64,7 +58,11 @@ export default function FileTreeItem({
       ) : (
         <span className="w-3 h-3 shrink-0" />
       )}
-      <Icon className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+      {entry.is_dir ? (
+        <FolderSymbolIcon folderName={entry.name} className="shrink-0 flex items-center" />
+      ) : (
+        <FileSymbolIcon fileName={entry.name} className="shrink-0 flex items-center" />
+      )}
       <span className="truncate">{entry.name}</span>
     </div>
   );

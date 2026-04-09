@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/command";
 import { useFileSearch, type FileMatchResult } from "@/api/generated";
 import { useEditorState } from "@/hooks/useEditorState";
-import { getFileIcon } from "./file-icons";
+import { FileSymbolIcon } from "./file-icons";
 
 interface FileSearchDialogProps {
   projectPath: string;
@@ -90,11 +90,9 @@ function FileResultItem({ file, onSelect }: FileResultItemProps) {
   const lastSlash = filePath.lastIndexOf("/");
   const fileName = lastSlash >= 0 ? filePath.slice(lastSlash + 1) : filePath;
   const fileNameOffset = lastSlash >= 0 ? lastSlash + 1 : 0;
-  const Icon = getFileIcon(fileName);
-
   return (
     <CommandItem value={filePath} onSelect={() => onSelect(filePath)}>
-      <Icon className="mr-2 h-4 w-4 shrink-0 text-muted-foreground" />
+      <FileSymbolIcon fileName={fileName} className="mr-2 shrink-0 flex items-center" />
       <div className="flex flex-col min-w-0">
         <span className="truncate">
           {highlightMatches(fileName, positions, fileNameOffset)}
