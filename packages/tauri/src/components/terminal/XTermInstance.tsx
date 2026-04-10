@@ -226,8 +226,12 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
       // This avoids creating the PTY with wrong dimensions when the terminal panel
       // is still transitioning from height:0 (CSS transition) at mount time.
       let connected = false;
-      const resizeObserver = new ResizeObserver(() => {
+      const resizeObserver = new ResizeObserver((entries) => {
         if (!mountedRef.current || exitedRef.current) return;
+        // Skip when container is hidden (display:none) — fitting with 0 dimensions
+        // causes xterm.js to reflow the buffer and drop lines irreversibly.
+        const entry = entries[0];
+        if (entry && entry.contentRect.width === 0 && entry.contentRect.height === 0) return;
         try {
           fitAddon.fit();
         } catch {
