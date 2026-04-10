@@ -92,6 +92,17 @@ interface HasUncommittedChangesResponse {
   has_changes: boolean;
 }
 
+export interface BlameLine {
+  line: number;
+  author: string;
+  date: string;
+  summary: string;
+}
+
+interface BlameResponse {
+  lines: BlameLine[];
+}
+
 // ---------------------------------------------------------------------------
 // Request param types
 // ---------------------------------------------------------------------------
@@ -176,6 +187,11 @@ interface HasUncommittedChangesParams {
   featureId: number;
 }
 
+interface GetBlameParams {
+  projectPath: string;
+  filePath: string;
+}
+
 // ---------------------------------------------------------------------------
 // Helpers — convert camelCase params to snake_case query strings
 // ---------------------------------------------------------------------------
@@ -241,6 +257,10 @@ function getCheckMergeConflictsQueryKey(params: CheckMergeConflictsParams) {
 
 function getHasUncommittedChangesQueryKey(params: HasUncommittedChangesParams) {
   return ["git", "has-uncommitted-changes", params] as const;
+}
+
+function getGetBlameQueryKey(params: GetBlameParams) {
+  return ["git", "blame", params] as const;
 }
 
 // ---------------------------------------------------------------------------
@@ -385,6 +405,18 @@ export function useHasUncommittedChanges(
     queryKey: getHasUncommittedChangesQueryKey(params),
     queryFn: () =>
       customInstance({ method: "GET", url: `/api/git/has-uncommitted-changes${qs(toSnakeParams(params))}` }),
+    ...options,
+  });
+}
+
+export function useGetBlame(
+  params: GetBlameParams,
+  options?: Omit<UseQueryOptions<BlameResponse, ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<BlameResponse, ErrorType<unknown>>({
+    queryKey: getGetBlameQueryKey(params),
+    queryFn: () =>
+      customInstance({ method: "GET", url: `/api/git/blame${qs(toSnakeParams(params))}` }),
     ...options,
   });
 }

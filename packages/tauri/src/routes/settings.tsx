@@ -144,6 +144,7 @@ function ZoomControl() {
 function EditorSettings() {
   const vimMode = useDebouncedSetting("editor_vim_mode");
   const autoSave = useDebouncedSetting("editor_auto_save");
+  const gitBlame = useDebouncedSetting("editor_git_blame");
   const maxTabs = useDebouncedSetting("editor_max_tabs");
 
   const isVimEnabled = (vimMode.value ?? "false") === "true";
@@ -173,6 +174,18 @@ function EditorSettings() {
           <label htmlFor="editor-auto-save" className="text-sm cursor-pointer">Auto-save</label>
         </div>
         <p className="text-xs text-muted-foreground ml-9">Automatically save files after a short delay.</p>
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-2">
+          <Switch
+            id="editor-git-blame"
+            checked={(gitBlame.value ?? "false") === "true"}
+            onCheckedChange={(checked) => gitBlame.setValue(checked ? "true" : "false")}
+          />
+          <label htmlFor="editor-git-blame" className="text-sm cursor-pointer">Git blame</label>
+        </div>
+        <p className="text-xs text-muted-foreground ml-9">Show blame annotation on the current line.</p>
       </div>
 
       <div className="flex flex-col gap-2">

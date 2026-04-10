@@ -116,6 +116,11 @@ pub async fn has_uncommitted_changes_handler(State(state): State<AppState>, Quer
     Ok(Json(service::has_uncommitted_changes(&state, params).await?))
 }
 
+#[utoipa::path(get, path = "/api/git/blame", params(("project_path" = String, Query,), ("file_path" = String, Query,)), responses((status = 200, body = BlameResponse)))]
+pub async fn get_blame_handler(Query(params): Query<GetBlameParams>) -> Result<Json<BlameResponse>, AppError> {
+    Ok(Json(service::get_blame(params).await?))
+}
+
 // ---------------------------------------------------------------------------
 // Router
 // ---------------------------------------------------------------------------
@@ -141,4 +146,5 @@ pub fn git_router() -> Router<AppState> {
         .route("/api/git/merge-conflicts", get(check_merge_conflicts_handler))
         .route("/api/git/merge", post(merge_feature_branch_handler))
         .route("/api/git/has-uncommitted-changes", get(has_uncommitted_changes_handler))
+        .route("/api/git/blame", get(get_blame_handler))
 }

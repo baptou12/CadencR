@@ -1,10 +1,13 @@
 use std::path::Path;
 
+use chrono::DateTime;
+
 use crate::app_state::AppState;
 use crate::domain::git::commands;
 use crate::domain::git::models::*;
 use crate::domain::git::repository;
 use crate::error::AppError;
+use crate::shared::git_cli::run_git;
 
 // ---------------------------------------------------------------------------
 // Feature-setting key constants
@@ -459,4 +462,105 @@ pub async fn has_uncommitted_changes(
 
     let has_changes = commands::has_uncommitted_changes(Path::new(&wt_path)).await?;
     Ok(HasUncommittedChangesResponse { has_changes })
+}
+
+pub async fn get_blame(params: GetBlameParams) -> Result<BlameResponse, AppError> {
+    let cwd = Path::new(&params.project_path);
+    let output = run_git(&["blame", "--porcelain", &params.file_path], cwd).await?;
+    let lines = parse_blame_porcelain(&output);
+    Ok(BlameResponse { lines })
+}
+
+fn parse_blame_porcelain(output: &str) -> Vec<BlameLine> {
+    let mut results: Vec<BlameLine> = Vec::new();
+    let mut line_num: u32 = 0;
+    let mut author = String::new();
+    let mut timestamp: i64 = 0;
+    let mut summary = String::new();
+
+    for raw_line in output.lines() {
+        if raw_line.len() >= 40 && raw_line.as_bytes()[..40].iter().all(|b| b.is_ascii_hexdigit()) {
+            let parts: Vec<&str> = raw_line.split_whitespace().collect();
+            if parts.len() >= 3 {
+                line_num = parts[2].parse().unwrap_or(0);
+            }
+        } else if let Some(val) = raw_line.strip_prefix("author ") {
+            author = val.to_string();
+        } else if let Some(val) = raw_line.strip_prefix("author-time ") {
+            timestamp = val.parse().unwrap_or(0);
+        } else if let Some(val) = raw_line.strip_prefix("summary ") {
+            summary = val.to_string();
+        } else if raw_line.starts_with('\t') {
+            let date = DateTime::from_timestamp(timestamp, 0)
+                .map(|dt| dt.format("%Y-%m-%d").to_string())
+                .unwrap_or_default();
+            results.push(BlameLine {
+                line: line_num,
+                author: std::mem::take(&mut author),
+                date,
+                summary: std::mem::take(&mut summary),
+            });
+        }
+    }
+    results
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_blame_porcelain_single_line() {
+        let output = "\
+abcdef1234567890abcdef1234567890abcdef12 1 1 1
+author Alice
+author-mail <alice@example.com>
+author-time 1700000000
+author-tz +0000
+committer Alice
+committer-mail <alice@example.com>
+committer-time 1700000000
+committer-tz +0000
+summary initial commit
+filename src/main.rs
+\thello world
+";
+        let lines = parse_blame_porcelain(output);
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].line, 1);
+        assert_eq!(lines[0].author, "Alice");
+        assert_eq!(lines[0].date, "2023-11-14");
+        assert_eq!(lines[0].summary, "initial commit");
+    }
+
+    #[test]
+    fn test_parse_blame_porcelain_multiple_lines() {
+        let output = "\
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 1 1 1
+author Alice
+author-time 1700000000
+summary first commit
+filename f.rs
+\tline one
+bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 2 2 1
+author Bob
+author-time 1700100000
+summary second commit
+filename f.rs
+\tline two
+";
+        let lines = parse_blame_porcelain(output);
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[0].author, "Alice");
+        assert_eq!(lines[0].line, 1);
+        assert_eq!(lines[1].author, "Bob");
+        assert_eq!(lines[1].line, 2);
+        assert_eq!(lines[1].summary, "second commit");
+    }
+
+    #[test]
+    fn test_parse_blame_porcelain_empty_input() {
+        let lines = parse_blame_porcelain("");
+        assert!(lines.is_empty());
+    }
 }

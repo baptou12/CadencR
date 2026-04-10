@@ -2,6 +2,13 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@/test-utils";
 import CodeMirrorEditor from "../CodeMirrorEditor";
 
+vi.mock("@codemirror/state", () => ({
+  Compartment: class {
+    of = vi.fn(() => []);
+    reconfigure = vi.fn(() => ({}));
+  },
+}));
+
 // Mock CodeMirror view — only EditorView is imported directly by CodeMirrorEditor now
 vi.mock("@codemirror/view", () => {
   class MockEditorView {
@@ -43,11 +50,16 @@ vi.mock("../editorSaveRegistry", () => ({
   unregisterSave: vi.fn(),
 }));
 
+vi.mock("../git-blame-extension", () => ({
+  gitBlameExtension: vi.fn(() => []),
+}));
+
 let mockReadFileReturn: { data: unknown; isLoading: boolean; error: Error | null } = { data: undefined, isLoading: true, error: null };
 
 vi.mock("@/api/generated", () => ({
   useReadFile: vi.fn(() => mockReadFileReturn),
   useWriteFile: vi.fn(() => ({ mutateAsync: vi.fn() })),
+  useGetBlame: vi.fn(() => ({ data: undefined })),
 }));
 
 vi.mock("@/stores/editor-store", () => ({

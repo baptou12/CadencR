@@ -263,6 +263,25 @@ pub struct CreateWorktreeResponse {
     pub branch: String,
 }
 
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct GetBlameParams {
+    pub project_path: String,
+    pub file_path: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct BlameLine {
+    pub line: u32,
+    pub author: String,
+    pub date: String,
+    pub summary: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct BlameResponse {
+    pub lines: Vec<BlameLine>,
+}
+
 // ---------------------------------------------------------------------------
 // Defaults
 // ---------------------------------------------------------------------------

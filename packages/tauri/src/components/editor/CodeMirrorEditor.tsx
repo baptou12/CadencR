@@ -1,9 +1,11 @@
 import { useEffect, useRef, useCallback, useState, useMemo } from "react";
 import { EditorView } from "@codemirror/view";
-import { useReadFile, useWriteFile } from "@/api/generated";
+import { Compartment } from "@codemirror/state";
+import { useReadFile, useWriteFile, useGetBlame } from "@/api/generated";
 import { useEditorStore } from "@/stores/editor-store";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import { getLanguageExtension } from "./language-extensions";
+import { gitBlameExtension } from "./git-blame-extension";
 import { registerSave, unregisterSave } from "./editorSaveRegistry";
 import BaseCodeMirrorEditor from "./BaseCodeMirrorEditor";
 import { toast } from "sonner";
@@ -38,10 +40,21 @@ export default function CodeMirrorEditor({ filePath, projectPath, paneId, featur
 
   const { value: vimModeSetting } = useDebouncedSetting("editor_vim_mode");
   const { value: autoSaveSetting } = useDebouncedSetting("editor_auto_save");
+  const { value: gitBlameSetting } = useDebouncedSetting("editor_git_blame");
   const isVimEnabled = (vimModeSetting ?? "false") === "true";
   const isAutoSaveEnabled = (autoSaveSetting ?? "false") === "true";
+  const isBlameEnabled = (gitBlameSetting ?? "false") === "true";
   const isAutoSaveEnabledRef = useRef(isAutoSaveEnabled);
   isAutoSaveEnabledRef.current = isAutoSaveEnabled;
+
+  const blameCompartment = useRef(new Compartment());
+  const { data: blameData } = useGetBlame(
+    { projectPath, filePath },
+    {
+      enabled: isBlameEnabled && Boolean(projectPath && filePath),
+      refetchOnWindowFocus: false,
+    },
+  );
 
   const setDirty = useEditorStore((s) => s.setDirty);
   const setCursorPosition = useEditorStore((s) => s.setCursorPosition);
@@ -105,6 +118,14 @@ export default function CodeMirrorEditor({ filePath, projectPath, paneId, featur
   }, [featureId, paneId, filePath, setDirty, saveQuiet]);
 
   const langExt = useMemo(() => getLanguageExtension(filePath), [filePath]);
+
+  // Hot-swap blame extension when data or setting changes
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    const ext = isBlameEnabled && blameData ? gitBlameExtension(blameData.lines) : [];
+    view.dispatch({ effects: blameCompartment.current.reconfigure(ext) });
+  }, [isBlameEnabled, blameData]);
 
   const cursorExtension = useMemo(() => {
     return EditorView.updateListener.of((update) => {
@@ -185,7 +206,7 @@ export default function CodeMirrorEditor({ filePath, projectPath, paneId, featur
         vimMode={isVimEnabled}
         onChange={handleChange}
         onSave={handleSave}
-        extraExtensions={[cursorExtension]}
+        extraExtensions={[cursorExtension, blameCompartment.current.of([])]}
         editorViewRef={viewRef}
         className="flex-1 overflow-auto"
       />
