@@ -196,7 +196,68 @@ pub async fn tree_handler(
 }
 
 // ---------------------------------------------------------------------------
-// Search types & handler
+// Content search types & handler
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize, utoipa::IntoParams)]
+pub struct ContentSearchParams {
+    pub project_path: String,
+    pub query: String,
+    #[serde(default)]
+    pub case_sensitive: bool,
+    #[serde(default)]
+    pub whole_word: bool,
+    #[serde(default)]
+    pub is_regex: bool,
+    #[serde(default = "default_true")]
+    pub respect_gitignore: bool,
+    pub include_pattern: Option<String>,
+    pub exclude_pattern: Option<String>,
+    #[serde(default = "default_content_limit")]
+    pub limit: usize,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_content_limit() -> usize {
+    500
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ContentMatch {
+    pub path: String,
+    pub line_number: u64,
+    pub line_content: String,
+    pub match_start: usize,
+    pub match_end: usize,
+    pub context_before: Vec<String>,
+    pub context_after: Vec<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ContentSearchResponse {
+    pub matches: Vec<ContentMatch>,
+    pub truncated: bool,
+}
+
+#[utoipa::path(get, path = "/api/editor/content-search",
+    params(ContentSearchParams),
+    responses((status = 200, body = ContentSearchResponse)))]
+pub async fn content_search_handler(
+    Query(params): Query<ContentSearchParams>,
+) -> Result<axum::Json<ContentSearchResponse>, AppError> {
+    let resp = tokio::task::spawn_blocking(move || service::content_search(&params))
+        .await
+        .map_err(|e| AppError::Internal(format!("Blocking task failed: {e}")))?
+        ?;
+
+    Ok(axum::Json(resp))
+}
+
+// ---------------------------------------------------------------------------
+// File search types & handler
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Deserialize, utoipa::IntoParams)]
@@ -257,4 +318,5 @@ pub fn editor_router() -> Router<AppState> {
         .route("/api/editor/write", post(write_file_handler))
         .route("/api/editor/tree", get(tree_handler))
         .route("/api/editor/search", get(search_handler))
+        .route("/api/editor/content-search", get(content_search_handler))
 }

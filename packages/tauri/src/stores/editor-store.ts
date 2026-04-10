@@ -14,6 +14,8 @@ interface EditorTab {
   disambiguatedName: string;
   isDirty: boolean;
   cursorPosition: { line: number; col: number };
+  /** When set, the editor scrolls to this line on next load and clears it. */
+  pendingGoToLine?: number;
   isArtifact?: boolean;
   artifactFeatureId?: number;
   artifactPhaseSlug?: string;
@@ -206,7 +208,7 @@ interface EditorStore {
   features: Record<number, EditorFeatureState>;
 
   initFeature: (featureId: number) => void;
-  openFile: (featureId: number, paneId: string, filePath: string, maxTabs?: number) => void;
+  openFile: (featureId: number, paneId: string, filePath: string, maxTabs?: number, goToLine?: number) => void;
   closeTab: (featureId: number, paneId: string, filePath: string) => void;
   setActiveFile: (featureId: number, paneId: string, filePath: string) => void;
   setDirty: (featureId: number, paneId: string, filePath: string, isDirty: boolean) => void;
@@ -223,6 +225,7 @@ interface EditorStore {
   setActivePane: (featureId: number, paneId: string) => void;
   openArtifact: (featureId: number, paneId: string, phaseSlug: string, maxTabs?: number, artifactType?: string) => void;
   openPhaseArtifacts: (featureId: number, paneId: string, phaseSlug: string, artifactTypes: string[], maxTabs?: number) => void;
+  clearPendingGoToLine: (featureId: number, paneId: string, filePath: string) => void;
 }
 
 export const useEditorStore = create<EditorStore>((set, get) => ({
@@ -239,12 +242,16 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     );
   },
 
-  openFile: (featureId, paneId, filePath, maxTabs = DEFAULT_MAX_TABS) =>
+  openFile: (featureId, paneId, filePath, maxTabs = DEFAULT_MAX_TABS, goToLine?) =>
     set((state) => {
       const feature = state.features[featureId] ?? { ...defaultFeatureState };
       const next = updatePane(feature, paneId, (pane) => {
         if (pane.tabs.some((t) => t.filePath === filePath)) {
-          return { ...pane, activeFilePath: filePath };
+          // File already open — update pendingGoToLine if specified
+          const tabs = goToLine
+            ? pane.tabs.map((t) => t.filePath === filePath ? { ...t, pendingGoToLine: goToLine } : t)
+            : pane.tabs;
+          return { ...pane, tabs, activeFilePath: filePath };
         }
 
         const fileName = getFileName(filePath);
@@ -253,7 +260,8 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
           fileName,
           disambiguatedName: fileName,
           isDirty: false,
-          cursorPosition: { line: 1, col: 1 },
+          cursorPosition: { line: goToLine ?? 1, col: 1 },
+          pendingGoToLine: goToLine,
         };
 
         let tabs = [...pane.tabs, newTab];
@@ -430,5 +438,17 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       openArtifact(featureId, paneId, phaseSlug, maxTabs, artifactTypes[0]);
     }
   },
+
+  clearPendingGoToLine: (featureId, paneId, filePath) =>
+    set((state) => {
+      const feature = state.features[featureId] ?? { ...defaultFeatureState };
+      const next = updatePane(feature, paneId, (pane) => ({
+        ...pane,
+        tabs: pane.tabs.map((t) =>
+          t.filePath === filePath ? { ...t, pendingGoToLine: undefined } : t,
+        ),
+      }));
+      return updateFeature(state, featureId, next);
+    }),
 }));
 

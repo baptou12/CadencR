@@ -15,8 +15,8 @@ export function useEditorState(featureId: number) {
     [featureId],
   );
   const openFile = useCallback(
-    (paneId: string, filePath: string, maxTabs?: number) =>
-      useEditorStore.getState().openFile(featureId, paneId, filePath, maxTabs),
+    (paneId: string, filePath: string, maxTabs?: number, goToLine?: number) =>
+      useEditorStore.getState().openFile(featureId, paneId, filePath, maxTabs, goToLine),
     [featureId],
   );
   const closeTab = useCallback(

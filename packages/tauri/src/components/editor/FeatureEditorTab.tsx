@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import EditorSplitTree from "./EditorSplitTree";
 import FileTree from "./FileTree";
 import FileSearchDialog from "./FileSearchDialog";
+import ContentSearchDialog from "./ContentSearchDialog";
 import { saveAll } from "./editorSaveRegistry";
 import { toast } from "sonner";
 
@@ -48,6 +49,7 @@ const FeatureEditorTab = forwardRef<FeatureEditorTabHandle, FeatureEditorTabProp
     const { activeTab } = useActiveTab(featureId);
     const isEditorActive = activeTab === "editor";
     const [fileSearchOpen, setFileSearchOpen] = useState(false);
+    const [contentSearchOpen, setContentSearchOpen] = useState(false);
     const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
     const [pendingProceed, setPendingProceed] = useState<(() => void) | null>(null);
     const [isSavingAll, setIsSavingAll] = useState(false);
@@ -108,6 +110,11 @@ const FeatureEditorTab = forwardRef<FeatureEditorTabHandle, FeatureEditorTabProp
       setFileSearchOpen(true);
     }, { enabled: isEditorActive });
 
+    useGlobalShortcut("meta+shift+f", (e) => {
+      e.preventDefault();
+      setContentSearchOpen(true);
+    }, { enabled: isEditorActive });
+
     // Split pane shortcuts — only active when editor tab is selected
     useHotkeys("meta+d", (e) => { e.preventDefault(); splitEditorPane(featureId, activePaneId, "vertical"); }, { enabled: isEditorActive });
     useHotkeys("meta+shift+d", (e) => { e.preventDefault(); splitEditorPane(featureId, activePaneId, "horizontal"); }, { enabled: isEditorActive });
@@ -144,6 +151,12 @@ const FeatureEditorTab = forwardRef<FeatureEditorTabHandle, FeatureEditorTabProp
           featureId={featureId}
           open={fileSearchOpen}
           onOpenChange={setFileSearchOpen}
+        />
+        <ContentSearchDialog
+          projectPath={projectPath}
+          featureId={featureId}
+          open={contentSearchOpen}
+          onOpenChange={setContentSearchOpen}
         />
 
         <Dialog open={leaveDialogOpen} onOpenChange={(open) => { if (!open) handleCancelLeave(); }}>

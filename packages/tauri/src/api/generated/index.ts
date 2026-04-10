@@ -1347,6 +1347,64 @@ export function useFileSearch(
   });
 }
 
+// ---------------------------------------------------------------------------
+// Content search
+// ---------------------------------------------------------------------------
+
+export interface ContentSearchParams {
+  query: string;
+  case_sensitive?: boolean;
+  whole_word?: boolean;
+  is_regex?: boolean;
+  respect_gitignore?: boolean;
+  include_pattern?: string;
+  exclude_pattern?: string;
+  limit?: number;
+}
+
+export interface ContentMatch {
+  path: string;
+  line_number: number;
+  line_content: string;
+  match_start: number;
+  match_end: number;
+  context_before: string[];
+  context_after: string[];
+}
+
+export interface ContentSearchResponse {
+  matches: ContentMatch[];
+  truncated: boolean;
+}
+
+function getContentSearchQueryKey(projectPath: string, params: ContentSearchParams) {
+  return ["editor", "content-search", projectPath, params] as const;
+}
+
+export function useContentSearch(
+  projectPath: string,
+  params: ContentSearchParams,
+  options?: Omit<UseQueryOptions<ContentSearchResponse, ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  const searchParams = new URLSearchParams();
+  searchParams.set("project_path", projectPath);
+  searchParams.set("query", params.query);
+  if (params.case_sensitive) searchParams.set("case_sensitive", "true");
+  if (params.whole_word) searchParams.set("whole_word", "true");
+  if (params.is_regex) searchParams.set("is_regex", "true");
+  if (params.respect_gitignore === false) searchParams.set("respect_gitignore", "false");
+  if (params.include_pattern) searchParams.set("include_pattern", params.include_pattern);
+  if (params.exclude_pattern) searchParams.set("exclude_pattern", params.exclude_pattern);
+  if (params.limit) searchParams.set("limit", String(params.limit));
+
+  return useQuery<ContentSearchResponse, ErrorType<unknown>>({
+    queryKey: getContentSearchQueryKey(projectPath, params),
+    queryFn: () =>
+      customInstance({ method: "GET", url: `/api/editor/content-search?${searchParams.toString()}` }),
+    ...options,
+  });
+}
+
 export function useWriteFile(
   options?: UseMutationOptions<FileWriteResponse, ErrorType<unknown>, FileWriteRequest>,
 ) {

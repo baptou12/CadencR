@@ -45,8 +45,12 @@ export default function CodeMirrorEditor({ filePath, projectPath, paneId, featur
 
   const setDirty = useEditorStore((s) => s.setDirty);
   const setCursorPosition = useEditorStore((s) => s.setCursorPosition);
+  const clearPendingGoToLine = useEditorStore((s) => s.clearPendingGoToLine);
   const cursorPosition = useEditorStore(
     (s) => s.features[featureId]?.panes[paneId]?.tabs.find((t) => t.filePath === filePath)?.cursorPosition ?? { line: 1, col: 1 },
+  );
+  const pendingGoToLine = useEditorStore(
+    (s) => s.features[featureId]?.panes[paneId]?.tabs.find((t) => t.filePath === filePath)?.pendingGoToLine,
   );
 
   const { data, isLoading, error } = useReadFile(
@@ -142,6 +146,23 @@ export default function CodeMirrorEditor({ filePath, projectPath, paneId, featur
       setDirty(featureId, paneId, filePath, false);
     }
   }, [data, filePath, featureId, paneId, setDirty]);
+
+  // Scroll to pending go-to line after content is loaded
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || !data || pendingGoToLine == null) return;
+
+    const lineCount = view.state.doc.lines;
+    const targetLine = Math.min(pendingGoToLine, lineCount);
+    const line = view.state.doc.line(targetLine);
+
+    view.dispatch({
+      selection: { anchor: line.from },
+      effects: EditorView.scrollIntoView(line.from, { y: "center" }),
+    });
+
+    clearPendingGoToLine(featureId, paneId, filePath);
+  }, [data, pendingGoToLine, featureId, paneId, filePath, clearPendingGoToLine]);
 
   const overlay = isLoading ? (
     <div className="absolute inset-0 flex flex-col gap-2 p-4 animate-pulse z-10 bg-background">
