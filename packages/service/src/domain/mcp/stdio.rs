@@ -57,7 +57,6 @@ pub async fn run_mcp_stdio(
         McpServer::Composable(s) => s.serve(stdio).await?.waiting().await,
         McpServer::Plan(s) => s.serve(stdio).await?.waiting().await,
         McpServer::Session(s) => s.serve(stdio).await?.waiting().await,
-        McpServer::Workflow(s) => s.serve(stdio).await?.waiting().await,
     };
 
     info!(?quit_reason, "MCP stdio server shutting down");

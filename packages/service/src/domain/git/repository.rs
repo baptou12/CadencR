@@ -76,6 +76,7 @@ pub async fn set_feature_setting(
 }
 
 /// Get all feature_settings whose key starts with a given prefix.
+#[allow(dead_code)]
 pub async fn get_feature_settings_by_prefix(
     pool: &SqlitePool,
     feature_id: i64,

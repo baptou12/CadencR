@@ -10,8 +10,10 @@ pub struct McpContext {
     /// Channel to signal agent completion
     pub done_sender: tokio::sync::Mutex<Option<oneshot::Sender<Option<String>>>>,
     /// Current phase slug (workflow agents only)
+    #[allow(dead_code)]
     pub phase_slug: Option<String>,
     /// Input phase slugs whose artifacts this phase depends on (workflow agents only)
+    #[allow(dead_code)]
     pub input_phase_slugs: Option<Vec<String>>,
 }
 

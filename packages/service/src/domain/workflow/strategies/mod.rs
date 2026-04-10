@@ -1,4 +1,3 @@
-pub mod custom_workflow;
 pub mod feature_build;
 pub mod feature_build_prompts;
 pub mod feature_build_session_review;
@@ -9,7 +8,6 @@ use sqlx::SqlitePool;
 use crate::domain::features::models::{QueueItem, WorkflowType};
 use crate::domain::mcp::servers::AgentType;
 
-use self::custom_workflow::CustomWorkflowStrategy;
 use self::feature_build::FeatureBuildStrategy;
 
 /// Each workflow type implements this trait to define how its queue is populated
@@ -61,11 +59,5 @@ pub trait WorkflowStrategy: Send + Sync {
 pub fn get_strategy(workflow_type: &WorkflowType) -> Result<Box<dyn WorkflowStrategy>, String> {
     match workflow_type {
         WorkflowType::FeatureBuild => Ok(Box::new(FeatureBuildStrategy)),
-        WorkflowType::Custom => Err("Use get_custom_strategy() with a workflow_definition_id".into()),
     }
-}
-
-/// Create a CustomWorkflowStrategy for a specific workflow definition.
-pub fn get_custom_strategy(workflow_definition_id: i64) -> Box<dyn WorkflowStrategy> {
-    Box::new(CustomWorkflowStrategy { workflow_definition_id })
 }

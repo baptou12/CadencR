@@ -356,33 +356,6 @@ pub struct WorkflowStartRetroPayload {
     pub feature_id: i64,
 }
 
-/// C→S: User approves or rejects a workflow phase artifact.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WorkflowPhaseApprovalPayload {
-    pub feature_id: i64,
-    pub phase_slug: String,
-    pub approved: bool,
-    pub feedback: Option<String>,
-}
-
-/// C→S: User manually triggers a phase (manual gate).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WorkflowPhaseTriggerPayload {
-    pub feature_id: i64,
-    pub phase_slug: String,
-}
-
-/// C→S: Start a feature with a custom workflow definition.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WorkflowFeatureStartCustomPayload {
-    pub feature_id: i64,
-    pub project_id: i64,
-    pub title: String,
-    pub workflow_definition_id: i64,
-    pub description: Option<String>,
-    pub use_worktree: Option<bool>,
-}
-
 // HasFeatureId impls for all workflow C→S payloads
 macro_rules! impl_has_feature_id {
     ($($ty:ty),+ $(,)?) => {
@@ -413,9 +386,6 @@ impl_has_feature_id!(
     WorkflowStartRiskPayload,
     WorkflowStartRetroPayload,
     WorkflowMarkDonePayload,
-    WorkflowPhaseApprovalPayload,
-    WorkflowPhaseTriggerPayload,
-    WorkflowFeatureStartCustomPayload,
 );
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -499,6 +469,7 @@ pub struct WorkflowPausedPayload {
     pub reason: String,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowPhaseCompletedPayload {
     pub feature_id: i64,

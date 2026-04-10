@@ -1,5 +1,4 @@
 import { useState, useRef, useCallback, useEffect, useMemo, lazy, Suspense } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { useEditorStore } from "@/stores/editor-store";
 import { useGetFeaturePrd, useListProjects, useGetStats } from "@/api/generated";
 import { FeatureTopBar } from "@/components/FeatureTopBar";
@@ -20,8 +19,6 @@ import { DiffViewerModal } from "@/components/diff/DiffViewerModal";
 import type { FeatureSession } from "@/hooks/useFeatureAgentState";
 import type { ContextUsageState } from "@/types/agent";
 import { useResolvedModel } from "@/hooks/useResolvedModel";
-import type { AgentType } from "@/types/agent-types";
-import { phaseModelKey } from "@/shared/models";
 import { useTerminalStore } from "@/hooks/useTerminalState";
 import { useActiveTab } from "@/hooks/useActiveTab";
 import { useSaveLastOpenedFeature } from "@/hooks/useSaveLastOpenedFeature";
@@ -34,15 +31,6 @@ import type { FeatureStatus } from "@/hooks/useFeatureState";
 const FeatureEditorTab = lazy(() => import("@/components/editor/FeatureEditorTab"));
 import type { FeatureEditorTabHandle } from "@/components/editor/FeatureEditorTab";
 import { useWorkflowStore } from "@/hooks/useWorkflowWebSocket";
-import { WorkflowQueueSidebar } from "@/components/workflow/WorkflowQueueSidebar";
-import { PhaseApprovalBar } from "@/components/workflow/PhaseApprovalBar";
-import { WorkflowInputBar } from "@/components/workflow/WorkflowInputBar";
-import {
-  useGetWorkflowDefinition,
-  useGetFeatureSettings,
-  getGetFeatureSettingsQueryKey,
-  useSetFeatureSetting,
-} from "@/api/generated";
 
 export function FeatureWorkflowView({
   featureId,
@@ -62,7 +50,6 @@ export function FeatureWorkflowView({
         type: string;
         project_id: number;
         created_at: string;
-        workflow_definition_id?: number | null;
       }
     | undefined;
   featureQuery: { refetch: () => unknown };
@@ -75,10 +62,6 @@ export function FeatureWorkflowView({
   descriptionRef.current = description;
 
   const { data: prdData } = useGetFeaturePrd(featureId);
-  const { data: workflowDefinition } = useGetWorkflowDefinition(
-    feature?.workflow_definition_id ?? 0,
-    { enabled: !!feature?.workflow_definition_id },
-  );
 
   // ---- Unified backend ----
   const backend = useWsWorkflowBackend(
@@ -106,11 +89,6 @@ export function FeatureWorkflowView({
   // Slash commands
   const projectsQuery = useListProjects();
   const projectPath = projectsQuery.data?.find((p) => p.id === projectId)?.path;
-  const isCustomWorkflow = !!feature?.workflow_definition_id;
-  const pendingApproval = useWorkflowStore((s) => s.pendingApproval);
-  const approvePhase = useWorkflowStore((s) => s.approvePhase);
-  const startCustomWorkflow = useWorkflowStore((s) => s.startCustomWorkflow);
-  const phaseStates = useWorkflowStore((s) => s.phaseStates);
   const slashCommands = useWorkflowStore((s) => s.slashCommands);
   const slashCommandsLoading = useWorkflowStore((s) => s.slashCommandsLoading);
   const requestSlashCommands = useWorkflowStore((s) => s.requestSlashCommands);
@@ -123,79 +101,10 @@ export function FeatureWorkflowView({
   }, [wsReady, projectPath, requestSlashCommands]);
 
   // --- Model settings for inline model switcher ---
-  const { resolveModel, handleModelChange } = useResolvedModel(
+  const { resolveModel: resolveModelForAgent, handleModelChange: handleModelChangeForAgent } = useResolvedModel(
     featureId,
     projectId,
   );
-
-  // --- Phase-aware model resolution for ws-workflow ---
-  const queryClient = useQueryClient();
-  const { data: featureSettingsData } = useGetFeatureSettings(featureId);
-  const phaseSettingsMap = useMemo(() => {
-    if (!featureSettingsData) return {};
-    return Object.fromEntries(featureSettingsData.map((s) => [s.key, s.value]));
-  }, [featureSettingsData]);
-
-  const phasesBySlug = useMemo(() => {
-    if (!workflowDefinition) return new Map<string, { model_override: string }>();
-    return new Map(workflowDefinition.phases.map((p) => [p.slug, p]));
-  }, [workflowDefinition]);
-
-  const setPhaseModelSetting = useSetFeatureSetting({
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: getGetFeatureSettingsQueryKey(featureId) }),
-  });
-
-  // Merged model resolver: phase override → definition default → agent-type cascade
-  const resolveModelForAgent = useCallback(
-    (agentType: AgentType): string => {
-      if (isCustomWorkflow) {
-        const phase = phasesBySlug.get(agentType);
-        if (phase) {
-          const featureVal = phaseSettingsMap[phaseModelKey(agentType)];
-          if (featureVal) return featureVal;
-          if (phase.model_override) return phase.model_override;
-        }
-      }
-      return resolveModel(agentType);
-    },
-    [isCustomWorkflow, phasesBySlug, phaseSettingsMap, resolveModel],
-  );
-
-  const handleModelChangeForAgent = useCallback(
-    (agentType: AgentType, modelId: string) => {
-      if (isCustomWorkflow && phasesBySlug.has(agentType)) {
-        setPhaseModelSetting.mutate({ featureId, key: phaseModelKey(agentType), value: modelId });
-      } else {
-        handleModelChange(agentType, modelId);
-      }
-    },
-    [isCustomWorkflow, phasesBySlug, featureId, setPhaseModelSetting, handleModelChange],
-  );
-
-  const [isStartingCustom, setIsStartingCustom] = useState(false);
-
-  const handleStartCustomWorkflow = useCallback(
-    (description: string) => {
-      if (!feature?.workflow_definition_id || !feature.title) return;
-      setIsStartingCustom(true);
-      startCustomWorkflow(featureId, projectId, feature.title, feature.workflow_definition_id, description);
-      // Reset after a short delay — backend will update state via WS
-      setTimeout(() => setIsStartingCustom(false), 2000);
-    },
-    [feature, featureId, projectId, startCustomWorkflow],
-  );
-
-  // Derive custom workflow phase info for manual gate messaging
-  const readyManualPhase = useMemo(() => {
-    if (!isCustomWorkflow) return null;
-    for (const [slug, state] of phaseStates) {
-      if (state.status === "ready") {
-        const phase = workflowDefinition?.phases?.find((p) => p.slug === slug);
-        if (phase?.gate_type === "manual") return phase;
-      }
-    }
-    return null;
-  }, [isCustomWorkflow, phaseStates, workflowDefinition?.phases]);
 
   const [deleteTarget, setDeleteTarget] = useState<FeatureSession | null>(null);
 
@@ -247,16 +156,11 @@ export function FeatureWorkflowView({
   const { startPlan } = backend;
   useEffect(() => {
     if (autoStartedRef.current || !initialDescription || !wsReady || !feature) return;
-    if (isCustomWorkflow && feature.workflow_definition_id) {
-      autoStartedRef.current = true;
-      setIsStartingCustom(true);
-      startCustomWorkflow(featureId, projectId, feature.title, feature.workflow_definition_id, initialDescription, initialUseWorktree);
-      setTimeout(() => setIsStartingCustom(false), 2000);
-    } else if (!isCustomWorkflow && view === "plan-input") {
+    if (view === "plan-input") {
       autoStartedRef.current = true;
       startPlan(initialDescription);
     }
-  }, [initialDescription, initialUseWorktree, wsReady, isCustomWorkflow, feature, featureId, projectId, startCustomWorkflow, view, startPlan]);
+  }, [initialDescription, wsReady, feature, view, startPlan]);
 
   const agentsWithQuestions = backend.sessionEntries.filter(
     (e) => e.pendingQuestions && e.pendingQuestions.length > 0,
@@ -265,18 +169,6 @@ export function FeatureWorkflowView({
   // Tab state
   const { activeTab, setActiveTab } = useActiveTab(featureId);
 
-  // Open artifact in editor tab
-  const openArtifact = useEditorStore((s) => s.openArtifact);
-  const openPhaseArtifacts = useEditorStore((s) => s.openPhaseArtifacts);
-  const editorActivePaneId = useEditorStore((s) => s.features[featureId]?.activePaneId ?? "main");
-  const handleViewArtifact = useCallback((phaseSlug: string, artifactTypes?: string[]) => {
-    if (artifactTypes && artifactTypes.length > 0) {
-      openPhaseArtifacts(featureId, editorActivePaneId, phaseSlug, artifactTypes);
-    } else {
-      openArtifact(featureId, editorActivePaneId, phaseSlug);
-    }
-    setActiveTab("editor");
-  }, [featureId, openArtifact, openPhaseArtifacts, editorActivePaneId, setActiveTab]);
   useSaveLastOpenedFeature(projectId, featureId, activeTab);
   const editorTabRef = useRef<FeatureEditorTabHandle>(null);
 
@@ -342,7 +234,7 @@ export function FeatureWorkflowView({
               </div>
             )}
 
-            {view === "plan-input" && !isCustomWorkflow && (
+            {view === "plan-input" && (
               <div className="flex-1 flex items-center justify-center overflow-auto p-6">
                 <PlanInputView
                   onStartPlanning={(text, images) => {
@@ -358,27 +250,6 @@ export function FeatureWorkflowView({
                   isStartingPlan={backend.isStartingPlan}
                   isStartingPrd={backend.isStartingPrd}
                 />
-              </div>
-            )}
-
-            {/* Auto-start loading — shown while auto-naming and worktree setup are in progress */}
-            {initialDescription && isCustomWorkflow && view === "plan-input" && (
-              <div className="flex-1 flex items-center justify-center">
-                <div className="flex flex-col items-center gap-3">
-                  <Loader2Icon className="h-6 w-6 animate-spin text-muted-foreground" />
-                  <p className="text-sm text-muted-foreground">Setting up workflow...</p>
-                </div>
-              </div>
-            )}
-
-            {/* Custom workflow: manual gate ready message */}
-            {isCustomWorkflow && readyManualPhase && backend.noAgentsRunning && backend.sessionEntries.length === 0 && (
-              <div className="flex-1 flex items-center justify-center">
-                <div className="text-center space-y-2">
-                  <p className="text-sm text-muted-foreground">
-                    Phase &apos;{readyManualPhase.name}&apos; is ready. Click Start to begin.
-                  </p>
-                </div>
               </div>
             )}
 
@@ -432,21 +303,6 @@ export function FeatureWorkflowView({
                     </Button>
                   </div>
                 )}
-
-                {/* Phase approval bar for custom workflow phases */}
-                {!maximizedAgent && pendingApproval && (() => {
-                  const phaseName = workflowDefinition?.phases?.find(
-                    (p) => p.slug === pendingApproval.phaseSlug,
-                  )?.name ?? pendingApproval.phaseSlug;
-                  return (
-                    <PhaseApprovalBar
-                      phaseName={phaseName}
-                      artifactContent={pendingApproval.artifactContent}
-                      onApprove={() => approvePhase(pendingApproval.phaseSlug, true)}
-                      onReject={(fb) => approvePhase(pendingApproval.phaseSlug, false, fb)}
-                    />
-                  );
-                })()}
 
                 {!maximizedAgent && (
                   <div className="shrink-0">
@@ -529,35 +385,18 @@ export function FeatureWorkflowView({
 
           </div>
 
-          {feature?.workflow_definition_id ? (
-            <WorkflowQueueSidebar
-              workflowDefinitionId={feature.workflow_definition_id}
-              featureId={featureId}
-              onViewArtifact={handleViewArtifact}
-            />
-          ) : (
-            <QueueSidebar
-              queue={backend.queue ?? []}
-              featureId={featureId}
-              selectedItemId={backend.selectedItemId ?? null}
-              onSelectItem={backend.selectItem ?? (() => {})}
-              onRetryItem={backend.retryItem}
-              onSkipItem={backend.skipItem}
-            />
-          )}
+          <QueueSidebar
+            queue={backend.queue ?? []}
+            featureId={featureId}
+            selectedItemId={backend.selectedItemId ?? null}
+            onSelectItem={backend.selectItem ?? (() => {})}
+            onRetryItem={backend.retryItem}
+            onSkipItem={backend.skipItem}
+          />
         </div>
       </div>
       </div>
 
-
-      {/* Custom workflow input bar — shown when no phases have started yet (hidden during auto-start) */}
-      {isCustomWorkflow && view === "plan-input" && !pendingApproval && workflowDefinition && !initialDescription && (
-        <WorkflowInputBar
-          onStart={handleStartCustomWorkflow}
-          isStarting={isStartingCustom}
-          workflowName={workflowDefinition.name}
-        />
-      )}
 
       {/* Per-agent diff modal (CMD+D) — separate from Git tab */}
       <DiffViewerModal

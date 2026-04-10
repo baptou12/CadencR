@@ -38,7 +38,7 @@ function getRunningAgents(queryClient: QueryClient): RunningAgentInfo[] {
     });
   }
 
-  // Check ws-workflow agents
+  // Check workflow agents
   const wfState = useWorkflowStore.getState();
   if (wfState.featureId) {
     for (const [slotKey, agent] of wfState.agents) {

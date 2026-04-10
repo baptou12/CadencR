@@ -279,6 +279,7 @@ pub async fn set_workflow_status(
 }
 
 /// Set the workflow_definition_id on a feature (used when starting a custom workflow).
+#[allow(dead_code)]
 pub async fn set_workflow_definition_id(
     pool: &SqlitePool,
     feature_id: i64,

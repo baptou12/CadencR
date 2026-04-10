@@ -245,7 +245,7 @@ impl AgentManager {
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
 
-        let include_mcp = matches!(agent_type, AgentType::Workflow);
+        let include_mcp = false;
         let slot = AgentSlot::QueueItem(item_id);
         let ctx = self.build_spawn_context(
             slot.clone(), db_session_id, agent_type, &agent_type_str,

@@ -64,6 +64,7 @@ pub async fn clear_agent_session(pool: &SqlitePool, session_id: i64) -> Result<(
     Ok(())
 }
 
+#[allow(dead_code)]
 pub async fn set_item_phase(pool: &SqlitePool, item_id: i64, phase_id: i64) -> Result<(), AppError> {
     sqlx::query("UPDATE workflow_queue SET phase_id = ? WHERE id = ?")
         .bind(phase_id)
@@ -73,6 +74,7 @@ pub async fn set_item_phase(pool: &SqlitePool, item_id: i64, phase_id: i64) -> R
     Ok(())
 }
 
+#[allow(dead_code)]
 pub async fn delete_item(pool: &SqlitePool, item_id: i64) -> Result<(), AppError> {
     sqlx::query("DELETE FROM workflow_queue WHERE id = ?")
         .bind(item_id)

@@ -15,6 +15,7 @@ pub enum AppError {
     NotFound(String),
     BadRequest(String),
     Internal(String),
+    #[allow(dead_code)]
     Conflict(String),
 }
 

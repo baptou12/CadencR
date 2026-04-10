@@ -2,7 +2,6 @@ pub mod composable;
 pub mod plan;
 pub mod session;
 pub mod tool_handlers;
-pub mod workflow;
 
 use std::sync::Arc;
 
@@ -12,7 +11,6 @@ use serde_json::json;
 use super::context::McpContext;
 use self::{
     composable::ComposableServer, plan::PlanServer, session::SessionServer,
-    workflow::WorkflowServer,
 };
 
 /// Agent types that can be served
@@ -26,7 +24,6 @@ pub enum AgentType {
     Risk,
     Retro,
     Session,
-    Workflow,
 }
 
 impl std::str::FromStr for AgentType {
@@ -42,7 +39,6 @@ impl std::str::FromStr for AgentType {
             "risk" => Ok(Self::Risk),
             "retro" => Ok(Self::Retro),
             "session" => Ok(Self::Session),
-            "workflow" => Ok(Self::Workflow),
             other => Err(format!("Unknown agent type: {other}")),
         }
     }
@@ -54,7 +50,6 @@ pub enum McpServer {
     Composable(ComposableServer),
     Plan(PlanServer),
     Session(SessionServer),
-    Workflow(WorkflowServer),
 }
 
 /// Create the appropriate MCP server for the given agent type.
@@ -64,7 +59,6 @@ pub fn create_mcp_server(agent_type: AgentType, ctx: Arc<McpContext>) -> McpServ
     match agent_type {
         AgentType::Plan => McpServer::Plan(PlanServer::new(ctx)),
         AgentType::Session => McpServer::Session(SessionServer::new(ctx)),
-        AgentType::Workflow => McpServer::Workflow(WorkflowServer::new(ctx)),
         AgentType::Prd => McpServer::Composable(ComposableServer::new(
             "cadence-prd",
             vec![th::create_prd(&ctx), th::edit_prd(&ctx), th::show_prd(&ctx), th::mark_agent_done(&ctx)],
@@ -122,7 +116,6 @@ pub fn mcp_server_name(agent_type: AgentType) -> &'static str {
         AgentType::Risk => "cadence-risk",
         AgentType::Retro => "cadence-retro",
         AgentType::Session => "cadence-session",
-        AgentType::Workflow => "cadence-workflow",
     }
 }
 

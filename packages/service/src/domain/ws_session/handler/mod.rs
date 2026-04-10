@@ -7,7 +7,6 @@ mod session_init;
 pub(crate) mod session_prompt;
 pub(crate) mod workflow;
 mod workflow_complex;
-pub(super) mod workflow_custom;
 mod workflow_interact;
 
 use std::collections::{HashMap, HashSet};

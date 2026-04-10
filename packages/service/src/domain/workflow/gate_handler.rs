@@ -8,13 +8,11 @@ use axum::extract::ws::Message;
 use tracing::{error, info};
 
 use crate::domain::features::repository as repo;
-use crate::domain::ws_workflow::artifact_repository;
 use crate::domain::workflow::agent_manager::AgentManager;
 use crate::domain::workflow::engine::AgentSlot;
 use crate::domain::workflow::permission_router::PermissionRouter;
 use crate::domain::workflow::queue_advancer::{QueueAdvancer, StatusSetter};
 use crate::domain::workflow::status::WorkflowStatus;
-use crate::domain::workflow::task_expander;
 use crate::domain::ws_session::protocol::*;
 
 use super::engine::to_value;
@@ -44,14 +42,17 @@ impl QueueAdvancer {
         }
         agent_manager.send_item_update(item_id).await;
 
-        let (phase_slug, artifact_content) = self.get_phase_artifact_info(item_id).await;
+        let phase_slug = match repo::get_queue_item(&self.read_pool, item_id).await {
+            Ok(Some(item)) => item.item_type.clone(),
+            _ => String::new(),
+        };
         let envelope = WsEnvelope::new(
             "workflow",
             "approval_requested",
             to_value(WorkflowApprovalRequestedPayload {
                 feature_id: self.feature_id,
                 phase_slug,
-                artifact_content,
+                artifact_content: None,
             }),
         );
         let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
@@ -89,35 +90,6 @@ impl QueueAdvancer {
         permissions: &PermissionRouter,
         set_status: &dyn StatusSetter,
     ) {
-        // Emit phase_completed for custom workflow items
-        if let AgentSlot::QueueItem(item_id) = slot {
-            let (phase_slug, artifact_preview) = self.get_phase_artifact_info(*item_id).await;
-            if !phase_slug.is_empty() {
-                // Check if this phase triggers task expansion of a downstream execute phase
-                if let Err(e) = task_expander::maybe_expand_downstream(
-                    &self.write_pool,
-                    &self.read_pool,
-                    self.feature_id,
-                    &phase_slug,
-                )
-                .await
-                {
-                    error!(error = %e, phase = %phase_slug, "task expansion failed");
-                }
-
-                let envelope = WsEnvelope::new(
-                    "workflow",
-                    "phase_completed",
-                    to_value(WorkflowPhaseCompletedPayload {
-                        feature_id: self.feature_id,
-                        phase_slug,
-                        artifact_preview,
-                    }),
-                );
-                let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
-            }
-        }
-
         match self.autonomy_level.load(Ordering::Relaxed) {
             3 => {
                 if let Err(e) = self.advance(agent_manager, permissions).await {
@@ -270,22 +242,8 @@ impl QueueAdvancer {
         }
     }
 
-    /// Get the phase slug and artifact content for a queue item.
-    /// For multi-artifact phases, concatenates all artifacts with type headers.
-    pub(crate) async fn get_phase_artifact_info(&self, item_id: i64) -> (String, Option<String>) {
-        let item = match repo::get_queue_item(&self.read_pool, item_id).await {
-            Ok(Some(item)) => item,
-            _ => return (String::new(), None),
-        };
-        let phase_slug = item.item_type.clone();
-        let artifacts = artifact_repository::get_phase_artifacts(&self.read_pool, self.feature_id, &phase_slug)
-            .await
-            .unwrap_or_default();
-        let content = artifact_repository::format_artifacts(&artifacts, None);
-        (phase_slug, content)
-    }
-
     /// Approve or reject a phase that's pending approval.
+    #[allow(dead_code)]
     pub async fn approve_phase(
         &self,
         phase_slug: &str,
@@ -310,15 +268,6 @@ impl QueueAdvancer {
                 .await
                 .map_err(|e| e.to_string())?;
             agent_manager.send_item_update(item.id).await;
-
-            // Check if approval triggers task expansion of a downstream execute phase
-            let _ = task_expander::maybe_expand_downstream(
-                &self.write_pool,
-                &self.read_pool,
-                self.feature_id,
-                phase_slug,
-            )
-            .await;
 
             repo::unblock_ready_items(&self.write_pool, self.feature_id)
                 .await
@@ -347,6 +296,7 @@ impl QueueAdvancer {
     }
 
     /// Trigger a manual phase that's in "ready" state.
+    #[allow(dead_code)]
     pub async fn trigger_manual_phase(
         &self,
         phase_slug: &str,

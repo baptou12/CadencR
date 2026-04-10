@@ -147,20 +147,17 @@ pub struct SetFeatureModelSettingRequest {
 #[serde(rename_all = "snake_case")]
 pub enum WorkflowType {
     FeatureBuild,
-    Custom,
 }
 
 impl WorkflowType {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::FeatureBuild => "feature_build",
-            Self::Custom => "custom",
         }
     }
     pub fn from_str(s: &str) -> Result<Self, String> {
         match s {
             "feature_build" => Ok(Self::FeatureBuild),
-            "custom" => Ok(Self::Custom),
             _ => Err(format!("Unknown workflow type: {s}")),
         }
     }

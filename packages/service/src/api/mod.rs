@@ -13,7 +13,6 @@ use crate::domain::sessions::routes::sessions_router;
 use crate::domain::usage::routes::usage_router;
 use crate::domain::terminal::routes::terminal_router;
 use crate::domain::editor::routes::editor_router;
-use crate::domain::ws_workflow::routes::ws_workflow_router;
 use crate::domain::ws_session::handler::ws_handler;
 
 #[derive(Clone, serde::Serialize, utoipa::ToSchema)]
@@ -81,7 +80,6 @@ pub fn build_router(state: AppState) -> Router {
         .merge(usage_router())
         .merge(terminal_router())
         .merge(editor_router())
-        .merge(ws_workflow_router())
         .route("/ws", get(ws_handler))
         .route("/api/models", get(list_models))
         .with_state(state)

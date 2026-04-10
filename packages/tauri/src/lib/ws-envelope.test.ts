@@ -7,7 +7,6 @@ import {
   createPermissionRespond,
   createInterrupt,
   createDestroy,
-  createCustomWorkflowStart,
 } from "./ws-envelope";
 
 describe("ws-envelope", () => {
@@ -86,28 +85,5 @@ describe("ws-envelope", () => {
       expect(env.payload).toEqual({ session_id: "s1" });
     });
 
-    it("createCustomWorkflowStart includes useWorktree when provided", () => {
-      const env = createCustomWorkflowStart(1, 2, "My Feature", 5, "build it", true);
-      expect(env.domain).toBe("workflow");
-      expect(env.action).toBe("feature_start_custom");
-      expect(env.payload).toEqual({
-        feature_id: 1,
-        project_id: 2,
-        title: "My Feature",
-        workflow_definition_id: 5,
-        description: "build it",
-        use_worktree: true,
-      });
-    });
-
-    it("createCustomWorkflowStart omits useWorktree when undefined", () => {
-      const env = createCustomWorkflowStart(1, 2, "My Feature", 5, "desc");
-      expect(env.payload).not.toHaveProperty("use_worktree");
-    });
-
-    it("createCustomWorkflowStart omits description when empty", () => {
-      const env = createCustomWorkflowStart(1, 2, "My Feature", 5);
-      expect(env.payload).not.toHaveProperty("description");
-    });
   });
 });

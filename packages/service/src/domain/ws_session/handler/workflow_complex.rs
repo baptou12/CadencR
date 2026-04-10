@@ -11,6 +11,7 @@ use crate::app_state::AppState;
 use crate::domain::features::models::WorkflowType;
 use crate::domain::workflow::engine::WorkflowEngine;
 use crate::domain::workflow::status::WorkflowStatus;
+use crate::domain::workflow::strategies;
 use crate::domain::workflow::worktree;
 use crate::domain::ws_session::protocol::*;
 use super::WsSender;
@@ -18,7 +19,6 @@ use super::workflow::{
     ENGINES, ensure_background_tasks, parse_and_get_engine, parse_payload,
     send_workflow_error, to_value,
 };
-use super::workflow_custom;
 use super::workflow_interact::prepare_worktree;
 
 pub(super) async fn handle_feature_start(
@@ -268,7 +268,7 @@ pub(super) async fn handle_populate_queue(envelope: WsEnvelope, sender: &WsSende
     let Some((payload, engine)) = parse_and_get_engine::<WorkflowPopulateQueuePayload>(&envelope, sender) else { return };
 
     let feature_id = payload.feature_id;
-    let strategy = match workflow_custom::resolve_strategy(&engine.workflow_type, feature_id, &app_state.read_pool).await {
+    let strategy = match strategies::get_strategy(&engine.workflow_type) {
         Ok(s) => s,
         Err(e) => {
             send_workflow_error(sender, &envelope.id, "STRATEGY_ERROR", &e);
@@ -333,7 +333,7 @@ async fn auto_populate_if_empty(
         .unwrap_or(0);
     if item_count == 0 {
         info!(feature_id = payload.feature_id, "start_build: queue empty, populating first");
-        let strategy = workflow_custom::resolve_strategy(&engine.workflow_type, payload.feature_id, &app_state.read_pool).await
+        let strategy = strategies::get_strategy(&engine.workflow_type)
             .inspect_err(|e| { send_workflow_error(sender, &envelope.id, "STRATEGY_ERROR", e); })?;
         let plan_id: Option<i64> = sqlx::query_scalar("SELECT id FROM plans WHERE feature_id = ? ORDER BY id DESC LIMIT 1")
             .bind(payload.feature_id)

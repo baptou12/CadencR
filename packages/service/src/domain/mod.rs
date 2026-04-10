@@ -13,4 +13,3 @@ pub mod mcp;
 pub mod settings;
 pub mod workflow;
 pub mod editor;
-pub mod ws_workflow;

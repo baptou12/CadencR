@@ -82,14 +82,6 @@ vi.mock("./ModelSelector", () => ({
   },
 }));
 
-// Mock WorkflowModelSelector
-vi.mock("./WorkflowModelSelector", () => ({
-  WorkflowModelSelector: () => {
-    const React = require("react");
-    return React.createElement("div", { "data-testid": "workflow-model-selector" });
-  },
-}));
-
 const mockSetCollapsed = vi.fn();
 let mockSidebarCollapsed = false;
 
@@ -160,23 +152,12 @@ describe("FeatureTopBar", () => {
     expect(screen.getByText("Settings")).toBeInTheDocument();
   });
 
-  it("renders ModelSelector for ws-feature (no workflow_definition_id)", async () => {
+  it("renders ModelSelector for ws-feature", async () => {
     const { default: userEvent } = await import("@testing-library/user-event");
     const user = userEvent.setup();
     render(<FeatureTopBar featureId={1} projectId={1} />);
     await user.click(screen.getByTitle("Feature settings"));
     expect(screen.getByTestId("model-selector")).toBeInTheDocument();
-    expect(screen.queryByTestId("workflow-model-selector")).not.toBeInTheDocument();
-  });
-
-  it("renders WorkflowModelSelector when feature has workflow_definition_id", async () => {
-    const { default: userEvent } = await import("@testing-library/user-event");
-    const user = userEvent.setup();
-    mockFeatureData = { ...mockFeatureData, workflow_definition_id: 5 };
-    render(<FeatureTopBar featureId={1} projectId={1} />);
-    await user.click(screen.getByTitle("Feature settings"));
-    expect(screen.getByTestId("workflow-model-selector")).toBeInTheDocument();
-    expect(screen.queryByTestId("model-selector")).not.toBeInTheDocument();
   });
 
   it("calls setCollapsed(false) when expand button is clicked", async () => {

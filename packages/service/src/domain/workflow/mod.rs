@@ -11,6 +11,5 @@ pub mod spawn;
 pub mod status;
 pub mod strategies;
 pub mod stream_reader;
-pub mod task_expander;
 pub mod worktree;
 pub mod ws_sender;

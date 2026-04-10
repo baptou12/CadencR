@@ -3,7 +3,6 @@
 import { invalidateFeatureQueries } from "@/lib/featureUpdated";
 import { type CommandsListPayload } from "@/lib/ws-envelope";
 import type { SlashCommand } from "@/hooks/useSlashCommand";
-import { queryClient } from "@/lib/queryClient";
 import {
   type WorkflowState, type WorkflowStatus, type QueueItemStatus,
   parseAgentSlot, agentSlotKey, PLAN_KEY, PRD_KEY, SESSION_PLACEHOLDER_KEY,
@@ -331,34 +330,6 @@ export function createWorkflowMessageHandler(
       case "worktree.setup_error":
         set({ worktreeStatus: "setup_error", worktreeError: (payload.error ?? payload.message ?? "") as string });
         break;
-      case "phase_started":
-      case "phase_completed":
-      case "approval_requested": {
-        const slug = payload.phase_slug as string;
-        const status = action === "phase_started" ? "running" : action === "phase_completed" ? "completed" : "pending_approval";
-        set(state => {
-          const phaseStates = new Map(state.phaseStates);
-          const prev = phaseStates.get(slug);
-          phaseStates.set(slug, {
-            slug, status,
-            agentSessionId: action === "phase_started" ? (payload.session_id as number) : (prev?.agentSessionId ?? null),
-            artifactPreview: action === "phase_completed" ? ((payload.artifact_preview as string) ?? null) : (prev?.artifactPreview ?? null),
-          });
-          const extra = action === "approval_requested"
-            ? { pendingApproval: { phaseSlug: slug, artifactContent: payload.artifact_content as string } }
-            : {};
-          return { phaseStates, ...extra };
-        });
-        if (action === "phase_completed" && get().featureId) {
-          void queryClient.invalidateQueries({ queryKey: ["workflow-artifact", get().featureId, slug] });
-        }
-        break;
-      }
-      case "artifact_updated": {
-        const featureId = get().featureId;
-        if (featureId) void queryClient.invalidateQueries({ queryKey: ["workflow-artifact", featureId, payload.phase_slug as string] });
-        break;
-      }
       case "completed": {
         set({ workflowStatus: "completed" });
         break;

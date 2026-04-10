@@ -53,7 +53,6 @@ async fn main() -> anyhow::Result<()> {
 
             let write_pool = db::create_write_pool(&db_path).await?;
             shared::migrate::run_migrations(&write_pool).await?;
-            domain::ws_workflow::presets::seed_presets(&write_pool).await?;
             let read_pool = db::create_read_pool(&db_path).await?;
 
             // Mark any sessions left as 'running' from a previous crash as 'paused'

@@ -55,23 +55,7 @@ impl QueueAdvancer {
         .ok()
         .flatten();
 
-        let strategy: Box<dyn WorkflowStrategy> = match &workflow_type {
-            WorkflowType::Custom => {
-                let wd_id: Option<i64> = sqlx::query_scalar(
-                    "SELECT workflow_definition_id FROM features WHERE id = ?",
-                )
-                .bind(feature_id)
-                .fetch_optional(&read_pool)
-                .await
-                .ok()
-                .flatten();
-                let wd_id = wd_id.ok_or_else(|| {
-                    format!("Feature {feature_id} has Custom workflow type but no workflow_definition_id")
-                })?;
-                strategies::get_custom_strategy(wd_id)
-            }
-            _ => strategies::get_strategy(&workflow_type)?,
-        };
+        let strategy: Box<dyn WorkflowStrategy> = strategies::get_strategy(&workflow_type)?;
 
         let autonomy = resolve_setting(
             &read_pool,

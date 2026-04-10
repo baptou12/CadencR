@@ -21,7 +21,6 @@ import {
   CommandSeparator,
 } from "@/components/ui/command";
 import { KbdShortcut } from "@/components/KbdShortcut";
-import { PresetPicker } from "@/components/workflow/PresetPicker";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useListProjects,
@@ -40,7 +39,7 @@ interface CommandPaletteProps {
   activeFeatureId: number | null;
 }
 
-type Mode = "commands" | "pick-project-feature" | "pick-project-session" | "pick-workflow";
+type Mode = "commands" | "pick-project-feature" | "pick-project-session";
 
 function ProjectFeatureGroup({
   projectId,
@@ -85,7 +84,6 @@ export function CommandPalette({
 }: CommandPaletteProps) {
   const [mode, setMode] = useState<Mode>("commands");
   const [search, setSearch] = useState("");
-  const [pendingProjectId, setPendingProjectId] = useState<number | null>(null);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
@@ -132,7 +130,6 @@ export function CommandPalette({
       if (!open) {
         setMode("commands");
         setSearch("");
-        setPendingProjectId(null);
       }
       onOpenChange(open);
     },
@@ -161,39 +158,27 @@ export function CommandPalette({
     close();
   }, [createProjectMutation, close]);
 
-  const handleWorkflowPick = useCallback(
-    (workflowDefinitionId: number | null) => {
-      const projectId = pendingProjectId;
-      if (projectId == null) return;
+  const handleNewFeature = useCallback(
+    (projectId: number) => {
       createFeatureMutation.mutate({
         project_id: projectId,
         title: "Untitled Feature",
-        workflow_definition_id: workflowDefinitionId,
       });
       close();
     },
-    [pendingProjectId, createFeatureMutation, close],
-  );
-
-  const startWorkflowPick = useCallback(
-    (projectId: number) => {
-      setPendingProjectId(projectId);
-      setMode("pick-workflow");
-      setSearch("");
-    },
-    [],
+    [createFeatureMutation, close],
   );
 
   const handleProjectPick = useCallback(
     (projectId: number) => {
       if (mode === "pick-project-feature") {
-        startWorkflowPick(projectId);
+        handleNewFeature(projectId);
       } else if (mode === "pick-project-session") {
         createSessionMutation.mutate({ project_id: projectId, type: "ws-session" });
         close();
       }
     },
-    [mode, startWorkflowPick, createSessionMutation, close],
+    [mode, handleNewFeature, createSessionMutation, close],
   );
 
   const handleOpenDiff = useCallback(() => {
@@ -214,16 +199,10 @@ export function CommandPalette({
     (e: React.KeyboardEvent) => {
       if (mode !== "commands" && e.key === "Backspace" && search === "") {
         e.preventDefault();
-        if (mode === "pick-workflow") {
-          // Go back to project pick if we came from there, otherwise commands
-          setMode(pendingProjectId != null && activeProjectId == null ? "pick-project-feature" : "commands");
-          setPendingProjectId(null);
-        } else {
-          setMode("commands");
-        }
+        setMode("commands");
       }
     },
-    [mode, search, pendingProjectId, activeProjectId],
+    [mode, search],
   );
 
   // Sort projects: active project first
@@ -238,17 +217,6 @@ export function CommandPalette({
         ),
       ]
     : projects;
-
-  if (mode === "pick-workflow") {
-    return (
-      <CommandDialog open={open} onOpenChange={handleOpenChange}>
-        <div className="px-3 pt-3 pb-1 text-sm text-muted-foreground">Choose a workflow</div>
-        <div className="max-h-[400px] overflow-y-auto px-3 pb-3">
-          <PresetPicker onSelect={handleWorkflowPick} selectedId={null} />
-        </div>
-      </CommandDialog>
-    );
-  }
 
   if (mode === "pick-project-feature" || mode === "pick-project-session") {
     return (
@@ -311,7 +279,7 @@ export function CommandPalette({
           <CommandItem
             onSelect={() => {
               if (activeProjectId != null) {
-                startWorkflowPick(activeProjectId);
+                handleNewFeature(activeProjectId);
               } else {
                 setMode("pick-project-feature");
                 setSearch("");

@@ -1,11 +1,9 @@
-import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { ModelSelector } from "../components/ModelSelector";
-import { WorkflowLibraryTab } from "@/components/workflow/WorkflowLibraryTab";
 import { useZoom } from "@/hooks/useZoom";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import {
@@ -18,40 +16,15 @@ export const Route = createFileRoute("/settings")({
   component: SettingsPage,
 });
 
-type Tab = "general" | "workflows";
-
 function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<Tab>("general");
-
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center gap-1 border-b border-border px-6 pt-6 pb-0">
         <h1 className="text-2xl font-bold mr-6 pb-2">Settings</h1>
-        <TabButton active={activeTab === "general"} onClick={() => setActiveTab("general")}>
-          General
-        </TabButton>
-        <TabButton active={activeTab === "workflows"} onClick={() => setActiveTab("workflows")}>
-          Workflow Library
-        </TabButton>
       </div>
 
-      {activeTab === "general" ? <GeneralTab /> : <WorkflowLibraryTab />}
+      <GeneralTab />
     </div>
-  );
-}
-
-function TabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
-        active
-          ? "border-primary text-foreground"
-          : "border-transparent text-muted-foreground hover:text-foreground"
-      }`}
-    >
-      {children}
-    </button>
   );
 }
 

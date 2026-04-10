@@ -3,7 +3,7 @@
 import { create } from "zustand";
 import { getWsUrl } from "@/lib/ws-url";
 import { createWsConnection } from "@/lib/ws-connection";
-import { createCommandsGet, createPhaseApproval, createPhaseTrigger, createCustomWorkflowStart } from "@/lib/ws-envelope";
+import { createCommandsGet } from "@/lib/ws-envelope";
 import { createWorkflowMessageHandler } from "@/hooks/workflow-event-handlers";
 import {
   hydrateFromSnapshotPatch,
@@ -57,9 +57,6 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     worktreeSetupOutput: [],
     worktreeError: null,
     featureTitle: null,
-    workflowDefinitionId: null,
-    phaseStates: new Map(),
-    pendingApproval: null,
 
     requestSlashCommands(cwd: string) {
       const { conn, slashCommands, slashCommandsLoading } = get();
@@ -94,7 +91,6 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         workflowStatus: "idle", pauseReason: null, selectedItemId: null, error: null, hydrated: false, startingBuild: false, continuingBuild: false,
         worktreeStatus: "idle" as const, worktreePath: null, worktreeSetupOutput: [], worktreeError: null,
         featureTitle: null, slashCommands: [], slashCommandsLoading: false,
-        workflowDefinitionId: null, phaseStates: new Map(), pendingApproval: null,
       });
     },
 
@@ -115,25 +111,6 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
 
     clearError() {
       set({ error: null });
-    },
-
-    approvePhase(phaseSlug, approved, feedback) {
-      const { conn, featureId } = get();
-      if (!conn?.isOpen() || !featureId) return;
-      conn.sendJson(createPhaseApproval(featureId, phaseSlug, approved, feedback));
-    },
-
-    triggerPhase(phaseSlug) {
-      const { conn, featureId } = get();
-      if (!conn?.isOpen() || !featureId) return;
-      conn.sendJson(createPhaseTrigger(featureId, phaseSlug));
-    },
-
-    startCustomWorkflow(featureId, projectId, title, workflowDefinitionId, description, useWorktree) {
-      const { conn } = get();
-      if (!conn?.isOpen()) return;
-      conn.sendJson(createCustomWorkflowStart(featureId, projectId, title, workflowDefinitionId, description, useWorktree));
-      set({ workflowDefinitionId });
     },
 
     setAutonomyLevel(level) {

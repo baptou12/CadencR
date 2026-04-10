@@ -44,6 +44,7 @@ pub async fn insert_queue_item_with_retries(
     Ok(result.last_insert_rowid())
 }
 
+#[allow(dead_code)]
 pub async fn insert_queue_item_with_config(
     pool: &SqlitePool,
     feature_id: i64,
@@ -241,6 +242,7 @@ pub async fn mark_item_pending_approval(pool: &SqlitePool, item_id: i64) -> Resu
     Ok(())
 }
 
+#[allow(dead_code)]
 pub async fn get_queue_item_by_slug(
     pool: &SqlitePool,
     feature_id: i64,

@@ -235,17 +235,6 @@ export function ProjectTree({
                         >
                           New Session
                         </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            void navigate({
-                              to: "/projects/$projectId/new-workflow",
-                              params: { projectId: String(project.id) },
-                            });
-                          }}
-                        >
-                          New Workflow
-                        </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
 

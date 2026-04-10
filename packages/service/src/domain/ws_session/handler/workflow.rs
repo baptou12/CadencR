@@ -11,7 +11,6 @@ use crate::domain::workflow::engine::WorkflowEngine;
 use crate::domain::ws_session::protocol::*;
 use super::{SdkSessions, WsSender};
 use super::workflow_complex;
-use super::workflow_custom;
 use super::workflow_interact;
 
 // ── Engine registry ──────────────────────────────────────────────────────────
@@ -202,24 +201,6 @@ pub async fn handle_workflow_action(
     _sdk_sessions: &SdkSessions,
     app_state: &AppState,
 ) {
-    let is_legacy_only = matches!(
-        envelope.action.as_str(),
-        "start_plan" | "start_prd" | "plan.approved" | "plan.rejected"
-            | "prd.approved" | "prd.rejected" | "populate_queue" | "start_build"
-            | "start_refine" | "start_review_fixer" | "start_risk" | "start_retro"
-    );
-    if is_legacy_only && workflow_custom::guard_legacy_action(&envelope, sender, &app_state.read_pool).await {
-        return;
-    }
-
-    let is_custom_only = matches!(
-        envelope.action.as_str(),
-        "phase_approval" | "phase_trigger" | "feature_start_custom"
-    );
-    if is_custom_only && workflow_custom::guard_custom_action(&envelope, sender, &app_state.read_pool).await {
-        return;
-    }
-
     match envelope.action.as_str() {
         "feature.start" => workflow_complex::handle_feature_start(envelope, sender, app_state).await,
         "start_plan" => workflow_complex::handle_start_plan(envelope, sender, app_state).await,
@@ -243,9 +224,6 @@ pub async fn handle_workflow_action(
         "start_risk" => handle_start_risk(envelope, sender).await,
         "start_retro" => handle_start_retro(envelope, sender).await,
         "mark_done" => handle_mark_done(envelope, sender).await,
-        "phase_approval" => workflow_custom::handle_phase_approval(envelope, sender, app_state).await,
-        "phase_trigger" => workflow_custom::handle_phase_trigger(envelope, sender, app_state).await,
-        "feature_start_custom" => workflow_custom::handle_feature_start_custom(envelope, sender, app_state).await,
         unknown => {
             send_workflow_error(sender, &envelope.id, "UNKNOWN_ACTION", &format!("Unknown workflow action: {unknown}"));
         }

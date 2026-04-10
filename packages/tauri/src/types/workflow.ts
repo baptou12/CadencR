@@ -17,24 +17,6 @@ import type { FeatureAgentStateResponse } from "@/api/generated";
 // Types
 // ---------------------------------------------------------------------------
 
-// ---------------------------------------------------------------------------
-// Workflow Phase types (custom workflow engine)
-// ---------------------------------------------------------------------------
-
-export type PhaseStatus = "pending" | "blocked" | "ready" | "running" | "completed" | "pending_approval" | "error";
-
-export interface PhaseState {
-  slug: string;
-  status: PhaseStatus;
-  agentSessionId: number | null;
-  artifactPreview: string | null;
-}
-
-export interface PendingApproval {
-  phaseSlug: string;
-  artifactContent: string;
-}
-
 export type WorkflowStatus =
   | "idle"
   | "planning"
@@ -130,12 +112,6 @@ export interface WorktreeSnapshot {
   setup_log?: string;
 }
 
-export interface SnapshotPhaseState {
-  slug: string;
-  status: PhaseStatus;
-  artifact_preview: string | null;
-}
-
 export interface FeatureSnapshot {
   workflow_status: WorkflowStatus;
   queue: QueueItem[];
@@ -143,7 +119,6 @@ export interface FeatureSnapshot {
   plan: PlanSnapshot | null;
   worktree: WorktreeSnapshot | null;
   autonomy_level: number;
-  phase_states?: SnapshotPhaseState[];
 }
 
 export interface WorkflowState {
@@ -169,11 +144,6 @@ export interface WorkflowState {
 
   /** Live feature title pushed via WS after auto-naming. */
   featureTitle: string | null;
-
-  // Custom workflow phase state
-  workflowDefinitionId: number | null;
-  phaseStates: Map<string, PhaseState>;
-  pendingApproval: PendingApproval | null;
 
   // Slash commands
   slashCommands: SlashCommand[];
@@ -219,11 +189,6 @@ export interface WorkflowState {
   removeAgent: (slotKey: string) => void;
   deleteSession: (sessionDbId: number) => void;
   clearError: () => void;
-
-  // Custom workflow actions
-  approvePhase: (phaseSlug: string, approved: boolean, feedback?: string) => void;
-  triggerPhase: (phaseSlug: string) => void;
-  startCustomWorkflow: (featureId: number, projectId: number, title: string, workflowDefinitionId: number, description?: string, useWorktree?: boolean) => void;
 
   populateAgentBlocks: (slotKey: string, blocks: AgentBlockData[], hasMore?: boolean, oldestMessageId?: number | null) => void;
   populateOlderBlocks: (slotKey: string, blocks: AgentBlockData[], hasMore: boolean, oldestMessageId: number | null) => void;
