@@ -373,3 +373,24 @@ async fn test_snapshot_includes_phase_states_from_artifacts() {
         assert!(ps["artifact_preview"].as_str().is_some(), "artifact_preview should be present");
     }
 }
+
+#[tokio::test]
+async fn test_file_tree_includes_dotfiles() {
+    let server = start_test_server().await;
+    let repo_path = server._tmp_dir.path().join("repo");
+
+    // Create a dotfile in the repo
+    std::fs::write(repo_path.join(".hidden"), "secret\n").unwrap();
+
+    let resp = server.client.get(format!(
+        "{}/api/editor/tree?project_path={}&dir_path=",
+        server.base_url,
+        repo_path.to_string_lossy()
+    )).send().await.unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    let entries = body.as_array().unwrap();
+    let names: Vec<&str> = entries.iter().map(|e| e["name"].as_str().unwrap()).collect();
+    assert!(names.contains(&".hidden"), "dotfiles should be included in file tree, got: {:?}", names);
+    assert!(names.contains(&".git"), ".git dir should be included in file tree, got: {:?}", names);
+}

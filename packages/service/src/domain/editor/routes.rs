@@ -158,10 +158,6 @@ pub async fn tree_handler(
             let entry = entry.map_err(|e| AppError::Internal(e.to_string()))?;
             let name = entry.file_name().to_string_lossy().to_string();
 
-            if name.starts_with('.') {
-                continue;
-            }
-
             let metadata = entry.metadata().map_err(|e| AppError::Internal(e.to_string()))?;
             let is_dir = metadata.is_dir();
 
