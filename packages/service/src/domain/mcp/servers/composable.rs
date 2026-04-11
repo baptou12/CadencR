@@ -5,8 +5,8 @@ use std::sync::Arc;
 use rmcp::{
     handler::server::ServerHandler,
     model::{
-        CallToolRequestParams, CallToolResult, ErrorData, ListToolsResult,
-        PaginatedRequestParams, ServerInfo, Tool,
+        CallToolRequestParams, CallToolResult, ErrorData, ListToolsResult, PaginatedRequestParams,
+        ServerInfo, Tool,
     },
     service::{RequestContext, RoleServer},
 };
@@ -17,8 +17,9 @@ use crate::domain::mcp::tools::helpers::{error_result, text_result};
 use super::server_info;
 
 /// A function that handles a tool call given JSON args.
-pub type ToolHandlerFn =
-    Arc<dyn Fn(Value) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send>> + Send + Sync>;
+pub type ToolHandlerFn = Arc<
+    dyn Fn(Value) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send>> + Send + Sync,
+>;
 
 /// A registered tool: its MCP definition paired with its async handler.
 pub struct ToolRegistration {

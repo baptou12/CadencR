@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+pub use crate::domain::agents::runtime::ProviderSettings as AgentProviderSettings;
+
 #[derive(Debug, Serialize, ToSchema)]
 pub struct Setting {
     pub key: String,
@@ -32,13 +34,22 @@ pub struct SetModelSettingRequest {
     pub model_id: String,
 }
 
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct SetProviderSettingRequest {
+    pub agent_type: String,
+    pub provider_id: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_setting_serialization() {
-        let s = Setting { key: "theme".to_string(), value: Some("dark".to_string()) };
+        let s = Setting {
+            key: "theme".to_string(),
+            value: Some("dark".to_string()),
+        };
         let json = serde_json::to_string(&s).unwrap();
         assert!(json.contains("\"key\":\"theme\""));
         assert!(json.contains("\"value\":\"dark\""));
@@ -46,7 +57,10 @@ mod tests {
 
     #[test]
     fn test_setting_null_value_serialization() {
-        let s = Setting { key: "missing".to_string(), value: None };
+        let s = Setting {
+            key: "missing".to_string(),
+            value: None,
+        };
         let json = serde_json::to_string(&s).unwrap();
         assert!(json.contains("\"value\":null"));
     }
@@ -109,5 +123,4 @@ mod tests {
         assert_eq!(req.agent_type, "plan");
         assert_eq!(req.model_id, "claude-sonnet-3-5");
     }
-
 }

@@ -1,19 +1,20 @@
 pub mod openapi;
 
-use axum::Router;
+use crate::app_state::AppState;
+use crate::domain::agents::runtime::AgentCatalogResponse;
+use crate::domain::diff_comments::routes::diff_comments_router;
+use crate::domain::editor::routes::editor_router;
+use crate::domain::features::routes::features_router;
+use crate::domain::git::routes::git_router;
+use crate::domain::projects::routes::projects_router;
+use crate::domain::sessions::routes::sessions_router;
+use crate::domain::terminal::routes::terminal_router;
+use crate::domain::usage::routes::usage_router;
+use crate::domain::workspace::routes::workspace_router;
+use crate::domain::ws_session::handler::ws_handler;
 use axum::routing::get;
 use axum::Json;
-use crate::app_state::AppState;
-use crate::domain::git::routes::git_router;
-use crate::domain::workspace::routes::workspace_router;
-use crate::domain::projects::routes::projects_router;
-use crate::domain::features::routes::features_router;
-use crate::domain::diff_comments::routes::diff_comments_router;
-use crate::domain::sessions::routes::sessions_router;
-use crate::domain::usage::routes::usage_router;
-use crate::domain::terminal::routes::terminal_router;
-use crate::domain::editor::routes::editor_router;
-use crate::domain::ws_session::handler::ws_handler;
+use axum::Router;
 
 #[derive(Clone, serde::Serialize, utoipa::ToSchema)]
 pub struct ModelInfo {
@@ -24,17 +25,17 @@ pub struct ModelInfo {
 
 /// User-facing model aliases served by GET /api/models.
 pub const MODELS: &[(&str, &str, u64)] = &[
-    ("sonnet",     "Sonnet",      200_000),
-    ("opus",       "Opus",        200_000),
-    ("haiku",      "Haiku",       200_000),
+    ("sonnet", "Sonnet", 200_000),
+    ("opus", "Opus", 200_000),
+    ("haiku", "Haiku", 200_000),
     ("sonnet[1m]", "Sonnet (1M)", 1_000_000),
-    ("opus[1m]",   "Opus (1M)",   1_000_000),
+    ("opus[1m]", "Opus (1M)", 1_000_000),
 ];
 
 /// CLI model ID prefixes → context window.
 /// The CLI reports full IDs like "claude-opus-4-6-20260301"; we match by prefix.
 const CLI_MODEL_PREFIXES: &[(&str, u64)] = &[
-    ("claude-opus-4-6",   1_000_000),
+    ("claude-opus-4-6", 1_000_000),
     ("claude-sonnet-4-6", 1_000_000),
 ];
 
@@ -61,11 +62,21 @@ pub fn context_window_for_model(model: &str) -> u64 {
 
 #[utoipa::path(get, path = "/api/models", responses((status = 200, body = Vec<ModelInfo>)))]
 pub async fn list_models() -> Json<Vec<ModelInfo>> {
-    Json(MODELS.iter().map(|(id, label, cw)| ModelInfo {
-        id: id.to_string(),
-        label: label.to_string(),
-        context_window: *cw,
-    }).collect())
+    Json(
+        MODELS
+            .iter()
+            .map(|(id, label, cw)| ModelInfo {
+                id: id.to_string(),
+                label: label.to_string(),
+                context_window: *cw,
+            })
+            .collect(),
+    )
+}
+
+#[utoipa::path(get, path = "/api/agent-catalog", responses((status = 200, body = AgentCatalogResponse)))]
+pub async fn get_agent_catalog() -> Json<AgentCatalogResponse> {
+    Json(crate::domain::agents::runtime::provider_catalog())
 }
 
 pub fn build_router(state: AppState) -> Router {
@@ -82,5 +93,6 @@ pub fn build_router(state: AppState) -> Router {
         .merge(editor_router())
         .route("/ws", get(ws_handler))
         .route("/api/models", get(list_models))
+        .route("/api/agent-catalog", get(get_agent_catalog))
         .with_state(state)
 }

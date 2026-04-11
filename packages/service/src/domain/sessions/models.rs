@@ -1,12 +1,14 @@
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
 use std::collections::HashMap;
+use utoipa::ToSchema;
 
 #[derive(Debug, Serialize, sqlx::FromRow, ToSchema)]
 pub struct AgentSessionRow {
     pub id: i64,
     pub feature_id: i64,
     pub agent_type: String,
+    pub runtime_provider: Option<String>,
+    pub runtime_session_id: Option<String>,
     pub claude_session_id: Option<String>,
     pub status: String,
     pub started_at: Option<String>,
@@ -91,6 +93,10 @@ pub struct SessionState {
     #[serde(rename = "hasFileChanges")]
     pub has_file_changes: bool,
     pub resumable: bool,
+    #[serde(rename = "runtimeProvider")]
+    pub runtime_provider: Option<String>,
+    #[serde(rename = "runtimeSessionId")]
+    pub runtime_session_id: Option<String>,
     #[serde(rename = "claudeSessionId")]
     pub claude_session_id: Option<String>,
     #[serde(rename = "runId")]
@@ -250,7 +256,9 @@ mod tests {
 
     #[test]
     fn test_draft_response_serde() {
-        let resp = DraftResponse { draft_prompt: Some("draft".to_string()) };
+        let resp = DraftResponse {
+            draft_prompt: Some("draft".to_string()),
+        };
         let json = serde_json::to_string(&resp).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed["draftPrompt"], "draft");
@@ -266,5 +274,4 @@ mod tests {
         let req_null: SaveDraftRequest = serde_json::from_str(json_null).unwrap();
         assert!(req_null.draft.is_none());
     }
-
 }

@@ -8,10 +8,8 @@ use std::sync::Arc;
 use rmcp::model::{Implementation, ServerCapabilities, ServerInfo, Tool};
 use serde_json::json;
 
+use self::{composable::ComposableServer, plan::PlanServer, session::SessionServer};
 use super::context::McpContext;
-use self::{
-    composable::ComposableServer, plan::PlanServer, session::SessionServer,
-};
 
 /// Agent types that can be served
 #[derive(Debug, Clone, Copy)]
@@ -61,44 +59,72 @@ pub fn create_mcp_server(agent_type: AgentType, ctx: Arc<McpContext>) -> McpServ
         AgentType::Session => McpServer::Session(SessionServer::new(ctx)),
         AgentType::Prd => McpServer::Composable(ComposableServer::new(
             "cadence-prd",
-            vec![th::create_prd(&ctx), th::edit_prd(&ctx), th::show_prd(&ctx), th::mark_agent_done(&ctx)],
+            vec![
+                th::create_prd(&ctx),
+                th::edit_prd(&ctx),
+                th::show_prd(&ctx),
+                th::mark_agent_done(&ctx),
+            ],
         )),
         AgentType::Execute => McpServer::Composable(ComposableServer::new(
             "cadence-execute",
             vec![
-                th::read_plan(&ctx), th::list_phases(&ctx), th::read_phase(&ctx),
-                th::mark_agent_done(&ctx), th::mark_phase_done(&ctx),
+                th::read_plan(&ctx),
+                th::list_phases(&ctx),
+                th::read_phase(&ctx),
+                th::mark_agent_done(&ctx),
+                th::mark_phase_done(&ctx),
             ],
         )),
         AgentType::Review => McpServer::Composable(ComposableServer::new(
             "cadence-review",
             vec![
-                th::read_plan(&ctx), th::list_phases(&ctx), th::read_phase(&ctx),
-                th::create_phase(&ctx), th::update_phase(&ctx), th::remove_phase(&ctx),
-                th::mark_agent_done(&ctx), th::finalize_phases(&ctx),
+                th::read_plan(&ctx),
+                th::list_phases(&ctx),
+                th::read_phase(&ctx),
+                th::create_phase(&ctx),
+                th::update_phase(&ctx),
+                th::remove_phase(&ctx),
+                th::mark_agent_done(&ctx),
+                th::finalize_phases(&ctx),
             ],
         )),
         AgentType::Risk => McpServer::Composable(ComposableServer::new(
             "cadence-risk",
             vec![
-                th::read_plan(&ctx), th::list_phases(&ctx), th::read_phase(&ctx),
-                th::create_phase(&ctx), th::update_phase(&ctx), th::remove_phase(&ctx),
-                th::mark_agent_done(&ctx), th::finalize_phases(&ctx),
+                th::read_plan(&ctx),
+                th::list_phases(&ctx),
+                th::read_phase(&ctx),
+                th::create_phase(&ctx),
+                th::update_phase(&ctx),
+                th::remove_phase(&ctx),
+                th::mark_agent_done(&ctx),
+                th::finalize_phases(&ctx),
             ],
         )),
         AgentType::Qa => McpServer::Composable(ComposableServer::new(
             "cadence-qa",
             vec![
-                th::read_plan(&ctx), th::list_phases(&ctx), th::read_phase(&ctx),
-                th::create_phase(&ctx), th::update_phase(&ctx), th::remove_phase(&ctx),
-                th::mark_phase_done(&ctx), th::mark_agent_done(&ctx), th::finalize_phases(&ctx),
+                th::read_plan(&ctx),
+                th::list_phases(&ctx),
+                th::read_phase(&ctx),
+                th::create_phase(&ctx),
+                th::update_phase(&ctx),
+                th::remove_phase(&ctx),
+                th::mark_phase_done(&ctx),
+                th::mark_agent_done(&ctx),
+                th::finalize_phases(&ctx),
             ],
         )),
         AgentType::Retro => McpServer::Composable(ComposableServer::new(
             "cadence-retro",
             vec![
-                th::read_plan(&ctx), th::list_phases(&ctx), th::read_phase(&ctx),
-                th::read_prd(&ctx), th::list_conversations(&ctx), th::read_conversation(&ctx),
+                th::read_plan(&ctx),
+                th::list_phases(&ctx),
+                th::read_phase(&ctx),
+                th::read_prd(&ctx),
+                th::list_conversations(&ctx),
+                th::read_conversation(&ctx),
                 th::mark_agent_done(&ctx),
             ],
         )),
@@ -236,11 +262,17 @@ fn tool_update_plan() -> Tool {
 }
 
 fn tool_show_plan() -> Tool {
-    plan_id_tool("show_plan", "Show the plan to the user for approval (blocks until approved or rejected)")
+    plan_id_tool(
+        "show_plan",
+        "Show the plan to the user for approval (blocks until approved or rejected)",
+    )
 }
 
 fn tool_finalize_plan() -> Tool {
-    plan_id_tool("finalize_plan", "Finalize a plan, marking it as ready for execution")
+    plan_id_tool(
+        "finalize_plan",
+        "Finalize a plan, marking it as ready for execution",
+    )
 }
 
 fn tool_finalize_phases() -> Tool {

@@ -38,7 +38,9 @@ impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, code) = match &self {
             AppError::DatabaseError(_) => (StatusCode::INTERNAL_SERVER_ERROR, "DATABASE_ERROR"),
-            AppError::GitCommandError(_) => (StatusCode::INTERNAL_SERVER_ERROR, "GIT_COMMAND_ERROR"),
+            AppError::GitCommandError(_) => {
+                (StatusCode::INTERNAL_SERVER_ERROR, "GIT_COMMAND_ERROR")
+            }
             AppError::NotFound(_) => (StatusCode::NOT_FOUND, "NOT_FOUND"),
             AppError::BadRequest(_) => (StatusCode::BAD_REQUEST, "BAD_REQUEST"),
             AppError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR"),

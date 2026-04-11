@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use notify_debouncer_mini::{new_debouncer, DebouncedEventKind, Debouncer};
 use notify_debouncer_mini::notify::RecursiveMode;
+use notify_debouncer_mini::{new_debouncer, DebouncedEventKind, Debouncer};
 use tokio::sync::broadcast;
 use tracing::{debug, warn};
 
@@ -58,9 +58,9 @@ impl FileWatcher {
                 }
 
                 // At least one non-.git change — notify
-                let has_relevant = events.iter().any(|e| {
-                    e.kind == DebouncedEventKind::Any && !is_git_path(&e.path)
-                });
+                let has_relevant = events
+                    .iter()
+                    .any(|e| e.kind == DebouncedEventKind::Any && !is_git_path(&e.path));
                 if has_relevant {
                     debug!(project = %canonical_clone.display(), "file change detected");
                     let _ = tx.send(FileChangeEvent {
@@ -119,7 +119,9 @@ mod tests {
     fn is_git_path_allows_normal_paths() {
         assert!(!is_git_path(&PathBuf::from("/project/src/main.rs")));
         assert!(!is_git_path(&PathBuf::from("/project/.gitignore")));
-        assert!(!is_git_path(&PathBuf::from("/project/.github/workflows/ci.yml")));
+        assert!(!is_git_path(&PathBuf::from(
+            "/project/.github/workflows/ci.yml"
+        )));
     }
 
     #[test]
@@ -143,7 +145,9 @@ mod tests {
         let (tx, _rx) = tokio::sync::broadcast::channel(16);
         let mut watcher = FileWatcher::new();
 
-        watcher.start(dir1.path().to_str().unwrap(), tx.clone()).unwrap();
+        watcher
+            .start(dir1.path().to_str().unwrap(), tx.clone())
+            .unwrap();
         let first_path = watcher.watched_path.clone();
 
         watcher.start(dir2.path().to_str().unwrap(), tx).unwrap();

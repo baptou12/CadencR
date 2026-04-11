@@ -22,9 +22,7 @@ pub fn topological_sort(
 
     for &(from, to) in edges {
         if !node_set.contains(&from) || !node_set.contains(&to) {
-            return Err(format!(
-                "Edge references unknown node: ({from}, {to})"
-            ));
+            return Err(format!("Edge references unknown node: ({from}, {to})"));
         }
         adj.entry(from).or_default().push(to);
         rev_adj.entry(to).or_default().push(from);
@@ -70,10 +68,7 @@ pub fn topological_sort(
         depth.insert(node, max_parent);
     }
 
-    Ok(order
-        .into_iter()
-        .map(|id| (id, depth[&id]))
-        .collect())
+    Ok(order.into_iter().map(|id| (id, depth[&id])).collect())
 }
 
 #[cfg(test)]
@@ -104,7 +99,11 @@ mod tests {
         assert_eq!(groups[&4], 2);
 
         // Check ordering: 1 before 2,3; 2,3 before 4
-        let pos: HashMap<i64, usize> = result.iter().enumerate().map(|(i, &(id, _))| (id, i)).collect();
+        let pos: HashMap<i64, usize> = result
+            .iter()
+            .enumerate()
+            .map(|(i, &(id, _))| (id, i))
+            .collect();
         assert!(pos[&1] < pos[&2]);
         assert!(pos[&1] < pos[&3]);
         assert!(pos[&2] < pos[&4]);

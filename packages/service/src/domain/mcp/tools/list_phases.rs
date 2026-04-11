@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use crate::domain::mcp::McpContext;
 use super::helpers::verify_plan_ownership;
+use crate::domain::mcp::McpContext;
 
 pub struct ListPhasesTool {
     pub ctx: Arc<McpContext>,
@@ -36,7 +36,9 @@ impl ListPhasesTool {
 
         let mut out = String::from("| ID | Step | Title | Status | Type | Complexity | Dependencies |\n|-----|------|-------|--------|------|------------|---------------|\n");
         for p in &phases {
-            let deps = p.depends_on.as_ref()
+            let deps = p
+                .depends_on
+                .as_ref()
                 .and_then(|s| serde_json::from_str::<Vec<String>>(s).ok())
                 .map(|d| d.join(", "))
                 .unwrap_or_else(|| "-".to_string());

@@ -3,7 +3,7 @@ use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 
 use dashmap::DashMap;
-use portable_pty::{ChildKiller, CommandBuilder, MasterPty, PtySize, native_pty_system};
+use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize};
 use tokio::sync::{broadcast, watch};
 use tracing::info;
 
@@ -64,7 +64,12 @@ impl PtyManager {
     }
 
     /// Spawn a new PTY in the given working directory. Returns (pty_id, handle).
-    pub fn create_pty(&self, cwd: &str, cols: u16, rows: u16) -> anyhow::Result<(String, Arc<PtyHandle>)> {
+    pub fn create_pty(
+        &self,
+        cwd: &str,
+        cols: u16,
+        rows: u16,
+    ) -> anyhow::Result<(String, Arc<PtyHandle>)> {
         let pty_system = native_pty_system();
         let pair = pty_system.openpty(PtySize {
             rows,

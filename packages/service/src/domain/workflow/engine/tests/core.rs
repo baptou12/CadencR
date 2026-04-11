@@ -31,7 +31,10 @@ async fn test_engine_creation_defaults() {
 async fn test_engine_last_activity_initialized() {
     let (engine, _rx) = test_engine().await;
     let activity = engine.last_activity.load(Ordering::Relaxed);
-    assert!(activity > 1_577_836_800, "last_activity should be a recent Unix timestamp");
+    assert!(
+        activity > 1_577_836_800,
+        "last_activity should be a recent Unix timestamp"
+    );
 }
 
 #[tokio::test]
@@ -62,7 +65,10 @@ fn test_strategy_feature_build() {
     use crate::domain::workflow::strategies;
     let strategy = strategies::get_strategy(&WorkflowType::FeatureBuild);
     assert!(strategy.is_ok());
-    assert_eq!(strategy.unwrap().workflow_type(), WorkflowType::FeatureBuild);
+    assert_eq!(
+        strategy.unwrap().workflow_type(),
+        WorkflowType::FeatureBuild
+    );
 }
 
 // ── DashMap-based state tracking ──
@@ -71,29 +77,65 @@ fn test_strategy_feature_build() {
 async fn test_active_items_tracking() {
     let (engine, _rx) = test_engine().await;
 
-    engine.agent_manager.active_items.insert(AgentSlot::QueueItem(10), 100);
-    engine.agent_manager.active_items.insert(AgentSlot::QueueItem(20), 200);
+    engine
+        .agent_manager
+        .active_items
+        .insert(AgentSlot::QueueItem(10), 100);
+    engine
+        .agent_manager
+        .active_items
+        .insert(AgentSlot::QueueItem(20), 200);
 
     assert_eq!(engine.active_items().len(), 2);
-    assert_eq!(*engine.active_items().get(&AgentSlot::QueueItem(10)).unwrap(), 100);
-    assert_eq!(*engine.active_items().get(&AgentSlot::QueueItem(20)).unwrap(), 200);
+    assert_eq!(
+        *engine
+            .active_items()
+            .get(&AgentSlot::QueueItem(10))
+            .unwrap(),
+        100
+    );
+    assert_eq!(
+        *engine
+            .active_items()
+            .get(&AgentSlot::QueueItem(20))
+            .unwrap(),
+        200
+    );
 
-    engine.agent_manager.active_items.remove(&AgentSlot::QueueItem(10));
+    engine
+        .agent_manager
+        .active_items
+        .remove(&AgentSlot::QueueItem(10));
     assert_eq!(engine.active_items().len(), 1);
-    assert!(engine.active_items().get(&AgentSlot::QueueItem(10)).is_none());
+    assert!(engine
+        .active_items()
+        .get(&AgentSlot::QueueItem(10))
+        .is_none());
 }
 
 #[tokio::test]
 async fn test_interrupted_items_tracking() {
     let (engine, _rx) = test_engine().await;
 
-    engine.agent_manager.interrupted_items.insert(AgentSlot::QueueItem(42));
-    assert!(engine.agent_manager.interrupted_items.contains(&AgentSlot::QueueItem(42)));
+    engine
+        .agent_manager
+        .interrupted_items
+        .insert(AgentSlot::QueueItem(42));
+    assert!(engine
+        .agent_manager
+        .interrupted_items
+        .contains(&AgentSlot::QueueItem(42)));
 
-    let removed = engine.agent_manager.interrupted_items.remove(&AgentSlot::QueueItem(42));
+    let removed = engine
+        .agent_manager
+        .interrupted_items
+        .remove(&AgentSlot::QueueItem(42));
     assert!(removed.is_some());
 
-    let removed_again = engine.agent_manager.interrupted_items.remove(&AgentSlot::QueueItem(42));
+    let removed_again = engine
+        .agent_manager
+        .interrupted_items
+        .remove(&AgentSlot::QueueItem(42));
     assert!(removed_again.is_none());
 }
 
@@ -113,10 +155,23 @@ async fn test_interrupted_flag_cleared_before_resume() {
 async fn test_paused_sessions_tracking() {
     let (engine, _rx) = test_engine().await;
 
-    engine.agent_manager.paused_sessions.insert(AgentSlot::QueueItem(5), "session-abc".to_string());
-    assert_eq!(*engine.agent_manager.paused_sessions.get(&AgentSlot::QueueItem(5)).unwrap(), "session-abc");
+    engine
+        .agent_manager
+        .paused_sessions
+        .insert(AgentSlot::QueueItem(5), "session-abc".to_string());
+    assert_eq!(
+        *engine
+            .agent_manager
+            .paused_sessions
+            .get(&AgentSlot::QueueItem(5))
+            .unwrap(),
+        "session-abc"
+    );
 
-    let removed = engine.agent_manager.paused_sessions.remove(&AgentSlot::QueueItem(5));
+    let removed = engine
+        .agent_manager
+        .paused_sessions
+        .remove(&AgentSlot::QueueItem(5));
     assert!(removed.is_some());
     assert_eq!(removed.unwrap().1, "session-abc");
 }
@@ -132,7 +187,9 @@ async fn test_respond_permission_no_channel() {
         feedback: None,
         updated_input: None,
     };
-    let result = engine.respond_permission(AgentSlot::QueueItem(999), response).await;
+    let result = engine
+        .respond_permission(AgentSlot::QueueItem(999), response)
+        .await;
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("No permission channel"));
 }
@@ -142,14 +199,19 @@ async fn test_respond_permission_with_channel() {
     let (engine, _rx) = test_engine().await;
 
     let (tx, mut perm_rx) = mpsc::channel::<PermissionResponse>(16);
-    engine.permissions.permission_txs.insert(AgentSlot::QueueItem(42), tx);
+    engine
+        .permissions
+        .permission_txs
+        .insert(AgentSlot::QueueItem(42), tx);
 
     let response = PermissionResponse {
         decision: PermissionDecision::AllowOnce,
         feedback: None,
         updated_input: None,
     };
-    let result = engine.respond_permission(AgentSlot::QueueItem(42), response).await;
+    let result = engine
+        .respond_permission(AgentSlot::QueueItem(42), response)
+        .await;
     assert!(result.is_ok());
 
     let received = perm_rx.recv().await.unwrap();
@@ -161,8 +223,14 @@ async fn test_respond_permission_with_channel() {
 #[tokio::test]
 async fn test_advance_at_capacity_is_noop() {
     let (engine, _rx) = test_engine().await;
-    engine.agent_manager.active_items.insert(AgentSlot::QueueItem(1), 100);
-    engine.agent_manager.active_items.insert(AgentSlot::QueueItem(2), 200);
+    engine
+        .agent_manager
+        .active_items
+        .insert(AgentSlot::QueueItem(1), 100);
+    engine
+        .agent_manager
+        .active_items
+        .insert(AgentSlot::QueueItem(2), 200);
 
     let result = engine.advance().await;
     assert!(result.is_ok());
@@ -204,10 +272,23 @@ fn test_workflow_type_from_str() {
 async fn test_strategy_agent_type_mapping() {
     let (engine, _rx) = test_engine().await;
 
-    assert!(matches!(engine.queue.strategy.agent_type_for_item("execute", None), Ok(AgentType::Execute)));
-    assert!(matches!(engine.queue.strategy.agent_type_for_item("qa", None), Ok(AgentType::Qa)));
-    assert!(matches!(engine.queue.strategy.agent_type_for_item("review", None), Ok(AgentType::Review)));
-    assert!(engine.queue.strategy.agent_type_for_item("bogus", None).is_err());
+    assert!(matches!(
+        engine.queue.strategy.agent_type_for_item("execute", None),
+        Ok(AgentType::Execute)
+    ));
+    assert!(matches!(
+        engine.queue.strategy.agent_type_for_item("qa", None),
+        Ok(AgentType::Qa)
+    ));
+    assert!(matches!(
+        engine.queue.strategy.agent_type_for_item("review", None),
+        Ok(AgentType::Review)
+    ));
+    assert!(engine
+        .queue
+        .strategy
+        .agent_type_for_item("bogus", None)
+        .is_err());
 }
 
 // ── Autonomy level ──
@@ -228,20 +309,42 @@ async fn test_autonomy_level_from_db_global_setting() {
     let pool = test_pool().await;
     sqlx::query("CREATE TABLE IF NOT EXISTS features (id INTEGER PRIMARY KEY, project_id INTEGER, agent_autonomy TEXT)")
         .execute(&pool).await.unwrap();
-    sqlx::query("CREATE TABLE IF NOT EXISTS projects (id INTEGER PRIMARY KEY, agent_autonomy TEXT)")
-        .execute(&pool).await.unwrap();
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS projects (id INTEGER PRIMARY KEY, agent_autonomy TEXT)",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
     sqlx::query("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
-        .execute(&pool).await.unwrap();
+        .execute(&pool)
+        .await
+        .unwrap();
     sqlx::query("INSERT INTO projects (id) VALUES (1)")
-        .execute(&pool).await.unwrap();
+        .execute(&pool)
+        .await
+        .unwrap();
     sqlx::query("INSERT INTO features (id, project_id) VALUES (1, 1)")
-        .execute(&pool).await.unwrap();
+        .execute(&pool)
+        .await
+        .unwrap();
     sqlx::query("INSERT INTO settings (key, value) VALUES ('agent_autonomy', '3')")
-        .execute(&pool).await.unwrap();
+        .execute(&pool)
+        .await
+        .unwrap();
 
     let (tx, _rx) = mpsc::unbounded_channel();
     let (turn_state_tx, _) = tokio::sync::broadcast::channel(64);
-    let engine = WorkflowEngine::new(1, WorkflowType::FeatureBuild, pool.clone(), pool, tx, 2, turn_state_tx).await.expect("test engine creation failed");
+    let engine = WorkflowEngine::new(
+        1,
+        WorkflowType::FeatureBuild,
+        pool.clone(),
+        pool,
+        tx,
+        2,
+        turn_state_tx,
+    )
+    .await
+    .expect("test engine creation failed");
 
     assert_eq!(engine.autonomy_level().load(Ordering::Relaxed), 3);
 }
@@ -251,20 +354,42 @@ async fn test_autonomy_level_feature_overrides_global() {
     let pool = test_pool().await;
     sqlx::query("CREATE TABLE IF NOT EXISTS features (id INTEGER PRIMARY KEY, project_id INTEGER, agent_autonomy TEXT)")
         .execute(&pool).await.unwrap();
-    sqlx::query("CREATE TABLE IF NOT EXISTS projects (id INTEGER PRIMARY KEY, agent_autonomy TEXT)")
-        .execute(&pool).await.unwrap();
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS projects (id INTEGER PRIMARY KEY, agent_autonomy TEXT)",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
     sqlx::query("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
-        .execute(&pool).await.unwrap();
+        .execute(&pool)
+        .await
+        .unwrap();
     sqlx::query("INSERT INTO projects (id) VALUES (1)")
-        .execute(&pool).await.unwrap();
+        .execute(&pool)
+        .await
+        .unwrap();
     sqlx::query("INSERT INTO features (id, project_id, agent_autonomy) VALUES (1, 1, '2')")
-        .execute(&pool).await.unwrap();
+        .execute(&pool)
+        .await
+        .unwrap();
     sqlx::query("INSERT INTO settings (key, value) VALUES ('agent_autonomy', '3')")
-        .execute(&pool).await.unwrap();
+        .execute(&pool)
+        .await
+        .unwrap();
 
     let (tx, _rx) = mpsc::unbounded_channel();
     let (turn_state_tx, _) = tokio::sync::broadcast::channel(64);
-    let engine = WorkflowEngine::new(1, WorkflowType::FeatureBuild, pool.clone(), pool, tx, 2, turn_state_tx).await.expect("test engine creation failed");
+    let engine = WorkflowEngine::new(
+        1,
+        WorkflowType::FeatureBuild,
+        pool.clone(),
+        pool,
+        tx,
+        2,
+        turn_state_tx,
+    )
+    .await
+    .expect("test engine creation failed");
 
     assert_eq!(engine.autonomy_level().load(Ordering::Relaxed), 2);
 }
@@ -305,7 +430,15 @@ fn test_queue_item_group_index_parallel_identification() {
 
 #[test]
 fn test_queue_item_status_transitions() {
-    let valid_statuses = ["ready", "blocked", "running", "completed", "error", "skipped", "paused"];
+    let valid_statuses = [
+        "ready",
+        "blocked",
+        "running",
+        "completed",
+        "error",
+        "skipped",
+        "paused",
+    ];
     for status in &valid_statuses {
         let item = make_queue_item(1, "execute", status, 0, Some(0));
         assert_eq!(item.status, *status);
@@ -357,4 +490,3 @@ fn test_topological_sort_independent_phases() {
         assert_eq!(group, 0);
     }
 }
-

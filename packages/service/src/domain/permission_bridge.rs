@@ -38,16 +38,11 @@ pub async fn resolve_permission_check(
     session_cache: &Arc<Mutex<HashSet<String>>>,
     allowed_patterns: &Arc<HashSet<String>>,
 ) -> ResolvedAction {
-    let force_prompt =
-        permissions::FRONTEND_PROMPT_TOOLS.contains(&request.tool_name.as_str());
+    let force_prompt = permissions::FRONTEND_PROMPT_TOOLS.contains(&request.tool_name.as_str());
 
     let cache = session_cache.lock().await;
-    let resolved = permissions::resolve_permission(
-        &request.tool_name,
-        &request.input,
-        worktree_path,
-        &cache,
-    );
+    let resolved =
+        permissions::resolve_permission(&request.tool_name, &request.input, worktree_path, &cache);
     drop(cache);
 
     match resolved {
@@ -67,7 +62,10 @@ pub async fn resolve_permission_check(
                 tool_use_id: Some(request.tool_use_id.clone()),
             })
         }
-        ResolvedPermission::NeedsPrompt { description, pattern } => {
+        ResolvedPermission::NeedsPrompt {
+            description,
+            pattern,
+        } => {
             // Check allowed_patterns from settings files
             if !force_prompt && allowed_patterns.contains(&pattern) {
                 debug!(tool_name = %request.tool_name, pattern = %pattern, "allowed by settings pattern");
@@ -78,7 +76,11 @@ pub async fn resolve_permission_check(
                     tool_use_id: Some(request.tool_use_id.clone()),
                 });
             }
-            ResolvedAction::NeedsPrompt { description, pattern, force_prompt }
+            ResolvedAction::NeedsPrompt {
+                description,
+                pattern,
+                force_prompt,
+            }
         }
     }
 }
@@ -105,9 +107,16 @@ pub async fn wait_and_apply_decision(
             WsSessionPersistence::broadcast_turn_state(turn_state_tx, feature_id, "claude");
             let input = response.updated_input.unwrap_or(original_input);
             apply_decision(
-                tool_use_id, pattern, force_prompt, worktree_path,
-                session_cache, response.decision, response.feedback, input,
-            ).await
+                tool_use_id,
+                pattern,
+                force_prompt,
+                worktree_path,
+                session_cache,
+                response.decision,
+                response.feedback,
+                input,
+            )
+            .await
         }
         None => PermissionResult::Deny {
             message: "Permission channel closed".to_string(),

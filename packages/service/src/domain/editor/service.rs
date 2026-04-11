@@ -38,15 +38,18 @@ pub fn validate_path(project_path: &str, relative_path: &str) -> Result<PathBuf,
 
 /// Validate path for writing — the file may not exist yet, so we canonicalize
 /// the parent directory instead.
-pub fn validate_path_for_write(project_path: &str, relative_path: &str) -> Result<PathBuf, AppError> {
+pub fn validate_path_for_write(
+    project_path: &str,
+    relative_path: &str,
+) -> Result<PathBuf, AppError> {
     let project = std::fs::canonicalize(project_path)
         .map_err(|e| AppError::BadRequest(format!("Invalid project path: {e}")))?;
 
     let target = project.join(relative_path);
 
-    let parent = target.parent().ok_or_else(|| {
-        AppError::BadRequest("Invalid file path".to_string())
-    })?;
+    let parent = target
+        .parent()
+        .ok_or_else(|| AppError::BadRequest("Invalid file path".to_string()))?;
 
     let canonical_parent = std::fs::canonicalize(parent).map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
@@ -62,9 +65,9 @@ pub fn validate_path_for_write(project_path: &str, relative_path: &str) -> Resul
         ));
     }
 
-    let file_name = target.file_name().ok_or_else(|| {
-        AppError::BadRequest("Invalid file name".to_string())
-    })?;
+    let file_name = target
+        .file_name()
+        .ok_or_else(|| AppError::BadRequest("Invalid file name".to_string()))?;
 
     Ok(canonical_parent.join(file_name))
 }
@@ -177,7 +180,10 @@ pub fn content_search(
     use super::routes::{ContentMatch, ContentSearchResponse};
 
     if params.query.is_empty() {
-        return Ok(ContentSearchResponse { matches: vec![], truncated: false });
+        return Ok(ContentSearchResponse {
+            matches: vec![],
+            truncated: false,
+        });
     }
 
     let project = std::fs::canonicalize(&params.project_path)
@@ -206,15 +212,21 @@ pub fn content_search(
     let mut overrides = ignore::overrides::OverrideBuilder::new(&project);
     if let Some(ref include) = params.include_pattern {
         for glob in include.split(',').map(str::trim).filter(|s| !s.is_empty()) {
-            overrides.add(glob).map_err(|e| AppError::BadRequest(format!("Invalid include glob: {e}")))?;
+            overrides
+                .add(glob)
+                .map_err(|e| AppError::BadRequest(format!("Invalid include glob: {e}")))?;
         }
     }
     if let Some(ref exclude) = params.exclude_pattern {
         for glob in exclude.split(',').map(str::trim).filter(|s| !s.is_empty()) {
-            overrides.add(&format!("!{glob}")).map_err(|e| AppError::BadRequest(format!("Invalid exclude glob: {e}")))?;
+            overrides
+                .add(&format!("!{glob}"))
+                .map_err(|e| AppError::BadRequest(format!("Invalid exclude glob: {e}")))?;
         }
     }
-    let built_overrides = overrides.build().map_err(|e| AppError::Internal(e.to_string()))?;
+    let built_overrides = overrides
+        .build()
+        .map_err(|e| AppError::Internal(e.to_string()))?;
     walker.overrides(built_overrides);
 
     let limit = params.limit;
@@ -300,7 +312,9 @@ pub fn content_search(
 }
 
 fn num_cpus() -> usize {
-    std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4)
+    std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4)
 }
 
 /// Check if a path is matched by the gitignore rules.

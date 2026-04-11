@@ -5,7 +5,7 @@ use tracing::{debug, info, warn};
 use axum::extract::ws::Message;
 
 use crate::domain::features::repository as repo;
-use crate::domain::workflow::engine::{AgentSlot, to_value};
+use crate::domain::workflow::engine::{to_value, AgentSlot};
 use crate::domain::ws_session::persistence::WsSessionPersistence;
 use crate::domain::ws_session::protocol::*;
 
@@ -24,7 +24,10 @@ impl AgentManager {
                 debug!(slot = %slot, cc_session_id = %cc_session_id, "captured Claude session ID for resume");
                 self.paused_sessions.insert(slot.clone(), cc_session_id);
             }
-            return q.interrupt().await.map_err(|e| format!("Interrupt failed: {e}"));
+            return q
+                .interrupt()
+                .await
+                .map_err(|e| format!("Interrupt failed: {e}"));
         }
         // Fallback: PID from DB — only for real queue items
         if let AgentSlot::QueueItem(item_id) = &slot {
@@ -33,14 +36,13 @@ impl AgentManager {
         // No query handle — the agent's CLI turn likely already ended.
         // Check if it's already paused/completed and treat as success.
         if let Some(db_sid) = self.active_items.get(&slot) {
-            let status: Option<(String,)> = sqlx::query_as(
-                "SELECT status FROM agent_sessions WHERE id = ?",
-            )
-            .bind(*db_sid)
-            .fetch_optional(&self.read_pool)
-            .await
-            .ok()
-            .flatten();
+            let status: Option<(String,)> =
+                sqlx::query_as("SELECT status FROM agent_sessions WHERE id = ?")
+                    .bind(*db_sid)
+                    .fetch_optional(&self.read_pool)
+                    .await
+                    .ok()
+                    .flatten();
             if let Some((ref s,)) = status {
                 if s == "paused" || s == "completed" {
                     info!(slot = %slot, status = %s, "interrupt requested but agent already {s} — treating as success");
@@ -58,7 +60,10 @@ impl AgentManager {
     /// from the DB and sending the signal, the process could exit and the PID could be
     /// reassigned. This is mitigated by preferring the in-memory Query handle path.
     pub async fn interrupt_by_pid(&self, queue_item_id: i64) -> Result<(), String> {
-        warn!(queue_item_id, "falling back to PID-based interrupt (no in-memory Query handle)");
+        warn!(
+            queue_item_id,
+            "falling back to PID-based interrupt (no in-memory Query handle)"
+        );
 
         let item = repo::get_queue_item(&self.read_pool, queue_item_id)
             .await
@@ -102,15 +107,18 @@ impl AgentManager {
                 // Capture session ID for resume
                 if let Some(cc_session_id) = q.session_id().await {
                     info!(slot = %slot, cc_session_id = %cc_session_id, "pause_all: captured session ID");
-                    self.paused_sessions.insert(slot.clone(), cc_session_id.clone());
+                    self.paused_sessions
+                        .insert(slot.clone(), cc_session_id.clone());
                     // Persist to DB
                     if let Some(db_session_id) = self.active_items.get(&slot).map(|e| *e.value()) {
                         WsSessionPersistence::persist_claude_session_id_static(
-                            &self.write_pool, db_session_id, &cc_session_id,
-                        ).await;
-                        WsSessionPersistence::mark_paused_static(
-                            &self.write_pool, db_session_id,
-                        ).await;
+                            &self.write_pool,
+                            db_session_id,
+                            &cc_session_id,
+                        )
+                        .await;
+                        WsSessionPersistence::mark_paused_static(&self.write_pool, db_session_id)
+                            .await;
                     }
                 }
                 // Interrupt the process
@@ -137,7 +145,10 @@ impl AgentManager {
         self.queries.remove(&slot);
 
         if let AgentSlot::QueueItem(item_id) = &slot {
-            if let Err(e) = repo::mark_item_completed(&self.write_pool, *item_id, Some("Marked done by user")).await {
+            if let Err(e) =
+                repo::mark_item_completed(&self.write_pool, *item_id, Some("Marked done by user"))
+                    .await
+            {
                 warn!(slot = %slot, error = %e, "failed to mark item completed on mark_done");
             }
             self.send_item_update(*item_id).await;
@@ -163,10 +174,16 @@ impl AgentManager {
                 result: Some("Marked done by user".to_string()),
             }),
         );
-        let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
+        let _ = self
+            .ws_sender
+            .send(Message::Text(String::from(envelope).into()));
 
         if self.active_items.is_empty() {
-            WsSessionPersistence::broadcast_turn_state(&self.turn_state_tx, self.feature_id, "none");
+            WsSessionPersistence::broadcast_turn_state(
+                &self.turn_state_tx,
+                self.feature_id,
+                "none",
+            );
         }
 
         Ok(())

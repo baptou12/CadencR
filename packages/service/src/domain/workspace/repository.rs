@@ -1,8 +1,11 @@
-use sqlx::SqlitePool;
+use super::models::{AgentProviderSettings, ModelSettings, Setting};
 use crate::error::AppError;
-use super::models::{Setting, ModelSettings};
+use sqlx::SqlitePool;
 
 use crate::api::DEFAULT_MODEL;
+use crate::domain::agents::runtime::{
+    default_provider_settings, runtime_setting_key, validate_agent_type,
+};
 const MODEL_KEYS: &[(&str, &str)] = &[
     ("plan", "model_plan"),
     ("prd", "model_prd"),
@@ -15,12 +18,25 @@ const MODEL_KEYS: &[(&str, &str)] = &[
     ("retro", "model_retro"),
 ];
 
+fn provider_keys() -> [(&'static str, String); 9] {
+    [
+        ("plan", runtime_setting_key("plan")),
+        ("prd", runtime_setting_key("prd")),
+        ("execute", runtime_setting_key("execute")),
+        ("risk", runtime_setting_key("risk")),
+        ("review", runtime_setting_key("review")),
+        ("review-fixer", runtime_setting_key("review-fixer")),
+        ("session", runtime_setting_key("session")),
+        ("qa", runtime_setting_key("qa")),
+        ("retro", runtime_setting_key("retro")),
+    ]
+}
+
 pub async fn get_setting(pool: &SqlitePool, key: &str) -> Result<Option<String>, AppError> {
-    let row: Option<(Option<String>,)> =
-        sqlx::query_as("SELECT value FROM settings WHERE key = ?")
-            .bind(key)
-            .fetch_optional(pool)
-            .await?;
+    let row: Option<(Option<String>,)> = sqlx::query_as("SELECT value FROM settings WHERE key = ?")
+        .bind(key)
+        .fetch_optional(pool)
+        .await?;
     Ok(row.and_then(|r| r.0))
 }
 
@@ -36,11 +52,13 @@ pub async fn set_setting(pool: &SqlitePool, key: &str, value: &str) -> Result<()
 }
 
 pub async fn list_settings(pool: &SqlitePool) -> Result<Vec<Setting>, AppError> {
-    let rows: Vec<(String, Option<String>)> =
-        sqlx::query_as("SELECT key, value FROM settings")
-            .fetch_all(pool)
-            .await?;
-    Ok(rows.into_iter().map(|(key, value)| Setting { key, value }).collect())
+    let rows: Vec<(String, Option<String>)> = sqlx::query_as("SELECT key, value FROM settings")
+        .fetch_all(pool)
+        .await?;
+    Ok(rows
+        .into_iter()
+        .map(|(key, value)| Setting { key, value })
+        .collect())
 }
 
 pub async fn get_model_settings(pool: &SqlitePool) -> Result<ModelSettings, AppError> {
@@ -71,19 +89,78 @@ pub async fn get_model_settings(pool: &SqlitePool) -> Result<ModelSettings, AppE
         }
     }
 
-    Ok(ModelSettings { plan, prd, execute, risk, review, review_fixer, session, qa, retro })
+    Ok(ModelSettings {
+        plan,
+        prd,
+        execute,
+        risk,
+        review,
+        review_fixer,
+        session,
+        qa,
+        retro,
+    })
 }
 
-pub async fn set_model_setting(pool: &SqlitePool, agent_type: &str, model_id: &str) -> Result<(), AppError> {
-    const VALID_MODEL_TYPES: &[&str] = &["plan", "prd", "execute", "risk", "review", "review-fixer", "session", "qa", "retro"];
-    if !VALID_MODEL_TYPES.contains(&agent_type) {
-        return Err(AppError::BadRequest(format!("Invalid model type: {}", agent_type)));
+pub async fn set_model_setting(
+    pool: &SqlitePool,
+    agent_type: &str,
+    model_id: &str,
+) -> Result<(), AppError> {
+    if !validate_agent_type(agent_type) {
+        return Err(AppError::BadRequest(format!(
+            "Invalid model type: {}",
+            agent_type
+        )));
     }
     let db_key = format!("model_{}", agent_type);
     set_setting(pool, &db_key, model_id).await
 }
 
-pub async fn get_prompt_history(pool: &SqlitePool, project_id: i64) -> Result<Vec<String>, AppError> {
+pub async fn get_provider_settings(pool: &SqlitePool) -> Result<AgentProviderSettings, AppError> {
+    let mut settings = default_provider_settings();
+
+    for (agent_type, db_key) in provider_keys() {
+        let provider = get_setting(pool, &db_key)
+            .await?
+            .unwrap_or_else(|| crate::domain::agents::runtime::DEFAULT_PROVIDER.to_string());
+        match agent_type {
+            "plan" => settings.plan = provider,
+            "prd" => settings.prd = provider,
+            "execute" => settings.execute = provider,
+            "risk" => settings.risk = provider,
+            "review" => settings.review = provider,
+            "review-fixer" => settings.review_fixer = provider,
+            "session" => settings.session = provider,
+            "qa" => settings.qa = provider,
+            "retro" => settings.retro = provider,
+            _ => {}
+        }
+    }
+
+    Ok(settings)
+}
+
+pub async fn set_provider_setting(
+    pool: &SqlitePool,
+    agent_type: &str,
+    provider_id: &str,
+) -> Result<(), AppError> {
+    if !validate_agent_type(agent_type) {
+        return Err(AppError::BadRequest(format!(
+            "Invalid provider type: {}",
+            agent_type
+        )));
+    }
+
+    let db_key = runtime_setting_key(agent_type);
+    set_setting(pool, &db_key, provider_id).await
+}
+
+pub async fn get_prompt_history(
+    pool: &SqlitePool,
+    project_id: i64,
+) -> Result<Vec<String>, AppError> {
     let rows: Vec<(String,)> = sqlx::query_as(
         "SELECT content FROM prompt_history WHERE project_id = ? ORDER BY created_at DESC LIMIT 100",
     )
@@ -93,7 +170,11 @@ pub async fn get_prompt_history(pool: &SqlitePool, project_id: i64) -> Result<Ve
     Ok(rows.into_iter().map(|r| r.0).collect())
 }
 
-pub async fn add_prompt_entry(pool: &SqlitePool, project_id: i64, content: &str) -> Result<bool, AppError> {
+pub async fn add_prompt_entry(
+    pool: &SqlitePool,
+    project_id: i64,
+    content: &str,
+) -> Result<bool, AppError> {
     // Dedup: skip if the most recent entry has the same content
     let latest: Option<(String,)> = sqlx::query_as(
         "SELECT content FROM prompt_history WHERE project_id = ? ORDER BY created_at DESC LIMIT 1",
@@ -138,12 +219,10 @@ mod tests {
             .connect("sqlite::memory:")
             .await
             .unwrap();
-        sqlx::query(
-            "CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT)",
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
+        sqlx::query("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT)")
+            .execute(&pool)
+            .await
+            .unwrap();
         sqlx::query(
             "CREATE TABLE prompt_history (\
                 id INTEGER PRIMARY KEY AUTOINCREMENT, \
@@ -226,7 +305,9 @@ mod tests {
     async fn test_set_and_get_model_setting() {
         let pool = setup_test_db().await;
 
-        set_model_setting(&pool, "plan", "claude-sonnet-3-5").await.unwrap();
+        set_model_setting(&pool, "plan", "claude-sonnet-3-5")
+            .await
+            .unwrap();
         let settings = get_model_settings(&pool).await.unwrap();
 
         assert_eq!(settings.plan, "claude-sonnet-3-5");
@@ -251,10 +332,14 @@ mod tests {
     async fn test_add_prompt_entry_deduplication() {
         let pool = setup_test_db().await;
 
-        let first = add_prompt_entry(&pool, 1, "duplicate prompt").await.unwrap();
+        let first = add_prompt_entry(&pool, 1, "duplicate prompt")
+            .await
+            .unwrap();
         assert!(first);
 
-        let second = add_prompt_entry(&pool, 1, "duplicate prompt").await.unwrap();
+        let second = add_prompt_entry(&pool, 1, "duplicate prompt")
+            .await
+            .unwrap();
         assert!(!second); // skipped
 
         let history = get_prompt_history(&pool, 1).await.unwrap();

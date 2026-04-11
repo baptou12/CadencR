@@ -7,21 +7,21 @@ use axum::extract::ws::Message;
 use tokio::sync::{mpsc, Mutex};
 use tracing::{debug, error, info, warn};
 
-use claude_agent_sdk_rs::{
-    CanUseTool, Options, PermissionRequest, PermissionResult, SdkError, SdkMessage, SystemMessage,
-};
+use claude_agent_sdk_rs::{CanUseTool, PermissionRequest, PermissionResult};
 
-use crate::app_state::AppState;
-use crate::domain::permission_bridge::{self, ResolvedAction};
-use crate::domain::workflow::worktree;
-use crate::domain::workflow::engine::WsSender as WorkflowWsSender;
 use super::super::permissions;
 use super::super::persistence::WsSessionPersistence;
 use super::super::protocol::*;
 use super::{
-    parse_session_id, send_error, send_claude_session_id,
-    QueryState, SdkHandle, SdkSessions, WsSender,
+    parse_session_id, send_claude_session_id, send_error, QueryState, SdkHandle, SdkSessions,
+    WsSender,
 };
+use crate::app_state::AppState;
+use crate::domain::agents::adapter::{RuntimeMessageRx, RuntimeSpawnConfig};
+use crate::domain::agents::runtime_adapter;
+use crate::domain::permission_bridge::{self, ResolvedAction};
+use crate::domain::workflow::engine::WsSender as WorkflowWsSender;
+use crate::domain::workflow::worktree;
 
 /// Build the content value for the Claude CLI.
 /// Returns a plain string Value when no images, or a JSON array of content blocks when images are present.
@@ -113,12 +113,18 @@ impl CanUseTool for WsBridgeCanUseTool {
             &self.worktree_path,
             &self.session_cache,
             &self.allowed_patterns,
-        ).await;
+        )
+        .await;
 
         match action {
             ResolvedAction::Resolved(result) => result,
-            ResolvedAction::NeedsPrompt { description, pattern, force_prompt } => {
-                self.handle_needs_prompt(&request, description, pattern, force_prompt).await
+            ResolvedAction::NeedsPrompt {
+                description,
+                pattern,
+                force_prompt,
+            } => {
+                self.handle_needs_prompt(&request, description, pattern, force_prompt)
+                    .await
             }
         }
     }
@@ -136,12 +142,14 @@ impl WsBridgeCanUseTool {
         info!("ExitPlanMode detected, sending plan_approval and blocking");
 
         // Persist pending_plan_approval to DB so it survives app restarts
-        let approval_json = serde_json::to_string(&request.input).unwrap_or_else(|_| "{}".to_string());
-        if let Err(e) = sqlx::query("UPDATE agent_sessions SET pending_plan_approval = ? WHERE id = ?")
-            .bind(&approval_json)
-            .bind(self.db_session_id)
-            .execute(&self.write_pool)
-            .await
+        let approval_json =
+            serde_json::to_string(&request.input).unwrap_or_else(|_| "{}".to_string());
+        if let Err(e) =
+            sqlx::query("UPDATE agent_sessions SET pending_plan_approval = ? WHERE id = ?")
+                .bind(&approval_json)
+                .bind(self.db_session_id)
+                .execute(&self.write_pool)
+                .await
         {
             warn!(session_id = self.db_session_id, error = %e, "failed to persist pending_plan_approval");
         }
@@ -156,12 +164,14 @@ impl WsBridgeCanUseTool {
         // renders both live and after app restart.
         let enriched_input = self.attach_plan_to_exit_block(request).await;
         if enriched_input != request.input {
-            let enriched_json = serde_json::to_string(&enriched_input).unwrap_or_else(|_| "{}".to_string());
-            if let Err(e) = sqlx::query("UPDATE agent_sessions SET pending_plan_approval = ? WHERE id = ?")
-                .bind(&enriched_json)
-                .bind(self.db_session_id)
-                .execute(&self.write_pool)
-                .await
+            let enriched_json =
+                serde_json::to_string(&enriched_input).unwrap_or_else(|_| "{}".to_string());
+            if let Err(e) =
+                sqlx::query("UPDATE agent_sessions SET pending_plan_approval = ? WHERE id = ?")
+                    .bind(&enriched_json)
+                    .bind(self.db_session_id)
+                    .execute(&self.write_pool)
+                    .await
             {
                 warn!(session_id = self.db_session_id, error = %e, "failed to persist enriched pending_plan_approval");
             }
@@ -171,15 +181,21 @@ impl WsBridgeCanUseTool {
         let mut rx = self.response_rx.lock().await;
         match rx.recv().await {
             Some(response) => {
-                if let Err(e) = sqlx::query("UPDATE agent_sessions SET pending_plan_approval = NULL WHERE id = ?")
-                    .bind(self.db_session_id)
-                    .execute(&self.write_pool)
-                    .await
+                if let Err(e) = sqlx::query(
+                    "UPDATE agent_sessions SET pending_plan_approval = NULL WHERE id = ?",
+                )
+                .bind(self.db_session_id)
+                .execute(&self.write_pool)
+                .await
                 {
                     warn!(session_id = self.db_session_id, error = %e, "failed to clear pending_plan_approval");
                 }
 
-                WsSessionPersistence::broadcast_turn_state(&self.turn_state_tx, self.feature_id, "claude");
+                WsSessionPersistence::broadcast_turn_state(
+                    &self.turn_state_tx,
+                    self.feature_id,
+                    "claude",
+                );
                 self.apply_exit_plan_decision(request, response).await
             }
             None => {
@@ -200,7 +216,7 @@ impl WsBridgeCanUseTool {
             plan_approval_result: Option<String>,
         }
         let row = sqlx::query_as::<_, ApprovalRow>(
-            "SELECT plan_approval_result FROM agent_sessions WHERE id = ?"
+            "SELECT plan_approval_result FROM agent_sessions WHERE id = ?",
         )
         .bind(self.db_session_id)
         .fetch_optional(&self.write_pool)
@@ -221,7 +237,10 @@ impl WsBridgeCanUseTool {
             warn!(session_id = self.db_session_id, error = %e, "failed to clear plan_approval_result and pending_plan_approval");
         }
 
-        let approved = result.get("approved").and_then(|v| v.as_bool()).unwrap_or(false);
+        let approved = result
+            .get("approved")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
         if approved {
             info!("ExitPlanMode: using stored approval result (approved)");
             Some(PermissionResult::Allow {
@@ -230,7 +249,8 @@ impl WsBridgeCanUseTool {
                 tool_use_id: Some(request.tool_use_id.clone()),
             })
         } else {
-            let feedback = result.get("feedback")
+            let feedback = result
+                .get("feedback")
                 .and_then(|v| v.as_str())
                 .unwrap_or("User requested changes to the plan.")
                 .to_string();
@@ -252,13 +272,17 @@ impl WsBridgeCanUseTool {
         match response.decision {
             PermissionDecision::AllowOnce | PermissionDecision::AllowFuture => {
                 let p = WsSessionPersistence::with_session_id(
-                    self.write_pool.clone(), self.feature_id, Some(self.db_session_id),
+                    self.write_pool.clone(),
+                    self.feature_id,
+                    Some(self.db_session_id),
                 );
                 p.persist_user_message("Plan approved.").await;
-                let _ = sqlx::query("UPDATE agent_sessions SET permission_mode = 'acceptEdits' WHERE id = ?")
-                    .bind(self.db_session_id)
-                    .execute(&self.write_pool)
-                    .await;
+                let _ = sqlx::query(
+                    "UPDATE agent_sessions SET permission_mode = 'acceptEdits' WHERE id = ?",
+                )
+                .bind(self.db_session_id)
+                .execute(&self.write_pool)
+                .await;
                 PermissionResult::Allow {
                     updated_input: request.input.clone(),
                     updated_permissions: None,
@@ -270,7 +294,9 @@ impl WsBridgeCanUseTool {
                     .feedback
                     .unwrap_or_else(|| "User requested changes to the plan.".to_string());
                 let p = WsSessionPersistence::with_session_id(
-                    self.write_pool.clone(), self.feature_id, Some(self.db_session_id),
+                    self.write_pool.clone(),
+                    self.feature_id,
+                    Some(self.db_session_id),
                 );
                 p.persist_user_message(&feedback).await;
                 PermissionResult::Deny {
@@ -301,9 +327,10 @@ impl WsBridgeCanUseTool {
 
         let plan_content = match plan_path {
             Some(content_json) => {
-                let parsed: Option<String> = serde_json::from_str::<serde_json::Value>(&content_json)
-                    .ok()
-                    .and_then(|v| v.get("file_path")?.as_str().map(String::from));
+                let parsed: Option<String> =
+                    serde_json::from_str::<serde_json::Value>(&content_json)
+                        .ok()
+                        .and_then(|v| v.get("file_path")?.as_str().map(String::from));
                 match parsed {
                     Some(file_path) => tokio::fs::read_to_string(&file_path).await.ok(),
                     None => None,
@@ -321,13 +348,20 @@ impl WsBridgeCanUseTool {
                 self.db_session_id,
                 &request.tool_use_id,
                 &updated_content,
-                &crate::domain::features::repository::ToolCallFilter::ToolName("ExitPlanMode".to_string()),
-            ).await;
+                &crate::domain::features::repository::ToolCallFilter::ToolName(
+                    "ExitPlanMode".to_string(),
+                ),
+            )
+            .await;
         }
         enriched
     }
 
-    fn send_plan_permission_request(&self, request: &PermissionRequest, tool_input: serde_json::Value) {
+    fn send_plan_permission_request(
+        &self,
+        request: &PermissionRequest,
+        tool_input: serde_json::Value,
+    ) {
         let payload = PermissionRequestPayload {
             request_id: request.tool_use_id.clone(),
             tool_name: request.tool_name.clone(),
@@ -340,7 +374,9 @@ impl WsBridgeCanUseTool {
             "permission.request",
             serde_json::to_value(payload).unwrap(),
         );
-        let _ = self.sender.send(Message::Text(String::from(envelope).into()));
+        let _ = self
+            .sender
+            .send(Message::Text(String::from(envelope).into()));
     }
 
     /// Handle a NeedsPrompt result: send session-specific envelope and
@@ -366,7 +402,9 @@ impl WsBridgeCanUseTool {
             "permission.request",
             serde_json::to_value(payload).unwrap(),
         );
-        let _ = self.sender.send(Message::Text(String::from(envelope).into()));
+        let _ = self
+            .sender
+            .send(Message::Text(String::from(envelope).into()));
 
         permission_bridge::wait_and_apply_decision(
             &self.response_rx,
@@ -378,7 +416,8 @@ impl WsBridgeCanUseTool {
             &self.session_cache,
             &self.turn_state_tx,
             self.feature_id,
-        ).await
+        )
+        .await
     }
 }
 
@@ -400,7 +439,12 @@ pub(super) async fn handle_prompt_send(
     let db_session_id = match parse_session_id(&payload.session_id) {
         Some(id) => id,
         None => {
-            send_error(sender, &envelope.id, "INVALID_SESSION_ID", "session_id must be a numeric DB id");
+            send_error(
+                sender,
+                &envelope.id,
+                "INVALID_SESSION_ID",
+                "session_id must be a numeric DB id",
+            );
             return;
         }
     };
@@ -422,8 +466,8 @@ pub(super) async fn handle_prompt_send(
     // Check if we need to respawn due to model or permission mode change
     let model_changed = handle.desired_model != handle.spawned_model;
     let mode_changed = handle.desired_permission_mode != handle.spawned_permission_mode;
-    let needs_respawn = matches!(&handle.state, QueryState::Active { .. })
-        && (model_changed || mode_changed);
+    let needs_respawn =
+        matches!(&handle.state, QueryState::Active { .. }) && (model_changed || mode_changed);
 
     if needs_respawn {
         info!(
@@ -437,27 +481,29 @@ pub(super) async fn handle_prompt_send(
 
         // Get claude session ID, persist it, and close the old query
         let claude_session_id = if let QueryState::Active { query, .. } = &handle.state {
-            let mut q = query.lock().await;
-            let sid = q.session_id().await;
+            let sid = query.lock().await.session_id().await;
             if let Some(ref cli_sid) = sid {
                 WsSessionPersistence::persist_claude_session_id_static(
-                    &app_state.write_pool, db_session_id, cli_sid,
-                ).await;
+                    &app_state.write_pool,
+                    db_session_id,
+                    cli_sid,
+                )
+                .await;
             }
-            q.close().await;
+            query.lock().await.close().await;
             sid
         } else {
             None
         };
 
         // Build fresh options with new model/mode + resume
-        let options = Options {
+        let options = RuntimeSpawnConfig {
             cwd: handle.config.cwd.clone(),
             permission_mode: handle.desired_permission_mode.clone(),
             model: handle.desired_model.clone(),
             system_prompt: handle.config.system_prompt.clone(),
-            resume: claude_session_id,
-            ..Options::default()
+            resume_session_id: claude_session_id,
+            ..RuntimeSpawnConfig::default()
         };
 
         // Reset to pending so the spawn logic below handles it
@@ -477,19 +523,22 @@ pub(super) async fn handle_prompt_send(
             let feature_id = handle.feature_id;
             let mut options = match std::mem::replace(
                 &mut handle.state,
-                QueryState::Pending(Options::default()),
+                QueryState::Pending(RuntimeSpawnConfig::default()),
             ) {
                 QueryState::Pending(opts) => opts,
                 _ => unreachable!(),
             };
 
             // Use the claude_session_id captured at init time for --resume
-            if options.resume.is_none() {
+            if options.resume_session_id.is_none() {
                 if let Some(cli_sid) = handle.resume_session_id.take() {
                     info!(db_session_id, claude_session_id = %cli_sid, "resuming previous CLI session");
-                    options.resume = Some(cli_sid);
+                    options.resume_session_id = Some(cli_sid);
                 } else {
-                    debug!(db_session_id, feature_id, "no claude_session_id found, spawning fresh");
+                    debug!(
+                        db_session_id,
+                        feature_id, "no claude_session_id found, spawning fresh"
+                    );
                 }
             }
 
@@ -502,7 +551,11 @@ pub(super) async fn handle_prompt_send(
             let write_pool = app_state.write_pool.clone();
             let persist_content = build_persist_content(&payload.text, &payload.images);
             {
-                let p = WsSessionPersistence::with_session_id(write_pool.clone(), feature_id, Some(db_session_id));
+                let p = WsSessionPersistence::with_session_id(
+                    write_pool.clone(),
+                    feature_id,
+                    Some(db_session_id),
+                );
                 p.persist_user_message(&persist_content).await;
             }
 
@@ -520,7 +573,8 @@ pub(super) async fn handle_prompt_send(
                         config.cwd.to_string_lossy().to_string(),
                         None,
                         sender.clone(),
-                    ).await;
+                    )
+                    .await;
                     info!(feature_id, name = ?result, "auto-named feature for worktree");
                 }
 
@@ -534,18 +588,26 @@ pub(super) async fn handle_prompt_send(
                             feature_id,
                             project_id,
                             &wf_sender,
-                        ).await {
+                        )
+                        .await
+                        {
                             Ok(wt_path) => {
                                 info!(feature_id, path = %wt_path.display(), "worktree created for session");
                                 // 3. Fire-and-forget setup commands
-                                let setup_step = worktree::get_setting(&app_state.read_pool, feature_id, "worktree_setup_step").await;
+                                let setup_step = worktree::get_setting(
+                                    &app_state.read_pool,
+                                    feature_id,
+                                    "worktree_setup_step",
+                                )
+                                .await;
                                 if setup_step.as_deref() != Some("ready") {
                                     let rp = app_state.read_pool.clone();
                                     let wp = write_pool.clone();
                                     let ws2 = WorkflowWsSender::new(sender.clone());
                                     let p = wt_path.clone();
                                     tokio::spawn(async move {
-                                        worktree::run_setup_commands(rp, wp, feature_id, p, ws2).await;
+                                        worktree::run_setup_commands(rp, wp, feature_id, p, ws2)
+                                            .await;
                                     });
                                 }
                                 // 4. Override cwd to worktree path
@@ -554,7 +616,8 @@ pub(super) async fn handle_prompt_send(
                                 worktree_path = canonical.clone();
                                 config.cwd = wt_path;
                                 config.canonical_cwd = canonical;
-                                allowed_patterns = Arc::new(permissions::load_allowed_patterns(&config.cwd));
+                                allowed_patterns =
+                                    Arc::new(permissions::load_allowed_patterns(&config.cwd));
                             }
                             Err(e) => {
                                 error!(feature_id, error = %e, "worktree creation failed, proceeding with original cwd");
@@ -583,14 +646,44 @@ pub(super) async fn handle_prompt_send(
             options.can_use_tool = Some(Box::new(bridge));
 
             let content_value = build_content_value(&payload.text, &payload.images);
-            info!(db_session_id, prompt = %payload.text, model = ?options.model, "spawning SDK query");
-            match claude_agent_sdk_rs::query(content_value, options).await {
-                Ok(mut real_query) => {
-                    info!(db_session_id, "SDK query spawned successfully, starting stream reader");
-                    WsSessionPersistence::mark_running_static(&app_state.write_pool, db_session_id).await;
-                    WsSessionPersistence::broadcast_turn_state(&app_state.turn_state_tx, feature_id, "claude");
-                    let message_rx = real_query.take_message_rx();
-                    let query_arc = Arc::new(Mutex::new(real_query));
+            let provider_id = sqlx::query_scalar::<_, String>(
+                "SELECT runtime_provider FROM agent_sessions WHERE id = ? AND runtime_provider IS NOT NULL",
+            )
+            .bind(db_session_id)
+            .fetch_optional(&app_state.read_pool)
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| crate::domain::agents::runtime::DEFAULT_PROVIDER.to_string());
+            let adapter = match runtime_adapter(&provider_id) {
+                Some(adapter) => adapter,
+                None => {
+                    send_error(
+                        sender,
+                        &envelope.id,
+                        "UNSUPPORTED_PROVIDER",
+                        &format!("No runtime adapter registered for provider '{provider_id}'"),
+                    );
+                    return;
+                }
+            };
+
+            info!(db_session_id, prompt = %payload.text, model = ?options.model, provider = %provider_id, "spawning runtime query");
+            match adapter.spawn(content_value, options).await {
+                Ok(mut runtime_session) => {
+                    info!(
+                        db_session_id,
+                        "runtime query spawned successfully, starting stream reader"
+                    );
+                    WsSessionPersistence::mark_running_static(&app_state.write_pool, db_session_id)
+                        .await;
+                    WsSessionPersistence::broadcast_turn_state(
+                        &app_state.turn_state_tx,
+                        feature_id,
+                        "claude",
+                    );
+                    let message_rx = runtime_session.take_message_rx();
+                    let query_arc = Arc::new(Mutex::new(runtime_session));
 
                     spawn_stream_reader(
                         db_session_id,
@@ -610,7 +703,9 @@ pub(super) async fn handle_prompt_send(
                         let prompt_text = payload.text.clone();
                         let naming_sender = sender.clone();
                         tokio::spawn(async move {
-                            if super::super::auto_name::has_default_title(&write_pool, feature_id).await {
+                            if super::super::auto_name::has_default_title(&write_pool, feature_id)
+                                .await
+                            {
                                 let result = super::super::auto_name::auto_name_feature(
                                     write_pool,
                                     feature_id,
@@ -618,7 +713,8 @@ pub(super) async fn handle_prompt_send(
                                     cwd,
                                     None,
                                     naming_sender,
-                                ).await;
+                                )
+                                .await;
                                 info!(feature_id, name = ?result, "auto-named feature");
                             }
                         });
@@ -646,7 +742,7 @@ pub(super) async fn handle_prompt_send(
                     );
                 }
                 Err(e) => {
-                    error!(db_session_id, error = %e, "SDK query spawn failed");
+                    error!(db_session_id, error = %e, "runtime query spawn failed");
                     send_error(sender, &envelope.id, "SDK_SPAWN_ERROR", &e.to_string());
                 }
             }
@@ -655,13 +751,14 @@ pub(super) async fn handle_prompt_send(
             // Persist follow-up user message
             let persist_content = build_persist_content(&payload.text, &payload.images);
             let p = WsSessionPersistence::with_session_id(
-                app_state.write_pool.clone(), handle.feature_id, Some(db_session_id),
+                app_state.write_pool.clone(),
+                handle.feature_id,
+                Some(db_session_id),
             );
             p.persist_user_message(&persist_content).await;
 
             let q = query.lock().await;
-            let turn_state = q.turn_state().await;
-            info!(db_session_id, turn_state = ?turn_state, "follow-up prompt");
+            info!(db_session_id, "follow-up prompt");
             let content = build_content_value(&payload.text, &payload.images);
             if let Err(e) = q.stream_input(content).await {
                 error!(db_session_id, error = %e, "stream_input failed");
@@ -676,7 +773,7 @@ pub(super) async fn handle_prompt_send(
 pub(super) fn spawn_stream_reader(
     db_session_id: i64,
     feature_id: i64,
-    mut message_rx: mpsc::Receiver<Result<SdkMessage, SdkError>>,
+    mut message_rx: RuntimeMessageRx,
     sender: WsSender,
     write_pool: sqlx::SqlitePool,
     turn_state_tx: tokio::sync::broadcast::Sender<crate::app_state::TurnStateEvent>,
@@ -689,10 +786,11 @@ pub(super) fn spawn_stream_reader(
     tokio::spawn(async move {
         info!(db_session_id, "stream reader started");
         let mut persistence = WsSessionPersistence::with_session_id(
-            write_pool.clone(), feature_id, Some(db_session_id),
+            write_pool.clone(),
+            feature_id,
+            Some(db_session_id),
         );
-        // Capture the CLI session ID from the first message that has one.
-        // Every SdkMessage variant carries a session_id field.
+        // Capture the runtime session ID from the first event that has one.
         let mut needs_session_id_capture = true;
         let mut context_window: u64 = initial_context_window;
 
@@ -700,15 +798,18 @@ pub(super) fn spawn_stream_reader(
             let msg = message_rx.recv().await;
 
             match msg {
-                Some(Ok(sdk_msg)) => {
+                Some(Ok(runtime_event)) => {
                     if needs_session_id_capture {
-                        if let Some(cli_sid) = sdk_msg.session_id() {
+                        if let Some(cli_sid) = runtime_event.session_id() {
                             if !cli_sid.is_empty() {
                                 needs_session_id_capture = false;
                                 info!(db_session_id, claude_session_id = %cli_sid, "stream_reader: persisting CLI session_id to DB");
                                 WsSessionPersistence::persist_claude_session_id_static(
-                                    &write_pool, db_session_id, cli_sid,
-                                ).await;
+                                    &write_pool,
+                                    db_session_id,
+                                    cli_sid,
+                                )
+                                .await;
                                 // Notify frontend of the Claude Code session ID
                                 send_claude_session_id(&sender, cli_sid);
                             }
@@ -716,70 +817,84 @@ pub(super) fn spawn_stream_reader(
                     }
 
                     // Capture context window from init model
-                    if let SdkMessage::System(SystemMessage::Init { ref model, .. }) = sdk_msg {
-                        context_window = crate::domain::usage::context_window_for_model(model);
-                        WsSessionPersistence::update_context_window(&write_pool, db_session_id, context_window).await;
+                    if let Some(init) = runtime_event.init() {
+                        if let Some(model) = init.model.as_deref() {
+                            context_window = crate::domain::usage::context_window_for_model(model);
+                        }
+                        WsSessionPersistence::update_context_window(
+                            &write_pool,
+                            db_session_id,
+                            context_window,
+                        )
+                        .await;
                     }
 
                     // Persist before forwarding (best-effort)
-                    persistence.persist_sdk_message(&sdk_msg).await;
+                    persistence.persist_runtime_event(&runtime_event).await;
 
                     // Extract and broadcast token usage (mirrors legacy SdkQueryRunner behavior)
-                    if let Some(usage) = sdk_msg.usage() {
-                        let total_input = usage.input_tokens
-                            + usage.cache_creation_input_tokens.unwrap_or(0)
-                            + usage.cache_read_input_tokens.unwrap_or(0);
-                        let total_output = usage.output_tokens;
-
+                    if let Some(usage) = runtime_event.usage() {
                         // Persist to DB (best-effort)
-                        WsSessionPersistence::update_token_usage(&write_pool, db_session_id, total_input, total_output).await;
+                        WsSessionPersistence::update_token_usage(
+                            &write_pool,
+                            db_session_id,
+                            usage.input_tokens,
+                            usage.output_tokens,
+                        )
+                        .await;
 
                         // Broadcast to frontend
                         let usage_env = WsEnvelope::new(
                             "session",
                             "usage_update",
                             serde_json::to_value(SessionUsageUpdatePayload {
-                                input_tokens: total_input,
-                                output_tokens: total_output,
+                                input_tokens: usage.input_tokens,
+                                output_tokens: usage.output_tokens,
                                 context_window,
-                            }).unwrap(),
+                            })
+                            .unwrap(),
                         );
                         let _ = sender.send(Message::Text(String::from(usage_env).into()));
                     }
 
-                    let envelope = match &sdk_msg {
-                        SdkMessage::Result { .. } => {
-                            // Mark session completed
-                            WsSessionPersistence::mark_completed_static(&write_pool, db_session_id).await;
-                            WsSessionPersistence::broadcast_turn_state(&turn_state_tx, feature_id, "none");
-                            WsEnvelope::new(
-                                "session",
-                                "ended",
-                                serde_json::to_value(SessionEndedPayload {
-                                    reason: "turn_complete".into(),
-                                })
-                                .unwrap(),
-                            )
-                        }
-                        _ => {
-                            // Forward as session.message with raw JSON
-                            let block = serde_json::to_value(&sdk_msg).unwrap_or_default();
-                            WsEnvelope::new(
-                                "session",
-                                "message",
-                                serde_json::to_value(SessionMessagePayload {
-                                    blocks: vec![block],
-                                })
-                                .unwrap(),
-                            )
-                        }
+                    let envelope = if runtime_event.is_result() {
+                        // Mark session completed
+                        WsSessionPersistence::mark_completed_static(&write_pool, db_session_id)
+                            .await;
+                        WsSessionPersistence::broadcast_turn_state(
+                            &turn_state_tx,
+                            feature_id,
+                            "none",
+                        );
+                        WsEnvelope::new(
+                            "session",
+                            "ended",
+                            serde_json::to_value(SessionEndedPayload {
+                                reason: "turn_complete".into(),
+                            })
+                            .unwrap(),
+                        )
+                    } else {
+                        // Forward as session.message with raw JSON
+                        let block = runtime_event.raw_json().clone();
+                        WsEnvelope::new(
+                            "session",
+                            "message",
+                            serde_json::to_value(SessionMessagePayload {
+                                blocks: vec![block],
+                            })
+                            .unwrap(),
+                        )
                     };
 
                     if sender
                         .send(Message::Text(String::from(envelope).into()))
                         .is_err()
                     {
-                        debug!(db_session_id, "WebSocket sender closed, stopping stream reader");
+                        debug!(
+                            db_session_id,
+                            "WebSocket sender closed, stopping stream reader"
+                        );
                         break;
                     }
                 }
@@ -825,19 +940,21 @@ pub(super) fn spawn_stream_reader(
                 let claude_session_id = q.session_id().await;
                 drop(q);
 
-                let options = Options {
+                let options = RuntimeSpawnConfig {
                     cwd: handle.config.cwd.clone(),
                     permission_mode: handle.desired_permission_mode.clone(),
                     model: handle.desired_model.clone(),
                     system_prompt: handle.config.system_prompt.clone(),
-                    resume: claude_session_id,
-                    ..Options::default()
+                    resume_session_id: claude_session_id,
+                    ..RuntimeSpawnConfig::default()
                 };
 
-                info!(db_session_id, "stream ended, transitioning Active → Pending for resume");
+                info!(
+                    db_session_id,
+                    "stream ended, transitioning Active → Pending for resume"
+                );
                 handle.state = QueryState::Pending(options);
             }
         }
-
     });
 }

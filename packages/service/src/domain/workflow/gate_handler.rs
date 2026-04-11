@@ -24,14 +24,23 @@ impl QueueAdvancer {
             AgentSlot::QueueItem(id) => *id,
             _ => return None,
         };
-        let item = repo::get_queue_item(&self.read_pool, item_id).await.ok()??;
+        let item = repo::get_queue_item(&self.read_pool, item_id)
+            .await
+            .ok()??;
         let config_str = item.config.as_deref()?;
         let config: serde_json::Value = serde_json::from_str(config_str).ok()?;
-        config.get("gate_type").and_then(|v| v.as_str()).map(|s| s.to_string())
+        config
+            .get("gate_type")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
     }
 
     /// Handle approval gate: mark pending_approval, emit WS event.
-    pub(crate) async fn handle_approval_gate(&self, slot: &AgentSlot, agent_manager: &AgentManager) {
+    pub(crate) async fn handle_approval_gate(
+        &self,
+        slot: &AgentSlot,
+        agent_manager: &AgentManager,
+    ) {
         let item_id = match slot {
             AgentSlot::QueueItem(id) => *id,
             _ => return,
@@ -55,7 +64,9 @@ impl QueueAdvancer {
                 artifact_content: None,
             }),
         );
-        let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
+        let _ = self
+            .ws_sender
+            .send(Message::Text(String::from(envelope).into()));
     }
 
     /// Handle manual gate: unblock dependents but don't auto-start next items.
@@ -73,11 +84,15 @@ impl QueueAdvancer {
                     workflow_status: None,
                 }),
             );
-            let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
+            let _ = self
+                .ws_sender
+                .send(Message::Text(String::from(envelope).into()));
         }
         if agent_manager.active_items.is_empty() {
             crate::domain::ws_session::persistence::WsSessionPersistence::broadcast_turn_state(
-                &self.turn_state_tx, self.feature_id, "none",
+                &self.turn_state_tx,
+                self.feature_id,
+                "none",
             );
         }
     }
@@ -97,7 +112,9 @@ impl QueueAdvancer {
                 }
             }
             2 => {
-                if let Ok(ready) = repo::unblock_ready_items(&self.write_pool, self.feature_id).await {
+                if let Ok(ready) =
+                    repo::unblock_ready_items(&self.write_pool, self.feature_id).await
+                {
                     if !ready.is_empty() {
                         let current_group = if let AgentSlot::QueueItem(id) = slot {
                             self.get_current_group_index(*id).await
@@ -127,7 +144,9 @@ impl QueueAdvancer {
                                     reason: "group_boundary".into(),
                                 }),
                             );
-                            let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
+                            let _ = self
+                                .ws_sender
+                                .send(Message::Text(String::from(envelope).into()));
                         }
                     }
                 }
@@ -142,7 +161,9 @@ impl QueueAdvancer {
                         reason: "autonomy_pause".into(),
                     }),
                 );
-                let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
+                let _ = self
+                    .ws_sender
+                    .send(Message::Text(String::from(envelope).into()));
             }
         }
     }
@@ -168,10 +189,13 @@ impl QueueAdvancer {
             }
         };
 
-        let config: serde_json::Value = item.config.as_deref()
+        let config: serde_json::Value = item
+            .config
+            .as_deref()
             .and_then(|s| serde_json::from_str(s).ok())
             .unwrap_or_default();
-        let max_iterations = config.get("max_iterations")
+        let max_iterations = config
+            .get("max_iterations")
             .and_then(|v| v.as_i64())
             .unwrap_or(1);
 
@@ -179,13 +203,16 @@ impl QueueAdvancer {
             Ok(c) => c,
             Err(e) => {
                 error!(item_id, error = %e, "failed to increment iteration count");
-                self.handle_auto_gate(slot, agent_manager, permissions, set_status).await;
+                self.handle_auto_gate(slot, agent_manager, permissions, set_status)
+                    .await;
                 return;
             }
         };
 
         let result_text = item.result.clone().unwrap_or_default();
-        let mut history: Vec<serde_json::Value> = item.iteration_history.as_deref()
+        let mut history: Vec<serde_json::Value> = item
+            .iteration_history
+            .as_deref()
             .and_then(|s| serde_json::from_str(s).ok())
             .unwrap_or_default();
         history.push(serde_json::json!({
@@ -193,19 +220,30 @@ impl QueueAdvancer {
             "result_preview": &result_text[..result_text.len().min(500)],
         }));
         let _ = repo::update_iteration_history(
-            &self.write_pool, item_id, &serde_json::to_string(&history).unwrap_or_default(),
-        ).await;
+            &self.write_pool,
+            item_id,
+            &serde_json::to_string(&history).unwrap_or_default(),
+        )
+        .await;
 
-        let satisfied = config.get("satisfied").and_then(|v| v.as_bool()).unwrap_or(false);
+        let satisfied = config
+            .get("satisfied")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
         let done = satisfied || new_count >= max_iterations;
 
         info!(
-            item_id, iteration = new_count, max_iterations, satisfied, done,
+            item_id,
+            iteration = new_count,
+            max_iterations,
+            satisfied,
+            done,
             "iterate gate check"
         );
 
         if done {
-            self.handle_auto_gate(slot, agent_manager, permissions, set_status).await;
+            self.handle_auto_gate(slot, agent_manager, permissions, set_status)
+                .await;
             return;
         }
 
@@ -233,7 +271,9 @@ impl QueueAdvancer {
                 max_iterations,
             }),
         );
-        let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
+        let _ = self
+            .ws_sender
+            .send(Message::Text(String::from(envelope).into()));
 
         agent_manager.send_item_update(item_id).await;
 
@@ -273,7 +313,8 @@ impl QueueAdvancer {
                 .await
                 .map_err(|e| e.to_string())?;
             self.advance(agent_manager, permissions).await?;
-            self.check_workflow_completion(agent_manager, set_status).await;
+            self.check_workflow_completion(agent_manager, set_status)
+                .await;
         } else {
             if let Some(fb) = feedback {
                 let mut config: serde_json::Value = item
@@ -303,15 +344,11 @@ impl QueueAdvancer {
         agent_manager: &AgentManager,
         permissions: &PermissionRouter,
     ) -> Result<(), String> {
-        let item = repo::get_queue_item_by_slug(
-            &self.read_pool,
-            self.feature_id,
-            phase_slug,
-            "ready",
-        )
-        .await
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| format!("No ready item found for phase '{phase_slug}'"))?;
+        let item =
+            repo::get_queue_item_by_slug(&self.read_pool, self.feature_id, phase_slug, "ready")
+                .await
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| format!("No ready item found for phase '{phase_slug}'"))?;
 
         let autonomy = self.autonomy_level.load(Ordering::Relaxed);
         agent_manager
@@ -330,7 +367,9 @@ impl QueueAdvancer {
         }
         if let Ok(items) = repo::get_queue_for_feature(&self.read_pool, self.feature_id).await {
             if !items.is_empty()
-                && items.iter().all(|i| matches!(i.status.as_str(), "completed" | "skipped"))
+                && items
+                    .iter()
+                    .all(|i| matches!(i.status.as_str(), "completed" | "skipped"))
             {
                 set_status.set_status(WorkflowStatus::Completed).await;
             }

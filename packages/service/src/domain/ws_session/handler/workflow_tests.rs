@@ -47,7 +47,10 @@ fn test_send_workflow_error_produces_correct_envelope() {
 #[test]
 fn test_parse_payload_valid() {
     let (tx, mut _rx) = make_sender();
-    let envelope = make_envelope("skip_item", serde_json::json!({"feature_id": 1, "item_id": 5}));
+    let envelope = make_envelope(
+        "skip_item",
+        serde_json::json!({"feature_id": 1, "item_id": 5}),
+    );
     let result = parse_payload::<WorkflowSkipItemPayload>(&envelope, &tx);
     assert!(result.is_some());
     let p = result.unwrap();
@@ -135,13 +138,34 @@ async fn test_no_engine_errors() {
     let slot = serde_json::json!({"type": "queue_item", "id": 1});
     let cases: Vec<(&str, serde_json::Value)> = vec![
         ("continue", serde_json::json!({"feature_id": 12345})),
-        ("skip_item", serde_json::json!({"feature_id": 12345, "item_id": 1})),
-        ("retry_item", serde_json::json!({"feature_id": 12345, "item_id": 1})),
-        ("set_parallel", serde_json::json!({"feature_id": 12345, "enabled": false})),
-        ("set_autonomy", serde_json::json!({"feature_id": 12345, "level": 2})),
-        ("permission.respond", serde_json::json!({"feature_id": 12345, "agent_slot": slot.clone(), "request_id": "r1", "decision": "allow_once"})),
-        ("prompt.send", serde_json::json!({"feature_id": 12345, "agent_slot": slot.clone(), "text": "hello"})),
-        ("mark_done", serde_json::json!({"feature_id": 12345, "agent_slot": slot})),
+        (
+            "skip_item",
+            serde_json::json!({"feature_id": 12345, "item_id": 1}),
+        ),
+        (
+            "retry_item",
+            serde_json::json!({"feature_id": 12345, "item_id": 1}),
+        ),
+        (
+            "set_parallel",
+            serde_json::json!({"feature_id": 12345, "enabled": false}),
+        ),
+        (
+            "set_autonomy",
+            serde_json::json!({"feature_id": 12345, "level": 2}),
+        ),
+        (
+            "permission.respond",
+            serde_json::json!({"feature_id": 12345, "agent_slot": slot.clone(), "request_id": "r1", "decision": "allow_once"}),
+        ),
+        (
+            "prompt.send",
+            serde_json::json!({"feature_id": 12345, "agent_slot": slot.clone(), "text": "hello"}),
+        ),
+        (
+            "mark_done",
+            serde_json::json!({"feature_id": 12345, "agent_slot": slot}),
+        ),
     ];
     for (action, payload) in cases {
         assert_action_error(action, payload, "NO_ENGINE").await;

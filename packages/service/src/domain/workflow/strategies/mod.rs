@@ -29,7 +29,11 @@ pub trait WorkflowStrategy: Send + Sync {
 
     /// Map an item_type to the AgentType that should execute it.
     /// `config` is the optional JSON config string from the queue item.
-    fn agent_type_for_item(&self, item_type: &str, config: Option<&str>) -> Result<AgentType, String>;
+    fn agent_type_for_item(
+        &self,
+        item_type: &str,
+        config: Option<&str>,
+    ) -> Result<AgentType, String>;
 
     /// Build the system prompt for an item.
     /// `autonomy_level`: 1 = confirm everything, 2 = moderate, 3 = full auto.

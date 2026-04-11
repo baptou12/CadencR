@@ -13,12 +13,20 @@ use claude_agent_sdk_rs::{
 use super::protocol::{FeatureRenamedPayload, FeatureUpdatedPayload, WsEnvelope};
 
 /// Send a `feature.updated` envelope over the given WebSocket sender.
-fn send_feature_updated(sender: &mpsc::UnboundedSender<Message>, feature_id: i64, changed: &[&str]) {
+fn send_feature_updated(
+    sender: &mpsc::UnboundedSender<Message>,
+    feature_id: i64,
+    changed: &[&str],
+) {
     let payload = FeatureUpdatedPayload {
         feature_id,
         changed: changed.iter().map(|s| s.to_string()).collect(),
     };
-    let envelope = WsEnvelope::new("feature", "updated", serde_json::to_value(&payload).unwrap());
+    let envelope = WsEnvelope::new(
+        "feature",
+        "updated",
+        serde_json::to_value(&payload).unwrap(),
+    );
     let json: String = envelope.into();
     let _ = sender.send(Message::Text(json.into()));
 }
@@ -29,12 +37,11 @@ const AUTO_NAME_MODEL: &str = "claude-haiku-4-5-20251001";
 
 /// Check if a feature still has its default auto-generated title (e.g. "Session 3" or "Untitled Feature").
 pub async fn has_default_title(pool: &SqlitePool, feature_id: i64) -> bool {
-    let row: Option<(String,)> =
-        sqlx::query_as("SELECT title FROM features WHERE id = ?")
-            .bind(feature_id)
-            .fetch_optional(pool)
-            .await
-            .unwrap_or(None);
+    let row: Option<(String,)> = sqlx::query_as("SELECT title FROM features WHERE id = ?")
+        .bind(feature_id)
+        .fetch_optional(pool)
+        .await
+        .unwrap_or(None);
 
     match row {
         Some((title,)) => {
@@ -71,7 +78,12 @@ pub async fn auto_name_feature(
         ..Options::default()
     };
 
-    let mut query = match claude_agent_sdk_rs::query(serde_json::Value::String(prompt.clone()), options).await {
+    let mut query = match claude_agent_sdk_rs::query(
+        serde_json::Value::String(prompt.clone()),
+        options,
+    )
+    .await
+    {
         Ok(q) => q,
         Err(e) => {
             error!(feature_id, error = %e, "auto-name: SDK query spawn failed");
@@ -115,7 +127,10 @@ pub async fn auto_name_feature(
                 }
             }
             SdkMessage::Result { .. } => {
-                debug!(feature_id, "auto-name: received Result, breaking out of stream loop");
+                debug!(
+                    feature_id,
+                    "auto-name: received Result, breaking out of stream loop"
+                );
                 break;
             }
             _ => {}
@@ -131,7 +146,10 @@ pub async fn auto_name_feature(
         None => accumulated_text,
     };
 
-    let name = raw_name.trim().trim_matches(|c| c == '"' || c == '\'').to_string();
+    let name = raw_name
+        .trim()
+        .trim_matches(|c| c == '"' || c == '\'')
+        .to_string();
 
     if name.is_empty() {
         warn!(feature_id, "auto-name: empty name extracted");

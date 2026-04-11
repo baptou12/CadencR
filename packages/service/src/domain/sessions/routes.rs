@@ -26,7 +26,9 @@ pub async fn get_sessions_handler(
     State(state): State<AppState>,
     Path(feature_id): Path<i64>,
 ) -> Result<Json<Vec<AgentSessionRow>>, AppError> {
-    Ok(Json(repository::get_sessions(&state.read_pool, feature_id).await?))
+    Ok(Json(
+        repository::get_sessions(&state.read_pool, feature_id).await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/features/{feature_id}/agent-state",
@@ -37,13 +39,24 @@ pub async fn get_feature_agent_state_handler(
     Path(feature_id): Path<i64>,
     Query(params): Query<AgentStateParams>,
 ) -> Result<Json<FeatureAgentStateResponse>, AppError> {
-    let after_map: Option<HashMap<i64, i64>> = params.after
+    let after_map: Option<HashMap<i64, i64>> = params
+        .after
         .as_deref()
         .and_then(|s| serde_json::from_str(s).ok());
-    let before_map: Option<HashMap<i64, i64>> = params.before
+    let before_map: Option<HashMap<i64, i64>> = params
+        .before
         .as_deref()
         .and_then(|s| serde_json::from_str(s).ok());
-    Ok(Json(repository::get_feature_agent_state(&state.read_pool, feature_id, after_map, params.limit, before_map).await?))
+    Ok(Json(
+        repository::get_feature_agent_state(
+            &state.read_pool,
+            feature_id,
+            after_map,
+            params.limit,
+            before_map,
+        )
+        .await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/sessions/{session_id}/draft",
@@ -72,7 +85,16 @@ pub async fn save_draft_handler(
 
 pub fn sessions_router() -> Router<AppState> {
     Router::new()
-        .route("/api/features/{feature_id}/sessions", get(get_sessions_handler))
-        .route("/api/features/{feature_id}/agent-state", get(get_feature_agent_state_handler))
-        .route("/api/sessions/{session_id}/draft", get(get_draft_handler).put(save_draft_handler))
+        .route(
+            "/api/features/{feature_id}/sessions",
+            get(get_sessions_handler),
+        )
+        .route(
+            "/api/features/{feature_id}/agent-state",
+            get(get_feature_agent_state_handler),
+        )
+        .route(
+            "/api/sessions/{session_id}/draft",
+            get(get_draft_handler).put(save_draft_handler),
+        )
 }

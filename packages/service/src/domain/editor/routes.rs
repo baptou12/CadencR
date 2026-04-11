@@ -4,9 +4,9 @@ use axum::Router;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use super::service;
 use crate::app_state::AppState;
 use crate::error::AppError;
-use super::service;
 
 // ---------------------------------------------------------------------------
 // Request / Response types
@@ -76,7 +76,9 @@ pub async fn read_file_handler(
 
         const MAX_FILE_SIZE: u64 = 5 * 1024 * 1024;
         let metadata = std::fs::metadata(&path).map_err(|e| match e.kind() {
-            std::io::ErrorKind::NotFound => AppError::NotFound(format!("File not found: {}", path.display())),
+            std::io::ErrorKind::NotFound => {
+                AppError::NotFound(format!("File not found: {}", path.display()))
+            }
             _ => AppError::Internal(e.to_string()),
         })?;
         if metadata.len() > MAX_FILE_SIZE {
@@ -86,8 +88,12 @@ pub async fn read_file_handler(
         }
 
         let content = std::fs::read_to_string(&path).map_err(|e| match e.kind() {
-            std::io::ErrorKind::NotFound => AppError::NotFound(format!("File not found: {}", path.display())),
-            std::io::ErrorKind::PermissionDenied => AppError::BadRequest(format!("Permission denied: {}", path.display())),
+            std::io::ErrorKind::NotFound => {
+                AppError::NotFound(format!("File not found: {}", path.display()))
+            }
+            std::io::ErrorKind::PermissionDenied => {
+                AppError::BadRequest(format!("Permission denied: {}", path.display()))
+            }
             _ => AppError::Internal(e.to_string()),
         })?;
 
@@ -98,11 +104,13 @@ pub async fn read_file_handler(
             ));
         }
 
-        Ok(ReadFileResponse { content, line_count })
+        Ok(ReadFileResponse {
+            content,
+            line_count,
+        })
     })
     .await
-    .map_err(|e| AppError::Internal(format!("Blocking task failed: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("Blocking task failed: {e}")))??;
 
     Ok(axum::Json(resp))
 }
@@ -118,13 +126,14 @@ pub async fn write_file_handler(
 
     tokio::task::spawn_blocking(move || -> Result<(), AppError> {
         std::fs::write(&path, &content).map_err(|e| match e.kind() {
-            std::io::ErrorKind::PermissionDenied => AppError::BadRequest(format!("Permission denied: {}", path.display())),
+            std::io::ErrorKind::PermissionDenied => {
+                AppError::BadRequest(format!("Permission denied: {}", path.display()))
+            }
             _ => AppError::Internal(e.to_string()),
         })
     })
     .await
-    .map_err(|e| AppError::Internal(format!("Blocking task failed: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("Blocking task failed: {e}")))??;
 
     Ok(axum::Json(WriteFileResponse { success: true }))
 }
@@ -150,7 +159,9 @@ pub async fn tree_handler(
 
         let read_dir = std::fs::read_dir(&dir_path).map_err(|e| match e.kind() {
             std::io::ErrorKind::NotFound => AppError::NotFound("Directory not found".to_string()),
-            std::io::ErrorKind::PermissionDenied => AppError::BadRequest("Permission denied".to_string()),
+            std::io::ErrorKind::PermissionDenied => {
+                AppError::BadRequest("Permission denied".to_string())
+            }
             _ => AppError::Internal(e.to_string()),
         })?;
 
@@ -158,7 +169,9 @@ pub async fn tree_handler(
             let entry = entry.map_err(|e| AppError::Internal(e.to_string()))?;
             let name = entry.file_name().to_string_lossy().to_string();
 
-            let metadata = entry.metadata().map_err(|e| AppError::Internal(e.to_string()))?;
+            let metadata = entry
+                .metadata()
+                .map_err(|e| AppError::Internal(e.to_string()))?;
             let is_dir = metadata.is_dir();
 
             let relative = entry
@@ -168,11 +181,7 @@ pub async fn tree_handler(
                 .to_string_lossy()
                 .to_string();
 
-            let is_gitignored = service::is_gitignored(
-                gitignore.as_ref(),
-                &entry.path(),
-                is_dir,
-            );
+            let is_gitignored = service::is_gitignored(gitignore.as_ref(), &entry.path(), is_dir);
 
             entries.push(FileTreeEntry {
                 name,
@@ -183,14 +192,15 @@ pub async fn tree_handler(
         }
 
         entries.sort_by(|a, b| {
-            b.is_dir.cmp(&a.is_dir).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+            b.is_dir
+                .cmp(&a.is_dir)
+                .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
         });
 
         Ok(entries)
     })
     .await
-    .map_err(|e| AppError::Internal(format!("Blocking task failed: {e}")))?
-    ?;
+    .map_err(|e| AppError::Internal(format!("Blocking task failed: {e}")))??;
 
     Ok(axum::Json(entries))
 }
@@ -250,8 +260,7 @@ pub async fn content_search_handler(
 ) -> Result<axum::Json<ContentSearchResponse>, AppError> {
     let resp = tokio::task::spawn_blocking(move || service::content_search(&params))
         .await
-        .map_err(|e| AppError::Internal(format!("Blocking task failed: {e}")))?
-        ?;
+        .map_err(|e| AppError::Internal(format!("Blocking task failed: {e}")))??;
 
     Ok(axum::Json(resp))
 }
@@ -286,24 +295,30 @@ pub async fn search_handler(
     let project_path = params.project_path;
     let query = params.query.unwrap_or_default();
 
-    let files: Vec<FileMatchResult> = tokio::task::spawn_blocking(move || -> Result<Vec<FileMatchResult>, AppError> {
-        if query.is_empty() {
-            let paths = service::recent_files(&project_path, 20)?;
-            Ok(paths
-                .into_iter()
-                .map(|path| FileMatchResult { path, positions: vec![] })
-                .collect())
-        } else {
-            let matches = service::fuzzy_search_files(&project_path, &query, 50)?;
-            Ok(matches
-                .into_iter()
-                .map(|m| FileMatchResult { path: m.path, positions: m.positions })
-                .collect())
-        }
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("Blocking task failed: {e}")))?
-    ?;
+    let files: Vec<FileMatchResult> =
+        tokio::task::spawn_blocking(move || -> Result<Vec<FileMatchResult>, AppError> {
+            if query.is_empty() {
+                let paths = service::recent_files(&project_path, 20)?;
+                Ok(paths
+                    .into_iter()
+                    .map(|path| FileMatchResult {
+                        path,
+                        positions: vec![],
+                    })
+                    .collect())
+            } else {
+                let matches = service::fuzzy_search_files(&project_path, &query, 50)?;
+                Ok(matches
+                    .into_iter()
+                    .map(|m| FileMatchResult {
+                        path: m.path,
+                        positions: m.positions,
+                    })
+                    .collect())
+            }
+        })
+        .await
+        .map_err(|e| AppError::Internal(format!("Blocking task failed: {e}")))??;
 
     Ok(axum::Json(FileSearchResponse { files }))
 }

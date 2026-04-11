@@ -1,11 +1,11 @@
 use axum::extract::ws::Message;
 use serde::Deserialize;
 
-use crate::app_state::AppState;
-use crate::domain::workspace::repository as workspace_repo;
-use crate::domain::sessions::repository as sessions_repo;
 use super::super::protocol::*;
 use super::{send_error, WsSender};
+use crate::app_state::AppState;
+use crate::domain::sessions::repository as sessions_repo;
+use crate::domain::workspace::repository as workspace_repo;
 
 #[derive(Deserialize)]
 struct HistoryGetPayload {
@@ -71,7 +71,13 @@ pub(super) async fn handle_history_add(
         }
     };
 
-    match workspace_repo::add_prompt_entry(&app_state.write_pool, payload.project_id, &payload.content).await {
+    match workspace_repo::add_prompt_entry(
+        &app_state.write_pool,
+        payload.project_id,
+        &payload.content,
+    )
+    .await
+    {
         Ok(added) => {
             let reply = WsEnvelope::reply(
                 &envelope.id,
@@ -129,7 +135,13 @@ pub(super) async fn handle_draft_save(
         }
     };
 
-    match sessions_repo::save_draft(&app_state.write_pool, payload.session_id, payload.draft.as_deref()).await {
+    match sessions_repo::save_draft(
+        &app_state.write_pool,
+        payload.session_id,
+        payload.draft.as_deref(),
+    )
+    .await
+    {
         Ok(()) => {
             let reply = WsEnvelope::reply(
                 &envelope.id,

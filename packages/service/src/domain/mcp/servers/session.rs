@@ -4,20 +4,27 @@ use std::sync::Arc;
 use rmcp::{
     handler::server::ServerHandler,
     model::{
-        CallToolRequestParams, CallToolResult, ErrorData, ListToolsResult,
-        PaginatedRequestParams, ServerInfo,
+        CallToolRequestParams, CallToolResult, ErrorData, ListToolsResult, PaginatedRequestParams,
+        ServerInfo,
     },
     service::{RequestContext, RoleServer},
 };
 
 use crate::domain::mcp::context::McpContext;
 use crate::domain::mcp::tools::{
-    create_phase::CreatePhaseTool, finalize_plan::FinalizePlanTool,
+    create_phase::CreatePhaseTool,
+    finalize_plan::FinalizePlanTool,
     helpers::{error_result, get_or_resolve_plan_id, require_i64, require_str, text_result},
-    list_phases::ListPhasesTool, mark_agent_done::MarkAgentDoneTool,
-    mark_phase_done::MarkPhaseDoneTool, read_phase::ReadPhaseTool, read_plan::ReadPlanTool,
-    read_prd::ReadPrdTool, remove_phase::RemovePhaseTool, show_plan::ShowPlanTool,
-    update_phase::UpdatePhaseTool, update_plan::UpdatePlanTool,
+    list_phases::ListPhasesTool,
+    mark_agent_done::MarkAgentDoneTool,
+    mark_phase_done::MarkPhaseDoneTool,
+    read_phase::ReadPhaseTool,
+    read_plan::ReadPlanTool,
+    read_prd::ReadPrdTool,
+    remove_phase::RemovePhaseTool,
+    show_plan::ShowPlanTool,
+    update_phase::UpdatePhaseTool,
+    update_plan::UpdatePlanTool,
 };
 
 use super::{
@@ -72,7 +79,8 @@ impl ServerHandler for SessionServer {
         _request: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
     ) -> impl Future<Output = Result<ListToolsResult, ErrorData>> + Send + '_ {
-        std::future::ready(Ok(ListToolsResult { meta: None,
+        std::future::ready(Ok(ListToolsResult {
+            meta: None,
             tools: vec![
                 tool_read_plan(),
                 tool_list_phases(),
@@ -138,12 +146,17 @@ impl ServerHandler for SessionServer {
                                     args["commit_message"].as_str().map(|s| s.to_string()),
                                     args["phase_type"].as_str().map(|s| s.to_string()),
                                     args["depends_on"].as_array().map(|arr| {
-                                        arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect()
+                                        arr.iter()
+                                            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                                            .collect()
                                     }),
                                 )
                                 .await
                         }
-                        (Err(e), _, _, _) | (_, Err(e), _, _) | (_, _, Err(e), _) | (_, _, _, Err(e)) => Err(e),
+                        (Err(e), _, _, _)
+                        | (_, Err(e), _, _)
+                        | (_, _, Err(e), _)
+                        | (_, _, _, Err(e)) => Err(e),
                     }
                 }
                 "update_phase" => match require_i64(&args, "phase_id") {
@@ -158,7 +171,9 @@ impl ServerHandler for SessionServer {
                                 args["prompt"].as_str().map(|s| s.to_string()),
                                 args["phase_type"].as_str().map(|s| s.to_string()),
                                 args["depends_on"].as_array().map(|arr| {
-                                    arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect()
+                                    arr.iter()
+                                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                                        .collect()
                                 }),
                             )
                             .await
@@ -178,7 +193,9 @@ impl ServerHandler for SessionServer {
                                 args["summary"].as_str().map(|s| s.to_string()),
                                 args["context"].as_str().map(|s| s.to_string()),
                                 args["clarifications"].as_str().map(|s| s.to_string()),
-                                args["completion_conditions"].as_str().map(|s| s.to_string()),
+                                args["completion_conditions"]
+                                    .as_str()
+                                    .map(|s| s.to_string()),
                             )
                             .await
                     }
@@ -193,7 +210,9 @@ impl ServerHandler for SessionServer {
                     Err(e) => Err(e),
                 },
                 "mark_agent_done" => {
-                    self.mark_agent_done.call(args["summary"].as_str().map(|s| s.to_string())).await
+                    self.mark_agent_done
+                        .call(args["summary"].as_str().map(|s| s.to_string()))
+                        .await
                 }
                 "mark_phase_done" => match require_i64(&args, "phase_id") {
                     Ok(phase_id) => {

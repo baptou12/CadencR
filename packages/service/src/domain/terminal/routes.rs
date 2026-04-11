@@ -11,10 +11,10 @@ use serde::Deserialize;
 use tokio::sync::broadcast;
 use tracing::{error, info};
 
-use crate::app_state::AppState;
 use super::cwd::resolve_cwd;
 use super::protocol::{ClientMessage, ServerMessage};
 use super::service::PtyHandle;
+use crate::app_state::AppState;
 
 type WsSink = futures::stream::SplitSink<WebSocket, Message>;
 type WsStream = futures::stream::SplitStream<WebSocket>;
@@ -50,7 +50,11 @@ async fn handle_terminal_ws(socket: WebSocket, params: TerminalWsParams, state: 
         let rows = params.rows.unwrap_or(24);
         handle_new_pty(socket, feature_id, project_id, cols, rows, &state).await;
     } else {
-        send_error(socket, "Missing required params: pty_id or (feature_id + project_id)").await;
+        send_error(
+            socket,
+            "Missing required params: pty_id or (feature_id + project_id)",
+        )
+        .await;
     }
 }
 
@@ -121,7 +125,14 @@ async fn handle_new_pty(
         return;
     }
 
-    run_pty_ws_loop(ws_sink, ws_stream, pty_id, handle, state.pty_manager.clone()).await;
+    run_pty_ws_loop(
+        ws_sink,
+        ws_stream,
+        pty_id,
+        handle,
+        state.pty_manager.clone(),
+    )
+    .await;
 }
 
 /// Spawn task that forwards PTY broadcast data to the WebSocket sink.
@@ -135,7 +146,13 @@ fn spawn_pty_to_ws_forwarder(
                 Ok(data) => {
                     let msg = ServerMessage::Data { data };
                     let json = msg.to_json();
-                    if sink.lock().await.send(Message::Text(json.into())).await.is_err() {
+                    if sink
+                        .lock()
+                        .await
+                        .send(Message::Text(json.into()))
+                        .await
+                        .is_err()
+                    {
                         break;
                     }
                 }

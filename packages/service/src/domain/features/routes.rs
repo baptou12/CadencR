@@ -26,7 +26,9 @@ pub async fn list_features_handler(
     State(state): State<AppState>,
     Query(params): Query<ListFeaturesParams>,
 ) -> Result<Json<Vec<Feature>>, AppError> {
-    Ok(Json(service::list_by_project(&state.read_pool, params.project_id).await?))
+    Ok(Json(
+        service::list_by_project(&state.read_pool, params.project_id).await?,
+    ))
 }
 
 #[utoipa::path(post, path = "/api/features",
@@ -115,7 +117,9 @@ pub async fn get_plan_with_phases_handler(
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> Result<Json<Option<PlanWithPhases>>, AppError> {
-    Ok(Json(service::get_plan_with_phases(&state.read_pool, id).await?))
+    Ok(Json(
+        service::get_plan_with_phases(&state.read_pool, id).await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/api/features/{id}/plan/progress",
@@ -125,7 +129,9 @@ pub async fn get_plan_progress_handler(
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> Result<Json<PlanProgress>, AppError> {
-    Ok(Json(service::get_plan_progress(&state.read_pool, id).await?))
+    Ok(Json(
+        service::get_plan_progress(&state.read_pool, id).await?,
+    ))
 }
 
 #[utoipa::path(put, path = "/api/phases/{id}/reset",
@@ -159,7 +165,9 @@ pub async fn get_feature_settings_handler(
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> Result<Json<Vec<FeatureSetting>>, AppError> {
-    Ok(Json(service::get_feature_settings(&state.read_pool, id).await?))
+    Ok(Json(
+        service::get_feature_settings(&state.read_pool, id).await?,
+    ))
 }
 
 #[utoipa::path(put, path = "/api/features/{id}/settings",
@@ -182,7 +190,9 @@ pub async fn get_feature_model_settings_handler(
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> Result<Json<FeatureModelSettings>, AppError> {
-    Ok(Json(service::get_feature_model_settings(&state.read_pool, id).await?))
+    Ok(Json(
+        service::get_feature_model_settings(&state.read_pool, id).await?,
+    ))
 }
 
 #[utoipa::path(put, path = "/api/features/{id}/model-settings",
@@ -194,7 +204,39 @@ pub async fn set_feature_model_setting_handler(
     Path(id): Path<i64>,
     Json(body): Json<SetFeatureModelSettingRequest>,
 ) -> Result<Json<SuccessResponse>, AppError> {
-    service::set_feature_model_setting(&state.write_pool, id, &body.model_type, &body.model).await?;
+    service::set_feature_model_setting(&state.write_pool, id, &body.model_type, &body.model)
+        .await?;
+    Ok(Json(SuccessResponse { success: true }))
+}
+
+#[utoipa::path(get, path = "/api/features/{id}/provider-settings",
+    params(("id" = i64, Path,)),
+    responses((status = 200, body = FeatureProviderSettings)))]
+pub async fn get_feature_provider_settings_handler(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Result<Json<FeatureProviderSettings>, AppError> {
+    Ok(Json(
+        service::get_feature_provider_settings(&state.read_pool, id).await?,
+    ))
+}
+
+#[utoipa::path(put, path = "/api/features/{id}/provider-settings",
+    params(("id" = i64, Path,)),
+    request_body = SetFeatureProviderSettingRequest,
+    responses((status = 200, body = SuccessResponse)))]
+pub async fn set_feature_provider_setting_handler(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Json(body): Json<SetFeatureProviderSettingRequest>,
+) -> Result<Json<SuccessResponse>, AppError> {
+    service::set_feature_provider_setting(
+        &state.write_pool,
+        id,
+        &body.provider_type,
+        &body.provider,
+    )
+    .await?;
     Ok(Json(SuccessResponse { success: true }))
 }
 
@@ -218,7 +260,9 @@ pub async fn get_feature_snapshot_handler(
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> Result<Json<FeatureSnapshotResponse>, AppError> {
-    Ok(Json(service::get_feature_snapshot(&state.read_pool, id).await?))
+    Ok(Json(
+        service::get_feature_snapshot(&state.read_pool, id).await?,
+    ))
 }
 
 #[utoipa::path(post, path = "/api/features/{id}/open-external",
@@ -231,14 +275,25 @@ pub async fn open_external_handler(
     Json(body): Json<OpenExternalRequest>,
 ) -> Result<Json<OpenExternalResponse>, AppError> {
     let path = crate::domain::git::service::resolve_feature_git_path(&state, id).await?;
-    let path = path.ok_or_else(|| AppError::NotFound("Feature working directory not found".to_string()))?;
+    let path =
+        path.ok_or_else(|| AppError::NotFound("Feature working directory not found".to_string()))?;
 
     match body.app {
         ExternalApp::Terminal => {
-            if Command::new("open").args(["-a", "iTerm", &path]).spawn().is_err() {
-                Command::new("open").args(["-a", "Terminal", &path]).spawn().map_err(|_| {
-                    AppError::BadRequest("No supported terminal app found. Install iTerm or use macOS Terminal.".to_string())
-                })?;
+            if Command::new("open")
+                .args(["-a", "iTerm", &path])
+                .spawn()
+                .is_err()
+            {
+                Command::new("open")
+                    .args(["-a", "Terminal", &path])
+                    .spawn()
+                    .map_err(|_| {
+                        AppError::BadRequest(
+                            "No supported terminal app found. Install iTerm or use macOS Terminal."
+                                .to_string(),
+                        )
+                    })?;
             }
         }
         ExternalApp::Zed => {
@@ -258,19 +313,56 @@ pub struct SuccessResponse {
 
 pub fn features_router() -> Router<AppState> {
     Router::new()
-        .route("/api/features", get(list_features_handler).post(create_feature_handler))
-        .route("/api/features/{id}", get(get_feature_handler).delete(delete_feature_handler))
-        .route("/api/features/{id}/status", put(update_feature_status_handler))
-        .route("/api/features/{id}/title", put(update_feature_title_handler))
+        .route(
+            "/api/features",
+            get(list_features_handler).post(create_feature_handler),
+        )
+        .route(
+            "/api/features/{id}",
+            get(get_feature_handler).delete(delete_feature_handler),
+        )
+        .route(
+            "/api/features/{id}/status",
+            put(update_feature_status_handler),
+        )
+        .route(
+            "/api/features/{id}/title",
+            put(update_feature_title_handler),
+        )
         .route("/api/features/{id}/prd", get(get_prd_handler))
         .route("/api/features/{id}/empty", get(is_empty_handler))
         .route("/api/features/{id}/plan", get(get_plan_with_phases_handler))
-        .route("/api/features/{id}/plan/progress", get(get_plan_progress_handler))
+        .route(
+            "/api/features/{id}/plan/progress",
+            get(get_plan_progress_handler),
+        )
         .route("/api/phases/{id}/reset", put(reset_phase_handler))
-        .route("/api/phases/{id}/status", put(override_phase_status_handler))
-        .route("/api/features/{id}/settings", get(get_feature_settings_handler).put(set_feature_setting_handler))
-        .route("/api/features/{id}/model-settings", get(get_feature_model_settings_handler).put(set_feature_model_setting_handler))
-        .route("/api/features/{id}/snapshot", get(get_feature_snapshot_handler))
-        .route("/api/features/{id}/working-dir", get(get_working_dir_handler))
-        .route("/api/features/{id}/open-external", post(open_external_handler))
+        .route(
+            "/api/phases/{id}/status",
+            put(override_phase_status_handler),
+        )
+        .route(
+            "/api/features/{id}/settings",
+            get(get_feature_settings_handler).put(set_feature_setting_handler),
+        )
+        .route(
+            "/api/features/{id}/model-settings",
+            get(get_feature_model_settings_handler).put(set_feature_model_setting_handler),
+        )
+        .route(
+            "/api/features/{id}/provider-settings",
+            get(get_feature_provider_settings_handler).put(set_feature_provider_setting_handler),
+        )
+        .route(
+            "/api/features/{id}/snapshot",
+            get(get_feature_snapshot_handler),
+        )
+        .route(
+            "/api/features/{id}/working-dir",
+            get(get_working_dir_handler),
+        )
+        .route(
+            "/api/features/{id}/open-external",
+            post(open_external_handler),
+        )
 }

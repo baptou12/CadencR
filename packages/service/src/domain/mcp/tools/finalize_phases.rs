@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use crate::domain::mcp::McpContext;
 use super::helpers::verify_plan_ownership;
+use crate::domain::mcp::McpContext;
 
 pub struct FinalizePhases {
     pub ctx: Arc<McpContext>,

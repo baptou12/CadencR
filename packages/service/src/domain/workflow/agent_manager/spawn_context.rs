@@ -5,11 +5,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use tokio::sync::mpsc;
-use tracing::info;
+use tracing::{info, warn};
 
-use claude_agent_sdk_rs::{Options, PermissionMode};
-
-use crate::domain::mcp::servers::{AgentType, mcp_server_name};
+use crate::domain::agents::adapter::{RuntimePermissionMode, RuntimeSpawnConfig};
+use crate::domain::agents::runtime::DEFAULT_PROVIDER;
+use crate::domain::mcp::servers::{mcp_server_name, AgentType};
 use crate::domain::workflow::engine::AgentSlot;
 use crate::domain::workflow::permission_router::{PermissionRouter, WorkflowPermissionBridge};
 use crate::domain::ws_session::handler::mcp_spawn::build_mcp_server_config;
@@ -56,7 +56,12 @@ impl AgentManager {
     }
 
     /// Resolve a setting using the shared feature → project → global cascade.
-    pub(super) async fn resolve_setting(&self, key: &str, project_id: Option<i64>, default: Option<&str>) -> Option<String> {
+    pub(super) async fn resolve_setting(
+        &self,
+        key: &str,
+        project_id: Option<i64>,
+        default: Option<&str>,
+    ) -> Option<String> {
         crate::domain::settings::resolve_setting(
             &self.read_pool,
             key,
@@ -68,7 +73,11 @@ impl AgentManager {
     }
 
     /// Resolve the model for a given agent type.
-    pub(super) async fn resolve_model(&self, agent_type_str: &str, project_id: Option<i64>) -> String {
+    pub(super) async fn resolve_model(
+        &self,
+        agent_type_str: &str,
+        project_id: Option<i64>,
+    ) -> String {
         const DEFAULT_MODEL: &str = crate::api::DEFAULT_MODEL;
         let db_key = format!("model_{agent_type_str}");
         self.resolve_setting(&db_key, project_id, Some(DEFAULT_MODEL))
@@ -76,9 +85,20 @@ impl AgentManager {
             .unwrap_or_else(|| DEFAULT_MODEL.to_string())
     }
 
+    /// Resolve the runtime provider for a given agent type.
+    pub(super) async fn resolve_provider(
+        &self,
+        agent_type_str: &str,
+        project_id: Option<i64>,
+    ) -> String {
+        let db_key = crate::domain::agents::runtime::runtime_setting_key(agent_type_str);
+        self.resolve_setting(&db_key, project_id, Some(DEFAULT_PROVIDER))
+            .await
+            .unwrap_or_else(|| DEFAULT_PROVIDER.to_string())
+    }
 
     /// Build a SpawnContext with all the shared setup: MCP config, CWD, permission
-    /// bridge, model resolution, language instruction, and Options construction.
+    /// bridge, model resolution, language instruction, and runtime spawn config.
     ///
     /// The caller is responsible for creating the DB session and slot beforehand,
     /// since those differ between spawn_pre_queue_agent, start_item, and resume_item.
@@ -96,11 +116,15 @@ impl AgentManager {
         input_phase_slugs: Option<&[String]>,
         model_override: Option<&str>,
     ) -> Result<SpawnContext, String> {
-        let mcp_servers = build_mcp_server_config(agent_type, self.feature_id, phase_slug, input_phase_slugs);
+        let mcp_servers =
+            build_mcp_server_config(agent_type, self.feature_id, phase_slug, input_phase_slugs);
         let expected_mcp_server = mcp_server_name(agent_type).to_string();
 
         let cwd = self.get_feature_cwd().await.ok_or_else(|| {
-            format!("No working directory found for feature {}. Was ensure_worktree called?", self.feature_id)
+            format!(
+                "No working directory found for feature {}. Was ensure_worktree called?",
+                self.feature_id
+            )
         })?;
         info!(feature_id = self.feature_id, agent_type = agent_type_str, cwd = %cwd.display(), "agent spawn CWD resolved");
 
@@ -122,19 +146,37 @@ impl AgentManager {
             turn_state_tx: self.turn_state_tx.clone(),
         };
 
-        // Model — prefer explicit override (e.g. from workflow phase definition)
         let project_id = self.get_project_id().await;
+        let provider = self.resolve_provider(agent_type_str, project_id).await;
+        if provider != DEFAULT_PROVIDER {
+            return Err(format!(
+                "Runtime provider '{provider}' is not implemented yet for workflow agents"
+            ));
+        }
+
+        // Model — prefer explicit override (e.g. from workflow phase definition)
         let model = match model_override.filter(|s| !s.is_empty()) {
             Some(m) => m.to_string(),
             None => self.resolve_model(agent_type_str, project_id).await,
         };
-        info!(feature_id = self.feature_id, agent_type = agent_type_str, model = %model, "resolved model");
+        info!(feature_id = self.feature_id, agent_type = agent_type_str, provider = %provider, model = %model, "resolved agent runtime");
 
-        let _ = sqlx::query("UPDATE agent_sessions SET model = ? WHERE id = ?")
-            .bind(&model)
-            .bind(db_session_id)
-            .execute(&self.write_pool)
-            .await;
+        if let Err(error) =
+            sqlx::query("UPDATE agent_sessions SET runtime_provider = ?, model = ? WHERE id = ?")
+                .bind(&provider)
+                .bind(&model)
+                .bind(db_session_id)
+                .execute(&self.write_pool)
+                .await
+        {
+            warn!(
+                session_id = db_session_id,
+                provider = %provider,
+                model = %model,
+                error = %error,
+                "failed to persist resolved runtime provider/model before spawn"
+            );
+        }
 
         // Build system prompt with CWD hint + optional MCP instructions
         let cwd_hint = format!(
@@ -153,20 +195,20 @@ impl AgentManager {
             _ => Some(cwd_hint),
         };
 
-        let mut options = Options {
+        let runtime_config = RuntimeSpawnConfig {
             cwd: cwd.clone(),
-            permission_mode: Some(PermissionMode::AcceptEdits),
+            permission_mode: Some(RuntimePermissionMode::AcceptEdits),
             model: Some(model.clone()),
             system_prompt: full_system_prompt,
-            resume: resume_session_id.map(|s| s.to_string()),
+            resume_session_id: resume_session_id.map(|s| s.to_string()),
             mcp_servers: Some(mcp_servers.clone()),
-            ..Options::default()
+            can_use_tool: Some(Box::new(bridge)),
         };
-        options.can_use_tool = Some(Box::new(bridge));
 
         Ok(SpawnContext {
+            provider,
             model,
-            options,
+            runtime_config,
             expected_mcp_server,
         })
     }

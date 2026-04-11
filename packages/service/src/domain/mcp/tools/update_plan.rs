@@ -3,8 +3,8 @@ use std::sync::Arc;
 use sqlx::sqlite::SqliteArguments;
 use sqlx::Arguments;
 
-use crate::domain::mcp::McpContext;
 use super::helpers::verify_plan_ownership;
+use crate::domain::mcp::McpContext;
 
 pub struct UpdatePlanTool {
     pub ctx: Arc<McpContext>,

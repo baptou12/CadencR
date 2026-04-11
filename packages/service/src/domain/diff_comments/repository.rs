@@ -5,7 +5,10 @@ use crate::error::AppError;
 
 // ---- Diff Comments ----
 
-pub async fn list_by_feature(pool: &SqlitePool, feature_id: i64) -> Result<Vec<DiffComment>, AppError> {
+pub async fn list_by_feature(
+    pool: &SqlitePool,
+    feature_id: i64,
+) -> Result<Vec<DiffComment>, AppError> {
     let rows: Vec<(i64, i64, String, i64, String, String, String, String)> = sqlx::query_as(
         "SELECT id, feature_id, file_path, line_number, side, content, status, created_at
          FROM diff_comments WHERE feature_id = ? ORDER BY file_path, line_number ASC",
@@ -16,20 +19,27 @@ pub async fn list_by_feature(pool: &SqlitePool, feature_id: i64) -> Result<Vec<D
 
     Ok(rows
         .into_iter()
-        .map(|(id, feature_id, file_path, line_number, side, content, status, created_at)| DiffComment {
-            id,
-            feature_id,
-            file_path,
-            line_number,
-            side,
-            content,
-            status,
-            created_at,
-        })
+        .map(
+            |(id, feature_id, file_path, line_number, side, content, status, created_at)| {
+                DiffComment {
+                    id,
+                    feature_id,
+                    file_path,
+                    line_number,
+                    side,
+                    content,
+                    status,
+                    created_at,
+                }
+            },
+        )
         .collect())
 }
 
-pub async fn create(pool: &SqlitePool, req: &CreateDiffCommentRequest) -> Result<DiffComment, AppError> {
+pub async fn create(
+    pool: &SqlitePool,
+    req: &CreateDiffCommentRequest,
+) -> Result<DiffComment, AppError> {
     let id = sqlx::query(
         "INSERT INTO diff_comments (feature_id, file_path, line_number, side, content, status)
          VALUES (?, ?, ?, ?, ?, 'pending')",
@@ -91,18 +101,20 @@ pub async fn mark_as_sent(pool: &SqlitePool, feature_id: i64) -> Result<u64, App
 }
 
 pub async fn delete_pending(pool: &SqlitePool, feature_id: i64) -> Result<u64, AppError> {
-    let result = sqlx::query(
-        "DELETE FROM diff_comments WHERE feature_id = ? AND status = 'pending'",
-    )
-    .bind(feature_id)
-    .execute(pool)
-    .await?;
+    let result =
+        sqlx::query("DELETE FROM diff_comments WHERE feature_id = ? AND status = 'pending'")
+            .bind(feature_id)
+            .execute(pool)
+            .await?;
     Ok(result.rows_affected())
 }
 
 // ---- Diff Viewed ----
 
-pub async fn list_viewed_by_feature(pool: &SqlitePool, feature_id: i64) -> Result<Vec<DiffViewedFile>, AppError> {
+pub async fn list_viewed_by_feature(
+    pool: &SqlitePool,
+    feature_id: i64,
+) -> Result<Vec<DiffViewedFile>, AppError> {
     let rows: Vec<(i64, i64, String, String, String)> = sqlx::query_as(
         "SELECT id, feature_id, file_path, blob_sha, viewed_at
          FROM diff_viewed_files WHERE feature_id = ? ORDER BY file_path ASC",
@@ -113,17 +125,24 @@ pub async fn list_viewed_by_feature(pool: &SqlitePool, feature_id: i64) -> Resul
 
     Ok(rows
         .into_iter()
-        .map(|(id, feature_id, file_path, blob_sha, viewed_at)| DiffViewedFile {
-            id,
-            feature_id,
-            file_path,
-            blob_sha,
-            viewed_at,
-        })
+        .map(
+            |(id, feature_id, file_path, blob_sha, viewed_at)| DiffViewedFile {
+                id,
+                feature_id,
+                file_path,
+                blob_sha,
+                viewed_at,
+            },
+        )
         .collect())
 }
 
-pub async fn mark_viewed(pool: &SqlitePool, feature_id: i64, file_path: &str, blob_sha: &str) -> Result<(), AppError> {
+pub async fn mark_viewed(
+    pool: &SqlitePool,
+    feature_id: i64,
+    file_path: &str,
+    blob_sha: &str,
+) -> Result<(), AppError> {
     sqlx::query(
         "INSERT INTO diff_viewed_files (feature_id, file_path, blob_sha, viewed_at)
          VALUES (?, ?, ?, datetime('now'))
@@ -137,24 +156,24 @@ pub async fn mark_viewed(pool: &SqlitePool, feature_id: i64, file_path: &str, bl
     Ok(())
 }
 
-pub async fn unmark_viewed(pool: &SqlitePool, feature_id: i64, file_path: &str) -> Result<(), AppError> {
-    sqlx::query(
-        "DELETE FROM diff_viewed_files WHERE feature_id = ? AND file_path = ?",
-    )
-    .bind(feature_id)
-    .bind(file_path)
-    .execute(pool)
-    .await?;
+pub async fn unmark_viewed(
+    pool: &SqlitePool,
+    feature_id: i64,
+    file_path: &str,
+) -> Result<(), AppError> {
+    sqlx::query("DELETE FROM diff_viewed_files WHERE feature_id = ? AND file_path = ?")
+        .bind(feature_id)
+        .bind(file_path)
+        .execute(pool)
+        .await?;
     Ok(())
 }
 
 pub async fn clear_all_viewed(pool: &SqlitePool, feature_id: i64) -> Result<u64, AppError> {
-    let result = sqlx::query(
-        "DELETE FROM diff_viewed_files WHERE feature_id = ?",
-    )
-    .bind(feature_id)
-    .execute(pool)
-    .await?;
+    let result = sqlx::query("DELETE FROM diff_viewed_files WHERE feature_id = ?")
+        .bind(feature_id)
+        .execute(pool)
+        .await?;
     Ok(result.rows_affected())
 }
 
@@ -175,16 +194,22 @@ mod tests {
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
                 path TEXT NOT NULL
-            )"
-        ).execute(&pool).await.unwrap();
+            )",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
 
         sqlx::query(
             "CREATE TABLE features (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 project_id INTEGER NOT NULL,
                 title TEXT
-            )"
-        ).execute(&pool).await.unwrap();
+            )",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
 
         sqlx::query(
             "CREATE TABLE diff_comments (
@@ -196,8 +221,11 @@ mod tests {
                 content TEXT NOT NULL,
                 status TEXT NOT NULL DEFAULT 'pending',
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
-            )"
-        ).execute(&pool).await.unwrap();
+            )",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
 
         sqlx::query(
             "CREATE TABLE diff_viewed_files (
@@ -207,19 +235,33 @@ mod tests {
                 blob_sha TEXT NOT NULL,
                 viewed_at TEXT NOT NULL DEFAULT (datetime('now')),
                 UNIQUE(feature_id, file_path)
-            )"
-        ).execute(&pool).await.unwrap();
+            )",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
 
         // Insert a project + feature to use in tests
-        sqlx::query("INSERT INTO projects (id, name, path) VALUES (1, 'Test Project', '/tmp/test')")
-            .execute(&pool).await.unwrap();
+        sqlx::query(
+            "INSERT INTO projects (id, name, path) VALUES (1, 'Test Project', '/tmp/test')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
         sqlx::query("INSERT INTO features (id, project_id, title) VALUES (1, 1, 'Test Feature')")
-            .execute(&pool).await.unwrap();
+            .execute(&pool)
+            .await
+            .unwrap();
 
         pool
     }
 
-    async fn create_comment(pool: &SqlitePool, feature_id: i64, file_path: &str, content: &str) -> DiffComment {
+    async fn create_comment(
+        pool: &SqlitePool,
+        feature_id: i64,
+        file_path: &str,
+        content: &str,
+    ) -> DiffComment {
         let req = CreateDiffCommentRequest {
             feature_id,
             file_path: file_path.to_string(),
@@ -334,7 +376,9 @@ mod tests {
     #[tokio::test]
     async fn test_mark_and_list_viewed() {
         let pool = setup_test_db().await;
-        mark_viewed(&pool, 1, "src/main.rs", "abc123").await.unwrap();
+        mark_viewed(&pool, 1, "src/main.rs", "abc123")
+            .await
+            .unwrap();
         mark_viewed(&pool, 1, "src/lib.rs", "def456").await.unwrap();
 
         let viewed = list_viewed_by_feature(&pool, 1).await.unwrap();
@@ -347,8 +391,12 @@ mod tests {
     #[tokio::test]
     async fn test_mark_viewed_upsert() {
         let pool = setup_test_db().await;
-        mark_viewed(&pool, 1, "src/main.rs", "sha_old").await.unwrap();
-        mark_viewed(&pool, 1, "src/main.rs", "sha_new").await.unwrap();
+        mark_viewed(&pool, 1, "src/main.rs", "sha_old")
+            .await
+            .unwrap();
+        mark_viewed(&pool, 1, "src/main.rs", "sha_new")
+            .await
+            .unwrap();
 
         let viewed = list_viewed_by_feature(&pool, 1).await.unwrap();
         assert_eq!(viewed.len(), 1);
@@ -358,7 +406,9 @@ mod tests {
     #[tokio::test]
     async fn test_unmark_viewed() {
         let pool = setup_test_db().await;
-        mark_viewed(&pool, 1, "src/main.rs", "abc123").await.unwrap();
+        mark_viewed(&pool, 1, "src/main.rs", "abc123")
+            .await
+            .unwrap();
         unmark_viewed(&pool, 1, "src/main.rs").await.unwrap();
 
         let viewed = list_viewed_by_feature(&pool, 1).await.unwrap();

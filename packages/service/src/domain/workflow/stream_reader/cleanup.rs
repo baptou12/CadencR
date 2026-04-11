@@ -7,8 +7,7 @@ use dashmap::DashMap;
 use sqlx::SqlitePool;
 use tracing::{debug, error, info, warn};
 
-use claude_agent_sdk_rs::{Query, SdkMessage};
-
+use crate::domain::agents::adapter::{RuntimeEvent, RuntimeSessionHandle};
 use crate::domain::features::repository as repo;
 use crate::domain::workflow::engine::{to_value, AgentSlot, WsSender};
 use crate::domain::ws_session::persistence::WsSessionPersistence;
@@ -20,10 +19,10 @@ pub async fn check_mcp_server_connected(
     slot: &AgentSlot,
     db_session_id: i64,
     expected_mcp_server: &str,
-    mcp_servers: &[claude_agent_sdk_rs::types::McpServerStatus],
+    mcp_servers: &[crate::domain::agents::adapter::RuntimeMcpServerStatus],
     sender: &WsSender,
     write_pool: &SqlitePool,
-    queries: &Arc<DashMap<AgentSlot, Arc<tokio::sync::Mutex<Query>>>>,
+    queries: &Arc<DashMap<AgentSlot, RuntimeSessionHandle>>,
 ) -> bool {
     let server_status = mcp_servers.iter().find(|s| s.name == expected_mcp_server);
     let mcp_ok = server_status.map_or(false, |s| s.status == "connected");
@@ -61,23 +60,19 @@ pub async fn check_mcp_server_connected(
 
 /// Extract usage from an SDK message and broadcast to frontend.
 pub async fn broadcast_usage(
-    sdk_msg: &SdkMessage,
+    runtime_event: &RuntimeEvent,
     slot: &AgentSlot,
     db_session_id: i64,
     context_window: u64,
     sender: &WsSender,
     write_pool: &SqlitePool,
 ) {
-    if let Some(usage) = sdk_msg.usage() {
-        let total_input = usage.input_tokens
-            + usage.cache_creation_input_tokens.unwrap_or(0)
-            + usage.cache_read_input_tokens.unwrap_or(0);
-        let total_output = usage.output_tokens;
+    if let Some(usage) = runtime_event.usage() {
         WsSessionPersistence::update_token_usage(
             write_pool,
             db_session_id,
-            total_input,
-            total_output,
+            usage.input_tokens,
+            usage.output_tokens,
         )
         .await;
 
@@ -87,8 +82,8 @@ pub async fn broadcast_usage(
             to_value(serde_json::json!({
                 "agent_slot": slot,
                 "session_id": db_session_id,
-                "input_tokens": total_input,
-                "output_tokens": total_output,
+                "input_tokens": usage.input_tokens,
+                "output_tokens": usage.output_tokens,
                 "context_window": context_window,
             })),
         );
@@ -98,42 +93,39 @@ pub async fn broadcast_usage(
 
 /// Build the WsEnvelope for an SDK message (result or generic block).
 pub async fn build_stream_envelope(
-    sdk_msg: &SdkMessage,
+    runtime_event: &RuntimeEvent,
     slot: &AgentSlot,
     db_session_id: i64,
     completed_ok: &mut bool,
     agent_done_called: &mut bool,
     write_pool: &SqlitePool,
 ) -> WsEnvelope {
-    match sdk_msg {
-        SdkMessage::Result { .. } => {
-            debug!(slot = %slot, agent_done_called = *agent_done_called, "received SDK Result message");
-            *completed_ok = true;
-            if *agent_done_called {
-                WsSessionPersistence::mark_completed_static(write_pool, db_session_id).await;
-            }
-            WsEnvelope::new(
-                "workflow",
-                "agent_stream",
-                to_value(WorkflowAgentStreamResultPayload {
-                    agent_slot: slot.clone(),
-                    session_id: db_session_id,
-                    msg_type: "result".into(),
-                }),
-            )
+    if runtime_event.is_result() {
+        debug!(slot = %slot, agent_done_called = *agent_done_called, "received SDK Result message");
+        *completed_ok = true;
+        if *agent_done_called {
+            WsSessionPersistence::mark_completed_static(write_pool, db_session_id).await;
         }
-        _ => {
-            let block = serde_json::to_value(sdk_msg).unwrap_or_default();
-            WsEnvelope::new(
-                "workflow",
-                "agent_stream",
-                to_value(WorkflowAgentStreamBlocksPayload {
-                    agent_slot: slot.clone(),
-                    session_id: db_session_id,
-                    blocks: vec![block],
-                }),
-            )
-        }
+        WsEnvelope::new(
+            "workflow",
+            "agent_stream",
+            to_value(WorkflowAgentStreamResultPayload {
+                agent_slot: slot.clone(),
+                session_id: db_session_id,
+                msg_type: "result".into(),
+            }),
+        )
+    } else {
+        let block = runtime_event.raw_json().clone();
+        WsEnvelope::new(
+            "workflow",
+            "agent_stream",
+            to_value(WorkflowAgentStreamBlocksPayload {
+                agent_slot: slot.clone(),
+                session_id: db_session_id,
+                blocks: vec![block],
+            }),
+        )
     }
 }
 
@@ -148,7 +140,7 @@ pub async fn post_stream_cleanup(
     ws_detached: bool,
     write_pool: &SqlitePool,
     active_items: &Arc<DashMap<AgentSlot, i64>>,
-    queries: &Arc<DashMap<AgentSlot, Arc<tokio::sync::Mutex<Query>>>>,
+    queries: &Arc<DashMap<AgentSlot, RuntimeSessionHandle>>,
     paused_sessions: &Arc<DashMap<AgentSlot, String>>,
     turn_state_tx: &tokio::sync::broadcast::Sender<crate::app_state::TurnStateEvent>,
 ) {
@@ -174,7 +166,15 @@ pub async fn post_stream_cleanup(
     } else if completed_ok && !agent_done_called {
         handle_paused(&slot, feature_id, db_session_id, write_pool).await;
     } else if let Some(err) = error_msg {
-        handle_error(&slot, feature_id, &err, write_pool, active_items, turn_state_tx).await;
+        handle_error(
+            &slot,
+            feature_id,
+            &err,
+            write_pool,
+            active_items,
+            turn_state_tx,
+        )
+        .await;
     } else {
         info!(slot = %slot, "stream ended without result — treating as paused for reconnect");
         handle_paused(&slot, feature_id, db_session_id, write_pool).await;

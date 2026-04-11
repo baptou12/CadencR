@@ -1,9 +1,9 @@
 //! Live-refresh detection for plan/phase-modifying tool calls.
 
 use axum::extract::ws::Message;
-use claude_agent_sdk_rs::SdkMessage;
 use sqlx::SqlitePool;
 
+use crate::domain::agents::adapter::RuntimeEvent;
 use crate::domain::features::repository as repo;
 use crate::domain::workflow::engine::{send_feature_updated_envelope, to_value, WsSender};
 use crate::domain::ws_session::protocol::*;
@@ -17,7 +17,7 @@ pub fn is_completion_tool(name: &str) -> bool {
 
 /// Detect plan/phase-modifying tool calls and send live-refresh updates.
 pub async fn handle_live_refresh(
-    sdk_msg: &SdkMessage,
+    runtime_event: &RuntimeEvent,
     feature_id: i64,
     phase_slug: Option<&str>,
     sender: &WsSender,
@@ -26,30 +26,44 @@ pub async fn handle_live_refresh(
     pending_feature_update: &mut Option<Vec<&'static str>>,
     pending_queue_update: &mut bool,
 ) {
-    match sdk_msg {
-        SdkMessage::Assistant { message, .. } => {
-            handle_assistant_message(message, agent_done_called, pending_feature_update, pending_queue_update);
-        }
-        SdkMessage::User { .. } => {
-            flush_pending_updates(sender, write_pool, feature_id, pending_feature_update, pending_queue_update).await;
-        }
-        SdkMessage::ToolUseSummary { ref data, .. } => {
-            handle_tool_use_summary(data, feature_id, phase_slug, sender, write_pool, agent_done_called).await;
-        }
-        _ => {}
+    if let Some(message) = runtime_event.assistant_message() {
+        handle_assistant_message(
+            message,
+            agent_done_called,
+            pending_feature_update,
+            pending_queue_update,
+        );
+    } else if runtime_event.user_message().is_some() {
+        flush_pending_updates(
+            sender,
+            write_pool,
+            feature_id,
+            pending_feature_update,
+            pending_queue_update,
+        )
+        .await;
+    } else if let Some(data) = runtime_event.tool_use_summary_data() {
+        handle_tool_use_summary(
+            data,
+            feature_id,
+            phase_slug,
+            sender,
+            write_pool,
+            agent_done_called,
+        )
+        .await;
     }
 }
 
 fn handle_assistant_message(
-    message: &claude_agent_sdk_rs::AssistantMessageBody,
+    message: &crate::domain::agents::adapter::RuntimeAssistantMessage,
     agent_done_called: &mut bool,
     pending_feature_update: &mut Option<Vec<&'static str>>,
     pending_queue_update: &mut bool,
 ) {
-    use claude_agent_sdk_rs::types::ContentBlock;
     let mut fields: Vec<&'static str> = Vec::new();
     for block in &message.content {
-        if let ContentBlock::ToolUse { name, .. } = block {
+        if let crate::domain::agents::adapter::RuntimeContentBlock::ToolUse { name, .. } = block {
             if is_completion_tool(name) {
                 *agent_done_called = true;
             }
@@ -158,7 +172,9 @@ mod tests {
         assert!(is_completion_tool("mark_phase_done"));
         assert!(is_completion_tool("mark_phase_complete"));
         assert!(is_completion_tool("request_approval"));
-        assert!(is_completion_tool("mcp__cadence_workflow__mark_phase_complete"));
+        assert!(is_completion_tool(
+            "mcp__cadence_workflow__mark_phase_complete"
+        ));
         assert!(!is_completion_tool("create_artifact"));
         assert!(!is_completion_tool("read_project_context"));
     }

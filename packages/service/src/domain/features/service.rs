@@ -1,12 +1,12 @@
 use sqlx::SqlitePool;
 
-use crate::error::AppError;
 use super::models::{
-    Feature, PlanProgress, PlanWithPhases, PrdResponse, IsEmptyResponse,
-    WorkingDirResponse, CreateFeatureResponse, FeatureSetting, FeatureModelSettings,
-    FeatureSnapshotResponse,
+    CreateFeatureResponse, Feature, FeatureModelSettings, FeatureProviderSettings, FeatureSetting,
+    FeatureSnapshotResponse, IsEmptyResponse, PlanProgress, PlanWithPhases, PrdResponse,
+    WorkingDirResponse,
 };
 use super::repository;
+use crate::error::AppError;
 
 pub async fn list_by_project(pool: &SqlitePool, project_id: i64) -> Result<Vec<Feature>, AppError> {
     repository::list_by_project(pool, project_id).await
@@ -52,12 +52,18 @@ pub async fn is_empty(pool: &SqlitePool, id: i64) -> Result<IsEmptyResponse, App
     Ok(IsEmptyResponse { empty })
 }
 
-pub async fn get_plan_with_phases(pool: &SqlitePool, feature_id: i64) -> Result<Option<PlanWithPhases>, AppError> {
+pub async fn get_plan_with_phases(
+    pool: &SqlitePool,
+    feature_id: i64,
+) -> Result<Option<PlanWithPhases>, AppError> {
     let result = repository::get_plan_with_phases(pool, feature_id).await?;
     Ok(result.map(|(plan, phases)| PlanWithPhases { plan, phases }))
 }
 
-pub async fn get_plan_progress(pool: &SqlitePool, feature_id: i64) -> Result<PlanProgress, AppError> {
+pub async fn get_plan_progress(
+    pool: &SqlitePool,
+    feature_id: i64,
+) -> Result<PlanProgress, AppError> {
     repository::get_plan_progress(pool, feature_id).await
 }
 
@@ -65,19 +71,34 @@ pub async fn reset_phase(pool: &SqlitePool, phase_id: i64) -> Result<(), AppErro
     repository::reset_phase(pool, phase_id).await
 }
 
-pub async fn override_phase_status(pool: &SqlitePool, phase_id: i64, status: &str) -> Result<(), AppError> {
+pub async fn override_phase_status(
+    pool: &SqlitePool,
+    phase_id: i64,
+    status: &str,
+) -> Result<(), AppError> {
     repository::override_phase_status(pool, phase_id, status).await
 }
 
-pub async fn get_feature_settings(pool: &SqlitePool, feature_id: i64) -> Result<Vec<FeatureSetting>, AppError> {
+pub async fn get_feature_settings(
+    pool: &SqlitePool,
+    feature_id: i64,
+) -> Result<Vec<FeatureSetting>, AppError> {
     repository::get_feature_settings(pool, feature_id).await
 }
 
-pub async fn set_feature_setting(pool: &SqlitePool, feature_id: i64, key: &str, value: &str) -> Result<(), AppError> {
+pub async fn set_feature_setting(
+    pool: &SqlitePool,
+    feature_id: i64,
+    key: &str,
+    value: &str,
+) -> Result<(), AppError> {
     repository::set_feature_setting(pool, feature_id, key, value).await
 }
 
-pub async fn get_feature_model_settings(pool: &SqlitePool, feature_id: i64) -> Result<FeatureModelSettings, AppError> {
+pub async fn get_feature_model_settings(
+    pool: &SqlitePool,
+    feature_id: i64,
+) -> Result<FeatureModelSettings, AppError> {
     repository::get_feature_model_settings(pool, feature_id).await
 }
 
@@ -88,6 +109,22 @@ pub async fn set_feature_model_setting(
     model: &str,
 ) -> Result<(), AppError> {
     repository::set_feature_model_setting(pool, feature_id, model_type, model).await
+}
+
+pub async fn get_feature_provider_settings(
+    pool: &SqlitePool,
+    feature_id: i64,
+) -> Result<FeatureProviderSettings, AppError> {
+    repository::get_feature_provider_settings(pool, feature_id).await
+}
+
+pub async fn set_feature_provider_setting(
+    pool: &SqlitePool,
+    feature_id: i64,
+    provider_type: &str,
+    provider: &str,
+) -> Result<(), AppError> {
+    repository::set_feature_provider_setting(pool, feature_id, provider_type, provider).await
 }
 
 pub async fn resolve_working_dir(

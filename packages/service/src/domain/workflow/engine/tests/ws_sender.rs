@@ -12,7 +12,10 @@ fn test_ws_sender_detach_drops_messages() {
     ws.detach();
     let result = ws.send(Message::Text("hello".into()));
     assert!(result.is_ok(), "send on detached sender should return Ok");
-    assert!(rx.try_recv().is_err(), "no message should arrive after detach");
+    assert!(
+        rx.try_recv().is_err(),
+        "no message should arrive after detach"
+    );
 }
 
 #[test]
@@ -83,7 +86,10 @@ async fn test_engine_reattach_sender_updates_sender() {
     let (tx2, mut rx2) = mpsc::unbounded_channel();
     engine.reattach_sender(tx2);
 
-    engine.ws_sender.send(Message::Text("after reattach".into())).unwrap();
+    engine
+        .ws_sender
+        .send(Message::Text("after reattach".into()))
+        .unwrap();
     let msg = rx2.try_recv().unwrap();
     if let Message::Text(text) = msg {
         assert_eq!(&*text, "after reattach");
@@ -114,8 +120,12 @@ fn test_send_feature_updated_envelope_format() {
         assert_eq!(v["domain"], "feature");
         assert_eq!(v["action"], "updated");
         assert_eq!(v["payload"]["feature_id"], 123);
-        let changed: Vec<String> = v["payload"]["changed"].as_array().unwrap()
-            .iter().filter_map(|v| v.as_str().map(String::from)).collect();
+        let changed: Vec<String> = v["payload"]["changed"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|v| v.as_str().map(String::from))
+            .collect();
         assert_eq!(changed, vec!["plan", "phases"]);
     } else {
         panic!("expected Text message");

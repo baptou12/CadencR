@@ -34,9 +34,10 @@ fn test_mcp_config_serializes_correctly_for_cli() {
             "--feature-id".to_string(),
             "42".to_string(),
         ]),
-        env: Some(HashMap::from([
-            ("CADENCE_DB_PATH".to_string(), "/tmp/test.db".to_string()),
-        ])),
+        env: Some(HashMap::from([(
+            "CADENCE_DB_PATH".to_string(),
+            "/tmp/test.db".to_string(),
+        )])),
     };
 
     let mut servers = HashMap::new();
@@ -48,17 +49,24 @@ fn test_mcp_config_serializes_correctly_for_cli() {
     let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
 
     // Must have mcpServers wrapper
-    assert!(parsed.get("mcpServers").is_some(), "missing mcpServers wrapper key");
+    assert!(
+        parsed.get("mcpServers").is_some(),
+        "missing mcpServers wrapper key"
+    );
 
     let mcp_servers = parsed.get("mcpServers").unwrap();
     let plan_server = mcp_servers.get("cadence-plan").unwrap();
 
     // Must be stdio type
     assert_eq!(plan_server.get("type").unwrap(), "stdio");
-    assert_eq!(plan_server.get("command").unwrap(), "/usr/bin/cadence-service");
+    assert_eq!(
+        plan_server.get("command").unwrap(),
+        "/usr/bin/cadence-service"
+    );
 
     // Args must include mcp-serve subcommand
-    let args: Vec<String> = serde_json::from_value(plan_server.get("args").unwrap().clone()).unwrap();
+    let args: Vec<String> =
+        serde_json::from_value(plan_server.get("args").unwrap().clone()).unwrap();
     assert!(args.contains(&"mcp-serve".to_string()));
     assert!(args.contains(&"--agent-type".to_string()));
     assert!(args.contains(&"plan".to_string()));
@@ -88,7 +96,10 @@ async fn test_mcp_stdio_server_responds_to_tools_list() {
         .await
         .unwrap();
 
-    sqlx::query("PRAGMA journal_mode=WAL").execute(&pool).await.unwrap();
+    sqlx::query("PRAGMA journal_mode=WAL")
+        .execute(&pool)
+        .await
+        .unwrap();
     // Create minimal schema needed by MCP tools
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS features (
@@ -98,8 +109,11 @@ async fn test_mcp_stdio_server_responds_to_tools_list() {
             status TEXT NOT NULL DEFAULT 'draft',
             type TEXT NOT NULL DEFAULT 'feature',
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
-        )"
-    ).execute(&pool).await.unwrap();
+        )",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS plans (
             id INTEGER PRIMARY KEY,
@@ -113,8 +127,11 @@ async fn test_mcp_stdio_server_responds_to_tools_list() {
             title TEXT,
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-        )"
-    ).execute(&pool).await.unwrap();
+        )",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS phases (
             id INTEGER PRIMARY KEY,
@@ -130,16 +147,22 @@ async fn test_mcp_stdio_server_responds_to_tools_list() {
             prompt TEXT,
             phase_type TEXT,
             depends_on TEXT
-        )"
-    ).execute(&pool).await.unwrap();
+        )",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS agent_sessions (
             id INTEGER PRIMARY KEY,
             feature_id INTEGER,
             agent_type TEXT,
             status TEXT DEFAULT 'running'
-        )"
-    ).execute(&pool).await.unwrap();
+        )",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
 
     // Insert a test feature
     sqlx::query("INSERT INTO features (id, title, status) VALUES (1, 'Test Feature', 'draft')")
@@ -152,12 +175,17 @@ async fn test_mcp_stdio_server_responds_to_tools_list() {
     // Find the built binary
     let binary = std::env::current_exe()
         .unwrap()
-        .parent().unwrap()  // deps/
-        .parent().unwrap()  // debug/
+        .parent()
+        .unwrap() // deps/
+        .parent()
+        .unwrap() // debug/
         .join("cadence-service");
 
     if !binary.exists() {
-        eprintln!("Skipping test: cadence-service binary not found at {:?}", binary);
+        eprintln!(
+            "Skipping test: cadence-service binary not found at {:?}",
+            binary
+        );
         return;
     }
 
@@ -211,13 +239,21 @@ async fn test_mcp_stdio_server_responds_to_tools_list() {
     // Read tools/list response
     let mut tools_line = String::new();
     reader.read_line(&mut tools_line).await.unwrap();
-    assert!(!tools_line.is_empty(), "tools/list response should not be empty");
+    assert!(
+        !tools_line.is_empty(),
+        "tools/list response should not be empty"
+    );
 
     let tools_resp: serde_json::Value = serde_json::from_str(&tools_line).unwrap();
     let tools = tools_resp["result"]["tools"].as_array().unwrap();
 
     // Plan server should have 10 tools
-    assert_eq!(tools.len(), 10, "plan server should expose 10 tools, got {}", tools.len());
+    assert_eq!(
+        tools.len(),
+        10,
+        "plan server should expose 10 tools, got {}",
+        tools.len()
+    );
 
     // Verify key tools are present
     let tool_names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
@@ -225,8 +261,14 @@ async fn test_mcp_stdio_server_responds_to_tools_list() {
     assert!(tool_names.contains(&"create_phase"), "missing create_phase");
     assert!(tool_names.contains(&"update_plan"), "missing update_plan");
     assert!(tool_names.contains(&"show_plan"), "missing show_plan");
-    assert!(tool_names.contains(&"finalize_plan"), "missing finalize_plan");
-    assert!(tool_names.contains(&"mark_agent_done"), "missing mark_agent_done");
+    assert!(
+        tool_names.contains(&"finalize_plan"),
+        "missing finalize_plan"
+    );
+    assert!(
+        tool_names.contains(&"mark_agent_done"),
+        "missing mark_agent_done"
+    );
     assert!(tool_names.contains(&"list_phases"), "missing list_phases");
     assert!(tool_names.contains(&"read_phase"), "missing read_phase");
     assert!(tool_names.contains(&"update_phase"), "missing update_phase");
@@ -234,8 +276,5 @@ async fn test_mcp_stdio_server_responds_to_tools_list() {
 
     // Close stdin to trigger server shutdown
     drop(stdin);
-    let _ = tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        child.wait(),
-    ).await;
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(5), child.wait()).await;
 }

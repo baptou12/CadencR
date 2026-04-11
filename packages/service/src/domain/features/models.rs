@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+pub use crate::domain::agents::runtime::ProviderSettings as FeatureProviderSettings;
+
 #[derive(Debug, Serialize, sqlx::FromRow, ToSchema)]
 pub struct Feature {
     pub id: i64,
@@ -140,6 +142,12 @@ pub struct SetFeatureModelSettingRequest {
     pub model: String,
 }
 
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct SetFeatureProviderSettingRequest {
+    pub provider_type: String,
+    pub provider: String,
+}
+
 /// Supported workflow types. Each maps to a different orchestration strategy.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -235,6 +243,8 @@ pub struct AgentSessionSummary {
     pub queue_item_id: Option<i64>,
     pub created_at: String,
     pub updated_at: Option<String>,
+    pub runtime_provider: Option<String>,
+    pub runtime_session_id: Option<String>,
     pub claude_session_id: Option<String>,
     pub input_tokens: i64,
     pub output_tokens: i64,
@@ -365,23 +375,21 @@ mod tests {
             completion_conditions: None,
             created_at: "2024-01-01T00:00:00".to_string(),
         };
-        let phases = vec![
-            Phase {
-                id: 1,
-                plan_id: 1,
-                step_number: 1,
-                title: "Phase 1".to_string(),
-                status: "pending".to_string(),
-                complexity: None,
-                commit_message: None,
-                prompt: None,
-                phase_type: None,
-                implementation_notes: None,
-                deviations: None,
-                order_index: Some(0),
-                depends_on: None,
-            },
-        ];
+        let phases = vec![Phase {
+            id: 1,
+            plan_id: 1,
+            step_number: 1,
+            title: "Phase 1".to_string(),
+            status: "pending".to_string(),
+            complexity: None,
+            commit_message: None,
+            prompt: None,
+            phase_type: None,
+            implementation_notes: None,
+            deviations: None,
+            order_index: Some(0),
+            depends_on: None,
+        }];
         let pwp = PlanWithPhases { plan, phases };
 
         let json = serde_json::to_string(&pwp).unwrap();
@@ -606,7 +614,9 @@ mod tests {
 
     #[test]
     fn test_prd_response_serde() {
-        let resp = PrdResponse { prd: Some("content".to_string()) };
+        let resp = PrdResponse {
+            prd: Some("content".to_string()),
+        };
         let json = serde_json::to_string(&resp).unwrap();
         let val: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(val["prd"], "content");
@@ -635,7 +645,9 @@ mod tests {
 
     #[test]
     fn test_working_dir_response_serde() {
-        let resp = WorkingDirResponse { path: Some("/tmp/dir".to_string()) };
+        let resp = WorkingDirResponse {
+            path: Some("/tmp/dir".to_string()),
+        };
         let json = serde_json::to_string(&resp).unwrap();
         let val: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(val["path"], "/tmp/dir");

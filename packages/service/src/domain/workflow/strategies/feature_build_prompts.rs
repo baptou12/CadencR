@@ -37,13 +37,12 @@ pub async fn build_enriched_execute_prompt(
     autonomy_level: u8,
     retry_count: i64,
 ) -> Result<String, String> {
-    let plan: Option<PlanContext> = sqlx::query_as(
-        "SELECT summary, context, clarifications FROM plans WHERE id = ?",
-    )
-    .bind(phase.plan_id)
-    .fetch_optional(read_pool)
-    .await
-    .map_err(|e| format!("Failed to read plan: {e}"))?;
+    let plan: Option<PlanContext> =
+        sqlx::query_as("SELECT summary, context, clarifications FROM plans WHERE id = ?")
+            .bind(phase.plan_id)
+            .fetch_optional(read_pool)
+            .await
+            .map_err(|e| format!("Failed to read plan: {e}"))?;
 
     let completed: Vec<(i64, String, Option<String>, Option<String>)> = sqlx::query_as(
         "SELECT step_number, title, implementation_notes, deviations FROM phases WHERE plan_id = ? AND status = 'completed' AND step_number < ? ORDER BY step_number, order_index",
@@ -110,7 +109,10 @@ pub async fn build_enriched_execute_prompt(
         id = phase.id,
     ));
 
-    let commit_msg = phase.commit_message.as_deref().unwrap_or("implement phase changes");
+    let commit_msg = phase
+        .commit_message
+        .as_deref()
+        .unwrap_or("implement phase changes");
     let commit_instructions = format!(
         "To commit, stage ONLY the files you modified (do NOT use `git add -A` or `git add .` as other agents may be running in parallel). \
          Use `git add <file1> <file2> ...` for each file you changed, then:\n```\ngit commit -m {}\n```",
@@ -213,13 +215,12 @@ pub async fn build_enriched_qa_prompt(
         }
     }
 
-    let max_step: Option<(i64,)> = sqlx::query_as(
-        "SELECT MAX(step_number) FROM phases WHERE plan_id = ?",
-    )
-    .bind(phase.plan_id)
-    .fetch_optional(read_pool)
-    .await
-    .map_err(|e| format!("Failed to get max step: {e}"))?;
+    let max_step: Option<(i64,)> =
+        sqlx::query_as("SELECT MAX(step_number) FROM phases WHERE plan_id = ?")
+            .bind(phase.plan_id)
+            .fetch_optional(read_pool)
+            .await
+            .map_err(|e| format!("Failed to get max step: {e}"))?;
     let fix_step = max_step.map_or(phase.step_number + 1, |(s,)| s + 1);
 
     Ok(format!(
@@ -237,4 +238,3 @@ pub async fn build_enriched_qa_prompt(
         phase_id = phase.id,
     ))
 }
-

@@ -300,7 +300,9 @@ mod tests {
 
     #[test]
     fn test_branch_response_serde_roundtrip() {
-        let resp = BranchResponse { branch: Some("main".into()) };
+        let resp = BranchResponse {
+            branch: Some("main".into()),
+        };
         let json = serde_json::to_string(&resp).unwrap();
         let back: BranchResponse = serde_json::from_str(&json).unwrap();
         assert_eq!(back.branch, Some("main".into()));
@@ -314,7 +316,11 @@ mod tests {
 
     #[test]
     fn test_git_stats_serde_roundtrip() {
-        let stats = GitStats { files_changed: 3, insertions: 10, deletions: 5 };
+        let stats = GitStats {
+            files_changed: 3,
+            insertions: 10,
+            deletions: 5,
+        };
         let json = serde_json::to_string(&stats).unwrap();
         let back: GitStats = serde_json::from_str(&json).unwrap();
         assert_eq!(back.files_changed, 3);
@@ -408,11 +414,17 @@ mod tests {
 
     #[test]
     fn test_success_response_skips_none_error() {
-        let resp = SuccessResponse { success: true, error: None };
+        let resp = SuccessResponse {
+            success: true,
+            error: None,
+        };
         let json = serde_json::to_string(&resp).unwrap();
         assert!(!json.contains("error"));
 
-        let resp = SuccessResponse { success: false, error: Some("oops".into()) };
+        let resp = SuccessResponse {
+            success: false,
+            error: Some("oops".into()),
+        };
         let json = serde_json::to_string(&resp).unwrap();
         assert!(json.contains("oops"));
     }

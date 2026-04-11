@@ -29,9 +29,8 @@ pub async fn run_git(args: &[&str], cwd: &Path) -> Result<String, AppError> {
 /// Strip absolute paths and truncate stderr to avoid leaking filesystem info.
 fn sanitize_git_stderr(stderr: &str) -> String {
     use regex_lite::Regex;
-    static PATH_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-        Regex::new(r"(/[a-zA-Z0-9_.~\-]+){2,}").unwrap()
-    });
+    static PATH_RE: std::sync::LazyLock<Regex> =
+        std::sync::LazyLock::new(|| Regex::new(r"(/[a-zA-Z0-9_.~\-]+){2,}").unwrap());
     let cleaned = PATH_RE.replace_all(stderr, "<path>");
     if cleaned.len() > 200 {
         format!("{}…", &cleaned[..200])

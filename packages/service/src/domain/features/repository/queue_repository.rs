@@ -1,7 +1,7 @@
 use sqlx::SqlitePool;
 
-use crate::error::AppError;
 use super::super::models::QueueItem;
+use crate::error::AppError;
 
 pub async fn insert_queue_item(
     pool: &SqlitePool,
@@ -13,7 +13,18 @@ pub async fn insert_queue_item(
     order_index: i64,
     group_index: Option<i64>,
 ) -> Result<i64, AppError> {
-    insert_queue_item_with_retries(pool, feature_id, workflow_type, item_type, phase_id, status, order_index, group_index, 1).await
+    insert_queue_item_with_retries(
+        pool,
+        feature_id,
+        workflow_type,
+        item_type,
+        phase_id,
+        status,
+        order_index,
+        group_index,
+        1,
+    )
+    .await
 }
 
 pub async fn insert_queue_item_with_retries(
@@ -86,7 +97,10 @@ pub async fn insert_dependency(
     Ok(())
 }
 
-pub async fn get_queue_for_feature(pool: &SqlitePool, feature_id: i64) -> Result<Vec<QueueItem>, AppError> {
+pub async fn get_queue_for_feature(
+    pool: &SqlitePool,
+    feature_id: i64,
+) -> Result<Vec<QueueItem>, AppError> {
     let rows = sqlx::query_as::<_, QueueItem>(
         r#"SELECT q.*, p.title as phase_title
            FROM workflow_queue q
@@ -100,7 +114,10 @@ pub async fn get_queue_for_feature(pool: &SqlitePool, feature_id: i64) -> Result
     Ok(rows)
 }
 
-pub async fn get_ready_items(pool: &SqlitePool, feature_id: i64) -> Result<Vec<QueueItem>, AppError> {
+pub async fn get_ready_items(
+    pool: &SqlitePool,
+    feature_id: i64,
+) -> Result<Vec<QueueItem>, AppError> {
     let rows = sqlx::query_as::<_, QueueItem>(
         "SELECT * FROM workflow_queue WHERE feature_id = ? AND status = 'ready' ORDER BY order_index",
     )
@@ -111,14 +128,20 @@ pub async fn get_ready_items(pool: &SqlitePool, feature_id: i64) -> Result<Vec<Q
 }
 
 pub async fn mark_item_running(pool: &SqlitePool, item_id: i64) -> Result<(), AppError> {
-    sqlx::query("UPDATE workflow_queue SET status = 'running', started_at = datetime('now') WHERE id = ?")
-        .bind(item_id)
-        .execute(pool)
-        .await?;
+    sqlx::query(
+        "UPDATE workflow_queue SET status = 'running', started_at = datetime('now') WHERE id = ?",
+    )
+    .bind(item_id)
+    .execute(pool)
+    .await?;
     Ok(())
 }
 
-pub async fn mark_item_completed(pool: &SqlitePool, item_id: i64, result_json: Option<&str>) -> Result<(), AppError> {
+pub async fn mark_item_completed(
+    pool: &SqlitePool,
+    item_id: i64,
+    result_json: Option<&str>,
+) -> Result<(), AppError> {
     sqlx::query("UPDATE workflow_queue SET status = 'completed', result = ?, ended_at = datetime('now') WHERE id = ?")
         .bind(result_json)
         .bind(item_id)
@@ -127,7 +150,11 @@ pub async fn mark_item_completed(pool: &SqlitePool, item_id: i64, result_json: O
     Ok(())
 }
 
-pub async fn mark_item_error(pool: &SqlitePool, item_id: i64, error_json: Option<&str>) -> Result<(), AppError> {
+pub async fn mark_item_error(
+    pool: &SqlitePool,
+    item_id: i64,
+    error_json: Option<&str>,
+) -> Result<(), AppError> {
     sqlx::query("UPDATE workflow_queue SET status = 'error', result = ?, ended_at = datetime('now') WHERE id = ?")
         .bind(error_json)
         .bind(item_id)
@@ -137,10 +164,12 @@ pub async fn mark_item_error(pool: &SqlitePool, item_id: i64, error_json: Option
 }
 
 pub async fn mark_item_skipped(pool: &SqlitePool, item_id: i64) -> Result<(), AppError> {
-    sqlx::query("UPDATE workflow_queue SET status = 'skipped', ended_at = datetime('now') WHERE id = ?")
-        .bind(item_id)
-        .execute(pool)
-        .await?;
+    sqlx::query(
+        "UPDATE workflow_queue SET status = 'skipped', ended_at = datetime('now') WHERE id = ?",
+    )
+    .bind(item_id)
+    .execute(pool)
+    .await?;
     Ok(())
 }
 
@@ -153,7 +182,10 @@ pub async fn update_item_pid(pool: &SqlitePool, item_id: i64, pid: i64) -> Resul
     Ok(())
 }
 
-pub async fn get_queue_item(pool: &SqlitePool, item_id: i64) -> Result<Option<QueueItem>, AppError> {
+pub async fn get_queue_item(
+    pool: &SqlitePool,
+    item_id: i64,
+) -> Result<Option<QueueItem>, AppError> {
     let item = sqlx::query_as::<_, QueueItem>("SELECT * FROM workflow_queue WHERE id = ?")
         .bind(item_id)
         .fetch_optional(pool)
@@ -161,7 +193,10 @@ pub async fn get_queue_item(pool: &SqlitePool, item_id: i64) -> Result<Option<Qu
     Ok(item)
 }
 
-pub async fn unblock_ready_items(pool: &SqlitePool, feature_id: i64) -> Result<Vec<QueueItem>, AppError> {
+pub async fn unblock_ready_items(
+    pool: &SqlitePool,
+    feature_id: i64,
+) -> Result<Vec<QueueItem>, AppError> {
     // Atomically update blocked items whose dependencies are all completed/skipped
     sqlx::query(
         r#"UPDATE workflow_queue SET status = 'ready'
@@ -207,7 +242,11 @@ pub async fn increment_iteration_count(pool: &SqlitePool, item_id: i64) -> Resul
     Ok(row.0)
 }
 
-pub async fn update_iteration_history(pool: &SqlitePool, item_id: i64, history: &str) -> Result<(), AppError> {
+pub async fn update_iteration_history(
+    pool: &SqlitePool,
+    item_id: i64,
+    history: &str,
+) -> Result<(), AppError> {
     sqlx::query("UPDATE workflow_queue SET iteration_history = ? WHERE id = ?")
         .bind(history)
         .bind(item_id)
@@ -260,7 +299,11 @@ pub async fn get_queue_item_by_slug(
     Ok(item)
 }
 
-pub async fn update_item_config(pool: &SqlitePool, item_id: i64, config: &str) -> Result<(), AppError> {
+pub async fn update_item_config(
+    pool: &SqlitePool,
+    item_id: i64,
+    config: &str,
+) -> Result<(), AppError> {
     sqlx::query("UPDATE workflow_queue SET config = ? WHERE id = ?")
         .bind(config)
         .bind(item_id)

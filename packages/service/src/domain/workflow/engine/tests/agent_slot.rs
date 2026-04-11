@@ -7,7 +7,10 @@ fn test_agent_slot_agent_type_str() {
     assert_eq!(AgentSlot::Prd.agent_type_str(), Some("prd"));
     assert_eq!(AgentSlot::Session(1).agent_type_str(), Some("session"));
     assert_eq!(AgentSlot::Refine.agent_type_str(), Some("refine"));
-    assert_eq!(AgentSlot::ReviewFixer(1).agent_type_str(), Some("review-fixer"));
+    assert_eq!(
+        AgentSlot::ReviewFixer(1).agent_type_str(),
+        Some("review-fixer")
+    );
     assert_eq!(AgentSlot::QueueItem(42).agent_type_str(), None);
 }
 
@@ -15,10 +18,19 @@ fn test_agent_slot_agent_type_str() {
 fn test_agent_type_str_to_slot_mapping() {
     assert_eq!(agent_type_str_to_slot("plan", 0), Some(AgentSlot::Plan));
     assert_eq!(agent_type_str_to_slot("prd", 0), Some(AgentSlot::Prd));
-    assert_eq!(agent_type_str_to_slot("session", 5), Some(AgentSlot::Session(5)));
+    assert_eq!(
+        agent_type_str_to_slot("session", 5),
+        Some(AgentSlot::Session(5))
+    );
     assert_eq!(agent_type_str_to_slot("refine", 0), Some(AgentSlot::Refine));
-    assert_eq!(agent_type_str_to_slot("review-fixer", 3), Some(AgentSlot::ReviewFixer(3)));
-    assert_eq!(agent_type_str_to_slot("review_fixer", 3), Some(AgentSlot::ReviewFixer(3)));
+    assert_eq!(
+        agent_type_str_to_slot("review-fixer", 3),
+        Some(AgentSlot::ReviewFixer(3))
+    );
+    assert_eq!(
+        agent_type_str_to_slot("review_fixer", 3),
+        Some(AgentSlot::ReviewFixer(3))
+    );
     assert_eq!(agent_type_str_to_slot("execute", 0), None);
     assert_eq!(agent_type_str_to_slot("", 0), None);
 }
@@ -37,11 +49,26 @@ fn test_agent_slot_roundtrip_via_legacy_id() {
 
 #[test]
 fn test_agent_slot_sdk_agent_type() {
-    assert!(matches!(AgentSlot::Plan.sdk_agent_type(), Some(AgentType::Plan)));
-    assert!(matches!(AgentSlot::Refine.sdk_agent_type(), Some(AgentType::Plan)));
-    assert!(matches!(AgentSlot::Prd.sdk_agent_type(), Some(AgentType::Prd)));
-    assert!(matches!(AgentSlot::Session(1).sdk_agent_type(), Some(AgentType::Session)));
-    assert!(matches!(AgentSlot::ReviewFixer(1).sdk_agent_type(), Some(AgentType::Execute)));
+    assert!(matches!(
+        AgentSlot::Plan.sdk_agent_type(),
+        Some(AgentType::Plan)
+    ));
+    assert!(matches!(
+        AgentSlot::Refine.sdk_agent_type(),
+        Some(AgentType::Plan)
+    ));
+    assert!(matches!(
+        AgentSlot::Prd.sdk_agent_type(),
+        Some(AgentType::Prd)
+    ));
+    assert!(matches!(
+        AgentSlot::Session(1).sdk_agent_type(),
+        Some(AgentType::Session)
+    ));
+    assert!(matches!(
+        AgentSlot::ReviewFixer(1).sdk_agent_type(),
+        Some(AgentType::Execute)
+    ));
     assert!(AgentSlot::QueueItem(42).sdk_agent_type().is_none());
 }
 
@@ -81,7 +108,11 @@ fn test_multi_instance_slots_are_unique_keys() {
     set.insert(AgentSlot::Session(1));
     set.insert(AgentSlot::Session(2));
     set.insert(AgentSlot::Session(3));
-    assert_eq!(set.len(), 3, "each Session with different id should be a unique key");
+    assert_eq!(
+        set.len(),
+        3,
+        "each Session with different id should be a unique key"
+    );
 
     set.clear();
     set.insert(AgentSlot::Plan);
@@ -110,5 +141,8 @@ fn test_agent_type_str_to_slot_risk() {
 
 #[test]
 fn test_agent_type_str_to_slot_retro() {
-    assert_eq!(agent_type_str_to_slot("retro", 1), Some(AgentSlot::Retro(1)));
+    assert_eq!(
+        agent_type_str_to_slot("retro", 1),
+        Some(AgentSlot::Retro(1))
+    );
 }

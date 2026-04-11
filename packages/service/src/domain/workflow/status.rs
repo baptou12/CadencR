@@ -72,7 +72,9 @@ impl WorkflowStatus {
             Self::Idle => matches!(to, Self::Planning | Self::Prd | Self::Building),
             Self::Planning => matches!(to, Self::PlanApproval | Self::Error | Self::Idle),
             Self::Prd => matches!(to, Self::Planning | Self::Idle | Self::Error),
-            Self::PlanApproval => matches!(to, Self::ReadyToBuild | Self::Planning | Self::Building),
+            Self::PlanApproval => {
+                matches!(to, Self::ReadyToBuild | Self::Planning | Self::Building)
+            }
             Self::ReadyToBuild => matches!(to, Self::Building),
             Self::Building => matches!(to, Self::Paused | Self::Completed | Self::Error),
             Self::Paused => matches!(to, Self::Building | Self::Idle),
@@ -94,7 +96,17 @@ mod tests {
 
     #[test]
     fn test_roundtrip() {
-        for s in ["idle", "planning", "prd", "plan_approval", "ready_to_build", "building", "paused", "completed", "error"] {
+        for s in [
+            "idle",
+            "planning",
+            "prd",
+            "plan_approval",
+            "ready_to_build",
+            "building",
+            "paused",
+            "completed",
+            "error",
+        ] {
             let status: WorkflowStatus = s.parse().unwrap();
             assert_eq!(status.to_string(), s);
         }
@@ -102,27 +114,55 @@ mod tests {
 
     #[test]
     fn test_valid_transitions() {
-        assert!(WorkflowStatus::Idle.transition(WorkflowStatus::Planning).is_ok());
-        assert!(WorkflowStatus::Planning.transition(WorkflowStatus::PlanApproval).is_ok());
-        assert!(WorkflowStatus::PlanApproval.transition(WorkflowStatus::ReadyToBuild).is_ok());
-        assert!(WorkflowStatus::ReadyToBuild.transition(WorkflowStatus::Building).is_ok());
-        assert!(WorkflowStatus::Building.transition(WorkflowStatus::Completed).is_ok());
-        assert!(WorkflowStatus::Building.transition(WorkflowStatus::Paused).is_ok());
-        assert!(WorkflowStatus::Building.transition(WorkflowStatus::Error).is_ok());
-        assert!(WorkflowStatus::Paused.transition(WorkflowStatus::Building).is_ok());
-        assert!(WorkflowStatus::Error.transition(WorkflowStatus::Building).is_ok());
-        assert!(WorkflowStatus::Error.transition(WorkflowStatus::Idle).is_ok());
+        assert!(WorkflowStatus::Idle
+            .transition(WorkflowStatus::Planning)
+            .is_ok());
+        assert!(WorkflowStatus::Planning
+            .transition(WorkflowStatus::PlanApproval)
+            .is_ok());
+        assert!(WorkflowStatus::PlanApproval
+            .transition(WorkflowStatus::ReadyToBuild)
+            .is_ok());
+        assert!(WorkflowStatus::ReadyToBuild
+            .transition(WorkflowStatus::Building)
+            .is_ok());
+        assert!(WorkflowStatus::Building
+            .transition(WorkflowStatus::Completed)
+            .is_ok());
+        assert!(WorkflowStatus::Building
+            .transition(WorkflowStatus::Paused)
+            .is_ok());
+        assert!(WorkflowStatus::Building
+            .transition(WorkflowStatus::Error)
+            .is_ok());
+        assert!(WorkflowStatus::Paused
+            .transition(WorkflowStatus::Building)
+            .is_ok());
+        assert!(WorkflowStatus::Error
+            .transition(WorkflowStatus::Building)
+            .is_ok());
+        assert!(WorkflowStatus::Error
+            .transition(WorkflowStatus::Idle)
+            .is_ok());
     }
 
     #[test]
     fn test_invalid_transitions() {
-        assert!(WorkflowStatus::Idle.transition(WorkflowStatus::Completed).is_err());
-        assert!(WorkflowStatus::Completed.transition(WorkflowStatus::Planning).is_err());
-        assert!(WorkflowStatus::ReadyToBuild.transition(WorkflowStatus::Idle).is_err());
+        assert!(WorkflowStatus::Idle
+            .transition(WorkflowStatus::Completed)
+            .is_err());
+        assert!(WorkflowStatus::Completed
+            .transition(WorkflowStatus::Planning)
+            .is_err());
+        assert!(WorkflowStatus::ReadyToBuild
+            .transition(WorkflowStatus::Idle)
+            .is_err());
     }
 
     #[test]
     fn test_noop_transition() {
-        assert!(WorkflowStatus::Building.transition(WorkflowStatus::Building).is_ok());
+        assert!(WorkflowStatus::Building
+            .transition(WorkflowStatus::Building)
+            .is_ok());
     }
 }

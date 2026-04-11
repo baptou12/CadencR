@@ -42,7 +42,6 @@ async fn main() -> anyhow::Result<()> {
             .await?;
         }
         None => {
-
             let db_path = config
                 .db_path
                 .clone()

@@ -65,11 +65,20 @@ pub async fn ensure_worktree(
     ws_sender: &WsSender,
 ) -> Result<PathBuf, String> {
     // 0. If user opted out of worktree, return the project directory directly
-    if get_setting(read_pool, feature_id, "skip_worktree").await.as_deref() == Some("true") {
+    if get_setting(read_pool, feature_id, "skip_worktree")
+        .await
+        .as_deref()
+        == Some("true")
+    {
         let project_dir = get_project_directory(read_pool, project_id).await?;
-        send_envelope(ws_sender, "workflow", "worktree.ready", serde_json::json!({
-            "feature_id": feature_id,
-        }));
+        send_envelope(
+            ws_sender,
+            "workflow",
+            "worktree.ready",
+            serde_json::json!({
+                "feature_id": feature_id,
+            }),
+        );
         return Ok(PathBuf::from(project_dir));
     }
 
@@ -77,18 +86,29 @@ pub async fn ensure_worktree(
     if let Some(existing) = get_setting(read_pool, feature_id, "worktree_path").await {
         if tokio::fs::metadata(&existing).await.is_ok() {
             let branch = get_setting(read_pool, feature_id, "worktree_branch").await;
-            let status = get_setting(read_pool, feature_id, "worktree_setup_step").await
+            let status = get_setting(read_pool, feature_id, "worktree_setup_step")
+                .await
                 .unwrap_or_else(|| "created".to_string());
             // Re-send worktree state so the frontend store is populated on reconnect
-            send_envelope(ws_sender, "workflow", "worktree.created", serde_json::json!({
-                "feature_id": feature_id,
-                "path": existing,
-                "branch": branch,
-            }));
-            if status == "ready" {
-                send_envelope(ws_sender, "workflow", "worktree.ready", serde_json::json!({
+            send_envelope(
+                ws_sender,
+                "workflow",
+                "worktree.created",
+                serde_json::json!({
                     "feature_id": feature_id,
-                }));
+                    "path": existing,
+                    "branch": branch,
+                }),
+            );
+            if status == "ready" {
+                send_envelope(
+                    ws_sender,
+                    "workflow",
+                    "worktree.ready",
+                    serde_json::json!({
+                        "feature_id": feature_id,
+                    }),
+                );
             }
             return Ok(PathBuf::from(existing));
         }
@@ -115,7 +135,9 @@ pub async fn ensure_worktree(
     .unwrap_or_else(|| "feature/".to_string());
 
     // 3. Reuse stored branch name if available, otherwise generate a new one
-    let branch = if let Some(existing_branch) = get_setting(read_pool, feature_id, "worktree_branch").await {
+    let branch = if let Some(existing_branch) =
+        get_setting(read_pool, feature_id, "worktree_branch").await
+    {
         existing_branch
     } else {
         let title = sqlx::query_as::<_, (String,)>("SELECT title FROM features WHERE id = ?")
@@ -134,18 +156,20 @@ pub async fn ensure_worktree(
     // 5. Compute worktree path
     let safe_branch = branch.replace('/', "-");
     let home = dirs::home_dir().ok_or("Could not determine home directory")?;
-    let worktree_path = home
-        .join(".cadence")
-        .join(&project_name)
-        .join(&safe_branch);
+    let worktree_path = home.join(".cadence").join(&project_name).join(&safe_branch);
     let path_str = worktree_path.to_string_lossy().to_string();
 
     // 6. Send worktree.creating
-    send_envelope(ws_sender, "workflow", "worktree.creating", serde_json::json!({
-        "feature_id": feature_id,
-        "branch": branch,
-        "path": path_str,
-    }));
+    send_envelope(
+        ws_sender,
+        "workflow",
+        "worktree.creating",
+        serde_json::json!({
+            "feature_id": feature_id,
+            "branch": branch,
+            "path": path_str,
+        }),
+    );
 
     // 7. Create parent directory
     if let Some(parent) = worktree_path.parent() {
@@ -187,17 +211,27 @@ pub async fn ensure_worktree(
     set_setting(write_pool, feature_id, "worktree_setup_step", "created").await?;
 
     // 10. Send worktree.created
-    send_envelope(ws_sender, "workflow", "worktree.created", serde_json::json!({
-        "feature_id": feature_id,
-        "path": path_str,
-        "branch": branch,
-    }));
+    send_envelope(
+        ws_sender,
+        "workflow",
+        "worktree.created",
+        serde_json::json!({
+            "feature_id": feature_id,
+            "path": path_str,
+            "branch": branch,
+        }),
+    );
 
     // 11. Notify frontend to refetch settings (branch name, worktree path, etc.)
-    send_envelope(ws_sender, "feature", "updated", serde_json::json!({
-        "feature_id": feature_id,
-        "changed": ["settings"],
-    }));
+    send_envelope(
+        ws_sender,
+        "feature",
+        "updated",
+        serde_json::json!({
+            "feature_id": feature_id,
+            "changed": ["settings"],
+        }),
+    );
 
     Ok(worktree_path)
 }
@@ -213,11 +247,16 @@ async fn report_setup_error(
     let _ = set_setting(write_pool, feature_id, "worktree_setup_step", "setup_error").await;
     let log = log_lines.lock().await.join("\n");
     let _ = set_setting(write_pool, feature_id, "worktree_setup_log", &log).await;
-    send_envelope(ws_sender, "workflow", "worktree.setup_error", serde_json::json!({
-        "feature_id": feature_id,
-        "error": error,
-        "output": log,
-    }));
+    send_envelope(
+        ws_sender,
+        "workflow",
+        "worktree.setup_error",
+        serde_json::json!({
+            "feature_id": feature_id,
+            "error": error,
+            "output": log,
+        }),
+    );
 }
 
 /// Run setup commands in the worktree (fire-and-forget via tokio::spawn).
@@ -229,9 +268,14 @@ pub async fn run_setup_commands(
     ws_sender: WsSender,
 ) {
     // 1. Send setup_running
-    send_envelope(&ws_sender, "workflow", "worktree.setup_running", serde_json::json!({
-        "feature_id": feature_id,
-    }));
+    send_envelope(
+        &ws_sender,
+        "workflow",
+        "worktree.setup_running",
+        serde_json::json!({
+            "feature_id": feature_id,
+        }),
+    );
 
     // 2. Query setup commands
     let commands_str = match sqlx::query_as::<_, (String,)>(
@@ -246,34 +290,58 @@ pub async fn run_setup_commands(
         Ok(_) => {
             // No setup commands
             let _ = set_setting(&write_pool, feature_id, "worktree_setup_step", "ready").await;
-            send_envelope(&ws_sender, "workflow", "worktree.ready", serde_json::json!({
-                "feature_id": feature_id,
-            }));
+            send_envelope(
+                &ws_sender,
+                "workflow",
+                "worktree.ready",
+                serde_json::json!({
+                    "feature_id": feature_id,
+                }),
+            );
             return;
         }
         Err(e) => {
             let error = format!("Failed to query setup commands: {e}");
-            let _ = set_setting(&write_pool, feature_id, "worktree_setup_step", "setup_error").await;
-            send_envelope(&ws_sender, "workflow", "worktree.setup_error", serde_json::json!({
-                "feature_id": feature_id,
-                "error": error,
-            }));
+            let _ = set_setting(
+                &write_pool,
+                feature_id,
+                "worktree_setup_step",
+                "setup_error",
+            )
+            .await;
+            send_envelope(
+                &ws_sender,
+                "workflow",
+                "worktree.setup_error",
+                serde_json::json!({
+                    "feature_id": feature_id,
+                    "error": error,
+                }),
+            );
             return;
         }
     };
 
     // 4. Parse and run each command, accumulating output log
-    let commands: Vec<&str> = commands_str.lines().filter(|l| !l.trim().is_empty()).collect();
+    let commands: Vec<&str> = commands_str
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .collect();
     let log_lines = Arc::new(tokio::sync::Mutex::new(Vec::<String>::new()));
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "sh".to_string());
     for cmd in commands {
         // Log the command being run
         let cmd_line = format!("$ {cmd}");
         log_lines.lock().await.push(cmd_line.clone());
-        send_envelope(&ws_sender, "workflow", "worktree.setup_output", serde_json::json!({
-            "feature_id": feature_id,
-            "line": cmd_line,
-        }));
+        send_envelope(
+            &ws_sender,
+            "workflow",
+            "worktree.setup_output",
+            serde_json::json!({
+                "feature_id": feature_id,
+                "line": cmd_line,
+            }),
+        );
 
         let mut child = match Command::new(&shell)
             .args(["-i", "-c", cmd])
@@ -300,10 +368,15 @@ pub async fn run_setup_commands(
                 let mut lines = reader.lines();
                 while let Ok(Some(line)) = lines.next_line().await {
                     log.lock().await.push(line.clone());
-                    send_envelope(&ws, "workflow", "worktree.setup_output", serde_json::json!({
-                        "feature_id": fid,
-                        "line": line,
-                    }));
+                    send_envelope(
+                        &ws,
+                        "workflow",
+                        "worktree.setup_output",
+                        serde_json::json!({
+                            "feature_id": fid,
+                            "line": line,
+                        }),
+                    );
                 }
             }))
         } else {
@@ -320,10 +393,15 @@ pub async fn run_setup_commands(
                 let mut lines = reader.lines();
                 while let Ok(Some(line)) = lines.next_line().await {
                     log.lock().await.push(line.clone());
-                    send_envelope(&ws, "workflow", "worktree.setup_output", serde_json::json!({
-                        "feature_id": fid,
-                        "line": line,
-                    }));
+                    send_envelope(
+                        &ws,
+                        "workflow",
+                        "worktree.setup_output",
+                        serde_json::json!({
+                            "feature_id": fid,
+                            "line": line,
+                        }),
+                    );
                 }
             }))
         } else {
@@ -331,8 +409,12 @@ pub async fn run_setup_commands(
         };
 
         // Wait for stream tasks to finish before checking exit status
-        if let Some(h) = stdout_handle { let _ = h.await; }
-        if let Some(h) = stderr_handle { let _ = h.await; }
+        if let Some(h) = stdout_handle {
+            let _ = h.await;
+        }
+        if let Some(h) = stderr_handle {
+            let _ = h.await;
+        }
 
         match child.wait().await {
             Ok(status) if status.success() => {
@@ -355,9 +437,14 @@ pub async fn run_setup_commands(
     let log = log_lines.lock().await.join("\n");
     let _ = set_setting(&write_pool, feature_id, "worktree_setup_log", &log).await;
     let _ = set_setting(&write_pool, feature_id, "worktree_setup_step", "ready").await;
-    send_envelope(&ws_sender, "workflow", "worktree.ready", serde_json::json!({
-        "feature_id": feature_id,
-    }));
+    send_envelope(
+        &ws_sender,
+        "workflow",
+        "worktree.ready",
+        serde_json::json!({
+            "feature_id": feature_id,
+        }),
+    );
 }
 
 /// Look up the project_id for a given feature.
@@ -366,7 +453,12 @@ pub async fn get_project_id_for_feature(pool: &SqlitePool, feature_id: i64) -> R
         .bind(feature_id)
         .fetch_one(pool)
         .await
-        .map_err(|e| format!("Failed to look up project for feature {}: {}", feature_id, e))
+        .map_err(|e| {
+            format!(
+                "Failed to look up project for feature {}: {}",
+                feature_id, e
+            )
+        })
 }
 
 /// Look up the project directory for a given project_id.
@@ -375,7 +467,12 @@ pub async fn get_project_directory(pool: &SqlitePool, project_id: i64) -> Result
         .bind(project_id)
         .fetch_one(pool)
         .await
-        .map_err(|e| format!("Failed to look up directory for project {}: {}", project_id, e))
+        .map_err(|e| {
+            format!(
+                "Failed to look up directory for project {}: {}",
+                project_id, e
+            )
+        })
 }
 
 // --- DB helpers ---
@@ -393,7 +490,12 @@ pub async fn get_setting(pool: &SqlitePool, feature_id: i64, key: &str) -> Optio
     .map(|r| r.0)
 }
 
-pub async fn set_setting(pool: &SqlitePool, feature_id: i64, key: &str, value: &str) -> Result<(), String> {
+pub async fn set_setting(
+    pool: &SqlitePool,
+    feature_id: i64,
+    key: &str,
+    value: &str,
+) -> Result<(), String> {
     sqlx::query(
         "INSERT OR REPLACE INTO feature_settings (feature_id, key, value) VALUES (?, ?, ?)",
     )
@@ -605,7 +707,9 @@ mod tests {
         // Verify structure
         assert!(expected.to_string_lossy().contains(".cadence"));
         assert!(expected.to_string_lossy().contains(project_name));
-        assert!(expected.to_string_lossy().contains("feature-implement-queue-1a2b"));
+        assert!(expected
+            .to_string_lossy()
+            .contains("feature-implement-queue-1a2b"));
     }
 
     #[test]

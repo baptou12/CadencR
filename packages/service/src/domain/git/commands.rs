@@ -101,7 +101,11 @@ pub async fn get_current_branch(repo_path: &Path) -> Result<Option<String>, AppE
     match run_git(&["rev-parse", "--abbrev-ref", "HEAD"], repo_path).await {
         Ok(stdout) => {
             let branch = stdout.trim().to_string();
-            Ok(if branch.is_empty() { None } else { Some(branch) })
+            Ok(if branch.is_empty() {
+                None
+            } else {
+                Some(branch)
+            })
         }
         Err(_) => Ok(None),
     }
@@ -190,7 +194,11 @@ pub async fn get_diff(
                 lines.pop();
             }
             let line_count = lines.len();
-            let added_lines: String = lines.iter().map(|l| format!("+{l}")).collect::<Vec<_>>().join("\n");
+            let added_lines: String = lines
+                .iter()
+                .map(|l| format!("+{l}"))
+                .collect::<Vec<_>>()
+                .join("\n");
             result.push_str(&format!(
                 "diff --git a/{file} b/{file}\nnew file mode 100644\n--- /dev/null\n+++ b/{file}\n@@ -0,0 +1,{line_count} @@\n{added_lines}\n"
             ));
@@ -250,8 +258,16 @@ pub async fn get_changed_files(
     for line in numstat.trim().lines().filter(|l| !l.is_empty()) {
         let parts: Vec<&str> = line.splitn(3, '\t').collect();
         if parts.len() >= 3 {
-            let additions = if parts[0] == "-" { 0 } else { parts[0].parse().unwrap_or(0) };
-            let deletions = if parts[1] == "-" { 0 } else { parts[1].parse().unwrap_or(0) };
+            let additions = if parts[0] == "-" {
+                0
+            } else {
+                parts[0].parse().unwrap_or(0)
+            };
+            let deletions = if parts[1] == "-" {
+                0
+            } else {
+                parts[1].parse().unwrap_or(0)
+            };
             stat_map.insert(parts[2].to_string(), (additions, deletions));
         }
     }
@@ -280,9 +296,9 @@ pub async fn get_changed_files(
         let (additions, deletions) = stat_map
             .get(&file)
             .or_else(|| {
-                old_file.as_ref().and_then(|old| {
-                    stat_map.get(&format!("{old} => {file}"))
-                })
+                old_file
+                    .as_ref()
+                    .and_then(|old| stat_map.get(&format!("{old} => {file}")))
             })
             .copied()
             .unwrap_or((0, 0));
@@ -309,16 +325,18 @@ pub async fn get_file_content(
         None => {
             // Read from working tree — validate against path traversal
             let full_path = worktree_path.join(file_path);
-            let canonical_wt = worktree_path.canonicalize().map_err(|e| {
-                AppError::BadRequest(format!("Invalid worktree path: {e}"))
-            })?;
-            let canonical_file = full_path.canonicalize().map_err(|_| {
-                AppError::BadRequest("File not found".into())
-            })?;
+            let canonical_wt = worktree_path
+                .canonicalize()
+                .map_err(|e| AppError::BadRequest(format!("Invalid worktree path: {e}")))?;
+            let canonical_file = full_path
+                .canonicalize()
+                .map_err(|_| AppError::BadRequest("File not found".into()))?;
             if !canonical_file.starts_with(&canonical_wt) {
                 return Err(AppError::BadRequest("Path traversal not allowed".into()));
             }
-            Ok(tokio::fs::read_to_string(&canonical_file).await.unwrap_or_default())
+            Ok(tokio::fs::read_to_string(&canonical_file)
+                .await
+                .unwrap_or_default())
         }
         Some(r) => {
             let show_arg = format!("{r}:{file_path}");
@@ -350,8 +368,12 @@ pub async fn get_file_content_batch(
             let old_ref = old_ref.clone();
             let new_ref = new_ref.clone();
             async move {
-                let old_content = get_file_content(&git_path, &file_path, Some(&old_ref)).await.unwrap_or_default();
-                let new_content = get_file_content(&git_path, &file_path, new_ref.as_deref()).await.unwrap_or_default();
+                let old_content = get_file_content(&git_path, &file_path, Some(&old_ref))
+                    .await
+                    .unwrap_or_default();
+                let new_content = get_file_content(&git_path, &file_path, new_ref.as_deref())
+                    .await
+                    .unwrap_or_default();
                 (file_path, (old_content, new_content))
             }
         })
@@ -371,7 +393,12 @@ pub async fn get_commit_log(
     let range = format!("{base_branch}..HEAD");
     let format_arg = format!("\x1e%H%n%h%n%s%n%an%n%ai%n%b");
     let stdout = run_git_quiet(
-        &["log", &range, &format!("--format={format_arg}"), "--reverse"],
+        &[
+            "log",
+            &range,
+            &format!("--format={format_arg}"),
+            "--reverse",
+        ],
         worktree_path,
     )
     .await;
@@ -403,9 +430,7 @@ pub async fn get_recent_commits(
 }
 
 /// Get blob SHAs for all changed files (worktree + branch changes).
-pub async fn get_file_blob_shas(
-    worktree_path: &Path,
-) -> Result<HashMap<String, String>, AppError> {
+pub async fn get_file_blob_shas(worktree_path: &Path) -> Result<HashMap<String, String>, AppError> {
     let (changed_out, untracked_out) = tokio::join!(
         run_git_quiet(&["diff", "HEAD", "--name-only"], worktree_path),
         run_git_quiet(
@@ -439,16 +464,13 @@ pub async fn get_file_blob_shas(
             if merge_base.is_empty() {
                 HashSet::new()
             } else {
-                run_git_quiet(
-                    &["diff", merge_base, "HEAD", "--name-only"],
-                    worktree_path,
-                )
-                .await
-                .trim()
-                .lines()
-                .filter(|l| !l.is_empty())
-                .map(|s| s.to_string())
-                .collect()
+                run_git_quiet(&["diff", merge_base, "HEAD", "--name-only"], worktree_path)
+                    .await
+                    .trim()
+                    .lines()
+                    .filter(|l| !l.is_empty())
+                    .map(|s| s.to_string())
+                    .collect()
             }
         }
         Err(_) => HashSet::new(),
@@ -570,12 +592,12 @@ pub async fn get_worktree_info(
 ) -> Result<Option<WorktreeInfo>, AppError> {
     let all = list_worktrees(repo_path).await?;
     // Canonicalize to handle macOS symlinks (/var -> /private/var)
-    let canonical = std::fs::canonicalize(worktree_path)
-        .unwrap_or_else(|_| worktree_path.to_path_buf());
+    let canonical =
+        std::fs::canonicalize(worktree_path).unwrap_or_else(|_| worktree_path.to_path_buf());
     let wt_str = canonical.to_string_lossy();
     Ok(all.into_iter().find(|w| {
-        let w_canonical = std::fs::canonicalize(&w.path)
-            .unwrap_or_else(|_| std::path::PathBuf::from(&w.path));
+        let w_canonical =
+            std::fs::canonicalize(&w.path).unwrap_or_else(|_| std::path::PathBuf::from(&w.path));
         w_canonical.to_string_lossy() == wt_str.as_ref()
     }))
 }
@@ -588,12 +610,14 @@ pub async fn create_worktree(
     project_name: &str,
 ) -> Result<(String, String), AppError> {
     // Pre-flight: verify repo
-    run_git(&["rev-parse", "--git-dir"], repo_path).await.map_err(|_| {
-        AppError::BadRequest(format!(
-            "Not a git repository: {}. Ensure the project path points to a valid git repo.",
-            repo_path.display()
-        ))
-    })?;
+    run_git(&["rev-parse", "--git-dir"], repo_path)
+        .await
+        .map_err(|_| {
+            AppError::BadRequest(format!(
+                "Not a git repository: {}. Ensure the project path points to a valid git repo.",
+                repo_path.display()
+            ))
+        })?;
 
     // Pre-flight: validate branch name
     if branch_name.is_empty() || branch_name.contains(|c: char| " \t~^:?*[\\".contains(c)) {
@@ -603,7 +627,8 @@ pub async fn create_worktree(
     }
 
     let safe_branch = branch_name.replace('/', "-");
-    let home = dirs::home_dir().ok_or_else(|| AppError::Internal("Cannot determine home directory".into()))?;
+    let home = dirs::home_dir()
+        .ok_or_else(|| AppError::Internal("Cannot determine home directory".into()))?;
     let worktree_path = home.join(".cadence").join(project_name).join(&safe_branch);
     let worktree_str = worktree_path.to_string_lossy().to_string();
 
@@ -620,9 +645,9 @@ pub async fn create_worktree(
 
     // Create parent directory
     if let Some(parent) = worktree_path.parent() {
-        tokio::fs::create_dir_all(parent).await.map_err(|e| {
-            AppError::Internal(format!("Failed to create directory: {e}"))
-        })?;
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to create directory: {e}")))?;
     }
 
     // Try with -b first; fall back without -b if branch already exists
@@ -636,11 +661,7 @@ pub async fn create_worktree(
         Err(e) => {
             let err_msg = e.to_string();
             if err_msg.contains("already exists") {
-                run_git(
-                    &["worktree", "add", &worktree_str, branch_name],
-                    repo_path,
-                )
-                .await?;
+                run_git(&["worktree", "add", &worktree_str, branch_name], repo_path).await?;
             } else {
                 return Err(e);
             }
@@ -863,11 +884,21 @@ mod tests {
     #[test]
     fn test_build_branch_name_basic() {
         let name = build_branch_name("feature/", "My Feature");
-        assert!(name.starts_with("feature/"), "should start with prefix, got: {name}");
-        assert!(name.contains("my-feature"), "should contain slug, got: {name}");
+        assert!(
+            name.starts_with("feature/"),
+            "should start with prefix, got: {name}"
+        );
+        assert!(
+            name.contains("my-feature"),
+            "should contain slug, got: {name}"
+        );
         // 4-char hex suffix after last dash
         let suffix = &name[name.rfind('-').unwrap() + 1..];
-        assert_eq!(suffix.len(), 4, "suffix should be 4 hex chars, got: {suffix}");
+        assert_eq!(
+            suffix.len(),
+            4,
+            "suffix should be 4 hex chars, got: {suffix}"
+        );
         assert!(suffix.chars().all(|c| c.is_ascii_hexdigit()));
     }
 

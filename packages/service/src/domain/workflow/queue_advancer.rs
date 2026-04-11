@@ -46,14 +46,13 @@ impl QueueAdvancer {
         ws_sender: WsSender,
         turn_state_tx: tokio::sync::broadcast::Sender<crate::app_state::TurnStateEvent>,
     ) -> Result<Self, String> {
-        let project_id = sqlx::query_scalar::<_, i64>(
-            "SELECT project_id FROM features WHERE id = ?",
-        )
-        .bind(feature_id)
-        .fetch_optional(&read_pool)
-        .await
-        .ok()
-        .flatten();
+        let project_id =
+            sqlx::query_scalar::<_, i64>("SELECT project_id FROM features WHERE id = ?")
+                .bind(feature_id)
+                .fetch_optional(&read_pool)
+                .await
+                .ok()
+                .flatten();
 
         let strategy: Box<dyn WorkflowStrategy> = strategies::get_strategy(&workflow_type)?;
 
@@ -76,7 +75,11 @@ impl QueueAdvancer {
             Some("true"),
         )
         .await;
-        let effective_max = if parallel_str.as_deref() == Some("false") { 1 } else { max_parallel };
+        let effective_max = if parallel_str.as_deref() == Some("false") {
+            1
+        } else {
+            max_parallel
+        };
 
         Ok(Self {
             feature_id,
@@ -125,7 +128,10 @@ impl QueueAdvancer {
         let capacity = max_parallel - running;
         let autonomy = self.autonomy_level.load(Ordering::Relaxed);
         for item in ready.into_iter().take(capacity) {
-            if let Err(e) = agent_manager.start_item(item, self.strategy.as_ref(), autonomy, permissions).await {
+            if let Err(e) = agent_manager
+                .start_item(item, self.strategy.as_ref(), autonomy, permissions)
+                .await
+            {
                 error!(feature_id = self.feature_id, error = %e, "failed to start queue item");
             }
         }
@@ -155,7 +161,11 @@ impl QueueAdvancer {
         permissions.cleanup(&slot);
 
         if agent_manager.active_items.is_empty() {
-            WsSessionPersistence::broadcast_turn_state(&self.turn_state_tx, self.feature_id, "none");
+            WsSessionPersistence::broadcast_turn_state(
+                &self.turn_state_tx,
+                self.feature_id,
+                "none",
+            );
         }
 
         let legacy_id = slot.as_legacy_id();
@@ -186,7 +196,9 @@ impl QueueAdvancer {
                 result: result.map(|s| s.to_string()),
             }),
         );
-        let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
+        let _ = self
+            .ws_sender
+            .send(Message::Text(String::from(envelope).into()));
 
         if matches!(slot, AgentSlot::Plan) {
             agent_manager.send_feature_updated(&["plan", "phases", "progress"]);
@@ -218,14 +230,17 @@ impl QueueAdvancer {
                     self.handle_manual_gate(agent_manager).await;
                 }
                 Some("iterate") => {
-                    self.handle_iterate_gate(&slot, agent_manager, permissions, set_status).await;
+                    self.handle_iterate_gate(&slot, agent_manager, permissions, set_status)
+                        .await;
                 }
                 _ => {
-                    self.handle_auto_gate(&slot, agent_manager, permissions, set_status).await;
+                    self.handle_auto_gate(&slot, agent_manager, permissions, set_status)
+                        .await;
                 }
             }
 
-            self.check_workflow_completion(agent_manager, set_status).await;
+            self.check_workflow_completion(agent_manager, set_status)
+                .await;
         }
     }
 
@@ -259,10 +274,13 @@ impl QueueAdvancer {
                                 feature_id = self.feature_id,
                                 item_id = *item_id,
                                 "auto-retrying item {} (attempt {}/{})",
-                                item_id, new_count, item.max_retries
+                                item_id,
+                                new_count,
+                                item.max_retries
                             );
 
-                            if let Err(e) = repo::mark_item_ready(&self.write_pool, *item_id).await {
+                            if let Err(e) = repo::mark_item_ready(&self.write_pool, *item_id).await
+                            {
                                 tracing::error!(item_id = *item_id, error = %e, "failed to reset item to ready for retry");
                             }
 
@@ -276,7 +294,9 @@ impl QueueAdvancer {
                                     max_retries: item.max_retries,
                                 }),
                             );
-                            let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
+                            let _ = self
+                                .ws_sender
+                                .send(Message::Text(String::from(envelope).into()));
 
                             agent_manager.send_item_update(*item_id).await;
 
@@ -308,10 +328,16 @@ impl QueueAdvancer {
                 error: error.to_string(),
             }),
         );
-        let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
+        let _ = self
+            .ws_sender
+            .send(Message::Text(String::from(envelope).into()));
 
         if agent_manager.active_items.is_empty() {
-            WsSessionPersistence::broadcast_turn_state(&self.turn_state_tx, self.feature_id, "none");
+            WsSessionPersistence::broadcast_turn_state(
+                &self.turn_state_tx,
+                self.feature_id,
+                "none",
+            );
             set_status.set_status(WorkflowStatus::Error).await;
         }
     }
@@ -346,7 +372,9 @@ impl QueueAdvancer {
             .await
             .map_err(|e| e.to_string())?;
 
-        agent_manager.active_items.remove(&AgentSlot::QueueItem(item_id));
+        agent_manager
+            .active_items
+            .remove(&AgentSlot::QueueItem(item_id));
 
         agent_manager.send_item_update(item_id).await;
 
@@ -358,7 +386,9 @@ impl QueueAdvancer {
                 agent_slot: AgentSlot::QueueItem(item_id),
             }),
         );
-        let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
+        let _ = self
+            .ws_sender
+            .send(Message::Text(String::from(envelope).into()));
 
         self.advance(agent_manager, permissions).await
     }

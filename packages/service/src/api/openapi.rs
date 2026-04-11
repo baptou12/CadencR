@@ -4,20 +4,20 @@ use serde::Serialize;
 use utoipa::OpenApi;
 
 use crate::app_state::AppState;
-use crate::domain::git::models;
-use crate::domain::git::routes;
-use crate::domain::workspace::models as workspace_models;
-use crate::domain::workspace::routes as workspace_routes;
-use crate::domain::projects::models as projects_models;
-use crate::domain::projects::routes as projects_routes;
-use crate::domain::features::models as features_models;
-use crate::domain::features::routes as features_routes;
 use crate::domain::diff_comments::models as diff_comments_models;
 use crate::domain::diff_comments::routes as diff_comments_routes;
+use crate::domain::features::models as features_models;
+use crate::domain::features::routes as features_routes;
+use crate::domain::git::models;
+use crate::domain::git::routes;
+use crate::domain::projects::models as projects_models;
+use crate::domain::projects::routes as projects_routes;
 use crate::domain::sessions::models as sessions_models;
 use crate::domain::sessions::routes as sessions_routes;
 use crate::domain::usage::models as usage_models;
 use crate::domain::usage::routes as usage_routes;
+use crate::domain::workspace::models as workspace_models;
+use crate::domain::workspace::routes as workspace_routes;
 
 #[derive(OpenApi)]
 #[openapi(
@@ -50,6 +50,8 @@ use crate::domain::usage::routes as usage_routes;
         workspace_routes::set_setting_handler,
         workspace_routes::get_model_settings_handler,
         workspace_routes::set_model_setting_handler,
+        workspace_routes::get_provider_settings_handler,
+        workspace_routes::set_provider_setting_handler,
         projects_routes::list_projects_handler,
         projects_routes::create_project_handler,
         projects_routes::delete_project_handler,
@@ -57,6 +59,8 @@ use crate::domain::usage::routes as usage_routes;
         projects_routes::set_project_setting_handler,
         projects_routes::get_project_model_settings_handler,
         projects_routes::set_project_model_setting_handler,
+        projects_routes::get_project_provider_settings_handler,
+        projects_routes::set_project_provider_setting_handler,
         features_routes::list_features_handler,
         features_routes::create_feature_handler,
         features_routes::get_feature_handler,
@@ -73,6 +77,8 @@ use crate::domain::usage::routes as usage_routes;
         features_routes::set_feature_setting_handler,
         features_routes::get_feature_model_settings_handler,
         features_routes::set_feature_model_setting_handler,
+        features_routes::get_feature_provider_settings_handler,
+        features_routes::set_feature_provider_setting_handler,
         features_routes::get_working_dir_handler,
         features_routes::open_external_handler,
         diff_comments_routes::list_diff_comments_handler,
@@ -91,10 +97,15 @@ use crate::domain::usage::routes as usage_routes;
         sessions_routes::save_draft_handler,
         usage_routes::get_usage_handler,
         super::list_models,
+        super::get_agent_catalog,
     ),
     components(schemas(
         HealthResponse,
         super::ModelInfo,
+        crate::domain::agents::runtime::AgentCatalogResponse,
+        crate::domain::agents::runtime::ProviderCatalogEntry,
+        crate::domain::agents::runtime::ModelCatalogEntry,
+        crate::domain::agents::runtime::ProviderStatus,
         models::BranchResponse,
         models::GitStats,
         models::DiffResponse,
@@ -133,15 +144,19 @@ use crate::domain::usage::routes as usage_routes;
         models::DeleteFeatureBranchParams,
         workspace_models::Setting,
         workspace_models::ModelSettings,
+        workspace_models::AgentProviderSettings,
         workspace_models::SetSettingRequest,
         workspace_models::SetModelSettingRequest,
+        workspace_models::SetProviderSettingRequest,
         workspace_routes::SettingValueResponse,
         projects_models::Project,
         projects_models::CreateProjectRequest,
         projects_models::ProjectSetting,
         projects_models::SetProjectSettingRequest,
         projects_models::ProjectModelSettings,
+        projects_models::ProjectProviderSettings,
         projects_models::SetProjectModelSettingRequest,
+        projects_models::SetProjectProviderSettingRequest,
         projects_routes::SuccessResponse,
         features_models::Feature,
         features_models::CreateFeatureRequest,
@@ -158,7 +173,9 @@ use crate::domain::usage::routes as usage_routes;
         features_models::FeatureSetting,
         features_models::SetFeatureSettingRequest,
         features_models::FeatureModelSettings,
+        features_models::FeatureProviderSettings,
         features_models::SetFeatureModelSettingRequest,
+        features_models::SetFeatureProviderSettingRequest,
         features_models::OverridePhaseStatusRequest,
         features_models::OpenExternalRequest,
         features_models::OpenExternalResponse,
@@ -181,7 +198,7 @@ use crate::domain::usage::routes as usage_routes;
         usage_models::UsageResponse,
         usage_models::UsageBucket,
         usage_models::UsageStatus,
-    )),
+    ))
 )]
 struct ApiDoc;
 

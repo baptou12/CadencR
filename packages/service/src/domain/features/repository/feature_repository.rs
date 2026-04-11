@@ -1,7 +1,7 @@
 use sqlx::SqlitePool;
 
-use crate::error::AppError;
 use super::super::models::Feature;
+use crate::error::AppError;
 
 pub async fn list_by_project(pool: &SqlitePool, project_id: i64) -> Result<Vec<Feature>, AppError> {
     let rows = sqlx::query_as::<_, Feature>(
@@ -41,14 +41,12 @@ pub async fn create_feature(
     title: &str,
     type_: &str,
 ) -> Result<i64, AppError> {
-    let result = sqlx::query(
-        "INSERT INTO features (project_id, title, type) VALUES (?, ?, ?)",
-    )
-    .bind(project_id)
-    .bind(title)
-    .bind(type_)
-    .execute(pool)
-    .await?;
+    let result = sqlx::query("INSERT INTO features (project_id, title, type) VALUES (?, ?, ?)")
+        .bind(project_id)
+        .bind(title)
+        .bind(type_)
+        .execute(pool)
+        .await?;
     Ok(result.last_insert_rowid())
 }
 
@@ -81,11 +79,10 @@ pub async fn update_title(pool: &SqlitePool, id: i64, title: &str) -> Result<(),
 }
 
 pub async fn get_prd(pool: &SqlitePool, id: i64) -> Result<Option<String>, AppError> {
-    let row: Option<(Option<String>,)> =
-        sqlx::query_as("SELECT prd FROM features WHERE id = ?")
-            .bind(id)
-            .fetch_optional(pool)
-            .await?;
+    let row: Option<(Option<String>,)> = sqlx::query_as("SELECT prd FROM features WHERE id = ?")
+        .bind(id)
+        .fetch_optional(pool)
+        .await?;
     Ok(row.and_then(|r| r.0))
 }
 
@@ -133,7 +130,11 @@ pub async fn is_empty(pool: &SqlitePool, id: i64) -> Result<bool, AppError> {
     Ok(!has_prd && has_plan.is_none())
 }
 
-pub async fn resolve_working_dir(pool: &SqlitePool, feature_id: i64, project_id: i64) -> Result<Option<String>, AppError> {
+pub async fn resolve_working_dir(
+    pool: &SqlitePool,
+    feature_id: i64,
+    project_id: i64,
+) -> Result<Option<String>, AppError> {
     let feature_row: Option<(String,)> =
         sqlx::query_as("SELECT COALESCE(type, 'ws-feature') FROM features WHERE id = ?")
             .bind(feature_id)
@@ -153,11 +154,10 @@ pub async fn resolve_working_dir(pool: &SqlitePool, feature_id: i64, project_id:
         }
     }
 
-    let project_path: Option<(String,)> =
-        sqlx::query_as("SELECT path FROM projects WHERE id = ?")
-            .bind(project_id)
-            .fetch_optional(pool)
-            .await?;
+    let project_path: Option<(String,)> = sqlx::query_as("SELECT path FROM projects WHERE id = ?")
+        .bind(project_id)
+        .fetch_optional(pool)
+        .await?;
     Ok(project_path.map(|r| r.0))
 }
 
@@ -171,11 +171,10 @@ pub async fn delete_feature(pool: &SqlitePool, id: i64) -> Result<(), AppError> 
         .await?;
 
     // Delete phases (FK to plans)
-    let plan_ids: Vec<(i64,)> =
-        sqlx::query_as("SELECT id FROM plans WHERE feature_id = ?")
-            .bind(id)
-            .fetch_all(&mut *tx)
-            .await?;
+    let plan_ids: Vec<(i64,)> = sqlx::query_as("SELECT id FROM plans WHERE feature_id = ?")
+        .bind(id)
+        .fetch_all(&mut *tx)
+        .await?;
 
     for (plan_id,) in plan_ids {
         sqlx::query("DELETE FROM phases WHERE plan_id = ?")
@@ -237,15 +236,16 @@ pub async fn get_workflow_status(
     pool: &SqlitePool,
     feature_id: i64,
 ) -> Result<crate::domain::workflow::status::WorkflowStatus, AppError> {
-    let row: Option<(String,)> = sqlx::query_as(
-        "SELECT COALESCE(workflow_status, 'idle') FROM features WHERE id = ?",
-    )
-    .bind(feature_id)
-    .fetch_optional(pool)
-    .await?;
+    let row: Option<(String,)> =
+        sqlx::query_as("SELECT COALESCE(workflow_status, 'idle') FROM features WHERE id = ?")
+            .bind(feature_id)
+            .fetch_optional(pool)
+            .await?;
 
     let status_str = row.map(|r| r.0).unwrap_or_else(|| "idle".to_string());
-    status_str.parse().map_err(|e: String| AppError::BadRequest(e))
+    status_str
+        .parse()
+        .map_err(|e: String| AppError::BadRequest(e))
 }
 
 pub async fn set_workflow_status(
@@ -256,7 +256,9 @@ pub async fn set_workflow_status(
     use crate::domain::workflow::status::WorkflowStatus;
 
     // Read current status
-    let current = get_workflow_status(pool, feature_id).await.unwrap_or(WorkflowStatus::Idle);
+    let current = get_workflow_status(pool, feature_id)
+        .await
+        .unwrap_or(WorkflowStatus::Idle);
 
     // Validate transition
     current.transition(new_status).map_err(|e| {
@@ -273,7 +275,6 @@ pub async fn set_workflow_status(
 
     Ok(new_status)
 }
-
 
 /// Force-set workflow status without transition validation.
 /// Used for recovery/reconnect scenarios where the DB state may be stale.

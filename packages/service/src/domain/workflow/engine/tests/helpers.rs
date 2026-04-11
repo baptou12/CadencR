@@ -3,7 +3,7 @@ use sqlx::SqlitePool;
 use tokio::sync::mpsc;
 
 use crate::domain::features::models::WorkflowType;
-use crate::domain::workflow::engine::{WsSender, WorkflowEngine};
+use crate::domain::workflow::engine::{WorkflowEngine, WsSender};
 
 /// Create in-memory SQLite pool for tests.
 pub async fn test_pool() -> SqlitePool {
@@ -37,7 +37,10 @@ pub async fn test_engine_with_schema() -> (WorkflowEngine, mpsc::UnboundedReceiv
             id INTEGER PRIMARY KEY, project_id INTEGER, title TEXT,
             status TEXT DEFAULT 'draft', type TEXT DEFAULT 'feature'
         )"#,
-    ).execute(&pool).await.unwrap();
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
     sqlx::query(
         r#"CREATE TABLE agent_sessions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -53,7 +56,10 @@ pub async fn test_engine_with_schema() -> (WorkflowEngine, mpsc::UnboundedReceiv
             started_at TEXT, ended_at TEXT,
             pending_questions TEXT
         )"#,
-    ).execute(&pool).await.unwrap();
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
     sqlx::query(
         r#"CREATE TABLE workflow_queue (
             id INTEGER PRIMARY KEY,
@@ -74,7 +80,10 @@ pub async fn test_engine_with_schema() -> (WorkflowEngine, mpsc::UnboundedReceiv
             iteration_count INTEGER NOT NULL DEFAULT 0,
             iteration_history TEXT
         )"#,
-    ).execute(&pool).await.unwrap();
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
     sqlx::query(
         r#"CREATE TABLE phases (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -87,14 +96,20 @@ pub async fn test_engine_with_schema() -> (WorkflowEngine, mpsc::UnboundedReceiv
             description TEXT,
             agent_count INTEGER DEFAULT 1
         )"#,
-    ).execute(&pool).await.unwrap();
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
     sqlx::query(
         r#"CREATE TABLE workflow_dependencies (
             item_id INTEGER NOT NULL,
             depends_on_id INTEGER NOT NULL,
             PRIMARY KEY (item_id, depends_on_id)
         )"#,
-    ).execute(&pool).await.unwrap();
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
 
     let (tx, rx) = mpsc::unbounded_channel();
     let (turn_state_tx, _) = tokio::sync::broadcast::channel(64);
@@ -113,7 +128,13 @@ pub async fn test_engine_with_schema() -> (WorkflowEngine, mpsc::UnboundedReceiv
 }
 
 /// Construct a QueueItem for testing.
-pub fn make_queue_item(id: i64, item_type: &str, status: &str, order: i64, group: Option<i64>) -> crate::domain::features::models::QueueItem {
+pub fn make_queue_item(
+    id: i64,
+    item_type: &str,
+    status: &str,
+    order: i64,
+    group: Option<i64>,
+) -> crate::domain::features::models::QueueItem {
     crate::domain::features::models::QueueItem {
         id,
         feature_id: 1,

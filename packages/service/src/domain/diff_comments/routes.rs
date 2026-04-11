@@ -22,7 +22,9 @@ pub async fn list_diff_comments_handler(
     State(state): State<AppState>,
     Path(feature_id): Path<i64>,
 ) -> Result<Json<Vec<DiffComment>>, AppError> {
-    Ok(Json(repository::list_by_feature(&state.read_pool, feature_id).await?))
+    Ok(Json(
+        repository::list_by_feature(&state.read_pool, feature_id).await?,
+    ))
 }
 
 #[utoipa::path(post, path = "/api/features/{feature_id}/diff-comments",
@@ -35,7 +37,9 @@ pub async fn create_diff_comment_handler(
     Json(body): Json<CreateDiffCommentRequest>,
 ) -> Result<Json<DiffComment>, AppError> {
     if feature_id != body.feature_id {
-        return Err(AppError::BadRequest("URL feature_id does not match body feature_id".to_string()));
+        return Err(AppError::BadRequest(
+            "URL feature_id does not match body feature_id".to_string(),
+        ));
     }
     Ok(Json(repository::create(&state.write_pool, &body).await?))
 }
@@ -95,7 +99,9 @@ pub async fn list_diff_viewed_handler(
     State(state): State<AppState>,
     Path(feature_id): Path<i64>,
 ) -> Result<Json<Vec<DiffViewedFile>>, AppError> {
-    Ok(Json(repository::list_viewed_by_feature(&state.read_pool, feature_id).await?))
+    Ok(Json(
+        repository::list_viewed_by_feature(&state.read_pool, feature_id).await?,
+    ))
 }
 
 #[utoipa::path(post, path = "/api/features/{feature_id}/diff-viewed",
@@ -108,9 +114,17 @@ pub async fn mark_diff_viewed_handler(
     Json(body): Json<MarkViewedRequest>,
 ) -> Result<Json<SuccessResponse>, AppError> {
     if feature_id != body.feature_id {
-        return Err(AppError::BadRequest("URL feature_id does not match body feature_id".to_string()));
+        return Err(AppError::BadRequest(
+            "URL feature_id does not match body feature_id".to_string(),
+        ));
     }
-    repository::mark_viewed(&state.write_pool, body.feature_id, &body.file_path, &body.blob_sha).await?;
+    repository::mark_viewed(
+        &state.write_pool,
+        body.feature_id,
+        &body.file_path,
+        &body.blob_sha,
+    )
+    .await?;
     Ok(Json(SuccessResponse { success: true }))
 }
 
@@ -144,11 +158,32 @@ pub async fn clear_all_diff_viewed_handler(
 
 pub fn diff_comments_router() -> Router<AppState> {
     Router::new()
-        .route("/api/features/{feature_id}/diff-comments", get(list_diff_comments_handler).post(create_diff_comment_handler))
-        .route("/api/diff-comments/{id}", put(update_diff_comment_handler).delete(delete_diff_comment_handler))
-        .route("/api/features/{feature_id}/diff-comments/sent", put(mark_diff_comments_sent_handler))
-        .route("/api/features/{feature_id}/diff-comments/pending", delete(delete_pending_diff_comments_handler))
-        .route("/api/features/{feature_id}/diff-viewed", get(list_diff_viewed_handler).post(mark_diff_viewed_handler))
-        .route("/api/features/{feature_id}/diff-viewed/file", delete(unmark_diff_viewed_handler))
-        .route("/api/features/{feature_id}/diff-viewed/files", delete(clear_all_diff_viewed_handler))
+        .route(
+            "/api/features/{feature_id}/diff-comments",
+            get(list_diff_comments_handler).post(create_diff_comment_handler),
+        )
+        .route(
+            "/api/diff-comments/{id}",
+            put(update_diff_comment_handler).delete(delete_diff_comment_handler),
+        )
+        .route(
+            "/api/features/{feature_id}/diff-comments/sent",
+            put(mark_diff_comments_sent_handler),
+        )
+        .route(
+            "/api/features/{feature_id}/diff-comments/pending",
+            delete(delete_pending_diff_comments_handler),
+        )
+        .route(
+            "/api/features/{feature_id}/diff-viewed",
+            get(list_diff_viewed_handler).post(mark_diff_viewed_handler),
+        )
+        .route(
+            "/api/features/{feature_id}/diff-viewed/file",
+            delete(unmark_diff_viewed_handler),
+        )
+        .route(
+            "/api/features/{feature_id}/diff-viewed/files",
+            delete(clear_all_diff_viewed_handler),
+        )
 }

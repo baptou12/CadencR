@@ -7,9 +7,21 @@ mod tests {
 
     fn create_test_project() -> TempDir {
         let dir = TempDir::new().unwrap();
-        fs::write(dir.path().join("hello.rs"), "fn main() {\n    println!(\"Hello, world!\");\n}\n").unwrap();
-        fs::write(dir.path().join("lib.rs"), "pub fn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n").unwrap();
-        fs::write(dir.path().join("test.txt"), "This is a test file\nWith multiple lines\nFor searching\n").unwrap();
+        fs::write(
+            dir.path().join("hello.rs"),
+            "fn main() {\n    println!(\"Hello, world!\");\n}\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join("lib.rs"),
+            "pub fn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join("test.txt"),
+            "This is a test file\nWith multiple lines\nFor searching\n",
+        )
+        .unwrap();
         dir
     }
 
@@ -45,7 +57,10 @@ mod tests {
         let params = default_params(dir.path().to_str().unwrap(), "hello");
         let result = service::content_search(&params).unwrap();
 
-        assert!(!result.matches.is_empty(), "case-insensitive should match 'Hello'");
+        assert!(
+            !result.matches.is_empty(),
+            "case-insensitive should match 'Hello'"
+        );
     }
 
     #[test]
@@ -55,7 +70,10 @@ mod tests {
         params.case_sensitive = true;
         let result = service::content_search(&params).unwrap();
 
-        assert!(result.matches.is_empty(), "case-sensitive 'hello' should not match 'Hello'");
+        assert!(
+            result.matches.is_empty(),
+            "case-sensitive 'hello' should not match 'Hello'"
+        );
     }
 
     #[test]
@@ -67,7 +85,10 @@ mod tests {
 
         // Should match "test" in test.txt but not partial matches
         for m in &result.matches {
-            assert!(m.line_content.contains("test"), "all matches should contain whole word 'test'");
+            assert!(
+                m.line_content.contains("test"),
+                "all matches should contain whole word 'test'"
+            );
         }
     }
 
@@ -78,7 +99,10 @@ mod tests {
         params.is_regex = true;
         let result = service::content_search(&params).unwrap();
 
-        assert!(!result.matches.is_empty(), "regex should match function declarations");
+        assert!(
+            !result.matches.is_empty(),
+            "regex should match function declarations"
+        );
     }
 
     #[test]
@@ -90,8 +114,14 @@ mod tests {
         assert!(!result.matches.is_empty());
         let m = &result.matches[0];
         // "multiple" is on line 2 of test.txt, so context_before should have line 1
-        assert!(!m.context_before.is_empty(), "should have context lines before");
-        assert!(!m.context_after.is_empty(), "should have context lines after");
+        assert!(
+            !m.context_before.is_empty(),
+            "should have context lines before"
+        );
+        assert!(
+            !m.context_after.is_empty(),
+            "should have context lines after"
+        );
     }
 
     #[test]
@@ -102,7 +132,10 @@ mod tests {
         let result = service::content_search(&params).unwrap();
 
         // Parallel walker may slightly overshoot, but truncated flag should be set
-        assert!(result.truncated, "should be truncated when matches exceed limit");
+        assert!(
+            result.truncated,
+            "should be truncated when matches exceed limit"
+        );
     }
 
     #[test]
@@ -113,7 +146,11 @@ mod tests {
         let result = service::content_search(&params).unwrap();
 
         for m in &result.matches {
-            assert!(m.path.ends_with(".rs"), "include *.rs should only return .rs files, got {}", m.path);
+            assert!(
+                m.path.ends_with(".rs"),
+                "include *.rs should only return .rs files, got {}",
+                m.path
+            );
         }
     }
 
@@ -125,7 +162,10 @@ mod tests {
         let result = service::content_search(&params).unwrap();
 
         for m in &result.matches {
-            assert!(!m.path.ends_with(".txt"), "exclude *.txt should not return .txt files");
+            assert!(
+                !m.path.ends_with(".txt"),
+                "exclude *.txt should not return .txt files"
+            );
         }
     }
 
@@ -159,6 +199,9 @@ mod tests {
         let params = default_params(dir.path().to_str().unwrap(), "");
         let result = service::content_search(&params).unwrap();
 
-        assert!(result.matches.is_empty(), "empty query should match nothing");
+        assert!(
+            result.matches.is_empty(),
+            "empty query should match nothing"
+        );
     }
 }

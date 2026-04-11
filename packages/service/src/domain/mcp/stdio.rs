@@ -34,7 +34,9 @@ pub async fn run_mcp_stdio(
 
     info!(
         agent_type = agent_type_str,
-        feature_id, ?phase_slug, "starting MCP stdio server"
+        feature_id,
+        ?phase_slug,
+        "starting MCP stdio server"
     );
 
     let write_pool = db::create_write_pool(db_path).await?;
@@ -44,7 +46,12 @@ pub async fn run_mcp_stdio(
     // We drop the receiver since we use .waiting() to keep the server alive.
     let (done_tx, _done_rx) = oneshot::channel();
     let ctx = McpContext::new(
-        read_pool, write_pool, feature_id, done_tx, phase_slug, input_phase_slugs,
+        read_pool,
+        write_pool,
+        feature_id,
+        done_tx,
+        phase_slug,
+        input_phase_slugs,
     );
 
     let server = super::servers::create_mcp_server(agent_type, ctx);

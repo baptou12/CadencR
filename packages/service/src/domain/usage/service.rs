@@ -22,7 +22,11 @@ fn now_ms() -> u64 {
         .as_millis() as u64
 }
 
-fn empty_response(status: UsageStatus, message: Option<String>, retry_at: Option<u64>) -> UsageResponse {
+fn empty_response(
+    status: UsageStatus,
+    message: Option<String>,
+    retry_at: Option<u64>,
+) -> UsageResponse {
     UsageResponse {
         five_hour: None,
         seven_day: None,
@@ -111,7 +115,12 @@ enum FetchError {
 
 async fn get_oauth_token() -> Result<String, FetchError> {
     let output = tokio::process::Command::new("security")
-        .args(["find-generic-password", "-s", "Claude Code-credentials", "-w"])
+        .args([
+            "find-generic-password",
+            "-s",
+            "Claude Code-credentials",
+            "-w",
+        ])
         .output()
         .await
         .map_err(|e| FetchError::Other(format!("Keychain access failed: {e}")))?;
@@ -167,7 +176,11 @@ async fn fetch_from_api() -> Result<UsageResponse, FetchError> {
     }
 
     if !res.status().is_success() {
-        return Err(FetchError::Other(format!("{} {}", res.status().as_u16(), res.status().canonical_reason().unwrap_or(""))));
+        return Err(FetchError::Other(format!(
+            "{} {}",
+            res.status().as_u16(),
+            res.status().canonical_reason().unwrap_or("")
+        )));
     }
 
     let raw: RawUsageResponse = res

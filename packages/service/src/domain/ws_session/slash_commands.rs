@@ -22,13 +22,31 @@ pub struct SlashCommand {
 fn bundled_commands() -> Vec<SlashCommand> {
     let commands = [
         ("clear", "Clear conversation context and start fresh"),
-        ("compact", "Compact conversation with optional focus instructions"),
-        ("simplify", "Review changed code for reuse, quality, and efficiency, then fix any issues found"),
-        ("review", "Review code changes for bugs, quality, and best practices"),
-        ("loop", "Run a prompt or slash command on a recurring interval"),
+        (
+            "compact",
+            "Compact conversation with optional focus instructions",
+        ),
+        (
+            "simplify",
+            "Review changed code for reuse, quality, and efficiency, then fix any issues found",
+        ),
+        (
+            "review",
+            "Review code changes for bugs, quality, and best practices",
+        ),
+        (
+            "loop",
+            "Run a prompt or slash command on a recurring interval",
+        ),
         ("batch", "Run multiple tasks in parallel"),
-        ("insights", "Generate insights from the current conversation"),
-        ("btw", "Send a background task while continuing the current conversation"),
+        (
+            "insights",
+            "Generate insights from the current conversation",
+        ),
+        (
+            "btw",
+            "Send a background task while continuing the current conversation",
+        ),
     ];
 
     commands
@@ -91,7 +109,11 @@ fn scan_into(base: &Path, commands: &mut Vec<SlashCommand>, seen: &mut HashSet<S
 ///
 /// Structure: `marketplaces/<marketplace>/{plugins,external_plugins}/<plugin-name>/`
 /// Each plugin can contain `commands/`, `skills/`, and `agents/` directories.
-fn scan_plugins(marketplaces_dir: &Path, commands: &mut Vec<SlashCommand>, seen: &mut HashSet<String>) {
+fn scan_plugins(
+    marketplaces_dir: &Path,
+    commands: &mut Vec<SlashCommand>,
+    seen: &mut HashSet<String>,
+) {
     let marketplaces = match std::fs::read_dir(marketplaces_dir) {
         Ok(e) => e,
         Err(_) => return,
@@ -137,9 +159,21 @@ fn scan_plugin_with_prefix(
     let mut plugin_cmds: Vec<SlashCommand> = Vec::new();
     let mut plugin_seen: HashSet<String> = HashSet::new();
 
-    scan_commands_dir(&plugin_dir.join("commands"), &mut plugin_cmds, &mut plugin_seen);
-    scan_skills_dir(&plugin_dir.join("skills"), &mut plugin_cmds, &mut plugin_seen);
-    scan_agents_dir(&plugin_dir.join("agents"), &mut plugin_cmds, &mut plugin_seen);
+    scan_commands_dir(
+        &plugin_dir.join("commands"),
+        &mut plugin_cmds,
+        &mut plugin_seen,
+    );
+    scan_skills_dir(
+        &plugin_dir.join("skills"),
+        &mut plugin_cmds,
+        &mut plugin_seen,
+    );
+    scan_agents_dir(
+        &plugin_dir.join("agents"),
+        &mut plugin_cmds,
+        &mut plugin_seen,
+    );
 
     for mut cmd in plugin_cmds {
         if let Some(p) = prefix {
@@ -156,7 +190,11 @@ fn scan_plugin_with_prefix(
 ///
 /// Structure: `cache/<marketplace>/<plugin>/<version>/`
 /// Commands are prefixed with the plugin name (e.g., `superpowers:brainstorming`).
-fn scan_cached_plugins(cache_dir: &Path, commands: &mut Vec<SlashCommand>, seen: &mut HashSet<String>) {
+fn scan_cached_plugins(
+    cache_dir: &Path,
+    commands: &mut Vec<SlashCommand>,
+    seen: &mut HashSet<String>,
+) {
     let marketplaces = match std::fs::read_dir(cache_dir) {
         Ok(e) => e,
         Err(_) => return,
@@ -178,11 +216,7 @@ fn scan_cached_plugins(cache_dir: &Path, commands: &mut Vec<SlashCommand>, seen:
                 continue;
             }
 
-            let plugin_name = plugin
-                .file_name()
-                .to_str()
-                .unwrap_or_default()
-                .to_string();
+            let plugin_name = plugin.file_name().to_str().unwrap_or_default().to_string();
 
             // Find the latest version directory (there's typically only one)
             let version_dir = match latest_version_dir(&plugin_path) {
@@ -222,8 +256,8 @@ fn scan_commands_dir(dir: &Path, commands: &mut Vec<SlashCommand>, seen: &mut Ha
                 if seen.contains(name) {
                     continue;
                 }
-                let description = parse_frontmatter_file(&path)
-                    .and_then(|fm| fm.get("description").cloned());
+                let description =
+                    parse_frontmatter_file(&path).and_then(|fm| fm.get("description").cloned());
                 debug!(name, ?description, "Discovered custom command");
                 seen.insert(name.to_string());
                 commands.push(SlashCommand {
@@ -264,7 +298,9 @@ fn scan_skills_dir(dir: &Path, commands: &mut Vec<SlashCommand>, seen: &mut Hash
 
         let name = frontmatter.get("name").unwrap_or(&dir_name).clone();
         let description = frontmatter.get("description").cloned();
-        let user_invocable = frontmatter.get("user-invocable").map_or(true, |v| v != "false");
+        let user_invocable = frontmatter
+            .get("user-invocable")
+            .map_or(true, |v| v != "false");
 
         if !user_invocable || seen.contains(&name) {
             continue;
@@ -474,10 +510,7 @@ mod tests {
 
         assert_eq!(commands.len(), 1);
         assert_eq!(commands[0].name, "code-simplifier");
-        assert_eq!(
-            commands[0].description.as_deref(),
-            Some("Simplifies code")
-        );
+        assert_eq!(commands[0].description.as_deref(), Some("Simplifies code"));
     }
 
     #[test]
@@ -489,11 +522,7 @@ mod tests {
 
         let cmd_dir = plugin_dir.join("commands");
         fs::create_dir_all(&cmd_dir).unwrap();
-        fs::write(
-            cmd_dir.join("deploy.md"),
-            "---\ndescription: Deploy\n---\n",
-        )
-        .unwrap();
+        fs::write(cmd_dir.join("deploy.md"), "---\ndescription: Deploy\n---\n").unwrap();
 
         let skill_dir = plugin_dir.join("skills/my-skill");
         fs::create_dir_all(&skill_dir).unwrap();
@@ -512,7 +541,9 @@ mod tests {
         .unwrap();
 
         // Create an external_plugins entry too
-        let ext_plugin_dir = tmp.path().join("my-marketplace/external_plugins/ext-plugin");
+        let ext_plugin_dir = tmp
+            .path()
+            .join("my-marketplace/external_plugins/ext-plugin");
         let ext_cmd_dir = ext_plugin_dir.join("commands");
         fs::create_dir_all(&ext_cmd_dir).unwrap();
         fs::write(
@@ -525,10 +556,22 @@ mod tests {
         let mut seen = HashSet::new();
         scan_plugins(tmp.path(), &mut commands, &mut seen);
 
-        assert!(commands.iter().any(|c| c.name == "deploy"), "missing deploy");
-        assert!(commands.iter().any(|c| c.name == "my-skill"), "missing my-skill");
-        assert!(commands.iter().any(|c| c.name == "my-agent"), "missing my-agent");
-        assert!(commands.iter().any(|c| c.name == "ext-cmd"), "missing ext-cmd");
+        assert!(
+            commands.iter().any(|c| c.name == "deploy"),
+            "missing deploy"
+        );
+        assert!(
+            commands.iter().any(|c| c.name == "my-skill"),
+            "missing my-skill"
+        );
+        assert!(
+            commands.iter().any(|c| c.name == "my-agent"),
+            "missing my-agent"
+        );
+        assert!(
+            commands.iter().any(|c| c.name == "ext-cmd"),
+            "missing ext-cmd"
+        );
         assert_eq!(commands.len(), 4);
     }
 
@@ -573,7 +616,10 @@ mod tests {
 
         let deploys: Vec<_> = commands.iter().filter(|c| c.name == "deploy").collect();
         assert_eq!(deploys.len(), 1);
-        assert_eq!(deploys[0].description.as_deref(), Some("Deploy via command"));
+        assert_eq!(
+            deploys[0].description.as_deref(),
+            Some("Deploy via command")
+        );
     }
 
     #[test]
@@ -592,9 +638,7 @@ mod tests {
         .unwrap();
 
         // Also add a command
-        let cmd_dir = tmp
-            .path()
-            .join("my-marketplace/superpowers/5.0.6/commands");
+        let cmd_dir = tmp.path().join("my-marketplace/superpowers/5.0.6/commands");
         fs::create_dir_all(&cmd_dir).unwrap();
         fs::write(
             cmd_dir.join("write-plan.md"),
@@ -607,7 +651,9 @@ mod tests {
         scan_cached_plugins(tmp.path(), &mut commands, &mut seen);
 
         assert!(
-            commands.iter().any(|c| c.name == "superpowers:brainstorming"),
+            commands
+                .iter()
+                .any(|c| c.name == "superpowers:brainstorming"),
             "missing superpowers:brainstorming"
         );
         assert!(

@@ -35,7 +35,12 @@ impl QueueAdvancer {
             if let Some(cc_sid_ref) = agent_manager.paused_sessions.get(&slot) {
                 cc_sid = cc_sid_ref.clone();
                 debug!(slot = %slot, db_session_id = db_sid, cc_session_id = %cc_sid, "persisting claude_session_id to DB for resume");
-                WsSessionPersistence::persist_claude_session_id_static(&self.write_pool, db_sid, &cc_sid).await;
+                WsSessionPersistence::persist_claude_session_id_static(
+                    &self.write_pool,
+                    db_sid,
+                    &cc_sid,
+                )
+                .await;
             }
         }
 
@@ -51,10 +56,16 @@ impl QueueAdvancer {
                 claude_session_id: cc_sid,
             }),
         );
-        let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
+        let _ = self
+            .ws_sender
+            .send(Message::Text(String::from(envelope).into()));
 
         if agent_manager.active_items.len() <= 1 {
-            WsSessionPersistence::broadcast_turn_state(&self.turn_state_tx, self.feature_id, "none");
+            WsSessionPersistence::broadcast_turn_state(
+                &self.turn_state_tx,
+                self.feature_id,
+                "none",
+            );
         }
     }
 
@@ -82,11 +93,12 @@ impl QueueAdvancer {
         .await
         .map_err(|e| format!("Failed to read phases: {e}"))?;
 
-        let existing: std::collections::HashSet<i64> = repo::get_existing_phase_ids(&self.read_pool, self.feature_id)
-            .await
-            .map_err(|e| format!("Failed to read queue: {e}"))?
-            .into_iter()
-            .collect();
+        let existing: std::collections::HashSet<i64> =
+            repo::get_existing_phase_ids(&self.read_pool, self.feature_id)
+                .await
+                .map_err(|e| format!("Failed to read queue: {e}"))?
+                .into_iter()
+                .collect();
 
         // Upgrade any draft queue items to ready (placeholders from create_phase)
         repo::upgrade_draft_to_ready(&self.write_pool, self.feature_id)
@@ -99,7 +111,10 @@ impl QueueAdvancer {
             .collect();
 
         if new_phases.is_empty() {
-            info!(feature_id = self.feature_id, "review completed, no new phases to add");
+            info!(
+                feature_id = self.feature_id,
+                "review completed, no new phases to add"
+            );
             return Ok(());
         }
 
@@ -151,9 +166,10 @@ impl QueueAdvancer {
         .await
         .map_err(|e| format!("Failed to insert follow-up review: {e}"))?;
 
-        let new_fix_ids = repo::get_fix_item_ids_after_order(&self.read_pool, self.feature_id, max_order)
-            .await
-            .map_err(|e| format!("Failed to read new fix items: {e}"))?;
+        let new_fix_ids =
+            repo::get_fix_item_ids_after_order(&self.read_pool, self.feature_id, max_order)
+                .await
+                .map_err(|e| format!("Failed to read new fix items: {e}"))?;
 
         for fix_id in new_fix_ids {
             let _ = repo::insert_dependency(&self.write_pool, review_id, fix_id).await;
@@ -172,7 +188,9 @@ impl QueueAdvancer {
                 workflow_status: None,
             }),
         );
-        let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
+        let _ = self
+            .ws_sender
+            .send(Message::Text(String::from(envelope).into()));
 
         let envelope = WsEnvelope::new(
             "workflow",
@@ -183,14 +201,19 @@ impl QueueAdvancer {
                 "fix_phase_count": new_phases.len(),
             })),
         );
-        let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
+        let _ = self
+            .ws_sender
+            .send(Message::Text(String::from(envelope).into()));
 
         Ok(())
     }
 
     /// Restore workflow state from DB on reconnection.
     pub async fn restore_on_reconnect(&self, agent_manager: &AgentManager) -> Result<(), String> {
-        info!(feature_id = self.feature_id, "restoring workflow state on reconnect");
+        info!(
+            feature_id = self.feature_id,
+            "restoring workflow state on reconnect"
+        );
 
         // Restore paused and stale running pre-queue agents from DB.
         // Running agents with a claude_session_id are treated as paused (process is gone after restart).
@@ -222,10 +245,19 @@ impl QueueAdvancer {
                 slot = %slot,
                 "restoring paused pre-queue agent for resume"
             );
-            agent_manager.paused_sessions.insert(slot.clone(), cc_session_id.clone());
-            agent_manager.active_items.insert(slot.clone(), *db_session_id);
+            agent_manager
+                .paused_sessions
+                .insert(slot.clone(), cc_session_id.clone());
+            agent_manager
+                .active_items
+                .insert(slot.clone(), *db_session_id);
             WsSessionPersistence::mark_paused_static(&self.write_pool, *db_session_id).await;
-            restored.push((slot, *db_session_id, agent_type.clone(), cc_session_id.clone()));
+            restored.push((
+                slot,
+                *db_session_id,
+                agent_type.clone(),
+                cc_session_id.clone(),
+            ));
         }
 
         // Restore paused queue items
@@ -237,7 +269,9 @@ impl QueueAdvancer {
             let slot = AgentSlot::QueueItem(*item_id);
             if let Some(ref sid) = cc_session_id {
                 info!(feature_id = self.feature_id, item_id, cc_session_id = %sid, "restoring paused queue item for resume");
-                agent_manager.paused_sessions.insert(slot.clone(), sid.clone());
+                agent_manager
+                    .paused_sessions
+                    .insert(slot.clone(), sid.clone());
             }
             if let Some(db_sid) = agent_session_id {
                 agent_manager.active_items.insert(slot.clone(), *db_sid);
@@ -269,10 +303,15 @@ impl QueueAdvancer {
         for (item_id, agent_session_id, cc_session_id) in &stale_running {
             if let Some(ref sid) = cc_session_id {
                 if !sid.is_empty() {
-                    info!(feature_id = self.feature_id, item_id, "recovering stale running queue item as paused");
+                    info!(
+                        feature_id = self.feature_id,
+                        item_id, "recovering stale running queue item as paused"
+                    );
                     let _ = repo::mark_item_paused(&self.write_pool, *item_id).await;
                     let slot = AgentSlot::QueueItem(*item_id);
-                    agent_manager.paused_sessions.insert(slot.clone(), sid.clone());
+                    agent_manager
+                        .paused_sessions
+                        .insert(slot.clone(), sid.clone());
                     if let Some(db_sid) = agent_session_id {
                         agent_manager.active_items.insert(slot.clone(), *db_sid);
                         WsSessionPersistence::mark_paused_static(&self.write_pool, *db_sid).await;
@@ -281,7 +320,9 @@ impl QueueAdvancer {
                     continue;
                 }
             }
-            let _ = repo::mark_item_error(&self.write_pool, *item_id, Some("Stale after reconnect")).await;
+            let _ =
+                repo::mark_item_error(&self.write_pool, *item_id, Some("Stale after reconnect"))
+                    .await;
             if let Some(db_sid) = agent_session_id {
                 WsSessionPersistence::mark_error_static(&self.write_pool, *db_sid).await;
             }
@@ -306,7 +347,9 @@ impl QueueAdvancer {
                 workflow_status: Some(workflow_status),
             }),
         );
-        let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
+        let _ = self
+            .ws_sender
+            .send(Message::Text(String::from(envelope).into()));
 
         // Notify frontend about restored paused agents
         for (slot, db_session_id, agent_type, cc_session_id) in &restored {
@@ -321,18 +364,29 @@ impl QueueAdvancer {
                     claude_session_id: cc_session_id.clone(),
                 }),
             );
-            let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
+            let _ = self
+                .ws_sender
+                .send(Message::Text(String::from(envelope).into()));
         }
 
         // Notify frontend about restored paused queue items + recovered stale running items
-        let queue_paused_envelopes: Vec<_> = paused_queue_items.iter()
+        let queue_paused_envelopes: Vec<_> = paused_queue_items
+            .iter()
             .filter_map(|(item_id, _, cc_session_id)| {
                 let sid = cc_session_id.as_ref()?;
                 let slot = AgentSlot::QueueItem(*item_id);
-                let db_sid = agent_manager.active_items.get(&slot).map(|e| *e.value()).unwrap_or(0);
+                let db_sid = agent_manager
+                    .active_items
+                    .get(&slot)
+                    .map(|e| *e.value())
+                    .unwrap_or(0);
                 Some((slot, db_sid, sid.clone()))
             })
-            .chain(recovered_stale.iter().map(|(slot, db_sid, cc_sid)| (slot.clone(), *db_sid, cc_sid.clone())))
+            .chain(
+                recovered_stale
+                    .iter()
+                    .map(|(slot, db_sid, cc_sid)| (slot.clone(), *db_sid, cc_sid.clone())),
+            )
             .collect();
 
         for (slot, db_sid, cc_sid) in queue_paused_envelopes {
@@ -347,7 +401,9 @@ impl QueueAdvancer {
                     claude_session_id: cc_sid,
                 }),
             );
-            let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
+            let _ = self
+                .ws_sender
+                .send(Message::Text(String::from(envelope).into()));
         }
 
         Ok(())

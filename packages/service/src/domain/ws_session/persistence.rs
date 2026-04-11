@@ -4,11 +4,14 @@
 //! in Rust using sqlx. All writes are best-effort — errors are logged but never
 //! propagate to the caller so the WebSocket stream is not interrupted.
 
-use std::collections::HashMap;
 use sqlx::SqlitePool;
+use std::collections::HashMap;
 use tracing::{debug, error};
 
-use claude_agent_sdk_rs::{AssistantMessageBody, SdkMessage, ContentBlock, ContentDelta, StreamEventData};
+use crate::domain::agents::adapter::{
+    RuntimeAssistantMessage, RuntimeContentBlock, RuntimeContentDelta, RuntimeEvent,
+    RuntimeStreamEvent, RuntimeUserContentBlock, RuntimeUserMessage,
+};
 
 const INSERT_MESSAGE_SQL: &str =
     "INSERT INTO agent_messages (session_id, role, content, message_type, tool_name, tool_use_id, parent_tool_use_id, model) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
@@ -19,6 +22,8 @@ const INSERT_MESSAGE_SQL: &str =
 pub struct SessionRow {
     pub id: i64,
     pub feature_id: i64,
+    pub runtime_provider: Option<String>,
+    pub runtime_session_id: Option<String>,
     pub model: Option<String>,
     pub permission_mode: Option<String>,
     pub claude_session_id: Option<String>,
@@ -48,7 +53,11 @@ impl WsSessionPersistence {
 
     /// Create a persistence instance with an already-known session DB id,
     /// avoiding the need to call `find_or_create_session` just to set it.
-    pub fn with_session_id(write_pool: SqlitePool, feature_id: i64, session_db_id: Option<i64>) -> Self {
+    pub fn with_session_id(
+        write_pool: SqlitePool,
+        feature_id: i64,
+        session_db_id: Option<i64>,
+    ) -> Self {
         Self {
             write_pool,
             session_db_id,
@@ -63,7 +72,11 @@ impl WsSessionPersistence {
     /// Ensure an agent_sessions row exists for this feature.
     /// Reuses an existing row if one is found, otherwise creates a new one.
     /// This keeps all messages for a feature in a single session across app restarts.
-    pub async fn find_or_create_session(&mut self, model: Option<&str>, permission_mode: Option<&str>) -> Option<i64> {
+    pub async fn find_or_create_session(
+        &mut self,
+        model: Option<&str>,
+        permission_mode: Option<&str>,
+    ) -> Option<i64> {
         // Try to reuse the most recent session for this feature
         let existing: Option<(i64,)> = sqlx::query_as(
             "SELECT id FROM agent_sessions WHERE feature_id = ? AND agent_type = 'session' ORDER BY id DESC LIMIT 1"
@@ -76,9 +89,10 @@ impl WsSessionPersistence {
         if let Some((id,)) = existing {
             // Reuse existing session — update status back to running
             if let Err(e) = sqlx::query(
-                "UPDATE agent_sessions SET status = 'paused', permission_mode = COALESCE(?, permission_mode) WHERE id = ?"
+                "UPDATE agent_sessions SET status = 'paused', permission_mode = COALESCE(?, permission_mode), runtime_provider = COALESCE(runtime_provider, ?) WHERE id = ?"
             )
             .bind(permission_mode)
+            .bind(crate::domain::agents::runtime::DEFAULT_PROVIDER)
             .bind(id)
             .execute(&self.write_pool)
             .await
@@ -87,16 +101,21 @@ impl WsSessionPersistence {
             }
 
             self.session_db_id = Some(id);
-            debug!(session_db_id = id, feature_id = self.feature_id, "reusing existing agent_sessions row");
+            debug!(
+                session_db_id = id,
+                feature_id = self.feature_id,
+                "reusing existing agent_sessions row"
+            );
             return Some(id);
         }
 
         // No existing session — create a new one
         let now = chrono::Utc::now().to_rfc3339();
         let result = sqlx::query(
-            "INSERT INTO agent_sessions (feature_id, agent_type, status, model, permission_mode, started_at) VALUES (?, 'session', 'paused', ?, ?, ?)"
+            "INSERT INTO agent_sessions (feature_id, agent_type, status, runtime_provider, model, permission_mode, started_at) VALUES (?, 'session', 'paused', ?, ?, ?, ?)"
         )
         .bind(self.feature_id)
+        .bind(crate::domain::agents::runtime::DEFAULT_PROVIDER)
         .bind(model)
         .bind(permission_mode)
         .bind(&now)
@@ -107,7 +126,11 @@ impl WsSessionPersistence {
             Ok(r) => {
                 let id = r.last_insert_rowid();
                 self.session_db_id = Some(id);
-                debug!(session_db_id = id, feature_id = self.feature_id, "created agent_sessions row");
+                debug!(
+                    session_db_id = id,
+                    feature_id = self.feature_id,
+                    "created agent_sessions row"
+                );
                 Some(id)
             }
             Err(e) => {
@@ -119,156 +142,275 @@ impl WsSessionPersistence {
 
     /// Persist a user message.
     pub async fn persist_user_message(&self, text: &str) {
-        let Some(session_id) = self.session_db_id else { return };
-        if let Err(e) = Self::insert_message(&self.write_pool, session_id, "user", text, "user_message", None, None, None, None).await {
+        let Some(session_id) = self.session_db_id else {
+            return;
+        };
+        if let Err(e) = Self::insert_message(
+            &self.write_pool,
+            session_id,
+            "user",
+            text,
+            "user_message",
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        {
             error!(error = %e, "failed to persist user message");
         }
     }
 
-    /// Main dispatch for SDK messages — mirrors SessionPersistence.persistStreamEvent.
-    pub async fn persist_sdk_message(&mut self, sdk_msg: &SdkMessage) {
-        let Some(session_id) = self.session_db_id else { return };
+    /// Main dispatch for normalized runtime events.
+    pub async fn persist_runtime_event(&mut self, runtime_event: &RuntimeEvent) {
+        let Some(session_id) = self.session_db_id else {
+            return;
+        };
 
-        match sdk_msg {
-            SdkMessage::StreamEvent { event, parent_tool_use_id, .. } => {
-                let ptuid = parent_tool_use_id.as_deref();
-                self.persist_stream_event(session_id, event, ptuid).await;
+        if let Some(event) = runtime_event.stream_event() {
+            self.persist_stream_event(session_id, event, runtime_event.parent_tool_use_id())
+                .await;
+            return;
+        }
+
+        if let Some(message) = runtime_event.user_message() {
+            self.persist_user_tool_results(session_id, message, runtime_event.parent_tool_use_id())
+                .await;
+            return;
+        }
+
+        if let Some(message) = runtime_event.assistant_message() {
+            if let Some(ptuid) = runtime_event.parent_tool_use_id() {
+                self.persist_assistant_subagent(session_id, message, ptuid)
+                    .await;
             }
-            SdkMessage::User { message, parent_tool_use_id, .. } => {
-                // Extract tool_result items from user messages
-                self.persist_user_tool_results(session_id, message, parent_tool_use_id.as_deref()).await;
-            }
-            SdkMessage::Assistant { message, parent_tool_use_id, .. } => {
-                if let Some(ptuid) = parent_tool_use_id.as_deref() {
-                    self.persist_assistant_subagent(session_id, message, ptuid).await;
-                }
-            }
-            SdkMessage::System(sys_msg) => {
-                use claude_agent_sdk_rs::SystemMessage;
-                match sys_msg {
-                    SystemMessage::CompactBoundary { .. } => {
-                        let _ = Self::insert_message(&self.write_pool, session_id, "system", "compact_boundary", "compact_divider", None, None, None, None).await;
-                    }
-                    _ => {}
-                }
-            }
-            _ => {}
+            return;
+        }
+
+        if runtime_event.is_compact_boundary() {
+            let _ = Self::insert_message(
+                &self.write_pool,
+                session_id,
+                "system",
+                "compact_boundary",
+                "compact_divider",
+                None,
+                None,
+                None,
+                None,
+            )
+            .await;
         }
     }
 
     /// Insert a single row into agent_messages.
     async fn insert_message(
-        pool: &SqlitePool, session_id: i64, role: &str, content: &str,
-        message_type: &str, tool_name: Option<&str>, tool_use_id: Option<&str>,
-        ptuid: Option<&str>, model: Option<&str>,
+        pool: &SqlitePool,
+        session_id: i64,
+        role: &str,
+        content: &str,
+        message_type: &str,
+        tool_name: Option<&str>,
+        tool_use_id: Option<&str>,
+        ptuid: Option<&str>,
+        model: Option<&str>,
     ) -> Result<sqlx::sqlite::SqliteQueryResult, sqlx::Error> {
         sqlx::query(INSERT_MESSAGE_SQL)
-            .bind(session_id).bind(role).bind(content)
-            .bind(message_type).bind(tool_name).bind(tool_use_id)
-            .bind(ptuid).bind(model)
-            .execute(pool).await
+            .bind(session_id)
+            .bind(role)
+            .bind(content)
+            .bind(message_type)
+            .bind(tool_name)
+            .bind(tool_use_id)
+            .bind(ptuid)
+            .bind(model)
+            .execute(pool)
+            .await
     }
 
-    async fn persist_stream_event(&mut self, session_id: i64, event: &StreamEventData, ptuid: Option<&str>) {
+    async fn persist_stream_event(
+        &mut self,
+        session_id: i64,
+        event: &RuntimeStreamEvent,
+        ptuid: Option<&str>,
+    ) {
         let model = self.current_model.as_deref();
 
         match event {
-            StreamEventData::MessageStart { message } => {
-                self.current_model = Some(message.model.clone());
+            RuntimeStreamEvent::MessageStart { model } => {
+                self.current_model = model.clone();
             }
-            StreamEventData::ContentBlockStart { index, content_block } => {
-                match content_block {
-                    ContentBlock::Text { text } => {
-                        let _ = Self::insert_message(&self.write_pool, session_id, "assistant", text, "text", None, None, ptuid, model).await;
-                    }
-                    ContentBlock::Thinking { thinking, .. } => {
-                        let _ = Self::insert_message(&self.write_pool, session_id, "assistant", thinking, "thinking", None, None, ptuid, model).await;
-                    }
-                    ContentBlock::ToolUse { id, name, input } => {
-                        let content = serde_json::to_string(input).unwrap_or_default();
-                        let result = Self::insert_message(&self.write_pool, session_id, "assistant", &content, "tool_call", Some(name), Some(id), ptuid, model).await;
-
-                        if let Ok(r) = result {
-                            let row_id = r.last_insert_rowid();
-                            self.pending_tool_row_ids.insert(*index, row_id);
-                            self.pending_tool_inputs.insert(*index, String::new());
-                        }
-
-                        // Track file-modifying tools
-                        if !self.file_change_marked && (name == "Write" || name == "Edit" || name == "NotebookEdit") {
-                            self.mark_has_file_changes(session_id).await;
-                        }
-                    }
-                    _ => {}
+            RuntimeStreamEvent::ContentBlockStart { index, block } => match block {
+                RuntimeContentBlock::Text { text } => {
+                    let _ = Self::insert_message(
+                        &self.write_pool,
+                        session_id,
+                        "assistant",
+                        text,
+                        "text",
+                        None,
+                        None,
+                        ptuid,
+                        model,
+                    )
+                    .await;
                 }
-            }
-            StreamEventData::ContentBlockDelta { index, delta } => {
-                match delta {
-                    ContentDelta::TextDelta { text } => {
-                        let _ = Self::insert_message(&self.write_pool, session_id, "assistant", text, "text_delta", None, None, ptuid, model).await;
+                RuntimeContentBlock::Thinking { thinking } => {
+                    let _ = Self::insert_message(
+                        &self.write_pool,
+                        session_id,
+                        "assistant",
+                        thinking,
+                        "thinking",
+                        None,
+                        None,
+                        ptuid,
+                        model,
+                    )
+                    .await;
+                }
+                RuntimeContentBlock::ToolUse { id, name, input } => {
+                    let content = serde_json::to_string(input).unwrap_or_default();
+                    let result = Self::insert_message(
+                        &self.write_pool,
+                        session_id,
+                        "assistant",
+                        &content,
+                        "tool_call",
+                        Some(name),
+                        Some(id),
+                        ptuid,
+                        model,
+                    )
+                    .await;
+
+                    if let Ok(r) = result {
+                        let row_id = r.last_insert_rowid();
+                        self.pending_tool_row_ids.insert(*index, row_id);
+                        self.pending_tool_inputs.insert(*index, String::new());
                     }
-                    ContentDelta::ThinkingDelta { thinking } => {
-                        let _ = Self::insert_message(&self.write_pool, session_id, "assistant", thinking, "thinking_delta", None, None, ptuid, model).await;
+
+                    // Track file-modifying tools
+                    if !self.file_change_marked
+                        && (name == "Write" || name == "Edit" || name == "NotebookEdit")
+                    {
+                        self.mark_has_file_changes(session_id).await;
                     }
-                    ContentDelta::InputJsonDelta { partial_json } => {
-                        if let Some(accumulated) = self.pending_tool_inputs.get_mut(index) {
-                            accumulated.push_str(partial_json);
-                            // Try to parse; if valid, update the row
-                            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(accumulated) {
-                                if let Some(&row_id) = self.pending_tool_row_ids.get(index) {
-                                    let content = serde_json::to_string(&parsed).unwrap_or_default();
-                                    let _ = sqlx::query("UPDATE agent_messages SET content = ? WHERE id = ?")
-                                        .bind(&content)
-                                        .bind(row_id)
-                                        .execute(&self.write_pool).await;
-                                }
+                }
+                RuntimeContentBlock::Other => {}
+            },
+            RuntimeStreamEvent::ContentBlockDelta { index, delta } => match delta {
+                RuntimeContentDelta::Text { text } => {
+                    let _ = Self::insert_message(
+                        &self.write_pool,
+                        session_id,
+                        "assistant",
+                        text,
+                        "text_delta",
+                        None,
+                        None,
+                        ptuid,
+                        model,
+                    )
+                    .await;
+                }
+                RuntimeContentDelta::Thinking { thinking } => {
+                    let _ = Self::insert_message(
+                        &self.write_pool,
+                        session_id,
+                        "assistant",
+                        thinking,
+                        "thinking_delta",
+                        None,
+                        None,
+                        ptuid,
+                        model,
+                    )
+                    .await;
+                }
+                RuntimeContentDelta::InputJson { partial_json } => {
+                    if let Some(accumulated) = self.pending_tool_inputs.get_mut(index) {
+                        accumulated.push_str(partial_json);
+                        // Try to parse; if valid, update the row
+                        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(accumulated) {
+                            if let Some(&row_id) = self.pending_tool_row_ids.get(index) {
+                                let content = serde_json::to_string(&parsed).unwrap_or_default();
+                                let _ = sqlx::query(
+                                    "UPDATE agent_messages SET content = ? WHERE id = ?",
+                                )
+                                .bind(&content)
+                                .bind(row_id)
+                                .execute(&self.write_pool)
+                                .await;
                             }
                         }
                     }
                 }
-            }
-            StreamEventData::ContentBlockStop { index } => {
+            },
+            RuntimeStreamEvent::ContentBlockStop { index } => {
                 // Finalize any pending tool input
                 if let Some(accumulated) = self.pending_tool_inputs.remove(index) {
                     if !accumulated.is_empty() {
                         if let Some(&row_id) = self.pending_tool_row_ids.get(index) {
-                            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&accumulated) {
+                            if let Ok(parsed) =
+                                serde_json::from_str::<serde_json::Value>(&accumulated)
+                            {
                                 let content = serde_json::to_string(&parsed).unwrap_or_default();
-                                let _ = sqlx::query("UPDATE agent_messages SET content = ? WHERE id = ?")
-                                    .bind(&content)
-                                    .bind(row_id)
-                                    .execute(&self.write_pool).await;
+                                let _ = sqlx::query(
+                                    "UPDATE agent_messages SET content = ? WHERE id = ?",
+                                )
+                                .bind(&content)
+                                .bind(row_id)
+                                .execute(&self.write_pool)
+                                .await;
                             }
                         }
                     }
                 }
                 self.pending_tool_row_ids.remove(index);
             }
-            _ => {} // message_delta, message_stop — skip
+            RuntimeStreamEvent::Other => {}
         }
     }
 
     /// Extract tool_result entries from a User message's content array and persist them.
-    async fn persist_user_tool_results(&self, session_id: i64, message: &serde_json::Value, ptuid: Option<&str>) {
-        let content_arr = match message.get("content").and_then(|c| c.as_array()) {
-            Some(arr) => arr,
-            None => return,
-        };
+    async fn persist_user_tool_results(
+        &self,
+        session_id: i64,
+        message: &RuntimeUserMessage,
+        ptuid: Option<&str>,
+    ) {
+        for item in &message.content {
+            if let RuntimeUserContentBlock::ToolResult {
+                tool_use_id,
+                is_error,
+                content,
+            } = item
+            {
+                let content = match content {
+                    serde_json::Value::String(text) => text.clone(),
+                    other => serde_json::to_string(other).unwrap_or_default(),
+                };
+                let msg_type = if *is_error {
+                    "tool_error"
+                } else {
+                    "tool_result"
+                };
 
-        for item in content_arr {
-            let item_type = item.get("type").and_then(|t| t.as_str()).unwrap_or("");
-            if item_type != "tool_result" { continue; }
-
-            let tool_use_id = item.get("tool_use_id").and_then(|v| v.as_str());
-            let is_error = item.get("is_error").and_then(|v| v.as_bool()).unwrap_or(false);
-            let content = match item.get("content") {
-                Some(c) if c.is_string() => c.as_str().unwrap_or("").to_string(),
-                Some(c) => serde_json::to_string(c).unwrap_or_default(),
-                None => String::new(),
-            };
-            let msg_type = if is_error { "tool_error" } else { "tool_result" };
-
-            let _ = Self::insert_message(&self.write_pool, session_id, "tool", &content, msg_type, None, tool_use_id, ptuid, None).await;
+                let _ = Self::insert_message(
+                    &self.write_pool,
+                    session_id,
+                    "tool",
+                    &content,
+                    msg_type,
+                    None,
+                    tool_use_id.as_deref(),
+                    ptuid,
+                    None,
+                )
+                .await;
+            }
         }
     }
 
@@ -284,24 +426,43 @@ impl WsSessionPersistence {
     ///
     /// Stream events for sub-agent tool_calls lack `parent_tool_use_id`, so we
     /// UPDATE existing rows to add the parent link. Text/thinking are inserted fresh.
-    async fn persist_assistant_subagent(&self, session_id: i64, message: &AssistantMessageBody, ptuid: &str) {
-        let model = Some(message.model.as_str());
+    async fn persist_assistant_subagent(
+        &self,
+        session_id: i64,
+        message: &RuntimeAssistantMessage,
+        ptuid: &str,
+    ) {
+        let model = message.model.as_deref();
         for cb in &message.content {
             match cb {
-                ContentBlock::ToolUse { id, name, input } => {
+                RuntimeContentBlock::ToolUse { id, name, input } => {
                     let content = serde_json::to_string(input).unwrap_or_default();
                     let result = sqlx::query(
                         "UPDATE agent_messages SET parent_tool_use_id = ?, content = ? \
                          WHERE session_id = ? AND tool_use_id = ? AND message_type = 'tool_call' \
-                         AND parent_tool_use_id IS NULL"
+                         AND parent_tool_use_id IS NULL",
                     )
-                        .bind(ptuid).bind(&content)
-                        .bind(session_id).bind(id)
-                        .execute(&self.write_pool).await;
+                    .bind(ptuid)
+                    .bind(&content)
+                    .bind(session_id)
+                    .bind(id)
+                    .execute(&self.write_pool)
+                    .await;
 
                     match result {
                         Ok(r) if r.rows_affected() == 0 => {
-                            let _ = Self::insert_message(&self.write_pool, session_id, "assistant", &content, "tool_call", Some(name), Some(id), Some(ptuid), model).await;
+                            let _ = Self::insert_message(
+                                &self.write_pool,
+                                session_id,
+                                "assistant",
+                                &content,
+                                "tool_call",
+                                Some(name),
+                                Some(id),
+                                Some(ptuid),
+                                model,
+                            )
+                            .await;
                         }
                         Err(e) => {
                             error!(error = %e, session_id, tool_use_id = %id, "failed to update sub-agent tool_call parent");
@@ -309,49 +470,89 @@ impl WsSessionPersistence {
                         _ => {}
                     }
                 }
-                ContentBlock::Text { text } => {
-                    let _ = Self::insert_message(&self.write_pool, session_id, "assistant", text, "text", None, None, Some(ptuid), model).await;
+                RuntimeContentBlock::Text { text } => {
+                    let _ = Self::insert_message(
+                        &self.write_pool,
+                        session_id,
+                        "assistant",
+                        text,
+                        "text",
+                        None,
+                        None,
+                        Some(ptuid),
+                        model,
+                    )
+                    .await;
                 }
-                ContentBlock::Thinking { thinking, .. } => {
-                    let _ = Self::insert_message(&self.write_pool, session_id, "assistant", thinking, "thinking", None, None, Some(ptuid), model).await;
+                RuntimeContentBlock::Thinking { thinking } => {
+                    let _ = Self::insert_message(
+                        &self.write_pool,
+                        session_id,
+                        "assistant",
+                        thinking,
+                        "thinking",
+                        None,
+                        None,
+                        Some(ptuid),
+                        model,
+                    )
+                    .await;
                 }
-                _ => {}
+                RuntimeContentBlock::Other => {}
             }
         }
     }
 
     /// Read a session row from the DB by its primary key.
     pub async fn get_session_row(pool: &SqlitePool, session_id: i64) -> Option<SessionRow> {
-        let row: Option<(i64, i64, Option<String>, Option<String>, Option<String>, String, Option<String>, Option<i64>, Option<i64>, Option<i64>)> =
+        let row: Option<(i64, i64, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>, String, Option<String>, Option<i64>, Option<i64>, Option<i64>)> =
             sqlx::query_as(
-                "SELECT id, feature_id, model, permission_mode, claude_session_id, status, pending_plan_approval, input_tokens, output_tokens, context_window FROM agent_sessions WHERE id = ?"
+                "SELECT id, feature_id, runtime_provider, runtime_session_id, model, permission_mode, claude_session_id, status, pending_plan_approval, input_tokens, output_tokens, context_window FROM agent_sessions WHERE id = ?"
             )
             .bind(session_id)
             .fetch_optional(pool)
             .await
             .ok()?;
-        row.map(|(id, feature_id, model, permission_mode, claude_session_id, status, pending_plan_approval, input_tokens, output_tokens, context_window)| SessionRow {
-            id,
-            feature_id,
-            model,
-            permission_mode,
-            claude_session_id,
-            status,
-            pending_plan_approval,
-            input_tokens,
-            output_tokens,
-            context_window,
-        })
+        row.map(
+            |(
+                id,
+                feature_id,
+                runtime_provider,
+                runtime_session_id,
+                model,
+                permission_mode,
+                claude_session_id,
+                status,
+                pending_plan_approval,
+                input_tokens,
+                output_tokens,
+                context_window,
+            )| SessionRow {
+                id,
+                feature_id,
+                runtime_provider,
+                runtime_session_id,
+                model,
+                permission_mode,
+                claude_session_id,
+                status,
+                pending_plan_approval,
+                input_tokens,
+                output_tokens,
+                context_window,
+            },
+        )
     }
 
     /// Mark a session as paused with ended_at = now.
     pub async fn mark_paused_static(pool: &SqlitePool, session_id: i64) {
         let now = chrono::Utc::now().to_rfc3339();
-        if let Err(e) = sqlx::query("UPDATE agent_sessions SET status = 'paused', ended_at = ? WHERE id = ?")
-            .bind(&now)
-            .bind(session_id)
-            .execute(pool)
-            .await
+        if let Err(e) =
+            sqlx::query("UPDATE agent_sessions SET status = 'paused', ended_at = ? WHERE id = ?")
+                .bind(&now)
+                .bind(session_id)
+                .execute(pool)
+                .await
         {
             error!(error = %e, session_db_id = session_id, "failed to mark session paused");
         }
@@ -359,10 +560,12 @@ impl WsSessionPersistence {
 
     /// Mark a session as running with ended_at = NULL.
     pub async fn mark_running_static(pool: &SqlitePool, session_id: i64) {
-        if let Err(e) = sqlx::query("UPDATE agent_sessions SET status = 'running', ended_at = NULL WHERE id = ?")
-            .bind(session_id)
-            .execute(pool)
-            .await
+        if let Err(e) = sqlx::query(
+            "UPDATE agent_sessions SET status = 'running', ended_at = NULL WHERE id = ?",
+        )
+        .bind(session_id)
+        .execute(pool)
+        .await
         {
             error!(error = %e, session_db_id = session_id, "failed to mark session running");
         }
@@ -371,11 +574,12 @@ impl WsSessionPersistence {
     /// Mark a session as completed.
     pub async fn mark_completed_static(pool: &SqlitePool, session_id: i64) {
         let now = chrono::Utc::now().to_rfc3339();
-        if let Err(e) = sqlx::query("UPDATE agent_sessions SET status = 'completed', ended_at = ? WHERE id = ?")
-            .bind(&now)
-            .bind(session_id)
-            .execute(pool)
-            .await
+        if let Err(e) =
+            sqlx::query("UPDATE agent_sessions SET status = 'completed', ended_at = ? WHERE id = ?")
+                .bind(&now)
+                .bind(session_id)
+                .execute(pool)
+                .await
         {
             error!(error = %e, session_db_id = session_id, "failed to mark session completed");
         }
@@ -384,11 +588,12 @@ impl WsSessionPersistence {
     /// Mark a session as error.
     pub async fn mark_error_static(pool: &SqlitePool, session_id: i64) {
         let now = chrono::Utc::now().to_rfc3339();
-        if let Err(e) = sqlx::query("UPDATE agent_sessions SET status = 'error', ended_at = ? WHERE id = ?")
-            .bind(&now)
-            .bind(session_id)
-            .execute(pool)
-            .await
+        if let Err(e) =
+            sqlx::query("UPDATE agent_sessions SET status = 'error', ended_at = ? WHERE id = ?")
+                .bind(&now)
+                .bind(session_id)
+                .execute(pool)
+                .await
         {
             error!(error = %e, session_db_id = session_id, "failed to mark session error");
         }
@@ -422,21 +627,23 @@ impl WsSessionPersistence {
     /// `clear_divider` message, and NULL out the column. Matches tRPC `clearSession`.
     ///
     /// If `known_cli_sid` is provided, it is used directly and the DB read is skipped.
-    pub async fn archive_and_clear(pool: &SqlitePool, session_id: i64, known_cli_sid: Option<&str>) {
+    pub async fn archive_and_clear(
+        pool: &SqlitePool,
+        session_id: i64,
+        known_cli_sid: Option<&str>,
+    ) {
         // Use the provided value or read from DB
         let cli_sid = match known_cli_sid {
             Some(sid) => Some(sid.to_string()),
-            None => {
-                sqlx::query_as::<_, (Option<String>,)>(
-                    "SELECT claude_session_id FROM agent_sessions WHERE id = ?"
-                )
-                .bind(session_id)
-                .fetch_optional(pool)
-                .await
-                .ok()
-                .flatten()
-                .and_then(|(sid,)| sid)
-            }
+            None => sqlx::query_as::<_, (Option<String>,)>(
+                "SELECT claude_session_id FROM agent_sessions WHERE id = ?",
+            )
+            .bind(session_id)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten()
+            .and_then(|(sid,)| sid),
         };
 
         if let Some(ref cli_sid) = cli_sid {
@@ -452,18 +659,35 @@ impl WsSessionPersistence {
         }
 
         // Insert clear_divider message
-        let _ = Self::insert_message(pool, session_id, "system", "clear_divider", "clear_divider", None, None, None, None).await;
+        let _ = Self::insert_message(
+            pool,
+            session_id,
+            "system",
+            "clear_divider",
+            "clear_divider",
+            None,
+            None,
+            None,
+            None,
+        )
+        .await;
 
         // NULL out claude_session_id
-        let _ = sqlx::query("UPDATE agent_sessions SET claude_session_id = NULL WHERE id = ?")
+        let _ = sqlx::query("UPDATE agent_sessions SET runtime_session_id = NULL, claude_session_id = NULL WHERE id = ?")
             .bind(session_id)
             .execute(pool)
             .await;
     }
 
     /// Persist the claude_session_id given a pool and session_id (static version).
-    pub async fn persist_claude_session_id_static(pool: &SqlitePool, session_id: i64, claude_session_id: &str) {
-        if let Err(e) = sqlx::query("UPDATE agent_sessions SET claude_session_id = ? WHERE id = ?")
+    pub async fn persist_claude_session_id_static(
+        pool: &SqlitePool,
+        session_id: i64,
+        claude_session_id: &str,
+    ) {
+        if let Err(e) = sqlx::query("UPDATE agent_sessions SET runtime_provider = ?, runtime_session_id = ?, claude_session_id = ? WHERE id = ?")
+            .bind(crate::domain::agents::runtime::DEFAULT_PROVIDER)
+            .bind(claude_session_id)
             .bind(claude_session_id)
             .bind(session_id)
             .execute(pool)
@@ -474,13 +698,20 @@ impl WsSessionPersistence {
     }
 
     /// Update token usage counters on a session row (best-effort).
-    pub async fn update_token_usage(pool: &SqlitePool, session_id: i64, input_tokens: u64, output_tokens: u64) {
-        let _ = sqlx::query("UPDATE agent_sessions SET input_tokens = ?, output_tokens = ? WHERE id = ?")
-            .bind(input_tokens as i64)
-            .bind(output_tokens as i64)
-            .bind(session_id)
-            .execute(pool)
-            .await;
+    pub async fn update_token_usage(
+        pool: &SqlitePool,
+        session_id: i64,
+        input_tokens: u64,
+        output_tokens: u64,
+    ) {
+        let _ = sqlx::query(
+            "UPDATE agent_sessions SET input_tokens = ?, output_tokens = ? WHERE id = ?",
+        )
+        .bind(input_tokens as i64)
+        .bind(output_tokens as i64)
+        .bind(session_id)
+        .execute(pool)
+        .await;
     }
 
     /// Update the context window size for a session (best-effort).
@@ -512,7 +743,10 @@ impl WsSessionPersistence {
     ///
     /// Returns `Ok(feature_id)` on success (for turn-state broadcast),
     /// or `Err(reason)` if the session doesn't exist or is still running.
-    pub async fn delete_session_static(pool: &SqlitePool, session_id: i64) -> Result<(i64, Option<String>), String> {
+    pub async fn delete_session_static(
+        pool: &SqlitePool,
+        session_id: i64,
+    ) -> Result<(i64, Option<String>), String> {
         // Look up feature_id, status, and agent_type
         let row: Option<(i64, String, Option<String>)> = sqlx::query_as(
             "SELECT feature_id, status, agent_type FROM agent_sessions WHERE id = ?",
@@ -534,11 +768,17 @@ impl WsSessionPersistence {
         // Delete in dependency order
         let _ = crate::domain::features::repository::clear_agent_session(pool, session_id).await;
         let _ = sqlx::query("DELETE FROM session_claude_ids WHERE session_id = ?")
-            .bind(session_id).execute(pool).await;
+            .bind(session_id)
+            .execute(pool)
+            .await;
         let _ = sqlx::query("DELETE FROM agent_messages WHERE session_id = ?")
-            .bind(session_id).execute(pool).await;
+            .bind(session_id)
+            .execute(pool)
+            .await;
         let _ = sqlx::query("DELETE FROM agent_sessions WHERE id = ?")
-            .bind(session_id).execute(pool).await;
+            .bind(session_id)
+            .execute(pool)
+            .await;
 
         Ok((feature_id, agent_type))
     }
@@ -547,7 +787,7 @@ impl WsSessionPersistence {
     pub async fn cleanup_stale_sessions(pool: &SqlitePool) {
         let now = chrono::Utc::now().to_rfc3339();
         if let Err(e) = sqlx::query(
-            "UPDATE agent_sessions SET status = 'paused', ended_at = ? WHERE status = 'running'"
+            "UPDATE agent_sessions SET status = 'paused', ended_at = ? WHERE status = 'running'",
         )
         .bind(&now)
         .execute(pool)
@@ -560,20 +800,28 @@ impl WsSessionPersistence {
     /// Store the Claude CLI session ID so future app restarts can --resume.
     #[cfg(test)]
     pub async fn persist_claude_session_id(&self, claude_session_id: &str) {
-        let Some(session_id) = self.session_db_id else { return };
-        Self::persist_claude_session_id_static(&self.write_pool, session_id, claude_session_id).await;
+        let Some(session_id) = self.session_db_id else {
+            return;
+        };
+        Self::persist_claude_session_id_static(&self.write_pool, session_id, claude_session_id)
+            .await;
     }
 
     #[cfg(test)]
     pub async fn mark_completed(&self) {
-        let Some(session_id) = self.session_db_id else { return };
+        let Some(session_id) = self.session_db_id else {
+            return;
+        };
         Self::mark_completed_static(&self.write_pool, session_id).await;
     }
 
     /// Look up the most recent claude_session_id for a feature across both
     /// `agent_sessions` and the `session_claude_ids` archive table.
     #[cfg(test)]
-    pub async fn get_latest_claude_session_id(pool: &SqlitePool, feature_id: i64) -> Option<String> {
+    pub async fn get_latest_claude_session_id(
+        pool: &SqlitePool,
+        feature_id: i64,
+    ) -> Option<String> {
         let row: Option<(String,)> = sqlx::query_as(
             r#"SELECT claude_session_id FROM (
                 SELECT claude_session_id, id AS sort_key FROM agent_sessions
@@ -582,7 +830,7 @@ impl WsSessionPersistence {
                 SELECT sci.claude_session_id, sci.id AS sort_key FROM session_claude_ids sci
                     JOIN agent_sessions s ON sci.session_id = s.id
                     WHERE s.feature_id = ?
-            ) ORDER BY sort_key DESC LIMIT 1"#
+            ) ORDER BY sort_key DESC LIMIT 1"#,
         )
         .bind(feature_id)
         .bind(feature_id)
@@ -611,6 +859,8 @@ mod tests {
                 feature_id INTEGER NOT NULL,
                 agent_type TEXT NOT NULL DEFAULT 'session',
                 status TEXT NOT NULL DEFAULT 'idle',
+                runtime_provider TEXT,
+                runtime_session_id TEXT,
                 claude_session_id TEXT,
                 model TEXT,
                 permission_mode TEXT,
@@ -688,22 +938,27 @@ mod tests {
 
         // Create initial session
         let mut p1 = WsSessionPersistence::new(pool.clone(), 1);
-        let id1 = p1.find_or_create_session(Some("sonnet"), None).await.unwrap();
+        let id1 = p1
+            .find_or_create_session(Some("sonnet"), None)
+            .await
+            .unwrap();
 
         // Second call with same feature_id should reuse
         let mut p2 = WsSessionPersistence::new(pool.clone(), 1);
-        let id2 = p2.find_or_create_session(Some("opus"), Some("plan")).await.unwrap();
+        let id2 = p2
+            .find_or_create_session(Some("opus"), Some("plan"))
+            .await
+            .unwrap();
 
         assert_eq!(id1, id2);
 
         // Model should NOT be overwritten — preserves the original "sonnet"
-        let row: (String, String) = sqlx::query_as(
-            "SELECT model, permission_mode FROM agent_sessions WHERE id = ?",
-        )
-        .bind(id2)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
+        let row: (String, String) =
+            sqlx::query_as("SELECT model, permission_mode FROM agent_sessions WHERE id = ?")
+                .bind(id2)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
         assert_eq!(row.0, "sonnet");
         assert_eq!(row.1, "plan");
     }
@@ -753,14 +1008,12 @@ mod tests {
         .unwrap();
 
         // Archive the session ID (as the Electron stop flow does)
-        sqlx::query(
-            "INSERT INTO session_claude_ids (session_id, claude_session_id) VALUES (?, ?)",
-        )
-        .bind(session_id.0)
-        .bind("archived-cli-sess")
-        .execute(&pool)
-        .await
-        .unwrap();
+        sqlx::query("INSERT INTO session_claude_ids (session_id, claude_session_id) VALUES (?, ?)")
+            .bind(session_id.0)
+            .bind("archived-cli-sess")
+            .execute(&pool)
+            .await
+            .unwrap();
 
         let found = WsSessionPersistence::get_latest_claude_session_id(&pool, 1).await;
         assert_eq!(found, Some("archived-cli-sess".to_string()));
@@ -790,9 +1043,14 @@ mod tests {
     async fn test_get_session_row() {
         let pool = setup_test_db().await;
         let mut p = WsSessionPersistence::new(pool.clone(), 42);
-        let id = p.find_or_create_session(Some("opus"), Some("plan")).await.unwrap();
+        let id = p
+            .find_or_create_session(Some("opus"), Some("plan"))
+            .await
+            .unwrap();
 
-        let row = WsSessionPersistence::get_session_row(&pool, id).await.unwrap();
+        let row = WsSessionPersistence::get_session_row(&pool, id)
+            .await
+            .unwrap();
         assert_eq!(row.id, id);
         assert_eq!(row.feature_id, 42);
         assert_eq!(row.model.as_deref(), Some("opus"));
@@ -803,7 +1061,9 @@ mod tests {
     #[tokio::test]
     async fn test_get_session_row_missing() {
         let pool = setup_test_db().await;
-        assert!(WsSessionPersistence::get_session_row(&pool, 999).await.is_none());
+        assert!(WsSessionPersistence::get_session_row(&pool, 999)
+            .await
+            .is_none());
     }
 
     #[tokio::test]
@@ -815,7 +1075,10 @@ mod tests {
         WsSessionPersistence::mark_paused_static(&pool, id).await;
 
         let row: (String,) = sqlx::query_as("SELECT status FROM agent_sessions WHERE id = ?")
-            .bind(id).fetch_one(&pool).await.unwrap();
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
         assert_eq!(row.0, "paused");
     }
 
@@ -828,8 +1091,12 @@ mod tests {
         WsSessionPersistence::mark_paused_static(&pool, id).await;
         WsSessionPersistence::mark_running_static(&pool, id).await;
 
-        let row: (String, Option<String>) = sqlx::query_as("SELECT status, ended_at FROM agent_sessions WHERE id = ?")
-            .bind(id).fetch_one(&pool).await.unwrap();
+        let row: (String, Option<String>) =
+            sqlx::query_as("SELECT status, ended_at FROM agent_sessions WHERE id = ?")
+                .bind(id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
         assert_eq!(row.0, "running");
         assert!(row.1.is_none());
     }
@@ -838,12 +1105,18 @@ mod tests {
     async fn test_update_model_static() {
         let pool = setup_test_db().await;
         let mut p = WsSessionPersistence::new(pool.clone(), 1);
-        let id = p.find_or_create_session(Some("sonnet"), None).await.unwrap();
+        let id = p
+            .find_or_create_session(Some("sonnet"), None)
+            .await
+            .unwrap();
 
         WsSessionPersistence::update_model_static(&pool, id, "opus").await;
 
         let row: (String,) = sqlx::query_as("SELECT model FROM agent_sessions WHERE id = ?")
-            .bind(id).fetch_one(&pool).await.unwrap();
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
         assert_eq!(row.0, "opus");
     }
 
@@ -855,8 +1128,12 @@ mod tests {
 
         WsSessionPersistence::update_permission_mode_static(&pool, id, "acceptEdits").await;
 
-        let row: (String,) = sqlx::query_as("SELECT permission_mode FROM agent_sessions WHERE id = ?")
-            .bind(id).fetch_one(&pool).await.unwrap();
+        let row: (String,) =
+            sqlx::query_as("SELECT permission_mode FROM agent_sessions WHERE id = ?")
+                .bind(id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
         assert_eq!(row.0, "acceptEdits");
     }
 
@@ -873,13 +1150,21 @@ mod tests {
         WsSessionPersistence::archive_and_clear(&pool, id, None).await;
 
         // claude_session_id should be NULL
-        let row: (Option<String>,) = sqlx::query_as("SELECT claude_session_id FROM agent_sessions WHERE id = ?")
-            .bind(id).fetch_one(&pool).await.unwrap();
+        let row: (Option<String>,) =
+            sqlx::query_as("SELECT claude_session_id FROM agent_sessions WHERE id = ?")
+                .bind(id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
         assert!(row.0.is_none());
 
         // Should be archived in session_claude_ids
-        let archived: (String,) = sqlx::query_as("SELECT claude_session_id FROM session_claude_ids WHERE session_id = ?")
-            .bind(id).fetch_one(&pool).await.unwrap();
+        let archived: (String,) =
+            sqlx::query_as("SELECT claude_session_id FROM session_claude_ids WHERE session_id = ?")
+                .bind(id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
         assert_eq!(archived.0, "cli-sess-123");
 
         // Should have a clear_divider message
@@ -907,7 +1192,9 @@ mod tests {
 
         // Both should now be paused (running one got cleaned up)
         let rows: Vec<(String,)> = sqlx::query_as("SELECT status FROM agent_sessions ORDER BY id")
-            .fetch_all(&pool).await.unwrap();
+            .fetch_all(&pool)
+            .await
+            .unwrap();
         assert_eq!(rows[0].0, "paused");
         assert_eq!(rows[1].0, "paused");
     }
@@ -925,9 +1212,12 @@ mod tests {
         let p = WsSessionPersistence::with_session_id(pool.clone(), 1, Some(id.0));
         p.persist_user_message("hello from with_session_id").await;
 
-        let row: (String,) = sqlx::query_as(
-            "SELECT content FROM agent_messages WHERE session_id = ?"
-        ).bind(id.0).fetch_one(&pool).await.unwrap();
+        let row: (String,) =
+            sqlx::query_as("SELECT content FROM agent_messages WHERE session_id = ?")
+                .bind(id.0)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
         assert_eq!(row.0, "hello from with_session_id");
     }
 
@@ -941,15 +1231,21 @@ mod tests {
         WsSessionPersistence::archive_and_clear(&pool, id, Some("directly-passed-sid")).await;
 
         // Should be archived even though it was never on the row
-        let archived: (String,) = sqlx::query_as(
-            "SELECT claude_session_id FROM session_claude_ids WHERE session_id = ?"
-        ).bind(id).fetch_one(&pool).await.unwrap();
+        let archived: (String,) =
+            sqlx::query_as("SELECT claude_session_id FROM session_claude_ids WHERE session_id = ?")
+                .bind(id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
         assert_eq!(archived.0, "directly-passed-sid");
 
         // Row's claude_session_id should be NULL
-        let row: (Option<String>,) = sqlx::query_as(
-            "SELECT claude_session_id FROM agent_sessions WHERE id = ?"
-        ).bind(id).fetch_one(&pool).await.unwrap();
+        let row: (Option<String>,) =
+            sqlx::query_as("SELECT claude_session_id FROM agent_sessions WHERE id = ?")
+                .bind(id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
         assert!(row.0.is_none());
     }
 
@@ -961,9 +1257,12 @@ mod tests {
 
         WsSessionPersistence::persist_claude_session_id_static(&pool, id, "static-sid-123").await;
 
-        let row: (Option<String>,) = sqlx::query_as(
-            "SELECT claude_session_id FROM agent_sessions WHERE id = ?"
-        ).bind(id).fetch_one(&pool).await.unwrap();
+        let row: (Option<String>,) =
+            sqlx::query_as("SELECT claude_session_id FROM agent_sessions WHERE id = ?")
+                .bind(id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
         assert_eq!(row.0.as_deref(), Some("static-sid-123"));
     }
 
@@ -973,15 +1272,22 @@ mod tests {
 
         // Step 1: Create session and persist a claude_session_id (simulates stream_reader capture)
         let mut p = WsSessionPersistence::new(pool.clone(), 1);
-        let id = p.find_or_create_session(Some("sonnet"), None).await.unwrap();
-        WsSessionPersistence::persist_claude_session_id_static(&pool, id, "cli-sess-resume-test").await;
+        let id = p
+            .find_or_create_session(Some("sonnet"), None)
+            .await
+            .unwrap();
+        WsSessionPersistence::persist_claude_session_id_static(&pool, id, "cli-sess-resume-test")
+            .await;
 
         // Step 2: Simulate app crash — session is still 'running'
         // On restart, cleanup_stale_sessions marks it paused
         WsSessionPersistence::cleanup_stale_sessions(&pool).await;
 
         let row: (String,) = sqlx::query_as("SELECT status FROM agent_sessions WHERE id = ?")
-            .bind(id).fetch_one(&pool).await.unwrap();
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
         assert_eq!(row.0, "paused");
 
         // Step 3: On reconnect, find_or_create reuses the session
@@ -1007,8 +1313,12 @@ mod tests {
         WsSessionPersistence::archive_and_clear(&pool, id, None).await;
 
         // claude_session_id is now NULL on the row
-        let row: (Option<String>,) = sqlx::query_as("SELECT claude_session_id FROM agent_sessions WHERE id = ?")
-            .bind(id).fetch_one(&pool).await.unwrap();
+        let row: (Option<String>,) =
+            sqlx::query_as("SELECT claude_session_id FROM agent_sessions WHERE id = ?")
+                .bind(id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
         assert!(row.0.is_none());
 
         // But get_latest_claude_session_id should still find it via the archive table
@@ -1025,7 +1335,10 @@ mod tests {
         WsSessionPersistence::mark_completed_static(&pool, id).await;
 
         let row: (String,) = sqlx::query_as("SELECT status FROM agent_sessions WHERE id = ?")
-            .bind(id).fetch_one(&pool).await.unwrap();
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
         assert_eq!(row.0, "completed");
     }
 
@@ -1037,13 +1350,12 @@ mod tests {
 
         WsSessionPersistence::update_token_usage(&pool, id, 1500, 300).await;
 
-        let row: (i64, i64) = sqlx::query_as(
-            "SELECT input_tokens, output_tokens FROM agent_sessions WHERE id = ?",
-        )
-        .bind(id)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
+        let row: (i64, i64) =
+            sqlx::query_as("SELECT input_tokens, output_tokens FROM agent_sessions WHERE id = ?")
+                .bind(id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
         assert_eq!(row.0, 1500);
         assert_eq!(row.1, 300);
     }
@@ -1057,7 +1369,10 @@ mod tests {
         p.mark_completed().await;
 
         let row: (String,) = sqlx::query_as("SELECT status FROM agent_sessions WHERE id = ?")
-            .bind(p.session_db_id.unwrap()).fetch_one(&pool).await.unwrap();
+            .bind(p.session_db_id.unwrap())
+            .fetch_one(&pool)
+            .await
+            .unwrap();
         assert_eq!(row.0, "completed");
     }
 
@@ -1075,11 +1390,18 @@ mod tests {
 
         // Verify all rows are gone
         let session: Option<(i64,)> = sqlx::query_as("SELECT id FROM agent_sessions WHERE id = ?")
-            .bind(id).fetch_optional(&pool).await.unwrap();
+            .bind(id)
+            .fetch_optional(&pool)
+            .await
+            .unwrap();
         assert!(session.is_none());
 
-        let msgs: Vec<(i64,)> = sqlx::query_as("SELECT id FROM agent_messages WHERE session_id = ?")
-            .bind(id).fetch_all(&pool).await.unwrap();
+        let msgs: Vec<(i64,)> =
+            sqlx::query_as("SELECT id FROM agent_messages WHERE session_id = ?")
+                .bind(id)
+                .fetch_all(&pool)
+                .await
+                .unwrap();
         assert!(msgs.is_empty());
     }
 
@@ -1110,8 +1432,12 @@ mod tests {
         // Insert a plan-type session directly
         sqlx::query("INSERT INTO agent_sessions (feature_id, agent_type, status) VALUES (1, 'plan', 'paused')")
             .execute(&pool).await.unwrap();
-        let id: (i64,) = sqlx::query_as("SELECT id FROM agent_sessions WHERE feature_id = 1 AND agent_type = 'plan'")
-            .fetch_one(&pool).await.unwrap();
+        let id: (i64,) = sqlx::query_as(
+            "SELECT id FROM agent_sessions WHERE feature_id = 1 AND agent_type = 'plan'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
 
         let result = WsSessionPersistence::delete_session_static(&pool, id.0).await;
         assert!(result.is_ok());
@@ -1151,10 +1477,15 @@ mod tests {
     async fn test_get_session_row_includes_pending_plan_approval() {
         let pool = setup_test_db().await;
         let mut p = WsSessionPersistence::new(pool.clone(), 10);
-        let id = p.find_or_create_session(Some("opus"), Some("plan")).await.unwrap();
+        let id = p
+            .find_or_create_session(Some("opus"), Some("plan"))
+            .await
+            .unwrap();
 
         // Initially null
-        let row = WsSessionPersistence::get_session_row(&pool, id).await.unwrap();
+        let row = WsSessionPersistence::get_session_row(&pool, id)
+            .await
+            .unwrap();
         assert!(row.pending_plan_approval.is_none());
 
         // Set pending_plan_approval
@@ -1165,15 +1496,23 @@ mod tests {
             .await
             .unwrap();
 
-        let row = WsSessionPersistence::get_session_row(&pool, id).await.unwrap();
-        assert_eq!(row.pending_plan_approval.as_deref(), Some(r#"{"plan":"test"}"#));
+        let row = WsSessionPersistence::get_session_row(&pool, id)
+            .await
+            .unwrap();
+        assert_eq!(
+            row.pending_plan_approval.as_deref(),
+            Some(r#"{"plan":"test"}"#)
+        );
     }
 
     #[tokio::test]
     async fn test_plan_approval_result_roundtrip() {
         let pool = setup_test_db().await;
         let mut p = WsSessionPersistence::new(pool.clone(), 10);
-        let id = p.find_or_create_session(Some("opus"), Some("plan")).await.unwrap();
+        let id = p
+            .find_or_create_session(Some("opus"), Some("plan"))
+            .await
+            .unwrap();
 
         // Set pending_plan_approval and plan_approval_result
         sqlx::query("UPDATE agent_sessions SET pending_plan_approval = ?, plan_approval_result = ? WHERE id = ?")
@@ -1191,7 +1530,9 @@ mod tests {
             .await
             .unwrap();
 
-        let row = WsSessionPersistence::get_session_row(&pool, id).await.unwrap();
+        let row = WsSessionPersistence::get_session_row(&pool, id)
+            .await
+            .unwrap();
         assert!(row.pending_plan_approval.is_none());
     }
 
@@ -1199,7 +1540,10 @@ mod tests {
     async fn test_enter_plan_mode_persists_permission_mode() {
         let pool = setup_test_db().await;
         let mut p = WsSessionPersistence::new(pool.clone(), 10);
-        let id = p.find_or_create_session(Some("opus"), Some("acceptEdits")).await.unwrap();
+        let id = p
+            .find_or_create_session(Some("opus"), Some("acceptEdits"))
+            .await
+            .unwrap();
 
         // Simulate EnterPlanMode updating the permission_mode
         sqlx::query("UPDATE agent_sessions SET permission_mode = 'plan' WHERE id = ?")
@@ -1208,7 +1552,9 @@ mod tests {
             .await
             .unwrap();
 
-        let row = WsSessionPersistence::get_session_row(&pool, id).await.unwrap();
+        let row = WsSessionPersistence::get_session_row(&pool, id)
+            .await
+            .unwrap();
         assert_eq!(row.permission_mode.as_deref(), Some("plan"));
     }
 
@@ -1216,7 +1562,10 @@ mod tests {
     async fn test_exit_plan_mode_approval_switches_to_accept_edits() {
         let pool = setup_test_db().await;
         let mut p = WsSessionPersistence::new(pool.clone(), 10);
-        let id = p.find_or_create_session(Some("opus"), Some("plan")).await.unwrap();
+        let id = p
+            .find_or_create_session(Some("opus"), Some("plan"))
+            .await
+            .unwrap();
 
         // Simulate ExitPlanMode approval switching mode
         sqlx::query("UPDATE agent_sessions SET permission_mode = 'acceptEdits', pending_plan_approval = NULL WHERE id = ?")
@@ -1225,22 +1574,37 @@ mod tests {
             .await
             .unwrap();
 
-        let row = WsSessionPersistence::get_session_row(&pool, id).await.unwrap();
+        let row = WsSessionPersistence::get_session_row(&pool, id)
+            .await
+            .unwrap();
         assert_eq!(row.permission_mode.as_deref(), Some("acceptEdits"));
         assert!(row.pending_plan_approval.is_none());
     }
 
     // ---- Sub-agent assistant message persistence tests ----
 
-    fn make_assistant_message(content: Vec<ContentBlock>) -> AssistantMessageBody {
-        AssistantMessageBody {
-            id: "msg-test".to_string(),
+    fn make_assistant_message(content: Vec<RuntimeContentBlock>) -> RuntimeAssistantMessage {
+        RuntimeAssistantMessage {
+            model: Some("claude-sonnet-4-20250514".to_string()),
             content,
-            model: "claude-sonnet-4-20250514".to_string(),
-            stop_reason: Some("end_turn".to_string()),
-            usage: None,
-            msg_type: None,
         }
+    }
+
+    fn make_assistant_event(
+        content: Vec<RuntimeContentBlock>,
+        parent_tool_use_id: Option<&str>,
+    ) -> RuntimeEvent {
+        RuntimeEvent::new(
+            crate::domain::agents::adapter::RuntimeEventMetadata {
+                session_id: Some("s1".to_string()),
+                usage: None,
+                raw: serde_json::json!({}),
+            },
+            crate::domain::agents::adapter::RuntimeEventKind::AssistantMessage {
+                message: make_assistant_message(content),
+                parent_tool_use_id: parent_tool_use_id.map(|id| id.to_string()),
+            },
+        )
     }
 
     #[tokio::test]
@@ -1250,17 +1614,27 @@ mod tests {
         let sid = p.find_or_create_session(None, None).await.unwrap();
 
         // Simulate stream_event tool_call (no parent_tool_use_id)
-        let _ = WsSessionPersistence::insert_message(&pool, sid, "assistant", "{\"command\":\"ls\"}", "tool_call", Some("Bash"), Some("toolu_child1"), None, None).await;
+        let _ = WsSessionPersistence::insert_message(
+            &pool,
+            sid,
+            "assistant",
+            "{\"command\":\"ls\"}",
+            "tool_call",
+            Some("Bash"),
+            Some("toolu_child1"),
+            None,
+            None,
+        )
+        .await;
 
         // Simulate assistant message arriving with parent
-        let msg = make_assistant_message(vec![
-            ContentBlock::ToolUse {
-                id: "toolu_child1".to_string(),
-                name: "Bash".to_string(),
-                input: serde_json::json!({"command": "ls -la"}),
-            },
-        ]);
-        p.persist_assistant_subagent(sid, &msg, "toolu_parent").await;
+        let msg = make_assistant_message(vec![RuntimeContentBlock::ToolUse {
+            id: "toolu_child1".to_string(),
+            name: "Bash".to_string(),
+            input: serde_json::json!({"command": "ls -la"}),
+        }]);
+        p.persist_assistant_subagent(sid, &msg, "toolu_parent")
+            .await;
 
         // The existing row should now have parent_tool_use_id set
         let row: (Option<String>, String) = sqlx::query_as(
@@ -1272,8 +1646,11 @@ mod tests {
 
         // Should not have created a duplicate
         let count: (i64,) = sqlx::query_as(
-            "SELECT COUNT(*) FROM agent_messages WHERE tool_use_id = 'toolu_child1'"
-        ).fetch_one(&pool).await.unwrap();
+            "SELECT COUNT(*) FROM agent_messages WHERE tool_use_id = 'toolu_child1'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
         assert_eq!(count.0, 1);
     }
 
@@ -1284,14 +1661,13 @@ mod tests {
         let sid = p.find_or_create_session(None, None).await.unwrap();
 
         // No prior stream_event row — assistant message should insert
-        let msg = make_assistant_message(vec![
-            ContentBlock::ToolUse {
-                id: "toolu_new".to_string(),
-                name: "Read".to_string(),
-                input: serde_json::json!({"file_path": "/tmp/test"}),
-            },
-        ]);
-        p.persist_assistant_subagent(sid, &msg, "toolu_parent").await;
+        let msg = make_assistant_message(vec![RuntimeContentBlock::ToolUse {
+            id: "toolu_new".to_string(),
+            name: "Read".to_string(),
+            input: serde_json::json!({"file_path": "/tmp/test"}),
+        }]);
+        p.persist_assistant_subagent(sid, &msg, "toolu_parent")
+            .await;
 
         let row: (String, String, Option<String>) = sqlx::query_as(
             "SELECT tool_name, content, parent_tool_use_id FROM agent_messages WHERE tool_use_id = 'toolu_new'"
@@ -1308,15 +1684,15 @@ mod tests {
         let sid = p.find_or_create_session(None, None).await.unwrap();
 
         let msg = make_assistant_message(vec![
-            ContentBlock::Thinking {
+            RuntimeContentBlock::Thinking {
                 thinking: "Let me analyze...".to_string(),
-                signature: None,
             },
-            ContentBlock::Text {
+            RuntimeContentBlock::Text {
                 text: "Here are my findings.".to_string(),
             },
         ]);
-        p.persist_assistant_subagent(sid, &msg, "toolu_parent").await;
+        p.persist_assistant_subagent(sid, &msg, "toolu_parent")
+            .await;
 
         let rows: Vec<(String, String, Option<String>)> = sqlx::query_as(
             "SELECT message_type, content, parent_tool_use_id FROM agent_messages WHERE session_id = ? ORDER BY id"
@@ -1337,43 +1713,41 @@ mod tests {
         let mut p = WsSessionPersistence::new(pool.clone(), 1);
         let sid = p.find_or_create_session(None, None).await.unwrap();
 
-        let sdk_msg = SdkMessage::Assistant {
-            uuid: "u1".to_string(),
-            session_id: "s1".to_string(),
-            message: make_assistant_message(vec![
-                ContentBlock::Text { text: "top-level response".to_string() },
-            ]),
-            parent_tool_use_id: None,
-            error: None,
-        };
-        p.persist_sdk_message(&sdk_msg).await;
+        let runtime_event = make_assistant_event(
+            vec![RuntimeContentBlock::Text {
+                text: "top-level response".to_string(),
+            }],
+            None,
+        );
+        p.persist_runtime_event(&runtime_event).await;
 
-        let count: (i64,) = sqlx::query_as(
-            "SELECT COUNT(*) FROM agent_messages WHERE session_id = ?"
-        ).bind(sid).fetch_one(&pool).await.unwrap();
-        assert_eq!(count.0, 0, "top-level assistant messages should not be persisted via this path");
+        let count: (i64,) =
+            sqlx::query_as("SELECT COUNT(*) FROM agent_messages WHERE session_id = ?")
+                .bind(sid)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            count.0, 0,
+            "top-level assistant messages should not be persisted via this path"
+        );
     }
 
     #[tokio::test]
-    async fn test_assistant_subagent_dispatched_via_persist_sdk_message() {
+    async fn test_assistant_subagent_dispatched_via_persist_runtime_event() {
         let pool = setup_test_db().await;
         let mut p = WsSessionPersistence::new(pool.clone(), 1);
         let _sid = p.find_or_create_session(None, None).await.unwrap();
 
-        let sdk_msg = SdkMessage::Assistant {
-            uuid: "u1".to_string(),
-            session_id: "s1".to_string(),
-            message: make_assistant_message(vec![
-                ContentBlock::ToolUse {
-                    id: "toolu_via_sdk".to_string(),
-                    name: "Grep".to_string(),
-                    input: serde_json::json!({"pattern": "foo"}),
-                },
-            ]),
-            parent_tool_use_id: Some("toolu_agent".to_string()),
-            error: None,
-        };
-        p.persist_sdk_message(&sdk_msg).await;
+        let runtime_event = make_assistant_event(
+            vec![RuntimeContentBlock::ToolUse {
+                id: "toolu_via_sdk".to_string(),
+                name: "Grep".to_string(),
+                input: serde_json::json!({"pattern": "foo"}),
+            }],
+            Some("toolu_agent"),
+        );
+        p.persist_runtime_event(&runtime_event).await;
 
         let row: (String, Option<String>) = sqlx::query_as(
             "SELECT tool_name, parent_tool_use_id FROM agent_messages WHERE tool_use_id = 'toolu_via_sdk'"

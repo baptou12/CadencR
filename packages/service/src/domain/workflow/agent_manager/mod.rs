@@ -10,12 +10,15 @@ use sqlx::SqlitePool;
 use tracing::{error, info, warn};
 
 use axum::extract::ws::Message;
-use claude_agent_sdk_rs::Query;
 
+use crate::domain::agents::adapter::RuntimeSessionHandle;
+use crate::domain::agents::runtime_adapter;
 use crate::domain::features::models::QueueItem;
 use crate::domain::features::repository as repo;
 use crate::domain::mcp::servers::AgentType;
-use crate::domain::workflow::engine::{AgentSlot, WsSender, send_feature_updated_envelope, to_value};
+use crate::domain::workflow::engine::{
+    send_feature_updated_envelope, to_value, AgentSlot, WsSender,
+};
 use crate::domain::workflow::permission_router::PermissionRouter;
 use crate::domain::workflow::strategies::WorkflowStrategy;
 use crate::domain::workflow::stream_reader::spawn_workflow_stream_reader;
@@ -34,7 +37,8 @@ mod tests;
 /// Built via `AgentManager::build_spawn_context` to deduplicate setup logic.
 pub struct SpawnContext {
     pub model: String,
-    pub options: claude_agent_sdk_rs::Options,
+    pub provider: String,
+    pub runtime_config: crate::domain::agents::adapter::RuntimeSpawnConfig,
     pub expected_mcp_server: String,
 }
 
@@ -45,8 +49,8 @@ pub struct AgentManager {
     pub write_pool: SqlitePool,
     pub ws_sender: WsSender,
     pub turn_state_tx: tokio::sync::broadcast::Sender<crate::app_state::TurnStateEvent>,
-    /// AgentSlot → Query handle (for interrupt/stream_input)
-    pub queries: Arc<DashMap<AgentSlot, Arc<tokio::sync::Mutex<Query>>>>,
+    /// AgentSlot → runtime session handle (for interrupt/stream_input)
+    pub queries: Arc<DashMap<AgentSlot, RuntimeSessionHandle>>,
     /// AgentSlot → db_session_id
     pub active_items: Arc<DashMap<AgentSlot, i64>>,
     /// Items that were explicitly interrupted (to distinguish from normal completion).
@@ -88,9 +92,16 @@ impl AgentManager {
         permissions: &PermissionRouter,
     ) -> Result<i64, String> {
         self.spawn_pre_queue_agent_with_display(
-            agent_type, agent_type_str, system_prompt,
-            initial_prompt, None, images, slot_fn, permissions,
-        ).await
+            agent_type,
+            agent_type_str,
+            system_prompt,
+            initial_prompt,
+            None,
+            images,
+            slot_fn,
+            permissions,
+        )
+        .await
     }
 
     /// Like `spawn_pre_queue_agent`, but accepts an optional display message
@@ -106,7 +117,11 @@ impl AgentManager {
         slot_fn: impl FnOnce(i64) -> AgentSlot,
         permissions: &PermissionRouter,
     ) -> Result<i64, String> {
-        info!(feature_id = self.feature_id, agent_type = agent_type_str, "spawning pre-queue agent");
+        info!(
+            feature_id = self.feature_id,
+            agent_type = agent_type_str,
+            "spawning pre-queue agent"
+        );
 
         // 1. Create agent session in DB
         let now = chrono::Utc::now().to_rfc3339();
@@ -123,17 +138,29 @@ impl AgentManager {
         let slot = slot_fn(db_session_id);
 
         // 2. Build spawn context (MCP, CWD, permissions, model, options)
-        let ctx = self.build_spawn_context(
-            slot.clone(), db_session_id, agent_type, agent_type_str,
-            Some(system_prompt), None, true, permissions,
-            None, None, None,
-        ).await?;
+        let ctx = self
+            .build_spawn_context(
+                slot.clone(),
+                db_session_id,
+                agent_type,
+                agent_type_str,
+                Some(system_prompt),
+                None,
+                true,
+                permissions,
+                None,
+                None,
+                None,
+            )
+            .await?;
 
         // 3. Persist the initial user prompt and send it to the frontend
         let display_msg = user_display_message.unwrap_or(initial_prompt);
         {
             let p = WsSessionPersistence::with_session_id(
-                self.write_pool.clone(), self.feature_id, Some(db_session_id),
+                self.write_pool.clone(),
+                self.feature_id,
+                Some(db_session_id),
             );
             p.persist_user_message(display_msg).await;
         }
@@ -142,30 +169,48 @@ impl AgentManager {
         let content_value = build_content_value(initial_prompt, images);
 
         // 4. Spawn query and start stream reader
-        match claude_agent_sdk_rs::query(content_value, ctx.options).await {
-            Ok(mut real_query) => {
-                let message_rx = real_query.take_message_rx();
-                let query_handle = Arc::new(tokio::sync::Mutex::new(real_query));
+        let adapter = runtime_adapter(&ctx.provider).ok_or_else(|| {
+            format!(
+                "No runtime adapter registered for provider '{}'",
+                ctx.provider
+            )
+        })?;
+        match adapter.spawn(content_value, ctx.runtime_config).await {
+            Ok(mut runtime_session) => {
+                let message_rx = runtime_session.take_message_rx();
+                let query_handle = Arc::new(tokio::sync::Mutex::new(runtime_session));
                 if let Some((_, old_query)) = self.queries.remove(&slot) {
                     warn!(slot = %slot, "closing existing query before spawning new pre-queue agent");
-                    old_query.lock().await.close().await;
+                    let mut old_query = old_query.lock().await;
+                    old_query.close().await;
                 }
                 self.queries.insert(slot.clone(), query_handle);
                 self.active_items.insert(slot.clone(), db_session_id);
 
                 spawn_workflow_stream_reader(
-                    slot.clone(), db_session_id, self.feature_id,
-                    ctx.expected_mcp_server, message_rx, self.ws_sender.clone(),
-                    self.write_pool.clone(), self.active_items.clone(),
-                    self.queries.clone(), self.paused_sessions.clone(),
+                    slot.clone(),
+                    db_session_id,
+                    self.feature_id,
+                    ctx.expected_mcp_server,
+                    message_rx,
+                    self.ws_sender.clone(),
+                    self.write_pool.clone(),
+                    self.active_items.clone(),
+                    self.queries.clone(),
+                    self.paused_sessions.clone(),
                     Some(ctx.model.as_str()),
                     self.turn_state_tx.clone(),
                 );
 
-                WsSessionPersistence::broadcast_turn_state(&self.turn_state_tx, self.feature_id, "claude");
+                WsSessionPersistence::broadcast_turn_state(
+                    &self.turn_state_tx,
+                    self.feature_id,
+                    "claude",
+                );
 
                 let envelope = WsEnvelope::new(
-                    "workflow", "agent_started",
+                    "workflow",
+                    "agent_started",
                     to_value(WorkflowAgentStartedPayload {
                         feature_id: self.feature_id,
                         agent_slot: slot,
@@ -173,15 +218,26 @@ impl AgentManager {
                         agent_type: agent_type_str.to_string(),
                     }),
                 );
-                let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
-                info!(feature_id = self.feature_id, db_session_id, agent_type = agent_type_str, "pre-queue agent spawned");
+                let _ = self
+                    .ws_sender
+                    .send(Message::Text(String::from(envelope).into()));
+                info!(
+                    feature_id = self.feature_id,
+                    db_session_id,
+                    agent_type = agent_type_str,
+                    "pre-queue agent spawned"
+                );
                 Ok(db_session_id)
             }
             Err(e) => {
                 error!(feature_id = self.feature_id, agent_type = agent_type_str, error = %e, "failed to spawn pre-queue agent");
                 WsSessionPersistence::mark_error_static(&self.write_pool, db_session_id).await;
-                WsSessionPersistence::broadcast_turn_state(&self.turn_state_tx, self.feature_id, "none");
-                Err(format!("SDK spawn failed for {agent_type_str}: {e}"))
+                WsSessionPersistence::broadcast_turn_state(
+                    &self.turn_state_tx,
+                    self.feature_id,
+                    "none",
+                );
+                Err(format!("Runtime spawn failed for {agent_type_str}: {e}"))
             }
         }
     }
@@ -206,7 +262,9 @@ impl AgentManager {
 
         // 2. Delegate to strategy
         let agent_type = strategy.agent_type_for_item(&item.item_type, item.config.as_deref())?;
-        let system_prompt = strategy.build_system_prompt(&self.read_pool, &item, autonomy).await?;
+        let system_prompt = strategy
+            .build_system_prompt(&self.read_pool, &item, autonomy)
+            .await?;
         let feature_title = self.get_feature_title().await.unwrap_or_default();
         let initial_prompt = strategy
             .build_initial_prompt(&self.read_pool, &item, &feature_title, autonomy)
@@ -231,34 +289,49 @@ impl AgentManager {
 
         // 4. Build spawn context (MCP, CWD, permissions, model, options)
         // Extract workflow-specific config from the queue item's config JSON
-        let config_json: Option<serde_json::Value> = item.config.as_deref()
+        let config_json: Option<serde_json::Value> = item
+            .config
+            .as_deref()
             .and_then(|c| serde_json::from_str(c).ok());
-        let phase_slug_owned = config_json.as_ref()
+        let phase_slug_owned = config_json
+            .as_ref()
             .and_then(|c| c.get("phase_slug"))
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
-        let input_phase_slugs_owned: Option<Vec<String>> = config_json.as_ref()
+        let input_phase_slugs_owned: Option<Vec<String>> = config_json
+            .as_ref()
             .and_then(|c| c.get("input_phase_slugs"))
             .and_then(|v| serde_json::from_value(v.clone()).ok());
-        let model_override_owned = config_json.as_ref()
+        let model_override_owned = config_json
+            .as_ref()
             .and_then(|c| c.get("model_override"))
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
 
         let include_mcp = false;
         let slot = AgentSlot::QueueItem(item_id);
-        let ctx = self.build_spawn_context(
-            slot.clone(), db_session_id, agent_type, &agent_type_str,
-            Some(system_prompt.as_str()), None, include_mcp, permissions,
-            phase_slug_owned.as_deref(),
-            input_phase_slugs_owned.as_deref(),
-            model_override_owned.as_deref(),
-        ).await?;
+        let ctx = self
+            .build_spawn_context(
+                slot.clone(),
+                db_session_id,
+                agent_type,
+                &agent_type_str,
+                Some(system_prompt.as_str()),
+                None,
+                include_mcp,
+                permissions,
+                phase_slug_owned.as_deref(),
+                input_phase_slugs_owned.as_deref(),
+                model_override_owned.as_deref(),
+            )
+            .await?;
 
         // 5. Persist the initial user prompt and send it to the frontend
         {
             let p = WsSessionPersistence::with_session_id(
-                self.write_pool.clone(), self.feature_id, Some(db_session_id),
+                self.write_pool.clone(),
+                self.feature_id,
+                Some(db_session_id),
             );
             p.persist_user_message(&initial_prompt).await;
         }
@@ -267,35 +340,55 @@ impl AgentManager {
         let content_value = serde_json::Value::String(initial_prompt);
 
         // 6. Spawn query and start stream reader
-        match claude_agent_sdk_rs::query(content_value, ctx.options).await {
-            Ok(mut real_query) => {
-                let message_rx = real_query.take_message_rx();
-                if let Some(pid) = real_query.pid() {
-                    if let Err(e) = repo::update_item_pid(&self.write_pool, item_id, pid as i64).await {
+        let adapter = runtime_adapter(&ctx.provider).ok_or_else(|| {
+            format!(
+                "No runtime adapter registered for provider '{}'",
+                ctx.provider
+            )
+        })?;
+        match adapter.spawn(content_value, ctx.runtime_config).await {
+            Ok(mut runtime_session) => {
+                let message_rx = runtime_session.take_message_rx();
+                if let Some(pid) = runtime_session.pid() {
+                    if let Err(e) =
+                        repo::update_item_pid(&self.write_pool, item_id, pid as i64).await
+                    {
                         warn!(item_id, error = %e, "failed to persist agent PID");
                     }
                 }
-                let query_handle = Arc::new(tokio::sync::Mutex::new(real_query));
+                let query_handle = Arc::new(tokio::sync::Mutex::new(runtime_session));
                 if let Some((_, old_query)) = self.queries.remove(&slot) {
                     warn!(slot = %slot, "closing existing query before spawning new queue item agent");
-                    old_query.lock().await.close().await;
+                    let mut old_query = old_query.lock().await;
+                    old_query.close().await;
                 }
                 self.queries.insert(slot.clone(), query_handle);
                 self.active_items.insert(slot.clone(), db_session_id);
 
                 spawn_workflow_stream_reader(
-                    slot.clone(), db_session_id, self.feature_id,
-                    ctx.expected_mcp_server, message_rx, self.ws_sender.clone(),
-                    self.write_pool.clone(), self.active_items.clone(),
-                    self.queries.clone(), self.paused_sessions.clone(),
+                    slot.clone(),
+                    db_session_id,
+                    self.feature_id,
+                    ctx.expected_mcp_server,
+                    message_rx,
+                    self.ws_sender.clone(),
+                    self.write_pool.clone(),
+                    self.active_items.clone(),
+                    self.queries.clone(),
+                    self.paused_sessions.clone(),
                     Some(ctx.model.as_str()),
                     self.turn_state_tx.clone(),
                 );
 
-                WsSessionPersistence::broadcast_turn_state(&self.turn_state_tx, self.feature_id, "claude");
+                WsSessionPersistence::broadcast_turn_state(
+                    &self.turn_state_tx,
+                    self.feature_id,
+                    "claude",
+                );
 
                 let envelope = WsEnvelope::new(
-                    "workflow", "item_started",
+                    "workflow",
+                    "item_started",
                     to_value(WorkflowItemStartedPayload {
                         feature_id: self.feature_id,
                         agent_slot: slot,
@@ -303,7 +396,9 @@ impl AgentManager {
                         item_type: item.item_type.clone(),
                     }),
                 );
-                let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
+                let _ = self
+                    .ws_sender
+                    .send(Message::Text(String::from(envelope).into()));
                 info!(item_id, db_session_id, "queue item agent spawned");
                 Ok(())
             }
@@ -311,10 +406,19 @@ impl AgentManager {
                 error!(item_id, error = %e, "failed to spawn agent for queue item");
                 // Clean up DB state: mark session as error, reset queue item
                 WsSessionPersistence::mark_error_static(&self.write_pool, db_session_id).await;
-                let _ = repo::mark_item_error(&self.write_pool, item_id, Some(&format!("SDK spawn failed: {e}"))).await;
+                let _ = repo::mark_item_error(
+                    &self.write_pool,
+                    item_id,
+                    Some(&format!("Runtime spawn failed: {e}")),
+                )
+                .await;
                 self.send_item_update(item_id).await;
-                WsSessionPersistence::broadcast_turn_state(&self.turn_state_tx, self.feature_id, "none");
-                Err(format!("SDK spawn failed: {e}"))
+                WsSessionPersistence::broadcast_turn_state(
+                    &self.turn_state_tx,
+                    self.feature_id,
+                    "none",
+                );
+                Err(format!("Runtime spawn failed: {e}"))
             }
         }
     }
@@ -340,7 +444,9 @@ impl AgentManager {
                 "content": content,
             }),
         );
-        let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
+        let _ = self
+            .ws_sender
+            .send(Message::Text(String::from(envelope).into()));
     }
 
     /// Send a differential item update envelope.
@@ -360,7 +466,9 @@ impl AgentManager {
                         agent_session_id: item.agent_session_id,
                     }),
                 );
-                let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
+                let _ = self
+                    .ws_sender
+                    .send(Message::Text(String::from(envelope).into()));
             }
             Ok(None) => {
                 warn!(item_id, "send_item_update: item not found");

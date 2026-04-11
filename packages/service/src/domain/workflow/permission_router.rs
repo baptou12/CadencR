@@ -44,12 +44,20 @@ impl PermissionRouter {
     }
 
     /// Route a permission response to the correct agent's permission channel.
-    pub async fn respond(&self, slot: AgentSlot, response: PermissionResponse) -> Result<(), String> {
+    pub async fn respond(
+        &self,
+        slot: AgentSlot,
+        response: PermissionResponse,
+    ) -> Result<(), String> {
         if let Some(tx) = self.permission_txs.get(&slot) {
-            return tx.send(response).await
+            return tx
+                .send(response)
+                .await
                 .map_err(|_| format!("Permission channel closed for slot {slot}"));
         }
-        Err(format!("No permission channel for slot {slot} — agent may need restart"))
+        Err(format!(
+            "No permission channel for slot {slot} — agent may need restart"
+        ))
     }
 
     /// Remove the permission channel for an agent slot.
@@ -96,12 +104,18 @@ impl CanUseTool for WorkflowPermissionBridge {
             &self.worktree_path,
             &self.session_cache,
             &self.allowed_patterns,
-        ).await;
+        )
+        .await;
 
         match action {
             ResolvedAction::Resolved(result) => result,
-            ResolvedAction::NeedsPrompt { description, pattern, force_prompt } => {
-                self.handle_needs_prompt(&request, description, pattern, force_prompt).await
+            ResolvedAction::NeedsPrompt {
+                description,
+                pattern,
+                force_prompt,
+            } => {
+                self.handle_needs_prompt(&request, description, pattern, force_prompt)
+                    .await
             }
         }
     }
@@ -115,7 +129,11 @@ impl WorkflowPermissionBridge {
         request: &PermissionRequest,
         is_show_plan: bool,
     ) -> PermissionResult {
-        let event_name = if is_show_plan { "plan_ready" } else { "prd_ready" };
+        let event_name = if is_show_plan {
+            "plan_ready"
+        } else {
+            "prd_ready"
+        };
         info!(
             feature_id = self.feature_id,
             tool_name = %request.tool_name,
@@ -130,7 +148,9 @@ impl WorkflowPermissionBridge {
                 "agent_slot": self.slot,
             }),
         );
-        let _ = self.sender.send(Message::Text(String::from(gate_env).into()));
+        let _ = self
+            .sender
+            .send(Message::Text(String::from(gate_env).into()));
 
         let content = if is_show_plan {
             self.emit_plan_approval_status().await;
@@ -144,11 +164,12 @@ impl WorkflowPermissionBridge {
             let mut enriched = request.input.clone();
             enriched["plan"] = serde_json::Value::String(plan_md.clone());
             let json = serde_json::to_string(&enriched).unwrap_or_else(|_| "{}".to_string());
-            if let Err(e) = sqlx::query("UPDATE agent_sessions SET pending_plan_approval = ? WHERE id = ?")
-                .bind(&json)
-                .bind(self.db_session_id)
-                .execute(&self.write_pool)
-                .await
+            if let Err(e) =
+                sqlx::query("UPDATE agent_sessions SET pending_plan_approval = ? WHERE id = ?")
+                    .bind(&json)
+                    .bind(self.db_session_id)
+                    .execute(&self.write_pool)
+                    .await
             {
                 warn!(session_id = self.db_session_id, error = %e, "failed to persist pending_plan_approval");
             }
@@ -156,7 +177,11 @@ impl WorkflowPermissionBridge {
 
         self.attach_plan_to_tool_call(request, content).await;
 
-        let changed: &[&str] = if is_show_plan { &["plan", "phases", "progress"] } else { &["prd"] };
+        let changed: &[&str] = if is_show_plan {
+            &["plan", "phases", "progress"]
+        } else {
+            &["prd"]
+        };
         send_feature_updated_envelope(&self.sender, self.feature_id, changed);
 
         let result = permission_bridge::wait_for_approval(
@@ -164,12 +189,14 @@ impl WorkflowPermissionBridge {
             &request.tool_use_id,
             request.input.clone(),
             "Plan/PRD rejected by user",
-        ).await;
+        )
+        .await;
 
-        if let Err(e) = sqlx::query("UPDATE agent_sessions SET pending_plan_approval = NULL WHERE id = ?")
-            .bind(self.db_session_id)
-            .execute(&self.write_pool)
-            .await
+        if let Err(e) =
+            sqlx::query("UPDATE agent_sessions SET pending_plan_approval = NULL WHERE id = ?")
+                .bind(self.db_session_id)
+                .execute(&self.write_pool)
+                .await
         {
             warn!(session_id = self.db_session_id, error = %e, "failed to clear pending_plan_approval");
         }
@@ -204,7 +231,9 @@ impl WorkflowPermissionBridge {
             "permission.request",
             serde_json::to_value(payload).unwrap(),
         );
-        let _ = self.sender.send(Message::Text(String::from(envelope).into()));
+        let _ = self
+            .sender
+            .send(Message::Text(String::from(envelope).into()));
 
         // Persist pending question data so it survives navigation/refresh
         if is_ask_user_question {
@@ -214,13 +243,11 @@ impl WorkflowPermissionBridge {
                 "request_id": &request.tool_use_id,
                 "pattern": &pattern,
             });
-            let _ = sqlx::query(
-                "UPDATE agent_sessions SET pending_questions = ? WHERE id = ?"
-            )
-            .bind(pq_json.to_string())
-            .bind(self.db_session_id)
-            .execute(&self.write_pool)
-            .await;
+            let _ = sqlx::query("UPDATE agent_sessions SET pending_questions = ? WHERE id = ?")
+                .bind(pq_json.to_string())
+                .bind(self.db_session_id)
+                .execute(&self.write_pool)
+                .await;
         }
 
         // Wait for user decision (shared logic handles turn state + decision)
@@ -234,16 +261,15 @@ impl WorkflowPermissionBridge {
             &self.session_cache,
             &self.turn_state_tx,
             self.feature_id,
-        ).await;
+        )
+        .await;
 
         // Clear persisted pending questions after user responds
         if is_ask_user_question {
-            let _ = sqlx::query(
-                "UPDATE agent_sessions SET pending_questions = NULL WHERE id = ?"
-            )
-            .bind(self.db_session_id)
-            .execute(&self.write_pool)
-            .await;
+            let _ = sqlx::query("UPDATE agent_sessions SET pending_questions = NULL WHERE id = ?")
+                .bind(self.db_session_id)
+                .execute(&self.write_pool)
+                .await;
         }
 
         result
@@ -251,8 +277,11 @@ impl WorkflowPermissionBridge {
 
     async fn emit_plan_approval_status(&self) {
         let _ = repo::set_workflow_status(
-            &self.write_pool, self.feature_id, WorkflowStatus::PlanApproval,
-        ).await;
+            &self.write_pool,
+            self.feature_id,
+            WorkflowStatus::PlanApproval,
+        )
+        .await;
         let status_env = WsEnvelope::new(
             "workflow",
             "status_changed",
@@ -262,7 +291,9 @@ impl WorkflowPermissionBridge {
                 previous_status: "planning".to_string(),
             }),
         );
-        let _ = self.sender.send(Message::Text(String::from(status_env).into()));
+        let _ = self
+            .sender
+            .send(Message::Text(String::from(status_env).into()));
     }
 
     async fn emit_plan_content(&self) -> Option<String> {
@@ -275,7 +306,10 @@ impl WorkflowPermissionBridge {
         {
             Ok(Some(id)) => id,
             Ok(None) => {
-                warn!(feature_id = self.feature_id, "no plan found when emitting plan_content");
+                warn!(
+                    feature_id = self.feature_id,
+                    "no plan found when emitting plan_content"
+                );
                 return None;
             }
             Err(e) => {
@@ -286,7 +320,12 @@ impl WorkflowPermissionBridge {
 
         match self.fetch_plan_content(plan_id).await {
             Some(content) => {
-                info!(feature_id = self.feature_id, plan_id, content_len = content.len(), "emitting plan_content");
+                info!(
+                    feature_id = self.feature_id,
+                    plan_id,
+                    content_len = content.len(),
+                    "emitting plan_content"
+                );
                 let env = WsEnvelope::new(
                     "workflow",
                     "plan_content",
@@ -300,7 +339,10 @@ impl WorkflowPermissionBridge {
                 Some(content)
             }
             None => {
-                warn!(feature_id = self.feature_id, plan_id, "fetch_plan_content returned None");
+                warn!(
+                    feature_id = self.feature_id,
+                    plan_id, "fetch_plan_content returned None"
+                );
                 None
             }
         }
@@ -315,7 +357,11 @@ impl WorkflowPermissionBridge {
         .await
         {
             Ok(Some(prd_content)) => {
-                info!(feature_id = self.feature_id, content_len = prd_content.len(), "emitting prd_content");
+                info!(
+                    feature_id = self.feature_id,
+                    content_len = prd_content.len(),
+                    "emitting prd_content"
+                );
                 let env = WsEnvelope::new(
                     "workflow",
                     "prd_content",
@@ -329,7 +375,10 @@ impl WorkflowPermissionBridge {
                 Some(prd_content)
             }
             Ok(None) => {
-                warn!(feature_id = self.feature_id, "no PRD found when emitting prd_content");
+                warn!(
+                    feature_id = self.feature_id,
+                    "no PRD found when emitting prd_content"
+                );
                 None
             }
             Err(e) => {
@@ -357,13 +406,12 @@ impl WorkflowPermissionBridge {
             depends_on: Option<String>,
         }
 
-        let plan: PlanRow = sqlx::query_as(
-            "SELECT title, summary, completion_conditions FROM plans WHERE id = ?",
-        )
-        .bind(plan_id)
-        .fetch_optional(&self.read_pool)
-        .await
-        .ok()??;
+        let plan: PlanRow =
+            sqlx::query_as("SELECT title, summary, completion_conditions FROM plans WHERE id = ?")
+                .bind(plan_id)
+                .fetch_optional(&self.read_pool)
+                .await
+                .ok()??;
 
         let phases: Vec<PhaseRow> = sqlx::query_as(
             "SELECT step_number, title, phase_type, complexity, prompt, commit_message, depends_on \
@@ -385,7 +433,10 @@ impl WorkflowPermissionBridge {
             out.push_str("\n## Phases\n");
             for p in &phases {
                 let pt = p.phase_type.as_deref().unwrap_or("value");
-                let cx = p.complexity.map(|c| c.to_string()).unwrap_or_else(|| "-".to_string());
+                let cx = p
+                    .complexity
+                    .map(|c| c.to_string())
+                    .unwrap_or_else(|| "-".to_string());
                 out.push_str(&format!(
                     "\n### Phase {} — {} `[{}]` (complexity: {})\n",
                     p.step_number, p.title, pt, cx,
@@ -421,8 +472,11 @@ impl WorkflowPermissionBridge {
                 self.db_session_id,
                 &request.tool_use_id,
                 &enriched_str,
-                &crate::domain::features::repository::ToolCallFilter::MessageType("tool_call".to_string()),
-            ).await;
+                &crate::domain::features::repository::ToolCallFilter::MessageType(
+                    "tool_call".to_string(),
+                ),
+            )
+            .await;
         }
     }
 }

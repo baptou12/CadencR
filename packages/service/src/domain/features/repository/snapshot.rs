@@ -1,10 +1,10 @@
 use sqlx::SqlitePool;
 
-use crate::error::AppError;
 use super::super::models::*;
+use super::feature_repository::get_workflow_status;
 use super::plan_repository::get_plan_with_phases;
 use super::settings_repository::get_feature_settings;
-use super::feature_repository::get_workflow_status;
+use crate::error::AppError;
 
 pub async fn get_feature_snapshot(
     pool: &SqlitePool,
@@ -34,6 +34,8 @@ pub async fn get_feature_snapshot(
                   wq.id as queue_item_id,
                   COALESCE(s.started_at, '') as created_at,
                   NULL as updated_at,
+                  s.runtime_provider,
+                  COALESCE(s.runtime_session_id, s.claude_session_id) as runtime_session_id,
                   s.claude_session_id,
                   s.input_tokens,
                   s.output_tokens,
@@ -63,21 +65,34 @@ pub async fn get_feature_snapshot(
 
     // 4. Feature settings for worktree + autonomy
     let settings = get_feature_settings(pool, feature_id).await?;
-    let worktree_path = settings.iter().find(|s| s.key == "worktree_path").map(|s| s.value.clone());
-    let worktree_branch = settings.iter().find(|s| s.key == "worktree_branch").map(|s| s.value.clone());
-    let worktree_status_val = settings.iter().find(|s| s.key == "worktree_setup_step").map(|s| s.value.as_str());
-    let worktree_setup_log = settings.iter().find(|s| s.key == "worktree_setup_log").map(|s| s.value.clone());
+    let worktree_path = settings
+        .iter()
+        .find(|s| s.key == "worktree_path")
+        .map(|s| s.value.clone());
+    let worktree_branch = settings
+        .iter()
+        .find(|s| s.key == "worktree_branch")
+        .map(|s| s.value.clone());
+    let worktree_status_val = settings
+        .iter()
+        .find(|s| s.key == "worktree_setup_step")
+        .map(|s| s.value.as_str());
+    let worktree_setup_log = settings
+        .iter()
+        .find(|s| s.key == "worktree_setup_log")
+        .map(|s| s.value.clone());
 
-    let worktree = if worktree_path.is_some() || worktree_branch.is_some() || worktree_status_val.is_some() {
-        Some(WorktreeSnapshot {
-            path: worktree_path,
-            branch: worktree_branch,
-            status: worktree_status_val.unwrap_or("none").to_string(),
-            setup_log: worktree_setup_log,
-        })
-    } else {
-        None
-    };
+    let worktree =
+        if worktree_path.is_some() || worktree_branch.is_some() || worktree_status_val.is_some() {
+            Some(WorktreeSnapshot {
+                path: worktree_path,
+                branch: worktree_branch,
+                status: worktree_status_val.unwrap_or("none").to_string(),
+                setup_log: worktree_setup_log,
+            })
+        } else {
+            None
+        };
 
     let autonomy_level: u8 = settings
         .iter()

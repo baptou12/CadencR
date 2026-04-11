@@ -31,7 +31,12 @@ async fn handle_commands_get(envelope: WsEnvelope, sender: &WsSender) {
     let payload: CommandsGetPayload = match serde_json::from_value(envelope.payload.clone()) {
         Ok(p) => p,
         Err(e) => {
-            send_error(sender, &envelope.id, "INVALID_PAYLOAD", &format!("Invalid commands.get payload: {e}"));
+            send_error(
+                sender,
+                &envelope.id,
+                "INVALID_PAYLOAD",
+                &format!("Invalid commands.get payload: {e}"),
+            );
             return;
         }
     };

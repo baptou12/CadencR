@@ -4,11 +4,10 @@ use crate::error::AppError;
 
 /// Get the filesystem path for a project by ID.
 pub async fn get_project_path(pool: &SqlitePool, project_id: i64) -> Result<String, AppError> {
-    let row: Option<(String,)> =
-        sqlx::query_as("SELECT path FROM projects WHERE id = ?")
-            .bind(project_id)
-            .fetch_optional(pool)
-            .await?;
+    let row: Option<(String,)> = sqlx::query_as("SELECT path FROM projects WHERE id = ?")
+        .bind(project_id)
+        .fetch_optional(pool)
+        .await?;
 
     row.map(|r| r.0)
         .ok_or_else(|| AppError::NotFound(format!("Project not found: {project_id}")))
@@ -16,11 +15,10 @@ pub async fn get_project_path(pool: &SqlitePool, project_id: i64) -> Result<Stri
 
 /// Get the project name for a project by ID.
 pub async fn get_project_name(pool: &SqlitePool, project_id: i64) -> Result<String, AppError> {
-    let row: Option<(String,)> =
-        sqlx::query_as("SELECT name FROM projects WHERE id = ?")
-            .bind(project_id)
-            .fetch_optional(pool)
-            .await?;
+    let row: Option<(String,)> = sqlx::query_as("SELECT name FROM projects WHERE id = ?")
+        .bind(project_id)
+        .fetch_optional(pool)
+        .await?;
 
     row.map(|r| r.0)
         .ok_or_else(|| AppError::NotFound(format!("Project not found: {project_id}")))
@@ -83,12 +81,13 @@ pub async fn get_feature_settings_by_prefix(
     prefix: &str,
 ) -> Result<Vec<(String, String)>, AppError> {
     let pattern = format!("{}%", prefix);
-    let rows: Vec<(String, String)> =
-        sqlx::query_as("SELECT key, value FROM feature_settings WHERE feature_id = ? AND key LIKE ?")
-            .bind(feature_id)
-            .bind(&pattern)
-            .fetch_all(pool)
-            .await?;
+    let rows: Vec<(String, String)> = sqlx::query_as(
+        "SELECT key, value FROM feature_settings WHERE feature_id = ? AND key LIKE ?",
+    )
+    .bind(feature_id)
+    .bind(&pattern)
+    .fetch_all(pool)
+    .await?;
     Ok(rows)
 }
 
@@ -137,11 +136,10 @@ pub async fn get_feature_title(
     pool: &SqlitePool,
     feature_id: i64,
 ) -> Result<Option<String>, AppError> {
-    let row: Option<(String,)> =
-        sqlx::query_as("SELECT title FROM features WHERE id = ?")
-            .bind(feature_id)
-            .fetch_optional(pool)
-            .await?;
+    let row: Option<(String,)> = sqlx::query_as("SELECT title FROM features WHERE id = ?")
+        .bind(feature_id)
+        .fetch_optional(pool)
+        .await?;
     Ok(row.map(|r| r.0))
 }
 
@@ -198,7 +196,9 @@ mod tests {
     async fn test_get_project_path_found() {
         let pool = setup_test_db().await;
         sqlx::query("INSERT INTO projects (id, name, path) VALUES (1, 'test', '/tmp/repo')")
-            .execute(&pool).await.unwrap();
+            .execute(&pool)
+            .await
+            .unwrap();
 
         let path = get_project_path(&pool, 1).await.unwrap();
         assert_eq!(path, "/tmp/repo");
@@ -215,34 +215,54 @@ mod tests {
     async fn test_get_set_delete_feature_setting() {
         let pool = setup_test_db().await;
         sqlx::query("INSERT INTO projects (id, name, path) VALUES (1, 'test', '/tmp')")
-            .execute(&pool).await.unwrap();
+            .execute(&pool)
+            .await
+            .unwrap();
         sqlx::query("INSERT INTO features (id, project_id, title) VALUES (1, 1, 'feat')")
-            .execute(&pool).await.unwrap();
+            .execute(&pool)
+            .await
+            .unwrap();
 
         // Initially missing
-        let val = get_feature_setting(&pool, 1, "worktree_path").await.unwrap();
+        let val = get_feature_setting(&pool, 1, "worktree_path")
+            .await
+            .unwrap();
         assert!(val.is_none());
 
         // Set
-        set_feature_setting(&pool, 1, "worktree_path", "/tmp/wt").await.unwrap();
-        let val = get_feature_setting(&pool, 1, "worktree_path").await.unwrap();
+        set_feature_setting(&pool, 1, "worktree_path", "/tmp/wt")
+            .await
+            .unwrap();
+        let val = get_feature_setting(&pool, 1, "worktree_path")
+            .await
+            .unwrap();
         assert_eq!(val, Some("/tmp/wt".into()));
 
         // Update
-        set_feature_setting(&pool, 1, "worktree_path", "/tmp/wt2").await.unwrap();
-        let val = get_feature_setting(&pool, 1, "worktree_path").await.unwrap();
+        set_feature_setting(&pool, 1, "worktree_path", "/tmp/wt2")
+            .await
+            .unwrap();
+        let val = get_feature_setting(&pool, 1, "worktree_path")
+            .await
+            .unwrap();
         assert_eq!(val, Some("/tmp/wt2".into()));
 
         // Delete
-        delete_feature_setting(&pool, 1, "worktree_path").await.unwrap();
-        let val = get_feature_setting(&pool, 1, "worktree_path").await.unwrap();
+        delete_feature_setting(&pool, 1, "worktree_path")
+            .await
+            .unwrap();
+        let val = get_feature_setting(&pool, 1, "worktree_path")
+            .await
+            .unwrap();
         assert!(val.is_none());
     }
 
     #[tokio::test]
     async fn test_get_feature_setting_missing() {
         let pool = setup_test_db().await;
-        let val = get_feature_setting(&pool, 999, "nonexistent").await.unwrap();
+        let val = get_feature_setting(&pool, 999, "nonexistent")
+            .await
+            .unwrap();
         assert_eq!(val, None);
     }
 
@@ -250,13 +270,23 @@ mod tests {
     async fn test_get_feature_settings_by_prefix() {
         let pool = setup_test_db().await;
         sqlx::query("INSERT INTO features (id, project_id, title) VALUES (1, 1, 'feat')")
-            .execute(&pool).await.unwrap();
+            .execute(&pool)
+            .await
+            .unwrap();
 
-        set_feature_setting(&pool, 1, "model_phase_plan", "sonnet").await.unwrap();
-        set_feature_setting(&pool, 1, "model_phase_execute", "haiku").await.unwrap();
-        set_feature_setting(&pool, 1, "worktree_branch", "feature/test").await.unwrap();
+        set_feature_setting(&pool, 1, "model_phase_plan", "sonnet")
+            .await
+            .unwrap();
+        set_feature_setting(&pool, 1, "model_phase_execute", "haiku")
+            .await
+            .unwrap();
+        set_feature_setting(&pool, 1, "worktree_branch", "feature/test")
+            .await
+            .unwrap();
 
-        let results = get_feature_settings_by_prefix(&pool, 1, "model_phase_").await.unwrap();
+        let results = get_feature_settings_by_prefix(&pool, 1, "model_phase_")
+            .await
+            .unwrap();
         assert_eq!(results.len(), 2);
         let map: std::collections::HashMap<_, _> = results.into_iter().collect();
         assert_eq!(map.get("model_phase_plan").unwrap(), "sonnet");
@@ -266,8 +296,9 @@ mod tests {
     #[tokio::test]
     async fn test_get_feature_settings_by_prefix_empty() {
         let pool = setup_test_db().await;
-        let results = get_feature_settings_by_prefix(&pool, 999, "model_phase_").await.unwrap();
+        let results = get_feature_settings_by_prefix(&pool, 999, "model_phase_")
+            .await
+            .unwrap();
         assert!(results.is_empty());
     }
-
 }

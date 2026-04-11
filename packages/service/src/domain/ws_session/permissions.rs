@@ -72,7 +72,9 @@ pub const FRONTEND_PROMPT_TOOLS: &[&str] = &["AskUserQuestion"];
 /// Check whether a resolved absolute path is within the worktree or /tmp.
 /// `worktree_path` should already be canonicalized for best performance.
 fn is_path_allowed(resolved_path: &Path, worktree_path: &Path) -> bool {
-    let normalized_path = resolved_path.canonicalize().unwrap_or_else(|_| resolved_path.to_path_buf());
+    let normalized_path = resolved_path
+        .canonicalize()
+        .unwrap_or_else(|_| resolved_path.to_path_buf());
 
     normalized_path.starts_with(worktree_path)
         || normalized_path.starts_with("/tmp/")
@@ -81,7 +83,9 @@ fn is_path_allowed(resolved_path: &Path, worktree_path: &Path) -> bool {
 
 /// Canonicalize a worktree path once for reuse across multiple permission checks.
 pub fn canonicalize_worktree(worktree_path: &Path) -> PathBuf {
-    worktree_path.canonicalize().unwrap_or_else(|_| worktree_path.to_path_buf())
+    worktree_path
+        .canonicalize()
+        .unwrap_or_else(|_| worktree_path.to_path_buf())
 }
 
 /// Check if a resolved path is an .env file (contains secrets).
@@ -104,7 +108,10 @@ fn extract_tool_path(tool_name: &str, input: &serde_json::Value) -> Option<Strin
     }
 
     if PATH_TOOLS.contains(&tool_name) {
-        return input.get("path").and_then(|v| v.as_str()).map(|s| s.to_string());
+        return input
+            .get("path")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
     }
 
     None
@@ -124,12 +131,36 @@ fn destructive_checks() -> &'static [(Regex, &'static str, &'static str)] {
     static CHECKS: OnceLock<Vec<(Regex, &str, &str)>> = OnceLock::new();
     CHECKS.get_or_init(|| {
         vec![
-            (Regex::new(r"\bgit\s+push\b").unwrap(), "git push will push commits to a remote repository", "Bash(git push:*)"),
-            (Regex::new(r"\brm\s+(?:-\w*[rR]\w*[fF]\w*|-\w*[fF]\w*[rR]\w*)\b").unwrap(), "rm -rf will recursively and forcefully delete files", "Bash(rm -rf:*)"),
-            (Regex::new(r"\bgit\s+reset\s+--hard\b").unwrap(), "git reset --hard will discard all uncommitted changes", "Bash(git reset --hard:*)"),
-            (Regex::new(r"\bgit\s+clean\s+-\w*[fF]").unwrap(), "git clean -f will remove untracked files from the repository", "Bash(git clean -f:*)"),
-            (Regex::new(r"\bgit\s+checkout\s+--\s").unwrap(), "git checkout -- will discard changes in working files", "Bash(git checkout --:*)"),
-            (Regex::new(r"\bsudo\s+rm\b").unwrap(), "sudo rm will delete files with root privileges", "Bash(sudo rm:*)"),
+            (
+                Regex::new(r"\bgit\s+push\b").unwrap(),
+                "git push will push commits to a remote repository",
+                "Bash(git push:*)",
+            ),
+            (
+                Regex::new(r"\brm\s+(?:-\w*[rR]\w*[fF]\w*|-\w*[fF]\w*[rR]\w*)\b").unwrap(),
+                "rm -rf will recursively and forcefully delete files",
+                "Bash(rm -rf:*)",
+            ),
+            (
+                Regex::new(r"\bgit\s+reset\s+--hard\b").unwrap(),
+                "git reset --hard will discard all uncommitted changes",
+                "Bash(git reset --hard:*)",
+            ),
+            (
+                Regex::new(r"\bgit\s+clean\s+-\w*[fF]").unwrap(),
+                "git clean -f will remove untracked files from the repository",
+                "Bash(git clean -f:*)",
+            ),
+            (
+                Regex::new(r"\bgit\s+checkout\s+--\s").unwrap(),
+                "git checkout -- will discard changes in working files",
+                "Bash(git checkout --:*)",
+            ),
+            (
+                Regex::new(r"\bsudo\s+rm\b").unwrap(),
+                "sudo rm will delete files with root privileges",
+                "Bash(sudo rm:*)",
+            ),
         ]
     })
 }
@@ -155,7 +186,11 @@ fn looks_like_real_path(candidate: &str) -> bool {
     }
 
     let parts: Vec<&str> = candidate.split('/').collect();
-    let first_component = if parts.len() > 1 { parts[1] } else { return false };
+    let first_component = if parts.len() > 1 {
+        parts[1]
+    } else {
+        return false;
+    };
 
     if first_component.is_empty() {
         return false;
@@ -183,7 +218,8 @@ fn looks_like_real_path(candidate: &str) -> bool {
 /// Returns the first offending path, or None if all paths are within bounds.
 fn find_outside_path(command: &str, worktree_path: &Path) -> Option<String> {
     static PATH_RE: OnceLock<Regex> = OnceLock::new();
-    let path_regex = PATH_RE.get_or_init(|| Regex::new(r#"(?:^|\s|=|")(\/[^\s"'`;|&><()]+)"#).unwrap());
+    let path_regex =
+        PATH_RE.get_or_init(|| Regex::new(r#"(?:^|\s|=|")(\/[^\s"'`;|&><()]+)"#).unwrap());
 
     for cap in path_regex.captures_iter(command) {
         let candidate = &cap[1];
@@ -220,7 +256,10 @@ fn find_outside_path(command: &str, worktree_path: &Path) -> Option<String> {
 /// 2. <worktreePath>/.claude/settings.json (project settings)
 /// 3. <worktreePath>/.claude/settings.local.json (local settings)
 pub fn load_allowed_patterns(worktree_path: &Path) -> HashSet<String> {
-    load_allowed_patterns_with_home(worktree_path, &dirs::home_dir().unwrap_or_else(|| PathBuf::from("/")))
+    load_allowed_patterns_with_home(
+        worktree_path,
+        &dirs::home_dir().unwrap_or_else(|| PathBuf::from("/")),
+    )
 }
 
 /// Load patterns with an explicit home directory (for testing).
@@ -286,10 +325,7 @@ pub fn resolve_permission(
 
     // Handle Bash specially
     if tool_name == "Bash" {
-        let command = input
-            .get("command")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let command = input.get("command").and_then(|v| v.as_str()).unwrap_or("");
 
         // Check for destructive commands
         if let Some(destructive) = detect_destructive_command(command) {
@@ -373,25 +409,26 @@ pub fn resolve_permission(
 ///
 /// Creates the file and directory if they don't exist.
 /// Ensures no duplicate patterns.
-pub fn append_to_settings_local(
-    worktree_path: &Path,
-    pattern: &str,
-) -> Result<(), std::io::Error> {
+pub fn append_to_settings_local(worktree_path: &Path, pattern: &str) -> Result<(), std::io::Error> {
     let claude_dir = worktree_path.join(".claude");
     let settings_path = claude_dir.join("settings.local.json");
 
     // Read existing settings or create empty structure
-    let mut settings: serde_json::Value = if let Ok(content) = std::fs::read_to_string(&settings_path) {
-        serde_json::from_str(&content).unwrap_or_else(|_| serde_json::json!({}))
-    } else {
-        serde_json::json!({})
-    };
+    let mut settings: serde_json::Value =
+        if let Ok(content) = std::fs::read_to_string(&settings_path) {
+            serde_json::from_str(&content).unwrap_or_else(|_| serde_json::json!({}))
+        } else {
+            serde_json::json!({})
+        };
 
     // Ensure permissions.allow array exists
     if !settings.get("permissions").is_some_and(|p| p.is_object()) {
         settings["permissions"] = serde_json::json!({});
     }
-    if !settings["permissions"].get("allow").is_some_and(|a| a.is_array()) {
+    if !settings["permissions"]
+        .get("allow")
+        .is_some_and(|a| a.is_array())
+    {
         settings["permissions"]["allow"] = serde_json::json!([]);
     }
 
@@ -407,7 +444,8 @@ pub fn append_to_settings_local(
 
     // Write back
     let content = serde_json::to_string_pretty(&settings)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))? + "\n";
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?
+        + "\n";
     std::fs::write(&settings_path, content)?;
 
     Ok(())
@@ -469,7 +507,12 @@ mod tests {
         let cache = HashSet::new();
 
         assert_eq!(
-            resolve_permission("mcp__chrome__click", &serde_json::json!({}), &worktree, &cache),
+            resolve_permission(
+                "mcp__chrome__click",
+                &serde_json::json!({}),
+                &worktree,
+                &cache
+            ),
             ResolvedPermission::Allow
         );
     }
@@ -480,7 +523,12 @@ mod tests {
         let cache = HashSet::new();
 
         assert_eq!(
-            resolve_permission("Bash", &serde_json::json!({"command": "ls -la"}), &worktree, &cache),
+            resolve_permission(
+                "Bash",
+                &serde_json::json!({"command": "ls -la"}),
+                &worktree,
+                &cache
+            ),
             ResolvedPermission::Allow
         );
     }
@@ -496,7 +544,9 @@ mod tests {
             &worktree,
             &cache,
         );
-        assert!(matches!(result, ResolvedPermission::NeedsPrompt { ref pattern, .. } if pattern == "Bash(git push:*)"));
+        assert!(
+            matches!(result, ResolvedPermission::NeedsPrompt { ref pattern, .. } if pattern == "Bash(git push:*)")
+        );
     }
 
     #[test]
@@ -541,7 +591,9 @@ mod tests {
             &worktree,
             &cache,
         );
-        assert!(matches!(result, ResolvedPermission::NeedsPrompt { ref pattern, .. } if pattern == "Bash(/etc/passwd:*)"));
+        assert!(
+            matches!(result, ResolvedPermission::NeedsPrompt { ref pattern, .. } if pattern == "Bash(/etc/passwd:*)")
+        );
     }
 
     #[test]
@@ -601,7 +653,9 @@ mod tests {
             &worktree,
             &cache,
         );
-        assert!(matches!(result, ResolvedPermission::NeedsPrompt { ref description, .. } if description.contains("secrets")));
+        assert!(
+            matches!(result, ResolvedPermission::NeedsPrompt { ref description, .. } if description.contains("secrets"))
+        );
     }
 
     #[test]

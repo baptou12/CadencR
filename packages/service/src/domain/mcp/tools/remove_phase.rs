@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use crate::domain::mcp::McpContext;
 use super::helpers::verify_phase_ownership;
+use crate::domain::mcp::McpContext;
 
 pub struct RemovePhaseTool {
     pub ctx: Arc<McpContext>,

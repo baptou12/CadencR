@@ -7,24 +7,27 @@ use tracing::warn;
 
 use crate::domain::mcp::servers::AgentType;
 use crate::domain::workflow::prompts::Prompts;
-use crate::domain::workflow::strategies::feature_build_session_review;
 use crate::domain::workflow::status::WorkflowStatus;
+use crate::domain::workflow::strategies::feature_build_session_review;
 use crate::domain::ws_session::protocol::ImagePayload;
 
 use super::agent_slot::AgentSlot;
 use super::engine::WorkflowEngine;
 
 impl WorkflowEngine {
-    pub async fn spawn_plan_agent(&self, description: &str, images: &[ImagePayload]) -> Result<i64, String> {
+    pub async fn spawn_plan_agent(
+        &self,
+        description: &str,
+        images: &[ImagePayload],
+    ) -> Result<i64, String> {
         self.set_status(WorkflowStatus::Planning).await;
-        let prd: Option<String> = sqlx::query_scalar::<_, Option<String>>(
-            "SELECT prd FROM features WHERE id = ?",
-        )
-        .bind(self.feature_id)
-        .fetch_optional(&self.read_pool)
-        .await
-        .map_err(|e| format!("Failed to read feature PRD: {e}"))?
-        .flatten();
+        let prd: Option<String> =
+            sqlx::query_scalar::<_, Option<String>>("SELECT prd FROM features WHERE id = ?")
+                .bind(self.feature_id)
+                .fetch_optional(&self.read_pool)
+                .await
+                .map_err(|e| format!("Failed to read feature PRD: {e}"))?
+                .flatten();
 
         let (preamble, desc) = if let Some(ref prd_content) = prd {
             if !prd_content.is_empty() {
@@ -33,10 +36,16 @@ impl WorkflowEngine {
                     prd_content.as_str(),
                 )
             } else {
-                ("Please create a detailed implementation plan for the following feature:\n\n", description)
+                (
+                    "Please create a detailed implementation plan for the following feature:\n\n",
+                    description,
+                )
             }
         } else {
-            ("Please create a detailed implementation plan for the following feature:\n\n", description)
+            (
+                "Please create a detailed implementation plan for the following feature:\n\n",
+                description,
+            )
         };
 
         let plan_instructions = "Start by exploring the codebase to understand the project structure and existing patterns. \
@@ -44,15 +53,17 @@ impl WorkflowEngine {
 
         let enriched_prompt = format!("{preamble}{desc}\n\n{plan_instructions}");
 
-        self.agent_manager.spawn_pre_queue_agent(
-            AgentType::Plan,
-            "plan",
-            Prompts::plan(),
-            &enriched_prompt,
-            images,
-            |_| AgentSlot::Plan,
-            &self.permissions,
-        ).await
+        self.agent_manager
+            .spawn_pre_queue_agent(
+                AgentType::Plan,
+                "plan",
+                Prompts::plan(),
+                &enriched_prompt,
+                images,
+                |_| AgentSlot::Plan,
+                &self.permissions,
+            )
+            .await
     }
 
     pub async fn spawn_prd_agent(&self, description: &str) -> Result<i64, String> {
@@ -65,18 +76,24 @@ impl WorkflowEngine {
             "Please create a comprehensive PRD for the following feature:\n\n{description}\n\n{prd_instructions}"
         );
 
-        self.agent_manager.spawn_pre_queue_agent(
-            AgentType::Prd,
-            "prd",
-            Prompts::prd(),
-            &enriched_prompt,
-            &[],
-            |_| AgentSlot::Prd,
-            &self.permissions,
-        ).await
+        self.agent_manager
+            .spawn_pre_queue_agent(
+                AgentType::Prd,
+                "prd",
+                Prompts::prd(),
+                &enriched_prompt,
+                &[],
+                |_| AgentSlot::Prd,
+                &self.permissions,
+            )
+            .await
     }
 
-    pub async fn spawn_session_agent(&self, prompt: &str, images: &[ImagePayload]) -> Result<i64, String> {
+    pub async fn spawn_session_agent(
+        &self,
+        prompt: &str,
+        images: &[ImagePayload],
+    ) -> Result<i64, String> {
         let enriched_prompt = feature_build_session_review::build_session_prompt(
             &self.read_pool,
             self.feature_id,
@@ -84,19 +101,25 @@ impl WorkflowEngine {
         )
         .await?;
 
-        self.agent_manager.spawn_pre_queue_agent_with_display(
-            AgentType::Session,
-            "session",
-            Prompts::session(),
-            &enriched_prompt,
-            Some(prompt),
-            images,
-            |id| AgentSlot::Session(id),
-            &self.permissions,
-        ).await
+        self.agent_manager
+            .spawn_pre_queue_agent_with_display(
+                AgentType::Session,
+                "session",
+                Prompts::session(),
+                &enriched_prompt,
+                Some(prompt),
+                images,
+                |id| AgentSlot::Session(id),
+                &self.permissions,
+            )
+            .await
     }
 
-    pub async fn spawn_refine_agent(&self, description: &str, images: &[ImagePayload]) -> Result<i64, String> {
+    pub async fn spawn_refine_agent(
+        &self,
+        description: &str,
+        images: &[ImagePayload],
+    ) -> Result<i64, String> {
         let refinement_prompt = match self.build_refine_context(description).await {
             Ok(prompt) => prompt,
             Err(e) => {
@@ -109,42 +132,47 @@ impl WorkflowEngine {
             }
         };
 
-        self.agent_manager.spawn_pre_queue_agent(
-            AgentType::Plan,
-            "plan",
-            Prompts::plan(),
-            &refinement_prompt,
-            images,
-            |_| AgentSlot::Refine,
-            &self.permissions,
-        ).await
+        self.agent_manager
+            .spawn_pre_queue_agent(
+                AgentType::Plan,
+                "plan",
+                Prompts::plan(),
+                &refinement_prompt,
+                images,
+                |_| AgentSlot::Refine,
+                &self.permissions,
+            )
+            .await
     }
 
     pub async fn spawn_review_fixer_agent(&self, comments: &str) -> Result<i64, String> {
-        let system_prompt = "You are a code review fixer. The user has reviewed a diff and provided comments. \
+        let system_prompt =
+            "You are a code review fixer. The user has reviewed a diff and provided comments. \
             Fix the issues described in the comments. Make minimal, focused changes.";
 
-        self.agent_manager.spawn_pre_queue_agent(
-            AgentType::Execute,
-            "review-fixer",
-            system_prompt,
-            comments,
-            &[],
-            |id| AgentSlot::ReviewFixer(id),
-            &self.permissions,
-        ).await
+        self.agent_manager
+            .spawn_pre_queue_agent(
+                AgentType::Execute,
+                "review-fixer",
+                system_prompt,
+                comments,
+                &[],
+                |id| AgentSlot::ReviewFixer(id),
+                &self.permissions,
+            )
+            .await
     }
 
     pub async fn spawn_risk_agent(&self) -> Result<i64, String> {
-        let feature: Option<(String,)> = sqlx::query_as(
-            "SELECT title FROM features WHERE id = ?",
-        )
-        .bind(self.feature_id)
-        .fetch_optional(&self.read_pool)
-        .await
-        .map_err(|e| format!("DB error querying feature: {e}"))?;
+        let feature: Option<(String,)> = sqlx::query_as("SELECT title FROM features WHERE id = ?")
+            .bind(self.feature_id)
+            .fetch_optional(&self.read_pool)
+            .await
+            .map_err(|e| format!("DB error querying feature: {e}"))?;
 
-        let feature_title = feature.map(|f| f.0).unwrap_or_else(|| format!("#{}", self.feature_id));
+        let feature_title = feature
+            .map(|f| f.0)
+            .unwrap_or_else(|| format!("#{}", self.feature_id));
 
         let plan: Option<(i64, Option<String>, Option<String>, Option<String>)> = sqlx::query_as(
             "SELECT id, summary, context, raw_markdown FROM plans WHERE feature_id = ? ORDER BY id DESC LIMIT 1",
@@ -179,25 +207,26 @@ impl WorkflowEngine {
              Then explore the codebase to understand the full context and impact of these changes. Generate a comprehensive risk report."
         );
 
-        self.agent_manager.spawn_pre_queue_agent(
-            AgentType::Risk,
-            "risk",
-            Prompts::risk(),
-            &prompt,
-            &[],
-            |id| AgentSlot::Risk(id),
-            &self.permissions,
-        ).await
+        self.agent_manager
+            .spawn_pre_queue_agent(
+                AgentType::Risk,
+                "risk",
+                Prompts::risk(),
+                &prompt,
+                &[],
+                |id| AgentSlot::Risk(id),
+                &self.permissions,
+            )
+            .await
     }
 
     pub async fn spawn_retro_agent(&self) -> Result<i64, String> {
-        let plan: Option<(i64,)> = sqlx::query_as(
-            "SELECT id FROM plans WHERE feature_id = ? ORDER BY id DESC LIMIT 1",
-        )
-        .bind(self.feature_id)
-        .fetch_optional(&self.read_pool)
-        .await
-        .map_err(|e| format!("DB error querying plan: {e}"))?;
+        let plan: Option<(i64,)> =
+            sqlx::query_as("SELECT id FROM plans WHERE feature_id = ? ORDER BY id DESC LIMIT 1")
+                .bind(self.feature_id)
+                .fetch_optional(&self.read_pool)
+                .await
+                .map_err(|e| format!("DB error querying plan: {e}"))?;
 
         let plan_hint = match plan {
             Some(p) => format!(
@@ -215,15 +244,17 @@ impl WorkflowEngine {
             self.feature_id
         );
 
-        self.agent_manager.spawn_pre_queue_agent(
-            AgentType::Retro,
-            "retro",
-            Prompts::retro(),
-            &prompt,
-            &[],
-            |id| AgentSlot::Retro(id),
-            &self.permissions,
-        ).await
+        self.agent_manager
+            .spawn_pre_queue_agent(
+                AgentType::Retro,
+                "retro",
+                Prompts::retro(),
+                &prompt,
+                &[],
+                |id| AgentSlot::Retro(id),
+                &self.permissions,
+            )
+            .await
     }
 
     /// Build a rich refinement context matching the legacy `buildRefineContext()`.
@@ -236,7 +267,8 @@ impl WorkflowEngine {
         .await
         .map_err(|e| format!("Failed to fetch plan: {e}"))?;
 
-        let (plan_id, summary, context) = plan.ok_or("No plan found for this feature — cannot refine without an existing plan.")?;
+        let (plan_id, summary, context) =
+            plan.ok_or("No plan found for this feature — cannot refine without an existing plan.")?;
 
         let phases: Vec<(i64, String, String, Option<String>, Option<String>)> = sqlx::query_as(
             "SELECT step_number, title, status, implementation_notes, phase_type FROM phases \

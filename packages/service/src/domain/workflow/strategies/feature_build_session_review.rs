@@ -1,6 +1,5 @@
 use sqlx::SqlitePool;
 
-
 use super::feature_build_prompts::format_completed_phase;
 
 /// Build an enriched initial prompt for session agents with plan state and constitution.
@@ -60,7 +59,9 @@ pub async fn build_session_prompt(
             .await
             .unwrap_or(None);
 
-    let mut ctx_parts = vec![format!("## Feature Context\n\n**Feature ID:** {feature_id}")];
+    let mut ctx_parts = vec![format!(
+        "## Feature Context\n\n**Feature ID:** {feature_id}"
+    )];
     if let Some((title, prd)) = feature {
         ctx_parts.push(format!("**Title:** {title}"));
         if let Some(desc) = prd.filter(|s| !s.is_empty()) {
@@ -90,12 +91,11 @@ pub async fn build_enriched_review_prompt(
 
     let mut sections: Vec<String> = Vec::new();
 
-    let prd: Option<(Option<String>,)> =
-        sqlx::query_as("SELECT prd FROM features WHERE id = ?")
-            .bind(feature_id)
-            .fetch_optional(read_pool)
-            .await
-            .map_err(|e| format!("Failed to read PRD: {e}"))?;
+    let prd: Option<(Option<String>,)> = sqlx::query_as("SELECT prd FROM features WHERE id = ?")
+        .bind(feature_id)
+        .fetch_optional(read_pool)
+        .await
+        .map_err(|e| format!("Failed to read PRD: {e}"))?;
 
     if let Some((Some(ref content),)) = prd {
         if !content.is_empty() {

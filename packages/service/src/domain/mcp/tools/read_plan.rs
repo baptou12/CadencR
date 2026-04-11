@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use crate::domain::mcp::McpContext;
 use super::helpers::verify_plan_ownership;
+use crate::domain::mcp::McpContext;
 
 pub struct ReadPlanTool {
     pub ctx: Arc<McpContext>,
@@ -79,7 +79,10 @@ impl ReadPlanTool {
                 p.step_number,
                 p.title,
                 p.phase_type.as_deref().unwrap_or("-"),
-                p.complexity.map(|c| c.to_string()).as_deref().unwrap_or("-"),
+                p.complexity
+                    .map(|c| c.to_string())
+                    .as_deref()
+                    .unwrap_or("-"),
                 p.status,
             ));
         }

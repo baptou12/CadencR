@@ -43,7 +43,10 @@ pub async fn retry_update_agent_message_content(
                 tokio::time::sleep(std::time::Duration::from_millis(50)).await;
             }
             _ => {
-                warn!(session_id, "failed to update agent_messages row after retries");
+                warn!(
+                    session_id,
+                    "failed to update agent_messages row after retries"
+                );
             }
         }
     }

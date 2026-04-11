@@ -8,7 +8,9 @@ use crate::domain::features::models::{Phase, QueueItem, WorkflowType};
 use crate::domain::features::repository;
 use crate::domain::mcp::servers::AgentType;
 use crate::domain::workflow::populate::topological_sort;
-use crate::domain::workflow::prompts::{build_execute_prompt, build_qa_prompt, build_review_prompt};
+use crate::domain::workflow::prompts::{
+    build_execute_prompt, build_qa_prompt, build_review_prompt,
+};
 
 use super::feature_build_prompts;
 use super::WorkflowStrategy;
@@ -75,10 +77,8 @@ impl WorkflowStrategy for FeatureBuildStrategy {
         }
 
         // 3. Build title -> phase map for resolving depends_on references
-        let title_to_phase: HashMap<String, &Phase> = phases
-            .iter()
-            .map(|p| (p.title.clone(), p))
-            .collect();
+        let title_to_phase: HashMap<String, &Phase> =
+            phases.iter().map(|p| (p.title.clone(), p)).collect();
 
         let phase_ids: Vec<i64> = phases.iter().map(|p| p.id).collect();
 
@@ -116,7 +116,10 @@ impl WorkflowStrategy for FeatureBuildStrategy {
             let group_index = *id_to_group.get(&phase.id).unwrap_or(&0) as i64;
 
             let item_type = map_phase_type_to_item_type(phase.phase_type.as_deref());
-            let has_deps = phase.depends_on.as_ref().map_or(false, |d| !parse_depends_on(d).is_empty());
+            let has_deps = phase
+                .depends_on
+                .as_ref()
+                .map_or(false, |d| !parse_depends_on(d).is_empty());
             let status = if has_deps { "blocked" } else { "ready" };
 
             let queue_id = repository::insert_queue_item(
@@ -142,9 +145,13 @@ impl WorkflowStrategy for FeatureBuildStrategy {
                     if let Some(dep_phase) = title_to_phase.get(dep_title.as_str()) {
                         let queue_item_id = phase_to_queue_item[&phase.id];
                         let depends_on_item_id = phase_to_queue_item[&dep_phase.id];
-                        repository::insert_dependency(write_pool, queue_item_id, depends_on_item_id)
-                            .await
-                            .map_err(|e| format!("Failed to insert dependency: {e}"))?;
+                        repository::insert_dependency(
+                            write_pool,
+                            queue_item_id,
+                            depends_on_item_id,
+                        )
+                        .await
+                        .map_err(|e| format!("Failed to insert dependency: {e}"))?;
                     }
                 }
             }
@@ -182,7 +189,11 @@ impl WorkflowStrategy for FeatureBuildStrategy {
         Ok(items)
     }
 
-    fn agent_type_for_item(&self, item_type: &str, _config: Option<&str>) -> Result<AgentType, String> {
+    fn agent_type_for_item(
+        &self,
+        item_type: &str,
+        _config: Option<&str>,
+    ) -> Result<AgentType, String> {
         match item_type {
             "execute" => Ok(AgentType::Execute),
             "qa" => Ok(AgentType::Qa),
@@ -232,14 +243,26 @@ impl WorkflowStrategy for FeatureBuildStrategy {
         match item.item_type.as_str() {
             "execute" => {
                 let phase = self.read_phase(read_pool, item.phase_id).await?;
-                feature_build_prompts::build_enriched_execute_prompt(read_pool, &phase, autonomy_level, item.retry_count).await
+                feature_build_prompts::build_enriched_execute_prompt(
+                    read_pool,
+                    &phase,
+                    autonomy_level,
+                    item.retry_count,
+                )
+                .await
             }
             "qa" => {
                 let phase = self.read_phase(read_pool, item.phase_id).await?;
-                feature_build_prompts::build_enriched_qa_prompt(read_pool, &phase, item.feature_id).await
+                feature_build_prompts::build_enriched_qa_prompt(read_pool, &phase, item.feature_id)
+                    .await
             }
             "review" => {
-                super::feature_build_session_review::build_enriched_review_prompt(read_pool, item.feature_id, feature_title).await
+                super::feature_build_session_review::build_enriched_review_prompt(
+                    read_pool,
+                    item.feature_id,
+                    feature_title,
+                )
+                .await
             }
             other => Err(format!("Unknown item type for initial prompt: {other}")),
         }
@@ -247,7 +270,11 @@ impl WorkflowStrategy for FeatureBuildStrategy {
 }
 
 impl FeatureBuildStrategy {
-    async fn read_phase(&self, read_pool: &SqlitePool, phase_id: Option<i64>) -> Result<Phase, String> {
+    async fn read_phase(
+        &self,
+        read_pool: &SqlitePool,
+        phase_id: Option<i64>,
+    ) -> Result<Phase, String> {
         let phase_id = phase_id.ok_or("Queue item requires a phase_id but none was set")?;
         sqlx::query_as::<_, Phase>("SELECT * FROM phases WHERE id = ?")
             .bind(phase_id)
@@ -256,7 +283,6 @@ impl FeatureBuildStrategy {
             .map_err(|e| format!("Failed to read phase: {e}"))?
             .ok_or_else(|| format!("Phase {phase_id} not found"))
     }
-
 }
 
 use crate::domain::features::repository::map_phase_type_to_item_type;

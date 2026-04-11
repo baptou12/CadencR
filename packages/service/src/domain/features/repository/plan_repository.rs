@@ -1,7 +1,7 @@
 use sqlx::SqlitePool;
 
+use super::super::models::{Phase, Plan, PlanProgress};
 use crate::error::AppError;
-use super::super::models::{Plan, Phase, PlanProgress};
 
 pub async fn get_plan_with_phases(
     pool: &SqlitePool,
@@ -34,12 +34,16 @@ pub async fn get_plan_with_phases(
     Ok(Some((plan, phases)))
 }
 
-pub async fn get_plan_progress(pool: &SqlitePool, feature_id: i64) -> Result<PlanProgress, AppError> {
-    let plan_row: Option<(i64,)> =
-        sqlx::query_as("SELECT id FROM plans WHERE feature_id = ? ORDER BY created_at DESC LIMIT 1")
-            .bind(feature_id)
-            .fetch_optional(pool)
-            .await?;
+pub async fn get_plan_progress(
+    pool: &SqlitePool,
+    feature_id: i64,
+) -> Result<PlanProgress, AppError> {
+    let plan_row: Option<(i64,)> = sqlx::query_as(
+        "SELECT id FROM plans WHERE feature_id = ? ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(feature_id)
+    .fetch_optional(pool)
+    .await?;
 
     let plan_id = match plan_row {
         None => return Ok(PlanProgress { total: 0, done: 0 }),
@@ -50,12 +54,16 @@ pub async fn get_plan_progress(pool: &SqlitePool, feature_id: i64) -> Result<Pla
         .bind(plan_id)
         .fetch_one(pool)
         .await?;
-    let done: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM phases WHERE plan_id = ? AND status = 'completed'")
-        .bind(plan_id)
-        .fetch_one(pool)
-        .await?;
+    let done: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM phases WHERE plan_id = ? AND status = 'completed'")
+            .bind(plan_id)
+            .fetch_one(pool)
+            .await?;
 
-    Ok(PlanProgress { total: total.0, done: done.0 })
+    Ok(PlanProgress {
+        total: total.0,
+        done: done.0,
+    })
 }
 
 pub async fn reset_phase(pool: &SqlitePool, phase_id: i64) -> Result<(), AppError> {
@@ -78,11 +86,10 @@ pub async fn reset_phase(pool: &SqlitePool, phase_id: i64) -> Result<(), AppErro
     }
 
     // Get step_number to check next phase
-    let step_row: Option<(i64,)> =
-        sqlx::query_as("SELECT step_number FROM phases WHERE id = ?")
-            .bind(phase_id)
-            .fetch_optional(pool)
-            .await?;
+    let step_row: Option<(i64,)> = sqlx::query_as("SELECT step_number FROM phases WHERE id = ?")
+        .bind(phase_id)
+        .fetch_optional(pool)
+        .await?;
     let step_number = step_row.map(|r| r.0).unwrap_or(0);
 
     let next_phase: Option<(String,)> = sqlx::query_as(
@@ -127,12 +134,15 @@ pub async fn reset_phase(pool: &SqlitePool, phase_id: i64) -> Result<(), AppErro
     Ok(())
 }
 
-pub async fn override_phase_status(pool: &SqlitePool, phase_id: i64, status: &str) -> Result<(), AppError> {
-    let exists: Option<(i64,)> =
-        sqlx::query_as("SELECT id FROM phases WHERE id = ?")
-            .bind(phase_id)
-            .fetch_optional(pool)
-            .await?;
+pub async fn override_phase_status(
+    pool: &SqlitePool,
+    phase_id: i64,
+    status: &str,
+) -> Result<(), AppError> {
+    let exists: Option<(i64,)> = sqlx::query_as("SELECT id FROM phases WHERE id = ?")
+        .bind(phase_id)
+        .fetch_optional(pool)
+        .await?;
     if exists.is_none() {
         return Err(AppError::NotFound(format!("Phase {phase_id} not found")));
     }

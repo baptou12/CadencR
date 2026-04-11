@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+pub use crate::domain::agents::runtime::ProviderSettings as ProjectProviderSettings;
+
 #[derive(Debug, Serialize, ToSchema)]
 pub struct Project {
     pub id: i64,
@@ -49,6 +51,12 @@ pub struct ProjectModelSettings {
 pub struct SetProjectModelSettingRequest {
     pub model_type: String,
     pub model: String,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct SetProjectProviderSettingRequest {
+    pub provider_type: String,
+    pub provider: String,
 }
 
 #[cfg(test)]

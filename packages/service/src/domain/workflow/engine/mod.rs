@@ -116,7 +116,10 @@ impl WorkflowEngine {
     /// Replay current engine state to a reconnected client: queue state,
     /// workflow status, and agent statuses (running/paused).
     pub async fn replay_state_to_client(&self) -> Result<(), String> {
-        info!(feature_id = self.feature_id, "replaying engine state to reconnected client");
+        info!(
+            feature_id = self.feature_id,
+            "replaying engine state to reconnected client"
+        );
 
         // 1. Send full queue update
         let all_items = repo::get_queue_for_feature(&self.read_pool, self.feature_id)
@@ -135,7 +138,9 @@ impl WorkflowEngine {
                 workflow_status: Some(workflow_status),
             }),
         );
-        let _ = self.ws_sender.send(Message::Text(String::from(queue_env).into()));
+        let _ = self
+            .ws_sender
+            .send(Message::Text(String::from(queue_env).into()));
 
         // 2. Report active (running) agents
         for entry in self.agent_manager.active_items.iter() {
@@ -156,7 +161,9 @@ impl WorkflowEngine {
                         agent_type,
                     }),
                 );
-                let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
+                let _ = self
+                    .ws_sender
+                    .send(Message::Text(String::from(envelope).into()));
             } else if is_paused {
                 if let Some(cc_sid) = self.agent_manager.paused_sessions.get(&slot) {
                     let agent_type = slot.agent_type_str().unwrap_or("execute").to_string();
@@ -171,7 +178,9 @@ impl WorkflowEngine {
                             claude_session_id: cc_sid.clone(),
                         }),
                     );
-                    let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
+                    let _ = self
+                        .ws_sender
+                        .send(Message::Text(String::from(envelope).into()));
                 }
             }
 
@@ -204,7 +213,10 @@ impl WorkflowEngine {
 
         // 3. Auto-resume agents that were paused by WS disconnect.
         // They have entries in paused_sessions + active_items but no running Query.
-        let auto_resume_slots: Vec<(AgentSlot, String)> = self.agent_manager.paused_sessions.iter()
+        let auto_resume_slots: Vec<(AgentSlot, String)> = self
+            .agent_manager
+            .paused_sessions
+            .iter()
             .filter(|entry| {
                 let slot = entry.key();
                 !self.agent_manager.queries.contains_key(slot)
@@ -253,7 +265,8 @@ impl WorkflowEngine {
             }
             Err(e) => {
                 tracing::warn!(feature_id = self.feature_id, from = %current, to = %new_status, error = %e, "invalid transition, force-setting");
-                let _ = repo::force_workflow_status(&self.write_pool, self.feature_id, new_status).await;
+                let _ = repo::force_workflow_status(&self.write_pool, self.feature_id, new_status)
+                    .await;
             }
         }
 
@@ -266,7 +279,9 @@ impl WorkflowEngine {
                 previous_status: current.to_string(),
             }),
         );
-        let _ = self.ws_sender.send(Message::Text(String::from(envelope).into()));
+        let _ = self
+            .ws_sender
+            .send(Message::Text(String::from(envelope).into()));
     }
 
     // ── Queue operations (delegates to QueueAdvancer) ──
@@ -286,12 +301,16 @@ impl WorkflowEngine {
 
     pub async fn advance(&self) -> Result<(), String> {
         self.touch_activity();
-        self.queue.advance(&self.agent_manager, &self.permissions).await
+        self.queue
+            .advance(&self.agent_manager, &self.permissions)
+            .await
     }
 
     pub async fn on_item_completed(&self, slot: AgentSlot, result: Option<&str>) {
         self.touch_activity();
-        self.queue.on_item_completed(slot, result, &self.agent_manager, &self.permissions, self).await;
+        self.queue
+            .on_item_completed(slot, result, &self.agent_manager, &self.permissions, self)
+            .await;
     }
 
     pub async fn on_item_paused(&self, slot: AgentSlot) {
@@ -301,20 +320,30 @@ impl WorkflowEngine {
 
     pub async fn on_item_error(&self, slot: AgentSlot, error: &str) {
         self.touch_activity();
-        self.queue.on_item_error(slot, error, &self.agent_manager, &self.permissions, self).await;
+        self.queue
+            .on_item_error(slot, error, &self.agent_manager, &self.permissions, self)
+            .await;
     }
 
     pub async fn skip_item(&self, item_id: i64) -> Result<(), String> {
-        self.queue.skip_item(item_id, &self.agent_manager, &self.permissions).await
+        self.queue
+            .skip_item(item_id, &self.agent_manager, &self.permissions)
+            .await
     }
 
     pub async fn retry_item(&self, item_id: i64) -> Result<(), String> {
-        self.queue.retry_item(item_id, &self.agent_manager, &self.permissions).await
+        self.queue
+            .retry_item(item_id, &self.agent_manager, &self.permissions)
+            .await
     }
 
     // ── Permission routing (delegates to PermissionRouter) ──
 
-    pub async fn respond_permission(&self, slot: AgentSlot, response: PermissionResponse) -> Result<(), String> {
+    pub async fn respond_permission(
+        &self,
+        slot: AgentSlot,
+        response: PermissionResponse,
+    ) -> Result<(), String> {
         self.permissions.respond(slot, response).await
     }
 
@@ -324,8 +353,15 @@ impl WorkflowEngine {
         self.agent_manager.interrupt_item(slot).await
     }
 
-    pub async fn send_prompt(&self, slot: AgentSlot, text: &str, images: Option<Vec<ImagePayload>>) -> Result<(), String> {
-        self.agent_manager.send_prompt(slot, text, images, &self.permissions).await
+    pub async fn send_prompt(
+        &self,
+        slot: AgentSlot,
+        text: &str,
+        images: Option<Vec<ImagePayload>>,
+    ) -> Result<(), String> {
+        self.agent_manager
+            .send_prompt(slot, text, images, &self.permissions)
+            .await
     }
 
     pub async fn mark_done(&self, slot: AgentSlot) -> Result<(), String> {
@@ -338,7 +374,6 @@ impl WorkflowEngine {
     pub async fn restore_on_reconnect(&self) -> Result<(), String> {
         self.queue.restore_on_reconnect(&self.agent_manager).await
     }
-
 }
 
 #[async_trait::async_trait]

@@ -40,29 +40,58 @@ async fn setup_test_db(db_path: &str, repo_path: &str) -> SqlitePool {
         .await
         .unwrap();
 
-    sqlx::query("CREATE TABLE projects (id INTEGER PRIMARY KEY, name TEXT, path TEXT, branch_prefix TEXT DEFAULT 'feature/')")
+    sqlx::query(
+        r#"CREATE TABLE projects (
+        id INTEGER PRIMARY KEY, name TEXT, path TEXT, branch_prefix TEXT DEFAULT 'feature/',
+        model_plan TEXT, model_prd TEXT, model_execute TEXT, model_risk TEXT,
+        model_review TEXT, "model_review-fixer" TEXT, model_session TEXT,
+        model_qa TEXT, model_retro TEXT,
+        agent_runtime_plan TEXT, agent_runtime_prd TEXT, agent_runtime_execute TEXT,
+        agent_runtime_risk TEXT, agent_runtime_review TEXT, "agent_runtime_review-fixer" TEXT,
+        agent_runtime_session TEXT, agent_runtime_qa TEXT, agent_runtime_retro TEXT
+    )"#,
+    )
         .execute(&pool).await.unwrap();
-    sqlx::query(r#"CREATE TABLE features (
+    sqlx::query(
+        r#"CREATE TABLE features (
         id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL, title TEXT,
         status TEXT DEFAULT 'draft', type TEXT NOT NULL DEFAULT 'feature',
         workflow_status TEXT DEFAULT 'idle',
         model_plan TEXT, model_prd TEXT, model_execute TEXT, model_risk TEXT,
         model_review TEXT, "model_review-fixer" TEXT, model_session TEXT,
-        model_qa TEXT, model_retro TEXT, agent_autonomy TEXT, parallel_execution TEXT
-    )"#)
-        .execute(&pool).await.unwrap();
+        model_qa TEXT, model_retro TEXT,
+        agent_runtime_plan TEXT, agent_runtime_prd TEXT, agent_runtime_execute TEXT,
+        agent_runtime_risk TEXT, agent_runtime_review TEXT, "agent_runtime_review-fixer" TEXT,
+        agent_runtime_session TEXT, agent_runtime_qa TEXT, agent_runtime_retro TEXT,
+        agent_autonomy TEXT, parallel_execution TEXT
+    )"#,
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT)")
+        .execute(&pool)
+        .await
+        .unwrap();
     sqlx::query("CREATE TABLE feature_settings (feature_id INTEGER, key TEXT, value TEXT, PRIMARY KEY(feature_id, key))")
         .execute(&pool).await.unwrap();
 
-    sqlx::query(r#"CREATE TABLE agent_sessions (
+    sqlx::query(
+        r#"CREATE TABLE agent_sessions (
         id INTEGER PRIMARY KEY AUTOINCREMENT, feature_id INTEGER NOT NULL,
         agent_type TEXT NOT NULL DEFAULT 'session', status TEXT NOT NULL DEFAULT 'idle',
-        claude_session_id TEXT, model TEXT, permission_mode TEXT,
+        runtime_provider TEXT, runtime_session_id TEXT, claude_session_id TEXT,
+        model TEXT, permission_mode TEXT,
         has_file_changes INTEGER NOT NULL DEFAULT 0,
         input_tokens INTEGER NOT NULL DEFAULT 0, output_tokens INTEGER NOT NULL DEFAULT 0,
         context_window INTEGER NOT NULL DEFAULT 200000, started_at TEXT, ended_at TEXT
-    )"#).execute(&pool).await.unwrap();
-    sqlx::query(r#"CREATE TABLE workflow_queue (
+    )"#,
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        r#"CREATE TABLE workflow_queue (
         id INTEGER PRIMARY KEY, feature_id INTEGER NOT NULL,
         workflow_type TEXT NOT NULL DEFAULT 'feature_build', item_type TEXT NOT NULL,
         phase_id INTEGER, status TEXT NOT NULL DEFAULT 'pending',
@@ -71,28 +100,48 @@ async fn setup_test_db(db_path: &str, repo_path: &str) -> SqlitePool {
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         started_at DATETIME, ended_at DATETIME, pid INTEGER,
         max_retries INTEGER NOT NULL DEFAULT 1, retry_count INTEGER NOT NULL DEFAULT 0
-    )"#).execute(&pool).await.unwrap();
-    sqlx::query(r#"CREATE TABLE plans (
+    )"#,
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        r#"CREATE TABLE plans (
         id INTEGER PRIMARY KEY AUTOINCREMENT, feature_id INTEGER NOT NULL,
         title TEXT, summary TEXT, context TEXT, clarifications TEXT, completion_conditions TEXT,
         status TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )"#).execute(&pool).await.unwrap();
-    sqlx::query(r#"CREATE TABLE phases (
+    )"#,
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        r#"CREATE TABLE phases (
         id INTEGER PRIMARY KEY AUTOINCREMENT, plan_id INTEGER NOT NULL,
         step_number INTEGER, title TEXT, status TEXT DEFAULT 'pending',
         complexity TEXT, commit_message TEXT, description TEXT,
         agent_count INTEGER DEFAULT 1
-    )"#).execute(&pool).await.unwrap();
+    )"#,
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
 
     sqlx::query("INSERT INTO projects (id, name, path) VALUES (1, 'test-project', ?)")
         .bind(repo_path)
-        .execute(&pool).await.unwrap();
+        .execute(&pool)
+        .await
+        .unwrap();
     sqlx::query("INSERT INTO features (id, project_id, title, status) VALUES (1, 1, 'Test Feature', 'in_progress')")
         .execute(&pool).await.unwrap();
     // Set worktree settings to point at the repo itself (for branch mode testing)
-    sqlx::query("INSERT INTO feature_settings (feature_id, key, value) VALUES (1, 'worktree_path', ?)")
-        .bind(repo_path)
-        .execute(&pool).await.unwrap();
+    sqlx::query(
+        "INSERT INTO feature_settings (feature_id, key, value) VALUES (1, 'worktree_path', ?)",
+    )
+    .bind(repo_path)
+    .execute(&pool)
+    .await
+    .unwrap();
     sqlx::query("INSERT INTO feature_settings (feature_id, key, value) VALUES (1, 'worktree_branch', 'feature/test-branch')")
         .execute(&pool).await.unwrap();
     sqlx::query("INSERT INTO feature_settings (feature_id, key, value) VALUES (1, 'worktree_original_branch', 'main')")
@@ -132,8 +181,7 @@ async fn start_test_server() -> TestServer {
         file_watcher: cadence_service::domain::editor::watcher::new_shared(),
     };
 
-    let app = api::build_router(state)
-        .layer(tower_http::cors::CorsLayer::permissive());
+    let app = api::build_router(state).layer(tower_http::cors::CorsLayer::permissive());
 
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -152,8 +200,12 @@ async fn start_test_server() -> TestServer {
 #[tokio::test]
 async fn test_health_check() {
     let server = start_test_server().await;
-    let resp = server.client.get(format!("{}/api/health", server.base_url))
-        .send().await.unwrap();
+    let resp = server
+        .client
+        .get(format!("{}/api/health", server.base_url))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), 200);
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["status"], "ok");
@@ -162,19 +214,31 @@ async fn test_health_check() {
 #[tokio::test]
 async fn test_openapi_has_20_paths() {
     let server = start_test_server().await;
-    let resp = server.client.get(format!("{}/api/openapi.json", server.base_url))
-        .send().await.unwrap();
+    let resp = server
+        .client
+        .get(format!("{}/api/openapi.json", server.base_url))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), 200);
     let body: serde_json::Value = resp.json().await.unwrap();
     let paths = body["paths"].as_object().unwrap();
-    assert!(paths.len() >= 19, "expected >= 19 paths, got {}", paths.len());
+    assert!(
+        paths.len() >= 19,
+        "expected >= 19 paths, got {}",
+        paths.len()
+    );
 }
 
 #[tokio::test]
 async fn test_get_branch() {
     let server = start_test_server().await;
-    let resp = server.client.get(format!("{}/api/git/branch?project_id=1", server.base_url))
-        .send().await.unwrap();
+    let resp = server
+        .client
+        .get(format!("{}/api/git/branch?project_id=1", server.base_url))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), 200);
     let body: serde_json::Value = resp.json().await.unwrap();
     assert!(body["branch"].is_string());
@@ -183,8 +247,12 @@ async fn test_get_branch() {
 #[tokio::test]
 async fn test_list_files() {
     let server = start_test_server().await;
-    let resp = server.client.get(format!("{}/api/git/files?feature_id=1", server.base_url))
-        .send().await.unwrap();
+    let resp = server
+        .client
+        .get(format!("{}/api/git/files?feature_id=1", server.base_url))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), 200);
     let body: serde_json::Value = resp.json().await.unwrap();
     assert!(body.as_array().unwrap().len() > 0);
@@ -193,8 +261,15 @@ async fn test_list_files() {
 #[tokio::test]
 async fn test_commit_log() {
     let server = start_test_server().await;
-    let resp = server.client.get(format!("{}/api/git/commit-log?feature_id=1", server.base_url))
-        .send().await.unwrap();
+    let resp = server
+        .client
+        .get(format!(
+            "{}/api/git/commit-log?feature_id=1",
+            server.base_url
+        ))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), 200);
     let body: serde_json::Value = resp.json().await.unwrap();
     assert!(body["commits"].as_array().unwrap().len() > 0);
@@ -203,10 +278,15 @@ async fn test_commit_log() {
 #[tokio::test]
 async fn test_file_content() {
     let server = start_test_server().await;
-    let resp = server.client.get(format!(
-        "{}/api/git/file-content?feature_id=1&file_path=test.txt&mode=worktree",
-        server.base_url
-    )).send().await.unwrap();
+    let resp = server
+        .client
+        .get(format!(
+            "{}/api/git/file-content?feature_id=1&file_path=test.txt&mode=worktree",
+            server.base_url
+        ))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), 200);
     let body: serde_json::Value = resp.json().await.unwrap();
     // new_content should have the file content
@@ -216,37 +296,56 @@ async fn test_file_content() {
 #[tokio::test]
 async fn test_file_content_batch_has_file_path() {
     let server = start_test_server().await;
-    let resp = server.client.post(format!("{}/api/git/file-content-batch", server.base_url))
+    let resp = server
+        .client
+        .post(format!("{}/api/git/file-content-batch", server.base_url))
         .json(&serde_json::json!({
             "feature_id": 1,
             "file_paths": ["test.txt"],
             "mode": "worktree"
         }))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), 200);
     let body: serde_json::Value = resp.json().await.unwrap();
     let items = body.as_array().unwrap();
     assert!(!items.is_empty());
     for item in items {
-        assert!(item["file_path"].is_string(), "each item should have file_path");
+        assert!(
+            item["file_path"].is_string(),
+            "each item should have file_path"
+        );
     }
 }
 
 #[tokio::test]
 async fn test_invalid_project_returns_404() {
     let server = start_test_server().await;
-    let resp = server.client.get(format!("{}/api/git/branch?project_id=9999", server.base_url))
-        .send().await.unwrap();
+    let resp = server
+        .client
+        .get(format!(
+            "{}/api/git/branch?project_id=9999",
+            server.base_url
+        ))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), 404);
 }
 
 #[tokio::test]
 async fn test_merge_conflicts_no_conflict() {
     let server = start_test_server().await;
-    let resp = server.client.get(format!(
-        "{}/api/git/merge-conflicts?project_id=1&feature_id=1",
-        server.base_url
-    )).send().await.unwrap();
+    let resp = server
+        .client
+        .get(format!(
+            "{}/api/git/merge-conflicts?project_id=1&feature_id=1",
+            server.base_url
+        ))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), 200);
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["has_conflicts"], false);
@@ -255,8 +354,15 @@ async fn test_merge_conflicts_no_conflict() {
 #[tokio::test]
 async fn test_file_blob_shas() {
     let server = start_test_server().await;
-    let resp = server.client.get(format!("{}/api/git/file-blob-shas?feature_id=1", server.base_url))
-        .send().await.unwrap();
+    let resp = server
+        .client
+        .get(format!(
+            "{}/api/git/file-blob-shas?feature_id=1",
+            server.base_url
+        ))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), 200);
     let body: serde_json::Value = resp.json().await.unwrap();
     let items = body.as_array().unwrap();
@@ -273,7 +379,12 @@ async fn test_snapshot_includes_completed_plan_agent() {
     let server = start_test_server().await;
 
     // Insert a completed plan agent session
-    server.client.post(format!("{}/api/features/1/snapshot", server.base_url)).send().await.ok();
+    server
+        .client
+        .post(format!("{}/api/features/1/snapshot", server.base_url))
+        .send()
+        .await
+        .ok();
 
     // We need to insert data directly, so get a separate pool
     let tmp_dir_path = format!("{}", server._tmp_dir.path().display());
@@ -301,8 +412,12 @@ async fn test_snapshot_includes_completed_plan_agent() {
     pool.close().await;
 
     // Fetch snapshot
-    let resp = server.client.get(format!("{}/api/features/1/snapshot", server.base_url))
-        .send().await.unwrap();
+    let resp = server
+        .client
+        .get(format!("{}/api/features/1/snapshot", server.base_url))
+        .send()
+        .await
+        .unwrap();
     let status = resp.status();
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(status, 200, "snapshot failed: {:?}", body);
@@ -310,32 +425,55 @@ async fn test_snapshot_includes_completed_plan_agent() {
     let sessions = body["agent_sessions"].as_array().unwrap();
     // Should have 3 sessions: completed plan, running plan, and execute (linked to queue)
     // Should NOT have the unknown_type agent
-    assert_eq!(sessions.len(), 3, "expected 3 agent sessions, got: {:?}", sessions);
+    assert_eq!(
+        sessions.len(),
+        3,
+        "expected 3 agent sessions, got: {:?}",
+        sessions
+    );
 
-    let agent_types: Vec<&str> = sessions.iter()
+    let agent_types: Vec<&str> = sessions
+        .iter()
         .map(|s| s["agent_type"].as_str().unwrap())
         .collect();
-    assert!(agent_types.contains(&"plan"), "completed plan agent should be in snapshot");
+    assert!(
+        agent_types.contains(&"plan"),
+        "completed plan agent should be in snapshot"
+    );
 
-    let statuses: Vec<&str> = sessions.iter()
+    let statuses: Vec<&str> = sessions
+        .iter()
         .filter(|s| s["agent_type"].as_str().unwrap() == "plan")
         .map(|s| s["status"].as_str().unwrap())
         .collect();
-    assert!(statuses.contains(&"completed"), "completed plan agent must be included");
-    assert!(statuses.contains(&"running"), "running plan agent must be included");
+    assert!(
+        statuses.contains(&"completed"),
+        "completed plan agent must be included"
+    );
+    assert!(
+        statuses.contains(&"running"),
+        "running plan agent must be included"
+    );
 }
 
 #[tokio::test]
 async fn test_snapshot_does_not_include_phase_states() {
     let server = start_test_server().await;
 
-    let resp = server.client.get(format!("{}/api/features/1/snapshot", server.base_url))
-        .send().await.unwrap();
+    let resp = server
+        .client
+        .get(format!("{}/api/features/1/snapshot", server.base_url))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), 200);
     let body: serde_json::Value = resp.json().await.unwrap();
 
     // phase_states field was removed entirely
-    assert!(body.get("phase_states").is_none(), "phase_states field should not be present");
+    assert!(
+        body.get("phase_states").is_none(),
+        "phase_states field should not be present"
+    );
 }
 
 #[tokio::test]
@@ -346,15 +484,31 @@ async fn test_file_tree_includes_dotfiles() {
     // Create a dotfile in the repo
     std::fs::write(repo_path.join(".hidden"), "secret\n").unwrap();
 
-    let resp = server.client.get(format!(
-        "{}/api/editor/tree?project_path={}&dir_path=",
-        server.base_url,
-        repo_path.to_string_lossy()
-    )).send().await.unwrap();
+    let resp = server
+        .client
+        .get(format!(
+            "{}/api/editor/tree?project_path={}&dir_path=",
+            server.base_url,
+            repo_path.to_string_lossy()
+        ))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), 200);
     let body: serde_json::Value = resp.json().await.unwrap();
     let entries = body.as_array().unwrap();
-    let names: Vec<&str> = entries.iter().map(|e| e["name"].as_str().unwrap()).collect();
-    assert!(names.contains(&".hidden"), "dotfiles should be included in file tree, got: {:?}", names);
-    assert!(names.contains(&".git"), ".git dir should be included in file tree, got: {:?}", names);
+    let names: Vec<&str> = entries
+        .iter()
+        .map(|e| e["name"].as_str().unwrap())
+        .collect();
+    assert!(
+        names.contains(&".hidden"),
+        "dotfiles should be included in file tree, got: {:?}",
+        names
+    );
+    assert!(
+        names.contains(&".git"),
+        ".git dir should be included in file tree, got: {:?}",
+        names
+    );
 }

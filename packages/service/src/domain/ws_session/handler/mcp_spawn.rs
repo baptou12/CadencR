@@ -5,13 +5,13 @@
 //! `Options::mcp_servers` field. The CLI will then spawn our MCP server as a
 //! stdio subprocess and connect to it automatically.
 
-use std::collections::HashMap;
 use std::env;
 
-use claude_agent_sdk_rs::mcp::McpServerConfig;
 use tracing::info;
 
+use crate::domain::agents::adapter::RuntimeMcpServerConfig;
 use crate::domain::mcp::servers::{mcp_server_name, AgentType};
+use std::collections::HashMap;
 
 /// Build the `mcp_servers` config map for attaching an MCP server to a CLI spawn.
 ///
@@ -29,7 +29,7 @@ pub fn build_mcp_server_config(
     feature_id: i64,
     phase_slug: Option<&str>,
     input_phase_slugs: Option<&[String]>,
-) -> HashMap<String, McpServerConfig> {
+) -> std::collections::HashMap<String, RuntimeMcpServerConfig> {
     let server_name = mcp_server_name(agent_type);
 
     // Resolve the path to the cadence-service binary.
@@ -81,7 +81,7 @@ pub fn build_mcp_server_config(
         "built MCP server config for agent spawn"
     );
 
-    let config = McpServerConfig::Stdio {
+    let config = RuntimeMcpServerConfig::Stdio {
         command: binary_path,
         args: Some(mcp_args),
         env: if env_vars.is_empty() {
@@ -91,7 +91,7 @@ pub fn build_mcp_server_config(
         },
     };
 
-    let mut servers = HashMap::new();
+    let mut servers = std::collections::HashMap::new();
     servers.insert(server_name.to_string(), config);
     servers
 }

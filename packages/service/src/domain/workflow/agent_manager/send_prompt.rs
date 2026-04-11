@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use tracing::{error, info, warn};
 
+use crate::domain::agents::runtime_adapter;
 use crate::domain::features::repository as repo;
 use crate::domain::mcp::servers::AgentType;
 
@@ -31,14 +32,19 @@ impl AgentManager {
         if let Some(query) = self.queries.get(&slot) {
             let q = query.lock().await;
             let content = build_content_value(text, &imgs);
-            q.stream_input(content).await.map_err(|e| format!("stream_input failed: {e}"))?;
+            q.stream_input(content)
+                .await
+                .map_err(|e| format!("stream_input failed: {e}"))?;
             return Ok(());
         }
 
         // Slow path: agent was paused, resume by spawning new process
-        if let Some((_, cc_session_id)) = self.paused_sessions.remove(&slot) {
-            info!(slot = %slot, cc_session_id = %cc_session_id, "resuming paused agent with --resume");
-            match self.resume_item(slot.clone(), &cc_session_id, text, &imgs, permissions).await {
+        if let Some((_, runtime_session_id)) = self.paused_sessions.remove(&slot) {
+            info!(slot = %slot, runtime_session_id = %runtime_session_id, "resuming paused agent with stored runtime session id");
+            match self
+                .resume_item(slot.clone(), &runtime_session_id, text, &imgs, permissions)
+                .await
+            {
                 Ok(()) => return Ok(()),
                 Err(e) => {
                     warn!(slot = %slot, error = %e, "resume failed, will try fresh spawn fallback");
@@ -63,15 +69,22 @@ impl AgentManager {
 
             if let Some((db_session_id, Some(ref cc_session_id))) = row {
                 if !cc_session_id.is_empty() {
-                    let cc_sid = cc_session_id.clone();
-                    info!(slot = %slot, db_session_id, cc_session_id = %cc_sid, "DB fallback: resuming paused agent with --resume");
+                    let runtime_sid = cc_session_id.clone();
+                    info!(slot = %slot, db_session_id, runtime_session_id = %runtime_sid, "DB fallback: resuming paused agent with stored runtime session id");
                     self.active_items.insert(slot.clone(), db_session_id);
-                    match self.resume_item(slot.clone(), &cc_sid, text, &imgs, permissions).await {
+                    match self
+                        .resume_item(slot.clone(), &runtime_sid, text, &imgs, permissions)
+                        .await
+                    {
                         Ok(()) => return Ok(()),
                         Err(e) => {
                             warn!(slot = %slot, error = %e, "DB resume failed, falling through to fresh spawn");
                             // Mark the stale session as completed so fresh spawn creates a new one
-                            WsSessionPersistence::mark_completed_static(&self.write_pool, db_session_id).await;
+                            WsSessionPersistence::mark_completed_static(
+                                &self.write_pool,
+                                db_session_id,
+                            )
+                            .await;
                         }
                     }
                 }
@@ -86,21 +99,24 @@ impl AgentManager {
             let sdk_type = slot.sdk_agent_type().unwrap();
             let system_prompt = slot.system_prompt().unwrap();
             info!(slot = %slot, agent_type = agent_type_str, "restarting pre-queue agent fresh (no resumable session)");
-            return self.spawn_pre_queue_agent(
-                sdk_type,
-                agent_type_str,
-                system_prompt,
-                text,
-                &imgs,
-                |id| match slot {
-                    AgentSlot::Session(_) => AgentSlot::Session(id),
-                    AgentSlot::Risk(_) => AgentSlot::Risk(id),
-                    AgentSlot::Retro(_) => AgentSlot::Retro(id),
-                    AgentSlot::ReviewFixer(_) => AgentSlot::ReviewFixer(id),
-                    other => other,
-                },
-                permissions,
-            ).await.map(|_| ());
+            return self
+                .spawn_pre_queue_agent(
+                    sdk_type,
+                    agent_type_str,
+                    system_prompt,
+                    text,
+                    &imgs,
+                    |id| match slot {
+                        AgentSlot::Session(_) => AgentSlot::Session(id),
+                        AgentSlot::Risk(_) => AgentSlot::Risk(id),
+                        AgentSlot::Retro(_) => AgentSlot::Retro(id),
+                        AgentSlot::ReviewFixer(_) => AgentSlot::ReviewFixer(id),
+                        other => other,
+                    },
+                    permissions,
+                )
+                .await
+                .map(|_| ());
         }
 
         // Fallback for queue items: look up claude_session_id via workflow_queue.agent_session_id
@@ -112,15 +128,22 @@ impl AgentManager {
 
             if let Some((db_session_id, Some(ref cc_session_id))) = row {
                 if !cc_session_id.is_empty() {
-                    let cc_sid = cc_session_id.clone();
-                    info!(slot = %slot, db_session_id, cc_session_id = %cc_sid, "DB fallback: resuming paused queue item with --resume");
+                    let runtime_sid = cc_session_id.clone();
+                    info!(slot = %slot, db_session_id, runtime_session_id = %runtime_sid, "DB fallback: resuming paused queue item with stored runtime session id");
                     self.active_items.insert(slot.clone(), db_session_id);
-                    match self.resume_item(slot.clone(), &cc_sid, text, &imgs, permissions).await {
+                    match self
+                        .resume_item(slot.clone(), &runtime_sid, text, &imgs, permissions)
+                        .await
+                    {
                         Ok(()) => return Ok(()),
                         Err(e) => {
                             warn!(slot = %slot, error = %e, "queue item resume failed");
                             // Mark stale session so retry can start fresh
-                            WsSessionPersistence::mark_completed_static(&self.write_pool, db_session_id).await;
+                            WsSessionPersistence::mark_completed_static(
+                                &self.write_pool,
+                                db_session_id,
+                            )
+                            .await;
                             return Err(format!("Resume failed for queue item: {e}"));
                         }
                     }
@@ -128,21 +151,25 @@ impl AgentManager {
             }
         }
 
-        Err(format!("No query handle for slot {slot} — agent may need restart"))
+        Err(format!(
+            "No query handle for slot {slot} — agent may need restart"
+        ))
     }
 
-    /// Resume a paused agent by spawning a new Claude Code process with `--resume`.
+    /// Resume a paused agent by spawning a new runtime process with `--resume`.
     pub(super) async fn resume_item(
         &self,
         slot: AgentSlot,
-        cc_session_id: &str,
+        runtime_session_id: &str,
         prompt: &str,
         images: &[ImagePayload],
         permissions: &PermissionRouter,
     ) -> Result<(), String> {
         self.interrupted_items.remove(&slot);
 
-        let db_session_id = self.active_items.get(&slot)
+        let db_session_id = self
+            .active_items
+            .get(&slot)
             .map(|r| *r)
             .ok_or_else(|| format!("No active session for slot {slot}"))?;
 
@@ -150,28 +177,39 @@ impl AgentManager {
         let agent_type_str = match slot.agent_type_str() {
             Some(s) => s.to_string(),
             None => {
-                let row: Option<(String,)> = sqlx::query_as(
-                    "SELECT agent_type FROM agent_sessions WHERE id = ?",
-                )
-                .bind(db_session_id)
-                .fetch_optional(&self.read_pool)
-                .await
-                .ok()
-                .flatten();
+                let row: Option<(String,)> =
+                    sqlx::query_as("SELECT agent_type FROM agent_sessions WHERE id = ?")
+                        .bind(db_session_id)
+                        .fetch_optional(&self.read_pool)
+                        .await
+                        .ok()
+                        .flatten();
                 row.map(|(t,)| t).unwrap_or_else(|| "execute".to_string())
             }
         };
 
         // Derive AgentType from the resolved string so queue items (review, qa, etc.)
         // get the correct MCP server, not a hardcoded Execute fallback.
-        let agent_type = agent_type_str.parse::<AgentType>().unwrap_or(AgentType::Execute);
+        let agent_type = agent_type_str
+            .parse::<AgentType>()
+            .unwrap_or(AgentType::Execute);
 
         // Build spawn context with --resume
-        let ctx = self.build_spawn_context(
-            slot.clone(), db_session_id, agent_type, &agent_type_str,
-            None, Some(cc_session_id), false, permissions,
-            None, None, None,
-        ).await?;
+        let ctx = self
+            .build_spawn_context(
+                slot.clone(),
+                db_session_id,
+                agent_type,
+                &agent_type_str,
+                None,
+                Some(runtime_session_id),
+                false,
+                permissions,
+                None,
+                None,
+                None,
+            )
+            .await?;
 
         let content_value = if prompt.is_empty() && images.is_empty() {
             serde_json::Value::String("Continue where you left off.".to_string())
@@ -179,18 +217,30 @@ impl AgentManager {
             build_content_value(prompt, images)
         };
 
-        match claude_agent_sdk_rs::query(content_value, ctx.options).await {
-            Ok(mut real_query) => {
-                let message_rx = real_query.take_message_rx();
-                if let Some(pid) = real_query.pid() {
+        let adapter = runtime_adapter(&ctx.provider).ok_or_else(|| {
+            format!(
+                "No runtime adapter registered for provider '{}'",
+                ctx.provider
+            )
+        })?;
+        match adapter.spawn(content_value, ctx.runtime_config).await {
+            Ok(mut runtime_session) => {
+                let message_rx = runtime_session.take_message_rx();
+                if let Some(pid) = runtime_session.pid() {
                     if let AgentSlot::QueueItem(item_id) = &slot {
-                        let _ = crate::domain::features::repository::update_item_pid(&self.write_pool, *item_id, pid as i64).await;
+                        let _ = crate::domain::features::repository::update_item_pid(
+                            &self.write_pool,
+                            *item_id,
+                            pid as i64,
+                        )
+                        .await;
                     }
                 }
-                let query_handle = Arc::new(tokio::sync::Mutex::new(real_query));
+                let query_handle = Arc::new(tokio::sync::Mutex::new(runtime_session));
                 if let Some((_, old_query)) = self.queries.remove(&slot) {
                     warn!(slot = %slot, "closing existing query before resuming agent");
-                    old_query.lock().await.close().await;
+                    let mut old_query = old_query.lock().await;
+                    old_query.close().await;
                 }
                 self.queries.insert(slot.clone(), query_handle);
 
@@ -205,15 +255,25 @@ impl AgentManager {
                     .await;
 
                 spawn_workflow_stream_reader(
-                    slot.clone(), db_session_id, self.feature_id,
-                    ctx.expected_mcp_server, message_rx, self.ws_sender.clone(),
-                    self.write_pool.clone(), self.active_items.clone(),
-                    self.queries.clone(), self.paused_sessions.clone(),
+                    slot.clone(),
+                    db_session_id,
+                    self.feature_id,
+                    ctx.expected_mcp_server,
+                    message_rx,
+                    self.ws_sender.clone(),
+                    self.write_pool.clone(),
+                    self.active_items.clone(),
+                    self.queries.clone(),
+                    self.paused_sessions.clone(),
                     Some(ctx.model.as_str()),
                     self.turn_state_tx.clone(),
                 );
 
-                WsSessionPersistence::broadcast_turn_state(&self.turn_state_tx, self.feature_id, "claude");
+                WsSessionPersistence::broadcast_turn_state(
+                    &self.turn_state_tx,
+                    self.feature_id,
+                    "claude",
+                );
                 info!(slot = %slot, "agent resumed successfully");
                 Ok(())
             }

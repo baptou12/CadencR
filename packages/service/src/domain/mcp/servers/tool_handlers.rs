@@ -28,7 +28,15 @@ use super::{
     tool_show_prd, tool_update_phase,
 };
 
-fn handler(f: impl Fn(serde_json::Value) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<String, String>> + Send>> + Send + Sync + 'static) -> ToolHandlerFn {
+fn handler(
+    f: impl Fn(
+            serde_json::Value,
+        )
+            -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<String, String>> + Send>>
+        + Send
+        + Sync
+        + 'static,
+) -> ToolHandlerFn {
     Arc::new(f)
 }
 
@@ -95,7 +103,9 @@ pub fn create_phase(ctx: &Arc<McpContext>) -> ToolRegistration {
                     args["commit_message"].as_str().map(|s| s.to_string()),
                     args["phase_type"].as_str().map(|s| s.to_string()),
                     args["depends_on"].as_array().map(|arr| {
-                        arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect()
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                            .collect()
                     }),
                 )
                 .await
@@ -121,7 +131,9 @@ pub fn update_phase(ctx: &Arc<McpContext>) -> ToolRegistration {
                     args["prompt"].as_str().map(|s| s.to_string()),
                     args["phase_type"].as_str().map(|s| s.to_string()),
                     args["depends_on"].as_array().map(|arr| {
-                        arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect()
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                            .collect()
                     }),
                 )
                 .await
@@ -151,7 +163,8 @@ pub fn mark_agent_done(ctx: &Arc<McpContext>) -> ToolRegistration {
         handler: handler(move |args| {
             let t = MarkAgentDoneTool::new(ctx.clone());
             Box::pin(async move {
-                t.call(args["summary"].as_str().map(|s| s.to_string())).await
+                t.call(args["summary"].as_str().map(|s| s.to_string()))
+                    .await
             })
         }),
     }
@@ -220,7 +233,8 @@ pub fn read_conversation(ctx: &Arc<McpContext>) -> ToolRegistration {
             let t = ReadConversationTool::new(ctx.clone());
             Box::pin(async move {
                 let session_id = require_i64(&args, "session_id")?;
-                t.call(session_id, args["offset"].as_i64(), args["limit"].as_i64()).await
+                t.call(session_id, args["offset"].as_i64(), args["limit"].as_i64())
+                    .await
             })
         }),
     }

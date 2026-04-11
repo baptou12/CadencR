@@ -2,9 +2,27 @@ use sqlx::SqlitePool;
 
 /// Columns that exist on both `features` and `projects` tables.
 const SHARED_COLUMNS: &[&str] = &[
-    "model_plan", "model_prd", "model_execute", "model_risk", "model_review",
-    "model_review-fixer", "model_session", "model_qa", "model_retro", "model_workflow",
-    "agent_autonomy", "parallel_execution",
+    "model_plan",
+    "model_prd",
+    "model_execute",
+    "model_risk",
+    "model_review",
+    "model_review-fixer",
+    "model_session",
+    "model_qa",
+    "model_retro",
+    "model_workflow",
+    "agent_runtime_plan",
+    "agent_runtime_prd",
+    "agent_runtime_execute",
+    "agent_runtime_risk",
+    "agent_runtime_review",
+    "agent_runtime_review-fixer",
+    "agent_runtime_session",
+    "agent_runtime_qa",
+    "agent_runtime_retro",
+    "agent_autonomy",
+    "parallel_execution",
 ];
 
 /// Columns that only exist on the `projects` table.
@@ -82,7 +100,10 @@ mod tests {
                 model_plan TEXT, model_prd TEXT, model_execute TEXT,
                 model_risk TEXT, model_review TEXT, "model_review-fixer" TEXT,
                 model_session TEXT, model_qa TEXT, model_retro TEXT,
-                model_workflow TEXT
+                model_workflow TEXT,
+                agent_runtime_plan TEXT, agent_runtime_prd TEXT, agent_runtime_execute TEXT,
+                agent_runtime_risk TEXT, agent_runtime_review TEXT, "agent_runtime_review-fixer" TEXT,
+                agent_runtime_session TEXT, agent_runtime_qa TEXT, agent_runtime_retro TEXT
             )"#,
         ).execute(&pool).await.unwrap();
         sqlx::query(
@@ -97,22 +118,34 @@ mod tests {
                 model_plan TEXT, model_prd TEXT, model_execute TEXT,
                 model_risk TEXT, model_review TEXT,
                 model_session TEXT, model_qa TEXT, model_retro TEXT,
-                model_workflow TEXT
+                model_workflow TEXT,
+                agent_runtime_plan TEXT, agent_runtime_prd TEXT, agent_runtime_execute TEXT,
+                agent_runtime_risk TEXT, agent_runtime_review TEXT, "agent_runtime_review-fixer" TEXT,
+                agent_runtime_session TEXT, agent_runtime_qa TEXT, agent_runtime_retro TEXT
             )"#,
         ).execute(&pool).await.unwrap();
-        sqlx::query(
-            "CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT)",
-        ).execute(&pool).await.unwrap();
+        sqlx::query("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT)")
+            .execute(&pool)
+            .await
+            .unwrap();
         pool
     }
 
     #[tokio::test]
     async fn test_feature_level_wins() {
         let pool = test_pool().await;
-        sqlx::query("INSERT INTO projects (id, name, path, agent_autonomy) VALUES (1, 'p', '/tmp', '3')")
-            .execute(&pool).await.unwrap();
-        sqlx::query("INSERT INTO features (id, project_id, title, agent_autonomy) VALUES (1, 1, 'f', '1')")
-            .execute(&pool).await.unwrap();
+        sqlx::query(
+            "INSERT INTO projects (id, name, path, agent_autonomy) VALUES (1, 'p', '/tmp', '3')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO features (id, project_id, title, agent_autonomy) VALUES (1, 1, 'f', '1')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
 
         let result = resolve_setting(&pool, "agent_autonomy", Some(1), Some(1), Some("3")).await;
         assert_eq!(result, Some("1".to_string()));
@@ -121,10 +154,16 @@ mod tests {
     #[tokio::test]
     async fn test_project_level_fallback() {
         let pool = test_pool().await;
-        sqlx::query("INSERT INTO projects (id, name, path, agent_autonomy) VALUES (1, 'p', '/tmp', '2')")
-            .execute(&pool).await.unwrap();
+        sqlx::query(
+            "INSERT INTO projects (id, name, path, agent_autonomy) VALUES (1, 'p', '/tmp', '2')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
         sqlx::query("INSERT INTO features (id, project_id, title) VALUES (1, 1, 'f')")
-            .execute(&pool).await.unwrap();
+            .execute(&pool)
+            .await
+            .unwrap();
 
         let result = resolve_setting(&pool, "agent_autonomy", Some(1), Some(1), Some("3")).await;
         assert_eq!(result, Some("2".to_string()));
@@ -134,11 +173,17 @@ mod tests {
     async fn test_global_fallback() {
         let pool = test_pool().await;
         sqlx::query("INSERT INTO projects (id, name, path) VALUES (1, 'p', '/tmp')")
-            .execute(&pool).await.unwrap();
+            .execute(&pool)
+            .await
+            .unwrap();
         sqlx::query("INSERT INTO features (id, project_id, title) VALUES (1, 1, 'f')")
-            .execute(&pool).await.unwrap();
+            .execute(&pool)
+            .await
+            .unwrap();
         sqlx::query("INSERT INTO settings (key, value) VALUES ('agent_autonomy', '2')")
-            .execute(&pool).await.unwrap();
+            .execute(&pool)
+            .await
+            .unwrap();
 
         let result = resolve_setting(&pool, "agent_autonomy", Some(1), Some(1), Some("3")).await;
         assert_eq!(result, Some("2".to_string()));
@@ -148,9 +193,13 @@ mod tests {
     async fn test_default_fallback() {
         let pool = test_pool().await;
         sqlx::query("INSERT INTO projects (id, name, path) VALUES (1, 'p', '/tmp')")
-            .execute(&pool).await.unwrap();
+            .execute(&pool)
+            .await
+            .unwrap();
         sqlx::query("INSERT INTO features (id, project_id, title) VALUES (1, 1, 'f')")
-            .execute(&pool).await.unwrap();
+            .execute(&pool)
+            .await
+            .unwrap();
 
         let result = resolve_setting(&pool, "agent_autonomy", Some(1), Some(1), Some("1")).await;
         assert_eq!(result, Some("1".to_string()));
@@ -172,8 +221,12 @@ mod tests {
     #[tokio::test]
     async fn test_project_only_column() {
         let pool = test_pool().await;
-        sqlx::query("INSERT INTO projects (id, name, path, qa_prompt) VALUES (1, 'p', '/tmp', 'run tests')")
-            .execute(&pool).await.unwrap();
+        sqlx::query(
+            "INSERT INTO projects (id, name, path, qa_prompt) VALUES (1, 'p', '/tmp', 'run tests')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
 
         let result = resolve_setting(&pool, "qa_prompt", None, Some(1), None).await;
         assert_eq!(result, Some("run tests".to_string()));
