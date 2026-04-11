@@ -19,6 +19,7 @@ export type PermissionMode = "acceptEdits" | "plan";
 
 export interface PendingPlanApproval {
   allowedPrompts?: Array<{ tool: string; prompt: string }>;
+  plan?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -132,6 +133,7 @@ export interface WsSessionStore {
     oldestMessageId?: number | null;
     featureId?: number;
     sessionDbId?: number;
+    pendingPlanApproval?: PendingPlanApproval | null;
   }) => void;
   loadOlderMessages: (sessionId: string) => Promise<void>;
 }

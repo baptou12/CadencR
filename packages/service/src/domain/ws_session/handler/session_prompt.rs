@@ -5,7 +5,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use axum::extract::ws::Message;
 use tokio::sync::{mpsc, Mutex};
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use claude_agent_sdk_rs::{
     CanUseTool, Options, PermissionRequest, PermissionResult, SdkError, SdkMessage, SystemMessage,
@@ -137,35 +137,47 @@ impl WsBridgeCanUseTool {
 
         // Persist pending_plan_approval to DB so it survives app restarts
         let approval_json = serde_json::to_string(&request.input).unwrap_or_else(|_| "{}".to_string());
-        let _ = sqlx::query("UPDATE agent_sessions SET pending_plan_approval = ? WHERE id = ?")
+        if let Err(e) = sqlx::query("UPDATE agent_sessions SET pending_plan_approval = ? WHERE id = ?")
             .bind(&approval_json)
             .bind(self.db_session_id)
             .execute(&self.write_pool)
-            .await;
+            .await
+        {
+            warn!(session_id = self.db_session_id, error = %e, "failed to persist pending_plan_approval");
+        }
 
-        let payload = PermissionRequestPayload {
-            request_id: request.tool_use_id.clone(),
-            tool_name: request.tool_name.clone(),
-            tool_input: request.input.clone(),
-            description: Some("Plan is ready for approval".to_string()),
-            pattern: None,
-        };
-        let envelope = WsEnvelope::new(
-            "session",
-            "permission.request",
-            serde_json::to_value(payload).unwrap(),
-        );
-        let _ = self.sender.send(Message::Text(String::from(envelope).into()));
+        // Send permission.request immediately so the frontend shows the approval
+        // bar without delay (the plan content is attached below).
+        self.send_plan_permission_request(request, request.input.clone());
 
         WsSessionPersistence::broadcast_turn_state(&self.turn_state_tx, self.feature_id, "askUser");
+
+        // Attach plan content and send enriched permission.request so PlanBlock
+        // renders both live and after app restart.
+        let enriched_input = self.attach_plan_to_exit_block(request).await;
+        if enriched_input != request.input {
+            let enriched_json = serde_json::to_string(&enriched_input).unwrap_or_else(|_| "{}".to_string());
+            if let Err(e) = sqlx::query("UPDATE agent_sessions SET pending_plan_approval = ? WHERE id = ?")
+                .bind(&enriched_json)
+                .bind(self.db_session_id)
+                .execute(&self.write_pool)
+                .await
+            {
+                warn!(session_id = self.db_session_id, error = %e, "failed to persist enriched pending_plan_approval");
+            }
+            self.send_plan_permission_request(request, enriched_input);
+        }
 
         let mut rx = self.response_rx.lock().await;
         match rx.recv().await {
             Some(response) => {
-                let _ = sqlx::query("UPDATE agent_sessions SET pending_plan_approval = NULL WHERE id = ?")
+                if let Err(e) = sqlx::query("UPDATE agent_sessions SET pending_plan_approval = NULL WHERE id = ?")
                     .bind(self.db_session_id)
                     .execute(&self.write_pool)
-                    .await;
+                    .await
+                {
+                    warn!(session_id = self.db_session_id, error = %e, "failed to clear pending_plan_approval");
+                }
 
                 WsSessionPersistence::broadcast_turn_state(&self.turn_state_tx, self.feature_id, "claude");
                 self.apply_exit_plan_decision(request, response).await
@@ -199,12 +211,15 @@ impl WsBridgeCanUseTool {
         let result = serde_json::from_str::<serde_json::Value>(result_str).ok()?;
 
         // Clear stored result
-        let _ = sqlx::query(
+        if let Err(e) = sqlx::query(
             "UPDATE agent_sessions SET plan_approval_result = NULL, pending_plan_approval = NULL WHERE id = ?"
         )
         .bind(self.db_session_id)
         .execute(&self.write_pool)
-        .await;
+        .await
+        {
+            warn!(session_id = self.db_session_id, error = %e, "failed to clear plan_approval_result and pending_plan_approval");
+        }
 
         let approved = result.get("approved").and_then(|v| v.as_bool()).unwrap_or(false);
         if approved {
@@ -265,6 +280,67 @@ impl WsBridgeCanUseTool {
                 }
             }
         }
+    }
+
+    /// Attach plan file content to the ExitPlanMode tool_call row in agent_messages.
+    /// Finds the most recent Write to a `.claude/plans/` path in this session,
+    /// reads the file, and returns the enriched tool input (with `plan` field).
+    async fn attach_plan_to_exit_block(&self, request: &PermissionRequest) -> serde_json::Value {
+        // Find the plan file path from the most recent Write tool_call
+        let plan_path: Option<String> = sqlx::query_scalar(
+            "SELECT content FROM agent_messages \
+             WHERE session_id = ? AND message_type = 'tool_call' AND tool_name = 'Write' \
+             AND content LIKE '%plans/%' \
+             ORDER BY id DESC LIMIT 1",
+        )
+        .bind(self.db_session_id)
+        .fetch_optional(&self.write_pool)
+        .await
+        .ok()
+        .flatten();
+
+        let plan_content = match plan_path {
+            Some(content_json) => {
+                let parsed: Option<String> = serde_json::from_str::<serde_json::Value>(&content_json)
+                    .ok()
+                    .and_then(|v| v.get("file_path")?.as_str().map(String::from));
+                match parsed {
+                    Some(file_path) => tokio::fs::read_to_string(&file_path).await.ok(),
+                    None => None,
+                }
+            }
+            None => None,
+        };
+
+        let mut enriched = request.input.clone();
+        if let Some(plan_md) = plan_content {
+            enriched["plan"] = serde_json::Value::String(plan_md);
+            let updated_content = serde_json::to_string(&enriched).unwrap_or_default();
+            crate::domain::features::repository::retry_update_agent_message_content(
+                &self.write_pool,
+                self.db_session_id,
+                &request.tool_use_id,
+                &updated_content,
+                &crate::domain::features::repository::ToolCallFilter::ToolName("ExitPlanMode".to_string()),
+            ).await;
+        }
+        enriched
+    }
+
+    fn send_plan_permission_request(&self, request: &PermissionRequest, tool_input: serde_json::Value) {
+        let payload = PermissionRequestPayload {
+            request_id: request.tool_use_id.clone(),
+            tool_name: request.tool_name.clone(),
+            tool_input,
+            description: Some("Plan is ready for approval".to_string()),
+            pattern: None,
+        };
+        let envelope = WsEnvelope::new(
+            "session",
+            "permission.request",
+            serde_json::to_value(payload).unwrap(),
+        );
+        let _ = self.sender.send(Message::Text(String::from(envelope).into()));
     }
 
     /// Handle a NeedsPrompt result: send session-specific envelope and

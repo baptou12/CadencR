@@ -77,6 +77,8 @@ export interface AgentSessionState {
   hasMore?: boolean;
   /** Lowest message ID in the current window */
   oldestMessageId?: number | null;
+  /** Plan/PRD content for approval gates, persisted for app restart */
+  pendingPlanApproval?: { plan?: string } | null;
 }
 
 export type AutonomyLevel = 1 | 2 | 3;

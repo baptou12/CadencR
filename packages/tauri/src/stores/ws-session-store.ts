@@ -37,6 +37,10 @@ export {
   applyMutations,
 } from "./ws-message-processing";
 import { parseTodosFromBlocks } from "./ws-message-processing";
+import { injectPlanIntoBlocks } from "./ws-message-processing";
+
+/** Prefix for synthetic request IDs created during plan-restore flows. */
+const PLAN_RESTORE_PREFIX = "plan_restore_";
 
 export const useWsSessionStore = create<WsSessionStore>((set, get) => {
   function getSession(sessionId: string): SessionEntry {
@@ -268,8 +272,15 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
         },
       ];
       if (session.pendingRequestId) {
+        const isRestored = session.pendingRequestId.startsWith(PLAN_RESTORE_PREFIX);
         sendRaw(sessionId, createModeSet(session.serverSessionId, "acceptEdits"));
         sendRaw(sessionId, createPermissionRespond(session.serverSessionId, session.pendingRequestId, "allow_once"));
+        // For restored plans (CLI not running), also send a prompt to trigger
+        // CLI respawn with --resume. The stored plan_approval_result will be
+        // picked up by check_stored_approval on the next ExitPlanMode call.
+        if (isRestored) {
+          sendRaw(sessionId, createPromptSend(session.serverSessionId, "Plan approved. Proceed with execution."));
+        }
         set(updateSession(get(), sessionId, {
           pendingRequestId: "",
           pendingPlanApproval: null,
@@ -306,7 +317,11 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
           ]
         : blocksWithStatus;
       if (session.pendingRequestId) {
+        const isRestored = session.pendingRequestId.startsWith(PLAN_RESTORE_PREFIX);
         sendRaw(sessionId, createPermissionRespond(session.serverSessionId, session.pendingRequestId, "deny", undefined, feedback));
+        if (isRestored) {
+          sendRaw(sessionId, createPromptSend(session.serverSessionId, feedback || "Plan rejected. Revise the plan."));
+        }
         set(updateSession(get(), sessionId, {
           pendingRequestId: "",
           pendingPlanApproval: null,
@@ -342,7 +357,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       set(updateSession(get(), sessionId, { persistedLoaded: true }));
     },
 
-    setPersistedState(sessionId: string, { blocks, status, hasMore, oldestMessageId, featureId, sessionDbId }) {
+    setPersistedState(sessionId: string, { blocks, status, hasMore, oldestMessageId, featureId, sessionDbId, pendingPlanApproval }) {
       const existing = get().sessions[sessionId];
       if (existing && existing.blocks.length > 0) {
         set(updateSession(get(), sessionId, {
@@ -351,17 +366,27 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
           oldestMessageId: oldestMessageId ?? null,
           featureId: featureId ?? null,
           sessionDbId: sessionDbId ?? null,
+          ...(pendingPlanApproval != null ? { pendingPlanApproval, status: "paused" as const } : {}),
         }));
         return;
       }
-      const todos = parseTodosFromBlocks(blocks);
+      // If pendingPlanApproval has plan content, inject it into the last
+      // ExitPlanMode block's toolArgs so PlanBlock renders on restore.
+      const enrichedBlocks = injectPlanIntoBlocks(blocks, pendingPlanApproval);
+      const todos = parseTodosFromBlocks(enrichedBlocks);
+      // Generate a synthetic request ID so approvePlan sends permission.respond
+      // instead of a text prompt. The "plan_restore_" prefix tells the backend
+      // to store the result in DB for the CLI to pick up on next spawn.
+      const restoredRequestId = pendingPlanApproval != null ? `${PLAN_RESTORE_PREFIX}${Date.now()}` : "";
       set(updateSession(get(), sessionId, {
-        blocks, status, persistedLoaded: true,
+        blocks: enrichedBlocks, status: pendingPlanApproval != null ? "paused" as const : status,
+        persistedLoaded: true,
         ...(todos ? { todos } : {}),
         hasMore: hasMore ?? false,
         oldestMessageId: oldestMessageId ?? null,
         featureId: featureId ?? null,
         sessionDbId: sessionDbId ?? null,
+        ...(pendingPlanApproval != null ? { pendingPlanApproval, pendingRequestId: restoredRequestId } : {}),
       }));
     },
 

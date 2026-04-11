@@ -262,7 +262,16 @@ function handlePermissionRequest(
 
   if (p.tool_name === "ExitPlanMode") {
     state.exitPlanModeDetected = false;
-    ctx.set(updateSession(ctx.get(), sessionId, {
+    const current = ctx.get();
+    const session = current.sessions[sessionId];
+    const enrichedArgs = JSON.stringify(p.tool_input ?? {});
+    const updatedBlocks = session?.blocks.map((b) =>
+      b.type === "tool_call" && b.toolName === "ExitPlanMode" && b.toolUseId === p.request_id
+        ? { ...b, toolArgs: enrichedArgs }
+        : b,
+    );
+    ctx.set(updateSession(current, sessionId, {
+      ...(updatedBlocks ? { blocks: updatedBlocks } : {}),
       pendingRequestId: p.request_id,
       pendingPlanApproval: p.tool_input ?? {},
       status: "paused",

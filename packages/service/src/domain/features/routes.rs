@@ -37,7 +37,7 @@ pub async fn create_feature_handler(
     Json(body): Json<CreateFeatureRequest>,
 ) -> Result<Json<CreateFeatureResponse>, AppError> {
     Ok(Json(
-        service::create_feature(&state.write_pool, body.project_id, body.title, body.type_, body.workflow_definition_id).await?,
+        service::create_feature(&state.write_pool, body.project_id, body.title, body.type_).await?,
     ))
 }
 

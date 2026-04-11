@@ -132,22 +132,49 @@ impl WorkflowPermissionBridge {
         );
         let _ = self.sender.send(Message::Text(String::from(gate_env).into()));
 
-        if is_show_plan {
+        let content = if is_show_plan {
             self.emit_plan_approval_status().await;
-            self.emit_plan_content().await;
+            self.emit_plan_content().await
         } else {
-            self.emit_prd_content().await;
+            self.emit_prd_content().await
+        };
+
+        // Persist plan/PRD content to pending_plan_approval so it survives app restart
+        if let Some(ref plan_md) = content {
+            let mut enriched = request.input.clone();
+            enriched["plan"] = serde_json::Value::String(plan_md.clone());
+            let json = serde_json::to_string(&enriched).unwrap_or_else(|_| "{}".to_string());
+            if let Err(e) = sqlx::query("UPDATE agent_sessions SET pending_plan_approval = ? WHERE id = ?")
+                .bind(&json)
+                .bind(self.db_session_id)
+                .execute(&self.write_pool)
+                .await
+            {
+                warn!(session_id = self.db_session_id, error = %e, "failed to persist pending_plan_approval");
+            }
         }
+
+        self.attach_plan_to_tool_call(request, content).await;
 
         let changed: &[&str] = if is_show_plan { &["plan", "phases", "progress"] } else { &["prd"] };
         send_feature_updated_envelope(&self.sender, self.feature_id, changed);
 
-        permission_bridge::wait_for_approval(
+        let result = permission_bridge::wait_for_approval(
             &self.response_rx,
             &request.tool_use_id,
             request.input.clone(),
             "Plan/PRD rejected by user",
-        ).await
+        ).await;
+
+        if let Err(e) = sqlx::query("UPDATE agent_sessions SET pending_plan_approval = NULL WHERE id = ?")
+            .bind(self.db_session_id)
+            .execute(&self.write_pool)
+            .await
+        {
+            warn!(session_id = self.db_session_id, error = %e, "failed to clear pending_plan_approval");
+        }
+
+        result
     }
 
     /// Handle a NeedsPrompt result: send workflow-specific envelope, persist
@@ -238,7 +265,7 @@ impl WorkflowPermissionBridge {
         let _ = self.sender.send(Message::Text(String::from(status_env).into()));
     }
 
-    async fn emit_plan_content(&self) {
+    async fn emit_plan_content(&self) -> Option<String> {
         let plan_id = match sqlx::query_scalar::<_, i64>(
             "SELECT id FROM plans WHERE feature_id = ? ORDER BY id DESC LIMIT 1",
         )
@@ -249,11 +276,11 @@ impl WorkflowPermissionBridge {
             Ok(Some(id)) => id,
             Ok(None) => {
                 warn!(feature_id = self.feature_id, "no plan found when emitting plan_content");
-                return;
+                return None;
             }
             Err(e) => {
                 warn!(feature_id = self.feature_id, error = %e, "failed to query plan");
-                return;
+                return None;
             }
         };
 
@@ -270,14 +297,16 @@ impl WorkflowPermissionBridge {
                     }),
                 );
                 let _ = self.sender.send(Message::Text(String::from(env).into()));
+                Some(content)
             }
             None => {
                 warn!(feature_id = self.feature_id, plan_id, "fetch_plan_content returned None");
+                None
             }
         }
     }
 
-    async fn emit_prd_content(&self) {
+    async fn emit_prd_content(&self) -> Option<String> {
         match sqlx::query_scalar::<_, String>(
             "SELECT prd FROM features WHERE id = ? AND prd IS NOT NULL",
         )
@@ -297,12 +326,15 @@ impl WorkflowPermissionBridge {
                     }),
                 );
                 let _ = self.sender.send(Message::Text(String::from(env).into()));
+                Some(prd_content)
             }
             Ok(None) => {
                 warn!(feature_id = self.feature_id, "no PRD found when emitting prd_content");
+                None
             }
             Err(e) => {
                 warn!(feature_id = self.feature_id, error = %e, "failed to query PRD");
+                None
             }
         }
     }
@@ -376,5 +408,21 @@ impl WorkflowPermissionBridge {
             }
         }
         Some(out)
+    }
+
+    /// Persist plan/PRD content into the tool_call row so the frontend can
+    /// render it after app restart.
+    async fn attach_plan_to_tool_call(&self, request: &PermissionRequest, content: Option<String>) {
+        if let Some(plan_md) = content {
+            let enriched = serde_json::json!({ "plan": plan_md });
+            let enriched_str = enriched.to_string();
+            crate::domain::features::repository::retry_update_agent_message_content(
+                &self.write_pool,
+                self.db_session_id,
+                &request.tool_use_id,
+                &enriched_str,
+                &crate::domain::features::repository::ToolCallFilter::MessageType("tool_call".to_string()),
+            ).await;
+        }
     }
 }

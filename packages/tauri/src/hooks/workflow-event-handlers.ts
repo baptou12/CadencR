@@ -185,7 +185,7 @@ export function createWorkflowMessageHandler(
             const planAgent = get().agents.get(PLAN_KEY);
             if (planAgent) {
               const agents = new Map(get().agents);
-              agents.set(PLAN_KEY, { ...planAgent, status: "running" as const });
+              agents.set(PLAN_KEY, { ...planAgent, status: "running" as const, pendingPlanApproval: null });
               updates.agents = agents;
             }
           }
@@ -194,7 +194,7 @@ export function createWorkflowMessageHandler(
             const prdAgent = get().agents.get(PRD_KEY);
             if (prdAgent && prdAgent.status === "paused") {
               const agents = updates.agents ? updates.agents : new Map(get().agents);
-              agents.set(PRD_KEY, { ...prdAgent, status: "running" as const });
+              agents.set(PRD_KEY, { ...prdAgent, status: "running" as const, pendingPlanApproval: null });
               updates.agents = agents;
             }
           }

@@ -21,7 +21,6 @@ pub async fn create_feature(
     project_id: i64,
     title: Option<String>,
     type_: Option<String>,
-    workflow_definition_id: Option<i64>,
 ) -> Result<CreateFeatureResponse, AppError> {
     let type_str = type_.as_deref().unwrap_or("ws-feature");
     let title = match title {
@@ -31,7 +30,7 @@ pub async fn create_feature(
             format!("Session {}", max_num + 1)
         }
     };
-    let id = repository::create_feature(pool, project_id, &title, type_str, workflow_definition_id).await?;
+    let id = repository::create_feature(pool, project_id, &title, type_str).await?;
     Ok(CreateFeatureResponse { id })
 }
 

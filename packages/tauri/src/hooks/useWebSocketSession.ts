@@ -95,6 +95,7 @@ export function useWebSocketSession(sessionId: string, featureId?: number): UseW
       oldestMessageId: lastSession.oldestMessageId,
       featureId,
       sessionDbId: lastSession.sessionDbId,
+      pendingPlanApproval: lastSession.pendingPlanApproval as PendingPlanApproval | null,
     });
   }, [featureId, agentStateQuery.data, persistedLoaded, sessionId, store]);
 

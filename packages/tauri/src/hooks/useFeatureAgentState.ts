@@ -19,6 +19,7 @@ import type { AgentStatus, TodoItem } from "@/types/agent";
 import { parseAskUserQuestions } from "@/components/AgentQuestionDrawer";
 import type { AgentQuestion } from "@/components/AgentQuestionDrawer";
 import type { PendingPermission } from "@/components/ToolPermissionPrompt";
+import { injectPlanIntoBlocks } from "@/stores/ws-message-processing";
 
 /** Number of messages to fetch per session on initial load */
 const INITIAL_MESSAGE_LIMIT = 100;
@@ -187,7 +188,7 @@ export interface FeatureSession {
   phaseTitle: string | null;
   todos: TodoItem[] | null;
   permissionMode: string;
-  pendingPlanApproval: { allowedPrompts?: Array<{ tool: string; prompt: string }> } | null;
+  pendingPlanApproval: { allowedPrompts?: Array<{ tool: string; prompt: string }>; plan?: string } | null;
   pendingPermission: PendingPermission | null;
   inputTokens: number;
   outputTokens: number;
@@ -324,7 +325,10 @@ export function useFeatureAgentState(featureId: number) {
         status,
         subprocessId: s.subprocessId,
         model: s.model,
-        blocks: acc?.blocks ?? serverBlocksToAgentBlocks(s.blocks),
+        blocks: injectPlanIntoBlocks(
+          acc?.blocks ?? serverBlocksToAgentBlocks(s.blocks),
+          s.pendingPlanApproval,
+        ),
         pendingQuestions: parseQuestions(s.pendingQuestions),
         hasFileChanges: s.hasFileChanges,
         resumable: s.resumable,

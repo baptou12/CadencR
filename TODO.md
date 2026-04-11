@@ -1,5 +1,6 @@
 ## FIX
-- [ ] [agent] When plan is visible, restarting the app should show the plan again.
+- [~] [agent] When plan is visible, restarting the app should show the plan again.
+- [ ] [feature] no loaders during the auto-namming
 
 ## FEAT
 - [ ] [agent] handle background agents

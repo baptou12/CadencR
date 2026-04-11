@@ -146,7 +146,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
           createdAt: new Date().toISOString(),
         };
         const agents = new Map(state.agents);
-        agents.set(agentKey, { ...agent, blocks: [...agent.blocks, block] });
+        agents.set(agentKey, { ...agent, blocks: [...agent.blocks, block], pendingPlanApproval: null });
         return { agents };
       });
     },
@@ -168,7 +168,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
           createdAt: new Date().toISOString(),
         };
         const agents = new Map(state.agents);
-        agents.set(agentKey, { ...agent, blocks: [...agent.blocks, block] });
+        agents.set(agentKey, { ...agent, blocks: [...agent.blocks, block], pendingPlanApproval: null });
         return { agents };
       });
     },

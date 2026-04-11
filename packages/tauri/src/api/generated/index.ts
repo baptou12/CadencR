@@ -1139,7 +1139,7 @@ export interface SessionState {
   phaseTitle: string | null;
   todos: Array<{ content: string; status: string; activeForm: string }> | null;
   permissionMode: string;
-  pendingPlanApproval: unknown | null;
+  pendingPlanApproval: { plan?: string } | null;
   pendingPrdApproval: unknown | null;
   pendingPermission: unknown | null;
   inputTokens: number;

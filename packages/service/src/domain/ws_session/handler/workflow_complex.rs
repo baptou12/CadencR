@@ -204,7 +204,8 @@ async fn handle_approval(envelope: WsEnvelope, sender: &WsSender, kind: &str, sl
     let Some((payload, engine)) = parse_and_get_engine::<WorkflowApprovalPayload>(&envelope, sender) else { return };
 
     let approved = payload.approved;
-    info!(feature_id = payload.feature_id, approved, kind, "resolving approval via permission channel");
+    let feature_id = payload.feature_id;
+    info!(feature_id, approved, kind, "resolving approval via permission channel");
 
     let decision = if approved { PermissionDecision::AllowOnce } else { PermissionDecision::Deny };
     let response = super::session_prompt::PermissionResponse {
@@ -216,9 +217,40 @@ async fn handle_approval(envelope: WsEnvelope, sender: &WsSender, kind: &str, sl
     update_approval_status(&engine, kind, approved).await;
     persist_approval_message(&engine, &payload, kind, approved, &slot).await;
 
-    match engine.respond_permission(slot, response).await {
-        Ok(()) => info!(feature_id = payload.feature_id, kind, "approval routed through permission channel"),
-        Err(e) => warn!(feature_id = payload.feature_id, error = %e, kind, "failed to route approval — agent may not be waiting"),
+    // Clear pending_plan_approval in DB (it was set for app-restart persistence)
+    if let Err(e) = sqlx::query(
+        "UPDATE agent_sessions SET pending_plan_approval = NULL WHERE feature_id = ? AND agent_type = ?"
+    )
+    .bind(feature_id)
+    .bind(kind)
+    .execute(&engine.write_pool)
+    .await
+    {
+        warn!(feature_id, error = %e, "failed to clear pending_plan_approval");
+    }
+
+    match engine.respond_permission(slot.clone(), response).await {
+        Ok(()) => info!(feature_id, kind, "approval routed through permission channel"),
+        Err(e) => {
+            // Agent is dead (e.g. after app restart). Mark session completed
+            // and auto-advance the workflow to the next step.
+            warn!(feature_id, error = %e, kind, "agent not waiting — marking completed and auto-advancing");
+            if let Err(e) = sqlx::query(
+                "UPDATE agent_sessions SET status = 'completed' WHERE feature_id = ? AND agent_type = ? AND status IN ('running', 'paused')"
+            )
+            .bind(feature_id)
+            .bind(kind)
+            .execute(&engine.write_pool)
+            .await
+            {
+                warn!(feature_id, error = %e, "failed to mark agent session as completed");
+            }
+
+            resume_agent_after_approval(
+                &engine, slot.clone(), kind, feature_id, approved,
+                payload.feedback.as_deref(),
+            ).await;
+        }
     }
 
     let ack = WsEnvelope::reply(&envelope.id, "workflow", format!("{kind}.approval_resolved"), to_value(WorkflowApprovalResolvedPayload {
@@ -226,6 +258,31 @@ async fn handle_approval(envelope: WsEnvelope, sender: &WsSender, kind: &str, sl
         approved,
     }));
     let _ = sender.send(Message::Text(String::from(ack).into()));
+}
+
+/// After app restart, the agent is dead. Resume it via send_prompt so it
+/// continues from where it left off (using --resume with its claude_session_id).
+async fn resume_agent_after_approval(
+    engine: &WorkflowEngine,
+    slot: crate::domain::workflow::engine::AgentSlot,
+    kind: &str,
+    feature_id: i64,
+    approved: bool,
+    feedback: Option<&str>,
+) {
+    let label = if kind == "plan" { "Plan" } else { "PRD" };
+    let prompt = if approved {
+        format!("{label} approved by the user. Your work is done — call `mark_agent_done` now.")
+    } else {
+        match feedback {
+            Some(fb) => format!("{label} rejected by the user. Feedback: {fb}\n\nPlease revise the {kind} based on this feedback, then call show_{kind} again for approval."),
+            None => format!("{label} rejected by the user. Please revise and call show_{kind} again."),
+        }
+    };
+    info!(feature_id, kind, "resuming dead agent after approval");
+    if let Err(e) = engine.send_prompt(slot, &prompt, None).await {
+        warn!(feature_id, error = %e, kind, "failed to resume agent after approval");
+    }
 }
 
 async fn update_approval_status(engine: &WorkflowEngine, kind: &str, approved: bool) {

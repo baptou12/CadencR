@@ -11,6 +11,7 @@ import type { AgentQuestion } from "@/components/AgentQuestionDrawer";
 import type { AgentBlockData } from "@/components/AgentBlock";
 import type { FeatureAgentStateResponse } from "@/api/generated";
 import { serverBlocksToAgentBlocks } from "@/hooks/useFeatureAgentState";
+import { injectPlanIntoBlocks } from "@/stores/ws-message-processing";
 import {
   type WorkflowState,
   type AgentSessionState,
@@ -36,14 +37,16 @@ export function hydrateFromSnapshotPatch(
   const hasWsQueue = state.queue.length > 0;
 
   // Build a lookup of REST-loaded blocks keyed by session DB id
-  const restBlocks = new Map<number, { blocks: AgentBlockData[]; hasMore: boolean; oldestMessageId: number | null }>();
+  const restBlocks = new Map<number, { blocks: AgentBlockData[]; hasMore: boolean; oldestMessageId: number | null; pendingPlanApproval: { plan?: string } | null }>();
   if (agentStateResp) {
     for (const s of agentStateResp.sessions) {
-      if (s.blocks.length === 0) continue;
+      if (s.blocks.length === 0 && !s.pendingPlanApproval) continue;
+      const ppa = s.pendingPlanApproval;
       restBlocks.set(s.sessionDbId, {
-        blocks: serverBlocksToAgentBlocks(s.blocks),
+        blocks: injectPlanIntoBlocks(serverBlocksToAgentBlocks(s.blocks), ppa),
         hasMore: s.hasMore,
         oldestMessageId: s.oldestMessageId,
+        pendingPlanApproval: ppa,
       });
     }
   }
@@ -81,6 +84,7 @@ export function hydrateFromSnapshotPatch(
           inputTokens: session.input_tokens ?? existing.inputTokens,
           outputTokens: session.output_tokens ?? existing.outputTokens,
           contextWindow: session.context_window || existing.contextWindow,
+          pendingPlanApproval: rest.pendingPlanApproval ?? existing.pendingPlanApproval,
         });
       }
     } else {
@@ -102,6 +106,7 @@ export function hydrateFromSnapshotPatch(
         outputTokens: session.output_tokens ?? 0,
         contextWindow: session.context_window || 200_000,
         hasFileChanges: false,
+        pendingPlanApproval: rest?.pendingPlanApproval ?? null,
       });
     }
   }
