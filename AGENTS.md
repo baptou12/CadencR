@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file mirrors `AGENTS.md` so Claude Code, Codex, and OpenCode use the same repository guidance.
+This file is the shared repository instruction entrypoint for Codex and OpenCode. `CLAUDE.md` at the repo root mirrors this file for Claude Code compatibility.
 
 ## Monorepo Structure
 
