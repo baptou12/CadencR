@@ -10,6 +10,7 @@ import {
   createPermissionRespond,
   createInterrupt,
   createDestroy,
+  createProviderSet,
   createModelSet,
   createModeSet,
   createSessionClear,
@@ -131,6 +132,9 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
     },
 
     initSession(sessionId: string, config) {
+      if (config.provider) {
+        set(updateSession(get(), sessionId, { currentProviderId: config.provider }));
+      }
       if (config.model) {
         set(updateSession(get(), sessionId, { currentModelId: config.model }));
       }
@@ -245,10 +249,14 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       sendRaw(sessionId, createSessionDelete(session.serverSessionId));
     },
 
+    setProvider(sessionId: string, providerId: string) {
+      const session = getSession(sessionId);
+      sendRaw(sessionId, createProviderSet(session.serverSessionId, providerId));
+    },
+
     setModel(sessionId: string, modelId) {
       const session = getSession(sessionId);
       sendRaw(sessionId, createModelSet(session.serverSessionId, modelId));
-      set(updateSession(get(), sessionId, { currentModelId: modelId }));
     },
 
     setPermissionMode(sessionId: string, mode) {

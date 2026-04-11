@@ -13,6 +13,7 @@ export interface WsEnvelope {
 }
 
 export interface SessionConfig {
+  provider?: string;
   model?: string;
   permissionMode?: string;
   systemPrompt?: string;
@@ -39,6 +40,7 @@ export function parseEnvelope(raw: string): WsEnvelope {
 
 export function createSessionInit(config: SessionConfig): WsEnvelope {
   return createEnvelope("session", "init", {
+    provider: config.provider ?? null,
     model: config.model ?? null,
     permission_mode: config.permissionMode ?? null,
     system_prompt: config.systemPrompt ?? null,
@@ -85,6 +87,10 @@ export function createModelSet(sessionId: string, model: string): WsEnvelope {
   return createEnvelope("session", "model.set", { session_id: sessionId, model });
 }
 
+export function createProviderSet(sessionId: string, provider: string): WsEnvelope {
+  return createEnvelope("session", "provider.set", { session_id: sessionId, provider });
+}
+
 export function createModeSet(sessionId: string, mode: string): WsEnvelope {
   return createEnvelope("session", "mode.set", { session_id: sessionId, mode });
 }
@@ -124,4 +130,3 @@ export function createDraftGet(sessionId: number): WsEnvelope {
 export function createDraftSave(sessionId: number, draft: string | null): WsEnvelope {
   return createEnvelope("session", "draft.save", { session_id: sessionId, draft });
 }
-

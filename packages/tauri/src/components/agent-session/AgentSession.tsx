@@ -14,6 +14,7 @@ import { AgentPromptBar, type AgentPromptBarHandle } from "../AgentPromptBar";
 import { ContextUsageBar } from "../ContextUsageBar";
 import { AGENT_ICONS } from "../agent-icons";
 import { useGetFeatureWorkingDir, useListModels } from "../../api/generated";
+import { useAgentCatalog } from "../../api/agentRuntime";
 import { AGENT_LABELS, STATUS_BADGE } from "./constants";
 import type { AgentSessionProps, AgentSessionHandle } from "./types";
 import { shallowEqualSkipFunctions } from "./shallowEqualSkipFunctions";
@@ -36,11 +37,11 @@ export const AgentSession = memo(forwardRef<AgentSessionHandle, AgentSessionProp
     todos, permissionMode, onPermissionModeToggle,
     pendingPlanApproval, planApproveLabel, planApprovalError,
     onPlanApprove, onPlanRequestChanges, onPlanReject,
-    contextUsage, currentModelId, onModelChange,
+    contextUsage, currentProviderId, onProviderChange, currentModelId, onModelChange,
     featureId, projectId, sessionId, wsSessionId, initialDraft,
     pendingPermission, onPermissionDecision,
     onMarkDone, maximized, onToggleMaximize,
-    claudeSessionId, slashCommandsOverride, slashCommandsLoading,
+    runtimeProvider, runtimeSessionId, slashCommandsOverride, slashCommandsLoading,
     hasMore, onLoadOlder, useWorktree, onToggleWorktree,
   } = props;
 
@@ -51,6 +52,7 @@ export const AgentSession = memo(forwardRef<AgentSessionHandle, AgentSessionProp
 
   const availableModels = useListModels();
   const models = useMemo(() => availableModels.data ?? [], [availableModels.data]);
+  const agentCatalog = useAgentCatalog();
   const cwdQuery = useGetFeatureWorkingDir(
     featureId ?? 0, projectId ?? 0,
     { enabled: featureId != null && projectId != null },
@@ -110,19 +112,66 @@ export const AgentSession = memo(forwardRef<AgentSessionHandle, AgentSessionProp
   })();
 
   const showDiffBar = !!(hasFileChanges && onViewDiff);
-  const currentModelLabel = models.find((m) => m.id === currentModelId)?.label ?? currentModelId ?? "Model";
+  const providerOptions = useMemo(
+    () => (agentCatalog.data?.providers ?? [])
+      .map((provider) => ({
+        id: provider.id,
+        label: provider.label,
+        disabled: provider.status !== "available",
+        models: provider.models.map((model) => ({ id: model.id, label: model.label })),
+      })),
+    [agentCatalog.data],
+  );
+  const activeProviderId = currentProviderId ?? runtimeProvider ?? "claude_code";
+  const activeProvider = providerOptions.find((provider) => provider.id === activeProviderId);
+  const visibleModels = activeProvider?.models.length ? activeProvider.models : models;
+  const allModels = providerOptions.flatMap((provider) => provider.models.map((model) => ({ ...model, providerId: provider.id })));
+  const currentModelLabel =
+    allModels.find((m) => m.id === currentModelId && m.providerId === activeProviderId)?.label ??
+    visibleModels.find((m) => m.id === currentModelId)?.label ??
+    currentModelId ?? "Model";
+  const canChangeProvider = !!onProviderChange && status === "idle" && blocks.length === 0;
+  const selectableProviders = useMemo(
+    () => providerOptions.filter((provider) => !provider.disabled && provider.models.length > 0),
+    [providerOptions],
+  );
 
   const handleCycleModel = useCallback(() => {
-    if (!onModelChange || models.length === 0) return;
-    const idx = models.findIndex((m) => m.id === currentModelId);
-    const next = models[(idx + 1) % models.length];
+    if (!onModelChange) return;
+    if (canChangeProvider && selectableProviders.length > 0) {
+      const cycleEntries = selectableProviders.flatMap((provider) => [
+        { type: "provider" as const, providerId: provider.id },
+        ...provider.models.map((model) => ({
+          type: "model" as const,
+          providerId: provider.id,
+          modelId: model.id,
+        })),
+      ]);
+
+      const currentIndex = cycleEntries.findIndex((entry) => entry.type === "model" && entry.providerId === activeProviderId && entry.modelId === currentModelId);
+      const next = cycleEntries[(currentIndex + 1 + cycleEntries.length) % cycleEntries.length];
+      if (next.type === "provider") {
+        onProviderChange?.(next.providerId);
+        const nextProvider = selectableProviders.find((provider) => provider.id === next.providerId);
+        const nextModel = nextProvider?.models[0];
+        if (nextModel) onModelChange(nextModel.id);
+        return;
+      }
+      onProviderChange?.(next.providerId);
+      onModelChange(next.modelId);
+      return;
+    }
+
+    if (visibleModels.length === 0) return;
+    const idx = visibleModels.findIndex((m) => m.id === currentModelId);
+    const next = visibleModels[(idx + 1 + visibleModels.length) % visibleModels.length];
     onModelChange(next.id);
-  }, [currentModelId, onModelChange, models]);
+  }, [activeProviderId, canChangeProvider, currentModelId, onModelChange, onProviderChange, selectableProviders, visibleModels]);
 
   const showWorktreeChip = !!onToggleWorktree && blocks.length === 0 && status === "idle";
   const hasMeta =
     !!onPermissionModeToggle || !!onModelChange || showDiffBar ||
-    (todos && todos.length > 0) || !!claudeSessionId || showWorktreeChip;
+    (todos && todos.length > 0) || !!runtimeSessionId || showWorktreeChip;
 
   // ---- Shared sub-sections ----
   const metaBar = hasMeta ? (
@@ -132,14 +181,19 @@ export const AgentSession = memo(forwardRef<AgentSessionHandle, AgentSessionProp
       showWorktreeChip={showWorktreeChip}
       useWorktree={useWorktree}
       onToggleWorktree={onToggleWorktree}
+      onProviderChange={onProviderChange}
+      currentProviderId={activeProviderId}
       onModelChange={onModelChange}
       currentModelId={currentModelId}
       currentModelLabel={currentModelLabel}
-      models={models}
+      models={visibleModels}
+      providers={providerOptions}
+      canChangeProvider={canChangeProvider}
       showDiffBar={showDiffBar}
       onViewDiff={onViewDiff}
       todos={todos}
-      claudeSessionId={claudeSessionId}
+      runtimeProvider={runtimeProvider}
+      runtimeSessionId={runtimeSessionId}
     />
   ) : null;
 

@@ -13,13 +13,26 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
 import type { TodoItem } from "@/types/agent";
+import { ProviderIcon } from "@/lib/provider-icons";
 
 interface Model {
   id: string;
   label: string;
+}
+
+interface Provider {
+  id: string;
+  label: string;
+  disabled?: boolean;
+  models: Model[];
 }
 
 export interface MetaBarProps {
@@ -28,14 +41,19 @@ export interface MetaBarProps {
   showWorktreeChip: boolean;
   useWorktree?: boolean;
   onToggleWorktree?: () => void;
+  onProviderChange?: (providerId: string) => void;
+  currentProviderId?: string;
   onModelChange?: (modelId: string) => void;
   currentModelId?: string;
   currentModelLabel: string;
   models: Model[];
+  providers?: Provider[];
+  canChangeProvider?: boolean;
   showDiffBar: boolean;
   onViewDiff?: () => void;
   todos?: TodoItem[] | null;
-  claudeSessionId?: string;
+  runtimeProvider?: string;
+  runtimeSessionId?: string;
 }
 
 const CHIP =
@@ -47,15 +65,22 @@ export function MetaBar({
   showWorktreeChip,
   useWorktree,
   onToggleWorktree,
+  onProviderChange,
+  currentProviderId,
   onModelChange,
   currentModelId,
   currentModelLabel,
   models,
+  providers = [],
+  canChangeProvider = false,
   showDiffBar,
   onViewDiff,
   todos,
-  claudeSessionId,
+  runtimeProvider,
+  runtimeSessionId,
 }: MetaBarProps) {
+  const displayProviderId = currentProviderId ?? runtimeProvider;
+
   return (
     <div
       className="relative -mt-6 flex items-center gap-1.5 px-3 py-3 backdrop-blur-sm"
@@ -105,25 +130,76 @@ export function MetaBar({
       {/* Model chip */}
       {onModelChange && (
         <DropdownMenu>
-          <ShortcutTooltip label="Switch model" keys={["cmd", "P"]}>
+          <ShortcutTooltip label="Switch provider or model" keys={["cmd", "P"]}>
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
                 className={cn(CHIP, "bg-violet-500/15 text-violet-400 hover:bg-violet-500/25")}
               >
+                <ProviderIcon providerId={displayProviderId} alt={currentModelLabel} className="size-3.5 rounded-sm" />
                 {currentModelLabel}
                 <ChevronDownIcon className="size-3" />
               </button>
             </DropdownMenuTrigger>
           </ShortcutTooltip>
-          <DropdownMenuContent align="start" className="min-w-[160px]">
-            {models.map((m) => (
+          <DropdownMenuContent align="start" className="min-w-[220px]">
+            <DropdownMenuLabel className="text-xs">Provider</DropdownMenuLabel>
+            {providers.map((provider) => (
+                <DropdownMenuSub key={provider.id}>
+                <DropdownMenuSubTrigger
+                  className="text-xs data-[disabled]:text-muted-foreground"
+                  disabled={provider.disabled}
+                >
+                  <ProviderIcon providerId={provider.id} alt={provider.label} className="size-3.5 rounded-sm" />
+                  <span className={provider.disabled ? "text-muted-foreground" : undefined}>{provider.label}</span>
+                  {provider.id === currentProviderId && <CheckIcon className="ml-1 size-3 text-violet-400" />}
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="min-w-[220px]">
+                  {provider.disabled ? (
+                    <DropdownMenuItem disabled className="text-xs text-muted-foreground">
+                      Coming soon
+                    </DropdownMenuItem>
+                  ) : canChangeProvider && onProviderChange ? (
+                    <>
+                      <DropdownMenuItem onClick={() => onProviderChange(provider.id)} className="text-xs">
+                        <ProviderIcon providerId={provider.id} alt={provider.label} className="size-3.5 rounded-sm" />
+                        Use {provider.label}
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                    </>
+                  ) : null}
+                  {!provider.disabled && provider.models.map((m) => (
+                    <DropdownMenuItem
+                      key={m.id}
+                      onClick={() => {
+                        if (canChangeProvider && onProviderChange && provider.id !== currentProviderId) {
+                          onProviderChange(provider.id);
+                        }
+                        onModelChange(m.id);
+                      }}
+                      className="flex items-center justify-between gap-2 text-xs"
+                    >
+                      <span className="flex items-center gap-2">
+                        <ProviderIcon providerId={provider.id} alt={m.label} className="size-3.5 rounded-sm" />
+                        {m.label}
+                      </span>
+                      {provider.id === currentProviderId && m.id === currentModelId && <CheckIcon className="size-3 text-violet-400" />}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+            ))}
+
+            {!providers.length && models.map((m) => (
               <DropdownMenuItem
                 key={m.id}
                 onClick={() => onModelChange(m.id)}
                 className="flex items-center justify-between gap-2 text-xs"
               >
-                {m.label}
+                <span className="flex items-center gap-2">
+                  <ProviderIcon providerId={displayProviderId} alt={m.label} className="size-3.5 rounded-sm" />
+                  {m.label}
+                </span>
                 {m.id === currentModelId && <CheckIcon className="size-3 text-violet-400" />}
               </DropdownMenuItem>
             ))}
@@ -149,9 +225,9 @@ export function MetaBar({
       {todos && todos.length > 0 && <AgentTodoList todos={todos} chipClass={CHIP} />}
 
       {/* Session ID */}
-      {claudeSessionId && (
+      {runtimeSessionId && (
         <span className="ml-auto select-all font-mono text-[10px] text-muted-foreground/50">
-          {claudeSessionId}
+          {runtimeProvider ? `${runtimeProvider}: ${runtimeSessionId}` : runtimeSessionId}
         </span>
       )}
     </div>

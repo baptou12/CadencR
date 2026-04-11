@@ -60,9 +60,9 @@ describe("SettingsPage route", () => {
     expect(screen.getByRole("heading", { name: "Settings" })).toBeInTheDocument();
   });
 
-  it("renders model configuration section", () => {
+  it("renders agent runtime section", () => {
     render(<SettingsPage />);
-    expect(screen.getByText("Model Configuration")).toBeInTheDocument();
+    expect(screen.getByText("Agent Runtime")).toBeInTheDocument();
     expect(screen.getByTestId("model-selector")).toBeInTheDocument();
   });
 

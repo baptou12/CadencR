@@ -71,7 +71,8 @@ function WebSocketSessionPage() {
   const session = useWsSessionStore((s) => s.sessions[sessionId]);
   const [useWorktree, setUseWorktree] = useState(false);
   const initializedRef = useRef<string | null>(null);
-  const { resolveModel } = useResolvedModel(featureId, projectId);
+  const { resolveModel, resolveProvider } = useResolvedModel(featureId, projectId);
+  const resolvedProviderId = resolveProvider("session");
   const resolvedModelId = resolveModel("session");
 
   // Use worktree path as effective cwd once available (live WS → DB settings → project cwd)
@@ -107,9 +108,9 @@ function WebSocketSessionPage() {
   useEffect(() => {
     if (isConnected && initializedRef.current !== sessionId && session?.serverSessionId === "") {
       initializedRef.current = sessionId;
-      initSession({ cwd, featureId, model: resolvedModelId });
+      initSession({ cwd, featureId, provider: resolvedProviderId, model: resolvedModelId });
     }
-  }, [isConnected, initSession, cwd, featureId, sessionId, session?.serverSessionId, resolvedModelId]);
+  }, [isConnected, initSession, cwd, featureId, sessionId, session?.serverSessionId, resolvedProviderId, resolvedModelId]);
 
   useEffect(() => {
     requestAnimationFrame(() => {
@@ -196,11 +197,14 @@ function WebSocketSessionPage() {
               ws.interrupt();
             }}
             contextUsage={ws.contextUsage}
+            currentProviderId={ws.currentProviderId}
+            onProviderChange={ws.setProvider}
             currentModelId={ws.currentModelId}
             onModelChange={ws.setModel}
             hasFileChanges={ws.hasFileChanges}
             onViewDiff={handleViewDiff}
-            claudeSessionId={ws.claudeSessionId || undefined}
+            runtimeProvider={ws.runtimeProvider}
+            runtimeSessionId={ws.runtimeSessionId || undefined}
             slashCommandsOverride={slashCommands}
             slashCommandsLoading={slashCommandsLoading}
             todos={session?.todos ?? null}

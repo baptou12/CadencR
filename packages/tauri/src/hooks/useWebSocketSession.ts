@@ -40,10 +40,13 @@ interface UseWebSocketSessionReturn {
   requestPlanChanges: (feedback: string) => void;
 
   contextUsage: ContextUsageState | null;
+  currentProviderId: string;
   currentModelId: string;
-  claudeSessionId: string;
+  runtimeProvider: string;
+  runtimeSessionId: string;
   hasFileChanges: boolean;
   setModel: (modelId: string) => void;
+  setProvider: (providerId: string) => void;
   sendPrompt: (text: string, images?: Array<{ base64: string; mimeType: string }>, useWorktree?: boolean) => void;
   respondToPermission: (requestId: string, granted: boolean) => void;
   interrupt: () => void;
@@ -112,8 +115,10 @@ export function useWebSocketSession(sessionId: string, featureId?: number): UseW
     permissionMode: session?.permissionMode ?? "acceptEdits",
     pendingPlanApproval: session?.pendingPlanApproval ?? null,
     contextUsage: session?.contextUsage ?? null,
+    currentProviderId: session?.currentProviderId ?? "claude_code",
     currentModelId: session?.currentModelId ?? DEFAULT_MODEL,
-    claudeSessionId: session?.claudeSessionId ?? "",
+    runtimeProvider: session?.runtimeProvider ?? "claude_code",
+    runtimeSessionId: session?.claudeSessionId ?? "",
     hasFileChanges: session?.hasFileChanges ?? false,
 
     sendPrompt: (text: string, images?: Array<{ base64: string; mimeType: string }>, useWorktree?: boolean) => store.sendPrompt(sessionId, text, images, useWorktree),
@@ -123,6 +128,7 @@ export function useWebSocketSession(sessionId: string, featureId?: number): UseW
     destroy: () => store.destroy(sessionId),
     clearSession: () => store.clearSession(sessionId),
     initSession: (config: SessionConfig) => store.initSession(sessionId, config),
+    setProvider: (providerId: string) => store.setProvider(sessionId, providerId),
     setModel: (modelId: string) => store.setModel(sessionId, modelId),
     setPermissionMode: (mode: PermissionMode) => store.setPermissionMode(sessionId, mode),
     approvePlan: () => store.approvePlan(sessionId),

@@ -171,7 +171,7 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", classNam
             <SettingsIcon className="size-4" />
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-[420px]" align="end">
+        <PopoverContent className="w-[560px] max-w-[calc(100vw-2rem)]" align="end">
           <div className="space-y-4">
             {/* Model Selection */}
             <div className="space-y-2">

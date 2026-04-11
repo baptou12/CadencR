@@ -100,11 +100,13 @@ export function FeatureWorkflowView({
     }
   }, [wsReady, projectPath, requestSlashCommands]);
 
-  // --- Model settings for inline model switcher ---
-  const { resolveModel: resolveModelForAgent, handleModelChange: handleModelChangeForAgent } = useResolvedModel(
-    featureId,
-    projectId,
-  );
+  // --- Runtime settings for inline provider/model switcher ---
+  const {
+    resolveModel: resolveModelForAgent,
+    handleModelChange: handleModelChangeForAgent,
+    resolveProvider: resolveProviderForAgent,
+    handleProviderChange: handleProviderChangeForAgent,
+  } = useResolvedModel(featureId, projectId);
 
   const [deleteTarget, setDeleteTarget] = useState<FeatureSession | null>(null);
 
@@ -279,7 +281,9 @@ export function FeatureWorkflowView({
                   agentsWithQuestions={agentsWithQuestions}
                   contextUsageMap={contextUsageMap}
                   resolveModel={resolveModelForAgent}
+                  resolveProvider={resolveProviderForAgent}
                   handleModelChange={handleModelChangeForAgent}
+                  handleProviderChange={handleProviderChangeForAgent}
                   handleDeleteAgent={handleDeleteAgent}
                   onViewDiff={handleViewDiffForAgent}
                   slashCommands={slashCommands}

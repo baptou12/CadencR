@@ -41,8 +41,8 @@ function GeneralTab() {
 
       <section className="space-y-4">
         <div>
-          <h2 className="text-lg font-semibold">Model Configuration</h2>
-          <p className="text-sm text-muted-foreground">Choose which Claude model to use for each agent type.</p>
+          <h2 className="text-lg font-semibold">Agent Runtime</h2>
+          <p className="text-sm text-muted-foreground">Choose the runtime provider and model for each agent type.</p>
         </div>
         <ModelSelector level="global" />
       </section>

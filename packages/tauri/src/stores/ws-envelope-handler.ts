@@ -159,6 +159,23 @@ function handleSessionAction(
       }
       break;
     }
+    case "provider.set.ok": {
+      const p = envelope.payload as { provider?: string };
+      if (p.provider) {
+        ctx.set(updateSession(ctx.get(), sessionId, {
+          currentProviderId: p.provider,
+          runtimeProvider: p.provider,
+        }));
+      }
+      break;
+    }
+    case "model.set.ok": {
+      const p = envelope.payload as { model?: string };
+      if (p.model) {
+        ctx.set(updateSession(ctx.get(), sessionId, { currentModelId: p.model }));
+      }
+      break;
+    }
     case "error":
       handleError(ctx, sessionId, envelope.payload, state);
       break;
@@ -203,6 +220,7 @@ function handleInitialized(
     serverSessionId: p.session_id ?? "",
     status: "idle",
   };
+  updates.runtimeProvider = ctx.getSession(sessionId).currentProviderId;
   if (p.model) updates.currentModelId = p.model;
   if (p.input_tokens != null || p.output_tokens != null) {
     const inputTokens = p.input_tokens ?? 0;

@@ -13,7 +13,7 @@ import type { WsConnection } from "@/lib/ws-connection";
 import type { WsEnvelope, SessionConfig } from "@/lib/ws-envelope";
 import type { StreamingState } from "./ws-message-processing";
 import { createStreamingState } from "./ws-message-processing";
-import { DEFAULT_MODEL } from "../shared/models";
+import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "../shared/models";
 
 export type PermissionMode = "acceptEdits" | "plan";
 
@@ -39,7 +39,9 @@ export interface SessionEntry {
   pendingQuestionToolInput: Record<string, unknown>;
   permissionMode: PermissionMode;
   pendingPlanApproval: PendingPlanApproval | null;
+  currentProviderId: string;
   currentModelId: string;
+  runtimeProvider: string;
   persistedLoaded: boolean;
   contextUsage: ContextUsageState | null;
   claudeSessionId: string;
@@ -75,7 +77,9 @@ export function createSessionEntry(): SessionEntry {
     pendingQuestionToolInput: {},
     permissionMode: "acceptEdits",
     pendingPlanApproval: null,
+    currentProviderId: DEFAULT_PROVIDER,
     currentModelId: DEFAULT_MODEL,
+    runtimeProvider: DEFAULT_PROVIDER,
     persistedLoaded: false,
     contextUsage: null,
     hasFileChanges: false,
@@ -115,6 +119,7 @@ export interface WsSessionStore {
   destroy: (sessionId: string) => void;
   clearSession: (sessionId: string) => void;
   deleteSession: (sessionId: string) => void;
+  setProvider: (sessionId: string, providerId: string) => void;
   setModel: (sessionId: string, modelId: string) => void;
   setPermissionMode: (sessionId: string, mode: PermissionMode) => void;
   approvePlan: (sessionId: string) => void;

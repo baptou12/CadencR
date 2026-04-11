@@ -182,6 +182,8 @@ export interface FeatureSession {
   pendingQuestions: AgentQuestion[] | null;
   hasFileChanges: boolean;
   resumable: boolean;
+  runtimeProvider?: string | null;
+  runtimeSessionId?: string | null;
   claudeSessionId: string | null;
   runId: number | null;
   phaseId: number | null;
@@ -197,6 +199,16 @@ export interface FeatureSession {
   draftPrompt: string | null;
   hasMore: boolean;
   oldestMessageId: number | null;
+}
+
+type FeatureSessionOptionalField = "runtimeProvider" | "runtimeSessionId" | "draftPrompt";
+
+function getOptionalSessionString(
+  session: object,
+  key: FeatureSessionOptionalField,
+): string | null {
+  const value = (session as Record<string, unknown>)[key];
+  return typeof value === "string" ? value : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -332,6 +344,8 @@ export function useFeatureAgentState(featureId: number) {
         pendingQuestions: parseQuestions(s.pendingQuestions),
         hasFileChanges: s.hasFileChanges,
         resumable: s.resumable,
+        runtimeProvider: getOptionalSessionString(s, "runtimeProvider"),
+        runtimeSessionId: getOptionalSessionString(s, "runtimeSessionId") ?? s.claudeSessionId,
         claudeSessionId: s.claudeSessionId,
         runId: s.runId,
         phaseId: s.phaseId,
@@ -344,7 +358,7 @@ export function useFeatureAgentState(featureId: number) {
         outputTokens: s.outputTokens ?? 0,
         contextWindow: s.contextWindow ?? 200000,
         wasCompacted: s.wasCompacted ?? false,
-        draftPrompt: (s as unknown as { draftPrompt?: string | null }).draftPrompt ?? null,
+        draftPrompt: getOptionalSessionString(s, "draftPrompt"),
         hasMore: acc?.hasMore ?? s.hasMore ?? false,
         oldestMessageId: acc?.oldestMessageId ?? s.oldestMessageId ?? null,
       };

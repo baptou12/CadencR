@@ -75,6 +75,10 @@ export interface AgentSessionProps {
   contextUsage?: ContextUsageState | null;
   /** Current model ID for the session (used for inline model switcher) */
   currentModelId?: string;
+  /** Current runtime provider ID for the session */
+  currentProviderId?: string;
+  /** Called when the user changes the provider before the first message */
+  onProviderChange?: (providerId: string) => void;
   /** Called when the user changes the model via the inline switcher */
   onModelChange?: (modelId: string) => void;
   /** Feature ID for file mention and slash command support in the prompt bar */
@@ -99,8 +103,10 @@ export interface AgentSessionProps {
   maximized?: boolean;
   /** Called when user clicks maximize/minimize */
   onToggleMaximize?: () => void;
-  /** Claude Code session ID to display above the prompt bar */
-  claudeSessionId?: string;
+  /** Runtime provider ID backing this session */
+  runtimeProvider?: string;
+  /** Opaque runtime session ID to display above the prompt bar */
+  runtimeSessionId?: string;
   /** Override slash commands (bypasses tRPC fetch). Used by ws-session. */
   slashCommandsOverride?: SlashCommand[];
   /** Whether the override commands are still loading */

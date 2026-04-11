@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { DEFAULT_MODEL } from "../shared/models";
+import { DEFAULT_MODEL, DEFAULT_PROVIDER, type AgentTypeSetting } from "../shared/models";
 import type { AgentType } from "../types/agent-types";
 import {
   useGetWorkspaceModelSettings,
@@ -9,6 +9,12 @@ import {
   getGetFeatureModelSettingsQueryKey,
   useSetFeatureModelSetting,
 } from "../api/generated";
+import {
+  useGetWorkspaceProviderSettings,
+  useGetProjectProviderSettings,
+  useGetFeatureProviderSettings,
+  useSetFeatureProviderSetting,
+} from "../api/agentRuntime";
 
 /**
  * Hook that resolves the effective model for an agent type through the
@@ -22,10 +28,14 @@ export function useResolvedModel(featureId: number, projectId: number) {
   const featureSettings = useGetFeatureModelSettings(featureId);
   const projectSettings = useGetProjectModelSettings(projectId);
   const globalSettings = useGetWorkspaceModelSettings();
+  const featureProviderSettings = useGetFeatureProviderSettings(featureId);
+  const projectProviderSettings = useGetProjectProviderSettings(projectId);
+  const globalProviderSettings = useGetWorkspaceProviderSettings();
 
   const setModelMutation = useSetFeatureModelSetting({
     onSuccess: () => queryClient.invalidateQueries({ queryKey: getGetFeatureModelSettingsQueryKey(featureId) }),
   });
+  const setProviderMutation = useSetFeatureProviderSetting();
 
   /** Resolve model through the hierarchy for display */
   const resolveModel = useCallback(
@@ -41,7 +51,7 @@ export function useResolvedModel(featureId: number, projectId: number) {
 
       return DEFAULT_MODEL;
     },
-    [featureSettings, projectSettings, globalSettings],
+    [featureSettings.data, projectSettings.data, globalSettings.data],
   );
 
   const handleModelChange = useCallback(
@@ -51,5 +61,28 @@ export function useResolvedModel(featureId: number, projectId: number) {
     [featureId, setModelMutation],
   );
 
-  return { resolveModel, handleModelChange };
+  const resolveProvider = useCallback(
+    (agentType: AgentType): string => {
+      const featureVal = featureProviderSettings.data?.[agentType as keyof typeof featureProviderSettings.data];
+      if (featureVal) return featureVal;
+
+      const projectVal = projectProviderSettings.data?.[agentType as keyof typeof projectProviderSettings.data];
+      if (projectVal) return projectVal;
+
+      const globalVal = globalProviderSettings.data?.[agentType as keyof typeof globalProviderSettings.data];
+      if (globalVal) return globalVal;
+
+      return DEFAULT_PROVIDER;
+    },
+    [featureProviderSettings.data, projectProviderSettings.data, globalProviderSettings.data],
+  );
+
+  const handleProviderChange = useCallback(
+    (agentType: AgentType, providerId: string) => {
+      setProviderMutation.mutate({ featureId, providerType: agentType as AgentTypeSetting, provider: providerId });
+    },
+    [featureId, setProviderMutation],
+  );
+
+  return { resolveModel, handleModelChange, resolveProvider, handleProviderChange };
 }

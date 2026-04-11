@@ -84,7 +84,9 @@ const defaultBackend = {
 
 vi.mock("@/hooks/useResolvedModel", () => ({
   useResolvedModel: vi.fn(() => ({
+    resolveProvider: vi.fn(() => "claude_code"),
     resolveModel: vi.fn(() => undefined),
+    handleProviderChange: vi.fn(),
     handleModelChange: vi.fn(),
   })),
 }));

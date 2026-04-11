@@ -89,6 +89,28 @@ describe("useFeatureAgentState", () => {
     expect(session.inputTokens).toBe(100);
   });
 
+  it("reads optional runtime fields without unsafe casting", () => {
+    mockUseQuery.mockReturnValue({
+      data: {
+        sessions: [
+          makeSession({
+            runtimeProvider: "claude_code",
+            runtimeSessionId: "runtime-123",
+            draftPrompt: "draft",
+          }),
+        ],
+      },
+      isLoading: false,
+      refetch: mockRefetch,
+    });
+
+    const { result } = renderHook(() => useFeatureAgentState(1));
+    const session = result.current.sessions[0];
+    expect(session.runtimeProvider).toBe("claude_code");
+    expect(session.runtimeSessionId).toBe("runtime-123");
+    expect(session.draftPrompt).toBe("draft");
+  });
+
   it("maps status=waiting to paused", () => {
     mockUseQuery.mockReturnValue({
       data: {

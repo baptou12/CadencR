@@ -5,13 +5,43 @@ import { AgentSession, shallowEqualSkipFunctions } from "./agent-session";
 import type { AgentSessionProps } from "./agent-session";
 import type { AgentBlockData } from "./AgentBlock";
 
+const hotkeyHandlers = new Map<string, (event: KeyboardEvent) => void>();
+
 vi.mock("react-hotkeys-hook", () => ({
-  useHotkeys: vi.fn(),
+  useHotkeys: vi.fn((keys: string, handler: (event: KeyboardEvent) => void) => {
+    hotkeyHandlers.set(keys, handler);
+  }),
 }));
 
 vi.mock("../api/generated", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../api/generated")>()),
   useListModels: vi.fn(() => ({ data: [{ id: "opus[1m]", label: "Opus (1M)" }] })),
+  useGetFeatureWorkingDir: vi.fn(() => ({ data: null })),
+}));
+
+vi.mock("../api/agentRuntime", () => ({
+  useAgentCatalog: vi.fn(() => ({
+    data: {
+      default_provider: "claude_code",
+      providers: [
+        {
+          id: "claude_code",
+          label: "Claude Code",
+          status: "available",
+          models: [{ id: "opus", label: "Opus", context_window: 200000 }],
+          default_model: "opus",
+        },
+        {
+          id: "opencode",
+          label: "OpenCode",
+          status: "available",
+          models: [],
+          default_model: null,
+        },
+      ],
+    },
+    isLoading: false,
+  })),
 }));
 
 // Mock hooks to avoid cascading tRPC dependencies
@@ -83,6 +113,7 @@ describe("AgentSession", () => {
   beforeEach(() => {
     onSend.mockClear();
     onStop.mockClear();
+    hotkeyHandlers.clear();
   });
 
   it("renders full-screen mode (collapsible=false)", () => {
@@ -258,6 +289,31 @@ describe("AgentSession", () => {
       />,
     );
     expect(screen.getByText("0/1")).toBeInTheDocument();
+  });
+
+  it("skips providers without models when cycling with Cmd+P", () => {
+    const onProviderChange = vi.fn();
+    const onModelChange = vi.fn();
+
+    render(
+      <AgentSession
+        agentType="session"
+        blocks={[]}
+        status="idle"
+        onSend={onSend}
+        onStop={onStop}
+        onProviderChange={onProviderChange}
+        onModelChange={onModelChange}
+        currentProviderId="claude_code"
+        currentModelId="opus"
+        runtimeProvider="claude_code"
+      />,
+    );
+
+    hotkeyHandlers.get("meta+p")?.({ preventDefault: vi.fn() } as unknown as KeyboardEvent);
+
+    expect(onProviderChange).not.toHaveBeenCalledWith("opencode");
+    expect(onModelChange).not.toHaveBeenCalledWith(undefined);
   });
 
   it("shows prompt bar for completed plan agent when pendingPlanApproval is set", () => {

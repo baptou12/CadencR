@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { DEFAULT_MODEL } from "../shared/models";
 import { useWsSessionStore, applyMutations, createStreamingState } from "./ws-session-store";
+import { updateSession } from "./ws-session-types";
 
 // --- Mock WebSocket ---
 
@@ -263,6 +264,52 @@ describe("ws-session-store", () => {
       payload: { session_id: "42" },
     });
     expect(useWsSessionStore.getState().sessions["s1"].currentModelId).toBe("opus[1m]");
+  });
+
+  it("setProvider waits for provider.set.ok before mutating local state", async () => {
+    const store = useWsSessionStore.getState();
+    store.connect("s1");
+    await tick();
+    const ws = getWs();
+    ws.simulateMessage({
+      domain: "session",
+      action: "initialized",
+      payload: { session_id: "srv-1" },
+    });
+
+    useWsSessionStore.setState((state) => updateSession(state, "s1", { currentProviderId: "stale-provider" }));
+    store.setProvider("s1", "claude_code");
+    expect(useWsSessionStore.getState().sessions["s1"].currentProviderId).toBe("stale-provider");
+
+    ws.simulateMessage({
+      domain: "session",
+      action: "provider.set.ok",
+      payload: { provider: "claude_code" },
+    });
+    expect(useWsSessionStore.getState().sessions["s1"].currentProviderId).toBe("claude_code");
+  });
+
+  it("setModel waits for model.set.ok before mutating local state", async () => {
+    const store = useWsSessionStore.getState();
+    store.connect("s1");
+    await tick();
+    const ws = getWs();
+    ws.simulateMessage({
+      domain: "session",
+      action: "initialized",
+      payload: { session_id: "srv-1" },
+    });
+
+    useWsSessionStore.setState((state) => updateSession(state, "s1", { currentModelId: "opus[1m]" }));
+    store.setModel("s1", "haiku");
+    expect(useWsSessionStore.getState().sessions["s1"].currentModelId).toBe("opus[1m]");
+
+    ws.simulateMessage({
+      domain: "session",
+      action: "model.set.ok",
+      payload: { model: "haiku" },
+    });
+    expect(useWsSessionStore.getState().sessions["s1"].currentModelId).toBe("haiku");
   });
 
   it("sets hasFileChanges when Write tool_call block is received", async () => {

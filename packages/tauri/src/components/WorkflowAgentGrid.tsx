@@ -17,7 +17,9 @@ interface WorkflowAgentGridProps {
   agentsWithQuestions: number;
   contextUsageMap: Map<number, ContextUsageState>;
   resolveModel: (agentType: AgentType) => string;
+  resolveProvider: (agentType: AgentType) => string;
   handleModelChange: (agentType: AgentType, modelId: string) => void;
+  handleProviderChange: (agentType: AgentType, providerId: string) => void;
   handleDeleteAgent: (entry: FeatureSession) => void;
   onViewDiff: () => void;
   slashCommands: { name: string; description: string }[];
@@ -36,7 +38,9 @@ export function WorkflowAgentGrid({
   agentsWithQuestions,
   contextUsageMap,
   resolveModel,
+  resolveProvider,
   handleModelChange,
+  handleProviderChange,
   handleDeleteAgent,
   onViewDiff,
   slashCommands,
@@ -88,6 +92,8 @@ export function WorkflowAgentGrid({
         hasFileChanges={entry.hasFileChanges}
         onViewDiff={() => onViewDiff()}
         todos={entry.todos}
+        currentProviderId={resolveProvider(entry.agentType)}
+        onProviderChange={(providerId) => handleProviderChange(entry.agentType, providerId)}
         currentModelId={resolveModel(entry.agentType)}
         onModelChange={(modelId) => handleModelChange(entry.agentType, modelId)}
         canDelete={entry.status !== "running" && entry.status !== "completed" && !!entry.sessionDbId}
@@ -96,7 +102,8 @@ export function WorkflowAgentGrid({
         featureId={featureId}
         projectId={projectId}
         sessionId={entry.sessionDbId}
-        claudeSessionId={entry.claudeSessionId || undefined}
+        runtimeProvider={entry.runtimeProvider || undefined}
+        runtimeSessionId={entry.runtimeSessionId || undefined}
         slashCommandsOverride={slashCommands}
         slashCommandsLoading={slashCommandsLoading}
         initialDraft={entry.draftPrompt}
