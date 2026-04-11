@@ -22,8 +22,10 @@ Frontend path alias: `@` -> `packages/tauri/src/` (for example `import { foo } f
 - Lint with `pnpm run lint` (oxlint via turbo)
 - Test with `pnpm test` (vitest via turbo)
 - Never use `any`; use `unknown` plus narrowing when needed
+- Keep TypeScript explicit. All functions, parameters, and return values must have explicit types. Prefer interfaces for object shapes and use Zod schemas for runtime validation at boundaries.
 - Never swallow errors silently; surface them to the user
 - Keep implementations simple and reusable; prefer extracting shared logic over duplication
+- Search for existing code before writing new code. Reuse helpers, hooks, utilities, and components instead of duplicating logic.
 - Avoid unnecessary re-renders, redundant network calls, and heavy main-thread work
 - Do not run `pnpm orval`; `packages/tauri/src/api/generated/index.ts` is hand-maintained
 - No file longer than 400 lines; refactor before crossing the limit
@@ -38,11 +40,16 @@ Additional scoped rules are defined in nearby `AGENTS.md` files:
 - `packages/tauri/src/routes/AGENTS.md`
 - `packages/service/migrations/AGENTS.md`
 
-For OpenCode, `opencode.json` also loads the existing `.claude/rules/*.md` files so the Claude-era rule set remains available without rewriting every rule.
+For OpenCode, `opencode.json` also loads the existing `.claude/rules/*.md` files. For Codex, the same repository rules must live in `AGENTS.md` files because Codex does not read `.claude/rules/*.md` directly.
 
-## Claude Skills
+## Shared Skills
 
-Project-specific skills live in `.claude/skills/*/SKILL.md`. If a task clearly matches one of these skills, read that skill and follow it before editing:
+Project-specific skills are mirrored for tool compatibility:
+
+- Claude Code and OpenCode: `.claude/skills/*/SKILL.md`
+- Codex: `.agents/skills/*/SKILL.md`
+
+The mirrored skills must stay semantically aligned. If a task clearly matches one of these skills, read the matching skill and follow it before editing:
 
 - `db`
 - `qa`
@@ -59,3 +66,5 @@ This repo also defines shared command-style aliases:
 - `/test-commit [message or notes]`: same as `/commit`
 
 OpenCode gets real slash commands from `.opencode/command/*.md`. For agents that do not support project slash commands natively, treat these as semantic aliases and follow the mapped skill or workflow.
+
+Codex currently documents built-in slash commands, not repository-defined custom slash commands. In Codex, treat these aliases as plain-language workflow requests and load the mapped skill or workflow manually.
