@@ -51,7 +51,9 @@ async fn setup_test_db(db_path: &str, repo_path: &str) -> SqlitePool {
         agent_runtime_session TEXT, agent_runtime_qa TEXT, agent_runtime_retro TEXT
     )"#,
     )
-        .execute(&pool).await.unwrap();
+    .execute(&pool)
+    .await
+    .unwrap();
     sqlx::query(
         r#"CREATE TABLE features (
         id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL, title TEXT,

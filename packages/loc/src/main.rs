@@ -76,11 +76,7 @@ fn main() -> Result<()> {
             Ok(())
         }
         Err(e) => {
-            eprintln!(
-                "{} {}",
-                "Error:".red().bold(),
-                e
-            );
+            eprintln!("{} {}", "Error:".red().bold(), e);
             eprintln!(
                 "Worktree left at: {} (remove manually with `git worktree remove`)",
                 worktree_path.display()
@@ -108,9 +104,7 @@ fn collect_daily_commits(
         let time = commit.time();
         let ts = time.seconds();
         let offset = time.offset_minutes();
-        let dt = chrono::DateTime::from_timestamp(ts, 0)
-            .unwrap()
-            .naive_utc()
+        let dt = chrono::DateTime::from_timestamp(ts, 0).unwrap().naive_utc()
             + chrono::Duration::minutes(offset as i64);
         let date = dt.date();
 
@@ -316,8 +310,7 @@ fn render_chart(day_commits: &[(NaiveDate, git2::Oid)], snapshots: &[DaySnapshot
     for (col, snap) in snapshots.iter().enumerate() {
         let total: u64 = snap.values().sum();
         col_totals.push(total);
-        let total_height =
-            ((total as f64 / max_loc as f64) * chart_height as f64).round() as usize;
+        let total_height = ((total as f64 / max_loc as f64) * chart_height as f64).round() as usize;
 
         // Build segments bottom-up: top langs first (bottom of bar), then other
         let mut segments: Vec<(usize, usize)> = Vec::new(); // (color_index, height)
