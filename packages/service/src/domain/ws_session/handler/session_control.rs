@@ -11,10 +11,14 @@ use super::{
     SdkSessions, WsSender,
 };
 use crate::app_state::AppState;
-use crate::domain::agents::adapter::RuntimeSpawnConfig;
+use crate::domain::agents::adapter::{
+    RuntimePermissionDecision, RuntimePermissionResponse, RuntimeSpawnConfig,
+};
 use crate::domain::agents::runtime::DEFAULT_PROVIDER;
+use crate::domain::agents::runtime_adapter;
 use crate::domain::workflow::engine::WsSender as WorkflowWsSender;
 use crate::domain::workflow::worktree;
+use crate::domain::ws_session::question_answers::format_answers_plain_text;
 
 /// Handle session.permission.respond
 pub(super) async fn handle_permission_respond(
@@ -97,20 +101,53 @@ pub(super) async fn handle_permission_respond(
 
     // Persist user answer for AskUserQuestion so it survives app restart.
     if let Some(ref updated_input) = payload.updated_input {
-        if let Some(answers) = updated_input.get("answers") {
-            if let Some(answer_text) = answers.get("0").and_then(|v| v.as_str()) {
-                let feature_id = handle.feature_id;
-                let p = WsSessionPersistence::with_session_id(
-                    app_state.write_pool.clone(),
-                    feature_id,
-                    Some(db_session_id),
+        if let Some(answer_text) = format_answers_plain_text(updated_input) {
+            let feature_id = handle.feature_id;
+            let p = WsSessionPersistence::with_session_id(
+                app_state.write_pool.clone(),
+                feature_id,
+                Some(db_session_id),
+            );
+            p.persist_user_message(&answer_text).await;
+        }
+    }
+
+    if let QueryState::Active { query, .. } = &handle.state {
+        let runtime_response = RuntimePermissionResponse {
+            request_id: payload.request_id.clone(),
+            decision: match payload.decision {
+                PermissionDecision::AllowOnce => RuntimePermissionDecision::AllowOnce,
+                PermissionDecision::AllowFuture => RuntimePermissionDecision::AllowFuture,
+                PermissionDecision::Deny => RuntimePermissionDecision::Deny,
+            },
+            feedback: payload.feedback.clone(),
+            updated_input: payload.updated_input.clone(),
+        };
+        let q = query.lock().await;
+        match q.respond_permission(runtime_response).await {
+            Ok(()) => {
+                WsSessionPersistence::broadcast_turn_state(
+                    &app_state.turn_state_tx,
+                    handle.feature_id,
+                    "claude",
                 );
-                p.persist_user_message(answer_text).await;
+                return;
             }
+            Err(error) if handle.runtime_provider != DEFAULT_PROVIDER => {
+                send_error(
+                    sender,
+                    &envelope.id,
+                    "RUNTIME_PERMISSION_ERROR",
+                    &error.to_string(),
+                );
+                return;
+            }
+            Err(_) => {}
         }
     }
 
     let response = PermissionResponse {
+        request_id: payload.request_id,
         decision: payload.decision,
         feedback: payload.feedback,
         updated_input: payload.updated_input,
@@ -154,12 +191,15 @@ pub(super) async fn handle_provider_set(
         }
     };
 
-    if payload.provider != DEFAULT_PROVIDER {
+    if runtime_adapter(&payload.provider).is_none() {
         send_error(
             sender,
             &envelope.id,
             "UNSUPPORTED_PROVIDER",
-            &format!("Only {DEFAULT_PROVIDER} is implemented right now"),
+            &format!(
+                "Runtime provider '{}' is not implemented yet",
+                payload.provider
+            ),
         );
         return;
     }
@@ -179,7 +219,14 @@ pub(super) async fn handle_provider_set(
     };
 
     match &mut handle.state {
-        QueryState::Pending(_) => {
+        QueryState::Pending(options) => {
+            let provider_changed = handle.runtime_provider != payload.provider;
+            handle.runtime_provider = payload.provider.clone();
+            if provider_changed {
+                // Resume IDs are provider-specific; drop any stale value when switching providers.
+                handle.resume_session_id = None;
+                options.resume_session_id = None;
+            }
             let _ = sqlx::query("UPDATE agent_sessions SET runtime_provider = ? WHERE id = ?")
                 .bind(&payload.provider)
                 .bind(db_session_id)
@@ -454,10 +501,17 @@ pub(super) async fn handle_destroy(
     };
 
     let feature_id = handle.feature_id;
+    let runtime_provider = handle.runtime_provider.clone();
 
     // Close active subprocess if running
     if let QueryState::Active { query, .. } = handle.state {
-        persist_and_close_query(&query, &app_state.write_pool, db_session_id).await;
+        persist_and_close_query(
+            &query,
+            &app_state.write_pool,
+            db_session_id,
+            &runtime_provider,
+        )
+        .await;
     }
 
     WsSessionPersistence::mark_completed_static(&app_state.write_pool, db_session_id).await;
@@ -605,7 +659,13 @@ pub(super) async fn handle_clear(
     // If stream already finished (Pending with resume), extract from those options.
     let cli_sid = match &handle.state {
         QueryState::Active { query, .. } => {
-            persist_and_close_query(query, &app_state.write_pool, db_session_id).await
+            persist_and_close_query(
+                query,
+                &app_state.write_pool,
+                db_session_id,
+                &handle.runtime_provider,
+            )
+            .await
         }
         QueryState::Pending(opts) => opts.resume_session_id.clone(),
     };

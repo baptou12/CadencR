@@ -16,6 +16,9 @@ use crate::domain::workflow::worktree;
 use crate::domain::ws_session::auto_name;
 use crate::domain::ws_session::persistence::WsSessionPersistence;
 use crate::domain::ws_session::protocol::*;
+use crate::domain::ws_session::question_answers::{
+    format_answers_markdown, format_answers_plain_text,
+};
 
 pub(super) async fn handle_permission_respond(
     envelope: WsEnvelope,
@@ -31,6 +34,7 @@ pub(super) async fn handle_permission_respond(
     persist_qa_answer(&payload, &engine, app_state, sender).await;
 
     let response = super::session_prompt::PermissionResponse {
+        request_id: payload.request_id.clone(),
         decision: payload.decision,
         feedback: payload.feedback,
         updated_input: payload.updated_input,
@@ -68,10 +72,7 @@ async fn persist_qa_answer(
     let Some(ref updated_input) = payload.updated_input else {
         return;
     };
-    let Some(answers) = updated_input.get("answers") else {
-        return;
-    };
-    let Some(answer_text) = answers.get("0").and_then(|v| v.as_str()) else {
+    let Some(answer_text) = format_answers_plain_text(updated_input) else {
         return;
     };
     let Some(db_session_id_ref) = engine.active_items().get(&payload.agent_slot) else {
@@ -84,9 +85,10 @@ async fn persist_qa_answer(
         payload.feature_id,
         Some(db_session_id),
     );
-    p.persist_user_message(answer_text).await;
+    p.persist_user_message(&answer_text).await;
 
-    let formatted = format_qa_answer(answer_text);
+    let formatted =
+        format_answers_markdown(updated_input).unwrap_or_else(|| format_qa_answer(&answer_text));
     let user_msg = WsEnvelope::new(
         "workflow",
         "agent_user_message",

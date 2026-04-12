@@ -158,6 +158,8 @@ pub struct SessionUsageUpdatePayload {
 pub struct SessionInitializedPayload {
     pub session_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub input_tokens: Option<u64>,
@@ -695,6 +697,7 @@ mod tests {
         // SessionInitializedPayload
         let p = SessionInitializedPayload {
             session_id: "s1".into(),
+            provider: None,
             model: None,
             input_tokens: None,
             output_tokens: None,

@@ -14,8 +14,39 @@ use super::{
 use crate::app_state::AppState;
 use crate::domain::agents::adapter::RuntimeSpawnConfig;
 use crate::domain::agents::runtime::DEFAULT_PROVIDER;
+use crate::domain::agents::runtime_adapter;
 use crate::domain::settings;
 use crate::domain::workflow::worktree;
+
+fn resume_session_id_for_provider(
+    provider_id: &str,
+    row_runtime_provider: Option<&str>,
+    runtime_session_id: Option<&str>,
+    claude_session_id: Option<&str>,
+) -> Option<String> {
+    if provider_id == DEFAULT_PROVIDER {
+        // Prefer explicit Claude session ID; fall back to runtime_session_id only
+        // when the row is also tagged as Claude provider.
+        let candidate = claude_session_id.or_else(|| {
+            if row_runtime_provider == Some(DEFAULT_PROVIDER) {
+                runtime_session_id
+            } else {
+                None
+            }
+        })?;
+
+        // Claude --resume in print mode accepts UUIDs; ignore incompatible IDs.
+        if uuid::Uuid::parse_str(candidate).is_ok() {
+            Some(candidate.to_string())
+        } else {
+            None
+        }
+    } else if row_runtime_provider.is_none() || row_runtime_provider == Some(provider_id) {
+        runtime_session_id.map(ToOwned::to_owned)
+    } else {
+        None
+    }
+}
 
 /// Handle session.init: DB-driven session creation.
 pub(super) async fn handle_init(
@@ -91,35 +122,20 @@ pub(super) async fn handle_init(
     };
 
     // Read session row for claude_session_id (--resume), token usage, and stored model.
-    let (
-        runtime_provider,
-        resume_session_id,
-        stored_model,
-        init_input_tokens,
-        init_output_tokens,
-        init_context_window,
-    ) = if let Some(row) =
-        WsSessionPersistence::get_session_row(&app_state.read_pool, db_session_id).await
-    {
+    let row = WsSessionPersistence::get_session_row(&app_state.read_pool, db_session_id).await;
+    let runtime_provider = row.as_ref().and_then(|r| r.runtime_provider.clone());
+    if let Some(ref r) = row {
         debug!(
             db_session_id,
             feature_id,
-            claude_session_id = ?row.claude_session_id,
-            status = %row.status,
-            model = ?row.model,
+            runtime_provider = ?r.runtime_provider,
+            runtime_session_id = ?r.runtime_session_id,
+            claude_session_id = ?r.claude_session_id,
+            status = %r.status,
+            model = ?r.model,
             "handle_init: DB row state at init time"
         );
-        (
-            row.runtime_provider,
-            row.runtime_session_id.or(row.claude_session_id),
-            row.model,
-            row.input_tokens,
-            row.output_tokens,
-            row.context_window,
-        )
-    } else {
-        (None, None, None, None, None, None)
-    };
+    }
 
     let project_id = sqlx::query_scalar::<_, i64>("SELECT project_id FROM features WHERE id = ?")
         .bind(feature_id)
@@ -139,8 +155,20 @@ pub(super) async fn handle_init(
     let effective_provider = runtime_provider
         .or(payload.provider.clone())
         .unwrap_or(configured_provider);
+    let resume_session_id = row.as_ref().and_then(|r| {
+        resume_session_id_for_provider(
+            &effective_provider,
+            r.runtime_provider.as_deref(),
+            r.runtime_session_id.as_deref(),
+            r.claude_session_id.as_deref(),
+        )
+    });
+    let stored_model = row.as_ref().and_then(|r| r.model.clone());
+    let init_input_tokens = row.as_ref().and_then(|r| r.input_tokens);
+    let init_output_tokens = row.as_ref().and_then(|r| r.output_tokens);
+    let init_context_window = row.as_ref().and_then(|r| r.context_window);
 
-    if effective_provider != DEFAULT_PROVIDER {
+    if runtime_adapter(&effective_provider).is_none() {
         send_error(
             sender,
             &envelope.id,
@@ -209,6 +237,7 @@ pub(super) async fn handle_init(
     let handle = SdkHandle {
         state: QueryState::Pending(runtime_config),
         feature_id,
+        runtime_provider: effective_provider.clone(),
         desired_model,
         spawned_model: None,
         desired_permission_mode,
@@ -228,6 +257,7 @@ pub(super) async fn handle_init(
         "initialized",
         serde_json::to_value(SessionInitializedPayload {
             session_id: db_session_id.to_string(),
+            provider: Some(effective_provider.clone()),
             model: effective_model,
             input_tokens: init_input_tokens.map(|v| v as u64),
             output_tokens: init_output_tokens.map(|v| v as u64),
@@ -289,4 +319,49 @@ pub(super) async fn handle_init(
 
     // Broadcast "none" to clear any stale turn state — session is idle until a prompt is sent
     WsSessionPersistence::broadcast_turn_state(&app_state.turn_state_tx, feature_id, "none");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resume_session_id_for_provider;
+    use crate::domain::agents::runtime::DEFAULT_PROVIDER;
+
+    #[test]
+    fn resume_session_for_claude_rejects_non_uuid() {
+        let resume = resume_session_id_for_provider(
+            DEFAULT_PROVIDER,
+            Some(DEFAULT_PROVIDER),
+            Some("ses_27f586910ffeUNaKL2l5UARerl"),
+            Some("ses_27f586910ffeUNaKL2l5UARerl"),
+        );
+        assert_eq!(resume, None);
+    }
+
+    #[test]
+    fn resume_session_for_claude_accepts_uuid() {
+        let sid = "11111111-1111-4111-8111-111111111111";
+        let resume = resume_session_id_for_provider(
+            DEFAULT_PROVIDER,
+            Some(DEFAULT_PROVIDER),
+            Some(sid),
+            None,
+        );
+        assert_eq!(resume, Some(sid.to_string()));
+    }
+
+    #[test]
+    fn resume_session_for_non_claude_only_when_provider_matches() {
+        let opencode_sid = "ses_27f586910ffeUNaKL2l5UARerl";
+        let matching =
+            resume_session_id_for_provider("opencode", Some("opencode"), Some(opencode_sid), None);
+        assert_eq!(matching, Some(opencode_sid.to_string()));
+
+        let mismatched = resume_session_id_for_provider(
+            "claude_code",
+            Some("opencode"),
+            Some(opencode_sid),
+            None,
+        );
+        assert_eq!(mismatched, None);
+    }
 }

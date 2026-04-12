@@ -1,0 +1,167 @@
+use serde_json::Value;
+
+pub fn extract_answer_lists(updated_input: &Value) -> Option<Vec<Vec<String>>> {
+    let answers = updated_input.get("answers")?;
+
+    if let Some(items) = answers.as_array() {
+        let parsed = items
+            .iter()
+            .map(|item| match item {
+                Value::Array(values) => values
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(ToOwned::to_owned)
+                    .collect::<Vec<String>>(),
+                Value::String(value) => vec![value.to_string()],
+                _ => Vec::new(),
+            })
+            .collect::<Vec<Vec<String>>>();
+        return Some(parsed);
+    }
+
+    let object = answers.as_object()?;
+    let mut indexed = object
+        .iter()
+        .filter_map(|(key, value)| {
+            let index = key.parse::<usize>().ok()?;
+            let answer_group = match value {
+                Value::String(answer) => vec![answer.to_string()],
+                Value::Array(values) => values
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(ToOwned::to_owned)
+                    .collect::<Vec<String>>(),
+                _ => Vec::new(),
+            };
+            Some((index, answer_group))
+        })
+        .collect::<Vec<(usize, Vec<String>)>>();
+    indexed.sort_by_key(|(index, _)| *index);
+    Some(indexed.into_iter().map(|(_, answers)| answers).collect())
+}
+
+pub fn format_answers_plain_text(updated_input: &Value) -> Option<String> {
+    let answers = extract_answer_lists(updated_input)?;
+    let questions = extract_question_labels(updated_input);
+
+    let formatted = answers
+        .iter()
+        .enumerate()
+        .map(|(index, answer_group)| {
+            let question = questions
+                .get(index)
+                .cloned()
+                .unwrap_or_else(|| format!("Question {}", index + 1));
+            let answer = answer_group.join(", ");
+            format!("{question}\nAnswer: {answer}")
+        })
+        .collect::<Vec<String>>()
+        .join("\n\n");
+
+    Some(formatted)
+}
+
+pub fn format_answers_markdown(updated_input: &Value) -> Option<String> {
+    let answers = extract_answer_lists(updated_input)?;
+    let questions = extract_question_labels(updated_input);
+
+    let formatted = answers
+        .iter()
+        .enumerate()
+        .map(|(index, answer_group)| {
+            let question = questions
+                .get(index)
+                .cloned()
+                .unwrap_or_else(|| format!("Question {}", index + 1));
+            format!("*{question}*\n\n**{}**", answer_group.join("\n"))
+        })
+        .collect::<Vec<String>>()
+        .join("\n\n\n\n");
+
+    Some(formatted)
+}
+
+fn extract_question_labels(updated_input: &Value) -> Vec<String> {
+    updated_input
+        .get("questions")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.get("question").and_then(Value::as_str))
+                .map(ToOwned::to_owned)
+                .collect::<Vec<String>>()
+        })
+        .filter(|items| !items.is_empty())
+        .or_else(|| {
+            updated_input
+                .get("question")
+                .and_then(Value::as_str)
+                .map(|question| vec![question.to_string()])
+        })
+        .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{extract_answer_lists, format_answers_markdown, format_answers_plain_text};
+    use serde_json::json;
+
+    #[test]
+    fn extracts_structured_answer_arrays() {
+        let updated_input = json!({
+            "questions": [
+                { "question": "First?" },
+                { "question": "Second?" }
+            ],
+            "answers": [
+                ["Alpha"],
+                ["Beta", "Gamma"]
+            ]
+        });
+
+        assert_eq!(
+            extract_answer_lists(&updated_input),
+            Some(vec![
+                vec!["Alpha".to_string()],
+                vec!["Beta".to_string(), "Gamma".to_string()],
+            ])
+        );
+    }
+
+    #[test]
+    fn extracts_legacy_object_answers() {
+        let updated_input = json!({
+            "question": "Only?",
+            "answers": { "0": "Legacy answer" }
+        });
+
+        assert_eq!(
+            extract_answer_lists(&updated_input),
+            Some(vec![vec!["Legacy answer".to_string()]])
+        );
+    }
+
+    #[test]
+    fn formats_answers_for_persistence_and_display() {
+        let updated_input = json!({
+            "questions": [
+                { "question": "First?" },
+                { "question": "Second?" }
+            ],
+            "answers": [
+                ["Alpha"],
+                ["Beta", "Gamma"]
+            ]
+        });
+
+        assert_eq!(
+            format_answers_plain_text(&updated_input).as_deref(),
+            Some("First?\nAnswer: Alpha\n\nSecond?\nAnswer: Beta, Gamma")
+        );
+        assert_eq!(
+            format_answers_markdown(&updated_input).as_deref(),
+            Some("*First?*\n\n**Alpha**\n\n\n\n*Second?*\n\n**Beta\nGamma**")
+        );
+    }
+}

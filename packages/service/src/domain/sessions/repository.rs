@@ -2,6 +2,7 @@ use sqlx::SqlitePool;
 use std::collections::HashMap;
 
 use super::models::*;
+use super::opencode_restore::{hydrate_opencode_tool_calls, should_hydrate_opencode_tool_calls};
 use crate::error::AppError;
 
 // ---- Block builder (port of shared.ts buildBlocks) ----
@@ -535,6 +536,8 @@ pub async fn get_feature_agent_state(
         }
     }
 
+    hydrate_full_opencode_sessions(&sessions, &mut full_messages).await;
+
     // Incremental fetches
     let mut incremental_messages: HashMap<i64, Vec<AgentMessageRow>> = HashMap::new();
     let mut updated_tool_calls: HashMap<i64, HashMap<i64, String>> = HashMap::new();
@@ -698,6 +701,32 @@ pub async fn get_feature_agent_state(
     Ok(FeatureAgentStateResponse {
         sessions: session_states,
     })
+}
+
+async fn hydrate_full_opencode_sessions(
+    sessions: &[AgentSessionRow],
+    full_messages: &mut HashMap<i64, Vec<AgentMessageRow>>,
+) {
+    let client = opencode_sdk_rs::OpenCodeClient::new(4096);
+
+    for session in sessions {
+        if session.runtime_provider.as_deref() != Some("opencode") {
+            continue;
+        }
+        let Some(runtime_session_id) = session.runtime_session_id.as_deref() else {
+            continue;
+        };
+        let Some(messages) = full_messages.get_mut(&session.id) else {
+            continue;
+        };
+        if !should_hydrate_opencode_tool_calls(messages) {
+            continue;
+        }
+        let Ok(provider_messages) = client.list_messages(runtime_session_id).await else {
+            continue;
+        };
+        let _ = hydrate_opencode_tool_calls(messages, &provider_messages);
+    }
 }
 
 pub async fn get_feature_turn_states(

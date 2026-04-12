@@ -289,6 +289,7 @@ async fn handle_approval(
         PermissionDecision::Deny
     };
     let response = super::session_prompt::PermissionResponse {
+        request_id: format!("approval_{kind}_{feature_id}"),
         decision,
         feedback: payload.feedback.clone(),
         updated_input: None,

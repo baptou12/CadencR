@@ -60,14 +60,6 @@ pub async fn set_item_agent_session(
     Ok(())
 }
 
-pub async fn clear_agent_session(pool: &SqlitePool, session_id: i64) -> Result<(), AppError> {
-    sqlx::query("UPDATE workflow_queue SET agent_session_id = NULL WHERE agent_session_id = ?")
-        .bind(session_id)
-        .execute(pool)
-        .await?;
-    Ok(())
-}
-
 #[allow(dead_code)]
 pub async fn set_item_phase(
     pool: &SqlitePool,

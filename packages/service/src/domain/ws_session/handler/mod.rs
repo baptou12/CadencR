@@ -55,6 +55,8 @@ pub struct SdkHandle {
     pub(super) state: QueryState,
     /// feature_id for persistence lookups.
     pub(super) feature_id: i64,
+    /// Active runtime provider for this session handle.
+    pub(super) runtime_provider: String,
     /// The model the user wants for the next turn. Updated by model.set.
     pub(super) desired_model: Option<String>,
     /// The model the CLI was actually spawned with.
@@ -98,12 +100,24 @@ pub(super) async fn persist_and_close_query(
     query: &RuntimeSessionHandle,
     pool: &sqlx::SqlitePool,
     db_session_id: i64,
+    runtime_provider: &str,
 ) -> Option<String> {
     let mut q = query.lock().await;
     let cli_sid = q.session_id().await;
     if let Some(ref sid) = cli_sid {
-        debug!(db_session_id, runtime_session_id = %sid, "persist_and_close: saving session_id");
-        WsSessionPersistence::persist_claude_session_id_static(pool, db_session_id, sid).await;
+        debug!(
+            db_session_id,
+            runtime_provider = %runtime_provider,
+            runtime_session_id = %sid,
+            "persist_and_close: saving runtime session_id"
+        );
+        WsSessionPersistence::persist_runtime_session_id_static(
+            pool,
+            db_session_id,
+            runtime_provider,
+            sid,
+        )
+        .await;
     }
     q.close().await;
     cli_sid
@@ -188,8 +202,10 @@ async fn handle_connection(socket: WebSocket, state: AppState) {
     debug!(count = sessions.len(), "WS cleanup: draining sessions");
     for (db_session_id, handle) in sessions.drain() {
         let feature_id = handle.feature_id;
+        let runtime_provider = handle.runtime_provider.clone();
         if let QueryState::Active { query, .. } = handle.state {
-            persist_and_close_query(&query, &state.write_pool, db_session_id).await;
+            persist_and_close_query(&query, &state.write_pool, db_session_id, &runtime_provider)
+                .await;
         }
         WsSessionPersistence::mark_paused_static(&state.write_pool, db_session_id).await;
         WsSessionPersistence::broadcast_turn_state(&state.turn_state_tx, feature_id, "none");
@@ -491,11 +507,13 @@ mod tests {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
         let app_state = make_test_app_state().await;
+        let resume_sid = "11111111-1111-4111-8111-111111111111";
 
         // Pre-create a session row with a claude_session_id (simulating previous app run)
         sqlx::query(
-            "INSERT INTO agent_sessions (feature_id, agent_type, status, claude_session_id) VALUES (1, 'session', 'paused', 'cli-sess-abc')"
+            "INSERT INTO agent_sessions (feature_id, agent_type, status, claude_session_id) VALUES (1, 'session', 'paused', ?)"
         )
+        .bind(resume_sid)
         .execute(&app_state.write_pool)
         .await
         .unwrap();
@@ -507,7 +525,7 @@ mod tests {
         let handle = sessions.get(&db_id).unwrap();
 
         // Should have captured the existing claude_session_id for resume
-        assert_eq!(handle.resume_session_id, Some("cli-sess-abc".to_string()));
+        assert_eq!(handle.resume_session_id, Some(resume_sid.to_string()));
     }
 
     #[tokio::test]
@@ -650,14 +668,12 @@ mod tests {
         // Simulate what handle_permission_respond does for AskUserQuestion
         let updated_input = serde_json::json!({
             "question": "What is the project name?",
-            "answers": { "0": "Question: What is the project name?\nAnswer: Cadence" }
+            "answers": [["Cadence"]]
         });
-        let answer_text = updated_input
-            .get("answers")
-            .and_then(|a| a.get("0"))
-            .and_then(|v| v.as_str())
-            .unwrap();
-        p.persist_user_message(answer_text).await;
+        let answer_text =
+            crate::domain::ws_session::question_answers::format_answers_plain_text(&updated_input)
+                .unwrap();
+        p.persist_user_message(&answer_text).await;
 
         // Verify it was persisted
         let (role, content, msg_type): (String, String, String) = sqlx::query_as(
@@ -669,10 +685,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(role, "user");
-        assert_eq!(
-            content,
-            "Question: What is the project name?\nAnswer: Cadence"
-        );
+        assert_eq!(content, "What is the project name?\nAnswer: Cadence");
         assert_eq!(msg_type, "user_message");
     }
 
@@ -694,16 +707,16 @@ mod tests {
             "file_path": "/tmp/test.txt"
         });
 
-        // The handler checks for answers.0 — this should NOT persist anything
-        if let Some(answers) = updated_input.get("answers") {
-            if let Some(answer_text) = answers.get("0").and_then(|v| v.as_str()) {
-                let p = WsSessionPersistence::with_session_id(
-                    app_state.write_pool.clone(),
-                    feature_id,
-                    Some(db_session_id),
-                );
-                p.persist_user_message(answer_text).await;
-            }
+        // The handler checks for structured answers — this should NOT persist anything
+        if let Some(answer_text) =
+            crate::domain::ws_session::question_answers::format_answers_plain_text(&updated_input)
+        {
+            let p = WsSessionPersistence::with_session_id(
+                app_state.write_pool.clone(),
+                feature_id,
+                Some(db_session_id),
+            );
+            p.persist_user_message(&answer_text).await;
         }
 
         // Verify nothing was persisted
@@ -722,11 +735,13 @@ mod tests {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
         let app_state = make_test_app_state().await;
+        let resume_sid = "22222222-2222-4222-8222-222222222222";
 
         // Pre-create a session row with a claude_session_id (simulating previous run)
         sqlx::query(
-            "INSERT INTO agent_sessions (feature_id, agent_type, status, claude_session_id) VALUES (1, 'session', 'paused', 'resume-uuid-123')"
+            "INSERT INTO agent_sessions (feature_id, agent_type, status, claude_session_id) VALUES (1, 'session', 'paused', ?)"
         )
+        .bind(resume_sid)
         .execute(&app_state.write_pool)
         .await
         .unwrap();
@@ -751,7 +766,10 @@ mod tests {
         }
 
         // Second message should be "claude_session_id"
-        let msg2 = rx.recv().await.unwrap();
+        let msg2 = tokio::time::timeout(std::time::Duration::from_millis(500), rx.recv())
+            .await
+            .expect("timed out waiting for claude_session_id message")
+            .unwrap();
         if let Message::Text(text) = msg2 {
             let env: WsEnvelope = serde_json::from_str(&text).unwrap();
             assert_eq!(env.domain, "session");
@@ -762,7 +780,7 @@ mod tests {
                 .unwrap()
                 .as_str()
                 .unwrap();
-            assert_eq!(sid, "resume-uuid-123");
+            assert_eq!(sid, resume_sid);
         } else {
             panic!("expected text message for claude_session_id");
         }
@@ -836,6 +854,38 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_init_accepts_opencode_provider() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+        let app_state = make_test_app_state().await;
+
+        sqlx::query(
+            "INSERT INTO agent_sessions (feature_id, agent_type, status, runtime_provider) VALUES (1, 'session', 'paused', 'opencode')"
+        )
+        .execute(&app_state.write_pool)
+        .await
+        .unwrap();
+
+        let envelope = make_envelope(
+            "session",
+            "init",
+            serde_json::json!({
+                "cwd": "/tmp/test",
+                "feature_id": 1,
+            }),
+        );
+        dispatch_envelope(envelope, &tx, &sdk_sessions, &app_state).await;
+
+        let msg = rx.recv().await.unwrap();
+        if let Message::Text(text) = msg {
+            let env: WsEnvelope = serde_json::from_str(&text).unwrap();
+            assert_eq!(env.action, "initialized");
+        } else {
+            panic!("expected text message");
+        }
+    }
+
+    #[tokio::test]
     async fn test_provider_set_updates_pending_session_and_persists_runtime_provider() {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
@@ -888,7 +938,7 @@ mod tests {
             "provider.set",
             serde_json::json!({
                 "session_id": session_id,
-                "provider": "opencode",
+                "provider": "codex_cli",
             }),
         );
         dispatch_envelope(envelope, &tx, &sdk_sessions, &app_state).await;
@@ -899,6 +949,37 @@ mod tests {
             assert_eq!(env.action, "error");
             let payload: SessionErrorPayload = serde_json::from_value(env.payload).unwrap();
             assert_eq!(payload.code, "UNSUPPORTED_PROVIDER");
+        } else {
+            panic!("expected text message");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_provider_set_accepts_opencode() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+        let app_state = make_test_app_state().await;
+
+        let session_id = init_session(&tx, &mut rx, &sdk_sessions, &app_state, 1).await;
+
+        let envelope = make_envelope(
+            "session",
+            "provider.set",
+            serde_json::json!({
+                "session_id": session_id,
+                "provider": "opencode",
+            }),
+        );
+        dispatch_envelope(envelope, &tx, &sdk_sessions, &app_state).await;
+
+        let msg = rx.recv().await.unwrap();
+        if let Message::Text(text) = msg {
+            let env: WsEnvelope = serde_json::from_str(&text).unwrap();
+            assert_eq!(env.action, "provider.set.ok");
+            assert_eq!(
+                env.payload.get("provider").and_then(|v| v.as_str()),
+                Some("opencode")
+            );
         } else {
             panic!("expected text message");
         }
@@ -958,6 +1039,7 @@ mod tests {
                 permission_tx,
             },
             feature_id,
+            runtime_provider: crate::domain::agents::runtime::DEFAULT_PROVIDER.to_string(),
             desired_model: Some("sonnet".to_string()),
             spawned_model: Some("sonnet".to_string()),
             desired_permission_mode: None,
@@ -1005,6 +1087,7 @@ mod tests {
             app_state.write_pool.clone(),
             app_state.turn_state_tx.clone(),
             sdk_sessions.clone(),
+            crate::domain::agents::runtime::DEFAULT_PROVIDER.to_string(),
             None,
         );
 
@@ -1081,6 +1164,7 @@ mod tests {
             app_state.write_pool.clone(),
             app_state.turn_state_tx.clone(),
             sdk_sessions.clone(),
+            crate::domain::agents::runtime::DEFAULT_PROVIDER.to_string(),
             None,
         );
 
@@ -1129,6 +1213,7 @@ mod tests {
             app_state.write_pool.clone(),
             app_state.turn_state_tx.clone(),
             sdk_sessions.clone(),
+            crate::domain::agents::runtime::DEFAULT_PROVIDER.to_string(),
             None,
         );
 
@@ -1143,6 +1228,67 @@ mod tests {
 
         // No panic, no handle in map — just a no-op
         assert!(sdk_sessions.lock().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_stream_reader_routes_opencode_permission_request() {
+        let app_state = make_test_app_state().await;
+        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+        let (ws_tx, mut ws_rx) = mpsc::unbounded_channel();
+
+        let db_session_id = 77i64;
+        let feature_id = 1i64;
+
+        {
+            let mut sessions = sdk_sessions.lock().await;
+            sessions.insert(db_session_id, make_active_handle(feature_id, None));
+        }
+
+        let (msg_tx, msg_rx) = mpsc::channel::<Result<RuntimeEvent, RuntimeError>>(4);
+        let event = RuntimeEvent::new(
+            crate::domain::agents::adapter::RuntimeEventMetadata {
+                session_id: Some("sess-opencode".to_string()),
+                usage: None,
+                raw: serde_json::json!({
+                    "type": "opencode_permission_request",
+                    "request_id": "perm-1",
+                    "tool_name": "Write",
+                    "tool_input": { "file_path": "/tmp/a.txt" },
+                    "description": "needs permission",
+                }),
+            },
+            crate::domain::agents::adapter::RuntimeEventKind::Other,
+        );
+        msg_tx.send(Ok(event)).await.unwrap();
+        drop(msg_tx);
+
+        session_prompt::spawn_stream_reader(
+            db_session_id,
+            feature_id,
+            msg_rx,
+            ws_tx,
+            app_state.write_pool.clone(),
+            app_state.turn_state_tx.clone(),
+            sdk_sessions,
+            "opencode".to_string(),
+            None,
+        );
+
+        let msg = ws_rx.recv().await.unwrap();
+        if let Message::Text(text) = msg {
+            let env: WsEnvelope = serde_json::from_str(&text).unwrap();
+            assert_eq!(env.action, "permission.request");
+            assert_eq!(
+                env.payload.get("request_id").and_then(|v| v.as_str()),
+                Some("perm-1")
+            );
+            assert_eq!(
+                env.payload.get("tool_name").and_then(|v| v.as_str()),
+                Some("Write")
+            );
+        } else {
+            panic!("expected text message");
+        }
     }
 
     #[tokio::test]
