@@ -190,7 +190,9 @@ mod tests {
         };
         let json = serde_json::to_string(&block).unwrap();
         let back: ContentBlock = serde_json::from_str(&json).unwrap();
-        assert!(matches!(back, ContentBlock::ToolUse { id, name, .. } if id == "tu_123" && name == "bash"));
+        assert!(
+            matches!(back, ContentBlock::ToolUse { id, name, .. } if id == "tu_123" && name == "bash")
+        );
     }
 
     #[test]

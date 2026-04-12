@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use tracing::{error, info, warn};
 
+use crate::domain::agents::adapter::{RuntimePermissionDecision, RuntimePermissionResponse};
 use crate::domain::agents::runtime_adapter;
 use crate::domain::features::repository as repo;
 use crate::domain::mcp::servers::AgentType;
@@ -12,12 +13,43 @@ use crate::domain::workflow::engine::AgentSlot;
 use crate::domain::workflow::permission_router::PermissionRouter;
 use crate::domain::workflow::stream_reader::spawn_workflow_stream_reader;
 use crate::domain::ws_session::handler::session_prompt::build_content_value;
+use crate::domain::ws_session::handler::session_prompt::PermissionResponse;
 use crate::domain::ws_session::persistence::WsSessionPersistence;
 use crate::domain::ws_session::protocol::ImagePayload;
 
 use super::AgentManager;
 
 impl AgentManager {
+    pub async fn respond_runtime_permission(
+        &self,
+        slot: &AgentSlot,
+        response: PermissionResponse,
+    ) -> Result<bool, String> {
+        let Some(query) = self.queries.get(slot) else {
+            return Ok(false);
+        };
+        let runtime_response = RuntimePermissionResponse {
+            request_id: response.request_id.clone(),
+            decision: match response.decision {
+                crate::domain::ws_session::protocol::PermissionDecision::AllowOnce => {
+                    RuntimePermissionDecision::AllowOnce
+                }
+                crate::domain::ws_session::protocol::PermissionDecision::AllowFuture => {
+                    RuntimePermissionDecision::AllowFuture
+                }
+                crate::domain::ws_session::protocol::PermissionDecision::Deny => {
+                    RuntimePermissionDecision::Deny
+                }
+            },
+            feedback: response.feedback.clone(),
+            updated_input: response.updated_input.clone(),
+        };
+
+        let q = query.lock().await;
+        let result = q.respond_permission(runtime_response).await;
+        Ok(result.is_ok())
+    }
+
     /// Send a follow-up prompt to a running workflow agent.
     pub async fn send_prompt(
         &self,
@@ -259,6 +291,7 @@ impl AgentManager {
                     db_session_id,
                     self.feature_id,
                     ctx.expected_mcp_server,
+                    ctx.provider.clone(),
                     message_rx,
                     self.ws_sender.clone(),
                     self.write_pool.clone(),

@@ -9,6 +9,7 @@ use tracing::{info, warn};
 
 use crate::domain::agents::adapter::{RuntimePermissionMode, RuntimeSpawnConfig};
 use crate::domain::agents::runtime::DEFAULT_PROVIDER;
+use crate::domain::agents::runtime_adapter;
 use crate::domain::mcp::servers::{mcp_server_name, AgentType};
 use crate::domain::workflow::engine::AgentSlot;
 use crate::domain::workflow::permission_router::{PermissionRouter, WorkflowPermissionBridge};
@@ -148,7 +149,7 @@ impl AgentManager {
 
         let project_id = self.get_project_id().await;
         let provider = self.resolve_provider(agent_type_str, project_id).await;
-        if provider != DEFAULT_PROVIDER {
+        if runtime_adapter(&provider).is_none() {
             return Err(format!(
                 "Runtime provider '{provider}' is not implemented yet for workflow agents"
             ));
@@ -202,7 +203,7 @@ impl AgentManager {
             system_prompt: full_system_prompt,
             resume_session_id: resume_session_id.map(|s| s.to_string()),
             mcp_servers: Some(mcp_servers.clone()),
-            can_use_tool: Some(Box::new(bridge)),
+            permission_handler: Some(Arc::new(bridge)),
         };
 
         Ok(SpawnContext {

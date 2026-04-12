@@ -14,8 +14,10 @@ use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
 
 use axum::extract::ws::Message;
-use claude_agent_sdk_rs::{CanUseTool, PermissionRequest, PermissionResult};
 
+use crate::domain::agents::adapter::{
+    RuntimeToolPermissionHandler, RuntimeToolPermissionRequest, RuntimeToolPermissionResult,
+};
 use crate::domain::features::repository as repo;
 use crate::domain::permission_bridge::{self, ResolvedAction};
 use crate::domain::workflow::engine::{AgentSlot, WsSender};
@@ -83,8 +85,11 @@ pub struct WorkflowPermissionBridge {
 }
 
 #[async_trait]
-impl CanUseTool for WorkflowPermissionBridge {
-    async fn can_use_tool(&self, request: PermissionRequest) -> PermissionResult {
+impl RuntimeToolPermissionHandler for WorkflowPermissionBridge {
+    async fn can_use_tool(
+        &self,
+        request: RuntimeToolPermissionRequest,
+    ) -> RuntimeToolPermissionResult {
         debug!(
             tool_name = %request.tool_name,
             slot = %self.slot,
@@ -126,9 +131,9 @@ impl WorkflowPermissionBridge {
     /// and block on the permission channel until the user approves/rejects.
     async fn handle_approval_gate(
         &self,
-        request: &PermissionRequest,
+        request: &RuntimeToolPermissionRequest,
         is_show_plan: bool,
-    ) -> PermissionResult {
+    ) -> RuntimeToolPermissionResult {
         let event_name = if is_show_plan {
             "plan_ready"
         } else {
@@ -208,11 +213,11 @@ impl WorkflowPermissionBridge {
     /// AskUserQuestion data, and wait for user decision.
     async fn handle_needs_prompt(
         &self,
-        request: &PermissionRequest,
+        request: &RuntimeToolPermissionRequest,
         description: String,
         pattern: String,
         force_prompt: bool,
-    ) -> PermissionResult {
+    ) -> RuntimeToolPermissionResult {
         debug!(tool_name = %request.tool_name, pattern = %pattern, "workflow prompting user");
         let is_ask_user_question = request.tool_name == "AskUserQuestion";
 
@@ -463,7 +468,11 @@ impl WorkflowPermissionBridge {
 
     /// Persist plan/PRD content into the tool_call row so the frontend can
     /// render it after app restart.
-    async fn attach_plan_to_tool_call(&self, request: &PermissionRequest, content: Option<String>) {
+    async fn attach_plan_to_tool_call(
+        &self,
+        request: &RuntimeToolPermissionRequest,
+        content: Option<String>,
+    ) {
         if let Some(plan_md) = content {
             let enriched = serde_json::json!({ "plan": plan_md });
             let enriched_str = enriched.to_string();

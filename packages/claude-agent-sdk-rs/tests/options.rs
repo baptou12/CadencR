@@ -149,14 +149,15 @@ fn to_cli_args_always_includes_output_format() {
     let pos = args
         .windows(2)
         .position(|w| w[0] == "--output-format" && w[1] == "stream-json");
-    assert!(pos.is_some(), "Expected --output-format stream-json in args");
+    assert!(
+        pos.is_some(),
+        "Expected --output-format stream-json in args"
+    );
 }
 
 #[test]
 fn to_cli_args_includes_model_when_set() {
-    let opts = OptionsBuilder::new()
-        .model("claude-opus-4-5")
-        .build();
+    let opts = OptionsBuilder::new().model("claude-opus-4-5").build();
     let args = opts.to_cli_args();
     let pos = args
         .windows(2)
@@ -166,9 +167,7 @@ fn to_cli_args_includes_model_when_set() {
 
 #[test]
 fn to_cli_args_includes_resume_when_set() {
-    let opts = OptionsBuilder::new()
-        .resume("sess-abc-123")
-        .build();
+    let opts = OptionsBuilder::new().resume("sess-abc-123").build();
     let args = opts.to_cli_args();
     let pos = args
         .windows(2)
@@ -205,7 +204,10 @@ fn to_cli_args_includes_permission_prompt_tool_when_can_use_tool_set() {
     let pos = args
         .windows(2)
         .position(|w| w[0] == "--permission-prompt-tool" && w[1] == "stdio");
-    assert!(pos.is_some(), "Expected --permission-prompt-tool stdio in args");
+    assert!(
+        pos.is_some(),
+        "Expected --permission-prompt-tool stdio in args"
+    );
 }
 
 #[test]
@@ -277,19 +279,30 @@ fn to_cli_args_wraps_mcp_servers_in_mcp_servers_key() {
         "cadence-plan".to_string(),
         McpServerConfig::Stdio {
             command: "/usr/bin/cadence-service".to_string(),
-            args: Some(vec!["mcp-serve".to_string(), "--agent-type".to_string(), "plan".to_string()]),
+            args: Some(vec![
+                "mcp-serve".to_string(),
+                "--agent-type".to_string(),
+                "plan".to_string(),
+            ]),
             env: None,
         },
     );
     let opts = OptionsBuilder::new().mcp_servers(servers).build();
     let args = opts.to_cli_args();
 
-    let pos = args.iter().position(|a| a == "--mcp-config").expect("--mcp-config should be present");
+    let pos = args
+        .iter()
+        .position(|a| a == "--mcp-config")
+        .expect("--mcp-config should be present");
     let config_json = &args[pos + 1];
-    let parsed: serde_json::Value = serde_json::from_str(config_json).expect("should be valid JSON");
+    let parsed: serde_json::Value =
+        serde_json::from_str(config_json).expect("should be valid JSON");
 
     // Must be wrapped in { "mcpServers": { ... } }
-    assert!(parsed.get("mcpServers").is_some(), "config must have mcpServers wrapper key");
+    assert!(
+        parsed.get("mcpServers").is_some(),
+        "config must have mcpServers wrapper key"
+    );
     let inner = &parsed["mcpServers"]["cadence-plan"];
     assert_eq!(inner["type"], "stdio");
     assert_eq!(inner["command"], "/usr/bin/cadence-service");

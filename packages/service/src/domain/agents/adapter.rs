@@ -44,7 +44,7 @@ pub struct RuntimeSpawnConfig {
     pub system_prompt: Option<String>,
     pub resume_session_id: Option<String>,
     pub mcp_servers: Option<HashMap<String, RuntimeMcpServerConfig>>,
-    pub can_use_tool: Option<Box<dyn claude_agent_sdk_rs::CanUseTool>>,
+    pub permission_handler: Option<Arc<dyn RuntimeToolPermissionHandler>>,
 }
 
 impl Default for RuntimeSpawnConfig {
@@ -56,7 +56,7 @@ impl Default for RuntimeSpawnConfig {
             system_prompt: None,
             resume_session_id: None,
             mcp_servers: None,
-            can_use_tool: None,
+            permission_handler: None,
         }
     }
 }
@@ -72,10 +72,72 @@ impl Display for RuntimeError {
 
 impl std::error::Error for RuntimeError {}
 
+impl RuntimeError {
+    pub fn new(message: impl Into<String>) -> Self {
+        Self(message.into())
+    }
+}
+
 impl From<claude_agent_sdk_rs::SdkError> for RuntimeError {
     fn from(value: claude_agent_sdk_rs::SdkError) -> Self {
         Self(value.to_string())
     }
+}
+
+impl From<opencode_sdk_rs::SdkError> for RuntimeError {
+    fn from(value: opencode_sdk_rs::SdkError) -> Self {
+        Self(value.to_string())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuntimePermissionDecision {
+    AllowOnce,
+    AllowFuture,
+    Deny,
+}
+
+#[derive(Debug, Clone)]
+pub struct RuntimePermissionResponse {
+    pub request_id: String,
+    pub decision: RuntimePermissionDecision,
+    pub feedback: Option<String>,
+    pub updated_input: Option<Value>,
+}
+
+#[derive(Debug, Clone)]
+pub struct RuntimePermissionRequest {
+    pub request_id: String,
+    pub tool_name: String,
+    pub tool_input: Value,
+    pub description: Option<String>,
+    pub pattern: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct RuntimeToolPermissionRequest {
+    pub tool_name: String,
+    pub tool_use_id: String,
+    pub input: Value,
+}
+
+#[derive(Debug, Clone)]
+pub struct RuntimePermissionUpdate {
+    pub data: Value,
+}
+
+#[derive(Debug, Clone)]
+pub enum RuntimeToolPermissionResult {
+    Allow {
+        updated_input: Value,
+        updated_permissions: Option<Vec<RuntimePermissionUpdate>>,
+        tool_use_id: Option<String>,
+    },
+    Deny {
+        message: String,
+        interrupt: Option<bool>,
+        tool_use_id: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -263,6 +325,14 @@ pub type RuntimeMessageRx = mpsc::Receiver<Result<RuntimeEvent, RuntimeError>>;
 pub type RuntimeSessionHandle = Arc<Mutex<Box<dyn AgentRuntimeSession>>>;
 
 #[async_trait]
+pub trait RuntimeToolPermissionHandler: Send + Sync {
+    async fn can_use_tool(
+        &self,
+        request: RuntimeToolPermissionRequest,
+    ) -> RuntimeToolPermissionResult;
+}
+
+#[async_trait]
 pub trait AgentRuntimeSession: Send + Sync {
     fn take_message_rx(&mut self) -> RuntimeMessageRx;
     async fn session_id(&self) -> Option<String>;
@@ -271,14 +341,135 @@ pub trait AgentRuntimeSession: Send + Sync {
     async fn close(&mut self);
     async fn set_model(&self, model: &str) -> Result<(), RuntimeError>;
     async fn set_permission_mode(&self, mode: RuntimePermissionMode) -> Result<(), RuntimeError>;
+    async fn respond_permission(
+        &self,
+        _response: RuntimePermissionResponse,
+    ) -> Result<(), RuntimeError> {
+        Err(RuntimeError::new(
+            "permission responses are not supported by this runtime",
+        ))
+    }
     fn pid(&self) -> Option<u32>;
 }
 
 #[async_trait]
 pub trait AgentRuntimeAdapter: Send + Sync {
+    async fn init(&self) -> Result<(), RuntimeError> {
+        Ok(())
+    }
+
+    fn is_valid_resume_session_id(&self, _session_id: &str) -> bool {
+        true
+    }
+
+    fn parse_permission_request(&self, _raw: &Value) -> Option<RuntimePermissionRequest> {
+        None
+    }
+
     async fn spawn(
         &self,
         content: Value,
         config: RuntimeSpawnConfig,
     ) -> Result<Box<dyn AgentRuntimeSession>, RuntimeError>;
+}
+
+#[cfg(test)]
+mod tests {
+    use async_trait::async_trait;
+    use serde_json::json;
+    use tokio::sync::{mpsc, Mutex};
+
+    use super::{
+        AgentRuntimeAdapter, AgentRuntimeSession, RuntimeError, RuntimeMessageRx,
+        RuntimePermissionDecision, RuntimePermissionResponse, RuntimeSpawnConfig,
+    };
+
+    struct DummySession;
+
+    #[async_trait]
+    impl AgentRuntimeSession for DummySession {
+        fn take_message_rx(&mut self) -> RuntimeMessageRx {
+            let (_tx, rx) = mpsc::channel(1);
+            rx
+        }
+
+        async fn session_id(&self) -> Option<String> {
+            Some("dummy".to_string())
+        }
+
+        async fn stream_input(&self, _content: serde_json::Value) -> Result<(), RuntimeError> {
+            Ok(())
+        }
+
+        async fn interrupt(&self) -> Result<(), RuntimeError> {
+            Ok(())
+        }
+
+        async fn close(&mut self) {}
+
+        async fn set_model(&self, _model: &str) -> Result<(), RuntimeError> {
+            Ok(())
+        }
+
+        async fn set_permission_mode(
+            &self,
+            _mode: super::RuntimePermissionMode,
+        ) -> Result<(), RuntimeError> {
+            Ok(())
+        }
+
+        fn pid(&self) -> Option<u32> {
+            None
+        }
+    }
+
+    struct DummyAdapter;
+
+    #[async_trait]
+    impl AgentRuntimeAdapter for DummyAdapter {
+        async fn spawn(
+            &self,
+            _content: serde_json::Value,
+            _config: RuntimeSpawnConfig,
+        ) -> Result<Box<dyn AgentRuntimeSession>, RuntimeError> {
+            Ok(Box::new(DummySession))
+        }
+    }
+
+    #[tokio::test]
+    async fn adapter_defaults_are_provider_neutral() {
+        let adapter = DummyAdapter;
+        assert!(adapter.is_valid_resume_session_id("anything"));
+        assert!(adapter
+            .parse_permission_request(&json!({"type": "none"}))
+            .is_none());
+
+        let spawned = adapter
+            .spawn(serde_json::Value::Null, RuntimeSpawnConfig::default())
+            .await
+            .expect("spawn should succeed");
+        let query = Mutex::new(spawned);
+        assert_eq!(
+            query.lock().await.session_id().await.as_deref(),
+            Some("dummy")
+        );
+    }
+
+    #[tokio::test]
+    async fn session_default_permission_response_is_unsupported() {
+        let session = DummySession;
+        let error = session
+            .respond_permission(RuntimePermissionResponse {
+                request_id: "req".to_string(),
+                decision: RuntimePermissionDecision::AllowOnce,
+                feedback: None,
+                updated_input: None,
+            })
+            .await
+            .expect_err("default session permission response should be unsupported");
+
+        assert!(error
+            .to_string()
+            .contains("permission responses are not supported"));
+    }
 }

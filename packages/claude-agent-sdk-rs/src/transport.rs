@@ -80,21 +80,13 @@ impl CliProcess {
 
         let mut child = cmd.spawn().map_err(SdkError::SpawnFailed)?;
 
-        let stdin = child
-            .stdin
-            .take()
-            .map(BufWriter::new);
+        let stdin = child.stdin.take().map(BufWriter::new);
 
-        let stdout = child
-            .stdout
-            .take()
-            .expect("stdout was piped");
+        let stdout = child.stdout.take().expect("stdout was piped");
 
         let stdout_lines = BufReader::new(stdout).lines();
 
-        let mut stderr_reader = BufReader::new(
-            child.stderr.take().expect("stderr was piped"),
-        );
+        let mut stderr_reader = BufReader::new(child.stderr.take().expect("stderr was piped"));
         let stderr_task = tokio::spawn(async move {
             let mut buf = String::new();
             use tokio::io::AsyncReadExt;
@@ -128,10 +120,7 @@ impl CliProcess {
                     }
                     return serde_json::from_str(&line)
                         .map(Some)
-                        .map_err(|e| SdkError::ProtocolError {
-                            line,
-                            source: e,
-                        });
+                        .map_err(|e| SdkError::ProtocolError { line, source: e });
                 }
                 Ok(None) => return Ok(None), // EOF
                 Err(e) => return Err(SdkError::IoError(e)),
@@ -151,7 +140,10 @@ impl CliProcess {
     pub async fn write_json(&mut self, value: &serde_json::Value) -> Result<(), SdkError> {
         let stdin = self.stdin.as_mut().ok_or(SdkError::InputClosed)?;
         let json = serde_json::to_string(value).map_err(SdkError::SerializationError)?;
-        stdin.write_all(json.as_bytes()).await.map_err(SdkError::IoError)?;
+        stdin
+            .write_all(json.as_bytes())
+            .await
+            .map_err(SdkError::IoError)?;
         stdin.write_all(b"\n").await.map_err(SdkError::IoError)?;
         stdin.flush().await.map_err(SdkError::IoError)?;
         Ok(())
@@ -193,12 +185,7 @@ impl CliProcess {
             }
         }
 
-        match tokio::time::timeout(
-            std::time::Duration::from_secs(5),
-            self.child.wait(),
-        )
-        .await
-        {
+        match tokio::time::timeout(std::time::Duration::from_secs(5), self.child.wait()).await {
             Ok(_) => Ok(()),
             Err(_) => {
                 self.child.kill().await.map_err(SdkError::IoError)?;
@@ -241,7 +228,10 @@ impl Drop for CliProcess {
         // (e.g. tokio task abort, panic, or missed cleanup), send SIGKILL to
         // prevent zombie CLI processes that consume tokens in the background.
         if let Some(pid) = self.child.id() {
-            tracing::warn!(pid, "CliProcess dropped with live process — sending SIGKILL");
+            tracing::warn!(
+                pid,
+                "CliProcess dropped with live process — sending SIGKILL"
+            );
             #[cfg(unix)]
             unsafe {
                 libc::kill(pid as libc::pid_t, libc::SIGKILL);
@@ -384,7 +374,9 @@ mod tests {
         let stderr_task = tokio::spawn(async move {
             let mut buf = String::new();
             use tokio::io::AsyncReadExt;
-            let _ = tokio::io::BufReader::new(stderr).read_to_string(&mut buf).await;
+            let _ = tokio::io::BufReader::new(stderr)
+                .read_to_string(&mut buf)
+                .await;
             buf
         });
 

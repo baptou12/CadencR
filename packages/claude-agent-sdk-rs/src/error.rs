@@ -21,10 +21,7 @@ pub enum SdkError {
 
     /// The CLI exited with a non-zero exit code.
     #[error("CLI process exited with code {code:?}: {stderr}")]
-    ProcessExit {
-        code: Option<i32>,
-        stderr: String,
-    },
+    ProcessExit { code: Option<i32>, stderr: String },
 
     /// An operation timed out.
     #[error("operation timed out")]

@@ -254,11 +254,7 @@ impl Query {
 
         // Wait for the reader task to finish (it will break after killing).
         if let Some(task) = self.reader_task.take() {
-            let _ = tokio::time::timeout(
-                std::time::Duration::from_secs(10),
-                task,
-            )
-            .await;
+            let _ = tokio::time::timeout(std::time::Duration::from_secs(10), task).await;
         }
 
         // Drop stdin for good measure.
@@ -271,12 +267,7 @@ impl Query {
     /// This writes a `user` message to CLI stdin and resets the turn state
     /// to `AgentWorking`.
     pub async fn stream_input(&self, content: serde_json::Value) -> Result<(), SdkError> {
-        let session_id = self
-            .session_id
-            .lock()
-            .await
-            .clone()
-            .unwrap_or_default();
+        let session_id = self.session_id.lock().await.clone().unwrap_or_default();
 
         let msg = serde_json::json!({
             "type": "user",
@@ -386,10 +377,7 @@ async fn write_to_stdin(
         .write_all(json.as_bytes())
         .await
         .map_err(SdkError::IoError)?;
-    stdin
-        .write_all(b"\n")
-        .await
-        .map_err(SdkError::IoError)?;
+    stdin.write_all(b"\n").await.map_err(SdkError::IoError)?;
     stdin.flush().await.map_err(SdkError::IoError)?;
     Ok(())
 }
@@ -644,10 +632,13 @@ pub async fn query(content: serde_json::Value, mut options: Options) -> Result<Q
 
     // Send the initialize control request so the CLI knows we support
     // the bidirectional control protocol (canUseTool, AskUserQuestion, etc.).
-    let init_request_id = format!("init_{}", std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos());
+    let init_request_id = format!(
+        "init_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+    );
     let init_msg = serde_json::json!({
         "type": "control_request",
         "request_id": init_request_id,
@@ -724,8 +715,8 @@ pub async fn supported_commands(
     cwd: &str,
     path_to_cli: Option<&std::path::Path>,
 ) -> Result<Vec<crate::types::SlashCommand>, SdkError> {
-    use crate::transport::{find_cli, CliProcess};
     use crate::messages::{SdkMessage, SystemMessage};
+    use crate::transport::{find_cli, CliProcess};
 
     let cli_path = find_cli(path_to_cli)?;
 
@@ -934,7 +925,9 @@ echo '{"type":"result","subtype":"success","uuid":"u3","session_id":"sess_123","
             ..Options::default()
         };
 
-        let mut q = query(serde_json::Value::String("test".into()), options).await.unwrap();
+        let mut q = query(serde_json::Value::String("test".into()), options)
+            .await
+            .unwrap();
 
         let mut messages = Vec::new();
         while let Some(msg) = q.next().await {
@@ -984,7 +977,9 @@ sleep 300
             ..Options::default()
         };
 
-        let mut q = query(serde_json::Value::String("test".into()), options).await.unwrap();
+        let mut q = query(serde_json::Value::String("test".into()), options)
+            .await
+            .unwrap();
 
         // Read the system init message
         let msg = q.next().await;
@@ -1023,14 +1018,19 @@ echo '{"type":"result","subtype":"success","uuid":"u2","session_id":"sess_take",
             ..Options::default()
         };
 
-        let mut q = query(serde_json::Value::String("test".into()), options).await.unwrap();
+        let mut q = query(serde_json::Value::String("test".into()), options)
+            .await
+            .unwrap();
 
         // Take the receiver out
         let mut rx = q.take_message_rx();
 
         // After take, Stream impl should return None
         let stream_result = q.next().await;
-        assert!(stream_result.is_none(), "stream should return None after take_message_rx");
+        assert!(
+            stream_result.is_none(),
+            "stream should return None after take_message_rx"
+        );
 
         // The taken receiver should still get messages
         let mut messages = Vec::new();
@@ -1038,7 +1038,11 @@ echo '{"type":"result","subtype":"success","uuid":"u2","session_id":"sess_take",
             messages.push(msg.unwrap());
         }
 
-        assert!(messages.len() >= 2, "receiver should get messages, got {}", messages.len());
+        assert!(
+            messages.len() >= 2,
+            "receiver should get messages, got {}",
+            messages.len()
+        );
     }
 
     #[tokio::test]
@@ -1072,7 +1076,9 @@ echo '{"type":"result","subtype":"success","uuid":"u3","session_id":"sess_456","
             ..Options::default()
         };
 
-        let mut q = query(serde_json::Value::String("test".into()), options).await.unwrap();
+        let mut q = query(serde_json::Value::String("test".into()), options)
+            .await
+            .unwrap();
 
         let mut messages = Vec::new();
         while let Some(msg) = q.next().await {
@@ -1116,7 +1122,9 @@ echo '{"type":"result","subtype":"success","uuid":"u2","session_id":"sess_init",
             ..Options::default()
         };
 
-        let mut q = query(serde_json::Value::String("test".into()), options).await.unwrap();
+        let mut q = query(serde_json::Value::String("test".into()), options)
+            .await
+            .unwrap();
 
         let mut messages = Vec::new();
         while let Some(msg) = q.next().await {
@@ -1124,7 +1132,12 @@ echo '{"type":"result","subtype":"success","uuid":"u2","session_id":"sess_init",
         }
 
         // control_response should be filtered out — only System(Init) + Result
-        assert_eq!(messages.len(), 2, "expected 2 messages, got {}", messages.len());
+        assert_eq!(
+            messages.len(),
+            2,
+            "expected 2 messages, got {}",
+            messages.len()
+        );
         assert!(messages
             .iter()
             .all(|m| !matches!(m, SdkMessage::Unknown(v) if v.get("type").and_then(|t| t.as_str()) == Some("control_response"))));
@@ -1163,7 +1176,9 @@ echo '{"type":"result","subtype":"success","uuid":"u2","session_id":"sess_clinit
             ..Options::default()
         };
 
-        let mut q = query(serde_json::Value::String("test".into()), options).await.unwrap();
+        let mut q = query(serde_json::Value::String("test".into()), options)
+            .await
+            .unwrap();
 
         let mut messages = Vec::new();
         while let Some(msg) = q.next().await {
@@ -1172,7 +1187,12 @@ echo '{"type":"result","subtype":"success","uuid":"u2","session_id":"sess_clinit
 
         // The CLI's initialize request should be handled (responded to) and not
         // forwarded as a message. We should only see System(Init) + Result.
-        assert_eq!(messages.len(), 2, "expected 2 messages, got {}", messages.len());
+        assert_eq!(
+            messages.len(),
+            2,
+            "expected 2 messages, got {}",
+            messages.len()
+        );
 
         let sid = q.session_id().await;
         assert_eq!(sid, Some("sess_clinit".to_string()));
@@ -1199,12 +1219,9 @@ echo '{"type":"result","subtype":"success","uuid":"u2","session_id":"sess_cmd","
         perms.set_mode(0o755);
         std::fs::set_permissions(&script_path, perms).unwrap();
 
-        let commands = supported_commands(
-            "/tmp",
-            Some(script_path.as_path()),
-        )
-        .await
-        .unwrap();
+        let commands = supported_commands("/tmp", Some(script_path.as_path()))
+            .await
+            .unwrap();
 
         assert_eq!(commands.len(), 3);
         assert_eq!(commands[0].name, "compact");

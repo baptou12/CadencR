@@ -20,7 +20,11 @@ fn stream_event_text_delta() {
     let msg: SdkMessage = serde_json::from_value(raw).unwrap();
     assert!(msg.is_content_delta());
     assert_eq!(msg.session_id(), Some("s1"));
-    if let SdkMessage::StreamEvent { event: StreamEventData::ContentBlockDelta { delta, .. }, .. } = &msg {
+    if let SdkMessage::StreamEvent {
+        event: StreamEventData::ContentBlockDelta { delta, .. },
+        ..
+    } = &msg
+    {
         assert!(matches!(delta, ContentDelta::TextDelta { text } if text == "hello"));
     } else {
         panic!("wrong variant");
@@ -156,7 +160,13 @@ fn result_success() {
     let msg: SdkMessage = serde_json::from_value(raw).unwrap();
     assert!(msg.is_turn_complete());
     assert_eq!(msg.session_id(), Some("s1"));
-    if let SdkMessage::Result { subtype, usage, is_error, .. } = &msg {
+    if let SdkMessage::Result {
+        subtype,
+        usage,
+        is_error,
+        ..
+    } = &msg
+    {
         assert_eq!(subtype, "success");
         assert!(!is_error);
         assert_eq!(usage.output_tokens, 50);
@@ -186,7 +196,13 @@ fn result_error_max_turns() {
     });
     let msg: SdkMessage = serde_json::from_value(raw).unwrap();
     assert!(msg.is_turn_complete());
-    if let SdkMessage::Result { subtype, errors, is_error, .. } = &msg {
+    if let SdkMessage::Result {
+        subtype,
+        errors,
+        is_error,
+        ..
+    } = &msg
+    {
         assert_eq!(subtype, "error_max_turns");
         assert!(is_error);
         assert_eq!(errors.as_ref().unwrap()[0], "Max turns reached");
@@ -217,7 +233,13 @@ fn system_init() {
     assert!(!msg.is_turn_complete());
     assert_eq!(msg.session_id(), Some("sess_abc"));
     assert!(!msg.is_compaction());
-    if let SdkMessage::System(SystemMessage::Init { session_id, model, tools, .. }) = &msg {
+    if let SdkMessage::System(SystemMessage::Init {
+        session_id,
+        model,
+        tools,
+        ..
+    }) = &msg
+    {
         assert_eq!(session_id, "sess_abc");
         assert_eq!(model, "claude-opus-4-5");
         assert_eq!(tools[0], "bash");
@@ -282,7 +304,10 @@ fn user_message_with_tool_use_result() {
     });
     let msg: SdkMessage = serde_json::from_value(raw).unwrap();
     assert_eq!(msg.session_id(), Some("s1"));
-    if let SdkMessage::User { tool_use_result, .. } = &msg {
+    if let SdkMessage::User {
+        tool_use_result, ..
+    } = &msg
+    {
         assert!(tool_use_result.is_some());
     } else {
         panic!("wrong variant");

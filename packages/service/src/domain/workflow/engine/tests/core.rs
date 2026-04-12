@@ -183,6 +183,7 @@ async fn test_respond_permission_no_channel() {
     let (engine, _rx) = test_engine().await;
 
     let response = PermissionResponse {
+        request_id: "req-1".to_string(),
         decision: PermissionDecision::AllowOnce,
         feedback: None,
         updated_input: None,
@@ -205,6 +206,7 @@ async fn test_respond_permission_with_channel() {
         .insert(AgentSlot::QueueItem(42), tx);
 
     let response = PermissionResponse {
+        request_id: "req-2".to_string(),
         decision: PermissionDecision::AllowOnce,
         feedback: None,
         updated_input: None,

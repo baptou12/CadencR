@@ -40,7 +40,10 @@ pub enum StreamEventData {
 
     /// Marks the start of a content block (text, tool_use, thinking).
     #[serde(rename = "content_block_start")]
-    ContentBlockStart { index: u32, content_block: ContentBlock },
+    ContentBlockStart {
+        index: u32,
+        content_block: ContentBlock,
+    },
 
     /// **THE critical event.** Carries partial text / thinking / tool-input JSON.
     #[serde(rename = "content_block_delta")]
@@ -52,7 +55,10 @@ pub enum StreamEventData {
 
     /// Carries stop_reason and optional updated usage at message end.
     #[serde(rename = "message_delta")]
-    MessageDelta { delta: MessageDeltaBody, usage: Option<Usage> },
+    MessageDelta {
+        delta: MessageDeltaBody,
+        usage: Option<Usage>,
+    },
 
     /// Marks the complete end of the streamed message.
     #[serde(rename = "message_stop")]
@@ -148,7 +154,6 @@ pub struct AssistantMessageBody {
 #[serde(tag = "type")]
 pub enum SdkMessage {
     // === STREAMING (PRIMARY) =================================================
-
     /// **PRIMARY message type.** Real-time streaming deltas from the Anthropic API.
     ///
     /// Contains `content_block_delta` with `TextDelta`, `ThinkingDelta`, or
@@ -162,7 +167,6 @@ pub enum SdkMessage {
     },
 
     // === TURN SIGNALS (CRITICAL) =============================================
-
     /// Signals turn completion.
     ///
     /// `subtype` is one of `"success"`, `"error_max_turns"`,
@@ -188,7 +192,6 @@ pub enum SdkMessage {
     },
 
     // === SESSION LIFECYCLE ===================================================
-
     /// System event (`init` or `compact_boundary`).
     #[serde(rename = "system")]
     System(SystemMessage),
@@ -218,7 +221,6 @@ pub enum SdkMessage {
     },
 
     // === OTHER VARIANTS ======================================================
-
     #[serde(rename = "status")]
     Status {
         uuid: String,
@@ -395,75 +397,315 @@ enum SdkMessageInner {
         is_replay: Option<bool>,
     },
     #[serde(rename = "status")]
-    Status { uuid: String, session_id: String, #[serde(flatten)] data: Value },
+    Status {
+        uuid: String,
+        session_id: String,
+        #[serde(flatten)]
+        data: Value,
+    },
     #[serde(rename = "hook_started")]
-    HookStarted { uuid: String, session_id: String, hook_event: String, hook_id: String, matcher: Option<String> },
+    HookStarted {
+        uuid: String,
+        session_id: String,
+        hook_event: String,
+        hook_id: String,
+        matcher: Option<String>,
+    },
     #[serde(rename = "hook_progress")]
-    HookProgress { uuid: String, session_id: String, hook_id: String, #[serde(flatten)] data: Value },
+    HookProgress {
+        uuid: String,
+        session_id: String,
+        hook_id: String,
+        #[serde(flatten)]
+        data: Value,
+    },
     #[serde(rename = "hook_response")]
-    HookResponse { uuid: String, session_id: String, hook_id: String, #[serde(flatten)] data: Value },
+    HookResponse {
+        uuid: String,
+        session_id: String,
+        hook_id: String,
+        #[serde(flatten)]
+        data: Value,
+    },
     #[serde(rename = "tool_progress")]
-    ToolProgress { uuid: String, session_id: String, tool_use_id: String, #[serde(flatten)] data: Value },
+    ToolProgress {
+        uuid: String,
+        session_id: String,
+        tool_use_id: String,
+        #[serde(flatten)]
+        data: Value,
+    },
     #[serde(rename = "auth_status")]
-    AuthStatus { uuid: String, session_id: String, #[serde(flatten)] data: Value },
+    AuthStatus {
+        uuid: String,
+        session_id: String,
+        #[serde(flatten)]
+        data: Value,
+    },
     #[serde(rename = "task_notification")]
-    TaskNotification { uuid: String, session_id: String, task_id: String, #[serde(flatten)] data: Value },
+    TaskNotification {
+        uuid: String,
+        session_id: String,
+        task_id: String,
+        #[serde(flatten)]
+        data: Value,
+    },
     #[serde(rename = "task_started")]
-    TaskStarted { uuid: String, session_id: String, task_id: String, #[serde(flatten)] data: Value },
+    TaskStarted {
+        uuid: String,
+        session_id: String,
+        task_id: String,
+        #[serde(flatten)]
+        data: Value,
+    },
     #[serde(rename = "task_progress")]
-    TaskProgress { uuid: String, session_id: String, task_id: String, #[serde(flatten)] data: Value },
+    TaskProgress {
+        uuid: String,
+        session_id: String,
+        task_id: String,
+        #[serde(flatten)]
+        data: Value,
+    },
     #[serde(rename = "files_persisted")]
-    FilesPersisted { uuid: String, session_id: String, #[serde(flatten)] data: Value },
+    FilesPersisted {
+        uuid: String,
+        session_id: String,
+        #[serde(flatten)]
+        data: Value,
+    },
     #[serde(rename = "tool_use_summary")]
-    ToolUseSummary { uuid: String, session_id: String, #[serde(flatten)] data: Value },
+    ToolUseSummary {
+        uuid: String,
+        session_id: String,
+        #[serde(flatten)]
+        data: Value,
+    },
     #[serde(rename = "rate_limit")]
-    RateLimit { uuid: String, session_id: String, #[serde(flatten)] data: Value },
+    RateLimit {
+        uuid: String,
+        session_id: String,
+        #[serde(flatten)]
+        data: Value,
+    },
     #[serde(rename = "prompt_suggestion")]
-    PromptSuggestion { uuid: String, session_id: String, suggestion: String },
+    PromptSuggestion {
+        uuid: String,
+        session_id: String,
+        suggestion: String,
+    },
 }
 
 impl From<SdkMessageInner> for SdkMessage {
     fn from(inner: SdkMessageInner) -> Self {
         match inner {
-            SdkMessageInner::StreamEvent { event, parent_tool_use_id, uuid, session_id } =>
-                SdkMessage::StreamEvent { event, parent_tool_use_id, uuid, session_id },
-            SdkMessageInner::Result { subtype, uuid, session_id, duration_ms, duration_api_ms,
-                is_error, num_turns, result, errors, stop_reason, total_cost_usd, usage,
-                permission_denials, structured_output, extra } =>
-                SdkMessage::Result { subtype, uuid, session_id, duration_ms, duration_api_ms,
-                    is_error, num_turns, result, errors, stop_reason, total_cost_usd, usage,
-                    permission_denials, structured_output, extra },
+            SdkMessageInner::StreamEvent {
+                event,
+                parent_tool_use_id,
+                uuid,
+                session_id,
+            } => SdkMessage::StreamEvent {
+                event,
+                parent_tool_use_id,
+                uuid,
+                session_id,
+            },
+            SdkMessageInner::Result {
+                subtype,
+                uuid,
+                session_id,
+                duration_ms,
+                duration_api_ms,
+                is_error,
+                num_turns,
+                result,
+                errors,
+                stop_reason,
+                total_cost_usd,
+                usage,
+                permission_denials,
+                structured_output,
+                extra,
+            } => SdkMessage::Result {
+                subtype,
+                uuid,
+                session_id,
+                duration_ms,
+                duration_api_ms,
+                is_error,
+                num_turns,
+                result,
+                errors,
+                stop_reason,
+                total_cost_usd,
+                usage,
+                permission_denials,
+                structured_output,
+                extra,
+            },
             SdkMessageInner::System(s) => SdkMessage::System(s),
-            SdkMessageInner::Assistant { uuid, session_id, message, parent_tool_use_id, error } =>
-                SdkMessage::Assistant { uuid, session_id, message, parent_tool_use_id, error },
-            SdkMessageInner::User { uuid, session_id, message, parent_tool_use_id, is_synthetic, tool_use_result, is_replay } =>
-                SdkMessage::User { uuid, session_id, message, parent_tool_use_id, is_synthetic, tool_use_result, is_replay },
-            SdkMessageInner::Status { uuid, session_id, data } =>
-                SdkMessage::Status { uuid, session_id, data },
-            SdkMessageInner::HookStarted { uuid, session_id, hook_event, hook_id, matcher } =>
-                SdkMessage::HookStarted { uuid, session_id, hook_event, hook_id, matcher },
-            SdkMessageInner::HookProgress { uuid, session_id, hook_id, data } =>
-                SdkMessage::HookProgress { uuid, session_id, hook_id, data },
-            SdkMessageInner::HookResponse { uuid, session_id, hook_id, data } =>
-                SdkMessage::HookResponse { uuid, session_id, hook_id, data },
-            SdkMessageInner::ToolProgress { uuid, session_id, tool_use_id, data } =>
-                SdkMessage::ToolProgress { uuid, session_id, tool_use_id, data },
-            SdkMessageInner::AuthStatus { uuid, session_id, data } =>
-                SdkMessage::AuthStatus { uuid, session_id, data },
-            SdkMessageInner::TaskNotification { uuid, session_id, task_id, data } =>
-                SdkMessage::TaskNotification { uuid, session_id, task_id, data },
-            SdkMessageInner::TaskStarted { uuid, session_id, task_id, data } =>
-                SdkMessage::TaskStarted { uuid, session_id, task_id, data },
-            SdkMessageInner::TaskProgress { uuid, session_id, task_id, data } =>
-                SdkMessage::TaskProgress { uuid, session_id, task_id, data },
-            SdkMessageInner::FilesPersisted { uuid, session_id, data } =>
-                SdkMessage::FilesPersisted { uuid, session_id, data },
-            SdkMessageInner::ToolUseSummary { uuid, session_id, data } =>
-                SdkMessage::ToolUseSummary { uuid, session_id, data },
-            SdkMessageInner::RateLimit { uuid, session_id, data } =>
-                SdkMessage::RateLimit { uuid, session_id, data },
-            SdkMessageInner::PromptSuggestion { uuid, session_id, suggestion } =>
-                SdkMessage::PromptSuggestion { uuid, session_id, suggestion },
+            SdkMessageInner::Assistant {
+                uuid,
+                session_id,
+                message,
+                parent_tool_use_id,
+                error,
+            } => SdkMessage::Assistant {
+                uuid,
+                session_id,
+                message,
+                parent_tool_use_id,
+                error,
+            },
+            SdkMessageInner::User {
+                uuid,
+                session_id,
+                message,
+                parent_tool_use_id,
+                is_synthetic,
+                tool_use_result,
+                is_replay,
+            } => SdkMessage::User {
+                uuid,
+                session_id,
+                message,
+                parent_tool_use_id,
+                is_synthetic,
+                tool_use_result,
+                is_replay,
+            },
+            SdkMessageInner::Status {
+                uuid,
+                session_id,
+                data,
+            } => SdkMessage::Status {
+                uuid,
+                session_id,
+                data,
+            },
+            SdkMessageInner::HookStarted {
+                uuid,
+                session_id,
+                hook_event,
+                hook_id,
+                matcher,
+            } => SdkMessage::HookStarted {
+                uuid,
+                session_id,
+                hook_event,
+                hook_id,
+                matcher,
+            },
+            SdkMessageInner::HookProgress {
+                uuid,
+                session_id,
+                hook_id,
+                data,
+            } => SdkMessage::HookProgress {
+                uuid,
+                session_id,
+                hook_id,
+                data,
+            },
+            SdkMessageInner::HookResponse {
+                uuid,
+                session_id,
+                hook_id,
+                data,
+            } => SdkMessage::HookResponse {
+                uuid,
+                session_id,
+                hook_id,
+                data,
+            },
+            SdkMessageInner::ToolProgress {
+                uuid,
+                session_id,
+                tool_use_id,
+                data,
+            } => SdkMessage::ToolProgress {
+                uuid,
+                session_id,
+                tool_use_id,
+                data,
+            },
+            SdkMessageInner::AuthStatus {
+                uuid,
+                session_id,
+                data,
+            } => SdkMessage::AuthStatus {
+                uuid,
+                session_id,
+                data,
+            },
+            SdkMessageInner::TaskNotification {
+                uuid,
+                session_id,
+                task_id,
+                data,
+            } => SdkMessage::TaskNotification {
+                uuid,
+                session_id,
+                task_id,
+                data,
+            },
+            SdkMessageInner::TaskStarted {
+                uuid,
+                session_id,
+                task_id,
+                data,
+            } => SdkMessage::TaskStarted {
+                uuid,
+                session_id,
+                task_id,
+                data,
+            },
+            SdkMessageInner::TaskProgress {
+                uuid,
+                session_id,
+                task_id,
+                data,
+            } => SdkMessage::TaskProgress {
+                uuid,
+                session_id,
+                task_id,
+                data,
+            },
+            SdkMessageInner::FilesPersisted {
+                uuid,
+                session_id,
+                data,
+            } => SdkMessage::FilesPersisted {
+                uuid,
+                session_id,
+                data,
+            },
+            SdkMessageInner::ToolUseSummary {
+                uuid,
+                session_id,
+                data,
+            } => SdkMessage::ToolUseSummary {
+                uuid,
+                session_id,
+                data,
+            },
+            SdkMessageInner::RateLimit {
+                uuid,
+                session_id,
+                data,
+            } => SdkMessage::RateLimit {
+                uuid,
+                session_id,
+                data,
+            },
+            SdkMessageInner::PromptSuggestion {
+                uuid,
+                session_id,
+                suggestion,
+            } => SdkMessage::PromptSuggestion {
+                uuid,
+                session_id,
+                suggestion,
+            },
         }
     }
 }
@@ -551,6 +793,9 @@ impl SdkMessage {
     ///
     /// Cadence sets the `was_compacted` flag on the session when this is received.
     pub fn is_compaction(&self) -> bool {
-        matches!(self, SdkMessage::System(SystemMessage::CompactBoundary { .. }))
+        matches!(
+            self,
+            SdkMessage::System(SystemMessage::CompactBoundary { .. })
+        )
     }
 }

@@ -33,6 +33,7 @@ pub fn spawn_workflow_stream_reader(
     db_session_id: i64,
     feature_id: i64,
     expected_mcp_server: String,
+    runtime_provider: String,
     mut message_rx: RuntimeMessageRx,
     sender: WsSender,
     write_pool: SqlitePool,
@@ -48,6 +49,7 @@ pub fn spawn_workflow_stream_reader(
 
     tokio::spawn(async move {
         debug!(slot = %slot, db_session_id, "workflow stream reader started");
+        let runtime_adapter = crate::domain::agents::runtime_adapter(&runtime_provider);
 
         let phase_slug: Option<String> = if let AgentSlot::QueueItem(item_id) = &slot {
             repo::get_queue_item(&write_pool, *item_id)
@@ -103,6 +105,31 @@ pub fn spawn_workflow_stream_reader(
 
             match msg {
                 Some(Ok(runtime_event)) => {
+                    if let Some(request) = runtime_adapter.and_then(|adapter| {
+                        adapter.parse_permission_request(runtime_event.raw_json())
+                    }) {
+                        let envelope = WsEnvelope::new(
+                            "workflow",
+                            "permission.request",
+                            to_value(WorkflowPermissionRequestPayload {
+                                feature_id,
+                                agent_slot: slot.clone(),
+                                request_id: request.request_id,
+                                tool_name: request.tool_name,
+                                tool_input: request.tool_input,
+                                description: request.description,
+                                pattern: request.pattern,
+                            }),
+                        );
+                        let _ = sender.send(Message::Text(String::from(envelope).into()));
+                        WsSessionPersistence::broadcast_turn_state(
+                            &turn_state_tx,
+                            feature_id,
+                            "askUser",
+                        );
+                        continue;
+                    }
+
                     capture_session_id(
                         &runtime_event,
                         &mut needs_session_id_capture,

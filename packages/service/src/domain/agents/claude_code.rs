@@ -6,7 +6,8 @@ use super::adapter::{
     AgentRuntimeAdapter, AgentRuntimeSession, RuntimeAssistantMessage, RuntimeContentBlock,
     RuntimeContentDelta, RuntimeError, RuntimeEvent, RuntimeEventKind, RuntimeEventMetadata,
     RuntimeInitEvent, RuntimeMcpServerConfig, RuntimeMcpServerStatus, RuntimeMessageRx,
-    RuntimePermissionMode, RuntimeSpawnConfig, RuntimeStreamEvent, RuntimeUsage,
+    RuntimePermissionMode, RuntimeSpawnConfig, RuntimeStreamEvent, RuntimeToolPermissionHandler,
+    RuntimeToolPermissionRequest, RuntimeToolPermissionResult, RuntimeUsage,
     RuntimeUserContentBlock, RuntimeUserMessage,
 };
 
@@ -22,6 +23,52 @@ impl ClaudeCodeSession {
     #[cfg(test)]
     pub(crate) fn from_query(query: claude_agent_sdk_rs::Query) -> Self {
         Self { query }
+    }
+}
+
+struct ClaudeCanUseToolAdapter {
+    inner: std::sync::Arc<dyn RuntimeToolPermissionHandler>,
+}
+
+#[async_trait]
+impl claude_agent_sdk_rs::CanUseTool for ClaudeCanUseToolAdapter {
+    async fn can_use_tool(
+        &self,
+        request: claude_agent_sdk_rs::PermissionRequest,
+    ) -> claude_agent_sdk_rs::PermissionResult {
+        match self
+            .inner
+            .can_use_tool(RuntimeToolPermissionRequest {
+                tool_name: request.tool_name,
+                tool_use_id: request.tool_use_id,
+                input: request.input,
+            })
+            .await
+        {
+            RuntimeToolPermissionResult::Allow {
+                updated_input,
+                updated_permissions,
+                tool_use_id,
+            } => claude_agent_sdk_rs::PermissionResult::Allow {
+                updated_input,
+                updated_permissions: updated_permissions.map(|updates| {
+                    updates
+                        .into_iter()
+                        .map(|update| claude_agent_sdk_rs::PermissionUpdate { data: update.data })
+                        .collect()
+                }),
+                tool_use_id,
+            },
+            RuntimeToolPermissionResult::Deny {
+                message,
+                interrupt,
+                tool_use_id,
+            } => claude_agent_sdk_rs::PermissionResult::Deny {
+                message,
+                interrupt,
+                tool_use_id,
+            },
+        }
     }
 }
 
@@ -266,6 +313,10 @@ impl AgentRuntimeSession for ClaudeCodeSession {
 
 #[async_trait]
 impl AgentRuntimeAdapter for ClaudeCodeAdapter {
+    fn is_valid_resume_session_id(&self, session_id: &str) -> bool {
+        uuid::Uuid::parse_str(session_id).is_ok()
+    }
+
     async fn spawn(
         &self,
         content: Value,
@@ -283,7 +334,10 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
                     .map(|(name, cfg)| (name, map_mcp_server_config(cfg)))
                     .collect()
             }),
-            can_use_tool: config.can_use_tool,
+            can_use_tool: config.permission_handler.map(|handler| {
+                Box::new(ClaudeCanUseToolAdapter { inner: handler })
+                    as Box<dyn claude_agent_sdk_rs::CanUseTool>
+            }),
             ..claude_agent_sdk_rs::Options::default()
         };
 
@@ -291,5 +345,94 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
             .await
             .map_err(RuntimeError::from)?;
         Ok(Box::new(ClaudeCodeSession { query }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::{map_permission_mode, normalize_event, ClaudeCodeAdapter};
+    use crate::domain::agents::adapter::{
+        AgentRuntimeAdapter, RuntimeContentDelta, RuntimePermissionMode, RuntimeStreamEvent,
+    };
+
+    #[test]
+    fn map_permission_mode_covers_all_variants() {
+        assert_eq!(
+            map_permission_mode(RuntimePermissionMode::Default),
+            claude_agent_sdk_rs::PermissionMode::Default
+        );
+        assert_eq!(
+            map_permission_mode(RuntimePermissionMode::AcceptEdits),
+            claude_agent_sdk_rs::PermissionMode::AcceptEdits
+        );
+        assert_eq!(
+            map_permission_mode(RuntimePermissionMode::BypassPermissions),
+            claude_agent_sdk_rs::PermissionMode::BypassPermissions
+        );
+        assert_eq!(
+            map_permission_mode(RuntimePermissionMode::Plan),
+            claude_agent_sdk_rs::PermissionMode::Plan
+        );
+        assert_eq!(
+            map_permission_mode(RuntimePermissionMode::DontAsk),
+            claude_agent_sdk_rs::PermissionMode::DontAsk
+        );
+    }
+
+    #[test]
+    fn adapter_resume_id_validation_is_uuid_only() {
+        let adapter = ClaudeCodeAdapter;
+        assert!(adapter.is_valid_resume_session_id("11111111-1111-4111-8111-111111111111"));
+        assert!(!adapter.is_valid_resume_session_id("ses_27f586910ffeUNaKL2l5UARerl"));
+    }
+
+    #[test]
+    fn normalize_event_maps_stream_text_delta() {
+        let message: claude_agent_sdk_rs::SdkMessage = serde_json::from_value(json!({
+            "type": "stream_event",
+            "uuid": "u1",
+            "session_id": "s1",
+            "event": {
+                "type": "content_block_delta",
+                "index": 0,
+                "delta": { "type": "text_delta", "text": "hello" }
+            }
+        }))
+        .expect("valid stream event");
+
+        let event = normalize_event(message);
+        match event.stream_event() {
+            Some(RuntimeStreamEvent::ContentBlockDelta {
+                index,
+                delta: RuntimeContentDelta::Text { text },
+            }) => {
+                assert_eq!(*index, 0);
+                assert_eq!(text, "hello");
+            }
+            other => panic!("unexpected stream mapping: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn normalize_event_maps_result_to_result_kind() {
+        let message: claude_agent_sdk_rs::SdkMessage = serde_json::from_value(json!({
+            "type": "result",
+            "subtype": "success",
+            "uuid": "u2",
+            "session_id": "s2",
+            "duration_ms": 1,
+            "duration_api_ms": 1,
+            "is_error": false,
+            "num_turns": 1,
+            "result": "ok",
+            "total_cost_usd": 0.0,
+            "usage": { "input_tokens": 1, "output_tokens": 1 }
+        }))
+        .expect("valid result event");
+
+        let event = normalize_event(message);
+        assert!(event.is_result());
     }
 }

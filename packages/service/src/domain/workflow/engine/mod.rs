@@ -344,6 +344,13 @@ impl WorkflowEngine {
         slot: AgentSlot,
         response: PermissionResponse,
     ) -> Result<(), String> {
+        if self
+            .agent_manager
+            .respond_runtime_permission(&slot, response.clone())
+            .await?
+        {
+            return Ok(());
+        }
         self.permissions.respond(slot, response).await
     }
 

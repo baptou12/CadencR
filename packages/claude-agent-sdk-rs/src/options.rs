@@ -33,7 +33,6 @@ pub struct Options {
     pub language: Option<String>,
 
     // --- Runtime-only fields (not serialised to CLI flags) ---
-
     /// Permission handler. When set, the stream blocks on every permission
     /// request until this trait method resolves — enabling the
     /// AskUserQuestion / ExitPlanMode / tool-permission "waiting" states.
