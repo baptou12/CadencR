@@ -66,44 +66,6 @@ pub fn runtime_setting_key(agent_type: &str) -> String {
     format!("agent_runtime_{agent_type}")
 }
 
-pub fn provider_catalog() -> AgentCatalogResponse {
-    let claude_models = crate::api::MODELS
-        .iter()
-        .map(|(id, label, context_window)| ModelCatalogEntry {
-            id: (*id).to_string(),
-            label: (*label).to_string(),
-            context_window: *context_window,
-        })
-        .collect();
-
-    AgentCatalogResponse {
-        default_provider: DEFAULT_PROVIDER.to_string(),
-        providers: vec![
-            ProviderCatalogEntry {
-                id: "claude_code".to_string(),
-                label: "Claude Code".to_string(),
-                status: ProviderStatus::Available,
-                models: claude_models,
-                default_model: Some(crate::api::DEFAULT_MODEL.to_string()),
-            },
-            ProviderCatalogEntry {
-                id: "codex_cli".to_string(),
-                label: "Codex CLI".to_string(),
-                status: ProviderStatus::ComingSoon,
-                models: vec![],
-                default_model: None,
-            },
-            ProviderCatalogEntry {
-                id: "opencode".to_string(),
-                label: "OpenCode".to_string(),
-                status: ProviderStatus::ComingSoon,
-                models: vec![],
-                default_model: None,
-            },
-        ],
-    }
-}
-
 pub fn default_provider_settings() -> ProviderSettings {
     let default = DEFAULT_PROVIDER.to_string();
     ProviderSettings {
@@ -121,48 +83,17 @@ pub fn default_provider_settings() -> ProviderSettings {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{default_provider_settings, validate_agent_type, DEFAULT_PROVIDER};
 
     #[test]
-    fn test_provider_catalog_marks_only_claude_as_available() {
-        let catalog = provider_catalog();
-
-        assert_eq!(catalog.default_provider, "claude_code");
-        assert_eq!(catalog.providers.len(), 3);
-
-        let claude = catalog
-            .providers
-            .iter()
-            .find(|p| p.id == "claude_code")
-            .unwrap();
-        assert_eq!(claude.status, ProviderStatus::Available);
-        assert!(!claude.models.is_empty());
-        assert_eq!(
-            claude.default_model.as_deref(),
-            Some(crate::api::DEFAULT_MODEL)
-        );
-
-        let codex = catalog
-            .providers
-            .iter()
-            .find(|p| p.id == "codex_cli")
-            .unwrap();
-        assert_eq!(codex.status, ProviderStatus::ComingSoon);
-        assert!(codex.models.is_empty());
-        assert!(codex.default_model.is_none());
-
-        let opencode = catalog
-            .providers
-            .iter()
-            .find(|p| p.id == "opencode")
-            .unwrap();
-        assert_eq!(opencode.status, ProviderStatus::ComingSoon);
-        assert!(opencode.models.is_empty());
-        assert!(opencode.default_model.is_none());
+    fn validates_supported_agent_types() {
+        assert!(validate_agent_type("plan"));
+        assert!(validate_agent_type("session"));
+        assert!(!validate_agent_type("unknown"));
     }
 
     #[test]
-    fn test_default_provider_settings_uses_default_for_all_agent_types() {
+    fn default_provider_settings_use_default_for_all_agent_types() {
         let settings = default_provider_settings();
 
         assert_eq!(settings.plan, DEFAULT_PROVIDER);

@@ -74,6 +74,8 @@ async fn main() -> anyhow::Result<()> {
                 file_watcher: domain::editor::watcher::new_shared(),
             };
 
+            domain::agents::spawn_runtime_startup_warmups();
+
             let app = api::build_router(state).layer(CorsLayer::permissive());
 
             let addr = format!("127.0.0.1:{}", config.port);

@@ -76,7 +76,7 @@ pub async fn list_models() -> Json<Vec<ModelInfo>> {
 
 #[utoipa::path(get, path = "/api/agent-catalog", responses((status = 200, body = AgentCatalogResponse)))]
 pub async fn get_agent_catalog() -> Json<AgentCatalogResponse> {
-    Json(crate::domain::agents::runtime::provider_catalog())
+    Json(crate::domain::agents::providers::provider_catalog_live().await)
 }
 
 pub fn build_router(state: AppState) -> Router {
