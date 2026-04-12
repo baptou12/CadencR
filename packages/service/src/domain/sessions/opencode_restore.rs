@@ -123,6 +123,7 @@ mod tests {
             ],
             created_at: None,
             model: Some("openai/gpt-5.4".to_string()),
+            tokens: None,
             finished: true,
         }];
 
@@ -159,6 +160,7 @@ mod tests {
             }],
             created_at: None,
             model: Some("openai/gpt-5.4".to_string()),
+            tokens: None,
             finished: true,
         }];
 

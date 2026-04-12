@@ -3,7 +3,7 @@ use serde_json::Value;
 use super::questions::build_question_tool_input;
 use crate::domain::agents::adapter::{
     RuntimeAssistantMessage, RuntimeContentBlock, RuntimeContentDelta, RuntimeEvent,
-    RuntimeEventKind, RuntimeEventMetadata, RuntimeInitEvent, RuntimeStreamEvent,
+    RuntimeEventKind, RuntimeEventMetadata, RuntimeInitEvent, RuntimeStreamEvent, RuntimeUsage,
     RuntimeUserContentBlock, RuntimeUserMessage,
 };
 
@@ -31,7 +31,7 @@ pub fn assistant_fallback_event(message: &opencode_sdk_rs::Message) -> RuntimeEv
     RuntimeEvent::new(
         RuntimeEventMetadata {
             session_id: Some(message.session_id.clone()),
-            usage: None,
+            usage: runtime_usage_from_tokens(message.tokens.as_ref()),
             raw,
         },
         RuntimeEventKind::AssistantMessage {
@@ -41,7 +41,11 @@ pub fn assistant_fallback_event(message: &opencode_sdk_rs::Message) -> RuntimeEv
     )
 }
 
-pub fn message_start_event(session_id: &str, model: Option<String>) -> RuntimeEvent {
+pub fn message_start_event(
+    session_id: &str,
+    model: Option<String>,
+    usage: Option<RuntimeUsage>,
+) -> RuntimeEvent {
     let raw = serde_json::json!({
         "type": "stream_event",
         "session_id": session_id,
@@ -54,7 +58,7 @@ pub fn message_start_event(session_id: &str, model: Option<String>) -> RuntimeEv
     RuntimeEvent::new(
         RuntimeEventMetadata {
             session_id: Some(session_id.to_string()),
-            usage: None,
+            usage,
             raw,
         },
         RuntimeEventKind::StreamEvent {
@@ -143,11 +147,11 @@ pub fn stream_stop_event(session_id: &str, index: u32) -> RuntimeEvent {
     )
 }
 
-pub fn result_event(session_id: &str) -> RuntimeEvent {
+pub fn result_event(session_id: &str, usage: Option<RuntimeUsage>) -> RuntimeEvent {
     RuntimeEvent::new(
         RuntimeEventMetadata {
             session_id: Some(session_id.to_string()),
-            usage: None,
+            usage,
             raw: serde_json::json!({ "type": "result", "session_id": session_id }),
         },
         RuntimeEventKind::Result,
@@ -248,6 +252,13 @@ pub fn user_message_event(message: &opencode_sdk_rs::Message) -> RuntimeEvent {
             parent_tool_use_id: None,
         },
     )
+}
+
+fn runtime_usage_from_tokens(tokens: Option<&opencode_sdk_rs::TokenUsage>) -> Option<RuntimeUsage> {
+    tokens.map(|tokens| RuntimeUsage {
+        input_tokens: tokens.total_input(),
+        output_tokens: tokens.output,
+    })
 }
 
 pub fn message_part_to_runtime_block(part: &opencode_sdk_rs::MessagePart) -> RuntimeContentBlock {

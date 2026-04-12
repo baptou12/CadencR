@@ -20,4 +20,5 @@ pub use sse::{shared_dispatcher, SseDispatcher, SseStream};
 pub use types::{
     Message, MessagePart, MessageRole, ModelRef, PermissionReply, PermissionRequest, PromptOptions,
     PromptPart, Question, QuestionItem, QuestionOption, Session, SessionStatus, SseEvent,
+    TokenCacheUsage, TokenUsage,
 };

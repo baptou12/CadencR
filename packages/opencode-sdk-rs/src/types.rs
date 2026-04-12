@@ -51,6 +51,27 @@ impl MessageRole {
 }
 
 #[derive(Debug, Clone)]
+pub struct TokenCacheUsage {
+    pub read: u64,
+    pub write: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct TokenUsage {
+    pub total: Option<u64>,
+    pub input: u64,
+    pub output: u64,
+    pub reasoning: u64,
+    pub cache: TokenCacheUsage,
+}
+
+impl TokenUsage {
+    pub fn total_input(&self) -> u64 {
+        self.input + self.cache.read + self.cache.write
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum MessagePart {
     Text {
         id: String,
@@ -83,6 +104,7 @@ pub struct Message {
     pub parts: Vec<MessagePart>,
     pub created_at: Option<String>,
     pub model: Option<String>,
+    pub tokens: Option<TokenUsage>,
     pub finished: bool,
 }
 

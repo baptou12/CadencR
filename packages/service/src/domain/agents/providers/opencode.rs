@@ -71,6 +71,14 @@ fn parse_model_id(value: &Value) -> Option<String> {
         .or_else(|| first_string(value, &["id", "modelID", "modelId", "model_id"]))
 }
 
+fn model_context_window(value: &Value) -> u64 {
+    value
+        .get("limit")
+        .and_then(|limit| limit.get("context"))
+        .and_then(Value::as_u64)
+        .unwrap_or(crate::api::DEFAULT_CONTEXT_WINDOW)
+}
+
 fn models_from_providers(providers: &[Value]) -> Vec<ModelCatalogEntry> {
     let mut seen = HashSet::new();
     let mut models = Vec::new();
@@ -100,7 +108,7 @@ fn models_from_providers(providers: &[Value]) -> Vec<ModelCatalogEntry> {
             models.push(ModelCatalogEntry {
                 id,
                 label: first_string(&model, &["name", "label"]).unwrap_or(model_id),
-                context_window: crate::api::DEFAULT_CONTEXT_WINDOW,
+                context_window: model_context_window(&model),
             });
         }
     }
@@ -162,7 +170,7 @@ fn should_warmup_on_start() -> bool {
 mod tests {
     use super::{
         build_catalog_entry, catalog_entry, catalog_entry_live, default_model_id,
-        models_from_providers, parse_warmup_flag,
+        model_context_window, models_from_providers, parse_warmup_flag,
     };
     use crate::domain::agents::runtime::ModelCatalogEntry;
     use crate::domain::agents::runtime::ProviderStatus;
@@ -248,6 +256,18 @@ mod tests {
     }
 
     #[test]
+    fn model_context_window_uses_limit_context() {
+        assert_eq!(
+            model_context_window(&json!({ "limit": { "context": 400000 } })),
+            400_000
+        );
+        assert_eq!(
+            model_context_window(&json!({ "limit": { "input": 272000 } })),
+            crate::api::DEFAULT_CONTEXT_WINDOW
+        );
+    }
+
+    #[test]
     fn default_model_id_reads_top_level_mapping() {
         let providers = vec![json!({
             "id": "anthropic",
@@ -275,7 +295,10 @@ mod tests {
 
     async fn start_opencode_mock_server() -> String {
         let app = Router::new()
-            .route("/global/health", get(|| async { Json(json!({ "ok": true })) }))
+            .route(
+                "/global/health",
+                get(|| async { Json(json!({ "ok": true })) }),
+            )
             .route(
                 "/config/providers",
                 get(|| async {
@@ -284,8 +307,16 @@ mod tests {
                         "providers": [{
                             "id": "anthropic",
                             "models": {
-                                "claude-sonnet-4-5": { "id": "claude-sonnet-4-5", "name": "Claude Sonnet 4.5" },
-                                "claude-opus-4-6": { "id": "claude-opus-4-6", "name": "Claude Opus 4.6" }
+                                "claude-sonnet-4-5": {
+                                    "id": "claude-sonnet-4-5",
+                                    "name": "Claude Sonnet 4.5",
+                                    "limit": { "context": 200000 }
+                                },
+                                "claude-opus-4-6": {
+                                    "id": "claude-opus-4-6",
+                                    "name": "Claude Opus 4.6",
+                                    "limit": { "context": 1000000 }
+                                }
                             }
                         }]
                     }))
@@ -328,6 +359,19 @@ mod tests {
             .collect::<Vec<_>>();
         labels.sort();
         assert_eq!(labels, vec!["Claude Opus 4.6", "Claude Sonnet 4.5"]);
+        let mut context_windows = entry
+            .models
+            .iter()
+            .map(|model| (model.id.clone(), model.context_window))
+            .collect::<Vec<_>>();
+        context_windows.sort_by(|left, right| left.0.cmp(&right.0));
+        assert_eq!(
+            context_windows,
+            vec![
+                ("anthropic/claude-opus-4-6".to_string(), 1_000_000),
+                ("anthropic/claude-sonnet-4-5".to_string(), 200_000),
+            ]
+        );
         assert_eq!(
             entry.default_model.as_deref(),
             Some("anthropic/claude-opus-4-6")
