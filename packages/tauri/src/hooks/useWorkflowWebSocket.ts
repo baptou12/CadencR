@@ -18,6 +18,7 @@ import {
 } from "@/types/workflow";
 
 import { patchAgent, blocksContainFileChange } from "@/hooks/agent-event-handlers";
+import type { AgentQuestionAnswers } from "@/components/AgentQuestionDrawer";
 
 export const useWorkflowStore = create<WorkflowState>((set, get) => {
   function send(action: string, payload: Record<string, unknown> = {}): boolean {
@@ -201,12 +202,12 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
       set(state => patchAgent(state, slotKey, { pendingPermission: null }));
     },
 
-    respondToQuestion(slotKey, response) {
+    respondToQuestion(slotKey: string, response: AgentQuestionAnswers) {
       const state = get();
       const agent = state.agents.get(slotKey);
       if (!agent) return;
 
-      const updatedInput = { ...agent.pendingQuestionToolInput, answers: { "0": response } };
+      const updatedInput = { ...agent.pendingQuestionToolInput, answers: response };
       send("permission.respond", {
         agent_slot: slotKeyToAgentSlot(slotKey),
         request_id: agent.pendingQuestionRequestId,

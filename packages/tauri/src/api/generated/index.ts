@@ -1133,6 +1133,8 @@ export interface SessionState {
   pendingQuestions: unknown | null;
   hasFileChanges: boolean;
   resumable: boolean;
+  runtimeProvider?: string | null;
+  runtimeSessionId?: string | null;
   claudeSessionId: string | null;
   runId: number | null;
   phaseId: number | null;
@@ -1452,4 +1454,3 @@ export function useWriteFile(
 }
 
 export const DEFAULT_ARTIFACT_TYPE = "default";
-

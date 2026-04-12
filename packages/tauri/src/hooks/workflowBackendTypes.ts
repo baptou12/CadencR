@@ -4,6 +4,7 @@
  */
 
 import type { FeatureSession } from "./useFeatureAgentState";
+import type { AgentQuestionAnswers } from "@/components/AgentQuestionDrawer";
 import type { AgentStatus } from "@/types/agent";
 import type {
   WorkflowStatus,
@@ -135,7 +136,7 @@ export interface WorkflowBackend {
     decision: string,
     feedback?: string,
   ): void;
-  submitAnswers(entry: FeatureSession, response: string): void;
+  submitAnswers(entry: FeatureSession, response: AgentQuestionAnswers): void;
   startSession(prompt: string, images?: string[]): void;
   startRefine(description: string, images?: string[]): void;
   startRisk(): void;

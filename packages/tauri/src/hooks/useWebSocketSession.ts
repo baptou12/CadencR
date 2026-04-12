@@ -6,7 +6,7 @@
  */
 
 import { useEffect } from "react";
-import { DEFAULT_MODEL } from "../shared/models";
+import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "../shared/models";
 import type { AgentBlockData } from "@/components/AgentBlock";
 import { useGetFeatureAgentState } from "@/api/generated";
 import { serverBlocksToAgentBlocks } from "@/hooks/useFeatureAgentState";
@@ -17,7 +17,7 @@ import {
 } from "@/stores/ws-session-store";
 import type { AgentStatus } from "@/types/agent";
 import type { PendingPermission } from "@/components/ToolPermissionPrompt";
-import type { AgentQuestion } from "@/components/AgentQuestionDrawer";
+import type { AgentQuestion, AgentQuestionAnswers } from "@/components/AgentQuestionDrawer";
 import type { SessionConfig } from "@/lib/ws-envelope";
 import type { ContextUsageState } from "@/types/agent";
 
@@ -29,7 +29,7 @@ interface UseWebSocketSessionReturn {
   pendingPermission: PendingPermission | null;
   pendingRequestId: string;
   pendingQuestions: AgentQuestion[];
-  respondToQuestion: (response: string) => void;
+  respondToQuestion: (response: AgentQuestionAnswers) => void;
   hasMore: boolean;
   loadOlderMessages: () => Promise<void>;
 
@@ -98,6 +98,10 @@ export function useWebSocketSession(sessionId: string, featureId?: number): UseW
       oldestMessageId: lastSession.oldestMessageId,
       featureId,
       sessionDbId: lastSession.sessionDbId,
+      currentProviderId: lastSession.runtimeProvider ?? undefined,
+      currentModelId: lastSession.model ?? undefined,
+      runtimeProvider: lastSession.runtimeProvider ?? undefined,
+      runtimeSessionId: lastSession.runtimeSessionId ?? undefined,
       pendingPlanApproval: lastSession.pendingPlanApproval as PendingPlanApproval | null,
     });
   }, [featureId, agentStateQuery.data, persistedLoaded, sessionId, store]);
@@ -115,15 +119,15 @@ export function useWebSocketSession(sessionId: string, featureId?: number): UseW
     permissionMode: session?.permissionMode ?? "acceptEdits",
     pendingPlanApproval: session?.pendingPlanApproval ?? null,
     contextUsage: session?.contextUsage ?? null,
-    currentProviderId: session?.currentProviderId ?? "claude_code",
+    currentProviderId: session?.currentProviderId ?? DEFAULT_PROVIDER,
     currentModelId: session?.currentModelId ?? DEFAULT_MODEL,
-    runtimeProvider: session?.runtimeProvider ?? "claude_code",
-    runtimeSessionId: session?.claudeSessionId ?? "",
+    runtimeProvider: session?.runtimeProvider ?? DEFAULT_PROVIDER,
+    runtimeSessionId: session?.runtimeSessionId ?? session?.claudeSessionId ?? "",
     hasFileChanges: session?.hasFileChanges ?? false,
 
     sendPrompt: (text: string, images?: Array<{ base64: string; mimeType: string }>, useWorktree?: boolean) => store.sendPrompt(sessionId, text, images, useWorktree),
     respondToPermission: (requestId: string, granted: boolean) => store.respondToPermission(sessionId, requestId, granted),
-    respondToQuestion: (response: string) => store.respondToQuestion(sessionId, response),
+    respondToQuestion: (response: AgentQuestionAnswers) => store.respondToQuestion(sessionId, response),
     interrupt: () => store.interrupt(sessionId),
     destroy: () => store.destroy(sessionId),
     clearSession: () => store.clearSession(sessionId),

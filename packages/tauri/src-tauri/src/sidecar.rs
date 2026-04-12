@@ -1,6 +1,6 @@
 use std::sync::Mutex;
-use tauri_plugin_shell::ShellExt;
 use tauri_plugin_shell::process::CommandChild;
+use tauri_plugin_shell::ShellExt;
 
 const SIDECAR_PORT: u16 = 5005;
 const HEALTH_CHECK_RETRIES: u32 = 30;
@@ -24,8 +24,7 @@ pub fn spawn_sidecar(app: &tauri::AppHandle) -> Result<SidecarState, String> {
         .ok_or_else(|| "Failed to get data dir".to_string())?
         .join("cadence");
 
-    std::fs::create_dir_all(&db_dir)
-        .map_err(|e| format!("Failed to create app data dir: {e}"))?;
+    std::fs::create_dir_all(&db_dir).map_err(|e| format!("Failed to create app data dir: {e}"))?;
 
     let db_path = db_dir.join("cadence.db");
     let port = SIDECAR_PORT;

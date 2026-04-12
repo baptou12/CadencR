@@ -22,7 +22,7 @@ import { useImageAttachments } from "@/hooks/useImageAttachments";
 import { usePromptDraft } from "@/hooks/usePromptDraft";
 import { usePromptHistory } from "@/hooks/usePromptHistory";
 import { useListFiles } from "@/api/generated";
-import type { AgentQuestion } from "./AgentQuestionDrawer";
+import type { AgentQuestion, AgentQuestionAnswers } from "./AgentQuestionDrawer";
 import type { AgentStatus } from "@/types/agent";
 
 export interface SplitSendAction {
@@ -46,7 +46,7 @@ interface AgentPromptBarProps {
   splitSendActions?: SplitSendAction[];
   disabled?: boolean;
   pendingQuestions?: AgentQuestion[];
-  onQuestionResponse?: (response: string) => void;
+  onQuestionResponse?: (response: AgentQuestionAnswers) => void;
   disableShortcuts?: boolean;
   onFocusChange?: (focused: boolean) => void;
   onCollapse?: () => void;

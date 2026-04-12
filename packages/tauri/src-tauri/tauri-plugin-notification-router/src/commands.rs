@@ -90,9 +90,9 @@ unsafe fn build_and_set_user_info(
 
     let user_info: Retained<NSDictionary<NSString, NSString>> =
         NSDictionary::from_slices(&key_refs, &val_refs);
-    let user_info_any: &NSDictionary<AnyObject, AnyObject> =
-        &*(&*user_info as *const NSDictionary<NSString, NSString>
-            as *const NSDictionary<AnyObject, AnyObject>);
+    let user_info_any: &NSDictionary<AnyObject, AnyObject> = &*(&*user_info
+        as *const NSDictionary<NSString, NSString>
+        as *const NSDictionary<AnyObject, AnyObject>);
     content.setUserInfo(user_info_any);
 }
 

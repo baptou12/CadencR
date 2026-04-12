@@ -1,18 +1,7 @@
-import claudeLogo from "../../assets/providers/claude.png";
-import codexLogo from "../../assets/providers/codex.png";
-import opencodeLogo from "../../assets/providers/opencode.png";
+import { getProviderMetadata } from "./providers";
 
 export function getProviderIconSrc(providerId?: string | null): string | null {
-  switch (providerId) {
-    case "claude_code":
-      return claudeLogo;
-    case "codex_cli":
-      return codexLogo;
-    case "opencode":
-      return opencodeLogo;
-    default:
-      return null;
-  }
+  return getProviderMetadata(providerId)?.iconSrc ?? null;
 }
 
 interface ProviderIconProps {

@@ -103,13 +103,12 @@ fn register_category() {
     let center = UNUserNotificationCenter::currentNotificationCenter();
     let category_id = NSString::from_str("AGENT_COMPLETE");
 
-    let category =
-        UNNotificationCategory::categoryWithIdentifier_actions_intentIdentifiers_options(
-            &category_id,
-            &NSArray::new(),
-            &NSArray::new(),
-            UNNotificationCategoryOptions::empty(),
-        );
+    let category = UNNotificationCategory::categoryWithIdentifier_actions_intentIdentifiers_options(
+        &category_id,
+        &NSArray::new(),
+        &NSArray::new(),
+        UNNotificationCategoryOptions::empty(),
+    );
 
     let categories = NSSet::from_retained_slice(&[category]);
     center.setNotificationCategories(&categories);

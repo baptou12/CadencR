@@ -1,8 +1,8 @@
 mod sidecar;
 
 use base64::Engine;
+use tauri::menu::{AboutMetadataBuilder, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::Manager;
-use tauri::menu::{Menu, Submenu, MenuItem, PredefinedMenuItem, AboutMetadataBuilder};
 
 #[tauri::command]
 fn read_file_base64(path: String) -> Result<String, String> {
@@ -24,29 +24,48 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![read_file_base64])
         .menu(|handle| {
             // Custom menu that omits CMD+W (Close Window) so the frontend controls it
-            let app_menu = Submenu::with_items(handle, "Cadence", true, &[
-                &PredefinedMenuItem::about(handle, Some("About Cadence"), Some(AboutMetadataBuilder::new().build()))?,
-                &PredefinedMenuItem::separator(handle)?,
-                &PredefinedMenuItem::hide(handle, None)?,
-                &PredefinedMenuItem::hide_others(handle, None)?,
-                &PredefinedMenuItem::show_all(handle, None)?,
-                &PredefinedMenuItem::separator(handle)?,
-                &PredefinedMenuItem::quit(handle, None)?,
-            ])?;
-            let edit_menu = Submenu::with_items(handle, "Edit", true, &[
-                &PredefinedMenuItem::undo(handle, None)?,
-                &PredefinedMenuItem::redo(handle, None)?,
-                &PredefinedMenuItem::separator(handle)?,
-                &PredefinedMenuItem::cut(handle, None)?,
-                &PredefinedMenuItem::copy(handle, None)?,
-                &PredefinedMenuItem::paste(handle, None)?,
-                &PredefinedMenuItem::select_all(handle, None)?,
-            ])?;
-            let window_menu = Submenu::with_items(handle, "Window", true, &[
-                &PredefinedMenuItem::minimize(handle, None)?,
-                &MenuItem::new(handle, "Zoom", true, None::<&str>)?,
-                &PredefinedMenuItem::fullscreen(handle, None)?,
-            ])?;
+            let app_menu = Submenu::with_items(
+                handle,
+                "Cadence",
+                true,
+                &[
+                    &PredefinedMenuItem::about(
+                        handle,
+                        Some("About Cadence"),
+                        Some(AboutMetadataBuilder::new().build()),
+                    )?,
+                    &PredefinedMenuItem::separator(handle)?,
+                    &PredefinedMenuItem::hide(handle, None)?,
+                    &PredefinedMenuItem::hide_others(handle, None)?,
+                    &PredefinedMenuItem::show_all(handle, None)?,
+                    &PredefinedMenuItem::separator(handle)?,
+                    &PredefinedMenuItem::quit(handle, None)?,
+                ],
+            )?;
+            let edit_menu = Submenu::with_items(
+                handle,
+                "Edit",
+                true,
+                &[
+                    &PredefinedMenuItem::undo(handle, None)?,
+                    &PredefinedMenuItem::redo(handle, None)?,
+                    &PredefinedMenuItem::separator(handle)?,
+                    &PredefinedMenuItem::cut(handle, None)?,
+                    &PredefinedMenuItem::copy(handle, None)?,
+                    &PredefinedMenuItem::paste(handle, None)?,
+                    &PredefinedMenuItem::select_all(handle, None)?,
+                ],
+            )?;
+            let window_menu = Submenu::with_items(
+                handle,
+                "Window",
+                true,
+                &[
+                    &PredefinedMenuItem::minimize(handle, None)?,
+                    &MenuItem::new(handle, "Zoom", true, None::<&str>)?,
+                    &PredefinedMenuItem::fullscreen(handle, None)?,
+                ],
+            )?;
             Menu::with_items(handle, &[&app_menu, &edit_menu, &window_menu])
         })
         .setup(|app| {
@@ -63,10 +82,8 @@ pub fn run() {
             app.manage(state);
 
             // Wait for health check on the async runtime
-            tauri::async_runtime::block_on(async {
-                sidecar::wait_for_healthy(port).await
-            })
-            .map_err(|e| Box::new(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+            tauri::async_runtime::block_on(async { sidecar::wait_for_healthy(port).await })
+                .map_err(|e| Box::new(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
 
             log::info!("cadence-service is healthy on port {port}");
             Ok(())

@@ -72,8 +72,8 @@ fn handle_notification_response(response: &UNNotificationResponse) {
 
     let feature_id = extract_i64_from_dict(&user_info, &feature_key).unwrap_or(0);
     let project_id = extract_i64_from_dict(&user_info, &project_key).unwrap_or(0);
-    let route_type = extract_string_from_dict(&user_info, &route_key)
-        .unwrap_or_else(|| "workflow".to_string());
+    let route_type =
+        extract_string_from_dict(&user_info, &route_key).unwrap_or_else(|| "workflow".to_string());
 
     let payload = NotificationPayload {
         feature_id,
@@ -86,10 +86,7 @@ fn handle_notification_response(response: &UNNotificationResponse) {
     }
 }
 
-fn extract_i64_from_dict(
-    dict: &NSDictionary<AnyObject, AnyObject>,
-    key: &NSString,
-) -> Option<i64> {
+fn extract_i64_from_dict(dict: &NSDictionary<AnyObject, AnyObject>, key: &NSString) -> Option<i64> {
     let key_obj: &AnyObject = unsafe { &*(key as *const NSString as *const AnyObject) };
     let val = dict.objectForKey(key_obj)?;
     let ns_str: &NSString = unsafe { &*(&*val as *const AnyObject as *const NSString) };
