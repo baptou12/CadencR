@@ -29,7 +29,7 @@ class MockWebSocket {
   constructor(_url: string) {
     MockWebSocket.instances.push(this);
     // Auto-fire open
-    setTimeout(() => this.fireEvent("open"), 0);
+    Promise.resolve().then(() => this.fireEvent("open"));
   }
 
   addEventListener(event: string, cb: (...args: unknown[]) => void) {
@@ -75,6 +75,10 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  const store = useWsSessionStore.getState();
+  for (const sessionId of Object.keys(store.sessions)) {
+    store.disconnect(sessionId);
+  }
   vi.restoreAllMocks();
 });
 
@@ -86,7 +90,7 @@ describe("useWebSocketSession", () => {
   it("connects to WebSocket on mount", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 10));
+      await Promise.resolve(); await Promise.resolve();
     });
     expect(MockWebSocket.instances.length).toBe(1);
     expect(result.current.isConnected).toBe(true);
@@ -95,7 +99,7 @@ describe("useWebSocketSession", () => {
   it("currentModelId defaults to DEFAULT_MODEL", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 10));
+      await Promise.resolve(); await Promise.resolve();
     });
     expect(result.current.currentModelId).toBe(DEFAULT_MODEL);
   });
@@ -103,7 +107,7 @@ describe("useWebSocketSession", () => {
   it("initSession sends correct envelope", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 10));
+      await Promise.resolve(); await Promise.resolve();
     });
     act(() => {
       result.current.initSession({ model: "opus" });
@@ -115,10 +119,17 @@ describe("useWebSocketSession", () => {
     expect(sent.payload.model).toBe("opus");
   });
 
-  it("sendPrompt sends correct envelope", async () => {
+  it("sendPrompt sends correct envelope once session is initialized", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 10));
+      await Promise.resolve(); await Promise.resolve();
+    });
+    act(() => {
+      getWs().simulateMessage({
+        domain: "session",
+        action: "initialized",
+        payload: { session_id: "srv-1" },
+      });
     });
     act(() => {
       result.current.sendPrompt("hello");
@@ -133,7 +144,7 @@ describe("useWebSocketSession", () => {
   it("incoming session.message updates blocks", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 10));
+      await Promise.resolve(); await Promise.resolve();
     });
     // Send a full assistant message (fallback path when no stream events)
     act(() => {
@@ -165,7 +176,7 @@ describe("useWebSocketSession", () => {
   it("incoming permission.request sets pendingPermission", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 10));
+      await Promise.resolve(); await Promise.resolve();
     });
     act(() => {
       getWs().simulateMessage({
@@ -191,7 +202,7 @@ describe("useWebSocketSession", () => {
   it("permission.request stores request_id in pendingRequestId", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 10));
+      await Promise.resolve(); await Promise.resolve();
     });
     act(() => {
       getWs().simulateMessage({
@@ -206,7 +217,7 @@ describe("useWebSocketSession", () => {
   it("respondToPermission sends request_id in envelope and clears state", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 10));
+      await Promise.resolve(); await Promise.resolve();
     });
     // Simulate server assigning session
     act(() => {
@@ -238,7 +249,7 @@ describe("useWebSocketSession", () => {
   it("session.error sets error status", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 10));
+      await Promise.resolve(); await Promise.resolve();
     });
     act(() => {
       getWs().simulateMessage({
@@ -253,7 +264,7 @@ describe("useWebSocketSession", () => {
   it("session.ended sets completed status", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 10));
+      await Promise.resolve(); await Promise.resolve();
     });
     act(() => {
       getWs().simulateMessage({
@@ -265,10 +276,52 @@ describe("useWebSocketSession", () => {
     expect(result.current.status).toBe("idle");
   });
 
+  it("message events with no recognized mutations do not re-enter running after end", async () => {
+    const { result } = renderHook(() => useWebSocketSession("test-id"));
+    await act(async () => {
+      await Promise.resolve(); await Promise.resolve();
+    });
+
+    act(() => {
+      result.current.initSession({ model: "opus" });
+    });
+    act(() => {
+      getWs().simulateMessage({
+        domain: "session",
+        action: "initialized",
+        payload: { session_id: "srv-1" },
+      });
+    });
+    act(() => {
+      result.current.sendPrompt("hello");
+    });
+    expect(result.current.status).toBe("running");
+
+    act(() => {
+      getWs().simulateMessage({
+        domain: "session",
+        action: "ended",
+        payload: { reason: "done" },
+      });
+    });
+    expect(result.current.status).toBe("idle");
+
+    act(() => {
+      getWs().simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [{ type: "unknown_event", payload: {} }],
+        },
+      });
+    });
+    expect(result.current.status).toBe("idle");
+  });
+
   it("multi-turn conversation accumulates blocks across turns", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 10));
+      await Promise.resolve(); await Promise.resolve();
     });
     const ws = getWs();
 
@@ -420,7 +473,7 @@ describe("useWebSocketSession", () => {
   it("ExitPlanMode in stream triggers plan approval on turn_complete", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 10));
+      await Promise.resolve(); await Promise.resolve();
     });
     const ws = getWs();
 
@@ -474,7 +527,7 @@ describe("useWebSocketSession", () => {
   it("turn_complete without ExitPlanMode goes idle normally", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 10));
+      await Promise.resolve(); await Promise.resolve();
     });
     const ws = getWs();
 
@@ -519,7 +572,7 @@ describe("useWebSocketSession", () => {
   it("approvePlan clears approval, sends mode.set + prompt, sets running", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 10));
+      await Promise.resolve(); await Promise.resolve();
     });
     const ws = getWs();
 
@@ -580,7 +633,7 @@ describe("useWebSocketSession", () => {
   it("requestPlanChanges clears approval, echoes feedback, sends prompt", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 10));
+      await Promise.resolve(); await Promise.resolve();
     });
     const ws = getWs();
 
@@ -639,7 +692,7 @@ describe("useWebSocketSession", () => {
   it("setPermissionMode sends mode.set envelope and updates state", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 10));
+      await Promise.resolve(); await Promise.resolve();
     });
     const ws = getWs();
 
@@ -664,7 +717,7 @@ describe("useWebSocketSession", () => {
   it("mode.changed envelope updates permissionMode state", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 10));
+      await Promise.resolve(); await Promise.resolve();
     });
 
     act(() => {
@@ -681,7 +734,7 @@ describe("useWebSocketSession", () => {
   it("assistant message backfills ExitPlanMode tool args", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 10));
+      await Promise.resolve(); await Promise.resolve();
     });
     const ws = getWs();
 
@@ -761,7 +814,7 @@ describe("useWebSocketSession", () => {
   it("subagent tool calls are nested into parent Agent block's childBlocks", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 10));
+      await Promise.resolve(); await Promise.resolve();
     });
     const ws = getWs();
 
@@ -822,7 +875,7 @@ describe("useWebSocketSession", () => {
   it("subagent childBlocks only shows tool_call types (text/thinking filtered by UI)", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 10));
+      await Promise.resolve(); await Promise.resolve();
     });
     const ws = getWs();
 
@@ -875,7 +928,7 @@ describe("useWebSocketSession", () => {
   it("multiple subagent tool calls accumulate in childBlocks without duplicates", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 10));
+      await Promise.resolve(); await Promise.resolve();
     });
     const ws = getWs();
 
@@ -933,7 +986,7 @@ describe("useWebSocketSession", () => {
   it("subagent assistant messages skip backfill path (different parentToolUseId)", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 10));
+      await Promise.resolve(); await Promise.resolve();
     });
     const ws = getWs();
 
@@ -1001,7 +1054,7 @@ describe("useWebSocketSession", () => {
   it("taskComplete is set when parentToolUseId changes", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 10));
+      await Promise.resolve(); await Promise.resolve();
     });
     const ws = getWs();
 
@@ -1065,7 +1118,7 @@ describe("useWebSocketSession", () => {
   it("taskComplete is set on turn end if subagent was active", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 10));
+      await Promise.resolve(); await Promise.resolve();
     });
     const ws = getWs();
 
@@ -1119,7 +1172,7 @@ describe("useWebSocketSession", () => {
   it("Task tool_call blocks also get childBlocks initialized", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 10));
+      await Promise.resolve(); await Promise.resolve();
     });
     const ws = getWs();
 
@@ -1152,7 +1205,7 @@ describe("useWebSocketSession", () => {
   it("user message with tool_result creates tool_result block", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 10));
+      await Promise.resolve(); await Promise.resolve();
     });
     const ws = getWs();
 
@@ -1208,7 +1261,7 @@ describe("useWebSocketSession", () => {
   it("user message with is_error=true sets isError on result block", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 10));
+      await Promise.resolve(); await Promise.resolve();
     });
     const ws = getWs();
 
@@ -1255,7 +1308,7 @@ describe("useWebSocketSession", () => {
   it("user message without matching tool_call uses 'unknown' sourceToolName", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 10));
+      await Promise.resolve(); await Promise.resolve();
     });
     const ws = getWs();
 
@@ -1284,7 +1337,7 @@ describe("useWebSocketSession", () => {
   it("user message with non-string content JSON-stringifies it", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 10));
+      await Promise.resolve(); await Promise.resolve();
     });
     const ws = getWs();
 
@@ -1312,7 +1365,7 @@ describe("useWebSocketSession", () => {
   it("user message with no content array is ignored", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 10));
+      await Promise.resolve(); await Promise.resolve();
     });
     const ws = getWs();
 
@@ -1335,7 +1388,7 @@ describe("useWebSocketSession", () => {
   it("user message tool_result nests under parent Agent block", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 10));
+      await Promise.resolve(); await Promise.resolve();
     });
     const ws = getWs();
 
@@ -1409,7 +1462,7 @@ describe("useWebSocketSession", () => {
   it("user message with multiple tool_results creates multiple blocks", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 10));
+      await Promise.resolve(); await Promise.resolve();
     });
     const ws = getWs();
 
@@ -1482,7 +1535,7 @@ describe("useWebSocketSession", () => {
 
     const { result } = renderHook(() => useWebSocketSession("test-id", 42));
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 10));
+      await Promise.resolve(); await Promise.resolve();
     });
 
     // Status should be reset to idle, not stuck on running
@@ -1509,7 +1562,7 @@ describe("useWebSocketSession", () => {
 
     const { result } = renderHook(() => useWebSocketSession("test-id", 43));
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 10));
+      await Promise.resolve(); await Promise.resolve();
     });
 
     expect(result.current.status).toBe("completed");
@@ -1523,7 +1576,7 @@ describe("useWebSocketSession", () => {
   it("unmount does NOT close WebSocket (connection is cached)", async () => {
     const { unmount } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 10));
+      await Promise.resolve(); await Promise.resolve();
     });
     const ws = getWs();
     act(() => {
@@ -1541,7 +1594,7 @@ describe("useWebSocketSession", () => {
   it("explicit destroy sends destroy and closes WebSocket", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 10));
+      await Promise.resolve(); await Promise.resolve();
     });
     const ws = getWs();
     act(() => {
@@ -1564,7 +1617,7 @@ describe("useWebSocketSession", () => {
   it("reuses existing WebSocket connection across unmount/remount", async () => {
     const { unmount } = renderHook(() => useWebSocketSession("reuse-id"));
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 10));
+      await Promise.resolve(); await Promise.resolve();
     });
     expect(MockWebSocket.instances.length).toBe(1);
 
@@ -1572,7 +1625,7 @@ describe("useWebSocketSession", () => {
     unmount();
     const { result } = renderHook(() => useWebSocketSession("reuse-id"));
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 10));
+      await Promise.resolve(); await Promise.resolve();
     });
     expect(MockWebSocket.instances.length).toBe(1);
     expect(result.current.isConnected).toBe(true);
@@ -1582,7 +1635,7 @@ describe("useWebSocketSession", () => {
     const { result: r1 } = renderHook(() => useWebSocketSession("session-a"));
     const { result: r2 } = renderHook(() => useWebSocketSession("session-b"));
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 10));
+      await Promise.resolve(); await Promise.resolve();
     });
     expect(MockWebSocket.instances.length).toBe(2);
     expect(r1.current.isConnected).toBe(true);
@@ -1592,7 +1645,7 @@ describe("useWebSocketSession", () => {
   it("preserves blocks across unmount/remount", async () => {
     const { result, unmount } = renderHook(() => useWebSocketSession("persist-id"));
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 10));
+      await Promise.resolve(); await Promise.resolve();
     });
 
     // Simulate a message that adds a block

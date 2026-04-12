@@ -115,6 +115,66 @@ describe("AgentBlock", () => {
       expect(screen.getByTestId("inline-diff")).toBeInTheDocument();
     });
 
+    it("renders OpenCode Write tool with camelCase filePath", () => {
+      render(
+        <AgentBlock
+          block={makeBlock({
+            type: "tool_call",
+            toolName: "Write",
+            toolArgs: JSON.stringify({ filePath: "src/opencode.ts", content: "new content" }),
+          })}
+        />,
+      );
+      expect(screen.getByTestId("inline-diff")).toHaveTextContent("src/opencode.ts");
+    });
+
+    it("renders OpenCode Edit tool with camelCase args", () => {
+      render(
+        <AgentBlock
+          block={makeBlock({
+            type: "tool_call",
+            toolName: "Edit",
+            toolArgs: JSON.stringify({
+              filePath: "src/edit-opencode.ts",
+              oldString: "before",
+              newString: "after",
+            }),
+          })}
+        />,
+      );
+      expect(screen.getByTestId("inline-diff")).toHaveTextContent("src/edit-opencode.ts");
+    });
+
+    it("renders apply_patch add-file tool with InlineDiffBlock", () => {
+      render(
+        <AgentBlock
+          block={makeBlock({
+            type: "tool_call",
+            toolName: "apply_patch",
+            toolArgs: JSON.stringify({
+              patchText: "*** Begin Patch\n*** Add File: toto.txt\n+hello\n*** End Patch\n",
+            }),
+          })}
+        />,
+      );
+      expect(screen.getByTestId("inline-diff")).toHaveTextContent("toto.txt");
+    });
+
+    it("renders ApplyPatch update-file tool with InlineDiffBlock", () => {
+      render(
+        <AgentBlock
+          block={makeBlock({
+            type: "tool_call",
+            toolName: "ApplyPatch",
+            toolArgs: JSON.stringify({
+              patch_text: "*** Begin Patch\n*** Update File: /workspace/toto.txt\n@@\n-Hello Cadence\n+Hello Cadence 2\n*** End Patch",
+            }),
+          })}
+        />,
+      );
+      expect(screen.getByTestId("inline-diff")).toHaveTextContent("/workspace/toto.txt");
+    });
+
     it("renders thinking block", () => {
       render(
         <AgentBlock
@@ -122,6 +182,15 @@ describe("AgentBlock", () => {
         />,
       );
       expect(screen.getByText("Thinking")).toBeInTheDocument();
+    });
+
+    it("does not render empty thinking block", () => {
+      const { container } = render(
+        <AgentBlock
+          block={makeBlock({ type: "thinking", content: "" })}
+        />,
+      );
+      expect(container.firstChild).toBeNull();
     });
   });
 
@@ -251,6 +320,59 @@ describe("AgentBlock", () => {
         />,
       );
       expect(screen.getByText("Running…")).toBeInTheDocument();
+    });
+
+    it("shows Bash output from tool args when no tool_result exists", () => {
+      render(
+        <AgentBlock
+          block={makeBlock({
+            type: "tool_call",
+            toolName: "Bash",
+            toolArgs: JSON.stringify({ command: "pwd", output: "/tmp/project\n" }),
+            toolUseId: "tu-3",
+          })}
+          toolResultMap={new Map()}
+        />,
+      );
+      expect(screen.getByText("pwd")).toBeInTheDocument();
+      expect(screen.getByText(/\/tmp\/project/)).toBeInTheDocument();
+    });
+
+    it("does not show running state for restored completed Bash output", () => {
+      render(
+        <AgentBlock
+          block={makeBlock({
+            type: "tool_call",
+            toolName: "Bash",
+            toolArgs: JSON.stringify({ command: "pnpm lint", status: "completed", output: "ok\n" }),
+            toolUseId: "tu-4",
+          })}
+          toolResultMap={new Map()}
+        />,
+      );
+      expect(screen.getByText("pnpm lint")).toBeInTheDocument();
+      expect(screen.queryByText("Running…")).not.toBeInTheDocument();
+      expect(screen.getByText("ok")).toBeInTheDocument();
+    });
+  });
+
+  describe("restored tool call details", () => {
+    it("shows restored Read file detail from persisted tool args", () => {
+      render(
+        <AgentBlock
+          block={makeBlock({
+            type: "tool_call",
+            toolName: "Read",
+            toolArgs: JSON.stringify({
+              file_path: "packages/service/src/main.rs",
+              status: "completed",
+            }),
+          })}
+        />,
+      );
+
+      expect(screen.getByText("Read")).toBeInTheDocument();
+      expect(screen.getByText("packages/service/src/main.rs")).toBeInTheDocument();
     });
   });
 

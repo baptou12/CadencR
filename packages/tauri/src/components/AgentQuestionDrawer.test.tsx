@@ -92,7 +92,7 @@ describe("AgentQuestionDrawer", () => {
     );
     expect(submitBtn).toBeTruthy();
     await user.click(submitBtn!);
-    expect(onSubmit).toHaveBeenCalledWith(expect.stringContaining("Red"));
+    expect(onSubmit).toHaveBeenCalledWith([["Red"]]);
   });
 
   it("allows multiple selections in multiSelect mode", async () => {
@@ -113,7 +113,7 @@ describe("AgentQuestionDrawer", () => {
       b.textContent?.includes("Submit") || b.textContent?.includes("Next"),
     )!;
     await user.click(submitBtn);
-    expect(onSubmit).toHaveBeenCalledWith(expect.stringContaining("Option A"));
+    expect(onSubmit).toHaveBeenCalledWith([["Option A", "Option B"]]);
   });
 
   it("shows Other option button", () => {
@@ -186,6 +186,43 @@ describe("parseAskUserQuestions", () => {
       ],
     });
     expect(result).toHaveLength(1);
+    expect(result[0].multiSelect).toBe(true);
+  });
+
+  it("prefers questions array over duplicated single-question fields", () => {
+    const result = parseAskUserQuestions({
+      question: "What exact file path should you edit?",
+      options: [{ label: "src/main.rs" }],
+      questions: [
+        {
+          question: "What exact file path should you edit?",
+          multiple: false,
+          options: [{ label: "src/main.rs" }, { label: "Other file" }],
+        },
+        {
+          question: "Which mode should you use?",
+          multiple: false,
+          options: [{ label: "minimal" }, { label: "moderate" }],
+        },
+      ],
+    });
+
+    expect(result).toHaveLength(2);
+    expect(result[0].question).toBe("What exact file path should you edit?");
+    expect(result[1].question).toBe("Which mode should you use?");
+  });
+
+  it("supports OpenCode multiple flag for multi-select questions", () => {
+    const result = parseAskUserQuestions({
+      questions: [
+        {
+          question: "Pick options",
+          multiple: true,
+          options: [{ label: "A" }, { label: "B" }],
+        },
+      ],
+    });
+
     expect(result[0].multiSelect).toBe(true);
   });
 

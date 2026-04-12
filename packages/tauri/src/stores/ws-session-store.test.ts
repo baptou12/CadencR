@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { DEFAULT_MODEL } from "../shared/models";
 import { useWsSessionStore, applyMutations, createStreamingState } from "./ws-session-store";
 import { updateSession } from "./ws-session-types";
@@ -17,7 +17,7 @@ class MockWebSocket {
 
   constructor(_url: string) {
     MockWebSocket.instances.push(this);
-    setTimeout(() => this.fireEvent("open"), 0);
+    Promise.resolve().then(() => this.fireEvent("open"));
   }
 
   addEventListener(event: string, cb: (...args: unknown[]) => void) {
@@ -59,13 +59,32 @@ beforeEach(() => {
   vi.stubGlobal("window", { ...globalThis.window });
 });
 
+afterEach(() => {
+  // Disconnect all sessions to close WebSocket connections and clear pending state
+  const store = useWsSessionStore.getState();
+  for (const sessionId of Object.keys(store.sessions)) {
+    store.disconnect(sessionId);
+  }
+  for (const id of activeTimerIds) clearTimeout(id);
+  activeTimerIds.clear();
+  vi.restoreAllMocks();
+});
+
 function getWs(): MockWebSocket {
   return MockWebSocket.instances[MockWebSocket.instances.length - 1];
 }
 
-async function tick() {
-  await new Promise((r) => setTimeout(r, 10));
+function tick(): Promise<void> {
+  return new Promise((resolve) => {
+    const id = setTimeout(() => {
+      activeTimerIds.delete(id);
+      resolve();
+    }, 10);
+    activeTimerIds.add(id);
+  });
 }
+
+const activeTimerIds = new Set<ReturnType<typeof setTimeout>>();
 
 describe("ws-session-store", () => {
   it("connect creates a WebSocket and sets isConnected on open", async () => {
@@ -143,6 +162,60 @@ describe("ws-session-store", () => {
     expect(session.blocks[0].content).toBe("hello");
   });
 
+  it("sendPrompt before initialized queues prompt and flushes after initialized", async () => {
+    const store = useWsSessionStore.getState();
+    store.connect("s1");
+    await tick();
+    const ws = getWs();
+
+    store.setPermissionMode("s1", "plan");
+    store.sendPrompt("s1", "hello");
+
+    expect(ws.sent).toHaveLength(0);
+    let session = useWsSessionStore.getState().sessions["s1"];
+    expect(session.queuedPrompts).toHaveLength(1);
+    expect(session.status).toBe("running");
+
+    ws.simulateMessage({
+      domain: "session",
+      action: "initialized",
+      payload: { session_id: "srv-1" },
+    });
+
+    const sent = ws.sent.map((raw) => JSON.parse(raw));
+    expect(sent).toHaveLength(2);
+    expect(sent[0].action).toBe("mode.set");
+    expect(sent[0].payload).toMatchObject({ session_id: "srv-1", mode: "plan" });
+    expect(sent[1].action).toBe("prompt.send");
+    expect(sent[1].payload).toMatchObject({ session_id: "srv-1", text: "hello" });
+
+    session = useWsSessionStore.getState().sessions["s1"];
+    expect(session.queuedPrompts).toHaveLength(0);
+    expect(session.status).toBe("running");
+  });
+
+  it("setPermissionMode before initialized defers mode.set until initialized", async () => {
+    const store = useWsSessionStore.getState();
+    store.connect("s1");
+    await tick();
+    const ws = getWs();
+
+    store.setPermissionMode("s1", "plan");
+    expect(ws.sent).toHaveLength(0);
+    expect(useWsSessionStore.getState().sessions["s1"].permissionMode).toBe("plan");
+
+    ws.simulateMessage({
+      domain: "session",
+      action: "initialized",
+      payload: { session_id: "srv-1" },
+    });
+
+    const sent = ws.sent.map((raw) => JSON.parse(raw));
+    expect(sent).toHaveLength(1);
+    expect(sent[0].action).toBe("mode.set");
+    expect(sent[0].payload).toMatchObject({ session_id: "srv-1", mode: "plan" });
+  });
+
   it("setPersistedState sets blocks and status", () => {
     // Ensure session exists first
     useWsSessionStore.getState().connect("s1");
@@ -152,6 +225,37 @@ describe("ws-session-store", () => {
     expect(session.blocks).toEqual(blocks);
     expect(session.status).toBe("completed");
     expect(session.persistedLoaded).toBe(true);
+  });
+
+  it("setPersistedState restores provider, model, and runtime session metadata", () => {
+    useWsSessionStore.getState().connect("s1");
+    useWsSessionStore.getState().setPersistedState("s1", {
+      blocks: [{ id: "b1", type: "text" as const, content: "restored" }],
+      status: "completed",
+      currentProviderId: "opencode",
+      currentModelId: "openai/gpt-5.3-codex",
+      runtimeProvider: "opencode",
+      runtimeSessionId: "ses_live_123",
+    });
+    const session = useWsSessionStore.getState().sessions["s1"];
+    expect(session.currentProviderId).toBe("opencode");
+    expect(session.currentModelId).toBe("openai/gpt-5.3-codex");
+    expect(session.runtimeProvider).toBe("opencode");
+    expect(session.runtimeSessionId).toBe("ses_live_123");
+    expect(session.claudeSessionId).toBe("");
+  });
+
+  it("setPersistedState uses runtimeProvider as currentProviderId when provider field is omitted", () => {
+    useWsSessionStore.getState().connect("s1");
+    useWsSessionStore.getState().setPersistedState("s1", {
+      blocks: [{ id: "b1", type: "text" as const, content: "restored" }],
+      status: "completed",
+      runtimeProvider: "opencode",
+      currentModelId: "openai/gpt-5.3-codex",
+    });
+    const session = useWsSessionStore.getState().sessions["s1"];
+    expect(session.currentProviderId).toBe("opencode");
+    expect(session.runtimeProvider).toBe("opencode");
   });
 
   it("claude_session_id action sets claudeSessionId on the session", async () => {
@@ -173,6 +277,7 @@ describe("ws-session-store", () => {
 
     const session = useWsSessionStore.getState().sessions["s1"];
     expect(session.claudeSessionId).toBe("uuid-abc-123");
+    expect(session.runtimeSessionId).toBe("uuid-abc-123");
   });
 
   it("claude_session_id dedup guard skips update when value unchanged", async () => {
@@ -206,6 +311,33 @@ describe("ws-session-store", () => {
     const sessionsAfterSecond = useWsSessionStore.getState().sessions;
     expect(sessionsAfterSecond).toBe(sessionsAfterFirst);
     expect(sessionsAfterSecond["s1"].claudeSessionId).toBe("uuid-abc-123");
+  });
+
+  it("close clears server session identifiers so init can run again", async () => {
+    const store = useWsSessionStore.getState();
+    store.connect("s1");
+    await tick();
+    const ws = getWs();
+
+    ws.simulateMessage({
+      domain: "session",
+      action: "initialized",
+      payload: { session_id: "srv-1" },
+    });
+    ws.simulateMessage({
+      domain: "session",
+      action: "claude_session_id",
+      payload: { claude_session_id: "uuid-abc-123" },
+    });
+    expect(useWsSessionStore.getState().sessions["s1"].serverSessionId).toBe("srv-1");
+
+    ws.fireEvent("close");
+    const session = useWsSessionStore.getState().sessions["s1"];
+    expect(session.isConnected).toBe(false);
+    expect(session.serverSessionId).toBe("");
+    expect(session.runtimeSessionId).toBe("");
+    expect(session.claudeSessionId).toBe("");
+    expect(session.conn).toBeNull();
   });
 
   it("new session defaults currentModelId to DEFAULT_MODEL", async () => {
@@ -264,6 +396,25 @@ describe("ws-session-store", () => {
       payload: { session_id: "42" },
     });
     expect(useWsSessionStore.getState().sessions["s1"].currentModelId).toBe("opus[1m]");
+  });
+
+  it("session.initialized with provider updates current and runtime provider", async () => {
+    const store = useWsSessionStore.getState();
+    store.connect("s1");
+    await tick();
+    store.initSession("s1", { provider: "claude_code", model: "opus[1m]" });
+
+    const ws = getWs();
+    ws.simulateMessage({
+      domain: "session",
+      action: "initialized",
+      payload: { session_id: "42", provider: "opencode", model: "openai/gpt-5.3-codex" },
+    });
+
+    const session = useWsSessionStore.getState().sessions["s1"];
+    expect(session.currentProviderId).toBe("opencode");
+    expect(session.runtimeProvider).toBe("opencode");
+    expect(session.currentModelId).toBe("openai/gpt-5.3-codex");
   });
 
   it("setProvider waits for provider.set.ok before mutating local state", async () => {

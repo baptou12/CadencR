@@ -97,4 +97,17 @@ describe("AgentStream", () => {
     expect(screen.getByTestId("block-1")).toBeInTheDocument();
     expect(screen.queryByTestId("block-2")).not.toBeInTheDocument();
   });
+
+  it("coalesces persisted text chunks split by hidden blocks", () => {
+    const createdAt = "2026-04-12T12:09:36Z";
+    const blocks: AgentBlockData[] = [
+      { ...makeBlock("1", "Hello "), createdAt, model: "openai/gpt-5.3-codex" },
+      { ...makeBlock("2", "ignored", "tool_result"), sourceToolName: "Read" },
+      { ...makeBlock("3", "world"), createdAt, model: "openai/gpt-5.3-codex" },
+    ];
+    render(<AgentStream blocks={blocks} />);
+    expect(screen.getByTestId("block-1")).toHaveTextContent("Hello world");
+    expect(screen.queryByTestId("block-2")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("block-3")).not.toBeInTheDocument();
+  });
 });

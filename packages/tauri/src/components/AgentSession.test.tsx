@@ -316,6 +316,50 @@ describe("AgentSession", () => {
     expect(onModelChange).not.toHaveBeenCalledWith(undefined);
   });
 
+  it("uses model provider icon when persisted provider is stale after restart", async () => {
+    const runtimeApi = await import("../api/agentRuntime");
+    vi.mocked(runtimeApi.useAgentCatalog).mockReturnValueOnce({
+      data: {
+        default_provider: "claude_code",
+        providers: [
+          {
+            id: "claude_code",
+            label: "Claude Code",
+            status: "available",
+            models: [{ id: "opus", label: "Opus", context_window: 200000 }],
+            default_model: "opus",
+          },
+          {
+            id: "opencode",
+            label: "OpenCode",
+            status: "available",
+            models: [{ id: "openai/gpt-5.3-codex", label: "GPT-5.3 Codex", context_window: 200000 }],
+            default_model: "openai/gpt-5.3-codex",
+          },
+        ],
+      },
+      isLoading: false,
+    } as ReturnType<typeof runtimeApi.useAgentCatalog>);
+
+    render(
+      <AgentSession
+        agentType="session"
+        blocks={[makeBlock("1", "hello")]}
+        status="completed"
+        onSend={onSend}
+        onStop={onStop}
+        onProviderChange={vi.fn()}
+        onModelChange={vi.fn()}
+        currentProviderId="claude_code"
+        currentModelId="openai/gpt-5.3-codex"
+        runtimeProvider="opencode"
+      />,
+    );
+
+    const modelIcon = screen.getByAltText("GPT-5.3 Codex");
+    expect(modelIcon).toHaveAttribute("src", expect.stringContaining("opencode"));
+  });
+
   it("shows prompt bar for completed plan agent when pendingPlanApproval is set", () => {
     render(
       <AgentSession

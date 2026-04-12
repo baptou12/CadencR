@@ -21,6 +21,16 @@ describe("parseToolCall", () => {
     expect(result).toEqual({ label: "Editing file", detail: "src/edit.ts" });
   });
 
+  it("parses apply_patch tool with patchText", () => {
+    const result = parseToolCall(
+      "apply_patch",
+      JSON.stringify({
+        patchText: "*** Begin Patch\n*** Add File: toto.txt\n+hello\n*** End Patch\n",
+      }),
+    );
+    expect(result).toEqual({ label: "Applying patch", detail: "toto.txt" });
+  });
+
   it("parses Bash tool with command", () => {
     const result = parseToolCall("Bash", JSON.stringify({ command: "git status" }));
     expect(result).toEqual({ label: "Running command", detail: "git status" });
@@ -92,6 +102,15 @@ describe("parseToolCall", () => {
 describe("getToolActivityLabel", () => {
   it("returns label with detail when detail is present", () => {
     expect(getToolActivityLabel("Read", JSON.stringify({ file_path: "foo.ts" }))).toBe("Reading file: foo.ts");
+  });
+
+  it("returns patch activity label for apply_patch", () => {
+    expect(
+      getToolActivityLabel(
+        "apply_patch",
+        JSON.stringify({ patchText: "*** Begin Patch\n*** Add File: toto.txt\n+hello\n*** End Patch\n" }),
+      ),
+    ).toBe("Applying patch: toto.txt");
   });
 
   it("returns label only when no detail", () => {

@@ -6,6 +6,8 @@ export default defineConfig({
     environment: "jsdom",
     include: ["src/**/*.test.tsx", "src/**/*.test.ts"],
     setupFiles: ["src/test-setup.ts"],
+    pool: "forks",
+    teardownTimeout: 3000,
   },
   resolve: {
     alias: {
