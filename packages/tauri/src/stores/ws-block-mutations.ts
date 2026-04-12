@@ -4,6 +4,7 @@
  */
 
 import type { AgentBlockData } from "@/components/AgentBlock";
+import { isFileChangeTool } from "@/lib/tool-adapter";
 import type { TodoItem } from "@/types/agent";
 import type { BlockMutation, StreamingState } from "./ws-message-processing";
 
@@ -33,8 +34,6 @@ export function parseTodosFromBlocks(blocks: AgentBlockData[]): ParsedTodo[] | u
   return undefined;
 }
 
-const FILE_CHANGE_TOOLS = new Set(["Write", "Edit", "NotebookEdit"]);
-
 export interface MessagePatch {
   blocks: AgentBlockData[];
   status: "running";
@@ -49,7 +48,7 @@ export function buildMessagePatch(
   state: StreamingState,
 ): MessagePatch {
   const hasNewFileChange = allMutations.some(
-    (m) => m.action === "append" && m.block.type === "tool_call" && m.block.toolName && FILE_CHANGE_TOOLS.has(m.block.toolName),
+    (m) => m.action === "append" && m.block.type === "tool_call" && isFileChangeTool(m.block.toolName),
   );
 
   const mutatedIds = new Set(allMutations.map((m) => m.block.id));
@@ -127,11 +126,33 @@ export function applyMutations(
     }
   }
 
+  function latestValidJsonSnapshot(content: string): string | undefined {
+    try {
+      JSON.parse(content);
+      return content;
+    } catch {
+      // Fall through to recover the last full JSON object from concatenated snapshots.
+    }
+
+    for (let index = content.lastIndexOf("{"); index >= 0;) {
+      const candidate = content.slice(index);
+      try {
+        JSON.parse(candidate);
+        return candidate;
+      } catch {
+        // Keep scanning backward.
+      }
+      const nextSearchStart = index - 1;
+      index = nextSearchStart >= 0 ? content.lastIndexOf("{", nextSearchStart) : -1;
+    }
+    return undefined;
+  }
+
   function syncToolUseMap(block: AgentBlockData): void {
     if (block.type !== "tool_call") return;
-    try {
-      JSON.parse(block.content);
-      block.toolArgs = block.content;
+    const latest = latestValidJsonSnapshot(block.content);
+    if (latest) {
+      block.toolArgs = latest;
       if (block.toolUseId) {
         const canonical = streamState.toolUseIdToBlock.get(block.toolUseId);
         if (canonical && canonical !== block) {
@@ -139,7 +160,7 @@ export function applyMutations(
           canonical.content = block.content;
         }
       }
-    } catch { /* keep previous toolArgs until JSON is complete */ }
+    }
   }
 
   const result = [...prevBlocks, ...rootAppends];

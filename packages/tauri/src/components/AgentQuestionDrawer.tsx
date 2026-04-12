@@ -16,11 +16,13 @@ export interface AgentQuestion {
   multiSelect?: boolean;
 }
 
+export type AgentQuestionAnswers = string[][];
+
 interface AgentQuestionDrawerProps {
   /** The questions to display */
   questions: AgentQuestion[];
   /** Called when the user submits their response */
-  onSubmit: (response: string) => void;
+  onSubmit: (response: AgentQuestionAnswers) => void;
   /** Whether the drawer is visible */
   open: boolean;
   /** When true, uses tighter spacing for inline rendering inside AgentPromptBar */
@@ -72,6 +74,25 @@ export function AgentQuestionDrawer({ questions, onSubmit, open, inline, disable
     }
     return parts.join("; ");
   }, [selectedOptions, showOther, freeText, currentQuestion]);
+
+  const getAnswerValues = useCallback(
+    (question: AgentQuestion | undefined, answerState: { selectedOptions: Set<string>; freeText: string; showOther: boolean }): string[] => {
+      if (!question) return [];
+      const values: string[] = [];
+      if (question.options?.length) {
+        values.push(...Array.from(answerState.selectedOptions));
+        if (answerState.showOther && answerState.freeText.trim()) {
+          values.push(answerState.freeText.trim());
+        }
+        return values;
+      }
+      if (answerState.freeText.trim()) {
+        return [answerState.freeText.trim()];
+      }
+      return values;
+    },
+    [],
+  );
 
   /** Save current UI state into answers array at a given index */
   const saveCurrentState = useCallback((index: number) => {
@@ -175,10 +196,14 @@ export function AgentQuestionDrawer({ questions, onSubmit, open, inline, disable
         resetState();
       }
     } else {
-      // All questions answered — format and submit
-      const response = questions
-        .map((q, i) => `${q.question}\nAnswer: ${newAnswers[i]?.text ?? ""}`)
-        .join("\n\n");
+      const response = questions.map((question, index) =>
+        getAnswerValues(question, newAnswers[index] ?? {
+          text: "",
+          selectedOptions: new Set<string>(),
+          freeText: "",
+          showOther: false,
+        }),
+      );
       onSubmit(response);
 
       // Reset everything
@@ -186,7 +211,7 @@ export function AgentQuestionDrawer({ questions, onSubmit, open, inline, disable
       setAnswers([]);
       resetState();
     }
-  }, [getCurrentAnswerText, answers, currentIndex, questions, onSubmit, resetState, selectedOptions, freeText, showOther]);
+  }, [getCurrentAnswerText, answers, currentIndex, questions, onSubmit, resetState, selectedOptions, freeText, showOther, getAnswerValues]);
 
   const handleFreeTextSubmit = useCallback(() => {
     if (freeText.trim()) {
@@ -430,24 +455,24 @@ function normalizeOptions(
 export function parseAskUserQuestions(
   toolInput: Record<string, unknown>,
 ): AgentQuestion[] {
+  // Handle multiple questions format
+  if (Array.isArray(toolInput.questions)) {
+    return (toolInput.questions as Record<string, unknown>[]).map((q) => ({
+      question: (q.question as string) ?? "",
+      options: normalizeOptions(q.options),
+      multiSelect: q.multiSelect === true || q.multiple === true,
+    }));
+  }
+
   // Handle single question format
   if (typeof toolInput.question === "string") {
     return [
       {
         question: toolInput.question as string,
         options: normalizeOptions(toolInput.options),
-        multiSelect: toolInput.multiSelect === true,
+        multiSelect: toolInput.multiSelect === true || toolInput.multiple === true,
       },
     ];
-  }
-
-  // Handle multiple questions format
-  if (Array.isArray(toolInput.questions)) {
-    return (toolInput.questions as Record<string, unknown>[]).map((q) => ({
-      question: (q.question as string) ?? "",
-      options: normalizeOptions(q.options),
-      multiSelect: q.multiSelect === true,
-    }));
   }
 
   return [];

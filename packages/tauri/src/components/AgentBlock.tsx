@@ -2,6 +2,7 @@ import { useState, useCallback, memo, useMemo } from "react";
 import { cn, toRelativePath } from "@/lib/utils";
 import { ChevronRightIcon, WrenchIcon, BrainIcon, Loader2Icon, TerminalIcon, CopyIcon, CheckIcon } from "lucide-react";
 import { parseToolCall, parseCadenceMcpTool } from "@/lib/tool-call-parser";
+import { extractBashOutput, extractInlineDiffPreview, isFileChangeTool, isToolCallRunning, normalizeToolName } from "@/lib/tool-adapter";
 import { CadenceMcpBlock } from "@/components/CadenceMcpBlock";
 import { Markdown } from "@/components/Markdown";
 import { InlineDiffBlock } from "@/components/InlineDiffBlock";
@@ -12,35 +13,6 @@ import { CollapsibleBlock } from "@/components/ui/collapsible-block";
 import { parseAnsi } from "@/lib/ansi-to-html";
 import { CodeBlockHeader } from "@/components/CodeBlockHeader";
 import { useCodeBlockActions } from "@/components/CodeBlockActionsContext";
-
-/** Reconstruct diff data from persisted tool args (for historical sessions). */
-function diffFromToolArgs(
-  toolName: string,
-  toolArgs?: string,
-): { filePath: string; oldContent: string; newContent: string } | null {
-  if (!toolArgs) return null;
-  try {
-    const args = JSON.parse(toolArgs) as Record<string, unknown>;
-    const filePath = args.file_path as string | undefined;
-    if (!filePath) return null;
-
-    if (toolName === "Edit") {
-      const oldString = (args.old_string as string) ?? "";
-      const newString = (args.new_string as string) ?? "";
-      if (oldString || newString) {
-        return { filePath, oldContent: oldString, newContent: newString };
-      }
-    } else if (toolName === "Write") {
-      const content = (args.content as string) ?? "";
-      if (content) {
-        return { filePath, oldContent: "", newContent: content };
-      }
-    }
-  } catch {
-    // Partial JSON during streaming — skip
-  }
-  return null;
-}
 
 /** Block types that the agent stream can produce */
 export type BlockType = "text" | "code" | "tool_call" | "tool_result" | "thinking" | "user_message" | "compact_divider" | "clear_divider";
@@ -114,17 +86,19 @@ export const AgentBlock = memo(function AgentBlock({ block, isStreaming, basePat
       if (block.toolName === "Bash") {
         const result = block.toolUseId ? toolResultMap?.get(block.toolUseId) : undefined;
         const summary = parseToolCall("Bash", block.toolArgs);
+        const running = !result && isToolCallRunning(block.toolArgs);
         return (
           <BashBlock
             command={summary?.detail}
-            content={result?.content}
+            content={result?.content ?? extractBashOutput(block.toolArgs)}
+            running={running}
             isError={result?.isError}
           />
         );
       }
       // Edit/Write: unified diff block (no separate ToolCallBlock header)
-      if (block.toolName === "Write" || block.toolName === "Edit") {
-        const diff = diffFromToolArgs(block.toolName, block.toolArgs);
+      if (isFileChangeTool(block.toolName)) {
+        const diff = extractInlineDiffPreview(block.toolName ?? "", block.toolArgs);
         if (diff && !diff.filePath.includes("/.claude/plans/")) {
           return (
             <InlineDiffBlock
@@ -145,7 +119,7 @@ export const AgentBlock = memo(function AgentBlock({ block, isStreaming, basePat
         return null;
       }
       // Edit/Write results are already shown via the diff — skip
-      if (block.sourceToolName === "Edit" || block.sourceToolName === "Write") {
+      if (isFileChangeTool(block.sourceToolName)) {
         return null;
       }
       if (block.sourceToolName === "Agent" || block.sourceToolName === "Task") {
@@ -245,10 +219,11 @@ function CodeBlock({ content, language }: { content: string; language?: string }
 
 function ToolCallBlock({ name, args, basePath }: { name: string; args?: string; basePath?: string }) {
   const [expanded, setExpanded] = useState(false);
-  const cadenceMcp = parseCadenceMcpTool(name, args);
+  const canonicalName = normalizeToolName(name);
+  const cadenceMcp = parseCadenceMcpTool(canonicalName, args);
   if (cadenceMcp) return <CadenceMcpBlock mcp={cadenceMcp} args={args} />;
 
-  const summary = parseToolCall(name, args);
+  const summary = parseToolCall(canonicalName, args);
   const detail = summary?.detail && basePath ? toRelativePath(summary.detail, basePath) : summary?.detail;
 
   return (
@@ -259,7 +234,7 @@ function ToolCallBlock({ name, args, basePath }: { name: string; args?: string; 
         onClick={() => setExpanded(!expanded)}
       >
         <WrenchIcon className="size-3 text-blue-400" />
-        <span className="font-medium text-blue-300">{name}</span>
+        <span className="font-medium text-blue-300">{canonicalName}</span>
         {detail && (
           <span className="truncate text-muted-foreground">{detail}</span>
         )}
@@ -288,14 +263,24 @@ function formatShellCommand(cmd: string): string {
 }
 
 /** Unified Bash block: command header + output body, appears at tool_call time. */
-const BashBlock = memo(function BashBlock({ command, content, isError }: { command?: string; content?: string; isError?: boolean }) {
+const BashBlock = memo(function BashBlock({
+  command,
+  content,
+  running,
+  isError,
+}: {
+  command?: string;
+  content?: string;
+  running?: boolean;
+  isError?: boolean;
+}) {
   const lines = content?.split("\n") ?? [];
   const totalLines = lines.length;
   const truncatedAnsi = useMemo(
     () => parseAnsi((content?.split("\n") ?? []).slice(-DEFAULT_BASH_LINES).join("\n")),
     [content],
   );
-  const hasOutput = !!content;
+  const hasOutput = typeof content === "string" && content.length > 0;
   const formattedCommand = useMemo(() => command ? formatShellCommand(command) : undefined, [command]);
 
   return (
@@ -322,11 +307,13 @@ const BashBlock = memo(function BashBlock({ command, content, isError }: { comma
           <pre className="whitespace-pre-wrap">
             {showAll ? parseAnsi(content) : truncatedAnsi}
           </pre>
-        ) : (
+        ) : running ? (
           <div className="flex items-center gap-2 text-xs text-zinc-500">
             <Loader2Icon className="size-3 animate-spin" />
             <span>Running…</span>
           </div>
+        ) : (
+          <div className="text-xs text-zinc-500">No output</div>
         )
       }
     </CollapsibleBlock>
@@ -335,6 +322,7 @@ const BashBlock = memo(function BashBlock({ command, content, isError }: { comma
 
 const ThinkingBlock = memo(function ThinkingBlock({ content }: { content: string }) {
   const [expanded, setExpanded] = useState(true);
+  if (!content.trim()) return null;
 
   return (
     <div className="my-1 rounded-md border border-border bg-purple-500/5">

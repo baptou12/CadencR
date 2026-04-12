@@ -3,6 +3,8 @@ import { buildUserMessageContent } from "@/types/agent-types";
 import { getWsUrl } from "@/lib/ws-url";
 import { createWsConnection } from "@/lib/ws-connection";
 import {
+  type SessionConfig,
+  type WsEnvelope,
   parseEnvelope,
   createEnvelope,
   createSessionInit,
@@ -22,12 +24,20 @@ import { serverBlocksToAgentBlocks } from "@/hooks/useFeatureAgentState";
 import { handleEnvelope } from "./ws-envelope-handler";
 import type { StoreAccessors } from "./ws-envelope-handler";
 import {
-  type WsSessionStore,
+  applyApprovePlan,
+  applyPersistedState,
+  applyPlanChangesRequest,
+  type PersistedStatePayload,
+} from "./ws-session-actions";
+import {
+  type QueuedPrompt,
   type SessionEntry,
+  type WsSessionStore,
   createSessionEntry,
-  updateSession,
-  markLastPlanBlock,
+  type PermissionMode,
+  updateSession
 } from "./ws-session-types";
+import type { AgentQuestionAnswers } from "@/components/AgentQuestionDrawer";
 
 export type { PermissionMode, PendingPlanApproval } from "./ws-session-types";
 export {
@@ -37,8 +47,6 @@ export {
   processSdkMessage,
   applyMutations,
 } from "./ws-message-processing";
-import { parseTodosFromBlocks } from "./ws-message-processing";
-import { injectPlanIntoBlocks } from "./ws-message-processing";
 
 /** Prefix for synthetic request IDs created during plan-restore flows. */
 const PLAN_RESTORE_PREFIX = "plan_restore_";
@@ -49,6 +57,37 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
   }
   function sendRaw(sessionId: string, data: unknown): void {
     getSession(sessionId).conn?.sendJson(data);
+  }
+  function queuePrompt(
+    sessionId: string,
+    text: string,
+    images?: Array<{ base64: string; mimeType: string }>,
+    useWorktree?: boolean,
+  ): void {
+    const session = getSession(sessionId);
+    const queuedPrompt: QueuedPrompt = { text };
+    if (images && images.length > 0) queuedPrompt.images = images;
+    if (useWorktree) queuedPrompt.useWorktree = true;
+    set(updateSession(get(), sessionId, {
+      queuedPrompts: [...session.queuedPrompts, queuedPrompt],
+    }));
+  }
+  function flushQueuedInitActions(sessionId: string): void {
+    const session = get().sessions[sessionId];
+    if (!session || !session.serverSessionId) return;
+    if (session.permissionMode === "plan") {
+      sendRaw(sessionId, createModeSet(session.serverSessionId, "plan"));
+    }
+    if (session.queuedPrompts.length === 0) return;
+    for (const prompt of session.queuedPrompts) {
+      sendRaw(sessionId, createPromptSend(
+        session.serverSessionId,
+        prompt.text,
+        prompt.images,
+        prompt.useWorktree,
+      ));
+    }
+    set(updateSession(get(), sessionId, { queuedPrompts: [] }));
   }
   const ctx: StoreAccessors = { get, set, getSession };
 
@@ -74,17 +113,31 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
             session.pendingWsRequests.clear();
           }
           set(updateSession(get(), sessionId, {
+            conn: null,
             isConnected: false,
+            serverSessionId: "",
+            runtimeSessionId: "",
+            claudeSessionId: "",
             status: getSession(sessionId).status === "running" ? "error" : getSession(sessionId).status,
           }));
         },
         onError: () => {
-          set(updateSession(get(), sessionId, { isConnected: false, status: "error" }));
+          set(updateSession(get(), sessionId, {
+            conn: null,
+            isConnected: false,
+            serverSessionId: "",
+            runtimeSessionId: "",
+            claudeSessionId: "",
+            status: "error",
+          }));
         },
         onMessage: (data) => {
           try {
             const envelope = parseEnvelope(data);
             handleEnvelope(ctx, sessionId, envelope);
+            if (envelope.domain === "session" && envelope.action === "initialized") {
+              flushQueuedInitActions(sessionId);
+            }
           } catch {
             // Ignore unparseable messages
           }
@@ -114,7 +167,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
 
     send: sendRaw,
 
-    sendRequest(sessionId: string, envelope): Promise<unknown> {
+    sendRequest(sessionId: string, envelope: WsEnvelope): Promise<unknown> {
       return new Promise((resolve) => {
         const session = get().sessions[sessionId];
         if (session) {
@@ -131,7 +184,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       });
     },
 
-    initSession(sessionId: string, config) {
+    initSession(sessionId: string, config: SessionConfig) {
       if (config.provider) {
         set(updateSession(get(), sessionId, { currentProviderId: config.provider }));
       }
@@ -141,9 +194,18 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       sendRaw(sessionId, createSessionInit(config));
     },
 
-    sendPrompt(sessionId: string, text, images, useWorktree) {
+    sendPrompt(
+      sessionId: string,
+      text: string,
+      images?: Array<{ base64: string; mimeType: string }>,
+      useWorktree?: boolean,
+    ) {
       const session = getSession(sessionId);
-      sendRaw(sessionId, createPromptSend(session.serverSessionId, text, images, useWorktree));
+      if (session.serverSessionId) {
+        sendRaw(sessionId, createPromptSend(session.serverSessionId, text, images, useWorktree));
+      } else {
+        queuePrompt(sessionId, text, images, useWorktree);
+      }
 
       const content = buildUserMessageContent(text, images);
       session.streamingState.counter += 1;
@@ -162,7 +224,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       }));
     },
 
-    respondToPermission(sessionId: string, requestId, granted) {
+    respondToPermission(sessionId: string, requestId: string, granted: boolean) {
       const session = getSession(sessionId);
       const decision = granted ? "allow_once" : "deny";
       sendRaw(sessionId, createPermissionRespond(session.serverSessionId, requestId, decision));
@@ -173,11 +235,11 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       }));
     },
 
-    respondToQuestion(sessionId: string, response) {
+    respondToQuestion(sessionId: string, response: AgentQuestionAnswers) {
       const session = getSession(sessionId);
       const updatedInput = {
         ...session.pendingQuestionToolInput,
-        answers: { "0": response },
+        answers: response,
       };
       sendRaw(sessionId, createPermissionRespond(
         session.serverSessionId,
@@ -186,16 +248,18 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
         updatedInput,
       ));
 
+      const questions = Array.isArray(session.pendingQuestionToolInput.questions)
+        ? session.pendingQuestionToolInput.questions
+        : session.pendingQuestionToolInput.question != null
+          ? [session.pendingQuestionToolInput]
+          : [];
       const formatted = response
-        .split("\n\n")
-        .map((qa) => {
-          const lines = qa.split("\n");
-          const question = lines[0] ?? "";
-          const answer = lines
-            .slice(1)
-            .map((l) => l.replace(/^Answer:\s*/, ""))
-            .join("\n");
-          return `*${question}*\n\n**${answer}**`;
+        .map((answerGroup, index) => {
+          const rawQuestion = questions[index];
+          const question = typeof rawQuestion === "object" && rawQuestion != null && typeof (rawQuestion as { question?: unknown }).question === "string"
+            ? (rawQuestion as { question: string }).question
+            : `Question ${index + 1}`;
+          return `*${question}*\n\n**${answerGroup.join("\n")}**`;
         })
         .join("\n\n\n\n");
 
@@ -254,96 +318,25 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       sendRaw(sessionId, createProviderSet(session.serverSessionId, providerId));
     },
 
-    setModel(sessionId: string, modelId) {
+    setModel(sessionId: string, modelId: string) {
       const session = getSession(sessionId);
       sendRaw(sessionId, createModelSet(session.serverSessionId, modelId));
     },
 
-    setPermissionMode(sessionId: string, mode) {
+    setPermissionMode(sessionId: string, mode: PermissionMode) {
       const session = getSession(sessionId);
-      sendRaw(sessionId, createModeSet(session.serverSessionId, mode));
+      if (session.serverSessionId) {
+        sendRaw(sessionId, createModeSet(session.serverSessionId, mode));
+      }
       set(updateSession(get(), sessionId, { permissionMode: mode }));
     },
 
     approvePlan(sessionId: string) {
-      const session = getSession(sessionId);
-      const markedBlocks = markLastPlanBlock(session.blocks, "approved");
-      session.streamingState.counter += 1;
-      const updatedBlocks = [
-        ...markedBlocks,
-        {
-          id: `ws-user-${session.streamingState.counter}`,
-          type: "user_message" as const,
-          content: "Plan approved.",
-          isError: false,
-          createdAt: new Date().toISOString(),
-        },
-      ];
-      if (session.pendingRequestId) {
-        const isRestored = session.pendingRequestId.startsWith(PLAN_RESTORE_PREFIX);
-        sendRaw(sessionId, createModeSet(session.serverSessionId, "acceptEdits"));
-        sendRaw(sessionId, createPermissionRespond(session.serverSessionId, session.pendingRequestId, "allow_once"));
-        // For restored plans (CLI not running), also send a prompt to trigger
-        // CLI respawn with --resume. The stored plan_approval_result will be
-        // picked up by check_stored_approval on the next ExitPlanMode call.
-        if (isRestored) {
-          sendRaw(sessionId, createPromptSend(session.serverSessionId, "Plan approved. Proceed with execution."));
-        }
-        set(updateSession(get(), sessionId, {
-          pendingRequestId: "",
-          pendingPlanApproval: null,
-          permissionMode: "acceptEdits",
-          blocks: updatedBlocks,
-          status: "running",
-        }));
-      } else {
-        sendRaw(sessionId, createModeSet(session.serverSessionId, "acceptEdits"));
-        sendRaw(sessionId, createPromptSend(session.serverSessionId, "Plan approved. Exit plan mode and proceed with execution."));
-        set(updateSession(get(), sessionId, {
-          permissionMode: "acceptEdits",
-          pendingPlanApproval: null,
-          blocks: updatedBlocks,
-          status: "running",
-        }));
-      }
+      applyApprovePlan(ctx, sessionId, sendRaw, PLAN_RESTORE_PREFIX);
     },
 
-    requestPlanChanges(sessionId: string, feedback) {
-      const session = getSession(sessionId);
-      const blocksWithStatus = markLastPlanBlock(session.blocks, "rejected");
-      session.streamingState.counter += 1;
-      const blocksWithFeedback = feedback
-        ? [
-            ...blocksWithStatus,
-            {
-              id: `ws-user-${session.streamingState.counter}`,
-              type: "user_message" as const,
-              content: feedback,
-              isError: false,
-              createdAt: new Date().toISOString(),
-            },
-          ]
-        : blocksWithStatus;
-      if (session.pendingRequestId) {
-        const isRestored = session.pendingRequestId.startsWith(PLAN_RESTORE_PREFIX);
-        sendRaw(sessionId, createPermissionRespond(session.serverSessionId, session.pendingRequestId, "deny", undefined, feedback));
-        if (isRestored) {
-          sendRaw(sessionId, createPromptSend(session.serverSessionId, feedback || "Plan rejected. Revise the plan."));
-        }
-        set(updateSession(get(), sessionId, {
-          pendingRequestId: "",
-          pendingPlanApproval: null,
-          blocks: blocksWithFeedback,
-          status: "running",
-        }));
-      } else {
-        sendRaw(sessionId, createPromptSend(session.serverSessionId, feedback));
-        set(updateSession(get(), sessionId, {
-          pendingPlanApproval: null,
-          blocks: blocksWithFeedback,
-          status: "running",
-        }));
-      }
+    requestPlanChanges(sessionId: string, feedback: string) {
+      applyPlanChangesRequest(ctx, sessionId, feedback, sendRaw, PLAN_RESTORE_PREFIX);
     },
 
     retryWorktreeSetup(sessionId: string) {
@@ -354,7 +347,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       }));
     },
 
-    requestSlashCommands(sessionId: string, cwd) {
+    requestSlashCommands(sessionId: string, cwd: string) {
       const session = getSession(sessionId);
       if (session.slashCommands.length > 0 || session.slashCommandsLoading) return;
       set(updateSession(get(), sessionId, { slashCommandsLoading: true }));
@@ -365,37 +358,8 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       set(updateSession(get(), sessionId, { persistedLoaded: true }));
     },
 
-    setPersistedState(sessionId: string, { blocks, status, hasMore, oldestMessageId, featureId, sessionDbId, pendingPlanApproval }) {
-      const existing = get().sessions[sessionId];
-      if (existing && existing.blocks.length > 0) {
-        set(updateSession(get(), sessionId, {
-          persistedLoaded: true,
-          hasMore: hasMore ?? false,
-          oldestMessageId: oldestMessageId ?? null,
-          featureId: featureId ?? null,
-          sessionDbId: sessionDbId ?? null,
-          ...(pendingPlanApproval != null ? { pendingPlanApproval, status: "paused" as const } : {}),
-        }));
-        return;
-      }
-      // If pendingPlanApproval has plan content, inject it into the last
-      // ExitPlanMode block's toolArgs so PlanBlock renders on restore.
-      const enrichedBlocks = injectPlanIntoBlocks(blocks, pendingPlanApproval);
-      const todos = parseTodosFromBlocks(enrichedBlocks);
-      // Generate a synthetic request ID so approvePlan sends permission.respond
-      // instead of a text prompt. The "plan_restore_" prefix tells the backend
-      // to store the result in DB for the CLI to pick up on next spawn.
-      const restoredRequestId = pendingPlanApproval != null ? `${PLAN_RESTORE_PREFIX}${Date.now()}` : "";
-      set(updateSession(get(), sessionId, {
-        blocks: enrichedBlocks, status: pendingPlanApproval != null ? "paused" as const : status,
-        persistedLoaded: true,
-        ...(todos ? { todos } : {}),
-        hasMore: hasMore ?? false,
-        oldestMessageId: oldestMessageId ?? null,
-        featureId: featureId ?? null,
-        sessionDbId: sessionDbId ?? null,
-        ...(pendingPlanApproval != null ? { pendingPlanApproval, pendingRequestId: restoredRequestId } : {}),
-      }));
+    setPersistedState(sessionId: string, payload: PersistedStatePayload) {
+      applyPersistedState(ctx, sessionId, payload, PLAN_RESTORE_PREFIX);
     },
 
     async loadOlderMessages(sessionId: string) {

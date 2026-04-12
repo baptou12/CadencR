@@ -1,3 +1,7 @@
+import { extractApplyPatchPrimaryPath } from "@/lib/apply-patch";
+import { stringArg } from "@/lib/tool-args";
+import { normalizeToolName } from "@/lib/tool-adapter";
+
 /**
  * Parses Claude Code tool call arguments into human-readable summaries.
  * Used to show what the agent is doing (e.g. "Reading src/main.ts").
@@ -95,17 +99,17 @@ type ToolParser = (args: Record<string, unknown>) => ToolSummary;
 const toolParsers: Record<string, ToolParser> = {
   Task: (args) => ({
     label: "Running subtask",
-    detail: typeof args.description === "string" ? args.description : undefined,
+    detail: stringArg(args, "description"),
   }),
 
   Agent: (args) => ({
     label: "Running subtask",
-    detail: typeof args.description === "string" ? args.description : undefined,
+    detail: stringArg(args, "description"),
   }),
 
   Bash: (args) => ({
     label: "Running command",
-    detail: typeof args.command === "string" ? args.command : undefined,
+    detail: stringArg(args, "command"),
   }),
 
   Glob: (args) => {
@@ -136,37 +140,42 @@ const toolParsers: Record<string, ToolParser> = {
 
   Read: (args) => ({
     label: "Reading file",
-    detail: typeof args.file_path === "string" ? args.file_path : undefined,
+    detail: stringArg(args, "file_path", "filePath", "path"),
   }),
 
   Write: (args) => ({
     label: "Writing file",
-    detail: typeof args.file_path === "string" ? args.file_path : undefined,
+    detail: stringArg(args, "file_path", "filePath", "path"),
   }),
 
   Edit: (args) => ({
     label: "Editing file",
-    detail: typeof args.file_path === "string" ? args.file_path : undefined,
+    detail: stringArg(args, "file_path", "filePath", "path"),
+  }),
+
+  ApplyPatch: (args) => ({
+    label: "Applying patch",
+    detail: extractApplyPatchPrimaryPath(args),
   }),
 
   WebSearch: (args) => ({
     label: "Searching web",
-    detail: typeof args.query === "string" ? args.query : undefined,
+    detail: stringArg(args, "query"),
   }),
 
   WebFetch: (args) => ({
     label: "Fetching page",
-    detail: typeof args.url === "string" ? args.url : undefined,
+    detail: stringArg(args, "url"),
   }),
 
   Skill: (args) => ({
     label: "Running skill",
-    detail: typeof args.skill === "string" ? args.skill : undefined,
+    detail: stringArg(args, "skill"),
   }),
 
   ToolSearch: (args) => ({
     label: "Searching tools",
-    detail: typeof args.query === "string" ? args.query : undefined,
+    detail: stringArg(args, "query"),
   }),
 
   ExitPlanMode: () => ({
@@ -182,7 +191,7 @@ export function parseToolCall(
   toolName: string,
   toolArgs?: string,
 ): ToolSummary | undefined {
-  const parser = toolParsers[toolName];
+  const parser = toolParsers[normalizeToolName(toolName)];
   if (!parser) return undefined;
 
   let args: Record<string, unknown> = {};
@@ -206,13 +215,14 @@ export function getToolActivityLabel(
   toolName: string,
   toolArgs?: string,
 ): string {
-  const cadence = parseCadenceMcpTool(toolName, toolArgs);
+  const canonicalToolName = normalizeToolName(toolName);
+  const cadence = parseCadenceMcpTool(canonicalToolName, toolArgs);
   if (cadence) {
     const prefix = `[${cadence.server}]`;
     return cadence.detail ? `${prefix} ${cadence.label}: ${cadence.detail}` : `${prefix} ${cadence.label}`;
   }
-  const summary = parseToolCall(toolName, toolArgs);
-  if (!summary) return `Running ${toolName}`;
+  const summary = parseToolCall(canonicalToolName, toolArgs);
+  if (!summary) return `Running ${canonicalToolName}`;
   if (summary.detail) return `${summary.label}: ${summary.detail}`;
   return summary.label;
 }

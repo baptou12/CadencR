@@ -7,6 +7,7 @@
  */
 
 import { useState, useEffect, useCallback, useMemo, useRef, useImperativeHandle, forwardRef, memo } from "react";
+import { DEFAULT_PROVIDER } from "@/shared/models";
 import { cn, capitalize } from "@/lib/utils";
 import { Loader2Icon } from "lucide-react";
 import { AgentStream } from "../AgentStream";
@@ -122,10 +123,35 @@ export const AgentSession = memo(forwardRef<AgentSessionHandle, AgentSessionProp
       })),
     [agentCatalog.data],
   );
-  const activeProviderId = currentProviderId ?? runtimeProvider ?? "claude_code";
+  const allModels = useMemo(
+    () => providerOptions.flatMap((provider) => provider.models.map((model) => ({ ...model, providerId: provider.id }))),
+    [providerOptions],
+  );
+  const modelProviderId = useMemo(
+    () => allModels.find((model) => model.id === currentModelId)?.providerId,
+    [allModels, currentModelId],
+  );
+  const providerSupportsModel = useCallback((providerId?: string) => {
+    if (!providerId || !currentModelId) return false;
+    const provider = providerOptions.find((entry) => entry.id === providerId);
+    if (!provider) return false;
+    return provider.models.some((model) => model.id === currentModelId);
+  }, [currentModelId, providerOptions]);
+  const activeProviderId = useMemo(() => {
+    const preferredCurrentProvider = currentProviderId && (!currentModelId || providerSupportsModel(currentProviderId))
+      ? currentProviderId
+      : undefined;
+    if (preferredCurrentProvider) return preferredCurrentProvider;
+
+    const preferredRuntimeProvider = runtimeProvider && (!currentModelId || providerSupportsModel(runtimeProvider))
+      ? runtimeProvider
+      : undefined;
+    if (preferredRuntimeProvider) return preferredRuntimeProvider;
+
+    return modelProviderId ?? runtimeProvider ?? currentProviderId ?? DEFAULT_PROVIDER;
+  }, [currentProviderId, currentModelId, modelProviderId, providerSupportsModel, runtimeProvider]);
   const activeProvider = providerOptions.find((provider) => provider.id === activeProviderId);
   const visibleModels = activeProvider?.models.length ? activeProvider.models : models;
-  const allModels = providerOptions.flatMap((provider) => provider.models.map((model) => ({ ...model, providerId: provider.id })));
   const currentModelLabel =
     allModels.find((m) => m.id === currentModelId && m.providerId === activeProviderId)?.label ??
     visibleModels.find((m) => m.id === currentModelId)?.label ??

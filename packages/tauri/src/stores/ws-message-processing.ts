@@ -6,6 +6,7 @@
  */
 
 import type { AgentBlockData } from "@/components/AgentBlock";
+import { normalizeToolName } from "@/lib/tool-adapter";
 
 // Streaming state — tracks in-flight content blocks by index
 
@@ -125,7 +126,7 @@ function processContentBlockStart(
 
   if (blockType === "tool_use") {
     const toolUseId = contentBlock.id as string;
-    const toolName = contentBlock.name as string;
+    const toolName = normalizeToolName(contentBlock.name as string);
     state.toolUseIds.set(index, toolUseId);
     state.toolUseIdToIndex.set(toolUseId, index);
 
@@ -219,7 +220,7 @@ function processAssistantMessage(
     } else if (cbType === "thinking") {
       results.push({ action: "append", block: { id: blockId, type: "thinking", content: cb.thinking as string, parentToolUseId: parentId, createdAt: now } });
     } else if (cbType === "tool_use") {
-      const toolName = cb.name as string;
+      const toolName = normalizeToolName(cb.name as string);
       if (toolName === "ExitPlanMode") state.exitPlanModeDetected = true;
       if (toolName === "EnterPlanMode") state.enterPlanModeDetected = true;
       const isSubagent = toolName === "Task" || toolName === "Agent";

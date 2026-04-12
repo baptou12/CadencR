@@ -1,8 +1,23 @@
 import type { AgentQuestion } from "@/components/AgentQuestionDrawer";
 import { parseAskUserQuestions } from "@/components/AgentQuestionDrawer";
 import type { SlashCommand } from "@/hooks/useSlashCommand";
-import type { CommandsListPayload } from "@/lib/ws-envelope";
 import { invalidateFeatureQueries } from "@/lib/featureUpdated";
+import {
+  parseClaudeSessionIdPayload,
+  parseClearedPayload,
+  parseCommandsListPayload,
+  parseErrorPayload,
+  parseFeatureRenamePayload,
+  parseFeatureUpdatedPayload,
+  parseInitializedPayload,
+  parseMessageBlocksPayload,
+  parseModePayload,
+  parseModelPayload,
+  parsePermissionPayload,
+  parseProviderPayload,
+  parseUsagePayload,
+} from "./ws-envelope-payload";
+import { handleWorktreeEvent } from "./ws-worktree-handler";
 import {
   type BlockMutation,
   type StreamingState,
@@ -14,58 +29,16 @@ import {
 import type { SessionEntry, WsSessionStore } from "./ws-session-types";
 import { updateSession } from "./ws-session-types";
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value != null && typeof value === "object";
+}
+
 // Types for the store accessors we need
 
 export interface StoreAccessors {
   get: () => WsSessionStore;
   set: (partial: Partial<WsSessionStore>) => void;
   getSession: (sessionId: string) => SessionEntry;
-}
-
-// Worktree events
-
-function handleWorktreeEvent(
-  ctx: StoreAccessors,
-  sessionId: string,
-  action: string,
-  payload: Record<string, unknown>,
-): void {
-  switch (action) {
-    case "worktree.creating":
-      ctx.set(updateSession(ctx.get(), sessionId, {
-        worktreeStatus: "creating",
-        worktreeBranch: (payload.branch as string) ?? null,
-        worktreePath: (payload.path as string) ?? null,
-        worktreeError: null,
-      }));
-      break;
-    case "worktree.created":
-      ctx.set(updateSession(ctx.get(), sessionId, {
-        worktreeStatus: "created",
-        worktreeBranch: (payload.branch as string) ?? null,
-        worktreePath: (payload.path as string) ?? null,
-      }));
-      break;
-    case "worktree.setup_running":
-      ctx.set(updateSession(ctx.get(), sessionId, { worktreeStatus: "setup_running" }));
-      break;
-    case "worktree.setup_output": {
-      const session = ctx.getSession(sessionId);
-      ctx.set(updateSession(ctx.get(), sessionId, {
-        worktreeSetupOutput: [...session.worktreeSetupOutput, payload.line as string],
-      }));
-      break;
-    }
-    case "worktree.ready":
-      ctx.set(updateSession(ctx.get(), sessionId, { worktreeStatus: "ready" }));
-      break;
-    case "worktree.setup_error":
-      ctx.set(updateSession(ctx.get(), sessionId, {
-        worktreeStatus: "setup_error",
-        worktreeError: (payload.error as string) ?? (payload.message as string) ?? null,
-      }));
-      break;
-  }
 }
 
 // Main envelope handler
@@ -92,13 +65,13 @@ export function handleEnvelope(
   }
 
   if (envelope.domain === "feature" && envelope.action === "updated") {
-    const p = envelope.payload as { feature_id?: number; changed?: string[] };
-    if (p.feature_id) invalidateFeatureQueries(p.feature_id, p.changed ?? []);
+    const p = parseFeatureUpdatedPayload(envelope.payload);
+    if (p?.feature_id) invalidateFeatureQueries(p.feature_id, p.changed);
     return;
   }
 
   if (envelope.domain === "workflow") {
-    handleWorktreeEvent(ctx, sessionId, envelope.action, envelope.payload as Record<string, unknown>);
+    handleWorktreeEvent(ctx, sessionId, envelope.action, envelope.payload);
     return;
   }
 
@@ -115,7 +88,8 @@ function handleCommandsDomain(
   envelope: { action: string; payload: unknown },
 ): void {
   if (envelope.action === "list") {
-    const p = envelope.payload as CommandsListPayload;
+    const p = parseCommandsListPayload(envelope.payload);
+    if (!p) return;
     const cmds: SlashCommand[] = (p.commands ?? []).map((c) => ({
       name: c.name,
       description: c.description ?? "",
@@ -140,9 +114,13 @@ function handleSessionAction(
       handleInitialized(ctx, sessionId, envelope.payload);
       break;
     case "claude_session_id": {
-      const p = envelope.payload as { claude_session_id?: string };
-      if (p.claude_session_id && p.claude_session_id !== ctx.getSession(sessionId).claudeSessionId) {
-        ctx.set(updateSession(ctx.get(), sessionId, { claudeSessionId: p.claude_session_id }));
+      const p = parseClaudeSessionIdPayload(envelope.payload);
+      const sessionIdValue = p?.claude_session_id;
+      if (sessionIdValue && sessionIdValue !== ctx.getSession(sessionId).claudeSessionId) {
+        ctx.set(updateSession(ctx.get(), sessionId, {
+          claudeSessionId: sessionIdValue,
+          runtimeSessionId: sessionIdValue,
+        }));
       }
       break;
     }
@@ -153,15 +131,15 @@ function handleSessionAction(
       handlePermissionRequest(ctx, sessionId, envelope.payload, state);
       break;
     case "mode.changed": {
-      const p = envelope.payload as { mode?: string };
-      if (p.mode === "acceptEdits" || p.mode === "plan") {
+      const p = parseModePayload(envelope.payload);
+      if (p?.mode === "acceptEdits" || p?.mode === "plan") {
         ctx.set(updateSession(ctx.get(), sessionId, { permissionMode: p.mode }));
       }
       break;
     }
     case "provider.set.ok": {
-      const p = envelope.payload as { provider?: string };
-      if (p.provider) {
+      const p = parseProviderPayload(envelope.payload);
+      if (p?.provider) {
         ctx.set(updateSession(ctx.get(), sessionId, {
           currentProviderId: p.provider,
           runtimeProvider: p.provider,
@@ -170,8 +148,8 @@ function handleSessionAction(
       break;
     }
     case "model.set.ok": {
-      const p = envelope.payload as { model?: string };
-      if (p.model) {
+      const p = parseModelPayload(envelope.payload);
+      if (p?.model) {
         ctx.set(updateSession(ctx.get(), sessionId, { currentModelId: p.model }));
       }
       break;
@@ -193,8 +171,8 @@ function handleSessionAction(
       handleUsageUpdate(ctx, sessionId, envelope.payload);
       break;
     case "feature.renamed": {
-      const p = envelope.payload as { feature_id?: number; title?: string };
-      if (p.title) ctx.set(updateSession(ctx.get(), sessionId, { featureTitle: p.title }));
+      const p = parseFeatureRenamePayload(envelope.payload);
+      if (p?.title) ctx.set(updateSession(ctx.get(), sessionId, { featureTitle: p.title }));
       break;
     }
     case "ended":
@@ -209,18 +187,18 @@ function handleInitialized(
   sessionId: string,
   payload: unknown,
 ): void {
-  const p = payload as {
-    session_id?: string;
-    model?: string;
-    input_tokens?: number;
-    output_tokens?: number;
-    context_window?: number;
-  };
+  const p = parseInitializedPayload(payload);
+  if (!p) return;
   const updates: Partial<SessionEntry> = {
     serverSessionId: p.session_id ?? "",
-    status: "idle",
+    status: ctx.getSession(sessionId).queuedPrompts.length > 0 ? "running" : "idle",
   };
-  updates.runtimeProvider = ctx.getSession(sessionId).currentProviderId;
+  if (p.provider) {
+    updates.currentProviderId = p.provider;
+    updates.runtimeProvider = p.provider;
+  } else {
+    updates.runtimeProvider = ctx.getSession(sessionId).currentProviderId;
+  }
   if (p.model) updates.currentModelId = p.model;
   if (p.input_tokens != null || p.output_tokens != null) {
     const inputTokens = p.input_tokens ?? 0;
@@ -245,13 +223,13 @@ function handleMessage(
   payload: unknown,
   state: StreamingState,
 ): void {
-  const p = payload as { blocks?: unknown[] };
-  if (!p.blocks || !Array.isArray(p.blocks)) return;
+  const p = parseMessageBlocksPayload(payload);
+  if (!p) return;
 
   const allMutations: BlockMutation[] = [];
   for (const rawBlock of p.blocks) {
-    if (!rawBlock || typeof rawBlock !== "object") continue;
-    allMutations.push(...processSdkMessage(rawBlock as Record<string, unknown>, state));
+    if (!isRecord(rawBlock)) continue;
+    allMutations.push(...processSdkMessage(rawBlock, state));
   }
 
   if (allMutations.length > 0) {
@@ -259,8 +237,6 @@ function handleMessage(
     const newBlocks = applyMutations(currentSession.blocks, allMutations, state);
     const patch = buildMessagePatch(newBlocks, allMutations, state);
     ctx.set(updateSession(ctx.get(), sessionId, patch));
-  } else {
-    ctx.set(updateSession(ctx.get(), sessionId, { status: "running" }));
   }
 }
 
@@ -270,13 +246,8 @@ function handlePermissionRequest(
   payload: unknown,
   state: StreamingState,
 ): void {
-  const p = payload as {
-    request_id: string;
-    tool_name: string;
-    tool_input: Record<string, unknown>;
-    description?: string;
-    pattern?: string;
-  };
+  const p = parsePermissionPayload(payload);
+  if (!p?.request_id || !p.tool_name) return;
 
   if (p.tool_name === "ExitPlanMode") {
     state.exitPlanModeDetected = false;
@@ -295,7 +266,7 @@ function handlePermissionRequest(
       status: "paused",
     }));
   } else if (p.tool_name === "AskUserQuestion") {
-    const toolInput = (p.tool_input ?? {}) as Record<string, unknown>;
+    const toolInput = p.tool_input ?? {};
     const questions: AgentQuestion[] = parseAskUserQuestions(toolInput);
     ctx.set(updateSession(ctx.get(), sessionId, {
       pendingRequestId: p.request_id,
@@ -323,8 +294,8 @@ function handleError(
   payload: unknown,
   state: StreamingState,
 ): void {
-  const p = payload as { message?: string };
-  if (p.message) {
+  const p = parseErrorPayload(payload);
+  if (p?.message) {
     state.counter += 1;
     const currentSession = ctx.getSession(sessionId);
     ctx.set(updateSession(ctx.get(), sessionId, {
@@ -351,7 +322,7 @@ function handleCleared(
 ): void {
   const session = ctx.get().sessions[sessionId];
   const existingBlocks = session?.blocks ?? [];
-  const previousSessionId = (payload as Record<string, unknown>)?.previous_session_id as string ?? "";
+  const previousSessionId = parseClearedPayload(payload)?.previous_session_id ?? "";
   ctx.set(updateSession(ctx.get(), sessionId, {
     blocks: [
       ...existingBlocks,
@@ -373,7 +344,8 @@ function handleUsageUpdate(
   sessionId: string,
   payload: unknown,
 ): void {
-  const u = payload as { input_tokens: number; output_tokens: number; context_window: number };
+  const u = parseUsagePayload(payload);
+  if (!u) return;
   const totalTokens = u.input_tokens + u.output_tokens;
   const contextWindow = u.context_window || 200000;
   ctx.set(updateSession(ctx.get(), sessionId, {

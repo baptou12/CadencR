@@ -6,7 +6,7 @@ import type { AgentBlockData } from "@/components/AgentBlock";
 import type { AgentStatus, TodoItem } from "@/types/agent";
 import type { ContextUsageState } from "@/types/agent";
 import type { PendingPermission } from "@/components/ToolPermissionPrompt";
-import type { AgentQuestion } from "@/components/AgentQuestionDrawer";
+import type { AgentQuestion, AgentQuestionAnswers } from "@/components/AgentQuestionDrawer";
 import type { SlashCommand } from "@/hooks/useSlashCommand";
 import type { WorktreeStatus } from "@/types/workflow";
 import type { WsConnection } from "@/lib/ws-connection";
@@ -20,6 +20,12 @@ export type PermissionMode = "acceptEdits" | "plan";
 export interface PendingPlanApproval {
   allowedPrompts?: Array<{ tool: string; prompt: string }>;
   plan?: string;
+}
+
+export interface QueuedPrompt {
+  text: string;
+  images?: Array<{ base64: string; mimeType: string }>;
+  useWorktree?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -42,6 +48,7 @@ export interface SessionEntry {
   currentProviderId: string;
   currentModelId: string;
   runtimeProvider: string;
+  runtimeSessionId: string;
   persistedLoaded: boolean;
   contextUsage: ContextUsageState | null;
   claudeSessionId: string;
@@ -60,6 +67,7 @@ export interface SessionEntry {
   oldestMessageId: number | null;
   featureId: number | null;
   sessionDbId: number | null;
+  queuedPrompts: QueuedPrompt[];
 }
 
 export function createSessionEntry(): SessionEntry {
@@ -80,6 +88,7 @@ export function createSessionEntry(): SessionEntry {
     currentProviderId: DEFAULT_PROVIDER,
     currentModelId: DEFAULT_MODEL,
     runtimeProvider: DEFAULT_PROVIDER,
+    runtimeSessionId: "",
     persistedLoaded: false,
     contextUsage: null,
     hasFileChanges: false,
@@ -97,6 +106,7 @@ export function createSessionEntry(): SessionEntry {
     oldestMessageId: null,
     featureId: null,
     sessionDbId: null,
+    queuedPrompts: [],
   };
 }
 
@@ -114,7 +124,7 @@ export interface WsSessionStore {
   initSession: (sessionId: string, config: SessionConfig) => void;
   sendPrompt: (sessionId: string, text: string, images?: Array<{ base64: string; mimeType: string }>, useWorktree?: boolean) => void;
   respondToPermission: (sessionId: string, requestId: string, granted: boolean) => void;
-  respondToQuestion: (sessionId: string, response: string) => void;
+  respondToQuestion: (sessionId: string, response: AgentQuestionAnswers) => void;
   interrupt: (sessionId: string) => void;
   destroy: (sessionId: string) => void;
   clearSession: (sessionId: string) => void;
@@ -138,6 +148,10 @@ export interface WsSessionStore {
     oldestMessageId?: number | null;
     featureId?: number;
     sessionDbId?: number;
+    currentProviderId?: string;
+    currentModelId?: string;
+    runtimeProvider?: string | null;
+    runtimeSessionId?: string | null;
     pendingPlanApproval?: PendingPlanApproval | null;
   }) => void;
   loadOlderMessages: (sessionId: string) => Promise<void>;

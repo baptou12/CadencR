@@ -1,7 +1,7 @@
 import type { Loader2Icon } from "lucide-react";
 import type { AgentBlockData } from "../AgentBlock";
 import type { AgentType } from "../../types/agent-types";
-import type { AgentQuestion } from "../AgentQuestionDrawer";
+import type { AgentQuestion, AgentQuestionAnswers } from "../AgentQuestionDrawer";
 import type { TodoItem } from "@/types/agent";
 import type { ContextUsageState } from "@/types/agent";
 import type { PendingPermission } from "../ToolPermissionPrompt";
@@ -22,7 +22,7 @@ export interface AgentSessionProps {
   /** Active questions from AskUserQuestion tool calls */
   pendingQuestions?: AgentQuestion[];
   /** Called when the user submits a response to questions */
-  onAnswerSubmit?: (response: string) => void;
+  onAnswerSubmit?: (response: AgentQuestionAnswers) => void;
   /** When true, disables keyboard shortcuts in the question drawer */
   disableShortcuts?: boolean;
   /** Override label (e.g. "Execute 1" for parallel phases) */
