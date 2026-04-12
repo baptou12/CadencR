@@ -28,6 +28,8 @@ Frontend path alias: `@` -> `packages/tauri/src/` (for example `import { foo } f
 - Search for existing code before writing new code. Reuse helpers, hooks, utilities, and components instead of duplicating logic.
 - Avoid unnecessary re-renders, redundant network calls, and heavy main-thread work
 - Do not run `pnpm orval`; `packages/tauri/src/api/generated/index.ts` is hand-maintained
+- In Rust source files, keep unit tests inline with the module they cover using `#[cfg(test)]`; do not create dedicated sibling `tests.rs` files for module unit tests
+- Do not spread provider-specific logic through shared frontend/backend codepaths; SDKs handle provider communication, adapters unify provider business logic, and shared code should stay provider-neutral
 - No file longer than 400 lines; refactor before crossing the limit
 - No function longer than 100 lines; split long functions before finishing
 
