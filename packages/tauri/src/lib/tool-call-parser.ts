@@ -170,7 +170,7 @@ const toolParsers: Record<string, ToolParser> = {
 
   Skill: (args) => ({
     label: "Running skill",
-    detail: stringArg(args, "skill"),
+    detail: stringArg(args, "skill", "name"),
   }),
 
   ToolSearch: (args) => ({

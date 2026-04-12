@@ -11,6 +11,11 @@ pub(crate) fn canonical_tool_name(name: String) -> String {
         "task" => "Task".to_string(),
         "agent" => "Agent".to_string(),
         "apply_patch" => "ApplyPatch".to_string(),
+        "todowrite" => "TodoWrite".to_string(),
+        "webfetch" => "WebFetch".to_string(),
+        "websearch" => "WebSearch".to_string(),
+        "skill" => "Skill".to_string(),
+        "toolsearch" => "ToolSearch".to_string(),
         _ => name,
     }
 }
@@ -95,6 +100,11 @@ mod tests {
     fn canonical_tool_name_maps_known_aliases() {
         assert_eq!(canonical_tool_name("bash".to_string()), "Bash");
         assert_eq!(canonical_tool_name("apply_patch".to_string()), "ApplyPatch");
+        assert_eq!(canonical_tool_name("todowrite".to_string()), "TodoWrite");
+        assert_eq!(canonical_tool_name("webfetch".to_string()), "WebFetch");
+        assert_eq!(canonical_tool_name("websearch".to_string()), "WebSearch");
+        assert_eq!(canonical_tool_name("skill".to_string()), "Skill");
+        assert_eq!(canonical_tool_name("toolsearch".to_string()), "ToolSearch");
         assert_eq!(
             canonical_tool_name("custom_tool".to_string()),
             "custom_tool"
