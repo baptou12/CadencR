@@ -334,11 +334,8 @@ mod tests {
     #[test]
     fn resume_session_for_claude_accepts_uuid() {
         let sid = "11111111-1111-4111-8111-111111111111";
-        let resume = resume_session_id_for_provider(
-            DEFAULT_PROVIDER,
-            Some(DEFAULT_PROVIDER),
-            Some(sid),
-        );
+        let resume =
+            resume_session_id_for_provider(DEFAULT_PROVIDER, Some(DEFAULT_PROVIDER), Some(sid));
         assert_eq!(resume, Some(sid.to_string()));
     }
 
@@ -349,11 +346,8 @@ mod tests {
             resume_session_id_for_provider("opencode", Some("opencode"), Some(opencode_sid));
         assert_eq!(matching, Some(opencode_sid.to_string()));
 
-        let mismatched = resume_session_id_for_provider(
-            "claude_code",
-            Some("opencode"),
-            Some(opencode_sid),
-        );
+        let mismatched =
+            resume_session_id_for_provider("claude_code", Some("opencode"), Some(opencode_sid));
         assert_eq!(mismatched, None);
     }
 }

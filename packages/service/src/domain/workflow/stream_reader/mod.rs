@@ -331,8 +331,7 @@ async fn capture_session_id(
     }
     *needs_capture = false;
     debug!(slot = %slot, db_session_id, runtime_session_id = %cli_sid, "persisting runtime session_id to DB");
-    WsSessionPersistence::persist_runtime_session_id_only(write_pool, db_session_id, cli_sid)
-        .await;
+    WsSessionPersistence::persist_runtime_session_id_only(write_pool, db_session_id, cli_sid).await;
     let sid_env = WsEnvelope::new(
         "workflow",
         "agent_session_id",
