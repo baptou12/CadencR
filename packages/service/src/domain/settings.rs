@@ -28,6 +28,41 @@ const SHARED_COLUMNS: &[&str] = &[
 /// Columns that only exist on the `projects` table.
 const PROJECT_ONLY_COLUMNS: &[&str] = &["branch_prefix", "qa_prompt"];
 
+async fn table_has_column(pool: &SqlitePool, table: &str, key: &str) -> bool {
+    let sql = format!("SELECT 1 FROM pragma_table_info('{table}') WHERE name = ? LIMIT 1");
+    sqlx::query_scalar::<_, i64>(&sql)
+        .bind(key)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()
+        .is_some()
+}
+
+async fn resolve_table_column_setting(
+    pool: &SqlitePool,
+    table: &str,
+    row_id: i64,
+    key: &str,
+) -> Option<String> {
+    if !table_has_column(pool, table, key).await {
+        return None;
+    }
+
+    let sql = format!(r#"SELECT "{key}" as v FROM {table} WHERE id = ?"#);
+    if let Ok(Some((Some(v),))) = sqlx::query_as::<_, (Option<String>,)>(&sql)
+        .bind(row_id)
+        .fetch_optional(pool)
+        .await
+    {
+        if !v.is_empty() {
+            return Some(v);
+        }
+    }
+
+    None
+}
+
 /// Resolve a setting using the cascade: feature column → project column → global EAV → default.
 ///
 /// - For columns in `SHARED_COLUMNS`: feature → project → global → default.
@@ -45,15 +80,8 @@ pub async fn resolve_setting(
     // 1. Feature-level (real column)
     if let Some(fid) = feature_id {
         if SHARED_COLUMNS.contains(&key) {
-            let sql = format!(r#"SELECT "{key}" as v FROM features WHERE id = ?"#);
-            if let Ok(Some((Some(v),))) = sqlx::query_as::<_, (Option<String>,)>(&sql)
-                .bind(fid)
-                .fetch_optional(pool)
-                .await
-            {
-                if !v.is_empty() {
-                    return Some(v);
-                }
+            if let Some(v) = resolve_table_column_setting(pool, "features", fid, key).await {
+                return Some(v);
             }
         }
     }
@@ -61,15 +89,8 @@ pub async fn resolve_setting(
     // 2. Project-level (real column)
     if let Some(pid) = project_id {
         if SHARED_COLUMNS.contains(&key) || PROJECT_ONLY_COLUMNS.contains(&key) {
-            let sql = format!(r#"SELECT "{key}" as v FROM projects WHERE id = ?"#);
-            if let Ok(Some((Some(v),))) = sqlx::query_as::<_, (Option<String>,)>(&sql)
-                .bind(pid)
-                .fetch_optional(pool)
-                .await
-            {
-                if !v.is_empty() {
-                    return Some(v);
-                }
+            if let Some(v) = resolve_table_column_setting(pool, "projects", pid, key).await {
+                return Some(v);
             }
         }
     }
@@ -230,5 +251,54 @@ mod tests {
 
         let result = resolve_setting(&pool, "qa_prompt", None, Some(1), None).await;
         assert_eq!(result, Some("run tests".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_missing_shared_column_falls_back_to_default() {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        sqlx::query(
+            r#"CREATE TABLE features (
+                id INTEGER PRIMARY KEY,
+                project_id INTEGER,
+                title TEXT
+            )"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            r#"CREATE TABLE projects (
+                id INTEGER PRIMARY KEY,
+                name TEXT NOT NULL,
+                path TEXT NOT NULL
+            )"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT)")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        sqlx::query("INSERT INTO projects (id, name, path) VALUES (1, 'p', '/tmp')")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO features (id, project_id, title) VALUES (1, 1, 'f')")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let result = resolve_setting(
+            &pool,
+            "agent_runtime_session",
+            Some(1),
+            Some(1),
+            Some("claude_code"),
+        )
+        .await;
+
+        assert_eq!(result, Some("claude_code".to_string()));
     }
 }

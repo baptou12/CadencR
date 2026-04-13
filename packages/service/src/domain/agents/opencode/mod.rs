@@ -3,6 +3,7 @@ mod model;
 pub(crate) mod permissions;
 mod questions;
 mod stream_loop;
+mod stream_state;
 mod stream_synthesizer;
 
 use std::collections::HashMap;

@@ -1,5 +1,6 @@
 pub mod adapter;
 pub mod claude_code;
+pub mod model_refs;
 pub mod opencode;
 pub mod providers;
 pub mod runtime;

@@ -13,6 +13,7 @@ use super::{
 };
 use crate::app_state::AppState;
 use crate::domain::agents::adapter::RuntimeSpawnConfig;
+use crate::domain::agents::model_refs::is_opencode_model_ref;
 use crate::domain::agents::runtime::DEFAULT_PROVIDER;
 use crate::domain::agents::runtime_adapter;
 use crate::domain::settings;
@@ -46,6 +47,13 @@ fn resume_session_id_for_provider(
     } else {
         None
     }
+}
+
+fn resolve_effective_provider(provider_id: String, model: Option<&str>) -> String {
+    if provider_id == DEFAULT_PROVIDER && model.is_some_and(is_opencode_model_ref) {
+        return "opencode".to_string();
+    }
+    provider_id
 }
 
 /// Handle session.init: DB-driven session creation.
@@ -152,9 +160,14 @@ pub(super) async fn handle_init(
     )
     .await
     .unwrap_or_else(|| DEFAULT_PROVIDER.to_string());
-    let effective_provider = runtime_provider
-        .or(payload.provider.clone())
-        .unwrap_or(configured_provider);
+    let stored_model = row.as_ref().and_then(|r| r.model.clone());
+    let effective_model = stored_model.clone().or(payload.model.clone());
+    let effective_provider = resolve_effective_provider(
+        runtime_provider
+            .or(payload.provider.clone())
+            .unwrap_or(configured_provider),
+        effective_model.as_deref(),
+    );
     let resume_session_id = row.as_ref().and_then(|r| {
         resume_session_id_for_provider(
             &effective_provider,
@@ -163,7 +176,6 @@ pub(super) async fn handle_init(
             r.claude_session_id.as_deref(),
         )
     });
-    let stored_model = row.as_ref().and_then(|r| r.model.clone());
     let init_input_tokens = row.as_ref().and_then(|r| r.input_tokens);
     let init_output_tokens = row.as_ref().and_then(|r| r.output_tokens);
     let init_context_window = row.as_ref().and_then(|r| r.context_window);
@@ -195,7 +207,6 @@ pub(super) async fn handle_init(
     }
 
     // Build SDK options — prefer the model stored in the DB (last used) over the frontend settings model
-    let effective_model = stored_model.clone().or(payload.model.clone());
     let mut runtime_config = RuntimeSpawnConfig::default();
     // If the feature has a worktree, use its path as cwd (critical for --resume)
     let effective_cwd =

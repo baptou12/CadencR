@@ -13,7 +13,7 @@ impl WsSessionPersistence {
             write_pool,
             session_db_id,
             feature_id,
-            current_model: None,
+            current_models: HashMap::new(),
             pending_tool_inputs: HashMap::new(),
             pending_tool_row_ids: HashMap::new(),
             file_change_marked: false,
@@ -36,10 +36,9 @@ impl WsSessionPersistence {
 
         if let Some((id,)) = existing {
             if let Err(e) = sqlx::query(
-                "UPDATE agent_sessions SET status = 'paused', permission_mode = COALESCE(?, permission_mode), runtime_provider = COALESCE(runtime_provider, ?) WHERE id = ?",
+                "UPDATE agent_sessions SET status = 'paused', permission_mode = COALESCE(?, permission_mode) WHERE id = ?",
             )
             .bind(permission_mode)
-            .bind(crate::domain::agents::runtime::DEFAULT_PROVIDER)
             .bind(id)
             .execute(&self.write_pool)
             .await
@@ -54,10 +53,9 @@ impl WsSessionPersistence {
 
         let now = chrono::Utc::now().to_rfc3339();
         let result = sqlx::query(
-            "INSERT INTO agent_sessions (feature_id, agent_type, status, runtime_provider, model, permission_mode, started_at) VALUES (?, 'session', 'paused', ?, ?, ?, ?)",
+            "INSERT INTO agent_sessions (feature_id, agent_type, status, model, permission_mode, started_at) VALUES (?, 'session', 'paused', ?, ?, ?)",
         )
         .bind(self.feature_id)
-        .bind(crate::domain::agents::runtime::DEFAULT_PROVIDER)
         .bind(model)
         .bind(permission_mode)
         .bind(&now)
@@ -221,6 +219,22 @@ mod session_bootstrap_tests {
         let id2 = p2.find_or_create_session(None, None).await.unwrap();
 
         assert_ne!(id1, id2);
+    }
+
+    #[tokio::test]
+    async fn test_find_or_create_session_leaves_runtime_provider_unset() {
+        let pool = setup_test_db().await;
+        let mut p = WsSessionPersistence::new(pool.clone(), 1);
+        let id = p.find_or_create_session(None, None).await.unwrap();
+
+        let row: (Option<String>,) =
+            sqlx::query_as("SELECT runtime_provider FROM agent_sessions WHERE id = ?")
+                .bind(id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+
+        assert_eq!(row.0, None);
     }
 
     #[tokio::test]
