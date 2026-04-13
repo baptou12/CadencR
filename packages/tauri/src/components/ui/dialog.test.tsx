@@ -53,6 +53,18 @@ describe("Dialog", () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
+  it("sets aria-describedby to undefined by default", () => {
+    render(
+      <Dialog open>
+        <DialogContent>
+          <DialogTitle>No Description</DialogTitle>
+        </DialogContent>
+      </Dialog>
+    );
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).not.toHaveAttribute("aria-describedby");
+  });
+
   it("does not render content when closed", () => {
     render(
       <Dialog open={false}>
