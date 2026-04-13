@@ -46,6 +46,7 @@ impl SseStream {
 pub struct SseDispatcher {
     subscribers: Arc<Mutex<HashMap<String, Vec<mpsc::Sender<SseEvent>>>>>,
     permission_subscribers: Arc<Mutex<Vec<mpsc::Sender<SseEvent>>>>,
+    session_roots: Arc<Mutex<HashMap<String, String>>>,
 }
 
 impl SseDispatcher {
@@ -53,6 +54,7 @@ impl SseDispatcher {
         let dispatcher = Arc::new(Self {
             subscribers: Arc::new(Mutex::new(HashMap::new())),
             permission_subscribers: Arc::new(Mutex::new(Vec::new())),
+            session_roots: Arc::new(Mutex::new(HashMap::new())),
         });
         let stream_dispatcher = Arc::clone(&dispatcher);
         tokio::spawn(async move {
@@ -94,6 +96,11 @@ impl SseDispatcher {
             .entry(session_id.to_string())
             .or_default()
             .push(tx);
+        self.session_roots
+            .lock()
+            .await
+            .entry(session_id.to_string())
+            .or_insert_with(|| session_id.to_string());
         rx
     }
 
@@ -108,10 +115,17 @@ impl SseDispatcher {
     }
 
     async fn dispatch(&self, event: SseEvent) {
+        self.update_session_root(&event).await;
         if let Some(session_id) = event.session_id() {
+            let root_session_id = self.resolve_root_session_id(session_id).await;
             let mut subscribers = self.subscribers.lock().await;
             if let Some(session_subscribers) = subscribers.get_mut(session_id) {
                 retain_live_senders(session_subscribers, &event).await;
+            }
+            if let Some(root_session_id) = root_session_id.filter(|root| root != session_id) {
+                if let Some(root_subscribers) = subscribers.get_mut(root_session_id.as_str()) {
+                    retain_live_senders(root_subscribers, &event).await;
+                }
             }
         }
         if matches!(
@@ -124,6 +138,37 @@ impl SseDispatcher {
             let mut subscribers = self.permission_subscribers.lock().await;
             retain_live_senders(&mut subscribers, &event).await;
         }
+    }
+
+    async fn update_session_root(&self, event: &SseEvent) {
+        let (session_id, parent_id) = match event {
+            SseEvent::SessionCreated(session) | SseEvent::SessionUpdated(session) => {
+                (session.id.clone(), session.parent_id.clone())
+            }
+            SseEvent::SessionDeleted { session_id } => {
+                self.session_roots.lock().await.remove(session_id);
+                return;
+            }
+            _ => return,
+        };
+
+        let mut session_roots = self.session_roots.lock().await;
+        if let Some(parent_id) = parent_id {
+            let root = session_roots
+                .get(&parent_id)
+                .cloned()
+                .unwrap_or(parent_id);
+            session_roots.insert(session_id, root);
+            return;
+        }
+
+        session_roots
+            .entry(session_id.clone())
+            .or_insert(session_id);
+    }
+
+    async fn resolve_root_session_id(&self, session_id: &str) -> Option<String> {
+        self.session_roots.lock().await.get(session_id).cloned()
     }
 }
 
@@ -155,4 +200,110 @@ async fn retain_live_senders(subscribers: &mut Vec<mpsc::Sender<SseEvent>>, even
         }
     }
     *subscribers = next;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SseDispatcher;
+    use crate::types::{Message, MessageRole, Session, SessionStatus, SseEvent};
+
+    #[tokio::test]
+    async fn child_session_events_are_forwarded_to_root_subscriber() {
+        let dispatcher = SseDispatcher {
+            subscribers: std::sync::Arc::new(tokio::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
+            permission_subscribers: std::sync::Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            session_roots: std::sync::Arc::new(tokio::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
+        };
+
+        let mut root_rx = dispatcher.subscribe("root").await;
+        dispatcher
+            .dispatch(SseEvent::SessionCreated(Session {
+                id: "child".to_string(),
+                title: None,
+                directory: "/tmp".to_string(),
+                status: SessionStatus::Active,
+                parent_id: Some("root".to_string()),
+                created_at: None,
+                updated_at: None,
+            }))
+            .await;
+
+        let forwarded = root_rx
+            .recv()
+            .await
+            .expect("expected forwarded child event");
+        match forwarded {
+            SseEvent::SessionCreated(session) => {
+                assert_eq!(session.id, "child");
+                assert_eq!(session.parent_id.as_deref(), Some("root"));
+            }
+            other => panic!("expected session created event, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn child_status_updates_do_not_clobber_root_mapping() {
+        let dispatcher = SseDispatcher {
+            subscribers: std::sync::Arc::new(tokio::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
+            permission_subscribers: std::sync::Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            session_roots: std::sync::Arc::new(tokio::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
+        };
+
+        let mut root_rx = dispatcher.subscribe("root").await;
+        dispatcher
+            .dispatch(SseEvent::SessionCreated(Session {
+                id: "child".to_string(),
+                title: None,
+                directory: "/tmp".to_string(),
+                status: SessionStatus::Active,
+                parent_id: Some("root".to_string()),
+                created_at: None,
+                updated_at: None,
+            }))
+            .await;
+        let _ = root_rx.recv().await;
+
+        dispatcher
+            .dispatch(SseEvent::SessionUpdated(Session {
+                id: "child".to_string(),
+                title: None,
+                directory: String::new(),
+                status: SessionStatus::Active,
+                parent_id: None,
+                created_at: None,
+                updated_at: None,
+            }))
+            .await;
+        let _ = root_rx.recv().await;
+
+        dispatcher
+            .dispatch(SseEvent::MessageUpdated(Message {
+                id: "msg_1".to_string(),
+                session_id: "child".to_string(),
+                role: MessageRole::Assistant,
+                parts: Vec::new(),
+                created_at: None,
+                model: Some("openai/gpt-5.4".to_string()),
+                tokens: None,
+                finished: false,
+            }))
+            .await;
+
+        let forwarded = root_rx.recv().await.expect("expected forwarded child message");
+        match forwarded {
+            SseEvent::MessageUpdated(message) => {
+                assert_eq!(message.session_id, "child");
+                assert!(matches!(message.role, MessageRole::Assistant));
+            }
+            other => panic!("expected child message update, got {other:?}"),
+        }
+    }
 }

@@ -65,6 +65,14 @@ pub(crate) fn tool_input_from_state(part: &Value) -> Value {
     if let Some(title) = state.get("title").cloned().filter(|value| !value.is_null()) {
         enriched.insert("title".to_string(), title);
     }
+    if let Some(session_id) = state
+        .get("metadata")
+        .and_then(|metadata| metadata.get("sessionId"))
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned)
+    {
+        enriched.insert("subagent_session_id".to_string(), Value::String(session_id));
+    }
     normalize_common_tool_input(&mut enriched);
     Value::Object(enriched)
 }
@@ -117,6 +125,7 @@ mod tests {
             "state": {
                 "status": "completed",
                 "title": "done",
+                "metadata": { "sessionId": "ses_child" },
                 "input": {
                     "filePath": "/tmp/a.txt",
                     "oldString": "old",
@@ -134,5 +143,6 @@ mod tests {
         assert_eq!(input["status"], "completed");
         assert_eq!(input["title"], "done");
         assert_eq!(input["output"], "ok");
+        assert_eq!(input["subagent_session_id"], "ses_child");
     }
 }

@@ -80,6 +80,18 @@ impl OpenCodeClient {
         })
     }
 
+    pub async fn get_session_any(&self, id: &str) -> Result<Session, SdkError> {
+        let response = self
+            .http
+            .get(format!("{}/session/{id}", self.base_url))
+            .send()
+            .await?;
+        let body = ensure_success(response).await?;
+        parse_session_from(&body).ok_or_else(|| {
+            SdkError::Protocol("get_session response does not contain a session".to_string())
+        })
+    }
+
     pub async fn list_sessions(&self, directory: &str) -> Result<Vec<Session>, SdkError> {
         let response = self
             .scoped_request(
@@ -293,6 +305,33 @@ impl OpenCodeClient {
             .filter_map(|value| parse_message_from(&value))
             .collect();
         Ok(messages)
+    }
+
+    pub async fn list_children_in_directory(
+        &self,
+        session_id: &str,
+        directory: Option<&str>,
+    ) -> Result<Vec<Session>, SdkError> {
+        let response = self
+            .maybe_scoped_request(
+                self.http
+                    .get(format!("{}/session/{session_id}/children", self.base_url)),
+                directory,
+            )
+            .send()
+            .await?;
+        let body = ensure_success(response).await?;
+        Ok(body
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|value| parse_session_from(&value))
+            .collect())
+    }
+
+    pub async fn list_children(&self, session_id: &str) -> Result<Vec<Session>, SdkError> {
+        self.list_children_in_directory(session_id, None).await
     }
 
     pub fn event_stream(&self) -> Result<SseStream, SdkError> {

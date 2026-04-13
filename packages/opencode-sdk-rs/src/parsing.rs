@@ -1,9 +1,10 @@
 mod helpers;
+mod part_parsing;
 
 use serde_json::{json, Value};
 
 use self::helpers::{maybe_string, maybe_timestamp, nested_object, parse_session_status};
-use crate::tool_input::{canonical_tool_name, tool_input_from_state};
+pub use self::part_parsing::parse_part_from;
 use crate::types::{
     Message, MessagePart, MessageRole, PermissionRequest, Question, QuestionItem, QuestionOption,
     Session, TokenCacheUsage, TokenUsage,
@@ -87,42 +88,6 @@ pub fn parse_message_from(payload: &Value) -> Option<Message> {
         tokens: parse_token_usage(candidate),
         finished: message_finished(candidate),
     })
-}
-
-pub fn parse_part_from(part: &Value) -> MessagePart {
-    let part_type = maybe_string(part, &["type"]).unwrap_or_default();
-    let id = maybe_string(part, &["id"]).unwrap_or_default();
-    match part_type.as_str() {
-        "text" => MessagePart::Text {
-            id,
-            text: maybe_string(part, &["text", "content"]).unwrap_or_default(),
-        },
-        "thinking" | "reasoning" => MessagePart::Thinking {
-            id,
-            thinking: maybe_string(part, &["thinking", "text", "content"]).unwrap_or_default(),
-        },
-        "tool" | "tool_use" | "tool-invocation" | "tool_call" => {
-            let name = canonical_tool_name(
-                maybe_string(part, &["tool", "name", "tool_name"]).unwrap_or_default(),
-            );
-            MessagePart::ToolUse {
-                id: id.clone(),
-                tool_id: maybe_string(part, &["callID", "tool_id", "toolID"]).unwrap_or(id),
-                input: tool_input_from_state(part),
-                name,
-            }
-        }
-        "tool_result" => MessagePart::ToolResult {
-            id,
-            tool_use_id: maybe_string(part, &["tool_use_id", "toolUseID"]).unwrap_or_default(),
-            is_error: part
-                .get("is_error")
-                .and_then(Value::as_bool)
-                .unwrap_or(false),
-            content: part.get("content").cloned().unwrap_or(Value::Null),
-        },
-        _ => MessagePart::Other(part.clone()),
-    }
 }
 
 fn maybe_model(value: &Value) -> Option<String> {
@@ -267,8 +232,7 @@ fn parse_question_options(value: Option<&Value>) -> Option<Vec<QuestionOption>> 
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_message_from, parse_part_from, parse_permission_from, parse_question_from};
-    use crate::types::MessagePart;
+    use super::{parse_message_from, parse_permission_from, parse_question_from};
     use serde_json::json;
 
     #[test]
@@ -329,68 +293,6 @@ mod tests {
 
         assert!(message.finished);
     }
-
-    #[test]
-    fn parse_part_from_supports_official_tool_part() {
-        let part = parse_part_from(&json!({
-            "id": "prt_1",
-            "type": "tool",
-            "tool": "bash",
-            "callID": "call_1",
-            "state": {
-                "status": "completed",
-                "input": { "command": "git status" },
-                "output": "clean"
-            }
-        }));
-
-        match part {
-            MessagePart::ToolUse {
-                tool_id,
-                name,
-                input,
-                ..
-            } => {
-                assert_eq!(tool_id, "call_1");
-                assert_eq!(name, "Bash");
-                assert_eq!(input["command"], "git status");
-                assert_eq!(input["output"], "clean");
-                assert_eq!(input["status"], "completed");
-            }
-            other => panic!("expected tool part, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn parse_part_from_merges_apply_patch_args_from_output() {
-        let part = parse_part_from(&json!({
-            "id": "prt_2",
-            "type": "tool",
-            "tool": "apply_patch",
-            "callID": "call_2",
-            "state": {
-                "status": "completed",
-                "output": {
-                    "args": {
-                        "patchText": "*** Begin Patch\n*** Add File: toto.txt\n+hello\n*** End Patch\n"
-                    }
-                }
-            }
-        }));
-
-        match part {
-            MessagePart::ToolUse { name, input, .. } => {
-                assert_eq!(name, "ApplyPatch");
-                assert_eq!(
-                    input["patch_text"],
-                    "*** Begin Patch\n*** Add File: toto.txt\n+hello\n*** End Patch\n"
-                );
-                assert_eq!(input["status"], "completed");
-            }
-            other => panic!("expected tool part, got {other:?}"),
-        }
-    }
-
     #[test]
     fn parse_permission_from_supports_official_permission_shape() {
         let request = parse_permission_from(&json!({
