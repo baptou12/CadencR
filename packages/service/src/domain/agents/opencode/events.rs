@@ -7,7 +7,10 @@ use crate::domain::agents::adapter::{
     RuntimeUserContentBlock, RuntimeUserMessage,
 };
 
-pub fn assistant_fallback_event(message: &opencode_sdk_rs::Message) -> RuntimeEvent {
+pub fn assistant_fallback_event(
+    message: &opencode_sdk_rs::Message,
+    parent_tool_use_id: Option<&str>,
+) -> RuntimeEvent {
     let model = message.model.clone();
     let content = message
         .parts
@@ -22,7 +25,7 @@ pub fn assistant_fallback_event(message: &opencode_sdk_rs::Message) -> RuntimeEv
     let raw = serde_json::json!({
         "type": "assistant",
         "session_id": message.session_id,
-        "parent_tool_use_id": Value::Null,
+        "parent_tool_use_id": parent_json_value(parent_tool_use_id),
         "message": {
             "model": model,
             "content": raw_content,
@@ -36,7 +39,7 @@ pub fn assistant_fallback_event(message: &opencode_sdk_rs::Message) -> RuntimeEv
         },
         RuntimeEventKind::AssistantMessage {
             message: RuntimeAssistantMessage { model, content },
-            parent_tool_use_id: None,
+            parent_tool_use_id: parent_tool_use_id.map(ToOwned::to_owned),
         },
     )
 }
@@ -45,11 +48,12 @@ pub fn message_start_event(
     session_id: &str,
     model: Option<String>,
     usage: Option<RuntimeUsage>,
+    parent_tool_use_id: Option<&str>,
 ) -> RuntimeEvent {
     let raw = serde_json::json!({
         "type": "stream_event",
         "session_id": session_id,
-        "parent_tool_use_id": Value::Null,
+        "parent_tool_use_id": parent_json_value(parent_tool_use_id),
         "event": {
             "type": "message_start",
             "message": { "model": model.clone() },
@@ -63,7 +67,7 @@ pub fn message_start_event(
         },
         RuntimeEventKind::StreamEvent {
             event: RuntimeStreamEvent::MessageStart { model },
-            parent_tool_use_id: None,
+            parent_tool_use_id: parent_tool_use_id.map(ToOwned::to_owned),
         },
     )
 }
@@ -72,11 +76,12 @@ pub fn stream_start_event(
     session_id: &str,
     index: u32,
     block: RuntimeContentBlock,
+    parent_tool_use_id: Option<&str>,
 ) -> RuntimeEvent {
     let raw = serde_json::json!({
         "type": "stream_event",
         "session_id": session_id,
-        "parent_tool_use_id": Value::Null,
+        "parent_tool_use_id": parent_json_value(parent_tool_use_id),
         "event": {
             "type": "content_block_start",
             "index": index,
@@ -91,7 +96,7 @@ pub fn stream_start_event(
         },
         RuntimeEventKind::StreamEvent {
             event: RuntimeStreamEvent::ContentBlockStart { index, block },
-            parent_tool_use_id: None,
+            parent_tool_use_id: parent_tool_use_id.map(ToOwned::to_owned),
         },
     )
 }
@@ -100,11 +105,12 @@ pub fn stream_delta_event(
     session_id: &str,
     index: u32,
     delta: RuntimeContentDelta,
+    parent_tool_use_id: Option<&str>,
 ) -> RuntimeEvent {
     let raw = serde_json::json!({
         "type": "stream_event",
         "session_id": session_id,
-        "parent_tool_use_id": Value::Null,
+        "parent_tool_use_id": parent_json_value(parent_tool_use_id),
         "event": {
             "type": "content_block_delta",
             "index": index,
@@ -119,16 +125,20 @@ pub fn stream_delta_event(
         },
         RuntimeEventKind::StreamEvent {
             event: RuntimeStreamEvent::ContentBlockDelta { index, delta },
-            parent_tool_use_id: None,
+            parent_tool_use_id: parent_tool_use_id.map(ToOwned::to_owned),
         },
     )
 }
 
-pub fn stream_stop_event(session_id: &str, index: u32) -> RuntimeEvent {
+pub fn stream_stop_event(
+    session_id: &str,
+    index: u32,
+    parent_tool_use_id: Option<&str>,
+) -> RuntimeEvent {
     let raw = serde_json::json!({
         "type": "stream_event",
         "session_id": session_id,
-        "parent_tool_use_id": Value::Null,
+        "parent_tool_use_id": parent_json_value(parent_tool_use_id),
         "event": {
             "type": "content_block_stop",
             "index": index,
@@ -142,7 +152,7 @@ pub fn stream_stop_event(session_id: &str, index: u32) -> RuntimeEvent {
         },
         RuntimeEventKind::StreamEvent {
             event: RuntimeStreamEvent::ContentBlockStop { index },
-            parent_tool_use_id: None,
+            parent_tool_use_id: parent_tool_use_id.map(ToOwned::to_owned),
         },
     )
 }
@@ -215,7 +225,10 @@ pub fn question_request_event(question: &opencode_sdk_rs::Question) -> RuntimeEv
     )
 }
 
-pub fn user_message_event(message: &opencode_sdk_rs::Message) -> RuntimeEvent {
+pub fn user_message_event(
+    message: &opencode_sdk_rs::Message,
+    parent_tool_use_id: Option<&str>,
+) -> RuntimeEvent {
     let content = message
         .parts
         .iter()
@@ -236,7 +249,7 @@ pub fn user_message_event(message: &opencode_sdk_rs::Message) -> RuntimeEvent {
     let raw = serde_json::json!({
         "type": "user",
         "session_id": message.session_id,
-        "parent_tool_use_id": Value::Null,
+        "parent_tool_use_id": parent_json_value(parent_tool_use_id),
         "message": {
             "content": message.parts.iter().map(message_part_to_json).collect::<Vec<Value>>(),
         }
@@ -249,9 +262,13 @@ pub fn user_message_event(message: &opencode_sdk_rs::Message) -> RuntimeEvent {
         },
         RuntimeEventKind::UserMessage {
             message: RuntimeUserMessage { content },
-            parent_tool_use_id: None,
+            parent_tool_use_id: parent_tool_use_id.map(ToOwned::to_owned),
         },
     )
+}
+
+fn parent_json_value(parent_tool_use_id: Option<&str>) -> Value {
+    parent_tool_use_id.map_or(Value::Null, |value| Value::String(value.to_string()))
 }
 
 fn runtime_usage_from_tokens(tokens: Option<&opencode_sdk_rs::TokenUsage>) -> Option<RuntimeUsage> {

@@ -1,7 +1,13 @@
+mod part_blocks;
+
 use std::collections::{BTreeSet, HashMap};
 
 use crate::domain::agents::adapter::{RuntimeContentDelta, RuntimeEvent};
 
+use self::part_blocks::{
+    delta_from_field, delta_is_empty, empty_runtime_block_for_part, infer_part_block,
+    part_block_from_message_part, runtime_block_from_part_block, PartBlock,
+};
 use super::events::{stream_delta_event, stream_start_event, stream_stop_event};
 
 pub struct StreamSynthesizer {
@@ -11,13 +17,6 @@ pub struct StreamSynthesizer {
     part_blocks: HashMap<String, PartBlock>,
     open_indices: BTreeSet<u32>,
     current_model: Option<String>,
-}
-
-#[derive(Clone)]
-enum PartBlock {
-    Text,
-    Thinking,
-    ToolUse { id: String, name: String },
 }
 
 impl StreamSynthesizer {
@@ -77,12 +76,16 @@ impl StreamSynthesizer {
         delta
     }
 
-    pub fn stop_events(&mut self, session_id: &str) -> Vec<RuntimeEvent> {
+    pub fn stop_events_with_parent(
+        &mut self,
+        session_id: &str,
+        parent_tool_use_id: Option<&str>,
+    ) -> Vec<RuntimeEvent> {
         let indices: Vec<u32> = self.open_indices.iter().copied().collect();
         self.open_indices.clear();
         indices
             .into_iter()
-            .map(|index| stream_stop_event(session_id, index))
+            .map(|index| stream_stop_event(session_id, index, parent_tool_use_id))
             .collect()
     }
 
@@ -90,6 +93,7 @@ impl StreamSynthesizer {
         &mut self,
         session_id: &str,
         part: &opencode_sdk_rs::MessagePart,
+        parent_tool_use_id: Option<&str>,
     ) -> Vec<RuntimeEvent> {
         let part_id = match part {
             opencode_sdk_rs::MessagePart::Text { id, .. }
@@ -113,6 +117,7 @@ impl StreamSynthesizer {
                 session_id,
                 index,
                 empty_runtime_block_for_part(part),
+                parent_tool_use_id,
             ));
         }
 
@@ -126,7 +131,12 @@ impl StreamSynthesizer {
         if !is_new {
             self.mark_open(index);
         }
-        output.push(stream_delta_event(session_id, index, delta));
+        output.push(stream_delta_event(
+            session_id,
+            index,
+            delta,
+            parent_tool_use_id,
+        ));
         output
     }
 
@@ -136,6 +146,7 @@ impl StreamSynthesizer {
         part_id: &str,
         field: &str,
         delta: &str,
+        parent_tool_use_id: Option<&str>,
     ) -> Vec<RuntimeEvent> {
         let part_block = self
             .part_blocks
@@ -159,6 +170,7 @@ impl StreamSynthesizer {
                 session_id,
                 index,
                 runtime_block_from_part_block(&part_block),
+                parent_tool_use_id,
             ));
         }
 
@@ -166,7 +178,12 @@ impl StreamSynthesizer {
         if !is_new {
             self.mark_open(index);
         }
-        output.push(stream_delta_event(session_id, index, delta_kind));
+        output.push(stream_delta_event(
+            session_id,
+            index,
+            delta_kind,
+            parent_tool_use_id,
+        ));
         output
     }
 
@@ -206,121 +223,6 @@ impl StreamSynthesizer {
     }
 }
 
-fn part_block_from_message_part(part: &opencode_sdk_rs::MessagePart) -> PartBlock {
-    match part {
-        opencode_sdk_rs::MessagePart::Text { .. } => PartBlock::Text,
-        opencode_sdk_rs::MessagePart::Thinking { .. } => PartBlock::Thinking,
-        opencode_sdk_rs::MessagePart::ToolUse { id, name, .. } => PartBlock::ToolUse {
-            id: id.clone(),
-            name: name.clone(),
-        },
-        _ => PartBlock::Text,
-    }
-}
-
-fn runtime_block_from_part_block(
-    part_block: &PartBlock,
-) -> crate::domain::agents::adapter::RuntimeContentBlock {
-    match part_block {
-        PartBlock::Text => crate::domain::agents::adapter::RuntimeContentBlock::Text {
-            text: String::new(),
-        },
-        PartBlock::Thinking => crate::domain::agents::adapter::RuntimeContentBlock::Thinking {
-            thinking: String::new(),
-        },
-        PartBlock::ToolUse { id, name } => {
-            crate::domain::agents::adapter::RuntimeContentBlock::ToolUse {
-                id: id.clone(),
-                name: name.clone(),
-                input: serde_json::json!({}),
-            }
-        }
-    }
-}
-
-fn empty_runtime_block_for_part(
-    part: &opencode_sdk_rs::MessagePart,
-) -> crate::domain::agents::adapter::RuntimeContentBlock {
-    runtime_block_from_part_block(&part_block_from_message_part(part))
-}
-
-fn infer_part_block(field: &str, part_id: &str) -> Option<PartBlock> {
-    if matches_text_field(field) {
-        return Some(PartBlock::Text);
-    }
-    if matches_thinking_field(field) {
-        return Some(PartBlock::Thinking);
-    }
-    if matches_input_field(field) {
-        return Some(PartBlock::ToolUse {
-            id: part_id.to_string(),
-            name: "unknown".to_string(),
-        });
-    }
-    None
-}
-
-fn delta_from_field(
-    field: &str,
-    delta: &str,
-    part_block: Option<&PartBlock>,
-) -> Option<RuntimeContentDelta> {
-    match part_block {
-        Some(PartBlock::Thinking) => {
-            return Some(RuntimeContentDelta::Thinking {
-                thinking: delta.to_string(),
-            });
-        }
-        Some(PartBlock::ToolUse { .. }) if matches_input_field(field) => {
-            return Some(RuntimeContentDelta::InputJson {
-                partial_json: delta.to_string(),
-            });
-        }
-        Some(PartBlock::Text) if matches_text_field(field) => {
-            return Some(RuntimeContentDelta::Text {
-                text: delta.to_string(),
-            });
-        }
-        _ => {}
-    }
-    if matches_text_field(field) {
-        return Some(RuntimeContentDelta::Text {
-            text: delta.to_string(),
-        });
-    }
-    if matches_thinking_field(field) {
-        return Some(RuntimeContentDelta::Thinking {
-            thinking: delta.to_string(),
-        });
-    }
-    if matches_input_field(field) {
-        return Some(RuntimeContentDelta::InputJson {
-            partial_json: delta.to_string(),
-        });
-    }
-    None
-}
-
-fn matches_text_field(field: &str) -> bool {
-    matches!(field, "text" | "content")
-}
-
-fn matches_thinking_field(field: &str) -> bool {
-    field.starts_with("reasoning")
-}
-
-fn matches_input_field(field: &str) -> bool {
-    field.contains("input")
-}
-
-fn delta_is_empty(delta: &RuntimeContentDelta) -> bool {
-    match delta {
-        RuntimeContentDelta::Text { text } => text.is_empty(),
-        RuntimeContentDelta::Thinking { thinking } => thinking.is_empty(),
-        RuntimeContentDelta::InputJson { partial_json } => partial_json.is_empty(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::StreamSynthesizer;
@@ -345,6 +247,7 @@ mod tests {
                 id: "part_1".to_string(),
                 text: "hello".to_string(),
             },
+            None,
         );
 
         assert_eq!(events.len(), 2);
@@ -372,6 +275,7 @@ mod tests {
                 name: "Bash".to_string(),
                 input: json!({ "command": "ls" }),
             },
+            None,
         );
 
         let events = synth.ingest_part(
@@ -382,6 +286,7 @@ mod tests {
                 name: "Bash".to_string(),
                 input: json!({ "command": "ls -la" }),
             },
+            None,
         );
 
         assert_eq!(events.len(), 1);
@@ -405,9 +310,10 @@ mod tests {
                 id: "part_1".to_string(),
                 thinking: String::new(),
             },
+            None,
         );
 
-        let events = synth.ingest_delta("ses_1", "part_1", "reasoning_content", "step 1");
+        let events = synth.ingest_delta("ses_1", "part_1", "reasoning_content", "step 1", None);
         assert_eq!(events.len(), 1);
         assert!(matches!(
             events[0].stream_event(),
@@ -423,7 +329,7 @@ mod tests {
     #[test]
     fn ingest_delta_can_bootstrap_text_block_from_field_name() {
         let mut synth = StreamSynthesizer::new(None);
-        let events = synth.ingest_delta("ses_1", "part_1", "text", "hello");
+        let events = synth.ingest_delta("ses_1", "part_1", "text", "hello", None);
         assert_eq!(events.len(), 2);
         assert!(matches!(
             events[0].stream_event(),
@@ -441,14 +347,14 @@ mod tests {
     #[test]
     fn ingest_delta_ignores_unknown_field_without_known_part_type() {
         let mut synth = StreamSynthesizer::new(None);
-        let events = synth.ingest_delta("ses_1", "part_1", "mystery_field", "hello");
+        let events = synth.ingest_delta("ses_1", "part_1", "mystery_field", "hello", None);
         assert!(events.is_empty());
     }
 
     #[test]
     fn ingest_delta_then_full_text_update_does_not_duplicate_content() {
         let mut synth = StreamSynthesizer::new(None);
-        let delta_events = synth.ingest_delta("ses_1", "part_1", "text", "hello");
+        let delta_events = synth.ingest_delta("ses_1", "part_1", "text", "hello", None);
         assert_eq!(delta_events.len(), 2);
 
         let update_events = synth.ingest_part(
@@ -457,8 +363,28 @@ mod tests {
                 id: "part_1".to_string(),
                 text: "hello".to_string(),
             },
+            None,
         );
 
         assert!(update_events.is_empty());
+    }
+
+    #[test]
+    fn child_stream_events_preserve_parent_tool_use_id() {
+        let mut synth = StreamSynthesizer::new(None);
+        let events = synth.ingest_part(
+            "ses_child",
+            &opencode_sdk_rs::MessagePart::ToolUse {
+                id: "part_1".to_string(),
+                tool_id: "call_1".to_string(),
+                name: "Read".to_string(),
+                input: json!({ "file_path": "src/main.ts" }),
+            },
+            Some("task_1"),
+        );
+
+        assert!(events
+            .iter()
+            .all(|event| event.parent_tool_use_id() == Some("task_1")));
     }
 }

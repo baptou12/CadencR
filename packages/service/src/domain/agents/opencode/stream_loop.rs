@@ -3,128 +3,10 @@ use std::sync::Arc;
 
 use tokio::sync::{mpsc, Mutex};
 
-use super::events::{
-    assistant_fallback_event, init_event, message_start_event, permission_request_event,
-    question_request_event, result_event, user_message_event,
-};
-use super::stream_synthesizer::StreamSynthesizer;
+use super::events::{init_event, permission_request_event, question_request_event};
+use super::stream_state::LoopState;
 use super::PendingRequestKind;
-use crate::domain::agents::adapter::{RuntimeError, RuntimeEvent, RuntimeUsage};
-
-struct LoopState {
-    synthesizer: StreamSynthesizer,
-    message_roles: HashMap<String, opencode_sdk_rs::MessageRole>,
-    assistant_turn_started: bool,
-    active_assistant_message_id: Option<String>,
-    latest_usage: Option<RuntimeUsage>,
-}
-
-impl LoopState {
-    fn new(model: Option<String>) -> Self {
-        Self {
-            synthesizer: StreamSynthesizer::new(model),
-            message_roles: HashMap::new(),
-            assistant_turn_started: false,
-            active_assistant_message_id: None,
-            latest_usage: None,
-        }
-    }
-
-    fn on_message(&mut self, message: opencode_sdk_rs::Message, output: &mut Vec<RuntimeEvent>) {
-        remember_message_role(&mut self.message_roles, &message);
-        match message.role {
-            opencode_sdk_rs::MessageRole::Assistant => {
-                self.handle_assistant_message(&message, output)
-            }
-            opencode_sdk_rs::MessageRole::User => output.push(user_message_event(&message)),
-            _ => {}
-        }
-    }
-
-    fn handle_assistant_message(
-        &mut self,
-        message: &opencode_sdk_rs::Message,
-        output: &mut Vec<RuntimeEvent>,
-    ) {
-        let model = message
-            .model
-            .clone()
-            .or_else(|| self.synthesizer.current_model());
-        let is_new_message =
-            self.active_assistant_message_id.as_deref() != Some(message.id.as_str());
-        let usage = message.tokens.as_ref().map(|tokens| RuntimeUsage {
-            input_tokens: tokens.total_input(),
-            output_tokens: tokens.output,
-        });
-        if let Some(usage) = usage.clone() {
-            self.latest_usage = Some(usage);
-        }
-        if is_new_message {
-            self.synthesizer.reset_for_turn(model.clone());
-            output.push(message_start_event(&message.session_id, model, usage));
-            self.active_assistant_message_id = Some(message.id.clone());
-        }
-        if !message.parts.is_empty() {
-            self.assistant_turn_started = true;
-            output.push(assistant_fallback_event(message));
-        }
-    }
-
-    fn on_part(
-        &mut self,
-        session_id: &str,
-        message_id: &str,
-        part: &opencode_sdk_rs::MessagePart,
-        output: &mut Vec<RuntimeEvent>,
-    ) {
-        if !streams_assistant_parts(&self.message_roles, message_id) {
-            return;
-        }
-        self.assistant_turn_started = true;
-        output.extend(self.synthesizer.ingest_part(session_id, part));
-    }
-
-    fn on_delta(
-        &mut self,
-        session_id: &str,
-        message_id: &str,
-        part_id: &str,
-        field: &str,
-        delta: &str,
-        output: &mut Vec<RuntimeEvent>,
-    ) {
-        if !streams_assistant_parts(&self.message_roles, message_id) {
-            return;
-        }
-        self.assistant_turn_started = true;
-        output.extend(
-            self.synthesizer
-                .ingest_delta(session_id, part_id, field, delta),
-        );
-    }
-
-    fn on_session_updated(
-        &mut self,
-        expected_session_id: &str,
-        session: opencode_sdk_rs::Session,
-        output: &mut Vec<RuntimeEvent>,
-    ) {
-        if session.id != expected_session_id {
-            return;
-        }
-        if should_finish_turn_from_status(&session.status, self.assistant_turn_started) {
-            self.finish_turn(&session.id, output);
-        }
-    }
-
-    fn finish_turn(&mut self, session_id: &str, output: &mut Vec<RuntimeEvent>) {
-        output.extend(self.synthesizer.stop_events(session_id));
-        output.push(result_event(session_id, self.latest_usage.clone()));
-        self.assistant_turn_started = false;
-        self.active_assistant_message_id = None;
-        self.latest_usage = None;
-    }
-}
+use crate::domain::agents::adapter::{RuntimeError, RuntimeEvent};
 
 pub(super) fn spawn_event_loop(
     mut source_rx: mpsc::Receiver<opencode_sdk_rs::SseEvent>,
@@ -134,12 +16,12 @@ pub(super) fn spawn_event_loop(
     model: Option<String>,
 ) {
     tokio::spawn(async move {
-        let mut state = LoopState::new(model);
+        let mut state = LoopState::new(session_id.clone(), model);
         while let Some(event) = source_rx.recv().await {
             let mut output = Vec::new();
             match event {
                 opencode_sdk_rs::SseEvent::ServerConnected => {
-                    output.push(init_event(&session_id, state.synthesizer.current_model()));
+                    output.push(init_event(&session_id, state.current_model()));
                 }
                 opencode_sdk_rs::SseEvent::MessageCreated(message)
                 | opencode_sdk_rs::SseEvent::MessageUpdated(message) => {
@@ -149,13 +31,17 @@ pub(super) fn spawn_event_loop(
                     session_id,
                     message_id,
                     part,
+                } => {
+                    state.on_part(&session_id, &message_id, &part, &mut output);
                 }
-                | opencode_sdk_rs::SseEvent::PartUpdated {
+                opencode_sdk_rs::SseEvent::PartUpdated {
                     session_id,
                     message_id,
                     part,
                 } => {
-                    state.on_part(&session_id, &message_id, &part, &mut output);
+                    if matches!(part, opencode_sdk_rs::MessagePart::ToolUse { .. }) {
+                        state.on_part(&session_id, &message_id, &part, &mut output);
+                    }
                 }
                 opencode_sdk_rs::SseEvent::PartDelta {
                     session_id,
@@ -163,7 +49,6 @@ pub(super) fn spawn_event_loop(
                     part_id,
                     field,
                     delta,
-                    ..
                 } => {
                     state.on_delta(
                         &session_id,
@@ -174,8 +59,9 @@ pub(super) fn spawn_event_loop(
                         &mut output,
                     );
                 }
-                opencode_sdk_rs::SseEvent::SessionUpdated(session) => {
-                    state.on_session_updated(&session_id, session, &mut output);
+                opencode_sdk_rs::SseEvent::SessionCreated(session)
+                | opencode_sdk_rs::SseEvent::SessionUpdated(session) => {
+                    state.on_session_updated(session, &mut output);
                 }
                 opencode_sdk_rs::SseEvent::PermissionCreated(request) => {
                     pending_requests
@@ -203,255 +89,274 @@ pub(super) fn spawn_event_loop(
     });
 }
 
-fn remember_message_role(
-    message_roles: &mut HashMap<String, opencode_sdk_rs::MessageRole>,
-    message: &opencode_sdk_rs::Message,
-) {
-    message_roles.insert(message.id.clone(), message.role.clone());
-}
-
-fn streams_assistant_parts(
-    message_roles: &HashMap<String, opencode_sdk_rs::MessageRole>,
-    message_id: &str,
-) -> bool {
-    matches!(
-        message_roles.get(message_id),
-        Some(opencode_sdk_rs::MessageRole::Assistant)
-    )
-}
-
-fn should_finish_turn_from_status(
-    status: &opencode_sdk_rs::SessionStatus,
-    assistant_turn_started: bool,
-) -> bool {
-    assistant_turn_started
-        && matches!(
-            status,
-            opencode_sdk_rs::SessionStatus::Completed | opencode_sdk_rs::SessionStatus::Idle
-        )
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{
-        assistant_fallback_event, remember_message_role, should_finish_turn_from_status,
-        streams_assistant_parts, LoopState,
-    };
+    use super::spawn_event_loop;
+    use crate::domain::agents::adapter::{RuntimeContentDelta, RuntimeStreamEvent, RuntimeUsage};
+    use crate::domain::agents::opencode::PendingRequestKind;
     use std::collections::HashMap;
+    use std::sync::Arc;
+    use tokio::sync::{mpsc, Mutex};
 
-    #[test]
-    fn remembers_and_checks_message_roles_for_part_streaming() {
-        let mut roles = HashMap::new();
-        let assistant = opencode_sdk_rs::Message {
-            id: "msg_assistant".to_string(),
-            session_id: "ses_1".to_string(),
-            role: opencode_sdk_rs::MessageRole::Assistant,
-            parts: Vec::new(),
-            created_at: None,
-            model: Some("openai/gpt-5.3-codex".to_string()),
-            tokens: None,
-            finished: false,
-        };
-        let user = opencode_sdk_rs::Message {
-            id: "msg_user".to_string(),
-            session_id: "ses_1".to_string(),
-            role: opencode_sdk_rs::MessageRole::User,
-            parts: Vec::new(),
-            created_at: None,
-            model: None,
-            tokens: None,
-            finished: false,
-        };
+    async fn collect_events(
+        source_events: Vec<opencode_sdk_rs::SseEvent>,
+    ) -> Vec<crate::domain::agents::adapter::RuntimeEvent> {
+        let (source_tx, source_rx) = mpsc::channel(16);
+        let (tx, mut rx) = mpsc::channel(32);
 
-        remember_message_role(&mut roles, &assistant);
-        remember_message_role(&mut roles, &user);
-
-        assert!(streams_assistant_parts(&roles, "msg_assistant"));
-        assert!(!streams_assistant_parts(&roles, "msg_user"));
-        assert!(!streams_assistant_parts(&roles, "missing"));
-    }
-
-    #[test]
-    fn finishes_turn_only_after_assistant_activity() {
-        assert!(!should_finish_turn_from_status(
-            &opencode_sdk_rs::SessionStatus::Idle,
-            false,
-        ));
-        assert!(!should_finish_turn_from_status(
-            &opencode_sdk_rs::SessionStatus::Completed,
-            false,
-        ));
-        assert!(should_finish_turn_from_status(
-            &opencode_sdk_rs::SessionStatus::Completed,
-            true,
-        ));
-        assert!(!should_finish_turn_from_status(
-            &opencode_sdk_rs::SessionStatus::Active,
-            true,
-        ));
-        assert!(should_finish_turn_from_status(
-            &opencode_sdk_rs::SessionStatus::Idle,
-            true,
-        ));
-    }
-
-    #[test]
-    fn finished_assistant_message_does_not_end_turn_without_session_completion() {
-        let message = opencode_sdk_rs::Message {
-            id: "msg_assistant".to_string(),
-            session_id: "ses_1".to_string(),
-            role: opencode_sdk_rs::MessageRole::Assistant,
-            parts: vec![opencode_sdk_rs::MessagePart::Text {
-                id: "part_1".to_string(),
-                text: "Working".to_string(),
-            }],
-            created_at: None,
-            model: Some("openai/gpt-5.4".to_string()),
-            tokens: None,
-            finished: true,
-        };
-        let mut state = LoopState::new(message.model.clone());
-        let mut output = Vec::new();
-
-        state.on_message(message, &mut output);
-
-        assert!(output
-            .iter()
-            .any(|event| event.assistant_message().is_some()));
-        assert!(!output.iter().any(|event| event.is_result()));
-    }
-
-    #[test]
-    fn assistant_message_emits_usage_from_opencode_tokens() {
-        let message = opencode_sdk_rs::Message {
-            id: "msg_assistant".to_string(),
-            session_id: "ses_1".to_string(),
-            role: opencode_sdk_rs::MessageRole::Assistant,
-            parts: vec![opencode_sdk_rs::MessagePart::Text {
-                id: "part_1".to_string(),
-                text: "Working".to_string(),
-            }],
-            created_at: None,
-            model: Some("openai/gpt-5.4".to_string()),
-            tokens: Some(opencode_sdk_rs::TokenUsage {
-                total: Some(33),
-                input: 20,
-                output: 10,
-                reasoning: 2,
-                cache: opencode_sdk_rs::TokenCacheUsage { read: 1, write: 2 },
-            }),
-            finished: true,
-        };
-        let mut state = LoopState::new(message.model.clone());
-        let mut output = Vec::new();
-
-        state.on_message(message, &mut output);
-
-        assert_eq!(output.len(), 2);
-        assert_eq!(output[0].usage().map(|usage| usage.input_tokens), Some(23));
-        assert_eq!(output[0].usage().map(|usage| usage.output_tokens), Some(10));
-        assert_eq!(output[1].usage().map(|usage| usage.input_tokens), Some(23));
-        assert_eq!(output[1].usage().map(|usage| usage.output_tokens), Some(10));
-    }
-
-    #[test]
-    fn session_completed_emits_result_after_assistant_activity() {
-        let mut state = LoopState::new(Some("openai/gpt-5.4".to_string()));
-        let message = opencode_sdk_rs::Message {
-            id: "msg_assistant".to_string(),
-            session_id: "ses_1".to_string(),
-            role: opencode_sdk_rs::MessageRole::Assistant,
-            parts: vec![opencode_sdk_rs::MessagePart::Text {
-                id: "part_1".to_string(),
-                text: "Working".to_string(),
-            }],
-            created_at: None,
-            model: Some("openai/gpt-5.4".to_string()),
-            tokens: None,
-            finished: true,
-        };
-        let mut output = vec![assistant_fallback_event(&message)];
-        state.assistant_turn_started = true;
-
-        state.on_session_updated(
-            "ses_1",
-            opencode_sdk_rs::Session {
-                id: "ses_1".to_string(),
-                title: None,
-                directory: "/tmp".to_string(),
-                status: opencode_sdk_rs::SessionStatus::Completed,
-                parent_id: None,
-                created_at: None,
-                updated_at: None,
-            },
-            &mut output,
+        spawn_event_loop(
+            source_rx,
+            tx,
+            Arc::new(Mutex::new(HashMap::<String, PendingRequestKind>::new())),
+            "ses_root".to_string(),
+            Some("openai/gpt-5.4".to_string()),
         );
 
-        assert!(output.iter().any(|event| event.is_result()));
+        for event in source_events {
+            source_tx.send(event).await.expect("send source event");
+        }
+        drop(source_tx);
+
+        let mut output = Vec::new();
+        while let Some(Ok(event)) = rx.recv().await {
+            output.push(event);
+        }
+        output
     }
 
-    #[test]
-    fn repeated_assistant_message_carries_final_usage_on_result() {
-        let mut state = LoopState::new(Some("opencode/big-pickle".to_string()));
-        let initial = opencode_sdk_rs::Message {
-            id: "msg_assistant".to_string(),
-            session_id: "ses_1".to_string(),
+    fn assistant_message(id: &str) -> opencode_sdk_rs::Message {
+        opencode_sdk_rs::Message {
+            id: id.to_string(),
+            session_id: "ses_root".to_string(),
             role: opencode_sdk_rs::MessageRole::Assistant,
             parts: Vec::new(),
             created_at: None,
-            model: Some("opencode/big-pickle".to_string()),
-            tokens: Some(opencode_sdk_rs::TokenUsage {
-                total: Some(0),
-                input: 0,
-                output: 0,
-                reasoning: 0,
-                cache: opencode_sdk_rs::TokenCacheUsage { read: 0, write: 0 },
-            }),
-            finished: false,
-        };
-        let updated = opencode_sdk_rs::Message {
-            id: "msg_assistant".to_string(),
-            session_id: "ses_1".to_string(),
-            role: opencode_sdk_rs::MessageRole::Assistant,
-            parts: Vec::new(),
+            model: Some("openai/gpt-5.4".to_string()),
+            tokens: None,
+            finished: true,
+        }
+    }
+
+    fn assistant_message_with_parts(
+        id: &str,
+        parts: Vec<opencode_sdk_rs::MessagePart>,
+    ) -> opencode_sdk_rs::Message {
+        opencode_sdk_rs::Message {
+            parts,
+            ..assistant_message(id)
+        }
+    }
+
+    fn assistant_message_with_tokens(
+        id: &str,
+        tokens: opencode_sdk_rs::TokenUsage,
+    ) -> opencode_sdk_rs::Message {
+        opencode_sdk_rs::Message {
+            tokens: Some(tokens),
+            ..assistant_message(id)
+        }
+    }
+
+    fn session_updated(status: opencode_sdk_rs::SessionStatus) -> opencode_sdk_rs::SseEvent {
+        opencode_sdk_rs::SseEvent::SessionUpdated(opencode_sdk_rs::Session {
+            id: "ses_root".to_string(),
+            title: None,
+            directory: "/tmp".to_string(),
+            status,
+            parent_id: None,
             created_at: None,
-            model: Some("opencode/big-pickle".to_string()),
-            tokens: Some(opencode_sdk_rs::TokenUsage {
-                total: Some(19_630),
-                input: 269,
-                output: 30,
-                reasoning: 0,
-                cache: opencode_sdk_rs::TokenCacheUsage {
-                    read: 0,
-                    write: 19_331,
+            updated_at: None,
+        })
+    }
+
+    fn usage(input: u64, cache_read: u64, cache_write: u64, output: u64) -> RuntimeUsage {
+        RuntimeUsage {
+            input_tokens: input + cache_read + cache_write,
+            output_tokens: output,
+        }
+    }
+
+    fn opencode_tokens(
+        input: u64,
+        cache_read: u64,
+        cache_write: u64,
+        output: u64,
+    ) -> opencode_sdk_rs::TokenUsage {
+        opencode_sdk_rs::TokenUsage {
+            total: None,
+            input,
+            output,
+            reasoning: 0,
+            cache: opencode_sdk_rs::TokenCacheUsage {
+                read: cache_read,
+                write: cache_write,
+            },
+        }
+    }
+
+    #[tokio::test]
+    async fn part_updated_for_tool_use_is_forwarded() {
+        let events = collect_events(vec![
+            opencode_sdk_rs::SseEvent::MessageCreated(assistant_message("msg_1")),
+            opencode_sdk_rs::SseEvent::PartUpdated {
+                session_id: "ses_root".to_string(),
+                message_id: "msg_1".to_string(),
+                part: opencode_sdk_rs::MessagePart::ToolUse {
+                    id: "tool_1".to_string(),
+                    tool_id: "call_1".to_string(),
+                    name: "Read".to_string(),
+                    input: serde_json::json!({ "file_path": "src/main.rs" }),
                 },
-            }),
-            finished: true,
-        };
-        let mut output = Vec::new();
-
-        state.on_message(initial, &mut output);
-        state.assistant_turn_started = true;
-        state.on_message(updated, &mut output);
-        state.on_session_updated(
-            "ses_1",
-            opencode_sdk_rs::Session {
-                id: "ses_1".to_string(),
-                title: None,
-                directory: "/tmp".to_string(),
-                status: opencode_sdk_rs::SessionStatus::Idle,
-                parent_id: None,
-                created_at: None,
-                updated_at: None,
             },
-            &mut output,
-        );
+        ])
+        .await;
 
-        let result = output
-            .iter()
-            .find(|event| event.is_result())
-            .expect("expected result event");
-        assert_eq!(result.usage().map(|usage| usage.input_tokens), Some(19_600));
-        assert_eq!(result.usage().map(|usage| usage.output_tokens), Some(30));
+        assert_eq!(events.len(), 3);
+        assert!(matches!(
+            events[1].stream_event(),
+            Some(RuntimeStreamEvent::ContentBlockStart { .. })
+        ));
+        assert!(matches!(
+            events[2].stream_event(),
+            Some(RuntimeStreamEvent::ContentBlockDelta { .. })
+        ));
+    }
+
+    #[tokio::test]
+    async fn part_updated_for_non_tool_use_is_ignored() {
+        let events = collect_events(vec![
+            opencode_sdk_rs::SseEvent::MessageCreated(assistant_message("msg_1")),
+            opencode_sdk_rs::SseEvent::PartUpdated {
+                session_id: "ses_root".to_string(),
+                message_id: "msg_1".to_string(),
+                part: opencode_sdk_rs::MessagePart::Text {
+                    id: "text_1".to_string(),
+                    text: "hello".to_string(),
+                },
+            },
+        ])
+        .await;
+
+        assert_eq!(events.len(), 1);
+        assert!(matches!(
+            events[0].stream_event(),
+            Some(RuntimeStreamEvent::MessageStart { .. })
+        ));
+    }
+
+    #[tokio::test]
+    async fn finishes_turn_only_after_assistant_activity() {
+        let events = collect_events(vec![session_updated(opencode_sdk_rs::SessionStatus::Completed)]).await;
+
+        assert!(events.is_empty());
+    }
+
+    #[tokio::test]
+    async fn finished_assistant_message_does_not_end_turn_without_session_completion() {
+        let events = collect_events(vec![opencode_sdk_rs::SseEvent::MessageCreated(
+            assistant_message_with_parts(
+                "msg_1",
+                vec![opencode_sdk_rs::MessagePart::Text {
+                    id: "text_1".to_string(),
+                    text: "hello".to_string(),
+                }],
+            ),
+        )])
+        .await;
+
+        assert_eq!(events.len(), 2);
+        assert!(matches!(
+            events[0].stream_event(),
+            Some(RuntimeStreamEvent::MessageStart { .. })
+        ));
+        assert!(events[1].assistant_message().is_some());
+        assert!(!events.iter().any(|event| event.is_result()));
+    }
+
+    #[tokio::test]
+    async fn assistant_message_emits_usage_from_opencode_tokens() {
+        let events = collect_events(vec![opencode_sdk_rs::SseEvent::MessageCreated(
+            assistant_message_with_tokens("msg_1", opencode_tokens(10, 2, 3, 7)),
+        )])
+        .await;
+
+        assert_eq!(events.len(), 1);
+        assert!(matches!(
+            events[0].stream_event(),
+            Some(RuntimeStreamEvent::MessageStart { .. })
+        ));
+        let event_usage = events[0].usage().expect("message_start usage");
+        assert_eq!(event_usage.input_tokens, usage(10, 2, 3, 7).input_tokens);
+        assert_eq!(event_usage.output_tokens, usage(10, 2, 3, 7).output_tokens);
+    }
+
+    #[tokio::test]
+    async fn session_completed_emits_result_after_assistant_activity() {
+        let events = collect_events(vec![
+            opencode_sdk_rs::SseEvent::MessageCreated(assistant_message("msg_1")),
+            opencode_sdk_rs::SseEvent::PartCreated {
+                session_id: "ses_root".to_string(),
+                message_id: "msg_1".to_string(),
+                part: opencode_sdk_rs::MessagePart::Text {
+                    id: "text_1".to_string(),
+                    text: "hello".to_string(),
+                },
+            },
+            opencode_sdk_rs::SseEvent::PartDelta {
+                session_id: "ses_root".to_string(),
+                message_id: "msg_1".to_string(),
+                part_id: "text_1".to_string(),
+                field: "text".to_string(),
+                delta: " there".to_string(),
+            },
+            session_updated(opencode_sdk_rs::SessionStatus::Completed),
+        ])
+        .await;
+
+        assert!(matches!(
+            events.first().and_then(|event| event.stream_event()),
+            Some(RuntimeStreamEvent::MessageStart { .. })
+        ));
+        assert!(events.iter().any(|event| matches!(
+            event.stream_event(),
+            Some(RuntimeStreamEvent::ContentBlockStart { .. })
+        )));
+        assert!(events.iter().any(|event| matches!(
+            event.stream_event(),
+            Some(RuntimeStreamEvent::ContentBlockDelta {
+                delta: RuntimeContentDelta::Text { .. },
+                ..
+            })
+        )));
+        assert!(events.iter().any(|event| matches!(
+            event.stream_event(),
+            Some(RuntimeStreamEvent::ContentBlockStop { .. })
+        )));
+        assert!(events.last().is_some_and(|event| event.is_result()));
+    }
+
+    #[tokio::test]
+    async fn repeated_assistant_message_carries_final_usage_on_result() {
+        let events = collect_events(vec![
+            opencode_sdk_rs::SseEvent::MessageCreated(assistant_message_with_parts(
+                "msg_1",
+                vec![opencode_sdk_rs::MessagePart::Text {
+                    id: "text_1".to_string(),
+                    text: "draft".to_string(),
+                }],
+            )),
+            opencode_sdk_rs::SseEvent::MessageUpdated(assistant_message_with_tokens(
+                "msg_1",
+                opencode_tokens(12, 4, 1, 9),
+            )),
+            session_updated(opencode_sdk_rs::SessionStatus::Idle),
+        ])
+        .await;
+
+        let result = events.last().expect("result event");
+        assert!(result.is_result());
+        let result_usage = result.usage().expect("result usage");
+        assert_eq!(result_usage.input_tokens, usage(12, 4, 1, 9).input_tokens);
+        assert_eq!(result_usage.output_tokens, usage(12, 4, 1, 9).output_tokens);
     }
 }
