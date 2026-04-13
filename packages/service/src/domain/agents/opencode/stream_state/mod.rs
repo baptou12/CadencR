@@ -1,7 +1,8 @@
 mod pending;
 mod subtasks;
+mod turn_completion;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use pending::{PendingMessageEvent, PendingSessionEvent, PendingState};
 
@@ -33,6 +34,10 @@ pub(super) struct LoopState {
     root_session_id: String,
     session_states: HashMap<String, SessionStreamState>,
     pending: PendingState,
+    session_parents: HashMap<String, String>,
+    active_sessions: HashSet<String>,
+    pending_finishes: HashSet<String>,
+    deferred_idle_finishes: HashSet<String>,
 }
 
 impl LoopState {
@@ -43,6 +48,10 @@ impl LoopState {
             root_session_id,
             session_states,
             pending: PendingState::new(),
+            session_parents: HashMap::new(),
+            active_sessions: HashSet::new(),
+            pending_finishes: HashSet::new(),
+            deferred_idle_finishes: HashSet::new(),
         }
     }
 
@@ -70,10 +79,11 @@ impl LoopState {
             opencode_sdk_rs::MessageRole::Assistant => {
                 self.handle_assistant_message(&message, pending_events, output)
             }
-            opencode_sdk_rs::MessageRole::User => {
-                let parent_tool_use_id = self.parent_tool_use_id_for_session(&message.session_id);
-                output.push(user_message_event(&message, parent_tool_use_id.as_deref()));
-            }
+            opencode_sdk_rs::MessageRole::User => output.push(user_message_event(
+                &message,
+                self.parent_tool_use_id_for_session(&message.session_id)
+                    .as_deref(),
+            )),
             _ => {}
         }
     }
@@ -96,7 +106,7 @@ impl LoopState {
 
         match self.pending.message_role(session_id, message_id) {
             Some(opencode_sdk_rs::MessageRole::Assistant) => {
-                self.process_part(session_id, part, output);
+                self.process_part(session_id, part, output)
             }
             Some(_) => {}
             None => self.pending.buffer_message_event(
@@ -127,7 +137,7 @@ impl LoopState {
 
         match self.pending.message_role(session_id, message_id) {
             Some(opencode_sdk_rs::MessageRole::Assistant) => {
-                self.process_delta(session_id, part_id, field, delta, output);
+                self.process_delta(session_id, part_id, field, delta, output)
             }
             Some(_) => {}
             None => self.pending.buffer_message_event(
@@ -147,8 +157,18 @@ impl LoopState {
         session: opencode_sdk_rs::Session,
         output: &mut Vec<RuntimeEvent>,
     ) {
+        if let Some(parent_id) = session.parent_id.as_ref() {
+            self.session_parents
+                .insert(session.id.clone(), parent_id.clone());
+        }
         if let Some(child_session_id) = self.pending.register_child_session(&session) {
             self.flush_pending_session_events(&child_session_id, output);
+        }
+
+        if should_finish_turn_from_status(&session.status) {
+            self.active_sessions.remove(&session.id);
+        } else {
+            self.active_sessions.insert(session.id.clone());
         }
 
         if self
@@ -162,7 +182,8 @@ impl LoopState {
         }
 
         if should_finish_turn_from_status(&session.status) {
-            self.finish_session(&session.id, output);
+            self.finish_or_defer_session(&session.id, &session.status, output);
+            self.finish_ready_ancestors(&session.id, output);
         }
     }
 
@@ -172,6 +193,7 @@ impl LoopState {
         pending_events: Option<Vec<PendingMessageEvent>>,
         output: &mut Vec<RuntimeEvent>,
     ) {
+        self.deferred_idle_finishes.remove(&message.session_id);
         self.note_subtasks_from_message(message, output);
         let parent_tool_use_id = self.parent_tool_use_id_for_session(&message.session_id);
         let usage = message.tokens.as_ref().map(|tokens| RuntimeUsage {
@@ -275,6 +297,7 @@ impl LoopState {
         part: &opencode_sdk_rs::MessagePart,
         output: &mut Vec<RuntimeEvent>,
     ) {
+        self.deferred_idle_finishes.remove(session_id);
         self.note_subtask_part(session_id, part, output);
         let parent_tool_use_id = self.parent_tool_use_id_for_session(session_id);
         let state = self.session_state_mut(session_id, None);
@@ -294,6 +317,7 @@ impl LoopState {
         delta: &str,
         output: &mut Vec<RuntimeEvent>,
     ) {
+        self.deferred_idle_finishes.remove(session_id);
         let parent_tool_use_id = self.parent_tool_use_id_for_session(session_id);
         let state = self.session_state_mut(session_id, None);
         state.assistant_turn_started = true;
@@ -329,6 +353,8 @@ impl LoopState {
     }
 
     fn finish_session(&mut self, session_id: &str, output: &mut Vec<RuntimeEvent>) {
+        self.pending_finishes.remove(session_id);
+        self.deferred_idle_finishes.remove(session_id);
         let parent_tool_use_id = self.parent_tool_use_id_for_session(session_id);
         let Some(state) = self.session_states.get_mut(session_id) else {
             return;

@@ -359,4 +359,5 @@ mod tests {
         assert_eq!(result_usage.input_tokens, usage(12, 4, 1, 9).input_tokens);
         assert_eq!(result_usage.output_tokens, usage(12, 4, 1, 9).output_tokens);
     }
+
 }
