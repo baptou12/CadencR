@@ -95,6 +95,25 @@ describe("AgentBlock", () => {
       expect(screen.getAllByText(/foo/).length).toBeGreaterThan(0);
     });
 
+    it("renders persisted OpenCode task output when child blocks are absent", () => {
+      render(
+        <AgentBlock
+          block={makeBlock({
+            type: "tool_call",
+            toolName: "Task",
+            toolArgs: JSON.stringify({
+              description: "Find session event parsing",
+              output: "task_id: ses_123\n\n<task_result>\nTop finding\n</task_result>",
+            }),
+            childBlocks: [],
+          })}
+        />,
+      );
+
+      expect(screen.getByText("Find session event parsing")).toBeInTheDocument();
+      expect(screen.getByText("Top finding")).toBeInTheDocument();
+    });
+
     it("returns null for TodoWrite tool", () => {
       const { container } = render(
         <AgentBlock block={makeBlock({ type: "tool_call", toolName: "TodoWrite" })} />,

@@ -98,6 +98,23 @@ function mergeIncrementalBlocks(
   newBlocks: AgentBlockData[],
 ): void {
   for (const block of newBlocks) {
+    if (block.type === "tool_call" && block.toolUseId) {
+      const existing = acc.toolUseIdMap.get(block.toolUseId)?.block;
+      if (existing) {
+        existing.content = block.content;
+        existing.toolArgs = block.toolArgs;
+        existing.toolName = block.toolName;
+        existing.parentToolUseId = block.parentToolUseId;
+        existing.createdAt = block.createdAt;
+        existing.model = block.model;
+        acc.toolUseIdMap.set(block.toolUseId, {
+          toolName: block.toolName ?? existing.toolName ?? "tool",
+          block: existing,
+        });
+        continue;
+      }
+    }
+
     // Determine the target list (root or nested under a parent tool_call)
     let targetList: AgentBlockData[];
     if (block.parentToolUseId) {

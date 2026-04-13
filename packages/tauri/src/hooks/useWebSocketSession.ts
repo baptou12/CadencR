@@ -74,7 +74,7 @@ export function useWebSocketSession(sessionId: string, featureId?: number): UseW
   const agentStateQuery = useGetFeatureAgentState(featureId ?? 0, undefined, {
     enabled: !!featureId && !persistedLoaded,
     cacheTime: 0,
-  }, 100);
+  });
 
   useEffect(() => {
     if (persistedLoaded || !featureId || !agentStateQuery.data) return;

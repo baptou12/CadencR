@@ -328,6 +328,76 @@ describe("useFeatureAgentState", () => {
     expect(result.current.sessions[0].blocks[0].content).toBe("existing text");
   });
 
+  it("updates existing nested tool_call blocks instead of appending them after child text", () => {
+    mockUseQuery.mockReturnValue({
+      data: {
+        sessions: [
+          makeSession({
+            maxMessageId: 100,
+            isIncremental: false,
+            blocks: [{
+              id: "task-1",
+              type: "tool_call",
+              content: '{"description":"Find OpenCode UI rendering","status":"pending"}',
+              toolName: "Task",
+              toolUseId: "task-tu-1",
+              childBlocks: [
+                {
+                  id: "msg-10",
+                  type: "tool_call",
+                  content: '{"status":"pending"}',
+                  toolName: "Read",
+                  toolUseId: "read-tu-1",
+                  parentToolUseId: "task-tu-1",
+                },
+                {
+                  id: "msg-11",
+                  type: "text",
+                  content: "Final answer",
+                  parentToolUseId: "task-tu-1",
+                },
+              ],
+            }],
+          }),
+        ],
+      },
+      isLoading: false,
+      refetch: mockRefetch,
+    });
+
+    const { result, rerender } = renderHook(() => useFeatureAgentState(1));
+
+    mockUseQuery.mockReturnValue({
+      data: {
+        sessions: [
+          makeSession({
+            maxMessageId: 101,
+            isIncremental: true,
+            blocks: [{
+              id: "msg-12",
+              type: "tool_call",
+              content: '{"file_path":"/tmp/example.ts"}',
+              toolName: "Read",
+              toolUseId: "read-tu-1",
+              parentToolUseId: "task-tu-1",
+            }],
+          }),
+        ],
+      },
+      isLoading: false,
+      refetch: mockRefetch,
+    });
+
+    rerender();
+
+    const childBlocks = result.current.sessions[0].blocks[0].childBlocks;
+    expect(childBlocks).toHaveLength(2);
+    expect(childBlocks?.[0].type).toBe("tool_call");
+    expect(childBlocks?.[0].content).toBe('{"file_path":"/tmp/example.ts"}');
+    expect(childBlocks?.[1].type).toBe("text");
+    expect(childBlocks?.[1].content).toBe("Final answer");
+  });
+
   it("clears accumulated state on feature ID change", () => {
     mockUseQuery.mockReturnValue({
       data: {

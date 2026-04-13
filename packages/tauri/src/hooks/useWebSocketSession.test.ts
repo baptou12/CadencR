@@ -104,6 +104,21 @@ describe("useWebSocketSession", () => {
     expect(result.current.currentModelId).toBe(DEFAULT_MODEL);
   });
 
+  it("loads persisted history without a message limit", async () => {
+    const { useGetFeatureAgentState } = await import("@/api/generated");
+    const mockedQuery = useGetFeatureAgentState as ReturnType<typeof vi.fn>;
+    mockedQuery.mockReturnValue({ data: undefined, isLoading: false });
+
+    renderHook(() => useWebSocketSession("persisted-unbounded", 42));
+    await act(async () => {
+      await Promise.resolve(); await Promise.resolve();
+    });
+
+    expect(mockedQuery).toHaveBeenCalled();
+    const lastCall = mockedQuery.mock.calls[mockedQuery.mock.calls.length - 1];
+    expect(lastCall).toHaveLength(3);
+  });
+
   it("initSession sends correct envelope", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
@@ -983,6 +998,91 @@ describe("useWebSocketSession", () => {
     expect(new Set(toolUseIds).size).toBe(7);
   });
 
+  it("concurrent child sessions with the same content index do not overwrite each other", async () => {
+    const { result } = renderHook(() => useWebSocketSession("test-id"));
+    await act(async () => {
+      await Promise.resolve(); await Promise.resolve();
+    });
+    const ws = getWs();
+
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [{
+            type: "assistant", uuid: "a-parent-1", session_id: "root",
+            parent_tool_use_id: null, error: null,
+            message: {
+              id: "msg-parent-1", model: "claude-opus-4-6", stop_reason: null,
+              content: [{ type: "tool_use", id: "task_a", name: "Task", input: { description: "Task A" } }],
+            },
+          }],
+        },
+      });
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [{
+            type: "assistant", uuid: "a-parent-2", session_id: "root",
+            parent_tool_use_id: null, error: null,
+            message: {
+              id: "msg-parent-2", model: "claude-opus-4-6", stop_reason: null,
+              content: [{ type: "tool_use", id: "task_b", name: "Task", input: { description: "Task B" } }],
+            },
+          }],
+        },
+      });
+    });
+
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [
+            {
+              type: "stream_event", uuid: "child-a-start", session_id: "child-a", parent_tool_use_id: "task_a",
+              event: { type: "message_start", message: { model: "claude-haiku-4-5-20251001" } },
+            },
+            {
+              type: "stream_event", uuid: "child-a-block", session_id: "child-a", parent_tool_use_id: "task_a",
+              event: { type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "grep_a", name: "Grep" } },
+            },
+            {
+              type: "stream_event", uuid: "child-b-start", session_id: "child-b", parent_tool_use_id: "task_b",
+              event: { type: "message_start", message: { model: "claude-haiku-4-5-20251001" } },
+            },
+            {
+              type: "stream_event", uuid: "child-b-block", session_id: "child-b", parent_tool_use_id: "task_b",
+              event: { type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "read_b", name: "Read" } },
+            },
+            {
+              type: "stream_event", uuid: "child-a-delta", session_id: "child-a", parent_tool_use_id: "task_a",
+              event: { type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: '{"pattern":"parse"}' } },
+            },
+            {
+              type: "stream_event", uuid: "child-b-delta", session_id: "child-b", parent_tool_use_id: "task_b",
+              event: { type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: '{"file_path":"/tmp/file.ts"}' } },
+            },
+          ],
+        },
+      });
+    });
+
+    const taskA = result.current.blocks.find((block) => block.toolUseId === "task_a");
+    const taskB = result.current.blocks.find((block) => block.toolUseId === "task_b");
+
+    expect(taskA?.childBlocks).toHaveLength(1);
+    expect(taskA?.childBlocks?.[0].toolName).toBe("Grep");
+    expect(taskA?.childBlocks?.[0].toolArgs).toContain("pattern");
+
+    expect(taskB?.childBlocks).toHaveLength(1);
+    expect(taskB?.childBlocks?.[0].toolName).toBe("Read");
+    expect(taskB?.childBlocks?.[0].toolArgs).toContain("file_path");
+  });
+
   it("subagent assistant messages skip backfill path (different parentToolUseId)", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
@@ -1049,6 +1149,72 @@ describe("useWebSocketSession", () => {
     const agentBlock = result.current.blocks[0];
     expect(agentBlock.childBlocks).toHaveLength(1);
     expect(agentBlock.childBlocks![0].toolName).toBe("Read");
+  });
+
+  it("preserves parent task backfill after child message_start clears stream indexes", async () => {
+    const { result } = renderHook(() => useWebSocketSession("test-id"));
+    await act(async () => {
+      await Promise.resolve(); await Promise.resolve();
+    });
+    const ws = getWs();
+
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [
+            {
+              type: "stream_event", uuid: "se1", session_id: "s1", parent_tool_use_id: null,
+              event: { type: "message_start", message: { model: "openai/gpt-5.3-codex" } },
+            },
+            {
+              type: "stream_event", uuid: "se2", session_id: "s1", parent_tool_use_id: null,
+              event: {
+                type: "content_block_start", index: 0,
+                content_block: { type: "tool_use", id: "task_1", name: "Task" },
+              },
+            },
+          ],
+        },
+      });
+    });
+
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [{
+            type: "stream_event", uuid: "se3", session_id: "s1", parent_tool_use_id: "task_1",
+            event: { type: "message_start", message: { model: "openai/gpt-5.3-codex" } },
+          }],
+        },
+      });
+    });
+
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [{
+            type: "assistant", uuid: "a1", session_id: "s1", parent_tool_use_id: null, error: null,
+            message: {
+              id: "msg-parent", model: "openai/gpt-5.3-codex", stop_reason: null,
+              content: [{
+                type: "tool_use", id: "task_1", name: "Task",
+                input: { description: "Find parsing", output: "<task_result>done</task_result>" },
+              }],
+            },
+          }],
+        },
+      });
+    });
+
+    const taskBlock = result.current.blocks.find((block) => block.toolUseId === "task_1");
+    expect(taskBlock?.toolArgs).toContain("Find parsing");
+    expect(taskBlock?.toolArgs).toContain("task_result");
   });
 
   it("taskComplete is set when parentToolUseId changes", async () => {
