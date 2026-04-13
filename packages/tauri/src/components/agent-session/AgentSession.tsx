@@ -7,7 +7,9 @@
  */
 
 import { useState, useEffect, useCallback, useMemo, useRef, useImperativeHandle, forwardRef, memo } from "react";
+import { useGetWorkspaceSetting } from "@/api/generated";
 import { DEFAULT_PROVIDER } from "@/shared/models";
+import { LOADER_STYLE_KEY, parseLoaderStyle } from "@/lib/loader-style";
 import { cn, capitalize } from "@/lib/utils";
 import { Loader2Icon } from "lucide-react";
 import { AgentStream } from "../AgentStream";
@@ -52,6 +54,7 @@ export const AgentSession = memo(forwardRef<AgentSessionHandle, AgentSessionProp
   const [promptBarFocused, setPromptBarFocused] = useState(false);
 
   const availableModels = useListModels();
+  const loaderStyleSetting = useGetWorkspaceSetting(LOADER_STYLE_KEY);
   const models = useMemo(() => availableModels.data ?? [], [availableModels.data]);
   const agentCatalog = useAgentCatalog();
   const cwdQuery = useGetFeatureWorkingDir(
@@ -59,6 +62,9 @@ export const AgentSession = memo(forwardRef<AgentSessionHandle, AgentSessionProp
     { enabled: featureId != null && projectId != null },
   );
   const projectPath = cwdQuery.data?.path ?? undefined;
+  const loaderStyle = parseLoaderStyle(loaderStyleSetting.data?.value);
+  const isStreaming = status === "running";
+  const shouldShowStreamingIndicator = loaderStyle !== "usage-glow";
 
   // ---- Collapsible state ----
   const [internalOpen, setInternalOpen] = useState(true);
@@ -238,7 +244,7 @@ export const AgentSession = memo(forwardRef<AgentSessionHandle, AgentSessionProp
         </div>
       )}
       {blocks.length > 0 && (
-        <AgentStream blocks={blocks} isStreaming={status === "running"} basePath={projectPath} />
+        <AgentStream blocks={blocks} isStreaming={isStreaming} showStreamingIndicator={shouldShowStreamingIndicator} basePath={projectPath} />
       )}
     </>
   );
@@ -284,7 +290,12 @@ export const AgentSession = memo(forwardRef<AgentSessionHandle, AgentSessionProp
       {promptBar}
       {contextUsage && (
         <div className="flex items-center gap-2 px-3 pb-1.5 pt-0">
-          <ContextUsageBar usage={contextUsage} className="flex-1 px-0 py-0" />
+          <ContextUsageBar
+            usage={contextUsage}
+            className="flex-1 px-0 py-0"
+            loaderStyle={loaderStyle}
+            isStreaming={isStreaming}
+          />
         </div>
       )}
     </div>
@@ -341,7 +352,12 @@ export const AgentSession = memo(forwardRef<AgentSessionHandle, AgentSessionProp
                 No output yet
               </div>
             ) : (
-              <AgentStream blocks={blocks} isStreaming={status === "running"} basePath={projectPath} />
+              <AgentStream
+                blocks={blocks}
+                isStreaming={isStreaming}
+                showStreamingIndicator={shouldShowStreamingIndicator}
+                basePath={projectPath}
+              />
             )}
           </div>
 
@@ -362,7 +378,12 @@ export const AgentSession = memo(forwardRef<AgentSessionHandle, AgentSessionProp
             {promptBar}
             {contextUsage && (
               <div className="flex items-center gap-2 px-3 pb-1.5 pt-0">
-                <ContextUsageBar usage={contextUsage} className="flex-1 px-0 py-0" />
+                <ContextUsageBar
+                  usage={contextUsage}
+                  className="flex-1 px-0 py-0"
+                  loaderStyle={loaderStyle}
+                  isStreaming={isStreaming}
+                />
               </div>
             )}
           </div>

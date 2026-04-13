@@ -72,4 +72,14 @@ describe("SettingsPage route", () => {
     expect(screen.getByRole("combobox")).toBeInTheDocument();
   });
 
+  it("renders loader style section", () => {
+    render(<SettingsPage />);
+    expect(screen.getByText("Loader Style")).toBeInTheDocument();
+    expect(screen.getByText("Choose between the default square loader and a discreet animated usage glow.")).toBeInTheDocument();
+    expect(screen.getByText("Normal")).toBeInTheDocument();
+    expect(screen.getByText("Usage Glow")).toBeInTheDocument();
+    expect(screen.getByText("Keep the current square streaming indicator and standard context usage bar.")).toBeInTheDocument();
+    expect(screen.getByText("Hide the square and let the context usage bar carry a subtle neon pulse while the agent is running.")).toBeInTheDocument();
+  });
+
 });

@@ -14,6 +14,7 @@ interface AgentStreamProps {
   blocks: AgentBlockData[];
   /** Whether the agent is currently streaming */
   isStreaming?: boolean;
+  showStreamingIndicator?: boolean;
   /** Base path to strip from file paths in diffs */
   basePath?: string;
 }
@@ -56,7 +57,12 @@ function coalesceDisplayBlocks(blocks: AgentBlockData[]): AgentBlockData[] {
   return merged;
 }
 
-export const AgentStream = memo(function AgentStream({ blocks, isStreaming, basePath }: AgentStreamProps) {
+export const AgentStream = memo(function AgentStream({
+  blocks,
+  isStreaming,
+  showStreamingIndicator = true,
+  basePath,
+}: AgentStreamProps) {
   const rootBlocks = useMemo(() => blocks.filter((b) => !b.parentToolUseId), [blocks]);
   const displayBlocks = useMemo(() => coalesceDisplayBlocks(rootBlocks), [rootBlocks]);
 
@@ -83,7 +89,7 @@ export const AgentStream = memo(function AgentStream({ blocks, isStreaming, base
           />
         </div>
       ))}
-      {isStreaming && (
+      {isStreaming && showStreamingIndicator && (
         <div className="flex items-center py-2 text-xs text-muted-foreground">
           <span className="animate-pulse">█</span>
         </div>

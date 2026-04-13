@@ -6,6 +6,7 @@ import { Switch } from "@/components/ui/switch";
 import { ModelSelector } from "../components/ModelSelector";
 import { useZoom } from "@/hooks/useZoom";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
+import { DEFAULT_LOADER_STYLE, LOADER_STYLE_DETAILS, LOADER_STYLE_KEY, parseLoaderStyle } from "@/lib/loader-style";
 import {
   useGetWorkspaceSetting,
   useSetWorkspaceSetting,
@@ -61,6 +62,14 @@ function GeneralTab() {
           <p className="text-sm text-muted-foreground">Run multiple agents in parallel within each execution step.</p>
         </div>
         <ParallelExecutionToggle />
+      </section>
+
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-lg font-semibold">Loader Style</h2>
+          <p className="text-sm text-muted-foreground">Choose between the default square loader and a discreet animated usage glow.</p>
+        </div>
+        <LoaderStyleControl />
       </section>
 
       <section className="space-y-4">
@@ -124,6 +133,46 @@ function AgentAutonomySelect() {
       <option value="2">Medium — manual continue</option>
       <option value="3">High — full auto</option>
     </select>
+  );
+}
+
+function LoaderStyleControl() {
+  const loaderStyle = useDebouncedSetting(LOADER_STYLE_KEY);
+  const value = parseLoaderStyle(loaderStyle.value ?? DEFAULT_LOADER_STYLE);
+
+  return (
+    <div className="space-y-2" role="radiogroup" aria-label="Loader style">
+      {LOADER_STYLE_DETAILS.map((option) => {
+        const isSelected = value === option.value;
+
+        return (
+          <button
+            key={option.value}
+            type="button"
+            role="radio"
+            aria-checked={isSelected}
+            onClick={() => loaderStyle.setValue(option.value)}
+            className={[
+              "flex w-full items-start justify-between gap-4 rounded-lg border px-4 py-3 text-left transition-colors",
+              isSelected
+                ? "border-primary/60 bg-primary/8"
+                : "border-border bg-background hover:bg-muted/40",
+            ].join(" ")}
+          >
+            <div className="space-y-1">
+              <div className="text-sm font-medium">{option.label}</div>
+              <div className="text-sm text-muted-foreground">{option.description}</div>
+            </div>
+            <div
+              className={[
+                "mt-1 size-3 shrink-0 rounded-full border transition-colors",
+                isSelected ? "border-primary bg-primary" : "border-muted-foreground/40 bg-transparent",
+              ].join(" ")}
+            />
+          </button>
+        );
+      })}
+    </div>
   );
 }
 

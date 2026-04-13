@@ -49,6 +49,11 @@ describe("AgentStream", () => {
     expect(screen.getByText("█")).toBeInTheDocument();
   });
 
+  it("hides streaming cursor when disabled by loader style", () => {
+    render(<AgentStream blocks={[]} isStreaming showStreamingIndicator={false} />);
+    expect(screen.queryByText("█")).not.toBeInTheDocument();
+  });
+
   it("renders sender and timestamp header for text blocks", () => {
     const block: AgentBlockData = {
       ...makeBlock("1", "Hello"),

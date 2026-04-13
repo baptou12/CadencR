@@ -121,3 +121,17 @@
   40%, 60% { transform: translateX(var(--scroll-distance)); }
   80%, 100% { transform: translateX(0); }
 }
+
+@keyframes context-usage-glow {
+  0%, 100% {
+    opacity: 0.72;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.context-usage-glow {
+  animation: context-usage-glow 2.8s ease-in-out infinite;
+  will-change: opacity;
+}
