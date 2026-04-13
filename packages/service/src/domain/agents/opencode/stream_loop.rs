@@ -83,7 +83,10 @@ pub(super) fn spawn_event_loop(
 
             for mapped in output {
                 if tx.send(Ok(mapped)).await.is_err() {
-                    warn!(session_id, "Event loop: downstream receiver dropped, stopping");
+                    warn!(
+                        session_id,
+                        "Event loop: downstream receiver dropped, stopping"
+                    );
                     return;
                 }
             }
@@ -151,11 +154,12 @@ mod tests {
         }
     }
 
-    fn assistant_message_with_parts(
+    fn assistant_message_with_parts_unfinished(
         id: &str,
         parts: Vec<opencode_sdk_rs::MessagePart>,
     ) -> opencode_sdk_rs::Message {
         opencode_sdk_rs::Message {
+            finished: false,
             parts,
             ..assistant_message(id)
         }
@@ -260,7 +264,10 @@ mod tests {
 
     #[tokio::test]
     async fn finishes_turn_only_after_assistant_activity() {
-        let events = collect_events(vec![session_updated(opencode_sdk_rs::SessionStatus::Completed)]).await;
+        let events = collect_events(vec![session_updated(
+            opencode_sdk_rs::SessionStatus::Completed,
+        )])
+        .await;
 
         assert!(events.is_empty());
     }
@@ -268,7 +275,7 @@ mod tests {
     #[tokio::test]
     async fn finished_assistant_message_does_not_end_turn_without_session_completion() {
         let events = collect_events(vec![opencode_sdk_rs::SseEvent::MessageCreated(
-            assistant_message_with_parts(
+            assistant_message_with_parts_unfinished(
                 "msg_1",
                 vec![opencode_sdk_rs::MessagePart::Text {
                     id: "text_1".to_string(),
@@ -305,9 +312,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn session_completed_emits_result_after_assistant_activity() {
+    async fn session_completed_without_terminal_message_does_not_emit_result() {
         let events = collect_events(vec![
-            opencode_sdk_rs::SseEvent::MessageCreated(assistant_message("msg_1")),
+            opencode_sdk_rs::SseEvent::MessageCreated(assistant_message_with_parts_unfinished(
+                "msg_1",
+                Vec::new(),
+            )),
             opencode_sdk_rs::SseEvent::PartCreated {
                 session_id: "ses_root".to_string(),
                 message_id: "msg_1".to_string(),
@@ -342,17 +352,13 @@ mod tests {
                 ..
             })
         )));
-        assert!(events.iter().any(|event| matches!(
-            event.stream_event(),
-            Some(RuntimeStreamEvent::ContentBlockStop { .. })
-        )));
-        assert!(events.last().is_some_and(|event| event.is_result()));
+        assert!(!events.iter().any(|event| event.is_result()));
     }
 
     #[tokio::test]
     async fn repeated_assistant_message_carries_final_usage_on_result() {
         let events = collect_events(vec![
-            opencode_sdk_rs::SseEvent::MessageCreated(assistant_message_with_parts(
+            opencode_sdk_rs::SseEvent::MessageCreated(assistant_message_with_parts_unfinished(
                 "msg_1",
                 vec![opencode_sdk_rs::MessagePart::Text {
                     id: "text_1".to_string(),
@@ -367,11 +373,14 @@ mod tests {
         ])
         .await;
 
-        let result = events.last().expect("result event");
+        let result = events
+            .iter()
+            .rev()
+            .find(|event| event.is_result())
+            .expect("result event");
         assert!(result.is_result());
         let result_usage = result.usage().expect("result usage");
         assert_eq!(result_usage.input_tokens, usage(12, 4, 1, 9).input_tokens);
         assert_eq!(result_usage.output_tokens, usage(12, 4, 1, 9).output_tokens);
     }
-
 }

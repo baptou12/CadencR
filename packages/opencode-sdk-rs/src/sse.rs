@@ -154,10 +154,7 @@ impl SseDispatcher {
 
         let mut session_roots = self.session_roots.lock().await;
         if let Some(parent_id) = parent_id {
-            let root = session_roots
-                .get(&parent_id)
-                .cloned()
-                .unwrap_or(parent_id);
+            let root = session_roots.get(&parent_id).cloned().unwrap_or(parent_id);
             session_roots.insert(session_id, root);
             return;
         }
@@ -299,7 +296,10 @@ mod tests {
             }))
             .await;
 
-        let forwarded = root_rx.recv().await.expect("expected forwarded child message");
+        let forwarded = root_rx
+            .recv()
+            .await
+            .expect("expected forwarded child message");
         match forwarded {
             SseEvent::MessageUpdated(message) => {
                 assert_eq!(message.session_id, "child");

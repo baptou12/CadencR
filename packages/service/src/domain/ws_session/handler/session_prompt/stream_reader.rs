@@ -1,4 +1,6 @@
 use axum::extract::ws::Message;
+use serde_json::Value;
+use tokio::time::Instant;
 use tracing::{debug, error, info};
 
 use crate::domain::agents::adapter::RuntimeMessageRx;
@@ -38,25 +40,62 @@ pub(crate) fn spawn_stream_reader(
         );
         // Capture the runtime session ID from the first event that has one.
         let mut needs_session_id_capture = true;
+        let mut runtime_session_id: Option<String> = None;
         let mut context_window: u64 = initial_context_window;
+        let mut last_runtime_activity = Instant::now();
+        let mut last_opencode_reconcile = Instant::now();
 
         loop {
-            let recv_result = tokio::time::timeout(
-                std::time::Duration::from_millis(500),
-                message_rx.recv(),
-            )
-            .await;
+            let recv_result =
+                tokio::time::timeout(std::time::Duration::from_millis(500), message_rx.recv())
+                    .await;
 
             let msg = match recv_result {
                 Ok(msg) => msg,
                 Err(_) => {
                     // Timeout — check if WS sender is still alive
-                    if sender
-                        .send(Message::Ping(vec![].into()))
-                        .is_err()
-                    {
-                        debug!(db_session_id, "WebSocket closed during timeout check, stopping stream reader");
+                    if sender.send(Message::Ping(vec![].into())).is_err() {
+                        debug!(
+                            db_session_id,
+                            "WebSocket closed during timeout check, stopping stream reader"
+                        );
                         break;
+                    }
+                    if runtime_provider == "opencode"
+                        && last_runtime_activity.elapsed() >= std::time::Duration::from_millis(750)
+                        && last_opencode_reconcile.elapsed()
+                            >= std::time::Duration::from_millis(750)
+                    {
+                        last_opencode_reconcile = Instant::now();
+                        if let Some(runtime_sid) = runtime_session_id.as_deref() {
+                            if opencode_session_is_finished(runtime_sid).await {
+                                info!(
+                                    db_session_id,
+                                    runtime_session_id = runtime_sid,
+                                    "opencode server reports finished session; reconciling completion"
+                                );
+                                WsSessionPersistence::mark_completed_static(
+                                    &write_pool,
+                                    db_session_id,
+                                )
+                                .await;
+                                WsSessionPersistence::broadcast_turn_state(
+                                    &turn_state_tx,
+                                    feature_id,
+                                    "none",
+                                );
+                                let end_env = WsEnvelope::new(
+                                    "session",
+                                    "ended",
+                                    serde_json::to_value(SessionEndedPayload {
+                                        reason: "provider_complete".into(),
+                                    })
+                                    .unwrap(),
+                                );
+                                let _ = sender.send(Message::Text(String::from(end_env).into()));
+                                break;
+                            }
+                        }
                     }
                     continue;
                 }
@@ -64,6 +103,7 @@ pub(crate) fn spawn_stream_reader(
 
             match msg {
                 Some(Ok(runtime_event)) => {
+                    last_runtime_activity = Instant::now();
                     if let Some(request) = runtime_adapter.and_then(|adapter| {
                         adapter.parse_permission_request(runtime_event.raw_json())
                     }) {
@@ -92,6 +132,7 @@ pub(crate) fn spawn_stream_reader(
                         if let Some(runtime_sid) = runtime_event.session_id() {
                             if !runtime_sid.is_empty() {
                                 needs_session_id_capture = false;
+                                runtime_session_id = Some(runtime_sid.to_string());
                                 info!(db_session_id, runtime_session_id = %runtime_sid, "stream_reader: persisting runtime session_id to DB");
                                 WsSessionPersistence::persist_runtime_session_id_static(
                                     &write_pool,
@@ -240,4 +281,32 @@ pub(crate) fn spawn_stream_reader(
             }
         }
     });
+}
+
+async fn opencode_session_is_finished(runtime_session_id: &str) -> bool {
+    let Ok(server) = opencode_sdk_rs::OpenCodeServer::ensure_running().await else {
+        return false;
+    };
+    let url = format!("{}/session/{runtime_session_id}/message", server.base_url);
+    let Ok(response) = reqwest::get(url).await else {
+        return false;
+    };
+    let Ok(body) = response.json::<Value>().await else {
+        return false;
+    };
+    latest_opencode_message_is_final_stop(&body)
+}
+
+fn latest_opencode_message_is_final_stop(body: &Value) -> bool {
+    let Some(messages) = body.as_array() else {
+        return false;
+    };
+    messages
+        .iter()
+        .rev()
+        .find_map(opencode_sdk_rs::parse_message_from)
+        .is_some_and(|message| {
+            matches!(message.role, opencode_sdk_rs::MessageRole::Assistant)
+                && message.is_terminal_turn_message()
+        })
 }

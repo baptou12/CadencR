@@ -93,7 +93,61 @@ pub enum MessagePart {
         id: String,
         thinking: String,
     },
+    StepFinish {
+        id: String,
+        reason: String,
+    },
     Other(Value),
+}
+
+impl MessagePart {
+    pub fn id(&self) -> Option<&str> {
+        match self {
+            Self::Text { id, .. }
+            | Self::ToolUse { id, .. }
+            | Self::ToolResult { id, .. }
+            | Self::Thinking { id, .. }
+            | Self::StepFinish { id, .. } => Some(id.as_str()),
+            Self::Other(_) => None,
+        }
+    }
+
+    pub fn is_subtask_launch(&self) -> bool {
+        matches!(
+            self,
+            Self::ToolUse { name, .. } if matches!(name.as_str(), "Task" | "Agent")
+        )
+    }
+
+    pub fn expects_tool_result(&self) -> bool {
+        matches!(
+            self,
+            Self::ToolUse { name, .. }
+                if matches!(
+                    name.as_str(),
+                    "Bash"
+                        | "Read"
+                        | "Write"
+                        | "Edit"
+                        | "Glob"
+                        | "Grep"
+                        | "ApplyPatch"
+                        | "TodoWrite"
+                        | "WebFetch"
+                        | "WebSearch"
+                        | "Skill"
+                        | "ToolSearch"
+                )
+        )
+    }
+
+    pub fn requires_follow_up_work(&self) -> bool {
+        self.expects_tool_result() || self.is_subtask_launch()
+    }
+
+    pub fn is_terminal_stop(&self) -> bool {
+        matches!(self, Self::StepFinish { reason, .. } if reason == "stop")
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -106,6 +160,12 @@ pub struct Message {
     pub model: Option<String>,
     pub tokens: Option<TokenUsage>,
     pub finished: bool,
+}
+
+impl Message {
+    pub fn is_terminal_turn_message(&self) -> bool {
+        self.finished && !self.parts.iter().any(MessagePart::requires_follow_up_work)
+    }
 }
 
 #[derive(Debug, Clone)]

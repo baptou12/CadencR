@@ -100,6 +100,7 @@ impl StreamSynthesizer {
             | opencode_sdk_rs::MessagePart::Thinking { id, .. }
             | opencode_sdk_rs::MessagePart::ToolUse { id, .. }
             | opencode_sdk_rs::MessagePart::ToolResult { id, .. } => id.as_str(),
+            opencode_sdk_rs::MessagePart::StepFinish { .. } => return Vec::new(),
             opencode_sdk_rs::MessagePart::Other(_) => return Vec::new(),
         };
         if part_id.is_empty() {

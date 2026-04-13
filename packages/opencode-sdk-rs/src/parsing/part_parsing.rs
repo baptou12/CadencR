@@ -16,6 +16,10 @@ pub fn parse_part_from(part: &Value) -> MessagePart {
             id,
             thinking: maybe_string(part, &["thinking", "text", "content"]).unwrap_or_default(),
         },
+        "step-finish" => MessagePart::StepFinish {
+            id,
+            reason: maybe_string(part, &["reason"]).unwrap_or_default(),
+        },
         "tool" | "tool_use" | "tool-invocation" | "tool_call" => {
             let name = canonical_tool_name(
                 maybe_string(part, &["tool", "name", "tool_name"]).unwrap_or_default(),
@@ -179,6 +183,23 @@ mod tests {
                 assert_eq!(input, json!({ "name": "general" }));
             }
             other => panic!("expected agent part to parse as ToolUse, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_part_from_supports_step_finish_part() {
+        let part = parse_part_from(&json!({
+            "id": "prt_finish",
+            "type": "step-finish",
+            "reason": "stop"
+        }));
+
+        match part {
+            MessagePart::StepFinish { id, reason } => {
+                assert_eq!(id, "prt_finish");
+                assert_eq!(reason, "stop");
+            }
+            other => panic!("expected step-finish part, got {other:?}"),
         }
     }
 }

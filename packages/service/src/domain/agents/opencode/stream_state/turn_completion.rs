@@ -5,23 +5,13 @@ impl LoopState {
     pub(super) fn finish_or_defer_session(
         &mut self,
         session_id: &str,
-        status: &opencode_sdk_rs::SessionStatus,
         output: &mut Vec<RuntimeEvent>,
     ) {
-        if self
-            .active_sessions
-            .iter()
-            .any(|active| self.is_descendant_of(active, session_id))
+        if self.has_blocking_descendant(session_id)
+            || self.has_pending_tool_uses(session_id)
+            || self.has_pending_subtasks(session_id)
         {
             self.pending_finishes.insert(session_id.to_string());
-            if matches!(status, opencode_sdk_rs::SessionStatus::Idle) {
-                self.deferred_idle_finishes.insert(session_id.to_string());
-            }
-            return;
-        }
-        if matches!(status, opencode_sdk_rs::SessionStatus::Idle)
-            && self.deferred_idle_finishes.contains(session_id)
-        {
             return;
         }
         self.finish_session(session_id, output);
@@ -36,19 +26,17 @@ impl LoopState {
         while let Some(parent_id) = current {
             current = self.session_parents.get(&parent_id).cloned();
             if self.pending_finishes.contains(&parent_id) {
-                let status = if self.deferred_idle_finishes.contains(&parent_id) {
-                    opencode_sdk_rs::SessionStatus::Idle
-                } else {
-                    opencode_sdk_rs::SessionStatus::Completed
-                };
-                self.finish_or_defer_session(&parent_id, &status, output);
+                self.finish_or_defer_session(&parent_id, output);
             }
         }
     }
 
     /// Force-finish all pending sessions. Used when the SSE source closes
     /// to prevent deadlocked turns that would otherwise wait forever.
-    pub(in crate::domain::agents::opencode) fn force_flush_pending(&mut self, output: &mut Vec<RuntimeEvent>) {
+    pub(in crate::domain::agents::opencode) fn force_flush_pending(
+        &mut self,
+        output: &mut Vec<RuntimeEvent>,
+    ) {
         let pending: Vec<String> = self.pending_finishes.iter().cloned().collect();
         for session_id in pending {
             self.finish_session(&session_id, output);
@@ -64,6 +52,15 @@ impl LoopState {
             current = self.session_parents.get(parent_id);
         }
         false
+    }
+
+    fn has_blocking_descendant(&self, session_id: &str) -> bool {
+        self.active_sessions
+            .iter()
+            .chain(self.pending_finishes.iter())
+            .any(|descendant| {
+                descendant != session_id && self.is_descendant_of(descendant, session_id)
+            })
     }
 }
 
@@ -97,6 +94,44 @@ mod tests {
             parent_id: Some("root".to_string()),
             created_at: None,
             updated_at: None,
+        }
+    }
+
+    fn user_message_with_tool_result(
+        session_id: &str,
+        id: &str,
+        tool_use_id: &str,
+    ) -> opencode_sdk_rs::Message {
+        opencode_sdk_rs::Message {
+            id: id.to_string(),
+            session_id: session_id.to_string(),
+            role: opencode_sdk_rs::MessageRole::User,
+            parts: vec![opencode_sdk_rs::MessagePart::ToolResult {
+                id: format!("result_{id}"),
+                tool_use_id: tool_use_id.to_string(),
+                is_error: false,
+                content: serde_json::json!("tool output"),
+            }],
+            created_at: None,
+            model: None,
+            tokens: None,
+            finished: true,
+        }
+    }
+
+    fn user_message_with_text(session_id: &str, id: &str, text: &str) -> opencode_sdk_rs::Message {
+        opencode_sdk_rs::Message {
+            id: id.to_string(),
+            session_id: session_id.to_string(),
+            role: opencode_sdk_rs::MessageRole::User,
+            parts: vec![opencode_sdk_rs::MessagePart::Text {
+                id: format!("text_{id}"),
+                text: text.to_string(),
+            }],
+            created_at: None,
+            model: None,
+            tokens: None,
+            finished: true,
         }
     }
 
@@ -137,6 +172,8 @@ mod tests {
             &mut output,
         );
 
+        assert_eq!(output.iter().filter(|event| event.is_result()).count(), 0);
+
         output.clear();
         state.on_session_updated(
             opencode_sdk_rs::Session {
@@ -169,8 +206,10 @@ mod tests {
             ),
             &mut output,
         );
-        assert_eq!(output.iter().filter(|event| event.is_result()).count(), 0);
+        assert_eq!(output.iter().filter(|event| event.is_result()).count(), 1);
+        assert!(output.last().is_some_and(|event| event.is_result()));
 
+        output.clear();
         state.on_session_updated(
             opencode_sdk_rs::Session {
                 id: "root".to_string(),
@@ -183,38 +222,29 @@ mod tests {
             },
             &mut output,
         );
-        assert_eq!(output.iter().filter(|event| event.is_result()).count(), 1);
-        assert!(output.last().is_some_and(|event| event.is_result()));
+        assert_eq!(output.iter().filter(|event| event.is_result()).count(), 0);
     }
 
     #[test]
-    fn force_flush_pending_emits_result_for_stuck_root() {
+    fn root_idle_waits_for_regular_tool_result_before_finishing() {
         let mut state = LoopState::new("root".to_string(), Some("openai/gpt-5.4".to_string()));
         let mut output = Vec::new();
 
-        // Root gets an assistant message so assistant_turn_started is true
         state.on_message(
             assistant_message(
                 "root",
                 "msg_root",
                 vec![opencode_sdk_rs::MessagePart::ToolUse {
-                    id: "task_1".to_string(),
-                    tool_id: "task_1".to_string(),
-                    name: "Task".to_string(),
-                    input: serde_json::json!({
-                        "description": "Explore",
-                        "subagent_session_id": "child_1",
-                    }),
+                    id: "tool_1".to_string(),
+                    tool_id: "call_1".to_string(),
+                    name: "Read".to_string(),
+                    input: serde_json::json!({ "file_path": "src/main.rs" }),
                 }],
             ),
             &mut output,
         );
-        // Child becomes active — root finish will be deferred
-        state.on_session_updated(
-            child_session(opencode_sdk_rs::SessionStatus::Active),
-            &mut output,
-        );
-        // Root goes Idle while child is still active — deferred
+
+        output.clear();
         state.on_session_updated(
             opencode_sdk_rs::Session {
                 id: "root".to_string(),
@@ -229,9 +259,132 @@ mod tests {
         );
         assert!(!output.iter().any(|event| event.is_result()));
 
-        // SSE source closes — force flush should emit the result
+        state.on_message(
+            user_message_with_tool_result("root", "msg_tool_result", "tool_1"),
+            &mut output,
+        );
+        state.on_message(
+            assistant_message(
+                "root",
+                "msg_root_2",
+                vec![opencode_sdk_rs::MessagePart::Text {
+                    id: "text_1".to_string(),
+                    text: "final summary".to_string(),
+                }],
+            ),
+            &mut output,
+        );
+
         output.clear();
-        state.force_flush_pending(&mut output);
-        assert!(output.iter().any(|event| event.is_result()), "force_flush_pending should emit result for stuck root");
+        state.on_session_updated(
+            opencode_sdk_rs::Session {
+                id: "root".to_string(),
+                title: None,
+                directory: "/tmp".to_string(),
+                status: opencode_sdk_rs::SessionStatus::Idle,
+                parent_id: None,
+                created_at: None,
+                updated_at: None,
+            },
+            &mut output,
+        );
+        assert_eq!(output.iter().filter(|event| event.is_result()).count(), 0);
+    }
+
+    #[test]
+    fn finished_assistant_after_question_answer_finishes_without_session_update() {
+        let mut state = LoopState::new("root".to_string(), Some("openai/gpt-5.4".to_string()));
+        let mut output = Vec::new();
+
+        state.on_message(
+            assistant_message(
+                "root",
+                "msg_root",
+                vec![opencode_sdk_rs::MessagePart::ToolUse {
+                    id: "question_1".to_string(),
+                    tool_id: "question_1".to_string(),
+                    name: "question".to_string(),
+                    input: serde_json::json!({ "question": "What next?" }),
+                }],
+            ),
+            &mut output,
+        );
+
+        output.clear();
+        state.on_message(
+            user_message_with_text("root", "msg_answer", "Explore backend"),
+            &mut output,
+        );
+        state.on_message(
+            assistant_message(
+                "root",
+                "msg_root_2",
+                vec![opencode_sdk_rs::MessagePart::Text {
+                    id: "text_1".to_string(),
+                    text: "Stopping here as requested.".to_string(),
+                }],
+            ),
+            &mut output,
+        );
+
+        assert_eq!(output.iter().filter(|event| event.is_result()).count(), 1);
+        assert!(output.last().is_some_and(|event| event.is_result()));
+
+        output.clear();
+        state.on_session_updated(
+            opencode_sdk_rs::Session {
+                id: "root".to_string(),
+                title: None,
+                directory: "/tmp".to_string(),
+                status: opencode_sdk_rs::SessionStatus::Idle,
+                parent_id: None,
+                created_at: None,
+                updated_at: None,
+            },
+            &mut output,
+        );
+        assert_eq!(output.iter().filter(|event| event.is_result()).count(), 0);
+    }
+
+    #[test]
+    fn step_finish_stop_part_finishes_root_without_session_update() {
+        let mut state = LoopState::new("root".to_string(), Some("openai/gpt-5.4".to_string()));
+        let mut output = Vec::new();
+
+        state.on_message(
+            opencode_sdk_rs::Message {
+                id: "msg_root".to_string(),
+                session_id: "root".to_string(),
+                role: opencode_sdk_rs::MessageRole::Assistant,
+                parts: Vec::new(),
+                created_at: None,
+                model: Some("openai/gpt-5.4".to_string()),
+                tokens: None,
+                finished: false,
+            },
+            &mut output,
+        );
+
+        state.on_part(
+            "root",
+            "msg_root",
+            &opencode_sdk_rs::MessagePart::Text {
+                id: "text_1".to_string(),
+                text: "Perfect - stopping here.".to_string(),
+            },
+            &mut output,
+        );
+        state.on_part(
+            "root",
+            "msg_root",
+            &opencode_sdk_rs::MessagePart::StepFinish {
+                id: "finish_1".to_string(),
+                reason: "stop".to_string(),
+            },
+            &mut output,
+        );
+
+        assert_eq!(output.iter().filter(|event| event.is_result()).count(), 1);
+        assert!(output.last().is_some_and(|event| event.is_result()));
     }
 }

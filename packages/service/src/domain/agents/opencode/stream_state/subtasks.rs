@@ -28,6 +28,9 @@ impl SubtaskState {
         let parent_session_id = session.parent_id.as_deref()?;
         self.child_parent_session_id
             .insert(session.id.clone(), parent_session_id.to_string());
+        if self.child_parent_tool_use_id.contains_key(&session.id) {
+            return Some(session.id.clone());
+        }
         self.pending_child_sessions_by_parent
             .entry(parent_session_id.to_string())
             .or_default()
@@ -69,6 +72,16 @@ impl SubtaskState {
         self.child_parent_tool_use_id
             .get(session_id)
             .map(String::as_str)
+    }
+
+    pub(super) fn has_pending_subtasks_for_session(&self, session_id: &str) -> bool {
+        self.pending_subtasks_by_session
+            .get(session_id)
+            .is_some_and(|pending| !pending.is_empty())
+            || self
+                .pending_child_sessions_by_parent
+                .get(session_id)
+                .is_some_and(|pending| !pending.is_empty())
     }
 
     fn remove_pending_subtask(&mut self, session_id: &str, tool_use_id: &str) {

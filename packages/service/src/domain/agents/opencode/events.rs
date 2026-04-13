@@ -332,6 +332,9 @@ fn message_part_to_json(part: &opencode_sdk_rs::MessagePart) -> Value {
         opencode_sdk_rs::MessagePart::Thinking { id, thinking } => {
             serde_json::json!({ "type": "thinking", "id": id, "thinking": thinking })
         }
+        opencode_sdk_rs::MessagePart::StepFinish { id, reason } => {
+            serde_json::json!({ "type": "step-finish", "id": id, "reason": reason })
+        }
         opencode_sdk_rs::MessagePart::ToolUse {
             id, name, input, ..
         } => {

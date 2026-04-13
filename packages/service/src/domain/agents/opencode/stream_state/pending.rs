@@ -153,6 +153,10 @@ impl PendingState {
     pub(super) fn parent_tool_use_id_for_session(&self, session_id: &str) -> Option<&str> {
         self.subtasks.parent_tool_use_id_for_session(session_id)
     }
+
+    pub(super) fn has_pending_subtasks_for_session(&self, session_id: &str) -> bool {
+        self.subtasks.has_pending_subtasks_for_session(session_id)
+    }
 }
 
 fn message_key(session_id: &str, message_id: &str) -> MessageKey {
