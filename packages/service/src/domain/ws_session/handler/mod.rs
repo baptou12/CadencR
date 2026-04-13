@@ -1088,6 +1088,7 @@ mod tests {
             sdk_sessions.clone(),
             crate::domain::agents::runtime::DEFAULT_PROVIDER.to_string(),
             None,
+            None,
         );
 
         // Wait for the "session.ended" message from the stream reader
@@ -1165,6 +1166,7 @@ mod tests {
             sdk_sessions.clone(),
             crate::domain::agents::runtime::DEFAULT_PROVIDER.to_string(),
             None,
+            None,
         );
 
         // Wait for the error message
@@ -1213,6 +1215,7 @@ mod tests {
             app_state.turn_state_tx.clone(),
             sdk_sessions.clone(),
             crate::domain::agents::runtime::DEFAULT_PROVIDER.to_string(),
+            None,
             None,
         );
 
@@ -1270,6 +1273,7 @@ mod tests {
             app_state.turn_state_tx.clone(),
             sdk_sessions,
             "opencode".to_string(),
+            None,
             None,
         );
 

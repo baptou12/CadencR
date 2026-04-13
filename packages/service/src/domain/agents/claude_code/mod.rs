@@ -215,6 +215,7 @@ fn normalize_event(msg: claude_agent_sdk_rs::SdkMessage) -> RuntimeEvent {
                     status: server.status,
                 })
                 .collect(),
+            context_window: None,
         }),
         claude_agent_sdk_rs::SdkMessage::System(
             claude_agent_sdk_rs::SystemMessage::CompactBoundary { .. },

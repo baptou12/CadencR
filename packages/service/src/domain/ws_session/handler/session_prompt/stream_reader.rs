@@ -26,10 +26,14 @@ pub(crate) fn spawn_stream_reader(
     sdk_sessions: SdkSessions,
     runtime_provider: String,
     model: Option<&str>,
+    provider_context_window: Option<u64>,
 ) {
-    let initial_context_window = model
-        .map(crate::domain::usage::context_window_for_model)
-        .unwrap_or(crate::api::DEFAULT_CONTEXT_WINDOW);
+    let initial_context_window = provider_context_window
+        .unwrap_or_else(|| {
+            model
+                .map(crate::domain::usage::context_window_for_model)
+                .unwrap_or(crate::api::DEFAULT_CONTEXT_WINDOW)
+        });
     tokio::spawn(async move {
         info!(db_session_id, "stream reader started");
         let runtime_adapter = runtime_adapter(&runtime_provider);
@@ -145,9 +149,12 @@ pub(crate) fn spawn_stream_reader(
                         }
                     }
 
-                    // Capture context window from init model.
+                    // Capture context window from init event (prefer provider-
+                    // reported value, fall back to model-id lookup).
                     if let Some(init) = runtime_event.init() {
-                        if let Some(model) = init.model.as_deref() {
+                        if let Some(cw) = init.context_window {
+                            context_window = cw;
+                        } else if let Some(model) = init.model.as_deref() {
                             context_window = crate::domain::usage::context_window_for_model(model);
                         }
                         WsSessionPersistence::update_context_window(
@@ -161,27 +168,28 @@ pub(crate) fn spawn_stream_reader(
                     // Persist before forwarding (best-effort).
                     persistence.persist_runtime_event(&runtime_event).await;
 
-                    // Extract and broadcast token usage.
                     if let Some(usage) = runtime_event.usage() {
-                        WsSessionPersistence::update_token_usage(
-                            &write_pool,
-                            db_session_id,
-                            usage.input_tokens,
-                            usage.output_tokens,
-                        )
-                        .await;
+                        if !usage.is_zero() {
+                            WsSessionPersistence::update_token_usage(
+                                &write_pool,
+                                db_session_id,
+                                usage.input_tokens,
+                                usage.output_tokens,
+                            )
+                            .await;
 
-                        let usage_env = WsEnvelope::new(
-                            "session",
-                            "usage_update",
-                            serde_json::to_value(SessionUsageUpdatePayload {
-                                input_tokens: usage.input_tokens,
-                                output_tokens: usage.output_tokens,
-                                context_window,
-                            })
-                            .unwrap(),
-                        );
-                        let _ = sender.send(Message::Text(String::from(usage_env).into()));
+                            let usage_env = WsEnvelope::new(
+                                "session",
+                                "usage_update",
+                                serde_json::to_value(SessionUsageUpdatePayload {
+                                    input_tokens: usage.input_tokens,
+                                    output_tokens: usage.output_tokens,
+                                    context_window,
+                                })
+                                .unwrap(),
+                            );
+                            let _ = sender.send(Message::Text(String::from(usage_env).into()));
+                        }
                     }
 
                     let envelope = if runtime_event.is_result() {

@@ -157,6 +157,18 @@ pub fn stream_stop_event(
     )
 }
 
+/// Constructs a RuntimeEvent carrying only token-usage metadata.
+pub fn usage_event(session_id: &str, usage: RuntimeUsage) -> RuntimeEvent {
+    RuntimeEvent::new(
+        RuntimeEventMetadata {
+            session_id: Some(session_id.to_string()),
+            usage: Some(usage),
+            raw: serde_json::json!({ "type": "usage_update", "session_id": session_id }),
+        },
+        RuntimeEventKind::Other,
+    )
+}
+
 pub fn result_event(session_id: &str, usage: Option<RuntimeUsage>) -> RuntimeEvent {
     RuntimeEvent::new(
         RuntimeEventMetadata {
@@ -168,7 +180,11 @@ pub fn result_event(session_id: &str, usage: Option<RuntimeUsage>) -> RuntimeEve
     )
 }
 
-pub fn init_event(session_id: &str, model: Option<String>) -> RuntimeEvent {
+pub fn init_event(
+    session_id: &str,
+    model: Option<String>,
+    context_window: Option<u64>,
+) -> RuntimeEvent {
     RuntimeEvent::new(
         RuntimeEventMetadata {
             session_id: Some(session_id.to_string()),
@@ -184,6 +200,7 @@ pub fn init_event(session_id: &str, model: Option<String>) -> RuntimeEvent {
         RuntimeEventKind::Init(RuntimeInitEvent {
             model,
             mcp_servers: Vec::new(),
+            context_window,
         }),
     )
 }

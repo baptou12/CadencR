@@ -48,10 +48,15 @@ pub struct OpenCodeSession {
     event_rx: Option<mpsc::UnboundedReceiver<opencode_sdk_rs::SseEvent>>,
     pending_requests: Arc<Mutex<HashMap<String, PendingRequestKind>>>,
     server_pid: Option<u32>,
+    context_window: Option<u64>,
 }
 
 #[async_trait]
 impl AgentRuntimeSession for OpenCodeSession {
+    fn context_window(&self) -> Option<u64> {
+        self.context_window
+    }
+
     fn take_message_rx(&mut self) -> RuntimeMessageRx {
         let Some(source_rx) = self.event_rx.take() else {
             tracing::warn!("take_message_rx called twice — returning dead channel");
@@ -66,7 +71,8 @@ impl AgentRuntimeSession for OpenCodeSession {
                 .clone()
                 .map(|m| format!("{}/{}", m.provider_id, m.model_id))
         });
-        spawn_event_loop(source_rx, tx, pending_requests, session_id, model);
+        let context_window = self.context_window;
+        spawn_event_loop(source_rx, tx, pending_requests, session_id, model, context_window);
         rx
     }
 
@@ -246,6 +252,12 @@ impl AgentRuntimeAdapter for OpenCodeAdapter {
             opencode_sdk_rs::shared_dispatcher(client.clone(), Some(directory.clone())).await;
 
         let current_model = config.model.as_deref().and_then(parse_model_ref);
+        let context_window = match config.model.as_deref() {
+            Some(model_id) => {
+                super::providers::opencode::context_window_for_model(model_id).await
+            }
+            None => None,
+        };
         let current_agent = permission_mode_agent(config.permission_mode.clone()).to_string();
         let session_id = resolve_session_id(&client, &directory, config.resume_session_id).await?;
         let event_rx = dispatcher.subscribe(&session_id).await;
@@ -275,6 +287,7 @@ impl AgentRuntimeAdapter for OpenCodeAdapter {
             event_rx: Some(event_rx),
             pending_requests: Arc::new(Mutex::new(HashMap::new())),
             server_pid: server.pid,
+            context_window,
         }))
     }
 }
@@ -372,6 +385,7 @@ mod tests {
                 PendingRequestKind::Question,
             )]))),
             server_pid: None,
+            context_window: None,
         };
         session
             .respond_permission(RuntimePermissionResponse {

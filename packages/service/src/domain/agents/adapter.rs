@@ -13,6 +13,12 @@ pub struct RuntimeUsage {
     pub output_tokens: u64,
 }
 
+impl RuntimeUsage {
+    pub fn is_zero(&self) -> bool {
+        self.input_tokens == 0 && self.output_tokens == 0
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RuntimePermissionMode {
     Default,
@@ -180,6 +186,7 @@ pub enum RuntimeEventKind {
 pub struct RuntimeInitEvent {
     pub model: Option<String>,
     pub mcp_servers: Vec<RuntimeMcpServerStatus>,
+    pub context_window: Option<u64>,
 }
 
 #[derive(Debug, Clone)]
@@ -335,6 +342,9 @@ pub trait RuntimeToolPermissionHandler: Send + Sync {
 #[async_trait]
 pub trait AgentRuntimeSession: Send + Sync {
     fn take_message_rx(&mut self) -> RuntimeMessageRx;
+    fn context_window(&self) -> Option<u64> {
+        None
+    }
     async fn session_id(&self) -> Option<String>;
     async fn stream_input(&self, content: Value) -> Result<(), RuntimeError>;
     async fn interrupt(&self) -> Result<(), RuntimeError>;

@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 
 use pending::{PendingMessageEvent, PendingSessionEvent, PendingState};
 
-use super::events::{assistant_fallback_event, message_start_event, result_event};
+use super::events::{assistant_fallback_event, message_start_event, result_event, usage_event};
 use super::stream_synthesizer::StreamSynthesizer;
 use crate::domain::agents::adapter::{RuntimeEvent, RuntimeUsage};
 
@@ -217,6 +217,10 @@ impl LoopState {
                     parent_tool_use_id.as_deref(),
                 ));
                 state.active_assistant_message_id = Some(message.id.clone());
+            } else if let Some(ref usage) = usage {
+                // MessageUpdated with tokens on an existing message — emit a
+                // usage-only event so the stream reader can broadcast it.
+                output.push(usage_event(&message.session_id, usage.clone()));
             }
             if !message.parts.is_empty() {
                 state.assistant_turn_started = true;

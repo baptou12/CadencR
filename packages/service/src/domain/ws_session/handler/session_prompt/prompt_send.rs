@@ -284,6 +284,15 @@ pub(crate) async fn handle_prompt_send(
                     );
                     WsSessionPersistence::mark_running_static(&app_state.write_pool, db_session_id)
                         .await;
+                    let provider_context_window = runtime_session.context_window();
+                    if let Some(cw) = provider_context_window {
+                        WsSessionPersistence::update_context_window(
+                            &app_state.write_pool,
+                            db_session_id,
+                            cw,
+                        )
+                        .await;
+                    }
                     WsSessionPersistence::broadcast_turn_state(
                         &app_state.turn_state_tx,
                         feature_id,
@@ -302,6 +311,7 @@ pub(crate) async fn handle_prompt_send(
                         sdk_sessions.clone(),
                         provider_id.clone(),
                         spawned_model.as_deref(),
+                        provider_context_window,
                     );
 
                     // Fire-and-forget auto-naming for first prompt.

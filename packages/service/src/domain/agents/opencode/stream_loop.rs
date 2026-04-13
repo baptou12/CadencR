@@ -15,6 +15,7 @@ pub(super) fn spawn_event_loop(
     pending_requests: Arc<Mutex<HashMap<String, PendingRequestKind>>>,
     session_id: String,
     model: Option<String>,
+    context_window: Option<u64>,
 ) {
     tokio::spawn(async move {
         let mut state = LoopState::new(session_id.clone(), model);
@@ -22,7 +23,7 @@ pub(super) fn spawn_event_loop(
             let mut output = Vec::new();
             match event {
                 opencode_sdk_rs::SseEvent::ServerConnected => {
-                    output.push(init_event(&session_id, state.current_model()));
+                    output.push(init_event(&session_id, state.current_model(), context_window));
                 }
                 opencode_sdk_rs::SseEvent::MessageCreated(message)
                 | opencode_sdk_rs::SseEvent::MessageUpdated(message) => {
@@ -127,6 +128,7 @@ mod tests {
             Arc::new(Mutex::new(HashMap::<String, PendingRequestKind>::new())),
             "ses_root".to_string(),
             Some("openai/gpt-5.4".to_string()),
+            None,
         );
 
         for event in source_events {

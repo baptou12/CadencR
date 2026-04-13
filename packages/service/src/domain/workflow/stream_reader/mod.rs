@@ -141,17 +141,20 @@ pub fn spawn_workflow_stream_reader(
                     .await;
 
                     if let Some(init) = runtime_event.init() {
-                        if let Some(model) = init.model.as_deref() {
+                        if let Some(cw) = init.context_window {
+                            context_window = cw;
+                        } else if let Some(model) = init.model.as_deref() {
                             context_window = crate::domain::usage::context_window_for_model(model);
-                            WsSessionPersistence::update_context_window(
-                                &write_pool,
-                                db_session_id,
-                                context_window,
-                            )
-                            .await;
-                            if !init.mcp_servers.is_empty() {
-                                debug!(slot = %slot, %model, context_window, mcp_servers = ?init.mcp_servers, "received init message from runtime");
-                            }
+                        }
+                        WsSessionPersistence::update_context_window(
+                            &write_pool,
+                            db_session_id,
+                            context_window,
+                        )
+                        .await;
+                        if !init.mcp_servers.is_empty() {
+                            let model_label = init.model.as_deref().unwrap_or("unknown");
+                            debug!(slot = %slot, model = %model_label, context_window, mcp_servers = ?init.mcp_servers, "received init message from runtime");
                         }
                         if !init.mcp_servers.is_empty()
                             && !check_mcp_server_connected(

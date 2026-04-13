@@ -68,6 +68,9 @@ pub async fn broadcast_usage(
     write_pool: &SqlitePool,
 ) {
     if let Some(usage) = runtime_event.usage() {
+        if usage.is_zero() {
+            return;
+        }
         WsSessionPersistence::update_token_usage(
             write_pool,
             db_session_id,

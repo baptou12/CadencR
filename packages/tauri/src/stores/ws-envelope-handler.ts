@@ -347,13 +347,14 @@ function handleUsageUpdate(
   if (!u) return;
   const totalTokens = u.input_tokens + u.output_tokens;
   const contextWindow = u.context_window || 200000;
+  const usageRatio = Math.min(1, totalTokens / contextWindow);
   ctx.set(updateSession(ctx.get(), sessionId, {
     contextUsage: {
       inputTokens: u.input_tokens,
       outputTokens: u.output_tokens,
       totalTokens,
       contextWindow,
-      usageRatio: Math.min(1, totalTokens / contextWindow),
+      usageRatio,
       wasCompacted: false,
     },
   }));

@@ -69,6 +69,15 @@ impl TokenUsage {
     pub fn total_input(&self) -> u64 {
         self.input + self.cache.read + self.cache.write
     }
+
+    /// Returns true when all token counters are zero (no real usage data yet).
+    pub fn is_zero(&self) -> bool {
+        self.input == 0
+            && self.output == 0
+            && self.reasoning == 0
+            && self.cache.read == 0
+            && self.cache.write == 0
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

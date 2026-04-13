@@ -132,6 +132,16 @@ async fn fetch_configured_catalog() -> Option<(Vec<ModelCatalogEntry>, Option<St
     }
 }
 
+/// Look up the context window for an opencode model by ID (e.g. "openai/gpt-5.4").
+/// Fetches the model catalog from the running opencode server.
+pub(crate) async fn context_window_for_model(model_id: &str) -> Option<u64> {
+    let (models, _) = fetch_configured_catalog().await?;
+    models
+        .iter()
+        .find(|m| m.id == model_id)
+        .map(|m| m.context_window)
+}
+
 fn parse_warmup_flag(raw: Option<&str>) -> bool {
     match raw.map(str::trim).map(str::to_ascii_lowercase) {
         None => true,

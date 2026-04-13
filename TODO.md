@@ -1,8 +1,7 @@
 ## FIX
 - [ ] [global] no loaders during the auto-namming
 - [ ] [opencode] thinking blocks are not wrapped, appears as normal text
-- [ ] [opencode] context usage is wrong, value does not appear before sending a message and % seems to high
-- [ ] [opencode] autonamming from opencode himself instead of claude sdk
+- [ ] [opencode] autonamming from opencode himself instead of claude sdk for ws-session
 - [ ] [agent] autoscroll seems broken after edits
 - [ ] [opencode] permission don't show the command
 - [ ] [agent] in some conversation, when going back to the conversation the loader is visible but not actually fetching the previous events in the conversation.

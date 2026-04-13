@@ -74,6 +74,8 @@ pub fn parse_message_from(payload: &Value) -> Option<Message> {
         })
         .unwrap_or_default();
 
+    let tokens = parse_token_usage(candidate);
+
     Some(Message {
         id,
         session_id,
@@ -85,7 +87,7 @@ pub fn parse_message_from(payload: &Value) -> Option<Message> {
             &["time", "created"],
         ),
         model: maybe_model(candidate),
-        tokens: parse_token_usage(candidate),
+        tokens,
         finished: message_finished(candidate),
     })
 }
@@ -102,7 +104,7 @@ fn maybe_model(value: &Value) -> Option<String> {
 fn parse_token_usage(value: &Value) -> Option<TokenUsage> {
     let tokens = value.get("tokens")?;
     let cache = tokens.get("cache");
-    Some(TokenUsage {
+    let usage = TokenUsage {
         total: maybe_u64(tokens.get("total")),
         input: maybe_u64(tokens.get("input")).unwrap_or(0),
         output: maybe_u64(tokens.get("output")).unwrap_or(0),
@@ -115,7 +117,10 @@ fn parse_token_usage(value: &Value) -> Option<TokenUsage> {
                 .and_then(|item| maybe_u64(item.get("write")))
                 .unwrap_or(0),
         },
-    })
+    };
+    // Zero-token payloads mean "no usage data yet" — filter them out so
+    // downstream code never overwrites real usage with zeros.
+    if usage.is_zero() { None } else { Some(usage) }
 }
 
 fn maybe_u64(value: Option<&Value>) -> Option<u64> {
@@ -336,5 +341,48 @@ mod tests {
             question.questions[0].options.as_ref().unwrap()[0].label,
             "A"
         );
+    }
+
+    #[test]
+    fn zero_token_usage_is_filtered_out() {
+        let message = parse_message_from(&json!({
+            "id": "msg_1", "sessionID": "ses_1", "role": "assistant",
+            "tokens": { "input": 0, "output": 0 }
+        }))
+        .unwrap();
+        assert!(message.tokens.is_none(), "all-zero tokens should be filtered");
+    }
+
+    #[test]
+    fn empty_tokens_object_is_filtered_out() {
+        let message = parse_message_from(&json!({
+            "id": "msg_1", "sessionID": "ses_1", "role": "assistant",
+            "tokens": {}
+        }))
+        .unwrap();
+        assert!(message.tokens.is_none(), "empty tokens object should be filtered");
+    }
+
+    #[test]
+    fn nonzero_input_tokens_are_preserved() {
+        let message = parse_message_from(&json!({
+            "id": "msg_1", "sessionID": "ses_1", "role": "assistant",
+            "tokens": { "input": 10, "output": 5 }
+        }))
+        .unwrap();
+        let tokens = message.tokens.expect("should have tokens");
+        assert_eq!(tokens.input, 10);
+        assert_eq!(tokens.output, 5);
+    }
+
+    #[test]
+    fn cache_only_tokens_are_preserved() {
+        let message = parse_message_from(&json!({
+            "id": "msg_1", "sessionID": "ses_1", "role": "assistant",
+            "tokens": { "input": 0, "output": 0, "cache": { "read": 100 } }
+        }))
+        .unwrap();
+        let tokens = message.tokens.expect("cache-only tokens should be preserved");
+        assert_eq!(tokens.cache.read, 100);
     }
 }
