@@ -51,7 +51,6 @@ export interface SessionEntry {
   runtimeSessionId: string;
   persistedLoaded: boolean;
   contextUsage: ContextUsageState | null;
-  claudeSessionId: string;
   hasFileChanges: boolean;
   slashCommands: SlashCommand[];
   slashCommandsLoading: boolean;
@@ -75,7 +74,6 @@ export function createSessionEntry(): SessionEntry {
     conn: null,
     isConnected: false,
     serverSessionId: "",
-    claudeSessionId: "",
     streamingState: createStreamingState(),
     blocks: [],
     status: "idle",

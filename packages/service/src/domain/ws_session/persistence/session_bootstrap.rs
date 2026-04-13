@@ -117,7 +117,7 @@ mod session_bootstrap_tests {
                 status TEXT NOT NULL DEFAULT 'idle',
                 runtime_provider TEXT,
                 runtime_session_id TEXT,
-                claude_session_id TEXT,
+
                 model TEXT,
                 permission_mode TEXT,
                 has_file_changes INTEGER NOT NULL DEFAULT 0,
@@ -152,10 +152,10 @@ mod session_bootstrap_tests {
         .unwrap();
 
         sqlx::query(
-            r#"CREATE TABLE session_claude_ids (
+            r#"CREATE TABLE session_runtime_ids (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 session_id INTEGER NOT NULL,
-                claude_session_id TEXT NOT NULL,
+                runtime_session_id TEXT NOT NULL,
                 created_at TEXT
             )"#,
         )

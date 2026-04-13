@@ -40,7 +40,7 @@ impl WsSessionPersistence {
         )
         .await?;
 
-        sqlx::query("DELETE FROM session_claude_ids WHERE session_id = ?")
+        sqlx::query("DELETE FROM session_runtime_ids WHERE session_id = ?")
             .bind(session_id)
             .execute(&mut *tx)
             .await
@@ -118,7 +118,7 @@ mod session_cleanup_tests {
                 status TEXT NOT NULL DEFAULT 'idle',
                 runtime_provider TEXT,
                 runtime_session_id TEXT,
-                claude_session_id TEXT,
+
                 model TEXT,
                 permission_mode TEXT,
                 has_file_changes INTEGER NOT NULL DEFAULT 0,
@@ -153,10 +153,10 @@ mod session_cleanup_tests {
         .unwrap();
 
         sqlx::query(
-            r#"CREATE TABLE session_claude_ids (
+            r#"CREATE TABLE session_runtime_ids (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 session_id INTEGER NOT NULL,
-                claude_session_id TEXT NOT NULL,
+                runtime_session_id TEXT NOT NULL,
                 created_at TEXT
             )"#,
         )
@@ -219,7 +219,7 @@ mod session_cleanup_tests {
         let id = p.find_or_create_session(None, None).await.unwrap();
         p.persist_user_message("hello").await;
         WsSessionPersistence::mark_paused_static(&pool, id).await;
-        sqlx::query("INSERT INTO session_claude_ids (session_id, claude_session_id) VALUES (?, ?)")
+        sqlx::query("INSERT INTO session_runtime_ids (session_id, runtime_session_id) VALUES (?, ?)")
             .bind(id)
             .bind("archived-session")
             .execute(&pool)
@@ -258,7 +258,7 @@ mod session_cleanup_tests {
         assert!(messages.is_empty());
 
         let archived_ids: Vec<(i64,)> =
-            sqlx::query_as("SELECT id FROM session_claude_ids WHERE session_id = ?")
+            sqlx::query_as("SELECT id FROM session_runtime_ids WHERE session_id = ?")
                 .bind(id)
                 .fetch_all(&pool)
                 .await

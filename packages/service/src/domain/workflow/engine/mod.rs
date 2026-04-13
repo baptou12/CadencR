@@ -165,7 +165,7 @@ impl WorkflowEngine {
                     .ws_sender
                     .send(Message::Text(String::from(envelope).into()));
             } else if is_paused {
-                if let Some(cc_sid) = self.agent_manager.paused_sessions.get(&slot) {
+                if let Some(rt_sid) = self.agent_manager.paused_sessions.get(&slot) {
                     let agent_type = slot.agent_type_str().unwrap_or("execute").to_string();
                     let envelope = WsEnvelope::new(
                         "workflow",
@@ -175,7 +175,7 @@ impl WorkflowEngine {
                             agent_slot: slot.clone(),
                             session_id: db_session_id,
                             agent_type,
-                            claude_session_id: cc_sid.clone(),
+                            runtime_session_id: rt_sid.clone(),
                         }),
                     );
                     let _ = self
@@ -225,7 +225,7 @@ impl WorkflowEngine {
             .map(|entry| (entry.key().clone(), entry.value().clone()))
             .collect();
 
-        for (slot, _cc_sid) in auto_resume_slots {
+        for (slot, _rt_sid) in auto_resume_slots {
             info!(feature_id = self.feature_id, slot = %slot, "auto-resuming agent after WS reconnect");
             if let Err(e) = self.send_prompt(slot.clone(), "", None).await {
                 warn!(feature_id = self.feature_id, slot = %slot, error = %e, "failed to auto-resume agent");

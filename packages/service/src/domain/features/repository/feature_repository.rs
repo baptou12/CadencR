@@ -190,7 +190,7 @@ pub async fn delete_feature(pool: &SqlitePool, id: i64) -> Result<(), AppError> 
 
     // Delete session children, then sessions
     sqlx::query(
-        "DELETE FROM session_claude_ids WHERE session_id IN (SELECT id FROM agent_sessions WHERE feature_id = ?)",
+        "DELETE FROM session_runtime_ids WHERE session_id IN (SELECT id FROM agent_sessions WHERE feature_id = ?)",
     )
     .bind(id)
     .execute(&mut *tx)

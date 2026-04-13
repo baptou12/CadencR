@@ -17,7 +17,7 @@ function makeSession(overrides?: Partial<FeatureSession>): FeatureSession {
     phaseTitle: null,
     subprocessId: null,
     model: null,
-    claudeSessionId: null,
+    runtimeSessionId: null,
     runId: null,
     todos: null,
     permissionMode: "acceptEdits",

@@ -159,7 +159,7 @@ export function createMockAgentSession(
     id,
     feature_id: 1,
     agent_type: "plan",
-    claude_session_id: null,
+    runtime_session_id: null,
     status: "completed",
     started_at: "2024-01-01T00:00:00.000Z",
     ended_at: "2024-01-01T00:05:00.000Z",

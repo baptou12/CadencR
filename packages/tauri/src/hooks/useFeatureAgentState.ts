@@ -200,8 +200,7 @@ export interface FeatureSession {
   hasFileChanges: boolean;
   resumable: boolean;
   runtimeProvider?: string | null;
-  runtimeSessionId?: string | null;
-  claudeSessionId: string | null;
+  runtimeSessionId: string | null;
   runId: number | null;
   phaseId: number | null;
   phaseTitle: string | null;
@@ -362,8 +361,7 @@ export function useFeatureAgentState(featureId: number) {
         hasFileChanges: s.hasFileChanges,
         resumable: s.resumable,
         runtimeProvider: getOptionalSessionString(s, "runtimeProvider"),
-        runtimeSessionId: getOptionalSessionString(s, "runtimeSessionId") ?? s.claudeSessionId,
-        claudeSessionId: s.claudeSessionId,
+        runtimeSessionId: s.runtimeSessionId,
         runId: s.runId,
         phaseId: s.phaseId,
         phaseTitle: s.phaseTitle,

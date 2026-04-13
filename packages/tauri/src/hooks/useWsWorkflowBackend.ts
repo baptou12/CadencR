@@ -43,7 +43,7 @@ function toFeatureSession(
     phaseId: item?.phase_id ?? null,
     phaseTitle: item?.phase_title ?? null,
     subprocessId: null, model: null, runId: null, todos: null,
-    claudeSessionId: agent?.claudeSessionId ?? null,
+    runtimeSessionId: agent?.runtimeSessionId ?? null,
     permissionMode: "acceptEdits", pendingPlanApproval: agent?.pendingPlanApproval ?? null,
     inputTokens: agent?.inputTokens ?? 0,
     outputTokens: agent?.outputTokens ?? 0,

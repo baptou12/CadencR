@@ -20,9 +20,9 @@ impl AgentManager {
         // Capture Claude Code session ID NOW while the query handle still exists
         if let Some(query) = self.queries.get(&slot) {
             let q = query.lock().await;
-            if let Some(cc_session_id) = q.session_id().await {
-                debug!(slot = %slot, cc_session_id = %cc_session_id, "captured Claude session ID for resume");
-                self.paused_sessions.insert(slot.clone(), cc_session_id);
+            if let Some(rt_session_id) = q.session_id().await {
+                debug!(slot = %slot, rt_session_id = %rt_session_id, "captured runtime session ID for resume");
+                self.paused_sessions.insert(slot.clone(), rt_session_id);
             }
             return q
                 .interrupt()
@@ -97,7 +97,7 @@ impl AgentManager {
         self.paused_sessions.remove(slot);
     }
 
-    /// Pause all running agents: capture claude_session_id, interrupt, mark paused in DB.
+    /// Pause all running agents: capture runtime_session_id, interrupt, mark paused in DB.
     /// Used during graceful shutdown so agents can be resumed on next app start.
     pub async fn pause_all(&self) {
         let slots: Vec<AgentSlot> = self.queries.iter().map(|e| e.key().clone()).collect();
@@ -105,16 +105,16 @@ impl AgentManager {
             if let Some(query_arc) = self.queries.get(&slot) {
                 let q = query_arc.lock().await;
                 // Capture session ID for resume
-                if let Some(cc_session_id) = q.session_id().await {
-                    info!(slot = %slot, cc_session_id = %cc_session_id, "pause_all: captured session ID");
+                if let Some(rt_session_id) = q.session_id().await {
+                    info!(slot = %slot, rt_session_id = %rt_session_id, "pause_all: captured session ID");
                     self.paused_sessions
-                        .insert(slot.clone(), cc_session_id.clone());
+                        .insert(slot.clone(), rt_session_id.clone());
                     // Persist to DB
                     if let Some(db_session_id) = self.active_items.get(&slot).map(|e| *e.value()) {
-                        WsSessionPersistence::persist_claude_session_id_static(
+                        WsSessionPersistence::persist_runtime_session_id_only(
                             &self.write_pool,
                             db_session_id,
-                            &cc_session_id,
+                            &rt_session_id,
                         )
                         .await;
                         WsSessionPersistence::mark_paused_static(&self.write_pool, db_session_id)

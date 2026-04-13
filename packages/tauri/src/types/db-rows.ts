@@ -88,7 +88,7 @@ export interface AgentSessionRow {
   id: number;
   feature_id: number;
   agent_type: string;
-  claude_session_id: string | null;
+  runtime_session_id: string | null;
   status: string;
   started_at: string;
   ended_at: string | null;

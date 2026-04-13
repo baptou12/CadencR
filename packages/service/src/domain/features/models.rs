@@ -245,7 +245,6 @@ pub struct AgentSessionSummary {
     pub updated_at: Option<String>,
     pub runtime_provider: Option<String>,
     pub runtime_session_id: Option<String>,
-    pub claude_session_id: Option<String>,
     pub input_tokens: i64,
     pub output_tokens: i64,
     pub context_window: i64,

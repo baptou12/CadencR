@@ -68,8 +68,8 @@ export interface AgentSessionState {
   pendingQuestionToolInput: Record<string, unknown>;
   pendingQuestionRequestId: string;
   historyLoaded: boolean;
-  /** Claude Code CLI session ID (UUID) for --resume */
-  claudeSessionId: string | null;
+  /** Runtime session ID (UUID) for --resume */
+  runtimeSessionId: string | null;
   inputTokens: number;
   outputTokens: number;
   contextWindow: number;
@@ -97,7 +97,7 @@ export interface AgentSessionSummary {
   queue_item_id: number | null;
   status: string;
   agent_type: string | null;
-  claude_session_id: string | null;
+  runtime_session_id: string | null;
   input_tokens: number;
   output_tokens: number;
   context_window: number;

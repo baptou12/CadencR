@@ -26,19 +26,19 @@ impl QueueAdvancer {
         }
 
         let mut db_sid: i64 = 0;
-        let mut cc_sid = String::new();
+        let mut runtime_sid = String::new();
 
         if let Some(db_session_id) = agent_manager.active_items.get(&slot) {
             db_sid = *db_session_id;
             WsSessionPersistence::mark_paused_static(&self.write_pool, db_sid).await;
 
-            if let Some(cc_sid_ref) = agent_manager.paused_sessions.get(&slot) {
-                cc_sid = cc_sid_ref.clone();
-                debug!(slot = %slot, db_session_id = db_sid, cc_session_id = %cc_sid, "persisting claude_session_id to DB for resume");
-                WsSessionPersistence::persist_claude_session_id_static(
+            if let Some(sid_ref) = agent_manager.paused_sessions.get(&slot) {
+                runtime_sid = sid_ref.clone();
+                debug!(slot = %slot, db_session_id = db_sid, runtime_session_id = %runtime_sid, "persisting runtime_session_id to DB for resume");
+                WsSessionPersistence::persist_runtime_session_id_only(
                     &self.write_pool,
                     db_sid,
-                    &cc_sid,
+                    &runtime_sid,
                 )
                 .await;
             }
@@ -53,7 +53,7 @@ impl QueueAdvancer {
                 agent_slot: slot,
                 session_id: db_sid,
                 agent_type,
-                claude_session_id: cc_sid,
+                runtime_session_id: runtime_sid,
             }),
         );
         let _ = self
@@ -216,10 +216,10 @@ impl QueueAdvancer {
         );
 
         // Restore paused and stale running pre-queue agents from DB.
-        // Running agents with a claude_session_id are treated as paused (process is gone after restart).
+        // Running agents with a runtime_session_id are treated as paused (process is gone after restart).
         let resumable_sessions: Vec<(i64, String, String)> = sqlx::query_as(
-            "SELECT id, agent_type, claude_session_id FROM agent_sessions \
-             WHERE feature_id = ? AND claude_session_id IS NOT NULL \
+            "SELECT id, agent_type, runtime_session_id FROM agent_sessions \
+             WHERE feature_id = ? AND runtime_session_id IS NOT NULL \
              AND status IN ('paused', 'running') \
              ORDER BY id DESC",
         )
@@ -230,7 +230,7 @@ impl QueueAdvancer {
 
         let mut restored: Vec<(AgentSlot, i64, String, String)> = Vec::new();
         let mut seen_singletons = std::collections::HashSet::new();
-        for (db_session_id, agent_type, cc_session_id) in &resumable_sessions {
+        for (db_session_id, agent_type, rt_session_id) in &resumable_sessions {
             let Some(slot) = agent_type_str_to_slot(agent_type, *db_session_id) else {
                 continue;
             };
@@ -241,13 +241,13 @@ impl QueueAdvancer {
                 feature_id = self.feature_id,
                 db_session_id,
                 agent_type = agent_type.as_str(),
-                cc_session_id = cc_session_id.as_str(),
+                rt_session_id = rt_session_id.as_str(),
                 slot = %slot,
                 "restoring paused pre-queue agent for resume"
             );
             agent_manager
                 .paused_sessions
-                .insert(slot.clone(), cc_session_id.clone());
+                .insert(slot.clone(), rt_session_id.clone());
             agent_manager
                 .active_items
                 .insert(slot.clone(), *db_session_id);
@@ -256,7 +256,7 @@ impl QueueAdvancer {
                 slot,
                 *db_session_id,
                 agent_type.clone(),
-                cc_session_id.clone(),
+                rt_session_id.clone(),
             ));
         }
 
@@ -265,10 +265,10 @@ impl QueueAdvancer {
             .await
             .map_err(|e| e.to_string())?;
 
-        for (item_id, agent_session_id, cc_session_id) in &paused_queue_items {
+        for (item_id, agent_session_id, rt_session_id) in &paused_queue_items {
             let slot = AgentSlot::QueueItem(*item_id);
-            if let Some(ref sid) = cc_session_id {
-                info!(feature_id = self.feature_id, item_id, cc_session_id = %sid, "restoring paused queue item for resume");
+            if let Some(ref sid) = rt_session_id {
+                info!(feature_id = self.feature_id, item_id, rt_session_id = %sid, "restoring paused queue item for resume");
                 agent_manager
                     .paused_sessions
                     .insert(slot.clone(), sid.clone());
@@ -286,9 +286,9 @@ impl QueueAdvancer {
         .execute(&self.write_pool)
         .await;
 
-        // Recover stale running queue items: pause those with a claude_session_id, error the rest
+        // Recover stale running queue items: pause those with a runtime_session_id, error the rest
         let stale_running: Vec<(i64, Option<i64>, Option<String>)> = sqlx::query_as(
-            "SELECT wq.id, wq.agent_session_id, ags.claude_session_id \
+            "SELECT wq.id, wq.agent_session_id, ags.runtime_session_id \
              FROM workflow_queue wq \
              LEFT JOIN agent_sessions ags ON ags.id = wq.agent_session_id \
              WHERE wq.feature_id = ? AND wq.status = 'running'",
@@ -300,8 +300,8 @@ impl QueueAdvancer {
 
         // recovered_stale collects items that were recovered as paused for frontend notification
         let mut recovered_stale: Vec<(AgentSlot, i64, String)> = Vec::new();
-        for (item_id, agent_session_id, cc_session_id) in &stale_running {
-            if let Some(ref sid) = cc_session_id {
+        for (item_id, agent_session_id, rt_session_id) in &stale_running {
+            if let Some(ref sid) = rt_session_id {
                 if !sid.is_empty() {
                     info!(
                         feature_id = self.feature_id,
@@ -352,7 +352,7 @@ impl QueueAdvancer {
             .send(Message::Text(String::from(envelope).into()));
 
         // Notify frontend about restored paused agents
-        for (slot, db_session_id, agent_type, cc_session_id) in &restored {
+        for (slot, db_session_id, agent_type, rt_session_id) in &restored {
             let envelope = WsEnvelope::new(
                 "workflow",
                 "agent_paused",
@@ -361,7 +361,7 @@ impl QueueAdvancer {
                     agent_slot: slot.clone(),
                     session_id: *db_session_id,
                     agent_type: agent_type.clone(),
-                    claude_session_id: cc_session_id.clone(),
+                    runtime_session_id: rt_session_id.clone(),
                 }),
             );
             let _ = self
@@ -372,8 +372,8 @@ impl QueueAdvancer {
         // Notify frontend about restored paused queue items + recovered stale running items
         let queue_paused_envelopes: Vec<_> = paused_queue_items
             .iter()
-            .filter_map(|(item_id, _, cc_session_id)| {
-                let sid = cc_session_id.as_ref()?;
+            .filter_map(|(item_id, _, rt_session_id)| {
+                let sid = rt_session_id.as_ref()?;
                 let slot = AgentSlot::QueueItem(*item_id);
                 let db_sid = agent_manager
                     .active_items
@@ -385,11 +385,11 @@ impl QueueAdvancer {
             .chain(
                 recovered_stale
                     .iter()
-                    .map(|(slot, db_sid, cc_sid)| (slot.clone(), *db_sid, cc_sid.clone())),
+                    .map(|(slot, db_sid, rt_sid)| (slot.clone(), *db_sid, rt_sid.clone())),
             )
             .collect();
 
-        for (slot, db_sid, cc_sid) in queue_paused_envelopes {
+        for (slot, db_sid, rt_sid) in queue_paused_envelopes {
             let envelope = WsEnvelope::new(
                 "workflow",
                 "agent_paused",
@@ -398,7 +398,7 @@ impl QueueAdvancer {
                     agent_slot: slot.clone(),
                     session_id: db_sid,
                     agent_type: slot.agent_type_str().unwrap_or("execute").to_string(),
-                    claude_session_id: cc_sid,
+                    runtime_session_id: rt_sid,
                 }),
             );
             let _ = self

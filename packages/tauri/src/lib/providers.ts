@@ -4,46 +4,46 @@ import opencodeLogo from "../../assets/providers/opencode.png";
 
 export const DEFAULT_PROVIDER_ID = "claude_code";
 
-interface ProviderMetadata {
+export interface ProviderMetadata {
   id: string;
   label: string;
-  iconSrc: string;
+  iconSrc: string | null;
 }
 
-const PROVIDER_METADATA: Record<string, ProviderMetadata> = {
-  claude_code: {
-    id: "claude_code",
-    label: "Claude Code",
-    iconSrc: claudeLogo,
-  },
-  codex_cli: {
-    id: "codex_cli",
-    label: "Codex CLI",
-    iconSrc: codexLogo,
-  },
-  opencode: {
-    id: "opencode",
-    label: "OpenCode",
-    iconSrc: opencodeLogo,
-  },
+/** Map provider IDs to their bundled icon assets. */
+const PROVIDER_ICONS: Record<string, string> = {
+  claude_code: claudeLogo,
+  codex_cli: codexLogo,
+  opencode: opencodeLogo,
 };
 
-export function getProviderMetadata(providerId?: string | null): ProviderMetadata | null {
+/**
+ * Get provider metadata. Returns icon from the local asset map and label from
+ * the optional catalog data (falls back to the provider ID as a label).
+ * New providers only need to add an icon asset + one entry in PROVIDER_ICONS.
+ */
+export function getProviderMetadata(
+  providerId?: string | null,
+  catalogLabel?: string | null,
+): ProviderMetadata | null {
   if (!providerId) {
     return null;
   }
-  return PROVIDER_METADATA[providerId] ?? null;
+  return {
+    id: providerId,
+    label: catalogLabel ?? formatProviderId(providerId),
+    iconSrc: PROVIDER_ICONS[providerId] ?? null,
+  };
+}
+
+/** Convert a snake_case provider ID to a human-readable label. */
+function formatProviderId(id: string): string {
+  return id
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
 }
 
 export function isDefaultProvider(providerId?: string | null): boolean {
   return providerId === DEFAULT_PROVIDER_ID;
-}
-
-export function resolveLegacyClaudeSessionId(
-  runtimeProvider?: string | null,
-  runtimeSessionId?: string | null,
-): string | undefined {
-  if (!runtimeProvider) return undefined;
-  if (!isDefaultProvider(runtimeProvider)) return "";
-  return runtimeSessionId ?? undefined;
 }

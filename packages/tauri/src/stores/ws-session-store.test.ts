@@ -242,7 +242,6 @@ describe("ws-session-store", () => {
     expect(session.currentModelId).toBe("openai/gpt-5.3-codex");
     expect(session.runtimeProvider).toBe("opencode");
     expect(session.runtimeSessionId).toBe("ses_live_123");
-    expect(session.claudeSessionId).toBe("");
   });
 
   it("setPersistedState uses runtimeProvider as currentProviderId when provider field is omitted", () => {
@@ -258,7 +257,7 @@ describe("ws-session-store", () => {
     expect(session.runtimeProvider).toBe("opencode");
   });
 
-  it("claude_session_id action sets claudeSessionId on the session", async () => {
+  it("runtime_session_id action sets runtimeSessionId on the session", async () => {
     const store = useWsSessionStore.getState();
     store.connect("s1");
     await tick();
@@ -271,16 +270,15 @@ describe("ws-session-store", () => {
 
     ws.simulateMessage({
       domain: "session",
-      action: "claude_session_id",
-      payload: { claude_session_id: "uuid-abc-123" },
+      action: "runtime_session_id",
+      payload: { runtime_session_id: "uuid-abc-123" },
     });
 
     const session = useWsSessionStore.getState().sessions["s1"];
-    expect(session.claudeSessionId).toBe("uuid-abc-123");
     expect(session.runtimeSessionId).toBe("uuid-abc-123");
   });
 
-  it("claude_session_id dedup guard skips update when value unchanged", async () => {
+  it("runtime_session_id dedup guard skips update when value unchanged", async () => {
     const store = useWsSessionStore.getState();
     store.connect("s1");
     await tick();
@@ -293,8 +291,8 @@ describe("ws-session-store", () => {
 
     ws.simulateMessage({
       domain: "session",
-      action: "claude_session_id",
-      payload: { claude_session_id: "uuid-abc-123" },
+      action: "runtime_session_id",
+      payload: { runtime_session_id: "uuid-abc-123" },
     });
 
     // Capture sessions reference after first set
@@ -303,14 +301,14 @@ describe("ws-session-store", () => {
     // Send the same value again
     ws.simulateMessage({
       domain: "session",
-      action: "claude_session_id",
-      payload: { claude_session_id: "uuid-abc-123" },
+      action: "runtime_session_id",
+      payload: { runtime_session_id: "uuid-abc-123" },
     });
 
     // Sessions object should be the same reference (no update triggered)
     const sessionsAfterSecond = useWsSessionStore.getState().sessions;
     expect(sessionsAfterSecond).toBe(sessionsAfterFirst);
-    expect(sessionsAfterSecond["s1"].claudeSessionId).toBe("uuid-abc-123");
+    expect(sessionsAfterSecond["s1"].runtimeSessionId).toBe("uuid-abc-123");
   });
 
   it("close clears server session identifiers so init can run again", async () => {
@@ -326,8 +324,8 @@ describe("ws-session-store", () => {
     });
     ws.simulateMessage({
       domain: "session",
-      action: "claude_session_id",
-      payload: { claude_session_id: "uuid-abc-123" },
+      action: "runtime_session_id",
+      payload: { runtime_session_id: "uuid-abc-123" },
     });
     expect(useWsSessionStore.getState().sessions["s1"].serverSessionId).toBe("srv-1");
 
@@ -336,7 +334,6 @@ describe("ws-session-store", () => {
     expect(session.isConnected).toBe(false);
     expect(session.serverSessionId).toBe("");
     expect(session.runtimeSessionId).toBe("");
-    expect(session.claudeSessionId).toBe("");
     expect(session.conn).toBeNull();
   });
 
@@ -610,8 +607,8 @@ describe("ws-session-store", () => {
     const lastBlock = session.blocks[session.blocks.length - 1];
     expect(lastBlock.type).toBe("clear_divider");
     expect(lastBlock.content).toBe("cli-sess-xyz");
-    // claudeSessionId reset
-    expect(session.claudeSessionId).toBe("");
+    // runtimeSessionId reset
+    expect(session.runtimeSessionId).toBe("");
     expect(session.status).toBe("idle");
   });
 

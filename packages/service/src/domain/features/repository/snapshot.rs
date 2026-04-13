@@ -35,8 +35,7 @@ pub async fn get_feature_snapshot(
                   COALESCE(s.started_at, '') as created_at,
                   NULL as updated_at,
                   s.runtime_provider,
-                  COALESCE(s.runtime_session_id, s.claude_session_id) as runtime_session_id,
-                  s.claude_session_id,
+                  s.runtime_session_id,
                   s.input_tokens,
                   s.output_tokens,
                   s.context_window

@@ -3,7 +3,6 @@ import {
   createPermissionRespond,
   createPromptSend,
 } from "@/lib/ws-envelope";
-import { resolveLegacyClaudeSessionId } from "@/lib/providers";
 import { fetchFeatureAgentState } from "@/api/generated";
 import { serverBlocksToAgentBlocks } from "@/hooks/useFeatureAgentState";
 import { injectPlanIntoBlocks, parseTodosFromBlocks } from "./ws-message-processing";
@@ -186,10 +185,6 @@ export function applyPersistedState(
   const resolvedProviderId = currentProviderId ?? runtimeProvider ?? undefined;
   const resolvedRuntimeProvider = runtimeProvider ?? currentProviderId ?? undefined;
   const resolvedRuntimeSessionId = runtimeSessionId ?? undefined;
-  const legacyClaudeSessionId = resolveLegacyClaudeSessionId(
-    resolvedRuntimeProvider,
-    resolvedRuntimeSessionId,
-  );
   const existing = ctx.get().sessions[sessionId];
   const sessionMetaPatch: Partial<SessionEntry> = {
     persistedLoaded: true,
@@ -201,9 +196,6 @@ export function applyPersistedState(
     ...(currentModelId ? { currentModelId } : {}),
     ...(resolvedRuntimeProvider ? { runtimeProvider: resolvedRuntimeProvider } : {}),
     ...(resolvedRuntimeSessionId ? { runtimeSessionId: resolvedRuntimeSessionId } : {}),
-    ...(legacyClaudeSessionId !== undefined
-      ? { claudeSessionId: legacyClaudeSessionId }
-      : {}),
     ...(pendingPlanApproval != null
       ? { pendingPlanApproval, status: "paused" as const }
       : {}),

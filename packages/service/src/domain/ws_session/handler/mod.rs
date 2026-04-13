@@ -138,12 +138,12 @@ pub(super) fn send_error(sender: &WsSender, ref_id: &str, code: &str, message: &
     let _ = sender.send(Message::Text(String::from(err).into()));
 }
 
-/// Notify the frontend of the Claude Code CLI session ID (UUID used for --resume).
-pub(super) fn send_claude_session_id(sender: &WsSender, cli_sid: &str) {
+/// Notify the frontend of the runtime session ID (used for --resume).
+pub(super) fn send_runtime_session_id(sender: &WsSender, cli_sid: &str) {
     let envelope = WsEnvelope::new(
         "session",
-        "claude_session_id",
-        serde_json::json!({ "claude_session_id": cli_sid }),
+        "runtime_session_id",
+        serde_json::json!({ "runtime_session_id": cli_sid }),
     );
     let _ = sender.send(Message::Text(String::from(envelope).into()));
 }
@@ -197,7 +197,7 @@ async fn handle_connection(socket: WebSocket, state: AppState) {
         }
     }
 
-    // Cleanup: mark sessions paused and persist claude_session_id before dropping
+    // Cleanup: mark sessions paused and persist runtime_session_id before dropping
     let mut sessions = sdk_sessions.lock().await;
     debug!(count = sessions.len(), "WS cleanup: draining sessions");
     for (db_session_id, handle) in sessions.drain() {
@@ -337,7 +337,6 @@ mod tests {
                 status TEXT NOT NULL DEFAULT 'idle',
                 runtime_provider TEXT,
                 runtime_session_id TEXT,
-                claude_session_id TEXT,
                 model TEXT,
                 permission_mode TEXT,
                 has_file_changes INTEGER NOT NULL DEFAULT 0,
@@ -375,10 +374,10 @@ mod tests {
         .unwrap();
 
         sqlx::query(
-            r#"CREATE TABLE session_claude_ids (
+            r#"CREATE TABLE session_runtime_ids (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 session_id INTEGER NOT NULL,
-                claude_session_id TEXT NOT NULL,
+                runtime_session_id TEXT NOT NULL,
                 created_at TEXT
             )"#,
         )
@@ -509,9 +508,9 @@ mod tests {
         let app_state = make_test_app_state().await;
         let resume_sid = "11111111-1111-4111-8111-111111111111";
 
-        // Pre-create a session row with a claude_session_id (simulating previous app run)
+        // Pre-create a session row with a runtime_session_id (simulating previous app run)
         sqlx::query(
-            "INSERT INTO agent_sessions (feature_id, agent_type, status, claude_session_id) VALUES (1, 'session', 'paused', ?)"
+            "INSERT INTO agent_sessions (feature_id, agent_type, status, runtime_session_id) VALUES (1, 'session', 'paused', ?)"
         )
         .bind(resume_sid)
         .execute(&app_state.write_pool)
@@ -524,17 +523,17 @@ mod tests {
         let db_id: i64 = session_id.parse().unwrap();
         let handle = sessions.get(&db_id).unwrap();
 
-        // Should have captured the existing claude_session_id for resume
+        // Should have captured the existing runtime_session_id for resume
         assert_eq!(handle.resume_session_id, Some(resume_sid.to_string()));
     }
 
     #[tokio::test]
-    async fn test_init_no_resume_when_claude_session_id_is_null() {
+    async fn test_init_no_resume_when_runtime_session_id_is_null() {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
         let app_state = make_test_app_state().await;
 
-        // Pre-create a session row WITHOUT claude_session_id (e.g., after clear)
+        // Pre-create a session row WITHOUT runtime_session_id (e.g., after clear)
         sqlx::query(
             "INSERT INTO agent_sessions (feature_id, agent_type, status) VALUES (1, 'session', 'paused')"
         )
@@ -731,15 +730,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_init_resume_sends_claude_session_id_message() {
+    async fn test_init_resume_sends_runtime_session_id_message() {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
         let app_state = make_test_app_state().await;
         let resume_sid = "22222222-2222-4222-8222-222222222222";
 
-        // Pre-create a session row with a claude_session_id (simulating previous run)
+        // Pre-create a session row with a runtime_session_id (simulating previous run)
         sqlx::query(
-            "INSERT INTO agent_sessions (feature_id, agent_type, status, claude_session_id) VALUES (1, 'session', 'paused', ?)"
+            "INSERT INTO agent_sessions (feature_id, agent_type, status, runtime_session_id) VALUES (1, 'session', 'paused', ?)"
         )
         .bind(resume_sid)
         .execute(&app_state.write_pool)
@@ -765,29 +764,29 @@ mod tests {
             panic!("expected text message for initialized");
         }
 
-        // Second message should be "claude_session_id"
+        // Second message should be "runtime_session_id"
         let msg2 = tokio::time::timeout(std::time::Duration::from_millis(500), rx.recv())
             .await
-            .expect("timed out waiting for claude_session_id message")
+            .expect("timed out waiting for runtime_session_id message")
             .unwrap();
         if let Message::Text(text) = msg2 {
             let env: WsEnvelope = serde_json::from_str(&text).unwrap();
             assert_eq!(env.domain, "session");
-            assert_eq!(env.action, "claude_session_id");
+            assert_eq!(env.action, "runtime_session_id");
             let sid = env
                 .payload
-                .get("claude_session_id")
+                .get("runtime_session_id")
                 .unwrap()
                 .as_str()
                 .unwrap();
             assert_eq!(sid, resume_sid);
         } else {
-            panic!("expected text message for claude_session_id");
+            panic!("expected text message for runtime_session_id");
         }
     }
 
     #[tokio::test]
-    async fn test_init_no_resume_does_not_send_claude_session_id_message() {
+    async fn test_init_no_resume_does_not_send_runtime_session_id_message() {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
         let app_state = make_test_app_state().await;
@@ -815,7 +814,7 @@ mod tests {
         // No further messages should be in the channel
         assert!(
             rx.try_recv().is_err(),
-            "expected no claude_session_id message for new session"
+            "expected no runtime_session_id message for new session"
         );
     }
 

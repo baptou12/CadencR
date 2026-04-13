@@ -355,7 +355,7 @@ async fn handle_approval(
 }
 
 /// After app restart, the agent is dead. Resume it via send_prompt so it
-/// continues from where it left off (using --resume with its claude_session_id).
+/// continues from where it left off (using --resume with its runtime_session_id).
 async fn resume_agent_after_approval(
     engine: &WorkflowEngine,
     slot: crate::domain::workflow::engine::AgentSlot,

@@ -48,12 +48,12 @@ export function parseCommandsListPayload(payload: unknown): CommandsListPayload 
   };
 }
 
-export function parseClaudeSessionIdPayload(
+export function parseRuntimeSessionIdPayload(
   payload: unknown,
-): { claude_session_id?: string } | null {
+): { runtime_session_id?: string } | null {
   const record = asRecord(payload);
   if (!record) return null;
-  return { claude_session_id: optionalString(record, "claude_session_id") };
+  return { runtime_session_id: optionalString(record, "runtime_session_id") };
 }
 
 export function parseInitializedPayload(payload: unknown): {

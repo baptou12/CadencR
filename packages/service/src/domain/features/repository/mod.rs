@@ -173,10 +173,10 @@ mod tests {
         .unwrap();
 
         sqlx::query(
-            r#"CREATE TABLE session_claude_ids (
+            r#"CREATE TABLE session_runtime_ids (
                 id INTEGER PRIMARY KEY,
                 session_id INTEGER REFERENCES agent_sessions(id),
-                claude_session_id TEXT
+                runtime_session_id TEXT
             )"#,
         )
         .execute(&pool)
@@ -1684,7 +1684,7 @@ mod tests {
             .await
             .unwrap();
         sqlx::query(
-            "INSERT INTO session_claude_ids (session_id, claude_session_id) VALUES (?, 'cid-1')",
+            "INSERT INTO session_runtime_ids (session_id, runtime_session_id) VALUES (?, 'cid-1')",
         )
         .bind(sess_id)
         .execute(&pool)

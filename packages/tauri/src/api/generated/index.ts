@@ -1134,8 +1134,7 @@ export interface SessionState {
   hasFileChanges: boolean;
   resumable: boolean;
   runtimeProvider?: string | null;
-  runtimeSessionId?: string | null;
-  claudeSessionId: string | null;
+  runtimeSessionId: string | null;
   runId: number | null;
   phaseId: number | null;
   phaseTitle: string | null;

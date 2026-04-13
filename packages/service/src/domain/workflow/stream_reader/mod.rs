@@ -275,7 +275,7 @@ async fn interrupt_and_pause(
         let q = query_arc.lock().await;
         if let Some(runtime_session_id) = q.session_id().await {
             paused_sessions.insert(slot.clone(), runtime_session_id.clone());
-            WsSessionPersistence::persist_claude_session_id_static(
+            WsSessionPersistence::persist_runtime_session_id_only(
                 write_pool,
                 db_session_id,
                 &runtime_session_id,
@@ -331,7 +331,7 @@ async fn capture_session_id(
     }
     *needs_capture = false;
     debug!(slot = %slot, db_session_id, runtime_session_id = %cli_sid, "persisting runtime session_id to DB");
-    WsSessionPersistence::persist_claude_session_id_static(write_pool, db_session_id, cli_sid)
+    WsSessionPersistence::persist_runtime_session_id_only(write_pool, db_session_id, cli_sid)
         .await;
     let sid_env = WsEnvelope::new(
         "workflow",
@@ -339,7 +339,7 @@ async fn capture_session_id(
         serde_json::json!({
             "agent_slot": &slot,
             "session_id": db_session_id,
-            "claude_session_id": cli_sid,
+            "runtime_session_id": cli_sid,
         }),
     );
     let _ = sender.send(Message::Text(String::from(sid_env).into()));

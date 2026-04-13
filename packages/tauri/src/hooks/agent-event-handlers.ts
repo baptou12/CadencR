@@ -37,7 +37,7 @@ export function createAgentSession(sessionId: number, agentType = "execute"): Ag
     pendingQuestionToolInput: {},
     pendingQuestionRequestId: "",
     historyLoaded: false,
-    claudeSessionId: null,
+    runtimeSessionId: null,
     inputTokens: 0,
     outputTokens: 0,
     contextWindow: 200_000,
@@ -207,11 +207,11 @@ export function handleAgentPaused(
 ): void {
   const pausedSlot = parseAgentSlot(payload);
   const pausedSessionId = payload.session_id as number;
-  const pausedClaudeSessionId = (payload.claude_session_id as string) || null;
+  const pausedRuntimeSessionId = (payload.runtime_session_id as string) || null;
   set(state => {
     const key = slotKeyForEvent(pausedSlot, pausedSessionId);
     return upsertAgent(state, key, pausedSessionId, {
-      sessionId: pausedSessionId, status: "paused", claudeSessionId: pausedClaudeSessionId,
+      sessionId: pausedSessionId, status: "paused", runtimeSessionId: pausedRuntimeSessionId,
       agentType: pausedSlot.type,
     });
   });
@@ -244,11 +244,11 @@ export function handleAgentSessionId(
   set: SetFn,
 ): void {
   const sidSlot = parseAgentSlot(payload);
-  const ccSessionId = payload.claude_session_id as string;
-  if (!ccSessionId) return;
+  const rtSessionId = payload.runtime_session_id as string;
+  if (!rtSessionId) return;
   set(state => {
     const key = resolveSlotKey(state.agents, sidSlot);
-    return patchAgent(state, key, { claudeSessionId: ccSessionId });
+    return patchAgent(state, key, { runtimeSessionId: rtSessionId });
   });
 }
 

@@ -7,14 +7,13 @@ impl WsSessionPersistence {
             Option<String>,
             Option<String>,
             Option<String>,
-            Option<String>,
             String,
             Option<String>,
             Option<i64>,
             Option<i64>,
             Option<i64>,
         )> = sqlx::query_as(
-            "SELECT id, feature_id, runtime_provider, runtime_session_id, model, permission_mode, claude_session_id, status, pending_plan_approval, input_tokens, output_tokens, context_window FROM agent_sessions WHERE id = ?",
+            "SELECT id, feature_id, runtime_provider, runtime_session_id, model, permission_mode, status, pending_plan_approval, input_tokens, output_tokens, context_window FROM agent_sessions WHERE id = ?",
         )
         .bind(session_id)
         .fetch_optional(pool)
@@ -28,7 +27,6 @@ impl WsSessionPersistence {
                 runtime_session_id,
                 model,
                 permission_mode,
-                claude_session_id,
                 status,
                 pending_plan_approval,
                 input_tokens,
@@ -41,7 +39,6 @@ impl WsSessionPersistence {
                 runtime_session_id,
                 model,
                 permission_mode,
-                claude_session_id,
                 status,
                 pending_plan_approval,
                 input_tokens,
@@ -52,16 +49,16 @@ impl WsSessionPersistence {
     }
 
     #[cfg(test)]
-    pub async fn get_latest_claude_session_id(
+    pub async fn get_latest_runtime_session_id(
         pool: &SqlitePool,
         feature_id: i64,
     ) -> Option<String> {
         let row: Option<(String,)> = sqlx::query_as(
-            r#"SELECT claude_session_id FROM (
-                SELECT claude_session_id, id AS sort_key FROM agent_sessions
-                    WHERE feature_id = ? AND claude_session_id IS NOT NULL
+            r#"SELECT runtime_session_id FROM (
+                SELECT runtime_session_id, id AS sort_key FROM agent_sessions
+                    WHERE feature_id = ? AND runtime_session_id IS NOT NULL
                 UNION ALL
-                SELECT sci.claude_session_id, sci.id AS sort_key FROM session_claude_ids sci
+                SELECT sci.runtime_session_id, sci.id AS sort_key FROM session_runtime_ids sci
                     JOIN agent_sessions s ON sci.session_id = s.id
                     WHERE s.feature_id = ?
             ) ORDER BY sort_key DESC LIMIT 1"#,
@@ -95,7 +92,6 @@ mod session_queries_tests {
                 status TEXT NOT NULL DEFAULT 'idle',
                 runtime_provider TEXT,
                 runtime_session_id TEXT,
-                claude_session_id TEXT,
                 model TEXT,
                 permission_mode TEXT,
                 has_file_changes INTEGER NOT NULL DEFAULT 0,
@@ -130,10 +126,10 @@ mod session_queries_tests {
         .unwrap();
 
         sqlx::query(
-            r#"CREATE TABLE session_claude_ids (
+            r#"CREATE TABLE session_runtime_ids (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 session_id INTEGER NOT NULL,
-                claude_session_id TEXT NOT NULL,
+                runtime_session_id TEXT NOT NULL,
                 created_at TEXT
             )"#,
         )
@@ -275,26 +271,26 @@ mod session_queries_tests {
     }
 
     #[tokio::test]
-    async fn test_persist_and_get_claude_session_id() {
+    async fn test_persist_and_get_runtime_session_id() {
         let pool = setup_test_db().await;
         let mut p = WsSessionPersistence::new(pool.clone(), 1);
         p.find_or_create_session(None, None).await;
 
-        p.persist_claude_session_id("cli-sess-abc").await;
+        p.persist_runtime_session_id("cli-sess-abc").await;
 
-        let found = WsSessionPersistence::get_latest_claude_session_id(&pool, 1).await;
+        let found = WsSessionPersistence::get_latest_runtime_session_id(&pool, 1).await;
         assert_eq!(found, Some("cli-sess-abc".to_string()));
     }
 
     #[tokio::test]
-    async fn test_get_latest_claude_session_id_returns_none_when_missing() {
+    async fn test_get_latest_runtime_session_id_returns_none_when_missing() {
         let pool = setup_test_db().await;
-        let found = WsSessionPersistence::get_latest_claude_session_id(&pool, 999).await;
+        let found = WsSessionPersistence::get_latest_runtime_session_id(&pool, 999).await;
         assert_eq!(found, None);
     }
 
     #[tokio::test]
-    async fn test_get_latest_claude_session_id_falls_back_to_archive() {
+    async fn test_get_latest_runtime_session_id_falls_back_to_archive() {
         let pool = setup_test_db().await;
         let session_id: (i64,) = sqlx::query_as(
             "INSERT INTO agent_sessions (feature_id, agent_type, status) VALUES (1, 'session', 'completed') RETURNING id",
@@ -303,14 +299,14 @@ mod session_queries_tests {
         .await
         .unwrap();
 
-        sqlx::query("INSERT INTO session_claude_ids (session_id, claude_session_id) VALUES (?, ?)")
+        sqlx::query("INSERT INTO session_runtime_ids (session_id, runtime_session_id) VALUES (?, ?)")
             .bind(session_id.0)
             .bind("archived-cli-sess")
             .execute(&pool)
             .await
             .unwrap();
 
-        let found = WsSessionPersistence::get_latest_claude_session_id(&pool, 1).await;
+        let found = WsSessionPersistence::get_latest_runtime_session_id(&pool, 1).await;
         assert_eq!(found, Some("archived-cli-sess".to_string()));
     }
 }

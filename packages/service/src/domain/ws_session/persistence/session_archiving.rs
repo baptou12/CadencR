@@ -8,7 +8,7 @@ impl WsSessionPersistence {
         let cli_sid = match known_cli_sid {
             Some(sid) => Some(sid.to_string()),
             None => sqlx::query_as::<_, (Option<String>,)>(
-                "SELECT claude_session_id FROM agent_sessions WHERE id = ?",
+                "SELECT runtime_session_id FROM agent_sessions WHERE id = ?",
             )
             .bind(session_id)
             .fetch_optional(pool)
@@ -21,7 +21,7 @@ impl WsSessionPersistence {
         if let Some(ref cli_sid) = cli_sid {
             let now = chrono::Utc::now().to_rfc3339();
             let _ = sqlx::query(
-                "INSERT INTO session_claude_ids (session_id, claude_session_id, created_at) VALUES (?, ?, ?)",
+                "INSERT INTO session_runtime_ids (session_id, runtime_session_id, created_at) VALUES (?, ?, ?)",
             )
             .bind(session_id)
             .bind(cli_sid)
@@ -44,7 +44,7 @@ impl WsSessionPersistence {
         .await;
 
         let _ = sqlx::query(
-            "UPDATE agent_sessions SET runtime_session_id = NULL, claude_session_id = NULL WHERE id = ?",
+            "UPDATE agent_sessions SET runtime_session_id = NULL WHERE id = ?",
         )
         .bind(session_id)
         .execute(pool)
@@ -57,14 +57,11 @@ impl WsSessionPersistence {
         runtime_provider: &str,
         runtime_session_id: &str,
     ) {
-        let legacy_session_id =
-            crate::domain::agents::legacy_session_id_value(runtime_provider, runtime_session_id);
         if let Err(e) = sqlx::query(
-            "UPDATE agent_sessions SET runtime_provider = ?, runtime_session_id = ?, claude_session_id = ? WHERE id = ?",
+            "UPDATE agent_sessions SET runtime_provider = ?, runtime_session_id = ? WHERE id = ?",
         )
         .bind(runtime_provider)
         .bind(runtime_session_id)
-        .bind(legacy_session_id)
         .bind(session_id)
         .execute(pool)
         .await
@@ -73,26 +70,30 @@ impl WsSessionPersistence {
         }
     }
 
-    pub async fn persist_claude_session_id_static(
+    /// Persist only the runtime_session_id without changing the provider column.
+    pub async fn persist_runtime_session_id_only(
         pool: &SqlitePool,
         session_id: i64,
-        claude_session_id: &str,
+        runtime_session_id: &str,
     ) {
-        Self::persist_runtime_session_id_static(
-            pool,
-            session_id,
-            crate::domain::agents::runtime::DEFAULT_PROVIDER,
-            claude_session_id,
+        if let Err(e) = sqlx::query(
+            "UPDATE agent_sessions SET runtime_session_id = ? WHERE id = ?",
         )
-        .await;
+        .bind(runtime_session_id)
+        .bind(session_id)
+        .execute(pool)
+        .await
+        {
+            error!(error = %e, "failed to persist runtime session_id");
+        }
     }
 
     #[cfg(test)]
-    pub async fn persist_claude_session_id(&self, claude_session_id: &str) {
+    pub async fn persist_runtime_session_id(&self, runtime_session_id: &str) {
         let Some(session_id) = self.session_db_id else {
             return;
         };
-        Self::persist_claude_session_id_static(&self.write_pool, session_id, claude_session_id)
+        Self::persist_runtime_session_id_only(&self.write_pool, session_id, runtime_session_id)
             .await;
     }
 }
@@ -116,7 +117,6 @@ mod session_archiving_tests {
                 status TEXT NOT NULL DEFAULT 'idle',
                 runtime_provider TEXT,
                 runtime_session_id TEXT,
-                claude_session_id TEXT,
                 model TEXT,
                 permission_mode TEXT,
                 has_file_changes INTEGER NOT NULL DEFAULT 0,
@@ -151,10 +151,10 @@ mod session_archiving_tests {
         .unwrap();
 
         sqlx::query(
-            r#"CREATE TABLE session_claude_ids (
+            r#"CREATE TABLE session_runtime_ids (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 session_id INTEGER NOT NULL,
-                claude_session_id TEXT NOT NULL,
+                runtime_session_id TEXT NOT NULL,
                 created_at TEXT
             )"#,
         )
@@ -171,11 +171,11 @@ mod session_archiving_tests {
         let mut p = WsSessionPersistence::new(pool.clone(), 1);
         let id = p.find_or_create_session(None, None).await.unwrap();
 
-        WsSessionPersistence::persist_claude_session_id_static(&pool, id, "cli-sess-123").await;
+        WsSessionPersistence::persist_runtime_session_id_only(&pool, id, "cli-sess-123").await;
         WsSessionPersistence::archive_and_clear(&pool, id, None).await;
 
         let row: (Option<String>,) =
-            sqlx::query_as("SELECT claude_session_id FROM agent_sessions WHERE id = ?")
+            sqlx::query_as("SELECT runtime_session_id FROM agent_sessions WHERE id = ?")
                 .bind(id)
                 .fetch_one(&pool)
                 .await
@@ -183,7 +183,7 @@ mod session_archiving_tests {
         assert!(row.0.is_none());
 
         let archived: (String,) =
-            sqlx::query_as("SELECT claude_session_id FROM session_claude_ids WHERE session_id = ?")
+            sqlx::query_as("SELECT runtime_session_id FROM session_runtime_ids WHERE session_id = ?")
                 .bind(id)
                 .fetch_one(&pool)
                 .await
@@ -210,7 +210,7 @@ mod session_archiving_tests {
         WsSessionPersistence::archive_and_clear(&pool, id, Some("directly-passed-sid")).await;
 
         let archived: (String,) =
-            sqlx::query_as("SELECT claude_session_id FROM session_claude_ids WHERE session_id = ?")
+            sqlx::query_as("SELECT runtime_session_id FROM session_runtime_ids WHERE session_id = ?")
                 .bind(id)
                 .fetch_one(&pool)
                 .await
@@ -218,7 +218,7 @@ mod session_archiving_tests {
         assert_eq!(archived.0, "directly-passed-sid");
 
         let row: (Option<String>,) =
-            sqlx::query_as("SELECT claude_session_id FROM agent_sessions WHERE id = ?")
+            sqlx::query_as("SELECT runtime_session_id FROM agent_sessions WHERE id = ?")
                 .bind(id)
                 .fetch_one(&pool)
                 .await
@@ -227,15 +227,15 @@ mod session_archiving_tests {
     }
 
     #[tokio::test]
-    async fn test_persist_claude_session_id_static() {
+    async fn test_persist_runtime_session_id_only() {
         let pool = setup_test_db().await;
         let mut p = WsSessionPersistence::new(pool.clone(), 1);
         let id = p.find_or_create_session(None, None).await.unwrap();
 
-        WsSessionPersistence::persist_claude_session_id_static(&pool, id, "static-sid-123").await;
+        WsSessionPersistence::persist_runtime_session_id_only(&pool, id, "static-sid-123").await;
 
         let row: (Option<String>,) =
-            sqlx::query_as("SELECT claude_session_id FROM agent_sessions WHERE id = ?")
+            sqlx::query_as("SELECT runtime_session_id FROM agent_sessions WHERE id = ?")
                 .bind(id)
                 .fetch_one(&pool)
                 .await
@@ -251,7 +251,7 @@ mod session_archiving_tests {
             .find_or_create_session(Some("sonnet"), None)
             .await
             .unwrap();
-        WsSessionPersistence::persist_claude_session_id_static(&pool, id, "cli-sess-resume-test")
+        WsSessionPersistence::persist_runtime_session_id_only(&pool, id, "cli-sess-resume-test")
             .await;
 
         WsSessionPersistence::cleanup_stale_sessions(&pool).await;
@@ -267,7 +267,7 @@ mod session_archiving_tests {
         let id2 = p2.find_or_create_session(Some("opus"), None).await.unwrap();
         assert_eq!(id, id2);
 
-        let found = WsSessionPersistence::get_latest_claude_session_id(&pool, 1).await;
+        let found = WsSessionPersistence::get_latest_runtime_session_id(&pool, 1).await;
         assert_eq!(found, Some("cli-sess-resume-test".to_string()));
     }
 
@@ -276,19 +276,19 @@ mod session_archiving_tests {
         let pool = setup_test_db().await;
         let mut p = WsSessionPersistence::new(pool.clone(), 1);
         let id = p.find_or_create_session(None, None).await.unwrap();
-        WsSessionPersistence::persist_claude_session_id_static(&pool, id, "pre-clear-sid").await;
+        WsSessionPersistence::persist_runtime_session_id_only(&pool, id, "pre-clear-sid").await;
 
         WsSessionPersistence::archive_and_clear(&pool, id, None).await;
 
         let row: (Option<String>,) =
-            sqlx::query_as("SELECT claude_session_id FROM agent_sessions WHERE id = ?")
+            sqlx::query_as("SELECT runtime_session_id FROM agent_sessions WHERE id = ?")
                 .bind(id)
                 .fetch_one(&pool)
                 .await
                 .unwrap();
         assert!(row.0.is_none());
 
-        let found = WsSessionPersistence::get_latest_claude_session_id(&pool, 1).await;
+        let found = WsSessionPersistence::get_latest_runtime_session_id(&pool, 1).await;
         assert_eq!(found, Some("pre-clear-sid".to_string()));
     }
 }

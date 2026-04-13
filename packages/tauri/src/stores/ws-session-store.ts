@@ -126,7 +126,6 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
             isConnected: false,
             serverSessionId: "",
             runtimeSessionId: "",
-            claudeSessionId: "",
             status: wasRunning ? "error" : session?.status ?? "idle",
             blocks: errorBlock ? [...(session?.blocks ?? []), errorBlock] : session?.blocks,
           }));
@@ -143,7 +142,6 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
             isConnected: false,
             serverSessionId: "",
             runtimeSessionId: "",
-            claudeSessionId: "",
             status: "error",
           }));
           scheduleReconnect(sessionId, () => get().connect(sessionId));

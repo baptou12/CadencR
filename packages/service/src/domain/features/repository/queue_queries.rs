@@ -158,7 +158,7 @@ pub async fn get_paused_queue_items(
     feature_id: i64,
 ) -> Result<Vec<(i64, Option<i64>, Option<String>)>, AppError> {
     let rows: Vec<(i64, Option<i64>, Option<String>)> = sqlx::query_as(
-        "SELECT wq.id, wq.agent_session_id, ags.claude_session_id \
+        "SELECT wq.id, wq.agent_session_id, ags.runtime_session_id \
          FROM workflow_queue wq \
          LEFT JOIN agent_sessions ags ON ags.id = wq.agent_session_id \
          WHERE wq.feature_id = ? AND wq.status = 'paused'",
@@ -174,7 +174,7 @@ pub async fn get_session_for_queue_item(
     item_id: i64,
 ) -> Result<Option<(i64, Option<String>)>, AppError> {
     let row: Option<(i64, Option<String>)> = sqlx::query_as(
-        "SELECT ags.id, ags.claude_session_id FROM agent_sessions ags \
+        "SELECT ags.id, ags.runtime_session_id FROM agent_sessions ags \
          INNER JOIN workflow_queue wq ON wq.agent_session_id = ags.id \
          WHERE wq.id = ? AND ags.status IN ('running', 'paused') \
          LIMIT 1",

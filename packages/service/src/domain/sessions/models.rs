@@ -9,7 +9,6 @@ pub struct AgentSessionRow {
     pub agent_type: String,
     pub runtime_provider: Option<String>,
     pub runtime_session_id: Option<String>,
-    pub claude_session_id: Option<String>,
     pub status: String,
     pub started_at: Option<String>,
     pub ended_at: Option<String>,
@@ -97,8 +96,6 @@ pub struct SessionState {
     pub runtime_provider: Option<String>,
     #[serde(rename = "runtimeSessionId")]
     pub runtime_session_id: Option<String>,
-    #[serde(rename = "claudeSessionId")]
-    pub claude_session_id: Option<String>,
     #[serde(rename = "runId")]
     pub run_id: Option<i64>,
     #[serde(rename = "phaseId")]

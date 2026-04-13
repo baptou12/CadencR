@@ -122,7 +122,7 @@ export function useWebSocketSession(sessionId: string, featureId?: number): UseW
     currentProviderId: session?.currentProviderId ?? DEFAULT_PROVIDER,
     currentModelId: session?.currentModelId ?? DEFAULT_MODEL,
     runtimeProvider: session?.runtimeProvider ?? DEFAULT_PROVIDER,
-    runtimeSessionId: session?.runtimeSessionId ?? session?.claudeSessionId ?? "",
+    runtimeSessionId: session?.runtimeSessionId ?? "",
     hasFileChanges: session?.hasFileChanges ?? false,
 
     sendPrompt: (text: string, images?: Array<{ base64: string; mimeType: string }>, useWorktree?: boolean) => store.sendPrompt(sessionId, text, images, useWorktree),

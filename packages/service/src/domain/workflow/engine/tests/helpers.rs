@@ -47,7 +47,7 @@ pub async fn test_engine_with_schema() -> (WorkflowEngine, mpsc::UnboundedReceiv
             feature_id INTEGER NOT NULL,
             agent_type TEXT NOT NULL DEFAULT 'session',
             status TEXT NOT NULL DEFAULT 'idle',
-            claude_session_id TEXT,
+            runtime_session_id TEXT,
             model TEXT, permission_mode TEXT,
             has_file_changes INTEGER NOT NULL DEFAULT 0,
             input_tokens INTEGER NOT NULL DEFAULT 0,

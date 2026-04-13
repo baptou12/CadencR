@@ -17,7 +17,7 @@ function makeEntry(overrides: Partial<FeatureSession>): FeatureSession {
     phaseTitle: null,
     subprocessId: null,
     model: null,
-    claudeSessionId: null,
+    runtimeSessionId: null,
     runId: null,
     todos: null,
     permissionMode: "acceptEdits",
@@ -47,7 +47,7 @@ describe("findSlotKey", () => {
   it("finds slot key from agents by sessionId", () => {
     const entry = makeEntry({ sessionDbId: 100 });
     const agents = new Map<string, AgentSessionState>([
-      ["qi:5", { sessionId: 100, blocks: [], streamingState: {} as never, status: "running", pendingPermission: null, agentType: "execute", pendingQuestions: [], pendingQuestionToolInput: {}, pendingQuestionRequestId: "", historyLoaded: false, claudeSessionId: null, inputTokens: 0, outputTokens: 0, contextWindow: 0, hasFileChanges: false }],
+      ["qi:5", { sessionId: 100, blocks: [], streamingState: {} as never, status: "running", pendingPermission: null, agentType: "execute", pendingQuestions: [], pendingQuestionToolInput: {}, pendingQuestionRequestId: "", historyLoaded: false, runtimeSessionId: null, inputTokens: 0, outputTokens: 0, contextWindow: 0, hasFileChanges: false }],
     ]);
     expect(findSlotKey(entry, [], agents)).toBe("qi:5");
   });
@@ -76,7 +76,7 @@ function makeAgentState(overrides?: Partial<AgentSessionState>): AgentSessionSta
     pendingQuestionToolInput: {},
     pendingQuestionRequestId: "",
     historyLoaded: false,
-    claudeSessionId: null,
+    runtimeSessionId: null,
     inputTokens: 0,
     outputTokens: 0,
     contextWindow: 200_000,

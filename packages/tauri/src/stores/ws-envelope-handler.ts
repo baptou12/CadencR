@@ -3,7 +3,7 @@ import { parseAskUserQuestions } from "@/components/AgentQuestionDrawer";
 import type { SlashCommand } from "@/hooks/useSlashCommand";
 import { invalidateFeatureQueries } from "@/lib/featureUpdated";
 import {
-  parseClaudeSessionIdPayload,
+  parseRuntimeSessionIdPayload,
   parseClearedPayload,
   parseCommandsListPayload,
   parseErrorPayload,
@@ -113,12 +113,11 @@ function handleSessionAction(
     case "initialized":
       handleInitialized(ctx, sessionId, envelope.payload);
       break;
-    case "claude_session_id": {
-      const p = parseClaudeSessionIdPayload(envelope.payload);
-      const sessionIdValue = p?.claude_session_id;
-      if (sessionIdValue && sessionIdValue !== ctx.getSession(sessionId).claudeSessionId) {
+    case "runtime_session_id": {
+      const p = parseRuntimeSessionIdPayload(envelope.payload);
+      const sessionIdValue = p?.runtime_session_id;
+      if (sessionIdValue && sessionIdValue !== ctx.getSession(sessionId).runtimeSessionId) {
         ctx.set(updateSession(ctx.get(), sessionId, {
-          claudeSessionId: sessionIdValue,
           runtimeSessionId: sessionIdValue,
         }));
       }
@@ -335,7 +334,7 @@ function handleCleared(
     pendingQuestions: [],
     pendingPlanApproval: null,
     hasFileChanges: false,
-    claudeSessionId: "",
+    runtimeSessionId: "",
   }));
 }
 

@@ -434,7 +434,7 @@ pub struct WorkflowAgentPausedPayload {
     pub agent_slot: AgentSlot,
     pub session_id: i64,
     pub agent_type: String,
-    pub claude_session_id: String,
+    pub runtime_session_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -394,7 +394,7 @@ pub async fn get_sessions(
     feature_id: i64,
 ) -> Result<Vec<AgentSessionRow>, AppError> {
     let rows = sqlx::query_as::<_, AgentSessionRow>(
-        r#"SELECT id, feature_id, agent_type, runtime_provider, runtime_session_id, claude_session_id, status, started_at, ended_at,
+        r#"SELECT id, feature_id, agent_type, runtime_provider, runtime_session_id, status, started_at, ended_at,
            run_id, phase_id, subprocess_id, model, pending_questions, has_file_changes,
            permission_mode, pending_plan_approval, pending_prd_approval, pending_permission,
            input_tokens, output_tokens, context_window, was_compacted, draft_prompt
@@ -414,7 +414,7 @@ pub async fn get_feature_agent_state(
     before_message_ids: Option<HashMap<i64, i64>>,
 ) -> Result<FeatureAgentStateResponse, AppError> {
     let sessions = sqlx::query_as::<_, AgentSessionRow>(
-        r#"SELECT id, feature_id, agent_type, runtime_provider, runtime_session_id, claude_session_id, status, started_at, ended_at,
+        r#"SELECT id, feature_id, agent_type, runtime_provider, runtime_session_id, status, started_at, ended_at,
            run_id, phase_id, subprocess_id, model, pending_questions, has_file_changes,
            permission_mode, pending_plan_approval, pending_prd_approval, pending_permission,
            input_tokens, output_tokens, context_window, was_compacted, draft_prompt
@@ -658,10 +658,7 @@ pub async fn get_feature_agent_state(
 
             let resumable =
                 (s.status == "paused" || s.status == "completed" || s.status == "error")
-                    && s.runtime_session_id
-                        .as_ref()
-                        .or(s.claude_session_id.as_ref())
-                        .is_some();
+                    && s.runtime_session_id.is_some();
 
             SessionState {
                 session_db_id: s.id,
@@ -677,8 +674,7 @@ pub async fn get_feature_agent_state(
                 has_file_changes: s.has_file_changes != 0,
                 resumable,
                 runtime_provider: s.runtime_provider,
-                runtime_session_id: s.runtime_session_id.clone().or(s.claude_session_id.clone()),
-                claude_session_id: s.claude_session_id,
+                runtime_session_id: s.runtime_session_id,
                 run_id: s.run_id,
                 phase_id: s.phase_id,
                 phase_title: s
@@ -878,7 +874,6 @@ mod tests {
                 agent_type TEXT NOT NULL DEFAULT 'main',
                 runtime_provider TEXT,
                 runtime_session_id TEXT,
-                claude_session_id TEXT,
                 status TEXT NOT NULL DEFAULT 'running',
                 started_at TEXT,
                 ended_at TEXT,

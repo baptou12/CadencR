@@ -22,7 +22,7 @@ async fn test_send_prompt_uses_paused_session_for_resume() {
     let (engine, _rx) = test_engine_with_schema().await;
 
     let db_id: i64 = sqlx::query_scalar(
-        "INSERT INTO agent_sessions (feature_id, agent_type, status, claude_session_id) VALUES (1, 'plan', 'paused', 'cc-resume-456') RETURNING id"
+        "INSERT INTO agent_sessions (feature_id, agent_type, status, runtime_session_id) VALUES (1, 'plan', 'paused', 'cc-resume-456') RETURNING id"
     ).fetch_one(&engine.write_pool).await.unwrap();
 
     engine

@@ -89,7 +89,7 @@ vi.mock("@/hooks/useWebSocketSession", () => ({
     currentModelId: null,
     setModel: vi.fn(),
     hasFileChanges: false,
-    claudeSessionId: null,
+    runtimeSessionId: null,
     hasMore: false,
     loadOlderMessages: vi.fn(),
   })),

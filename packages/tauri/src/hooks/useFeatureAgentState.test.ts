@@ -23,7 +23,7 @@ function makeSession(overrides: Record<string, unknown> = {}) {
     pendingQuestions: null,
     hasFileChanges: false,
     resumable: false,
-    claudeSessionId: null,
+    runtimeSessionId: null,
     runId: null,
     phaseId: null,
     phaseTitle: null,

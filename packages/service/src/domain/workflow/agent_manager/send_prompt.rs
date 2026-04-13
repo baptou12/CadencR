@@ -85,10 +85,10 @@ impl AgentManager {
             }
         }
 
-        // Fallback: check DB for a claude_session_id we can resume with
+        // Fallback: check DB for a runtime_session_id we can resume with
         if let Some(agent_type_str) = slot.agent_type_str() {
             let row: Option<(i64, Option<String>)> = sqlx::query_as(
-                "SELECT id, claude_session_id FROM agent_sessions \
+                "SELECT id, runtime_session_id FROM agent_sessions \
                  WHERE feature_id = ? AND agent_type = ? AND status IN ('running', 'paused') \
                  ORDER BY id DESC LIMIT 1",
             )
@@ -99,9 +99,9 @@ impl AgentManager {
             .ok()
             .flatten();
 
-            if let Some((db_session_id, Some(ref cc_session_id))) = row {
-                if !cc_session_id.is_empty() {
-                    let runtime_sid = cc_session_id.clone();
+            if let Some((db_session_id, Some(ref rt_session_id))) = row {
+                if !rt_session_id.is_empty() {
+                    let runtime_sid = rt_session_id.clone();
                     info!(slot = %slot, db_session_id, runtime_session_id = %runtime_sid, "DB fallback: resuming paused agent with stored runtime session id");
                     self.active_items.insert(slot.clone(), db_session_id);
                     match self
@@ -122,9 +122,9 @@ impl AgentManager {
                 }
             }
 
-            // No claude_session_id or resume failed — restart the agent fresh
+            // No runtime_session_id or resume failed — restart the agent fresh
             if let Some((db_session_id, _)) = row {
-                info!(slot = %slot, db_session_id, "no claude_session_id — restarting agent fresh");
+                info!(slot = %slot, db_session_id, "no runtime_session_id — restarting agent fresh");
                 WsSessionPersistence::mark_completed_static(&self.write_pool, db_session_id).await;
             }
 
@@ -151,16 +151,16 @@ impl AgentManager {
                 .map(|_| ());
         }
 
-        // Fallback for queue items: look up claude_session_id via workflow_queue.agent_session_id
+        // Fallback for queue items: look up runtime_session_id via workflow_queue.agent_session_id
         if let AgentSlot::QueueItem(item_id) = &slot {
             let row = repo::get_session_for_queue_item(&self.read_pool, *item_id)
                 .await
                 .ok()
                 .flatten();
 
-            if let Some((db_session_id, Some(ref cc_session_id))) = row {
-                if !cc_session_id.is_empty() {
-                    let runtime_sid = cc_session_id.clone();
+            if let Some((db_session_id, Some(ref rt_session_id))) = row {
+                if !rt_session_id.is_empty() {
+                    let runtime_sid = rt_session_id.clone();
                     info!(slot = %slot, db_session_id, runtime_session_id = %runtime_sid, "DB fallback: resuming paused queue item with stored runtime session id");
                     self.active_items.insert(slot.clone(), db_session_id);
                     match self
