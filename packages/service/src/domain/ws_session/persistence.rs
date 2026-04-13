@@ -34,15 +34,20 @@ pub struct SessionRow {
     pub context_window: Option<i64>,
 }
 
+struct ToolInputBuffer {
+    accumulated: String,
+    replacement_candidate: Option<String>,
+}
+
 pub struct WsSessionPersistence {
     write_pool: SqlitePool,
     session_db_id: Option<i64>,
     feature_id: i64,
-    current_model: Option<String>,
-    /// block_index -> partial JSON being accumulated
-    pending_tool_inputs: HashMap<u32, String>,
-    /// block_index -> agent_messages.id for the tool_call row
-    pending_tool_row_ids: HashMap<u32, i64>,
+    current_models: HashMap<String, String>,
+    /// (runtime_session_id, block_index) -> partial JSON being accumulated
+    pending_tool_inputs: HashMap<(String, u32), ToolInputBuffer>,
+    /// (runtime_session_id, block_index) -> agent_messages.id for the tool_call row
+    pending_tool_row_ids: HashMap<(String, u32), i64>,
     file_change_marked: bool,
 }
 

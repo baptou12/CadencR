@@ -15,14 +15,18 @@ impl WsSessionPersistence {
                 RuntimeContentBlock::ToolUse { id, name, input } => {
                     let content = serde_json::to_string(input).unwrap_or_default();
                     let result = sqlx::query(
-                        "UPDATE agent_messages SET parent_tool_use_id = ?, content = ? \
+                        "UPDATE agent_messages SET parent_tool_use_id = COALESCE(parent_tool_use_id, ?), \
+                         content = ?, tool_name = COALESCE(tool_name, ?), model = COALESCE(model, ?) \
                          WHERE session_id = ? AND tool_use_id = ? AND message_type = 'tool_call' \
-                         AND parent_tool_use_id IS NULL",
+                         AND (parent_tool_use_id IS NULL OR parent_tool_use_id = ?)",
                     )
                     .bind(ptuid)
                     .bind(&content)
+                    .bind(name)
+                    .bind(model)
                     .bind(session_id)
                     .bind(id)
+                    .bind(ptuid)
                     .execute(&self.write_pool)
                     .await;
 
@@ -240,6 +244,51 @@ mod session_subagents_tests {
         assert_eq!(row.0, "Read");
         assert!(row.1.contains("/tmp/test"));
         assert_eq!(row.2.as_deref(), Some("toolu_parent"));
+    }
+
+    #[tokio::test]
+    async fn test_assistant_subagent_updates_existing_row_with_same_parent() {
+        let pool = setup_test_db().await;
+        let mut p = WsSessionPersistence::new(pool.clone(), 1);
+        let sid = p.find_or_create_session(None, None).await.unwrap();
+
+        let _ = WsSessionPersistence::insert_message(
+            &pool,
+            sid,
+            "assistant",
+            r#"{"status":"pending"}"#,
+            "tool_call",
+            Some("Read"),
+            Some("toolu_same_parent"),
+            Some("toolu_parent"),
+            None,
+        )
+        .await;
+
+        let msg = make_assistant_message(vec![RuntimeContentBlock::ToolUse {
+            id: "toolu_same_parent".to_string(),
+            name: "Read".to_string(),
+            input: serde_json::json!({"file_path": "/tmp/test"}),
+        }]);
+        p.persist_assistant_subagent(sid, &msg, "toolu_parent")
+            .await;
+
+        let row: (String, Option<String>) = sqlx::query_as(
+            "SELECT content, parent_tool_use_id FROM agent_messages WHERE tool_use_id = 'toolu_same_parent'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let count: (i64,) = sqlx::query_as(
+            "SELECT COUNT(*) FROM agent_messages WHERE tool_use_id = 'toolu_same_parent'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(count.0, 1);
+        assert!(row.0.contains("/tmp/test"));
+        assert_eq!(row.1.as_deref(), Some("toolu_parent"));
     }
 
     #[tokio::test]

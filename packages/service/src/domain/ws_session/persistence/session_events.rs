@@ -6,7 +6,12 @@ impl WsSessionPersistence {
         };
 
         if let Some(event) = runtime_event.stream_event() {
-            self.persist_stream_event(session_id, event, runtime_event.parent_tool_use_id())
+            self.persist_stream_event(
+                session_id,
+                runtime_event.session_id(),
+                event,
+                runtime_event.parent_tool_use_id(),
+            )
                 .await;
             return;
         }
@@ -70,14 +75,18 @@ impl WsSessionPersistence {
     async fn persist_stream_event(
         &mut self,
         session_id: i64,
+        runtime_session_id: Option<&str>,
         event: &RuntimeStreamEvent,
         ptuid: Option<&str>,
     ) {
-        let model = self.current_model.as_deref();
+        let runtime_key = runtime_stream_key(runtime_session_id);
+        let model = self.current_models.get(&runtime_key).map(String::as_str);
 
         match event {
             RuntimeStreamEvent::MessageStart { model } => {
-                self.current_model = model.clone();
+                if let Some(model) = model.clone() {
+                    self.current_models.insert(runtime_key, model);
+                }
             }
             RuntimeStreamEvent::ContentBlockStart { index, block } => match block {
                 RuntimeContentBlock::Text { text } => {
@@ -125,8 +134,15 @@ impl WsSessionPersistence {
 
                     if let Ok(r) = result {
                         let row_id = r.last_insert_rowid();
-                        self.pending_tool_row_ids.insert(*index, row_id);
-                        self.pending_tool_inputs.insert(*index, String::new());
+                        let key = (runtime_key.clone(), *index);
+                        self.pending_tool_row_ids.insert(key.clone(), row_id);
+                        self.pending_tool_inputs.insert(
+                            key,
+                            ToolInputBuffer {
+                                accumulated: content,
+                                replacement_candidate: None,
+                            },
+                        );
                     }
 
                     if !self.file_change_marked
@@ -167,30 +183,30 @@ impl WsSessionPersistence {
                     .await;
                 }
                 RuntimeContentDelta::InputJson { partial_json } => {
-                    if let Some(accumulated) = self.pending_tool_inputs.get_mut(index) {
-                        accumulated.push_str(partial_json);
-                        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(accumulated) {
-                            if let Some(&row_id) = self.pending_tool_row_ids.get(index) {
-                                let content = serde_json::to_string(&parsed).unwrap_or_default();
-                                let _ = sqlx::query(
-                                    "UPDATE agent_messages SET content = ? WHERE id = ?",
-                                )
+                    let key = (runtime_key.clone(), *index);
+                    let parsed = self
+                        .pending_tool_inputs
+                        .get_mut(&key)
+                        .and_then(|buffer| buffer.apply_delta(partial_json));
+
+                    if let Some(parsed) = parsed {
+                        if let Some(&row_id) = self.pending_tool_row_ids.get(&key) {
+                            let content = serde_json::to_string(&parsed).unwrap_or_default();
+                            let _ = sqlx::query("UPDATE agent_messages SET content = ? WHERE id = ?")
                                 .bind(&content)
                                 .bind(row_id)
                                 .execute(&self.write_pool)
                                 .await;
-                            }
                         }
                     }
                 }
             },
             RuntimeStreamEvent::ContentBlockStop { index } => {
-                if let Some(accumulated) = self.pending_tool_inputs.remove(index) {
-                    if !accumulated.is_empty() {
-                        if let Some(&row_id) = self.pending_tool_row_ids.get(index) {
-                            if let Ok(parsed) =
-                                serde_json::from_str::<serde_json::Value>(&accumulated)
-                            {
+                let key = (runtime_key.clone(), *index);
+                if let Some(buffer) = self.pending_tool_inputs.remove(&key) {
+                    if !buffer.accumulated.is_empty() {
+                        if let Some(&row_id) = self.pending_tool_row_ids.get(&key) {
+                            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&buffer.accumulated) {
                                 let content = serde_json::to_string(&parsed).unwrap_or_default();
                                 let _ = sqlx::query(
                                     "UPDATE agent_messages SET content = ? WHERE id = ?",
@@ -203,7 +219,7 @@ impl WsSessionPersistence {
                         }
                     }
                 }
-                self.pending_tool_row_ids.remove(index);
+                self.pending_tool_row_ids.remove(&key);
             }
             RuntimeStreamEvent::Other => {}
         }
@@ -250,5 +266,285 @@ impl WsSessionPersistence {
             .bind(session_id)
             .execute(&self.write_pool)
             .await;
+    }
+}
+
+impl ToolInputBuffer {
+    fn apply_delta(&mut self, partial_json: &str) -> Option<serde_json::Value> {
+        let appended = format!("{}{partial_json}", self.accumulated);
+        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&appended) {
+            self.accumulated = appended;
+            self.replacement_candidate = None;
+            return Some(parsed);
+        }
+
+        if self.replacement_candidate.is_some() || partial_json.trim_start().starts_with('{') {
+            let replacement = self.replacement_candidate.get_or_insert_with(String::new);
+            replacement.push_str(partial_json);
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(replacement) {
+                self.accumulated = replacement.clone();
+                self.replacement_candidate = None;
+                return Some(parsed);
+            }
+        }
+
+        None
+    }
+}
+
+fn runtime_stream_key(runtime_session_id: Option<&str>) -> String {
+    runtime_session_id.unwrap_or_default().to_string()
+}
+
+#[cfg(test)]
+mod session_events_tests {
+    use super::*;
+    use crate::domain::agents::adapter::{
+        RuntimeContentBlock, RuntimeContentDelta, RuntimeEvent, RuntimeEventKind,
+        RuntimeEventMetadata, RuntimeStreamEvent,
+    };
+    use sqlx::sqlite::SqlitePoolOptions;
+    use sqlx::{Row, SqlitePool};
+
+    async fn setup_test_db() -> SqlitePool {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("connect test db");
+
+        sqlx::query(
+            "CREATE TABLE agent_sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                feature_id INTEGER NOT NULL,
+                agent_type TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                started_at TEXT,
+                ended_at TEXT,
+                runtime_provider TEXT,
+                runtime_session_id TEXT,
+                has_file_changes INTEGER DEFAULT 0,
+                model TEXT DEFAULT NULL,
+                permission_mode TEXT DEFAULT 'bypassPermissions',
+                input_tokens INTEGER DEFAULT 0,
+                output_tokens INTEGER DEFAULT 0,
+                context_window INTEGER DEFAULT 200000,
+                was_compacted INTEGER DEFAULT 0
+            )",
+        )
+        .execute(&pool)
+        .await
+        .expect("create sessions");
+
+        sqlx::query(
+            "CREATE TABLE agent_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id INTEGER NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                message_type TEXT NOT NULL DEFAULT 'text',
+                tool_name TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                tool_use_id TEXT,
+                parent_tool_use_id TEXT,
+                model TEXT DEFAULT NULL
+            )",
+        )
+        .execute(&pool)
+        .await
+        .expect("create messages");
+
+        sqlx::query(
+            "INSERT INTO agent_sessions (feature_id, agent_type, status)
+             VALUES (1, 'execute', 'running')",
+        )
+        .execute(&pool)
+        .await
+        .expect("insert session");
+
+        pool
+    }
+
+    fn stream_event(
+        runtime_session_id: &str,
+        parent_tool_use_id: Option<&str>,
+        event: RuntimeStreamEvent,
+    ) -> RuntimeEvent {
+        RuntimeEvent::new(
+            RuntimeEventMetadata {
+                session_id: Some(runtime_session_id.to_string()),
+                usage: None,
+                raw: serde_json::json!({}),
+            },
+            RuntimeEventKind::StreamEvent {
+                event,
+                parent_tool_use_id: parent_tool_use_id.map(ToOwned::to_owned),
+            },
+        )
+    }
+
+    #[tokio::test]
+    async fn tool_json_deltas_do_not_collide_between_child_sessions() {
+        let pool = setup_test_db().await;
+        let mut persistence = WsSessionPersistence::with_session_id(pool.clone(), 1, Some(1));
+
+        persistence
+            .persist_runtime_event(&stream_event(
+                "child_a",
+                Some("task_a"),
+                RuntimeStreamEvent::MessageStart {
+                    model: Some("model-a".to_string()),
+                },
+            ))
+            .await;
+        persistence
+            .persist_runtime_event(&stream_event(
+                "child_a",
+                Some("task_a"),
+                RuntimeStreamEvent::ContentBlockStart {
+                    index: 0,
+                    block: RuntimeContentBlock::ToolUse {
+                        id: "tool_a".to_string(),
+                        name: "Grep".to_string(),
+                        input: serde_json::json!({ "status": "pending" }),
+                    },
+                },
+            ))
+            .await;
+
+        persistence
+            .persist_runtime_event(&stream_event(
+                "child_b",
+                Some("task_b"),
+                RuntimeStreamEvent::MessageStart {
+                    model: Some("model-b".to_string()),
+                },
+            ))
+            .await;
+        persistence
+            .persist_runtime_event(&stream_event(
+                "child_b",
+                Some("task_b"),
+                RuntimeStreamEvent::ContentBlockStart {
+                    index: 0,
+                    block: RuntimeContentBlock::ToolUse {
+                        id: "tool_b".to_string(),
+                        name: "Read".to_string(),
+                        input: serde_json::json!({ "status": "pending" }),
+                    },
+                },
+            ))
+            .await;
+
+        persistence
+            .persist_runtime_event(&stream_event(
+                "child_a",
+                Some("task_a"),
+                RuntimeStreamEvent::ContentBlockDelta {
+                    index: 0,
+                    delta: RuntimeContentDelta::InputJson {
+                        partial_json: r#"{"pattern":"foo"}"#.to_string(),
+                    },
+                },
+            ))
+            .await;
+        persistence
+            .persist_runtime_event(&stream_event(
+                "child_b",
+                Some("task_b"),
+                RuntimeStreamEvent::ContentBlockDelta {
+                    index: 0,
+                    delta: RuntimeContentDelta::InputJson {
+                        partial_json: r#"{"file_path":"/tmp/test"}"#.to_string(),
+                    },
+                },
+            ))
+            .await;
+
+        let rows = sqlx::query(
+            "SELECT tool_use_id, tool_name, content, parent_tool_use_id FROM agent_messages WHERE session_id = 1 AND message_type = 'tool_call' ORDER BY tool_use_id",
+        )
+        .fetch_all(&pool)
+        .await
+        .expect("fetch tool rows");
+
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].get::<String, _>("tool_use_id"), "tool_a");
+        assert_eq!(rows[0].get::<String, _>("tool_name"), "Grep");
+        assert_eq!(rows[0].get::<String, _>("parent_tool_use_id"), "task_a");
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&rows[0].get::<String, _>("content"))
+                .expect("valid json"),
+            serde_json::json!({ "pattern": "foo" })
+        );
+
+        assert_eq!(rows[1].get::<String, _>("tool_use_id"), "tool_b");
+        assert_eq!(rows[1].get::<String, _>("tool_name"), "Read");
+        assert_eq!(rows[1].get::<String, _>("parent_tool_use_id"), "task_b");
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&rows[1].get::<String, _>("content"))
+                .expect("valid json"),
+            serde_json::json!({ "file_path": "/tmp/test" })
+        );
+    }
+
+    #[tokio::test]
+    async fn tool_json_deltas_support_chunked_replacement_snapshots() {
+        let pool = setup_test_db().await;
+        let mut persistence = WsSessionPersistence::with_session_id(pool.clone(), 1, Some(1));
+
+        persistence
+            .persist_runtime_event(&stream_event(
+                "child_a",
+                Some("task_a"),
+                RuntimeStreamEvent::ContentBlockStart {
+                    index: 0,
+                    block: RuntimeContentBlock::ToolUse {
+                        id: "tool_a".to_string(),
+                        name: "Task".to_string(),
+                        input: serde_json::json!({ "status": "pending" }),
+                    },
+                },
+            ))
+            .await;
+
+        persistence
+            .persist_runtime_event(&stream_event(
+                "child_a",
+                Some("task_a"),
+                RuntimeStreamEvent::ContentBlockDelta {
+                    index: 0,
+                    delta: RuntimeContentDelta::InputJson {
+                        partial_json: r#"{"nested": "#.to_string(),
+                    },
+                },
+            ))
+            .await;
+
+        persistence
+            .persist_runtime_event(&stream_event(
+                "child_a",
+                Some("task_a"),
+                RuntimeStreamEvent::ContentBlockDelta {
+                    index: 0,
+                    delta: RuntimeContentDelta::InputJson {
+                        partial_json: r#"{"key":"value"}}"#.to_string(),
+                    },
+                },
+            ))
+            .await;
+
+        let row = sqlx::query(
+            "SELECT content FROM agent_messages WHERE session_id = 1 AND tool_use_id = 'tool_a'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("fetch tool row");
+
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&row.get::<String, _>("content"))
+                .expect("valid json"),
+            serde_json::json!({ "nested": { "key": "value" } })
+        );
     }
 }
