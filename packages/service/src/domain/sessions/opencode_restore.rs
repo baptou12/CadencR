@@ -1,6 +1,14 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use super::models::AgentMessageRow;
+
+struct SyntheticRowFields {
+    message_type: String,
+    content: String,
+    tool_name: Option<String>,
+    tool_use_id: Option<String>,
+    model: Option<String>,
+}
 
 pub fn should_hydrate_opencode_tool_calls(messages: &[AgentMessageRow]) -> bool {
     messages.iter().any(|message| {
@@ -9,11 +17,32 @@ pub fn should_hydrate_opencode_tool_calls(messages: &[AgentMessageRow]) -> bool 
     })
 }
 
+#[cfg(test)]
 pub fn hydrate_opencode_tool_calls(
     messages: &mut [AgentMessageRow],
     provider_messages: &[opencode_sdk_rs::Message],
 ) -> bool {
     let tool_inputs = collect_tool_inputs(provider_messages);
+    hydrate_opencode_tool_calls_with_inputs(messages, &tool_inputs)
+}
+
+pub fn hydrate_opencode_tool_calls_with_children(
+    messages: &mut [AgentMessageRow],
+    provider_messages: &[opencode_sdk_rs::Message],
+    child_messages_by_session: &HashMap<String, Vec<opencode_sdk_rs::Message>>,
+) -> bool {
+    let tool_inputs = collect_tool_inputs(
+        provider_messages
+            .iter()
+            .chain(child_messages_by_session.values().flatten()),
+    );
+    hydrate_opencode_tool_calls_with_inputs(messages, &tool_inputs)
+}
+
+fn hydrate_opencode_tool_calls_with_inputs(
+    messages: &mut [AgentMessageRow],
+    tool_inputs: &HashMap<String, serde_json::Value>,
+) -> bool {
     let mut changed = false;
 
     for message in messages.iter_mut() {
@@ -40,8 +69,75 @@ pub fn hydrate_opencode_tool_calls(
     changed
 }
 
-fn collect_tool_inputs(
+pub fn should_hydrate_opencode_child_sessions(messages: &[AgentMessageRow]) -> bool {
+    let task_tool_use_ids: HashSet<&str> = messages
+        .iter()
+        .filter(|message| {
+            message.message_type == "tool_call"
+                && matches!(message.tool_name.as_deref(), Some("Task") | Some("Agent"))
+        })
+        .filter_map(|message| message.tool_use_id.as_deref())
+        .collect();
+
+    task_tool_use_ids.iter().any(|tool_use_id| {
+        !messages
+            .iter()
+            .any(|message| message.parent_tool_use_id.as_deref() == Some(*tool_use_id))
+    })
+}
+
+pub fn synthesize_opencode_child_rows(
+    existing_messages: &[AgentMessageRow],
     provider_messages: &[opencode_sdk_rs::Message],
+    child_messages_by_session: &HashMap<String, Vec<opencode_sdk_rs::Message>>,
+) -> Vec<AgentMessageRow> {
+    let existing_parent_ids: HashSet<&str> = existing_messages
+        .iter()
+        .filter_map(|message| message.parent_tool_use_id.as_deref())
+        .collect();
+    let task_session_map = collect_task_session_ids(provider_messages);
+    let mut synthetic_rows = Vec::new();
+    let mut next_id = -1_i64;
+
+    for (tool_use_id, child_session_id) in task_session_map {
+        if existing_parent_ids.contains(tool_use_id.as_str()) {
+            continue;
+        }
+        let Some(child_messages) = child_messages_by_session.get(&child_session_id) else {
+            continue;
+        };
+        for message in child_messages {
+            if !matches!(message.role, opencode_sdk_rs::MessageRole::Assistant) {
+                continue;
+            }
+            for part in &message.parts {
+                let Some(fields) = synthetic_row_from_part(message, part) else {
+                    continue;
+                };
+                synthetic_rows.push(AgentMessageRow {
+                    id: next_id,
+                    session_id: existing_messages
+                        .first()
+                        .map(|message| message.session_id)
+                        .unwrap_or_default(),
+                    content: fields.content,
+                    message_type: fields.message_type,
+                    tool_name: fields.tool_name,
+                    tool_use_id: fields.tool_use_id,
+                    parent_tool_use_id: Some(tool_use_id.clone()),
+                    created_at: message.created_at.clone(),
+                    model: fields.model,
+                });
+                next_id -= 1;
+            }
+        }
+    }
+
+    synthetic_rows
+}
+
+fn collect_tool_inputs<'a>(
+    provider_messages: impl IntoIterator<Item = &'a opencode_sdk_rs::Message>,
 ) -> HashMap<String, serde_json::Value> {
     let mut inputs = HashMap::new();
     for message in provider_messages {
@@ -54,6 +150,89 @@ fn collect_tool_inputs(
     inputs
 }
 
+fn collect_task_session_ids(
+    provider_messages: &[opencode_sdk_rs::Message],
+) -> HashMap<String, String> {
+    let mut sessions = HashMap::new();
+    for message in provider_messages {
+        for part in &message.parts {
+            let opencode_sdk_rs::MessagePart::ToolUse {
+                id, name, input, ..
+            } = part
+            else {
+                continue;
+            };
+            if !matches!(name.as_str(), "Task" | "Agent") {
+                continue;
+            }
+            let Some(child_session_id) = input
+                .get("subagent_session_id")
+                .and_then(serde_json::Value::as_str)
+            else {
+                continue;
+            };
+            sessions.insert(id.clone(), child_session_id.to_string());
+        }
+    }
+    sessions
+}
+
+fn synthetic_row_from_part(
+    message: &opencode_sdk_rs::Message,
+    part: &opencode_sdk_rs::MessagePart,
+) -> Option<SyntheticRowFields> {
+    let model = message.model.clone();
+    match part {
+        opencode_sdk_rs::MessagePart::Text { text, .. } => Some(SyntheticRowFields {
+            message_type: "text".to_string(),
+            content: text.clone(),
+            tool_name: None,
+            tool_use_id: None,
+            model,
+        }),
+        opencode_sdk_rs::MessagePart::Thinking { thinking, .. } => Some(SyntheticRowFields {
+            message_type: "thinking".to_string(),
+            content: thinking.clone(),
+            tool_name: None,
+            tool_use_id: None,
+            model: None,
+        }),
+        opencode_sdk_rs::MessagePart::ToolUse {
+            id, name, input, ..
+        } => Some(SyntheticRowFields {
+            message_type: "tool_call".to_string(),
+            content: serde_json::to_string(input).unwrap_or_default(),
+            tool_name: Some(name.clone()),
+            tool_use_id: Some(id.clone()),
+            model: None,
+        }),
+        opencode_sdk_rs::MessagePart::ToolResult {
+            tool_use_id,
+            is_error,
+            content,
+            ..
+        } => Some(SyntheticRowFields {
+            message_type: if *is_error {
+                "tool_error".to_string()
+            } else {
+                "tool_result".to_string()
+            },
+            content: serialize_tool_result_content(content),
+            tool_name: None,
+            tool_use_id: Some(tool_use_id.clone()),
+            model: None,
+        }),
+        opencode_sdk_rs::MessagePart::Other(_) => None,
+    }
+}
+
+fn serialize_tool_result_content(content: &serde_json::Value) -> String {
+    content
+        .as_str()
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| serde_json::to_string(content).unwrap_or_default())
+}
+
 fn parse_pending_placeholder(content: &str) -> Option<bool> {
     let parsed = serde_json::from_str::<serde_json::Value>(content).ok()?;
     let object = parsed.as_object()?;
@@ -63,9 +242,13 @@ fn parse_pending_placeholder(content: &str) -> Option<bool> {
 
 #[cfg(test)]
 mod tests {
-    use super::{hydrate_opencode_tool_calls, should_hydrate_opencode_tool_calls};
+    use super::{
+        hydrate_opencode_tool_calls, should_hydrate_opencode_child_sessions,
+        should_hydrate_opencode_tool_calls, synthesize_opencode_child_rows,
+    };
     use crate::domain::sessions::models::AgentMessageRow;
     use serde_json::json;
+    use std::collections::HashMap;
 
     fn tool_call_row(id: i64, tool_use_id: &str, content: &str) -> AgentMessageRow {
         AgentMessageRow {
@@ -193,5 +376,87 @@ mod tests {
         ];
 
         assert!(!should_hydrate_opencode_tool_calls(&messages));
+    }
+
+    #[test]
+    fn detects_task_rows_missing_child_session_content() {
+        let messages = vec![tool_call_row(1, "prt_task", r#"{"status":"completed"}"#)];
+        let mut task = messages[0].clone();
+        task.tool_name = Some("Task".to_string());
+
+        assert!(should_hydrate_opencode_child_sessions(&[task]));
+    }
+
+    #[test]
+    fn synthesizes_child_rows_from_provider_messages() {
+        let existing_messages = vec![AgentMessageRow {
+            id: 1,
+            session_id: 7,
+            content: r#"{"description":"Inspect","subagent_session_id":"ses_child"}"#.to_string(),
+            message_type: "tool_call".to_string(),
+            tool_name: Some("Task".to_string()),
+            tool_use_id: Some("prt_task".to_string()),
+            parent_tool_use_id: None,
+            created_at: Some("2026-04-12 21:00:00".to_string()),
+            model: None,
+        }];
+        let provider_messages = vec![opencode_sdk_rs::Message {
+            id: "msg_root".to_string(),
+            session_id: "ses_root".to_string(),
+            role: opencode_sdk_rs::MessageRole::Assistant,
+            parts: vec![opencode_sdk_rs::MessagePart::ToolUse {
+                id: "prt_task".to_string(),
+                tool_id: "call_task".to_string(),
+                name: "Task".to_string(),
+                input: json!({
+                    "description": "Inspect",
+                    "subagent_session_id": "ses_child",
+                    "status": "completed"
+                }),
+            }],
+            created_at: Some("2026-04-12 21:00:00".to_string()),
+            model: Some("openai/gpt-5.4".to_string()),
+            tokens: None,
+            finished: true,
+        }];
+        let child_messages_by_session = HashMap::from([(
+            "ses_child".to_string(),
+            vec![opencode_sdk_rs::Message {
+                id: "msg_child".to_string(),
+                session_id: "ses_child".to_string(),
+                role: opencode_sdk_rs::MessageRole::Assistant,
+                parts: vec![
+                    opencode_sdk_rs::MessagePart::ToolUse {
+                        id: "prt_read".to_string(),
+                        tool_id: "call_read".to_string(),
+                        name: "Read".to_string(),
+                        input: json!({ "file_path": "src/main.ts", "status": "completed" }),
+                    },
+                    opencode_sdk_rs::MessagePart::Text {
+                        id: "prt_text".to_string(),
+                        text: "Done".to_string(),
+                    },
+                ],
+                created_at: Some("2026-04-12 21:00:01".to_string()),
+                model: Some("openai/gpt-5.4".to_string()),
+                tokens: None,
+                finished: true,
+            }],
+        )]);
+
+        let synthesized = synthesize_opencode_child_rows(
+            &existing_messages,
+            &provider_messages,
+            &child_messages_by_session,
+        );
+
+        assert_eq!(synthesized.len(), 2);
+        assert_eq!(
+            synthesized[0].parent_tool_use_id.as_deref(),
+            Some("prt_task")
+        );
+        assert_eq!(synthesized[0].tool_name.as_deref(), Some("Read"));
+        assert_eq!(synthesized[1].message_type, "text");
+        assert_eq!(synthesized[1].content, "Done");
     }
 }

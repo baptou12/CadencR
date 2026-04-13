@@ -2,7 +2,11 @@ use sqlx::SqlitePool;
 use std::collections::HashMap;
 
 use super::models::*;
-use super::opencode_restore::{hydrate_opencode_tool_calls, should_hydrate_opencode_tool_calls};
+use super::opencode_reparent::reassign_reused_child_message_parents;
+use super::opencode_restore::{
+    hydrate_opencode_tool_calls_with_children, should_hydrate_opencode_child_sessions,
+    should_hydrate_opencode_tool_calls, synthesize_opencode_child_rows,
+};
 use crate::error::AppError;
 
 // ---- Block builder (port of shared.ts buildBlocks) ----
@@ -719,13 +723,50 @@ async fn hydrate_full_opencode_sessions(
         let Some(messages) = full_messages.get_mut(&session.id) else {
             continue;
         };
-        if !should_hydrate_opencode_tool_calls(messages) {
+        let hydrate_tool_calls = should_hydrate_opencode_tool_calls(messages);
+        let hydrate_child_sessions = should_hydrate_opencode_child_sessions(messages);
+        if !hydrate_tool_calls && !hydrate_child_sessions {
             continue;
         }
         let Ok(provider_messages) = client.list_messages(runtime_session_id).await else {
             continue;
         };
-        let _ = hydrate_opencode_tool_calls(messages, &provider_messages);
+        let mut child_messages_by_session: HashMap<String, Vec<opencode_sdk_rs::Message>> =
+            HashMap::new();
+        if hydrate_tool_calls || hydrate_child_sessions {
+            let root_directory = client
+                .get_session_any(runtime_session_id)
+                .await
+                .ok()
+                .map(|session| session.directory);
+            if let Ok(children) = client
+                .list_children_in_directory(runtime_session_id, root_directory.as_deref())
+                .await
+            {
+                for child in children {
+                    let Ok(child_messages) = client.list_messages(&child.id).await else {
+                        continue;
+                    };
+                    child_messages_by_session.insert(child.id, child_messages);
+                }
+            }
+        }
+        if hydrate_tool_calls {
+            let _ = hydrate_opencode_tool_calls_with_children(
+                messages,
+                &provider_messages,
+                &child_messages_by_session,
+            );
+        }
+        let _ = reassign_reused_child_message_parents(messages);
+        if hydrate_child_sessions {
+            let synthesized = synthesize_opencode_child_rows(
+                messages,
+                &provider_messages,
+                &child_messages_by_session,
+            );
+            messages.extend(synthesized);
+        }
     }
 }
 
