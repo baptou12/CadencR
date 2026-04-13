@@ -12,18 +12,28 @@ use cadence_service::app_state::AppState;
 /// Create a temp git repo with an initial commit and a feature branch.
 fn create_test_repo(dir: &std::path::Path) {
     let run = |args: &[&str]| {
-        Command::new("git")
+        let output = Command::new("git")
             .args(args)
             .current_dir(dir)
             .env("GIT_AUTHOR_NAME", "Test")
             .env("GIT_AUTHOR_EMAIL", "test@test.com")
             .env("GIT_COMMITTER_NAME", "Test")
             .env("GIT_COMMITTER_EMAIL", "test@test.com")
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("HOME", dir)
             .output()
-            .expect("git command failed");
+            .expect("git command failed to spawn");
+        assert!(
+            output.status.success(),
+            "git {} failed (exit {}): {}",
+            args.join(" "),
+            output.status,
+            String::from_utf8_lossy(&output.stderr),
+        );
     };
 
     run(&["init", "-b", "main"]);
+    run(&["config", "commit.gpgsign", "false"]);
     std::fs::write(dir.join("README.md"), "# Test\n").unwrap();
     run(&["add", "."]);
     run(&["commit", "-m", "initial commit"]);
