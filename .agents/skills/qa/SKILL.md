@@ -6,35 +6,43 @@ description: >
   wants to validate that something they just built actually works in the real app. Also trigger when the user
   says "run QA", "does it look right", or "let me see it working". If a feature was just implemented and the
   user wants confirmation it works end-to-end, this is the skill to use.
+user-invocable: true
+allowed-tools: Bash(*), mcp__chrome-devtools__*
 ---
 
 # QA Testing
 
 Test Cadence features by running the app in a browser and verifying behavior interactively.
 
-The argument describes the feature to test. If empty, infer the feature from the current session context such as recent file changes, the active branch, or the conversation history.
+The argument (`$ARGUMENTS`) describes the feature to test. If empty, infer the feature from the current session context (recent file changes, active branch, conversation history).
 
 ## Step 1: Ensure Dev Servers Are Running
 
 The Cadence stack has two servers:
-- Frontend (Vite): `http://localhost:1420`
-- Backend (Rust service): `http://localhost:5005/api/health`
+- **Frontend** (Vite): `http://localhost:1420`
+- **Backend** (Rust service): `http://localhost:5005/api/health`
 
 Check if they're already up and healthy:
 
 ```bash
+# Health-check both servers (2-second timeout each)
 curl -sf --max-time 2 http://localhost:5005/api/health && echo "API: ok" || echo "API: down"
 curl -sf --max-time 2 http://localhost:1420 && echo "Frontend: ok" || echo "Frontend: down"
 ```
 
-If either is down, kill stale processes and restart the full stack:
+**If both are healthy**, skip to Step 2.
+
+**If either is down**, kill stale processes and restart the full stack:
 
 ```bash
+# Kill anything on the dev ports
 lsof -ti:1420 -ti:5005 | xargs kill -9 2>/dev/null || true
+
+# Start the full stack from the project root (backgrounded)
 cd /workspace/cadence && pnpm dev &
 ```
 
-Then poll until both servers respond, timing out after 60 seconds:
+Then poll until both servers respond (timeout after 60 seconds):
 
 ```bash
 for i in $(seq 1 60); do
@@ -45,52 +53,114 @@ for i in $(seq 1 60); do
 done
 ```
 
-If servers do not come up within 60 seconds, report the failure and stop.
+If servers don't come up within 60 seconds, report the failure and stop.
 
 ## Step 2: Plan Test Procedures
 
-Before touching the browser:
+Before touching the browser, think about what to test. Based on the feature description:
 
-1. Identify 3-5 concrete test cases covering the happy path and key edge cases.
-2. For each test case, note the steps and expected outcome.
-3. Briefly tell the user what will be tested.
+1. Identify 3-5 concrete test cases covering the happy path and key edge cases
+2. For each test case, note the steps (navigate, click, type, verify) and expected outcome
+3. Briefly tell the user what you're about to test so they can course-correct if needed
 
-## Step 3: Open the App
+Keep test cases focused and practical — test what the user built, not the entire app.
 
-Open `http://localhost:1420` with the browser automation available in the current agent environment, wait for load completion, and keep the session open for the rest of the checks.
+## Step 3: Open the App in cmux Browser
 
-Cadence uses hash routing, so URLs look like `http://localhost:1420/#/projects/1/features`.
+```bash
+cmux browser open http://localhost:1420
+```
+
+Store the surface ID from the output (e.g., `surface:22`) and use it for all subsequent commands.
+
+Wait for the page to load:
+
+```bash
+cmux browser surface:ID wait --load-state complete --timeout-ms 10000
+```
 
 ## Step 4: Execute Test Cases
 
-For each test case:
+For each test case, follow this loop:
 
-1. Navigate to the right part of the app.
-2. Interact with the UI.
-3. Verify the result against expectations.
-4. Record pass or fail plus any unexpected behavior.
+1. **Navigate** to the right part of the app
+2. **Interact** — click buttons, fill forms, trigger the feature
+3. **Verify** — take a snapshot or screenshot and check the result against expectations
+4. **Record** — note pass/fail and any unexpected behavior
 
-Take screenshots of interesting states, especially failures, and check browser console or runtime errors before finishing.
+### Key cmux browser commands
 
-For React controlled inputs, ensure interactions trigger real input events rather than only mutating DOM values.
+| Action | Command |
+|--------|---------|
+| Take DOM snapshot | `cmux browser snapshot` |
+| Take screenshot | `cmux browser screenshot --out /tmp/qa-<name>.png` |
+| Click element | `cmux browser click "<css-selector>"` |
+| Type text | `cmux browser fill "<css-selector>" --text "value"` |
+| Wait for element | `cmux browser wait --selector "<css-selector>" --timeout 5` |
+| Read text | `cmux browser get text --selector "<css-selector>"` |
+| Check visibility | `cmux browser is visible "<css-selector>"` |
+| Navigate | `cmux browser goto "http://localhost:1420/#/path"` |
+| Check console errors | `cmux browser console list` |
+| Check JS errors | `cmux browser errors list` |
+
+Use `snapshot` liberally to understand the current page state before interacting. Snapshots are cheap and prevent blind clicking.
+
+After all interactions, always check for console errors — they often reveal issues that aren't visible in the UI:
+
+```bash
+cmux browser errors list
+cmux browser console list
+```
+
+### React controlled inputs
+
+`cmux browser fill` and `type` set the DOM value but do **not** trigger React's synthetic `onChange` on controlled inputs (`value={state}`). The input appears updated but React's internal state is stale, so blur/submit handlers use the old value.
+
+**Workaround** — use `eval` with the native value setter to fire a React-compatible `input` event:
+
+```bash
+cmux browser surface:ID eval --script "
+const input = document.querySelector('YOUR_SELECTOR');
+const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+nativeSetter.call(input, 'NEW_VALUE');
+input.dispatchEvent(new Event('input', { bubbles: true }));
+"
+```
+
+Then trigger blur/submit as needed:
+```bash
+cmux browser surface:ID eval --script "document.querySelector('YOUR_SELECTOR').blur()"
+```
+
+### Tips
+
+- Cadence uses **hash routing** (`/#/...`), so URLs look like `http://localhost:1420/#/projects/1/features`
+- All `cmux browser` commands need the surface ID: `cmux browser surface:ID <command>`
+- Use `snapshot --compact` for a quick overview, full `snapshot` when you need element details
+- Use `--snapshot-after` on interaction commands (click, goto, fill) to see the result immediately
+- If a click doesn't seem to work, take a snapshot to verify the selector matches the right element
+- Take screenshots of interesting states (failures especially) — save to `/tmp/qa-*.png` and mention the paths in the report
 
 ## Step 5: Report Results
 
-Produce a concise report:
+After running all test cases, produce a concise report:
 
-```text
+```
 ## QA Report: [Feature Name]
 
-Result: X/Y passed
+**Result**: X/Y passed
 
-Failed
-- [Test case]: Expected [X], got [Y]. Screenshot: /tmp/qa-failure-1.png
+### Failed
+- **[Test case name]**: Expected [X], got [Y]. Screenshot: /tmp/qa-failure-1.png
 
-Passed
-- [Test case]
+### Passed
+- [Test case name]
+- [Test case name]
 
-Console Errors
-- None
+### Console Errors
+- [Any errors found, or "None"]
 ```
 
-Focus on failures. Do not shut down the dev servers when done.
+Focus the report on failures — what broke and why. Passing tests get a one-liner each. If everything passed, say so and keep it short.
+
+Do NOT clean up the dev servers when done — the user likely wants them running.

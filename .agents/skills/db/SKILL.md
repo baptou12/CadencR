@@ -1,6 +1,8 @@
 ---
 name: db
 description: Query or modify the Cadence SQLite database
+user-invocable: true
+allowed-tools: Bash(sqlite3 *)
 ---
 
 # Cadence Database
@@ -23,6 +25,6 @@ Use `sqlite3` for all operations. Always wrap the DB path in double quotes (`"`)
 
 ## Usage
 
-If the user's request is a raw SQL query, run it directly. Otherwise interpret the user's intent and build the appropriate query.
+If `$ARGUMENTS` is a raw SQL query, run it directly. Otherwise interpret the user's intent and build the appropriate query.
 
 When deleting agent sessions, also delete their messages from `agent_messages`. When resetting a feature, update its status and clean up related sessions/messages as needed. Always show results after mutations to confirm changes.

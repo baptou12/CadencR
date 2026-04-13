@@ -46,27 +46,24 @@ For OpenCode, `opencode.json` also loads the existing `.claude/rules/*.md` files
 
 ## Shared Skills
 
-Project-specific skills are mirrored for tool compatibility:
+Project-specific skills use agent-skills-compatible directories:
 
-- Claude Code and OpenCode: `.claude/skills/*/SKILL.md`
-- Codex: `.agents/skills/*/SKILL.md`
+- Codex and OpenCode can load `.agents/skills/*/SKILL.md`
+- Claude Code loads `.claude/skills/*/SKILL.md`
 
-The mirrored skills must stay semantically aligned. If a task clearly matches one of these skills, read the matching skill and follow it before editing:
+When a skill needs to work across all three tools, prefer a shared implementation with minimal duplication and keep the Claude-visible entrypoint aligned. If a task clearly matches one of these skills, read the matching skill and follow it before editing:
 
 - `db`
 - `qa`
-- `sync-presets`
-- `test-commit`
+- `finish-job`
 
 ## Command Aliases
 
-This repo also defines shared command-style aliases:
+This repo defines only these shared command-style aliases:
 
 - `/qa [feature]`: run the QA workflow from `.claude/skills/qa/SKILL.md`
-- `/test [scope]`: use `.claude/skills/test-commit/SKILL.md` for the testing workflow only; do not create a git commit unless explicitly requested
-- `/commit [message or notes]`: use `.claude/skills/test-commit/SKILL.md` for the full test-and-commit workflow
-- `/test-commit [message or notes]`: same as `/commit`
+- `/finish-job [scope or notes]`: canonical self-contained workflow; simplify the current implementation, close test coverage gaps, propose a commit plan, wait for approval, and after approval continue through the safe commit flow without relying on any other command
 
-OpenCode gets real slash commands from `.opencode/command/*.md`. For agents that do not support project slash commands natively, treat these as semantic aliases and follow the mapped skill or workflow.
+OpenCode does not use a repo-local custom command directory in this repo. OpenCode, Codex, and Claude Code should all rely on the shared skills for `db`, `qa`, and `finish-job`. For agents that do not support project slash commands natively, treat these as semantic aliases and follow the mapped skill or workflow.
 
-Codex currently documents built-in slash commands, not repository-defined custom slash commands. In Codex, treat these aliases as plain-language workflow requests and load the mapped skill or workflow manually.
+Codex currently documents built-in slash commands only. For Codex, the supported repo mechanism is the skill in `.agents/skills/*`; users can invoke that skill explicitly, and if `/finish-job` appears in a prompt it should be treated as a plain-language alias for the `finish-job` skill rather than a native custom slash command.
