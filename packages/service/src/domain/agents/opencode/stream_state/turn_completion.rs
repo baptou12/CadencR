@@ -46,6 +46,15 @@ impl LoopState {
         }
     }
 
+    /// Force-finish all pending sessions. Used when the SSE source closes
+    /// to prevent deadlocked turns that would otherwise wait forever.
+    pub(in crate::domain::agents::opencode) fn force_flush_pending(&mut self, output: &mut Vec<RuntimeEvent>) {
+        let pending: Vec<String> = self.pending_finishes.iter().cloned().collect();
+        for session_id in pending {
+            self.finish_session(&session_id, output);
+        }
+    }
+
     fn is_descendant_of(&self, session_id: &str, ancestor_id: &str) -> bool {
         let mut current = self.session_parents.get(session_id);
         while let Some(parent_id) = current {
@@ -176,5 +185,53 @@ mod tests {
         );
         assert_eq!(output.iter().filter(|event| event.is_result()).count(), 1);
         assert!(output.last().is_some_and(|event| event.is_result()));
+    }
+
+    #[test]
+    fn force_flush_pending_emits_result_for_stuck_root() {
+        let mut state = LoopState::new("root".to_string(), Some("openai/gpt-5.4".to_string()));
+        let mut output = Vec::new();
+
+        // Root gets an assistant message so assistant_turn_started is true
+        state.on_message(
+            assistant_message(
+                "root",
+                "msg_root",
+                vec![opencode_sdk_rs::MessagePart::ToolUse {
+                    id: "task_1".to_string(),
+                    tool_id: "task_1".to_string(),
+                    name: "Task".to_string(),
+                    input: serde_json::json!({
+                        "description": "Explore",
+                        "subagent_session_id": "child_1",
+                    }),
+                }],
+            ),
+            &mut output,
+        );
+        // Child becomes active — root finish will be deferred
+        state.on_session_updated(
+            child_session(opencode_sdk_rs::SessionStatus::Active),
+            &mut output,
+        );
+        // Root goes Idle while child is still active — deferred
+        state.on_session_updated(
+            opencode_sdk_rs::Session {
+                id: "root".to_string(),
+                title: None,
+                directory: "/tmp".to_string(),
+                status: opencode_sdk_rs::SessionStatus::Idle,
+                parent_id: None,
+                created_at: None,
+                updated_at: None,
+            },
+            &mut output,
+        );
+        assert!(!output.iter().any(|event| event.is_result()));
+
+        // SSE source closes — force flush should emit the result
+        output.clear();
+        state.force_flush_pending(&mut output);
+        assert!(output.iter().any(|event| event.is_result()), "force_flush_pending should emit result for stuck root");
     }
 }

@@ -70,6 +70,7 @@ fn prompt_parts_from_content(content: Value) -> Vec<opencode_sdk_rs::PromptPart>
 impl AgentRuntimeSession for OpenCodeSession {
     fn take_message_rx(&mut self) -> RuntimeMessageRx {
         let Some(source_rx) = self.event_rx.take() else {
+            tracing::warn!("take_message_rx called twice — returning dead channel");
             let (_tx, rx) = mpsc::channel(1);
             return rx;
         };

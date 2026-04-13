@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { buildUserMessageContent } from "@/types/agent-types";
 import { getWsUrl } from "@/lib/ws-url";
 import { createWsConnection } from "@/lib/ws-connection";
+import { scheduleReconnect, resetReconnectDelay, clearReconnect } from "@/lib/ws-reconnect";
 import {
   type SessionConfig,
   type WsEnvelope,
@@ -19,14 +20,14 @@ import {
   createSessionDelete,
   createCommandsGet,
 } from "@/lib/ws-envelope";
-import { fetchFeatureAgentState } from "@/api/generated";
-import { serverBlocksToAgentBlocks } from "@/hooks/useFeatureAgentState";
 import { handleEnvelope } from "./ws-envelope-handler";
 import type { StoreAccessors } from "./ws-envelope-handler";
 import {
   applyApprovePlan,
   applyPersistedState,
   applyPlanChangesRequest,
+  formatQuestionResponse,
+  loadOlderSessionMessages,
   type PersistedStatePayload,
 } from "./ws-session-actions";
 import {
@@ -104,9 +105,34 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       const conn = createWsConnection({
         url: getWsUrl(),
         onOpen: () => {
+          resetReconnectDelay(sessionId);
           set(updateSession(get(), sessionId, { isConnected: true }));
         },
         onClose: () => {
+          const session = get().sessions[sessionId];
+          if (session?.pendingWsRequests.size) {
+            for (const cb of session.pendingWsRequests.values()) cb(null);
+            session.pendingWsRequests.clear();
+          }
+          const wasRunning = session?.status === "running";
+          const errorBlock = wasRunning ? {
+            id: `ws-err-close-${Date.now()}`,
+            type: "text" as const,
+            content: "Connection lost while streaming. Reconnecting…",
+            isError: true,
+          } : undefined;
+          set(updateSession(get(), sessionId, {
+            conn: null,
+            isConnected: false,
+            serverSessionId: "",
+            runtimeSessionId: "",
+            claudeSessionId: "",
+            status: wasRunning ? "error" : session?.status ?? "idle",
+            blocks: errorBlock ? [...(session?.blocks ?? []), errorBlock] : session?.blocks,
+          }));
+          scheduleReconnect(sessionId, () => get().connect(sessionId));
+        },
+        onError: () => {
           const session = get().sessions[sessionId];
           if (session?.pendingWsRequests.size) {
             for (const cb of session.pendingWsRequests.values()) cb(null);
@@ -118,28 +144,37 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
             serverSessionId: "",
             runtimeSessionId: "",
             claudeSessionId: "",
-            status: getSession(sessionId).status === "running" ? "error" : getSession(sessionId).status,
-          }));
-        },
-        onError: () => {
-          set(updateSession(get(), sessionId, {
-            conn: null,
-            isConnected: false,
-            serverSessionId: "",
-            runtimeSessionId: "",
-            claudeSessionId: "",
             status: "error",
           }));
+          scheduleReconnect(sessionId, () => get().connect(sessionId));
         },
         onMessage: (data) => {
+          let envelope: WsEnvelope;
           try {
-            const envelope = parseEnvelope(data);
+            envelope = parseEnvelope(data);
+          } catch {
+            return; // genuinely unparseable — skip
+          }
+          try {
             handleEnvelope(ctx, sessionId, envelope);
             if (envelope.domain === "session" && envelope.action === "initialized") {
               flushQueuedInitActions(sessionId);
             }
-          } catch {
-            // Ignore unparseable messages
+          } catch (err) {
+            console.error("[ws-session] handleEnvelope error:", err);
+            const session = getSession(sessionId);
+            session.streamingState.counter += 1;
+            set(updateSession(get(), sessionId, {
+              blocks: [
+                ...session.blocks,
+                {
+                  id: `ws-err-${session.streamingState.counter}`,
+                  type: "text" as const,
+                  content: `Internal error: ${err instanceof Error ? err.message : "unknown"}`,
+                  isError: true,
+                },
+              ],
+            }));
           }
         },
       });
@@ -153,6 +188,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
     },
 
     disconnect(sessionId: string) {
+      clearReconnect(sessionId);
       const session = get().sessions[sessionId];
       if (!session?.conn) return;
 
@@ -237,32 +273,14 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
 
     respondToQuestion(sessionId: string, response: AgentQuestionAnswers) {
       const session = getSession(sessionId);
-      const updatedInput = {
-        ...session.pendingQuestionToolInput,
-        answers: response,
-      };
       sendRaw(sessionId, createPermissionRespond(
         session.serverSessionId,
         session.pendingRequestId,
         "allow_once",
-        updatedInput,
+        { ...session.pendingQuestionToolInput, answers: response },
       ));
 
-      const questions = Array.isArray(session.pendingQuestionToolInput.questions)
-        ? session.pendingQuestionToolInput.questions
-        : session.pendingQuestionToolInput.question != null
-          ? [session.pendingQuestionToolInput]
-          : [];
-      const formatted = response
-        .map((answerGroup, index) => {
-          const rawQuestion = questions[index];
-          const question = typeof rawQuestion === "object" && rawQuestion != null && typeof (rawQuestion as { question?: unknown }).question === "string"
-            ? (rawQuestion as { question: string }).question
-            : `Question ${index + 1}`;
-          return `*${question}*\n\n**${answerGroup.join("\n")}**`;
-        })
-        .join("\n\n\n\n");
-
+      const formatted = formatQuestionResponse(session.pendingQuestionToolInput, response);
       session.streamingState.counter += 1;
       set(updateSession(get(), sessionId, {
         blocks: [
@@ -288,6 +306,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
     },
 
     destroy(sessionId: string) {
+      clearReconnect(sessionId);
       const session = get().sessions[sessionId];
       if (!session?.conn) return;
 
@@ -363,30 +382,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
     },
 
     async loadOlderMessages(sessionId: string) {
-      const session = get().sessions[sessionId];
-      if (!session || !session.hasMore || session.oldestMessageId == null || !session.featureId || !session.sessionDbId) return;
-
-      const beforeParam = JSON.stringify({ [session.sessionDbId]: session.oldestMessageId });
-      const data = await fetchFeatureAgentState(session.featureId, {
-        before: beforeParam,
-        limit: 100,
-      });
-
-      const serverSession = data.sessions.find((s) => s.sessionDbId === session.sessionDbId);
-      if (!serverSession) {
-        set(updateSession(get(), sessionId, { hasMore: false }));
-        return;
-      }
-
-      const olderBlocks = serverBlocksToAgentBlocks(serverSession.blocks as never[]);
-
-      const currentSession = get().sessions[sessionId];
-      if (!currentSession) return;
-      set(updateSession(get(), sessionId, {
-        blocks: [...olderBlocks, ...currentSession.blocks],
-        hasMore: serverSession.hasMore ?? false,
-        oldestMessageId: serverSession.oldestMessageId ?? null,
-      }));
+      await loadOlderSessionMessages(ctx, sessionId);
     },
   };
 });

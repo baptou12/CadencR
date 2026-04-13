@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use tokio::sync::{mpsc, Mutex};
+use tracing::warn;
 
 use super::events::{init_event, permission_request_event, question_request_event};
 use super::stream_state::LoopState;
@@ -82,10 +83,23 @@ pub(super) fn spawn_event_loop(
 
             for mapped in output {
                 if tx.send(Ok(mapped)).await.is_err() {
+                    warn!(session_id, "Event loop: downstream receiver dropped, stopping");
                     return;
                 }
             }
         }
+
+        // SSE source closed — flush any pending turn completions and signal downstream
+        let mut final_output = Vec::new();
+        state.force_flush_pending(&mut final_output);
+        for mapped in final_output {
+            if tx.send(Ok(mapped)).await.is_err() {
+                break;
+            }
+        }
+        let _ = tx
+            .send(Err(RuntimeError::new("SSE source closed unexpectedly")))
+            .await;
     });
 }
 

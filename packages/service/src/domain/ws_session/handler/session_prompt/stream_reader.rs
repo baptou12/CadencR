@@ -41,7 +41,26 @@ pub(crate) fn spawn_stream_reader(
         let mut context_window: u64 = initial_context_window;
 
         loop {
-            let msg = message_rx.recv().await;
+            let recv_result = tokio::time::timeout(
+                std::time::Duration::from_millis(500),
+                message_rx.recv(),
+            )
+            .await;
+
+            let msg = match recv_result {
+                Ok(msg) => msg,
+                Err(_) => {
+                    // Timeout — check if WS sender is still alive
+                    if sender
+                        .send(Message::Ping(vec![].into()))
+                        .is_err()
+                    {
+                        debug!(db_session_id, "WebSocket closed during timeout check, stopping stream reader");
+                        break;
+                    }
+                    continue;
+                }
+            };
 
             match msg {
                 Some(Ok(runtime_event)) => {

@@ -71,7 +71,9 @@ interface AgentBlockProps {
 export const AgentBlock = memo(function AgentBlock({ block, isStreaming, basePath, toolResultMap }: AgentBlockProps) {
   switch (block.type) {
     case "text":
-      return <TextBlock content={block.content} />;
+      return block.isError
+        ? <div className="text-red-400 text-sm"><TextBlock content={block.content} /></div>
+        : <TextBlock content={block.content} />;
     case "code":
       return <CodeBlock content={block.content} language={block.language} />;
     case "tool_call": {

@@ -4,6 +4,8 @@ import {
   createPromptSend,
 } from "@/lib/ws-envelope";
 import { resolveLegacyClaudeSessionId } from "@/lib/providers";
+import { fetchFeatureAgentState } from "@/api/generated";
+import { serverBlocksToAgentBlocks } from "@/hooks/useFeatureAgentState";
 import { injectPlanIntoBlocks, parseTodosFromBlocks } from "./ws-message-processing";
 import type { StoreAccessors } from "./ws-envelope-handler";
 import {
@@ -228,4 +230,55 @@ export function applyPersistedState(
         : {}),
     }),
   );
+}
+
+/** Load older messages for a session from the server. */
+export async function loadOlderSessionMessages(
+  ctx: StoreAccessors,
+  sessionId: string,
+): Promise<void> {
+  const session = ctx.get().sessions[sessionId];
+  if (!session || !session.hasMore || session.oldestMessageId == null || !session.featureId || !session.sessionDbId) return;
+
+  const beforeParam = JSON.stringify({ [session.sessionDbId]: session.oldestMessageId });
+  const data = await fetchFeatureAgentState(session.featureId, {
+    before: beforeParam,
+    limit: 100,
+  });
+
+  const serverSession = data.sessions.find((s) => s.sessionDbId === session.sessionDbId);
+  if (!serverSession) {
+    ctx.set(updateSession(ctx.get(), sessionId, { hasMore: false }));
+    return;
+  }
+
+  const olderBlocks = serverBlocksToAgentBlocks(serverSession.blocks as never[]);
+  const currentSession = ctx.get().sessions[sessionId];
+  if (!currentSession) return;
+  ctx.set(updateSession(ctx.get(), sessionId, {
+    blocks: [...olderBlocks, ...currentSession.blocks],
+    hasMore: serverSession.hasMore ?? false,
+    oldestMessageId: serverSession.oldestMessageId ?? null,
+  }));
+}
+
+/** Format question answers into a user-visible markdown string. */
+export function formatQuestionResponse(
+  pendingQuestionToolInput: Record<string, unknown>,
+  response: Array<string[]>,
+): string {
+  const questions = Array.isArray(pendingQuestionToolInput.questions)
+    ? pendingQuestionToolInput.questions
+    : pendingQuestionToolInput.question != null
+      ? [pendingQuestionToolInput]
+      : [];
+  return response
+    .map((answerGroup, index) => {
+      const rawQuestion = questions[index] as Record<string, unknown> | undefined;
+      const question = typeof rawQuestion === "object" && rawQuestion != null && typeof rawQuestion.question === "string"
+        ? rawQuestion.question as string
+        : `Question ${index + 1}`;
+      return `*${question}*\n\n**${answerGroup.join("\n")}**`;
+    })
+    .join("\n\n\n\n");
 }

@@ -122,11 +122,16 @@ export const useAppWsStore = create<AppWsState>((set, get) => {
       });
 
       ws.addEventListener("message", (event) => {
+        let envelope: ReturnType<typeof parseEnvelope>;
         try {
-          const envelope = parseEnvelope(event.data as string);
-          handleEnvelope(envelope.domain, envelope.action, envelope.payload as Record<string, unknown>);
+          envelope = parseEnvelope(event.data as string);
         } catch {
-          // Ignore unparseable messages
+          return; // genuinely unparseable — skip
+        }
+        try {
+          handleEnvelope(envelope.domain, envelope.action, envelope.payload as Record<string, unknown>);
+        } catch (err) {
+          console.error("[app-ws] handleEnvelope error:", err);
         }
       });
 

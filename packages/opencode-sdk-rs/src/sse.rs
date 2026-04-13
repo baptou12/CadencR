@@ -197,6 +197,8 @@ async fn retain_live_senders(subscribers: &mut Vec<mpsc::Sender<SseEvent>>, even
     for sender in subscribers.drain(..) {
         if sender.send(event.clone()).await.is_ok() {
             next.push(sender);
+        } else {
+            warn!("Pruned dead SSE subscriber");
         }
     }
     *subscribers = next;
