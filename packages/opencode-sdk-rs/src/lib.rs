@@ -5,6 +5,7 @@ pub mod event_parsing;
 pub mod parsing;
 pub mod process;
 pub mod sse;
+mod sse_reconcile;
 mod tool_input;
 pub mod types;
 

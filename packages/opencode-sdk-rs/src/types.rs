@@ -20,7 +20,7 @@ impl SessionStatus {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Session {
     pub id: String,
     pub title: Option<String>,
@@ -50,13 +50,13 @@ impl MessageRole {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TokenCacheUsage {
     pub read: u64,
     pub write: u64,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TokenUsage {
     pub total: Option<u64>,
     pub input: u64,
@@ -71,7 +71,7 @@ impl TokenUsage {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum MessagePart {
     Text {
         id: String,
@@ -150,7 +150,7 @@ impl MessagePart {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Message {
     pub id: String,
     pub session_id: String,

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -12,6 +13,7 @@ use tracing::warn;
 use crate::client::OpenCodeClient;
 use crate::error::SdkError;
 use crate::event_parsing::parse_sse_event;
+use crate::sse_reconcile::ReconnectState;
 use crate::types::SseEvent;
 
 pub struct SseStream {
@@ -44,8 +46,11 @@ impl SseStream {
 }
 
 pub struct SseDispatcher {
-    subscribers: Arc<Mutex<HashMap<String, Vec<mpsc::Sender<SseEvent>>>>>,
-    permission_subscribers: Arc<Mutex<Vec<mpsc::Sender<SseEvent>>>>,
+    // Use unbounded fan-out channels so a slow Cadence consumer cannot block
+    // the shared OpenCode SSE reader and freeze every later event in the turn.
+    subscribers: Arc<Mutex<HashMap<String, Vec<mpsc::UnboundedSender<SseEvent>>>>>,
+    permission_subscribers: Arc<Mutex<Vec<mpsc::UnboundedSender<SseEvent>>>>,
+    reconnect_state: Arc<Mutex<ReconnectState>>,
     session_roots: Arc<Mutex<HashMap<String, String>>>,
 }
 
@@ -54,10 +59,12 @@ impl SseDispatcher {
         let dispatcher = Arc::new(Self {
             subscribers: Arc::new(Mutex::new(HashMap::new())),
             permission_subscribers: Arc::new(Mutex::new(Vec::new())),
+            reconnect_state: Arc::new(Mutex::new(ReconnectState::default())),
             session_roots: Arc::new(Mutex::new(HashMap::new())),
         });
         let stream_dispatcher = Arc::clone(&dispatcher);
         tokio::spawn(async move {
+            let mut should_reconcile = false;
             loop {
                 let mut stream = match client.event_stream_for_directory(directory.as_deref()) {
                     Ok(stream) => stream,
@@ -68,10 +75,16 @@ impl SseDispatcher {
                     }
                 };
 
+                if should_reconcile {
+                    stream_dispatcher
+                        .reconcile_after_reconnect(&client, directory.as_deref())
+                        .await;
+                }
+
                 let mut should_reconnect = false;
                 while let Some(next) = stream.next().await {
                     match next {
-                        Ok(event) => stream_dispatcher.dispatch(event).await,
+                        Ok(event) => stream_dispatcher.dispatch_live(event).await,
                         Err(error) => {
                             warn!(error = %error, "opencode SSE stream error");
                             should_reconnect = true;
@@ -83,14 +96,15 @@ impl SseDispatcher {
                 if !should_reconnect {
                     warn!("opencode SSE stream ended; reconnecting");
                 }
+                should_reconcile = true;
                 sleep(Duration::from_millis(250)).await;
             }
         });
         dispatcher
     }
 
-    pub async fn subscribe(&self, session_id: &str) -> mpsc::Receiver<SseEvent> {
-        let (tx, rx) = mpsc::channel(256);
+    pub async fn subscribe(&self, session_id: &str) -> mpsc::UnboundedReceiver<SseEvent> {
+        let (tx, rx) = mpsc::unbounded_channel();
         let mut subscribers = self.subscribers.lock().await;
         subscribers
             .entry(session_id.to_string())
@@ -108,23 +122,28 @@ impl SseDispatcher {
         self.subscribers.lock().await.remove(session_id);
     }
 
-    pub async fn subscribe_permissions(&self) -> mpsc::Receiver<SseEvent> {
-        let (tx, rx) = mpsc::channel(64);
+    pub async fn subscribe_permissions(&self) -> mpsc::UnboundedReceiver<SseEvent> {
+        let (tx, rx) = mpsc::unbounded_channel();
         self.permission_subscribers.lock().await.push(tx);
         rx
     }
 
-    async fn dispatch(&self, event: SseEvent) {
+    async fn dispatch_live(&self, event: SseEvent) {
+        self.reconnect_state.lock().await.record_event(&event);
+        self.dispatch_event(event).await;
+    }
+
+    async fn dispatch_event(&self, event: SseEvent) {
         self.update_session_root(&event).await;
         if let Some(session_id) = event.session_id() {
             let root_session_id = self.resolve_root_session_id(session_id).await;
             let mut subscribers = self.subscribers.lock().await;
             if let Some(session_subscribers) = subscribers.get_mut(session_id) {
-                retain_live_senders(session_subscribers, &event).await;
+                retain_live_senders(session_subscribers, &event);
             }
             if let Some(root_session_id) = root_session_id.filter(|root| root != session_id) {
                 if let Some(root_subscribers) = subscribers.get_mut(root_session_id.as_str()) {
-                    retain_live_senders(root_subscribers, &event).await;
+                    retain_live_senders(root_subscribers, &event);
                 }
             }
         }
@@ -136,7 +155,44 @@ impl SseDispatcher {
                 | SseEvent::QuestionUpdated { .. }
         ) {
             let mut subscribers = self.permission_subscribers.lock().await;
-            retain_live_senders(&mut subscribers, &event).await;
+            retain_live_senders(&mut subscribers, &event);
+        }
+    }
+
+    async fn reconcile_after_reconnect(&self, client: &OpenCodeClient, directory: Option<&str>) {
+        let subscribed_session_ids = self
+            .subscribers
+            .lock()
+            .await
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>();
+        if subscribed_session_ids.is_empty() {
+            return;
+        }
+
+        let session_roots = self.session_roots.lock().await;
+        let root_session_ids = subscribed_session_ids
+            .into_iter()
+            .map(|session_id| {
+                session_roots
+                    .get(&session_id)
+                    .cloned()
+                    .unwrap_or(session_id)
+            })
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        drop(session_roots);
+
+        let replay = self
+            .reconnect_state
+            .lock()
+            .await
+            .reconcile_subscribers(client, directory, &root_session_ids)
+            .await;
+        for event in replay {
+            self.dispatch_event(event).await;
         }
     }
 
@@ -189,10 +245,10 @@ pub async fn shared_dispatcher(
     created
 }
 
-async fn retain_live_senders(subscribers: &mut Vec<mpsc::Sender<SseEvent>>, event: &SseEvent) {
+fn retain_live_senders(subscribers: &mut Vec<mpsc::UnboundedSender<SseEvent>>, event: &SseEvent) {
     let mut next = Vec::with_capacity(subscribers.len());
     for sender in subscribers.drain(..) {
-        if sender.send(event.clone()).await.is_ok() {
+        if sender.send(event.clone()).is_ok() {
             next.push(sender);
         } else {
             warn!("Pruned dead SSE subscriber");
@@ -213,6 +269,9 @@ mod tests {
                 std::collections::HashMap::new(),
             )),
             permission_subscribers: std::sync::Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            reconnect_state: std::sync::Arc::new(tokio::sync::Mutex::new(
+                crate::sse_reconcile::ReconnectState::default(),
+            )),
             session_roots: std::sync::Arc::new(tokio::sync::Mutex::new(
                 std::collections::HashMap::new(),
             )),
@@ -220,7 +279,7 @@ mod tests {
 
         let mut root_rx = dispatcher.subscribe("root").await;
         dispatcher
-            .dispatch(SseEvent::SessionCreated(Session {
+            .dispatch_event(SseEvent::SessionCreated(Session {
                 id: "child".to_string(),
                 title: None,
                 directory: "/tmp".to_string(),
@@ -251,6 +310,9 @@ mod tests {
                 std::collections::HashMap::new(),
             )),
             permission_subscribers: std::sync::Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            reconnect_state: std::sync::Arc::new(tokio::sync::Mutex::new(
+                crate::sse_reconcile::ReconnectState::default(),
+            )),
             session_roots: std::sync::Arc::new(tokio::sync::Mutex::new(
                 std::collections::HashMap::new(),
             )),
@@ -258,7 +320,7 @@ mod tests {
 
         let mut root_rx = dispatcher.subscribe("root").await;
         dispatcher
-            .dispatch(SseEvent::SessionCreated(Session {
+            .dispatch_event(SseEvent::SessionCreated(Session {
                 id: "child".to_string(),
                 title: None,
                 directory: "/tmp".to_string(),
@@ -271,7 +333,7 @@ mod tests {
         let _ = root_rx.recv().await;
 
         dispatcher
-            .dispatch(SseEvent::SessionUpdated(Session {
+            .dispatch_event(SseEvent::SessionUpdated(Session {
                 id: "child".to_string(),
                 title: None,
                 directory: String::new(),
@@ -284,7 +346,7 @@ mod tests {
         let _ = root_rx.recv().await;
 
         dispatcher
-            .dispatch(SseEvent::MessageUpdated(Message {
+            .dispatch_event(SseEvent::MessageUpdated(Message {
                 id: "msg_1".to_string(),
                 session_id: "child".to_string(),
                 role: MessageRole::Assistant,

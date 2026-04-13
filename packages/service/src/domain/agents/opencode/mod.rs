@@ -41,7 +41,7 @@ pub struct OpenCodeSession {
     current_model: Arc<RwLock<Option<opencode_sdk_rs::ModelRef>>>,
     directory: String,
     system_prompt: Option<String>,
-    event_rx: Option<mpsc::Receiver<opencode_sdk_rs::SseEvent>>,
+    event_rx: Option<mpsc::UnboundedReceiver<opencode_sdk_rs::SseEvent>>,
     pending_requests: Arc<Mutex<HashMap<String, PendingRequestKind>>>,
     server_pid: Option<u32>,
 }

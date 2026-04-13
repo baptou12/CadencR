@@ -10,7 +10,7 @@ use super::PendingRequestKind;
 use crate::domain::agents::adapter::{RuntimeError, RuntimeEvent};
 
 pub(super) fn spawn_event_loop(
-    mut source_rx: mpsc::Receiver<opencode_sdk_rs::SseEvent>,
+    mut source_rx: mpsc::UnboundedReceiver<opencode_sdk_rs::SseEvent>,
     tx: mpsc::Sender<Result<RuntimeEvent, RuntimeError>>,
     pending_requests: Arc<Mutex<HashMap<String, PendingRequestKind>>>,
     session_id: String,
@@ -118,7 +118,7 @@ mod tests {
     async fn collect_events(
         source_events: Vec<opencode_sdk_rs::SseEvent>,
     ) -> Vec<crate::domain::agents::adapter::RuntimeEvent> {
-        let (source_tx, source_rx) = mpsc::channel(16);
+        let (source_tx, source_rx) = mpsc::unbounded_channel();
         let (tx, mut rx) = mpsc::channel(32);
 
         spawn_event_loop(
@@ -130,7 +130,7 @@ mod tests {
         );
 
         for event in source_events {
-            source_tx.send(event).await.expect("send source event");
+            source_tx.send(event).expect("send source event");
         }
         drop(source_tx);
 
