@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   extractBashOutput,
+  extractTaskOutput,
   isToolCallRunning,
   extractInlineDiffPreview,
   isFileChangeTool,
@@ -24,15 +25,47 @@ describe("isFileChangeTool", () => {
 
 describe("extractBashOutput", () => {
   it("extracts generic output field", () => {
-    expect(extractBashOutput(JSON.stringify({ command: "pwd", output: "/tmp/project\n" }))).toBe("/tmp/project\n");
+    expect(
+      extractBashOutput(
+        JSON.stringify({ command: "pwd", output: "/tmp/project\n" }),
+      ),
+    ).toBe("/tmp/project\n");
   });
 
   it("supports legacy persisted opencode output field", () => {
-    expect(extractBashOutput(JSON.stringify({ command: "pwd", __opencode_output: "/tmp/old\n" }))).toBe("/tmp/old\n");
+    expect(
+      extractBashOutput(
+        JSON.stringify({ command: "pwd", __opencode_output: "/tmp/old\n" }),
+      ),
+    ).toBe("/tmp/old\n");
   });
 
   it("extracts structured stdout output", () => {
-    expect(extractBashOutput(JSON.stringify({ output: { stdout: "ok\n", stderr: "" } }))).toBe("ok\n");
+    expect(
+      extractBashOutput(
+        JSON.stringify({ output: { stdout: "ok\n", stderr: "" } }),
+      ),
+    ).toBe("ok\n");
+  });
+});
+
+describe("extractTaskOutput", () => {
+  it("extracts tagged task results from persisted output", () => {
+    expect(
+      extractTaskOutput(
+        JSON.stringify({
+          output: "task_id: ses_123\n\n<task_result>Top finding</task_result>",
+        }),
+      ),
+    ).toBe("Top finding");
+  });
+
+  it("supports structured output payloads", () => {
+    expect(
+      extractTaskOutput(
+        JSON.stringify({ output: { text: "Structured finding" } }),
+      ),
+    ).toBe("Structured finding");
   });
 });
 
@@ -42,7 +75,9 @@ describe("isToolCallRunning", () => {
   });
 
   it("treats completed status as not running", () => {
-    expect(isToolCallRunning(JSON.stringify({ status: "completed" }))).toBe(false);
+    expect(isToolCallRunning(JSON.stringify({ status: "completed" }))).toBe(
+      false,
+    );
   });
 });
 
@@ -52,7 +87,8 @@ describe("extractInlineDiffPreview", () => {
       extractInlineDiffPreview(
         "apply_patch",
         JSON.stringify({
-          patch_text: "*** Begin Patch\n*** Add File: toto.txt\n+hello\n*** End Patch\n",
+          patch_text:
+            "*** Begin Patch\n*** Add File: toto.txt\n+hello\n*** End Patch\n",
         }),
       ),
     ).toEqual({
@@ -67,7 +103,8 @@ describe("extractInlineDiffPreview", () => {
       extractInlineDiffPreview(
         "ApplyPatch",
         JSON.stringify({
-          patch_text: "*** Begin Patch\n*** Update File: /workspace/toto.txt\n@@\n-Hello Cadence\n+Hello Cadence 2\n*** End Patch",
+          patch_text:
+            "*** Begin Patch\n*** Update File: /workspace/toto.txt\n@@\n-Hello Cadence\n+Hello Cadence 2\n*** End Patch",
         }),
       ),
     ).toEqual({

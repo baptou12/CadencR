@@ -1,4 +1,7 @@
-import { extractApplyPatchPreview, isApplyPatchToolName } from "@/lib/apply-patch";
+import {
+  extractApplyPatchPreview,
+  isApplyPatchToolName,
+} from "@/lib/apply-patch";
 import { stringArg } from "@/lib/tool-args";
 
 export interface InlineDiffPreview {
@@ -7,9 +10,16 @@ export interface InlineDiffPreview {
   newContent: string;
 }
 
-const FILE_CHANGE_TOOLS = new Set(["Write", "Edit", "NotebookEdit", "ApplyPatch"]);
+const FILE_CHANGE_TOOLS = new Set([
+  "Write",
+  "Edit",
+  "NotebookEdit",
+  "ApplyPatch",
+]);
 
-function parseToolArgsObject(toolArgs?: string): Record<string, unknown> | null {
+function parseToolArgsObject(
+  toolArgs?: string,
+): Record<string, unknown> | null {
   if (!toolArgs) return null;
   try {
     return JSON.parse(toolArgs) as Record<string, unknown>;
@@ -43,11 +53,49 @@ export function extractBashOutput(toolArgs?: string): string | undefined {
   return undefined;
 }
 
+export function extractTaskOutput(toolArgs?: string): string | undefined {
+  const args = parseToolArgsObject(toolArgs);
+  if (!args) return undefined;
+
+  const output = args.output ?? args.__opencode_output;
+  const text =
+    typeof output === "string"
+      ? output
+      : output && typeof output === "object"
+        ? extractStructuredTaskOutput(output as Record<string, unknown>)
+        : undefined;
+
+  if (!text) return undefined;
+
+  const tagged = extractTaggedOutput(text, "task_result");
+  const trimmed = (tagged ?? text).trim();
+  return trimmed || undefined;
+}
+
 export function extractToolStatus(toolArgs?: string): string | undefined {
   const args = parseToolArgsObject(toolArgs);
   if (!args) return undefined;
   const status = args.status ?? args.__opencode_status;
   return typeof status === "string" ? status.toLowerCase() : undefined;
+}
+
+function extractStructuredTaskOutput(
+  output: Record<string, unknown>,
+): string | undefined {
+  if (typeof output.output === "string") return output.output;
+  if (typeof output.stdout === "string") return output.stdout;
+  if (typeof output.text === "string") return output.text;
+  return undefined;
+}
+
+function extractTaggedOutput(text: string, tag: string): string | undefined {
+  const startTag = `<${tag}>`;
+  const endTag = `</${tag}>`;
+  const start = text.indexOf(startTag);
+  if (start === -1) return undefined;
+  const end = text.indexOf(endTag, start + startTag.length);
+  if (end === -1) return undefined;
+  return text.slice(start + startTag.length, end);
 }
 
 export function isToolCallRunning(toolArgs?: string): boolean {

@@ -365,10 +365,13 @@ function handleTurnComplete(
   sessionId: string,
   state: StreamingState,
 ): void {
-  if (state.parentToolUseId) {
-    const parent = state.toolUseIdToBlock.get(state.parentToolUseId);
+  for (const stream of state.streams.values()) {
+    if (!stream.parentToolUseId) {
+      continue;
+    }
+    const parent = state.toolUseIdToBlock.get(stream.parentToolUseId);
     if (parent?.childBlocks) parent.taskComplete = true;
-    state.parentToolUseId = null;
+    stream.parentToolUseId = null;
   }
   if (state.exitPlanModeDetected) {
     state.exitPlanModeDetected = false;
@@ -377,6 +380,8 @@ function handleTurnComplete(
       status: "paused",
     }));
   } else {
-    ctx.set(updateSession(ctx.get(), sessionId, { status: "idle" }));
+    ctx.set(updateSession(ctx.get(), sessionId, {
+      status: "idle",
+    }));
   }
 }

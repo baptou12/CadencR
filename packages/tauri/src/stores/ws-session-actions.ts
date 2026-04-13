@@ -12,7 +12,6 @@ import {
   type SessionEntry,
   updateSession,
 } from "./ws-session-types";
-
 export interface PersistedStatePayload {
   blocks: SessionEntry["blocks"];
   status: SessionEntry["status"];
