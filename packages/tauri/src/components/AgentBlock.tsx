@@ -343,8 +343,8 @@ const ThinkingBlock = memo(function ThinkingBlock({ content }: { content: string
         />
       </button>
       {expanded && (
-        <div className="border-t border-border px-3 py-2 text-xs text-muted-foreground whitespace-pre-wrap">
-          {content}
+        <div className="border-t border-border px-3 py-2">
+          <Markdown content={content} className="text-xs text-muted-foreground" />
         </div>
       )}
     </div>

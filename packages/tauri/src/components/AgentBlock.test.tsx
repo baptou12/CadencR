@@ -203,6 +203,20 @@ describe("AgentBlock", () => {
       expect(screen.getByText("Thinking")).toBeInTheDocument();
     });
 
+    it("renders thinking markdown", () => {
+      const { container } = render(
+        <AgentBlock
+          block={makeBlock({
+            type: "thinking",
+            content: "## Plan\n\n- keep reasoning blocks\n- preserve `markdown`",
+          })}
+        />,
+      );
+      expect(screen.getByRole("heading", { level: 2, name: "Plan" })).toBeInTheDocument();
+      expect(container.querySelectorAll("li")).toHaveLength(2);
+      expect(screen.getByText("markdown")).toHaveProperty("tagName", "CODE");
+    });
+
     it("does not render empty thinking block", () => {
       const { container } = render(
         <AgentBlock

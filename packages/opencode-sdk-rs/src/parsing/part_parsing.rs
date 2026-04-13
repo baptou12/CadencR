@@ -4,17 +4,30 @@ use super::helpers::maybe_string;
 use crate::tool_input::{canonical_tool_name, tool_input_from_state};
 use crate::types::MessagePart;
 
+const THINKING_VALUE_KEYS: &[&str] = &[
+    "thinking",
+    "reasoning",
+    "reasoning_text",
+    "reasoningText",
+    "reasoning_content",
+    "reasoningContent",
+    "text",
+    "content",
+];
+
 pub fn parse_part_from(part: &Value) -> MessagePart {
     let part_type = maybe_string(part, &["type"]).unwrap_or_default();
     let id = maybe_string(part, &["id"]).unwrap_or_default();
+    if is_thinking_part_type(&part_type) {
+        return MessagePart::Thinking {
+            id,
+            thinking: thinking_content(part),
+        };
+    }
     match part_type.as_str() {
         "text" => MessagePart::Text {
             id,
             text: maybe_string(part, &["text", "content"]).unwrap_or_default(),
-        },
-        "thinking" | "reasoning" => MessagePart::Thinking {
-            id,
-            thinking: maybe_string(part, &["thinking", "text", "content"]).unwrap_or_default(),
         },
         "step-finish" => MessagePart::StepFinish {
             id,
@@ -60,6 +73,14 @@ pub fn parse_part_from(part: &Value) -> MessagePart {
         },
         _ => MessagePart::Other(part.clone()),
     }
+}
+
+fn is_thinking_part_type(part_type: &str) -> bool {
+    matches!(part_type, "thinking" | "reasoning") || part_type.starts_with("reasoning_")
+}
+
+fn thinking_content(part: &Value) -> String {
+    maybe_string(part, THINKING_VALUE_KEYS).unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -200,6 +221,40 @@ mod tests {
                 assert_eq!(reason, "stop");
             }
             other => panic!("expected step-finish part, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_part_from_treats_reasoning_text_variants_as_thinking() {
+        let part = parse_part_from(&json!({
+            "id": "prt_3",
+            "type": "reasoning_text",
+            "reasoningText": "- inspect stream state\n- keep markdown"
+        }));
+
+        match part {
+            MessagePart::Thinking { id, thinking } => {
+                assert_eq!(id, "prt_3");
+                assert_eq!(thinking, "- inspect stream state\n- keep markdown");
+            }
+            other => panic!("expected reasoning_text to parse as Thinking, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_part_from_ignores_reasoning_fields_when_type_is_text() {
+        let part = parse_part_from(&json!({
+            "id": "prt_4",
+            "type": "text",
+            "reasoning_content": "Let me think through this.",
+            "text": "fallback text"
+        }));
+
+        match part {
+            MessagePart::Text { text, .. } => {
+                assert_eq!(text, "fallback text");
+            }
+            other => panic!("expected text part to remain Text, got {other:?}"),
         }
     }
 }

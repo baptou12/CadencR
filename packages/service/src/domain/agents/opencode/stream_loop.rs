@@ -41,9 +41,7 @@ pub(super) fn spawn_event_loop(
                     message_id,
                     part,
                 } => {
-                    if matches!(part, opencode_sdk_rs::MessagePart::ToolUse { .. }) {
-                        state.on_part(&session_id, &message_id, &part, &mut output);
-                    }
+                    state.on_part(&session_id, &message_id, &part, &mut output);
                 }
                 opencode_sdk_rs::SseEvent::PartDelta {
                     session_id,
@@ -243,7 +241,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn part_updated_for_non_tool_use_is_ignored() {
+    async fn part_updated_for_non_tool_use_is_forwarded() {
         let events = collect_events(vec![
             opencode_sdk_rs::SseEvent::MessageCreated(assistant_message("msg_1")),
             opencode_sdk_rs::SseEvent::PartUpdated {
@@ -257,10 +255,18 @@ mod tests {
         ])
         .await;
 
-        assert_eq!(events.len(), 1);
+        assert_eq!(events.len(), 3);
         assert!(matches!(
             events[0].stream_event(),
             Some(RuntimeStreamEvent::MessageStart { .. })
+        ));
+        assert!(matches!(
+            events[1].stream_event(),
+            Some(RuntimeStreamEvent::ContentBlockStart { .. })
+        ));
+        assert!(matches!(
+            events[2].stream_event(),
+            Some(RuntimeStreamEvent::ContentBlockDelta { .. })
         ));
     }
 

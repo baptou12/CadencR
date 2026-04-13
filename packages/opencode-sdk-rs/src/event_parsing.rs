@@ -269,6 +269,31 @@ mod tests {
             other => panic!("expected part update, got {other:?}"),
         }
 
+        let reasoning_update = parse_sse_event(json!({
+            "type": "message.part.updated",
+            "properties": {
+                "sessionID": "ses_1",
+                "part": {
+                    "id": "prt_reason",
+                    "messageID": "msg_1",
+                    "type": "reasoning",
+                    "text": "- inspect docs"
+                }
+            }
+        }));
+        match reasoning_update {
+            SseEvent::PartUpdated {
+                message_id, part, ..
+            } => {
+                assert_eq!(message_id, "msg_1");
+                assert!(matches!(
+                    part,
+                    MessagePart::Thinking { thinking, .. } if thinking == "- inspect docs"
+                ));
+            }
+            other => panic!("expected reasoning part update, got {other:?}"),
+        }
+
         let permission = parse_sse_event(json!({
             "type": "permission.asked",
             "properties": {
