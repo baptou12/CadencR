@@ -8,14 +8,13 @@ use super::super::permissions;
 use super::super::persistence::WsSessionPersistence;
 use super::super::protocol::*;
 use super::{
-    parse_permission_mode, send_claude_session_id, send_error, QueryState, SdkHandle, SdkSessions,
+    parse_permission_mode, send_error, send_runtime_session_id, QueryState, SdkHandle, SdkSessions,
     SessionConfig, WsSender,
 };
 use crate::app_state::AppState;
 use crate::domain::agents::adapter::RuntimeSpawnConfig;
-use crate::domain::agents::model_refs::is_opencode_model_ref;
 use crate::domain::agents::runtime::DEFAULT_PROVIDER;
-use crate::domain::agents::runtime_adapter;
+use crate::domain::agents::{adapter_for_model, runtime_adapter};
 use crate::domain::settings;
 use crate::domain::workflow::worktree;
 
@@ -23,35 +22,22 @@ fn resume_session_id_for_provider(
     provider_id: &str,
     row_runtime_provider: Option<&str>,
     runtime_session_id: Option<&str>,
-    claude_session_id: Option<&str>,
 ) -> Option<String> {
-    if provider_id == DEFAULT_PROVIDER {
-        // Prefer explicit Claude session ID; fall back to runtime_session_id only
-        // when the row is also tagged as Claude provider.
-        let candidate = claude_session_id.or_else(|| {
-            if row_runtime_provider == Some(DEFAULT_PROVIDER) {
-                runtime_session_id
-            } else {
-                None
-            }
-        })?;
-
-        // Claude --resume in print mode accepts UUIDs; ignore incompatible IDs.
-        if uuid::Uuid::parse_str(candidate).is_ok() {
-            Some(candidate.to_string())
-        } else {
-            None
-        }
-    } else if row_runtime_provider.is_none() || row_runtime_provider == Some(provider_id) {
-        runtime_session_id.map(ToOwned::to_owned)
-    } else {
-        None
+    // Only resume when the stored provider matches (or is unset).
+    if row_runtime_provider.is_some() && row_runtime_provider != Some(provider_id) {
+        return None;
     }
+    let adapter = runtime_adapter(provider_id)?;
+    adapter.resolve_resume_session_id(runtime_session_id)
 }
 
 fn resolve_effective_provider(provider_id: String, model: Option<&str>) -> String {
-    if provider_id == DEFAULT_PROVIDER && model.is_some_and(is_opencode_model_ref) {
-        return "opencode".to_string();
+    if provider_id == DEFAULT_PROVIDER {
+        if let Some(model) = model {
+            if let Some((adapter_id, _)) = adapter_for_model(model) {
+                return adapter_id.to_string();
+            }
+        }
     }
     provider_id
 }
@@ -129,7 +115,7 @@ pub(super) async fn handle_init(
         }
     };
 
-    // Read session row for claude_session_id (--resume), token usage, and stored model.
+    // Read session row for runtime_session_id (--resume), token usage, and stored model.
     let row = WsSessionPersistence::get_session_row(&app_state.read_pool, db_session_id).await;
     let runtime_provider = row.as_ref().and_then(|r| r.runtime_provider.clone());
     if let Some(ref r) = row {
@@ -138,7 +124,6 @@ pub(super) async fn handle_init(
             feature_id,
             runtime_provider = ?r.runtime_provider,
             runtime_session_id = ?r.runtime_session_id,
-            claude_session_id = ?r.claude_session_id,
             status = %r.status,
             model = ?r.model,
             "handle_init: DB row state at init time"
@@ -173,7 +158,6 @@ pub(super) async fn handle_init(
             &effective_provider,
             r.runtime_provider.as_deref(),
             r.runtime_session_id.as_deref(),
-            r.claude_session_id.as_deref(),
         )
     });
     let init_input_tokens = row.as_ref().and_then(|r| r.input_tokens);
@@ -278,9 +262,9 @@ pub(super) async fn handle_init(
     );
     let _ = sender.send(axum::extract::ws::Message::Text(String::from(reply).into()));
 
-    // If resuming, immediately send the known claude_session_id so the frontend can display it
+    // If resuming, immediately send the known runtime_session_id so the frontend can display it
     if let Some(ref cli_sid) = resume_session_id {
-        send_claude_session_id(sender, cli_sid);
+        send_runtime_session_id(sender, cli_sid);
     }
 
     // Check if there's a pending plan approval in the DB (e.g., from a previous app session)
@@ -343,7 +327,6 @@ mod tests {
             DEFAULT_PROVIDER,
             Some(DEFAULT_PROVIDER),
             Some("ses_27f586910ffeUNaKL2l5UARerl"),
-            Some("ses_27f586910ffeUNaKL2l5UARerl"),
         );
         assert_eq!(resume, None);
     }
@@ -355,7 +338,6 @@ mod tests {
             DEFAULT_PROVIDER,
             Some(DEFAULT_PROVIDER),
             Some(sid),
-            None,
         );
         assert_eq!(resume, Some(sid.to_string()));
     }
@@ -364,14 +346,13 @@ mod tests {
     fn resume_session_for_non_claude_only_when_provider_matches() {
         let opencode_sid = "ses_27f586910ffeUNaKL2l5UARerl";
         let matching =
-            resume_session_id_for_provider("opencode", Some("opencode"), Some(opencode_sid), None);
+            resume_session_id_for_provider("opencode", Some("opencode"), Some(opencode_sid));
         assert_eq!(matching, Some(opencode_sid.to_string()));
 
         let mismatched = resume_session_id_for_provider(
             "claude_code",
             Some("opencode"),
             Some(opencode_sid),
-            None,
         );
         assert_eq!(mismatched, None);
     }

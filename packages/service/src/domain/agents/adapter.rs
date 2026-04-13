@@ -366,6 +366,29 @@ pub trait AgentRuntimeAdapter: Send + Sync {
         None
     }
 
+    /// Returns true if this adapter should handle the given model string.
+    /// Used for automatic provider routing when the user selects a model.
+    fn accepts_model(&self, _model: &str) -> bool {
+        false
+    }
+
+    /// Resolve a resume session ID from the DB-stored runtime_session_id.
+    /// The default accepts any string. Override to apply validation (e.g. UUID-only).
+    fn resolve_resume_session_id(&self, runtime_session_id: Option<&str>) -> Option<String> {
+        runtime_session_id.map(ToOwned::to_owned)
+    }
+
+    /// Static catalog entry (available immediately at startup).
+    fn catalog_entry(&self) -> super::runtime::ProviderCatalogEntry;
+
+    /// Live catalog entry (may fetch from external service). Defaults to static.
+    async fn catalog_entry_live(&self) -> super::runtime::ProviderCatalogEntry {
+        self.catalog_entry()
+    }
+
+    /// Called once at startup for background warmup (e.g. starting sidecar processes).
+    fn spawn_startup_warmup(&self) {}
+
     async fn spawn(
         &self,
         content: Value,
@@ -427,6 +450,16 @@ mod tests {
 
     #[async_trait]
     impl AgentRuntimeAdapter for DummyAdapter {
+        fn catalog_entry(&self) -> crate::domain::agents::runtime::ProviderCatalogEntry {
+            crate::domain::agents::runtime::ProviderCatalogEntry {
+                id: "dummy".to_string(),
+                label: "Dummy".to_string(),
+                status: crate::domain::agents::runtime::ProviderStatus::Available,
+                models: vec![],
+                default_model: None,
+            }
+        }
+
         async fn spawn(
             &self,
             _content: serde_json::Value,

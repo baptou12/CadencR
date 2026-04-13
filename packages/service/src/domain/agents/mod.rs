@@ -5,4 +5,4 @@ pub mod opencode;
 pub mod providers;
 pub mod runtime;
 
-pub use providers::{legacy_session_id_value, runtime_adapter, spawn_runtime_startup_warmups};
+pub use providers::{adapter_for_model, runtime_adapter, spawn_runtime_startup_warmups};

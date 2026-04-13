@@ -2,38 +2,20 @@ use std::collections::HashSet;
 use std::time::Duration;
 
 use serde_json::Value;
-use tracing::{info, warn};
 
-use crate::domain::agents::adapter::AgentRuntimeAdapter;
 use crate::domain::agents::runtime::{ModelCatalogEntry, ProviderCatalogEntry, ProviderStatus};
 
 const FALLBACK_MODEL_ID: &str = "default/default";
 
-pub fn catalog_entry() -> ProviderCatalogEntry {
+pub(crate) fn catalog_entry() -> ProviderCatalogEntry {
     build_catalog_entry(default_models(), None)
 }
 
-pub async fn catalog_entry_live() -> ProviderCatalogEntry {
+pub(crate) async fn catalog_entry_live() -> ProviderCatalogEntry {
     fetch_configured_catalog()
         .await
         .map(|(models, default_model)| build_catalog_entry(models, default_model))
         .unwrap_or_else(catalog_entry)
-}
-
-pub fn spawn_startup_warmup() {
-    if !should_warmup_on_start() {
-        info!("opencode startup warmup disabled by CADENCE_OPENCODE_WARMUP_ON_START");
-        return;
-    }
-
-    let adapter = &crate::domain::agents::opencode::OPENCODE_ADAPTER;
-    tokio::spawn(async move {
-        if let Err(error) = adapter.init().await {
-            warn!(error = %error, "opencode startup warmup failed");
-        } else {
-            info!("opencode startup warmup completed");
-        }
-    });
 }
 
 fn build_catalog_entry(
@@ -158,7 +140,7 @@ fn parse_warmup_flag(raw: Option<&str>) -> bool {
     }
 }
 
-fn should_warmup_on_start() -> bool {
+pub(crate) fn should_warmup_on_start() -> bool {
     parse_warmup_flag(
         std::env::var("CADENCE_OPENCODE_WARMUP_ON_START")
             .ok()

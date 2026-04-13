@@ -215,6 +215,32 @@ impl AgentRuntimeAdapter for OpenCodeAdapter {
         })
     }
 
+    fn accepts_model(&self, model: &str) -> bool {
+        crate::domain::agents::model_refs::is_opencode_model_ref(model)
+    }
+
+    fn catalog_entry(&self) -> crate::domain::agents::runtime::ProviderCatalogEntry {
+        super::providers::opencode::catalog_entry()
+    }
+
+    async fn catalog_entry_live(&self) -> crate::domain::agents::runtime::ProviderCatalogEntry {
+        super::providers::opencode::catalog_entry_live().await
+    }
+
+    fn spawn_startup_warmup(&self) {
+        if !crate::domain::agents::providers::opencode::should_warmup_on_start() {
+            tracing::info!("opencode startup warmup disabled by CADENCE_OPENCODE_WARMUP_ON_START");
+            return;
+        }
+        tokio::spawn(async {
+            if let Err(error) = OPENCODE_ADAPTER.init().await {
+                tracing::warn!(error = %error, "opencode startup warmup failed");
+            } else {
+                tracing::info!("opencode startup warmup completed");
+            }
+        });
+    }
+
     async fn init(&self) -> Result<(), RuntimeError> {
         let _ = opencode_sdk_rs::OpenCodeClient::init()
             .await

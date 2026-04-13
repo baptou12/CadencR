@@ -14,16 +14,11 @@ use crate::app_state::AppState;
 use crate::domain::agents::adapter::{
     RuntimePermissionDecision, RuntimePermissionResponse, RuntimeSpawnConfig,
 };
-use crate::domain::agents::model_refs::is_opencode_model_ref;
 use crate::domain::agents::runtime::DEFAULT_PROVIDER;
-use crate::domain::agents::runtime_adapter;
+use crate::domain::agents::{adapter_for_model, runtime_adapter};
 use crate::domain::workflow::engine::WsSender as WorkflowWsSender;
 use crate::domain::workflow::worktree;
 use crate::domain::ws_session::question_answers::format_answers_plain_text;
-
-fn model_prefers_opencode(model: &str) -> bool {
-    is_opencode_model_ref(model)
-}
 
 /// Handle session.permission.respond
 pub(super) async fn handle_permission_respond(
@@ -305,16 +300,18 @@ pub(super) async fn handle_model_set(
     match &mut handle.state {
         QueryState::Pending(options) => {
             options.model = Some(payload.model.clone());
-            if handle.runtime_provider == DEFAULT_PROVIDER && model_prefers_opencode(&payload.model)
-            {
-                handle.runtime_provider = "opencode".to_string();
-                handle.resume_session_id = None;
-                options.resume_session_id = None;
-                let _ = sqlx::query("UPDATE agent_sessions SET runtime_provider = ? WHERE id = ?")
-                    .bind("opencode")
-                    .bind(db_session_id)
-                    .execute(&app_state.write_pool)
-                    .await;
+            if let Some((new_provider, _)) = adapter_for_model(&payload.model) {
+                if handle.runtime_provider != new_provider {
+                    handle.runtime_provider = new_provider.to_string();
+                    handle.resume_session_id = None;
+                    options.resume_session_id = None;
+                    let _ =
+                        sqlx::query("UPDATE agent_sessions SET runtime_provider = ? WHERE id = ?")
+                            .bind(new_provider)
+                            .bind(db_session_id)
+                            .execute(&app_state.write_pool)
+                            .await;
+                }
             }
         }
         QueryState::Active { query, .. } => {
@@ -671,7 +668,7 @@ pub(super) async fn handle_clear(
         }
     };
 
-    // Close active subprocess if any, capturing claude_session_id for archive.
+    // Close active subprocess if any, capturing runtime_session_id for archive.
     // If stream already finished (Pending with resume), extract from those options.
     let cli_sid = match &handle.state {
         QueryState::Active { query, .. } => {

@@ -10,6 +10,7 @@ use super::adapter::{
     RuntimeToolPermissionRequest, RuntimeToolPermissionResult, RuntimeUsage,
     RuntimeUserContentBlock, RuntimeUserMessage,
 };
+use super::runtime::{ModelCatalogEntry, ProviderCatalogEntry, ProviderStatus};
 
 pub struct ClaudeCodeAdapter;
 
@@ -315,6 +316,29 @@ impl AgentRuntimeSession for ClaudeCodeSession {
 impl AgentRuntimeAdapter for ClaudeCodeAdapter {
     fn is_valid_resume_session_id(&self, session_id: &str) -> bool {
         uuid::Uuid::parse_str(session_id).is_ok()
+    }
+
+    fn resolve_resume_session_id(&self, runtime_session_id: Option<&str>) -> Option<String> {
+        runtime_session_id
+            .filter(|sid| uuid::Uuid::parse_str(sid).is_ok())
+            .map(ToOwned::to_owned)
+    }
+
+    fn catalog_entry(&self) -> ProviderCatalogEntry {
+        ProviderCatalogEntry {
+            id: "claude_code".to_string(),
+            label: "Claude Code".to_string(),
+            status: ProviderStatus::Available,
+            models: crate::api::MODELS
+                .iter()
+                .map(|(id, label, context_window)| ModelCatalogEntry {
+                    id: (*id).to_string(),
+                    label: (*label).to_string(),
+                    context_window: *context_window,
+                })
+                .collect(),
+            default_model: Some(crate::api::DEFAULT_MODEL.to_string()),
+        }
     }
 
     async fn spawn(
