@@ -283,18 +283,40 @@ pub enum PermissionReply {
 
 #[derive(Debug, Clone)]
 pub enum PromptPart {
-    Text { text: String },
+    Text {
+        text: String,
+    },
+    File {
+        mime: String,
+        filename: Option<String>,
+        url: String,
+    },
     Raw(Value),
 }
 
 impl PromptPart {
-    pub fn to_value(&self) -> Value {
+    pub fn into_value(self) -> Value {
         match self {
             PromptPart::Text { text } => serde_json::json!({
                 "type": "text",
                 "text": text,
             }),
-            PromptPart::Raw(value) => value.clone(),
+            PromptPart::File {
+                mime,
+                filename,
+                url,
+            } => {
+                let mut value = serde_json::json!({
+                    "type": "file",
+                    "mime": mime,
+                    "url": url,
+                });
+                if let Some(filename) = filename {
+                    value["filename"] = Value::String(filename);
+                }
+                value
+            }
+            PromptPart::Raw(value) => value,
         }
     }
 }

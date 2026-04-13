@@ -9,7 +9,7 @@ pub fn build_prompt_payload(parts: Vec<PromptPart>, options: PromptOptions) -> V
         Value::Array(
             parts
                 .into_iter()
-                .map(|part| part.to_value())
+                .map(PromptPart::into_value)
                 .collect::<Vec<Value>>(),
         ),
     );
@@ -110,6 +110,23 @@ mod tests {
         assert_eq!(payload["model"]["modelID"], "gpt-5.3-codex");
         assert_eq!(payload["agent"], "build");
         assert_eq!(payload["system"], "system prompt");
+    }
+
+    #[test]
+    fn build_prompt_payload_serializes_file_parts() {
+        let payload = build_prompt_payload(
+            vec![PromptPart::File {
+                mime: "image/png".to_string(),
+                filename: None,
+                url: "data:image/png;base64,abc123".to_string(),
+            }],
+            PromptOptions::default(),
+        );
+
+        assert_eq!(payload["parts"][0]["type"], "file");
+        assert_eq!(payload["parts"][0]["mime"], "image/png");
+        assert!(payload["parts"][0].get("filename").is_none());
+        assert_eq!(payload["parts"][0]["url"], "data:image/png;base64,abc123");
     }
 
     #[test]

@@ -1,7 +1,9 @@
 mod events;
 mod model;
 pub(crate) mod permissions;
+mod prompt_parts;
 mod questions;
+mod session_resolution;
 mod stream_loop;
 mod stream_state;
 mod stream_synthesizer;
@@ -15,7 +17,9 @@ use tokio::sync::{mpsc, Mutex, RwLock};
 
 use self::model::{parse_model_ref, permission_mode_agent};
 use self::permissions::parse_permission_request as parse_opencode_permission_request;
+use self::prompt_parts::prompt_parts_from_content;
 use self::questions::extract_question_answers;
+use self::session_resolution::resolve_session_id;
 use self::stream_loop::spawn_event_loop;
 use super::adapter::{
     AgentRuntimeAdapter, AgentRuntimeSession, RuntimeError, RuntimeMessageRx,
@@ -44,26 +48,6 @@ pub struct OpenCodeSession {
     event_rx: Option<mpsc::UnboundedReceiver<opencode_sdk_rs::SseEvent>>,
     pending_requests: Arc<Mutex<HashMap<String, PendingRequestKind>>>,
     server_pid: Option<u32>,
-}
-
-fn prompt_parts_from_content(content: Value) -> Vec<opencode_sdk_rs::PromptPart> {
-    match content {
-        Value::String(text) => vec![opencode_sdk_rs::PromptPart::Text { text }],
-        Value::Array(items) => items
-            .into_iter()
-            .map(|item| {
-                let text = item
-                    .get("text")
-                    .and_then(Value::as_str)
-                    .map(ToOwned::to_owned);
-                match text {
-                    Some(text) => opencode_sdk_rs::PromptPart::Text { text },
-                    None => opencode_sdk_rs::PromptPart::Raw(item),
-                }
-            })
-            .collect(),
-        other => vec![opencode_sdk_rs::PromptPart::Raw(other)],
-    }
 }
 
 #[async_trait]
@@ -295,36 +279,6 @@ impl AgentRuntimeAdapter for OpenCodeAdapter {
     }
 }
 
-async fn resolve_session_id(
-    client: &opencode_sdk_rs::OpenCodeClient,
-    directory: &str,
-    resume_session_id: Option<String>,
-) -> Result<String, RuntimeError> {
-    match resume_session_id {
-        Some(session_id) => match client.get_session(&session_id, directory).await {
-            Ok(_) => Ok(session_id),
-            Err(error) if should_create_fresh_session(&error) => client
-                .create_session(directory)
-                .await
-                .map(|session| session.id)
-                .map_err(RuntimeError::from),
-            Err(error) => Err(RuntimeError::from(error)),
-        },
-        None => client
-            .create_session(directory)
-            .await
-            .map(|session| session.id)
-            .map_err(RuntimeError::from),
-    }
-}
-
-fn should_create_fresh_session(error: &opencode_sdk_rs::SdkError) -> bool {
-    matches!(
-        error,
-        opencode_sdk_rs::SdkError::HttpStatus { status: 404, .. }
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use std::{collections::HashMap, convert::Infallible, sync::Arc};
@@ -372,25 +326,6 @@ mod tests {
         assert!(adapter
             .parse_permission_request(&json!({ "type": "other_event" }))
             .is_none());
-    }
-
-    #[test]
-    fn create_fresh_session_only_on_not_found() {
-        assert!(super::should_create_fresh_session(
-            &opencode_sdk_rs::SdkError::HttpStatus {
-                status: 404,
-                body: "missing".to_string(),
-            }
-        ));
-        assert!(!super::should_create_fresh_session(
-            &opencode_sdk_rs::SdkError::HttpStatus {
-                status: 500,
-                body: "boom".to_string(),
-            }
-        ));
-        assert!(!super::should_create_fresh_session(
-            &opencode_sdk_rs::SdkError::Timeout("timed out".to_string())
-        ));
     }
 
     #[tokio::test]
