@@ -14,7 +14,7 @@ use crate::domain::ws_session::protocol::{
     SessionUsageUpdatePayload, WsEnvelope,
 };
 
-use super::super::{QueryState, SdkSessions, WsSender};
+use super::super::{send_runtime_session_id, QueryState, SdkSessions, WsSender};
 use crate::domain::agents::adapter::RuntimeSpawnConfig;
 
 /// Spawn a background task that reads from the runtime message receiver and forwards
@@ -140,6 +140,7 @@ pub(crate) fn spawn_stream_reader(
                             &runtime_sid,
                         )
                         .await;
+                        send_runtime_session_id(&sender, &runtime_sid);
                     }
 
                     if let Some(next_context_window) =
