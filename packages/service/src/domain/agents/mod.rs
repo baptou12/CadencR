@@ -5,4 +5,7 @@ pub mod opencode;
 pub mod providers;
 pub mod runtime;
 
-pub use providers::{adapter_for_model, runtime_adapter, spawn_runtime_startup_warmups};
+pub use providers::{
+    adapter_for_model, runtime_adapter, runtime_session_finished,
+    spawn_runtime_startup_warmups,
+};

@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::time::Duration;
 
+use opencode_sdk_rs::{Message, MessageRole, OpenCodeClient};
 use serde_json::Value;
 
 use crate::domain::agents::runtime::{ModelCatalogEntry, ProviderCatalogEntry, ProviderStatus};
@@ -156,6 +157,22 @@ pub(crate) fn should_warmup_on_start() -> bool {
             .ok()
             .as_deref(),
     )
+}
+
+pub(crate) async fn session_finished(runtime_session_id: &str) -> bool {
+    let Ok(client) = OpenCodeClient::init().await else {
+        return false;
+    };
+    let Ok(messages) = client.list_messages(runtime_session_id).await else {
+        return false;
+    };
+    latest_message_is_final_stop(&messages)
+}
+
+fn latest_message_is_final_stop(messages: &[Message]) -> bool {
+    messages.iter().rev().next().map_or(false, |message| {
+        matches!(message.role, MessageRole::Assistant) && message.is_terminal_turn_message()
+    })
 }
 
 #[cfg(test)]

@@ -15,15 +15,17 @@ use tracing::{debug, error, info, warn};
 
 use axum::extract::ws::Message;
 
-use crate::domain::agents::adapter::{RuntimeEvent, RuntimeMessageRx, RuntimeSessionHandle};
+use crate::domain::agents::adapter::{RuntimeMessageRx, RuntimeSessionHandle};
+use crate::domain::runtime_stream::{
+    capture_runtime_session_id, persist_usage, workflow_permission_request_payload,
+    update_context_window,
+};
 use crate::domain::features::repository as repo;
 use crate::domain::workflow::engine::{to_value, AgentSlot, WsSender};
 use crate::domain::ws_session::persistence::WsSessionPersistence;
 use crate::domain::ws_session::protocol::*;
 
-use cleanup::{
-    broadcast_usage, build_stream_envelope, check_mcp_server_connected, post_stream_cleanup,
-};
+use cleanup::{build_stream_envelope, check_mcp_server_connected, post_stream_cleanup};
 use live_refresh::handle_live_refresh;
 
 /// Spawn a background task that reads agent stream messages and forwards them
@@ -111,17 +113,11 @@ pub fn spawn_workflow_stream_reader(
                         let envelope = WsEnvelope::new(
                             "workflow",
                             "permission.request",
-                            to_value(WorkflowPermissionRequestPayload {
+                            to_value(workflow_permission_request_payload(
                                 feature_id,
-                                agent_slot: slot.clone(),
-                                request_id: request.request_id,
-                                tool_name: request.tool_name,
-                                tool_input: request.tool_input,
-                                description: request.description,
-                                pattern: request.pattern,
-                                preview: request.preview,
-                                options: request.options.into_iter().map(Into::into).collect(),
-                            }),
+                                slot.clone(),
+                                request,
+                            )),
                         );
                         let _ = sender.send(Message::Text(String::from(envelope).into()));
                         WsSessionPersistence::broadcast_turn_state(
@@ -132,28 +128,44 @@ pub fn spawn_workflow_stream_reader(
                         continue;
                     }
 
-                    capture_session_id(
-                        &runtime_event,
-                        &mut needs_session_id_capture,
-                        &slot,
-                        db_session_id,
-                        &sender,
-                        &write_pool,
-                    )
-                    .await;
+                    if let Some(runtime_sid) =
+                        capture_runtime_session_id(&runtime_event, &mut needs_session_id_capture)
+                    {
+                        debug!(slot = %slot, db_session_id, runtime_session_id = %runtime_sid, "persisting runtime session_id to DB");
+                        WsSessionPersistence::persist_runtime_session_id_only(
+                            &write_pool,
+                            db_session_id,
+                            &runtime_sid,
+                        )
+                        .await;
+                        let sid_env = WsEnvelope::new(
+                            "workflow",
+                            "agent_session_id",
+                            serde_json::json!({
+                                "agent_slot": &slot,
+                                "session_id": db_session_id,
+                                "runtime_session_id": runtime_sid,
+                            }),
+                        );
+                        let _ = sender.send(Message::Text(String::from(sid_env).into()));
+                    }
 
-                    if let Some(init) = runtime_event.init() {
-                        if let Some(cw) = init.context_window {
-                            context_window = cw;
-                        } else if let Some(model) = init.model.as_deref() {
-                            context_window = crate::domain::usage::context_window_for_model(model);
-                        }
+                    if let Some(next_context_window) =
+                        update_context_window(&runtime_event, context_window)
+                    {
+                        context_window = next_context_window;
                         WsSessionPersistence::update_context_window(
                             &write_pool,
                             db_session_id,
                             context_window,
                         )
                         .await;
+                    }
+
+                    if let Some(init) = runtime_event.init() {
+                        if let Some(cw) = init.context_window {
+                            debug!(slot = %slot, context_window = cw, "received runtime context window");
+                        }
                         if !init.mcp_servers.is_empty() {
                             let model_label = init.model.as_deref().unwrap_or("unknown");
                             debug!(slot = %slot, model = %model_label, context_window, mcp_servers = ?init.mcp_servers, "received init message from runtime");
@@ -179,15 +191,26 @@ pub fn spawn_workflow_stream_reader(
                     }
 
                     persistence.persist_runtime_event(&runtime_event).await;
-                    broadcast_usage(
+                    if let Some((input_tokens, output_tokens)) = persist_usage(
                         &runtime_event,
-                        &slot,
                         db_session_id,
-                        context_window,
-                        &sender,
                         &write_pool,
                     )
-                    .await;
+                    .await
+                    {
+                        let usage_env = WsEnvelope::new(
+                            "workflow",
+                            "usage_update",
+                            to_value(serde_json::json!({
+                                "agent_slot": slot,
+                                "session_id": db_session_id,
+                                "input_tokens": input_tokens,
+                                "output_tokens": output_tokens,
+                                "context_window": context_window,
+                            })),
+                        );
+                        let _ = sender.send(Message::Text(String::from(usage_env).into()));
+                    }
 
                     let envelope = build_stream_envelope(
                         &runtime_event,
@@ -314,37 +337,4 @@ async fn handle_stream_error(
     );
     let _ = sender.send(Message::Text(String::from(err_env).into()));
     e.to_string()
-}
-
-/// Capture the runtime session id from the first message that has one.
-async fn capture_session_id(
-    runtime_event: &RuntimeEvent,
-    needs_capture: &mut bool,
-    slot: &AgentSlot,
-    db_session_id: i64,
-    sender: &WsSender,
-    write_pool: &SqlitePool,
-) {
-    if !*needs_capture {
-        return;
-    }
-    let Some(cli_sid) = runtime_event.session_id() else {
-        return;
-    };
-    if cli_sid.is_empty() {
-        return;
-    }
-    *needs_capture = false;
-    debug!(slot = %slot, db_session_id, runtime_session_id = %cli_sid, "persisting runtime session_id to DB");
-    WsSessionPersistence::persist_runtime_session_id_only(write_pool, db_session_id, cli_sid).await;
-    let sid_env = WsEnvelope::new(
-        "workflow",
-        "agent_session_id",
-        serde_json::json!({
-            "agent_slot": &slot,
-            "session_id": db_session_id,
-            "runtime_session_id": cli_sid,
-        }),
-    );
-    let _ = sender.send(Message::Text(String::from(sid_env).into()));
 }

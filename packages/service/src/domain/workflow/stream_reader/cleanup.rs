@@ -58,42 +58,6 @@ pub async fn check_mcp_server_connected(
     true
 }
 
-/// Extract usage from an SDK message and broadcast to frontend.
-pub async fn broadcast_usage(
-    runtime_event: &RuntimeEvent,
-    slot: &AgentSlot,
-    db_session_id: i64,
-    context_window: u64,
-    sender: &WsSender,
-    write_pool: &SqlitePool,
-) {
-    if let Some(usage) = runtime_event.usage() {
-        if usage.is_zero() {
-            return;
-        }
-        WsSessionPersistence::update_token_usage(
-            write_pool,
-            db_session_id,
-            usage.input_tokens,
-            usage.output_tokens,
-        )
-        .await;
-
-        let usage_env = WsEnvelope::new(
-            "workflow",
-            "usage_update",
-            to_value(serde_json::json!({
-                "agent_slot": slot,
-                "session_id": db_session_id,
-                "input_tokens": usage.input_tokens,
-                "output_tokens": usage.output_tokens,
-                "context_window": context_window,
-            })),
-        );
-        let _ = sender.send(Message::Text(String::from(usage_env).into()));
-    }
-}
-
 /// Build the WsEnvelope for an SDK message (result or generic block).
 pub async fn build_stream_envelope(
     runtime_event: &RuntimeEvent,

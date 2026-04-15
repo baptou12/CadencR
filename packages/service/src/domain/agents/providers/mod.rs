@@ -43,6 +43,14 @@ pub fn spawn_runtime_startup_warmups() {
     }
 }
 
+pub async fn runtime_session_finished(provider_id: &str, runtime_session_id: &str) -> bool {
+    let Some(adapter) = runtime_adapter(provider_id) else {
+        return false;
+    };
+
+    adapter.session_finished(runtime_session_id).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::{adapter_for_model, runtime_adapter, ADAPTERS};

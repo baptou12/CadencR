@@ -6,6 +6,7 @@ pub mod git;
 pub mod mcp;
 pub mod permission_bridge;
 pub mod projects;
+pub mod runtime_stream;
 pub mod sessions;
 pub mod settings;
 pub mod terminal;

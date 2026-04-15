@@ -409,6 +409,10 @@ pub trait AgentRuntimeAdapter: Send + Sync {
     /// Called once at startup for background warmup (e.g. starting sidecar processes).
     fn spawn_startup_warmup(&self) {}
 
+    async fn session_finished(&self, _runtime_session_id: &str) -> bool {
+        false
+    }
+
     async fn spawn(
         &self,
         content: Value,
