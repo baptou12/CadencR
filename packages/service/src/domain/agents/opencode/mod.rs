@@ -16,7 +16,9 @@ use serde_json::Value;
 use tokio::sync::{mpsc, Mutex, RwLock};
 
 use self::model::{parse_model_ref, permission_mode_agent};
-use self::permissions::parse_permission_request as parse_opencode_permission_request;
+use self::permissions::{
+    parse_permission_request as parse_opencode_permission_request, permission_options,
+};
 use self::prompt_parts::prompt_parts_from_content;
 use self::questions::extract_question_answers;
 use self::session_resolution::resolve_session_id;
@@ -202,6 +204,8 @@ impl AgentRuntimeAdapter for OpenCodeAdapter {
             tool_input: request.tool_input,
             description: request.description,
             pattern: None,
+            preview: request.preview,
+            options: permission_options(),
         })
     }
 
@@ -331,6 +335,8 @@ mod tests {
         assert_eq!(parsed.tool_input, json!({ "filePath": "README.md" }));
         assert_eq!(parsed.description.as_deref(), Some("Read file"));
         assert_eq!(parsed.pattern, None);
+        assert_eq!(parsed.preview.as_deref(), Some("README.md"));
+        assert_eq!(parsed.options.len(), 3);
     }
 
     #[test]

@@ -120,7 +120,11 @@ fn parse_token_usage(value: &Value) -> Option<TokenUsage> {
     };
     // Zero-token payloads mean "no usage data yet" — filter them out so
     // downstream code never overwrites real usage with zeros.
-    if usage.is_zero() { None } else { Some(usage) }
+    if usage.is_zero() {
+        None
+    } else {
+        Some(usage)
+    }
 }
 
 fn maybe_u64(value: Option<&Value>) -> Option<u64> {
@@ -167,6 +171,11 @@ pub fn parse_permission_from(payload: &Value) -> Option<PermissionRequest> {
     Some(PermissionRequest {
         id: maybe_string(candidate, &["id", "request_id", "requestID"])?,
         session_id: maybe_string(candidate, &["session_id", "sessionID"])?,
+        call_id: maybe_string(candidate, &["call_id", "callID"]).or_else(|| {
+            candidate
+                .get("tool")
+                .and_then(|tool| maybe_string(tool, &["call_id", "callID"]))
+        }),
         tool_name,
         tool_input,
         description: maybe_string(candidate, &["description"]).or_else(|| {
@@ -306,11 +315,13 @@ mod tests {
             "permission": "bash",
             "patterns": ["git *"],
             "metadata": { "command": "git status" },
-            "always": ["git status"]
+            "always": ["git status"],
+            "tool": { "callID": "call_1" }
         }))
         .unwrap();
 
         assert_eq!(request.tool_name, "bash");
+        assert_eq!(request.call_id.as_deref(), Some("call_1"));
         assert_eq!(request.tool_input["metadata"]["command"], "git status");
         assert_eq!(request.tool_input["patterns"][0], "git *");
     }
@@ -350,7 +361,10 @@ mod tests {
             "tokens": { "input": 0, "output": 0 }
         }))
         .unwrap();
-        assert!(message.tokens.is_none(), "all-zero tokens should be filtered");
+        assert!(
+            message.tokens.is_none(),
+            "all-zero tokens should be filtered"
+        );
     }
 
     #[test]
@@ -360,7 +374,10 @@ mod tests {
             "tokens": {}
         }))
         .unwrap();
-        assert!(message.tokens.is_none(), "empty tokens object should be filtered");
+        assert!(
+            message.tokens.is_none(),
+            "empty tokens object should be filtered"
+        );
     }
 
     #[test]
@@ -382,7 +399,9 @@ mod tests {
             "tokens": { "input": 0, "output": 0, "cache": { "read": 100 } }
         }))
         .unwrap();
-        let tokens = message.tokens.expect("cache-only tokens should be preserved");
+        let tokens = message
+            .tokens
+            .expect("cache-only tokens should be preserved");
         assert_eq!(tokens.cache.read, 100);
     }
 }

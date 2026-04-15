@@ -323,6 +323,10 @@ export function handlePermissionRequest(
     input: toolInput,
     description: (payload.description ?? "") as string,
     pattern: (payload.pattern ?? "") as string,
+    preview: typeof payload.preview === "string" ? payload.preview : undefined,
+    options: Array.isArray(payload.options)
+      ? payload.options as PendingPermission["options"]
+      : [],
     requestId,
   };
   set(state => {

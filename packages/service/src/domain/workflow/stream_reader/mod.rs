@@ -119,6 +119,8 @@ pub fn spawn_workflow_stream_reader(
                                 tool_input: request.tool_input,
                                 description: request.description,
                                 pattern: request.pattern,
+                                preview: request.preview,
+                                options: request.options.into_iter().map(Into::into).collect(),
                             }),
                         );
                         let _ = sender.send(Message::Text(String::from(envelope).into()));

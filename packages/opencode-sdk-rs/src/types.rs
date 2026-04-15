@@ -181,6 +181,7 @@ impl Message {
 pub struct PermissionRequest {
     pub id: String,
     pub session_id: String,
+    pub call_id: Option<String>,
     pub tool_name: String,
     pub tool_input: Value,
     pub description: Option<String>,

@@ -287,7 +287,28 @@ pub(super) async fn handle_init(
                 tool_input: plan_input,
                 description: Some("Plan is ready for approval".to_string()),
                 pattern: None,
+                preview: None,
+                options: Vec::new(),
             };
+            let envelope = super::super::protocol::WsEnvelope::new(
+                "session",
+                "permission.request",
+                serde_json::to_value(payload).unwrap(),
+            );
+            let _ = sender.send(axum::extract::ws::Message::Text(
+                String::from(envelope).into(),
+            ));
+            WsSessionPersistence::broadcast_turn_state(
+                &app_state.turn_state_tx,
+                feature_id,
+                "askUser",
+            );
+            return;
+        }
+
+        if let Some(payload) = row.pending_permission.as_deref().and_then(|value| {
+            serde_json::from_str::<super::super::protocol::PermissionRequestPayload>(value).ok()
+        }) {
             let envelope = super::super::protocol::WsEnvelope::new(
                 "session",
                 "permission.request",

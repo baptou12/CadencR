@@ -204,7 +204,26 @@ impl WorkflowEngine {
                             tool_input: pq["tool_input"].clone(),
                             description: None,
                             pattern: pq["pattern"].as_str().map(|s| s.to_string()),
+                            preview: None,
+                            options: Vec::new(),
                         }),
+                    );
+                    let _ = self.ws_sender.send(Message::Text(String::from(perm_env).into()));
+                }
+            }
+
+            if let Ok(Some(pp_json)) = sqlx::query_scalar::<_, String>(
+                "SELECT pending_permission FROM agent_sessions WHERE id = ? AND pending_permission IS NOT NULL"
+            )
+            .bind(db_session_id)
+            .fetch_optional(&self.read_pool)
+            .await
+            {
+                if let Ok(pp) = serde_json::from_str::<WorkflowPermissionRequestPayload>(&pp_json) {
+                    let perm_env = WsEnvelope::new(
+                        "workflow",
+                        "permission.request",
+                        to_value(pp),
                     );
                     let _ = self.ws_sender.send(Message::Text(String::from(perm_env).into()));
                 }

@@ -37,6 +37,7 @@ pub(super) struct LoopState {
     active_sessions: HashSet<String>,
     pending_tool_use_ids: HashMap<String, HashSet<String>>,
     pending_finishes: HashSet<String>,
+    pending_permission_tool_use_ids: HashMap<String, (String, String)>,
 }
 
 impl LoopState {
@@ -51,6 +52,7 @@ impl LoopState {
             active_sessions: HashSet::new(),
             pending_tool_use_ids: HashMap::new(),
             pending_finishes: HashSet::new(),
+            pending_permission_tool_use_ids: HashMap::new(),
         }
     }
 

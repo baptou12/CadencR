@@ -235,7 +235,10 @@ function handleMessage(
     const currentSession = ctx.getSession(sessionId);
     const newBlocks = applyMutations(currentSession.blocks, allMutations, state);
     const patch = buildMessagePatch(newBlocks, allMutations, state);
-    ctx.set(updateSession(ctx.get(), sessionId, patch));
+    const status = state.turnTerminal && currentSession.status !== "running"
+      ? currentSession.status
+      : patch.status;
+    ctx.set(updateSession(ctx.get(), sessionId, { ...patch, status }));
   }
 }
 
@@ -281,6 +284,8 @@ function handlePermissionRequest(
         input: p.tool_input ?? {},
         description: p.description ?? "",
         pattern: p.pattern ?? "",
+        preview: p.preview,
+        options: p.options,
       },
       status: "paused",
     }));
@@ -365,6 +370,7 @@ function handleTurnComplete(
   sessionId: string,
   state: StreamingState,
 ): void {
+  state.turnTerminal = true;
   for (const stream of state.streams.values()) {
     if (!stream.parentToolUseId) {
       continue;

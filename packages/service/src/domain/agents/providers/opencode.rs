@@ -322,10 +322,22 @@ mod tests {
         format!("http://{addr}")
     }
 
+    async fn wait_for_mock_server(base_url: &str) {
+        let health_url = format!("{base_url}/global/health");
+        for _ in 0..20 {
+            if reqwest::get(&health_url).await.is_ok() {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+        panic!("mock opencode server did not become ready");
+    }
+
     #[tokio::test(flavor = "current_thread")]
     async fn live_catalog_reads_configured_models() {
         let _guard = OPENCODE_ENV_LOCK.lock().unwrap();
         let base_url = start_opencode_mock_server().await;
+        wait_for_mock_server(&base_url).await;
         let _ = opencode_sdk_rs::OpenCodeServer::shutdown().await;
         std::env::set_var("CADENCE_OPENCODE_BASE_URL", &base_url);
 

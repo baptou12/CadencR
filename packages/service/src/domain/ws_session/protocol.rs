@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::domain::agents::adapter::{RuntimePermissionDecision, RuntimePermissionOption};
 use crate::domain::workflow::engine::AgentSlot;
 
 /// Permission decision from the client.
@@ -182,6 +183,33 @@ pub struct PermissionRequestPayload {
     pub description: Option<String>,
     /// Permission pattern for "allow future" persistence (e.g. "Read(/path)" or "Bash(git push:*)").
     pub pattern: Option<String>,
+    pub preview: Option<String>,
+    #[serde(default)]
+    pub options: Vec<PermissionOptionPayload>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PermissionOptionPayload {
+    pub decision: PermissionDecision,
+    pub label: String,
+    pub description: String,
+    #[serde(default)]
+    pub collect_feedback: bool,
+}
+
+impl From<RuntimePermissionOption> for PermissionOptionPayload {
+    fn from(option: RuntimePermissionOption) -> Self {
+        Self {
+            decision: match option.decision {
+                RuntimePermissionDecision::AllowOnce => PermissionDecision::AllowOnce,
+                RuntimePermissionDecision::AllowFuture => PermissionDecision::AllowFuture,
+                RuntimePermissionDecision::Deny => PermissionDecision::Deny,
+            },
+            label: option.label,
+            description: option.description,
+            collect_feedback: option.collect_feedback,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -322,6 +350,9 @@ pub struct WorkflowPermissionRequestPayload {
     pub tool_input: serde_json::Value,
     pub description: Option<String>,
     pub pattern: Option<String>,
+    pub preview: Option<String>,
+    #[serde(default)]
+    pub options: Vec<PermissionOptionPayload>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -720,6 +751,13 @@ mod tests {
             tool_input: serde_json::json!({}),
             description: Some("run cmd".into()),
             pattern: None,
+            preview: Some("ls".into()),
+            options: vec![PermissionOptionPayload {
+                decision: PermissionDecision::AllowOnce,
+                label: "Allow once".into(),
+                description: "Approve this tool call only".into(),
+                collect_feedback: false,
+            }],
         };
         let v = serde_json::to_value(&p).unwrap();
         let _: PermissionRequestPayload = serde_json::from_value(v).unwrap();
@@ -1197,11 +1235,19 @@ mod tests {
             tool_input: serde_json::json!({"command": "ls"}),
             description: Some("list files".into()),
             pattern: Some("Bash(ls:*)".into()),
+            preview: Some("ls".into()),
+            options: vec![PermissionOptionPayload {
+                decision: PermissionDecision::AllowFuture,
+                label: "Allow for future use".into(),
+                description: "Save `Bash(ls:*)` to settings".into(),
+                collect_feedback: false,
+            }],
         };
         let v = serde_json::to_value(&p).unwrap();
         let d: WorkflowPermissionRequestPayload = serde_json::from_value(v).unwrap();
         assert_eq!(d.tool_name, "Bash");
         assert_eq!(d.pattern.as_deref(), Some("Bash(ls:*)"));
+        assert_eq!(d.preview.as_deref(), Some("ls"));
     }
 
     #[test]

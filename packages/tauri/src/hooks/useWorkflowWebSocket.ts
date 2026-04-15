@@ -197,8 +197,13 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
       send("retry_worktree_setup");
     },
 
-    respondToPermission(slotKey, requestId, decision) {
-      send("permission.respond", { agent_slot: slotKeyToAgentSlot(slotKey), request_id: requestId, decision });
+    respondToPermission(slotKey, requestId, decision, feedback) {
+      send("permission.respond", {
+        agent_slot: slotKeyToAgentSlot(slotKey),
+        request_id: requestId,
+        decision,
+        ...(feedback ? { feedback } : {}),
+      });
       set(state => patchAgent(state, slotKey, { pendingPermission: null }));
     },
 

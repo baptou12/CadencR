@@ -179,8 +179,8 @@ function WebSocketSessionPage() {
             }}
             onStop={ws.interrupt}
             pendingPermission={ws.pendingPermission}
-            onPermissionDecision={(decision) => {
-              ws.respondToPermission(ws.pendingRequestId, decision !== "deny");
+            onPermissionDecision={(decision, feedback) => {
+              ws.respondToPermission(ws.pendingRequestId, decision, feedback);
             }}
             pendingQuestions={ws.pendingQuestions.length > 0 ? ws.pendingQuestions : undefined}
             onAnswerSubmit={ws.respondToQuestion}

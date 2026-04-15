@@ -64,11 +64,15 @@ pub(super) fn spawn_event_loop(
                     state.on_session_updated(session, &mut output);
                 }
                 opencode_sdk_rs::SseEvent::PermissionCreated(request) => {
+                    state.note_permission_request(&request);
                     pending_requests
                         .lock()
                         .await
                         .insert(request.id.clone(), PendingRequestKind::Permission);
                     output.push(permission_request_event(&request));
+                }
+                opencode_sdk_rs::SseEvent::PermissionUpdated { id, status } => {
+                    state.resolve_permission_update(&id, &status, &mut output);
                 }
                 opencode_sdk_rs::SseEvent::QuestionCreated(question) => {
                     pending_requests

@@ -17,6 +17,7 @@ import {
 } from "@/stores/ws-session-store";
 import type { AgentStatus } from "@/types/agent";
 import type { PendingPermission } from "@/components/ToolPermissionPrompt";
+import type { PermissionDecisionValue } from "@/components/ToolPermissionPrompt";
 import type { AgentQuestion, AgentQuestionAnswers } from "@/components/AgentQuestionDrawer";
 import type { SessionConfig } from "@/lib/ws-envelope";
 import type { ContextUsageState } from "@/types/agent";
@@ -48,7 +49,7 @@ interface UseWebSocketSessionReturn {
   setModel: (modelId: string) => void;
   setProvider: (providerId: string) => void;
   sendPrompt: (text: string, images?: Array<{ base64: string; mimeType: string }>, useWorktree?: boolean) => void;
-  respondToPermission: (requestId: string, granted: boolean) => void;
+  respondToPermission: (requestId: string, decision: PermissionDecisionValue, feedback?: string) => void;
   interrupt: () => void;
   destroy: () => void;
   clearSession: () => void;
@@ -126,7 +127,9 @@ export function useWebSocketSession(sessionId: string, featureId?: number): UseW
     hasFileChanges: session?.hasFileChanges ?? false,
 
     sendPrompt: (text: string, images?: Array<{ base64: string; mimeType: string }>, useWorktree?: boolean) => store.sendPrompt(sessionId, text, images, useWorktree),
-    respondToPermission: (requestId: string, granted: boolean) => store.respondToPermission(sessionId, requestId, granted),
+    respondToPermission: (requestId: string, decision: PermissionDecisionValue, feedback?: string) => {
+      store.respondToPermission(sessionId, requestId, decision, feedback);
+    },
     respondToQuestion: (response: AgentQuestionAnswers) => store.respondToQuestion(sessionId, response),
     interrupt: () => store.interrupt(sessionId),
     destroy: () => store.destroy(sessionId),

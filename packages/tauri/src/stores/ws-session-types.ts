@@ -11,6 +11,7 @@ import type { SlashCommand } from "@/hooks/useSlashCommand";
 import type { WorktreeStatus } from "@/types/workflow";
 import type { WsConnection } from "@/lib/ws-connection";
 import type { WsEnvelope, SessionConfig } from "@/lib/ws-envelope";
+import type { PermissionDecisionValue } from "@/components/ToolPermissionPrompt";
 import type { StreamingState } from "./ws-message-processing";
 import { createStreamingState } from "./ws-message-processing";
 import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "../shared/models";
@@ -121,7 +122,7 @@ export interface WsSessionStore {
   send: (sessionId: string, data: unknown) => void;
   initSession: (sessionId: string, config: SessionConfig) => void;
   sendPrompt: (sessionId: string, text: string, images?: Array<{ base64: string; mimeType: string }>, useWorktree?: boolean) => void;
-  respondToPermission: (sessionId: string, requestId: string, granted: boolean) => void;
+  respondToPermission: (sessionId: string, requestId: string, decision: PermissionDecisionValue, feedback?: string) => void;
   respondToQuestion: (sessionId: string, response: AgentQuestionAnswers) => void;
   interrupt: (sessionId: string) => void;
   destroy: (sessionId: string) => void;

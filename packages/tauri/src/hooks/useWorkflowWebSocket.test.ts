@@ -2086,6 +2086,8 @@ describe("useWorkflowStore", () => {
         input: { command: "ls" },
         description: "Run ls",
         pattern: "Bash(/tmp:*)",
+        preview: undefined,
+        options: [],
         requestId: "req-1",
       });
     });

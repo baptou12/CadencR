@@ -169,6 +169,7 @@ impl WsBridgeCanUseTool {
         let mut rx = self.response_rx.lock().await;
         match rx.recv().await {
             Some(response) => {
+                let decision = response.decision.clone();
                 if response.request_id != request.tool_use_id {
                     debug!(
                         expected_request_id = %request.tool_use_id,
@@ -189,7 +190,7 @@ impl WsBridgeCanUseTool {
                 WsSessionPersistence::broadcast_turn_state(
                     &self.turn_state_tx,
                     self.feature_id,
-                    "claude",
+                    crate::domain::permission_bridge::turn_state_after_decision(decision),
                 );
                 self.apply_exit_plan_decision(request, response).await
             }
@@ -359,6 +360,8 @@ impl WsBridgeCanUseTool {
             tool_input,
             description: Some("Plan is ready for approval".to_string()),
             pattern: None,
+            preview: None,
+            options: Vec::new(),
         };
         let envelope = WsEnvelope::new(
             "session",
@@ -385,7 +388,14 @@ impl WsBridgeCanUseTool {
             tool_input: request.input.clone(),
             description: Some(description),
             pattern: Some(pattern.clone()),
+            preview: permission_bridge::extract_permission_preview(&request.input),
+            options: permission_bridge::build_default_permission_options(Some(&pattern)),
         };
+        let _ = sqlx::query("UPDATE agent_sessions SET pending_permission = ? WHERE id = ?")
+            .bind(serde_json::to_string(&payload).unwrap_or_default())
+            .bind(self.db_session_id)
+            .execute(&self.write_pool)
+            .await;
         let envelope = WsEnvelope::new(
             "session",
             "permission.request",
@@ -395,7 +405,7 @@ impl WsBridgeCanUseTool {
             .sender
             .send(Message::Text(String::from(envelope).into()));
 
-        permission_bridge::wait_and_apply_decision(
+        let result = permission_bridge::wait_and_apply_decision(
             &self.response_rx,
             &request.tool_use_id,
             request.input.clone(),
@@ -406,6 +416,13 @@ impl WsBridgeCanUseTool {
             &self.turn_state_tx,
             self.feature_id,
         )
-        .await
+        .await;
+
+        let _ = sqlx::query("UPDATE agent_sessions SET pending_permission = NULL WHERE id = ?")
+            .bind(self.db_session_id)
+            .execute(&self.write_pool)
+            .await;
+
+        result
     }
 }

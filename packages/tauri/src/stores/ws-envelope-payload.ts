@@ -28,6 +28,13 @@ function optionalArray(
   return Array.isArray(value) ? value : undefined;
 }
 
+interface ParsedPermissionOption {
+  decision: "allow_once" | "allow_future" | "deny";
+  label: string;
+  description: string;
+  collectFeedback?: boolean;
+}
+
 export function parseCommandsListPayload(payload: unknown): CommandsListPayload | null {
   const record = asRecord(payload);
   if (!record) return null;
@@ -124,16 +131,40 @@ export function parsePermissionPayload(payload: unknown): {
   tool_input: Record<string, unknown>;
   description?: string;
   pattern?: string;
+  preview?: string;
+  options: ParsedPermissionOption[];
 } | null {
   const record = asRecord(payload);
   if (!record) return null;
   const toolInputRecord = asRecord(record.tool_input) ?? {};
+  const options = (optionalArray(record, "options") ?? [])
+    .map((entry): ParsedPermissionOption | null => {
+      const item = asRecord(entry);
+      if (!item) return null;
+      const decision = optionalString(item, "decision");
+      const label = optionalString(item, "label");
+      const description = optionalString(item, "description");
+      const collectFeedback = item.collect_feedback;
+      if (!decision || !label || !description) return null;
+      if (decision !== "allow_once" && decision !== "allow_future" && decision !== "deny") {
+        return null;
+      }
+      return {
+        decision,
+        label,
+        description,
+        collectFeedback: typeof collectFeedback === "boolean" ? collectFeedback : undefined,
+      };
+    })
+    .filter((entry): entry is ParsedPermissionOption => entry !== null);
   return {
     request_id: optionalString(record, "request_id"),
     tool_name: optionalString(record, "tool_name"),
     tool_input: toolInputRecord,
     description: optionalString(record, "description"),
     pattern: optionalString(record, "pattern"),
+    preview: optionalString(record, "preview"),
+    options,
   };
 }
 

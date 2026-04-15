@@ -126,10 +126,23 @@ pub(super) async fn handle_permission_respond(
         let q = query.lock().await;
         match q.respond_permission(runtime_response).await {
             Ok(()) => {
+                if matches!(payload.decision, PermissionDecision::Deny) {
+                    WsSessionPersistence::mark_completed_static(&app_state.write_pool, db_session_id)
+                        .await;
+                    let ended = WsEnvelope::new(
+                        "session",
+                        "ended",
+                        serde_json::to_value(SessionEndedPayload {
+                            reason: "permission_denied".into(),
+                        })
+                        .unwrap(),
+                    );
+                    let _ = sender.send(Message::Text(String::from(ended).into()));
+                }
                 WsSessionPersistence::broadcast_turn_state(
                     &app_state.turn_state_tx,
                     handle.feature_id,
-                    "claude",
+                    crate::domain::permission_bridge::turn_state_after_decision(payload.decision),
                 );
                 return;
             }

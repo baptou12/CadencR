@@ -28,6 +28,7 @@ pub struct SessionRow {
     pub permission_mode: Option<String>,
     pub status: String,
     pub pending_plan_approval: Option<String>,
+    pub pending_permission: Option<String>,
     pub input_tokens: Option<i64>,
     pub output_tokens: Option<i64>,
     pub context_window: Option<i64>,

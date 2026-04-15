@@ -210,6 +210,8 @@ describe("useWebSocketSession", () => {
       input: { command: "ls" },
       description: "run ls",
       pattern: "",
+      preview: undefined,
+      options: [],
     });
     expect(result.current.status).toBe("paused");
   });
@@ -250,7 +252,7 @@ describe("useWebSocketSession", () => {
       });
     });
     act(() => {
-      result.current.respondToPermission("r1", true);
+      result.current.respondToPermission("r1", "allow_once");
     });
     expect(result.current.pendingPermission).toBeNull();
     expect(result.current.pendingRequestId).toBe("");
@@ -259,6 +261,34 @@ describe("useWebSocketSession", () => {
     expect(sent.action).toBe("permission.respond");
     expect(sent.payload.request_id).toBe("r1");
     expect(sent.payload.decision).toBe("allow_once");
+  });
+
+  it("deny permission response returns session to idle", async () => {
+    const { result } = renderHook(() => useWebSocketSession("test-id"));
+    await act(async () => {
+      await Promise.resolve(); await Promise.resolve();
+    });
+    act(() => {
+      getWs().simulateMessage({
+        domain: "session",
+        action: "initialized",
+        payload: { session_id: "srv-1" },
+      });
+    });
+    act(() => {
+      getWs().simulateMessage({
+        domain: "session",
+        action: "permission.request",
+        payload: { request_id: "r2", tool_name: "bash", tool_input: {}, description: "" },
+      });
+    });
+    act(() => {
+      result.current.respondToPermission("r2", "deny");
+    });
+    expect(result.current.pendingPermission).toBeNull();
+    expect(result.current.status).toBe("idle");
+    const sent = JSON.parse(getWs().sent[0]);
+    expect(sent.payload.decision).toBe("deny");
   });
 
   it("session.error sets error status", async () => {
@@ -330,6 +360,89 @@ describe("useWebSocketSession", () => {
         },
       });
     });
+    expect(result.current.status).toBe("idle");
+  });
+
+  it("late tool updates after end do not re-enter running", async () => {
+    const { result } = renderHook(() => useWebSocketSession("test-id"));
+    await act(async () => {
+      await Promise.resolve(); await Promise.resolve();
+    });
+
+    act(() => {
+      result.current.initSession({ model: "openai/gpt-5.3-codex" });
+    });
+    act(() => {
+      getWs().simulateMessage({
+        domain: "session",
+        action: "initialized",
+        payload: { session_id: "srv-1", provider: "opencode", model: "openai/gpt-5.3-codex" },
+      });
+    });
+    act(() => {
+      result.current.sendPrompt("Read /etc/hosts and summarize it");
+    });
+
+    act(() => {
+      getWs().simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [
+            {
+              type: "stream_event",
+              session_id: "ses_test",
+              parent_tool_use_id: null,
+              event: {
+                type: "content_block_start",
+                index: 1,
+                content_block: {
+                  type: "tool_use",
+                  id: "call_1",
+                  name: "Read",
+                  input: {},
+                },
+              },
+            },
+          ],
+        },
+      });
+    });
+    expect(result.current.status).toBe("running");
+
+    act(() => {
+      getWs().simulateMessage({
+        domain: "session",
+        action: "ended",
+        payload: { reason: "permission_denied" },
+      });
+    });
+    expect(result.current.status).toBe("idle");
+
+    act(() => {
+      getWs().simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [
+            {
+              type: "stream_event",
+              session_id: "ses_test",
+              parent_tool_use_id: null,
+              event: {
+                type: "content_block_delta",
+                index: 1,
+                delta: {
+                  type: "input_json_delta",
+                  partial_json: '{"file_path":"/etc/hosts","status":"error"}',
+                },
+              },
+            },
+          ],
+        },
+      });
+    });
+
     expect(result.current.status).toBe("idle");
   });
 

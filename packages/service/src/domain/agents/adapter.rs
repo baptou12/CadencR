@@ -118,6 +118,16 @@ pub struct RuntimePermissionRequest {
     pub tool_input: Value,
     pub description: Option<String>,
     pub pattern: Option<String>,
+    pub preview: Option<String>,
+    pub options: Vec<RuntimePermissionOption>,
+}
+
+#[derive(Debug, Clone)]
+pub struct RuntimePermissionOption {
+    pub decision: RuntimePermissionDecision,
+    pub label: String,
+    pub description: String,
+    pub collect_feedback: bool,
 }
 
 #[derive(Debug, Clone)]

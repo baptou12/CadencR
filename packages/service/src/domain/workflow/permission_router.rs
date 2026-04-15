@@ -230,11 +230,13 @@ impl WorkflowPermissionBridge {
             tool_input: request.input.clone(),
             description: Some(description),
             pattern: Some(pattern.clone()),
+            preview: permission_bridge::extract_permission_preview(&request.input),
+            options: permission_bridge::build_default_permission_options(Some(&pattern)),
         };
         let envelope = WsEnvelope::new(
             "workflow",
             "permission.request",
-            serde_json::to_value(payload).unwrap(),
+            serde_json::to_value(&payload).unwrap(),
         );
         let _ = self
             .sender
@@ -250,6 +252,12 @@ impl WorkflowPermissionBridge {
             });
             let _ = sqlx::query("UPDATE agent_sessions SET pending_questions = ? WHERE id = ?")
                 .bind(pq_json.to_string())
+                .bind(self.db_session_id)
+                .execute(&self.write_pool)
+                .await;
+        } else {
+            let _ = sqlx::query("UPDATE agent_sessions SET pending_permission = ? WHERE id = ?")
+                .bind(serde_json::to_string(&payload).unwrap_or_default())
                 .bind(self.db_session_id)
                 .execute(&self.write_pool)
                 .await;
@@ -272,6 +280,11 @@ impl WorkflowPermissionBridge {
         // Clear persisted pending questions after user responds
         if is_ask_user_question {
             let _ = sqlx::query("UPDATE agent_sessions SET pending_questions = NULL WHERE id = ?")
+                .bind(self.db_session_id)
+                .execute(&self.write_pool)
+                .await;
+        } else {
+            let _ = sqlx::query("UPDATE agent_sessions SET pending_permission = NULL WHERE id = ?")
                 .bind(self.db_session_id)
                 .execute(&self.write_pool)
                 .await;

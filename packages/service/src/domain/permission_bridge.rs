@@ -8,6 +8,7 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Arc;
 
+use serde_json::Value;
 use tokio::sync::{mpsc, Mutex};
 use tracing::{debug, error};
 
@@ -15,7 +16,7 @@ use crate::domain::agents::adapter::{RuntimeToolPermissionRequest, RuntimeToolPe
 use crate::domain::ws_session::handler::session_prompt::PermissionResponse;
 use crate::domain::ws_session::permissions::{self, ResolvedPermission};
 use crate::domain::ws_session::persistence::WsSessionPersistence;
-use crate::domain::ws_session::protocol::PermissionDecision;
+use crate::domain::ws_session::protocol::{PermissionDecision, PermissionOptionPayload};
 
 /// Result of server-side permission resolution with pattern checks applied.
 pub enum ResolvedAction {
@@ -28,6 +29,110 @@ pub enum ResolvedAction {
         pattern: String,
         force_prompt: bool,
     },
+}
+
+pub fn build_default_permission_options(pattern: Option<&str>) -> Vec<PermissionOptionPayload> {
+    let allow_future_description = pattern.map_or_else(
+        || "Save this permission for future use".to_string(),
+        |value| format!("Save `{value}` to settings"),
+    );
+
+    vec![
+        PermissionOptionPayload {
+            decision: PermissionDecision::AllowOnce,
+            label: "Allow once".to_string(),
+            description: "Approve this tool call only".to_string(),
+            collect_feedback: false,
+        },
+        PermissionOptionPayload {
+            decision: PermissionDecision::AllowFuture,
+            label: "Allow for future use".to_string(),
+            description: allow_future_description,
+            collect_feedback: false,
+        },
+        PermissionOptionPayload {
+            decision: PermissionDecision::Deny,
+            label: "Deny".to_string(),
+            description: "Reject this tool call".to_string(),
+            collect_feedback: true,
+        },
+    ]
+}
+
+pub fn extract_permission_preview(input: &Value) -> Option<String> {
+    [
+        "command",
+        "file_path",
+        "filepath",
+        "path",
+        "filePath",
+        "directory",
+        "dir",
+        "cwd",
+        "target",
+        "destination",
+        "source",
+    ]
+        .iter()
+        .find_map(|key| input.get(*key).and_then(Value::as_str))
+        .map(ToOwned::to_owned)
+        .or_else(|| extract_preview_from_nested_object(input.get("args")))
+        .or_else(|| {
+            input.get("metadata").and_then(|metadata| {
+                [
+                    "command",
+                    "path",
+                    "file_path",
+                    "filepath",
+                    "filePath",
+                    "directory",
+                    "dir",
+                    "cwd",
+                    "target",
+                    "destination",
+                    "source",
+                ]
+                .iter()
+                .find_map(|key| metadata.get(*key).and_then(Value::as_str))
+                .map(ToOwned::to_owned)
+                .or_else(|| extract_preview_from_nested_object(metadata.get("args")))
+            })
+        })
+        .or_else(|| {
+            input
+                .get("always")
+                .and_then(Value::as_array)
+                .and_then(|items| items.iter().find_map(Value::as_str))
+                .map(ToOwned::to_owned)
+        })
+        .or_else(|| {
+            input
+                .get("patterns")
+                .and_then(Value::as_array)
+                .and_then(|patterns| patterns.iter().find_map(Value::as_str))
+                .map(ToOwned::to_owned)
+        })
+}
+
+fn extract_preview_from_nested_object(value: Option<&Value>) -> Option<String> {
+    value.and_then(|object| {
+        [
+            "command",
+            "path",
+            "file_path",
+            "filepath",
+            "filePath",
+            "directory",
+            "dir",
+            "cwd",
+            "target",
+            "destination",
+            "source",
+        ]
+        .iter()
+        .find_map(|key| object.get(*key).and_then(Value::as_str))
+        .map(ToOwned::to_owned)
+    })
 }
 
 /// Resolve a permission request server-side, checking the session cache
@@ -104,7 +209,12 @@ pub async fn wait_and_apply_decision(
     let mut rx = response_rx.lock().await;
     match rx.recv().await {
         Some(response) => {
-            WsSessionPersistence::broadcast_turn_state(turn_state_tx, feature_id, "claude");
+            let decision = response.decision.clone();
+            WsSessionPersistence::broadcast_turn_state(
+                turn_state_tx,
+                feature_id,
+                turn_state_after_decision(decision.clone()),
+            );
             let input = response.updated_input.unwrap_or(original_input);
             apply_decision(
                 tool_use_id,
@@ -112,7 +222,7 @@ pub async fn wait_and_apply_decision(
                 force_prompt,
                 worktree_path,
                 session_cache,
-                response.decision,
+                decision,
                 response.feedback,
                 input,
             )
@@ -123,6 +233,36 @@ pub async fn wait_and_apply_decision(
             interrupt: Some(false),
             tool_use_id: Some(tool_use_id.to_string()),
         },
+    }
+}
+
+pub fn turn_state_after_decision(decision: PermissionDecision) -> &'static str {
+    match decision {
+        PermissionDecision::AllowOnce | PermissionDecision::AllowFuture => "claude",
+        PermissionDecision::Deny => "none",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::turn_state_after_decision;
+    use crate::domain::ws_session::protocol::PermissionDecision;
+
+    #[test]
+    fn deny_decision_clears_turn_state() {
+        assert_eq!(turn_state_after_decision(PermissionDecision::Deny), "none");
+    }
+
+    #[test]
+    fn allow_decisions_resume_agent_turn_state() {
+        assert_eq!(
+            turn_state_after_decision(PermissionDecision::AllowOnce),
+            "claude"
+        );
+        assert_eq!(
+            turn_state_after_decision(PermissionDecision::AllowFuture),
+            "claude"
+        );
     }
 }
 

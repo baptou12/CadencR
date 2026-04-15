@@ -39,6 +39,7 @@ import {
   updateSession
 } from "./ws-session-types";
 import type { AgentQuestionAnswers } from "@/components/AgentQuestionDrawer";
+import type { PermissionDecisionValue } from "@/components/ToolPermissionPrompt";
 
 export type { PermissionMode, PendingPlanApproval } from "./ws-session-types";
 export {
@@ -243,6 +244,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
 
       const content = buildUserMessageContent(text, images);
       session.streamingState.counter += 1;
+      session.streamingState.turnTerminal = false;
       set(updateSession(get(), sessionId, {
         blocks: [
           ...session.blocks,
@@ -258,14 +260,14 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       }));
     },
 
-    respondToPermission(sessionId: string, requestId: string, granted: boolean) {
+    respondToPermission(sessionId: string, requestId: string, decision: PermissionDecisionValue, feedback?: string) {
       const session = getSession(sessionId);
-      const decision = granted ? "allow_once" : "deny";
-      sendRaw(sessionId, createPermissionRespond(session.serverSessionId, requestId, decision));
+      session.streamingState.turnTerminal = decision === "deny";
+      sendRaw(sessionId, createPermissionRespond(session.serverSessionId, requestId, decision, undefined, feedback));
       set(updateSession(get(), sessionId, {
         pendingPermission: null,
         pendingRequestId: "",
-        status: "running",
+        status: decision === "deny" ? "idle" : "running",
       }));
     },
 

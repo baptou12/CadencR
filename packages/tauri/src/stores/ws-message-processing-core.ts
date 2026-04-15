@@ -19,6 +19,7 @@ export interface StreamingState {
   counter: number;
   exitPlanModeDetected: boolean;
   enterPlanModeDetected: boolean;
+  turnTerminal: boolean;
 }
 
 export type BlockMutation = {
@@ -33,6 +34,7 @@ export function createStreamingState(): StreamingState {
     counter: 0,
     exitPlanModeDetected: false,
     enterPlanModeDetected: false,
+    turnTerminal: false,
   };
 }
 

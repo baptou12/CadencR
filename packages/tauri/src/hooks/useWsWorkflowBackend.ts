@@ -290,11 +290,11 @@ export function useWsWorkflowBackend(
       const slotKey = findSlotKey(entry, store.queue, store.agents);
       store.interruptItem(slotKey);
     },
-    submitPermission: (entry, decision, _feedback) => {
+    submitPermission: (entry, decision, feedback) => {
       const slotKey = findSlotKey(entry, store.queue, store.agents);
       const requestId = entry.pendingPermission?.requestId ?? "";
-      const mapped = decision === "allow" ? "allow_once" : decision === "deny" ? "deny" : "allow_once";
-      store.respondToPermission(slotKey, requestId, mapped as "allow_once" | "allow_future" | "deny");
+      const mapped = decision === "allow" ? "allow_once" : decision === "deny" ? "deny" : "allow_future";
+      store.respondToPermission(slotKey, requestId, mapped as "allow_once" | "allow_future" | "deny", feedback);
     },
     submitAnswers: (entry, response) => {
       const slotKey = findSlotKey(entry, store.queue, store.agents);

@@ -9,6 +9,7 @@ import type { AgentBlockData } from "@/components/AgentBlock";
 import type { AgentQuestionAnswers } from "@/components/AgentQuestionDrawer";
 import type { AgentStatus } from "@/types/agent";
 import type { PendingPermission } from "@/components/ToolPermissionPrompt";
+import type { PermissionDecisionValue } from "@/components/ToolPermissionPrompt";
 import type { AgentQuestion } from "@/components/AgentQuestionDrawer";
 import type { StreamingState } from "@/stores/ws-session-store";
 import type { SlashCommand } from "@/hooks/useSlashCommand";
@@ -178,7 +179,7 @@ export interface WorkflowState {
   skipItem: (itemId: number) => void;
   retryItem: (itemId: number) => void;
   retryWorktreeSetup: () => void;
-  respondToPermission: (slotKey: string, requestId: string, decision: "allow_once" | "allow_future" | "deny") => void;
+  respondToPermission: (slotKey: string, requestId: string, decision: PermissionDecisionValue, feedback?: string) => void;
   respondToQuestion: (slotKey: string, response: AgentQuestionAnswers) => void;
   sendPromptToAgent: (slotKey: string, text: string, images?: Array<{ base64: string; mimeType: string }>) => void;
   interruptItem: (slotKey: string) => void;
