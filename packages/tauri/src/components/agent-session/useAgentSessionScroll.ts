@@ -17,6 +17,7 @@ export function useAgentSessionScroll({
   onLoadOlder,
 }: UseAgentSessionScrollOptions) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const autoScrollRef = useRef(true);
   const loadingOlderRef = useRef(false);
 
@@ -71,5 +72,24 @@ export function useAgentSessionScroll({
     }
   }, [blocks]);
 
-  return { scrollContainerRef };
+  // Catch async content height changes (e.g. CodeMirror rendering after useEffect).
+  useEffect(() => {
+    const content = contentRef.current;
+    const scrollEl = scrollContainerRef.current;
+    if (!content || !scrollEl) return;
+
+    let raf = 0;
+    const ro = new ResizeObserver(() => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        if (autoScrollRef.current) {
+          scrollEl.scrollTop = scrollEl.scrollHeight;
+        }
+      });
+    });
+    ro.observe(content);
+    return () => { cancelAnimationFrame(raf); ro.disconnect(); };
+  }, []);
+
+  return { scrollContainerRef, contentRef };
 }

@@ -71,7 +71,7 @@ export const AgentSession = memo(forwardRef<AgentSessionHandle, AgentSessionProp
   const isControlled = controlledOpen !== undefined;
   const isOpen = isControlled ? controlledOpen : internalOpen;
 
-  const { scrollContainerRef } = useAgentSessionScroll({
+  const { scrollContainerRef, contentRef } = useAgentSessionScroll({
     isOpen, blocks, promptBarFocused, hasMore, onLoadOlder,
   });
 
@@ -306,7 +306,9 @@ export const AgentSession = memo(forwardRef<AgentSessionHandle, AgentSessionProp
     return (
       <div ref={containerRef} className={cn("flex h-full flex-col", className)}>
         <div ref={scrollContainerRef} className="flex-1 overflow-auto px-4 pt-4 pb-8" style={{ overflowAnchor: "none" }}>
-          {streamContent}
+          <div ref={contentRef}>
+            {streamContent}
+          </div>
         </div>
         {bottomSection}
       </div>
@@ -347,18 +349,20 @@ export const AgentSession = memo(forwardRef<AgentSessionHandle, AgentSessionProp
       {isOpen && (
         <>
           <div ref={scrollContainerRef} className="flex-1 min-h-0 border-t border-border/30 overflow-y-auto pb-6" style={{ overflowAnchor: "none" }}>
-            {blocks.length === 0 && status === "idle" ? (
-              <div className="flex flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
-                No output yet
-              </div>
-            ) : (
-              <AgentStream
-                blocks={blocks}
-                isStreaming={isStreaming}
-                showStreamingIndicator={shouldShowStreamingIndicator}
-                basePath={projectPath}
-              />
-            )}
+            <div ref={contentRef}>
+              {blocks.length === 0 && status === "idle" ? (
+                <div className="flex flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
+                  No output yet
+                </div>
+              ) : (
+                <AgentStream
+                  blocks={blocks}
+                  isStreaming={isStreaming}
+                  showStreamingIndicator={shouldShowStreamingIndicator}
+                  basePath={projectPath}
+                />
+              )}
+            </div>
           </div>
 
           <div className="shrink-0">
