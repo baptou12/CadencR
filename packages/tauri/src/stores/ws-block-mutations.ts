@@ -6,7 +6,7 @@
 import type { AgentBlockData } from "@/components/AgentBlock";
 import { isFileChangeTool } from "@/lib/tool-adapter";
 import type { TodoItem } from "@/types/agent";
-import type { BlockMutation, StreamingState } from "./ws-message-processing";
+import type { BlockMutation, ParserSignals, StreamingState } from "./ws-message-processing";
 
 export type ParsedTodo = TodoItem;
 
@@ -36,7 +36,6 @@ export function parseTodosFromBlocks(blocks: AgentBlockData[]): ParsedTodo[] | u
 
 export interface MessagePatch {
   blocks: AgentBlockData[];
-  status: "running";
   hasFileChanges?: boolean;
   todos?: ParsedTodo[];
   permissionMode?: "plan";
@@ -45,7 +44,7 @@ export interface MessagePatch {
 export function buildMessagePatch(
   newBlocks: AgentBlockData[],
   allMutations: BlockMutation[],
-  state: StreamingState,
+  signals: ParserSignals,
 ): MessagePatch {
   const hasNewFileChange = allMutations.some(
     (m) => m.action === "append" && m.block.type === "tool_call" && isFileChangeTool(m.block.toolName),
@@ -54,14 +53,13 @@ export function buildMessagePatch(
   const mutatedIds = new Set(allMutations.map((m) => m.block.id));
   const todoBlock = findTodoBlock(newBlocks, mutatedIds, allMutations);
 
-  const patch: MessagePatch = { blocks: newBlocks, status: "running" };
+  const patch: MessagePatch = { blocks: newBlocks };
   if (hasNewFileChange) patch.hasFileChanges = true;
   if (todoBlock) {
     const todos = parseTodosFromBlocks([todoBlock]);
     if (todos) patch.todos = todos;
   }
-  if (state.enterPlanModeDetected) {
-    state.enterPlanModeDetected = false;
+  if (signals.enterPlanModeRequested) {
     patch.permissionMode = "plan";
   }
   return patch;

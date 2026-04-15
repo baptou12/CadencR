@@ -6,6 +6,7 @@ import {
   parseRuntimeSessionIdPayload,
   parseClearedPayload,
   parseCommandsListPayload,
+  parseEndedPayload,
   parseErrorPayload,
   parseFeatureRenamePayload,
   parseFeatureUpdatedPayload,
@@ -20,7 +21,6 @@ import {
 import { handleWorktreeEvent } from "./ws-worktree-handler";
 import {
   type BlockMutation,
-  type StreamingState,
   createStreamingState,
   processSdkMessage,
   applyMutations,
@@ -28,6 +28,7 @@ import {
 } from "./ws-message-processing";
 import type { SessionEntry, WsSessionStore } from "./ws-session-types";
 import { updateSession } from "./ws-session-types";
+import { transitionTurn, type TurnTerminalReason } from "./ws-turn-lifecycle";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value != null && typeof value === "object";
@@ -106,9 +107,6 @@ function handleSessionAction(
   sessionId: string,
   envelope: { action: string; payload: unknown },
 ): void {
-  const session = ctx.getSession(sessionId);
-  const state = session.streamingState;
-
   switch (envelope.action) {
     case "initialized":
       handleInitialized(ctx, sessionId, envelope.payload);
@@ -124,10 +122,10 @@ function handleSessionAction(
       break;
     }
     case "message":
-      handleMessage(ctx, sessionId, envelope.payload, state);
+      handleMessage(ctx, sessionId, envelope.payload);
       break;
     case "permission.request":
-      handlePermissionRequest(ctx, sessionId, envelope.payload, state);
+      handlePermissionRequest(ctx, sessionId, envelope.payload);
       break;
     case "mode.changed": {
       const p = parseModePayload(envelope.payload);
@@ -154,7 +152,7 @@ function handleSessionAction(
       break;
     }
     case "error":
-      handleError(ctx, sessionId, envelope.payload, state);
+      handleError(ctx, sessionId, envelope.payload);
       break;
     case "cleared":
       handleCleared(ctx, sessionId, envelope.payload);
@@ -176,7 +174,7 @@ function handleSessionAction(
     }
     case "ended":
     case "turn_complete":
-      handleTurnComplete(ctx, sessionId, state);
+      handleTurnComplete(ctx, sessionId, envelope.payload);
       break;
   }
 }
@@ -188,9 +186,10 @@ function handleInitialized(
 ): void {
   const p = parseInitializedPayload(payload);
   if (!p) return;
+  const session = ctx.getSession(sessionId);
   const updates: Partial<SessionEntry> = {
     serverSessionId: p.session_id ?? "",
-    status: ctx.getSession(sessionId).queuedPrompts.length > 0 ? "running" : "idle",
+    lifecycle: transitionTurn(session.lifecycle, { type: "initialized" }),
   };
   if (p.provider) {
     updates.currentProviderId = p.provider;
@@ -220,25 +219,25 @@ function handleMessage(
   ctx: StoreAccessors,
   sessionId: string,
   payload: unknown,
-  state: StreamingState,
 ): void {
   const p = parseMessageBlocksPayload(payload);
   if (!p) return;
+  const state = ctx.getSession(sessionId).streamingState;
 
   const allMutations: BlockMutation[] = [];
+  let enterPlanModeRequested = false;
   for (const rawBlock of p.blocks) {
     if (!isRecord(rawBlock)) continue;
-    allMutations.push(...processSdkMessage(rawBlock, state));
+    const result = processSdkMessage(rawBlock, state);
+    allMutations.push(...result.mutations);
+    enterPlanModeRequested ||= result.signals.enterPlanModeRequested;
   }
 
   if (allMutations.length > 0) {
     const currentSession = ctx.getSession(sessionId);
     const newBlocks = applyMutations(currentSession.blocks, allMutations, state);
-    const patch = buildMessagePatch(newBlocks, allMutations, state);
-    const status = state.turnTerminal && currentSession.status !== "running"
-      ? currentSession.status
-      : patch.status;
-    ctx.set(updateSession(ctx.get(), sessionId, { ...patch, status }));
+    const patch = buildMessagePatch(newBlocks, allMutations, { enterPlanModeRequested });
+    ctx.set(updateSession(ctx.get(), sessionId, patch));
   }
 }
 
@@ -246,15 +245,13 @@ function handlePermissionRequest(
   ctx: StoreAccessors,
   sessionId: string,
   payload: unknown,
-  state: StreamingState,
 ): void {
   const p = parsePermissionPayload(payload);
   if (!p?.request_id || !p.tool_name) return;
+  const session = ctx.get().sessions[sessionId];
 
   if (p.tool_name === "ExitPlanMode") {
-    state.exitPlanModeDetected = false;
     const current = ctx.get();
-    const session = current.sessions[sessionId];
     const enrichedArgs = JSON.stringify(p.tool_input ?? {});
     const updatedBlocks = session?.blocks.map((b) =>
       b.type === "tool_call" && b.toolName === "ExitPlanMode" && b.toolUseId === p.request_id
@@ -265,7 +262,7 @@ function handlePermissionRequest(
       ...(updatedBlocks ? { blocks: updatedBlocks } : {}),
       pendingRequestId: p.request_id,
       pendingPlanApproval: p.tool_input ?? {},
-      status: "paused",
+      lifecycle: transitionTurn(session?.lifecycle ?? { phase: "idle" }, { type: "plan_approval_requested" }),
     }));
   } else if (p.tool_name === "AskUserQuestion") {
     const toolInput = p.tool_input ?? {};
@@ -274,7 +271,7 @@ function handlePermissionRequest(
       pendingRequestId: p.request_id,
       pendingQuestions: questions,
       pendingQuestionToolInput: toolInput,
-      status: "paused",
+      lifecycle: transitionTurn(session?.lifecycle ?? { phase: "idle" }, { type: "question_requested" }),
     }));
   } else {
     ctx.set(updateSession(ctx.get(), sessionId, {
@@ -287,7 +284,7 @@ function handlePermissionRequest(
         preview: p.preview,
         options: p.options,
       },
-      status: "paused",
+      lifecycle: transitionTurn(session?.lifecycle ?? { phase: "idle" }, { type: "permission_requested" }),
     }));
   }
 }
@@ -296,16 +293,16 @@ function handleError(
   ctx: StoreAccessors,
   sessionId: string,
   payload: unknown,
-  state: StreamingState,
 ): void {
   const p = parseErrorPayload(payload);
+  const session = ctx.getSession(sessionId);
+  const state = session.streamingState;
   if (p?.message) {
     state.counter += 1;
-    const currentSession = ctx.getSession(sessionId);
     ctx.set(updateSession(ctx.get(), sessionId, {
-      status: "error",
+      lifecycle: transitionTurn(session.lifecycle, { type: "turn_errored", message: p.message }),
       blocks: [
-        ...currentSession.blocks,
+        ...session.blocks,
         {
           id: `ws-err-${state.counter}`,
           type: "text",
@@ -315,7 +312,9 @@ function handleError(
       ],
     }));
   } else {
-    ctx.set(updateSession(ctx.get(), sessionId, { status: "error" }));
+    ctx.set(updateSession(ctx.get(), sessionId, {
+      lifecycle: transitionTurn(session.lifecycle, { type: "turn_errored" }),
+    }));
   }
 }
 
@@ -332,7 +331,7 @@ function handleCleared(
       ...existingBlocks,
       { id: `clear-${Date.now()}`, type: "clear_divider" as const, content: previousSessionId },
     ],
-    status: "idle",
+    lifecycle: transitionTurn(session?.lifecycle ?? { phase: "idle" }, { type: "turn_cleared" }),
     streamingState: createStreamingState(),
     pendingPermission: null,
     pendingRequestId: "",
@@ -368,9 +367,10 @@ function handleUsageUpdate(
 function handleTurnComplete(
   ctx: StoreAccessors,
   sessionId: string,
-  state: StreamingState,
+  payload: unknown,
 ): void {
-  state.turnTerminal = true;
+  const session = ctx.getSession(sessionId);
+  const state = session.streamingState;
   for (const stream of state.streams.values()) {
     if (!stream.parentToolUseId) {
       continue;
@@ -379,15 +379,26 @@ function handleTurnComplete(
     if (parent?.childBlocks) parent.taskComplete = true;
     stream.parentToolUseId = null;
   }
-  if (state.exitPlanModeDetected) {
-    state.exitPlanModeDetected = false;
-    ctx.set(updateSession(ctx.get(), sessionId, {
-      pendingPlanApproval: {},
-      status: "paused",
-    }));
-  } else {
-    ctx.set(updateSession(ctx.get(), sessionId, {
-      status: "idle",
-    }));
+  ctx.set(updateSession(ctx.get(), sessionId, {
+    lifecycle: transitionTurn(session.lifecycle, {
+      type: "turn_ended",
+      reason: mapTerminalReason(parseEndedPayload(payload)?.reason),
+    }),
+  }));
+}
+
+function mapTerminalReason(reason: string | undefined): TurnTerminalReason {
+  switch (reason) {
+    case "provider_complete":
+    case "turn_complete":
+      return "completed";
+    case "stream_closed":
+      return "streamClosed";
+    case "turn_cleared":
+      return "cleared";
+    case "permission_denied":
+      return "denied";
+    default:
+      return "completed";
   }
 }

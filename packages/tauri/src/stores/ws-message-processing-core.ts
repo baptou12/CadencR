@@ -1,4 +1,5 @@
 import type { AgentBlockData } from "@/components/AgentBlock";
+import { normalizeToolName } from "@/lib/tool-adapter";
 import { createToolUseBlock } from "./ws-message-processing-tool-blocks";
 
 interface StreamContext {
@@ -17,9 +18,15 @@ export interface StreamingState {
   streams: Map<StreamSessionId, StreamContext>;
   toolUseIdToBlock: Map<string, AgentBlockData>;
   counter: number;
-  exitPlanModeDetected: boolean;
-  enterPlanModeDetected: boolean;
-  turnTerminal: boolean;
+}
+
+export interface ParserSignals {
+  enterPlanModeRequested: boolean;
+}
+
+export interface MessageProcessingResult {
+  mutations: BlockMutation[];
+  signals: ParserSignals;
 }
 
 export type BlockMutation = {
@@ -32,29 +39,36 @@ export function createStreamingState(): StreamingState {
     streams: new Map(),
     toolUseIdToBlock: new Map(),
     counter: 0,
-    exitPlanModeDetected: false,
-    enterPlanModeDetected: false,
-    turnTerminal: false,
+  };
+}
+
+function createParserSignals(): ParserSignals {
+  return {
+    enterPlanModeRequested: false,
   };
 }
 
 export function processSdkMessage(
   msg: Record<string, unknown>,
   state: StreamingState,
-): BlockMutation[] {
-  if (!msg || typeof msg !== "object") return [];
+): MessageProcessingResult {
+  if (!msg || typeof msg !== "object") {
+    return { mutations: [], signals: createParserSignals() };
+  }
+
+  const signals = createParserSignals();
 
   switch (msg.type as string) {
     case "stream_event":
-      return processStreamEvent(msg, state);
+      return { mutations: processStreamEvent(msg, state), signals };
     case "assistant":
-      return processAssistantMessage(msg, state);
+      return { mutations: processAssistantMessage(msg, state, signals), signals };
     case "user":
-      return processUserMessage(msg, state);
+      return { mutations: processUserMessage(msg, state), signals };
     case "system":
     case "result":
     default:
-      return [];
+      return { mutations: [], signals };
   }
 }
 
@@ -194,6 +208,7 @@ function processContentBlockDelta(
 function processAssistantMessage(
   msg: Record<string, unknown>,
   state: StreamingState,
+  signals: ParserSignals,
 ): BlockMutation[] {
   const assistantMsg = msg.message as Record<string, unknown> | undefined;
   const contentArr = assistantMsg?.content as Array<Record<string, unknown>> | undefined;
@@ -223,6 +238,7 @@ function processAssistantMessage(
     const mutation = createAssistantMutation(
       contentBlock,
       state,
+      signals,
       model,
       assistantParentId,
       now,
@@ -266,6 +282,7 @@ function processAssistantReplace(
 function createAssistantMutation(
   contentBlock: Record<string, unknown>,
   state: StreamingState,
+  signals: ParserSignals,
   model: string | undefined,
   parentToolUseId: string | null,
   createdAt: string,
@@ -298,6 +315,9 @@ function createAssistantMutation(
         },
       };
     case "tool_use":
+      if (normalizeToolName(contentBlock.name as string) === "EnterPlanMode") {
+        signals.enterPlanModeRequested = true;
+      }
       return {
         action: "append",
         block: createToolUseBlock(

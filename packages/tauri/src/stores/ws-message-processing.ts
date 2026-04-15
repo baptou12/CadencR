@@ -13,6 +13,8 @@ export {
 } from "./ws-message-processing-core";
 export type {
   BlockMutation,
+  MessageProcessingResult,
+  ParserSignals,
   StreamingState,
 } from "./ws-message-processing-core";
 

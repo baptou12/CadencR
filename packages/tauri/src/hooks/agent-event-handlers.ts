@@ -97,7 +97,7 @@ export function processAgentStream(
   agent: AgentSessionState,
   msg: Record<string, unknown>,
 ): AgentSessionState {
-  const mutations = processSdkMessage(msg, agent.streamingState);
+  const { mutations } = processSdkMessage(msg, agent.streamingState);
   if (mutations.length === 0) return agent;
   const blocks = applyMutations(agent.blocks, mutations, agent.streamingState);
   const hasNewFileChange = !agent.hasFileChanges && mutations.some(

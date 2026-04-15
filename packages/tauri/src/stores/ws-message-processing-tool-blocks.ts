@@ -3,8 +3,6 @@ import { normalizeToolName } from "@/lib/tool-adapter";
 
 interface ToolBlockState {
   toolUseIdToBlock: Map<string, AgentBlockData>;
-  exitPlanModeDetected: boolean;
-  enterPlanModeDetected: boolean;
 }
 
 export function createToolUseBlock(
@@ -16,8 +14,6 @@ export function createToolUseBlock(
   includeInput: boolean,
 ): AgentBlockData {
   const toolName = normalizeToolName(contentBlock.name as string);
-  if (toolName === "ExitPlanMode") state.exitPlanModeDetected = true;
-  if (toolName === "EnterPlanMode") state.enterPlanModeDetected = true;
 
   const toolUseId = contentBlock.id as string;
   const input = includeInput ? JSON.stringify(contentBlock.input ?? {}) : "";

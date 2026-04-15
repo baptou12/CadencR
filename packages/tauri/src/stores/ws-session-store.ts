@@ -40,6 +40,7 @@ import {
 } from "./ws-session-types";
 import type { AgentQuestionAnswers } from "@/components/AgentQuestionDrawer";
 import type { PermissionDecisionValue } from "@/components/ToolPermissionPrompt";
+import { isTurnActive, transitionTurn } from "./ws-turn-lifecycle";
 
 export type { PermissionMode, PendingPlanApproval } from "./ws-session-types";
 export {
@@ -115,7 +116,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
             for (const cb of session.pendingWsRequests.values()) cb(null);
             session.pendingWsRequests.clear();
           }
-          const wasRunning = session?.status === "running";
+          const wasRunning = session != null && isTurnActive(session.lifecycle);
           const errorBlock = wasRunning ? {
             id: `ws-err-close-${Date.now()}`,
             type: "text" as const,
@@ -127,7 +128,10 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
             isConnected: false,
             serverSessionId: "",
             runtimeSessionId: "",
-            status: wasRunning ? "error" : session?.status ?? "idle",
+            lifecycle: transitionTurn(
+              session?.lifecycle ?? createSessionEntry().lifecycle,
+              { type: "connection_lost" },
+            ),
             blocks: errorBlock ? [...(session?.blocks ?? []), errorBlock] : session?.blocks,
           }));
           scheduleReconnect(sessionId, () => get().connect(sessionId));
@@ -143,7 +147,10 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
             isConnected: false,
             serverSessionId: "",
             runtimeSessionId: "",
-            status: "error",
+            lifecycle: transitionTurn(
+              session?.lifecycle ?? createSessionEntry().lifecycle,
+              { type: "turn_errored" },
+            ),
           }));
           scheduleReconnect(sessionId, () => get().connect(sessionId));
         },
@@ -244,7 +251,6 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
 
       const content = buildUserMessageContent(text, images);
       session.streamingState.counter += 1;
-      session.streamingState.turnTerminal = false;
       set(updateSession(get(), sessionId, {
         blocks: [
           ...session.blocks,
@@ -256,18 +262,19 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
             createdAt: new Date().toISOString(),
           },
         ],
-        status: "running",
+        lifecycle: transitionTurn(session.lifecycle, { type: "prompt_sent" }),
       }));
     },
 
     respondToPermission(sessionId: string, requestId: string, decision: PermissionDecisionValue, feedback?: string) {
       const session = getSession(sessionId);
-      session.streamingState.turnTerminal = decision === "deny";
       sendRaw(sessionId, createPermissionRespond(session.serverSessionId, requestId, decision, undefined, feedback));
       set(updateSession(get(), sessionId, {
         pendingPermission: null,
         pendingRequestId: "",
-        status: decision === "deny" ? "idle" : "running",
+        lifecycle: transitionTurn(session.lifecycle, {
+          type: decision === "deny" ? "permission_denied" : "permission_allowed",
+        }),
       }));
     },
 
@@ -296,7 +303,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
         pendingQuestions: [],
         pendingQuestionToolInput: {},
         pendingRequestId: "",
-        status: "running",
+        lifecycle: transitionTurn(session.lifecycle, { type: "question_answered" }),
       }));
     },
 
@@ -318,7 +325,10 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       set(updateSession(get(), sessionId, {
         conn: null,
         isConnected: false,
-        status: "completed",
+        lifecycle: transitionTurn(session.lifecycle, {
+          type: "turn_ended",
+          reason: "completed",
+        }),
       }));
     },
 

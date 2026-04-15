@@ -13,9 +13,10 @@ import {
   type SessionEntry,
   updateSession,
 } from "./ws-session-types";
+import { transitionTurn } from "./ws-turn-lifecycle";
 export interface PersistedStatePayload {
   blocks: SessionEntry["blocks"];
-  status: SessionEntry["status"];
+  lifecycle: SessionEntry["lifecycle"];
   hasMore?: boolean;
   oldestMessageId?: number | null;
   featureId?: number;
@@ -73,7 +74,7 @@ export function applyApprovePlan(
         pendingPlanApproval: null,
         permissionMode: "acceptEdits",
         blocks: updatedBlocks,
-        status: "running",
+        lifecycle: transitionTurn(session.lifecycle, { type: "plan_approved" }),
       }),
     );
     return;
@@ -92,7 +93,7 @@ export function applyApprovePlan(
       permissionMode: "acceptEdits",
       pendingPlanApproval: null,
       blocks: updatedBlocks,
-      status: "running",
+      lifecycle: transitionTurn(session.lifecycle, { type: "plan_approved" }),
     }),
   );
 }
@@ -146,7 +147,7 @@ export function applyPlanChangesRequest(
         pendingRequestId: "",
         pendingPlanApproval: null,
         blocks: blocksWithFeedback,
-        status: "running",
+        lifecycle: transitionTurn(session.lifecycle, { type: "plan_changes_requested" }),
       }),
     );
     return;
@@ -157,7 +158,7 @@ export function applyPlanChangesRequest(
     updateSession(ctx.get(), sessionId, {
       pendingPlanApproval: null,
       blocks: blocksWithFeedback,
-      status: "running",
+      lifecycle: transitionTurn(session.lifecycle, { type: "plan_changes_requested" }),
     }),
   );
 }
@@ -170,7 +171,7 @@ export function applyPersistedState(
 ): void {
   const {
     blocks,
-    status,
+    lifecycle,
     hasMore,
     oldestMessageId,
     featureId,
@@ -197,29 +198,42 @@ export function applyPersistedState(
     ...(resolvedRuntimeProvider ? { runtimeProvider: resolvedRuntimeProvider } : {}),
     ...(resolvedRuntimeSessionId ? { runtimeSessionId: resolvedRuntimeSessionId } : {}),
     ...(pendingPlanApproval != null
-      ? { pendingPlanApproval, status: "paused" as const }
+      ? {
+        pendingPlanApproval,
+        lifecycle: transitionTurn(lifecycle, { type: "plan_approval_requested" }),
+      }
       : {}),
   };
 
+  const restoredRequestId = pendingPlanApproval != null
+    ? existing?.pendingRequestId || `${planRestorePrefix}${Date.now()}`
+    : "";
+
+  const restoredPlanApprovalPatch = pendingPlanApproval != null
+    ? { pendingRequestId: restoredRequestId }
+    : {};
+
+  const sessionMetaWithRequestId: Partial<SessionEntry> = {
+    ...sessionMetaPatch,
+    ...restoredPlanApprovalPatch,
+  };
+
   if (existing && existing.blocks.length > 0) {
-    ctx.set(updateSession(ctx.get(), sessionId, sessionMetaPatch));
+    ctx.set(updateSession(ctx.get(), sessionId, sessionMetaWithRequestId));
     return;
   }
 
   const enrichedBlocks = injectPlanIntoBlocks(blocks, pendingPlanApproval);
   const todos = parseTodosFromBlocks(enrichedBlocks);
-  const restoredRequestId =
-    pendingPlanApproval != null ? `${planRestorePrefix}${Date.now()}` : "";
 
   ctx.set(
     updateSession(ctx.get(), sessionId, {
-      ...sessionMetaPatch,
+      ...sessionMetaWithRequestId,
       blocks: enrichedBlocks,
-      status: pendingPlanApproval != null ? "paused" : status,
+      lifecycle: pendingPlanApproval != null
+        ? transitionTurn(lifecycle, { type: "plan_approval_requested" })
+        : lifecycle,
       ...(todos ? { todos } : {}),
-      ...(pendingPlanApproval != null
-        ? { pendingRequestId: restoredRequestId }
-        : {}),
     }),
   );
 }

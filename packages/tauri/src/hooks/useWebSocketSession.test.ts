@@ -185,7 +185,7 @@ describe("useWebSocketSession", () => {
     });
     expect(result.current.blocks).toHaveLength(1);
     expect(result.current.blocks[0].content).toBe("hi");
-    expect(result.current.status).toBe("running");
+    expect(result.current.status).toBe("idle");
   });
 
   it("incoming permission.request sets pendingPermission", async () => {
@@ -318,7 +318,7 @@ describe("useWebSocketSession", () => {
         payload: { reason: "done" },
       });
     });
-    expect(result.current.status).toBe("idle");
+    expect(result.current.status).toBe("completed");
   });
 
   it("message events with no recognized mutations do not re-enter running after end", async () => {
@@ -349,7 +349,7 @@ describe("useWebSocketSession", () => {
         payload: { reason: "done" },
       });
     });
-    expect(result.current.status).toBe("idle");
+    expect(result.current.status).toBe("completed");
 
     act(() => {
       getWs().simulateMessage({
@@ -360,7 +360,7 @@ describe("useWebSocketSession", () => {
         },
       });
     });
-    expect(result.current.status).toBe("idle");
+    expect(result.current.status).toBe("completed");
   });
 
   it("late tool updates after end do not re-enter running", async () => {
@@ -522,7 +522,7 @@ describe("useWebSocketSession", () => {
         payload: { reason: "done" },
       });
     });
-    expect(result.current.status).toBe("idle");
+    expect(result.current.status).toBe("completed");
 
     // 6. Second prompt
     act(() => {
@@ -579,7 +579,7 @@ describe("useWebSocketSession", () => {
         payload: { reason: "done" },
       });
     });
-    expect(result.current.status).toBe("idle");
+    expect(result.current.status).toBe("completed");
 
     // Verify all blocks accumulated correctly
     expect(result.current.blocks.map((b) => b.type)).toEqual([
@@ -598,7 +598,7 @@ describe("useWebSocketSession", () => {
   // Plan approval flow
   // ---------------------------------------------------------------------------
 
-  it("ExitPlanMode in stream triggers plan approval on turn_complete", async () => {
+  it("ExitPlanMode in stream does not trigger plan approval without permission.request", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
       await Promise.resolve(); await Promise.resolve();
@@ -635,11 +635,10 @@ describe("useWebSocketSession", () => {
       });
     });
 
-    // Status should be running (approval bar not shown yet)
-    expect(result.current.status).toBe("running");
+    expect(result.current.status).toBe("idle");
     expect(result.current.pendingPlanApproval).toBeNull();
 
-    // turn_complete triggers the approval bar
+    // turn_complete is terminal; plan approval only comes from permission.request
     act(() => {
       ws.simulateMessage({
         domain: "session",
@@ -648,11 +647,11 @@ describe("useWebSocketSession", () => {
       });
     });
 
-    expect(result.current.pendingPlanApproval).toEqual({});
-    expect(result.current.status).toBe("paused");
+    expect(result.current.pendingPlanApproval).toBeNull();
+    expect(result.current.status).toBe("completed");
   });
 
-  it("turn_complete without ExitPlanMode goes idle normally", async () => {
+  it("turn_complete without ExitPlanMode goes terminal normally", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
       await Promise.resolve(); await Promise.resolve();
@@ -694,7 +693,7 @@ describe("useWebSocketSession", () => {
     });
 
     expect(result.current.pendingPlanApproval).toBeNull();
-    expect(result.current.status).toBe("idle");
+    expect(result.current.status).toBe("completed");
   });
 
   it("approvePlan clears approval, sends mode.set + prompt, sets running", async () => {
@@ -717,24 +716,14 @@ describe("useWebSocketSession", () => {
     act(() => {
       ws.simulateMessage({
         domain: "session",
-        action: "message",
+        action: "permission.request",
         payload: {
-          blocks: [{
-            type: "stream_event",
-            uuid: "se1",
-            session_id: "s1",
-            parent_tool_use_id: null,
-            event: {
-              type: "content_block_start",
-              index: 0,
-              content_block: { type: "tool_use", id: "toolu_1", name: "ExitPlanMode", input: {} },
-            },
-          }],
+          request_id: "req-plan-1",
+          tool_name: "ExitPlanMode",
+          tool_input: {},
+          description: "Plan is ready",
         },
       });
-    });
-    act(() => {
-      ws.simulateMessage({ domain: "session", action: "turn_complete", payload: {} });
     });
     expect(result.current.pendingPlanApproval).toEqual({});
 
@@ -747,15 +736,16 @@ describe("useWebSocketSession", () => {
     expect(result.current.permissionMode).toBe("acceptEdits");
     expect(result.current.status).toBe("running");
 
-    // Should have sent mode.set and prompt.send
+    // Should have sent mode.set and permission.respond
     const sentMessages = ws.sent.map((s) => JSON.parse(s));
     const modeSet = sentMessages.find((m) => m.action === "mode.set");
     expect(modeSet).toBeDefined();
     expect(modeSet.payload.mode).toBe("acceptEdits");
 
-    const promptSend = sentMessages.find((m) => m.action === "prompt.send");
-    expect(promptSend).toBeDefined();
-    expect(promptSend.payload.text).toContain("Plan approved");
+    const permissionRespond = sentMessages.find((m) => m.action === "permission.respond");
+    expect(permissionRespond).toBeDefined();
+    expect(permissionRespond.payload.request_id).toBe("req-plan-1");
+    expect(permissionRespond.payload.decision).toBe("allow_once");
   });
 
   it("requestPlanChanges clears approval, echoes feedback, sends prompt", async () => {
@@ -777,24 +767,14 @@ describe("useWebSocketSession", () => {
     act(() => {
       ws.simulateMessage({
         domain: "session",
-        action: "message",
+        action: "permission.request",
         payload: {
-          blocks: [{
-            type: "stream_event",
-            uuid: "se1",
-            session_id: "s1",
-            parent_tool_use_id: null,
-            event: {
-              type: "content_block_start",
-              index: 0,
-              content_block: { type: "tool_use", id: "toolu_1", name: "ExitPlanMode", input: {} },
-            },
-          }],
+          request_id: "req-plan-2",
+          tool_name: "ExitPlanMode",
+          tool_input: {},
+          description: "Plan is ready",
         },
       });
-    });
-    act(() => {
-      ws.simulateMessage({ domain: "session", action: "turn_complete", payload: {} });
     });
 
     // Request changes
@@ -810,11 +790,13 @@ describe("useWebSocketSession", () => {
     expect(userMessages).toHaveLength(1);
     expect(userMessages[0].content).toBe("Use a different approach");
 
-    // Should have sent prompt.send with feedback
+    // Should have sent permission.respond with deny feedback
     const sentMessages = ws.sent.map((s) => JSON.parse(s));
-    const promptSend = sentMessages.find((m) => m.action === "prompt.send");
-    expect(promptSend).toBeDefined();
-    expect(promptSend.payload.text).toBe("Use a different approach");
+    const permissionRespond = sentMessages.find((m) => m.action === "permission.respond");
+    expect(permissionRespond).toBeDefined();
+    expect(permissionRespond.payload.request_id).toBe("req-plan-2");
+    expect(permissionRespond.payload.decision).toBe("deny");
+    expect(permissionRespond.payload.feedback).toBe("Use a different approach");
   });
 
   it("setPermissionMode sends mode.set envelope and updates state", async () => {

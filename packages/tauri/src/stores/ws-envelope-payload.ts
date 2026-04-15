@@ -174,6 +174,12 @@ export function parseErrorPayload(payload: unknown): { message?: string } | null
   return { message: optionalString(record, "message") };
 }
 
+export function parseEndedPayload(payload: unknown): { reason?: string } | null {
+  const record = asRecord(payload);
+  if (!record) return null;
+  return { reason: optionalString(record, "reason") };
+}
+
 export function parseUsagePayload(payload: unknown): {
   input_tokens: number;
   output_tokens: number;

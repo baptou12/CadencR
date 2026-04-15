@@ -3,6 +3,7 @@ import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { QueryClient } from "@tanstack/react-query";
 import { useWsSessionStore } from "@/stores/ws-session-store";
+import { isTurnActive } from "@/stores/ws-turn-lifecycle";
 import { useWorkflowStore } from "@/hooks/useWorkflowWebSocket";
 import { useEditorStore } from "@/stores/editor-store";
 import { useGlobalShortcut } from "@/hooks/useGlobalShortcut";
@@ -27,7 +28,7 @@ function getRunningAgents(queryClient: QueryClient): RunningAgentInfo[] {
   // Check ws-session / ws-feature agents
   const sessions = useWsSessionStore.getState().sessions;
   for (const [sessionId, session] of Object.entries(sessions)) {
-    if (session.status !== "running") continue;
+    if (!isTurnActive(session.lifecycle)) continue;
     const title = session.featureTitle
       ?? lookupFeatureTitle(session.featureId, queryClient)
       ?? "Untitled";
@@ -78,7 +79,7 @@ export function useAppClose(queryClient: QueryClient) {
         // Workflow agent — extract slotKey and interrupt via workflow store
         const slotKey = sessionId.split(":").slice(2).join(":");
         wfStore.interruptItem(slotKey);
-      } else if (wsStore.sessions[sessionId]?.status === "running") {
+      } else if (wsStore.sessions[sessionId] && isTurnActive(wsStore.sessions[sessionId].lifecycle)) {
         wsStore.interrupt(sessionId);
       }
     }

@@ -7,6 +7,7 @@ import {
   type SessionEntry,
   type WsSessionStore,
 } from "./ws-session-types";
+import { transitionTurn } from "./ws-turn-lifecycle";
 
 function createTestContext(session: SessionEntry): StoreAccessors {
   let state = { sessions: { s1: session } } as unknown as WsSessionStore;
@@ -39,7 +40,7 @@ describe("handleEnvelope turn_complete", () => {
     const taskB = makeTaskBlock("task-b");
 
     session.blocks = [taskA, taskB];
-    session.status = "running";
+    session.lifecycle = transitionTurn(session.lifecycle, { type: "prompt_sent" });
     session.streamingState.toolUseIdToBlock.set("task-a", taskA);
     session.streamingState.toolUseIdToBlock.set("task-b", taskB);
     session.streamingState.streams.set("child-a", {
@@ -62,7 +63,7 @@ describe("handleEnvelope turn_complete", () => {
     });
 
     const updated = ctx.getSession("s1");
-    expect(updated.status).toBe("idle");
+    expect(updated.lifecycle).toEqual({ phase: "terminal", reason: "completed" });
     expect(updated.blocks[0].taskComplete).toBe(true);
     expect(updated.blocks[1].taskComplete).toBe(true);
     for (const stream of updated.streamingState.streams.values()) {

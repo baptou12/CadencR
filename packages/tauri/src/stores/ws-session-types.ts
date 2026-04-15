@@ -3,7 +3,7 @@
  */
 
 import type { AgentBlockData } from "@/components/AgentBlock";
-import type { AgentStatus, TodoItem } from "@/types/agent";
+import type { TodoItem } from "@/types/agent";
 import type { ContextUsageState } from "@/types/agent";
 import type { PendingPermission } from "@/components/ToolPermissionPrompt";
 import type { AgentQuestion, AgentQuestionAnswers } from "@/components/AgentQuestionDrawer";
@@ -14,6 +14,8 @@ import type { WsEnvelope, SessionConfig } from "@/lib/ws-envelope";
 import type { PermissionDecisionValue } from "@/components/ToolPermissionPrompt";
 import type { StreamingState } from "./ws-message-processing";
 import { createStreamingState } from "./ws-message-processing";
+import type { TurnLifecycle } from "./ws-turn-lifecycle";
+import { createIdleTurnLifecycle } from "./ws-turn-lifecycle";
 import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "../shared/models";
 
 export type PermissionMode = "acceptEdits" | "plan";
@@ -37,9 +39,9 @@ export interface SessionEntry {
   conn: WsConnection | null;
   isConnected: boolean;
   serverSessionId: string;
+  lifecycle: TurnLifecycle;
   streamingState: StreamingState;
   blocks: AgentBlockData[];
-  status: AgentStatus;
   pendingPermission: PendingPermission | null;
   pendingRequestId: string;
   pendingQuestions: AgentQuestion[];
@@ -75,9 +77,9 @@ export function createSessionEntry(): SessionEntry {
     conn: null,
     isConnected: false,
     serverSessionId: "",
+    lifecycle: createIdleTurnLifecycle(),
     streamingState: createStreamingState(),
     blocks: [],
-    status: "idle",
     pendingPermission: null,
     pendingRequestId: "",
     pendingQuestions: [],
@@ -142,7 +144,7 @@ export interface WsSessionStore {
   markPersistedLoaded: (sessionId: string) => void;
   setPersistedState: (sessionId: string, options: {
     blocks: AgentBlockData[];
-    status: AgentStatus;
+    lifecycle: TurnLifecycle;
     hasMore?: boolean;
     oldestMessageId?: number | null;
     featureId?: number;

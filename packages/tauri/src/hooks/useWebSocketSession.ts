@@ -15,15 +15,22 @@ import {
   type PermissionMode,
   type PendingPlanApproval,
 } from "@/stores/ws-session-store";
-import type { AgentStatus } from "@/types/agent";
 import type { PendingPermission } from "@/components/ToolPermissionPrompt";
 import type { PermissionDecisionValue } from "@/components/ToolPermissionPrompt";
 import type { AgentQuestion, AgentQuestionAnswers } from "@/components/AgentQuestionDrawer";
 import type { SessionConfig } from "@/lib/ws-envelope";
 import type { ContextUsageState } from "@/types/agent";
+import type { AgentStatus } from "@/types/agent";
+import {
+  type TurnLifecycle,
+  createIdleTurnLifecycle,
+  lifecycleToStatus,
+  persistedStatusToLifecycle,
+} from "@/stores/ws-turn-lifecycle";
 
 interface UseWebSocketSessionReturn {
   blocks: AgentBlockData[];
+  lifecycle: TurnLifecycle;
   status: AgentStatus;
   isConnected: boolean;
   sessionId: string;
@@ -88,13 +95,14 @@ export function useWebSocketSession(sessionId: string, featureId?: number): UseW
     const lastSession = sessions[sessions.length - 1];
     const restoredBlocks = serverBlocksToAgentBlocks(lastSession.blocks);
 
-    const s = lastSession.status;
-    const restoredStatus: AgentStatus =
-      s === "paused" || s === "completed" || s === "error" ? s : "idle";
+    const restoredLifecycle = persistedStatusToLifecycle(
+      lastSession.status as AgentStatus,
+      lastSession.pendingPlanApproval,
+    );
 
     store.setPersistedState(sessionId, {
       blocks: restoredBlocks,
-      status: restoredStatus,
+      lifecycle: restoredLifecycle,
       hasMore: lastSession.hasMore,
       oldestMessageId: lastSession.oldestMessageId,
       featureId,
@@ -109,7 +117,8 @@ export function useWebSocketSession(sessionId: string, featureId?: number): UseW
 
   return {
     blocks: session?.blocks ?? [],
-    status: session?.status ?? "idle",
+    lifecycle: session?.lifecycle ?? createIdleTurnLifecycle(),
+    status: lifecycleToStatus(session?.lifecycle ?? createIdleTurnLifecycle()),
     isConnected: session?.isConnected ?? false,
     sessionId,
     hasMore: session?.hasMore ?? false,

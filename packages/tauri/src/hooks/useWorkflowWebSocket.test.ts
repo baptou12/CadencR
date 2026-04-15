@@ -18,9 +18,14 @@ vi.mock("@/stores/ws-session-store", () => {
       activeThinkingIndex: null,
       toolCalls: new Map(),
     }),
-    processSdkMessage: (_msg: unknown, _state: unknown) => [
-      { type: "append-text", text: `chunk-${++counter}` },
-    ],
+    processSdkMessage: (_msg: unknown, _state: unknown) => ({
+      mutations: [
+        { type: "append-text", text: `chunk-${++counter}` },
+      ],
+      signals: {
+        enterPlanModeRequested: false,
+      },
+    }),
     applyMutations: (
       blocks: unknown[],
       mutations: Array<{ type: string; text: string }>,

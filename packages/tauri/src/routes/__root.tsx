@@ -33,6 +33,7 @@ import { KeyboardShortcutsModal } from "@/components/KeyboardShortcutsModal";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useAppWsStore } from "@/stores/app-ws-store";
 import { useWsSessionStore } from "@/stores/ws-session-store";
+import { isTurnActive } from "@/stores/ws-turn-lifecycle";
 import { useZoomHotkeys } from "@/hooks/useZoom";
 import { initNotificationPermission, listenForNotificationClicks } from "@/lib/notify-agent-done";
 import { useAppClose } from "@/hooks/useAppClose";
@@ -198,14 +199,14 @@ function RootLayout() {
   useHotkeys(
     "meta+escape",
     (e) => {
-      const store = useWsSessionStore.getState();
-      const sessions = store.sessions;
-      let stopped = false;
-      for (const sessionId of Object.keys(sessions)) {
-        if (sessions[sessionId].status === "running") {
-          store.interrupt(sessionId);
-          stopped = true;
-        }
+        const store = useWsSessionStore.getState();
+        const sessions = store.sessions;
+        let stopped = false;
+        for (const sessionId of Object.keys(sessions)) {
+          if (isTurnActive(sessions[sessionId].lifecycle)) {
+            store.interrupt(sessionId);
+            stopped = true;
+          }
       }
       if (stopped) e.preventDefault();
     },
