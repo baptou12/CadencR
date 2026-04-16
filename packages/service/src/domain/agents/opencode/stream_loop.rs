@@ -5,8 +5,8 @@ use tokio::sync::{mpsc, Mutex};
 use tracing::warn;
 
 use super::events::{init_event, permission_request_event, question_request_event};
+use super::session::PendingRequestKind;
 use super::stream_state::LoopState;
-use super::PendingRequestKind;
 use crate::domain::agents::adapter::{RuntimeError, RuntimeEvent};
 
 pub(super) fn spawn_event_loop(
@@ -23,7 +23,11 @@ pub(super) fn spawn_event_loop(
             let mut output = Vec::new();
             match event {
                 opencode_sdk_rs::SseEvent::ServerConnected => {
-                    output.push(init_event(&session_id, state.current_model(), context_window));
+                    output.push(init_event(
+                        &session_id,
+                        state.current_model(),
+                        context_window,
+                    ));
                 }
                 opencode_sdk_rs::SseEvent::MessageCreated(message)
                 | opencode_sdk_rs::SseEvent::MessageUpdated(message) => {
@@ -113,7 +117,7 @@ pub(super) fn spawn_event_loop(
 mod tests {
     use super::spawn_event_loop;
     use crate::domain::agents::adapter::{RuntimeContentDelta, RuntimeStreamEvent, RuntimeUsage};
-    use crate::domain::agents::opencode::PendingRequestKind;
+    use crate::domain::agents::opencode::session::PendingRequestKind;
     use std::collections::HashMap;
     use std::sync::Arc;
     use tokio::sync::{mpsc, Mutex};
