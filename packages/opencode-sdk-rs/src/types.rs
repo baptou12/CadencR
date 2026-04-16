@@ -278,6 +278,21 @@ pub struct ModelRef {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Command {
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub agent: Option<String>,
+    #[serde(default)]
+    pub model: Option<String>,
+    #[serde(default)]
+    pub template: Option<String>,
+    #[serde(default)]
+    pub subtask: Option<bool>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PromptOptions {
     pub model: Option<ModelRef>,
     pub agent: Option<String>,

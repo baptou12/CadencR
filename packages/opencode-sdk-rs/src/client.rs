@@ -1,3 +1,7 @@
+mod commands;
+
+pub use commands::parse_command_invocation;
+
 use reqwest::StatusCode;
 use serde::de::DeserializeOwned;
 use serde_json::Value;

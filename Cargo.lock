@@ -3702,6 +3702,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "axum",
+ "dirs 6.0.0",
  "futures-util",
  "once_cell",
  "regex-lite",
@@ -3709,6 +3710,7 @@ dependencies = [
  "reqwest-eventsource",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "tokio-stream",

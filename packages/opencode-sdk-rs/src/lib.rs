@@ -9,7 +9,7 @@ mod sse_reconcile;
 mod tool_input;
 pub mod types;
 
-pub use client::OpenCodeClient;
+pub use client::{parse_command_invocation, OpenCodeClient};
 pub use error::SdkError;
 pub use event_parsing::parse_sse_event;
 pub use parsing::{
@@ -19,7 +19,7 @@ pub use parsing::{
 pub use process::{OpenCodeServer, OpenCodeServerInfo};
 pub use sse::{shared_dispatcher, SseDispatcher, SseStream};
 pub use types::{
-    Message, MessagePart, MessageRole, ModelRef, PermissionReply, PermissionRequest, PromptOptions,
-    PromptPart, Question, QuestionItem, QuestionOption, Session, SessionStatus, SseEvent,
-    TokenCacheUsage, TokenUsage,
+    Command, Message, MessagePart, MessageRole, ModelRef, PermissionReply, PermissionRequest,
+    PromptOptions, PromptPart, Question, QuestionItem, QuestionOption, Session, SessionStatus,
+    SseEvent, TokenCacheUsage, TokenUsage,
 };
