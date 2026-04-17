@@ -77,10 +77,11 @@ export function useSetWorkspaceProviderSetting(
 export function useGetProjectProviderSettings(projectId: number, enabled = true) {
   return useQuery({
     queryKey: ["projects", "provider-settings", projectId],
-    queryFn: async () => {
-      const data = await customInstance<ProviderSettings>({ method: "GET", url: `/api/projects/${projectId}/provider-settings` });
-      return { ...defaultProviderSettings(), ...data };
-    },
+    queryFn: () =>
+      customInstance<ProviderSettings>({
+        method: "GET",
+        url: `/api/projects/${projectId}/provider-settings`,
+      }),
     enabled,
   });
 }
@@ -107,10 +108,11 @@ export function useSetProjectProviderSetting(
 export function useGetFeatureProviderSettings(featureId: number, enabled = true) {
   return useQuery({
     queryKey: ["features", "provider-settings", featureId],
-    queryFn: async () => {
-      const data = await customInstance<ProviderSettings>({ method: "GET", url: `/api/features/${featureId}/provider-settings` });
-      return { ...defaultProviderSettings(), ...data };
-    },
+    queryFn: () =>
+      customInstance<ProviderSettings>({
+        method: "GET",
+        url: `/api/features/${featureId}/provider-settings`,
+      }),
     enabled,
   });
 }

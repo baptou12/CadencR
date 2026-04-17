@@ -52,11 +52,29 @@ const cadenceToolLabels: Record<string, string> = {
   read_conversation: "Reading conversation",
 };
 
+/**
+ * Read a string arg, rejecting empty strings.
+ *
+ * OpenAI strict JSON schemas fill optional string fields with `""` when the
+ * model doesn't provide them, so a naive `typeof === "string"` check would
+ * short-circuit on that sentinel and prevent fall-back to the next field.
+ */
+function nonEmptyString(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
 /** Extract a meaningful detail string from Cadence MCP tool args. */
 function cadenceDetail(tool: string, args: Record<string, unknown>): string | undefined {
-  if (typeof args.title === "string") return args.title;
-  if (typeof args.summary === "string") return args.summary;
-  if (typeof args.prd === "string") return args.prd.slice(0, 80);
+  const title = nonEmptyString(args.title);
+  if (title) return title;
+  const summary = nonEmptyString(args.summary);
+  if (summary) return summary;
+  const commitMessage = nonEmptyString(args.commit_message);
+  if (commitMessage) return commitMessage;
+  const prompt = nonEmptyString(args.prompt);
+  if (prompt) return prompt.slice(0, 80);
+  const prd = nonEmptyString(args.prd);
+  if (prd) return prd.slice(0, 80);
   if (tool === "read_phase" || tool === "mark_phase_done") {
     if (typeof args.phase_id === "number") return `Phase #${args.phase_id}`;
   }

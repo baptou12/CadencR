@@ -177,4 +177,29 @@ describe("parseCadenceMcpTool", () => {
     expect(result!.label).toBe("Reading plan");
     expect(result!.detail).toBeUndefined();
   });
+
+  it("falls back past empty-string title to summary", () => {
+    const result = parseCadenceMcpTool(
+      "mcp__cadence-common__mark_agent_done",
+      JSON.stringify({ title: "", summary: "Explored the theme" }),
+    );
+    expect(result!.detail).toBe("Explored the theme");
+  });
+
+  it("falls back past empty title/summary to commit_message", () => {
+    const result = parseCadenceMcpTool(
+      "mcp__cadence-plan__create_phase",
+      JSON.stringify({ title: "", summary: "", commit_message: "feat: add one-dark theme" }),
+    );
+    expect(result!.detail).toBe("feat: add one-dark theme");
+  });
+
+  it("falls back to truncated prompt when title/summary/commit_message are empty", () => {
+    const longPrompt = "a".repeat(120);
+    const result = parseCadenceMcpTool(
+      "mcp__cadence-plan__create_phase",
+      JSON.stringify({ title: "", prompt: longPrompt }),
+    );
+    expect(result!.detail).toHaveLength(80);
+  });
 });
