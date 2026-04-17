@@ -1027,6 +1027,140 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn test_provider_set_is_locked_once_session_has_history() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+        let app_state = make_test_app_state().await;
+
+        let session_id = init_session(&tx, &mut rx, &sdk_sessions, &app_state, 1).await;
+        let db_id: i64 = session_id.parse().unwrap();
+
+        sqlx::query(
+            "INSERT INTO agent_messages (session_id, role, content, message_type) VALUES (?, 'user', 'hello', 'user_message')",
+        )
+        .bind(db_id)
+        .execute(&app_state.write_pool)
+        .await
+        .unwrap();
+
+        let envelope = make_envelope(
+            "session",
+            "provider.set",
+            serde_json::json!({
+                "session_id": session_id,
+                "provider": "opencode",
+            }),
+        );
+        dispatch_envelope(envelope, &tx, &sdk_sessions, &app_state).await;
+
+        let msg = rx.recv().await.unwrap();
+        if let Message::Text(text) = msg {
+            let env: WsEnvelope = serde_json::from_str(&text).unwrap();
+            assert_eq!(env.action, "error");
+            let payload: SessionErrorPayload = serde_json::from_value(env.payload).unwrap();
+            assert_eq!(payload.code, "PROVIDER_LOCKED");
+        } else {
+            panic!("expected text message");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_model_set_updates_pending_session_provider_from_model() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+        let app_state = make_test_app_state().await;
+
+        let session_id = init_session(&tx, &mut rx, &sdk_sessions, &app_state, 1).await;
+        let db_id: i64 = session_id.parse().unwrap();
+
+        let provider_envelope = make_envelope(
+            "session",
+            "provider.set",
+            serde_json::json!({
+                "session_id": session_id,
+                "provider": "opencode",
+            }),
+        );
+        dispatch_envelope(provider_envelope, &tx, &sdk_sessions, &app_state).await;
+        let _ = rx.recv().await.unwrap();
+
+        let model_envelope = make_envelope(
+            "session",
+            "model.set",
+            serde_json::json!({
+                "session_id": session_id,
+                "model": "opus",
+            }),
+        );
+        dispatch_envelope(model_envelope, &tx, &sdk_sessions, &app_state).await;
+
+        let msg = rx.recv().await.unwrap();
+        if let Message::Text(text) = msg {
+            let env: WsEnvelope = serde_json::from_str(&text).unwrap();
+            assert_eq!(env.action, "model.set.ok");
+        } else {
+            panic!("expected text message");
+        }
+
+        let persisted: Option<String> =
+            sqlx::query_scalar("SELECT runtime_provider FROM agent_sessions WHERE id = ?")
+                .bind(db_id)
+                .fetch_one(&app_state.read_pool)
+                .await
+                .unwrap();
+        assert_eq!(persisted.as_deref(), Some("claude_code"));
+    }
+
+    #[tokio::test]
+    async fn test_model_set_rejects_cross_provider_change_once_session_has_history() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+        let app_state = make_test_app_state().await;
+
+        let session_id = init_session(&tx, &mut rx, &sdk_sessions, &app_state, 1).await;
+        let db_id: i64 = session_id.parse().unwrap();
+
+        let provider_envelope = make_envelope(
+            "session",
+            "provider.set",
+            serde_json::json!({
+                "session_id": session_id,
+                "provider": "opencode",
+            }),
+        );
+        dispatch_envelope(provider_envelope, &tx, &sdk_sessions, &app_state).await;
+        let _ = rx.recv().await.unwrap();
+
+        sqlx::query(
+            "INSERT INTO agent_messages (session_id, role, content, message_type) VALUES (?, 'user', 'hello', 'user_message')",
+        )
+        .bind(db_id)
+        .execute(&app_state.write_pool)
+        .await
+        .unwrap();
+
+        let model_envelope = make_envelope(
+            "session",
+            "model.set",
+            serde_json::json!({
+                "session_id": session_id,
+                "model": "opus",
+            }),
+        );
+        dispatch_envelope(model_envelope, &tx, &sdk_sessions, &app_state).await;
+
+        let msg = rx.recv().await.unwrap();
+        if let Message::Text(text) = msg {
+            let env: WsEnvelope = serde_json::from_str(&text).unwrap();
+            assert_eq!(env.action, "error");
+            let payload: SessionErrorPayload = serde_json::from_value(env.payload).unwrap();
+            assert_eq!(payload.code, "PROVIDER_LOCKED");
+        } else {
+            panic!("expected text message");
+        }
+    }
+
     /// Helper: insert an SdkHandle with QueryState::Active using a test stub Query.
     fn make_active_handle(feature_id: i64, session_id: Option<String>) -> SdkHandle {
         let query = Query::new_test_stub(session_id);

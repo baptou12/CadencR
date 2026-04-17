@@ -20,6 +20,27 @@ use crate::domain::workflow::engine::WsSender as WorkflowWsSender;
 use crate::domain::workflow::worktree;
 use crate::domain::ws_session::question_answers::format_answers_plain_text;
 
+async fn session_has_messages(pool: &sqlx::SqlitePool, session_id: i64) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar::<_, i64>("SELECT EXISTS(SELECT 1 FROM agent_messages WHERE session_id = ?)")
+        .bind(session_id)
+        .fetch_one(pool)
+        .await
+        .map(|exists| exists != 0)
+}
+
+fn provider_for_model(current_provider: &str, model: &str) -> String {
+    adapter_for_model(model)
+        .map(|(provider_id, _)| provider_id)
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| {
+            if current_provider != DEFAULT_PROVIDER && !model.contains('/') {
+                return DEFAULT_PROVIDER.to_string();
+            }
+
+            current_provider.to_string()
+        })
+}
+
 /// Handle session.permission.respond
 pub(super) async fn handle_permission_respond(
     envelope: WsEnvelope,
@@ -220,6 +241,20 @@ pub(super) async fn handle_provider_set(
         return;
     }
 
+    let has_messages = match session_has_messages(&app_state.read_pool, db_session_id).await {
+        Ok(value) => value,
+        Err(error) => {
+            error!(db_session_id, %error, "failed to verify session history before provider change");
+            send_error(
+                sender,
+                &envelope.id,
+                "DB_ERROR",
+                "Failed to verify session history",
+            );
+            return;
+        }
+    };
+
     let mut sessions = sdk_sessions.lock().await;
     let handle = match sessions.get_mut(&db_session_id) {
         Some(h) => h,
@@ -233,6 +268,16 @@ pub(super) async fn handle_provider_set(
             return;
         }
     };
+
+    if has_messages {
+        send_error(
+            sender,
+            &envelope.id,
+            "PROVIDER_LOCKED",
+            "Provider cannot be changed after the conversation starts",
+        );
+        return;
+    }
 
     match &mut handle.state {
         QueryState::Pending(options) => {
@@ -296,6 +341,20 @@ pub(super) async fn handle_model_set(
         }
     };
 
+    let has_messages = match session_has_messages(&app_state.read_pool, db_session_id).await {
+        Ok(value) => value,
+        Err(error) => {
+            error!(db_session_id, %error, "failed to verify session history before model change");
+            send_error(
+                sender,
+                &envelope.id,
+                "DB_ERROR",
+                "Failed to verify session history",
+            );
+            return;
+        }
+    };
+
     let mut sessions = sdk_sessions.lock().await;
     let handle = match sessions.get_mut(&db_session_id) {
         Some(h) => h,
@@ -310,24 +369,32 @@ pub(super) async fn handle_model_set(
         }
     };
 
+    let target_provider = provider_for_model(&handle.runtime_provider, &payload.model);
+    if has_messages && handle.runtime_provider != target_provider {
+        send_error(
+            sender,
+            &envelope.id,
+            "PROVIDER_LOCKED",
+            "Start a new session to switch providers",
+        );
+        return;
+    }
+
     info!(db_session_id, model = %payload.model, "updating desired model");
     handle.desired_model = Some(payload.model.clone());
 
     match &mut handle.state {
         QueryState::Pending(options) => {
             options.model = Some(payload.model.clone());
-            if let Some((new_provider, _)) = adapter_for_model(&payload.model) {
-                if handle.runtime_provider != new_provider {
-                    handle.runtime_provider = new_provider.to_string();
-                    handle.resume_session_id = None;
-                    options.resume_session_id = None;
-                    let _ =
-                        sqlx::query("UPDATE agent_sessions SET runtime_provider = ? WHERE id = ?")
-                            .bind(new_provider)
-                            .bind(db_session_id)
-                            .execute(&app_state.write_pool)
-                            .await;
-                }
+            if handle.runtime_provider != target_provider {
+                handle.runtime_provider = target_provider.clone();
+                handle.resume_session_id = None;
+                options.resume_session_id = None;
+                let _ = sqlx::query("UPDATE agent_sessions SET runtime_provider = ? WHERE id = ?")
+                    .bind(&target_provider)
+                    .bind(db_session_id)
+                    .execute(&app_state.write_pool)
+                    .await;
             }
         }
         QueryState::Active { query, .. } => {
