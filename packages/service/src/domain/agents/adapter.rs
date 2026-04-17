@@ -162,10 +162,14 @@ pub struct RuntimeEvent {
     kind: RuntimeEventKind,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct RuntimeEventMetadata {
     pub session_id: Option<String>,
     pub usage: Option<RuntimeUsage>,
+    /// Authoritative context window reported by the provider for this turn
+    /// (e.g. from Claude Code's `result.modelUsage[model].contextWindow`).
+    /// Populated on turn-complete events; `None` on intermediate events.
+    pub context_window: Option<u64>,
     pub raw: Value,
 }
 
@@ -240,6 +244,7 @@ pub enum RuntimeUserContentBlock {
 pub enum RuntimeStreamEvent {
     MessageStart {
         model: Option<String>,
+        input_tokens: Option<u64>,
     },
     ContentBlockStart {
         index: u32,
@@ -273,6 +278,10 @@ impl RuntimeEvent {
 
     pub fn usage(&self) -> Option<&RuntimeUsage> {
         self.metadata.usage.as_ref()
+    }
+
+    pub fn context_window(&self) -> Option<u64> {
+        self.metadata.context_window
     }
 
     pub fn is_result(&self) -> bool {
@@ -404,6 +413,38 @@ pub trait AgentRuntimeAdapter: Send + Sync {
     /// Live catalog entry (may fetch from external service). Defaults to static.
     async fn catalog_entry_live(&self) -> super::runtime::ProviderCatalogEntry {
         self.catalog_entry()
+    }
+
+    /// Preferred default model id for this provider.
+    ///
+    /// Defaults to the static catalog entry so shared callers can stay
+    /// provider-neutral. Providers with live catalogs (like Claude Code)
+    /// should override this.
+    async fn default_model_id(&self) -> Option<String> {
+        self.catalog_entry().default_model
+    }
+
+    /// Provider-known context window for a given model id, if the provider
+    /// can answer synchronously (e.g. opencode exposes this via its server).
+    /// Defaults to `None` — callers must fall back to another source
+    /// (usually history persisted from prior `result` events).
+    async fn context_window_for_model(&self, _model_id: &str) -> Option<u64> {
+        None
+    }
+
+    /// Extract an authoritative context window for the current event.
+    ///
+    /// The default implementation stays provider-neutral by relying only on
+    /// normalized metadata/init values. Providers with richer wire formats can
+    /// override this and inspect their raw payloads in the adapter layer.
+    fn context_window_for_event(
+        &self,
+        runtime_event: &RuntimeEvent,
+        _active_model: Option<&str>,
+    ) -> Option<u64> {
+        runtime_event
+            .context_window()
+            .or_else(|| runtime_event.init().and_then(|init| init.context_window))
     }
 
     /// Called once at startup for background warmup (e.g. starting sidecar processes).

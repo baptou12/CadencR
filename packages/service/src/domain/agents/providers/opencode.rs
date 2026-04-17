@@ -20,7 +20,7 @@ pub(crate) async fn catalog_entry_live() -> ProviderCatalogEntry {
 }
 
 fn build_catalog_entry(
-    models: Vec<ModelCatalogEntry>,
+    models: Vec<OpencodeModel>,
     default_model: Option<String>,
 ) -> ProviderCatalogEntry {
     let resolved_default = default_model.or_else(|| models.first().map(|model| model.id.clone()));
@@ -28,18 +28,36 @@ fn build_catalog_entry(
         id: "opencode".to_string(),
         label: "OpenCode".to_string(),
         status: ProviderStatus::Available,
-        models,
+        models: models.iter().map(OpencodeModel::to_catalog_entry).collect(),
         default_model: resolved_default,
     }
 }
 
-fn default_models() -> Vec<ModelCatalogEntry> {
-    vec![ModelCatalogEntry {
+/// Internal per-model record used by opencode's session init pipeline to
+/// tell the stream reader the model's context window. Translated to the
+/// frontend-facing `ModelCatalogEntry` via `to_catalog_entry`.
+#[derive(Debug, Clone)]
+struct OpencodeModel {
+    id: String,
+    label: String,
+    context_window: u64,
+}
+
+impl OpencodeModel {
+    fn to_catalog_entry(&self) -> ModelCatalogEntry {
+        ModelCatalogEntry::alias(self.id.clone(), self.label.clone())
+    }
+}
+
+fn default_models() -> Vec<OpencodeModel> {
+    vec![OpencodeModel {
         id: FALLBACK_MODEL_ID.to_string(),
         label: "Default".to_string(),
-        context_window: crate::api::DEFAULT_CONTEXT_WINDOW,
+        context_window: OPENCODE_FALLBACK_CONTEXT_WINDOW,
     }]
 }
+
+const OPENCODE_FALLBACK_CONTEXT_WINDOW: u64 = 200_000;
 
 fn first_string(value: &Value, keys: &[&str]) -> Option<String> {
     keys.iter()
@@ -59,10 +77,10 @@ fn model_context_window(value: &Value) -> u64 {
         .get("limit")
         .and_then(|limit| limit.get("context"))
         .and_then(Value::as_u64)
-        .unwrap_or(crate::api::DEFAULT_CONTEXT_WINDOW)
+        .unwrap_or(OPENCODE_FALLBACK_CONTEXT_WINDOW)
 }
 
-fn models_from_providers(providers: &[Value]) -> Vec<ModelCatalogEntry> {
+fn models_from_providers(providers: &[Value]) -> Vec<OpencodeModel> {
     let mut seen = HashSet::new();
     let mut models = Vec::new();
 
@@ -88,10 +106,12 @@ fn models_from_providers(providers: &[Value]) -> Vec<ModelCatalogEntry> {
             if !seen.insert(id.clone()) {
                 continue;
             }
-            models.push(ModelCatalogEntry {
+            let label = first_string(&model, &["name", "label"]).unwrap_or(model_id);
+            let context_window = model_context_window(&model);
+            models.push(OpencodeModel {
                 id,
-                label: first_string(&model, &["name", "label"]).unwrap_or(model_id),
-                context_window: model_context_window(&model),
+                label,
+                context_window,
             });
         }
     }
@@ -110,7 +130,7 @@ fn default_model_id(config: &Value, providers: &[Value]) -> Option<String> {
     None
 }
 
-async fn fetch_configured_catalog() -> Option<(Vec<ModelCatalogEntry>, Option<String>)> {
+async fn fetch_configured_catalog() -> Option<(Vec<OpencodeModel>, Option<String>)> {
     let timeout = Duration::from_secs(3);
     let client = tokio::time::timeout(timeout, opencode_sdk_rs::OpenCodeClient::init())
         .await
@@ -179,9 +199,9 @@ fn latest_message_is_final_stop(messages: &[Message]) -> bool {
 mod tests {
     use super::{
         build_catalog_entry, catalog_entry, catalog_entry_live, default_model_id,
-        model_context_window, models_from_providers, parse_warmup_flag,
+        model_context_window, models_from_providers, parse_warmup_flag, OpencodeModel,
+        OPENCODE_FALLBACK_CONTEXT_WINDOW,
     };
-    use crate::domain::agents::runtime::ModelCatalogEntry;
     use crate::domain::agents::runtime::ProviderStatus;
     use axum::routing::get;
     use axum::{Json, Router};
@@ -244,15 +264,15 @@ mod tests {
     fn build_catalog_entry_uses_first_model_when_default_missing() {
         let entry = build_catalog_entry(
             vec![
-                ModelCatalogEntry {
+                OpencodeModel {
                     id: "anthropic/claude-sonnet".to_string(),
                     label: "anthropic/claude-sonnet".to_string(),
-                    context_window: crate::api::DEFAULT_CONTEXT_WINDOW,
+                    context_window: OPENCODE_FALLBACK_CONTEXT_WINDOW,
                 },
-                ModelCatalogEntry {
+                OpencodeModel {
                     id: "openai/gpt-5.4".to_string(),
                     label: "openai/gpt-5.4".to_string(),
-                    context_window: crate::api::DEFAULT_CONTEXT_WINDOW,
+                    context_window: OPENCODE_FALLBACK_CONTEXT_WINDOW,
                 },
             ],
             None,
@@ -272,7 +292,7 @@ mod tests {
         );
         assert_eq!(
             model_context_window(&json!({ "limit": { "input": 272000 } })),
-            crate::api::DEFAULT_CONTEXT_WINDOW
+            OPENCODE_FALLBACK_CONTEXT_WINDOW
         );
     }
 
@@ -380,18 +400,19 @@ mod tests {
             .collect::<Vec<_>>();
         labels.sort();
         assert_eq!(labels, vec!["Claude Opus 4.6", "Claude Sonnet 4.5"]);
-        let mut context_windows = entry
-            .models
-            .iter()
-            .map(|model| (model.id.clone(), model.context_window))
-            .collect::<Vec<_>>();
-        context_windows.sort_by(|left, right| left.0.cmp(&right.0));
+        // Context windows are now tracked internally on `OpencodeModel` and
+        // surfaced via `context_window_for_model`; `ModelCatalogEntry` only
+        // carries id/label/capability info. Verify the live lookup instead.
+        let cw_opus = super::context_window_for_model("anthropic/claude-opus-4-6")
+            .await
+            .expect("context window should be known for opus");
+        let cw_sonnet = super::context_window_for_model("anthropic/claude-sonnet-4-5")
+            .await
+            .expect("context window should be known for sonnet");
         assert_eq!(
-            context_windows,
-            vec![
-                ("anthropic/claude-opus-4-6".to_string(), 1_000_000),
-                ("anthropic/claude-sonnet-4-5".to_string(), 200_000),
-            ]
+            (cw_opus, cw_sonnet),
+            (1_000_000, 200_000),
+            "unexpected context windows: opus={cw_opus}, sonnet={cw_sonnet}",
         );
         assert_eq!(
             entry.default_model.as_deref(),

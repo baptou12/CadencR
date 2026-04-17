@@ -96,12 +96,10 @@ use crate::domain::workspace::routes as workspace_routes;
         sessions_routes::get_draft_handler,
         sessions_routes::save_draft_handler,
         usage_routes::get_usage_handler,
-        super::list_models,
         super::get_agent_catalog,
     ),
     components(schemas(
         HealthResponse,
-        super::ModelInfo,
         crate::domain::agents::runtime::AgentCatalogResponse,
         crate::domain::agents::runtime::ProviderCatalogEntry,
         crate::domain::agents::runtime::ModelCatalogEntry,

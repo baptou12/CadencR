@@ -1,20 +1,41 @@
+mod catalog;
+mod events;
+
 use async_trait::async_trait;
 use serde_json::Value;
 use tokio::sync::mpsc;
 
+use self::catalog::fallback_models;
+use self::events::{context_window_for_model_from_raw, normalize_event};
 use super::adapter::{
-    AgentRuntimeAdapter, AgentRuntimeSession, RuntimeAssistantMessage, RuntimeContentBlock,
-    RuntimeContentDelta, RuntimeError, RuntimeEvent, RuntimeEventKind, RuntimeEventMetadata,
-    RuntimeInitEvent, RuntimeMcpServerConfig, RuntimeMcpServerStatus, RuntimeMessageRx,
-    RuntimePermissionMode, RuntimeSpawnConfig, RuntimeStreamEvent, RuntimeToolPermissionHandler,
-    RuntimeToolPermissionRequest, RuntimeToolPermissionResult, RuntimeUsage,
-    RuntimeUserContentBlock, RuntimeUserMessage,
+    AgentRuntimeAdapter, AgentRuntimeSession, RuntimeError, RuntimeEvent, RuntimeMcpServerConfig,
+    RuntimeMessageRx, RuntimePermissionMode, RuntimeSpawnConfig, RuntimeToolPermissionHandler,
+    RuntimeToolPermissionRequest, RuntimeToolPermissionResult,
 };
 use super::runtime::{ModelCatalogEntry, ProviderCatalogEntry, ProviderStatus};
 
-pub struct ClaudeCodeAdapter;
+pub struct ClaudeCodeAdapter {
+    /// Process-lifetime cache of the model catalog. Pre-populated with a
+    /// static fallback list of the historical aliases so the UI has
+    /// something to show before the CLI probe completes; replaced with the
+    /// live CLI-reported list on first successful probe.
+    cached_models: std::sync::OnceLock<std::sync::RwLock<Vec<ModelCatalogEntry>>>,
+    /// Serialises concurrent probes and tracks whether the cached list is
+    /// already authoritative (live from the CLI). Unlike `OnceCell`, this
+    /// lets the probe run again after a failure or empty response — the UI
+    /// would otherwise be stuck on fallback aliases until service restart.
+    probe_state: tokio::sync::Mutex<ProbeState>,
+}
 
-pub static CLAUDE_CODE_ADAPTER: ClaudeCodeAdapter = ClaudeCodeAdapter;
+#[derive(Default)]
+struct ProbeState {
+    live: bool,
+}
+
+pub static CLAUDE_CODE_ADAPTER: ClaudeCodeAdapter = ClaudeCodeAdapter {
+    cached_models: std::sync::OnceLock::new(),
+    probe_state: tokio::sync::Mutex::const_new(ProbeState { live: false }),
+};
 
 pub struct ClaudeCodeSession {
     query: claude_agent_sdk_rs::Query,
@@ -95,168 +116,6 @@ fn map_mcp_server_config(
     }
 }
 
-fn map_content_block(block: &claude_agent_sdk_rs::types::ContentBlock) -> RuntimeContentBlock {
-    match block {
-        claude_agent_sdk_rs::types::ContentBlock::Text { text } => {
-            RuntimeContentBlock::Text { text: text.clone() }
-        }
-        claude_agent_sdk_rs::types::ContentBlock::Thinking { thinking, .. } => {
-            RuntimeContentBlock::Thinking {
-                thinking: thinking.clone(),
-            }
-        }
-        claude_agent_sdk_rs::types::ContentBlock::ToolUse { id, name, input } => {
-            RuntimeContentBlock::ToolUse {
-                id: id.clone(),
-                name: name.clone(),
-                input: input.clone(),
-            }
-        }
-        _ => RuntimeContentBlock::Other,
-    }
-}
-
-fn map_stream_event(event: &claude_agent_sdk_rs::StreamEventData) -> RuntimeStreamEvent {
-    match event {
-        claude_agent_sdk_rs::StreamEventData::MessageStart { message } => {
-            RuntimeStreamEvent::MessageStart {
-                model: Some(message.model.clone()),
-            }
-        }
-        claude_agent_sdk_rs::StreamEventData::ContentBlockStart {
-            index,
-            content_block,
-        } => RuntimeStreamEvent::ContentBlockStart {
-            index: *index,
-            block: map_content_block(content_block),
-        },
-        claude_agent_sdk_rs::StreamEventData::ContentBlockDelta { index, delta } => {
-            let delta = match delta {
-                claude_agent_sdk_rs::ContentDelta::TextDelta { text } => {
-                    RuntimeContentDelta::Text { text: text.clone() }
-                }
-                claude_agent_sdk_rs::ContentDelta::ThinkingDelta { thinking } => {
-                    RuntimeContentDelta::Thinking {
-                        thinking: thinking.clone(),
-                    }
-                }
-                claude_agent_sdk_rs::ContentDelta::InputJsonDelta { partial_json } => {
-                    RuntimeContentDelta::InputJson {
-                        partial_json: partial_json.clone(),
-                    }
-                }
-            };
-            RuntimeStreamEvent::ContentBlockDelta {
-                index: *index,
-                delta,
-            }
-        }
-        claude_agent_sdk_rs::StreamEventData::ContentBlockStop { index } => {
-            RuntimeStreamEvent::ContentBlockStop { index: *index }
-        }
-        _ => RuntimeStreamEvent::Other,
-    }
-}
-
-fn map_user_message(message: &Value) -> RuntimeUserMessage {
-    let content = message
-        .get("content")
-        .and_then(Value::as_array)
-        .map(|items| {
-            items
-                .iter()
-                .map(|item| {
-                    if item.get("type").and_then(Value::as_str) == Some("tool_result") {
-                        RuntimeUserContentBlock::ToolResult {
-                            tool_use_id: item
-                                .get("tool_use_id")
-                                .and_then(Value::as_str)
-                                .map(ToOwned::to_owned),
-                            is_error: item
-                                .get("is_error")
-                                .and_then(Value::as_bool)
-                                .unwrap_or(false),
-                            content: item.get("content").cloned().unwrap_or(Value::Null),
-                        }
-                    } else {
-                        RuntimeUserContentBlock::Other
-                    }
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-
-    RuntimeUserMessage { content }
-}
-
-fn normalize_event(msg: claude_agent_sdk_rs::SdkMessage) -> RuntimeEvent {
-    let metadata = RuntimeEventMetadata {
-        session_id: msg.session_id().map(ToOwned::to_owned),
-        usage: msg.usage().map(|usage| RuntimeUsage {
-            input_tokens: usage.input_tokens
-                + usage.cache_creation_input_tokens.unwrap_or(0)
-                + usage.cache_read_input_tokens.unwrap_or(0),
-            output_tokens: usage.output_tokens,
-        }),
-        raw: serde_json::to_value(&msg).unwrap_or_default(),
-    };
-
-    let kind = match msg {
-        claude_agent_sdk_rs::SdkMessage::System(claude_agent_sdk_rs::SystemMessage::Init {
-            model,
-            mcp_servers,
-            ..
-        }) => RuntimeEventKind::Init(RuntimeInitEvent {
-            model: Some(model),
-            mcp_servers: mcp_servers
-                .into_iter()
-                .map(|server| RuntimeMcpServerStatus {
-                    name: server.name,
-                    status: server.status,
-                })
-                .collect(),
-            context_window: None,
-        }),
-        claude_agent_sdk_rs::SdkMessage::System(
-            claude_agent_sdk_rs::SystemMessage::CompactBoundary { .. },
-        ) => RuntimeEventKind::CompactBoundary,
-        claude_agent_sdk_rs::SdkMessage::Assistant {
-            message,
-            parent_tool_use_id,
-            ..
-        } => RuntimeEventKind::AssistantMessage {
-            message: RuntimeAssistantMessage {
-                model: Some(message.model),
-                content: message.content.iter().map(map_content_block).collect(),
-            },
-            parent_tool_use_id,
-        },
-        claude_agent_sdk_rs::SdkMessage::User {
-            message,
-            parent_tool_use_id,
-            ..
-        } => RuntimeEventKind::UserMessage {
-            message: map_user_message(&message),
-            parent_tool_use_id,
-        },
-        claude_agent_sdk_rs::SdkMessage::StreamEvent {
-            event,
-            parent_tool_use_id,
-            ..
-        } => RuntimeEventKind::StreamEvent {
-            event: map_stream_event(&event),
-            parent_tool_use_id,
-        },
-        claude_agent_sdk_rs::SdkMessage::ToolUseSummary { data, .. } => {
-            RuntimeEventKind::ToolUseSummary { data }
-        }
-        claude_agent_sdk_rs::SdkMessage::Result { .. } => RuntimeEventKind::Result,
-        _ => RuntimeEventKind::Other,
-    };
-
-    RuntimeEvent::new(metadata, kind)
-}
-
 #[async_trait]
 impl AgentRuntimeSession for ClaudeCodeSession {
     fn take_message_rx(&mut self) -> RuntimeMessageRx {
@@ -326,20 +185,60 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
     }
 
     fn catalog_entry(&self) -> ProviderCatalogEntry {
+        // Fast, sync path used for registry bootstrap and routing. The
+        // authoritative catalog comes from `catalog_entry_live()`.
+        let models = fallback_models();
+        let default_model = Self::default_model_from(&models);
         ProviderCatalogEntry {
             id: "claude_code".to_string(),
             label: "Claude Code".to_string(),
             status: ProviderStatus::Available,
-            models: crate::api::MODELS
-                .iter()
-                .map(|(id, label, context_window)| ModelCatalogEntry {
-                    id: (*id).to_string(),
-                    label: (*label).to_string(),
-                    context_window: *context_window,
-                })
-                .collect(),
-            default_model: Some(crate::api::DEFAULT_MODEL.to_string()),
+            models,
+            default_model,
         }
+    }
+
+    fn spawn_startup_warmup(&self) {
+        // Prime the model cache on startup so the `/api/agent-catalog`
+        // endpoint serves the live CLI list on first call without paying the
+        // probe latency inline.
+        tokio::spawn(async {
+            let _ = CLAUDE_CODE_ADAPTER.load_models().await;
+        });
+    }
+
+    async fn catalog_entry_live(&self) -> ProviderCatalogEntry {
+        let models = self.load_models().await;
+        let default_model = Self::default_model_from(&models);
+        ProviderCatalogEntry {
+            id: "claude_code".to_string(),
+            label: "Claude Code".to_string(),
+            status: ProviderStatus::Available,
+            models,
+            default_model,
+        }
+    }
+
+    async fn default_model_id(&self) -> Option<String> {
+        ClaudeCodeAdapter::default_model_id(self).await
+    }
+
+    fn context_window_for_event(
+        &self,
+        runtime_event: &RuntimeEvent,
+        active_model: Option<&str>,
+    ) -> Option<u64> {
+        if let Some(model) = active_model {
+            if let Some(context_window) =
+                context_window_for_model_from_raw(runtime_event.raw_json(), model)
+            {
+                return Some(context_window);
+            }
+        }
+
+        runtime_event
+            .context_window()
+            .or_else(|| runtime_event.init().and_then(|init| init.context_window))
     }
 
     async fn spawn(
@@ -375,12 +274,15 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
 
 #[cfg(test)]
 mod tests {
-    use serde_json::json;
+    use super::{map_permission_mode, ClaudeCodeAdapter, ProbeState};
+    use crate::domain::agents::adapter::{AgentRuntimeAdapter, RuntimePermissionMode};
 
-    use super::{map_permission_mode, normalize_event, ClaudeCodeAdapter};
-    use crate::domain::agents::adapter::{
-        AgentRuntimeAdapter, RuntimeContentDelta, RuntimePermissionMode, RuntimeStreamEvent,
-    };
+    fn new_test_adapter() -> ClaudeCodeAdapter {
+        ClaudeCodeAdapter {
+            cached_models: std::sync::OnceLock::new(),
+            probe_state: tokio::sync::Mutex::new(ProbeState::default()),
+        }
+    }
 
     #[test]
     fn map_permission_mode_covers_all_variants() {
@@ -408,56 +310,8 @@ mod tests {
 
     #[test]
     fn adapter_resume_id_validation_is_uuid_only() {
-        let adapter = ClaudeCodeAdapter;
+        let adapter = new_test_adapter();
         assert!(adapter.is_valid_resume_session_id("11111111-1111-4111-8111-111111111111"));
         assert!(!adapter.is_valid_resume_session_id("ses_27f586910ffeUNaKL2l5UARerl"));
-    }
-
-    #[test]
-    fn normalize_event_maps_stream_text_delta() {
-        let message: claude_agent_sdk_rs::SdkMessage = serde_json::from_value(json!({
-            "type": "stream_event",
-            "uuid": "u1",
-            "session_id": "s1",
-            "event": {
-                "type": "content_block_delta",
-                "index": 0,
-                "delta": { "type": "text_delta", "text": "hello" }
-            }
-        }))
-        .expect("valid stream event");
-
-        let event = normalize_event(message);
-        match event.stream_event() {
-            Some(RuntimeStreamEvent::ContentBlockDelta {
-                index,
-                delta: RuntimeContentDelta::Text { text },
-            }) => {
-                assert_eq!(*index, 0);
-                assert_eq!(text, "hello");
-            }
-            other => panic!("unexpected stream mapping: {other:?}"),
-        }
-    }
-
-    #[test]
-    fn normalize_event_maps_result_to_result_kind() {
-        let message: claude_agent_sdk_rs::SdkMessage = serde_json::from_value(json!({
-            "type": "result",
-            "subtype": "success",
-            "uuid": "u2",
-            "session_id": "s2",
-            "duration_ms": 1,
-            "duration_api_ms": 1,
-            "is_error": false,
-            "num_turns": 1,
-            "result": "ok",
-            "total_cost_usd": 0.0,
-            "usage": { "input_tokens": 1, "output_tokens": 1 }
-        }))
-        .expect("valid result event");
-
-        let event = normalize_event(message);
-        assert!(event.is_result());
     }
 }

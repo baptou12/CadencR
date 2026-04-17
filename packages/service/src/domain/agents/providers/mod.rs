@@ -37,6 +37,18 @@ pub async fn provider_catalog_live() -> AgentCatalogResponse {
     }
 }
 
+pub async fn provider_default_model(provider_id: &str) -> Option<String> {
+    if let Some(adapter) = runtime_adapter(provider_id) {
+        return adapter.default_model_id().await;
+    }
+
+    if provider_id == "codex_cli" {
+        return codex_cli::catalog_entry().default_model;
+    }
+
+    None
+}
+
 pub fn spawn_runtime_startup_warmups() {
     for (_, adapter) in ADAPTERS {
         adapter.spawn_startup_warmup();

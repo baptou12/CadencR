@@ -7,6 +7,15 @@ use crate::domain::agents::adapter::{
     RuntimeUserContentBlock, RuntimeUserMessage,
 };
 
+fn metadata(session_id: String, usage: Option<RuntimeUsage>, raw: Value) -> RuntimeEventMetadata {
+    RuntimeEventMetadata {
+        session_id: Some(session_id),
+        usage,
+        raw,
+        ..RuntimeEventMetadata::default()
+    }
+}
+
 pub fn assistant_fallback_event(
     message: &opencode_sdk_rs::Message,
     parent_tool_use_id: Option<&str>,
@@ -32,11 +41,11 @@ pub fn assistant_fallback_event(
         }
     });
     RuntimeEvent::new(
-        RuntimeEventMetadata {
-            session_id: Some(message.session_id.clone()),
-            usage: runtime_usage_from_tokens(message.tokens.as_ref()),
+        metadata(
+            message.session_id.clone(),
+            runtime_usage_from_tokens(message.tokens.as_ref()),
             raw,
-        },
+        ),
         RuntimeEventKind::AssistantMessage {
             message: RuntimeAssistantMessage { model, content },
             parent_tool_use_id: parent_tool_use_id.map(ToOwned::to_owned),
@@ -60,13 +69,12 @@ pub fn message_start_event(
         }
     });
     RuntimeEvent::new(
-        RuntimeEventMetadata {
-            session_id: Some(session_id.to_string()),
-            usage,
-            raw,
-        },
+        metadata(session_id.to_string(), usage, raw),
         RuntimeEventKind::StreamEvent {
-            event: RuntimeStreamEvent::MessageStart { model },
+            event: RuntimeStreamEvent::MessageStart {
+                model,
+                input_tokens: None,
+            },
             parent_tool_use_id: parent_tool_use_id.map(ToOwned::to_owned),
         },
     )
@@ -89,11 +97,7 @@ pub fn stream_start_event(
         }
     });
     RuntimeEvent::new(
-        RuntimeEventMetadata {
-            session_id: Some(session_id.to_string()),
-            usage: None,
-            raw,
-        },
+        metadata(session_id.to_string(), None, raw),
         RuntimeEventKind::StreamEvent {
             event: RuntimeStreamEvent::ContentBlockStart { index, block },
             parent_tool_use_id: parent_tool_use_id.map(ToOwned::to_owned),
@@ -118,11 +122,7 @@ pub fn stream_delta_event(
         }
     });
     RuntimeEvent::new(
-        RuntimeEventMetadata {
-            session_id: Some(session_id.to_string()),
-            usage: None,
-            raw,
-        },
+        metadata(session_id.to_string(), None, raw),
         RuntimeEventKind::StreamEvent {
             event: RuntimeStreamEvent::ContentBlockDelta { index, delta },
             parent_tool_use_id: parent_tool_use_id.map(ToOwned::to_owned),
@@ -145,11 +145,7 @@ pub fn stream_stop_event(
         }
     });
     RuntimeEvent::new(
-        RuntimeEventMetadata {
-            session_id: Some(session_id.to_string()),
-            usage: None,
-            raw,
-        },
+        metadata(session_id.to_string(), None, raw),
         RuntimeEventKind::StreamEvent {
             event: RuntimeStreamEvent::ContentBlockStop { index },
             parent_tool_use_id: parent_tool_use_id.map(ToOwned::to_owned),
@@ -160,22 +156,22 @@ pub fn stream_stop_event(
 /// Constructs a RuntimeEvent carrying only token-usage metadata.
 pub fn usage_event(session_id: &str, usage: RuntimeUsage) -> RuntimeEvent {
     RuntimeEvent::new(
-        RuntimeEventMetadata {
-            session_id: Some(session_id.to_string()),
-            usage: Some(usage),
-            raw: serde_json::json!({ "type": "usage_update", "session_id": session_id }),
-        },
+        metadata(
+            session_id.to_string(),
+            Some(usage),
+            serde_json::json!({ "type": "usage_update", "session_id": session_id }),
+        ),
         RuntimeEventKind::Other,
     )
 }
 
 pub fn result_event(session_id: &str, usage: Option<RuntimeUsage>) -> RuntimeEvent {
     RuntimeEvent::new(
-        RuntimeEventMetadata {
-            session_id: Some(session_id.to_string()),
+        metadata(
+            session_id.to_string(),
             usage,
-            raw: serde_json::json!({ "type": "result", "session_id": session_id }),
-        },
+            serde_json::json!({ "type": "result", "session_id": session_id }),
+        ),
         RuntimeEventKind::Result,
     )
 }
@@ -186,17 +182,17 @@ pub fn init_event(
     context_window: Option<u64>,
 ) -> RuntimeEvent {
     RuntimeEvent::new(
-        RuntimeEventMetadata {
-            session_id: Some(session_id.to_string()),
-            usage: None,
-            raw: serde_json::json!({
+        metadata(
+            session_id.to_string(),
+            None,
+            serde_json::json!({
                 "type": "system",
                 "subtype": "init",
                 "session_id": session_id,
                 "model": model.clone(),
                 "mcp_servers": [],
             }),
-        },
+        ),
         RuntimeEventKind::Init(RuntimeInitEvent {
             model,
             mcp_servers: Vec::new(),
@@ -207,10 +203,10 @@ pub fn init_event(
 
 pub fn permission_request_event(request: &opencode_sdk_rs::PermissionRequest) -> RuntimeEvent {
     RuntimeEvent::new(
-        RuntimeEventMetadata {
-            session_id: Some(request.session_id.clone()),
-            usage: None,
-            raw: serde_json::json!({
+        metadata(
+            request.session_id.clone(),
+            None,
+            serde_json::json!({
                 "type": "opencode_permission_request",
                 "session_id": request.session_id,
                 "request_id": request.id,
@@ -218,7 +214,7 @@ pub fn permission_request_event(request: &opencode_sdk_rs::PermissionRequest) ->
                 "tool_input": request.tool_input,
                 "description": request.description,
             }),
-        },
+        ),
         RuntimeEventKind::Other,
     )
 }
@@ -226,10 +222,10 @@ pub fn permission_request_event(request: &opencode_sdk_rs::PermissionRequest) ->
 pub fn question_request_event(question: &opencode_sdk_rs::Question) -> RuntimeEvent {
     let tool_input = build_question_tool_input(question);
     RuntimeEvent::new(
-        RuntimeEventMetadata {
-            session_id: Some(question.session_id.clone()),
-            usage: None,
-            raw: serde_json::json!({
+        metadata(
+            question.session_id.clone(),
+            None,
+            serde_json::json!({
                 "type": "opencode_permission_request",
                 "session_id": question.session_id,
                 "request_id": question.id,
@@ -237,7 +233,7 @@ pub fn question_request_event(question: &opencode_sdk_rs::Question) -> RuntimeEv
                 "tool_input": tool_input,
                 "description": "OpenCode question",
             }),
-        },
+        ),
         RuntimeEventKind::Other,
     )
 }
@@ -272,11 +268,7 @@ pub fn user_message_event(
         }
     });
     RuntimeEvent::new(
-        RuntimeEventMetadata {
-            session_id: Some(message.session_id.clone()),
-            usage: None,
-            raw,
-        },
+        metadata(message.session_id.clone(), None, raw),
         RuntimeEventKind::UserMessage {
             message: RuntimeUserMessage { content },
             parent_tool_use_id: parent_tool_use_id.map(ToOwned::to_owned),

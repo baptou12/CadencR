@@ -26,7 +26,36 @@ pub enum ProviderStatus {
 pub struct ModelCatalogEntry {
     pub id: String,
     pub label: String,
-    pub context_window: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supports_effort: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supported_effort_levels: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supports_adaptive_thinking: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supports_fast_mode: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supports_auto_mode: Option<bool>,
+}
+
+impl ModelCatalogEntry {
+    /// Bare alias constructor for catalog entries that don't carry capability
+    /// flags or descriptions (e.g. fallback lists and third-party providers
+    /// that only expose id/label).
+    pub fn alias(id: impl Into<String>, label: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            label: label.into(),
+            description: None,
+            supports_effort: None,
+            supported_effort_levels: None,
+            supports_adaptive_thinking: None,
+            supports_fast_mode: None,
+            supports_auto_mode: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

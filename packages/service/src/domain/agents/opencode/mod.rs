@@ -53,6 +53,10 @@ impl AgentRuntimeAdapter for OpenCodeAdapter {
         super::providers::opencode::catalog_entry_live().await
     }
 
+    async fn context_window_for_model(&self, model_id: &str) -> Option<u64> {
+        super::providers::opencode::context_window_for_model(model_id).await
+    }
+
     fn spawn_startup_warmup(&self) {
         if !crate::domain::agents::providers::opencode::should_warmup_on_start() {
             tracing::info!("opencode startup warmup disabled by CADENCE_OPENCODE_WARMUP_ON_START");

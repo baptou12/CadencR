@@ -819,6 +819,109 @@ pub async fn supported_commands(
     }
 }
 
+// ── Supported models ─────────────────────────────────────────────────────────
+
+/// Fetch the list of models the CLI currently exposes.
+///
+/// Sends the `initialize` control-request over the CLI's stdin/stdout control
+/// protocol and reads the matching `control_response` to extract `models`.
+/// This is a pure local metadata handshake — no prompt is submitted, no tokens
+/// are billed, and no network round-trip is required to fill the `models` field.
+///
+/// The CLI process is killed before returning.
+///
+/// # Timeout
+///
+/// If the CLI doesn't reply within 10 seconds, returns [`SdkError::Timeout`].
+pub async fn supported_models(
+    cwd: &str,
+    path_to_cli: Option<&std::path::Path>,
+) -> Result<Vec<crate::types::ModelInfo>, SdkError> {
+    use crate::transport::{find_cli, CliProcess};
+
+    let cli_path = find_cli(path_to_cli)?;
+
+    let options = Options {
+        cwd: std::path::PathBuf::from(cwd),
+        ..Options::default()
+    };
+
+    let mut process = CliProcess::spawn(&cli_path, &options).await?;
+
+    let stdin = process.take_stdin();
+    let process_stdin = tokio::sync::Mutex::new(stdin);
+
+    let init_request_id = format!(
+        "init_models_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+    );
+    let init_msg = serde_json::json!({
+        "type": "control_request",
+        "request_id": init_request_id,
+        "request": { "subtype": "initialize" }
+    });
+    write_to_stdin(&process_stdin, &init_msg).await?;
+
+    let result = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            match process.read_message().await? {
+                Some(raw) => {
+                    // Match the control_response to our initialize request.
+                    if raw.get("type").and_then(|t| t.as_str()) == Some("control_response") {
+                        let req_id = raw.pointer("/response/request_id").and_then(|v| v.as_str());
+                        if req_id == Some(init_request_id.as_str()) {
+                            let models = raw
+                                .pointer("/response/response/models")
+                                .cloned()
+                                .unwrap_or(serde_json::Value::Array(Vec::new()));
+                            let parsed: Vec<crate::types::ModelInfo> =
+                                serde_json::from_value(models)
+                                    .map_err(SdkError::SerializationError)?;
+                            return Ok::<Vec<crate::types::ModelInfo>, SdkError>(parsed);
+                        }
+                        continue;
+                    }
+                    // The CLI may send its own `initialize` control_request; reply
+                    // so it keeps going, then keep waiting for our response.
+                    if control_request_subtype(&raw) == Some("initialize") {
+                        let request_id = raw
+                            .get("request_id")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let response_json = serde_json::json!({
+                            "type": "control_response",
+                            "response": {
+                                "subtype": "success",
+                                "request_id": request_id,
+                                "response": {}
+                            }
+                        });
+                        write_to_stdin(&process_stdin, &response_json).await?;
+                        continue;
+                    }
+                    // Ignore any other messages (e.g. system.init emitted early).
+                }
+                None => {
+                    let (code, stderr) = process.wait_with_stderr().await;
+                    return Err(SdkError::ProcessExit { code, stderr });
+                }
+            }
+        }
+    })
+    .await;
+
+    let _ = process.kill().await;
+
+    match result {
+        Ok(models) => models,
+        Err(_elapsed) => Err(SdkError::Timeout),
+    }
+}
+
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -1196,6 +1299,44 @@ echo '{"type":"result","subtype":"success","uuid":"u2","session_id":"sess_clinit
 
         let sid = q.session_id().await;
         assert_eq!(sid, Some("sess_clinit".to_string()));
+    }
+
+    #[tokio::test]
+    async fn supported_models_extracts_models_from_control_response() {
+        use std::os::unix::fs::PermissionsExt;
+        use tempfile::TempDir;
+
+        let dir = TempDir::new().unwrap();
+        let script_path = dir.path().join("claude");
+
+        // Mock CLI: read the initialize control_request, echo back a control_response
+        // whose inner response.models array matches the real CLI wire format.
+        let script = r#"#!/bin/sh
+read -r INIT_REQ
+REQ_ID=$(printf '%s' "$INIT_REQ" | sed -n 's/.*"request_id":"\([^"]*\)".*/\1/p')
+printf '{"type":"control_response","response":{"subtype":"success","request_id":"%s","response":{"commands":[],"agents":[],"output_style":"default","available_output_styles":["default"],"models":[{"value":"default","displayName":"Default (recommended)","description":"Opus 4.7 with 1M context","supportsEffort":true,"supportedEffortLevels":["low","medium","high","xhigh","max"],"supportsAdaptiveThinking":true,"supportsAutoMode":true},{"value":"sonnet","displayName":"Sonnet","description":"Sonnet 4.6"},{"value":"haiku","displayName":"Haiku","description":"Haiku 4.5"}],"account":{}}}}\n' "$REQ_ID"
+sleep 60
+"#;
+
+        std::fs::write(&script_path, script).unwrap();
+        let mut perms = std::fs::metadata(&script_path).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&script_path, perms).unwrap();
+
+        let models = supported_models("/tmp", Some(script_path.as_path()))
+            .await
+            .expect("should return models");
+
+        assert_eq!(models.len(), 3);
+        assert_eq!(models[0].value, "default");
+        assert_eq!(models[0].display_name, "Default (recommended)");
+        assert_eq!(
+            models[0].description.as_deref(),
+            Some("Opus 4.7 with 1M context")
+        );
+        assert_eq!(models[0].supports_effort, Some(true));
+        assert_eq!(models[0].supports_auto_mode, Some(true));
+        assert_eq!(models[2].value, "haiku");
     }
 
     #[tokio::test]

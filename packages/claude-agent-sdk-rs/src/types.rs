@@ -71,11 +71,29 @@ pub struct SlashCommand {
     pub description: Option<String>,
 }
 
-/// Information about an available model.
+/// Information about an available model, as reported by the CLI's `initialize`
+/// control-response. Wire format uses camelCase (e.g. `displayName`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ModelInfo {
-    pub id: String,
+    /// Model identifier to pass via `--model` (e.g. `"opus"`, `"sonnet[1m]"`,
+    /// `"default"`).
+    pub value: String,
+    /// Human-readable display name (e.g. `"Opus"`, `"Sonnet (1M context)"`).
     pub display_name: String,
+    /// Description of the model's capabilities.
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub supports_effort: Option<bool>,
+    #[serde(default)]
+    pub supported_effort_levels: Option<Vec<String>>,
+    #[serde(default)]
+    pub supports_adaptive_thinking: Option<bool>,
+    #[serde(default)]
+    pub supports_fast_mode: Option<bool>,
+    #[serde(default)]
+    pub supports_auto_mode: Option<bool>,
 }
 
 /// Information about a sub-agent.
@@ -256,6 +274,45 @@ mod tests {
         assert!(
             matches!(back, ContentDelta::ThinkingDelta { thinking } if thinking == "step 1: analyze")
         );
+    }
+
+    // ── ModelInfo serde ──────────────────────────────────────────────────────
+
+    #[test]
+    fn model_info_parses_cli_payload() {
+        let raw = json!({
+            "value": "default",
+            "displayName": "Default (recommended)",
+            "description": "Opus 4.7 with 1M context · Most capable for complex work",
+            "supportsEffort": true,
+            "supportedEffortLevels": ["low", "medium", "high", "xhigh", "max"],
+            "supportsAdaptiveThinking": true,
+            "supportsAutoMode": true
+        });
+        let info: ModelInfo = serde_json::from_value(raw).unwrap();
+        assert_eq!(info.value, "default");
+        assert_eq!(info.display_name, "Default (recommended)");
+        assert_eq!(info.supports_effort, Some(true));
+        assert_eq!(
+            info.supported_effort_levels.as_deref(),
+            Some(
+                ["low", "medium", "high", "xhigh", "max"]
+                    .map(String::from)
+                    .as_slice()
+            )
+        );
+        assert_eq!(info.supports_auto_mode, Some(true));
+        assert_eq!(info.supports_fast_mode, None);
+    }
+
+    #[test]
+    fn model_info_parses_minimal_payload() {
+        let raw = json!({ "value": "haiku", "displayName": "Haiku" });
+        let info: ModelInfo = serde_json::from_value(raw).unwrap();
+        assert_eq!(info.value, "haiku");
+        assert_eq!(info.display_name, "Haiku");
+        assert!(info.description.is_none());
+        assert!(info.supports_effort.is_none());
     }
 
     // ── AccountInfo forward-compat ───────────────────────────────────────────

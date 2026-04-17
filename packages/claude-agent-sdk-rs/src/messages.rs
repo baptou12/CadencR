@@ -119,6 +119,35 @@ impl SystemMessage {
     }
 }
 
+// ── ModelUsageInfo ───────────────────────────────────────────────────────────
+
+/// Per-model usage record from the CLI's `result` message `modelUsage` map.
+///
+/// The CLI emits a `modelUsage` object keyed by the fully-qualified model
+/// identifier (e.g. `"claude-opus-4-7[1m]"`), with per-turn token counts and
+/// — critically — the authoritative `contextWindow` for that model. This is
+/// the source of truth for Cadence's context-window tracking: no parsing of
+/// description strings, no alias-prefix guessing.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelUsageInfo {
+    #[serde(default)]
+    pub input_tokens: u64,
+    #[serde(default)]
+    pub output_tokens: u64,
+    #[serde(default)]
+    pub cache_read_input_tokens: u64,
+    #[serde(default)]
+    pub cache_creation_input_tokens: u64,
+    /// Authoritative context window reported by the CLI for this model.
+    #[serde(default)]
+    pub context_window: Option<u64>,
+    #[serde(default)]
+    pub max_output_tokens: Option<u64>,
+    #[serde(default)]
+    pub cost_usd: Option<f64>,
+}
+
 // ── AssistantMessageBody ─────────────────────────────────────────────────────
 
 /// Full assistant message body (emitted after a stream turn completes).
@@ -187,6 +216,11 @@ pub enum SdkMessage {
         usage: Usage,
         permission_denials: Vec<PermissionDenial>,
         structured_output: Option<Value>,
+        /// Per-model usage breakdown. Key is the CLI model identifier
+        /// (e.g. `"claude-opus-4-7[1m]"`). Carries the authoritative
+        /// `contextWindow`.
+        #[serde(default, rename = "modelUsage")]
+        model_usage: HashMap<String, ModelUsageInfo>,
         #[serde(flatten)]
         extra: HashMap<String, Value>,
     },
@@ -371,6 +405,8 @@ enum SdkMessageInner {
         #[serde(default)]
         permission_denials: Vec<PermissionDenial>,
         structured_output: Option<Value>,
+        #[serde(default, rename = "modelUsage")]
+        model_usage: HashMap<String, ModelUsageInfo>,
         #[serde(flatten)]
         extra: HashMap<String, Value>,
     },
@@ -524,6 +560,7 @@ impl From<SdkMessageInner> for SdkMessage {
                 usage,
                 permission_denials,
                 structured_output,
+                model_usage,
                 extra,
             } => SdkMessage::Result {
                 subtype,
@@ -540,6 +577,7 @@ impl From<SdkMessageInner> for SdkMessage {
                 usage,
                 permission_denials,
                 structured_output,
+                model_usage,
                 extra,
             },
             SdkMessageInner::System(s) => SdkMessage::System(s),
@@ -785,6 +823,20 @@ impl SdkMessage {
     pub fn cumulative_usage(&self) -> Option<&Usage> {
         match self {
             SdkMessage::Result { usage, .. } => Some(usage),
+            _ => None,
+        }
+    }
+
+    /// Extract the authoritative context window reported by the CLI on a
+    /// `Result` message. When the session involves multiple models in a
+    /// single turn, returns the largest declared window (safest upper bound
+    /// for display purposes). Returns `None` if no `modelUsage` entry carried
+    /// a `contextWindow` field.
+    pub fn result_context_window(&self) -> Option<u64> {
+        match self {
+            SdkMessage::Result { model_usage, .. } => {
+                model_usage.values().filter_map(|u| u.context_window).max()
+            }
             _ => None,
         }
     }

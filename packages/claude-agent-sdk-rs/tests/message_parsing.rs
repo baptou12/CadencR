@@ -179,6 +179,79 @@ fn result_success() {
 }
 
 #[test]
+fn result_exposes_context_window_from_model_usage() {
+    let raw = json!({
+        "type": "result",
+        "subtype": "success",
+        "uuid": "r3",
+        "session_id": "s1",
+        "duration_ms": 4000,
+        "duration_api_ms": 1400,
+        "is_error": false,
+        "num_turns": 1,
+        "result": "hi",
+        "total_cost_usd": 0.07,
+        "usage": { "input_tokens": 6, "output_tokens": 6 },
+        "permission_denials": [],
+        "modelUsage": {
+            "claude-opus-4-7[1m]": {
+                "inputTokens": 6,
+                "outputTokens": 6,
+                "contextWindow": 1000000,
+                "maxOutputTokens": 64000,
+                "costUSD": 0.07923125
+            }
+        }
+    });
+    let msg: SdkMessage = serde_json::from_value(raw).unwrap();
+    assert_eq!(msg.result_context_window(), Some(1_000_000));
+}
+
+#[test]
+fn result_context_window_picks_largest_when_multiple_models() {
+    let raw = json!({
+        "type": "result",
+        "subtype": "success",
+        "uuid": "r4",
+        "session_id": "s1",
+        "duration_ms": 1,
+        "duration_api_ms": 1,
+        "is_error": false,
+        "num_turns": 1,
+        "result": "ok",
+        "total_cost_usd": 0.0,
+        "usage": { "input_tokens": 1, "output_tokens": 1 },
+        "permission_denials": [],
+        "modelUsage": {
+            "claude-haiku-4-5": { "contextWindow": 200000 },
+            "claude-opus-4-7[1m]": { "contextWindow": 1000000 }
+        }
+    });
+    let msg: SdkMessage = serde_json::from_value(raw).unwrap();
+    assert_eq!(msg.result_context_window(), Some(1_000_000));
+}
+
+#[test]
+fn result_context_window_returns_none_when_absent() {
+    let raw = json!({
+        "type": "result",
+        "subtype": "success",
+        "uuid": "r5",
+        "session_id": "s1",
+        "duration_ms": 1,
+        "duration_api_ms": 1,
+        "is_error": false,
+        "num_turns": 1,
+        "result": "ok",
+        "total_cost_usd": 0.0,
+        "usage": { "input_tokens": 1, "output_tokens": 1 },
+        "permission_denials": []
+    });
+    let msg: SdkMessage = serde_json::from_value(raw).unwrap();
+    assert_eq!(msg.result_context_window(), None);
+}
+
+#[test]
 fn result_error_max_turns() {
     let raw = json!({
         "type": "result",
